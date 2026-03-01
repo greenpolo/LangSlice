@@ -1,0 +1,22 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+
+# Markdown files
+*.md
+
+# Agent knowledge-base files
+AGENTS.md
+
+# Windows NUL artifact
+nul

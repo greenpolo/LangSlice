@@ -1,0 +1,14 @@
+name: langslice
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - numpy
+  - scipy
+  - pillow
+  - pyside6
+  - pip
+  - pip:
+    - google-genai
+    - brainglobe-atlasapi
+    - python-dotenv
