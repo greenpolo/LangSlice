@@ -20,3 +20,9 @@ AGENTS.md
 
 # Windows NUL artifact
 nul
+
+# Cloned reference repositories (keep locally, exclude from repo)
+references/abba_python/
+references/brainglobe-atlasapi/
+references/DeepSlice_upstream/
+references/ijp-imagetoatlas/
