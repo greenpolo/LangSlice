@@ -53,16 +53,16 @@ class AtlasLoaderWorker(QObject):
     error = Signal(str)
     finished = Signal()
 
-    def __init__(self, atlas_name: str, ap_mm: float) -> None:
+    def __init__(self, atlas_name: str, position_mm: float) -> None:
         super().__init__()
         self._atlas_name = atlas_name
-        self._ap_mm = ap_mm
+        self._position_mm = position_mm
 
     @Slot()
     def load(self) -> None:
         try:
             atlas = load_atlas(self._atlas_name)
-            image = get_reference_slice(atlas, self._ap_mm)
+            image = get_reference_slice(atlas, self._position_mm)
             self.slice_ready.emit(pil_to_qpixmap(image))
         except Exception as exc:
             self.error.emit(str(exc))
@@ -82,7 +82,7 @@ class AtlasViewer(QFrame):
         self.setFrameShape(QFrame.Shape.StyledPanel)
 
         self._atlas_name: Optional[str] = None
-        self._ap_mm: Optional[float] = None
+        self._position_mm: Optional[float] = None
         self._generation = 0
         self._queued_generation = 0
         self._active_generation = 0
@@ -116,7 +116,7 @@ class AtlasViewer(QFrame):
 
         self._ap_badge = QLabel(self)
         self._ap_badge.setObjectName("atlasApBadge")
-        self._ap_badge.setText("AP: +0.00 mm")
+        self._ap_badge.setText("Pos: 0.00 mm")
         self._ap_badge.setVisible(False)
         self._ap_badge.setStyleSheet(
             f"""
@@ -165,8 +165,8 @@ class AtlasViewer(QFrame):
 
         self._show_placeholder_state()
 
-    def set_ap(self, ap_mm: float) -> None:
-        self._ap_mm = float(ap_mm)
+    def set_position(self, position_mm: float) -> None:
+        self._position_mm = float(position_mm)
         self._queue_reload()
 
     def set_atlas(self, atlas_name: str) -> None:
@@ -176,7 +176,7 @@ class AtlasViewer(QFrame):
 
     def clear(self) -> None:
         self._atlas_name = None
-        self._ap_mm = None
+        self._position_mm = None
         self._source_pixmap = None
         self._generation += 1
         self._queued_generation = self._generation
@@ -195,7 +195,7 @@ class AtlasViewer(QFrame):
         self._generation += 1
         self._queued_generation = self._generation
 
-        if self._ap_mm is None or self._atlas_name is None:
+        if self._position_mm is None or self._atlas_name is None:
             self._debounce_timer.stop()
             self._source_pixmap = None
             self._image_label.clear()
@@ -203,27 +203,27 @@ class AtlasViewer(QFrame):
             self._show_placeholder_state()
             return
 
-        self._set_ap_badge_text(self._ap_mm)
+        self._set_ap_badge_text(self._position_mm)
         self._ap_badge.setVisible(True)
         self._position_ap_badge()
         self._debounce_timer.start()
 
     @Slot()
     def _start_loading_request(self) -> None:
-        if self._ap_mm is None or self._atlas_name is None:
+        if self._position_mm is None or self._atlas_name is None:
             self._show_placeholder_state()
             return
 
         request_generation = self._queued_generation
         atlas_name = self._atlas_name
-        ap_mm = self._ap_mm
+        position_mm = self._position_mm
 
         self._active_generation = request_generation
         self._cancel_active_request()
         self._show_loading_state()
 
         thread = QThread(self)
-        worker = AtlasLoaderWorker(atlas_name, ap_mm)
+        worker = AtlasLoaderWorker(atlas_name, position_mm)
         worker.moveToThread(thread)
 
         thread.started.connect(worker.load)
@@ -270,9 +270,8 @@ class AtlasViewer(QFrame):
     def _show_loading_state(self) -> None:
         self._stack.setCurrentIndex(self._STATE_LOADING)
 
-    def _set_ap_badge_text(self, ap_mm: float) -> None:
-        sign = "+" if ap_mm >= 0 else ""
-        self._ap_badge.setText(f"AP: {sign}{ap_mm:.2f} mm")
+    def _set_ap_badge_text(self, position_mm: float) -> None:
+        self._ap_badge.setText(f"Pos: {position_mm:.2f} mm")
         self._ap_badge.adjustSize()
 
     def _position_ap_badge(self) -> None:
@@ -312,7 +311,7 @@ class AtlasViewer(QFrame):
         heading.setObjectName("atlasHeading")
         heading.setAlignment(Qt.AlignmentFlag.AlignHCenter)
 
-        text = QLabel("Awaiting AP Estimation...", widget)
+        text = QLabel("Awaiting Position Estimate...", widget)
         text.setObjectName("atlasPlaceholderText")
         text.setAlignment(Qt.AlignmentFlag.AlignHCenter)
 

@@ -33,7 +33,6 @@ QApplication = _qtwidgets.QApplication
 QComboBox = _qtwidgets.QComboBox
 QFileDialog = _qtwidgets.QFileDialog
 QFrame = _qtwidgets.QFrame
-QGraphicsOpacityEffect = _qtwidgets.QGraphicsOpacityEffect
 QHBoxLayout = _qtwidgets.QHBoxLayout
 QLabel = _qtwidgets.QLabel
 QMainWindow = _qtwidgets.QMainWindow
@@ -46,6 +45,7 @@ QSplitter = _qtwidgets.QSplitter
 QStackedWidget = _qtwidgets.QStackedWidget
 QVBoxLayout = _qtwidgets.QVBoxLayout
 QWidget = _qtwidgets.QWidget
+QDoubleSpinBox = _qtwidgets.QDoubleSpinBox
 
 from langslice import __version__
 from langslice.atlas import (
@@ -55,9 +55,10 @@ from langslice.atlas import (
     list_downloaded_atlases,
 )
 from langslice.gui.theme import ACCENT, BG_PRIMARY, ERROR, STYLESHEET, SUCCESS, TEXT_SECONDARY
-from langslice.vlm import APResult, AffineResult, PreprocessOptions, estimate_affine, estimate_ap
+from langslice.vlm import APResult, AffineResult, PreprocessOptions, estimate_affine, estimate_position
 from langslice.export import build_quint_export, save_quint_json
 from langslice.gui.settings_dialog import SettingsDialog
+from langslice.gui.overlay_viewer import OverlayGraphicsView
 
 try:
     AtlasViewer = importlib.import_module("langslice.gui.atlas_viewer").AtlasViewer
@@ -68,29 +69,29 @@ except Exception:
         def __init__(self, parent: QWidget | None = None) -> None:
             super().__init__(parent)
             self._atlas_name = ""
-            self._ap: float | None = None
+            self._position_mm: float | None = None
             layout = QVBoxLayout(self)
             layout.setContentsMargins(16, 16, 16, 16)
             layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            self._label = QLabel("Atlas pending AP estimate")
+            self._label = QLabel("Atlas pending position estimate")
             self._label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self._label.setStyleSheet(f"color: {TEXT_SECONDARY};")
             layout.addWidget(self._label)
 
-        def set_ap(self, ap_mm: float) -> None:
-            self._ap = ap_mm
-            self._label.setText(f"{self._atlas_name}\nAP: {ap_mm:+.2f} mm")
+        def set_position(self, position_mm: float) -> None:
+            self._position_mm = position_mm
+            self._label.setText(f"{self._atlas_name}\nPos: {position_mm:.2f} mm")
 
         def set_atlas(self, atlas_name: str) -> None:
             self._atlas_name = atlas_name
-            if self._ap is None:
-                self._label.setText(f"{atlas_name}\nAwaiting AP estimate")
+            if self._position_mm is None:
+                self._label.setText(f"{atlas_name}\nAwaiting position estimate")
             else:
-                self._label.setText(f"{atlas_name}\nAP: {self._ap:+.2f} mm")
+                self._label.setText(f"{atlas_name}\nPos: {self._position_mm:.2f} mm")
 
         def clear(self) -> None:
-            self._ap = None
-            self._label.setText("Atlas pending AP estimate")
+            self._position_mm = None
+            self._label.setText("Atlas pending position estimate")
 
 
 def pil_to_qpixmap(image: Image.Image) -> QPixmap:
@@ -207,17 +208,19 @@ class AgentWorker(QObject):
         image: Image.Image,
         atlas_name: str,
         preprocess_options: PreprocessOptions,
+        pixel_size_um: float = 4.0,
     ):
         super().__init__()
         self.image = image
         self.atlas_name = atlas_name
         self.preprocess_options = preprocess_options
+        self.pixel_size_um = pixel_size_um
 
     def run(self) -> None:
         try:
             self.step_started.emit("ap")
-            self.log_message.emit("Starting AP estimation...")
-            ap_result = estimate_ap(
+            self.log_message.emit("Starting position estimation...")
+            ap_result = estimate_position(
                 self.image,
                 self.atlas_name,
                 on_progress=self.log_message.emit,
@@ -236,6 +239,9 @@ class AgentWorker(QObject):
                 self.image,
                 on_progress=self.log_message.emit,
                 preprocess_options=self.preprocess_options,
+                atlas_name=self.atlas_name,
+                position_mm=ap_result.position_mm,
+                pixel_size_um=self.pixel_size_um,
             )
             self.step_completed.emit("affine", affine_result)
         except Exception as exc:
@@ -330,7 +336,7 @@ class StepIndicator(QFrame):
             self.circle.setStyleSheet("background-color: #555555; border-radius: 9px;")
 
     def show_ap_result(self, result: APResult) -> None:
-        self.result_top.setText(f"Estimated AP: <span style='color:{SUCCESS}'>{result.ap_position:+.2f} mm</span>")
+        self.result_top.setText(f"Estimated Position: <span style='color:{SUCCESS}'>{result.position_mm:.2f} mm</span>")
         self.result_reasoning.setText(result.reasoning)
         self.error_label.clear()
         self.result_panel.show()
@@ -380,13 +386,15 @@ class MainWindow(QMainWindow):
 
         self.image_path: str | None = None
         self.pil_image: Image.Image | None = None
-        self.current_ap: float | None = None
+        self.current_pos: float | None = None
         self.ap_result: APResult | None = None
         self.affine_result: AffineResult | None = None
         self.current_view_mode = "single"
 
         self.worker_thread: QThread | None = None
         self.worker: AgentWorker | None = None
+
+        self.pixel_size_um: float = 4.0
 
         self._build_ui()
         self._set_view_mode("single")
@@ -494,6 +502,18 @@ class MainWindow(QMainWindow):
         self._populate_atlas_combo()
         self.atlas_combo.currentIndexChanged.connect(self._on_atlas_changed)
 
+        px_size_label = QLabel("Pixel Size:")
+        px_size_label.setObjectName("subheading")
+        self.pixel_size_spin = QDoubleSpinBox()
+        self.pixel_size_spin.setRange(0.1, 100.0)
+        self.pixel_size_spin.setValue(self.pixel_size_um)
+        self.pixel_size_spin.setSuffix(" µm/px")
+        self.pixel_size_spin.setDecimals(2)
+        self.pixel_size_spin.setSingleStep(0.5)
+        self.pixel_size_spin.setFixedWidth(130)
+        self.pixel_size_spin.setToolTip("Pixel size of the histology image in micrometers per pixel")
+        self.pixel_size_spin.valueChanged.connect(self._on_pixel_size_changed)
+
         self.upload_button = QPushButton("Open Image...")
         self.upload_button.setObjectName("secondary")
         self.upload_button.clicked.connect(self._browse_image)
@@ -507,6 +527,8 @@ class MainWindow(QMainWindow):
         self.export_button.clicked.connect(self._export_abba)
 
         right.addWidget(self.atlas_combo)
+        right.addWidget(px_size_label)
+        right.addWidget(self.pixel_size_spin)
         right.addWidget(self.upload_button)
         right.addWidget(self.settings_button)
         right.addWidget(self.export_button)
@@ -647,29 +669,9 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        holder = QFrame()
-        holder.setObjectName("glassPanel")
-        holder_layout = QVBoxLayout(holder)
-        holder_layout.setContentsMargins(10, 10, 10, 10)
-
-        self.overlay_image_label = ImageLabel()
-        self.overlay_image_label.setStyleSheet("background: transparent;")
-        holder_layout.addWidget(self.overlay_image_label)
-
-        self.overlay_layer = QFrame(holder)
-        self.overlay_layer.setStyleSheet("background: transparent;")
-        overlay_layout = QVBoxLayout(self.overlay_layer)
-        overlay_layout.setContentsMargins(10, 10, 10, 10)
-        self.overlay_atlas = AtlasViewer(self.overlay_layer)
-        overlay_layout.addWidget(self.overlay_atlas)
-        self.overlay_layer.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
-
-        self.overlay_effect = QGraphicsOpacityEffect(self.overlay_layer)
-        self.overlay_effect.setOpacity(0.5)
-        self.overlay_layer.setGraphicsEffect(self.overlay_effect)
-        self.overlay_layer.raise_()
-
-        layout.addWidget(holder)
+        self.overlay_viewer = OverlayGraphicsView()
+        self.overlay_viewer.set_pixel_size(self.pixel_size_um)
+        layout.addWidget(self.overlay_viewer)
         return page
 
     def _build_agent_panel(self) -> QWidget:
@@ -698,10 +700,10 @@ class MainWindow(QMainWindow):
         self.ap_adjust_wrap.setObjectName("glassPanel")
         ap_layout = QVBoxLayout(self.ap_adjust_wrap)
         ap_layout.setContentsMargins(10, 10, 10, 10)
-        self.ap_value_label = QLabel("Manual AP Adjustment: +0.00 mm")
+        self.ap_value_label = QLabel("Manual Position: 0.00 mm")
         self.ap_value_label.setObjectName("monoLabel")
         self.ap_slider = QSlider(Qt.Orientation.Horizontal)
-        self.ap_slider.setRange(-500, 500)
+        self.ap_slider.setRange(0, 2000)  # Default 0-20mm
         self.ap_slider.setValue(0)
         self.ap_slider.valueChanged.connect(self._on_ap_slider_changed)
         ap_layout.addWidget(self.ap_value_label)
@@ -709,7 +711,7 @@ class MainWindow(QMainWindow):
         self.ap_adjust_wrap.hide()
         layout.addWidget(self.ap_adjust_wrap)
 
-        self.step_ap = StepIndicator("Estimate AP Position", has_connector=True)
+        self.step_ap = StepIndicator("Estimate Position", has_connector=True)
         self.step_affine = StepIndicator("Affine Transformation", has_connector=False)
 
         preprocess_panel = QFrame()
@@ -744,10 +746,6 @@ class MainWindow(QMainWindow):
 
     def resizeEvent(self, event: Any) -> None:
         super().resizeEvent(event)
-        if hasattr(self, "overlay_layer"):
-            parent = self.overlay_layer.parentWidget()
-            if parent is not None:
-                self.overlay_layer.setGeometry(parent.rect())
 
     def _set_view_mode(self, mode: str) -> None:
         self.current_view_mode = mode
@@ -787,7 +785,7 @@ class MainWindow(QMainWindow):
 
         self.image_path = file_path
         self.pil_image = image
-        self.current_ap = None
+        self.current_pos = None
         self.ap_result = None
         self.affine_result = None
         self._reset_steps()
@@ -804,7 +802,7 @@ class MainWindow(QMainWindow):
         self._set_export_enabled(False)
         self.run_button.setEnabled(self.pil_image is not None and not self._is_worker_running())
         self.split_atlas.clear()
-        self.overlay_atlas.clear()
+        self.overlay_viewer.clear()
 
     def _run_agent(self) -> None:
         if self.pil_image is None or self._is_worker_running():
@@ -823,7 +821,7 @@ class MainWindow(QMainWindow):
             self._append_log("Preprocessing disabled: sending original image content.")
 
         thread = QThread(self)
-        worker = AgentWorker(image_copy, atlas_name, preprocess_options=preprocess_options)
+        worker = AgentWorker(image_copy, atlas_name, preprocess_options=preprocess_options, pixel_size_um=self.pixel_size_um)
         worker.moveToThread(thread)
 
         self.worker_thread = thread
@@ -852,13 +850,13 @@ class MainWindow(QMainWindow):
     def _on_step_completed(self, step_id: str, result: object) -> None:
         if step_id == "ap" and isinstance(result, APResult):
             self.ap_result = result
-            self.current_ap = result.ap_position
+            self.current_pos = result.position_mm
             self.step_ap.set_status("completed")
             self.step_ap.show_ap_result(result)
-            self._set_ap_slider_value(result.ap_position)
+            self._set_ap_slider_value(result.position_mm)
             self.ap_adjust_wrap.show()
             self._sync_atlas_viewers()
-            self._append_log(f"Final AP estimated: {result.ap_position:+.2f} mm")
+            self._append_log(f"Final position estimated: {result.position_mm:.2f} mm")
             return
 
         if step_id == "affine" and isinstance(result, AffineResult):
@@ -904,8 +902,8 @@ class MainWindow(QMainWindow):
     def _on_atlas_changed(self) -> None:
         atlas_name = self._current_atlas_name()
         self.split_atlas.set_atlas(atlas_name)
-        self.overlay_atlas.set_atlas(atlas_name)
-        if self.current_ap is not None:
+        self.overlay_viewer.set_atlas(atlas_name)
+        if self.current_pos is not None:
             self._sync_atlas_viewers()
         self._append_log(f"Atlas selected: {atlas_name}")
 
@@ -915,28 +913,44 @@ class MainWindow(QMainWindow):
     def _sync_atlas_viewers(self) -> None:
         atlas_name = self._current_atlas_name()
         self.split_atlas.set_atlas(atlas_name)
-        self.overlay_atlas.set_atlas(atlas_name)
-        if self.current_ap is None:
+        self.overlay_viewer.set_atlas(atlas_name)
+        self.overlay_viewer.set_pixel_size(self.pixel_size_um)
+
+        # Update slider range based on atlas
+        try:
+            from langslice.atlas import get_position_range_mm, load_atlas
+            atlas = load_atlas(atlas_name)
+            _, max_pos = get_position_range_mm(atlas)
+            self.ap_slider.setRange(0, int(round(max_pos * 100)))
+        except Exception:
+            pass
+
+        if self.current_pos is None:
             self.split_atlas.clear()
-            self.overlay_atlas.clear()
+            self.overlay_viewer.clear()
             return
-        self.split_atlas.set_ap(self.current_ap)
-        self.overlay_atlas.set_ap(self.current_ap)
+
+        self.split_atlas.set_position(self.current_pos)
+        self.overlay_viewer.set_position(self.current_pos)
 
     def _on_ap_slider_changed(self, slider_value: int) -> None:
-        self.current_ap = slider_value / 100.0
-        self.ap_value_label.setText(f"Manual AP Adjustment: {self.current_ap:+.2f} mm")
+        self.current_pos = slider_value / 100.0
+        self.ap_value_label.setText(f"Manual Position: {self.current_pos:.2f} mm")
         self._sync_atlas_viewers()
 
-    def _set_ap_slider_value(self, ap_value: float) -> None:
-        value = max(-500, min(500, int(round(ap_value * 100))))
+    def _on_pixel_size_changed(self, value: float) -> None:
+        self.pixel_size_um = value
+        self._sync_atlas_viewers()
+
+    def _set_ap_slider_value(self, position_mm: float) -> None:
+        value = int(round(position_mm * 100))
         self.ap_slider.blockSignals(True)
         self.ap_slider.setValue(value)
         self.ap_slider.blockSignals(False)
-        self.ap_value_label.setText(f"Manual AP Adjustment: {value / 100.0:+.2f} mm")
+        self.ap_value_label.setText(f"Manual Position: {position_mm:.2f} mm")
 
     def _on_opacity_changed(self, value: int) -> None:
-        self.overlay_effect.setOpacity(value / 100.0)
+        self.overlay_viewer.set_atlas_opacity(value / 100.0)
 
     def _transformed_pixmap(self) -> QPixmap | None:
         if self.pil_image is None:
@@ -958,7 +972,7 @@ class MainWindow(QMainWindow):
         pixmap = self._transformed_pixmap()
         self.single_image_label.set_source_pixmap(pixmap)
         self.split_image_label.set_source_pixmap(pixmap)
-        self.overlay_image_label.set_source_pixmap(pixmap)
+        self.overlay_viewer.set_slice_pixmap(pixmap)
         self._sync_atlas_viewers()
 
     def _append_log(self, message: str) -> None:
@@ -983,16 +997,14 @@ class MainWindow(QMainWindow):
 
         # Gather atlas info for anchoring computation
         try:
-            from langslice.atlas.core import get_origin_index, load_atlas
+            from langslice.atlas import load_atlas
             atlas = load_atlas(atlas_name)
             atlas_shape = atlas.reference.shape
             atlas_resolution = atlas.resolution
-            origin_index = get_origin_index(atlas)
         except Exception:
             # Fallback: use reasonable defaults for Allen Mouse 25um
             atlas_shape = (528, 320, 456)
             atlas_resolution = (25.0, 25.0, 25.0)
-            origin_index = 264
 
         rotation = self.affine_result.rotation if self.affine_result else 0.0
         tx = self.affine_result.translateX if self.affine_result else 0.0
@@ -1000,11 +1012,10 @@ class MainWindow(QMainWindow):
 
         quint_export = build_quint_export(
             filename=self.image_path,
-            ap_mm=self.current_ap or 0.0,
+            position_mm=self.current_pos or 0.0,
             atlas_name=atlas_name,
             atlas_shape=atlas_shape,
             atlas_resolution=atlas_resolution,
-            origin_index=origin_index,
             image_width=self.pil_image.width,
             image_height=self.pil_image.height,
             rotation_deg=rotation,
