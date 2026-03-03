@@ -118,10 +118,9 @@ def _resolve_target(atlas_name: str) -> str:
 
 
 def compute_anchoring(
-    ap_mm: float,
+    position_mm: float,
     atlas_shape: Sequence[int],
     atlas_resolution: Sequence[float],
-    origin_index: int,
     image_width: int,
     image_height: int,
     rotation_deg: float = 0.0,
@@ -132,14 +131,12 @@ def compute_anchoring(
 
     Parameters
     ----------
-    ap_mm : float
-        Anterior-posterior position in mm (positive = anterior of origin).
+    position_mm : float
+        Physical position in mm from the anterior edge of the volume.
     atlas_shape : (n_ap, n_dv, n_ml)
         Number of voxels along each BrainGlobe axis.
     atlas_resolution : (res_ap, res_dv, res_ml)
         Voxel resolution in **micrometers**.
-    origin_index : int
-        Index along the AP axis that corresponds to 0 mm (e.g. Bregma).
     image_width, image_height : int
         Pixel dimensions of the section image.
     rotation_deg : float
@@ -149,9 +146,9 @@ def compute_anchoring(
     """
     n_ap, n_dv, n_ml = int(atlas_shape[0]), int(atlas_shape[1]), int(atlas_shape[2])
 
-    # --- Convert AP mm → voxel index (BG axis-0) ---
+    # --- Convert physical position mm → voxel index (BG axis-0) ---
     res_ap_mm = float(atlas_resolution[0]) / 1000.0
-    ap_voxel = origin_index - (ap_mm / res_ap_mm)  # keep as float for smooth positioning
+    ap_voxel = position_mm / res_ap_mm  # keep as float for smooth positioning
 
     # --- Determine image → atlas scale ---
     # We want the atlas coronal slice to be centered and *fit* within the
@@ -230,11 +227,10 @@ def compute_anchoring(
 
 def build_quint_export(
     filename: str,
-    ap_mm: float,
+    position_mm: float,
     atlas_name: str,
     atlas_shape: Sequence[int],
     atlas_resolution: Sequence[float],
-    origin_index: int,
     image_width: int,
     image_height: int,
     rotation_deg: float = 0.0,
@@ -244,10 +240,9 @@ def build_quint_export(
 ) -> QUINTExport:
     """Build a complete QUINT export structure for a single slice."""
     anchoring = compute_anchoring(
-        ap_mm=ap_mm,
+        position_mm=position_mm,
         atlas_shape=atlas_shape,
         atlas_resolution=atlas_resolution,
-        origin_index=origin_index,
         image_width=image_width,
         image_height=image_height,
         rotation_deg=rotation_deg,
