@@ -8,7 +8,7 @@ from typing import Callable, Protocol, cast
 logger = logging.getLogger(__name__)
 
 MODEL_NAME = "gemini-3-flash-preview"
-THINKING_BUDGET = 8096
+THINKING_LEVEL = "HIGH"
 
 _BACKEND_AI_STUDIO = "ai_studio"
 _BACKEND_VERTEX_API_KEY = "vertex_api_key"

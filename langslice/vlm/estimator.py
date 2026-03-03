@@ -11,7 +11,7 @@ import numpy as np
 from PIL import Image
 from PIL import ImageOps
 
-from langslice.vlm.config import MODEL_NAME, THINKING_BUDGET, get_client
+from langslice.vlm.config import MODEL_NAME, THINKING_LEVEL, get_client
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +68,7 @@ def _retry_generate(
 
 @dataclass
 class APResult:
-    ap_position: float
+    position_mm: float
     reasoning: str
 
 
@@ -204,10 +204,9 @@ def _contents_from_parts(parts: list[dict[str, object]]) -> list[dict[str, objec
 
 def _generation_config(schema: dict[str, object]) -> dict[str, object]:
     return {
-        "thinking_config": {"thinking_budget": THINKING_BUDGET},
+        "thinking_config": {"thinking_level": THINKING_LEVEL},
         "response_mime_type": "application/json",
         "response_schema": schema,
-        "tools": [{"code_execution": {}}],
     }
 
 
@@ -238,19 +237,19 @@ def _to_str(value: object, default: str = "N/A") -> str:
     return default
 
 
-def estimate_ap(
+def estimate_position(
     image: Image.Image,
     atlas_name: str,
     on_progress: Callable[[str], None] | None = None,
     preprocess_options: PreprocessOptions | None = None,
 ) -> APResult:
     """
-    Two-pass AP position estimation.
+    Two-pass physical position estimation (mm from anterior edge).
 
-    Pass 1 (coarse): Compare against reference slices at 1.0mm intervals.
-    Pass 2 (fine): Compare against reference slices at 0.2mm intervals around coarse estimate.
+    Pass 1 (coarse): Compare against 8 evenly spaced reference slices.
+    Pass 2 (fine): Compare against 5 reference slices at 0.2mm intervals around coarse estimate.
     """
-    from langslice.atlas.core import get_ap_range, get_reference_slice, load_atlas
+    from langslice.atlas.core import get_position_range_mm, get_reference_slice, load_atlas
 
     def _progress(msg: str) -> None:
         if on_progress:
@@ -261,20 +260,16 @@ def estimate_ap(
 
     client = get_client()
     atlas = load_atlas(atlas_name)
-    most_anterior, most_posterior = get_ap_range(atlas)
-    ap_lower = min(most_anterior, most_posterior)
-    ap_upper = max(most_anterior, most_posterior)
+    pos_lower, pos_upper = get_position_range_mm(atlas)
 
-    _progress("Fetching coarse reference images (1.0mm steps)...")
-    coarse_aps = [3.0, 2.0, 1.0, 0.0, -1.0, -2.0, -3.0, -4.0]
+    _progress("Fetching coarse reference images (evenly spaced)...")
+    coarse_positions = np.linspace(pos_lower, pos_upper, 8).tolist()
 
     coarse_refs: list[tuple[float, Image.Image]] = []
-    for ap in coarse_aps:
-        if not (ap_lower <= ap <= ap_upper):
-            continue
+    for pos in coarse_positions:
         try:
-            ref_img = get_reference_slice(atlas, ap)
-            coarse_refs.append((ap, ref_img))
+            ref_img = get_reference_slice(atlas, pos)
+            coarse_refs.append((pos, ref_img))
         except ValueError:
             continue
 
@@ -292,21 +287,20 @@ def estimate_ap(
         _part_image_base64(target_b64),
     ]
 
-    for i, (ap, ref_img) in enumerate(coarse_refs):
-        sign = "+" if ap > 0 else ""
-        coarse_parts.append(_part_text(f"Reference Image {i + 2}: Atlas slice at AP {sign}{ap} mm."))
+    for i, (pos, ref_img) in enumerate(coarse_refs):
+        coarse_parts.append(_part_text(f"Reference Image {i + 2}: Atlas slice at {pos:.2f} mm from anterior edge."))
         coarse_prepared = _prepare_vlm_image(ref_img, options)
         coarse_parts.append(_part_image_base64(_image_to_base64(coarse_prepared)))
 
     coarse_parts.append(
         _part_text(
             "Compare the target brain slice (Image 1) to the reference atlas slices. "
-            + "Estimate the rough Anterior-Posterior (AP) position of the target slice relative "
-            + "to Bregma in mm. Return a value between -5.0 and 5.0."
+            + "Estimate the rough Anterior-Posterior (AP) position of the target slice "
+            + f"in millimeters from the anterior edge of the volume (range: 0.0 to {pos_upper:.1f}mm)."
         )
     )
 
-    _progress("Analyzing coarse AP position...")
+    _progress("Analyzing coarse position...")
     coarse_response = _retry_generate(
         client,
         model=MODEL_NAME,
@@ -315,9 +309,9 @@ def estimate_ap(
             {
                 "type": "OBJECT",
                 "properties": {
-                    "ap_position": {
+                    "position_mm": {
                         "type": "NUMBER",
-                        "description": "Estimated AP position in mm",
+                        "description": "Estimated position in mm from anterior edge",
                     },
                     "reasoning": {
                         "type": "STRING",
@@ -329,26 +323,26 @@ def estimate_ap(
     )
 
     coarse_result = _extract_result(coarse_response)
-    coarse_ap = _to_float(coarse_result.get("ap_position"), 0.0)
+    coarse_pos = _to_float(coarse_result.get("position_mm"), 0.0)
     _progress(
-        f"Coarse AP estimated at {'+' if coarse_ap > 0 else ''}{coarse_ap}mm. Fetching fine references..."
+        f"Coarse position estimated at {coarse_pos:.2f}mm. Fetching fine references..."
     )
 
-    fine_aps = [
-        round(coarse_ap + 0.4, 2),
-        round(coarse_ap + 0.2, 2),
-        round(coarse_ap, 2),
-        round(coarse_ap - 0.2, 2),
-        round(coarse_ap - 0.4, 2),
+    fine_positions = [
+        round(coarse_pos + 0.4, 2),
+        round(coarse_pos + 0.2, 2),
+        round(coarse_pos, 2),
+        round(coarse_pos - 0.2, 2),
+        round(coarse_pos - 0.4, 2),
     ]
 
     fine_refs: list[tuple[float, Image.Image]] = []
-    for ap in fine_aps:
-        if not (ap_lower <= ap <= ap_upper):
+    for pos in fine_positions:
+        if not (pos_lower <= pos <= pos_upper):
             continue
         try:
-            ref_img = get_reference_slice(atlas, ap)
-            fine_refs.append((ap, ref_img))
+            ref_img = get_reference_slice(atlas, pos)
+            fine_refs.append((pos, ref_img))
         except ValueError:
             continue
 
@@ -362,21 +356,20 @@ def estimate_ap(
         _part_image_base64(target_b64),
     ]
 
-    for i, (ap, ref_img) in enumerate(fine_refs):
-        sign = "+" if ap > 0 else ""
-        fine_parts.append(_part_text(f"Reference Image {i + 2}: Atlas slice at AP {sign}{ap} mm."))
+    for i, (pos, ref_img) in enumerate(fine_refs):
+        fine_parts.append(_part_text(f"Reference Image {i + 2}: Atlas slice at {pos:.2f} mm from anterior edge."))
         fine_prepared = _prepare_vlm_image(ref_img, options)
         fine_parts.append(_part_image_base64(_image_to_base64(fine_prepared)))
 
     fine_parts.append(
         _part_text(
             "Compare the target brain slice (Image 1) to these fine-grained reference atlas slices "
-            + f"(centered around {coarse_ap}mm). Estimate the exact Anterior-Posterior (AP) position "
-            + "of the target slice relative to Bregma in mm. Return a highly precise value."
+            + f"(centered around {coarse_pos:.2f}mm). Estimate the exact Anterior-Posterior (AP) position "
+            + "of the target slice in millimeters from the anterior edge. Return a highly precise value."
         )
     )
 
-    _progress("Analyzing fine AP position...")
+    _progress("Analyzing fine position...")
     fine_response = _retry_generate(
         client,
         model=MODEL_NAME,
@@ -385,9 +378,9 @@ def estimate_ap(
             {
                 "type": "OBJECT",
                 "properties": {
-                    "ap_position": {
+                    "position_mm": {
                         "type": "NUMBER",
-                        "description": "Precise estimated AP position in mm",
+                        "description": "Precise estimated position in mm from anterior edge",
                     },
                     "reasoning": {
                         "type": "STRING",
@@ -399,22 +392,95 @@ def estimate_ap(
     )
 
     final_result = _extract_result(fine_response)
-    final_ap = _to_float(final_result.get("ap_position"), coarse_ap)
+    final_pos = _to_float(final_result.get("position_mm"), coarse_pos)
     final_reasoning = _to_str(final_result.get("reasoning"), "N/A")
 
     return APResult(
-        ap_position=final_ap,
-        reasoning=f"Coarse estimate was {coarse_ap}mm. Fine reasoning: {final_reasoning}",
+        position_mm=final_pos,
+        reasoning=f"Coarse estimate was {coarse_pos:.2f}mm. Fine reasoning: {final_reasoning}",
     )
+
+
+def estimate_ap(
+    image: Image.Image,
+    atlas_name: str,
+    on_progress: Callable[[str], None] | None = None,
+    preprocess_options: PreprocessOptions | None = None,
+) -> APResult:
+    return estimate_position(
+        image=image,
+        atlas_name=atlas_name,
+        on_progress=on_progress,
+        preprocess_options=preprocess_options,
+    )
+
+
+def _build_scaled_composite(
+    target: Image.Image,
+    atlas_name: str,
+    position_mm: float,
+    pixel_size_um: float,
+    progress: Callable[[str], None],
+) -> Image.Image | None:
+    """Build a side-by-side composite with physically-correct atlas scaling.
+
+    The atlas image is resized so that one atlas pixel maps to
+    ``atlas_resolution_um / pixel_size_um`` target pixels, ensuring the
+    two images share the same physical scale.
+    """
+    from langslice.atlas.core import get_composite_slice, load_atlas
+
+    try:
+        atlas = load_atlas(atlas_name)
+        atlas_composite = get_composite_slice(atlas, position_mm, opacity=0.4)
+        atlas_res_um = float(atlas.resolution[1])  # DV axis (coronal plane)
+    except Exception as exc:
+        progress(f"Warning: could not load atlas composite for affine prompt: {exc}")
+        return None
+
+    scale_factor = atlas_res_um / pixel_size_um
+    new_w = max(1, int(round(atlas_composite.width * scale_factor)))
+    new_h = max(1, int(round(atlas_composite.height * scale_factor)))
+    atlas_scaled = atlas_composite.resize((new_w, new_h), _RESAMPLE_LANCZOS)
+
+    progress(
+        f"Atlas scaled for VLM: {atlas_composite.width}x{atlas_composite.height} -> "
+        f"{new_w}x{new_h} (scale {scale_factor:.2f}x, "
+        f"atlas {atlas_res_um:.0f}µm / slice {pixel_size_um:.1f}µm)"
+    )
+
+    # Build side-by-side composite: [target | atlas_scaled]
+    # Pad the shorter image vertically to match heights.
+    target_rgb = target.convert("RGB")
+    atlas_rgb = atlas_scaled.convert("RGB")
+    out_h = max(target_rgb.height, atlas_rgb.height)
+    gap = 20  # pixel gap between images
+    out_w = target_rgb.width + gap + atlas_rgb.width
+    composite = Image.new("RGB", (out_w, out_h), (0, 0, 0))
+
+    # Center each vertically
+    target_y = (out_h - target_rgb.height) // 2
+    atlas_y = (out_h - atlas_rgb.height) // 2
+    composite.paste(target_rgb, (0, target_y))
+    composite.paste(atlas_rgb, (target_rgb.width + gap, atlas_y))
+
+    return composite
 
 
 def estimate_affine(
     image: Image.Image,
     on_progress: Callable[[str], None] | None = None,
     preprocess_options: PreprocessOptions | None = None,
+    atlas_name: str | None = None,
+    position_mm: float | None = None,
+    pixel_size_um: float | None = None,
 ) -> AffineResult:
     """
     Estimate 2D affine transformation to center and align a brain slice.
+
+    When *atlas_name*, *position_mm*, and *pixel_size_um* are all provided the
+    function constructs a physically-scaled composite (slice + atlas) and
+    sends it to the VLM, giving the model accurate spatial context.
 
     Returns rotation (degrees), translateX and translateY (% of image size).
     """
@@ -430,19 +496,62 @@ def estimate_affine(
     target_prepared = _prepare_vlm_image(image, options)
     target_b64 = _image_to_base64(target_prepared)
 
-    _progress("Estimating affine transformation...")
-    response = _retry_generate(
-        client,
-        model=MODEL_NAME,
-        contents=_contents_from_parts([
+    # Build physically-scaled composite when atlas context is available
+    composite_b64: str | None = None
+    has_atlas_context = (
+        atlas_name is not None
+        and position_mm is not None
+        and pixel_size_um is not None
+        and pixel_size_um > 0
+    )
+    if has_atlas_context:
+        assert atlas_name is not None and position_mm is not None and pixel_size_um is not None
+        composite = _build_scaled_composite(
+            target_prepared, atlas_name, position_mm, pixel_size_um, _progress
+        )
+        if composite is not None:
+            composite_b64 = _image_to_base64(composite)
+
+    # Assemble prompt parts
+    parts: list[dict[str, object]]
+    if composite_b64 is not None:
+        _progress("Estimating affine transformation (with atlas context)...")
+        parts = [
+            _part_text(
+                "Image 1 is the target brain slice you need to register."
+            ),
+            _part_image_base64(target_b64),
+            _part_text(
+                "Image 2 is a side-by-side composite showing the target brain slice (left) "
+                "and the atlas reference at the same physical scale (right). "
+                "The atlas has been scaled so both images share the same physical "
+                "coordinate space (µm per pixel)."
+            ),
+            _part_image_base64(composite_b64),
+            _part_text(
+                "Using both images, estimate the 2D affine transformation "
+                "(rotation in degrees, translateX and translateY as percentages of image size) "
+                "needed to align the target brain slice to match the atlas orientation. "
+                "The atlas reference shows the expected upright coronal orientation. "
+                "Compare the tissue outline and internal structures to determine rotation and offset."
+            ),
+        ]
+    else:
+        _progress("Estimating affine transformation...")
+        parts = [
             _part_image_base64(target_b64),
             _part_text(
                 "Analyze this brain slice image. Estimate the 2D affine transformation "
-                + "(rotation in degrees, translateX and translateY as percentages of image size) "
-                + "needed to center and align it upright. Assume the image might be slightly tilted "
-                + "or off-center."
+                "(rotation in degrees, translateX and translateY as percentages of image size) "
+                "needed to center and align it upright. Assume the image might be slightly tilted "
+                "or off-center."
             ),
-        ]),
+        ]
+
+    response = _retry_generate(
+        client,
+        model=MODEL_NAME,
+        contents=_contents_from_parts(parts),
         config=_generation_config(
             {
                 "type": "OBJECT",
