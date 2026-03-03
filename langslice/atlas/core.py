@@ -50,58 +50,34 @@ def load_atlas(name: str) -> BrainGlobeAtlas:
     return atlas
 
 
-def get_origin_index(atlas: _AtlasLike) -> int:
-    """Return atlas origin index along AP axis using metadata when available."""
-    shape = cast(tuple[int, ...], atlas.reference.shape)
-    n_slices = shape[0]
-    transform: object | None = atlas.metadata.get("trasform_to_bg")
-
-    if transform is not None:
-        try:
-            matrix = np.asarray(transform, dtype=np.float64)
-            if matrix.shape == (4, 4):
-                res_mm = float(atlas.resolution[0]) / 1000.0
-                if res_mm > 0:
-                    translation_x = cast(np.float64, matrix[0, 3])
-                    origin = int(round(float(translation_x) / res_mm))
-                    if 0 < origin < n_slices:
-                        return origin
-        except Exception:
-            pass
-
-    midpoint = n_slices // 2
-    logger.warning(
-        "Atlas '%s' lacks origin metadata. Using midpoint index %d as origin.",
-        atlas.atlas_name,
-        midpoint,
-    )
-    return midpoint
-
-
-def ap_mm_to_index(atlas: _AtlasLike, ap_mm: float) -> int:
-    """Convert an AP coordinate in mm to an array index along axis 0."""
+def position_mm_to_index(atlas: _AtlasLike, position_mm: float) -> int:
+    """Convert a physical position (mm from anterior edge) to an array index."""
     res_mm = float(atlas.resolution[0]) / 1000.0
     shape = cast(tuple[int, ...], atlas.reference.shape)
     n_slices = shape[0]
-    origin_index = get_origin_index(atlas)
 
-    idx = origin_index - int(round(ap_mm / res_mm))
+    idx = int(round(position_mm / res_mm))
     if idx < 0 or idx >= n_slices:
-        most_anterior, most_posterior = get_ap_range(atlas)
-        raise ValueError(f"AP={ap_mm}mm maps to index {idx}, out of range [0, {n_slices - 1}]. Valid AP range: ~{most_anterior:.1f}mm to ~{most_posterior:.1f}mm")
+        _, max_pos = get_position_range_mm(atlas)
+        raise ValueError(
+            f"Position {position_mm:.3f}mm maps to index {idx}, out of range [0, {n_slices - 1}]. "
+            f"Valid range for '{atlas.atlas_name}': 0.0mm to {max_pos:.3f}mm"
+        )
     return idx
 
 
-def get_ap_range(atlas: _AtlasLike) -> tuple[float, float]:
-    """Return AP range as (most_anterior_mm, most_posterior_mm)."""
+def index_to_position_mm(atlas: _AtlasLike, idx: int) -> float:
+    """Convert an array index along axis 0 to a physical position in mm."""
     res_mm = float(atlas.resolution[0]) / 1000.0
+    return idx * res_mm
+
+
+def get_position_range_mm(atlas: _AtlasLike) -> tuple[float, float]:
+    """Return physical position range as (0.0, max_mm)."""
     shape = cast(tuple[int, ...], atlas.reference.shape)
     n_slices = shape[0]
-    origin_index = get_origin_index(atlas)
-
-    most_anterior = origin_index * res_mm
-    most_posterior = -(n_slices - origin_index) * res_mm
-    return most_anterior, most_posterior
+    res_mm = float(atlas.resolution[0]) / 1000.0
+    return 0.0, (n_slices - 1) * res_mm
 
 
 def _normalize_to_uint8(arr: np.ndarray) -> np.ndarray:
@@ -116,9 +92,9 @@ def _normalize_to_uint8(arr: np.ndarray) -> np.ndarray:
     return np.clip((arr_float / max_val) * 255.0, 0, 255).astype(np.uint8)
 
 
-def get_reference_slice(atlas: _AtlasLike, ap_mm: float) -> Image.Image:
+def get_reference_slice(atlas: _AtlasLike, position_mm: float) -> Image.Image:
     """Get coronal reference slice as grayscale PIL image."""
-    idx = ap_mm_to_index(atlas, ap_mm)
+    idx = position_mm_to_index(atlas, position_mm)
     reference_slice = np.asarray(atlas.reference[idx, :, :])
     normalized = _normalize_to_uint8(reference_slice)
     return Image.fromarray(normalized, mode="L")
@@ -143,20 +119,20 @@ def _annotation_to_boundaries(annotation_slice: np.ndarray) -> np.ndarray:
     return edges
 
 
-def get_boundary_slice(atlas: _AtlasLike, ap_mm: float) -> Image.Image:
+def get_boundary_slice(atlas: _AtlasLike, position_mm: float) -> Image.Image:
     """Get coronal annotation boundaries as grayscale PIL image."""
-    idx = ap_mm_to_index(atlas, ap_mm)
+    idx = position_mm_to_index(atlas, position_mm)
     annotation_slice = np.asarray(atlas.annotation[idx, :, :])
     edges = _annotation_to_boundaries(annotation_slice)
     return Image.fromarray(edges, mode="L")
 
 
-def get_composite_slice(atlas: _AtlasLike, ap_mm: float, opacity: float = 0.4) -> Image.Image:
+def get_composite_slice(atlas: _AtlasLike, position_mm: float, opacity: float = 0.4) -> Image.Image:
     """Overlay annotation boundaries on reference image and return RGB PIL image."""
     if not 0.0 <= opacity <= 1.0:
         raise ValueError(f"opacity must be in [0, 1], got {opacity}")
 
-    idx = ap_mm_to_index(atlas, ap_mm)
+    idx = position_mm_to_index(atlas, position_mm)
     ref_slice = np.asarray(atlas.reference[idx, :, :])
     ref_norm = _normalize_to_uint8(ref_slice)
     ref_rgb = np.stack([ref_norm, ref_norm, ref_norm], axis=-1).astype(np.float32)
@@ -173,8 +149,8 @@ def get_composite_slice(atlas: _AtlasLike, ap_mm: float, opacity: float = 0.4) -
 
 
 def get_atlas_info(atlas: _AtlasLike) -> dict[str, object]:
-    """Return atlas metadata and AP range info."""
-    most_anterior, most_posterior = get_ap_range(atlas)
+    """Return atlas metadata and position range info."""
+    min_pos, max_pos = get_position_range_mm(atlas)
     resolution_mm = [float(r) / 1000.0 for r in atlas.resolution]
 
     shape = cast(tuple[int, ...], atlas.reference.shape)
@@ -184,11 +160,10 @@ def get_atlas_info(atlas: _AtlasLike) -> dict[str, object]:
         "shape": list(shape),
         "resolution_um": list(atlas.resolution),
         "resolution_mm": resolution_mm,
-        "ap_range_mm": {
-            "most_anterior": most_anterior,
-            "most_posterior": most_posterior,
+        "position_range_mm": {
+            "min": min_pos,
+            "max": max_pos,
         },
-        "origin_index": get_origin_index(atlas),
         "n_coronal_slices": shape[0],
         "species": atlas.metadata.get("species", "unknown"),
         "citation": atlas.metadata.get("citation", ""),
