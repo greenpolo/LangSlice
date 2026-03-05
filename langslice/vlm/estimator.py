@@ -2,6 +2,7 @@
 
 import base64
 import io
+import json
 import logging
 import time
 from dataclasses import dataclass
@@ -9,9 +10,14 @@ from typing import Any, Callable, cast
 
 import numpy as np
 from PIL import Image
-from PIL import ImageOps
+from google.genai.types import Tool, ToolCodeExecution
 
-from langslice.vlm.config import MODEL_NAME, THINKING_LEVEL, get_client
+from langslice.vlm.config import (
+    CODE_EXECUTION_ENABLED,
+    MODEL_NAME,
+    THINKING_LEVEL,
+    get_client,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,8 +32,8 @@ def _retry_generate(
     client: Any,
     *,
     model: str,
-    contents: list[dict[str, object]],
-    config: dict[str, object],
+    contents: object,
+    config: object,
 ) -> Any:
     """Wrapper around client.models.generate_content with exponential backoff."""
     last_exc: Exception | None = None
@@ -80,16 +86,6 @@ class AffineResult:
     reasoning: str
 
 
-@dataclass
-class PreprocessOptions:
-    enabled: bool = False
-    crop_tissue: bool = True
-    normalize_contrast: bool = True
-    max_side_px: int = 1280
-    tissue_percentile: float = 92.0
-    min_foreground_fraction: float = 0.01
-    margin_fraction: float = 0.06
-
 
 def _image_to_base64(img: Image.Image, fmt: str = "JPEG") -> str:
     """Convert PIL Image to base64 string."""
@@ -103,87 +99,37 @@ def _image_to_base64(img: Image.Image, fmt: str = "JPEG") -> str:
     return base64.b64encode(buf.getvalue()).decode("utf-8")
 
 
-def _resize_max_side(img: Image.Image, max_side_px: int) -> Image.Image:
-    if max_side_px <= 0:
-        return img
-    width, height = img.size
-    largest = max(width, height)
-    if largest <= max_side_px:
-        return img
 
-    scale = max_side_px / float(largest)
-    new_width = max(1, int(round(width * scale)))
-    new_height = max(1, int(round(height * scale)))
-    return img.resize((new_width, new_height), _RESAMPLE_LANCZOS)
+def _normalize_image(image: Image.Image) -> Image.Image:
+    """Normalize an arbitrary PIL image to 8-bit RGB without modifying source data.
 
+    Handles:
+    - 16-bit / 32-bit grayscale (``I;16``, ``I``, ``F``): min-max scaled to 0-255
+    - RGBA / palette / other modes: converted to RGB directly
+    - Standard 8-bit RGB: returned as-is
 
-def _border_fill_value(gray: np.ndarray) -> int:
-    if gray.size == 0:
-        return 255
-    top = gray[0, :]
-    bottom = gray[-1, :]
-    left = gray[:, 0]
-    right = gray[:, -1]
-    border = np.concatenate([top, bottom, left, right])
-    return int(np.clip(np.median(border), 0, 255))
+    The source ``Image`` object is never mutated.
+    """
+    mode = image.mode
 
+    # Already 8-bit RGB — nothing to do.
+    if mode == "RGB":
+        return image
 
-def _crop_tissue_region(img: Image.Image, options: PreprocessOptions) -> Image.Image:
-    gray = np.asarray(img.convert("L"), dtype=np.uint8)
-    if gray.size == 0:
-        return img
+    # High bit-depth modes need min-max normalization, not clipping.
+    if mode in ("I", "I;16", "I;16B", "I;32", "F"):
+        arr = np.asarray(image, dtype=np.float32)
+        lo, hi = float(arr.min()), float(arr.max())
+        if hi > lo:
+            arr = (arr - lo) / (hi - lo) * 255.0
+        else:
+            arr = np.zeros_like(arr)
+        gray8 = arr.astype(np.uint8)
+        return Image.fromarray(gray8).convert("RGB")
 
-    threshold = float(np.percentile(gray, options.tissue_percentile))
-    mask = gray < threshold
-    if float(mask.mean()) < options.min_foreground_fraction:
-        return img
+    # All other modes (L, LA, RGBA, P, PA, CMYK, …) — let PIL handle it.
+    return image.convert("RGB")
 
-    ys, xs = np.where(mask)
-    if xs.size == 0 or ys.size == 0:
-        return img
-
-    x0, x1 = int(xs.min()), int(xs.max()) + 1
-    y0, y1 = int(ys.min()), int(ys.max()) + 1
-
-    margin = int(round(max(x1 - x0, y1 - y0) * options.margin_fraction))
-    x0 = max(0, x0 - margin)
-    y0 = max(0, y0 - margin)
-    x1 = min(img.width, x1 + margin)
-    y1 = min(img.height, y1 + margin)
-
-    cropped = img.crop((x0, y0, x1, y1))
-
-    width, height = cropped.size
-    if width == height:
-        return cropped
-
-    fill = _border_fill_value(gray)
-    if width > height:
-        pad_total = width - height
-        top = pad_total // 2
-        bottom = pad_total - top
-        return ImageOps.expand(cropped, border=(0, top, 0, bottom), fill=(fill, fill, fill))
-
-    pad_total = height - width
-    left = pad_total // 2
-    right = pad_total - left
-    return ImageOps.expand(cropped, border=(left, 0, right, 0), fill=(fill, fill, fill))
-
-
-def _prepare_vlm_image(image: Image.Image, options: PreprocessOptions) -> Image.Image:
-    prepared = image.convert("RGB")
-    if not options.enabled:
-        return prepared
-
-    if options.crop_tissue:
-        prepared = _crop_tissue_region(prepared, options)
-
-    prepared = _resize_max_side(prepared, options.max_side_px)
-
-    if options.normalize_contrast:
-        prepared = ImageOps.autocontrast(prepared, cutoff=1)
-
-    return prepared
 
 
 def _part_text(text: str) -> dict[str, object]:
@@ -203,14 +149,43 @@ def _contents_from_parts(parts: list[dict[str, object]]) -> list[dict[str, objec
 
 
 def _generation_config(schema: dict[str, object]) -> dict[str, object]:
-    return {
+    config: dict[str, object] = {
         "thinking_config": {"thinking_level": THINKING_LEVEL},
         "response_mime_type": "application/json",
-        "response_schema": schema,
+        "response_json_schema": schema,
     }
+    if CODE_EXECUTION_ENABLED:
+        config["tools"] = [Tool(code_execution=ToolCodeExecution())]
+    return config
+
+
+def _first_model_content(response: object) -> object:
+    candidates = getattr(response, "candidates", None)
+    if not isinstance(candidates, list) or not candidates:
+        prompt_feedback = getattr(response, "prompt_feedback", None)
+        raise RuntimeError(
+            f"Gemini returned no candidates. prompt_feedback={prompt_feedback}"
+        )
+
+    first = candidates[0]
+    finish_reason = getattr(first, "finish_reason", None)
+    content = getattr(first, "content", None)
+    if content is None:
+        raise RuntimeError(
+            f"Gemini candidate has no content. finish_reason={finish_reason}"
+        )
+    return content
 
 
 def _extract_result(response: object) -> dict[str, object]:
+    executable_code = getattr(response, "executable_code", None)
+    if executable_code:
+        logger.info(f"VLM executed code:\n{executable_code}")
+    
+    code_execution_result = getattr(response, "code_execution_result", None)
+    if code_execution_result:
+        logger.info(f"VLM code execution outcome:\n{code_execution_result}")
+        
     parsed = getattr(response, "parsed", None)
     if isinstance(parsed, dict):
         parsed_dict = cast(dict[object, object], parsed)
@@ -219,8 +194,28 @@ def _extract_result(response: object) -> dict[str, object]:
             normalized[str(k)] = v
         return normalized
 
+    model_dump = getattr(parsed, "model_dump", None)
+    if callable(model_dump):
+        dumped = model_dump()
+        if isinstance(dumped, dict):
+            dumped_dict = cast(dict[object, object], dumped)
+            normalized: dict[str, object] = {}
+            for k, v in dumped_dict.items():
+                normalized[str(k)] = v
+            return normalized
+
     text = getattr(response, "text", None)
     if isinstance(text, str) and text:
+        try:
+            decoded = json.loads(text)
+            if isinstance(decoded, dict):
+                decoded_dict = cast(dict[object, object], decoded)
+                normalized: dict[str, object] = {}
+                for k, v in decoded_dict.items():
+                    normalized[str(k)] = v
+                return normalized
+        except json.JSONDecodeError:
+            pass
         logger.warning("Gemini response did not expose parsed JSON; returning empty result.")
     return {}
 
@@ -237,167 +232,479 @@ def _to_str(value: object, default: str = "N/A") -> str:
     return default
 
 
+def _image_to_bytes(img: Image.Image, fmt: str = "JPEG") -> bytes:
+    """Convert PIL Image to raw bytes."""
+    buf = io.BytesIO()
+    if img.mode != "RGB":
+        img = img.convert("RGB")
+    if fmt.upper() == "JPEG":
+        img.save(buf, format=fmt, quality=95, subsampling=0)
+    else:
+        img.save(buf, format=fmt)
+    return buf.getvalue()
+
+
+def _get_regions_at_position(atlas: object, position_mm: float) -> list[str]:
+    """Return brain region names visible at a given AP position."""
+    from langslice.atlas.core import position_mm_to_index
+
+    try:
+        idx = position_mm_to_index(cast(Any, atlas), position_mm)
+    except ValueError:
+        return []
+
+    atlas_obj = cast(Any, atlas)
+    annotation_slice = np.asarray(atlas_obj.annotation[idx, :, :])
+    unique_ids = np.unique(annotation_slice)
+    unique_ids = unique_ids[unique_ids > 0]
+
+    structures = atlas_obj.structures
+    names: list[str] = []
+    for uid in unique_ids[:30]:  # Cap at 30 to avoid huge lists
+        uid_int = int(uid)
+        if uid_int in structures:
+            entry = structures[uid_int]
+            names.append(f"{entry['acronym']} ({entry['name']})")
+    return names
+
+
 def estimate_position(
     image: Image.Image,
     atlas_name: str,
     on_progress: Callable[[str], None] | None = None,
-    preprocess_options: PreprocessOptions | None = None,
 ) -> APResult:
-    """
-    Two-pass physical position estimation (mm from anterior edge).
+    """Agentic AP estimation using tool-use with self-correction.
 
-    Pass 1 (coarse): Compare against 8 evenly spaced reference slices.
-    Pass 2 (fine): Compare against 5 reference slices at 0.2mm intervals around coarse estimate.
+    The model receives tools to explore the atlas freely:
+    - fetch_atlas_slice: view any coronal section
+    - get_atlas_info: get coordinate range and metadata
+    - get_region_names: see what brain regions exist at a position
+    - submit_estimate: declare the final answer
+
+    Uses manual function calling so images can be injected alongside
+    tool responses. The model runs until it submits or hits max iterations.
+
+    Set ``LANGSLICE_VLM_DEBUG_DIR`` to save all artifacts for review.
     """
-    from langslice.atlas.core import get_position_range_mm, get_reference_slice, load_atlas
+    import os
+    from datetime import datetime
+    from google.genai import types
+    from langslice.atlas.core import (
+        get_position_range_mm,
+        get_reference_slice,
+        load_atlas,
+        get_atlas_info as _get_atlas_info_core,
+    )
 
     def _progress(msg: str) -> None:
         if on_progress:
             on_progress(msg)
         logger.info(msg)
 
-    options = preprocess_options or PreprocessOptions()
-
     client = get_client()
     atlas = load_atlas(atlas_name)
-    pos_lower, pos_upper = get_position_range_mm(atlas)
+    pos_lo, pos_hi = get_position_range_mm(atlas)
 
-    _progress("Fetching coarse reference images (evenly spaced)...")
-    coarse_positions = np.linspace(pos_lower, pos_upper, 8).tolist()
+    target_prepared = _normalize_image(image)
+    target_bytes = _image_to_bytes(target_prepared)
+    target_h = target_prepared.height
 
-    coarse_refs: list[tuple[float, Image.Image]] = []
-    for pos in coarse_positions:
-        try:
-            ref_img = get_reference_slice(atlas, pos)
-            coarse_refs.append((pos, ref_img))
-        except ValueError:
-            continue
+    # --- Debug artifact setup ---
+    debug_dir: str | None = os.environ.get("LANGSLICE_VLM_DEBUG_DIR")
+    run_dir: str | None = None
+    if debug_dir:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_atlas = atlas_name.replace("/", "_").replace("\\", "_")
+        run_dir = os.path.join(debug_dir, f"{timestamp}_{safe_atlas}")
+        os.makedirs(run_dir, exist_ok=True)
+        target_prepared.save(os.path.join(run_dir, "target.jpg"), quality=95)
+        _progress(f"Debug artifacts → {run_dir}")
 
-    if not coarse_refs:
-        _progress("Warning: No coarse reference images available. Estimating without visual references.")
-    else:
-        _progress(f"Fetched {len(coarse_refs)} coarse reference images.")
-
-    if options.enabled:
-        _progress("Applying preprocessing to target and reference images...")
-    target_prepared = _prepare_vlm_image(image, options)
-    target_b64 = _image_to_base64(target_prepared)
-    coarse_parts: list[dict[str, object]] = [
-        _part_text("Image 1 is the target brain slice you need to analyze."),
-        _part_image_base64(target_b64),
-    ]
-
-    for i, (pos, ref_img) in enumerate(coarse_refs):
-        coarse_parts.append(_part_text(f"Reference Image {i + 2}: Atlas slice at {pos:.2f} mm from anterior edge."))
-        coarse_prepared = _prepare_vlm_image(ref_img, options)
-        coarse_parts.append(_part_image_base64(_image_to_base64(coarse_prepared)))
-
-    coarse_parts.append(
-        _part_text(
-            "Compare the target brain slice (Image 1) to the reference atlas slices. "
-            + "Estimate the rough Anterior-Posterior (AP) position of the target slice "
-            + f"in millimeters from the anterior edge of the volume (range: 0.0 to {pos_upper:.1f}mm)."
-        )
-    )
-
-    _progress("Analyzing coarse position...")
-    coarse_response = _retry_generate(
-        client,
-        model=MODEL_NAME,
-        contents=_contents_from_parts(coarse_parts),
-        config=_generation_config(
-            {
-                "type": "OBJECT",
+    # --- Tool declarations ---
+    tool_declarations = types.Tool(function_declarations=[
+        types.FunctionDeclaration(
+            name="fetch_atlas_slice",
+            description=(
+                "Fetch a coronal brain atlas reference image at a specific "
+                "anterior-posterior position. The image will be shown to you. "
+                "Use this to visually compare against the target slice."
+            ),
+            parameters_json_schema={
+                "type": "object",
                 "properties": {
                     "position_mm": {
-                        "type": "NUMBER",
-                        "description": "Estimated position in mm from anterior edge",
-                    },
-                    "reasoning": {
-                        "type": "STRING",
-                        "description": "Reasoning for the estimation",
+                        "type": "number",
+                        "description": "AP position in mm from the anterior edge of the atlas",
                     },
                 },
-            }
+                "required": ["position_mm"],
+            },
         ),
-    )
-
-    coarse_result = _extract_result(coarse_response)
-    coarse_pos = _to_float(coarse_result.get("position_mm"), 0.0)
-    _progress(
-        f"Coarse position estimated at {coarse_pos:.2f}mm. Fetching fine references..."
-    )
-
-    fine_positions = [
-        round(coarse_pos + 0.4, 2),
-        round(coarse_pos + 0.2, 2),
-        round(coarse_pos, 2),
-        round(coarse_pos - 0.2, 2),
-        round(coarse_pos - 0.4, 2),
-    ]
-
-    fine_refs: list[tuple[float, Image.Image]] = []
-    for pos in fine_positions:
-        if not (pos_lower <= pos <= pos_upper):
-            continue
-        try:
-            ref_img = get_reference_slice(atlas, pos)
-            fine_refs.append((pos, ref_img))
-        except ValueError:
-            continue
-
-    if not fine_refs:
-        _progress("Warning: No fine reference images available.")
-    else:
-        _progress(f"Fetched {len(fine_refs)} fine reference images.")
-
-    fine_parts: list[dict[str, object]] = [
-        _part_text("Image 1 is the target brain slice you need to analyze."),
-        _part_image_base64(target_b64),
-    ]
-
-    for i, (pos, ref_img) in enumerate(fine_refs):
-        fine_parts.append(_part_text(f"Reference Image {i + 2}: Atlas slice at {pos:.2f} mm from anterior edge."))
-        fine_prepared = _prepare_vlm_image(ref_img, options)
-        fine_parts.append(_part_image_base64(_image_to_base64(fine_prepared)))
-
-    fine_parts.append(
-        _part_text(
-            "Compare the target brain slice (Image 1) to these fine-grained reference atlas slices "
-            + f"(centered around {coarse_pos:.2f}mm). Estimate the exact Anterior-Posterior (AP) position "
-            + "of the target slice in millimeters from the anterior edge. Return a highly precise value."
-        )
-    )
-
-    _progress("Analyzing fine position...")
-    fine_response = _retry_generate(
-        client,
-        model=MODEL_NAME,
-        contents=_contents_from_parts(fine_parts),
-        config=_generation_config(
-            {
-                "type": "OBJECT",
+        types.FunctionDeclaration(
+            name="get_atlas_info",
+            description=(
+                "Get atlas metadata including the valid AP coordinate range, "
+                "resolution, species, and number of slices."
+            ),
+            parameters_json_schema={"type": "object", "properties": {}},
+        ),
+        types.FunctionDeclaration(
+            name="get_region_names",
+            description=(
+                "Get the names and acronyms of brain regions visible at a "
+                "specific AP position. Useful for confirming anatomical identity."
+            ),
+            parameters_json_schema={
+                "type": "object",
                 "properties": {
                     "position_mm": {
-                        "type": "NUMBER",
-                        "description": "Precise estimated position in mm from anterior edge",
-                    },
-                    "reasoning": {
-                        "type": "STRING",
-                        "description": "Reasoning for the precise estimation",
+                        "type": "number",
+                        "description": "AP position in mm from the anterior edge",
                     },
                 },
-            }
+                "required": ["position_mm"],
+            },
         ),
+        types.FunctionDeclaration(
+            name="fetch_multiple_atlas_slices",
+            description=(
+                "Fetch up to 5 coronal brain atlas reference images at multiple "
+                "anterior-posterior positions at once. The images will be shown to you "
+                "in order. Use this to perform a rapid coarse sweep (e.g., check every 2mm) "
+                "to quickly narrow down the general neighborhood."
+            ),
+            parameters_json_schema={
+                "type": "object",
+                "properties": {
+                    "positions_mm": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "description": "List of up to 5 AP positions in mm to fetch",
+                    },
+                },
+                "required": ["positions_mm"],
+            },
+        ),
+        types.FunctionDeclaration(
+            name="submit_estimate",
+            description=(
+                "Submit your final AP position estimate. Only call this when "
+                "you are confident in your answer."
+            ),
+            parameters_json_schema={
+                "type": "object",
+                "properties": {
+                    "position_mm": {
+                        "type": "number",
+                        "description": "Final estimated AP position in mm from the anterior edge",
+                    },
+                    "confidence": {
+                        "type": "string",
+                        "description": "Confidence level: low, medium, or high",
+                    },
+                    "reasoning": {
+                        "type": "string",
+                        "description": "Detailed reasoning for the estimate",
+                    },
+                },
+                "required": ["position_mm", "confidence", "reasoning"],
+            },
+        ),
+    ])
+
+    # --- System prompt ---
+    system_instruction = (
+        "You are an expert neuroanatomist. You are given a histology brain slice image "
+        "and must determine its Anterior-Posterior (AP) position within a reference atlas. "
+        "The coordinate system is: 0.0mm is the extreme Anterior edge (e.g. olfactory bulb), "
+        "while larger mm values move Posterior towards the cerebellum and brainstem. "
+        "You have tools to fetch atlas reference images at any AP coordinate, query which "
+        "brain regions exist at a given position, and get atlas metadata. \n\n"
+        "RECOMMENDED STRATEGY:\n"
+        "1. Coarse Sweep: Call `fetch_multiple_atlas_slices` with 4-5 widely spaced coordinates "
+        "   (e.g., 2.0, 4.0, 6.0, 8.0) to instantly find the correct neighborhood.\n"
+        "2. Finer Search: Identify the closest match, then call `fetch_multiple_atlas_slices` "
+        "   again around that match with tighter spacing (e.g., ±0.5mm).\n"
+        "3. Verification: Once narrowed down, check specific structural landmarks, or use "
+        "   `get_region_names` to confirm anatomical identity.\n"
+        "4. Submit: Call `submit_estimate` ONLY when you are highly confident.\n\n"
+        "Don't guess blindly — use your tools to narrow down the answer methodically."
     )
 
-    final_result = _extract_result(fine_response)
-    final_pos = _to_float(final_result.get("position_mm"), coarse_pos)
-    final_reasoning = _to_str(final_result.get("reasoning"), "N/A")
+    # --- Initial user message with target image ---
+    initial_parts = [
+        types.Part(text="Here is the target brain slice. Determine its AP position in the atlas."),
+        types.Part(inline_data=types.Blob(mime_type="image/jpeg", data=target_bytes)),
+    ]
+    history: list[types.Content] = [
+        types.Content(role="user", parts=initial_parts),
+    ]
+
+    thinking_level = getattr(types.ThinkingLevel, THINKING_LEVEL, None)
+    config = types.GenerateContentConfig(
+        tools=[tool_declarations],
+        automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+        thinking_config=types.ThinkingConfig(thinking_level=thinking_level),
+        system_instruction=system_instruction,
+    )
+
+    max_iterations = 20
+    estimate_result: dict[str, object] | None = None
+    reasoning_log: list[dict[str, object]] = []
+    images_fetched = 0
+
+    _progress(f"Starting agentic estimation (max {max_iterations} tool calls)...")
+
+    for iteration in range(max_iterations):
+        response = _retry_generate(
+            client,
+            model=MODEL_NAME,
+            contents=history,
+            config=config,
+        )
+
+        # Append model response to history
+        model_content: types.Content = cast(types.Content, _first_model_content(response))
+        history.append(model_content)
+
+        # Collect function calls from the response
+        model_parts = getattr(model_content, "parts", None) or []
+        function_calls = [p for p in model_parts if p.function_call]
+
+        if not function_calls:
+            # Model responded with thought/text but no tool call
+            text_parts = [p.text for p in model_parts if p.text]
+            if text_parts:
+                _progress(f"Agent reasoning/text: {text_parts[0][:200]}...")
+            else:
+                _progress("Agent produced thought block but no tool calls.")
+            
+            # Prevent premature exit; prompt the model to actually call a tool
+            nudge = types.Part(text="Please continue. You must call a tool to explore further, or call `submit_estimate` if you have finalized your answer.")
+            history.append(types.Content(role="user", parts=[nudge]))
+            continue
+
+
+        # Process each function call
+        tool_response_parts: list[types.Part] = []
+
+        for fc_part in function_calls:
+            fc = fc_part.function_call
+            name = fc.name
+            args = dict(fc.args) if fc.args else {}
+
+            _progress(f"Tool call [{iteration + 1}]: {name}({args})")
+
+            if name == "fetch_atlas_slice":
+                pos = float(args.get("position_mm", (pos_lo + pos_hi) / 2))
+                pos = max(pos_lo, min(pos_hi, pos))  # Clamp
+
+                try:
+                    ref_img = get_reference_slice(atlas, pos)
+                    ref_prepared = _normalize_image(ref_img)
+                    # Scale to match target height
+                    scale = target_h / ref_prepared.height
+                    new_w = max(1, int(round(ref_prepared.width * scale)))
+                    new_h = max(1, int(round(ref_prepared.height * scale)))
+                    ref_scaled = ref_prepared.resize((new_w, new_h), _RESAMPLE_LANCZOS)
+                    ref_bytes = _image_to_bytes(ref_scaled)
+                    images_fetched += 1
+
+                    # Save debug image
+                    if run_dir:
+                        ref_scaled.save(
+                            os.path.join(run_dir, f"tool_{iteration + 1:02d}_slice_{pos:.2f}mm.jpg"),
+                            quality=95,
+                        )
+
+                    tool_response_parts.append(
+                        types.Part.from_function_response(
+                            name=name,
+                            response={"position_mm": pos, "status": "ok", "description": f"Atlas coronal section at {pos:.2f}mm from anterior edge"},
+                        )
+                    )
+                    # Inject the image so the model can see it
+                    tool_response_parts.append(
+                        types.Part(inline_data=types.Blob(mime_type="image/jpeg", data=ref_bytes))
+                    )
+
+                    reasoning_log.append({"iteration": iteration + 1, "tool": name, "args": args, "result": f"Image at {pos:.2f}mm"})
+
+                except ValueError as exc:
+                    tool_response_parts.append(
+                        types.Part.from_function_response(
+                            name=name,
+                            response={"status": "error", "error": str(exc)},
+                        )
+                    )
+                    reasoning_log.append({"iteration": iteration + 1, "tool": name, "args": args, "result": f"Error: {exc}"})
+
+            elif name == "fetch_multiple_atlas_slices":
+                positions_list = args.get("positions_mm", [])
+                if not isinstance(positions_list, list):
+                    positions_list = []
+                
+                # Cap to 5 to prevent context blowout
+                positions = [max(pos_lo, min(pos_hi, float(p))) for p in positions_list[:5]]
+                
+                if not positions:
+                    tool_response_parts.append(
+                        types.Part.from_function_response(
+                            name=name,
+                            response={"status": "error", "error": "No valid positions provided"},
+                        )
+                    )
+                    reasoning_log.append({"iteration": iteration + 1, "tool": name, "args": args, "result": "Error: empty input"})
+                else:
+                    successes = []
+                    for pos in positions:
+                        try:
+                            ref_img = get_reference_slice(atlas, pos)
+                            ref_prepared = _normalize_image(ref_img)
+                            scale = target_h / ref_prepared.height
+                            new_w = max(1, int(round(ref_prepared.width * scale)))
+                            new_h = max(1, int(round(ref_prepared.height * scale)))
+                            ref_scaled = ref_prepared.resize((new_w, new_h), _RESAMPLE_LANCZOS)
+                            ref_bytes = _image_to_bytes(ref_scaled)
+                            images_fetched += 1
+
+                            if run_dir:
+                                ref_scaled.save(
+                                    os.path.join(run_dir, f"tool_{iteration + 1:02d}_multi_{pos:.2f}mm.jpg"),
+                                    quality=95,
+                                )
+
+                            # We must weave text parts + image blobs for the model to associate them
+                            tool_response_parts.append(
+                                types.Part.from_function_response(
+                                    name=name,
+                                    response={"position_mm": pos, "status": "ok", "description": f"Atlas coronal section at {pos:.2f}mm"},
+                                )
+                            )
+                            tool_response_parts.append(
+                                types.Part(inline_data=types.Blob(mime_type="image/jpeg", data=ref_bytes))
+                            )
+                            successes.append(f"{pos:.2f}mm")
+                        except Exception as exc:
+                            # Log error inline and continue
+                            tool_response_parts.append(
+                                types.Part.from_function_response(
+                                    name=name,
+                                    response={"position_mm": pos, "status": "error", "error": str(exc)},
+                                )
+                            )
+                    
+                    reasoning_log.append({"iteration": iteration + 1, "tool": name, "args": args, "result": f"Fetched {len(successes)} slices: {', '.join(successes)}"})
+
+            elif name == "get_atlas_info":
+                info = _get_atlas_info_core(atlas)
+                info["coordinate_note"] = "0.0mm is extreme Anterior; higher mm is more Posterior."
+                tool_response_parts.append(
+                    types.Part.from_function_response(
+                        name=name,
+                        response=info,
+                    )
+                )
+                reasoning_log.append({"iteration": iteration + 1, "tool": name, "args": {}, "result": str(info)})
+                _progress(f"  → Atlas range: [{pos_lo:.2f}, {pos_hi:.2f}] mm")
+
+            elif name == "get_region_names":
+                pos = float(args.get("position_mm", (pos_lo + pos_hi) / 2))
+                regions = _get_regions_at_position(atlas, pos)
+                tool_response_parts.append(
+                    types.Part.from_function_response(
+                        name=name,
+                        response={"position_mm": pos, "regions": regions},
+                    )
+                )
+                reasoning_log.append({"iteration": iteration + 1, "tool": name, "args": args, "result": f"{len(regions)} regions"})
+                _progress(f"  → {len(regions)} regions at {pos:.2f}mm")
+
+            elif name == "submit_estimate":
+                est_pos = float(args.get("position_mm", 0.0))
+                est_confidence = str(args.get("confidence", "unknown"))
+                est_reasoning = str(args.get("reasoning", ""))
+                estimate_result = {
+                    "position_mm": est_pos,
+                    "confidence": est_confidence,
+                    "reasoning": est_reasoning,
+                }
+                reasoning_log.append({"iteration": iteration + 1, "tool": name, "args": args, "result": f"Submitted {est_pos:.2f}mm ({est_confidence})"})
+                _progress(f"Agent submitted estimate: {est_pos:.2f}mm (confidence: {est_confidence})")
+                break
+
+            else:
+                tool_response_parts.append(
+                    types.Part.from_function_response(
+                        name=name,
+                        response={"status": "error", "error": f"Unknown tool: {name}"},
+                    )
+                )
+
+        if estimate_result:
+            break
+
+        # Append tool responses to history
+        if tool_response_parts:
+            history.append(types.Content(role="tool", parts=tool_response_parts))
+
+    # --- Build final result ---
+    final_pos: float
+    final_reasoning: str
+
+    if estimate_result:
+        final_pos = _to_float(estimate_result.get("position_mm"), (pos_lo + pos_hi) / 2)
+        final_reasoning = str(estimate_result["reasoning"])
+    else:
+        # Fallback: model never submitted
+        final_pos = (pos_lo + pos_hi) / 2
+        final_reasoning = "Agent did not submit an estimate within the iteration limit."
+        _progress(f"Warning: Agent did not submit. Falling back to midpoint: {final_pos:.2f}mm")
+
+    _progress(f"Final position estimated: {final_pos:.2f} mm ({images_fetched} atlas images fetched)")
+
+    # --- Write reasoning.txt debug artifact ---
+    if run_dir:
+        reasoning_path = os.path.join(run_dir, "reasoning.txt")
+        with open(reasoning_path, "w", encoding="utf-8") as f:
+            f.write(f"AP Estimation — {atlas_name} — {datetime.now().isoformat()}\n")
+            f.write(f"Model: {MODEL_NAME}\n")
+            f.write("=" * 60 + "\n\n")
+            for entry in reasoning_log:
+                f.write(f"[{entry['iteration']}] {entry['tool']}({entry.get('args', {})})\n")
+                f.write(f"    → {entry['result']}\n\n")
+            f.write("=" * 60 + "\n")
+            f.write(f"FINAL ESTIMATE: {final_pos:.2f} mm\n")
+            if estimate_result:
+                f.write(f"CONFIDENCE: {estimate_result.get('confidence', 'N/A')}\n")
+                f.write(f"REASONING: {estimate_result.get('reasoning', 'N/A')}\n")
+            f.write("=" * 60 + "\n")
+
+            # Write full conversation history
+            f.write("\n\nFULL CONVERSATION HISTORY\n")
+            f.write("=" * 60 + "\n\n")
+            for content in history:
+                role = content.role if hasattr(content, "role") else "?"
+                f.write(f"--- {role} ---\n")
+                content_parts = content.parts or []
+                for part in content_parts:
+                    if part.text:
+                        f.write(f"  TEXT: {part.text[:500]}\n")
+                    if part.function_call:
+                        f.write(f"  CALL: {part.function_call.name}({dict(part.function_call.args) if part.function_call.args else {}})\n")
+                    if part.function_response:
+                        f.write(f"  RESPONSE: {part.function_response.name} → {part.function_response.response}\n")
+                    if part.inline_data:
+                        blob_data = part.inline_data.data
+                        data_len = len(blob_data) if isinstance(blob_data, (bytes, bytearray)) else 0
+                        f.write(f"  IMAGE: {part.inline_data.mime_type} ({data_len} bytes)\n")
+                f.write("\n")
+
+        _progress(f"Reasoning log saved → {reasoning_path}")
 
     return APResult(
         position_mm=final_pos,
-        reasoning=f"Coarse estimate was {coarse_pos:.2f}mm. Fine reasoning: {final_reasoning}",
+        reasoning=final_reasoning,
     )
 
 
@@ -405,60 +712,55 @@ def estimate_ap(
     image: Image.Image,
     atlas_name: str,
     on_progress: Callable[[str], None] | None = None,
-    preprocess_options: PreprocessOptions | None = None,
 ) -> APResult:
     return estimate_position(
         image=image,
         atlas_name=atlas_name,
         on_progress=on_progress,
-        preprocess_options=preprocess_options,
     )
 
 
-def _build_scaled_composite(
+def _build_matched_composite(
     target: Image.Image,
     atlas_name: str,
     position_mm: float,
-    pixel_size_um: float,
     progress: Callable[[str], None],
 ) -> Image.Image | None:
-    """Build a side-by-side composite with physically-correct atlas scaling.
+    """Build a side-by-side composite with the atlas scaled to match the target's pixel dimensions.
 
-    The atlas image is resized so that one atlas pixel maps to
-    ``atlas_resolution_um / pixel_size_um`` target pixels, ensuring the
-    two images share the same physical scale.
+    The atlas is resized so its height matches the target's height, preserving
+    the atlas aspect ratio.  This gives the VLM visually comparable images
+    regardless of the original pixel sizes or physical resolution.
     """
     from langslice.atlas.core import get_composite_slice, load_atlas
 
     try:
         atlas = load_atlas(atlas_name)
         atlas_composite = get_composite_slice(atlas, position_mm, opacity=0.4)
-        atlas_res_um = float(atlas.resolution[1])  # DV axis (coronal plane)
     except Exception as exc:
         progress(f"Warning: could not load atlas composite for affine prompt: {exc}")
         return None
 
-    scale_factor = atlas_res_um / pixel_size_um
+    # Scale atlas height to match target height, preserving aspect ratio.
+    target_rgb = _normalize_image(target)
+    target_h = target_rgb.height
+    scale_factor = target_h / atlas_composite.height
     new_w = max(1, int(round(atlas_composite.width * scale_factor)))
     new_h = max(1, int(round(atlas_composite.height * scale_factor)))
     atlas_scaled = atlas_composite.resize((new_w, new_h), _RESAMPLE_LANCZOS)
 
     progress(
         f"Atlas scaled for VLM: {atlas_composite.width}x{atlas_composite.height} -> "
-        f"{new_w}x{new_h} (scale {scale_factor:.2f}x, "
-        f"atlas {atlas_res_um:.0f}µm / slice {pixel_size_um:.1f}µm)"
+        f"{new_w}x{new_h} (matched to target height {target_h}px)"
     )
 
     # Build side-by-side composite: [target | atlas_scaled]
-    # Pad the shorter image vertically to match heights.
-    target_rgb = target.convert("RGB")
     atlas_rgb = atlas_scaled.convert("RGB")
     out_h = max(target_rgb.height, atlas_rgb.height)
     gap = 20  # pixel gap between images
     out_w = target_rgb.width + gap + atlas_rgb.width
     composite = Image.new("RGB", (out_w, out_h), (0, 0, 0))
 
-    # Center each vertically
     target_y = (out_h - target_rgb.height) // 2
     atlas_y = (out_h - atlas_rgb.height) // 2
     composite.paste(target_rgb, (0, target_y))
@@ -470,7 +772,6 @@ def _build_scaled_composite(
 def estimate_affine(
     image: Image.Image,
     on_progress: Callable[[str], None] | None = None,
-    preprocess_options: PreprocessOptions | None = None,
     atlas_name: str | None = None,
     position_mm: float | None = None,
     pixel_size_um: float | None = None,
@@ -478,9 +779,12 @@ def estimate_affine(
     """
     Estimate 2D affine transformation to center and align a brain slice.
 
-    When *atlas_name*, *position_mm*, and *pixel_size_um* are all provided the
-    function constructs a physically-scaled composite (slice + atlas) and
-    sends it to the VLM, giving the model accurate spatial context.
+    When *atlas_name* and *position_mm* are provided the function constructs
+    a side-by-side composite (slice + atlas at matched pixel dimensions) and
+    sends it to the VLM, giving the model accurate visual context.
+
+    *pixel_size_um* is accepted but ignored — atlas scaling is now purely
+    visual (pixel-dimension matched), not physical.
 
     Returns rotation (degrees), translateX and translateY (% of image size).
     """
@@ -490,24 +794,18 @@ def estimate_affine(
             on_progress(msg)
         logger.info(msg)
 
-    options = preprocess_options or PreprocessOptions()
-
     client = get_client()
-    target_prepared = _prepare_vlm_image(image, options)
+
+    target_prepared = _normalize_image(image)
     target_b64 = _image_to_base64(target_prepared)
 
-    # Build physically-scaled composite when atlas context is available
+    # Build pixel-matched composite when atlas context is available.
     composite_b64: str | None = None
-    has_atlas_context = (
-        atlas_name is not None
-        and position_mm is not None
-        and pixel_size_um is not None
-        and pixel_size_um > 0
-    )
+    has_atlas_context = atlas_name is not None and position_mm is not None
     if has_atlas_context:
-        assert atlas_name is not None and position_mm is not None and pixel_size_um is not None
-        composite = _build_scaled_composite(
-            target_prepared, atlas_name, position_mm, pixel_size_um, _progress
+        assert atlas_name is not None and position_mm is not None
+        composite = _build_matched_composite(
+            target_prepared, atlas_name, position_mm, _progress
         )
         if composite is not None:
             composite_b64 = _image_to_base64(composite)
@@ -516,36 +814,46 @@ def estimate_affine(
     parts: list[dict[str, object]]
     if composite_b64 is not None:
         _progress("Estimating affine transformation (with atlas context)...")
+        prompt_text = (
+            "Using both images, estimate the 2D affine transformation "
+            "(rotation in degrees, translateX and translateY as percentages of image size) "
+            "needed to align the target brain slice to match the atlas orientation. "
+            "The atlas reference shows the expected upright coronal orientation. "
+            "Compare the tissue outline and internal structures to determine rotation and offset. "
+        )
+        if CODE_EXECUTION_ENABLED:
+            prompt_text += (
+                "You may actively inspect the images using Python code. For example, "
+                "you can write code to measure the angle of the midline or detect the center "
+                "of mass to verify your rotation and translation estimates."
+            )
         parts = [
-            _part_text(
-                "Image 1 is the target brain slice you need to register."
-            ),
+            _part_text("Image 1 is the target brain slice you need to register."),
             _part_image_base64(target_b64),
             _part_text(
                 "Image 2 is a side-by-side composite showing the target brain slice (left) "
-                "and the atlas reference at the same physical scale (right). "
-                "The atlas has been scaled so both images share the same physical "
-                "coordinate space (µm per pixel)."
+                "and the atlas reference at the same visual scale (right). "
+                "The atlas has been resized to match the target image height for comparison."
             ),
             _part_image_base64(composite_b64),
-            _part_text(
-                "Using both images, estimate the 2D affine transformation "
-                "(rotation in degrees, translateX and translateY as percentages of image size) "
-                "needed to align the target brain slice to match the atlas orientation. "
-                "The atlas reference shows the expected upright coronal orientation. "
-                "Compare the tissue outline and internal structures to determine rotation and offset."
-            ),
+            _part_text(prompt_text),
         ]
     else:
         _progress("Estimating affine transformation...")
+        prompt_text = (
+            "Analyze this brain slice image. Estimate the 2D affine transformation "
+            "(rotation in degrees, translateX and translateY as percentages of image size) "
+            "needed to center and align it upright. Assume the image might be slightly tilted "
+            "or off-center. "
+        )
+        if CODE_EXECUTION_ENABLED:
+            prompt_text += (
+                "You may use Python code to analyze the image properties, such as finding the "
+                "center of mass or detecting the main axis of the tissue, to inform your estimates."
+            )
         parts = [
             _part_image_base64(target_b64),
-            _part_text(
-                "Analyze this brain slice image. Estimate the 2D affine transformation "
-                "(rotation in degrees, translateX and translateY as percentages of image size) "
-                "needed to center and align it upright. Assume the image might be slightly tilted "
-                "or off-center."
-            ),
+            _part_text(prompt_text),
         ]
 
     response = _retry_generate(
@@ -554,25 +862,26 @@ def estimate_affine(
         contents=_contents_from_parts(parts),
         config=_generation_config(
             {
-                "type": "OBJECT",
+                "type": "object",
                 "properties": {
                     "rotation": {
-                        "type": "NUMBER",
+                        "type": "number",
                         "description": "Rotation in degrees to make the slice upright",
                     },
                     "translateX": {
-                        "type": "NUMBER",
+                        "type": "number",
                         "description": "X translation as percentage (-50 to 50)",
                     },
                     "translateY": {
-                        "type": "NUMBER",
+                        "type": "number",
                         "description": "Y translation as percentage (-50 to 50)",
                     },
                     "reasoning": {
-                        "type": "STRING",
+                        "type": "string",
                         "description": "Reasoning for the transformation",
                     },
                 },
+                "required": ["rotation", "translateX", "translateY", "reasoning"],
             }
         ),
     )

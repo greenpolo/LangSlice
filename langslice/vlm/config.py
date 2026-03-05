@@ -1,5 +1,6 @@
 """VLM configuration - authentication and model settings."""
 
+import atexit
 import importlib
 import logging
 import os
@@ -9,6 +10,18 @@ logger = logging.getLogger(__name__)
 
 MODEL_NAME = "gemini-3-flash-preview"
 THINKING_LEVEL = "HIGH"
+CODE_EXECUTION_ENABLED = True
+
+AVAILABLE_MODELS: list[str] = [
+    "gemini-3-flash-preview",
+    "gemini-3.1-pro-preview",
+]
+
+
+def set_model_name(name: str) -> None:
+    """Set active model name at runtime for subsequent requests."""
+    globals()["MODEL_NAME"] = name
+    logger.info("Model changed to: %s", name)
 
 _BACKEND_AI_STUDIO = "ai_studio"
 _BACKEND_VERTEX_API_KEY = "vertex_api_key"
@@ -26,6 +39,9 @@ class _GenAIModelsProtocol(Protocol):
 
 class GenAIClientProtocol(Protocol):
     models: _GenAIModelsProtocol
+
+
+_client_instance: GenAIClientProtocol | None = None
 
 
 def _load_dotenv() -> None:
@@ -111,26 +127,51 @@ def _vertex_location() -> str:
     return _env("GOOGLE_CLOUD_LOCATION") or "us-central1"
 
 
+def close_client() -> None:
+    """Close cached GenAI client and release transport resources."""
+    global _client_instance
+    if _client_instance is None:
+        return
+
+    close = getattr(_client_instance, "close", None)
+    if callable(close):
+        try:
+            close()
+        except Exception as exc:
+            logger.debug("Failed to close GenAI client cleanly: %s", exc)
+    _client_instance = None
+
+
 def get_client() -> GenAIClientProtocol:
     """Create and return a configured GenAI client for the selected backend."""
+    global _client_instance
+    if _client_instance is not None:
+        return _client_instance
+
     _load_dotenv()
     genai_module = importlib.import_module("google.genai")
     client_cls = cast(Callable[..., GenAIClientProtocol], getattr(genai_module, "Client"))
     backend = get_backend()
 
     if backend == _BACKEND_AI_STUDIO:
-        return client_cls(api_key=get_api_key())
+        _client_instance = client_cls(api_key=get_api_key())
+        return _client_instance
 
     if backend == _BACKEND_VERTEX_API_KEY:
-        return client_cls(vertexai=True, api_key=get_api_key())
+        _client_instance = client_cls(vertexai=True, api_key=get_api_key())
+        return _client_instance
 
     logger.info(
         "Using Vertex ADC auth (project=%s, location=%s)",
         _vertex_project(),
         _vertex_location(),
     )
-    return client_cls(
+    _client_instance = client_cls(
         vertexai=True,
         project=_vertex_project(),
         location=_vertex_location(),
     )
+    return _client_instance
+
+
+atexit.register(close_client)
