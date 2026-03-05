@@ -2,7 +2,7 @@ import importlib
 import logging
 from collections.abc import Callable, Sequence
 from functools import lru_cache
-from typing import Protocol, cast
+from typing import Any, Protocol, cast
 
 import numpy as np
 from PIL import Image
@@ -23,6 +23,82 @@ class _AtlasLike(Protocol):
     annotation: np.ndarray
     resolution: Sequence[float]
     metadata: dict[str, object]
+
+
+def _shape3d(volume: np.ndarray) -> tuple[int, int, int]:
+    shape = cast(tuple[int, ...], volume.shape)
+    if len(shape) != 3:
+        raise ValueError(f"Expected a 3D atlas volume, got shape={shape}")
+    return shape[0], shape[1], shape[2]
+
+
+def _safe_index(axis_name: str, index: int, upper_bound: int) -> int:
+    if index < 0 or index >= upper_bound:
+        raise ValueError(
+            f"{axis_name} index {index} out of range [0, {upper_bound - 1}]"
+        )
+    return index
+
+
+def _as_scalar_int(value: object) -> int | None:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, (int, np.integer)):
+        return int(value)
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return None
+    if np.isscalar(value):
+        try:
+            return int(np.asarray(value).item())
+        except (TypeError, ValueError):
+            return None
+    try:
+        return int(str(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _normalize_version(raw: object) -> str | None:
+    if raw is None:
+        return None
+    if isinstance(raw, tuple):
+        tuple_value = cast(tuple[object, ...], raw)
+        return ".".join(str(part) for part in tuple_value)
+    return str(raw)
+
+
+def _lookup_structure_record(atlas: _AtlasLike, structure_id: int) -> dict[str, str]:
+    structures = getattr(atlas, "structures", None)
+    if structures is not None:
+        try:
+            data = structures[structure_id]
+            if isinstance(data, dict):
+                return {
+                    "acronym": str(data.get("acronym", "")),
+                    "name": str(data.get("name", "")),
+                }
+        except Exception:
+            pass
+
+    lookup_df = getattr(atlas, "lookup_df", None)
+    if lookup_df is not None:
+        try:
+            matches = lookup_df.loc[lookup_df["id"] == structure_id]
+            if not getattr(matches, "empty", True):
+                row = matches.iloc[0]
+                return {
+                    "acronym": str(row["acronym"]),
+                    "name": str(row["name"]),
+                }
+        except Exception:
+            pass
+
+    return {"acronym": "", "name": ""}
 
 
 class BrainGlobeAtlas(_AtlasLike, Protocol):
@@ -148,12 +224,193 @@ def get_composite_slice(atlas: _AtlasLike, position_mm: float, opacity: float = 
     return Image.fromarray(result.astype(np.uint8), mode="RGB")
 
 
+def list_additional_references(atlas: _AtlasLike) -> list[str]:
+    """Return available secondary reference names for an atlas."""
+    refs = getattr(atlas, "additional_references", None)
+    if refs is None:
+        return []
+    if hasattr(refs, "keys"):
+        return sorted(str(key) for key in refs.keys())
+    return []
+
+
+def get_additional_reference_slice(
+    atlas: _AtlasLike, reference_name: str, position_mm: float
+) -> Image.Image:
+    """Get a coronal slice from an atlas additional reference volume."""
+    refs = getattr(atlas, "additional_references", None)
+    if refs is None:
+        raise ValueError(f"Atlas '{atlas.atlas_name}' has no additional references")
+
+    try:
+        ref_volume = np.asarray(refs[reference_name])
+    except Exception as exc:
+        available = list_additional_references(atlas)
+        raise ValueError(
+            f"Unknown additional reference '{reference_name}'. Available: {available}"
+        ) from exc
+
+    _, _, _ = _shape3d(ref_volume)
+    idx = position_mm_to_index(atlas, position_mm)
+    if idx >= ref_volume.shape[0]:
+        raise ValueError(
+            f"Reference '{reference_name}' only has {ref_volume.shape[0]} AP slices, "
+            + f"requested index {idx}"
+        )
+
+    slice_2d = np.asarray(ref_volume[idx, :, :])
+    normalized = _normalize_to_uint8(slice_2d)
+    return Image.fromarray(normalized, mode="L")
+
+
+def get_structure_hierarchy(atlas: _AtlasLike, structure: int | str) -> dict[str, object]:
+    """Return ancestor and descendant acronyms for a structure."""
+    ancestors_fn = getattr(atlas, "get_structure_ancestors", None)
+    descendants_fn = getattr(atlas, "get_structure_descendants", None)
+
+    ancestors: list[str] = []
+    descendants: list[str] = []
+
+    if callable(ancestors_fn):
+        try:
+            raw = ancestors_fn(structure)
+            if isinstance(raw, Sequence) and not isinstance(raw, (str, bytes)):
+                ancestors = [str(item) for item in raw]
+        except Exception:
+            ancestors = []
+
+    if callable(descendants_fn):
+        try:
+            raw = descendants_fn(structure)
+            if isinstance(raw, Sequence) and not isinstance(raw, (str, bytes)):
+                descendants = [str(item) for item in raw]
+        except Exception:
+            descendants = []
+
+    return {
+        "structure": structure,
+        "ancestors": ancestors,
+        "descendants": descendants,
+        "n_ancestors": len(ancestors),
+        "n_descendants": len(descendants),
+    }
+
+
+def get_structure_mask_slice(
+    atlas: _AtlasLike, structure: int | str, position_mm: float
+) -> Image.Image:
+    """Get a binary coronal mask slice for one structure (including descendants)."""
+    get_mask_fn = getattr(atlas, "get_structure_mask", None)
+    if not callable(get_mask_fn):
+        raise ValueError(
+            "Atlas backend does not expose get_structure_mask(). "
+            + "Requires brainglobe-atlasapi structure utilities."
+        )
+
+    mask_volume = np.asarray(get_mask_fn(structure))
+    _, _, _ = _shape3d(mask_volume)
+
+    idx = position_mm_to_index(atlas, position_mm)
+    if idx >= mask_volume.shape[0]:
+        raise ValueError(
+            f"Structure mask has {mask_volume.shape[0]} AP slices, requested index {idx}"
+        )
+
+    slice_mask = np.asarray(mask_volume[idx, :, :])
+    binary = np.where(slice_mask > 0, 255, 0).astype(np.uint8)
+    return Image.fromarray(binary, mode="L")
+
+
+def get_region_at_position(
+    atlas: _AtlasLike,
+    position_mm: float,
+    *,
+    dv_index: int | None = None,
+    ml_index: int | None = None,
+    include_hierarchy: bool = False,
+) -> dict[str, Any]:
+    """Resolve structure and hemisphere at a specific AP position and in-slice index."""
+    ap_idx = position_mm_to_index(atlas, position_mm)
+    _, n_dv, n_ml = _shape3d(atlas.reference)
+
+    dv_idx = n_dv // 2 if dv_index is None else _safe_index("DV", dv_index, n_dv)
+    ml_idx = n_ml // 2 if ml_index is None else _safe_index("ML", ml_index, n_ml)
+    coords = (ap_idx, dv_idx, ml_idx)
+
+    structure_id = _as_scalar_int(atlas.annotation[coords])
+    if structure_id is None:
+        structure_id = 0
+
+    structure_fn = getattr(atlas, "structure_from_coords", None)
+    acronym = ""
+    if callable(structure_fn):
+        try:
+            sid = _as_scalar_int(
+                structure_fn(coords, microns=False, as_acronym=False)
+            )
+            if sid is not None:
+                structure_id = sid
+            acronym = str(
+                structure_fn(
+                    coords,
+                    microns=False,
+                    as_acronym=True,
+                    key_error_string="Outside atlas",
+                )
+            )
+        except Exception:
+            pass
+
+    record = _lookup_structure_record(atlas, structure_id)
+    if not acronym:
+        acronym = record["acronym"]
+
+    hemisphere_fn = getattr(atlas, "hemisphere_from_coords", None)
+    hemisphere = "unknown"
+    if callable(hemisphere_fn):
+        try:
+            hemisphere = str(hemisphere_fn(coords, microns=False, as_string=True))
+        except Exception:
+            hemisphere = "unknown"
+
+    hierarchy = None
+    if include_hierarchy and structure_id > 0:
+        hierarchy = get_structure_hierarchy(atlas, structure_id)
+
+    return {
+        "position_mm": float(position_mm),
+        "indices": {
+            "ap": ap_idx,
+            "dv": dv_idx,
+            "ml": ml_idx,
+        },
+        "hemisphere": hemisphere,
+        "structure": {
+            "id": structure_id,
+            "acronym": acronym,
+            "name": record["name"],
+        },
+        "hierarchy": hierarchy,
+    }
+
+
 def get_atlas_info(atlas: _AtlasLike) -> dict[str, object]:
     """Return atlas metadata and position range info."""
     min_pos, max_pos = get_position_range_mm(atlas)
     resolution_mm = [float(r) / 1000.0 for r in atlas.resolution]
 
     shape = cast(tuple[int, ...], atlas.reference.shape)
+
+    check_latest_version = getattr(atlas, "check_latest_version", None)
+    is_latest: bool | None = None
+    if callable(check_latest_version):
+        try:
+            result = check_latest_version(print_warning=False)
+            if isinstance(result, bool):
+                is_latest = result
+        except Exception:
+            is_latest = None
+
     return {
         "name": atlas.atlas_name,
         "orientation": atlas.orientation,
@@ -167,6 +424,10 @@ def get_atlas_info(atlas: _AtlasLike) -> dict[str, object]:
         "n_coronal_slices": shape[0],
         "species": atlas.metadata.get("species", "unknown"),
         "citation": atlas.metadata.get("citation", ""),
+        "local_version": _normalize_version(getattr(atlas, "local_version", None)),
+        "remote_version": _normalize_version(getattr(atlas, "remote_version", None)),
+        "is_latest_version": is_latest,
+        "additional_references": list_additional_references(atlas),
     }
 
 

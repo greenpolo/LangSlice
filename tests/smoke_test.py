@@ -5,12 +5,12 @@ from langslice import __version__
 print(f"Version: {__version__}")
 
 # Atlas module
-from langslice.atlas import load_atlas, get_origin_index, ap_mm_to_index, get_ap_range
+from langslice.atlas import load_atlas, position_mm_to_index, index_to_position_mm, get_position_range_mm
 print("Atlas module OK")
 
 # VLM module
-from langslice.vlm.config import get_api_key, get_client, MODEL_NAME, THINKING_BUDGET
-print(f"VLM config OK: model={MODEL_NAME} budget={THINKING_BUDGET}")
+from langslice.vlm.config import get_api_key, get_client, MODEL_NAME, THINKING_LEVEL
+print(f"VLM config OK: model={MODEL_NAME} thinking={THINKING_LEVEL}")
 
 from langslice.vlm.estimator import estimate_ap, estimate_affine, APResult, AffineResult, _retry_generate
 print("VLM estimator OK (with retry logic)")
@@ -24,10 +24,9 @@ print("Export module OK")
 
 # Test anchoring computation
 anch = compute_anchoring(
-    ap_mm=1.0,
+    position_mm=1.0,
     atlas_shape=(528, 320, 456),
     atlas_resolution=(25.0, 25.0, 25.0),
-    origin_index=264,
     image_width=1024,
     image_height=670,
 )
@@ -39,9 +38,9 @@ print(f"Target: {t}")
 
 # Test full export dict
 exp = build_quint_export(
-    filename="test_slice.png", ap_mm=1.0, atlas_name="allen_mouse_25um",
+    filename="test_slice.png", position_mm=1.0, atlas_name="allen_mouse_25um",
     atlas_shape=(528, 320, 456), atlas_resolution=(25.0, 25.0, 25.0),
-    origin_index=264, image_width=1024, image_height=670,
+    image_width=1024, image_height=670,
     rotation_deg=2.5, translate_x_pct=1.0, translate_y_pct=-0.5,
 )
 d = export_to_dict(exp)
