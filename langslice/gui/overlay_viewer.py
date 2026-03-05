@@ -1,9 +1,9 @@
-"""Physical-scale overlay viewer for brain slice + atlas registration.
+"""Overlay viewer for brain slice + atlas registration.
 
-Renders both the histology slice and atlas reference in a shared coordinate
-space (slice-pixel units), scaling the atlas by the ratio of physical pixel
-sizes so that structures match in real-world dimensions — analogous to how
-ABBA uses BigDataViewer's physical coordinate system.
+Renders both the histology slice and atlas reference in the same scene,
+scaling the atlas so its height matches the slice pixmap height.  This gives
+a visually comparable, though not physically exact, overlay that works
+regardless of the original image resolution or atlas voxel size.
 """
 
 from __future__ import annotations
@@ -73,7 +73,7 @@ def _pil_to_qpixmap(img: Image.Image) -> QPixmap:
 
 class _AtlasLoaderWorker(QObject):
     """Load an atlas composite slice in a background thread."""
-    slice_ready = Signal(QPixmap, float)  # pixmap, atlas_resolution_um
+    slice_ready = Signal(QPixmap)
     error = Signal(str)
     finished = Signal()
 
@@ -86,11 +86,8 @@ class _AtlasLoaderWorker(QObject):
     def load(self) -> None:
         try:
             atlas = load_atlas(self._atlas_name)
-            # Composite = reference + green boundary lines
             composite = get_composite_slice(atlas, self._position_mm, opacity=0.4)
-            # Atlas pixel size along coronal axes (DV and ML are axes 1, 2)
-            atlas_res_um = float(atlas.resolution[1])
-            self.slice_ready.emit(_pil_to_qpixmap(composite), atlas_res_um)
+            self.slice_ready.emit(_pil_to_qpixmap(composite))
         except Exception as exc:
             self.error.emit(str(exc))
         finally:
@@ -102,14 +99,11 @@ class _AtlasLoaderWorker(QObject):
 # ---------------------------------------------------------------------------
 
 class OverlayGraphicsView(QFrame):
-    """QGraphicsView-based viewer that renders slice + atlas in shared
-    physical coordinate space.
+    """QGraphicsView-based viewer that renders slice + atlas in a shared scene.
 
-    Coordinate convention (all in *slice-pixel* units):
-    - The slice pixmap is placed at the origin with scale 1.0
-    - The atlas pixmap is scaled by ``atlas_resolution_um / pixel_size_um``
-      so that one atlas pixel covers the correct number of slice pixels.
-    - Both items are centered on the scene origin.
+    The atlas pixmap is scaled so its height matches the slice pixmap height,
+    preserving the atlas aspect ratio.  Both items are centered on the scene
+    origin.
     """
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
@@ -118,8 +112,6 @@ class OverlayGraphicsView(QFrame):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         # State
-        self._pixel_size_um: float = 4.0
-        self._atlas_resolution_um: float = 25.0
         self._atlas_name: Optional[str] = None
         self._position_mm: Optional[float] = None
         self._atlas_opacity: float = 0.5
@@ -204,9 +196,9 @@ class OverlayGraphicsView(QFrame):
         self._position_mm = position_mm
         self._queue_atlas_reload()
 
-    def set_pixel_size(self, um_per_px: float) -> None:
-        self._pixel_size_um = max(0.01, um_per_px)
-        self._layout_items()
+    def set_pixel_size(self, um_per_px: float) -> None:  # noqa: ARG002
+        """Accepted for API compatibility; atlas scaling is now visual, not physical."""
+        pass
 
     def set_atlas_opacity(self, opacity: float) -> None:
         self._atlas_opacity = max(0.0, min(1.0, opacity))
@@ -250,14 +242,19 @@ class OverlayGraphicsView(QFrame):
             self._slice_item.setPos(-pm.width() / 2.0, -pm.height() / 2.0)
 
         if self._atlas_item is not None:
-            scale = self._atlas_resolution_um / self._pixel_size_um
+            atlas_pm = self._atlas_item.pixmap()
+            if self._slice_item is not None and atlas_pm.height() > 0:
+                # Scale the atlas so its height matches the slice height.
+                slice_pm = self._slice_item.pixmap()
+                scale = slice_pm.height() / atlas_pm.height()
+            else:
+                scale = 1.0
             self._atlas_item.setScale(scale)
-            pm = self._atlas_item.pixmap()
-            # After scaling, the effective size is pm.size() * scale.
+            # After scaling, effective size is pm.size() * scale.
             # Center the scaled atlas on the origin.
             self._atlas_item.setPos(
-                -(pm.width() * scale) / 2.0,
-                -(pm.height() * scale) / 2.0,
+                -(atlas_pm.width() * scale) / 2.0,
+                -(atlas_pm.height() * scale) / 2.0,
             )
             self._atlas_item.setOpacity(self._atlas_opacity)
 
@@ -320,7 +317,7 @@ class OverlayGraphicsView(QFrame):
         worker.moveToThread(thread)
 
         thread.started.connect(worker.load)
-        worker.slice_ready.connect(lambda pm, res, g=gen: self._on_atlas_ready(g, pm, res))
+        worker.slice_ready.connect(lambda pm, g=gen: self._on_atlas_ready(g, pm))
         worker.error.connect(lambda msg, g=gen: self._on_atlas_error(g, msg))
         worker.finished.connect(thread.quit)
         worker.finished.connect(worker.deleteLater)
@@ -339,10 +336,9 @@ class OverlayGraphicsView(QFrame):
             self._active_thread = None
             self._active_worker = None
 
-    def _on_atlas_ready(self, gen: int, pixmap: QPixmap, atlas_res_um: float) -> None:
+    def _on_atlas_ready(self, gen: int, pixmap: QPixmap) -> None:
         if gen != self._generation:
             return
-        self._atlas_resolution_um = atlas_res_um
 
         if self._atlas_item is not None:
             self._scene.removeItem(self._atlas_item)

@@ -55,7 +55,9 @@ from langslice.atlas import (
     list_downloaded_atlases,
 )
 from langslice.gui.theme import ACCENT, BG_PRIMARY, ERROR, STYLESHEET, SUCCESS, TEXT_SECONDARY
-from langslice.vlm import APResult, AffineResult, PreprocessOptions, estimate_affine, estimate_position
+from langslice.vlm import APResult, AffineResult, estimate_affine, estimate_position
+from langslice.vlm.config import AVAILABLE_MODELS, MODEL_NAME, set_model_name
+from langslice.vlm.estimator import _normalize_image
 from langslice.export import build_quint_export, save_quint_json
 from langslice.gui.settings_dialog import SettingsDialog
 from langslice.gui.overlay_viewer import OverlayGraphicsView
@@ -207,13 +209,11 @@ class AgentWorker(QObject):
         self,
         image: Image.Image,
         atlas_name: str,
-        preprocess_options: PreprocessOptions,
-        pixel_size_um: float = 4.0,
-    ):
+        pixel_size_um: float,
+    ) -> None:
         super().__init__()
         self.image = image
         self.atlas_name = atlas_name
-        self.preprocess_options = preprocess_options
         self.pixel_size_um = pixel_size_um
 
     def run(self) -> None:
@@ -221,10 +221,9 @@ class AgentWorker(QObject):
             self.step_started.emit("ap")
             self.log_message.emit("Starting position estimation...")
             ap_result = estimate_position(
-                self.image,
-                self.atlas_name,
+                image=self.image,
+                atlas_name=self.atlas_name,
                 on_progress=self.log_message.emit,
-                preprocess_options=self.preprocess_options,
             )
             self.step_completed.emit("ap", ap_result)
         except Exception as exc:
@@ -236,9 +235,8 @@ class AgentWorker(QObject):
             self.step_started.emit("affine")
             self.log_message.emit("Starting affine estimation...")
             affine_result = estimate_affine(
-                self.image,
+                image=self.image,
                 on_progress=self.log_message.emit,
-                preprocess_options=self.preprocess_options,
                 atlas_name=self.atlas_name,
                 position_mm=ap_result.position_mm,
                 pixel_size_um=self.pixel_size_um,
@@ -502,6 +500,16 @@ class MainWindow(QMainWindow):
         self._populate_atlas_combo()
         self.atlas_combo.currentIndexChanged.connect(self._on_atlas_changed)
 
+        model_label = QLabel("Model:")
+        model_label.setObjectName("subheading")
+        self.model_combo = QComboBox()
+        for m in AVAILABLE_MODELS:
+            self.model_combo.addItem(m)
+        self.model_combo.setCurrentText(MODEL_NAME)
+        self.model_combo.setFixedWidth(180)
+        self.model_combo.setToolTip("VLM model for AP estimation")
+        self.model_combo.currentTextChanged.connect(self._on_model_changed)
+
         px_size_label = QLabel("Pixel Size:")
         px_size_label.setObjectName("subheading")
         self.pixel_size_spin = QDoubleSpinBox()
@@ -527,6 +535,8 @@ class MainWindow(QMainWindow):
         self.export_button.clicked.connect(self._export_abba)
 
         right.addWidget(self.atlas_combo)
+        right.addWidget(model_label)
+        right.addWidget(self.model_combo)
         right.addWidget(px_size_label)
         right.addWidget(self.pixel_size_spin)
         right.addWidget(self.upload_button)
@@ -714,21 +724,6 @@ class MainWindow(QMainWindow):
         self.step_ap = StepIndicator("Estimate Position", has_connector=True)
         self.step_affine = StepIndicator("Affine Transformation", has_connector=False)
 
-        preprocess_panel = QFrame()
-        preprocess_panel.setObjectName("glassPanel")
-        preprocess_layout = QVBoxLayout(preprocess_panel)
-        preprocess_layout.setContentsMargins(10, 10, 10, 10)
-        preprocess_layout.setSpacing(6)
-
-        self.preprocess_checkbox = QCheckBox("Enable image preprocessing")
-        self.preprocess_checkbox.setChecked(False)
-        self.preprocess_hint = QLabel("Crops tissue, normalizes contrast, and resizes before VLM calls.")
-        self.preprocess_hint.setWordWrap(True)
-        self.preprocess_hint.setStyleSheet(f"font-size: 12px; color: {TEXT_SECONDARY};")
-        preprocess_layout.addWidget(self.preprocess_checkbox)
-        preprocess_layout.addWidget(self.preprocess_hint)
-
-        layout.addWidget(preprocess_panel)
         layout.addWidget(self.step_ap)
         layout.addWidget(self.step_affine)
 
@@ -778,7 +773,7 @@ class MainWindow(QMainWindow):
     def _load_image(self, file_path: str) -> None:
         try:
             with Image.open(file_path) as loaded:
-                image = loaded.copy()
+                image = _normalize_image(loaded.copy())
         except Exception as exc:
             self._append_log(f"Failed to open image: {exc}")
             return
@@ -813,15 +808,9 @@ class MainWindow(QMainWindow):
 
         atlas_name = self._current_atlas_name()
         image_copy = self.pil_image.copy()
-        preprocess_options = PreprocessOptions(enabled=self.preprocess_checkbox.isChecked())
-
-        if preprocess_options.enabled:
-            self._append_log("Preprocessing enabled: crop tissue + normalize contrast + resize.")
-        else:
-            self._append_log("Preprocessing disabled: sending original image content.")
 
         thread = QThread(self)
-        worker = AgentWorker(image_copy, atlas_name, preprocess_options=preprocess_options, pixel_size_um=self.pixel_size_um)
+        worker = AgentWorker(image_copy, atlas_name, pixel_size_um=self.pixel_size_um)
         worker.moveToThread(thread)
 
         self.worker_thread = thread
@@ -898,6 +887,10 @@ class MainWindow(QMainWindow):
 
     def _is_worker_running(self) -> bool:
         return self.worker_thread is not None and self.worker_thread.isRunning()
+
+    def _on_model_changed(self, model_name: str) -> None:
+        set_model_name(model_name)
+        self._append_log(f"Model changed: {model_name}")
 
     def _on_atlas_changed(self) -> None:
         atlas_name = self._current_atlas_name()
