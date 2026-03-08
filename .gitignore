@@ -12,9 +12,6 @@ __pycache__/
 .mypy_cache/
 *.egg-info/
 
-# Markdown files
-*.md
-
 # Agent knowledge-base files
 AGENTS.md
 
@@ -25,4 +22,8 @@ nul
 references/abba_python/
 references/brainglobe-atlasapi/
 references/DeepSlice_upstream/
+references/google-genai-docs/
 references/ijp-imagetoatlas/
+
+# Archived local notes not part of the active docs set
+archive/*.md
