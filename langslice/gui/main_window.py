@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 import importlib
-from typing import Any
+from datetime import datetime
+from typing import Any, cast
 
 from PIL import Image
 
@@ -59,6 +61,7 @@ from langslice.vlm import APResult, AffineResult, estimate_affine, estimate_posi
 from langslice.vlm.config import AVAILABLE_MODELS, MODEL_NAME, set_model_name
 from langslice.vlm.estimator import _normalize_image
 from langslice.export import build_quint_export, save_quint_json
+from langslice.gui.run_metadata_dialog import RunMetadataDialog
 from langslice.gui.settings_dialog import SettingsDialog
 from langslice.gui.overlay_viewer import OverlayGraphicsView
 
@@ -103,6 +106,24 @@ def pil_to_qpixmap(image: Image.Image) -> QPixmap:
     data = rgba_image.tobytes("raw", "RGBA")
     qt_image = QImage(data, width, height, width * 4, QImage.Format.Format_RGBA8888)
     return QPixmap.fromImage(qt_image.copy())
+
+
+def affine_matrix_to_qtransform(matrix: object) -> QTransform:
+    """Convert a row-major 3x3 affine matrix into a QTransform."""
+    arr = getattr(matrix, "tolist", None)
+    values = arr() if callable(arr) else matrix
+    m: Any = values
+    return QTransform(
+        float(m[0][0]),
+        float(m[1][0]),
+        0.0,
+        float(m[0][1]),
+        float(m[1][1]),
+        0.0,
+        float(m[0][2]),
+        float(m[1][2]),
+        1.0,
+    )
 
 
 class ImageLabel(QLabel):
@@ -340,12 +361,16 @@ class StepIndicator(QFrame):
         self.result_panel.show()
 
     def show_affine_result(self, result: AffineResult) -> None:
+        tx_px, ty_px = result.translation_px
+        scale_x, scale_y = result.scale
         self.result_top.setText(
             " | ".join(
                 [
-                    f"Rotation: {result.rotation:.2f}°",
-                    f"Translate X: {result.translateX:.2f}%",
-                    f"Translate Y: {result.translateY:.2f}%",
+                    f"Backend: {result.backend}",
+                    f"Rotation: {result.rotation_deg:.2f} deg",
+                    f"Translate: ({tx_px:.1f}, {ty_px:.1f}) px",
+                    f"Scale: ({scale_x:.3f}, {scale_y:.3f})",
+                    f"Shear: {result.shear:.3f}",
                 ]
             )
         )
@@ -387,6 +412,7 @@ class MainWindow(QMainWindow):
         self.current_pos: float | None = None
         self.ap_result: APResult | None = None
         self.affine_result: AffineResult | None = None
+        self._last_run_context: dict[str, object] | None = None
         self.current_view_mode = "single"
 
         self.worker_thread: QThread | None = None
@@ -515,7 +541,7 @@ class MainWindow(QMainWindow):
         self.pixel_size_spin = QDoubleSpinBox()
         self.pixel_size_spin.setRange(0.1, 100.0)
         self.pixel_size_spin.setValue(self.pixel_size_um)
-        self.pixel_size_spin.setSuffix(" µm/px")
+        self.pixel_size_spin.setSuffix(" um/px")
         self.pixel_size_spin.setDecimals(2)
         self.pixel_size_spin.setSingleStep(0.5)
         self.pixel_size_spin.setFixedWidth(130)
@@ -526,11 +552,11 @@ class MainWindow(QMainWindow):
         self.upload_button.setObjectName("secondary")
         self.upload_button.clicked.connect(self._browse_image)
 
-        self.settings_button = QPushButton("⚙ Settings")
+        self.settings_button = QPushButton("Settings")
         self.settings_button.setObjectName("secondary")
         self.settings_button.clicked.connect(self._open_settings)
 
-        self.export_button = QPushButton("Export ABBA")
+        self.export_button = QPushButton("Export QUINT/ABBA JSON")
         self.export_button.setObjectName("secondary")
         self.export_button.clicked.connect(self._export_abba)
 
@@ -699,10 +725,14 @@ class MainWindow(QMainWindow):
         hrow.setSpacing(8)
         title = QLabel("Agent Workflow")
         title.setObjectName("heading")
+        self.clear_all_button = QPushButton("Clear All")
+        self.clear_all_button.setObjectName("secondary")
+        self.clear_all_button.clicked.connect(self._clear_all)
         self.run_button = QPushButton("Run Agent")
         self.run_button.clicked.connect(self._run_agent)
         hrow.addWidget(title)
         hrow.addStretch(1)
+        hrow.addWidget(self.clear_all_button)
         hrow.addWidget(self.run_button)
         layout.addWidget(header)
 
@@ -727,6 +757,25 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.step_ap)
         layout.addWidget(self.step_affine)
 
+        # Feedback buttons for curating agent traces
+        self.feedback_wrap = QFrame()
+        fb_layout = QHBoxLayout(self.feedback_wrap)
+        fb_layout.setContentsMargins(0, 8, 0, 0)
+        fb_layout.setSpacing(8)
+        
+        self.success_btn = QPushButton("Mark Success")
+        self.success_btn.setObjectName("secondary")
+        self.success_btn.clicked.connect(lambda: self._mark_run("success"))
+        
+        self.failure_btn = QPushButton("Mark Failure")
+        self.failure_btn.setObjectName("secondary")
+        self.failure_btn.clicked.connect(lambda: self._mark_run("failure"))
+        
+        fb_layout.addWidget(self.success_btn)
+        fb_layout.addWidget(self.failure_btn)
+        self.feedback_wrap.hide()
+        layout.addWidget(self.feedback_wrap)
+
         logs_label = QLabel("Agent Logs")
         logs_label.setObjectName("monoLabel")
         layout.addWidget(logs_label)
@@ -738,6 +787,103 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.logs, stretch=1)
 
         return panel
+
+    def _mark_run(self, outcome: str) -> None:
+        if not self.ap_result or not getattr(self.ap_result, "debug_dir", None):
+            self._append_log("No debug directory available to save.")
+            return
+
+        debug_dir = self.ap_result.debug_dir
+        if not isinstance(debug_dir, str) or not debug_dir:
+            self._append_log("No debug directory available to save.")
+            return
+        debug_dir = cast(str, debug_dir)
+
+        if not os.path.exists(debug_dir):
+            self._append_log("Debug directory no longer exists on disk.")
+            return
+
+        parent_dir = os.path.dirname(debug_dir)
+        target_group_dir = os.path.join(parent_dir, outcome)
+        os.makedirs(target_group_dir, exist_ok=True)
+
+        folder_name = os.path.basename(debug_dir)
+        new_path = self._unique_target_path(os.path.join(target_group_dir, folder_name))
+
+        dialog = RunMetadataDialog(
+            outcome=outcome,
+            estimated_position_mm=self.ap_result.position_mm,
+            parent=self,
+        )
+        if not dialog.exec():
+            self._append_log("Run classification cancelled.")
+            return
+
+        metadata = self._build_run_metadata(outcome, dialog.metadata())
+
+        try:
+            os.rename(debug_dir, new_path)
+            self._write_run_metadata(new_path, metadata)
+            self._append_log(f"Agent trace moved to '{outcome}' folder.")
+            self.ap_result.debug_dir = new_path  # Update reference
+            self.success_btn.setEnabled(False)
+            self.failure_btn.setEnabled(False)
+        except Exception as exc:
+            self._append_log(f"Failed to move trace: {exc}")
+
+    @staticmethod
+    def _unique_target_path(base_path: str) -> str:
+        if not os.path.exists(base_path):
+            return base_path
+
+        root = base_path
+        counter = 2
+        while True:
+            candidate = f"{root}_{counter}"
+            if not os.path.exists(candidate):
+                return candidate
+            counter += 1
+
+    def _build_run_metadata(
+        self,
+        outcome: str,
+        user_metadata: dict[str, object],
+    ) -> dict[str, object]:
+        actual_position = user_metadata.get("actual_position_mm")
+        estimated_position = self.ap_result.position_mm if self.ap_result else None
+        signed_error_mm: float | None = None
+        absolute_error_mm: float | None = None
+
+        if isinstance(actual_position, (int, float)) and isinstance(estimated_position, (int, float)):
+            signed_error_mm = float(estimated_position) - float(actual_position)
+            absolute_error_mm = abs(signed_error_mm)
+
+        image_name = os.path.basename(self.image_path) if self.image_path else None
+        affine_backend = self.affine_result.backend if self.affine_result else None
+        run_context = self._last_run_context or {}
+
+        return {
+            "classified_at": datetime.now().isoformat(timespec="seconds"),
+            "outcome": outcome,
+            "image_name": image_name,
+            "image_path": self.image_path,
+            "atlas_name": run_context.get("atlas_name") or self._current_atlas_name(),
+            "model_name": run_context.get("model_name") or self.model_combo.currentText(),
+            "pixel_size_um": run_context.get("pixel_size_um") or self.pixel_size_um,
+            "run_started_at": run_context.get("run_started_at"),
+            "estimated_position_mm": estimated_position,
+            "actual_position_mm": actual_position,
+            "signed_error_mm": signed_error_mm,
+            "absolute_error_mm": absolute_error_mm,
+            "affine_backend": affine_backend,
+            "notes": user_metadata.get("notes") or "",
+        }
+
+    def _write_run_metadata(self, trace_dir: str, metadata: dict[str, object]) -> None:
+        metadata_path = os.path.join(trace_dir, "classification.json")
+        with open(metadata_path, "w", encoding="utf-8") as fh:
+            json.dump(metadata, fh, indent=2)
+        self._append_log(f"Saved classification metadata: {metadata_path}")
 
     def resizeEvent(self, event: Any) -> None:
         super().resizeEvent(event)
@@ -783,10 +929,37 @@ class MainWindow(QMainWindow):
         self.current_pos = None
         self.ap_result = None
         self.affine_result = None
+        self._last_run_context = None
         self._reset_steps()
         self._update_display_pixmaps()
         self._set_view_mode(self.current_view_mode)
         self._append_log(f"Loaded image: {os.path.basename(file_path)}")
+
+    def _clear_all(self) -> None:
+        if self._is_worker_running():
+            self._append_log("Cannot clear while the agent is running.")
+            return
+
+        self.image_path = None
+        self.pil_image = None
+        self.current_pos = None
+        self.ap_result = None
+        self.affine_result = None
+        self._last_run_context = None
+
+        self.logs.clear()
+        self.single_image_label.set_source_pixmap(None)
+        self.split_image_label.set_source_pixmap(None)
+        self.overlay_viewer.clear_all()
+        self.split_atlas.clear()
+
+        self.ap_slider.blockSignals(True)
+        self.ap_slider.setValue(0)
+        self.ap_slider.blockSignals(False)
+        self.ap_value_label.setText("Manual Position: 0.00 mm")
+
+        self._reset_steps()
+        self._set_view_mode("single")
 
     def _reset_steps(self) -> None:
         self.step_ap.set_status("idle")
@@ -794,6 +967,9 @@ class MainWindow(QMainWindow):
         self.step_ap.clear_result()
         self.step_affine.clear_result()
         self.ap_adjust_wrap.hide()
+        self.feedback_wrap.hide()
+        self.success_btn.setEnabled(True)
+        self.failure_btn.setEnabled(True)
         self._set_export_enabled(False)
         self.run_button.setEnabled(self.pil_image is not None and not self._is_worker_running())
         self.split_atlas.clear()
@@ -808,6 +984,12 @@ class MainWindow(QMainWindow):
 
         atlas_name = self._current_atlas_name()
         image_copy = self.pil_image.copy()
+        self._last_run_context = {
+            "atlas_name": atlas_name,
+            "model_name": self.model_combo.currentText(),
+            "pixel_size_um": self.pixel_size_um,
+            "run_started_at": datetime.now().isoformat(timespec="seconds"),
+        }
 
         thread = QThread(self)
         worker = AgentWorker(image_copy, atlas_name, pixel_size_um=self.pixel_size_um)
@@ -852,8 +1034,14 @@ class MainWindow(QMainWindow):
             self.affine_result = result
             self.step_affine.set_status("completed")
             self.step_affine.show_affine_result(result)
+            tx_px, ty_px = result.translation_px
             self._append_log(
-                f"Affine calculated: rot {result.rotation:.2f}°, X {result.translateX:.2f}%, Y {result.translateY:.2f}%"
+                "Affine calculated: "
+                f"backend={result.backend}, "
+                f"rot={result.rotation_deg:.2f} deg, "
+                f"translate=({tx_px:.1f}, {ty_px:.1f}) px, "
+                f"scale=({result.scale[0]:.3f}, {result.scale[1]:.3f}), "
+                f"shear={result.shear:.3f}"
             )
             self._update_display_pixmaps()
             self._set_view_mode("split")
@@ -874,6 +1062,12 @@ class MainWindow(QMainWindow):
         self._append_log("Pipeline completed.")
         self.run_button.setEnabled(self.pil_image is not None)
         self._set_export_enabled(self._all_steps_completed())
+        
+        # Enable feedback buttons if debug traces were generated
+        if self._all_steps_completed() and getattr(self.ap_result, "debug_dir", None):
+            self.feedback_wrap.show()
+            self.success_btn.setEnabled(True)
+            self.failure_btn.setEnabled(True)
 
     def _on_thread_cleaned(self) -> None:
         self.worker = None
@@ -953,13 +1147,16 @@ class MainWindow(QMainWindow):
         if self.affine_result is None:
             return pixmap
 
-        tx_px = pixmap.width() * (self.affine_result.translateX / 100.0)
-        ty_px = pixmap.height() * (self.affine_result.translateY / 100.0)
-        transform = QTransform()
-        transform.translate((pixmap.width() / 2.0) + tx_px, (pixmap.height() / 2.0) + ty_px)
-        transform.rotate(self.affine_result.rotation)
-        transform.translate(-pixmap.width() / 2.0, -pixmap.height() / 2.0)
-        return pixmap.transformed(transform, Qt.TransformationMode.SmoothTransformation)
+        out_w, out_h = self.affine_result.output_size
+        canvas = QPixmap(out_w, out_h)
+        canvas.fill(QColor(0, 0, 0, 0))
+
+        painter = QPainter(canvas)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+        painter.setTransform(affine_matrix_to_qtransform(self.affine_result.matrix))
+        painter.drawPixmap(0, 0, pixmap)
+        painter.end()
+        return canvas
 
     def _update_display_pixmaps(self) -> None:
         pixmap = self._transformed_pixmap()
@@ -981,7 +1178,7 @@ class MainWindow(QMainWindow):
         atlas_name = self._current_atlas_name()
         out_path, _ = QFileDialog.getSaveFileName(
             self,
-            "Export ABBA JSON",
+            "Export QUINT/ABBA JSON",
             "registration_abba.json",
             "JSON (*.json)",
         )
@@ -999,10 +1196,6 @@ class MainWindow(QMainWindow):
             atlas_shape = (528, 320, 456)
             atlas_resolution = (25.0, 25.0, 25.0)
 
-        rotation = self.affine_result.rotation if self.affine_result else 0.0
-        tx = self.affine_result.translateX if self.affine_result else 0.0
-        ty = self.affine_result.translateY if self.affine_result else 0.0
-
         quint_export = build_quint_export(
             filename=self.image_path,
             position_mm=self.current_pos or 0.0,
@@ -1011,14 +1204,14 @@ class MainWindow(QMainWindow):
             atlas_resolution=atlas_resolution,
             image_width=self.pil_image.width,
             image_height=self.pil_image.height,
-            rotation_deg=rotation,
-            translate_x_pct=tx,
-            translate_y_pct=ty,
+            affine_matrix=self.affine_result.matrix if self.affine_result else None,
+            output_width=self.affine_result.output_width if self.affine_result else None,
+            output_height=self.affine_result.output_height if self.affine_result else None,
         )
 
         try:
             save_quint_json(quint_export, out_path)
-            self._append_log(f"Exported ABBA JSON: {out_path}")
+            self._append_log(f"Exported QUINT/ABBA JSON: {out_path}")
         except Exception as exc:
             self._append_log(f"Export failed: {exc}")
 

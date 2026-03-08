@@ -12,12 +12,9 @@ import numpy as np
 from PIL import Image
 from google.genai.types import Tool, ToolCodeExecution
 
-from langslice.vlm.config import (
-    CODE_EXECUTION_ENABLED,
-    MODEL_NAME,
-    THINKING_LEVEL,
-    get_client,
-)
+from langslice.registration import AffineResult, estimate_affine_registration
+from langslice.vlm import config as vlm_config
+from langslice.vlm.config import get_client
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +31,7 @@ def _retry_generate(
     model: str,
     contents: object,
     config: object,
+    on_progress: Callable[[str], None] | None = None,
 ) -> Any:
     """Wrapper around client.models.generate_content with exponential backoff."""
     last_exc: Exception | None = None
@@ -49,10 +47,10 @@ def _retry_generate(
             if isinstance(status, int) and status in _RETRYABLE_STATUS_CODES:
                 if attempt < _MAX_RETRIES:
                     delay = _INITIAL_BACKOFF_S * (2 ** attempt)
-                    logger.warning(
-                        "Gemini API error (status %s), retrying in %.1fs (attempt %d/%d)",
-                        status, delay, attempt + 1, _MAX_RETRIES,
-                    )
+                    msg = f"Gemini API error (status {status}), retrying in {delay:.1f}s (attempt {attempt + 1}/{_MAX_RETRIES})"
+                    logger.warning(msg)
+                    if on_progress:
+                        on_progress(msg)
                     time.sleep(delay)
                     continue
             # Also retry on generic connection / timeout errors
@@ -60,13 +58,13 @@ def _retry_generate(
             if any(kw in exc_name for kw in ("timeout", "connection", "transport")):
                 if attempt < _MAX_RETRIES:
                     delay = _INITIAL_BACKOFF_S * (2 ** attempt)
-                    logger.warning(
-                        "Transient error (%s), retrying in %.1fs (attempt %d/%d)",
-                        type(exc).__name__, delay, attempt + 1, _MAX_RETRIES,
-                    )
+                    msg = f"Transient error ({type(exc).__name__}), retrying in {delay:.1f}s (attempt {attempt + 1}/{_MAX_RETRIES})"
+                    logger.warning(msg)
+                    if on_progress:
+                        on_progress(msg)
                     time.sleep(delay)
                     continue
-            # Non-retryable error — raise immediately
+            # Non-retryable error - raise immediately
             raise
     # Exhausted retries
     assert last_exc is not None
@@ -76,14 +74,7 @@ def _retry_generate(
 class APResult:
     position_mm: float
     reasoning: str
-
-
-@dataclass
-class AffineResult:
-    rotation: float
-    translateX: float
-    translateY: float
-    reasoning: str
+    debug_dir: str | None = None
 
 
 
@@ -112,7 +103,7 @@ def _normalize_image(image: Image.Image) -> Image.Image:
     """
     mode = image.mode
 
-    # Already 8-bit RGB — nothing to do.
+    # Already 8-bit RGB - nothing to do.
     if mode == "RGB":
         return image
 
@@ -127,7 +118,7 @@ def _normalize_image(image: Image.Image) -> Image.Image:
         gray8 = arr.astype(np.uint8)
         return Image.fromarray(gray8).convert("RGB")
 
-    # All other modes (L, LA, RGBA, P, PA, CMYK, …) — let PIL handle it.
+    # All other modes (L, LA, RGBA, P, PA, CMYK, etc.) - let PIL handle it.
     return image.convert("RGB")
 
 
@@ -150,11 +141,11 @@ def _contents_from_parts(parts: list[dict[str, object]]) -> list[dict[str, objec
 
 def _generation_config(schema: dict[str, object]) -> dict[str, object]:
     config: dict[str, object] = {
-        "thinking_config": {"thinking_level": THINKING_LEVEL},
+        "thinking_config": {"thinking_level": vlm_config.THINKING_LEVEL},
         "response_mime_type": "application/json",
         "response_json_schema": schema,
     }
-    if CODE_EXECUTION_ENABLED:
+    if vlm_config.CODE_EXECUTION_ENABLED:
         config["tools"] = [Tool(code_execution=ToolCodeExecution())]
     return config
 
@@ -244,6 +235,97 @@ def _image_to_bytes(img: Image.Image, fmt: str = "JPEG") -> bytes:
     return buf.getvalue()
 
 
+def _inline_data_size(part: object) -> int:
+    inline_data = getattr(part, "inline_data", None)
+    if inline_data is None:
+        return 0
+
+    data = getattr(inline_data, "data", None)
+    if isinstance(data, (bytes, bytearray)):
+        return len(data)
+    return 0
+
+
+def _history_metrics(contents: list[object]) -> dict[str, int]:
+    metrics = {
+        "content_count": len(contents),
+        "part_count": 0,
+        "text_parts": 0,
+        "function_call_parts": 0,
+        "function_response_parts": 0,
+        "image_parts": 0,
+        "image_bytes": 0,
+    }
+
+    for content in contents:
+        content_parts = getattr(content, "parts", None) or []
+        for part in content_parts:
+            metrics["part_count"] += 1
+            if getattr(part, "text", None):
+                metrics["text_parts"] += 1
+            if getattr(part, "function_call", None):
+                metrics["function_call_parts"] += 1
+            if getattr(part, "function_response", None):
+                metrics["function_response_parts"] += 1
+
+            blob_size = _inline_data_size(part)
+            if blob_size > 0:
+                metrics["image_parts"] += 1
+                metrics["image_bytes"] += blob_size
+
+    return metrics
+
+
+def _extract_usage_metadata(response: object) -> dict[str, int | float | str | bool]:
+    usage = getattr(response, "usage_metadata", None)
+    usage_fields = (
+        "prompt_token_count",
+        "candidates_token_count",
+        "total_token_count",
+        "thoughts_token_count",
+        "cached_content_token_count",
+        "tool_use_prompt_token_count",
+    )
+
+    metadata: dict[str, int | float | str | bool] = {}
+    if usage is None:
+        return metadata
+
+    for field in usage_fields:
+        value = getattr(usage, field, None)
+        if isinstance(value, (int, float, str, bool)):
+            metadata[field] = value
+
+    model_dump = getattr(usage, "model_dump", None)
+    if callable(model_dump):
+        dumped = model_dump()
+        if isinstance(dumped, dict):
+            dumped_dict = cast(dict[object, object], dumped)
+            for field in usage_fields:
+                value = dumped_dict.get(field)
+                if isinstance(value, (int, float, str, bool)):
+                    metadata[field] = value
+
+    return metadata
+
+
+def _format_usage_metadata(metadata: dict[str, int | float | str | bool]) -> str:
+    preferred_fields = (
+        "prompt_token_count",
+        "tool_use_prompt_token_count",
+        "thoughts_token_count",
+        "candidates_token_count",
+        "total_token_count",
+        "cached_content_token_count",
+    )
+    parts: list[str] = []
+    for field in preferred_fields:
+        value = metadata.get(field)
+        if value is not None:
+            parts.append(f"{field}={value}")
+    return ", ".join(parts) if parts else "usage metadata unavailable"
+
+
 def _get_regions_at_position(atlas: object, position_mm: float) -> list[str]:
     """Return brain region names visible at a given AP position."""
     from langslice.atlas.core import position_mm_to_index
@@ -281,7 +363,7 @@ def estimate_position(
     - get_region_names: see what brain regions exist at a position
     - submit_estimate: declare the final answer
 
-    Uses manual function calling so images can be injected alongside
+    Uses manual function calling so atlas images can be injected alongside
     tool responses. The model runs until it submits or hits max iterations.
 
     Set ``LANGSLICE_VLM_DEBUG_DIR`` to save all artifacts for review.
@@ -308,6 +390,17 @@ def estimate_position(
     target_prepared = _normalize_image(image)
     target_bytes = _image_to_bytes(target_prepared)
     target_h = target_prepared.height
+    target_info = {
+        "width": target_prepared.width,
+        "height": target_prepared.height,
+        "mode": target_prepared.mode,
+        "jpeg_bytes": len(target_bytes),
+    }
+    _progress(
+        "Target image prepared for Gemini: "
+        f"{target_prepared.width}x{target_prepared.height}px, "
+        f"mode={target_prepared.mode}, jpeg_bytes={len(target_bytes)}"
+    )
 
     # --- Debug artifact setup ---
     debug_dir: str | None = os.environ.get("LANGSLICE_VLM_DEBUG_DIR")
@@ -318,7 +411,7 @@ def estimate_position(
         run_dir = os.path.join(debug_dir, f"{timestamp}_{safe_atlas}")
         os.makedirs(run_dir, exist_ok=True)
         target_prepared.save(os.path.join(run_dir, "target.jpg"), quality=95)
-        _progress(f"Debug artifacts → {run_dir}")
+        _progress(f"Debug artifacts -> {run_dir}")
 
     # --- Tool declarations ---
     tool_declarations = types.Tool(function_declarations=[
@@ -416,19 +509,19 @@ def estimate_position(
     system_instruction = (
         "You are an expert neuroanatomist. You are given a histology brain slice image "
         "and must determine its Anterior-Posterior (AP) position within a reference atlas. "
-        "The coordinate system is: 0.0mm is the extreme Anterior edge (e.g. olfactory bulb), "
-        "while larger mm values move Posterior towards the cerebellum and brainstem. "
+        "The coordinate system is: 0.0 mm is the extreme anterior edge (e.g. olfactory bulb), "
+        "while larger mm values move posterior toward the cerebellum and brainstem. "
         "You have tools to fetch atlas reference images at any AP coordinate, query which "
-        "brain regions exist at a given position, and get atlas metadata. \n\n"
+        "brain regions exist at a given position, and get atlas metadata.\n\n"
         "RECOMMENDED STRATEGY:\n"
         "1. Coarse Sweep: Call `fetch_multiple_atlas_slices` with 4-5 widely spaced coordinates "
         "   (e.g., 2.0, 4.0, 6.0, 8.0) to instantly find the correct neighborhood.\n"
         "2. Finer Search: Identify the closest match, then call `fetch_multiple_atlas_slices` "
-        "   again around that match with tighter spacing (e.g., ±0.5mm).\n"
-        "3. Verification: Once narrowed down, check specific structural landmarks, or use "
+        "   again around that match with tighter spacing (e.g., +/-0.5 mm).\n"
+        "3. Verification: Once narrowed down, check specific structural landmarks or use "
         "   `get_region_names` to confirm anatomical identity.\n"
-        "4. Submit: Call `submit_estimate` ONLY when you are highly confident.\n\n"
-        "Don't guess blindly — use your tools to narrow down the answer methodically."
+        "4. Submit: Call `submit_estimate` only when you are highly confident.\n\n"
+        "Do not guess blindly; use the tools to narrow down the answer methodically."
     )
 
     # --- Initial user message with target image ---
@@ -440,7 +533,7 @@ def estimate_position(
         types.Content(role="user", parts=initial_parts),
     ]
 
-    thinking_level = getattr(types.ThinkingLevel, THINKING_LEVEL, None)
+    thinking_level = getattr(types.ThinkingLevel, vlm_config.THINKING_LEVEL, None)
     config = types.GenerateContentConfig(
         tools=[tool_declarations],
         automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
@@ -451,16 +544,38 @@ def estimate_position(
     max_iterations = 20
     estimate_result: dict[str, object] | None = None
     reasoning_log: list[dict[str, object]] = []
+    turn_metrics: list[dict[str, object]] = []
     images_fetched = 0
 
     _progress(f"Starting agentic estimation (max {max_iterations} tool calls)...")
 
     for iteration in range(max_iterations):
+        request_metrics = _history_metrics(cast(list[object], history))
+        _progress(
+            f"Turn {iteration + 1}: sending {request_metrics['content_count']} messages, "
+            f"{request_metrics['part_count']} parts, {request_metrics['image_parts']} images "
+            f"({request_metrics['image_bytes']} bytes)"
+        )
+        turn_started_at = time.perf_counter()
         response = _retry_generate(
             client,
-            model=MODEL_NAME,
+            model=vlm_config.MODEL_NAME,
             contents=history,
             config=config,
+            on_progress=_progress,
+        )
+        wall_time_s = time.perf_counter() - turn_started_at
+        usage_metadata = _extract_usage_metadata(response)
+        turn_metric = {
+            "iteration": iteration + 1,
+            "request": request_metrics,
+            "wall_time_s": round(wall_time_s, 3),
+            "usage_metadata": usage_metadata,
+        }
+        turn_metrics.append(turn_metric)
+        _progress(
+            f"Turn {iteration + 1} completed in {wall_time_s:.2f}s; "
+            f"{_format_usage_metadata(usage_metadata)}"
         )
 
         # Append model response to history
@@ -606,7 +721,7 @@ def estimate_position(
                     )
                 )
                 reasoning_log.append({"iteration": iteration + 1, "tool": name, "args": {}, "result": str(info)})
-                _progress(f"  → Atlas range: [{pos_lo:.2f}, {pos_hi:.2f}] mm")
+                _progress(f"  -> Atlas range: [{pos_lo:.2f}, {pos_hi:.2f}] mm")
 
             elif name == "get_region_names":
                 pos = float(args.get("position_mm", (pos_lo + pos_hi) / 2))
@@ -618,7 +733,7 @@ def estimate_position(
                     )
                 )
                 reasoning_log.append({"iteration": iteration + 1, "tool": name, "args": args, "result": f"{len(regions)} regions"})
-                _progress(f"  → {len(regions)} regions at {pos:.2f}mm")
+                _progress(f"  -> {len(regions)} regions at {pos:.2f}mm")
 
             elif name == "submit_estimate":
                 est_pos = float(args.get("position_mm", 0.0))
@@ -646,7 +761,7 @@ def estimate_position(
 
         # Append tool responses to history
         if tool_response_parts:
-            history.append(types.Content(role="tool", parts=tool_response_parts))
+            history.append(types.Content(role="user", parts=tool_response_parts))
 
     # --- Build final result ---
     final_pos: float
@@ -667,12 +782,29 @@ def estimate_position(
     if run_dir:
         reasoning_path = os.path.join(run_dir, "reasoning.txt")
         with open(reasoning_path, "w", encoding="utf-8") as f:
-            f.write(f"AP Estimation — {atlas_name} — {datetime.now().isoformat()}\n")
-            f.write(f"Model: {MODEL_NAME}\n")
+            f.write(f"AP Estimation - {atlas_name} - {datetime.now().isoformat()}\n")
+            f.write(f"Model: {vlm_config.MODEL_NAME}\n")
+            f.write(
+                "Target Image: "
+                f"{target_info['width']}x{target_info['height']} px, "
+                f"mode={target_info['mode']}, jpeg_bytes={target_info['jpeg_bytes']}\n"
+            )
             f.write("=" * 60 + "\n\n")
+            f.write("TURN TELEMETRY\n")
+            f.write("-" * 60 + "\n")
+            for turn in turn_metrics:
+                request = cast(dict[str, object], turn["request"])
+                usage = cast(dict[str, int | float | str | bool], turn["usage_metadata"])
+                f.write(
+                    f"Turn {turn['iteration']}: wall_time_s={turn['wall_time_s']}, "
+                    f"messages={request.get('content_count')}, parts={request.get('part_count')}, "
+                    f"images={request.get('image_parts')}, image_bytes={request.get('image_bytes')}\n"
+                )
+                f.write(f"    usage: {_format_usage_metadata(usage)}\n")
+            f.write("\n")
             for entry in reasoning_log:
                 f.write(f"[{entry['iteration']}] {entry['tool']}({entry.get('args', {})})\n")
-                f.write(f"    → {entry['result']}\n\n")
+                f.write(f"    -> {entry['result']}\n\n")
             f.write("=" * 60 + "\n")
             f.write(f"FINAL ESTIMATE: {final_pos:.2f} mm\n")
             if estimate_result:
@@ -693,18 +825,37 @@ def estimate_position(
                     if part.function_call:
                         f.write(f"  CALL: {part.function_call.name}({dict(part.function_call.args) if part.function_call.args else {}})\n")
                     if part.function_response:
-                        f.write(f"  RESPONSE: {part.function_response.name} → {part.function_response.response}\n")
+                        f.write(f"  RESPONSE: {part.function_response.name} -> {part.function_response.response}\n")
                     if part.inline_data:
                         blob_data = part.inline_data.data
                         data_len = len(blob_data) if isinstance(blob_data, (bytes, bytearray)) else 0
                         f.write(f"  IMAGE: {part.inline_data.mime_type} ({data_len} bytes)\n")
                 f.write("\n")
 
-        _progress(f"Reasoning log saved → {reasoning_path}")
+        telemetry_path = os.path.join(run_dir, "telemetry.json")
+        with open(telemetry_path, "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "model": vlm_config.MODEL_NAME,
+                    "atlas_name": atlas_name,
+                    "target_image": target_info,
+                    "max_iterations": max_iterations,
+                    "images_fetched": images_fetched,
+                    "turns": turn_metrics,
+                    "final_estimate_mm": final_pos,
+                    "final_reasoning": final_reasoning,
+                },
+                f,
+                indent=2,
+            )
+
+        _progress(f"Reasoning log saved -> {reasoning_path}")
+        _progress(f"Telemetry saved -> {telemetry_path}")
 
     return APResult(
         position_mm=final_pos,
         reasoning=final_reasoning,
+        debug_dir=run_dir,
     )
 
 
@@ -769,7 +920,7 @@ def _build_matched_composite(
     return composite
 
 
-def estimate_affine(
+def _estimate_affine_vlm_fallback(
     image: Image.Image,
     on_progress: Callable[[str], None] | None = None,
     atlas_name: str | None = None,
@@ -777,16 +928,15 @@ def estimate_affine(
     pixel_size_um: float | None = None,
 ) -> AffineResult:
     """
-    Estimate 2D affine transformation to center and align a brain slice.
+    Estimate 2D affine transformation with the Gemini fallback path.
 
     When *atlas_name* and *position_mm* are provided the function constructs
     a side-by-side composite (slice + atlas at matched pixel dimensions) and
     sends it to the VLM, giving the model accurate visual context.
 
-    *pixel_size_um* is accepted but ignored — atlas scaling is now purely
-    visual (pixel-dimension matched), not physical.
-
-    Returns rotation (degrees), translateX and translateY (% of image size).
+    *pixel_size_um* is accepted but ignored because this fallback remains a
+    visually matched registration prompt rather than a physically calibrated
+    transform estimate.
     """
 
     def _progress(msg: str) -> None:
@@ -813,7 +963,7 @@ def estimate_affine(
     # Assemble prompt parts
     parts: list[dict[str, object]]
     if composite_b64 is not None:
-        _progress("Estimating affine transformation (with atlas context)...")
+        _progress("Estimating affine transformation with Gemini fallback (with atlas context)...")
         prompt_text = (
             "Using both images, estimate the 2D affine transformation "
             "(rotation in degrees, translateX and translateY as percentages of image size) "
@@ -821,7 +971,7 @@ def estimate_affine(
             "The atlas reference shows the expected upright coronal orientation. "
             "Compare the tissue outline and internal structures to determine rotation and offset. "
         )
-        if CODE_EXECUTION_ENABLED:
+        if vlm_config.CODE_EXECUTION_ENABLED:
             prompt_text += (
                 "You may actively inspect the images using Python code. For example, "
                 "you can write code to measure the angle of the midline or detect the center "
@@ -839,14 +989,14 @@ def estimate_affine(
             _part_text(prompt_text),
         ]
     else:
-        _progress("Estimating affine transformation...")
+        _progress("Estimating affine transformation with Gemini fallback...")
         prompt_text = (
             "Analyze this brain slice image. Estimate the 2D affine transformation "
             "(rotation in degrees, translateX and translateY as percentages of image size) "
             "needed to center and align it upright. Assume the image might be slightly tilted "
             "or off-center. "
         )
-        if CODE_EXECUTION_ENABLED:
+        if vlm_config.CODE_EXECUTION_ENABLED:
             prompt_text += (
                 "You may use Python code to analyze the image properties, such as finding the "
                 "center of mass or detecting the main axis of the tissue, to inform your estimates."
@@ -858,7 +1008,7 @@ def estimate_affine(
 
     response = _retry_generate(
         client,
-        model=MODEL_NAME,
+        model=vlm_config.MODEL_NAME,
         contents=_contents_from_parts(parts),
         config=_generation_config(
             {
@@ -884,6 +1034,7 @@ def estimate_affine(
                 "required": ["rotation", "translateX", "translateY", "reasoning"],
             }
         ),
+        on_progress=_progress,
     )
 
     result = _extract_result(response)
@@ -892,11 +1043,42 @@ def estimate_affine(
     translate_y = _to_float(result.get("translateY"), 0.0)
     reasoning = _to_str(result.get("reasoning"), "N/A")
 
-    _progress(f"Affine estimated: rot={rotation} deg, tx={translate_x}%, ty={translate_y}%")
+    _progress(
+        "Gemini fallback affine estimated: "
+        f"rot={rotation} deg, tx={translate_x}%, ty={translate_y}%"
+    )
 
-    return AffineResult(
-        rotation=rotation,
-        translateX=translate_x,
-        translateY=translate_y,
+    return AffineResult.from_legacy_params(
+        image_width=target_prepared.width,
+        image_height=target_prepared.height,
+        rotation_deg=rotation,
+        translate_x_pct=translate_x,
+        translate_y_pct=translate_y,
+        backend="vlm_fallback",
         reasoning=reasoning,
+        provenance={
+            "legacy_rotation_deg": rotation,
+            "legacy_translate_x_pct": translate_x,
+            "legacy_translate_y_pct": translate_y,
+            "atlas_context_used": composite_b64 is not None,
+        },
+    )
+
+
+def estimate_affine(
+    image: Image.Image,
+    on_progress: Callable[[str], None] | None = None,
+    atlas_name: str | None = None,
+    position_mm: float | None = None,
+    pixel_size_um: float | None = None,
+) -> AffineResult:
+    """Estimate an in-plane affine transform with ANTsPyX primary and Gemini fallback."""
+
+    return estimate_affine_registration(
+        image=image,
+        on_progress=on_progress,
+        atlas_name=atlas_name,
+        position_mm=position_mm,
+        pixel_size_um=pixel_size_um,
+        fallback=_estimate_affine_vlm_fallback,
     )
