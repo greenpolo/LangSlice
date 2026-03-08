@@ -1,4 +1,4 @@
-"""LangSlice Atlas module — BrainGlobe atlas access as plain Python functions."""
+"""LangSlice Atlas module - BrainGlobe atlas access as plain Python functions."""
 
 from langslice.atlas.core import (
     canonicalize_atlas_name,

@@ -2,7 +2,7 @@
 
 Renders both the histology slice and atlas reference in the same scene,
 scaling the atlas so its height matches the slice pixmap height.  This gives
-a visually comparable, though not physically exact, overlay that works
+a visually comparable, but not physically calibrated, overlay that works
 regardless of the original image resolution or atlas voxel size.
 """
 

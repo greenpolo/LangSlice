@@ -1,7 +1,6 @@
 """Dark theme stylesheet for LangSlice PySide6 GUI.
-
-Ported from src/index.css — #0a0a0a background, #6366f1 indigo accent,
-glass panels with translucent backgrounds and subtle borders.
+Ported from src/index.css with a #0a0a0a background, #6366f1 indigo accent,
+and glass panels with translucent backgrounds and subtle borders.
 """
 
 # ---------------------------------------------------------------------------
@@ -21,7 +20,7 @@ SUCCESS = "#22c55e"
 WARNING = "#eab308"
 ERROR = "#ef4444"
 
-# Font families — Inter for UI, JetBrains Mono for data
+# Font families - Inter for UI, JetBrains Mono for data
 FONT_SANS = '"Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif'
 FONT_MONO = '"JetBrains Mono", "Cascadia Code", "Consolas", monospace'
 

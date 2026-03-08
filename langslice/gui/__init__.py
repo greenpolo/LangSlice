@@ -1,4 +1,4 @@
-"""LangSlice GUI module — PySide6 desktop application."""
+"""LangSlice GUI module - PySide6 desktop application."""
 
 
 def launch():
