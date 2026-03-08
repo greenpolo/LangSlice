@@ -1,80 +1,103 @@
+"""Script-style checks for matrix-first QUINT export math."""
+
 import numpy as np
 
-def generate_quicknii_anchors(
-    atlas_y: float,               # AP position (sagittal depth in Allen) -> This maps to Allen Y or Allen Z depending on axis
-    rotation_deg: float, 
-    translate_x: float,           # 2D translation 
-    translate_y: float,           # 2D translation
-    scale_x: float,               # Image to atlas scale
-    scale_y: float,               # Image to atlas scale
-    image_width: int,
-    image_height: int,
-    atlas="AMBA"
-):
-    """
-    Generate [ox, oy, oz, ux, uy, uz, vx, vy, vz] QuickNII anchoring.
-    Assuming Coronal sections (Constant AP axis).
-    
-    In ABBA/QuickNII for Allen Mouse Brain:
-    X = Left-Right
-    Y = Superior-Inferior (Dorso-Ventral)
-    Z = Anterior-Posterior
-    
-    Let's test this mapping.
-    """
-    
-    # 1. Base 2D corners of the image (in slice pixels)
-    # Origin: [0, 0]
-    # Top-Right: [image_width, 0]
-    # Bottom-Left: [0, image_height]
-    
-    # 2. Apply Scale
-    o_2d = np.array([0.0, 0.0])
-    u_2d = np.array([image_width * scale_x, 0.0])
-    v_2d = np.array([0.0, image_height * scale_y])
-    
-    # 3. Apply Rotation
-    theta = np.radians(rotation_deg)
-    cos_t = np.cos(theta)
-    sin_t = np.sin(theta)
-    rot_matrix = np.array([
-        [cos_t, -sin_t],
-        [sin_t,  cos_t]
-    ])
-    
-    # We rotate the vectors, not the points (since u and v are vectors from origin)
-    u_2d = np.dot(rot_matrix, u_2d)
-    v_2d = np.dot(rot_matrix, v_2d)
-    
-    # 4. Apply Translation to the origin
-    o_2d += np.array([translate_x, translate_y])
-    
-    # 5. Map to 3D Atlas Coordinates (Allen CCF)
-    # If cutting Coronal slices, AP (Z-axis) is constant.
-    # U vector is primarily along X (Left-Right)
-    # V vector is primarily along Y (Superior-Inferior)
-    
-    ox = o_2d[0]
-    oy = o_2d[1]
-    oz = atlas_y 
-    
-    ux = u_2d[0]
-    uy = u_2d[1]
-    uz = 0.0 # No Z component for pure coronal slices
-    
-    vx = v_2d[0]
-    vy = v_2d[1]
-    vz = 0.0 # No Z component for pure coronal slices
-    
-    return [ox, oy, oz, ux, uy, uz, vx, vy, vz]
+from langslice.export import compute_anchoring
+from langslice.registration import AffineResult, affine_matrix_from_legacy_params
 
-print(generate_quicknii_anchors(
-    atlas_y=250.0,
+ATLAS_SHAPE = (528, 320, 456)
+ATLAS_RESOLUTION = (25.0, 25.0, 25.0)
+IMAGE_WIDTH = 1024
+IMAGE_HEIGHT = 670
+
+
+def _anchoring_array(anchoring: object) -> np.ndarray:
+    return np.asarray(getattr(anchoring, "to_list")(), dtype=np.float64)
+
+
+identity_anchoring = compute_anchoring(
+    position_mm=1.0,
+    atlas_shape=ATLAS_SHAPE,
+    atlas_resolution=ATLAS_RESOLUTION,
+    image_width=IMAGE_WIDTH,
+    image_height=IMAGE_HEIGHT,
+)
+identity_matrix_anchoring = compute_anchoring(
+    position_mm=1.0,
+    atlas_shape=ATLAS_SHAPE,
+    atlas_resolution=ATLAS_RESOLUTION,
+    image_width=IMAGE_WIDTH,
+    image_height=IMAGE_HEIGHT,
+    affine_matrix=np.eye(3, dtype=np.float64),
+)
+assert np.allclose(
+    _anchoring_array(identity_anchoring),
+    _anchoring_array(identity_matrix_anchoring),
+)
+
+legacy_matrix = affine_matrix_from_legacy_params(
+    image_width=IMAGE_WIDTH,
+    image_height=IMAGE_HEIGHT,
     rotation_deg=5.0,
-    translate_x=10.0,
-    translate_y=-5.0,
-    scale_x=0.025, # say 25um per pixel
-    scale_y=0.025,
+    translate_x_pct=1.0,
+    translate_y_pct=-0.5,
+)
+legacy_param_anchoring = compute_anchoring(
+    position_mm=1.0,
+    atlas_shape=ATLAS_SHAPE,
+    atlas_resolution=ATLAS_RESOLUTION,
+    image_width=IMAGE_WIDTH,
+    image_height=IMAGE_HEIGHT,
+    rotation_deg=5.0,
+    translate_x_pct=1.0,
+    translate_y_pct=-0.5,
+)
+matrix_anchoring = compute_anchoring(
+    position_mm=1.0,
+    atlas_shape=ATLAS_SHAPE,
+    atlas_resolution=ATLAS_RESOLUTION,
+    image_width=IMAGE_WIDTH,
+    image_height=IMAGE_HEIGHT,
+    affine_matrix=legacy_matrix,
+)
+assert np.allclose(
+    _anchoring_array(legacy_param_anchoring),
+    _anchoring_array(matrix_anchoring),
+)
+
+similarity_matrix = np.array(
+    [[1.08, -0.12, 14.0], [0.12, 1.08, -9.0], [0.0, 0.0, 1.0]],
+    dtype=np.float64,
+)
+similarity_result = AffineResult(
+    matrix=similarity_matrix,
+    source_size=(1000, 800),
+    output_size=(900, 700),
+    backend="test",
+    reasoning="synthetic",
+)
+expected_scale = float(np.hypot(1.08, 0.12))
+assert abs(similarity_result.rotation_deg - 6.3401917) < 1e-3
+assert abs(similarity_result.scale[0] - expected_scale) < 1e-6
+assert abs(similarity_result.scale[1] - expected_scale) < 1e-6
+
+shear_matrix = np.array(
+    [[1.0, 0.35, 8.0], [0.0, 0.85, -6.0], [0.0, 0.0, 1.0]],
+    dtype=np.float64,
+)
+shear_anchoring = compute_anchoring(
+    position_mm=1.0,
+    atlas_shape=ATLAS_SHAPE,
+    atlas_resolution=ATLAS_RESOLUTION,
     image_width=1000,
-    image_height=800
-))
+    image_height=800,
+    affine_matrix=shear_matrix,
+    output_width=900,
+    output_height=700,
+)
+u_norm = float(np.linalg.norm([shear_anchoring.ux, shear_anchoring.uy, shear_anchoring.uz]))
+v_norm = float(np.linalg.norm([shear_anchoring.vx, shear_anchoring.vy, shear_anchoring.vz]))
+assert abs(shear_anchoring.vx) > 1e-6
+assert abs(u_norm - v_norm) > 1.0
+
+print("Matrix-first QUINT math OK")

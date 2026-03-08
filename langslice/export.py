@@ -5,26 +5,26 @@ how a 2-D section image maps into a 3-D atlas reference volume:
 
     atlas_point = o + u * (px / W) + v * (py / H)
 
-where ``(px, py)`` are pixel coordinates in the section image of size ``W × H``,
-``o`` is the top-left corner in atlas *voxel* space, and ``u`` / ``v`` are direction
-vectors pointing toward the top-right and bottom-left corners respectively.
+where ``(px, py)`` are pixel coordinates in the section image of size ``W x H``,
+``o`` is the top-left corner in atlas voxel space, and ``u`` / ``v`` are
+direction vectors pointing toward the top-right and bottom-left corners.
 
-For coronal sections the mapping in the Allen Mouse Brain Atlas (CCFv3, 25 µm)
-coordinate system used by QuickNII / DeepSlice is:
+For coronal sections in the Allen Mouse Brain Atlas (CCFv3, 25 um):
 
-    QuickNII x  ↔  atlas ML axis  (size 456)
-    QuickNII y  ↔  atlas AP axis  (size 528)
-    QuickNII z  ↔  atlas DV axis  (size 320)
+    QuickNII x  <->  atlas ML axis  (size 456)
+    QuickNII y  <->  atlas AP axis  (size 528)
+    QuickNII z  <->  atlas DV axis  (size 320)
 
 This module is atlas-agnostic: it reads axis sizes and resolution from any
-BrainGlobe atlas and builds a correct anchoring vector for coronal cuts.
+BrainGlobe atlas and builds a coronal anchoring vector in atlas voxel space.
+The canonical path accepts a full 3x3 affine matrix that maps source-image
+pixels into a chosen coronal output frame.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import math
 import os
 from dataclasses import dataclass, field
 from typing import Any, Sequence
@@ -32,21 +32,26 @@ from typing import Any, Sequence
 import numpy as np
 
 from langslice import __version__
+from langslice.registration import (
+    affine_matrix_from_legacy_params,
+    apply_affine_to_points,
+    coerce_affine_matrix,
+)
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Atlas ↔ QuickNII axis mapping
+# Atlas <-> QuickNII axis mapping
 # ---------------------------------------------------------------------------
 # BrainGlobe atlases are stored in ASR orientation:
-#   axis-0 = Anterior → Posterior  (AP)
-#   axis-1 = Superior → Inferior   (DV)
-#   axis-2 = Left → Right          (ML)
+#   axis-0 = Anterior -> Posterior  (AP)
+#   axis-1 = Superior -> Inferior   (DV)
+#   axis-2 = Left -> Right          (ML)
 #
 # QuickNII uses a different axis order:
 #   x = ML,  y = AP,  z = DV
 #
-# We map:  BG axis-0 → QN y,  BG axis-1 → QN z,  BG axis-2 → QN x
+# We map: BG axis-0 -> QN y, BG axis-1 -> QN z, BG axis-2 -> QN x
 
 _KNOWN_TARGETS: dict[str, str] = {
     "allen_mouse_25um": "ABA_Mouse_CCFv3_2017_25um.cutlas",
@@ -79,7 +84,17 @@ class AnchoringVector:
     vz: float
 
     def to_list(self) -> list[float]:
-        return [self.ox, self.oy, self.oz, self.ux, self.uy, self.uz, self.vx, self.vy, self.vz]
+        return [
+            self.ox,
+            self.oy,
+            self.oz,
+            self.ux,
+            self.uy,
+            self.uz,
+            self.vx,
+            self.vy,
+            self.vz,
+        ]
 
 
 @dataclass
@@ -113,7 +128,6 @@ def _resolve_target(atlas_name: str) -> str:
     """Map a BrainGlobe atlas name to a ``.cutlas`` target identifier."""
     if atlas_name in _KNOWN_TARGETS:
         return _KNOWN_TARGETS[atlas_name]
-    # Fallback: construct a reasonable target string
     return f"{atlas_name}.cutlas"
 
 
@@ -123,6 +137,9 @@ def compute_anchoring(
     atlas_resolution: Sequence[float],
     image_width: int,
     image_height: int,
+    affine_matrix: Sequence[Sequence[float]] | np.ndarray | None = None,
+    output_width: int | None = None,
+    output_height: int | None = None,
     rotation_deg: float = 0.0,
     translate_x_pct: float = 0.0,
     translate_y_pct: float = 0.0,
@@ -136,40 +153,58 @@ def compute_anchoring(
     atlas_shape : (n_ap, n_dv, n_ml)
         Number of voxels along each BrainGlobe axis.
     atlas_resolution : (res_ap, res_dv, res_ml)
-        Voxel resolution in **micrometers**.
+        Voxel resolution in micrometers.
     image_width, image_height : int
-        Pixel dimensions of the section image.
+        Pixel dimensions of the source section image.
+    affine_matrix : array-like of shape (3, 3), optional
+        Homogeneous transform mapping source-image pixels into the output frame.
+        When omitted, the legacy rotation/translation parameters are converted
+        into a matrix for backward compatibility.
+    output_width, output_height : int, optional
+        Pixel dimensions of the output frame. Defaults to the source image size.
     rotation_deg : float
-        In-plane rotation in degrees (clockwise positive).
+        Legacy in-plane rotation in degrees. Used only when *affine_matrix* is
+        omitted.
     translate_x_pct, translate_y_pct : float
-        Translation as percentage of image size (−50 to 50).
+        Legacy translation as percentage of image size. Used only when
+        *affine_matrix* is omitted.
     """
-    n_ap, n_dv, n_ml = int(atlas_shape[0]), int(atlas_shape[1]), int(atlas_shape[2])
+    if image_width <= 0 or image_height <= 0:
+        raise ValueError("image_width and image_height must be positive")
 
-    # --- Convert physical position mm → voxel index (BG axis-0) ---
+    frame_width = int(output_width or image_width)
+    frame_height = int(output_height or image_height)
+    if frame_width <= 0 or frame_height <= 0:
+        raise ValueError("output_width and output_height must be positive")
+
+    matrix = coerce_affine_matrix(
+        affine_matrix
+        if affine_matrix is not None
+        else affine_matrix_from_legacy_params(
+            image_width=image_width,
+            image_height=image_height,
+            rotation_deg=rotation_deg,
+            translate_x_pct=translate_x_pct,
+            translate_y_pct=translate_y_pct,
+        )
+    )
+
+    n_dv, n_ml = int(atlas_shape[1]), int(atlas_shape[2])
+
+    # Convert physical position mm -> voxel index (BG axis-0).
     res_ap_mm = float(atlas_resolution[0]) / 1000.0
-    ap_voxel = position_mm / res_ap_mm  # keep as float for smooth positioning
+    ap_voxel = position_mm / res_ap_mm
 
-    # --- Determine image → atlas scale ---
-    # We want the atlas coronal slice to be centered and *fit* within the
-    # image bounds.  The section image typically includes background around
-    # the brain, so we scale the atlas to occupy ~90 % of the smaller
-    # dimension to leave a border, matching DeepSlice conventions.
-    #
-    # u spans image width  → atlas ML axis (QN x)
-    # v spans image height → atlas DV axis (QN z)
-    padding_factor = 1.1  # atlas slice occupies ~90% of image → vectors 10% larger
+    # Determine image -> atlas scale.
+    # The atlas slice is centered and fit within the image bounds with a
+    # small border so the section does not fill the full frame.
+    padding_factor = 1.1
+    u_mag = n_ml * padding_factor
+    v_mag = n_dv * padding_factor
 
-    u_mag = n_ml * padding_factor  # voxels spanned across image width
-    v_mag = n_dv * padding_factor  # voxels spanned across image height
-
-    # --- Compute un-rotated origin ---
-    # For a centred, upright coronal section:
-    #   o  = top-left   →  (+x, y_ap, +z) = (ML_high, ap_voxel, DV_high)
-    #   u  = rightward  →  (-u_mag, 0, 0)         [image x → decreasing ML]
-    #   v  = downward   →  (0, 0, -v_mag)          [image y → decreasing DV]
-    center_x = n_ml / 2.0  # ML centre
-    center_z = n_dv / 2.0  # DV centre
+    # Compute unrotated origin and basis vectors for an upright coronal slice.
+    center_x = n_ml / 2.0
+    center_z = n_dv / 2.0
 
     ox0 = center_x + u_mag / 2.0
     oz0 = center_z + v_mag / 2.0
@@ -179,44 +214,44 @@ def compute_anchoring(
     vx0 = 0.0
     vz0 = -v_mag
 
-    # --- Apply in-plane rotation ---
-    theta = math.radians(rotation_deg)
-    cos_t = math.cos(theta)
-    sin_t = math.sin(theta)
+    ox = center_x - (ux0 * 0.5 + vx0 * 0.5)
+    oz = center_z - (uz0 * 0.5 + vz0 * 0.5)
 
-    # Rotate u and v around the image centre (the origin shifts accordingly)
-    ux = ux0 * cos_t - uz0 * sin_t
-    uz = ux0 * sin_t + uz0 * cos_t
-    vx = vx0 * cos_t - vz0 * sin_t
-    vz = vx0 * sin_t + vz0 * cos_t
+    def frame_to_atlas(point_px: np.ndarray) -> np.ndarray:
+        px, py = float(point_px[0]), float(point_px[1])
+        return np.array(
+            [
+                ox + (ux0 * (px / frame_width)) + (vx0 * (py / frame_height)),
+                ap_voxel,
+                oz + (uz0 * (px / frame_width)) + (vz0 * (py / frame_height)),
+            ],
+            dtype=np.float64,
+        )
 
-    # Recompute origin so that the centre of the image still maps to atlas centre
-    # Centre in atlas space = o + u*0.5 + v*0.5
-    ox = center_x - (ux * 0.5 + vx * 0.5)
-    oz = center_z - (uz * 0.5 + vz * 0.5)
+    transformed_corners = apply_affine_to_points(
+        matrix,
+        [
+            (0.0, 0.0),
+            (float(image_width), 0.0),
+            (0.0, float(image_height)),
+        ],
+    )
+    atlas_origin = frame_to_atlas(transformed_corners[0])
+    atlas_top_right = frame_to_atlas(transformed_corners[1])
+    atlas_bottom_left = frame_to_atlas(transformed_corners[2])
+    u_vec = atlas_top_right - atlas_origin
+    v_vec = atlas_bottom_left - atlas_origin
 
-    # --- Apply translation ---
-    # translate_x_pct and translate_y_pct shift the image relative to the atlas.
-    # Positive translate_x → image moves right → atlas appears shifted left → origin shifts in +x
-    tx_vox = (translate_x_pct / 100.0) * u_mag
-    tz_vox = (translate_y_pct / 100.0) * v_mag
-    ox += tx_vox
-    oz += tz_vox
-
-    # --- Assemble ---
-    # For a coronal section the y-components (AP axis) are essentially zero for
-    # u and v (the cut plane is perpendicular to AP), and the origin y is the
-    # AP voxel position.
     return AnchoringVector(
-        ox=round(ox, 6),
-        oy=round(ap_voxel, 6),
-        oz=round(oz, 6),
-        ux=round(ux, 6),
-        uy=0.0,
-        uz=round(uz, 6),
-        vx=round(vx, 6),
-        vy=0.0,
-        vz=round(vz, 6),
+        ox=round(float(atlas_origin[0]), 6),
+        oy=round(float(atlas_origin[1]), 6),
+        oz=round(float(atlas_origin[2]), 6),
+        ux=round(float(u_vec[0]), 6),
+        uy=round(float(u_vec[1]), 6),
+        uz=round(float(u_vec[2]), 6),
+        vx=round(float(v_vec[0]), 6),
+        vy=round(float(v_vec[1]), 6),
+        vz=round(float(v_vec[2]), 6),
     )
 
 
@@ -233,6 +268,9 @@ def build_quint_export(
     atlas_resolution: Sequence[float],
     image_width: int,
     image_height: int,
+    affine_matrix: Sequence[Sequence[float]] | np.ndarray | None = None,
+    output_width: int | None = None,
+    output_height: int | None = None,
     rotation_deg: float = 0.0,
     translate_x_pct: float = 0.0,
     translate_y_pct: float = 0.0,
@@ -245,6 +283,9 @@ def build_quint_export(
         atlas_resolution=atlas_resolution,
         image_width=image_width,
         image_height=image_height,
+        affine_matrix=affine_matrix,
+        output_width=output_width,
+        output_height=output_height,
         rotation_deg=rotation_deg,
         translate_x_pct=translate_x_pct,
         translate_y_pct=translate_y_pct,
