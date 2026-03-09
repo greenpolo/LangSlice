@@ -2,7 +2,11 @@
 
 import numpy as np
 
-from langslice.export import compute_anchoring
+from langslice.export import (
+    CORONAL_FRAME_PADDING_FACTOR,
+    compute_anchoring,
+    compute_coronal_frame_geometry,
+)
 from langslice.registration import AffineResult, affine_matrix_from_legacy_params
 
 ATLAS_SHAPE = (528, 320, 456)
@@ -33,6 +37,44 @@ identity_matrix_anchoring = compute_anchoring(
 assert np.allclose(
     _anchoring_array(identity_anchoring),
     _anchoring_array(identity_matrix_anchoring),
+)
+
+identity_geometry = compute_coronal_frame_geometry(
+    atlas_shape=ATLAS_SHAPE,
+    frame_width=IMAGE_WIDTH,
+    frame_height=IMAGE_HEIGHT,
+)
+assert abs(identity_geometry.atlas_width_px - (IMAGE_WIDTH / CORONAL_FRAME_PADDING_FACTOR)) < 1e-9
+assert abs(identity_geometry.atlas_height_px - (IMAGE_HEIGHT / CORONAL_FRAME_PADDING_FACTOR)) < 1e-9
+
+identity_origin = np.array(
+    [identity_anchoring.ox, identity_anchoring.oy, identity_anchoring.oz],
+    dtype=np.float64,
+)
+identity_top_right = identity_geometry.frame_to_atlas(
+    px=float(IMAGE_WIDTH),
+    py=0.0,
+    ap_voxel=identity_anchoring.oy,
+)
+identity_bottom_left = identity_geometry.frame_to_atlas(
+    px=0.0,
+    py=float(IMAGE_HEIGHT),
+    ap_voxel=identity_anchoring.oy,
+)
+assert np.allclose(
+    identity_geometry.frame_to_atlas(px=0.0, py=0.0, ap_voxel=identity_anchoring.oy),
+    identity_origin,
+    atol=1e-6,
+)
+assert np.allclose(
+    identity_top_right - identity_origin,
+    np.array([identity_anchoring.ux, identity_anchoring.uy, identity_anchoring.uz], dtype=np.float64),
+    atol=1e-6,
+)
+assert np.allclose(
+    identity_bottom_left - identity_origin,
+    np.array([identity_anchoring.vx, identity_anchoring.vy, identity_anchoring.vz], dtype=np.float64),
+    atol=1e-6,
 )
 
 legacy_matrix = affine_matrix_from_legacy_params(

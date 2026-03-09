@@ -63,6 +63,8 @@ _KNOWN_TARGETS: dict[str, str] = {
     "kim_unified_25um": "Kim_UnifiedMouse_v1_25um.cutlas",
 }
 
+CORONAL_FRAME_PADDING_FACTOR = 1.1
+
 
 # ---------------------------------------------------------------------------
 # Data classes
@@ -95,6 +97,87 @@ class AnchoringVector:
             self.vy,
             self.vz,
         ]
+
+
+@dataclass(frozen=True)
+class CoronalFrameGeometry:
+    """Coronal frame geometry shared by export and calibrated previews."""
+
+    frame_width: int
+    frame_height: int
+    atlas_left_px: float
+    atlas_top_px: float
+    atlas_width_px: float
+    atlas_height_px: float
+    origin_x: float
+    origin_z: float
+    u_x: float
+    u_z: float
+    v_x: float
+    v_z: float
+
+    def frame_to_atlas(self, px: float, py: float, ap_voxel: float) -> np.ndarray:
+        """Map a frame pixel position to atlas voxel coordinates."""
+        return np.array(
+            [
+                self.origin_x + (self.u_x * (px / self.frame_width)) + (self.v_x * (py / self.frame_height)),
+                ap_voxel,
+                self.origin_z + (self.u_z * (px / self.frame_width)) + (self.v_z * (py / self.frame_height)),
+            ],
+            dtype=np.float64,
+        )
+
+
+def compute_coronal_frame_geometry(
+    atlas_shape: Sequence[int],
+    frame_width: int,
+    frame_height: int,
+    padding_factor: float = CORONAL_FRAME_PADDING_FACTOR,
+) -> CoronalFrameGeometry:
+    """Compute coronal frame geometry used by QUINT/ABBA anchoring math."""
+    if frame_width <= 0 or frame_height <= 0:
+        raise ValueError("frame_width and frame_height must be positive")
+    if padding_factor <= 0.0:
+        raise ValueError("padding_factor must be positive")
+
+    n_dv = int(atlas_shape[1])
+    n_ml = int(atlas_shape[2])
+    if n_dv <= 0 or n_ml <= 0:
+        raise ValueError("atlas_shape must contain positive DV/ML dimensions")
+
+    u_mag = n_ml * padding_factor
+    v_mag = n_dv * padding_factor
+
+    center_x = n_ml / 2.0
+    center_z = n_dv / 2.0
+
+    u_x = -u_mag
+    u_z = 0.0
+    v_x = 0.0
+    v_z = -v_mag
+
+    origin_x = center_x - (u_x * 0.5 + v_x * 0.5)
+    origin_z = center_z - (u_z * 0.5 + v_z * 0.5)
+
+    atlas_width_px = frame_width / padding_factor
+    atlas_height_px = frame_height / padding_factor
+    atlas_left_px = (frame_width - atlas_width_px) / 2.0
+    atlas_top_px = (frame_height - atlas_height_px) / 2.0
+
+    return CoronalFrameGeometry(
+        frame_width=frame_width,
+        frame_height=frame_height,
+        atlas_left_px=atlas_left_px,
+        atlas_top_px=atlas_top_px,
+        atlas_width_px=atlas_width_px,
+        atlas_height_px=atlas_height_px,
+        origin_x=origin_x,
+        origin_z=origin_z,
+        u_x=u_x,
+        u_z=u_z,
+        v_x=v_x,
+        v_z=v_z,
+    )
 
 
 @dataclass
@@ -189,44 +272,14 @@ def compute_anchoring(
         )
     )
 
-    n_dv, n_ml = int(atlas_shape[1]), int(atlas_shape[2])
-
     # Convert physical position mm -> voxel index (BG axis-0).
     res_ap_mm = float(atlas_resolution[0]) / 1000.0
     ap_voxel = position_mm / res_ap_mm
-
-    # Determine image -> atlas scale.
-    # The atlas slice is centered and fit within the image bounds with a
-    # small border so the section does not fill the full frame.
-    padding_factor = 1.1
-    u_mag = n_ml * padding_factor
-    v_mag = n_dv * padding_factor
-
-    # Compute unrotated origin and basis vectors for an upright coronal slice.
-    center_x = n_ml / 2.0
-    center_z = n_dv / 2.0
-
-    ox0 = center_x + u_mag / 2.0
-    oz0 = center_z + v_mag / 2.0
-
-    ux0 = -u_mag
-    uz0 = 0.0
-    vx0 = 0.0
-    vz0 = -v_mag
-
-    ox = center_x - (ux0 * 0.5 + vx0 * 0.5)
-    oz = center_z - (uz0 * 0.5 + vz0 * 0.5)
-
-    def frame_to_atlas(point_px: np.ndarray) -> np.ndarray:
-        px, py = float(point_px[0]), float(point_px[1])
-        return np.array(
-            [
-                ox + (ux0 * (px / frame_width)) + (vx0 * (py / frame_height)),
-                ap_voxel,
-                oz + (uz0 * (px / frame_width)) + (vz0 * (py / frame_height)),
-            ],
-            dtype=np.float64,
-        )
+    geometry = compute_coronal_frame_geometry(
+        atlas_shape=atlas_shape,
+        frame_width=frame_width,
+        frame_height=frame_height,
+    )
 
     transformed_corners = apply_affine_to_points(
         matrix,
@@ -236,9 +289,21 @@ def compute_anchoring(
             (0.0, float(image_height)),
         ],
     )
-    atlas_origin = frame_to_atlas(transformed_corners[0])
-    atlas_top_right = frame_to_atlas(transformed_corners[1])
-    atlas_bottom_left = frame_to_atlas(transformed_corners[2])
+    atlas_origin = geometry.frame_to_atlas(
+        px=float(transformed_corners[0][0]),
+        py=float(transformed_corners[0][1]),
+        ap_voxel=ap_voxel,
+    )
+    atlas_top_right = geometry.frame_to_atlas(
+        px=float(transformed_corners[1][0]),
+        py=float(transformed_corners[1][1]),
+        ap_voxel=ap_voxel,
+    )
+    atlas_bottom_left = geometry.frame_to_atlas(
+        px=float(transformed_corners[2][0]),
+        py=float(transformed_corners[2][1]),
+        ap_voxel=ap_voxel,
+    )
     u_vec = atlas_top_right - atlas_origin
     v_vec = atlas_bottom_left - atlas_origin
 

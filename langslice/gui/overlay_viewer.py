@@ -1,15 +1,14 @@
 """Overlay viewer for brain slice + atlas registration.
 
-Renders both the histology slice and atlas reference in the same scene,
-scaling the atlas so its height matches the slice pixmap height.  This gives
-a visually comparable, but not physically calibrated, overlay that works
-regardless of the original image resolution or atlas voxel size.
+Renders both the histology slice and atlas reference in a shared frame.
+Atlas placement follows the same coronal geometry contract used by
+QUINT/ABBA export so the preview aligns with exported anchoring math.
 """
 
 from __future__ import annotations
 
 import importlib
-from typing import Optional
+from typing import Optional, cast
 
 from PIL import Image
 
@@ -28,6 +27,7 @@ Slot = _qtcore.Slot
 
 QImage = _qtgui.QImage
 QPixmap = _qtgui.QPixmap
+QTransform = _qtgui.QTransform
 
 QFrame = _qtwidgets.QFrame
 QGraphicsPixmapItem = _qtwidgets.QGraphicsPixmapItem
@@ -39,6 +39,7 @@ QVBoxLayout = _qtwidgets.QVBoxLayout
 QWidget = _qtwidgets.QWidget
 
 from langslice.atlas.core import get_composite_slice, load_atlas
+from langslice.export import compute_coronal_frame_geometry
 from langslice.gui.theme import (
     ACCENT,
     BG_PANEL_SOLID,
@@ -73,7 +74,7 @@ def _pil_to_qpixmap(img: Image.Image) -> QPixmap:
 
 class _AtlasLoaderWorker(QObject):
     """Load an atlas composite slice in a background thread."""
-    slice_ready = Signal(QPixmap)
+    slice_ready = Signal(QPixmap, object)
     error = Signal(str)
     finished = Signal()
 
@@ -87,7 +88,11 @@ class _AtlasLoaderWorker(QObject):
         try:
             atlas = load_atlas(self._atlas_name)
             composite = get_composite_slice(atlas, self._position_mm, opacity=0.4)
-            self.slice_ready.emit(_pil_to_qpixmap(composite))
+            atlas_shape = cast(tuple[int, int, int], tuple(atlas.reference.shape))
+            self.slice_ready.emit(
+                _pil_to_qpixmap(composite),
+                atlas_shape,
+            )
         except Exception as exc:
             self.error.emit(str(exc))
         finally:
@@ -101,9 +106,8 @@ class _AtlasLoaderWorker(QObject):
 class OverlayGraphicsView(QFrame):
     """QGraphicsView-based viewer that renders slice + atlas in a shared scene.
 
-    The atlas pixmap is scaled so its height matches the slice pixmap height,
-    preserving the atlas aspect ratio.  Both items are centered on the scene
-    origin.
+    The atlas pixmap is placed in the output frame using the same coronal
+    frame contract as :mod:`langslice.export`.
     """
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
@@ -114,6 +118,7 @@ class OverlayGraphicsView(QFrame):
         # State
         self._atlas_name: Optional[str] = None
         self._position_mm: Optional[float] = None
+        self._atlas_shape: Optional[tuple[int, int, int]] = None
         self._atlas_opacity: float = 0.5
         self._generation: int = 0
 
@@ -184,8 +189,12 @@ class OverlayGraphicsView(QFrame):
             self._fit_scene()
             return
 
-        self._slice_item = self._scene.addPixmap(pixmap)
-        self._slice_item.setZValue(0)
+        slice_item = self._scene.addPixmap(pixmap)
+        if slice_item is None:
+            self._fit_scene()
+            return
+        slice_item.setZValue(0)
+        self._slice_item = slice_item
         self._layout_items()
 
     def set_atlas(self, atlas_name: str) -> None:
@@ -197,7 +206,7 @@ class OverlayGraphicsView(QFrame):
         self._queue_atlas_reload()
 
     def set_pixel_size(self, um_per_px: float) -> None:  # noqa: ARG002
-        """Accepted for API compatibility; atlas scaling is now visual, not physical."""
+        """Accepted for API compatibility; pixel-size calibration is not yet used here."""
         pass
 
     def set_atlas_opacity(self, opacity: float) -> None:
@@ -208,6 +217,7 @@ class OverlayGraphicsView(QFrame):
     def clear(self) -> None:
         self._atlas_name = None
         self._position_mm = None
+        self._atlas_shape = None
         self._generation += 1
         self._debounce.stop()
         self._cancel_active()
@@ -237,25 +247,42 @@ class OverlayGraphicsView(QFrame):
 
     def _layout_items(self) -> None:
         """Position and scale both items centered on the scene origin."""
+        slice_width = 0.0
+        slice_height = 0.0
         if self._slice_item is not None:
             pm = self._slice_item.pixmap()
-            self._slice_item.setPos(-pm.width() / 2.0, -pm.height() / 2.0)
+            slice_width = float(pm.width())
+            slice_height = float(pm.height())
+            self._slice_item.setPos(-slice_width / 2.0, -slice_height / 2.0)
 
         if self._atlas_item is not None:
             atlas_pm = self._atlas_item.pixmap()
-            if self._slice_item is not None and atlas_pm.height() > 0:
-                # Scale the atlas so its height matches the slice height.
-                slice_pm = self._slice_item.pixmap()
-                scale = slice_pm.height() / atlas_pm.height()
+            if (
+                self._slice_item is not None
+                and self._atlas_shape is not None
+                and atlas_pm.width() > 0
+                and atlas_pm.height() > 0
+                and slice_width > 0.0
+                and slice_height > 0.0
+            ):
+                geometry = compute_coronal_frame_geometry(
+                    atlas_shape=self._atlas_shape,
+                    frame_width=int(round(slice_width)),
+                    frame_height=int(round(slice_height)),
+                )
+                scale_x = geometry.atlas_width_px / float(atlas_pm.width())
+                scale_y = geometry.atlas_height_px / float(atlas_pm.height())
+                self._atlas_item.setTransform(QTransform().scale(scale_x, scale_y))
+
+                slice_left = -slice_width / 2.0
+                slice_top = -slice_height / 2.0
+                self._atlas_item.setPos(
+                    slice_left + geometry.atlas_left_px,
+                    slice_top + geometry.atlas_top_px,
+                )
             else:
-                scale = 1.0
-            self._atlas_item.setScale(scale)
-            # After scaling, effective size is pm.size() * scale.
-            # Center the scaled atlas on the origin.
-            self._atlas_item.setPos(
-                -(atlas_pm.width() * scale) / 2.0,
-                -(atlas_pm.height() * scale) / 2.0,
-            )
+                self._atlas_item.setTransform(QTransform())
+                self._atlas_item.setPos(-atlas_pm.width() / 2.0, -atlas_pm.height() / 2.0)
             self._atlas_item.setOpacity(self._atlas_opacity)
 
         self._fit_scene()
@@ -296,6 +323,7 @@ class OverlayGraphicsView(QFrame):
             if self._atlas_item is not None:
                 self._scene.removeItem(self._atlas_item)
                 self._atlas_item = None
+            self._atlas_shape = None
             self._ap_badge.setVisible(False)
             self._fit_scene()
             return
@@ -317,7 +345,9 @@ class OverlayGraphicsView(QFrame):
         worker.moveToThread(thread)
 
         thread.started.connect(worker.load)
-        worker.slice_ready.connect(lambda pm, g=gen: self._on_atlas_ready(g, pm))
+        worker.slice_ready.connect(
+            lambda pm, shape, g=gen: self._on_atlas_ready(g, pm, shape)
+        )
         worker.error.connect(lambda msg, g=gen: self._on_atlas_error(g, msg))
         worker.finished.connect(thread.quit)
         worker.finished.connect(worker.deleteLater)
@@ -336,14 +366,24 @@ class OverlayGraphicsView(QFrame):
             self._active_thread = None
             self._active_worker = None
 
-    def _on_atlas_ready(self, gen: int, pixmap: QPixmap) -> None:
+    def _on_atlas_ready(self, gen: int, pixmap: QPixmap, atlas_shape: object) -> None:
         if gen != self._generation:
             return
 
         if self._atlas_item is not None:
             self._scene.removeItem(self._atlas_item)
-        self._atlas_item = self._scene.addPixmap(pixmap)
-        self._atlas_item.setZValue(1)
+        atlas_item = self._scene.addPixmap(pixmap)
+        if atlas_item is None:
+            self._atlas_item = None
+            self._atlas_shape = None
+            self._fit_scene()
+            return
+        atlas_item.setZValue(1)
+        self._atlas_item = atlas_item
+        if isinstance(atlas_shape, tuple) and len(atlas_shape) == 3:
+            self._atlas_shape = cast(tuple[int, int, int], atlas_shape)
+        else:
+            self._atlas_shape = None
         self._layout_items()
 
     def _on_atlas_error(self, gen: int, message: str) -> None:
