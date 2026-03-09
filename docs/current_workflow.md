@@ -32,6 +32,9 @@ The current affine result is matrix-first.
 The primary backend is ANTsPyX registration against the atlas reference slice at the estimated AP position.
 If ANTsPyX is unavailable or fails sanity checks, the code falls back to Gemini-based visual affine estimation.
 
+The GUI also provides a standalone affine debug lane.
+`Run ANTs Affine` skips AP estimation, uses the current manual AP slider position, and runs ANTs-only affine registration for isolated troubleshooting.
+
 The GUI shows derived values such as:
 
 - `backend`
@@ -59,19 +62,20 @@ Shows the transformed histology slice beside an asynchronously loaded atlas refe
 ### Overlay view
 
 Shows the transformed slice and atlas composite in a shared `QGraphicsView`.
-The atlas layer is scaled to be visually comparable to the slice.
-This is useful for quick inspection, but it is not a physically calibrated ABBA-style viewer.
-It is also a visual inspection tool only; the GUI does not yet compute quantitative registration quality metrics.
+The atlas layer is placed with the same coronal frame geometry contract used by export anchoring, so preview placement aligns with exported geometry semantics.
+The overlay remains a visual inspection tool, not a full physically calibrated ABBA-style viewer, and the GUI does not yet compute quantitative registration quality metrics.
 
 ## Pixel Size Input
 
-The GUI currently collects pixel size from the user.
-At present, that value is retained in GUI state for workflow compatibility, but it does not yet drive physical atlas scaling in the overlay and it does not currently change the ANTsPyX affine coordinate system.
+Image ingest now attempts pixel-size auto-detection from TIFF metadata.
+If metadata is found, pixel size is auto-applied immediately; otherwise the existing manual value is retained.
+The canonical normalized image is kept for preview/export/registration, while a VLM-ready derivative is generated for Gemini calls using aspect-ratio-preserving resize constraints.
 
 In other words:
 
-- pixel size is part of the current UI
-- pixel size is not yet used to physically calibrate preview scaling
+- pixel size can be metadata-derived or manually overridden
+- VLM/AP calls can use a downsampled derivative with dynamically adjusted effective um/px
+- full physical pixel-size calibration in registration/orchestration is still incomplete
 
 ## Debug Trace Curation
 
@@ -110,7 +114,7 @@ What export does not do:
 
 ## Current Limitations
 
-- Preview scaling is visual rather than full physical-space calibration.
-- Pixel size is not yet used to physically scale atlas overlays.
+- Overlay geometry now mirrors export geometry, but full physical-space calibration from per-image pixel size is not complete yet.
+- Pixel-size auto-detection currently focuses on TIFF metadata.
 - The GUI currently validates affine results visually; it does not report quantitative alignment metrics.
 - The app exports compatible JSON but does not embed itself into ABBA runtime workflows.

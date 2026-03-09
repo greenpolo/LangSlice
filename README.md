@@ -1,16 +1,17 @@
 # LangSlice
 
 LangSlice is a Python desktop app for VLM-assisted histological brain slice registration against BrainGlobe atlases.
-It uses Gemini to estimate anterior-posterior position, then runs matrix-based in-plane affine registration with ANTsPyX as the primary backend and Gemini as a fallback, and finally exports QUINT/ABBA-compatible JSON.
+It uses Gemini to estimate anterior-posterior position, runs matrix-first in-plane affine registration, and exports QUINT/ABBA-compatible JSON.
 
 ## Current Workflow
 
 1. Load a histology image in the GUI.
-2. Choose a BrainGlobe atlas.
-3. Run AP estimation.
-4. Run affine estimation.
-5. Review the result in single, split, or overlay view.
-6. Export QUINT/ABBA-compatible JSON.
+2. Pixel size is auto-detected from TIFF metadata when available; otherwise the current manual value is used.
+3. Choose a BrainGlobe atlas.
+4. Run AP estimation.
+5. Run affine estimation from the full agent pipeline or use standalone `Run ANTs Affine` for isolated affine debugging.
+6. Review the result in single, split, or overlay view.
+7. Export QUINT/ABBA-compatible JSON.
 
 ## Setup
 
@@ -47,8 +48,8 @@ When classifying a run, the GUI can also save optional evaluation metadata such 
 
 ## Current Limitations
 
-- Atlas matching in the GUI and affine prompt is visually scaled, not full ABBA-style physical-space calibration.
-- Pixel size is collected in the GUI but is not yet used to physically scale atlas overlays.
+- Overlay preview now follows the same coronal frame geometry contract as export, but full physical-space calibration from per-image pixel size is not complete yet.
+- Pixel-size metadata auto-detection currently focuses on TIFF metadata; non-TIFF inputs usually require manual pixel size.
 - Affine verification in the GUI is currently visual; there are no built-in landmark or overlap-error metrics yet.
 - Export targets QUINT/ABBA-compatible JSON only; LangSlice does not depend on ABBA, Fiji, or a JVM at runtime.
 

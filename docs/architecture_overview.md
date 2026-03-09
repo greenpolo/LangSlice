@@ -51,6 +51,8 @@ It owns:
 - ANTsPyX-based affine estimation against atlas reference slices
 - backend fallback orchestration from ANTsPyX to Gemini
 
+`langslice.image_prep` handles ingest normalization, pixel-size metadata detection, and VLM-target downsampling policy.
+
 ### `langslice.gui`
 
 The GUI is centered on `MainWindow` in `langslice.gui.main_window`.
@@ -78,7 +80,8 @@ The output is designed to be imported by QUINT-family tooling and ABBA-compatibl
 ### 1. GUI input
 
 The user loads a slice image and selects an atlas in the GUI.
-The image is normalized to 8-bit RGB for display and model input.
+The image ingest layer normalizes to 8-bit RGB, tries to detect pixel size from TIFF metadata, and prepares a VLM derivative image for Gemini calls.
+The canonical normalized image remains the source for preview/export/registration.
 
 ### 2. AP estimation
 
@@ -96,6 +99,8 @@ That function:
 Once AP estimation completes, the same worker runs `estimate_affine(...)`.
 The primary path is ANTsPyX-based affine registration against the atlas reference slice at the estimated AP position.
 If ANTsPyX is unavailable or returns a degenerate transform, the code falls back to the Gemini-based affine estimator.
+
+The GUI also supports a standalone ANTs debug lane (`Run ANTs Affine`) that skips AP estimation and runs affine directly at the current manual AP position.
 
 The Gemini fallback can build a side-by-side composite:
 
@@ -171,6 +176,7 @@ The following are not current runtime goals:
 - ABBA, Fiji, or JVM integration at runtime
 - Bregma-referenced internal coordinates
 - fully physically calibrated viewer overlays
+- complete pixel-size-aware affine orchestration across all backends
 - quantitative affine quality scoring in the GUI
 - automatic migration of atlas coordinates into a skull landmark space
 
