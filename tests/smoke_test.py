@@ -26,6 +26,10 @@ from langslice.export import (
 )
 print("Export module OK")
 
+# Image prep module
+from langslice.image_prep import detect_pixel_size_um, load_image_state, prepare_image_for_vlm
+print("Image prep OK")
+
 # Test anchoring computation
 anch = compute_anchoring(
     position_mm=1.0,

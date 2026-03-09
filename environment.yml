@@ -6,6 +6,7 @@ dependencies:
   - numpy
   - scipy
   - pillow
+  - tifffile
   - pyside6
   - pip
   - pip:
