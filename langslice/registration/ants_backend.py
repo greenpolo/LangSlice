@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import importlib
+import importlib.util
 import inspect
 import logging
 import math
 import os
+import sys
 import tempfile
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 import numpy as np
 from PIL import Image
@@ -36,7 +38,9 @@ def _normalize_grayscale_array(image: Image.Image) -> np.ndarray:
 
 
 def _largest_component(mask: np.ndarray) -> np.ndarray:
-    labeled, count = ndimage.label(mask)
+    labeled, count = cast(tuple[np.ndarray, int], ndimage.label(mask))
+    labeled = np.asarray(labeled)
+    count = int(count)
     if count <= 1:
         return mask.astype(bool)
     sizes = ndimage.sum(mask, labeled, index=np.arange(1, count + 1))
@@ -46,12 +50,18 @@ def _largest_component(mask: np.ndarray) -> np.ndarray:
 
 def _refine_mask(mask: np.ndarray) -> np.ndarray:
     refined = mask.astype(bool)
-    refined = ndimage.binary_fill_holes(refined)
-    refined = ndimage.binary_opening(refined, structure=np.ones((3, 3), dtype=bool))
-    refined = ndimage.binary_closing(refined, structure=np.ones((5, 5), dtype=bool))
+    refined = np.asarray(ndimage.binary_fill_holes(refined), dtype=bool)
+    refined = np.asarray(
+        ndimage.binary_opening(refined, structure=np.ones((3, 3), dtype=bool)),
+        dtype=bool,
+    )
+    refined = np.asarray(
+        ndimage.binary_closing(refined, structure=np.ones((5, 5), dtype=bool)),
+        dtype=bool,
+    )
     refined = _largest_component(refined)
-    refined = ndimage.binary_fill_holes(refined)
-    return refined.astype(bool)
+    refined = np.asarray(ndimage.binary_fill_holes(refined), dtype=bool)
+    return cast(np.ndarray, refined.astype(bool))
 
 
 def _score_mask(mask: np.ndarray) -> float:
@@ -92,11 +102,18 @@ def _build_atlas_mask(image: Image.Image) -> np.ndarray:
 
 
 def _load_ants_module() -> Any:
+    spec = importlib.util.find_spec("ants")
     try:
         return importlib.import_module("ants")
     except ImportError as exc:
+        if spec is None:
+            raise RegistrationFailure(
+                "ANTsPyX (`ants`) is not installed in the Python interpreter "
+                f"running LangSlice ({sys.executable}). Install `antspyx` into that environment."
+            ) from exc
         raise RegistrationFailure(
-            "ANTsPyX is not installed in this environment."
+            "ANTsPyX (`ants`) was found but failed to import in the Python interpreter "
+            f"running LangSlice ({sys.executable}): {exc}"
         ) from exc
 
 
