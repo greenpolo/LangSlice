@@ -56,10 +56,11 @@ from langslice.atlas import (
     list_available_atlases,
     list_downloaded_atlases,
 )
+from langslice.image_prep import LoadedImageState, load_image_state
+from langslice.registration import estimate_affine_registration
 from langslice.gui.theme import ACCENT, BG_PRIMARY, ERROR, STYLESHEET, SUCCESS, TEXT_SECONDARY
 from langslice.vlm import APResult, AffineResult, estimate_affine, estimate_position
 from langslice.vlm.config import AVAILABLE_MODELS, MODEL_NAME, set_model_name
-from langslice.vlm.estimator import _normalize_image
 from langslice.export import build_quint_export, save_quint_json
 from langslice.gui.run_metadata_dialog import RunMetadataDialog
 from langslice.gui.settings_dialog import SettingsDialog
@@ -228,21 +229,32 @@ class AgentWorker(QObject):
 
     def __init__(
         self,
-        image: Image.Image,
+        canonical_image: Image.Image,
+        vlm_image: Image.Image,
         atlas_name: str,
         pixel_size_um: float,
+        *,
+        position_mm: float | None = None,
+        mode: str = "full",
     ) -> None:
         super().__init__()
-        self.image = image
+        self.image = canonical_image
+        self.vlm_image = vlm_image
         self.atlas_name = atlas_name
         self.pixel_size_um = pixel_size_um
+        self.position_mm = position_mm
+        self.mode = mode
 
     def run(self) -> None:
+        if self.mode == "affine_only":
+            self._run_affine_only()
+            return
+
         try:
             self.step_started.emit("ap")
             self.log_message.emit("Starting position estimation...")
             ap_result = estimate_position(
-                image=self.image,
+                image=self.vlm_image,
                 atlas_name=self.atlas_name,
                 on_progress=self.log_message.emit,
             )
@@ -261,6 +273,31 @@ class AgentWorker(QObject):
                 atlas_name=self.atlas_name,
                 position_mm=ap_result.position_mm,
                 pixel_size_um=self.pixel_size_um,
+            )
+            self.step_completed.emit("affine", affine_result)
+        except Exception as exc:
+            self.step_error.emit("affine", str(exc))
+        finally:
+            self.finished.emit()
+
+    def _run_affine_only(self) -> None:
+        if self.position_mm is None:
+            self.step_error.emit("affine", "Manual AP position is required for standalone ANTs affine.")
+            self.finished.emit()
+            return
+
+        try:
+            self.step_started.emit("affine")
+            self.log_message.emit(
+                f"Starting standalone ANTs affine at {self.position_mm:.2f} mm..."
+            )
+            affine_result = estimate_affine_registration(
+                image=self.image,
+                on_progress=self.log_message.emit,
+                atlas_name=self.atlas_name,
+                position_mm=self.position_mm,
+                pixel_size_um=self.pixel_size_um,
+                fallback=None,
             )
             self.step_completed.emit("affine", affine_result)
         except Exception as exc:
@@ -408,6 +445,7 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(1100, 720)
 
         self.image_path: str | None = None
+        self.loaded_image_state: LoadedImageState | None = None
         self.pil_image: Image.Image | None = None
         self.current_pos: float | None = None
         self.ap_result: APResult | None = None
@@ -419,6 +457,8 @@ class MainWindow(QMainWindow):
         self.worker: AgentWorker | None = None
 
         self.pixel_size_um: float = 4.0
+        self._pixel_size_source: str = "manual_default"
+        self._metadata_pixel_size_um: float | None = None
 
         self._build_ui()
         self._set_view_mode("single")
@@ -728,11 +768,18 @@ class MainWindow(QMainWindow):
         self.clear_all_button = QPushButton("Clear All")
         self.clear_all_button.setObjectName("secondary")
         self.clear_all_button.clicked.connect(self._clear_all)
+        self.run_affine_button = QPushButton("Run ANTs Affine")
+        self.run_affine_button.setObjectName("secondary")
+        self.run_affine_button.setToolTip(
+            "Run standalone ANTs affine registration at the current manual AP position"
+        )
+        self.run_affine_button.clicked.connect(self._run_affine_only)
         self.run_button = QPushButton("Run Agent")
         self.run_button.clicked.connect(self._run_agent)
         hrow.addWidget(title)
         hrow.addStretch(1)
         hrow.addWidget(self.clear_all_button)
+        hrow.addWidget(self.run_affine_button)
         hrow.addWidget(self.run_button)
         layout.addWidget(header)
 
@@ -870,6 +917,14 @@ class MainWindow(QMainWindow):
             "atlas_name": run_context.get("atlas_name") or self._current_atlas_name(),
             "model_name": run_context.get("model_name") or self.model_combo.currentText(),
             "pixel_size_um": run_context.get("pixel_size_um") or self.pixel_size_um,
+            "pixel_size_source": run_context.get("pixel_size_source") or self._pixel_size_source,
+            "metadata_pixel_size_um": run_context.get("metadata_pixel_size_um"),
+            "image_width": run_context.get("image_width"),
+            "image_height": run_context.get("image_height"),
+            "vlm_width": run_context.get("vlm_width"),
+            "vlm_height": run_context.get("vlm_height"),
+            "vlm_scale_factor": run_context.get("vlm_scale_factor"),
+            "vlm_effective_pixel_size_um": run_context.get("vlm_effective_pixel_size_um"),
             "run_started_at": run_context.get("run_started_at"),
             "estimated_position_mm": estimated_position,
             "actual_position_mm": actual_position,
@@ -918,22 +973,51 @@ class MainWindow(QMainWindow):
 
     def _load_image(self, file_path: str) -> None:
         try:
-            with Image.open(file_path) as loaded:
-                image = _normalize_image(loaded.copy())
+            loaded_state = load_image_state(
+                file_path,
+                fallback_pixel_size_um=self.pixel_size_um,
+            )
         except Exception as exc:
             self._append_log(f"Failed to open image: {exc}")
             return
 
         self.image_path = file_path
-        self.pil_image = image
+        self.loaded_image_state = loaded_state
+        self.pil_image = loaded_state.canonical_image
+        self.pixel_size_um = loaded_state.pixel_size_um
+        self._pixel_size_source = loaded_state.pixel_size_source
+        self._metadata_pixel_size_um = loaded_state.metadata_pixel_size_um
+        self.pixel_size_spin.blockSignals(True)
+        self.pixel_size_spin.setValue(loaded_state.pixel_size_um)
+        self.pixel_size_spin.blockSignals(False)
         self.current_pos = None
         self.ap_result = None
         self.affine_result = None
         self._last_run_context = None
         self._reset_steps()
+        self.ap_adjust_wrap.show()
+        self._sync_atlas_viewers()
         self._update_display_pixmaps()
         self._set_view_mode(self.current_view_mode)
         self._append_log(f"Loaded image: {os.path.basename(file_path)}")
+        if loaded_state.metadata_pixel_size_um is not None:
+            self._append_log(
+                "Auto-detected pixel size: "
+                f"{loaded_state.pixel_size_um:.4f} um/px "
+                f"(source: {loaded_state.pixel_size_source})"
+            )
+        else:
+            self._append_log(
+                "No pixel-size metadata found; using current manual value: "
+                f"{loaded_state.pixel_size_um:.4f} um/px"
+            )
+        self._append_log(
+            "VLM image prepared: "
+            f"original={loaded_state.original_size[0]}x{loaded_state.original_size[1]}px, "
+            f"vlm={loaded_state.vlm_size[0]}x{loaded_state.vlm_size[1]}px, "
+            f"scale={loaded_state.vlm_scale_factor:.4f}, "
+            f"effective_pixel_size={loaded_state.vlm_effective_pixel_size_um:.4f} um/px"
+        )
 
     def _clear_all(self) -> None:
         if self._is_worker_running():
@@ -941,6 +1025,7 @@ class MainWindow(QMainWindow):
             return
 
         self.image_path = None
+        self.loaded_image_state = None
         self.pil_image = None
         self.current_pos = None
         self.ap_result = None
@@ -966,12 +1051,13 @@ class MainWindow(QMainWindow):
         self.step_affine.set_status("idle")
         self.step_ap.clear_result()
         self.step_affine.clear_result()
-        self.ap_adjust_wrap.hide()
+        self.ap_adjust_wrap.setVisible(self.pil_image is not None)
         self.feedback_wrap.hide()
         self.success_btn.setEnabled(True)
         self.failure_btn.setEnabled(True)
         self._set_export_enabled(False)
         self.run_button.setEnabled(self.pil_image is not None and not self._is_worker_running())
+        self.run_affine_button.setEnabled(self.pil_image is not None and not self._is_worker_running())
         self.split_atlas.clear()
         self.overlay_viewer.clear()
 
@@ -984,15 +1070,39 @@ class MainWindow(QMainWindow):
 
         atlas_name = self._current_atlas_name()
         image_copy = self.pil_image.copy()
+        vlm_image_copy = (
+            self.loaded_image_state.vlm_image.copy()
+            if self.loaded_image_state is not None
+            else self.pil_image.copy()
+        )
         self._last_run_context = {
             "atlas_name": atlas_name,
             "model_name": self.model_combo.currentText(),
             "pixel_size_um": self.pixel_size_um,
+            "pixel_size_source": self._pixel_size_source,
+            "metadata_pixel_size_um": self._metadata_pixel_size_um,
+            "image_width": self.pil_image.width,
+            "image_height": self.pil_image.height,
+            "vlm_width": vlm_image_copy.width,
+            "vlm_height": vlm_image_copy.height,
+            "vlm_scale_factor": (
+                self.loaded_image_state.vlm_scale_factor if self.loaded_image_state is not None else 1.0
+            ),
+            "vlm_effective_pixel_size_um": (
+                self.loaded_image_state.vlm_effective_pixel_size_um
+                if self.loaded_image_state is not None
+                else self.pixel_size_um
+            ),
             "run_started_at": datetime.now().isoformat(timespec="seconds"),
         }
 
         thread = QThread(self)
-        worker = AgentWorker(image_copy, atlas_name, pixel_size_um=self.pixel_size_um)
+        worker = AgentWorker(
+            image_copy,
+            vlm_image_copy,
+            atlas_name,
+            pixel_size_um=self.pixel_size_um,
+        )
         worker.moveToThread(thread)
 
         self.worker_thread = thread
@@ -1010,6 +1120,83 @@ class MainWindow(QMainWindow):
         thread.finished.connect(self._on_thread_cleaned)
 
         self.run_button.setEnabled(False)
+        self.run_affine_button.setEnabled(False)
+        thread.start()
+
+    def _run_affine_only(self) -> None:
+        if self.pil_image is None or self._is_worker_running():
+            return
+
+        if self.current_pos is None:
+            self.current_pos = self.ap_slider.value() / 100.0
+            self.ap_value_label.setText(f"Manual Position: {self.current_pos:.2f} mm")
+            self._sync_atlas_viewers()
+
+        self._reset_steps()
+        self.ap_adjust_wrap.show()
+        atlas_name = self._current_atlas_name()
+        self._append_log(
+            "Starting standalone ANTs affine debug run: "
+            f"atlas={atlas_name}, position={self.current_pos:.2f} mm, "
+            f"pixel_size={self.pixel_size_um:.4f} um/px, "
+            f"image={self.pil_image.width}x{self.pil_image.height}px"
+        )
+
+        image_copy = self.pil_image.copy()
+        vlm_image_copy = (
+            self.loaded_image_state.vlm_image.copy()
+            if self.loaded_image_state is not None
+            else self.pil_image.copy()
+        )
+        self._last_run_context = {
+            "atlas_name": atlas_name,
+            "pixel_size_um": self.pixel_size_um,
+            "pixel_size_source": self._pixel_size_source,
+            "metadata_pixel_size_um": self._metadata_pixel_size_um,
+            "image_width": self.pil_image.width,
+            "image_height": self.pil_image.height,
+            "vlm_width": vlm_image_copy.width,
+            "vlm_height": vlm_image_copy.height,
+            "vlm_scale_factor": (
+                self.loaded_image_state.vlm_scale_factor if self.loaded_image_state is not None else 1.0
+            ),
+            "vlm_effective_pixel_size_um": (
+                self.loaded_image_state.vlm_effective_pixel_size_um
+                if self.loaded_image_state is not None
+                else self.pixel_size_um
+            ),
+            "manual_position_mm": self.current_pos,
+            "run_mode": "affine_only",
+            "run_started_at": datetime.now().isoformat(timespec="seconds"),
+        }
+
+        thread = QThread(self)
+        worker = AgentWorker(
+            image_copy,
+            vlm_image_copy,
+            atlas_name,
+            pixel_size_um=self.pixel_size_um,
+            position_mm=self.current_pos,
+            mode="affine_only",
+        )
+        worker.moveToThread(thread)
+
+        self.worker_thread = thread
+        self.worker = worker
+
+        thread.started.connect(worker.run)
+        worker.step_started.connect(self._on_step_started)
+        worker.step_completed.connect(self._on_step_completed)
+        worker.step_error.connect(self._on_step_error)
+        worker.log_message.connect(self._append_log)
+        worker.finished.connect(self._on_worker_finished)
+        worker.finished.connect(thread.quit)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(self._on_thread_cleaned)
+
+        self.run_button.setEnabled(False)
+        self.run_affine_button.setEnabled(False)
         thread.start()
 
     def _on_step_started(self, step_id: str) -> None:
@@ -1061,6 +1248,7 @@ class MainWindow(QMainWindow):
     def _on_worker_finished(self) -> None:
         self._append_log("Pipeline completed.")
         self.run_button.setEnabled(self.pil_image is not None)
+        self.run_affine_button.setEnabled(self.pil_image is not None)
         self._set_export_enabled(self._all_steps_completed())
         
         # Enable feedback buttons if debug traces were generated
@@ -1090,7 +1278,7 @@ class MainWindow(QMainWindow):
         atlas_name = self._current_atlas_name()
         self.split_atlas.set_atlas(atlas_name)
         self.overlay_viewer.set_atlas(atlas_name)
-        if self.current_pos is not None:
+        if self.pil_image is not None:
             self._sync_atlas_viewers()
         self._append_log(f"Atlas selected: {atlas_name}")
 
@@ -1127,6 +1315,17 @@ class MainWindow(QMainWindow):
 
     def _on_pixel_size_changed(self, value: float) -> None:
         self.pixel_size_um = value
+        self._pixel_size_source = "manual_override"
+        if self.loaded_image_state is not None:
+            self.loaded_image_state = self.loaded_image_state.with_pixel_size(
+                value,
+                source="manual_override",
+            )
+            self._append_log(
+                "Pixel size updated manually: "
+                f"{value:.4f} um/px; "
+                f"effective VLM pixel size={self.loaded_image_state.vlm_effective_pixel_size_um:.4f} um/px"
+            )
         self._sync_atlas_viewers()
 
     def _set_ap_slider_value(self, position_mm: float) -> None:
