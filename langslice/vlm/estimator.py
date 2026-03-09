@@ -12,6 +12,7 @@ import numpy as np
 from PIL import Image
 from google.genai.types import Tool, ToolCodeExecution
 
+from langslice.image_prep import normalize_image, prepare_image_for_vlm
 from langslice.registration import AffineResult, estimate_affine_registration
 from langslice.vlm import config as vlm_config
 from langslice.vlm.config import get_client
@@ -88,40 +89,6 @@ def _image_to_base64(img: Image.Image, fmt: str = "JPEG") -> str:
     else:
         img.save(buf, format=fmt)
     return base64.b64encode(buf.getvalue()).decode("utf-8")
-
-
-
-def _normalize_image(image: Image.Image) -> Image.Image:
-    """Normalize an arbitrary PIL image to 8-bit RGB without modifying source data.
-
-    Handles:
-    - 16-bit / 32-bit grayscale (``I;16``, ``I``, ``F``): min-max scaled to 0-255
-    - RGBA / palette / other modes: converted to RGB directly
-    - Standard 8-bit RGB: returned as-is
-
-    The source ``Image`` object is never mutated.
-    """
-    mode = image.mode
-
-    # Already 8-bit RGB - nothing to do.
-    if mode == "RGB":
-        return image
-
-    # High bit-depth modes need min-max normalization, not clipping.
-    if mode in ("I", "I;16", "I;16B", "I;32", "F"):
-        arr = np.asarray(image, dtype=np.float32)
-        lo, hi = float(arr.min()), float(arr.max())
-        if hi > lo:
-            arr = (arr - lo) / (hi - lo) * 255.0
-        else:
-            arr = np.zeros_like(arr)
-        gray8 = arr.astype(np.uint8)
-        return Image.fromarray(gray8).convert("RGB")
-
-    # All other modes (L, LA, RGBA, P, PA, CMYK, etc.) - let PIL handle it.
-    return image.convert("RGB")
-
-
 
 def _part_text(text: str) -> dict[str, object]:
     return {"text": text}
@@ -326,6 +293,48 @@ def _format_usage_metadata(metadata: dict[str, int | float | str | bool]) -> str
     return ", ".join(parts) if parts else "usage metadata unavailable"
 
 
+def _sorted_unique_positions(
+    positions: list[float],
+    *,
+    tolerance: float = 0.02,
+) -> list[float]:
+    unique_positions: list[float] = []
+    for pos in sorted(positions):
+        if not unique_positions or abs(pos - unique_positions[-1]) > tolerance:
+            unique_positions.append(pos)
+    return unique_positions
+
+
+def _is_broad_multi_sweep(positions: list[float]) -> bool:
+    if len(positions) < 4:
+        return False
+    return (max(positions) - min(positions)) >= 3.0
+
+
+def _is_narrow_multi_sweep(positions: list[float]) -> bool:
+    if len(positions) < 3:
+        return False
+    return (max(positions) - min(positions)) <= 1.5
+
+
+def _has_neighbor_bracket(
+    fetched_positions: list[float],
+    center_mm: float,
+    *,
+    pos_lo: float,
+    pos_hi: float,
+    tolerance: float = 0.35,
+    edge_margin: float = 0.25,
+) -> bool:
+    unique_positions = _sorted_unique_positions(fetched_positions)
+    has_lower = any(center_mm - tolerance <= pos < center_mm for pos in unique_positions)
+    has_upper = any(center_mm < pos <= center_mm + tolerance for pos in unique_positions)
+
+    needs_lower = center_mm > pos_lo + edge_margin
+    needs_upper = center_mm < pos_hi - edge_margin
+    return (has_lower or not needs_lower) and (has_upper or not needs_upper)
+
+
 def _get_regions_at_position(atlas: object, position_mm: float) -> list[str]:
     """Return brain region names visible at a given AP position."""
     from langslice.atlas.core import position_mm_to_index
@@ -387,15 +396,27 @@ def estimate_position(
     atlas = load_atlas(atlas_name)
     pos_lo, pos_hi = get_position_range_mm(atlas)
 
-    target_prepared = _normalize_image(image)
+    target_normalized = normalize_image(image)
+    target_prep = prepare_image_for_vlm(target_normalized)
+    target_prepared = target_prep.image
     target_bytes = _image_to_bytes(target_prepared)
     target_h = target_prepared.height
     target_info = {
+        "original_width": target_prep.original_size[0],
+        "original_height": target_prep.original_size[1],
         "width": target_prepared.width,
         "height": target_prepared.height,
         "mode": target_prepared.mode,
         "jpeg_bytes": len(target_bytes),
+        "vlm_scale_factor": round(target_prep.scale_factor, 6),
     }
+    if target_prep.downsampled:
+        _progress(
+            "Target image resized for Gemini budget: "
+            f"{target_prep.original_size[0]}x{target_prep.original_size[1]}px -> "
+            f"{target_prepared.width}x{target_prepared.height}px "
+            f"(scale={target_prep.scale_factor:.4f})"
+        )
     _progress(
         "Target image prepared for Gemini: "
         f"{target_prepared.width}x{target_prepared.height}px, "
@@ -515,13 +536,13 @@ def estimate_position(
         "brain regions exist at a given position, and get atlas metadata.\n\n"
         "RECOMMENDED STRATEGY:\n"
         "1. Coarse Sweep: Call `fetch_multiple_atlas_slices` with 4-5 widely spaced coordinates "
-        "   (e.g., 2.0, 4.0, 6.0, 8.0) to instantly find the correct neighborhood.\n"
+        "   (e.g., 2.0, 4.0, 6.0, 8.0) as your first real image search step to instantly find the correct neighborhood.\n"
         "2. Finer Search: Identify the closest match, then call `fetch_multiple_atlas_slices` "
         "   again around that match with tighter spacing (e.g., +/-0.5 mm).\n"
         "3. Verification: Once narrowed down, check specific structural landmarks or use "
-        "   `get_region_names` to confirm anatomical identity.\n"
+        "   `get_region_names` to confirm anatomical identity. Before submitting, compare at least one lower and one higher neighboring AP position around your leading candidate.\n"
         "4. Submit: Call `submit_estimate` only when you are highly confident.\n\n"
-        "Do not guess blindly; use the tools to narrow down the answer methodically."
+        "Do not guess blindly; use the tools to narrow down the answer methodically. Avoid long thought-only turns: either perform the next search step or submit once the neighborhood is bracketed."
     )
 
     # --- Initial user message with target image ---
@@ -546,6 +567,9 @@ def estimate_position(
     reasoning_log: list[dict[str, object]] = []
     turn_metrics: list[dict[str, object]] = []
     images_fetched = 0
+    fetched_positions: list[float] = []
+    saw_broad_sweep = False
+    saw_narrow_sweep = False
 
     _progress(f"Starting agentic estimation (max {max_iterations} tool calls)...")
 
@@ -566,7 +590,7 @@ def estimate_position(
         )
         wall_time_s = time.perf_counter() - turn_started_at
         usage_metadata = _extract_usage_metadata(response)
-        turn_metric = {
+        turn_metric: dict[str, object] = {
             "iteration": iteration + 1,
             "request": request_metrics,
             "wall_time_s": round(wall_time_s, 3),
@@ -593,9 +617,24 @@ def estimate_position(
                 _progress(f"Agent reasoning/text: {text_parts[0][:200]}...")
             else:
                 _progress("Agent produced thought block but no tool calls.")
-            
-            # Prevent premature exit; prompt the model to actually call a tool
-            nudge = types.Part(text="Please continue. You must call a tool to explore further, or call `submit_estimate` if you have finalized your answer.")
+
+            if not saw_broad_sweep:
+                nudge_text = (
+                    "Please continue with a broad coarse sweep now. Call `fetch_multiple_atlas_slices` "
+                    "with 4-5 widely spaced AP positions to find the correct neighborhood before reasoning further."
+                )
+            elif not saw_narrow_sweep:
+                nudge_text = (
+                    "Please continue with a narrowed sweep now. Call `fetch_multiple_atlas_slices` "
+                    "around your best current neighborhood with tighter spacing before considering submission."
+                )
+            else:
+                nudge_text = (
+                    "Please continue. Before submitting, verify your leading candidate by checking at least one "
+                    "lower and one higher neighboring AP position around it using `fetch_multiple_atlas_slices` or `fetch_atlas_slice`."
+                )
+
+            nudge = types.Part(text=nudge_text)
             history.append(types.Content(role="user", parts=[nudge]))
             continue
 
@@ -613,10 +652,11 @@ def estimate_position(
             if name == "fetch_atlas_slice":
                 pos = float(args.get("position_mm", (pos_lo + pos_hi) / 2))
                 pos = max(pos_lo, min(pos_hi, pos))  # Clamp
+                fetched_positions.append(pos)
 
                 try:
                     ref_img = get_reference_slice(atlas, pos)
-                    ref_prepared = _normalize_image(ref_img)
+                    ref_prepared = normalize_image(ref_img)
                     # Scale to match target height
                     scale = target_h / ref_prepared.height
                     new_w = max(1, int(round(ref_prepared.width * scale)))
@@ -658,10 +698,15 @@ def estimate_position(
                 positions_list = args.get("positions_mm", [])
                 if not isinstance(positions_list, list):
                     positions_list = []
-                
+
                 # Cap to 5 to prevent context blowout
                 positions = [max(pos_lo, min(pos_hi, float(p))) for p in positions_list[:5]]
-                
+                fetched_positions.extend(positions)
+                if positions and _is_broad_multi_sweep(positions):
+                    saw_broad_sweep = True
+                if positions and _is_narrow_multi_sweep(positions):
+                    saw_narrow_sweep = True
+
                 if not positions:
                     tool_response_parts.append(
                         types.Part.from_function_response(
@@ -675,7 +720,7 @@ def estimate_position(
                     for pos in positions:
                         try:
                             ref_img = get_reference_slice(atlas, pos)
-                            ref_prepared = _normalize_image(ref_img)
+                            ref_prepared = normalize_image(ref_img)
                             scale = target_h / ref_prepared.height
                             new_w = max(1, int(round(ref_prepared.width * scale)))
                             new_h = max(1, int(round(ref_prepared.height * scale)))
@@ -739,6 +784,79 @@ def estimate_position(
                 est_pos = float(args.get("position_mm", 0.0))
                 est_confidence = str(args.get("confidence", "unknown"))
                 est_reasoning = str(args.get("reasoning", ""))
+                has_neighbor_check = _has_neighbor_bracket(
+                    fetched_positions,
+                    est_pos,
+                    pos_lo=pos_lo,
+                    pos_hi=pos_hi,
+                )
+                near_iteration_limit = iteration >= max_iterations - 2
+
+                if not saw_broad_sweep and not near_iteration_limit:
+                    tool_response_parts.append(
+                        types.Part.from_function_response(
+                            name=name,
+                            response={
+                                "status": "error",
+                                "error": "Run a broad `fetch_multiple_atlas_slices` sweep before submitting.",
+                            },
+                        )
+                    )
+                    reasoning_log.append(
+                        {
+                            "iteration": iteration + 1,
+                            "tool": name,
+                            "args": args,
+                            "result": f"Rejected submit at {est_pos:.2f}mm: no broad sweep yet",
+                        }
+                    )
+                    continue
+
+                if not saw_narrow_sweep and not near_iteration_limit:
+                    tool_response_parts.append(
+                        types.Part.from_function_response(
+                            name=name,
+                            response={
+                                "status": "error",
+                                "error": "Run a narrowed `fetch_multiple_atlas_slices` sweep around your best candidate before submitting.",
+                            },
+                        )
+                    )
+                    reasoning_log.append(
+                        {
+                            "iteration": iteration + 1,
+                            "tool": name,
+                            "args": args,
+                            "result": f"Rejected submit at {est_pos:.2f}mm: no narrow sweep yet",
+                        }
+                    )
+                    continue
+
+                if not has_neighbor_check and not near_iteration_limit:
+                    lower = max(pos_lo, est_pos - 0.2)
+                    upper = min(pos_hi, est_pos + 0.2)
+                    tool_response_parts.append(
+                        types.Part.from_function_response(
+                            name=name,
+                            response={
+                                "status": "error",
+                                "error": (
+                                    "Before submitting, verify at least one lower and one higher neighboring AP position "
+                                    f"around {est_pos:.2f} mm (for example {lower:.2f} mm and {upper:.2f} mm)."
+                                ),
+                            },
+                        )
+                    )
+                    reasoning_log.append(
+                        {
+                            "iteration": iteration + 1,
+                            "tool": name,
+                            "args": args,
+                            "result": f"Rejected submit at {est_pos:.2f}mm: neighborhood not bracketed",
+                        }
+                    )
+                    continue
+
                 estimate_result = {
                     "position_mm": est_pos,
                     "confidence": est_confidence,
@@ -893,7 +1011,7 @@ def _build_matched_composite(
         return None
 
     # Scale atlas height to match target height, preserving aspect ratio.
-    target_rgb = _normalize_image(target)
+    target_rgb = normalize_image(target)
     target_h = target_rgb.height
     scale_factor = target_h / atlas_composite.height
     new_w = max(1, int(round(atlas_composite.width * scale_factor)))
@@ -946,7 +1064,22 @@ def _estimate_affine_vlm_fallback(
 
     client = get_client()
 
-    target_prepared = _normalize_image(image)
+    target_normalized = normalize_image(image)
+    vlm_prep = prepare_image_for_vlm(target_normalized, pixel_size_um=pixel_size_um)
+    target_prepared = vlm_prep.image
+    if vlm_prep.downsampled:
+        _progress(
+            "Target image resized for Gemini affine fallback: "
+            f"{vlm_prep.original_size[0]}x{vlm_prep.original_size[1]}px -> "
+            f"{vlm_prep.output_size[0]}x{vlm_prep.output_size[1]}px "
+            f"(scale={vlm_prep.scale_factor:.4f}"
+            + (
+                f", effective_pixel_size={vlm_prep.effective_pixel_size_um:.4f} um/px"
+                if vlm_prep.effective_pixel_size_um is not None
+                else ""
+            )
+            + ")"
+        )
     target_b64 = _image_to_base64(target_prepared)
 
     # Build pixel-matched composite when atlas context is available.
