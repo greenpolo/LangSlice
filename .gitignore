@@ -19,6 +19,7 @@ AGENTS.md
 nul
 
 # Cloned reference repositories (keep locally, exclude from repo)
+references/
 references/abba_python/
 references/brainglobe-atlasapi/
 references/DeepSlice_upstream/
@@ -26,4 +27,5 @@ references/google-genai-docs/
 references/ijp-imagetoatlas/
 
 # Archived local notes not part of the active docs set
+archive/
 archive/*.md
