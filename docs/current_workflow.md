@@ -29,11 +29,7 @@ The output shown in the GUI is:
 
 Affine estimation runs after AP estimation.
 The current affine result is matrix-first.
-The primary backend is ANTsPyX registration against the atlas reference slice at the estimated AP position.
-If ANTsPyX is unavailable or fails sanity checks, the code falls back to Gemini-based visual affine estimation.
-
-The GUI also provides a standalone affine debug lane.
-`Run ANTs Affine` skips AP estimation, uses the current manual AP slider position, and runs ANTs-only affine registration for isolated troubleshooting.
+The current affine path uses the LangSlice registration runtime, which consumes one agent-produced landmark set and derives the affine deterministically from vetted correspondences.
 
 The GUI shows derived values such as:
 

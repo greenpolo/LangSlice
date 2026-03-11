@@ -47,9 +47,10 @@ The supported backends are:
 It owns:
 
 - the matrix-first `AffineResult` model
+- the nonlinear `NonlinearResult` model
 - affine matrix helpers and decomposition helpers
-- ANTsPyX-based affine estimation against atlas reference slices
-- backend fallback orchestration from ANTsPyX to Gemini
+- registration-agent orchestration
+- deterministic landmark vetting, affine fitting, and TPS fitting
 
 `langslice.image_prep` handles ingest normalization, pixel-size metadata detection, and VLM-target downsampling policy.
 
@@ -96,19 +97,9 @@ That function:
 
 ### 3. Affine estimation
 
-Once AP estimation completes, the same worker runs `estimate_affine(...)`.
-The primary path is ANTsPyX-based affine registration against the atlas reference slice at the estimated AP position.
-If ANTsPyX is unavailable or returns a degenerate transform, the code falls back to the Gemini-based affine estimator.
-
-The GUI also supports a standalone ANTs debug lane (`Run ANTs Affine`) that skips AP estimation and runs affine directly at the current manual AP position.
-
-The Gemini fallback can build a side-by-side composite:
-
-- target slice on the left
-- atlas composite slice on the right
-
-The atlas image is resized to match the target image height for visual comparison.
-This is intentionally documented as visual matching, not ABBA-style physical calibration.
+Once AP estimation completes, the same worker runs the LangSlice registration runtime.
+That runtime asks a dedicated registration agent for paired anatomical correspondences, then derives affine and TPS outputs deterministically from the same vetted landmark set.
+The affine result remains the current preview/export contract.
 
 ### 4. Preview
 

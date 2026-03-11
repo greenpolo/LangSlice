@@ -7,7 +7,7 @@ This map is intentionally short and stable so human and AI agents can navigate q
 - `langslice/` - installable package source
 - `langslice/atlas/` - BrainGlobe loading, AP indexing, atlas metadata helpers
 - `langslice/vlm/` - Gemini client/config, AP agent loop, and Gemini affine fallback
-- `langslice/registration/` - matrix-first affine registration types and ANTsPyX orchestration
+- `langslice/registration/` - matrix-first affine and nonlinear registration runtime
 - `langslice/gui/` - PySide6 application UI
 - `langslice/export.py` - QUINT/ABBA-compatible export helpers
 - `tests/` - verification scripts (`smoke_test.py`, `test_atlas_features.py`, `test_quicknii_math.py`, `test_registration_backends.py`)

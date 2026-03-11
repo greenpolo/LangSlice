@@ -9,7 +9,7 @@ It uses Gemini to estimate anterior-posterior position, runs matrix-first in-pla
 2. Pixel size is auto-detected from TIFF metadata when available; otherwise the current manual value is used.
 3. Choose a BrainGlobe atlas.
 4. Run AP estimation.
-5. Run affine estimation from the full agent pipeline or use standalone `Run ANTs Affine` for isolated affine debugging.
+5. Run affine estimation from the full agent pipeline.
 6. Review the result in single, split, or overlay view.
 7. Export QUINT/ABBA-compatible JSON.
 
