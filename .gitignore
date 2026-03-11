@@ -11,6 +11,7 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 *.egg-info/
+.vscode/
 
 # Agent knowledge-base files
 AGENTS.md
