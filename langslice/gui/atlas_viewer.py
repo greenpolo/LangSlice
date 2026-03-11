@@ -17,6 +17,9 @@ Signal = QtCore.Signal
 Slot = QtCore.Slot
 
 QImage = QtGui.QImage
+QColor = QtGui.QColor
+QPainter = QtGui.QPainter
+QPen = QtGui.QPen
 QPixmap = QtGui.QPixmap
 QResizeEvent = QtGui.QResizeEvent
 
@@ -87,6 +90,7 @@ class AtlasViewer(QFrame):
         self._queued_generation = 0
         self._active_generation = 0
         self._source_pixmap: Optional[QPixmap] = None
+        self._correspondence_markers: list[tuple[float, float, str]] = []
 
         self._active_thread: Optional[QThread] = None
         self._active_worker: Optional[AtlasLoaderWorker] = None
@@ -178,6 +182,7 @@ class AtlasViewer(QFrame):
         self._atlas_name = None
         self._position_mm = None
         self._source_pixmap = None
+        self._correspondence_markers = []
         self._generation += 1
         self._queued_generation = self._generation
         self._debounce_timer.stop()
@@ -185,6 +190,16 @@ class AtlasViewer(QFrame):
         self._ap_badge.setVisible(False)
         self._image_label.clear()
         self._show_placeholder_state()
+
+    def set_correspondence_markers(self, markers: list[tuple[float, float, str]] | None) -> None:
+        if markers is None:
+            self._correspondence_markers = []
+        else:
+            self._correspondence_markers = [
+                (float(x), float(y), str(label))
+                for x, y, label in markers
+            ]
+        self._update_scaled_pixmap()
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
@@ -295,7 +310,36 @@ class AtlasViewer(QFrame):
             Qt.AspectRatioMode.KeepAspectRatio,
             Qt.TransformationMode.SmoothTransformation,
         )
+        if self._correspondence_markers:
+            self._draw_correspondence_markers(scaled)
         self._image_label.setPixmap(scaled)
+
+    def _draw_correspondence_markers(self, scaled_pixmap: QPixmap) -> None:
+        if self._source_pixmap is None or self._source_pixmap.width() <= 0 or self._source_pixmap.height() <= 0:
+            return
+
+        sx = scaled_pixmap.width() / float(self._source_pixmap.width())
+        sy = scaled_pixmap.height() / float(self._source_pixmap.height())
+        marker_pen = QPen(QColor(245, 158, 11))
+        marker_pen.setWidth(2)
+        text_pen = QPen(QColor(240, 240, 240))
+        radius = 5
+
+        painter = QPainter(scaled_pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setPen(marker_pen)
+        width = scaled_pixmap.width()
+        height = scaled_pixmap.height()
+        for x, y, label in self._correspondence_markers:
+            px = x * sx
+            py = y * sy
+            if px < 0.0 or py < 0.0 or px >= width or py >= height:
+                continue
+            painter.drawEllipse(int(round(px - radius)), int(round(py - radius)), radius * 2, radius * 2)
+            painter.setPen(text_pen)
+            painter.drawText(int(round(px + 8)), int(round(py - 6)), label)
+            painter.setPen(marker_pen)
+        painter.end()
 
     def _build_placeholder_widget(self) -> QWidget:
         widget = QWidget(self)

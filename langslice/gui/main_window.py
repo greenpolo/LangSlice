@@ -57,9 +57,14 @@ from langslice.atlas import (
     list_downloaded_atlases,
 )
 from langslice.image_prep import LoadedImageState, load_image_state
-from langslice.registration import estimate_affine_registration
+from langslice.registration import (
+    AffineResult,
+    RegistrationResult,
+    apply_affine_to_points,
+    estimate_registration_runtime,
+)
 from langslice.gui.theme import ACCENT, BG_PRIMARY, ERROR, STYLESHEET, SUCCESS, TEXT_SECONDARY
-from langslice.vlm import APResult, AffineResult, estimate_affine, estimate_position
+from langslice.vlm import APResult, estimate_position
 from langslice.vlm.config import AVAILABLE_MODELS, MODEL_NAME, set_model_name
 from langslice.export import build_quint_export, save_quint_json
 from langslice.gui.run_metadata_dialog import RunMetadataDialog
@@ -99,6 +104,9 @@ except Exception:
             self._position_mm = None
             self._label.setText("Atlas pending position estimate")
 
+        def set_correspondence_markers(self, markers: list[tuple[float, float, str]] | None) -> None:
+            _ = markers
+
 
 def pil_to_qpixmap(image: Image.Image) -> QPixmap:
     """Convert PIL Image to QPixmap."""
@@ -125,6 +133,67 @@ def affine_matrix_to_qtransform(matrix: object) -> QTransform:
         float(m[1][2]),
         1.0,
     )
+
+
+def build_split_view_correspondence_points(
+    registration_result: RegistrationResult | None,
+    affine_result: AffineResult | None,
+) -> tuple[list[tuple[float, float, str]], list[tuple[float, float, str]]]:
+    """Return paired marker points for split-view slice and atlas panes."""
+    if registration_result is None:
+        return [], []
+
+    accepted = registration_result.accepted_correspondences
+    labels = [corr.label for corr in accepted]
+
+    slice_xy = [(float(corr.slice_xy[0]), float(corr.slice_xy[1])) for corr in accepted]
+    if affine_result is not None and slice_xy:
+        transformed = apply_affine_to_points(affine_result.matrix, slice_xy)
+        slice_points = [
+            (float(transformed[idx][0]), float(transformed[idx][1]), labels[idx])
+            for idx in range(len(labels))
+        ]
+    else:
+        slice_points = [(x, y, labels[idx]) for idx, (x, y) in enumerate(slice_xy)]
+
+    atlas_points = [
+        (float(corr.atlas_xy[0]), float(corr.atlas_xy[1]), corr.label)
+        for corr in accepted
+    ]
+    return slice_points, atlas_points
+
+
+def draw_correspondence_markers(
+    pixmap: QPixmap,
+    points: list[tuple[float, float, str]],
+    *,
+    color: QColor,
+) -> QPixmap:
+    """Draw labeled correspondence markers onto a pixmap copy."""
+    if pixmap.isNull() or not points:
+        return pixmap
+
+    annotated = QPixmap(pixmap)
+    painter = QPainter(annotated)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+    pen = QPen(color)
+    pen.setWidth(2)
+    painter.setPen(pen)
+    text_color = QColor(240, 240, 240)
+
+    width = annotated.width()
+    height = annotated.height()
+    radius = 5
+    for x, y, label in points:
+        if x < 0.0 or y < 0.0 or x >= width or y >= height:
+            continue
+        painter.drawEllipse(int(round(x - radius)), int(round(y - radius)), radius * 2, radius * 2)
+        painter.setPen(text_color)
+        painter.drawText(int(round(x + 8)), int(round(y - 6)), label)
+        painter.setPen(pen)
+
+    painter.end()
+    return annotated
 
 
 class ImageLabel(QLabel):
@@ -219,7 +288,7 @@ class CanvasArea(QFrame):
 
 
 class AgentWorker(QObject):
-    """Runs AP + affine estimation in a worker thread."""
+    """Runs AP + registration runtime in a worker thread."""
 
     step_started = Signal(str)
     step_completed = Signal(str, object)
@@ -233,23 +302,14 @@ class AgentWorker(QObject):
         vlm_image: Image.Image,
         atlas_name: str,
         pixel_size_um: float,
-        *,
-        position_mm: float | None = None,
-        mode: str = "full",
     ) -> None:
         super().__init__()
         self.image = canonical_image
         self.vlm_image = vlm_image
         self.atlas_name = atlas_name
         self.pixel_size_um = pixel_size_um
-        self.position_mm = position_mm
-        self.mode = mode
 
     def run(self) -> None:
-        if self.mode == "affine_only":
-            self._run_affine_only()
-            return
-
         try:
             self.step_started.emit("ap")
             self.log_message.emit("Starting position estimation...")
@@ -267,44 +327,18 @@ class AgentWorker(QObject):
         try:
             self.step_started.emit("affine")
             self.log_message.emit("Starting affine estimation...")
-            affine_result = estimate_affine(
+            registration_result = estimate_registration_runtime(
                 image=self.image,
                 on_progress=self.log_message.emit,
                 atlas_name=self.atlas_name,
                 position_mm=ap_result.position_mm,
                 pixel_size_um=self.pixel_size_um,
             )
-            self.step_completed.emit("affine", affine_result)
+            self.step_completed.emit("affine", registration_result)
         except Exception as exc:
             self.step_error.emit("affine", str(exc))
         finally:
             self.finished.emit()
-
-    def _run_affine_only(self) -> None:
-        if self.position_mm is None:
-            self.step_error.emit("affine", "Manual AP position is required for standalone ANTs affine.")
-            self.finished.emit()
-            return
-
-        try:
-            self.step_started.emit("affine")
-            self.log_message.emit(
-                f"Starting standalone ANTs affine at {self.position_mm:.2f} mm..."
-            )
-            affine_result = estimate_affine_registration(
-                image=self.image,
-                on_progress=self.log_message.emit,
-                atlas_name=self.atlas_name,
-                position_mm=self.position_mm,
-                pixel_size_um=self.pixel_size_um,
-                fallback=None,
-            )
-            self.step_completed.emit("affine", affine_result)
-        except Exception as exc:
-            self.step_error.emit("affine", str(exc))
-        finally:
-            self.finished.emit()
-
 
 class StepIndicator(QFrame):
     """Step row in the right-side timeline panel."""
@@ -450,6 +484,7 @@ class MainWindow(QMainWindow):
         self.current_pos: float | None = None
         self.ap_result: APResult | None = None
         self.affine_result: AffineResult | None = None
+        self.registration_result: RegistrationResult | None = None
         self._last_run_context: dict[str, object] | None = None
         self.current_view_mode = "single"
 
@@ -768,18 +803,11 @@ class MainWindow(QMainWindow):
         self.clear_all_button = QPushButton("Clear All")
         self.clear_all_button.setObjectName("secondary")
         self.clear_all_button.clicked.connect(self._clear_all)
-        self.run_affine_button = QPushButton("Run ANTs Affine")
-        self.run_affine_button.setObjectName("secondary")
-        self.run_affine_button.setToolTip(
-            "Run standalone ANTs affine registration at the current manual AP position"
-        )
-        self.run_affine_button.clicked.connect(self._run_affine_only)
         self.run_button = QPushButton("Run Agent")
         self.run_button.clicked.connect(self._run_agent)
         hrow.addWidget(title)
         hrow.addStretch(1)
         hrow.addWidget(self.clear_all_button)
-        hrow.addWidget(self.run_affine_button)
         hrow.addWidget(self.run_button)
         layout.addWidget(header)
 
@@ -993,6 +1021,7 @@ class MainWindow(QMainWindow):
         self.current_pos = None
         self.ap_result = None
         self.affine_result = None
+        self.registration_result = None
         self._last_run_context = None
         self._reset_steps()
         self.ap_adjust_wrap.show()
@@ -1030,6 +1059,7 @@ class MainWindow(QMainWindow):
         self.current_pos = None
         self.ap_result = None
         self.affine_result = None
+        self.registration_result = None
         self._last_run_context = None
 
         self.logs.clear()
@@ -1057,7 +1087,6 @@ class MainWindow(QMainWindow):
         self.failure_btn.setEnabled(True)
         self._set_export_enabled(False)
         self.run_button.setEnabled(self.pil_image is not None and not self._is_worker_running())
-        self.run_affine_button.setEnabled(self.pil_image is not None and not self._is_worker_running())
         self.split_atlas.clear()
         self.overlay_viewer.clear()
 
@@ -1065,6 +1094,7 @@ class MainWindow(QMainWindow):
         if self.pil_image is None or self._is_worker_running():
             return
 
+        self.registration_result = None
         self._reset_steps()
         self._append_log("Starting agentic registration pipeline...")
 
@@ -1120,83 +1150,6 @@ class MainWindow(QMainWindow):
         thread.finished.connect(self._on_thread_cleaned)
 
         self.run_button.setEnabled(False)
-        self.run_affine_button.setEnabled(False)
-        thread.start()
-
-    def _run_affine_only(self) -> None:
-        if self.pil_image is None or self._is_worker_running():
-            return
-
-        if self.current_pos is None:
-            self.current_pos = self.ap_slider.value() / 100.0
-            self.ap_value_label.setText(f"Manual Position: {self.current_pos:.2f} mm")
-            self._sync_atlas_viewers()
-
-        self._reset_steps()
-        self.ap_adjust_wrap.show()
-        atlas_name = self._current_atlas_name()
-        self._append_log(
-            "Starting standalone ANTs affine debug run: "
-            f"atlas={atlas_name}, position={self.current_pos:.2f} mm, "
-            f"pixel_size={self.pixel_size_um:.4f} um/px, "
-            f"image={self.pil_image.width}x{self.pil_image.height}px"
-        )
-
-        image_copy = self.pil_image.copy()
-        vlm_image_copy = (
-            self.loaded_image_state.vlm_image.copy()
-            if self.loaded_image_state is not None
-            else self.pil_image.copy()
-        )
-        self._last_run_context = {
-            "atlas_name": atlas_name,
-            "pixel_size_um": self.pixel_size_um,
-            "pixel_size_source": self._pixel_size_source,
-            "metadata_pixel_size_um": self._metadata_pixel_size_um,
-            "image_width": self.pil_image.width,
-            "image_height": self.pil_image.height,
-            "vlm_width": vlm_image_copy.width,
-            "vlm_height": vlm_image_copy.height,
-            "vlm_scale_factor": (
-                self.loaded_image_state.vlm_scale_factor if self.loaded_image_state is not None else 1.0
-            ),
-            "vlm_effective_pixel_size_um": (
-                self.loaded_image_state.vlm_effective_pixel_size_um
-                if self.loaded_image_state is not None
-                else self.pixel_size_um
-            ),
-            "manual_position_mm": self.current_pos,
-            "run_mode": "affine_only",
-            "run_started_at": datetime.now().isoformat(timespec="seconds"),
-        }
-
-        thread = QThread(self)
-        worker = AgentWorker(
-            image_copy,
-            vlm_image_copy,
-            atlas_name,
-            pixel_size_um=self.pixel_size_um,
-            position_mm=self.current_pos,
-            mode="affine_only",
-        )
-        worker.moveToThread(thread)
-
-        self.worker_thread = thread
-        self.worker = worker
-
-        thread.started.connect(worker.run)
-        worker.step_started.connect(self._on_step_started)
-        worker.step_completed.connect(self._on_step_completed)
-        worker.step_error.connect(self._on_step_error)
-        worker.log_message.connect(self._append_log)
-        worker.finished.connect(self._on_worker_finished)
-        worker.finished.connect(thread.quit)
-        thread.finished.connect(worker.deleteLater)
-        thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(self._on_thread_cleaned)
-
-        self.run_button.setEnabled(False)
-        self.run_affine_button.setEnabled(False)
         thread.start()
 
     def _on_step_started(self, step_id: str) -> None:
@@ -1217,18 +1170,21 @@ class MainWindow(QMainWindow):
             self._append_log(f"Final position estimated: {result.position_mm:.2f} mm")
             return
 
-        if step_id == "affine" and isinstance(result, AffineResult):
-            self.affine_result = result
+        if step_id == "affine" and isinstance(result, RegistrationResult):
+            self.registration_result = result
+            self.affine_result = result.affine_result
+            affine_result = result.affine_result
             self.step_affine.set_status("completed")
-            self.step_affine.show_affine_result(result)
-            tx_px, ty_px = result.translation_px
+            self.step_affine.show_affine_result(affine_result)
+            tx_px, ty_px = affine_result.translation_px
             self._append_log(
                 "Affine calculated: "
-                f"backend={result.backend}, "
-                f"rot={result.rotation_deg:.2f} deg, "
+                f"backend={affine_result.backend}, "
+                f"rot={affine_result.rotation_deg:.2f} deg, "
                 f"translate=({tx_px:.1f}, {ty_px:.1f}) px, "
-                f"scale=({result.scale[0]:.3f}, {result.scale[1]:.3f}), "
-                f"shear={result.shear:.3f}"
+                f"scale=({affine_result.scale[0]:.3f}, {affine_result.scale[1]:.3f}), "
+                f"shear={affine_result.shear:.3f}, "
+                f"accepted_pairs={len(result.accepted_correspondences)}"
             )
             self._update_display_pixmaps()
             self._set_view_mode("split")
@@ -1248,7 +1204,6 @@ class MainWindow(QMainWindow):
     def _on_worker_finished(self) -> None:
         self._append_log("Pipeline completed.")
         self.run_button.setEnabled(self.pil_image is not None)
-        self.run_affine_button.setEnabled(self.pil_image is not None)
         self._set_export_enabled(self._all_steps_completed())
         
         # Enable feedback buttons if debug traces were generated
@@ -1358,10 +1313,22 @@ class MainWindow(QMainWindow):
         return canvas
 
     def _update_display_pixmaps(self) -> None:
-        pixmap = self._transformed_pixmap()
-        self.single_image_label.set_source_pixmap(pixmap)
-        self.split_image_label.set_source_pixmap(pixmap)
-        self.overlay_viewer.set_slice_pixmap(pixmap)
+        base_pixmap = self._transformed_pixmap()
+        split_slice_points, split_atlas_points = build_split_view_correspondence_points(
+            self.registration_result,
+            self.affine_result,
+        )
+        split_pixmap = base_pixmap
+        if split_pixmap is not None and split_slice_points:
+            split_pixmap = draw_correspondence_markers(
+                split_pixmap,
+                split_slice_points,
+                color=QColor(245, 158, 11),
+            )
+        self.single_image_label.set_source_pixmap(base_pixmap)
+        self.split_image_label.set_source_pixmap(split_pixmap)
+        self.split_atlas.set_correspondence_markers(split_atlas_points)
+        self.overlay_viewer.set_slice_pixmap(base_pixmap)
         self._sync_atlas_viewers()
 
     def _append_log(self, message: str) -> None:
