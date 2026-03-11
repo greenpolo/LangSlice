@@ -1,4 +1,4 @@
-"""Affine registration result types and matrix helpers."""
+"""Registration result types and matrix helpers."""
 
 from __future__ import annotations
 
@@ -232,3 +232,53 @@ class AffineResult:
         if height <= 0:
             return 0.0
         return (self.translation_px[1] / float(height)) * 100.0
+
+
+@dataclass(frozen=True)
+class RegistrationCorrespondence:
+    """One paired anatomical correspondence between atlas and slice."""
+
+    slice_xy: tuple[float, float]
+    atlas_xy: tuple[float, float]
+    label: str
+    confidence: str = "medium"
+    rationale: str = ""
+
+
+@dataclass
+class NonlinearResult:
+    """Regularized nonlinear registration result derived from landmarks."""
+
+    atlas_points: np.ndarray
+    slice_points: np.ndarray
+    smoothing: float
+    backend: str
+    reasoning: str
+    output_size: tuple[int, int]
+    qc_metrics: dict[str, Any] = field(default_factory=dict)
+    provenance: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        self.atlas_points = np.asarray(self.atlas_points, dtype=np.float64)
+        self.slice_points = np.asarray(self.slice_points, dtype=np.float64)
+        if self.atlas_points.ndim != 2 or self.atlas_points.shape[1] != 2:
+            raise ValueError("atlas_points must have shape (N, 2)")
+        if self.slice_points.ndim != 2 or self.slice_points.shape[1] != 2:
+            raise ValueError("slice_points must have shape (N, 2)")
+        if self.atlas_points.shape != self.slice_points.shape:
+            raise ValueError("atlas_points and slice_points must have the same shape")
+        self.output_size = (int(self.output_size[0]), int(self.output_size[1]))
+        self.smoothing = float(self.smoothing)
+
+
+@dataclass
+class RegistrationResult:
+    """Complete registration runtime output."""
+
+    correspondences: list[RegistrationCorrespondence]
+    accepted_correspondences: list[RegistrationCorrespondence]
+    rejected_correspondences: list[dict[str, Any]]
+    affine_result: AffineResult
+    nonlinear_result: NonlinearResult
+    qc_state: str
+    debug_dir: str | None = None

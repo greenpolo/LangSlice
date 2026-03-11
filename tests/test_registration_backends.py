@@ -1,72 +1,71 @@
-"""Script-style checks for affine backend orchestration."""
+"""Script-style checks for registration runtime orchestration."""
 
 import numpy as np
 from PIL import Image
 
 import langslice.registration.core as registration_core
-from langslice.registration import AffineResult, estimate_affine_registration
-
-
-def fallback(
-    image: Image.Image,
-    on_progress: object = None,
-    atlas_name: str | None = None,
-    position_mm: float | None = None,
-    pixel_size_um: float | None = None,
-) -> AffineResult:
-    _ = on_progress, atlas_name, position_mm, pixel_size_um
-    return AffineResult.from_legacy_params(
-        image_width=image.width,
-        image_height=image.height,
-        rotation_deg=2.0,
-        translate_x_pct=1.0,
-        translate_y_pct=-1.5,
-        backend="vlm_fallback",
-        reasoning="fallback path",
-    )
+from langslice.registration import (
+    AffineResult,
+    NonlinearResult,
+    RegistrationCorrespondence,
+    RegistrationResult,
+    estimate_affine_registration,
+    estimate_registration_runtime,
+)
 
 
 image = Image.new("L", (120, 90), color=0)
-original_backend = registration_core.estimate_affine_with_ants
+original_runtime = registration_core.estimate_registration
 
 try:
-    def fake_success(**kwargs: object) -> AffineResult:
+    def fake_runtime(**kwargs: object) -> RegistrationResult:
         image_obj = kwargs["image"]
-        return AffineResult(
+        assert isinstance(image_obj, Image.Image)
+        affine = AffineResult(
             matrix=np.array(
                 [[1.0, 0.0, 3.0], [0.0, 1.0, -2.0], [0.0, 0.0, 1.0]],
                 dtype=np.float64,
             ),
             source_size=(image_obj.width, image_obj.height),
             output_size=(140, 100),
-            backend="antspyx",
-            reasoning="ants success",
+            backend="registration_agent_affine",
+            reasoning="runtime affine",
+        )
+        nonlinear = NonlinearResult(
+            atlas_points=np.array([[0.0, 0.0], [10.0, 5.0], [20.0, 8.0], [15.0, 18.0], [4.0, 16.0], [11.0, 10.0]]),
+            slice_points=np.array([[1.0, 2.0], [12.0, 7.0], [24.0, 12.0], [18.0, 21.0], [6.0, 17.0], [14.0, 12.0]]),
+            smoothing=1.0,
+            backend="tps",
+            reasoning="runtime nonlinear",
+            output_size=(140, 100),
+        )
+        corr = RegistrationCorrespondence(slice_xy=(1.0, 2.0), atlas_xy=(0.0, 0.0), label="test", confidence="high")
+        return RegistrationResult(
+            correspondences=[corr],
+            accepted_correspondences=[corr],
+            rejected_correspondences=[],
+            affine_result=affine,
+            nonlinear_result=nonlinear,
+            qc_state="accepted",
         )
 
-    registration_core.estimate_affine_with_ants = fake_success
-    success_result = estimate_affine_registration(
+    registration_core.estimate_registration = fake_runtime
+    full_result = estimate_registration_runtime(
         image=image,
         atlas_name="allen_mouse_25um",
         position_mm=1.2,
-        fallback=fallback,
     )
-    assert success_result.backend == "antspyx"
-    assert success_result.output_size == (140, 100)
+    assert full_result.affine_result.backend == "registration_agent_affine"
+    assert full_result.nonlinear_result.backend == "tps"
 
-    def fake_failure(**kwargs: object) -> AffineResult:
-        _ = kwargs
-        raise RuntimeError("synthetic ants failure")
-
-    registration_core.estimate_affine_with_ants = fake_failure
-    failure_result = estimate_affine_registration(
+    affine_only = estimate_affine_registration(
         image=image,
         atlas_name="allen_mouse_25um",
         position_mm=1.2,
-        fallback=fallback,
     )
-    assert failure_result.backend == "vlm_fallback"
-    assert "ANTsPyX backend failed: synthetic ants failure" in failure_result.reasoning
+    assert affine_only.backend == "registration_agent_affine"
+    assert affine_only.output_size == (140, 100)
 finally:
-    registration_core.estimate_affine_with_ants = original_backend
+    registration_core.estimate_registration = original_runtime
 
-print("Registration backend orchestration OK")
+print("Registration runtime orchestration OK")
