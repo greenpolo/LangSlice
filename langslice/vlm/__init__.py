@@ -9,8 +9,6 @@ from langslice.vlm.config import (
 )
 from langslice.vlm.estimator import (
     APResult,
-    AffineResult,
-    estimate_affine,
     estimate_ap,
     estimate_position,
 )
@@ -23,7 +21,5 @@ __all__ = [
     "THINKING_LEVEL",
     "estimate_ap",
     "estimate_position",
-    "estimate_affine",
     "APResult",
-    "AffineResult",
 ]

@@ -1,6 +1,5 @@
 """VLM-based brain slice estimation using Gemini."""
 
-import base64
 import io
 import json
 import logging
@@ -10,10 +9,9 @@ from typing import Any, Callable, cast
 
 import numpy as np
 from PIL import Image
-from google.genai.types import Tool, ToolCodeExecution
-
 from langslice.image_prep import normalize_image, prepare_image_for_vlm
-from langslice.registration import AffineResult, estimate_affine_registration
+from langslice.registration.core import estimate_affine_registration
+from langslice.registration.types import AffineResult
 from langslice.vlm import config as vlm_config
 from langslice.vlm.config import get_client
 
@@ -77,46 +75,6 @@ class APResult:
     reasoning: str
     debug_dir: str | None = None
 
-
-
-def _image_to_base64(img: Image.Image, fmt: str = "JPEG") -> str:
-    """Convert PIL Image to base64 string."""
-    buf = io.BytesIO()
-    if img.mode != "RGB":
-        img = img.convert("RGB")
-    if fmt.upper() == "JPEG":
-        img.save(buf, format=fmt, quality=95, subsampling=0)
-    else:
-        img.save(buf, format=fmt)
-    return base64.b64encode(buf.getvalue()).decode("utf-8")
-
-def _part_text(text: str) -> dict[str, object]:
-    return {"text": text}
-
-
-def _part_image_base64(image_b64: str) -> dict[str, object]:
-    inline_data: object = {
-        "mime_type": "image/jpeg",
-        "data": image_b64,
-    }
-    return {"inline_data": inline_data}
-
-
-def _contents_from_parts(parts: list[dict[str, object]]) -> list[dict[str, object]]:
-    return [{"role": "user", "parts": parts}]
-
-
-def _generation_config(schema: dict[str, object]) -> dict[str, object]:
-    config: dict[str, object] = {
-        "thinking_config": {"thinking_level": vlm_config.THINKING_LEVEL},
-        "response_mime_type": "application/json",
-        "response_json_schema": schema,
-    }
-    if vlm_config.CODE_EXECUTION_ENABLED:
-        config["tools"] = [Tool(code_execution=ToolCodeExecution())]
-    return config
-
-
 def _first_model_content(response: object) -> object:
     candidates = getattr(response, "candidates", None)
     if not isinstance(candidates, list) or not candidates:
@@ -133,60 +91,9 @@ def _first_model_content(response: object) -> object:
             f"Gemini candidate has no content. finish_reason={finish_reason}"
         )
     return content
-
-
-def _extract_result(response: object) -> dict[str, object]:
-    executable_code = getattr(response, "executable_code", None)
-    if executable_code:
-        logger.info(f"VLM executed code:\n{executable_code}")
-    
-    code_execution_result = getattr(response, "code_execution_result", None)
-    if code_execution_result:
-        logger.info(f"VLM code execution outcome:\n{code_execution_result}")
-        
-    parsed = getattr(response, "parsed", None)
-    if isinstance(parsed, dict):
-        parsed_dict = cast(dict[object, object], parsed)
-        normalized: dict[str, object] = {}
-        for k, v in parsed_dict.items():
-            normalized[str(k)] = v
-        return normalized
-
-    model_dump = getattr(parsed, "model_dump", None)
-    if callable(model_dump):
-        dumped = model_dump()
-        if isinstance(dumped, dict):
-            dumped_dict = cast(dict[object, object], dumped)
-            normalized: dict[str, object] = {}
-            for k, v in dumped_dict.items():
-                normalized[str(k)] = v
-            return normalized
-
-    text = getattr(response, "text", None)
-    if isinstance(text, str) and text:
-        try:
-            decoded = json.loads(text)
-            if isinstance(decoded, dict):
-                decoded_dict = cast(dict[object, object], decoded)
-                normalized: dict[str, object] = {}
-                for k, v in decoded_dict.items():
-                    normalized[str(k)] = v
-                return normalized
-        except json.JSONDecodeError:
-            pass
-        logger.warning("Gemini response did not expose parsed JSON; returning empty result.")
-    return {}
-
-
 def _to_float(value: object, default: float = 0.0) -> float:
     if isinstance(value, (int, float)):
         return float(value)
-    return default
-
-
-def _to_str(value: object, default: str = "N/A") -> str:
-    if isinstance(value, str):
-        return value
     return default
 
 
@@ -989,215 +896,6 @@ def estimate_ap(
     )
 
 
-def _build_matched_composite(
-    target: Image.Image,
-    atlas_name: str,
-    position_mm: float,
-    progress: Callable[[str], None],
-) -> Image.Image | None:
-    """Build a side-by-side composite with the atlas scaled to match the target's pixel dimensions.
-
-    The atlas is resized so its height matches the target's height, preserving
-    the atlas aspect ratio.  This gives the VLM visually comparable images
-    regardless of the original pixel sizes or physical resolution.
-    """
-    from langslice.atlas.core import get_composite_slice, load_atlas
-
-    try:
-        atlas = load_atlas(atlas_name)
-        atlas_composite = get_composite_slice(atlas, position_mm, opacity=0.4)
-    except Exception as exc:
-        progress(f"Warning: could not load atlas composite for affine prompt: {exc}")
-        return None
-
-    # Scale atlas height to match target height, preserving aspect ratio.
-    target_rgb = normalize_image(target)
-    target_h = target_rgb.height
-    scale_factor = target_h / atlas_composite.height
-    new_w = max(1, int(round(atlas_composite.width * scale_factor)))
-    new_h = max(1, int(round(atlas_composite.height * scale_factor)))
-    atlas_scaled = atlas_composite.resize((new_w, new_h), _RESAMPLE_LANCZOS)
-
-    progress(
-        f"Atlas scaled for VLM: {atlas_composite.width}x{atlas_composite.height} -> "
-        f"{new_w}x{new_h} (matched to target height {target_h}px)"
-    )
-
-    # Build side-by-side composite: [target | atlas_scaled]
-    atlas_rgb = atlas_scaled.convert("RGB")
-    out_h = max(target_rgb.height, atlas_rgb.height)
-    gap = 20  # pixel gap between images
-    out_w = target_rgb.width + gap + atlas_rgb.width
-    composite = Image.new("RGB", (out_w, out_h), (0, 0, 0))
-
-    target_y = (out_h - target_rgb.height) // 2
-    atlas_y = (out_h - atlas_rgb.height) // 2
-    composite.paste(target_rgb, (0, target_y))
-    composite.paste(atlas_rgb, (target_rgb.width + gap, atlas_y))
-
-    return composite
-
-
-def _estimate_affine_vlm_fallback(
-    image: Image.Image,
-    on_progress: Callable[[str], None] | None = None,
-    atlas_name: str | None = None,
-    position_mm: float | None = None,
-    pixel_size_um: float | None = None,
-) -> AffineResult:
-    """
-    Estimate 2D affine transformation with the Gemini fallback path.
-
-    When *atlas_name* and *position_mm* are provided the function constructs
-    a side-by-side composite (slice + atlas at matched pixel dimensions) and
-    sends it to the VLM, giving the model accurate visual context.
-
-    *pixel_size_um* is accepted but ignored because this fallback remains a
-    visually matched registration prompt rather than a physically calibrated
-    transform estimate.
-    """
-
-    def _progress(msg: str) -> None:
-        if on_progress:
-            on_progress(msg)
-        logger.info(msg)
-
-    client = get_client()
-
-    target_normalized = normalize_image(image)
-    vlm_prep = prepare_image_for_vlm(target_normalized, pixel_size_um=pixel_size_um)
-    target_prepared = vlm_prep.image
-    if vlm_prep.downsampled:
-        _progress(
-            "Target image resized for Gemini affine fallback: "
-            f"{vlm_prep.original_size[0]}x{vlm_prep.original_size[1]}px -> "
-            f"{vlm_prep.output_size[0]}x{vlm_prep.output_size[1]}px "
-            f"(scale={vlm_prep.scale_factor:.4f}"
-            + (
-                f", effective_pixel_size={vlm_prep.effective_pixel_size_um:.4f} um/px"
-                if vlm_prep.effective_pixel_size_um is not None
-                else ""
-            )
-            + ")"
-        )
-    target_b64 = _image_to_base64(target_prepared)
-
-    # Build pixel-matched composite when atlas context is available.
-    composite_b64: str | None = None
-    has_atlas_context = atlas_name is not None and position_mm is not None
-    if has_atlas_context:
-        assert atlas_name is not None and position_mm is not None
-        composite = _build_matched_composite(
-            target_prepared, atlas_name, position_mm, _progress
-        )
-        if composite is not None:
-            composite_b64 = _image_to_base64(composite)
-
-    # Assemble prompt parts
-    parts: list[dict[str, object]]
-    if composite_b64 is not None:
-        _progress("Estimating affine transformation with Gemini fallback (with atlas context)...")
-        prompt_text = (
-            "Using both images, estimate the 2D affine transformation "
-            "(rotation in degrees, translateX and translateY as percentages of image size) "
-            "needed to align the target brain slice to match the atlas orientation. "
-            "The atlas reference shows the expected upright coronal orientation. "
-            "Compare the tissue outline and internal structures to determine rotation and offset. "
-        )
-        if vlm_config.CODE_EXECUTION_ENABLED:
-            prompt_text += (
-                "You may actively inspect the images using Python code. For example, "
-                "you can write code to measure the angle of the midline or detect the center "
-                "of mass to verify your rotation and translation estimates."
-            )
-        parts = [
-            _part_text("Image 1 is the target brain slice you need to register."),
-            _part_image_base64(target_b64),
-            _part_text(
-                "Image 2 is a side-by-side composite showing the target brain slice (left) "
-                "and the atlas reference at the same visual scale (right). "
-                "The atlas has been resized to match the target image height for comparison."
-            ),
-            _part_image_base64(composite_b64),
-            _part_text(prompt_text),
-        ]
-    else:
-        _progress("Estimating affine transformation with Gemini fallback...")
-        prompt_text = (
-            "Analyze this brain slice image. Estimate the 2D affine transformation "
-            "(rotation in degrees, translateX and translateY as percentages of image size) "
-            "needed to center and align it upright. Assume the image might be slightly tilted "
-            "or off-center. "
-        )
-        if vlm_config.CODE_EXECUTION_ENABLED:
-            prompt_text += (
-                "You may use Python code to analyze the image properties, such as finding the "
-                "center of mass or detecting the main axis of the tissue, to inform your estimates."
-            )
-        parts = [
-            _part_image_base64(target_b64),
-            _part_text(prompt_text),
-        ]
-
-    response = _retry_generate(
-        client,
-        model=vlm_config.MODEL_NAME,
-        contents=_contents_from_parts(parts),
-        config=_generation_config(
-            {
-                "type": "object",
-                "properties": {
-                    "rotation": {
-                        "type": "number",
-                        "description": "Rotation in degrees to make the slice upright",
-                    },
-                    "translateX": {
-                        "type": "number",
-                        "description": "X translation as percentage (-50 to 50)",
-                    },
-                    "translateY": {
-                        "type": "number",
-                        "description": "Y translation as percentage (-50 to 50)",
-                    },
-                    "reasoning": {
-                        "type": "string",
-                        "description": "Reasoning for the transformation",
-                    },
-                },
-                "required": ["rotation", "translateX", "translateY", "reasoning"],
-            }
-        ),
-        on_progress=_progress,
-    )
-
-    result = _extract_result(response)
-    rotation = _to_float(result.get("rotation"), 0.0)
-    translate_x = _to_float(result.get("translateX"), 0.0)
-    translate_y = _to_float(result.get("translateY"), 0.0)
-    reasoning = _to_str(result.get("reasoning"), "N/A")
-
-    _progress(
-        "Gemini fallback affine estimated: "
-        f"rot={rotation} deg, tx={translate_x}%, ty={translate_y}%"
-    )
-
-    return AffineResult.from_legacy_params(
-        image_width=target_prepared.width,
-        image_height=target_prepared.height,
-        rotation_deg=rotation,
-        translate_x_pct=translate_x,
-        translate_y_pct=translate_y,
-        backend="vlm_fallback",
-        reasoning=reasoning,
-        provenance={
-            "legacy_rotation_deg": rotation,
-            "legacy_translate_x_pct": translate_x,
-            "legacy_translate_y_pct": translate_y,
-            "atlas_context_used": composite_b64 is not None,
-        },
-    )
-
-
 def estimate_affine(
     image: Image.Image,
     on_progress: Callable[[str], None] | None = None,
@@ -1205,7 +903,7 @@ def estimate_affine(
     position_mm: float | None = None,
     pixel_size_um: float | None = None,
 ) -> AffineResult:
-    """Estimate an in-plane affine transform with ANTsPyX primary and Gemini fallback."""
+    """Estimate an in-plane affine transform with the registration runtime."""
 
     return estimate_affine_registration(
         image=image,
@@ -1213,5 +911,4 @@ def estimate_affine(
         atlas_name=atlas_name,
         position_mm=position_mm,
         pixel_size_um=pixel_size_um,
-        fallback=_estimate_affine_vlm_fallback,
     )

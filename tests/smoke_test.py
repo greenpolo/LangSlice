@@ -12,11 +12,11 @@ print("Atlas module OK")
 from langslice.vlm.config import get_api_key, get_client, MODEL_NAME, THINKING_LEVEL
 print(f"VLM config OK: model={MODEL_NAME} thinking={THINKING_LEVEL}")
 
-from langslice.vlm.estimator import estimate_ap, estimate_affine, APResult, AffineResult, _retry_generate
-print("VLM estimator OK (with retry logic)")
+from langslice.vlm.estimator import estimate_ap, APResult, _retry_generate
+print("VLM estimator OK (AP + retry logic)")
 
 # Registration module
-from langslice.registration import affine_matrix_from_legacy_params, identity_affine_matrix
+from langslice.registration import AffineResult, NonlinearResult, affine_matrix_from_legacy_params, identity_affine_matrix
 print("Registration module OK")
 
 # Export module
