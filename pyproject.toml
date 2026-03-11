@@ -8,7 +8,6 @@ version = "0.1.0"
 description = "VLM-based brain slice registration using Gemini and BrainGlobe atlases"
 requires-python = ">=3.10"
 dependencies = [
-    "antspyx",
     "google-genai",
     "brainglobe-atlasapi",
     "numpy",

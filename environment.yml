@@ -10,7 +10,6 @@ dependencies:
   - pyside6
   - pip
   - pip:
-    - antspyx
     - google-genai
     - brainglobe-atlasapi
     - python-dotenv
