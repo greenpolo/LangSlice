@@ -12,4 +12,5 @@ dependencies:
   - pip:
     - google-genai
     - brainglobe-atlasapi
+    - brainglobe-space
     - python-dotenv

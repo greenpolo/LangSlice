@@ -7,6 +7,8 @@ from typing import Any, Protocol, cast
 import numpy as np
 from PIL import Image
 
+from langslice.atlas.space import atlas_space_context, require_coronal_layout
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_ATLAS_NAME = "allen_mouse_25um"
@@ -128,32 +130,31 @@ def load_atlas(name: str) -> BrainGlobeAtlas:
 
 def position_mm_to_index(atlas: _AtlasLike, position_mm: float) -> int:
     """Convert a physical position (mm from anterior edge) to an array index."""
-    res_mm = float(atlas.resolution[0]) / 1000.0
-    shape = cast(tuple[int, ...], atlas.reference.shape)
-    n_slices = shape[0]
+    context = require_coronal_layout(atlas_space_context(atlas))
+    res_mm = context.ap_resolution_mm
+    n_slices = context.shape[context.ap_axis_index]
 
     idx = int(round(position_mm / res_mm))
     if idx < 0 or idx >= n_slices:
         _, max_pos = get_position_range_mm(atlas)
         raise ValueError(
             f"Position {position_mm:.3f}mm maps to index {idx}, out of range [0, {n_slices - 1}]. "
-            f"Valid range for '{atlas.atlas_name}': 0.0mm to {max_pos:.3f}mm"
+            + f"Valid range for '{atlas.atlas_name}': 0.0mm to {max_pos:.3f}mm"
         )
     return idx
 
 
 def index_to_position_mm(atlas: _AtlasLike, idx: int) -> float:
     """Convert an array index along axis 0 to a physical position in mm."""
-    res_mm = float(atlas.resolution[0]) / 1000.0
-    return idx * res_mm
+    context = require_coronal_layout(atlas_space_context(atlas))
+    return idx * context.ap_resolution_mm
 
 
 def get_position_range_mm(atlas: _AtlasLike) -> tuple[float, float]:
     """Return physical position range as (0.0, max_mm)."""
-    shape = cast(tuple[int, ...], atlas.reference.shape)
-    n_slices = shape[0]
-    res_mm = float(atlas.resolution[0]) / 1000.0
-    return 0.0, (n_slices - 1) * res_mm
+    context = require_coronal_layout(atlas_space_context(atlas))
+    n_slices = context.shape[context.ap_axis_index]
+    return 0.0, (n_slices - 1) * context.ap_resolution_mm
 
 
 def _normalize_to_uint8(arr: np.ndarray) -> np.ndarray:
