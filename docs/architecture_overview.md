@@ -16,16 +16,18 @@ The active runtime is organized around four package areas:
 ### `langslice.atlas`
 
 `langslice.atlas.core` wraps BrainGlobe access behind plain Python helpers.
+`langslice.atlas.space` provides the orientation adapter layer using `brainglobe-space` (`AnatomicalSpace`).
 The active responsibilities are:
 
 - atlas name canonicalization
 - atlas loading and caching
-- conversion between `position_mm` and AP index
+- conversion between `position_mm` and AP index through atlas-space context
 - extraction of reference, boundary, and composite slices
 - structure and region lookup helpers
 - atlas metadata and atlas listing helpers
 
 The atlas layer is the source of truth for atlas-native AP coordinates.
+Current runtime guardrails require coronal layout with AP/DV/ML mapped to axes `0/1/2`.
 
 ### `langslice.vlm`
 
@@ -168,6 +170,7 @@ The following are not current runtime goals:
 - Bregma-referenced internal coordinates
 - fully physically calibrated viewer overlays
 - complete pixel-size-aware affine orchestration across all backends
+- full non-coronal atlas orientation support in GUI/export/runtime
 - quantitative affine quality scoring in the GUI
 - automatic migration of atlas coordinates into a skull landmark space
 

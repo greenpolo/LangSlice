@@ -19,6 +19,8 @@ The GUI entrypoint is `langslice gui`.
 AP estimation is agentic.
 The model receives the target image plus a small atlas toolset that lets it request atlas slices, atlas metadata, and visible region names before submitting a final AP estimate.
 
+Atlas AP/index conversion now runs through a `brainglobe-space` adapter in `langslice.atlas.space`, with current guardrails that keep the runtime on coronal atlas layout assumptions.
+
 The output shown in the GUI is:
 
 - estimated `position_mm`
@@ -114,3 +116,4 @@ What export does not do:
 - Pixel-size auto-detection currently focuses on TIFF metadata.
 - The GUI currently validates affine results visually; it does not report quantitative alignment metrics.
 - The app exports compatible JSON but does not embed itself into ABBA runtime workflows.
+- Broad non-coronal orientation support is not enabled yet; sagittal-first workflows are not a current target.

@@ -20,11 +20,15 @@ The active helper functions are:
 - `index_to_position_mm(...)` in `langslice.atlas.core`
 - `get_position_range_mm(...)` in `langslice.atlas.core`
 
+These helpers are now backed by `langslice.atlas.space`, which builds a `brainglobe-space` `AnatomicalSpace` context from atlas orientation/shape/resolution.
+
 These functions treat:
 
 - `0.0 mm` as the most anterior coronal slice available in the volume
 - increasing values as more posterior positions
 - the valid range as `0.0` to `(n_ap - 1) * res_ap_mm`
+
+Current guardrails intentionally require coronal-layout atlases (`AP/DV/ML -> axes 0/1/2`) and AP increasing from anterior to posterior.
 
 ## Where It Is Used
 
@@ -59,3 +63,4 @@ The current atlas helpers rely on:
 
 That is enough for LangSlice's current atlas-native AP handling.
 The code does not depend on a Bregma offset or on any extra transform metadata.
+Broader orientation support is planned but not active yet.
