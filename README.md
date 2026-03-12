@@ -35,6 +35,19 @@ LangSlice supports the backends implemented in `langslice/vlm/config.py`:
 
 Relevant environment variables are documented in `.env.example`.
 
+### Optional Gemini Rollout Flags
+
+These flags are intended for staged evaluation of newer Gemini integrations in the AP estimator:
+
+- `LANGSLICE_GENAI_COUNT_TOKENS=true` - log a turn-1 token preflight for AP and registration requests
+- `LANGSLICE_GENAI_AP_USE_FILE_API=true` - send AP images through Gemini File API instead of inline blobs (AI Studio only)
+- `LANGSLICE_GENAI_AP_USE_CONTEXT_CACHE=true` - cache the stable AP target-image prefix for repeated turns
+- `LANGSLICE_GENAI_AP_USE_INTERACTIONS=true` - run the AP estimator through the Interactions API pilot path (AI Studio only)
+- `LANGSLICE_GENAI_AP_CACHE_TTL=3600s` - override the AP cache TTL
+- `LANGSLICE_GENAI_FILE_POLL_TIMEOUT_S=10.0` - adjust File API processing timeout in seconds
+
+The offline Batch API helper in `langslice.vlm.batch_eval` is currently guarded to `vertex_adc` only.
+
 ## CLI
 
 - `langslice gui` - launch the desktop application

@@ -43,6 +43,10 @@ The supported backends are:
 - AP estimation via manual function calling
 - Gemini fallback affine estimation from the target image, optionally with atlas context
 
+`langslice.vlm.batch_eval` contains offline-only Batch API helpers for AP prompt/model evaluation on Vertex (`vertex_adc` guarded), separate from the live GUI runtime path.
+
+`langslice.vlm.config` also exposes rollout flags for staged Gemini integrations (token preflight, AP File API transport, AP context caching, and AP Interactions pilot).
+
 ### `langslice.registration`
 
 `langslice.registration` is the primary affine layer.
