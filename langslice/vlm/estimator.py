@@ -4,11 +4,12 @@ import io
 import json
 import logging
 import time
-from dataclasses import dataclass
-from typing import Any, Callable, cast
+from dataclasses import dataclass, field
+from typing import Any, Callable, Mapping, Sequence, cast
 
 import numpy as np
 from PIL import Image
+from google.genai import types
 from langslice.image_prep import normalize_image, prepare_image_for_vlm
 from langslice.registration.core import estimate_affine_registration
 from langslice.registration.types import AffineResult
@@ -36,16 +37,14 @@ def _retry_generate(
     last_exc: Exception | None = None
     for attempt in range(_MAX_RETRIES + 1):
         try:
-            return client.models.generate_content(
-                model=model, contents=contents, config=config
-            )
+            return client.models.generate_content(model=model, contents=contents, config=config)
         except Exception as exc:
             last_exc = exc
             # Check if the error has a retryable HTTP status code
             status = getattr(exc, "status_code", None) or getattr(exc, "code", None)
             if isinstance(status, int) and status in _RETRYABLE_STATUS_CODES:
                 if attempt < _MAX_RETRIES:
-                    delay = _INITIAL_BACKOFF_S * (2 ** attempt)
+                    delay = _INITIAL_BACKOFF_S * (2**attempt)
                     msg = f"Gemini API error (status {status}), retrying in {delay:.1f}s (attempt {attempt + 1}/{_MAX_RETRIES})"
                     logger.warning(msg)
                     if on_progress:
@@ -56,7 +55,7 @@ def _retry_generate(
             exc_name = type(exc).__name__.lower()
             if any(kw in exc_name for kw in ("timeout", "connection", "transport")):
                 if attempt < _MAX_RETRIES:
-                    delay = _INITIAL_BACKOFF_S * (2 ** attempt)
+                    delay = _INITIAL_BACKOFF_S * (2**attempt)
                     msg = f"Transient error ({type(exc).__name__}), retrying in {delay:.1f}s (attempt {attempt + 1}/{_MAX_RETRIES})"
                     logger.warning(msg)
                     if on_progress:
@@ -69,28 +68,49 @@ def _retry_generate(
     assert last_exc is not None
     raise last_exc
 
+
 @dataclass
 class APResult:
     position_mm: float
     reasoning: str
     debug_dir: str | None = None
 
+
+@dataclass
+class _APLoopState:
+    max_iterations: int
+    estimate_result: dict[str, object] | None = None
+    reasoning_log: list[dict[str, object]] = field(default_factory=list)
+    turn_metrics: list[dict[str, object]] = field(default_factory=list)
+    images_fetched: int = 0
+    fetched_positions: list[float] = field(default_factory=list)
+    saw_broad_sweep: bool = False
+    saw_narrow_sweep: bool = False
+
+
+@dataclass
+class _ImagePayload:
+    part: types.Part
+    interaction_input: dict[str, object] | None
+    transport: str
+    file_name: str | None = None
+    file_uri: str | None = None
+
+
 def _first_model_content(response: object) -> object:
     candidates = getattr(response, "candidates", None)
     if not isinstance(candidates, list) or not candidates:
         prompt_feedback = getattr(response, "prompt_feedback", None)
-        raise RuntimeError(
-            f"Gemini returned no candidates. prompt_feedback={prompt_feedback}"
-        )
+        raise RuntimeError(f"Gemini returned no candidates. prompt_feedback={prompt_feedback}")
 
     first = candidates[0]
     finish_reason = getattr(first, "finish_reason", None)
     content = getattr(first, "content", None)
     if content is None:
-        raise RuntimeError(
-            f"Gemini candidate has no content. finish_reason={finish_reason}"
-        )
+        raise RuntimeError(f"Gemini candidate has no content. finish_reason={finish_reason}")
     return content
+
+
 def _to_float(value: object, default: float = 0.0) -> float:
     if isinstance(value, (int, float)):
         return float(value)
@@ -109,6 +129,88 @@ def _image_to_bytes(img: Image.Image, fmt: str = "JPEG") -> bytes:
     return buf.getvalue()
 
 
+def _file_state_name(file_obj: object) -> str | None:
+    state = getattr(file_obj, "state", None)
+    if isinstance(state, str):
+        return state.upper()
+    state_name = getattr(state, "name", None)
+    if isinstance(state_name, str):
+        return state_name.upper()
+    return None
+
+
+def _wait_for_uploaded_file(
+    client: Any,
+    *,
+    file_name: str,
+    timeout_s: float,
+    on_progress: Callable[[str], None] | None = None,
+) -> object:
+    deadline = time.perf_counter() + timeout_s
+    while True:
+        uploaded = client.files.get(name=file_name)
+        state_name = _file_state_name(uploaded)
+        if state_name in {None, "ACTIVE"}:
+            return uploaded
+        if state_name in {"FAILED", "ERROR"}:
+            raise RuntimeError(
+                f"Gemini File API processing failed for {file_name}: state={state_name}"
+            )
+        if time.perf_counter() >= deadline:
+            raise RuntimeError(
+                f"Gemini File API processing timed out for {file_name}: last_state={state_name}"
+            )
+        if on_progress:
+            on_progress(
+                f"Waiting for Gemini file '{file_name}' to become ACTIVE (state={state_name})"
+            )
+        time.sleep(0.5)
+
+
+def _build_image_payload(
+    client: Any,
+    *,
+    image_bytes: bytes,
+    display_name: str,
+    use_file_api: bool,
+    uploaded_file_names: list[str],
+    on_progress: Callable[[str], None] | None = None,
+) -> _ImagePayload:
+    if not use_file_api:
+        return _ImagePayload(
+            part=types.Part(inline_data=types.Blob(mime_type="image/jpeg", data=image_bytes)),
+            interaction_input=None,
+            transport="inline_data",
+        )
+
+    payload = io.BytesIO(image_bytes)
+    payload.name = f"{display_name}.jpg"
+    uploaded = client.files.upload(
+        file=payload,
+        config=types.UploadFileConfig(mime_type="image/jpeg", display_name=display_name),
+    )
+    file_name = getattr(uploaded, "name", None)
+    if not isinstance(file_name, str) or not file_name:
+        raise RuntimeError(f"Gemini File API upload for '{display_name}' returned no file name")
+    uploaded_file_names.append(file_name)
+    active_file = _wait_for_uploaded_file(
+        client,
+        file_name=file_name,
+        timeout_s=vlm_config.file_poll_timeout_s(),
+        on_progress=on_progress,
+    )
+    file_uri = getattr(active_file, "uri", None) or getattr(uploaded, "uri", None)
+    if not isinstance(file_uri, str) or not file_uri:
+        raise RuntimeError(f"Gemini File API upload for '{display_name}' returned no URI")
+    return _ImagePayload(
+        part=types.Part.from_uri(file_uri=file_uri, mime_type="image/jpeg"),
+        interaction_input={"type": "image", "uri": file_uri, "mime_type": "image/jpeg"},
+        transport="file_api",
+        file_name=file_name,
+        file_uri=file_uri,
+    )
+
+
 def _inline_data_size(part: object) -> int:
     inline_data = getattr(part, "inline_data", None)
     if inline_data is None:
@@ -118,6 +220,14 @@ def _inline_data_size(part: object) -> int:
     if isinstance(data, (bytes, bytearray)):
         return len(data)
     return 0
+
+
+def _has_file_data(part: object) -> bool:
+    file_data = getattr(part, "file_data", None)
+    if file_data is None:
+        return False
+    file_uri = getattr(file_data, "file_uri", None)
+    return isinstance(file_uri, str) and bool(file_uri)
 
 
 def _history_metrics(contents: list[object]) -> dict[str, int]:
@@ -146,6 +256,10 @@ def _history_metrics(contents: list[object]) -> dict[str, int]:
             if blob_size > 0:
                 metrics["image_parts"] += 1
                 metrics["image_bytes"] += blob_size
+                continue
+
+            if _has_file_data(part):
+                metrics["image_parts"] += 1
 
     return metrics
 
@@ -183,6 +297,64 @@ def _extract_usage_metadata(response: object) -> dict[str, int | float | str | b
     return metadata
 
 
+def _extract_count_tokens_metadata(response: object) -> dict[str, int | float | str | bool]:
+    fields = ("total_tokens", "total_billable_characters")
+    metadata: dict[str, int | float | str | bool] = {}
+    for field in fields:
+        value = getattr(response, field, None)
+        if isinstance(value, (int, float, str, bool)):
+            metadata[field] = value
+    return metadata
+
+
+def _extract_interaction_usage_metadata(interaction: object) -> dict[str, int | float | str | bool]:
+    usage = getattr(interaction, "usage", None)
+    field_map = {
+        "total_input_tokens": "prompt_token_count",
+        "total_output_tokens": "candidates_token_count",
+        "total_tokens": "total_token_count",
+        "total_thought_tokens": "thoughts_token_count",
+        "total_cached_tokens": "cached_content_token_count",
+        "total_tool_use_tokens": "tool_use_prompt_token_count",
+    }
+    metadata: dict[str, int | float | str | bool] = {}
+    if usage is None:
+        return metadata
+    for source_field, target_field in field_map.items():
+        value = getattr(usage, source_field, None)
+        if isinstance(value, (int, float, str, bool)):
+            metadata[target_field] = value
+    return metadata
+
+
+def _count_tokens_if_enabled(
+    client: Any,
+    *,
+    model: str,
+    contents: object,
+    system_instruction: str | None = None,
+    tools: list[types.Tool] | None = None,
+    on_progress: Callable[[str], None] | None = None,
+) -> dict[str, int | float | str | bool]:
+    if not vlm_config.count_tokens_enabled():
+        return {}
+
+    config: dict[str, object] = {}
+    if system_instruction:
+        config["system_instruction"] = system_instruction
+    if tools:
+        config["tools"] = tools
+    try:
+        response = client.models.count_tokens(model=model, contents=contents, config=config or None)
+    except Exception as exc:
+        message = f"Token preflight failed: {type(exc).__name__}: {exc}"
+        logger.warning(message)
+        if on_progress:
+            on_progress(message)
+        return {"error": message}
+    return _extract_count_tokens_metadata(response)
+
+
 def _format_usage_metadata(metadata: dict[str, int | float | str | bool]) -> str:
     preferred_fields = (
         "prompt_token_count",
@@ -198,6 +370,61 @@ def _format_usage_metadata(metadata: dict[str, int | float | str | bool]) -> str
         if value is not None:
             parts.append(f"{field}={value}")
     return ", ".join(parts) if parts else "usage metadata unavailable"
+
+
+def _format_count_tokens(metadata: dict[str, int | float | str | bool]) -> str:
+    parts: list[str] = []
+    for field in ("total_tokens", "total_billable_characters"):
+        value = metadata.get(field)
+        if value is not None:
+            parts.append(f"{field}={value}")
+    skipped = metadata.get("skipped")
+    if isinstance(skipped, str):
+        parts.append(f"skipped={skipped}")
+    error = metadata.get("error")
+    if isinstance(error, str):
+        parts.append(error)
+    return ", ".join(parts) if parts else "count_tokens unavailable"
+
+
+def _build_nudge_text(state: _APLoopState) -> str:
+    if not state.saw_broad_sweep:
+        return (
+            "Please continue with a broad coarse sweep now. Call `fetch_multiple_atlas_slices` "
+            "with 4-5 widely spaced AP positions to find the correct neighborhood before reasoning further."
+        )
+    if not state.saw_narrow_sweep:
+        return (
+            "Please continue with a narrowed sweep now. Call `fetch_multiple_atlas_slices` "
+            "around your best current neighborhood with tighter spacing before considering submission."
+        )
+    return (
+        "Please continue. Before submitting, verify your leading candidate by checking at least one "
+        "lower and one higher neighboring AP position around it using `fetch_multiple_atlas_slices` or `fetch_atlas_slice`."
+    )
+
+
+def _interaction_input_metrics(input_parts: Sequence[Mapping[str, object]]) -> dict[str, int]:
+    metrics = {
+        "content_count": 1,
+        "part_count": len(input_parts),
+        "text_parts": 0,
+        "function_call_parts": 0,
+        "function_response_parts": 0,
+        "image_parts": 0,
+        "image_bytes": 0,
+    }
+    for item in input_parts:
+        item_type = item.get("type")
+        if item_type == "text":
+            metrics["text_parts"] += 1
+        elif item_type == "image":
+            metrics["image_parts"] += 1
+        elif item_type == "function_call":
+            metrics["function_call_parts"] += 1
+        elif item_type == "function_result":
+            metrics["function_response_parts"] += 1
+    return metrics
 
 
 def _sorted_unique_positions(
@@ -264,6 +491,518 @@ def _get_regions_at_position(atlas: object, position_mm: float) -> list[str]:
             entry = structures[uid_int]
             names.append(f"{entry['acronym']} ({entry['name']})")
     return names
+
+
+def _extract_generate_function_calls(
+    model_content: types.Content,
+) -> tuple[list[dict[str, object]], str | None]:
+    model_parts = getattr(model_content, "parts", None) or []
+    text_preview: str | None = None
+    function_calls: list[dict[str, object]] = []
+    for part in model_parts:
+        text = getattr(part, "text", None)
+        if text_preview is None and isinstance(text, str) and text:
+            text_preview = text
+        function_call = getattr(part, "function_call", None)
+        if function_call is None:
+            continue
+        args = dict(function_call.args) if getattr(function_call, "args", None) else {}
+        function_calls.append(
+            {
+                "call_id": None,
+                "name": getattr(function_call, "name", ""),
+                "args": args,
+            }
+        )
+    return function_calls, text_preview
+
+
+def _extract_interaction_function_calls(
+    interaction: object,
+) -> tuple[list[dict[str, object]], str | None]:
+    outputs = getattr(interaction, "outputs", None) or []
+    text_preview: str | None = None
+    function_calls: list[dict[str, object]] = []
+    for output in outputs:
+        output_type = getattr(output, "type", None)
+        if output_type == "text" and text_preview is None:
+            text = getattr(output, "text", None)
+            if isinstance(text, str) and text:
+                text_preview = text
+        if output_type != "function_call":
+            continue
+        arguments = getattr(output, "arguments", None)
+        args = dict(arguments) if isinstance(arguments, dict) else {}
+        function_calls.append(
+            {
+                "call_id": getattr(output, "id", None),
+                "name": getattr(output, "name", ""),
+                "args": args,
+            }
+        )
+    return function_calls, text_preview
+
+
+def _process_ap_function_calls(
+    function_calls: list[dict[str, object]],
+    *,
+    iteration: int,
+    atlas: object,
+    pos_lo: float,
+    pos_hi: float,
+    target_h: int,
+    run_dir: str | None,
+    client: Any,
+    use_file_api: bool,
+    uploaded_file_names: list[str],
+    state: _APLoopState,
+    on_progress: Callable[[str], None] | None = None,
+) -> tuple[list[types.Part], list[dict[str, object]]]:
+    import os
+
+    atlas_obj = cast(Any, atlas)
+    generate_parts: list[types.Part] = []
+    interaction_inputs: list[dict[str, object]] = []
+
+    def _append_response(
+        *,
+        call_id: object,
+        name: str,
+        response: dict[str, object],
+        is_error: bool = False,
+    ) -> None:
+        generate_parts.append(types.Part.from_function_response(name=name, response=response))
+        interaction_inputs.append(
+            {
+                "type": "function_result",
+                "call_id": str(call_id)
+                if isinstance(call_id, str) and call_id
+                else f"{iteration + 1}:{name}",
+                "name": name,
+                "result": response,
+                "is_error": is_error,
+            }
+        )
+
+    for call in function_calls:
+        name = str(call.get("name", ""))
+        args_obj = call.get("args", {})
+        args = args_obj if isinstance(args_obj, dict) else {}
+        call_id = call.get("call_id")
+
+        if on_progress:
+            on_progress(f"Tool call [{iteration + 1}]: {name}({args})")
+
+        if name == "fetch_atlas_slice":
+            pos = float(args.get("position_mm", (pos_lo + pos_hi) / 2))
+            pos = max(pos_lo, min(pos_hi, pos))
+            state.fetched_positions.append(pos)
+            try:
+                from langslice.atlas.core import get_reference_slice
+
+                ref_img = get_reference_slice(atlas_obj, pos)
+                ref_prepared = normalize_image(ref_img)
+                scale = target_h / ref_prepared.height
+                new_w = max(1, int(round(ref_prepared.width * scale)))
+                new_h = max(1, int(round(ref_prepared.height * scale)))
+                ref_scaled = ref_prepared.resize((new_w, new_h), _RESAMPLE_LANCZOS)
+                ref_bytes = _image_to_bytes(ref_scaled)
+                image_payload = _build_image_payload(
+                    client,
+                    image_bytes=ref_bytes,
+                    display_name=f"ap_{iteration + 1:02d}_slice_{pos:.3f}mm",
+                    use_file_api=use_file_api,
+                    uploaded_file_names=uploaded_file_names,
+                    on_progress=on_progress,
+                )
+                state.images_fetched += 1
+
+                if run_dir:
+                    ref_scaled.save(
+                        os.path.join(run_dir, f"tool_{iteration + 1:02d}_slice_{pos:.2f}mm.jpg"),
+                        quality=95,
+                    )
+
+                _append_response(
+                    call_id=call_id,
+                    name=name,
+                    response={
+                        "position_mm": pos,
+                        "status": "ok",
+                        "description": f"Atlas coronal section at {pos:.2f}mm from anterior edge",
+                    },
+                )
+                generate_parts.append(image_payload.part)
+                if image_payload.interaction_input is not None:
+                    interaction_inputs.append(image_payload.interaction_input)
+                state.reasoning_log.append(
+                    {
+                        "iteration": iteration + 1,
+                        "tool": name,
+                        "args": args,
+                        "result": f"Image at {pos:.2f}mm via {image_payload.transport}",
+                    }
+                )
+            except ValueError as exc:
+                _append_response(
+                    call_id=call_id,
+                    name=name,
+                    response={"status": "error", "error": str(exc)},
+                    is_error=True,
+                )
+                state.reasoning_log.append(
+                    {
+                        "iteration": iteration + 1,
+                        "tool": name,
+                        "args": args,
+                        "result": f"Error: {exc}",
+                    }
+                )
+
+        elif name == "fetch_multiple_atlas_slices":
+            positions_list = args.get("positions_mm", [])
+            if not isinstance(positions_list, list):
+                positions_list = []
+
+            positions = [max(pos_lo, min(pos_hi, float(p))) for p in positions_list[:5]]
+            state.fetched_positions.extend(positions)
+            if positions and _is_broad_multi_sweep(positions):
+                state.saw_broad_sweep = True
+            if positions and _is_narrow_multi_sweep(positions):
+                state.saw_narrow_sweep = True
+
+            if not positions:
+                _append_response(
+                    call_id=call_id,
+                    name=name,
+                    response={"status": "error", "error": "No valid positions provided"},
+                    is_error=True,
+                )
+                state.reasoning_log.append(
+                    {
+                        "iteration": iteration + 1,
+                        "tool": name,
+                        "args": args,
+                        "result": "Error: empty input",
+                    }
+                )
+                continue
+
+            successes: list[str] = []
+            from langslice.atlas.core import get_reference_slice
+
+            for pos in positions:
+                try:
+                    ref_img = get_reference_slice(atlas_obj, pos)
+                    ref_prepared = normalize_image(ref_img)
+                    scale = target_h / ref_prepared.height
+                    new_w = max(1, int(round(ref_prepared.width * scale)))
+                    new_h = max(1, int(round(ref_prepared.height * scale)))
+                    ref_scaled = ref_prepared.resize((new_w, new_h), _RESAMPLE_LANCZOS)
+                    ref_bytes = _image_to_bytes(ref_scaled)
+                    image_payload = _build_image_payload(
+                        client,
+                        image_bytes=ref_bytes,
+                        display_name=f"ap_{iteration + 1:02d}_multi_{pos:.3f}mm",
+                        use_file_api=use_file_api,
+                        uploaded_file_names=uploaded_file_names,
+                        on_progress=on_progress,
+                    )
+                    state.images_fetched += 1
+
+                    if run_dir:
+                        ref_scaled.save(
+                            os.path.join(
+                                run_dir, f"tool_{iteration + 1:02d}_multi_{pos:.2f}mm.jpg"
+                            ),
+                            quality=95,
+                        )
+
+                    _append_response(
+                        call_id=call_id,
+                        name=name,
+                        response={
+                            "position_mm": pos,
+                            "status": "ok",
+                            "description": f"Atlas coronal section at {pos:.2f}mm",
+                        },
+                    )
+                    generate_parts.append(image_payload.part)
+                    if image_payload.interaction_input is not None:
+                        interaction_inputs.append(image_payload.interaction_input)
+                    successes.append(f"{pos:.2f}mm")
+                except Exception as exc:
+                    _append_response(
+                        call_id=call_id,
+                        name=name,
+                        response={"position_mm": pos, "status": "error", "error": str(exc)},
+                        is_error=True,
+                    )
+
+            state.reasoning_log.append(
+                {
+                    "iteration": iteration + 1,
+                    "tool": name,
+                    "args": args,
+                    "result": f"Fetched {len(successes)} slices: {', '.join(successes)}",
+                }
+            )
+
+        elif name == "get_atlas_info":
+            from langslice.atlas.core import get_atlas_info as _get_atlas_info_core
+
+            info = _get_atlas_info_core(atlas_obj)
+            info["coordinate_note"] = "0.0mm is extreme Anterior; higher mm is more Posterior."
+            _append_response(call_id=call_id, name=name, response=info)
+            state.reasoning_log.append(
+                {"iteration": iteration + 1, "tool": name, "args": {}, "result": str(info)}
+            )
+            if on_progress:
+                on_progress(f"  -> Atlas range: [{pos_lo:.2f}, {pos_hi:.2f}] mm")
+
+        elif name == "get_region_names":
+            pos = float(args.get("position_mm", (pos_lo + pos_hi) / 2))
+            regions = _get_regions_at_position(atlas, pos)
+            _append_response(
+                call_id=call_id,
+                name=name,
+                response={"position_mm": pos, "regions": regions},
+            )
+            state.reasoning_log.append(
+                {
+                    "iteration": iteration + 1,
+                    "tool": name,
+                    "args": args,
+                    "result": f"{len(regions)} regions",
+                }
+            )
+            if on_progress:
+                on_progress(f"  -> {len(regions)} regions at {pos:.2f}mm")
+
+        elif name == "submit_estimate":
+            est_pos = float(args.get("position_mm", 0.0))
+            est_confidence = str(args.get("confidence", "unknown"))
+            est_reasoning = str(args.get("reasoning", ""))
+            has_neighbor_check = _has_neighbor_bracket(
+                state.fetched_positions,
+                est_pos,
+                pos_lo=pos_lo,
+                pos_hi=pos_hi,
+            )
+            near_iteration_limit = iteration >= state.max_iterations - 2
+
+            if not state.saw_broad_sweep and not near_iteration_limit:
+                _append_response(
+                    call_id=call_id,
+                    name=name,
+                    response={
+                        "status": "error",
+                        "error": "Run a broad `fetch_multiple_atlas_slices` sweep before submitting.",
+                    },
+                    is_error=True,
+                )
+                state.reasoning_log.append(
+                    {
+                        "iteration": iteration + 1,
+                        "tool": name,
+                        "args": args,
+                        "result": f"Rejected submit at {est_pos:.2f}mm: no broad sweep yet",
+                    }
+                )
+                continue
+
+            if not state.saw_narrow_sweep and not near_iteration_limit:
+                _append_response(
+                    call_id=call_id,
+                    name=name,
+                    response={
+                        "status": "error",
+                        "error": "Run a narrowed `fetch_multiple_atlas_slices` sweep around your best candidate before submitting.",
+                    },
+                    is_error=True,
+                )
+                state.reasoning_log.append(
+                    {
+                        "iteration": iteration + 1,
+                        "tool": name,
+                        "args": args,
+                        "result": f"Rejected submit at {est_pos:.2f}mm: no narrow sweep yet",
+                    }
+                )
+                continue
+
+            if not has_neighbor_check and not near_iteration_limit:
+                lower = max(pos_lo, est_pos - 0.2)
+                upper = min(pos_hi, est_pos + 0.2)
+                _append_response(
+                    call_id=call_id,
+                    name=name,
+                    response={
+                        "status": "error",
+                        "error": (
+                            "Before submitting, verify at least one lower and one higher neighboring AP position "
+                            f"around {est_pos:.2f} mm (for example {lower:.2f} mm and {upper:.2f} mm)."
+                        ),
+                    },
+                    is_error=True,
+                )
+                state.reasoning_log.append(
+                    {
+                        "iteration": iteration + 1,
+                        "tool": name,
+                        "args": args,
+                        "result": f"Rejected submit at {est_pos:.2f}mm: neighborhood not bracketed",
+                    }
+                )
+                continue
+
+            state.estimate_result = {
+                "position_mm": est_pos,
+                "confidence": est_confidence,
+                "reasoning": est_reasoning,
+            }
+            state.reasoning_log.append(
+                {
+                    "iteration": iteration + 1,
+                    "tool": name,
+                    "args": args,
+                    "result": f"Submitted {est_pos:.2f}mm ({est_confidence})",
+                }
+            )
+            if on_progress:
+                on_progress(
+                    f"Agent submitted estimate: {est_pos:.2f}mm (confidence: {est_confidence})"
+                )
+
+        else:
+            _append_response(
+                call_id=call_id,
+                name=name,
+                response={"status": "error", "error": f"Unknown tool: {name}"},
+                is_error=True,
+            )
+
+    return generate_parts, interaction_inputs
+
+
+def _run_interactions_ap_loop(
+    client: Any,
+    *,
+    model_name: str,
+    system_instruction: str,
+    tool_declarations: types.Tool,
+    initial_input: list[dict[str, object]],
+    atlas: object,
+    pos_lo: float,
+    pos_hi: float,
+    target_h: int,
+    run_dir: str | None,
+    uploaded_file_names: list[str],
+    state: _APLoopState,
+    on_progress: Callable[[str], None] | None = None,
+) -> list[dict[str, object]]:
+    interaction_trace: list[dict[str, object]] = []
+    previous_interaction_id: str | None = None
+    next_input = initial_input
+
+    for iteration in range(state.max_iterations):
+        request_metrics = _interaction_input_metrics(next_input)
+        turn_metric: dict[str, object] = {
+            "iteration": iteration + 1,
+            "request": request_metrics,
+            "mode": "interactions",
+        }
+        if iteration == 0:
+            preflight_parts: list[types.Part] = []
+            for item in next_input:
+                item_type = item.get("type")
+                if item_type == "text":
+                    text = item.get("text")
+                    if isinstance(text, str):
+                        preflight_parts.append(types.Part(text=text))
+                elif item_type == "image":
+                    uri = item.get("uri")
+                    if isinstance(uri, str):
+                        preflight_parts.append(
+                            types.Part.from_uri(file_uri=uri, mime_type="image/jpeg")
+                        )
+            preflight = _count_tokens_if_enabled(
+                client,
+                model=model_name,
+                contents=preflight_parts,
+                system_instruction=system_instruction,
+                tools=[tool_declarations],
+                on_progress=on_progress,
+            )
+            if preflight:
+                turn_metric["preflight_count_tokens"] = preflight
+                if on_progress:
+                    on_progress(f"Turn 1 token preflight: {_format_count_tokens(preflight)}")
+
+        if on_progress:
+            on_progress(
+                f"Interactions turn {iteration + 1}: sending {request_metrics['part_count']} parts, "
+                f"{request_metrics['image_parts']} images ({request_metrics['image_bytes']} bytes)"
+            )
+
+        started_at = time.perf_counter()
+        interaction = client.interactions.create(
+            model=model_name,
+            input=next_input,
+            previous_interaction_id=previous_interaction_id,
+            system_instruction=system_instruction,
+            tools=[tool_declarations],
+        )
+        turn_metric["wall_time_s"] = round(time.perf_counter() - started_at, 3)
+        usage_metadata = _extract_interaction_usage_metadata(interaction)
+        turn_metric["usage_metadata"] = usage_metadata
+        state.turn_metrics.append(turn_metric)
+        previous_interaction_id = cast(str | None, getattr(interaction, "id", None))
+
+        outputs = getattr(interaction, "outputs", None) or []
+        interaction_trace.append(
+            {
+                "iteration": iteration + 1,
+                "input": next_input,
+                "outputs": [
+                    getattr(output, "model_dump", lambda: None)()
+                    if callable(getattr(output, "model_dump", None))
+                    else {
+                        "type": getattr(output, "type", None),
+                        "text": getattr(output, "text", None),
+                        "name": getattr(output, "name", None),
+                    }
+                    for output in outputs
+                ],
+            }
+        )
+
+        function_calls, text_preview = _extract_interaction_function_calls(interaction)
+        if not function_calls:
+            if text_preview and on_progress:
+                on_progress(f"Agent reasoning/text: {text_preview[:200]}...")
+            next_input = [{"type": "text", "text": _build_nudge_text(state)}]
+            continue
+
+        _, interaction_inputs = _process_ap_function_calls(
+            function_calls,
+            iteration=iteration,
+            atlas=atlas,
+            pos_lo=pos_lo,
+            pos_hi=pos_hi,
+            target_h=target_h,
+            run_dir=run_dir,
+            client=client,
+            use_file_api=True,
+            uploaded_file_names=uploaded_file_names,
+            state=state,
+            on_progress=on_progress,
+        )
+        if state.estimate_result:
+            break
+        next_input = interaction_inputs
+
+    return interaction_trace
 
 
 def estimate_position(
@@ -342,96 +1081,98 @@ def estimate_position(
         _progress(f"Debug artifacts -> {run_dir}")
 
     # --- Tool declarations ---
-    tool_declarations = types.Tool(function_declarations=[
-        types.FunctionDeclaration(
-            name="fetch_atlas_slice",
-            description=(
-                "Fetch a coronal brain atlas reference image at a specific "
-                "anterior-posterior position. The image will be shown to you. "
-                "Use this to visually compare against the target slice."
-            ),
-            parameters_json_schema={
-                "type": "object",
-                "properties": {
-                    "position_mm": {
-                        "type": "number",
-                        "description": "AP position in mm from the anterior edge of the atlas",
+    tool_declarations = types.Tool(
+        function_declarations=[
+            types.FunctionDeclaration(
+                name="fetch_atlas_slice",
+                description=(
+                    "Fetch a coronal brain atlas reference image at a specific "
+                    "anterior-posterior position. The image will be shown to you. "
+                    "Use this to visually compare against the target slice."
+                ),
+                parameters_json_schema={
+                    "type": "object",
+                    "properties": {
+                        "position_mm": {
+                            "type": "number",
+                            "description": "AP position in mm from the anterior edge of the atlas",
+                        },
                     },
+                    "required": ["position_mm"],
                 },
-                "required": ["position_mm"],
-            },
-        ),
-        types.FunctionDeclaration(
-            name="get_atlas_info",
-            description=(
-                "Get atlas metadata including the valid AP coordinate range, "
-                "resolution, species, and number of slices."
             ),
-            parameters_json_schema={"type": "object", "properties": {}},
-        ),
-        types.FunctionDeclaration(
-            name="get_region_names",
-            description=(
-                "Get the names and acronyms of brain regions visible at a "
-                "specific AP position. Useful for confirming anatomical identity."
+            types.FunctionDeclaration(
+                name="get_atlas_info",
+                description=(
+                    "Get atlas metadata including the valid AP coordinate range, "
+                    "resolution, species, and number of slices."
+                ),
+                parameters_json_schema={"type": "object", "properties": {}},
             ),
-            parameters_json_schema={
-                "type": "object",
-                "properties": {
-                    "position_mm": {
-                        "type": "number",
-                        "description": "AP position in mm from the anterior edge",
+            types.FunctionDeclaration(
+                name="get_region_names",
+                description=(
+                    "Get the names and acronyms of brain regions visible at a "
+                    "specific AP position. Useful for confirming anatomical identity."
+                ),
+                parameters_json_schema={
+                    "type": "object",
+                    "properties": {
+                        "position_mm": {
+                            "type": "number",
+                            "description": "AP position in mm from the anterior edge",
+                        },
                     },
+                    "required": ["position_mm"],
                 },
-                "required": ["position_mm"],
-            },
-        ),
-        types.FunctionDeclaration(
-            name="fetch_multiple_atlas_slices",
-            description=(
-                "Fetch up to 5 coronal brain atlas reference images at multiple "
-                "anterior-posterior positions at once. The images will be shown to you "
-                "in order. Use this to perform a rapid coarse sweep (e.g., check every 2mm) "
-                "to quickly narrow down the general neighborhood."
             ),
-            parameters_json_schema={
-                "type": "object",
-                "properties": {
-                    "positions_mm": {
-                        "type": "array",
-                        "items": {"type": "number"},
-                        "description": "List of up to 5 AP positions in mm to fetch",
+            types.FunctionDeclaration(
+                name="fetch_multiple_atlas_slices",
+                description=(
+                    "Fetch up to 5 coronal brain atlas reference images at multiple "
+                    "anterior-posterior positions at once. The images will be shown to you "
+                    "in order. Use this to perform a rapid coarse sweep (e.g., check every 2mm) "
+                    "to quickly narrow down the general neighborhood."
+                ),
+                parameters_json_schema={
+                    "type": "object",
+                    "properties": {
+                        "positions_mm": {
+                            "type": "array",
+                            "items": {"type": "number"},
+                            "description": "List of up to 5 AP positions in mm to fetch",
+                        },
                     },
+                    "required": ["positions_mm"],
                 },
-                "required": ["positions_mm"],
-            },
-        ),
-        types.FunctionDeclaration(
-            name="submit_estimate",
-            description=(
-                "Submit your final AP position estimate. Only call this when "
-                "you are confident in your answer."
             ),
-            parameters_json_schema={
-                "type": "object",
-                "properties": {
-                    "position_mm": {
-                        "type": "number",
-                        "description": "Final estimated AP position in mm from the anterior edge",
+            types.FunctionDeclaration(
+                name="submit_estimate",
+                description=(
+                    "Submit your final AP position estimate. Only call this when "
+                    "you are confident in your answer."
+                ),
+                parameters_json_schema={
+                    "type": "object",
+                    "properties": {
+                        "position_mm": {
+                            "type": "number",
+                            "description": "Final estimated AP position in mm from the anterior edge",
+                        },
+                        "confidence": {
+                            "type": "string",
+                            "description": "Confidence level: low, medium, or high",
+                        },
+                        "reasoning": {
+                            "type": "string",
+                            "description": "Detailed reasoning for the estimate",
+                        },
                     },
-                    "confidence": {
-                        "type": "string",
-                        "description": "Confidence level: low, medium, or high",
-                    },
-                    "reasoning": {
-                        "type": "string",
-                        "description": "Detailed reasoning for the estimate",
-                    },
+                    "required": ["position_mm", "confidence", "reasoning"],
                 },
-                "required": ["position_mm", "confidence", "reasoning"],
-            },
-        ),
-    ])
+            ),
+        ]
+    )
 
     # --- System prompt ---
     system_instruction = (
@@ -452,436 +1193,383 @@ def estimate_position(
         "Do not guess blindly; use the tools to narrow down the answer methodically. Avoid long thought-only turns: either perform the next search step or submit once the neighborhood is bracketed."
     )
 
-    # --- Initial user message with target image ---
-    initial_parts = [
-        types.Part(text="Here is the target brain slice. Determine its AP position in the atlas."),
-        types.Part(inline_data=types.Blob(mime_type="image/jpeg", data=target_bytes)),
-    ]
-    history: list[types.Content] = [
-        types.Content(role="user", parts=initial_parts),
-    ]
+    feature_flags = vlm_config.feature_flags()
+    requested_file_api = vlm_config.ap_use_file_api()
+    requested_cache = vlm_config.ap_use_context_cache()
+    requested_interactions = vlm_config.ap_use_interactions()
+
+    use_file_api = requested_file_api and vlm_config.supports_file_api()
+    use_context_cache = requested_cache
+    use_interactions = requested_interactions and vlm_config.supports_interactions_api()
+
+    if requested_file_api and not use_file_api:
+        _progress(
+            "AP File API requested but current backend does not support Gemini File API; using inline images."
+        )
+    if requested_interactions and not use_interactions:
+        _progress(
+            "Interactions API requested but current backend does not support it; using generate_content loop."
+        )
+    if use_interactions and not use_file_api:
+        _progress(
+            "Interactions pilot requires Gemini File API image references; enabling File API transport for this run."
+        )
+        use_file_api = True
+    if use_interactions and use_context_cache:
+        _progress("Interactions pilot bypasses AP context caching for this run.")
+        use_context_cache = False
+
+    feature_flags["effective_ap_use_file_api"] = use_file_api
+    feature_flags["effective_ap_use_context_cache"] = use_context_cache
+    feature_flags["effective_ap_use_interactions"] = use_interactions
 
     thinking_level = getattr(types.ThinkingLevel, vlm_config.THINKING_LEVEL, None)
-    config = types.GenerateContentConfig(
-        tools=[tool_declarations],
-        automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
-        thinking_config=types.ThinkingConfig(thinking_level=thinking_level),
-        system_instruction=system_instruction,
-    )
-
     max_iterations = 20
-    estimate_result: dict[str, object] | None = None
-    reasoning_log: list[dict[str, object]] = []
-    turn_metrics: list[dict[str, object]] = []
-    images_fetched = 0
-    fetched_positions: list[float] = []
-    saw_broad_sweep = False
-    saw_narrow_sweep = False
+    state = _APLoopState(max_iterations=max_iterations)
+    history: list[types.Content] = []
+    interaction_trace: list[dict[str, object]] = []
+    uploaded_file_names: list[str] = []
+    cache_name: str | None = None
+    mode_used = "generate_content"
 
-    _progress(f"Starting agentic estimation (max {max_iterations} tool calls)...")
-
-    for iteration in range(max_iterations):
-        request_metrics = _history_metrics(cast(list[object], history))
-        _progress(
-            f"Turn {iteration + 1}: sending {request_metrics['content_count']} messages, "
-            f"{request_metrics['part_count']} parts, {request_metrics['image_parts']} images "
-            f"({request_metrics['image_bytes']} bytes)"
-        )
-        turn_started_at = time.perf_counter()
-        response = _retry_generate(
+    try:
+        target_payload = _build_image_payload(
             client,
-            model=vlm_config.MODEL_NAME,
-            contents=history,
-            config=config,
+            image_bytes=target_bytes,
+            display_name="target_slice",
+            use_file_api=use_file_api,
+            uploaded_file_names=uploaded_file_names,
             on_progress=_progress,
         )
-        wall_time_s = time.perf_counter() - turn_started_at
-        usage_metadata = _extract_usage_metadata(response)
-        turn_metric: dict[str, object] = {
-            "iteration": iteration + 1,
-            "request": request_metrics,
-            "wall_time_s": round(wall_time_s, 3),
-            "usage_metadata": usage_metadata,
-        }
-        turn_metrics.append(turn_metric)
-        _progress(
-            f"Turn {iteration + 1} completed in {wall_time_s:.2f}s; "
-            f"{_format_usage_metadata(usage_metadata)}"
-        )
+        target_info["input_transport"] = target_payload.transport
 
-        # Append model response to history
-        model_content: types.Content = cast(types.Content, _first_model_content(response))
-        history.append(model_content)
+        initial_parts = [
+            types.Part(
+                text="Here is the target brain slice. Determine its AP position in the atlas."
+            ),
+            target_payload.part,
+        ]
+        history = [types.Content(role="user", parts=initial_parts)]
 
-        # Collect function calls from the response
-        model_parts = getattr(model_content, "parts", None) or []
-        function_calls = [p for p in model_parts if p.function_call]
-
-        if not function_calls:
-            # Model responded with thought/text but no tool call
-            text_parts = [p.text for p in model_parts if p.text]
-            if text_parts:
-                _progress(f"Agent reasoning/text: {text_parts[0][:200]}...")
-            else:
-                _progress("Agent produced thought block but no tool calls.")
-
-            if not saw_broad_sweep:
-                nudge_text = (
-                    "Please continue with a broad coarse sweep now. Call `fetch_multiple_atlas_slices` "
-                    "with 4-5 widely spaced AP positions to find the correct neighborhood before reasoning further."
+        if use_context_cache:
+            try:
+                cache = client.caches.create(
+                    model=vlm_config.MODEL_NAME,
+                    config=types.CreateCachedContentConfig(
+                        contents=[
+                            types.Content(
+                                role="user",
+                                parts=[
+                                    types.Part(text="Target brain slice image for AP estimation."),
+                                    target_payload.part,
+                                ],
+                            )
+                        ],
+                        system_instruction=system_instruction,
+                        tools=[tool_declarations],
+                        ttl=vlm_config.ap_cache_ttl(),
+                    ),
                 )
-            elif not saw_narrow_sweep:
-                nudge_text = (
-                    "Please continue with a narrowed sweep now. Call `fetch_multiple_atlas_slices` "
-                    "around your best current neighborhood with tighter spacing before considering submission."
-                )
-            else:
-                nudge_text = (
-                    "Please continue. Before submitting, verify your leading candidate by checking at least one "
-                    "lower and one higher neighboring AP position around it using `fetch_multiple_atlas_slices` or `fetch_atlas_slice`."
-                )
-
-            nudge = types.Part(text=nudge_text)
-            history.append(types.Content(role="user", parts=[nudge]))
-            continue
-
-
-        # Process each function call
-        tool_response_parts: list[types.Part] = []
-
-        for fc_part in function_calls:
-            fc = fc_part.function_call
-            name = fc.name
-            args = dict(fc.args) if fc.args else {}
-
-            _progress(f"Tool call [{iteration + 1}]: {name}({args})")
-
-            if name == "fetch_atlas_slice":
-                pos = float(args.get("position_mm", (pos_lo + pos_hi) / 2))
-                pos = max(pos_lo, min(pos_hi, pos))  # Clamp
-                fetched_positions.append(pos)
-
-                try:
-                    ref_img = get_reference_slice(atlas, pos)
-                    ref_prepared = normalize_image(ref_img)
-                    # Scale to match target height
-                    scale = target_h / ref_prepared.height
-                    new_w = max(1, int(round(ref_prepared.width * scale)))
-                    new_h = max(1, int(round(ref_prepared.height * scale)))
-                    ref_scaled = ref_prepared.resize((new_w, new_h), _RESAMPLE_LANCZOS)
-                    ref_bytes = _image_to_bytes(ref_scaled)
-                    images_fetched += 1
-
-                    # Save debug image
-                    if run_dir:
-                        ref_scaled.save(
-                            os.path.join(run_dir, f"tool_{iteration + 1:02d}_slice_{pos:.2f}mm.jpg"),
-                            quality=95,
+                cache_name_obj = getattr(cache, "name", None)
+                if isinstance(cache_name_obj, str) and cache_name_obj:
+                    cache_name = cache_name_obj
+                    history = [
+                        types.Content(
+                            role="user",
+                            parts=[
+                                types.Part(
+                                    text="Determine the AP position in the atlas for the cached target brain slice."
+                                )
+                            ],
                         )
-
-                    tool_response_parts.append(
-                        types.Part.from_function_response(
-                            name=name,
-                            response={"position_mm": pos, "status": "ok", "description": f"Atlas coronal section at {pos:.2f}mm from anterior edge"},
-                        )
-                    )
-                    # Inject the image so the model can see it
-                    tool_response_parts.append(
-                        types.Part(inline_data=types.Blob(mime_type="image/jpeg", data=ref_bytes))
-                    )
-
-                    reasoning_log.append({"iteration": iteration + 1, "tool": name, "args": args, "result": f"Image at {pos:.2f}mm"})
-
-                except ValueError as exc:
-                    tool_response_parts.append(
-                        types.Part.from_function_response(
-                            name=name,
-                            response={"status": "error", "error": str(exc)},
-                        )
-                    )
-                    reasoning_log.append({"iteration": iteration + 1, "tool": name, "args": args, "result": f"Error: {exc}"})
-
-            elif name == "fetch_multiple_atlas_slices":
-                positions_list = args.get("positions_mm", [])
-                if not isinstance(positions_list, list):
-                    positions_list = []
-
-                # Cap to 5 to prevent context blowout
-                positions = [max(pos_lo, min(pos_hi, float(p))) for p in positions_list[:5]]
-                fetched_positions.extend(positions)
-                if positions and _is_broad_multi_sweep(positions):
-                    saw_broad_sweep = True
-                if positions and _is_narrow_multi_sweep(positions):
-                    saw_narrow_sweep = True
-
-                if not positions:
-                    tool_response_parts.append(
-                        types.Part.from_function_response(
-                            name=name,
-                            response={"status": "error", "error": "No valid positions provided"},
-                        )
-                    )
-                    reasoning_log.append({"iteration": iteration + 1, "tool": name, "args": args, "result": "Error: empty input"})
+                    ]
+                    _progress(f"AP cache created: {cache_name}")
                 else:
-                    successes = []
-                    for pos in positions:
-                        try:
-                            ref_img = get_reference_slice(atlas, pos)
-                            ref_prepared = normalize_image(ref_img)
-                            scale = target_h / ref_prepared.height
-                            new_w = max(1, int(round(ref_prepared.width * scale)))
-                            new_h = max(1, int(round(ref_prepared.height * scale)))
-                            ref_scaled = ref_prepared.resize((new_w, new_h), _RESAMPLE_LANCZOS)
-                            ref_bytes = _image_to_bytes(ref_scaled)
-                            images_fetched += 1
-
-                            if run_dir:
-                                ref_scaled.save(
-                                    os.path.join(run_dir, f"tool_{iteration + 1:02d}_multi_{pos:.2f}mm.jpg"),
-                                    quality=95,
-                                )
-
-                            # We must weave text parts + image blobs for the model to associate them
-                            tool_response_parts.append(
-                                types.Part.from_function_response(
-                                    name=name,
-                                    response={"position_mm": pos, "status": "ok", "description": f"Atlas coronal section at {pos:.2f}mm"},
-                                )
-                            )
-                            tool_response_parts.append(
-                                types.Part(inline_data=types.Blob(mime_type="image/jpeg", data=ref_bytes))
-                            )
-                            successes.append(f"{pos:.2f}mm")
-                        except Exception as exc:
-                            # Log error inline and continue
-                            tool_response_parts.append(
-                                types.Part.from_function_response(
-                                    name=name,
-                                    response={"position_mm": pos, "status": "error", "error": str(exc)},
-                                )
-                            )
-                    
-                    reasoning_log.append({"iteration": iteration + 1, "tool": name, "args": args, "result": f"Fetched {len(successes)} slices: {', '.join(successes)}"})
-
-            elif name == "get_atlas_info":
-                info = _get_atlas_info_core(atlas)
-                info["coordinate_note"] = "0.0mm is extreme Anterior; higher mm is more Posterior."
-                tool_response_parts.append(
-                    types.Part.from_function_response(
-                        name=name,
-                        response=info,
+                    _progress(
+                        "AP cache creation returned no cache name; continuing without cached content."
                     )
+            except Exception as exc:
+                _progress(
+                    f"AP cache creation failed; continuing without cached content: {type(exc).__name__}: {exc}"
                 )
-                reasoning_log.append({"iteration": iteration + 1, "tool": name, "args": {}, "result": str(info)})
-                _progress(f"  -> Atlas range: [{pos_lo:.2f}, {pos_hi:.2f}] mm")
+                cache_name = None
 
-            elif name == "get_region_names":
-                pos = float(args.get("position_mm", (pos_lo + pos_hi) / 2))
-                regions = _get_regions_at_position(atlas, pos)
-                tool_response_parts.append(
-                    types.Part.from_function_response(
-                        name=name,
-                        response={"position_mm": pos, "regions": regions},
-                    )
-                )
-                reasoning_log.append({"iteration": iteration + 1, "tool": name, "args": args, "result": f"{len(regions)} regions"})
-                _progress(f"  -> {len(regions)} regions at {pos:.2f}mm")
+        if cache_name:
+            config = types.GenerateContentConfig(
+                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+                thinking_config=types.ThinkingConfig(thinking_level=thinking_level),
+                cached_content=cache_name,
+            )
+        else:
+            config = types.GenerateContentConfig(
+                tools=[tool_declarations],
+                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+                thinking_config=types.ThinkingConfig(thinking_level=thinking_level),
+                system_instruction=system_instruction,
+            )
 
-            elif name == "submit_estimate":
-                est_pos = float(args.get("position_mm", 0.0))
-                est_confidence = str(args.get("confidence", "unknown"))
-                est_reasoning = str(args.get("reasoning", ""))
-                has_neighbor_check = _has_neighbor_bracket(
-                    fetched_positions,
-                    est_pos,
+        _progress(f"Starting agentic estimation (max {max_iterations} tool calls)...")
+
+        if use_interactions:
+            initial_interaction_input: list[dict[str, object]] = [
+                {
+                    "type": "text",
+                    "text": "Here is the target brain slice. Determine its AP position in the atlas.",
+                },
+            ]
+            if target_payload.interaction_input is not None:
+                initial_interaction_input.append(target_payload.interaction_input)
+            try:
+                interaction_trace = _run_interactions_ap_loop(
+                    client,
+                    model_name=vlm_config.MODEL_NAME,
+                    system_instruction=system_instruction,
+                    tool_declarations=tool_declarations,
+                    initial_input=initial_interaction_input,
+                    atlas=atlas,
                     pos_lo=pos_lo,
                     pos_hi=pos_hi,
+                    target_h=target_h,
+                    run_dir=run_dir,
+                    uploaded_file_names=uploaded_file_names,
+                    state=state,
+                    on_progress=_progress,
                 )
-                near_iteration_limit = iteration >= max_iterations - 2
+                mode_used = "interactions"
+            except Exception as exc:
+                _progress(
+                    f"Interactions API pilot failed; falling back to generate_content loop: {type(exc).__name__}: {exc}"
+                )
+                state = _APLoopState(max_iterations=max_iterations)
+                interaction_trace = []
+                mode_used = "generate_content"
 
-                if not saw_broad_sweep and not near_iteration_limit:
-                    tool_response_parts.append(
-                        types.Part.from_function_response(
-                            name=name,
-                            response={
-                                "status": "error",
-                                "error": "Run a broad `fetch_multiple_atlas_slices` sweep before submitting.",
-                            },
-                        )
-                    )
-                    reasoning_log.append(
-                        {
-                            "iteration": iteration + 1,
-                            "tool": name,
-                            "args": args,
-                            "result": f"Rejected submit at {est_pos:.2f}mm: no broad sweep yet",
-                        }
-                    )
-                    continue
-
-                if not saw_narrow_sweep and not near_iteration_limit:
-                    tool_response_parts.append(
-                        types.Part.from_function_response(
-                            name=name,
-                            response={
-                                "status": "error",
-                                "error": "Run a narrowed `fetch_multiple_atlas_slices` sweep around your best candidate before submitting.",
-                            },
-                        )
-                    )
-                    reasoning_log.append(
-                        {
-                            "iteration": iteration + 1,
-                            "tool": name,
-                            "args": args,
-                            "result": f"Rejected submit at {est_pos:.2f}mm: no narrow sweep yet",
-                        }
-                    )
-                    continue
-
-                if not has_neighbor_check and not near_iteration_limit:
-                    lower = max(pos_lo, est_pos - 0.2)
-                    upper = min(pos_hi, est_pos + 0.2)
-                    tool_response_parts.append(
-                        types.Part.from_function_response(
-                            name=name,
-                            response={
-                                "status": "error",
-                                "error": (
-                                    "Before submitting, verify at least one lower and one higher neighboring AP position "
-                                    f"around {est_pos:.2f} mm (for example {lower:.2f} mm and {upper:.2f} mm)."
-                                ),
-                            },
-                        )
-                    )
-                    reasoning_log.append(
-                        {
-                            "iteration": iteration + 1,
-                            "tool": name,
-                            "args": args,
-                            "result": f"Rejected submit at {est_pos:.2f}mm: neighborhood not bracketed",
-                        }
-                    )
-                    continue
-
-                estimate_result = {
-                    "position_mm": est_pos,
-                    "confidence": est_confidence,
-                    "reasoning": est_reasoning,
+        if mode_used == "generate_content":
+            for iteration in range(max_iterations):
+                request_metrics = _history_metrics(cast(list[object], history))
+                turn_metric: dict[str, object] = {
+                    "iteration": iteration + 1,
+                    "request": request_metrics,
+                    "mode": "generate_content",
                 }
-                reasoning_log.append({"iteration": iteration + 1, "tool": name, "args": args, "result": f"Submitted {est_pos:.2f}mm ({est_confidence})"})
-                _progress(f"Agent submitted estimate: {est_pos:.2f}mm (confidence: {est_confidence})")
-                break
-
-            else:
-                tool_response_parts.append(
-                    types.Part.from_function_response(
-                        name=name,
-                        response={"status": "error", "error": f"Unknown tool: {name}"},
+                if iteration == 0 and not cache_name:
+                    preflight = _count_tokens_if_enabled(
+                        client,
+                        model=vlm_config.MODEL_NAME,
+                        contents=history,
+                        system_instruction=None if cache_name else system_instruction,
+                        tools=None if cache_name else [tool_declarations],
+                        on_progress=_progress,
                     )
+                    if preflight:
+                        turn_metric["preflight_count_tokens"] = preflight
+                        _progress(f"Turn 1 token preflight: {_format_count_tokens(preflight)}")
+                elif iteration == 0 and cache_name:
+                    turn_metric["preflight_count_tokens"] = {"skipped": "cached_content_active"}
+
+                _progress(
+                    f"Turn {iteration + 1}: sending {request_metrics['content_count']} messages, "
+                    f"{request_metrics['part_count']} parts, {request_metrics['image_parts']} images "
+                    f"({request_metrics['image_bytes']} bytes)"
+                )
+                turn_started_at = time.perf_counter()
+                response = _retry_generate(
+                    client,
+                    model=vlm_config.MODEL_NAME,
+                    contents=history,
+                    config=config,
+                    on_progress=_progress,
+                )
+                wall_time_s = time.perf_counter() - turn_started_at
+                usage_metadata = _extract_usage_metadata(response)
+                turn_metric["wall_time_s"] = round(wall_time_s, 3)
+                turn_metric["usage_metadata"] = usage_metadata
+                state.turn_metrics.append(turn_metric)
+                _progress(
+                    f"Turn {iteration + 1} completed in {wall_time_s:.2f}s; "
+                    f"{_format_usage_metadata(usage_metadata)}"
                 )
 
-        if estimate_result:
-            break
+                model_content = cast(types.Content, _first_model_content(response))
+                history.append(model_content)
+                function_calls, text_preview = _extract_generate_function_calls(model_content)
 
-        # Append tool responses to history
-        if tool_response_parts:
-            history.append(types.Content(role="user", parts=tool_response_parts))
+                if not function_calls:
+                    if text_preview:
+                        _progress(f"Agent reasoning/text: {text_preview[:200]}...")
+                    else:
+                        _progress("Agent produced thought block but no tool calls.")
+                    history.append(
+                        types.Content(
+                            role="user", parts=[types.Part(text=_build_nudge_text(state))]
+                        )
+                    )
+                    continue
 
-    # --- Build final result ---
-    final_pos: float
-    final_reasoning: str
+                tool_response_parts, _ = _process_ap_function_calls(
+                    function_calls,
+                    iteration=iteration,
+                    atlas=atlas,
+                    pos_lo=pos_lo,
+                    pos_hi=pos_hi,
+                    target_h=target_h,
+                    run_dir=run_dir,
+                    client=client,
+                    use_file_api=use_file_api,
+                    uploaded_file_names=uploaded_file_names,
+                    state=state,
+                    on_progress=_progress,
+                )
+                if state.estimate_result:
+                    break
+                if tool_response_parts:
+                    history.append(types.Content(role="user", parts=tool_response_parts))
 
-    if estimate_result:
-        final_pos = _to_float(estimate_result.get("position_mm"), (pos_lo + pos_hi) / 2)
-        final_reasoning = str(estimate_result["reasoning"])
-    else:
-        # Fallback: model never submitted
-        final_pos = (pos_lo + pos_hi) / 2
-        final_reasoning = "Agent did not submit an estimate within the iteration limit."
-        _progress(f"Warning: Agent did not submit. Falling back to midpoint: {final_pos:.2f}mm")
+        final_pos: float
+        final_reasoning: str
+        if state.estimate_result:
+            final_pos = _to_float(state.estimate_result.get("position_mm"), (pos_lo + pos_hi) / 2)
+            final_reasoning = str(state.estimate_result["reasoning"])
+        else:
+            final_pos = (pos_lo + pos_hi) / 2
+            final_reasoning = "Agent did not submit an estimate within the iteration limit."
+            _progress(f"Warning: Agent did not submit. Falling back to midpoint: {final_pos:.2f}mm")
 
-    _progress(f"Final position estimated: {final_pos:.2f} mm ({images_fetched} atlas images fetched)")
+        _progress(
+            f"Final position estimated: {final_pos:.2f} mm ({state.images_fetched} atlas images fetched)"
+        )
 
-    # --- Write reasoning.txt debug artifact ---
-    if run_dir:
-        reasoning_path = os.path.join(run_dir, "reasoning.txt")
-        with open(reasoning_path, "w", encoding="utf-8") as f:
-            f.write(f"AP Estimation - {atlas_name} - {datetime.now().isoformat()}\n")
-            f.write(f"Model: {vlm_config.MODEL_NAME}\n")
-            f.write(
-                "Target Image: "
-                f"{target_info['width']}x{target_info['height']} px, "
-                f"mode={target_info['mode']}, jpeg_bytes={target_info['jpeg_bytes']}\n"
-            )
-            f.write("=" * 60 + "\n\n")
-            f.write("TURN TELEMETRY\n")
-            f.write("-" * 60 + "\n")
-            for turn in turn_metrics:
-                request = cast(dict[str, object], turn["request"])
-                usage = cast(dict[str, int | float | str | bool], turn["usage_metadata"])
+        feature_flags["effective_ap_use_file_api"] = (
+            target_info.get("input_transport") == "file_api"
+        )
+        feature_flags["effective_ap_use_context_cache"] = cache_name is not None
+        feature_flags["effective_ap_use_interactions"] = mode_used == "interactions"
+
+        if run_dir:
+            reasoning_path = os.path.join(run_dir, "reasoning.txt")
+            with open(reasoning_path, "w", encoding="utf-8") as f:
+                f.write(f"AP Estimation - {atlas_name} - {datetime.now().isoformat()}\n")
+                f.write(f"Model: {vlm_config.MODEL_NAME}\n")
+                f.write(f"Mode: {mode_used}\n")
                 f.write(
-                    f"Turn {turn['iteration']}: wall_time_s={turn['wall_time_s']}, "
-                    f"messages={request.get('content_count')}, parts={request.get('part_count')}, "
-                    f"images={request.get('image_parts')}, image_bytes={request.get('image_bytes')}\n"
+                    "Target Image: "
+                    f"{target_info['width']}x{target_info['height']} px, "
+                    f"mode={target_info['mode']}, jpeg_bytes={target_info['jpeg_bytes']}, "
+                    f"transport={target_info['input_transport']}\n"
                 )
-                f.write(f"    usage: {_format_usage_metadata(usage)}\n")
-            f.write("\n")
-            for entry in reasoning_log:
-                f.write(f"[{entry['iteration']}] {entry['tool']}({entry.get('args', {})})\n")
-                f.write(f"    -> {entry['result']}\n\n")
-            f.write("=" * 60 + "\n")
-            f.write(f"FINAL ESTIMATE: {final_pos:.2f} mm\n")
-            if estimate_result:
-                f.write(f"CONFIDENCE: {estimate_result.get('confidence', 'N/A')}\n")
-                f.write(f"REASONING: {estimate_result.get('reasoning', 'N/A')}\n")
-            f.write("=" * 60 + "\n")
-
-            # Write full conversation history
-            f.write("\n\nFULL CONVERSATION HISTORY\n")
-            f.write("=" * 60 + "\n\n")
-            for content in history:
-                role = content.role if hasattr(content, "role") else "?"
-                f.write(f"--- {role} ---\n")
-                content_parts = content.parts or []
-                for part in content_parts:
-                    if part.text:
-                        f.write(f"  TEXT: {part.text[:500]}\n")
-                    if part.function_call:
-                        f.write(f"  CALL: {part.function_call.name}({dict(part.function_call.args) if part.function_call.args else {}})\n")
-                    if part.function_response:
-                        f.write(f"  RESPONSE: {part.function_response.name} -> {part.function_response.response}\n")
-                    if part.inline_data:
-                        blob_data = part.inline_data.data
-                        data_len = len(blob_data) if isinstance(blob_data, (bytes, bytearray)) else 0
-                        f.write(f"  IMAGE: {part.inline_data.mime_type} ({data_len} bytes)\n")
+                f.write(f"Feature Flags: {json.dumps(feature_flags, sort_keys=True)}\n")
+                f.write("=" * 60 + "\n\n")
+                f.write("TURN TELEMETRY\n")
+                f.write("-" * 60 + "\n")
+                for turn in state.turn_metrics:
+                    request = cast(dict[str, object], turn["request"])
+                    usage = cast(
+                        dict[str, int | float | str | bool], turn.get("usage_metadata", {})
+                    )
+                    preflight = cast(
+                        dict[str, int | float | str | bool], turn.get("preflight_count_tokens", {})
+                    )
+                    f.write(
+                        f"Turn {turn['iteration']}: mode={turn.get('mode')}, wall_time_s={turn.get('wall_time_s')}, "
+                        f"messages={request.get('content_count')}, parts={request.get('part_count')}, "
+                        f"images={request.get('image_parts')}, image_bytes={request.get('image_bytes')}\n"
+                    )
+                    if preflight:
+                        f.write(f"    preflight: {_format_count_tokens(preflight)}\n")
+                    f.write(f"    usage: {_format_usage_metadata(usage)}\n")
                 f.write("\n")
+                for entry in state.reasoning_log:
+                    f.write(f"[{entry['iteration']}] {entry['tool']}({entry.get('args', {})})\n")
+                    f.write(f"    -> {entry['result']}\n\n")
+                f.write("=" * 60 + "\n")
+                f.write(f"FINAL ESTIMATE: {final_pos:.2f} mm\n")
+                if state.estimate_result:
+                    f.write(f"CONFIDENCE: {state.estimate_result.get('confidence', 'N/A')}\n")
+                    f.write(f"REASONING: {state.estimate_result.get('reasoning', 'N/A')}\n")
+                f.write("=" * 60 + "\n")
 
-        telemetry_path = os.path.join(run_dir, "telemetry.json")
-        with open(telemetry_path, "w", encoding="utf-8") as f:
-            json.dump(
-                {
-                    "model": vlm_config.MODEL_NAME,
-                    "atlas_name": atlas_name,
-                    "target_image": target_info,
-                    "max_iterations": max_iterations,
-                    "images_fetched": images_fetched,
-                    "turns": turn_metrics,
-                    "final_estimate_mm": final_pos,
-                    "final_reasoning": final_reasoning,
-                },
-                f,
-                indent=2,
-            )
+                if interaction_trace:
+                    f.write("\n\nINTERACTIONS TRACE\n")
+                    f.write("=" * 60 + "\n\n")
+                    for turn in interaction_trace:
+                        f.write(f"--- turn {turn['iteration']} input ---\n")
+                        f.write(json.dumps(turn["input"], indent=2))
+                        f.write("\n--- outputs ---\n")
+                        f.write(json.dumps(turn["outputs"], indent=2))
+                        f.write("\n\n")
+                else:
+                    f.write("\n\nFULL CONVERSATION HISTORY\n")
+                    f.write("=" * 60 + "\n\n")
+                    for content in history:
+                        role = content.role if hasattr(content, "role") else "?"
+                        f.write(f"--- {role} ---\n")
+                        content_parts = content.parts or []
+                        for part in content_parts:
+                            if part.text:
+                                f.write(f"  TEXT: {part.text[:500]}\n")
+                            if part.function_call:
+                                f.write(
+                                    f"  CALL: {part.function_call.name}({dict(part.function_call.args) if part.function_call.args else {}})\n"
+                                )
+                            if part.function_response:
+                                f.write(
+                                    f"  RESPONSE: {part.function_response.name} -> {part.function_response.response}\n"
+                                )
+                            if part.inline_data:
+                                blob_data = part.inline_data.data
+                                data_len = (
+                                    len(blob_data)
+                                    if isinstance(blob_data, (bytes, bytearray))
+                                    else 0
+                                )
+                                f.write(
+                                    f"  IMAGE: {part.inline_data.mime_type} ({data_len} bytes)\n"
+                                )
+                            if _has_file_data(part):
+                                file_data = getattr(part, "file_data", None)
+                                file_uri = getattr(file_data, "file_uri", None)
+                                f.write(f"  IMAGE: file_uri={file_uri}\n")
+                        f.write("\n")
 
-        _progress(f"Reasoning log saved -> {reasoning_path}")
-        _progress(f"Telemetry saved -> {telemetry_path}")
+            telemetry_path = os.path.join(run_dir, "telemetry.json")
+            with open(telemetry_path, "w", encoding="utf-8") as f:
+                json.dump(
+                    {
+                        "model": vlm_config.MODEL_NAME,
+                        "mode": mode_used,
+                        "atlas_name": atlas_name,
+                        "target_image": target_info,
+                        "feature_flags": feature_flags,
+                        "max_iterations": max_iterations,
+                        "images_fetched": state.images_fetched,
+                        "cache_name": cache_name,
+                        "turns": state.turn_metrics,
+                        "final_estimate_mm": final_pos,
+                        "final_reasoning": final_reasoning,
+                    },
+                    f,
+                    indent=2,
+                )
 
-    return APResult(
-        position_mm=final_pos,
-        reasoning=final_reasoning,
-        debug_dir=run_dir,
-    )
+            _progress(f"Reasoning log saved -> {reasoning_path}")
+            _progress(f"Telemetry saved -> {telemetry_path}")
+
+        return APResult(
+            position_mm=final_pos,
+            reasoning=final_reasoning,
+            debug_dir=run_dir,
+        )
+    finally:
+        if cache_name:
+            try:
+                client.caches.delete(name=cache_name)
+            except Exception as exc:
+                logger.warning("Failed to delete Gemini cache %s: %s", cache_name, exc)
+        for file_name in reversed(uploaded_file_names):
+            try:
+                client.files.delete(name=file_name)
+            except Exception as exc:
+                logger.warning("Failed to delete Gemini file %s: %s", file_name, exc)
 
 
 def estimate_ap(

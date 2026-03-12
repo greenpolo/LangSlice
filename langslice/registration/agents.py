@@ -38,8 +38,12 @@ def _retry_generate(
         except Exception as exc:
             last_exc = exc
             status = getattr(exc, "status_code", None) or getattr(exc, "code", None)
-            if isinstance(status, int) and status in _RETRYABLE_STATUS_CODES and attempt < _MAX_RETRIES:
-                delay = _INITIAL_BACKOFF_S * (2 ** attempt)
+            if (
+                isinstance(status, int)
+                and status in _RETRYABLE_STATUS_CODES
+                and attempt < _MAX_RETRIES
+            ):
+                delay = _INITIAL_BACKOFF_S * (2**attempt)
                 if on_progress:
                     on_progress(f"Gemini registration retry in {delay:.1f}s after status {status}")
                 time.sleep(delay)
@@ -74,6 +78,27 @@ def _extract_result(response: object) -> dict[str, object]:
         except json.JSONDecodeError:
             logger.warning("Registration agent did not return parseable JSON")
     return {}
+
+
+def _extract_count_tokens_metadata(response: object) -> dict[str, int | float | str | bool]:
+    metadata: dict[str, int | float | str | bool] = {}
+    for field in ("total_tokens", "total_billable_characters"):
+        value = getattr(response, field, None)
+        if isinstance(value, (int, float, str, bool)):
+            metadata[field] = value
+    return metadata
+
+
+def _format_count_tokens(metadata: dict[str, int | float | str | bool]) -> str:
+    parts: list[str] = []
+    for field in ("total_tokens", "total_billable_characters"):
+        value = metadata.get(field)
+        if value is not None:
+            parts.append(f"{field}={value}")
+    error = metadata.get("error")
+    if isinstance(error, str):
+        parts.append(error)
+    return ", ".join(parts) if parts else "count_tokens unavailable"
 
 
 def _to_float(value: object) -> float:
@@ -153,13 +178,16 @@ def estimate_registration_correspondences(
     )
 
     contents = [
-        {"role": "user", "parts": [
-            {"text": prompt},
-            {"text": "First image: histology slice."},
-            _image_to_inline_data(slice_prep.image),
-            {"text": "Second image: atlas reference with boundaries."},
-            _image_to_inline_data(atlas_prep.image),
-        ]}
+        {
+            "role": "user",
+            "parts": [
+                {"text": prompt},
+                {"text": "First image: histology slice."},
+                _image_to_inline_data(slice_prep.image),
+                {"text": "Second image: atlas reference with boundaries."},
+                _image_to_inline_data(atlas_prep.image),
+            ],
+        }
     ]
 
     config: dict[str, object] = {
@@ -167,8 +195,26 @@ def estimate_registration_correspondences(
         "response_mime_type": "application/json",
         "response_json_schema": schema,
     }
+    client = get_client()
+    if getattr(vlm_config, "count_tokens_enabled")():
+        count_config = {"system_instruction": None}
+        try:
+            count_response = client.models.count_tokens(
+                model=vlm_config.MODEL_NAME,
+                contents=contents,
+                config=count_config,
+            )
+            if on_progress:
+                on_progress(
+                    "Registration token preflight: "
+                    f"{_format_count_tokens(_extract_count_tokens_metadata(count_response))}"
+                )
+        except Exception as exc:
+            if on_progress:
+                on_progress(f"Registration token preflight failed: {type(exc).__name__}: {exc}")
+
     response = _retry_generate(
-        get_client(),
+        client,
         model=vlm_config.MODEL_NAME,
         contents=contents,
         config=config,
@@ -190,15 +236,23 @@ def estimate_registration_correspondences(
         corr_dict = cast(dict[str, object], item)
         correspondences.append(
             RegistrationCorrespondence(
-                slice_xy=(_to_float(corr_dict["slice_x"]) * slice_scale_x, _to_float(corr_dict["slice_y"]) * slice_scale_y),
-                atlas_xy=(_to_float(corr_dict["atlas_x"]) * atlas_scale_x, _to_float(corr_dict["atlas_y"]) * atlas_scale_y),
+                slice_xy=(
+                    _to_float(corr_dict["slice_x"]) * slice_scale_x,
+                    _to_float(corr_dict["slice_y"]) * slice_scale_y,
+                ),
+                atlas_xy=(
+                    _to_float(corr_dict["atlas_x"]) * atlas_scale_x,
+                    _to_float(corr_dict["atlas_y"]) * atlas_scale_y,
+                ),
                 label=str(corr_dict["label"]),
                 confidence=str(corr_dict["confidence"]),
                 rationale=str(corr_dict["rationale"]),
             )
         )
     if len(correspondences) < 6:
-        raise RuntimeError(f"Registration agent returned too few usable correspondences ({len(correspondences)})")
+        raise RuntimeError(
+            f"Registration agent returned too few usable correspondences ({len(correspondences)})"
+        )
     if on_progress:
         on_progress(f"Registration agent proposed {len(correspondences)} correspondences")
     return correspondences
