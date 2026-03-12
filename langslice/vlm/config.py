@@ -4,13 +4,20 @@ import atexit
 import importlib
 import logging
 import os
-from typing import Callable, Protocol, cast
+from typing import Any, Callable, Protocol, cast
 
 logger = logging.getLogger(__name__)
 
 MODEL_NAME = "gemini-3-flash-preview"
 THINKING_LEVEL = "HIGH"
 CODE_EXECUTION_ENABLED = True
+
+_ENV_COUNT_TOKENS = "LANGSLICE_GENAI_COUNT_TOKENS"
+_ENV_AP_USE_FILE_API = "LANGSLICE_GENAI_AP_USE_FILE_API"
+_ENV_AP_USE_CONTEXT_CACHE = "LANGSLICE_GENAI_AP_USE_CONTEXT_CACHE"
+_ENV_AP_USE_INTERACTIONS = "LANGSLICE_GENAI_AP_USE_INTERACTIONS"
+_ENV_AP_CACHE_TTL = "LANGSLICE_GENAI_AP_CACHE_TTL"
+_ENV_FILE_POLL_TIMEOUT_S = "LANGSLICE_GENAI_FILE_POLL_TIMEOUT_S"
 
 AVAILABLE_MODELS: list[str] = [
     "gemini-3-flash-preview",
@@ -22,6 +29,7 @@ def set_model_name(name: str) -> None:
     """Set active model name at runtime for subsequent requests."""
     globals()["MODEL_NAME"] = name
     logger.info("Model changed to: %s", name)
+
 
 _BACKEND_AI_STUDIO = "ai_studio"
 _BACKEND_VERTEX_API_KEY = "vertex_api_key"
@@ -36,9 +44,41 @@ _VALID_BACKENDS = {
 class _GenAIModelsProtocol(Protocol):
     def generate_content(self, *, model: str, contents: object, config: object) -> object: ...
 
+    def count_tokens(
+        self, *, model: str, contents: object, config: object | None = None
+    ) -> object: ...
+
+
+class _GenAIFilesProtocol(Protocol):
+    def upload(self, *, file: object, config: object | None = None) -> object: ...
+
+    def get(self, *, name: str, config: object | None = None) -> object: ...
+
+    def delete(self, *, name: str, config: object | None = None) -> object: ...
+
+
+class _GenAICachesProtocol(Protocol):
+    def create(self, *, model: str, config: object | None = None) -> object: ...
+
+    def delete(self, *, name: str, config: object | None = None) -> object: ...
+
+
+class _GenAIInteractionsProtocol(Protocol):
+    def create(self, **kwargs: object) -> object: ...
+
+
+class _GenAIBatchesProtocol(Protocol):
+    def create(self, *, model: str, src: object, config: object | None = None) -> object: ...
+
 
 class GenAIClientProtocol(Protocol):
     models: _GenAIModelsProtocol
+    files: _GenAIFilesProtocol
+    caches: _GenAICachesProtocol
+    interactions: _GenAIInteractionsProtocol
+    batches: _GenAIBatchesProtocol
+
+    def close(self) -> None: ...
 
 
 _client_instance: GenAIClientProtocol | None = None
@@ -68,6 +108,17 @@ def _env_bool(name: str) -> bool:
     return value.lower() in {"1", "true", "yes", "on"}
 
 
+def _env_float(name: str, default: float) -> float:
+    value = _env(name)
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        logger.warning("Invalid float env %s=%r; using default %.2f", name, value, default)
+        return default
+
+
 def get_backend() -> str:
     """Resolve authentication backend for google-genai client."""
     _load_dotenv()
@@ -85,6 +136,63 @@ def get_backend() -> str:
             f"Invalid LANGSLICE_GENAI_BACKEND='{backend}'. Expected one of: {allowed}."
         )
     return normalized
+
+
+def count_tokens_enabled() -> bool:
+    _load_dotenv()
+    return _env_bool(_ENV_COUNT_TOKENS)
+
+
+def ap_use_file_api() -> bool:
+    _load_dotenv()
+    return _env_bool(_ENV_AP_USE_FILE_API)
+
+
+def ap_use_context_cache() -> bool:
+    _load_dotenv()
+    return _env_bool(_ENV_AP_USE_CONTEXT_CACHE)
+
+
+def ap_use_interactions() -> bool:
+    _load_dotenv()
+    return _env_bool(_ENV_AP_USE_INTERACTIONS)
+
+
+def ap_cache_ttl() -> str:
+    _load_dotenv()
+    return _env(_ENV_AP_CACHE_TTL) or "3600s"
+
+
+def file_poll_timeout_s() -> float:
+    _load_dotenv()
+    return _env_float(_ENV_FILE_POLL_TIMEOUT_S, 10.0)
+
+
+def supports_file_api() -> bool:
+    return get_backend() == _BACKEND_AI_STUDIO
+
+
+def supports_interactions_api() -> bool:
+    return get_backend() == _BACKEND_AI_STUDIO
+
+
+def supports_batch_api() -> bool:
+    return get_backend() == _BACKEND_VERTEX_ADC
+
+
+def feature_flags() -> dict[str, Any]:
+    return {
+        "count_tokens_enabled": count_tokens_enabled(),
+        "ap_use_file_api": ap_use_file_api(),
+        "ap_use_context_cache": ap_use_context_cache(),
+        "ap_use_interactions": ap_use_interactions(),
+        "supports_file_api": supports_file_api(),
+        "supports_interactions_api": supports_interactions_api(),
+        "supports_batch_api": supports_batch_api(),
+        "ap_cache_ttl": ap_cache_ttl(),
+        "file_poll_timeout_s": file_poll_timeout_s(),
+        "backend": get_backend(),
+    }
 
 
 def get_api_key() -> str:
@@ -172,6 +280,30 @@ def get_client() -> GenAIClientProtocol:
         location=_vertex_location(),
     )
     return _client_instance
+
+
+def create_batch_client() -> GenAIClientProtocol:
+    """Create a dedicated v1 Vertex client for Batch API usage."""
+    if not supports_batch_api():
+        raise RuntimeError("Batch API is only supported with Vertex backends.")
+
+    _load_dotenv()
+    genai_module = importlib.import_module("google.genai")
+    types_module = importlib.import_module("google.genai.types")
+    client_cls = cast(Callable[..., GenAIClientProtocol], getattr(genai_module, "Client"))
+    http_options_cls = cast(Callable[..., object], getattr(types_module, "HttpOptions"))
+    http_options = http_options_cls(api_version="v1")
+    backend = get_backend()
+
+    if backend == _BACKEND_VERTEX_API_KEY:
+        return client_cls(vertexai=True, api_key=get_api_key(), http_options=http_options)
+
+    return client_cls(
+        vertexai=True,
+        project=_vertex_project(),
+        location=_vertex_location(),
+        http_options=http_options,
+    )
 
 
 atexit.register(close_client)
