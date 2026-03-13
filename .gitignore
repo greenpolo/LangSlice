@@ -30,3 +30,7 @@ references/ijp-imagetoatlas/
 # Archived local notes not part of the active docs set
 archive/
 archive/*.md
+
+# Local agent/session artifacts
+.sisyphus/
+debug_runs/

@@ -6,7 +6,7 @@ LangSlice is a Python desktop application for VLM-assisted registration of histo
 The active runtime is organized around four package areas:
 
 - `langslice.atlas` - BrainGlobe atlas loading, AP indexing, and slice extraction
-- `langslice.vlm` - Gemini configuration, AP estimation, and Gemini affine fallback
+- `langslice.vlm` - Gemini configuration and AP estimation
 - `langslice.registration` - matrix-first affine registration types and backend orchestration
 - `langslice.gui` - PySide6 desktop workflow and threaded execution
 - `langslice.export` - QUINT/ABBA-compatible JSON export
@@ -38,10 +38,7 @@ The supported backends are:
 - `vertex_api_key`
 - `vertex_adc`
 
-`langslice.vlm.estimator` contains the active model-facing workflows:
-
-- AP estimation via manual function calling
-- Gemini fallback affine estimation from the target image, optionally with atlas context
+`langslice.vlm.estimator` contains AP estimation via manual function calling.
 
 `langslice.vlm.batch_eval` contains offline-only Batch API helpers for AP prompt/model evaluation on Vertex (`vertex_adc` guarded), separate from the live GUI runtime path.
 
@@ -49,7 +46,7 @@ The supported backends are:
 
 ### `langslice.registration`
 
-`langslice.registration` is the primary affine layer.
+`langslice.registration` is the registration runtime layer.
 It owns:
 
 - the matrix-first `AffineResult` model
@@ -67,7 +64,7 @@ It owns:
 
 - image loading
 - atlas and model selection
-- threaded AP and affine estimation
+- threaded AP and landmark registration estimation
 - single, split, and overlay previews
 - export
 - debug trace curation buttons
@@ -101,7 +98,7 @@ That function:
 - uses manual function calling so tool responses can include atlas images
 - returns `APResult(position_mm, reasoning, debug_dir)`
 
-### 3. Affine estimation
+### 3. Landmark registration
 
 Once AP estimation completes, the same worker runs the LangSlice registration runtime.
 That runtime asks a dedicated registration agent for paired anatomical correspondences, then derives affine and TPS outputs deterministically from the same vetted landmark set.
@@ -119,7 +116,7 @@ Atlas preview loading is asynchronous so atlas I/O does not block the UI thread.
 
 ### 5. Export
 
-After AP and affine estimation complete, the GUI calls `build_quint_export(...)` and writes JSON through `save_quint_json(...)`.
+After AP and landmark registration complete, the GUI calls `build_quint_export(...)` and writes JSON through `save_quint_json(...)`.
 
 The export uses:
 
@@ -150,8 +147,8 @@ The implementation handles the loop manually so atlas images can be injected dir
 
 ## Worker-Thread Model
 
-The GUI does not run AP or affine work on the main thread.
-`AgentWorker` executes AP estimation and affine estimation inside a `QThread`, then emits progress and result signals back to the main window.
+The GUI does not run AP or registration work on the main thread.
+`AgentWorker` executes AP estimation and landmark registration inside a `QThread`, then emits progress and result signals back to the main window.
 
 Separate background loader workers are used for atlas preview widgets so atlas slice rendering stays responsive while the user changes atlas or AP position.
 

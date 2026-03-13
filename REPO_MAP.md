@@ -10,7 +10,7 @@ This map is intentionally short and stable so human and AI agents can navigate q
 - `langslice/registration/` - matrix-first affine and nonlinear registration runtime
 - `langslice/gui/` - PySide6 application UI
 - `langslice/export.py` - QUINT/ABBA-compatible export helpers
-- `tests/` - verification scripts (`smoke_test.py`, `test_atlas_features.py`, `test_atlas_space.py`, `test_quicknii_math.py`, `test_registration_backends.py`)
+- `tests/` - pytest suite (`smoke_test.py`, `test_atlas_features.py`, `test_atlas_space.py`, `test_quicknii_math.py`, `test_registration_backends.py`)
 - `pyproject.toml` - package metadata and dependencies
 - `environment.yml` - conda environment definition
 - `.env.example` - required environment variable template
@@ -39,8 +39,8 @@ This map is intentionally short and stable so human and AI agents can navigate q
 ## Common Commands
 
 - `pip install -e .`
-- `python tests/smoke_test.py`
-- `python tests/test_atlas_features.py`
-- `python tests/test_quicknii_math.py`
+- `python -m pytest`
+- `python -m ruff check .`
+- `python -m basedpyright`
 - `langslice gui`
 - `langslice version`
