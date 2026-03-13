@@ -36,9 +36,7 @@ def _shape3d(volume: np.ndarray) -> tuple[int, int, int]:
 
 def _safe_index(axis_name: str, index: int, upper_bound: int) -> int:
     if index < 0 or index >= upper_bound:
-        raise ValueError(
-            f"{axis_name} index {index} out of range [0, {upper_bound - 1}]"
-        )
+        raise ValueError(f"{axis_name} index {index} out of range [0, {upper_bound - 1}]")
     return index
 
 
@@ -121,7 +119,7 @@ def load_atlas(name: str) -> BrainGlobeAtlas:
     atlas_name = canonicalize_atlas_name(name)
     try:
         module = importlib.import_module("brainglobe_atlasapi")
-        brain_globe_atlas = cast(Callable[[str], BrainGlobeAtlas], getattr(module, "BrainGlobeAtlas"))
+        brain_globe_atlas = cast(Callable[[str], BrainGlobeAtlas], module.BrainGlobeAtlas)
         atlas = brain_globe_atlas(atlas_name)
     except Exception as exc:  # pragma: no cover - passthrough from external library
         raise ValueError(f"Atlas '{atlas_name}' not found or failed to load: {exc}") from exc
@@ -322,6 +320,48 @@ def get_structure_mask_slice(
     return Image.fromarray(binary, mode="L")
 
 
+def get_slice_region_metadata(atlas: _AtlasLike, position_mm: float) -> list[dict[str, object]]:
+    """Enumerate regions visible on a coronal slice with metadata for VLM prompts.
+
+    Returns a list of region dicts sorted by area (largest first), each containing:
+    ``id``, ``acronym``, ``name``, ``centroid`` (row, col pixels),
+    ``area_fraction``, and ``centroid_normalized`` ([y, x] in 0–1000 range).
+    Background (structure ID 0) is excluded.
+    """
+    idx = position_mm_to_index(atlas, position_mm)
+    ann = np.asarray(atlas.annotation[idx, :, :])
+    h, w = cast(tuple[int, int], ann.shape)
+
+    unique_ids = np.unique(ann)
+    unique_ids = unique_ids[unique_ids > 0]  # filter background
+
+    regions: list[dict[str, object]] = []
+    for uid in unique_ids:
+        uid_int = int(uid)
+        record = _lookup_structure_record(atlas, uid_int)
+        mask = ann == uid
+        ys, xs = np.where(mask)
+        centroid_row = int(np.mean(ys))
+        centroid_col = int(np.mean(xs))
+        area_fraction = float(mask.sum()) / float(h * w)
+        regions.append(
+            {
+                "id": uid_int,
+                "acronym": record["acronym"],
+                "name": record["name"],
+                "centroid": (centroid_row, centroid_col),
+                "area_fraction": area_fraction,
+                "centroid_normalized": (
+                    int(round(centroid_row * 1000 / max(h - 1, 1))),
+                    int(round(centroid_col * 1000 / max(w - 1, 1))),
+                ),
+            }
+        )
+
+    regions.sort(key=lambda r: cast(float, r["area_fraction"]), reverse=True)
+    return regions
+
+
 def get_region_at_position(
     atlas: _AtlasLike,
     position_mm: float,
@@ -346,9 +386,7 @@ def get_region_at_position(
     acronym = ""
     if callable(structure_fn):
         try:
-            sid = _as_scalar_int(
-                structure_fn(coords, microns=False, as_acronym=False)
-            )
+            sid = _as_scalar_int(structure_fn(coords, microns=False, as_acronym=False))
             if sid is not None:
                 structure_id = sid
             acronym = str(
@@ -440,7 +478,10 @@ def list_downloaded_atlases() -> list[str]:
         module = importlib.import_module("brainglobe_atlasapi")
 
     try:
-        get_downloaded_atlases = cast(Callable[[], Sequence[object]], getattr(module, "get_downloaded_atlases"))
+        get_downloaded_atlases = cast(
+            Callable[[], Sequence[object]],
+            module.get_downloaded_atlases,
+        )
     except AttributeError:
         logger.warning("BrainGlobe API does not expose get_downloaded_atlases().")
         return []
@@ -461,7 +502,10 @@ def list_available_atlases() -> list[str]:
     """Return remote atlas names advertised by BrainGlobe."""
     try:
         module = importlib.import_module("brainglobe_atlasapi.list_atlases")
-        get_atlases_lastversions = cast(Callable[[], object], getattr(module, "get_atlases_lastversions"))
+        get_atlases_lastversions = cast(
+            Callable[[], object],
+            module.get_atlases_lastversions,
+        )
     except Exception as exc:
         logger.warning("Could not access BrainGlobe remote atlas listing: %s", exc)
         return []

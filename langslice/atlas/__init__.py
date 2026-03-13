@@ -1,8 +1,8 @@
 """LangSlice Atlas module - BrainGlobe atlas access as plain Python functions."""
 
 from langslice.atlas.core import (
-    canonicalize_atlas_name,
     DEFAULT_ATLAS_NAME,
+    canonicalize_atlas_name,
     get_additional_reference_slice,
     get_atlas_info,
     get_boundary_slice,
@@ -10,6 +10,7 @@ from langslice.atlas.core import (
     get_position_range_mm,
     get_reference_slice,
     get_region_at_position,
+    get_slice_region_metadata,
     get_structure_hierarchy,
     get_structure_mask_slice,
     index_to_position_mm,
@@ -33,6 +34,7 @@ __all__ = [
     "list_additional_references",
     "get_additional_reference_slice",
     "get_region_at_position",
+    "get_slice_region_metadata",
     "get_structure_hierarchy",
     "get_structure_mask_slice",
     "get_atlas_info",

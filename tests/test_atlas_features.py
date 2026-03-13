@@ -1,4 +1,4 @@
-"""Script-style checks for BrainGlobe atlas helper integrations."""
+"""Checks for BrainGlobe atlas helper integrations."""
 
 from collections.abc import Sequence
 from typing import cast
@@ -127,33 +127,47 @@ class FakeAtlas:
         raise KeyError(structure)
 
 
-atlas = FakeAtlas()
+def test_list_additional_references() -> None:
+    atlas = FakeAtlas()
+    refs = list_additional_references(atlas)
+    assert refs == ["nissl"]
 
-refs = list_additional_references(atlas)
-assert refs == ["nissl"]
 
-extra_slice = get_additional_reference_slice(atlas, "nissl", position_mm=0.2)
-assert extra_slice.mode == "L"
-assert extra_slice.size == (4, 4)
+def test_additional_reference_slice() -> None:
+    atlas = FakeAtlas()
 
-region = get_region_at_position(atlas, 0.2, dv_index=1, ml_index=3, include_hierarchy=True)
-assert region["structure"]["id"] == 3
-assert region["structure"]["acronym"] == "RIGHT"
-assert region["hemisphere"] == "right"
-assert isinstance(region["hierarchy"], dict)
+    extra_slice = get_additional_reference_slice(atlas, "nissl", position_mm=0.2)
+    assert extra_slice.mode == "L"
+    assert extra_slice.size == (4, 4)
 
-hier = get_structure_hierarchy(atlas, 2)
-assert hier["ancestors"] == ["ROOT"]
-assert hier["n_descendants"] == 0
 
-mask = get_structure_mask_slice(atlas, 2, position_mm=0.1)
-mask_arr = np.asarray(mask)
-assert mask_arr.shape == (4, 4)
-assert int(mask_arr.max()) == 255
+def test_region_and_hierarchy_lookup() -> None:
+    atlas = FakeAtlas()
 
-info = get_atlas_info(atlas)
-assert info["local_version"] == "1.0"
-assert info["is_latest_version"] is True
-assert info["additional_references"] == ["nissl"]
+    region = get_region_at_position(atlas, 0.2, dv_index=1, ml_index=3, include_hierarchy=True)
+    assert region["structure"]["id"] == 3
+    assert region["structure"]["acronym"] == "RIGHT"
+    assert region["hemisphere"] == "right"
+    assert isinstance(region["hierarchy"], dict)
 
-print("Atlas feature helpers OK")
+    hier = get_structure_hierarchy(atlas, 2)
+    assert hier["ancestors"] == ["ROOT"]
+    assert hier["n_descendants"] == 0
+
+
+def test_structure_mask_slice() -> None:
+    atlas = FakeAtlas()
+
+    mask = get_structure_mask_slice(atlas, 2, position_mm=0.1)
+    mask_arr = np.asarray(mask)
+    assert mask_arr.shape == (4, 4)
+    assert int(mask_arr.max()) == 255
+
+
+def test_atlas_info_projection() -> None:
+    atlas = FakeAtlas()
+
+    info = get_atlas_info(atlas)
+    assert info["local_version"] == "1.0"
+    assert info["is_latest_version"] is True
+    assert info["additional_references"] == ["nissl"]
