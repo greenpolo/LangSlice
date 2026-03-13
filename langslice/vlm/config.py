@@ -11,6 +11,15 @@ logger = logging.getLogger(__name__)
 MODEL_NAME = "gemini-3-flash-preview"
 THINKING_LEVEL = "HIGH"
 CODE_EXECUTION_ENABLED = True
+REGISTRATION_THINKING_BUDGET: int = 8192
+
+AVAILABLE_THINKING_BUDGETS: list[tuple[str, int]] = [
+    ("Off", 0),
+    ("Low (1k)", 1024),
+    ("Medium (4k)", 4096),
+    ("High (8k)", 8192),
+    ("Max (24k)", 24576),
+]
 
 _ENV_COUNT_TOKENS = "LANGSLICE_GENAI_COUNT_TOKENS"
 _ENV_AP_USE_FILE_API = "LANGSLICE_GENAI_AP_USE_FILE_API"
@@ -29,6 +38,12 @@ def set_model_name(name: str) -> None:
     """Set active model name at runtime for subsequent requests."""
     globals()["MODEL_NAME"] = name
     logger.info("Model changed to: %s", name)
+
+
+def set_registration_thinking_budget(budget: int) -> None:
+    """Set the thinking budget for registration at runtime."""
+    globals()["REGISTRATION_THINKING_BUDGET"] = budget
+    logger.info("Registration thinking budget changed to: %d", budget)
 
 
 _BACKEND_AI_STUDIO = "ai_studio"

@@ -28,23 +28,12 @@ class VettingResult:
     qc_metrics: dict[str, float]
 
 
-def _confidence_weight(confidence: str) -> float:
-    normalized = confidence.strip().lower()
-    if normalized == "high":
-        return 1.0
-    if normalized == "medium":
-        return 0.65
-    if normalized == "low":
-        return 0.35
-    return 0.5
-
-
 def _points_from_correspondences(
     correspondences: Sequence[RegistrationCorrespondence],
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     atlas_points = np.asarray([c.atlas_xy for c in correspondences], dtype=np.float64)
     slice_points = np.asarray([c.slice_xy for c in correspondences], dtype=np.float64)
-    weights = np.asarray([_confidence_weight(c.confidence) for c in correspondences], dtype=np.float64)
+    weights = np.ones(len(correspondences), dtype=np.float64)
     return atlas_points, slice_points, weights
 
 
@@ -71,20 +60,17 @@ def vet_correspondences(
         seen.add(key)
         accepted.append(corr)
 
-    high_confidence = [c for c in accepted if c.confidence.strip().lower() == "high"]
-    if len(high_confidence) >= min_count:
-        dropped = [c for c in accepted if c not in high_confidence]
-        for corr in dropped:
-            rejected.append({"correspondence": corr, "reason": "pruned_low_confidence"})
-        accepted = high_confidence
-
     if len(accepted) < min_count:
         raise ValueError(f"Need at least {min_count} correspondences, got {len(accepted)}")
 
     _, slice_points, _ = _points_from_correspondences(accepted)
     width, height = slice_size
-    bbox_w = float(slice_points[:, 0].max() - slice_points[:, 0].min()) if len(slice_points) else 0.0
-    bbox_h = float(slice_points[:, 1].max() - slice_points[:, 1].min()) if len(slice_points) else 0.0
+    bbox_w = (
+        float(slice_points[:, 0].max() - slice_points[:, 0].min()) if len(slice_points) else 0.0
+    )
+    bbox_h = (
+        float(slice_points[:, 1].max() - slice_points[:, 1].min()) if len(slice_points) else 0.0
+    )
     coverage = (bbox_w * bbox_h) / max(float(width * height), 1.0)
     if coverage < 0.08:
         raise ValueError(f"Landmark spread too small (coverage={coverage:.4f})")
@@ -124,7 +110,7 @@ def fit_affine_from_correspondences(
     if not is_valid_affine_matrix(matrix):
         raise ValueError("Computed affine matrix failed sanity checks")
 
-    predicted = (design @ params)
+    predicted = design @ params
     residuals = np.linalg.norm(predicted - slice_points, axis=1)
     result = AffineResult(
         matrix=matrix,

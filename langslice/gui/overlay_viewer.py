@@ -72,8 +72,10 @@ def _pil_to_qpixmap(img: Image.Image) -> QPixmap:
 # Background atlas loader (same pattern as atlas_viewer.py)
 # ---------------------------------------------------------------------------
 
+
 class _AtlasLoaderWorker(QObject):
     """Load an atlas composite slice in a background thread."""
+
     slice_ready = Signal(QPixmap, object)
     error = Signal(str)
     finished = Signal()
@@ -102,6 +104,7 @@ class _AtlasLoaderWorker(QObject):
 # ---------------------------------------------------------------------------
 # Main widget
 # ---------------------------------------------------------------------------
+
 
 class OverlayGraphicsView(QFrame):
     """QGraphicsView-based viewer that renders slice + atlas in a shared scene.
@@ -320,6 +323,7 @@ class OverlayGraphicsView(QFrame):
         self._generation += 1
         if self._atlas_name is None or self._position_mm is None:
             self._debounce.stop()
+            self._cancel_active()
             if self._atlas_item is not None:
                 self._scene.removeItem(self._atlas_item)
                 self._atlas_item = None
@@ -345,26 +349,34 @@ class OverlayGraphicsView(QFrame):
         worker.moveToThread(thread)
 
         thread.started.connect(worker.load)
-        worker.slice_ready.connect(
-            lambda pm, shape, g=gen: self._on_atlas_ready(g, pm, shape)
-        )
+        worker.slice_ready.connect(lambda pm, shape, g=gen: self._on_atlas_ready(g, pm, shape))
         worker.error.connect(lambda msg, g=gen: self._on_atlas_error(g, msg))
         worker.finished.connect(thread.quit)
         worker.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(lambda g=gen: self._on_loader_done(g))
+        thread.finished.connect(lambda g=gen, t=thread: self._on_loader_done(g, t))
 
         self._active_thread = thread
         self._active_worker = worker
         thread.start()
 
     def _cancel_active(self) -> None:
-        if self._active_thread is not None:
-            if self._active_thread.isRunning():
-                self._active_thread.requestInterruption()
-                self._active_thread.quit()
-            self._active_thread = None
-            self._active_worker = None
+        thread = self._active_thread
+        self._active_thread = None
+        self._active_worker = None
+        if thread is None:
+            return
+        try:
+            is_running = thread.isRunning()
+        except RuntimeError:
+            return
+        if not is_running:
+            return
+        try:
+            thread.requestInterruption()
+            thread.quit()
+        except RuntimeError:
+            return
 
     def _on_atlas_ready(self, gen: int, pixmap: QPixmap, atlas_shape: object) -> None:
         if gen != self._generation:
@@ -392,7 +404,11 @@ class OverlayGraphicsView(QFrame):
         # Silently ignore atlas load errors in the overlay view;
         # the split-view AtlasViewer already shows errors to the user.
 
-    def _on_loader_done(self, gen: int) -> None:
+    def _on_loader_done(self, gen: int, thread: Optional[QThread] = None) -> None:
+        if thread is not None and self._active_thread is thread:
+            self._active_thread = None
+            self._active_worker = None
+            return
         if gen == self._generation:
             self._active_thread = None
             self._active_worker = None

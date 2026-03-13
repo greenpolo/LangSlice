@@ -5,6 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import cast
 
+import numpy as np
 from PIL import Image
 
 import langslice.registration.agents as registration_agents
@@ -126,24 +127,24 @@ def test_registration_count_tokens_runs_before_generate(monkeypatch) -> None:
         def generate_content(self, *, model: str, contents: object, config: object) -> object:
             _ = model, contents, config
             model_calls.append("generate_content")
-            correspondences = []
-            for idx in range(6):
-                correspondences.append(
-                    {
-                        "slice_x": float(10 + idx * 5),
-                        "slice_y": float(20 + idx * 4),
-                        "atlas_x": float(12 + idx * 5),
-                        "atlas_y": float(22 + idx * 4),
-                        "label": f"pt-{idx}",
-                        "confidence": "high",
-                        "rationale": "synthetic",
-                    }
-                )
-            return SimpleNamespace(parsed={"reasoning": "ok", "correspondences": correspondences})
+            return SimpleNamespace(
+                parsed={
+                    "correspondences": [
+                        {
+                            "atlas_point_2d": [int(80 + idx * 70), int(50 + idx * 75)],
+                            "slice_point_2d": [int(100 + idx * 65), int(60 + idx * 70)],
+                            "label": f"pt-{idx}",
+                            "status": "found",
+                            "confidence": "high",
+                        }
+                        for idx in range(8)
+                    ]
+                }
+            )
 
     fake_module = SimpleNamespace(
         MODEL_NAME="gemini-3-flash-preview",
-        THINKING_LEVEL="HIGH",
+        REGISTRATION_THINKING_BUDGET=8192,
         count_tokens_enabled=lambda: True,
         get_client=lambda: SimpleNamespace(models=FakeModels()),
     )
@@ -153,7 +154,17 @@ def test_registration_count_tokens_runs_before_generate(monkeypatch) -> None:
         "import_module",
         lambda name: fake_module if name == "langslice.vlm.config" else None,
     )
-    monkeypatch.setattr(registration_agents, "load_atlas", lambda atlas_name: object())
+    atlas = SimpleNamespace(
+        atlas_name="allen_mouse_25um",
+        orientation="asr",
+        reference=np.ones((1, 100, 120), dtype=np.uint8),
+        annotation=np.ones((1, 100, 120), dtype=np.int32),
+        resolution=(25.0, 25.0, 25.0),
+        metadata={},
+        structures={1: {"acronym": "CTX", "name": "Cortex"}},
+    )
+    monkeypatch.setattr(registration_agents, "load_atlas", lambda atlas_name: atlas)
+    monkeypatch.setattr(registration_agents, "position_mm_to_index", lambda atlas, position_mm: 0)
     monkeypatch.setattr(
         registration_agents,
         "get_atlas_info",
@@ -161,8 +172,15 @@ def test_registration_count_tokens_runs_before_generate(monkeypatch) -> None:
     )
     monkeypatch.setattr(
         registration_agents,
-        "get_region_at_position",
-        lambda atlas, position_mm, include_hierarchy=True: {"structure": "CTX"},
+        "get_slice_region_metadata",
+        lambda atlas, position_mm: [
+            {
+                "acronym": "CTX",
+                "name": "Cortex",
+                "centroid_normalized": (500, 500),
+                "area_fraction": 0.5,
+            }
+        ],
     )
     monkeypatch.setattr(
         registration_agents,
@@ -177,6 +195,6 @@ def test_registration_count_tokens_runs_before_generate(monkeypatch) -> None:
         on_progress=progress_messages.append,
     )
 
-    assert len(result) == 6
+    assert len(result) == 8
     assert model_calls == ["count_tokens", "generate_content"]
     assert any("Registration token preflight" in message for message in progress_messages)

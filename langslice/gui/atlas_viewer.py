@@ -4,6 +4,7 @@ import importlib
 from typing import Optional
 
 from PIL import Image
+
 QtCore = importlib.import_module("PySide6.QtCore")
 QtGui = importlib.import_module("PySide6.QtGui")
 QtWidgets = importlib.import_module("PySide6.QtWidgets")
@@ -30,8 +31,15 @@ QStackedLayout = QtWidgets.QStackedLayout
 QVBoxLayout = QtWidgets.QVBoxLayout
 QWidget = QtWidgets.QWidget
 
-from langslice.atlas.core import get_reference_slice, load_atlas
-from langslice.gui.theme import ACCENT, BG_PANEL_SOLID, BORDER_SUBTLE, FONT_MONO, TEXT_PRIMARY, TEXT_SECONDARY
+from langslice.atlas.core import get_composite_slice, load_atlas
+from langslice.gui.theme import (
+    ACCENT,
+    BG_PANEL_SOLID,
+    BORDER_SUBTLE,
+    FONT_MONO,
+    TEXT_PRIMARY,
+    TEXT_SECONDARY,
+)
 
 
 def pil_to_qpixmap(img: Image.Image) -> QPixmap:
@@ -65,7 +73,7 @@ class AtlasLoaderWorker(QObject):
     def load(self) -> None:
         try:
             atlas = load_atlas(self._atlas_name)
-            image = get_reference_slice(atlas, self._position_mm)
+            image = get_composite_slice(atlas, self._position_mm)
             self.slice_ready.emit(pil_to_qpixmap(image))
         except Exception as exc:
             self.error.emit(str(exc))
@@ -196,8 +204,7 @@ class AtlasViewer(QFrame):
             self._correspondence_markers = []
         else:
             self._correspondence_markers = [
-                (float(x), float(y), str(label))
-                for x, y, label in markers
+                (float(x), float(y), str(label)) for x, y, label in markers
             ]
         self._update_scaled_pixmap()
 
@@ -242,7 +249,9 @@ class AtlasViewer(QFrame):
         worker.moveToThread(thread)
 
         thread.started.connect(worker.load)
-        worker.slice_ready.connect(lambda pixmap, g=request_generation: self._on_slice_ready(g, pixmap))
+        worker.slice_ready.connect(
+            lambda pixmap, g=request_generation: self._on_slice_ready(g, pixmap)
+        )
         worker.error.connect(lambda msg, g=request_generation: self._on_error(g, msg))
         worker.finished.connect(lambda g=request_generation: self._on_worker_finished(g))
         worker.finished.connect(thread.quit)
@@ -315,7 +324,11 @@ class AtlasViewer(QFrame):
         self._image_label.setPixmap(scaled)
 
     def _draw_correspondence_markers(self, scaled_pixmap: QPixmap) -> None:
-        if self._source_pixmap is None or self._source_pixmap.width() <= 0 or self._source_pixmap.height() <= 0:
+        if (
+            self._source_pixmap is None
+            or self._source_pixmap.width() <= 0
+            or self._source_pixmap.height() <= 0
+        ):
             return
 
         sx = scaled_pixmap.width() / float(self._source_pixmap.width())
@@ -335,7 +348,9 @@ class AtlasViewer(QFrame):
             py = y * sy
             if px < 0.0 or py < 0.0 or px >= width or py >= height:
                 continue
-            painter.drawEllipse(int(round(px - radius)), int(round(py - radius)), radius * 2, radius * 2)
+            painter.drawEllipse(
+                int(round(px - radius)), int(round(py - radius)), radius * 2, radius * 2
+            )
             painter.setPen(text_pen)
             painter.drawText(int(round(px + 8)), int(round(py - 6)), label)
             painter.setPen(marker_pen)

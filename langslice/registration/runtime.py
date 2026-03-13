@@ -8,9 +8,8 @@ import os
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Any
+from typing import Callable
 
-import numpy as np
 from PIL import Image, ImageDraw
 
 from langslice.atlas import get_composite_slice, load_atlas
@@ -20,7 +19,7 @@ from langslice.registration.solver import (
     fit_tps_from_correspondences,
     vet_correspondences,
 )
-from langslice.registration.types import RegistrationResult
+from langslice.registration.types import RegistrationCorrespondence, RegistrationResult
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +38,9 @@ def _save_image(path: Path, image: Image.Image) -> None:
     image.save(path)
 
 
-def _draw_landmarks(image: Image.Image, points: list[tuple[float, float]], labels: list[str]) -> Image.Image:
+def _draw_landmarks(
+    image: Image.Image, points: list[tuple[float, float]], labels: list[str]
+) -> Image.Image:
     annotated = image.convert("RGB").copy()
     draw = ImageDraw.Draw(annotated)
     for (x, y), label in zip(points, labels):
@@ -92,9 +93,7 @@ def _write_debug_artifacts(
         },
         "accepted_correspondences": [asdict(c) for c in result.accepted_correspondences],
         "rejected_correspondences": [
-            {
-                **{k: (asdict(v) if hasattr(v, "slice_xy") else v) for k, v in item.items()}
-            }
+            {**{k: (asdict(v) if hasattr(v, "slice_xy") else v) for k, v in item.items()}}
             for item in result.rejected_correspondences
         ],
     }
@@ -107,6 +106,8 @@ def estimate_registration(
     atlas_name: str,
     position_mm: float,
     pixel_size_um: float | None = None,
+    target_landmark_count: int = 12,
+    on_correspondences: Callable[[list[RegistrationCorrespondence]], None] | None = None,
     on_progress: Callable[[str], None] | None = None,
 ) -> RegistrationResult:
     """Run the new registration runtime and return affine + nonlinear results."""
@@ -117,19 +118,25 @@ def estimate_registration(
         image,
         atlas_name=atlas_name,
         position_mm=position_mm,
+        target_landmark_count=target_landmark_count,
         on_progress=on_progress,
     )
+    if on_correspondences is not None:
+        on_correspondences(correspondences)
     vetting = vet_correspondences(correspondences, slice_size=image.size)
     affine_result, residuals = fit_affine_from_correspondences(
         vetting.accepted,
         source_size=atlas_image.size,
         output_size=image.size,
-        backend="registration_agent_affine",
+        backend="landmark_affine",
         reasoning="Affine derived deterministically from vetted registration correspondences.",
     )
+    affine_result.provenance["transform_direction"] = "atlas_to_slice"
     for corr, residual in zip(vetting.accepted, residuals):
         if residual > max(image.size) * 0.05:
-            vetting.rejected.append({"correspondence": corr, "reason": f"high_affine_residual:{residual:.3f}"})
+            vetting.rejected.append(
+                {"correspondence": corr, "reason": f"high_affine_residual:{residual:.3f}"}
+            )
     nonlinear_result = fit_tps_from_correspondences(
         vetting.accepted,
         output_size=image.size,

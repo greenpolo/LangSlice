@@ -11,8 +11,6 @@ import numpy as np
 from PIL import Image
 from google.genai import types
 from langslice.image_prep import normalize_image, prepare_image_for_vlm
-from langslice.registration.core import estimate_affine_registration
-from langslice.registration.types import AffineResult
 from langslice.vlm import config as vlm_config
 from langslice.vlm.config import get_client
 
@@ -1581,22 +1579,4 @@ def estimate_ap(
         image=image,
         atlas_name=atlas_name,
         on_progress=on_progress,
-    )
-
-
-def estimate_affine(
-    image: Image.Image,
-    on_progress: Callable[[str], None] | None = None,
-    atlas_name: str | None = None,
-    position_mm: float | None = None,
-    pixel_size_um: float | None = None,
-) -> AffineResult:
-    """Estimate an in-plane affine transform with the registration runtime."""
-
-    return estimate_affine_registration(
-        image=image,
-        on_progress=on_progress,
-        atlas_name=atlas_name,
-        position_mm=position_mm,
-        pixel_size_um=pixel_size_um,
     )

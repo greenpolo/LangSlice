@@ -48,6 +48,7 @@ QStackedWidget = _qtwidgets.QStackedWidget
 QVBoxLayout = _qtwidgets.QVBoxLayout
 QWidget = _qtwidgets.QWidget
 QDoubleSpinBox = _qtwidgets.QDoubleSpinBox
+QSpinBox = _qtwidgets.QSpinBox
 
 from langslice import __version__
 from langslice.atlas import (
@@ -59,13 +60,20 @@ from langslice.atlas import (
 from langslice.image_prep import LoadedImageState, load_image_state
 from langslice.registration import (
     AffineResult,
+    RegistrationCorrespondence,
     RegistrationResult,
-    apply_affine_to_points,
     estimate_registration_runtime,
 )
-from langslice.gui.theme import ACCENT, BG_PRIMARY, ERROR, STYLESHEET, SUCCESS, TEXT_SECONDARY
+from langslice.gui.theme import ACCENT, ERROR, STYLESHEET, SUCCESS, TEXT_SECONDARY
 from langslice.vlm import APResult, estimate_position
-from langslice.vlm.config import AVAILABLE_MODELS, MODEL_NAME, set_model_name
+from langslice.vlm.config import (
+    AVAILABLE_MODELS,
+    AVAILABLE_THINKING_BUDGETS,
+    MODEL_NAME,
+    REGISTRATION_THINKING_BUDGET,
+    set_model_name,
+    set_registration_thinking_budget,
+)
 from langslice.export import build_quint_export, save_quint_json
 from langslice.gui.run_metadata_dialog import RunMetadataDialog
 from langslice.gui.settings_dialog import SettingsDialog
@@ -74,6 +82,7 @@ from langslice.gui.overlay_viewer import OverlayGraphicsView
 try:
     AtlasViewer = importlib.import_module("langslice.gui.atlas_viewer").AtlasViewer
 except Exception:
+
     class AtlasViewer(QFrame):
         """Fallback atlas widget when atlas_viewer.py is unavailable."""
 
@@ -104,7 +113,9 @@ except Exception:
             self._position_mm = None
             self._label.setText("Atlas pending position estimate")
 
-        def set_correspondence_markers(self, markers: list[tuple[float, float, str]] | None) -> None:
+        def set_correspondence_markers(
+            self, markers: list[tuple[float, float, str]] | None
+        ) -> None:
             _ = markers
 
 
@@ -138,29 +149,39 @@ def affine_matrix_to_qtransform(matrix: object) -> QTransform:
 def build_split_view_correspondence_points(
     registration_result: RegistrationResult | None,
     affine_result: AffineResult | None,
+    preview_correspondences: list[RegistrationCorrespondence] | None = None,
 ) -> tuple[list[tuple[float, float, str]], list[tuple[float, float, str]]]:
     """Return paired marker points for split-view slice and atlas panes."""
-    if registration_result is None:
+    _ = affine_result
+    correspondences: list[RegistrationCorrespondence] = []
+    if registration_result is not None:
+        correspondences = registration_result.accepted_correspondences
+    elif preview_correspondences is not None:
+        correspondences = preview_correspondences
+    if not correspondences:
         return [], []
 
-    accepted = registration_result.accepted_correspondences
-    labels = [corr.label for corr in accepted]
-
-    slice_xy = [(float(corr.slice_xy[0]), float(corr.slice_xy[1])) for corr in accepted]
-    if affine_result is not None and slice_xy:
-        transformed = apply_affine_to_points(affine_result.matrix, slice_xy)
-        slice_points = [
-            (float(transformed[idx][0]), float(transformed[idx][1]), labels[idx])
-            for idx in range(len(labels))
-        ]
-    else:
-        slice_points = [(x, y, labels[idx]) for idx, (x, y) in enumerate(slice_xy)]
+    slice_points = [
+        (float(corr.slice_xy[0]), float(corr.slice_xy[1]), corr.label) for corr in correspondences
+    ]
 
     atlas_points = [
-        (float(corr.atlas_xy[0]), float(corr.atlas_xy[1]), corr.label)
-        for corr in accepted
+        (float(corr.atlas_xy[0]), float(corr.atlas_xy[1]), corr.label) for corr in correspondences
     ]
     return slice_points, atlas_points
+
+
+def should_apply_affine_to_slice(
+    affine_result: AffineResult | None,
+    slice_size: tuple[int, int] | None,
+) -> bool:
+    """Return True when an affine result is defined in the slice-image source frame."""
+    if affine_result is None or slice_size is None:
+        return False
+    direction = str(affine_result.provenance.get("transform_direction", "")).strip().lower()
+    if direction == "atlas_to_slice":
+        return False
+    return affine_result.source_size == (int(slice_size[0]), int(slice_size[1]))
 
 
 def draw_correspondence_markers(
@@ -293,6 +314,7 @@ class AgentWorker(QObject):
     step_started = Signal(str)
     step_completed = Signal(str, object)
     step_error = Signal(str, str)
+    correspondences_ready = Signal(object)
     log_message = Signal(str)
     finished = Signal()
 
@@ -302,12 +324,14 @@ class AgentWorker(QObject):
         vlm_image: Image.Image,
         atlas_name: str,
         pixel_size_um: float,
+        target_landmark_count: int,
     ) -> None:
         super().__init__()
         self.image = canonical_image
         self.vlm_image = vlm_image
         self.atlas_name = atlas_name
         self.pixel_size_um = pixel_size_um
+        self.target_landmark_count = target_landmark_count
 
     def run(self) -> None:
         try:
@@ -326,19 +350,89 @@ class AgentWorker(QObject):
 
         try:
             self.step_started.emit("affine")
-            self.log_message.emit("Starting affine estimation...")
+            self.log_message.emit(
+                "Starting landmark-based registration... "
+                f"(target_pairs={self.target_landmark_count}, edge_hint_pairs=5)"
+            )
             registration_result = estimate_registration_runtime(
                 image=self.image,
                 on_progress=self.log_message.emit,
                 atlas_name=self.atlas_name,
                 position_mm=ap_result.position_mm,
                 pixel_size_um=self.pixel_size_um,
+                target_landmark_count=self.target_landmark_count,
+                on_correspondences=self.correspondences_ready.emit,
             )
             self.step_completed.emit("affine", registration_result)
         except Exception as exc:
             self.step_error.emit("affine", str(exc))
         finally:
             self.finished.emit()
+
+
+class ManualRegistrationWorker(QObject):
+    """Runs registration runtime from a manually selected AP position."""
+
+    step_started = Signal(str)
+    step_completed = Signal(str, object)
+    step_error = Signal(str, str)
+    correspondences_ready = Signal(object)
+    log_message = Signal(str)
+    finished = Signal()
+
+    def __init__(
+        self,
+        canonical_image: Image.Image,
+        atlas_name: str,
+        position_mm: float,
+        pixel_size_um: float,
+        target_landmark_count: int,
+    ) -> None:
+        super().__init__()
+        self.image = canonical_image
+        self.atlas_name = atlas_name
+        self.position_mm = position_mm
+        self.pixel_size_um = pixel_size_um
+        self.target_landmark_count = target_landmark_count
+
+    def run(self) -> None:
+        try:
+            self.step_started.emit("ap")
+            self.log_message.emit(f"Using manual AP position: {self.position_mm:.2f} mm")
+            self.step_completed.emit(
+                "ap",
+                APResult(
+                    position_mm=self.position_mm,
+                    reasoning="Manual AP position",
+                    debug_dir=None,
+                ),
+            )
+        except Exception as exc:
+            self.step_error.emit("ap", str(exc))
+            self.finished.emit()
+            return
+
+        try:
+            self.step_started.emit("affine")
+            self.log_message.emit(
+                "Starting landmark-based registration... "
+                f"(target_pairs={self.target_landmark_count}, edge_hint_pairs=5)"
+            )
+            registration_result = estimate_registration_runtime(
+                image=self.image,
+                on_progress=self.log_message.emit,
+                atlas_name=self.atlas_name,
+                position_mm=self.position_mm,
+                pixel_size_um=self.pixel_size_um,
+                target_landmark_count=self.target_landmark_count,
+                on_correspondences=self.correspondences_ready.emit,
+            )
+            self.step_completed.emit("affine", registration_result)
+        except Exception as exc:
+            self.step_error.emit("affine", str(exc))
+        finally:
+            self.finished.emit()
+
 
 class StepIndicator(QFrame):
     """Step row in the right-side timeline panel."""
@@ -425,8 +519,18 @@ class StepIndicator(QFrame):
             self.title_label.setStyleSheet(f"font-weight: 600; color: {TEXT_SECONDARY};")
             self.circle.setStyleSheet("background-color: #555555; border-radius: 9px;")
 
-    def show_ap_result(self, result: APResult) -> None:
-        self.result_top.setText(f"Estimated Position: <span style='color:{SUCCESS}'>{result.position_mm:.2f} mm</span>")
+    def set_title(self, title: str) -> None:
+        self.title_label.setText(title)
+
+    def show_ap_result(
+        self,
+        result: APResult,
+        *,
+        position_label: str = "Estimated Position",
+    ) -> None:
+        self.result_top.setText(
+            f"{position_label}: <span style='color:{SUCCESS}'>{result.position_mm:.2f} mm</span>"
+        )
         self.result_reasoning.setText(result.reasoning)
         self.error_label.clear()
         self.result_panel.show()
@@ -482,22 +586,27 @@ class MainWindow(QMainWindow):
         self.loaded_image_state: LoadedImageState | None = None
         self.pil_image: Image.Image | None = None
         self.current_pos: float | None = None
+        self._active_pipeline_mode: str = "agent"
         self.ap_result: APResult | None = None
         self.affine_result: AffineResult | None = None
         self.registration_result: RegistrationResult | None = None
+        self.preview_correspondences: list[RegistrationCorrespondence] | None = None
         self._last_run_context: dict[str, object] | None = None
         self.current_view_mode = "single"
 
         self.worker_thread: QThread | None = None
-        self.worker: AgentWorker | None = None
+        self.worker: AgentWorker | ManualRegistrationWorker | None = None
 
         self.pixel_size_um: float = 4.0
+        self.registration_landmark_count: int = 8
         self._pixel_size_source: str = "manual_default"
         self._metadata_pixel_size_um: float | None = None
 
         self._build_ui()
+        self._set_pipeline_mode("agent")
         self._set_view_mode("single")
         self._set_export_enabled(False)
+        self._update_run_buttons()
 
     def _build_ui(self) -> None:
         root = QWidget()
@@ -620,8 +729,40 @@ class MainWindow(QMainWindow):
         self.pixel_size_spin.setDecimals(2)
         self.pixel_size_spin.setSingleStep(0.5)
         self.pixel_size_spin.setFixedWidth(130)
-        self.pixel_size_spin.setToolTip("Pixel size of the histology image in micrometers per pixel")
+        self.pixel_size_spin.setToolTip(
+            "Pixel size of the histology image in micrometers per pixel"
+        )
         self.pixel_size_spin.valueChanged.connect(self._on_pixel_size_changed)
+
+        landmark_count_label = QLabel("Landmarks:")
+        landmark_count_label.setObjectName("subheading")
+        self.landmark_count_spin = QSpinBox()
+        self.landmark_count_spin.setRange(6, 24)
+        self.landmark_count_spin.setValue(self.registration_landmark_count)
+        self.landmark_count_spin.setSuffix(" pts")
+        self.landmark_count_spin.setFixedWidth(110)
+        self.landmark_count_spin.setToolTip(
+            "Total correspondence pairs requested from the registration agent. "
+            "At least 5 are enforced near image borders."
+        )
+        self.landmark_count_spin.valueChanged.connect(self._on_landmark_count_changed)
+
+        thinking_label = QLabel("Thinking:")
+        thinking_label.setObjectName("subheading")
+        self.thinking_combo = QComboBox()
+        current_budget = REGISTRATION_THINKING_BUDGET
+        selected_index = 0
+        for i, (label, budget) in enumerate(AVAILABLE_THINKING_BUDGETS):
+            self.thinking_combo.addItem(label, budget)
+            if budget == current_budget:
+                selected_index = i
+        self.thinking_combo.setCurrentIndex(selected_index)
+        self.thinking_combo.setFixedWidth(120)
+        self.thinking_combo.setToolTip(
+            "Thinking budget for registration (landmark correspondence). "
+            "Higher values give the model more reasoning tokens."
+        )
+        self.thinking_combo.currentIndexChanged.connect(self._on_thinking_budget_changed)
 
         self.upload_button = QPushButton("Open Image...")
         self.upload_button.setObjectName("secondary")
@@ -640,6 +781,10 @@ class MainWindow(QMainWindow):
         right.addWidget(self.model_combo)
         right.addWidget(px_size_label)
         right.addWidget(self.pixel_size_spin)
+        right.addWidget(landmark_count_label)
+        right.addWidget(self.landmark_count_spin)
+        right.addWidget(thinking_label)
+        right.addWidget(self.thinking_combo)
         right.addWidget(self.upload_button)
         right.addWidget(self.settings_button)
         right.addWidget(self.export_button)
@@ -747,7 +892,9 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
         self.single_image_label = ImageLabel()
-        self.single_image_label.setStyleSheet("border: 1px solid rgba(255,255,255,20); border-radius: 10px;")
+        self.single_image_label.setStyleSheet(
+            "border: 1px solid rgba(255,255,255,20); border-radius: 10px;"
+        )
         layout.addWidget(self.single_image_label)
         return page
 
@@ -798,7 +945,7 @@ class MainWindow(QMainWindow):
         hrow = QHBoxLayout(header)
         hrow.setContentsMargins(0, 0, 0, 0)
         hrow.setSpacing(8)
-        title = QLabel("Agent Workflow")
+        title = QLabel("Registration Workflows")
         title.setObjectName("heading")
         self.clear_all_button = QPushButton("Clear All")
         self.clear_all_button.setObjectName("secondary")
@@ -811,23 +958,47 @@ class MainWindow(QMainWindow):
         hrow.addWidget(self.run_button)
         layout.addWidget(header)
 
+        workflow_copy = QLabel(
+            "Run Agent for automatic AP estimation, or use the manual position flow below to register from an explicit atlas location."
+        )
+        workflow_copy.setWordWrap(True)
+        workflow_copy.setObjectName("subheading")
+        layout.addWidget(workflow_copy)
+
         self.ap_adjust_wrap = QFrame()
         self.ap_adjust_wrap.setObjectName("glassPanel")
         ap_layout = QVBoxLayout(self.ap_adjust_wrap)
         ap_layout.setContentsMargins(10, 10, 10, 10)
+        ap_layout.setSpacing(6)
+        manual_title = QLabel("Manual Position Registration")
+        manual_title.setStyleSheet("font-size: 13px; font-weight: 600;")
+        manual_copy = QLabel(
+            "Set AP with the slider, then run landmark registration from that exact manual position (AP agent skipped)."
+        )
+        manual_copy.setWordWrap(True)
+        manual_copy.setObjectName("subheading")
         self.ap_value_label = QLabel("Manual Position: 0.00 mm")
         self.ap_value_label.setObjectName("monoLabel")
         self.ap_slider = QSlider(Qt.Orientation.Horizontal)
         self.ap_slider.setRange(0, 2000)  # Default 0-20mm
         self.ap_slider.setValue(0)
         self.ap_slider.valueChanged.connect(self._on_ap_slider_changed)
+        self.run_registration_button = QPushButton("Run Registration at Manual Position")
+        self.run_registration_button.clicked.connect(self._run_manual_registration)
+        self.manual_registration_status_label = QLabel()
+        self.manual_registration_status_label.setWordWrap(True)
+        self.manual_registration_status_label.setObjectName("subheading")
+        ap_layout.addWidget(manual_title)
+        ap_layout.addWidget(manual_copy)
         ap_layout.addWidget(self.ap_value_label)
         ap_layout.addWidget(self.ap_slider)
+        ap_layout.addWidget(self.run_registration_button)
+        ap_layout.addWidget(self.manual_registration_status_label)
         self.ap_adjust_wrap.hide()
         layout.addWidget(self.ap_adjust_wrap)
 
-        self.step_ap = StepIndicator("Estimate Position", has_connector=True)
-        self.step_affine = StepIndicator("Affine Transformation", has_connector=False)
+        self.step_ap = StepIndicator("Estimate Position (Agent)", has_connector=True)
+        self.step_affine = StepIndicator("Landmark Registration", has_connector=False)
 
         layout.addWidget(self.step_ap)
         layout.addWidget(self.step_affine)
@@ -837,15 +1008,15 @@ class MainWindow(QMainWindow):
         fb_layout = QHBoxLayout(self.feedback_wrap)
         fb_layout.setContentsMargins(0, 8, 0, 0)
         fb_layout.setSpacing(8)
-        
+
         self.success_btn = QPushButton("Mark Success")
         self.success_btn.setObjectName("secondary")
         self.success_btn.clicked.connect(lambda: self._mark_run("success"))
-        
+
         self.failure_btn = QPushButton("Mark Failure")
         self.failure_btn.setObjectName("secondary")
         self.failure_btn.clicked.connect(lambda: self._mark_run("failure"))
-        
+
         fb_layout.addWidget(self.success_btn)
         fb_layout.addWidget(self.failure_btn)
         self.feedback_wrap.hide()
@@ -929,7 +1100,9 @@ class MainWindow(QMainWindow):
         signed_error_mm: float | None = None
         absolute_error_mm: float | None = None
 
-        if isinstance(actual_position, (int, float)) and isinstance(estimated_position, (int, float)):
+        if isinstance(actual_position, (int, float)) and isinstance(
+            estimated_position, (int, float)
+        ):
             signed_error_mm = float(estimated_position) - float(actual_position)
             absolute_error_mm = abs(signed_error_mm)
 
@@ -953,6 +1126,8 @@ class MainWindow(QMainWindow):
             "vlm_height": run_context.get("vlm_height"),
             "vlm_scale_factor": run_context.get("vlm_scale_factor"),
             "vlm_effective_pixel_size_um": run_context.get("vlm_effective_pixel_size_um"),
+            "registration_landmark_count": run_context.get("registration_landmark_count")
+            or self.registration_landmark_count,
             "run_started_at": run_context.get("run_started_at"),
             "estimated_position_mm": estimated_position,
             "actual_position_mm": actual_position,
@@ -1019,16 +1194,20 @@ class MainWindow(QMainWindow):
         self.pixel_size_spin.setValue(loaded_state.pixel_size_um)
         self.pixel_size_spin.blockSignals(False)
         self.current_pos = None
+        self._set_pipeline_mode("manual")
         self.ap_result = None
         self.affine_result = None
         self.registration_result = None
+        self.preview_correspondences = None
         self._last_run_context = None
         self._reset_steps()
         self.ap_adjust_wrap.show()
         self._sync_atlas_viewers()
+        self._set_ap_slider_value(self.ap_slider.value() / 100.0)
         self._update_display_pixmaps()
         self._set_view_mode(self.current_view_mode)
         self._append_log(f"Loaded image: {os.path.basename(file_path)}")
+        self._append_log(f"Manual position initialized at {self.current_pos:.2f} mm")
         if loaded_state.metadata_pixel_size_um is not None:
             self._append_log(
                 "Auto-detected pixel size: "
@@ -1057,9 +1236,11 @@ class MainWindow(QMainWindow):
         self.loaded_image_state = None
         self.pil_image = None
         self.current_pos = None
+        self._set_pipeline_mode("agent")
         self.ap_result = None
         self.affine_result = None
         self.registration_result = None
+        self.preview_correspondences = None
         self._last_run_context = None
 
         self.logs.clear()
@@ -1086,26 +1267,67 @@ class MainWindow(QMainWindow):
         self.success_btn.setEnabled(True)
         self.failure_btn.setEnabled(True)
         self._set_export_enabled(False)
-        self.run_button.setEnabled(self.pil_image is not None and not self._is_worker_running())
+        self._update_run_buttons()
         self.split_atlas.clear()
         self.overlay_viewer.clear()
 
-    def _run_agent(self) -> None:
-        if self.pil_image is None or self._is_worker_running():
-            return
+    def _can_run_agent(self) -> bool:
+        return self.pil_image is not None and not self._is_worker_running()
 
-        self.registration_result = None
-        self._reset_steps()
-        self._append_log("Starting agentic registration pipeline...")
-
-        atlas_name = self._current_atlas_name()
-        image_copy = self.pil_image.copy()
-        vlm_image_copy = (
-            self.loaded_image_state.vlm_image.copy()
-            if self.loaded_image_state is not None
-            else self.pil_image.copy()
+    def _can_run_manual_registration(self) -> bool:
+        return (
+            self.pil_image is not None
+            and self.current_pos is not None
+            and not self._is_worker_running()
         )
-        self._last_run_context = {
+
+    def _update_run_buttons(self) -> None:
+        agent_enabled = self._can_run_agent()
+        manual_enabled = self._can_run_manual_registration()
+
+        self.run_button.setEnabled(agent_enabled)
+        self.run_registration_button.setEnabled(manual_enabled)
+        self.run_button.setToolTip("Run AP agent + landmark registration")
+
+        message = self._manual_registration_status_text()
+        self.run_registration_button.setToolTip(message)
+        self.manual_registration_status_label.setText(message)
+
+    def _manual_registration_status_text(self) -> str:
+        if self._is_worker_running():
+            return "Manual registration is unavailable while a pipeline run is active."
+        if self.pil_image is None:
+            return "Load an image to unlock manual position registration."
+        if self.current_pos is None:
+            return "Pick a manual AP position to enable registration."
+        return (
+            f"Ready: Run landmark registration from manual position {self.current_pos:.2f} mm "
+            "(without AP agent estimation, "
+            f"target={self.registration_landmark_count} pairs, edge hint=5 pairs)."
+        )
+
+    def _set_pipeline_mode(self, mode: str) -> None:
+        self._active_pipeline_mode = mode
+        if mode == "manual":
+            self.step_ap.set_title("Manual Position")
+            return
+        self.step_ap.set_title("Estimate Position (Agent)")
+
+    def _build_run_context(self, atlas_name: str) -> dict[str, object]:
+        if self.pil_image is None:
+            return {}
+
+        vlm_width = self.pil_image.width
+        vlm_height = self.pil_image.height
+        vlm_scale_factor = 1.0
+        vlm_effective_pixel_size_um = self.pixel_size_um
+        if self.loaded_image_state is not None:
+            vlm_width = self.loaded_image_state.vlm_image.width
+            vlm_height = self.loaded_image_state.vlm_image.height
+            vlm_scale_factor = self.loaded_image_state.vlm_scale_factor
+            vlm_effective_pixel_size_um = self.loaded_image_state.vlm_effective_pixel_size_um
+
+        return {
             "atlas_name": atlas_name,
             "model_name": self.model_combo.currentText(),
             "pixel_size_um": self.pixel_size_um,
@@ -1113,26 +1335,16 @@ class MainWindow(QMainWindow):
             "metadata_pixel_size_um": self._metadata_pixel_size_um,
             "image_width": self.pil_image.width,
             "image_height": self.pil_image.height,
-            "vlm_width": vlm_image_copy.width,
-            "vlm_height": vlm_image_copy.height,
-            "vlm_scale_factor": (
-                self.loaded_image_state.vlm_scale_factor if self.loaded_image_state is not None else 1.0
-            ),
-            "vlm_effective_pixel_size_um": (
-                self.loaded_image_state.vlm_effective_pixel_size_um
-                if self.loaded_image_state is not None
-                else self.pixel_size_um
-            ),
+            "vlm_width": vlm_width,
+            "vlm_height": vlm_height,
+            "vlm_scale_factor": vlm_scale_factor,
+            "vlm_effective_pixel_size_um": vlm_effective_pixel_size_um,
+            "registration_landmark_count": self.registration_landmark_count,
             "run_started_at": datetime.now().isoformat(timespec="seconds"),
         }
 
+    def _start_worker(self, worker: AgentWorker | ManualRegistrationWorker) -> None:
         thread = QThread(self)
-        worker = AgentWorker(
-            image_copy,
-            vlm_image_copy,
-            atlas_name,
-            pixel_size_um=self.pixel_size_um,
-        )
         worker.moveToThread(thread)
 
         self.worker_thread = thread
@@ -1142,6 +1354,7 @@ class MainWindow(QMainWindow):
         worker.step_started.connect(self._on_step_started)
         worker.step_completed.connect(self._on_step_completed)
         worker.step_error.connect(self._on_step_error)
+        worker.correspondences_ready.connect(self._on_correspondences_ready)
         worker.log_message.connect(self._append_log)
         worker.finished.connect(self._on_worker_finished)
         worker.finished.connect(thread.quit)
@@ -1149,8 +1362,71 @@ class MainWindow(QMainWindow):
         thread.finished.connect(thread.deleteLater)
         thread.finished.connect(self._on_thread_cleaned)
 
-        self.run_button.setEnabled(False)
+        self._update_run_buttons()
         thread.start()
+
+    def _run_agent(self) -> None:
+        if not self._can_run_agent() or self.pil_image is None:
+            return
+
+        self._set_pipeline_mode("agent")
+        self.ap_result = None
+        self.affine_result = None
+        self.registration_result = None
+        self.preview_correspondences = None
+        self._reset_steps()
+        self._update_display_pixmaps()
+        self._append_log("Starting agentic registration pipeline...")
+
+        atlas_name = self._current_atlas_name()
+        image_copy = self.pil_image.copy()
+        vlm_image_copy = (
+            self.loaded_image_state.vlm_image.copy()
+            if self.loaded_image_state is not None
+            else self.pil_image.copy()
+        )
+        self._last_run_context = self._build_run_context(atlas_name)
+
+        self._start_worker(
+            AgentWorker(
+                image_copy,
+                vlm_image_copy,
+                atlas_name,
+                pixel_size_um=self.pixel_size_um,
+                target_landmark_count=self.registration_landmark_count,
+            )
+        )
+
+    def _run_manual_registration(self) -> None:
+        if (
+            not self._can_run_manual_registration()
+            or self.pil_image is None
+            or self.current_pos is None
+        ):
+            return
+
+        self._set_pipeline_mode("manual")
+        self.ap_result = None
+        self.affine_result = None
+        self.registration_result = None
+        self.preview_correspondences = None
+        self._reset_steps()
+        self._update_display_pixmaps()
+        self._append_log("Starting registration runtime from manual AP position...")
+
+        atlas_name = self._current_atlas_name()
+        position_mm = float(self.current_pos)
+        self._last_run_context = self._build_run_context(atlas_name)
+
+        self._start_worker(
+            ManualRegistrationWorker(
+                self.pil_image.copy(),
+                atlas_name,
+                position_mm,
+                pixel_size_um=self.pixel_size_um,
+                target_landmark_count=self.registration_landmark_count,
+            )
+        )
 
     def _on_step_started(self, step_id: str) -> None:
         if step_id == "ap":
@@ -1160,19 +1436,26 @@ class MainWindow(QMainWindow):
 
     def _on_step_completed(self, step_id: str, result: object) -> None:
         if step_id == "ap" and isinstance(result, APResult):
+            manual_mode = self._active_pipeline_mode == "manual"
             self.ap_result = result
             self.current_pos = result.position_mm
             self.step_ap.set_status("completed")
-            self.step_ap.show_ap_result(result)
+            self.step_ap.show_ap_result(
+                result,
+                position_label="Manual Position" if manual_mode else "Estimated Position",
+            )
             self._set_ap_slider_value(result.position_mm)
             self.ap_adjust_wrap.show()
-            self._sync_atlas_viewers()
-            self._append_log(f"Final position estimated: {result.position_mm:.2f} mm")
+            if manual_mode:
+                self._append_log(f"Manual position locked: {result.position_mm:.2f} mm")
+            else:
+                self._append_log(f"Final position estimated: {result.position_mm:.2f} mm")
             return
 
         if step_id == "affine" and isinstance(result, RegistrationResult):
             self.registration_result = result
             self.affine_result = result.affine_result
+            self.preview_correspondences = None
             affine_result = result.affine_result
             self.step_affine.set_status("completed")
             self.step_affine.show_affine_result(affine_result)
@@ -1191,6 +1474,20 @@ class MainWindow(QMainWindow):
 
         self._set_export_enabled(self._all_steps_completed())
 
+    def _on_correspondences_ready(self, correspondences_obj: object) -> None:
+        if not isinstance(correspondences_obj, list):
+            return
+        correspondences: list[RegistrationCorrespondence] = []
+        for item in correspondences_obj:
+            if isinstance(item, RegistrationCorrespondence):
+                correspondences.append(item)
+        if not correspondences:
+            return
+        self.preview_correspondences = correspondences
+        self._append_log(f"Received {len(correspondences)} landmark pairs for visual review")
+        self._update_display_pixmaps()
+        self._set_view_mode("split")
+
     def _on_step_error(self, step_id: str, message: str) -> None:
         if step_id == "ap":
             self.step_ap.set_status("error")
@@ -1203,9 +1500,9 @@ class MainWindow(QMainWindow):
 
     def _on_worker_finished(self) -> None:
         self._append_log("Pipeline completed.")
-        self.run_button.setEnabled(self.pil_image is not None)
+        self._update_run_buttons()
         self._set_export_enabled(self._all_steps_completed())
-        
+
         # Enable feedback buttons if debug traces were generated
         if self._all_steps_completed() and getattr(self.ap_result, "debug_dir", None):
             self.feedback_wrap.show()
@@ -1215,6 +1512,7 @@ class MainWindow(QMainWindow):
     def _on_thread_cleaned(self) -> None:
         self.worker = None
         self.worker_thread = None
+        self._update_run_buttons()
 
     def _all_steps_completed(self) -> bool:
         return self.ap_result is not None and self.affine_result is not None
@@ -1223,7 +1521,7 @@ class MainWindow(QMainWindow):
         self.export_button.setEnabled(enabled)
 
     def _is_worker_running(self) -> bool:
-        return self.worker_thread is not None and self.worker_thread.isRunning()
+        return self.worker_thread is not None
 
     def _on_model_changed(self, model_name: str) -> None:
         set_model_name(model_name)
@@ -1249,6 +1547,7 @@ class MainWindow(QMainWindow):
         # Update slider range based on atlas
         try:
             from langslice.atlas import get_position_range_mm, load_atlas
+
             atlas = load_atlas(atlas_name)
             _, max_pos = get_position_range_mm(atlas)
             self.ap_slider.setRange(0, int(round(max_pos * 100)))
@@ -1264,9 +1563,7 @@ class MainWindow(QMainWindow):
         self.overlay_viewer.set_position(self.current_pos)
 
     def _on_ap_slider_changed(self, slider_value: int) -> None:
-        self.current_pos = slider_value / 100.0
-        self.ap_value_label.setText(f"Manual Position: {self.current_pos:.2f} mm")
-        self._sync_atlas_viewers()
+        self._set_ap_slider_value(slider_value / 100.0)
 
     def _on_pixel_size_changed(self, value: float) -> None:
         self.pixel_size_um = value
@@ -1283,12 +1580,32 @@ class MainWindow(QMainWindow):
             )
         self._sync_atlas_viewers()
 
+    def _on_landmark_count_changed(self, value: int) -> None:
+        self.registration_landmark_count = int(value)
+        self._append_log(
+            f"Registration landmark target set to {self.registration_landmark_count} pairs"
+        )
+        self._update_run_buttons()
+
+    def _on_thinking_budget_changed(self, index: int) -> None:
+        budget = self.thinking_combo.itemData(index)
+        if isinstance(budget, int):
+            set_registration_thinking_budget(budget)
+            label = self.thinking_combo.itemText(index)
+            self._append_log(f"Registration thinking budget set to {label} ({budget} tokens)")
+
     def _set_ap_slider_value(self, position_mm: float) -> None:
-        value = int(round(position_mm * 100))
+        min_pos = self.ap_slider.minimum() / 100.0
+        max_pos = self.ap_slider.maximum() / 100.0
+        clamped_position = max(min_pos, min(max_pos, float(position_mm)))
+        value = int(round(clamped_position * 100))
         self.ap_slider.blockSignals(True)
         self.ap_slider.setValue(value)
         self.ap_slider.blockSignals(False)
-        self.ap_value_label.setText(f"Manual Position: {position_mm:.2f} mm")
+        self.current_pos = clamped_position
+        self.ap_value_label.setText(f"Manual Position: {clamped_position:.2f} mm")
+        self._sync_atlas_viewers()
+        self._update_run_buttons()
 
     def _on_opacity_changed(self, value: int) -> None:
         self.overlay_viewer.set_atlas_opacity(value / 100.0)
@@ -1298,9 +1615,13 @@ class MainWindow(QMainWindow):
             return None
 
         pixmap = pil_to_qpixmap(self.pil_image)
-        if self.affine_result is None:
+        if not should_apply_affine_to_slice(
+            self.affine_result,
+            (self.pil_image.width, self.pil_image.height),
+        ):
             return pixmap
 
+        assert self.affine_result is not None
         out_w, out_h = self.affine_result.output_size
         canvas = QPixmap(out_w, out_h)
         canvas.fill(QColor(0, 0, 0, 0))
@@ -1317,6 +1638,7 @@ class MainWindow(QMainWindow):
         split_slice_points, split_atlas_points = build_split_view_correspondence_points(
             self.registration_result,
             self.affine_result,
+            self.preview_correspondences,
         )
         split_pixmap = base_pixmap
         if split_pixmap is not None and split_slice_points:
@@ -1354,6 +1676,7 @@ class MainWindow(QMainWindow):
         # Gather atlas info for anchoring computation
         try:
             from langslice.atlas import load_atlas
+
             atlas = load_atlas(atlas_name)
             atlas_shape = atlas.reference.shape
             atlas_resolution = atlas.resolution
