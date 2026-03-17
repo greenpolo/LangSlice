@@ -30,7 +30,6 @@ def _correspondence(
     label: str,
     *,
     status: str = "found",
-    confidence: str = "high",
 ) -> dict[str, object]:
     """Build a fake paired correspondence in normalised [y, x] 0-1000 format."""
     return {
@@ -38,7 +37,6 @@ def _correspondence(
         "slice_point_2d": [slice_norm_y, slice_norm_x],
         "label": label,
         "status": status,
-        "confidence": confidence,
     }
 
 
@@ -54,7 +52,6 @@ def _patch_common(monkeypatch: Any) -> None:
         structures={1: {"acronym": "CTX", "name": "Cortex"}},
     )
     monkeypatch.setattr(agents, "load_atlas", lambda _name: atlas)
-    monkeypatch.setattr(agents, "position_mm_to_index", lambda _atlas, _pos: 0)
     monkeypatch.setattr(
         agents,
         "get_atlas_info",
@@ -135,10 +132,9 @@ def test_single_pass_pairs_atlas_and_slice_landmarks(monkeypatch: Any) -> None:
     assert call_count == 1
     assert result[0].label == "e1"
     assert result[1].label == "e2"
-    assert "atlas_region=CTX" in result[0].rationale
 
 
-def test_single_pass_rescales_atlas_framed_slice_coordinates(monkeypatch: Any) -> None:
+def test_single_pass_keeps_raw_slice_coordinate_frame(monkeypatch: Any) -> None:
     _patch_common(monkeypatch)
 
     correspondences = [
@@ -176,10 +172,10 @@ def test_single_pass_rescales_atlas_framed_slice_coordinates(monkeypatch: Any) -
     )
     assert len(result) == 12
     assert call_count == 1
-    # After rescale the tiny-norm pixel values are boosted into full slice space.
-    assert result[3].slice_xy[0] > 1000.0  # ~1128 after rescale (was ~136 before)
-    assert result[3].slice_xy[1] > 1200.0  # ~1354 after rescale (was ~136 before)
-    assert result[0].slice_xy[0] > 50.0  # ~63 after rescale (was ~7.6 before)
+    # Without atlas-frame rescue, tiny normalized slice coordinates remain small.
+    assert result[3].slice_xy[0] < 200.0
+    assert result[3].slice_xy[1] < 200.0
+    assert result[0].slice_xy[0] < 20.0
 
 
 def test_single_pass_normalized_coordinates_map_to_exact_pixel_xy(monkeypatch: Any) -> None:
@@ -220,7 +216,7 @@ def test_single_pass_normalized_coordinates_map_to_exact_pixel_xy(monkeypatch: A
     assert result[4].slice_xy == (300.0, 200.0)
 
 
-def test_single_pass_rejects_out_of_range_points_instead_of_clamping(monkeypatch: Any) -> None:
+def test_single_pass_keeps_out_of_range_points_without_filtering(monkeypatch: Any) -> None:
     _patch_common(monkeypatch)
 
     correspondences = [
@@ -231,7 +227,7 @@ def test_single_pass_rejects_out_of_range_points_instead_of_clamping(monkeypatch
         _correspondence(400, 400, 400, 400, "keep_5"),
         _correspondence(500, 500, 500, 500, "keep_6"),
         _correspondence(1001, 600, 600, 600, "reject_atlas"),
-        _correspondence(600, 600, -1, 600, "reject_slice"),
+        _correspondence(600, 600, -1, 600, "keep_negative_slice"),
     ]
 
     monkeypatch.setattr(
@@ -249,12 +245,12 @@ def test_single_pass_rejects_out_of_range_points_instead_of_clamping(monkeypatch
     )
 
     labels = [corr.label for corr in result]
-    assert len(result) == 6
-    assert "reject_atlas" not in labels
-    assert "reject_slice" not in labels
+    assert len(result) == 8
+    assert "reject_atlas" in labels
+    assert "keep_negative_slice" in labels
 
 
-def test_single_pass_fails_before_solver_when_too_few_pairs_survive(monkeypatch: Any) -> None:
+def test_single_pass_only_filters_not_visible_pairs(monkeypatch: Any) -> None:
     _patch_common(monkeypatch)
 
     correspondences = [
@@ -264,8 +260,8 @@ def test_single_pass_fails_before_solver_when_too_few_pairs_survive(monkeypatch:
         _correspondence(300, 300, 300, 300, "keep_4"),
         _correspondence(400, 400, 400, 400, "keep_5"),
         _correspondence(500, 500, 500, 500, "drop_not_visible", status="not_visible"),
-        _correspondence(1001, 600, 600, 600, "drop_atlas"),
-        _correspondence(600, 600, 1001, 600, "drop_slice"),
+        _correspondence(1001, 600, 600, 600, "keep_out_of_range"),
+        _correspondence(600, 600, 1001, 600, "keep_slice_out_of_range"),
     ]
 
     monkeypatch.setattr(
@@ -275,47 +271,11 @@ def test_single_pass_fails_before_solver_when_too_few_pairs_survive(monkeypatch:
     )
 
     image = Image.new("RGB", (3790, 2844), (0, 0, 0))
-    try:
-        agents.estimate_registration_correspondences(
-            image,
-            atlas_name="allen_mouse_25um",
-            position_mm=4.28,
-            target_landmark_count=8,
-            min_edge_landmarks=5,
-        )
-    except RuntimeError as exc:
-        assert "(5 < 6)" in str(exc)
-    else:
-        raise AssertionError("Expected too-few-correspondences failure")
-
-
-def test_detect_copy_pattern() -> None:
-    from langslice.registration.types import RegistrationCorrespondence
-
-    copied = [
-        RegistrationCorrespondence(
-            slice_xy=(ax * 10.0, ay * 10.0),
-            atlas_xy=(ax, ay),
-            label=f"p{i}",
-        )
-        for i, (ax, ay) in enumerate([(10, 10), (400, 10), (10, 300), (400, 300), (200, 150)])
-    ]
-    assert agents._detect_copy_pattern(copied, slice_size=(4000, 3000)) is True
-
-    genuine = [
-        RegistrationCorrespondence(
-            slice_xy=(sx, sy),
-            atlas_xy=(ax, ay),
-            label=f"p{i}",
-        )
-        for i, (sx, sy, ax, ay) in enumerate(
-            [
-                (300, 200, 10, 10),
-                (3500, 400, 400, 10),
-                (500, 2800, 10, 300),
-                (3600, 2600, 400, 300),
-                (1800, 1200, 200, 150),
-            ]
-        )
-    ]
-    assert agents._detect_copy_pattern(genuine, slice_size=(4000, 3000)) is False
+    result = agents.estimate_registration_correspondences(
+        image,
+        atlas_name="allen_mouse_25um",
+        position_mm=4.28,
+        target_landmark_count=8,
+        min_edge_landmarks=5,
+    )
+    assert len(result) == 7

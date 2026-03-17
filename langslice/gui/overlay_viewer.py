@@ -38,7 +38,7 @@ QSizePolicy = _qtwidgets.QSizePolicy
 QVBoxLayout = _qtwidgets.QVBoxLayout
 QWidget = _qtwidgets.QWidget
 
-from langslice.atlas.core import get_composite_slice, load_atlas
+from langslice.atlas.core import get_composite_slice, get_reference_slice, load_atlas
 from langslice.export import compute_coronal_frame_geometry
 from langslice.gui.theme import (
     ACCENT,
@@ -80,16 +80,25 @@ class _AtlasLoaderWorker(QObject):
     error = Signal(str)
     finished = Signal()
 
-    def __init__(self, atlas_name: str, position_mm: float) -> None:
+    def __init__(
+        self,
+        atlas_name: str,
+        position_mm: float,
+        show_region_borders: bool = True,
+    ) -> None:
         super().__init__()
         self._atlas_name = atlas_name
         self._position_mm = position_mm
+        self._show_region_borders = bool(show_region_borders)
 
     @Slot()
     def load(self) -> None:
         try:
             atlas = load_atlas(self._atlas_name)
-            composite = get_composite_slice(atlas, self._position_mm, opacity=0.4)
+            if self._show_region_borders:
+                composite = get_composite_slice(atlas, self._position_mm, opacity=0.4)
+            else:
+                composite = get_reference_slice(atlas, self._position_mm)
             atlas_shape = cast(tuple[int, int, int], tuple(atlas.reference.shape))
             self.slice_ready.emit(
                 _pil_to_qpixmap(composite),
@@ -122,6 +131,7 @@ class OverlayGraphicsView(QFrame):
         self._atlas_name: Optional[str] = None
         self._position_mm: Optional[float] = None
         self._atlas_shape: Optional[tuple[int, int, int]] = None
+        self._show_region_borders: bool = True
         self._atlas_opacity: float = 0.5
         self._generation: int = 0
 
@@ -206,6 +216,10 @@ class OverlayGraphicsView(QFrame):
 
     def set_position(self, position_mm: float) -> None:
         self._position_mm = position_mm
+        self._queue_atlas_reload()
+
+    def set_show_region_borders(self, visible: bool) -> None:
+        self._show_region_borders = bool(visible)
         self._queue_atlas_reload()
 
     def set_pixel_size(self, um_per_px: float) -> None:  # noqa: ARG002
@@ -345,7 +359,11 @@ class OverlayGraphicsView(QFrame):
         self._cancel_active()
 
         thread = QThread(self)
-        worker = _AtlasLoaderWorker(self._atlas_name, self._position_mm)
+        worker = _AtlasLoaderWorker(
+            self._atlas_name,
+            self._position_mm,
+            show_region_borders=self._show_region_borders,
+        )
         worker.moveToThread(thread)
 
         thread.started.connect(worker.load)

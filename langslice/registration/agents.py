@@ -9,18 +9,17 @@ import logging
 import time
 from typing import Any, Callable, cast
 
-import numpy as np
 from PIL import Image
 
 from langslice.atlas import (
     get_atlas_info,
     get_composite_slice,
+    get_reference_slice,
     get_slice_region_metadata,
     load_atlas,
 )
-from langslice.atlas.core import _AtlasLike, _lookup_structure_record, position_mm_to_index
+from langslice.atlas.core import _AtlasLike
 from langslice.image_prep import normalize_image, prepare_image_for_vlm
-from langslice.registration.solver import MIN_CORRESPONDENCES
 from langslice.registration.types import RegistrationCorrespondence
 
 logger = logging.getLogger(__name__)
@@ -40,7 +39,7 @@ RULES:
 4. Work one correspondence at a time, visually confirming both atlas and histology before moving to the next pair.
 5. Reason bidirectionally: sometimes start from atlas to slice, and sometimes start from slice to atlas.
 6. Points must fall on real tissue, not background, padding, or space outside the section.
-7. If a reliable match is not visible, set status to not_visible, confidence to low, and both coordinates to [0, 0].
+7. If a reliable match is not visible, set status to not_visible and both coordinates to [0, 0].
 8. Prefer a spatially distributed mix of outer contour anchors, midline points, cavity or tract corners, and interior boundaries.
 9. Include hemisphere or midline cues in labels whenever possible to reduce left-right swaps.
 10. Do not waste effort naming anatomy if identity is uncertain. Use concise geometric labels instead of guessing structure names.
@@ -139,10 +138,6 @@ def _extract_normalized_point(point: object, *, field_name: str) -> tuple[float,
     return norm_y, norm_x
 
 
-def _is_normalized_point_in_range(norm_y: float, norm_x: float) -> bool:
-    return 0.0 <= norm_y <= 1000.0 and 0.0 <= norm_x <= 1000.0
-
-
 def _normalized_to_pixel_xy(
     norm_y: float,
     norm_x: float,
@@ -153,49 +148,6 @@ def _normalized_to_pixel_xy(
     px_x = norm_x * max(width - 1, 1) / 1000.0
     px_y = norm_y * max(height - 1, 1) / 1000.0
     return px_x, px_y
-
-
-def _maybe_rescale_slice_coords_from_atlas_frame(
-    correspondences: list[RegistrationCorrespondence],
-    *,
-    slice_size: tuple[int, int],
-    atlas_size: tuple[int, int],
-) -> tuple[list[RegistrationCorrespondence], bool]:
-    if not correspondences:
-        return correspondences, False
-
-    slice_w = max(float(slice_size[0]), 1.0)
-    slice_h = max(float(slice_size[1]), 1.0)
-    atlas_w = max(float(atlas_size[0]), 1.0)
-    atlas_h = max(float(atlas_size[1]), 1.0)
-    if slice_w <= atlas_w * 1.5 and slice_h <= atlas_h * 1.5:
-        return correspondences, False
-
-    max_slice_x = max(float(c.slice_xy[0]) for c in correspondences)
-    max_slice_y = max(float(c.slice_xy[1]) for c in correspondences)
-
-    looks_like_atlas_frame = (
-        max_slice_x <= atlas_w * 1.25
-        and max_slice_y <= atlas_h * 1.25
-        and max_slice_x <= slice_w * 0.45
-        and max_slice_y <= slice_h * 0.45
-    )
-    if not looks_like_atlas_frame:
-        return correspondences, False
-
-    scale_x = slice_w / atlas_w
-    scale_y = slice_h / atlas_h
-    remapped = [
-        RegistrationCorrespondence(
-            slice_xy=(corr.slice_xy[0] * scale_x, corr.slice_xy[1] * scale_y),
-            atlas_xy=corr.atlas_xy,
-            label=corr.label,
-            confidence=corr.confidence,
-            rationale=corr.rationale,
-        )
-        for corr in correspondences
-    ]
-    return remapped, True
 
 
 def _build_region_metadata_text(
@@ -234,49 +186,6 @@ def _build_region_metadata_text(
     return "\n".join(rows)
 
 
-def _validate_atlas_coordinates(
-    correspondences: list[dict[str, object]],
-    atlas: _AtlasLike,
-    position_mm: float,
-) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
-    idx = position_mm_to_index(atlas, position_mm)
-    annotation_slice = np.asarray(atlas.annotation[idx, :, :])
-    height, width = cast(tuple[int, int], annotation_slice.shape)
-
-    accepted: list[dict[str, object]] = []
-    rejected: list[dict[str, object]] = []
-    for entry in correspondences:
-        item = dict(entry)
-        try:
-            norm_y, norm_x = _extract_normalized_point(
-                item.get("atlas_point_2d"),
-                field_name="atlas_point_2d",
-            )
-        except (TypeError, ValueError) as exc:
-            item["reason"] = f"invalid_atlas_point: {exc}"
-            rejected.append(item)
-            continue
-
-        if not _is_normalized_point_in_range(norm_y, norm_x):
-            item["reason"] = "atlas_point_out_of_range"
-            rejected.append(item)
-            continue
-
-        row = int(round(norm_y * max(height - 1, 1) / 1000.0))
-        col = int(round(norm_x * max(width - 1, 1) / 1000.0))
-        structure_id = int(np.asarray(annotation_slice[row, col]).item())
-        if structure_id <= 0:
-            item["reason"] = "atlas_point_outside_brain"
-            rejected.append(item)
-            continue
-
-        record = _lookup_structure_record(atlas, structure_id)
-        item["validated_region"] = record.get("acronym", "") or str(structure_id)
-        accepted.append(item)
-
-    return accepted, rejected
-
-
 def _build_single_pass_schema(target_count: int) -> dict[str, object]:
     return {
         "type": "object",
@@ -307,17 +216,12 @@ def _build_single_pass_schema(target_count: int) -> dict[str, object]:
                             "type": "string",
                             "enum": ["found", "uncertain", "not_visible"],
                         },
-                        "confidence": {
-                            "type": "string",
-                            "enum": ["high", "medium", "low"],
-                        },
                     },
                     "required": [
                         "atlas_point_2d",
                         "slice_point_2d",
                         "label",
                         "status",
-                        "confidence",
                     ],
                 },
             }
@@ -359,7 +263,6 @@ def _build_single_pass_request(
         "Output requirements:\n"
         "- atlas_point_2d and slice_point_2d must be [y, x] integers in the 0-1000 normalized range.\n"
         "- status must be found, uncertain, or not_visible.\n"
-        "- confidence must be high, medium, or low.\n"
         "- Never copy or mechanically transform coordinates from one image to the other."
     )
 
@@ -437,33 +340,6 @@ def _estimate_correspondences_single_pass(
     return list(correspondences)
 
 
-def _detect_copy_pattern(
-    correspondences: list[RegistrationCorrespondence],
-    *,
-    slice_size: tuple[int, int],
-) -> bool:
-    """Return True if slice coords are suspiciously close to a linear scale of atlas coords."""
-    if len(correspondences) < 4:
-        return False
-    atlas_pts = np.array([c.atlas_xy for c in correspondences], dtype=np.float64)
-    slice_pts = np.array([c.slice_xy for c in correspondences], dtype=np.float64)
-
-    for axis in range(2):
-        a = atlas_pts[:, axis]
-        s = slice_pts[:, axis]
-        a_range = float(a.max() - a.min())
-        if a_range < 1.0:
-            continue
-        scale = (s.max() - s.min()) / a_range
-        offset = s.mean() - a.mean() * scale
-        predicted = a * scale + offset
-        residuals = np.abs(s - predicted)
-        dim = float(slice_size[axis])
-        if dim > 0 and float(residuals.mean()) / dim > 0.03:
-            return False
-    return True
-
-
 def estimate_registration_correspondences(
     image: Image.Image,
     *,
@@ -471,6 +347,7 @@ def estimate_registration_correspondences(
     position_mm: float,
     target_landmark_count: int = 8,
     min_edge_landmarks: int = 5,
+    show_atlas_borders: bool = True,
     on_progress: Callable[[str], None] | None = None,
 ) -> list[RegistrationCorrespondence]:
     """Run a single-pass Gemini pipeline to produce paired landmark correspondences."""
@@ -478,14 +355,17 @@ def estimate_registration_correspondences(
     get_client = cast(Callable[[], Any], getattr(vlm_config, "get_client"))
     atlas = load_atlas(atlas_name)
     atlas_info = get_atlas_info(atlas)
-    atlas_image = get_composite_slice(atlas, position_mm)
+    if show_atlas_borders:
+        atlas_image = get_composite_slice(atlas, position_mm)
+    else:
+        atlas_image = get_reference_slice(atlas, position_mm)
 
     slice_prep = prepare_image_for_vlm(normalize_image(image))
     atlas_prep = prepare_image_for_vlm(normalize_image(atlas_image))
     region_metadata_text = _build_region_metadata_text(atlas, position_mm)
 
-    min_edge = max(1, int(min_edge_landmarks))
-    target_count = max(min_edge + 1, min(int(target_landmark_count), 24))
+    target_count = max(1, min(int(target_landmark_count), 24))
+    min_edge = max(0, min(int(min_edge_landmarks), target_count))
 
     if on_progress:
         on_progress(
@@ -559,24 +439,14 @@ def estimate_registration_correspondences(
             continue
         visible_correspondences.append(entry)
 
-    validated_correspondences, rejected_correspondences = _validate_atlas_coordinates(
-        visible_correspondences,
-        atlas,
-        position_mm,
-    )
-    for rejected in rejected_correspondences:
-        logger.info(
-            "Rejected correspondence %s: %s",
-            rejected.get("label", "unknown"),
-            rejected.get("reason", "unknown_reason"),
-        )
+    candidate_correspondences = visible_correspondences
 
     # Convert normalized [y, x] values to original-image pixel (x, y).
     # We map the 0-1000 endpoints onto the valid pixel index range [0, size-1]
     # so model outputs at 1000 stay inside the image domain.
 
     correspondences: list[RegistrationCorrespondence] = []
-    for entry in validated_correspondences:
+    for entry in candidate_correspondences:
         try:
             a_norm_y, a_norm_x = _extract_normalized_point(
                 entry.get("atlas_point_2d"),
@@ -594,13 +464,6 @@ def estimate_registration_correspondences(
             )
             continue
 
-        if not _is_normalized_point_in_range(s_norm_y, s_norm_x):
-            logger.info(
-                "Rejected correspondence %s due to slice_point_2d out of range",
-                entry.get("label", "unknown"),
-            )
-            continue
-
         a_px_x, a_px_y = _normalized_to_pixel_xy(
             a_norm_y,
             a_norm_x,
@@ -613,51 +476,20 @@ def estimate_registration_correspondences(
         )
 
         rationale_parts = [f"status={entry.get('status', 'found')}"]
-        validated_region = str(entry.get("validated_region", "")).strip()
-        if validated_region:
-            rationale_parts.append(f"atlas_region={validated_region}")
 
         correspondences.append(
             RegistrationCorrespondence(
                 slice_xy=(s_px_x, s_px_y),
                 atlas_xy=(a_px_x, a_px_y),
                 label=str(entry.get("label", f"landmark_{len(correspondences)}")),
-                confidence=str(entry.get("confidence", "medium")),
+                confidence="medium",
                 rationale="; ".join(rationale_parts),
             )
         )
 
-    # With abstention and validation, fewer than target_count correspondences
-    # are acceptable as long as we still satisfy the solver minimum.
-    min_required = min(MIN_CORRESPONDENCES, target_count)
-    if len(correspondences) < min_required:
-        raise RuntimeError(
-            f"Registration agent produced too few paired correspondences "
-            f"({len(correspondences)} < {min_required})"
-        )
+    if not correspondences:
+        raise RuntimeError("Registration agent produced no usable correspondences")
     correspondences = correspondences[:target_count]
-
-    correspondences, remapped = _maybe_rescale_slice_coords_from_atlas_frame(
-        correspondences,
-        slice_size=image.size,
-        atlas_size=atlas_image.size,
-    )
-    if remapped and on_progress:
-        on_progress(
-            "Detected atlas-framed slice landmarks from model output; "
-            "rescaled slice coordinates into slice pixel space"
-        )
-
-    if _detect_copy_pattern(correspondences, slice_size=image.size):
-        logger.warning(
-            "Slice coordinates appear to be a simple geometric projection of "
-            "atlas coordinates — independent localization may have failed"
-        )
-        if on_progress:
-            on_progress(
-                "Warning: slice landmarks may be projected from atlas coordinates "
-                "rather than independently located"
-            )
 
     if on_progress:
         on_progress(f"Registration agent proposed {len(correspondences)} correspondences")

@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, replace
+from typing import Sequence
 
 import numpy as np
 from PIL import Image
@@ -45,6 +46,7 @@ class LoadedImageState:
     vlm_size: tuple[int, int]
     vlm_scale_factor: float
     vlm_effective_pixel_size_um: float
+    channel_labels: tuple[str, ...] = ("Red", "Green", "Blue")
 
     def with_pixel_size(self, pixel_size_um: float, source: str) -> "LoadedImageState":
         effective = pixel_size_um / self.vlm_scale_factor
@@ -73,6 +75,48 @@ def normalize_image(image: Image.Image) -> Image.Image:
         return Image.fromarray(gray8).convert("RGB")
 
     return image.convert("RGB")
+
+
+def infer_channel_labels(mode: str | None) -> tuple[str, ...]:
+    """Infer simple UI labels for the source image channels."""
+    cleaned = (mode or "").upper()
+    if cleaned in {"L", "LA", "I", "I;16", "I;16B", "I;32", "F"}:
+        return ("Gray",)
+    return ("Red", "Green", "Blue")
+
+
+def render_slice_agent_image(
+    image: Image.Image,
+    *,
+    channel_enabled: Sequence[bool] = (True, True, True),
+    exposure_ev: float = 0.0,
+    brightness: float = 0.0,
+    contrast: float = 1.0,
+) -> Image.Image:
+    """Render the slice image exactly as it should be shown and sent to the agent."""
+    rgb = normalize_image(image)
+    arr = np.asarray(rgb, dtype=np.float32).copy()
+
+    enabled = tuple(bool(value) for value in channel_enabled)
+    if len(enabled) == 1:
+        if not enabled[0]:
+            arr.fill(0.0)
+    else:
+        for channel_index in range(min(arr.shape[2], len(enabled), 3)):
+            if not enabled[channel_index]:
+                arr[:, :, channel_index] = 0.0
+
+    if exposure_ev != 0.0:
+        arr *= float(2.0**exposure_ev)
+
+    if brightness != 0.0:
+        arr += float(brightness) * 255.0
+
+    if contrast != 1.0:
+        arr = (arr - 127.5) * float(contrast) + 127.5
+
+    clipped = np.clip(arr, 0.0, 255.0).astype(np.uint8)
+    return Image.fromarray(clipped, mode="RGB")
 
 
 def _rational_to_float(value: object) -> float | None:
@@ -218,7 +262,9 @@ def _pixel_size_from_tiff_tags(file_path: str) -> PixelSizeDetection | None:
         if not math.isclose(x_um, y_um, rel_tol=1e-3, abs_tol=1e-6):
             return None
 
-        return PixelSizeDetection(pixel_size_um=float((x_um + y_um) / 2.0), source="tiff_resolution")
+        return PixelSizeDetection(
+            pixel_size_um=float((x_um + y_um) / 2.0), source="tiff_resolution"
+        )
 
 
 def detect_pixel_size_um(file_path: str) -> PixelSizeDetection | None:
@@ -283,6 +329,7 @@ def load_image_state(
 ) -> LoadedImageState:
     """Load an image, detect pixel size, and derive a VLM-ready image."""
     with Image.open(file_path) as loaded:
+        channel_labels = infer_channel_labels(getattr(loaded, "mode", None))
         canonical_image = normalize_image(loaded.copy())
 
     detection = detect_pixel_size_um(file_path)
@@ -316,4 +363,5 @@ def load_image_state(
         vlm_size=vlm_prep.output_size,
         vlm_scale_factor=vlm_prep.scale_factor,
         vlm_effective_pixel_size_um=float(effective_pixel_size_um),
+        channel_labels=channel_labels,
     )

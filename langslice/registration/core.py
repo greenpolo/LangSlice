@@ -21,6 +21,7 @@ def estimate_registration_runtime(
     position_mm: float | None = None,
     pixel_size_um: float | None = None,
     target_landmark_count: int = 12,
+    show_atlas_borders: bool = True,
     on_correspondences: Callable[[list[RegistrationCorrespondence]], None] | None = None,
 ) -> RegistrationResult:
     """Run the separate registration runtime and return full results."""
@@ -39,6 +40,7 @@ def estimate_registration_runtime(
         position_mm=position_mm,
         pixel_size_um=pixel_size_um,
         target_landmark_count=target_landmark_count,
+        show_atlas_borders=show_atlas_borders,
         on_correspondences=on_correspondences,
         on_progress=on_progress,
     )

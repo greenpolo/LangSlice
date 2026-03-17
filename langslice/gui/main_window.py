@@ -57,14 +57,19 @@ from langslice.atlas import (
     list_available_atlases,
     list_downloaded_atlases,
 )
-from langslice.image_prep import LoadedImageState, load_image_state
+from langslice.image_prep import (
+    LoadedImageState,
+    load_image_state,
+    prepare_image_for_vlm,
+    render_slice_agent_image,
+)
 from langslice.registration import (
     AffineResult,
     RegistrationCorrespondence,
     RegistrationResult,
     estimate_registration_runtime,
 )
-from langslice.gui.theme import ACCENT, ERROR, STYLESHEET, SUCCESS, TEXT_SECONDARY
+from langslice.gui.theme import ACCENT, STYLESHEET, TEXT_SECONDARY
 from langslice.vlm import APResult, estimate_position
 from langslice.vlm.config import (
     AVAILABLE_MODELS,
@@ -78,6 +83,18 @@ from langslice.export import build_quint_export, save_quint_json
 from langslice.gui.run_metadata_dialog import RunMetadataDialog
 from langslice.gui.settings_dialog import SettingsDialog
 from langslice.gui.overlay_viewer import OverlayGraphicsView
+
+_main_window_components = importlib.import_module("langslice.gui.main_window_components")
+CanvasArea = _main_window_components.CanvasArea
+ImageLabel = _main_window_components.ImageLabel
+StepIndicator = _main_window_components.StepIndicator
+affine_matrix_to_qtransform = _main_window_components.affine_matrix_to_qtransform
+build_split_view_correspondence_points = (
+    _main_window_components.build_split_view_correspondence_points
+)
+draw_correspondence_markers = _main_window_components.draw_correspondence_markers
+pil_to_qpixmap = _main_window_components.pil_to_qpixmap
+should_apply_affine_to_slice = _main_window_components.should_apply_affine_to_slice
 
 try:
     AtlasViewer = importlib.import_module("langslice.gui.atlas_viewer").AtlasViewer
@@ -118,194 +135,8 @@ except Exception:
         ) -> None:
             _ = markers
 
-
-def pil_to_qpixmap(image: Image.Image) -> QPixmap:
-    """Convert PIL Image to QPixmap."""
-    rgba_image = image.convert("RGBA")
-    width, height = rgba_image.size
-    data = rgba_image.tobytes("raw", "RGBA")
-    qt_image = QImage(data, width, height, width * 4, QImage.Format.Format_RGBA8888)
-    return QPixmap.fromImage(qt_image.copy())
-
-
-def affine_matrix_to_qtransform(matrix: object) -> QTransform:
-    """Convert a row-major 3x3 affine matrix into a QTransform."""
-    arr = getattr(matrix, "tolist", None)
-    values = arr() if callable(arr) else matrix
-    m: Any = values
-    return QTransform(
-        float(m[0][0]),
-        float(m[1][0]),
-        0.0,
-        float(m[0][1]),
-        float(m[1][1]),
-        0.0,
-        float(m[0][2]),
-        float(m[1][2]),
-        1.0,
-    )
-
-
-def build_split_view_correspondence_points(
-    registration_result: RegistrationResult | None,
-    affine_result: AffineResult | None,
-    preview_correspondences: list[RegistrationCorrespondence] | None = None,
-) -> tuple[list[tuple[float, float, str]], list[tuple[float, float, str]]]:
-    """Return paired marker points for split-view slice and atlas panes."""
-    _ = affine_result
-    correspondences: list[RegistrationCorrespondence] = []
-    if registration_result is not None:
-        correspondences = registration_result.accepted_correspondences
-    elif preview_correspondences is not None:
-        correspondences = preview_correspondences
-    if not correspondences:
-        return [], []
-
-    slice_points = [
-        (float(corr.slice_xy[0]), float(corr.slice_xy[1]), corr.label) for corr in correspondences
-    ]
-
-    atlas_points = [
-        (float(corr.atlas_xy[0]), float(corr.atlas_xy[1]), corr.label) for corr in correspondences
-    ]
-    return slice_points, atlas_points
-
-
-def should_apply_affine_to_slice(
-    affine_result: AffineResult | None,
-    slice_size: tuple[int, int] | None,
-) -> bool:
-    """Return True when an affine result is defined in the slice-image source frame."""
-    if affine_result is None or slice_size is None:
-        return False
-    direction = str(affine_result.provenance.get("transform_direction", "")).strip().lower()
-    if direction == "atlas_to_slice":
-        return False
-    return affine_result.source_size == (int(slice_size[0]), int(slice_size[1]))
-
-
-def draw_correspondence_markers(
-    pixmap: QPixmap,
-    points: list[tuple[float, float, str]],
-    *,
-    color: QColor,
-) -> QPixmap:
-    """Draw labeled correspondence markers onto a pixmap copy."""
-    if pixmap.isNull() or not points:
-        return pixmap
-
-    annotated = QPixmap(pixmap)
-    painter = QPainter(annotated)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-    pen = QPen(color)
-    pen.setWidth(2)
-    painter.setPen(pen)
-    text_color = QColor(240, 240, 240)
-
-    width = annotated.width()
-    height = annotated.height()
-    radius = 5
-    for x, y, label in points:
-        if x < 0.0 or y < 0.0 or x >= width or y >= height:
-            continue
-        painter.drawEllipse(int(round(x - radius)), int(round(y - radius)), radius * 2, radius * 2)
-        painter.setPen(text_color)
-        painter.drawText(int(round(x + 8)), int(round(y - 6)), label)
-        painter.setPen(pen)
-
-    painter.end()
-    return annotated
-
-
-class ImageLabel(QLabel):
-    """QLabel that keeps and scales a source pixmap."""
-
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self._source_pixmap: QPixmap | None = None
-        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-
-    def set_source_pixmap(self, pixmap: QPixmap | None) -> None:
-        self._source_pixmap = pixmap
-        self._update_scaled_pixmap()
-
-    def resizeEvent(self, event: Any) -> None:
-        super().resizeEvent(event)
-        self._update_scaled_pixmap()
-
-    def _update_scaled_pixmap(self) -> None:
-        if self._source_pixmap is None or self.width() <= 1 or self.height() <= 1:
-            self.clear()
-            return
-        scaled = self._source_pixmap.scaled(
-            self.size(),
-            Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation,
-        )
-        self.setPixmap(scaled)
-
-
-class CanvasArea(QFrame):
-    """Canvas zone with drag-and-drop support and subtle grid background."""
-
-    file_dropped = Signal(str)
-
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setAcceptDrops(True)
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-
-    def dragEnterEvent(self, event: QDragEnterEvent) -> None:
-        mime = event.mimeData()
-        if not mime.hasUrls():
-            event.ignore()
-            return
-
-        for url in mime.urls():
-            if url.isLocalFile() and self._is_image_path(url.toLocalFile()):
-                event.acceptProposedAction()
-                return
-        event.ignore()
-
-    def dropEvent(self, event: QDropEvent) -> None:
-        for url in event.mimeData().urls():
-            if not url.isLocalFile():
-                continue
-            file_path = url.toLocalFile()
-            if self._is_image_path(file_path):
-                self.file_dropped.emit(file_path)
-                event.acceptProposedAction()
-                return
-        event.ignore()
-
-    def paintEvent(self, event: Any) -> None:
-        super().paintEvent(event)
-        painter = None
-        try:
-            painter = QPainter(self)
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
-            pen = QPen(QColor(255, 255, 255, 8))
-            pen.setWidth(1)
-            painter.setPen(pen)
-            spacing = 40
-            width = self.width()
-            height = self.height()
-            x = 0
-            while x <= width:
-                painter.drawLine(x, 0, x, height)
-                x += spacing
-            y = 0
-            while y <= height:
-                painter.drawLine(0, y, width, y)
-                y += spacing
-        finally:
-            if painter is not None:
-                painter.end()
-
-    @staticmethod
-    def _is_image_path(path: str) -> bool:
-        return path.lower().endswith((".png", ".jpg", ".jpeg", ".tif", ".tiff"))
+        def set_show_region_borders(self, visible: bool) -> None:
+            _ = visible
 
 
 class AgentWorker(QObject):
@@ -325,6 +156,7 @@ class AgentWorker(QObject):
         atlas_name: str,
         pixel_size_um: float,
         target_landmark_count: int,
+        show_atlas_borders: bool,
     ) -> None:
         super().__init__()
         self.image = canonical_image
@@ -332,6 +164,7 @@ class AgentWorker(QObject):
         self.atlas_name = atlas_name
         self.pixel_size_um = pixel_size_um
         self.target_landmark_count = target_landmark_count
+        self.show_atlas_borders = bool(show_atlas_borders)
 
     def run(self) -> None:
         try:
@@ -361,6 +194,7 @@ class AgentWorker(QObject):
                 position_mm=ap_result.position_mm,
                 pixel_size_um=self.pixel_size_um,
                 target_landmark_count=self.target_landmark_count,
+                show_atlas_borders=self.show_atlas_borders,
                 on_correspondences=self.correspondences_ready.emit,
             )
             self.step_completed.emit("affine", registration_result)
@@ -387,6 +221,7 @@ class ManualRegistrationWorker(QObject):
         position_mm: float,
         pixel_size_um: float,
         target_landmark_count: int,
+        show_atlas_borders: bool,
     ) -> None:
         super().__init__()
         self.image = canonical_image
@@ -394,6 +229,7 @@ class ManualRegistrationWorker(QObject):
         self.position_mm = position_mm
         self.pixel_size_um = pixel_size_um
         self.target_landmark_count = target_landmark_count
+        self.show_atlas_borders = bool(show_atlas_borders)
 
     def run(self) -> None:
         try:
@@ -425,6 +261,7 @@ class ManualRegistrationWorker(QObject):
                 position_mm=self.position_mm,
                 pixel_size_um=self.pixel_size_um,
                 target_landmark_count=self.target_landmark_count,
+                show_atlas_borders=self.show_atlas_borders,
                 on_correspondences=self.correspondences_ready.emit,
             )
             self.step_completed.emit("affine", registration_result)
@@ -432,145 +269,6 @@ class ManualRegistrationWorker(QObject):
             self.step_error.emit("affine", str(exc))
         finally:
             self.finished.emit()
-
-
-class StepIndicator(QFrame):
-    """Step row in the right-side timeline panel."""
-
-    def __init__(self, title: str, has_connector: bool, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self._status = "idle"
-        self._pulse = False
-
-        root = QHBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(10)
-
-        left_col = QVBoxLayout()
-        left_col.setContentsMargins(0, 0, 0, 0)
-        left_col.setSpacing(0)
-        left_col.setAlignment(Qt.AlignmentFlag.AlignTop)
-
-        self.circle = QLabel()
-        self.circle.setFixedSize(18, 18)
-        self.circle.setStyleSheet("border-radius: 9px;")
-        left_col.addWidget(self.circle, alignment=Qt.AlignmentFlag.AlignHCenter)
-
-        self.connector = QFrame()
-        self.connector.setFixedWidth(1)
-        self.connector.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
-        self.connector.setStyleSheet("background-color: rgba(255, 255, 255, 25);")
-        self.connector.setVisible(has_connector)
-        left_col.addWidget(self.connector, alignment=Qt.AlignmentFlag.AlignHCenter)
-
-        root.addLayout(left_col)
-
-        right_col = QVBoxLayout()
-        right_col.setContentsMargins(0, 0, 0, 0)
-        right_col.setSpacing(6)
-
-        self.title_label = QLabel(title)
-        self.title_label.setStyleSheet(f"font-weight: 600; color: {TEXT_SECONDARY};")
-        right_col.addWidget(self.title_label)
-
-        self.result_panel = QFrame()
-        self.result_panel.setObjectName("glassPanel")
-        panel_layout = QVBoxLayout(self.result_panel)
-        panel_layout.setContentsMargins(10, 10, 10, 10)
-        panel_layout.setSpacing(4)
-
-        self.result_top = QLabel()
-        self.result_top.setStyleSheet("font-size: 12px;")
-        self.result_reasoning = QLabel()
-        self.result_reasoning.setWordWrap(True)
-        self.result_reasoning.setStyleSheet(f"font-size: 12px; color: {TEXT_SECONDARY};")
-        self.error_label = QLabel()
-        self.error_label.setWordWrap(True)
-        self.error_label.setStyleSheet(f"font-size: 12px; color: {ERROR};")
-
-        panel_layout.addWidget(self.result_top)
-        panel_layout.addWidget(self.result_reasoning)
-        panel_layout.addWidget(self.error_label)
-
-        self.result_panel.hide()
-        right_col.addWidget(self.result_panel)
-        root.addLayout(right_col, stretch=1)
-
-        self._timer = QTimer(self)
-        self._timer.setInterval(350)
-        self._timer.timeout.connect(self._tick)
-        self.set_status("idle")
-
-    def set_status(self, status: str) -> None:
-        self._status = status
-        if status == "running":
-            self._timer.start()
-            self.title_label.setStyleSheet(f"font-weight: 600; color: {ACCENT};")
-        elif status == "completed":
-            self._timer.stop()
-            self.title_label.setStyleSheet(f"font-weight: 600; color: {SUCCESS};")
-            self.circle.setStyleSheet(f"background-color: {SUCCESS}; border-radius: 9px;")
-        elif status == "error":
-            self._timer.stop()
-            self.title_label.setStyleSheet(f"font-weight: 600; color: {ERROR};")
-            self.circle.setStyleSheet(f"background-color: {ERROR}; border-radius: 9px;")
-        else:
-            self._timer.stop()
-            self.title_label.setStyleSheet(f"font-weight: 600; color: {TEXT_SECONDARY};")
-            self.circle.setStyleSheet("background-color: #555555; border-radius: 9px;")
-
-    def set_title(self, title: str) -> None:
-        self.title_label.setText(title)
-
-    def show_ap_result(
-        self,
-        result: APResult,
-        *,
-        position_label: str = "Estimated Position",
-    ) -> None:
-        self.result_top.setText(
-            f"{position_label}: <span style='color:{SUCCESS}'>{result.position_mm:.2f} mm</span>"
-        )
-        self.result_reasoning.setText(result.reasoning)
-        self.error_label.clear()
-        self.result_panel.show()
-
-    def show_affine_result(self, result: AffineResult) -> None:
-        tx_px, ty_px = result.translation_px
-        scale_x, scale_y = result.scale
-        self.result_top.setText(
-            " | ".join(
-                [
-                    f"Backend: {result.backend}",
-                    f"Rotation: {result.rotation_deg:.2f} deg",
-                    f"Translate: ({tx_px:.1f}, {ty_px:.1f}) px",
-                    f"Scale: ({scale_x:.3f}, {scale_y:.3f})",
-                    f"Shear: {result.shear:.3f}",
-                ]
-            )
-        )
-        self.result_reasoning.setText(result.reasoning)
-        self.error_label.clear()
-        self.result_panel.show()
-
-    def show_error(self, message: str) -> None:
-        self.result_top.clear()
-        self.result_reasoning.clear()
-        self.error_label.setText(message)
-        self.result_panel.show()
-
-    def clear_result(self) -> None:
-        self.result_top.clear()
-        self.result_reasoning.clear()
-        self.error_label.clear()
-        self.result_panel.hide()
-
-    def _tick(self) -> None:
-        if self._status != "running":
-            return
-        self._pulse = not self._pulse
-        color = ACCENT if self._pulse else "#4f46e5"
-        self.circle.setStyleSheet(f"background-color: {color}; border-radius: 9px;")
 
 
 class MainWindow(QMainWindow):
@@ -584,7 +282,9 @@ class MainWindow(QMainWindow):
 
         self.image_path: str | None = None
         self.loaded_image_state: LoadedImageState | None = None
+        self.source_image: Image.Image | None = None
         self.pil_image: Image.Image | None = None
+        self.agent_vlm_image: Image.Image | None = None
         self.current_pos: float | None = None
         self._active_pipeline_mode: str = "agent"
         self.ap_result: APResult | None = None
@@ -601,6 +301,18 @@ class MainWindow(QMainWindow):
         self.registration_landmark_count: int = 8
         self._pixel_size_source: str = "manual_default"
         self._metadata_pixel_size_um: float | None = None
+        self._vlm_scale_factor: float = 1.0
+        self._vlm_effective_pixel_size_um: float = self.pixel_size_um
+        self._slice_channel_labels: tuple[str, ...] = ("Red", "Green", "Blue")
+        self._slice_exposure_ev: float = 0.0
+        self._slice_brightness: float = 0.0
+        self._slice_contrast: float = 1.0
+        self._show_atlas_region_borders: bool = True
+
+        self._slice_adjust_timer = QTimer(self)
+        self._slice_adjust_timer.setSingleShot(True)
+        self._slice_adjust_timer.setInterval(75)
+        self._slice_adjust_timer.timeout.connect(self._apply_slice_adjustments)
 
         self._build_ui()
         self._set_pipeline_mode("agent")
@@ -965,6 +677,104 @@ class MainWindow(QMainWindow):
         workflow_copy.setObjectName("subheading")
         layout.addWidget(workflow_copy)
 
+        self.agent_input_wrap = QFrame()
+        self.agent_input_wrap.setObjectName("glassPanel")
+        input_layout = QVBoxLayout(self.agent_input_wrap)
+        input_layout.setContentsMargins(10, 10, 10, 10)
+        input_layout.setSpacing(6)
+
+        input_title = QLabel("Agent Input Adjustments")
+        input_title.setStyleSheet("font-size: 13px; font-weight: 600;")
+        input_copy = QLabel(
+            "Slice adjustments update the preview and the image sent to the agents. "
+            "The atlas border toggle also matches landmark-registration atlas inputs."
+        )
+        input_copy.setWordWrap(True)
+        input_copy.setObjectName("subheading")
+        self.agent_input_status_label = QLabel("Preview matches current agent input.")
+        self.agent_input_status_label.setWordWrap(True)
+        self.agent_input_status_label.setObjectName("subheading")
+
+        channel_label = QLabel("Channels")
+        channel_label.setObjectName("monoLabel")
+        channel_row = QHBoxLayout()
+        channel_row.setContentsMargins(0, 0, 0, 0)
+        channel_row.setSpacing(8)
+        self.channel_checkboxes: list[QCheckBox] = []
+        for label in ("Red", "Green", "Blue"):
+            checkbox = QCheckBox(label)
+            checkbox.setChecked(True)
+            checkbox.toggled.connect(self._queue_slice_adjustment_refresh)
+            self.channel_checkboxes.append(checkbox)
+            channel_row.addWidget(checkbox)
+        channel_row.addStretch(1)
+
+        exposure_row = QHBoxLayout()
+        exposure_row.setContentsMargins(0, 0, 0, 0)
+        exposure_row.setSpacing(8)
+        exposure_label = QLabel("Exposure")
+        exposure_label.setObjectName("monoLabel")
+        self.exposure_slider = QSlider(Qt.Orientation.Horizontal)
+        self.exposure_slider.setRange(-30, 30)
+        self.exposure_slider.setValue(0)
+        self.exposure_slider.valueChanged.connect(self._queue_slice_adjustment_refresh)
+        self.exposure_value_label = QLabel("0.0 EV")
+        self.exposure_value_label.setObjectName("monoLabel")
+        exposure_row.addWidget(exposure_label)
+        exposure_row.addWidget(self.exposure_slider, stretch=1)
+        exposure_row.addWidget(self.exposure_value_label)
+
+        brightness_row = QHBoxLayout()
+        brightness_row.setContentsMargins(0, 0, 0, 0)
+        brightness_row.setSpacing(8)
+        brightness_label = QLabel("Brightness")
+        brightness_label.setObjectName("monoLabel")
+        self.brightness_slider = QSlider(Qt.Orientation.Horizontal)
+        self.brightness_slider.setRange(-100, 100)
+        self.brightness_slider.setValue(0)
+        self.brightness_slider.valueChanged.connect(self._queue_slice_adjustment_refresh)
+        self.brightness_value_label = QLabel("0%")
+        self.brightness_value_label.setObjectName("monoLabel")
+        brightness_row.addWidget(brightness_label)
+        brightness_row.addWidget(self.brightness_slider, stretch=1)
+        brightness_row.addWidget(self.brightness_value_label)
+
+        contrast_row = QHBoxLayout()
+        contrast_row.setContentsMargins(0, 0, 0, 0)
+        contrast_row.setSpacing(8)
+        contrast_label = QLabel("Contrast")
+        contrast_label.setObjectName("monoLabel")
+        self.contrast_slider = QSlider(Qt.Orientation.Horizontal)
+        self.contrast_slider.setRange(0, 200)
+        self.contrast_slider.setValue(100)
+        self.contrast_slider.valueChanged.connect(self._queue_slice_adjustment_refresh)
+        self.contrast_value_label = QLabel("100%")
+        self.contrast_value_label.setObjectName("monoLabel")
+        contrast_row.addWidget(contrast_label)
+        contrast_row.addWidget(self.contrast_slider, stretch=1)
+        contrast_row.addWidget(self.contrast_value_label)
+
+        self.atlas_borders_checkbox = QCheckBox("Show atlas region borders")
+        self.atlas_borders_checkbox.setChecked(True)
+        self.atlas_borders_checkbox.toggled.connect(self._on_atlas_borders_toggled)
+
+        reset_adjustments_button = QPushButton("Reset Adjustments")
+        reset_adjustments_button.setObjectName("secondary")
+        reset_adjustments_button.clicked.connect(self._reset_slice_adjustments)
+
+        input_layout.addWidget(input_title)
+        input_layout.addWidget(input_copy)
+        input_layout.addWidget(self.agent_input_status_label)
+        input_layout.addWidget(channel_label)
+        input_layout.addLayout(channel_row)
+        input_layout.addLayout(exposure_row)
+        input_layout.addLayout(brightness_row)
+        input_layout.addLayout(contrast_row)
+        input_layout.addWidget(self.atlas_borders_checkbox)
+        input_layout.addWidget(reset_adjustments_button)
+        self.agent_input_wrap.hide()
+        layout.addWidget(self.agent_input_wrap)
+
         self.ap_adjust_wrap = QFrame()
         self.ap_adjust_wrap.setObjectName("glassPanel")
         ap_layout = QVBoxLayout(self.ap_adjust_wrap)
@@ -1128,6 +938,12 @@ class MainWindow(QMainWindow):
             "vlm_effective_pixel_size_um": run_context.get("vlm_effective_pixel_size_um"),
             "registration_landmark_count": run_context.get("registration_landmark_count")
             or self.registration_landmark_count,
+            "channel_enabled": run_context.get("channel_enabled"),
+            "channel_labels": run_context.get("channel_labels"),
+            "exposure_ev": run_context.get("exposure_ev"),
+            "brightness_pct": run_context.get("brightness_pct"),
+            "contrast_pct": run_context.get("contrast_pct"),
+            "show_atlas_region_borders": run_context.get("show_atlas_region_borders"),
             "run_started_at": run_context.get("run_started_at"),
             "estimated_position_mm": estimated_position,
             "actual_position_mm": actual_position,
@@ -1186,7 +1002,8 @@ class MainWindow(QMainWindow):
 
         self.image_path = file_path
         self.loaded_image_state = loaded_state
-        self.pil_image = loaded_state.canonical_image
+        self.source_image = loaded_state.canonical_image
+        self._slice_channel_labels = loaded_state.channel_labels
         self.pixel_size_um = loaded_state.pixel_size_um
         self._pixel_size_source = loaded_state.pixel_size_source
         self._metadata_pixel_size_um = loaded_state.metadata_pixel_size_um
@@ -1200,8 +1017,9 @@ class MainWindow(QMainWindow):
         self.registration_result = None
         self.preview_correspondences = None
         self._last_run_context = None
+        self._refresh_agent_input_controls()
+        self._reset_slice_adjustments()
         self._reset_steps()
-        self.ap_adjust_wrap.show()
         self._sync_atlas_viewers()
         self._set_ap_slider_value(self.ap_slider.value() / 100.0)
         self._update_display_pixmaps()
@@ -1234,7 +1052,9 @@ class MainWindow(QMainWindow):
 
         self.image_path = None
         self.loaded_image_state = None
+        self.source_image = None
         self.pil_image = None
+        self.agent_vlm_image = None
         self.current_pos = None
         self._set_pipeline_mode("agent")
         self.ap_result = None
@@ -1242,6 +1062,7 @@ class MainWindow(QMainWindow):
         self.registration_result = None
         self.preview_correspondences = None
         self._last_run_context = None
+        self._slice_adjust_timer.stop()
 
         self.logs.clear()
         self.single_image_label.set_source_pixmap(None)
@@ -1257,11 +1078,125 @@ class MainWindow(QMainWindow):
         self._reset_steps()
         self._set_view_mode("single")
 
+    def _current_channel_enabled(self) -> tuple[bool, ...]:
+        labels = self._slice_channel_labels
+        if len(labels) <= 1:
+            return (self.channel_checkboxes[0].isChecked(),)
+        return tuple(checkbox.isChecked() for checkbox in self.channel_checkboxes)
+
+    def _refresh_agent_input_controls(self) -> None:
+        labels = self._slice_channel_labels or ("Red", "Green", "Blue")
+        for index, checkbox in enumerate(self.channel_checkboxes):
+            visible = index < len(labels) if len(labels) > 1 else index == 0
+            checkbox.setVisible(visible)
+            if visible:
+                if len(labels) == 1:
+                    checkbox.setText(labels[0])
+                else:
+                    checkbox.setText(labels[index])
+        self.exposure_value_label.setText(f"{self.exposure_slider.value() / 10.0:+.1f} EV")
+        self.brightness_value_label.setText(f"{self.brightness_slider.value():+d}%")
+        self.contrast_value_label.setText(f"{self.contrast_slider.value()}%")
+        if self.source_image is None:
+            self.agent_input_status_label.setText("Load a slice to configure what the agent sees.")
+            return
+        enabled_labels = []
+        current_enabled = self._current_channel_enabled()
+        if len(labels) == 1:
+            enabled_labels = [labels[0]] if current_enabled[0] else ["none"]
+        else:
+            enabled_labels = [
+                labels[index]
+                for index in range(min(len(labels), len(current_enabled)))
+                if current_enabled[index]
+            ] or ["none"]
+        atlas_mode = "on" if self._show_atlas_region_borders else "off"
+        self.agent_input_status_label.setText(
+            "Preview matches current agent input: "
+            + f"channels={', '.join(enabled_labels)}, "
+            + f"exposure={self.exposure_slider.value() / 10.0:+.1f} EV, "
+            + f"brightness={self.brightness_slider.value():+d}%, "
+            + f"contrast={self.contrast_slider.value()}%, "
+            + f"atlas borders={atlas_mode}."
+        )
+
+    def _invalidate_pipeline_outputs(self, reason: str) -> None:
+        had_outputs = any(
+            value is not None
+            for value in (
+                self.ap_result,
+                self.affine_result,
+                self.registration_result,
+                self.preview_correspondences,
+            )
+        )
+        self.ap_result = None
+        self.affine_result = None
+        self.registration_result = None
+        self.preview_correspondences = None
+        self._last_run_context = None
+        self._reset_steps()
+        self._update_display_pixmaps()
+        self._sync_atlas_viewers()
+        if had_outputs:
+            self._append_log(reason)
+
+    def _apply_slice_adjustments(self) -> None:
+        if self.source_image is None:
+            return
+        self._refresh_agent_input_controls()
+        self.pil_image = render_slice_agent_image(
+            self.source_image,
+            channel_enabled=self._current_channel_enabled(),
+            exposure_ev=self.exposure_slider.value() / 10.0,
+            brightness=self.brightness_slider.value() / 100.0,
+            contrast=self.contrast_slider.value() / 100.0,
+        )
+        prep = prepare_image_for_vlm(self.pil_image, pixel_size_um=self.pixel_size_um)
+        self.agent_vlm_image = prep.image
+        self._vlm_scale_factor = prep.scale_factor
+        self._vlm_effective_pixel_size_um = (
+            prep.effective_pixel_size_um
+            if prep.effective_pixel_size_um is not None
+            else self.pixel_size_um
+        )
+        self._update_display_pixmaps()
+        self._sync_atlas_viewers()
+
+    def _queue_slice_adjustment_refresh(self) -> None:
+        self._refresh_agent_input_controls()
+        if self.source_image is None:
+            return
+        if self._is_worker_running():
+            return
+        self._slice_adjust_timer.start()
+        self._invalidate_pipeline_outputs(
+            "Agent input adjustments changed; cleared prior AP/registration results."
+        )
+
+    def _reset_slice_adjustments(self) -> None:
+        for checkbox in self.channel_checkboxes:
+            checkbox.blockSignals(True)
+            checkbox.setChecked(True)
+            checkbox.blockSignals(False)
+        for slider, value in (
+            (self.exposure_slider, 0),
+            (self.brightness_slider, 0),
+            (self.contrast_slider, 100),
+        ):
+            slider.blockSignals(True)
+            slider.setValue(value)
+            slider.blockSignals(False)
+        self._refresh_agent_input_controls()
+        self._apply_slice_adjustments()
+        self._invalidate_pipeline_outputs("Agent input adjustments reset; cleared prior results.")
+
     def _reset_steps(self) -> None:
         self.step_ap.set_status("idle")
         self.step_affine.set_status("idle")
         self.step_ap.clear_result()
         self.step_affine.clear_result()
+        self.agent_input_wrap.setVisible(self.source_image is not None)
         self.ap_adjust_wrap.setVisible(self.pil_image is not None)
         self.feedback_wrap.hide()
         self.success_btn.setEnabled(True)
@@ -1284,9 +1219,12 @@ class MainWindow(QMainWindow):
     def _update_run_buttons(self) -> None:
         agent_enabled = self._can_run_agent()
         manual_enabled = self._can_run_manual_registration()
+        input_enabled = self.source_image is not None and not self._is_worker_running()
 
         self.run_button.setEnabled(agent_enabled)
         self.run_registration_button.setEnabled(manual_enabled)
+        self.agent_input_wrap.setEnabled(input_enabled)
+        self.ap_adjust_wrap.setEnabled(input_enabled)
         self.run_button.setToolTip("Run AP agent + landmark registration")
 
         message = self._manual_registration_status_text()
@@ -1319,13 +1257,11 @@ class MainWindow(QMainWindow):
 
         vlm_width = self.pil_image.width
         vlm_height = self.pil_image.height
-        vlm_scale_factor = 1.0
-        vlm_effective_pixel_size_um = self.pixel_size_um
-        if self.loaded_image_state is not None:
-            vlm_width = self.loaded_image_state.vlm_image.width
-            vlm_height = self.loaded_image_state.vlm_image.height
-            vlm_scale_factor = self.loaded_image_state.vlm_scale_factor
-            vlm_effective_pixel_size_um = self.loaded_image_state.vlm_effective_pixel_size_um
+        vlm_scale_factor = self._vlm_scale_factor
+        vlm_effective_pixel_size_um = self._vlm_effective_pixel_size_um
+        if self.agent_vlm_image is not None:
+            vlm_width = self.agent_vlm_image.width
+            vlm_height = self.agent_vlm_image.height
 
         return {
             "atlas_name": atlas_name,
@@ -1340,6 +1276,12 @@ class MainWindow(QMainWindow):
             "vlm_scale_factor": vlm_scale_factor,
             "vlm_effective_pixel_size_um": vlm_effective_pixel_size_um,
             "registration_landmark_count": self.registration_landmark_count,
+            "channel_enabled": list(self._current_channel_enabled()),
+            "channel_labels": list(self._slice_channel_labels),
+            "exposure_ev": self.exposure_slider.value() / 10.0,
+            "brightness_pct": self.brightness_slider.value(),
+            "contrast_pct": self.contrast_slider.value(),
+            "show_atlas_region_borders": self._show_atlas_region_borders,
             "run_started_at": datetime.now().isoformat(timespec="seconds"),
         }
 
@@ -1381,8 +1323,8 @@ class MainWindow(QMainWindow):
         atlas_name = self._current_atlas_name()
         image_copy = self.pil_image.copy()
         vlm_image_copy = (
-            self.loaded_image_state.vlm_image.copy()
-            if self.loaded_image_state is not None
+            self.agent_vlm_image.copy()
+            if self.agent_vlm_image is not None
             else self.pil_image.copy()
         )
         self._last_run_context = self._build_run_context(atlas_name)
@@ -1394,6 +1336,7 @@ class MainWindow(QMainWindow):
                 atlas_name,
                 pixel_size_um=self.pixel_size_um,
                 target_landmark_count=self.registration_landmark_count,
+                show_atlas_borders=self._show_atlas_region_borders,
             )
         )
 
@@ -1425,6 +1368,7 @@ class MainWindow(QMainWindow):
                 position_mm,
                 pixel_size_um=self.pixel_size_um,
                 target_landmark_count=self.registration_landmark_count,
+                show_atlas_borders=self._show_atlas_region_borders,
             )
         )
 
@@ -1531,6 +1475,8 @@ class MainWindow(QMainWindow):
         atlas_name = self._current_atlas_name()
         self.split_atlas.set_atlas(atlas_name)
         self.overlay_viewer.set_atlas(atlas_name)
+        self.split_atlas.set_show_region_borders(self._show_atlas_region_borders)
+        self.overlay_viewer.set_show_region_borders(self._show_atlas_region_borders)
         if self.pil_image is not None:
             self._sync_atlas_viewers()
         self._append_log(f"Atlas selected: {atlas_name}")
@@ -1541,7 +1487,9 @@ class MainWindow(QMainWindow):
     def _sync_atlas_viewers(self) -> None:
         atlas_name = self._current_atlas_name()
         self.split_atlas.set_atlas(atlas_name)
+        self.split_atlas.set_show_region_borders(self._show_atlas_region_borders)
         self.overlay_viewer.set_atlas(atlas_name)
+        self.overlay_viewer.set_show_region_borders(self._show_atlas_region_borders)
         self.overlay_viewer.set_pixel_size(self.pixel_size_um)
 
         # Update slider range based on atlas
@@ -1578,7 +1526,15 @@ class MainWindow(QMainWindow):
                 f"{value:.4f} um/px; "
                 f"effective VLM pixel size={self.loaded_image_state.vlm_effective_pixel_size_um:.4f} um/px"
             )
+        self._apply_slice_adjustments()
         self._sync_atlas_viewers()
+
+    def _on_atlas_borders_toggled(self, checked: bool) -> None:
+        self._show_atlas_region_borders = bool(checked)
+        self._sync_atlas_viewers()
+        self._invalidate_pipeline_outputs(
+            "Atlas border visibility changed; cleared prior registration results."
+        )
 
     def _on_landmark_count_changed(self, value: int) -> None:
         self.registration_landmark_count = int(value)

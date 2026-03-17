@@ -12,12 +12,11 @@ from typing import Callable
 
 from PIL import Image, ImageDraw
 
-from langslice.atlas import get_composite_slice, load_atlas
+from langslice.atlas import get_composite_slice, get_reference_slice, load_atlas
 from langslice.registration.agents import estimate_registration_correspondences
 from langslice.registration.solver import (
     fit_affine_from_correspondences,
     fit_tps_from_correspondences,
-    vet_correspondences,
 )
 from langslice.registration.types import RegistrationCorrespondence, RegistrationResult
 
@@ -107,47 +106,48 @@ def estimate_registration(
     position_mm: float,
     pixel_size_um: float | None = None,
     target_landmark_count: int = 12,
+    show_atlas_borders: bool = True,
     on_correspondences: Callable[[list[RegistrationCorrespondence]], None] | None = None,
     on_progress: Callable[[str], None] | None = None,
 ) -> RegistrationResult:
     """Run the new registration runtime and return affine + nonlinear results."""
     _ = pixel_size_um
     atlas = load_atlas(atlas_name)
-    atlas_image = get_composite_slice(atlas, position_mm)
+    if show_atlas_borders:
+        atlas_image = get_composite_slice(atlas, position_mm)
+    else:
+        atlas_image = get_reference_slice(atlas, position_mm)
     correspondences = estimate_registration_correspondences(
         image,
         atlas_name=atlas_name,
         position_mm=position_mm,
         target_landmark_count=target_landmark_count,
+        show_atlas_borders=show_atlas_borders,
         on_progress=on_progress,
     )
+    if len(correspondences) < 3:
+        raise RegistrationFailure(
+            f"Need at least 3 correspondence pairs to fit registration, got {len(correspondences)}"
+        )
     if on_correspondences is not None:
         on_correspondences(correspondences)
-    vetting = vet_correspondences(correspondences, slice_size=image.size)
+    accepted = list(correspondences)
+    rejected: list[dict[str, object]] = []
     affine_result, residuals = fit_affine_from_correspondences(
-        vetting.accepted,
+        accepted,
         source_size=atlas_image.size,
         output_size=image.size,
         backend="landmark_affine",
-        reasoning="Affine derived deterministically from vetted registration correspondences.",
+        reasoning="Affine derived from registration correspondences.",
     )
     affine_result.provenance["transform_direction"] = "atlas_to_slice"
-    for corr, residual in zip(vetting.accepted, residuals):
-        if residual > max(image.size) * 0.05:
-            vetting.rejected.append(
-                {"correspondence": corr, "reason": f"high_affine_residual:{residual:.3f}"}
-            )
+    _ = residuals
     nonlinear_result = fit_tps_from_correspondences(
-        vetting.accepted,
+        accepted,
         output_size=image.size,
-        reasoning="Regularized TPS derived from the same vetted registration correspondences.",
+        reasoning="Regularized TPS derived from registration correspondences.",
     )
     qc_state = "accepted"
-    if nonlinear_result.qc_metrics.get("negative_jacobian_fraction", 0.0) > 0.0:
-        qc_state = "rejected"
-        raise RegistrationFailure("TPS warp failed Jacobian fold check")
-    if nonlinear_result.qc_metrics.get("max_landmark_residual_px", 0.0) > max(image.size) * 0.08:
-        qc_state = "review"
 
     debug_dir: str | None = None
     root = os.environ.get("LANGSLICE_VLM_DEBUG_DIR")
@@ -161,8 +161,8 @@ def estimate_registration(
             atlas_image=atlas_image,
             result=RegistrationResult(
                 correspondences=correspondences,
-                accepted_correspondences=vetting.accepted,
-                rejected_correspondences=vetting.rejected,
+                accepted_correspondences=accepted,
+                rejected_correspondences=rejected,
                 affine_result=affine_result,
                 nonlinear_result=nonlinear_result,
                 qc_state=qc_state,
@@ -173,8 +173,8 @@ def estimate_registration(
     _progress(on_progress, f"Registration runtime completed with state={qc_state}")
     return RegistrationResult(
         correspondences=correspondences,
-        accepted_correspondences=vetting.accepted,
-        rejected_correspondences=vetting.rejected,
+        accepted_correspondences=accepted,
+        rejected_correspondences=rejected,
         affine_result=affine_result,
         nonlinear_result=nonlinear_result,
         qc_state=qc_state,

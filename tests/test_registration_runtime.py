@@ -16,10 +16,12 @@ def fake_estimate_registration_correspondences(
     atlas_name,
     position_mm,
     target_landmark_count,
+    show_atlas_borders=True,
     on_progress=None,
 ):
     _ = image, atlas_name, position_mm
     assert target_landmark_count == 14
+    assert show_atlas_borders is True
     if on_progress is not None:
         on_progress("fake correspondences")
     return [

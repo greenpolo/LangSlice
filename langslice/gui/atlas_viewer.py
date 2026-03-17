@@ -31,7 +31,7 @@ QStackedLayout = QtWidgets.QStackedLayout
 QVBoxLayout = QtWidgets.QVBoxLayout
 QWidget = QtWidgets.QWidget
 
-from langslice.atlas.core import get_composite_slice, load_atlas
+from langslice.atlas.core import get_composite_slice, get_reference_slice, load_atlas
 from langslice.gui.theme import (
     ACCENT,
     BG_PANEL_SOLID,
@@ -64,16 +64,25 @@ class AtlasLoaderWorker(QObject):
     error = Signal(str)
     finished = Signal()
 
-    def __init__(self, atlas_name: str, position_mm: float) -> None:
+    def __init__(
+        self,
+        atlas_name: str,
+        position_mm: float,
+        show_region_borders: bool = True,
+    ) -> None:
         super().__init__()
         self._atlas_name = atlas_name
         self._position_mm = position_mm
+        self._show_region_borders = bool(show_region_borders)
 
     @Slot()
     def load(self) -> None:
         try:
             atlas = load_atlas(self._atlas_name)
-            image = get_composite_slice(atlas, self._position_mm)
+            if self._show_region_borders:
+                image = get_composite_slice(atlas, self._position_mm)
+            else:
+                image = get_reference_slice(atlas, self._position_mm)
             self.slice_ready.emit(pil_to_qpixmap(image))
         except Exception as exc:
             self.error.emit(str(exc))
@@ -94,6 +103,7 @@ class AtlasViewer(QFrame):
 
         self._atlas_name: Optional[str] = None
         self._position_mm: Optional[float] = None
+        self._show_region_borders: bool = True
         self._generation = 0
         self._queued_generation = 0
         self._active_generation = 0
@@ -186,6 +196,10 @@ class AtlasViewer(QFrame):
         self._atlas_name = cleaned if cleaned else None
         self._queue_reload()
 
+    def set_show_region_borders(self, visible: bool) -> None:
+        self._show_region_borders = bool(visible)
+        self._queue_reload()
+
     def clear(self) -> None:
         self._atlas_name = None
         self._position_mm = None
@@ -245,7 +259,11 @@ class AtlasViewer(QFrame):
         self._show_loading_state()
 
         thread = QThread(self)
-        worker = AtlasLoaderWorker(atlas_name, position_mm)
+        worker = AtlasLoaderWorker(
+            atlas_name,
+            position_mm,
+            show_region_borders=self._show_region_borders,
+        )
         worker.moveToThread(thread)
 
         thread.started.connect(worker.load)

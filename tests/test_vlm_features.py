@@ -135,7 +135,6 @@ def test_registration_count_tokens_runs_before_generate(monkeypatch) -> None:
                             "slice_point_2d": [int(100 + idx * 65), int(60 + idx * 70)],
                             "label": f"pt-{idx}",
                             "status": "found",
-                            "confidence": "high",
                         }
                         for idx in range(8)
                     ]
@@ -164,7 +163,6 @@ def test_registration_count_tokens_runs_before_generate(monkeypatch) -> None:
         structures={1: {"acronym": "CTX", "name": "Cortex"}},
     )
     monkeypatch.setattr(registration_agents, "load_atlas", lambda atlas_name: atlas)
-    monkeypatch.setattr(registration_agents, "position_mm_to_index", lambda atlas, position_mm: 0)
     monkeypatch.setattr(
         registration_agents,
         "get_atlas_info",

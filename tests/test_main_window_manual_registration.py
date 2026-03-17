@@ -78,6 +78,9 @@ def test_load_image_initializes_manual_position_and_manual_ui(monkeypatch) -> No
         ) -> None:
             _ = markers
 
+        def set_show_region_borders(self, visible: bool) -> None:
+            _ = visible
+
     class DummyOverlayGraphicsView(main_window.QFrame):
         def __init__(self, parent=None) -> None:
             super().__init__(parent)
@@ -104,6 +107,9 @@ def test_load_image_initializes_manual_position_and_manual_ui(monkeypatch) -> No
         def set_atlas_opacity(self, opacity: float) -> None:
             _ = opacity
 
+        def set_show_region_borders(self, visible: bool) -> None:
+            _ = visible
+
     monkeypatch.setattr(main_window, "AtlasViewer", DummyAtlasViewer)
     monkeypatch.setattr(main_window, "OverlayGraphicsView", DummyOverlayGraphicsView)
 
@@ -117,6 +123,7 @@ def test_load_image_initializes_manual_position_and_manual_ui(monkeypatch) -> No
         vlm_size=(120, 80),
         vlm_scale_factor=1.0,
         vlm_effective_pixel_size_um=4.0,
+        channel_labels=("Red", "Green", "Blue"),
     )
     monkeypatch.setattr(main_window, "load_image_state", lambda *_args, **_kwargs: dummy_state)
     monkeypatch.setattr(atlas, "load_atlas", lambda _atlas_name: object())
@@ -167,6 +174,9 @@ def test_manual_registration_path_updates_state(monkeypatch) -> None:
         ) -> None:
             _ = markers
 
+        def set_show_region_borders(self, visible: bool) -> None:
+            _ = visible
+
     class DummyOverlayGraphicsView(main_window.QFrame):
         def set_pixel_size(self, pixel_size_um: float) -> None:
             _ = pixel_size_um
@@ -189,6 +199,9 @@ def test_manual_registration_path_updates_state(monkeypatch) -> None:
         def set_atlas_opacity(self, opacity: float) -> None:
             _ = opacity
 
+        def set_show_region_borders(self, visible: bool) -> None:
+            _ = visible
+
     monkeypatch.setattr(main_window, "AtlasViewer", DummyAtlasViewer)
     monkeypatch.setattr(main_window, "OverlayGraphicsView", DummyOverlayGraphicsView)
 
@@ -208,12 +221,14 @@ def test_manual_registration_path_updates_state(monkeypatch) -> None:
         position_mm,
         pixel_size_um,
         target_landmark_count,
+        show_atlas_borders,
     ):
         captured["image_size"] = image.size
         captured["atlas_name"] = atlas_name
         captured["position_mm"] = position_mm
         captured["pixel_size_um"] = pixel_size_um
         captured["target_landmark_count"] = target_landmark_count
+        captured["show_atlas_borders"] = show_atlas_borders
         if on_correspondences is not None:
             on_correspondences(fresh_result.accepted_correspondences)
         time.sleep(0.05)
@@ -225,7 +240,9 @@ def test_manual_registration_path_updates_state(monkeypatch) -> None:
         main_window, "estimate_registration_runtime", fake_estimate_registration_runtime
     )
 
-    window.pil_image = Image.new("RGB", (120, 80), (255, 255, 255))
+    window.source_image = Image.new("RGB", (120, 80), (255, 255, 255))
+    window.pil_image = window.source_image.copy()
+    window.agent_vlm_image = window.pil_image.copy()
     window.current_pos = 1.23
     window.landmark_count_spin.setValue(18)
     window.ap_result = main_window.APResult(position_mm=0.45, reasoning="stale", debug_dir="old")
@@ -256,6 +273,7 @@ def test_manual_registration_path_updates_state(monkeypatch) -> None:
     assert captured["atlas_name"] == "allen_mouse_25um"
     assert captured["position_mm"] == 1.23
     assert captured["target_landmark_count"] == 18
+    assert captured["show_atlas_borders"] is True
 
     assert window.ap_result is not None
     assert window.ap_result.position_mm == 1.23
@@ -300,6 +318,9 @@ def test_manual_registration_shows_preview_pairs_on_solver_failure(monkeypatch) 
         ) -> None:
             self.marker_history.append(list(markers or []))
 
+        def set_show_region_borders(self, visible: bool) -> None:
+            _ = visible
+
     class DummyOverlayGraphicsView(main_window.QFrame):
         def set_pixel_size(self, pixel_size_um: float) -> None:
             _ = pixel_size_um
@@ -322,12 +343,17 @@ def test_manual_registration_shows_preview_pairs_on_solver_failure(monkeypatch) 
         def set_atlas_opacity(self, opacity: float) -> None:
             _ = opacity
 
+        def set_show_region_borders(self, visible: bool) -> None:
+            _ = visible
+
     monkeypatch.setattr(main_window, "AtlasViewer", DummyAtlasViewer)
     monkeypatch.setattr(main_window, "OverlayGraphicsView", DummyOverlayGraphicsView)
 
     app = main_window.QApplication.instance() or main_window.QApplication([])
     window = main_window.MainWindow()
-    window.pil_image = Image.new("RGB", (120, 80), (255, 255, 255))
+    window.source_image = Image.new("RGB", (120, 80), (255, 255, 255))
+    window.pil_image = window.source_image.copy()
+    window.agent_vlm_image = window.pil_image.copy()
     window.current_pos = 1.23
     window._update_run_buttons()
 
@@ -347,8 +373,17 @@ def test_manual_registration_shows_preview_pairs_on_solver_failure(monkeypatch) 
         position_mm,
         pixel_size_um,
         target_landmark_count,
+        show_atlas_borders,
     ):
-        _ = image, on_progress, atlas_name, position_mm, pixel_size_um, target_landmark_count
+        _ = (
+            image,
+            on_progress,
+            atlas_name,
+            position_mm,
+            pixel_size_um,
+            target_landmark_count,
+            show_atlas_borders,
+        )
         if on_correspondences is not None:
             on_correspondences([preview_corr])
         raise ValueError("Landmark spread too small (coverage=0.0514)")
