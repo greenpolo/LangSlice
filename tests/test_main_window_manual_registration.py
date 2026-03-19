@@ -55,6 +55,7 @@ def _build_registration_result(translate_x_px: float) -> RegistrationResult:
 
 def test_load_image_initializes_manual_position_and_manual_ui(monkeypatch) -> None:
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.delenv("LANGSLICE_VLM_DEBUG_DIR", raising=False)
     monkeypatch.setattr(main_window, "list_downloaded_atlases", lambda: ["allen_mouse_25um"])
     monkeypatch.setattr(main_window, "list_available_atlases", lambda: ["allen_mouse_25um"])
 
@@ -103,6 +104,13 @@ def test_load_image_initializes_manual_position_and_manual_ui(monkeypatch) -> No
 
         def set_slice_pixmap(self, pixmap) -> None:
             _ = pixmap
+
+        def set_correspondence_markers(
+            self,
+            slice_markers: list[tuple[float, float, str]] | None = None,
+            atlas_markers: list[tuple[float, float, str]] | None = None,
+        ) -> None:
+            _ = slice_markers, atlas_markers
 
         def set_atlas_opacity(self, opacity: float) -> None:
             _ = opacity
@@ -155,6 +163,7 @@ def test_load_image_initializes_manual_position_and_manual_ui(monkeypatch) -> No
 
 def test_manual_registration_path_updates_state(monkeypatch) -> None:
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.delenv("LANGSLICE_VLM_DEBUG_DIR", raising=False)
     monkeypatch.setattr(main_window, "list_downloaded_atlases", lambda: ["allen_mouse_25um"])
     monkeypatch.setattr(main_window, "list_available_atlases", lambda: ["allen_mouse_25um"])
 
@@ -196,6 +205,13 @@ def test_manual_registration_path_updates_state(monkeypatch) -> None:
         def set_slice_pixmap(self, pixmap) -> None:
             _ = pixmap
 
+        def set_correspondence_markers(
+            self,
+            slice_markers: list[tuple[float, float, str]] | None = None,
+            atlas_markers: list[tuple[float, float, str]] | None = None,
+        ) -> None:
+            _ = slice_markers, atlas_markers
+
         def set_atlas_opacity(self, opacity: float) -> None:
             _ = opacity
 
@@ -216,19 +232,25 @@ def test_manual_registration_path_updates_state(monkeypatch) -> None:
         *,
         image,
         on_progress,
+        on_trace,
         on_correspondences,
         atlas_name,
         position_mm,
         pixel_size_um,
         target_landmark_count,
+        workflow,
         show_atlas_borders,
+        debug_dir,
     ):
         captured["image_size"] = image.size
         captured["atlas_name"] = atlas_name
         captured["position_mm"] = position_mm
         captured["pixel_size_um"] = pixel_size_um
         captured["target_landmark_count"] = target_landmark_count
+        captured["workflow"] = workflow
         captured["show_atlas_borders"] = show_atlas_borders
+        captured["debug_dir"] = debug_dir
+        _ = on_trace
         if on_correspondences is not None:
             on_correspondences(fresh_result.accepted_correspondences)
         time.sleep(0.05)
@@ -273,7 +295,9 @@ def test_manual_registration_path_updates_state(monkeypatch) -> None:
     assert captured["atlas_name"] == "allen_mouse_25um"
     assert captured["position_mm"] == 1.23
     assert captured["target_landmark_count"] == 18
+    assert captured["workflow"] == "single_pass"
     assert captured["show_atlas_borders"] is True
+    assert captured["debug_dir"] is None
 
     assert window.ap_result is not None
     assert window.ap_result.position_mm == 1.23
@@ -295,6 +319,7 @@ def test_manual_registration_path_updates_state(monkeypatch) -> None:
 
 def test_manual_registration_shows_preview_pairs_on_solver_failure(monkeypatch) -> None:
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.delenv("LANGSLICE_VLM_DEBUG_DIR", raising=False)
     monkeypatch.setattr(main_window, "list_downloaded_atlases", lambda: ["allen_mouse_25um"])
     monkeypatch.setattr(main_window, "list_available_atlases", lambda: ["allen_mouse_25um"])
 
@@ -340,6 +365,13 @@ def test_manual_registration_shows_preview_pairs_on_solver_failure(monkeypatch) 
         def set_slice_pixmap(self, pixmap) -> None:
             _ = pixmap
 
+        def set_correspondence_markers(
+            self,
+            slice_markers: list[tuple[float, float, str]] | None = None,
+            atlas_markers: list[tuple[float, float, str]] | None = None,
+        ) -> None:
+            _ = slice_markers, atlas_markers
+
         def set_atlas_opacity(self, opacity: float) -> None:
             _ = opacity
 
@@ -368,21 +400,27 @@ def test_manual_registration_shows_preview_pairs_on_solver_failure(monkeypatch) 
         *,
         image,
         on_progress,
+        on_trace,
         on_correspondences,
         atlas_name,
         position_mm,
         pixel_size_um,
         target_landmark_count,
+        workflow,
         show_atlas_borders,
+        debug_dir,
     ):
         _ = (
             image,
             on_progress,
+            on_trace,
             atlas_name,
             position_mm,
             pixel_size_um,
             target_landmark_count,
+            workflow,
             show_atlas_borders,
+            debug_dir,
         )
         if on_correspondences is not None:
             on_correspondences([preview_corr])
@@ -408,4 +446,93 @@ def test_manual_registration_shows_preview_pairs_on_solver_failure(monkeypatch) 
     assert window.split_atlas.marker_history[-1] == [(12.0, 16.0, "A")]
     assert window.registration_result is None
 
+    window.close()
+
+
+def test_image_model_selection_gates_registration_workflow(monkeypatch) -> None:
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    monkeypatch.setattr(main_window, "list_downloaded_atlases", lambda: ["allen_mouse_25um"])
+    monkeypatch.setattr(main_window, "list_available_atlases", lambda: ["allen_mouse_25um"])
+
+    class DummyAtlasViewer(main_window.QFrame):
+        def set_position(self, position_mm: float) -> None:
+            _ = position_mm
+
+        def set_atlas(self, atlas_name: str) -> None:
+            _ = atlas_name
+
+        def clear(self) -> None:
+            return
+
+        def set_correspondence_markers(
+            self,
+            markers: list[tuple[float, float, str]] | None,
+        ) -> None:
+            _ = markers
+
+        def set_show_region_borders(self, visible: bool) -> None:
+            _ = visible
+
+    class DummyOverlayGraphicsView(main_window.QFrame):
+        def set_pixel_size(self, pixel_size_um: float) -> None:
+            _ = pixel_size_um
+
+        def set_atlas(self, atlas_name: str) -> None:
+            _ = atlas_name
+
+        def clear(self) -> None:
+            return
+
+        def clear_all(self) -> None:
+            return
+
+        def set_position(self, position_mm: float) -> None:
+            _ = position_mm
+
+        def set_slice_pixmap(self, pixmap) -> None:
+            _ = pixmap
+
+        def set_correspondence_markers(
+            self,
+            slice_markers: list[tuple[float, float, str]] | None = None,
+            atlas_markers: list[tuple[float, float, str]] | None = None,
+        ) -> None:
+            _ = slice_markers, atlas_markers
+
+        def set_atlas_opacity(self, opacity: float) -> None:
+            _ = opacity
+
+        def set_show_region_borders(self, visible: bool) -> None:
+            _ = visible
+
+    monkeypatch.setattr(main_window, "AtlasViewer", DummyAtlasViewer)
+    monkeypatch.setattr(main_window, "OverlayGraphicsView", DummyOverlayGraphicsView)
+
+    app = main_window.QApplication.instance() or main_window.QApplication([])
+    window = main_window.MainWindow()
+
+    models = [window.model_combo.itemText(i) for i in range(window.model_combo.count())]
+    assert "gemini-3-pro-image-preview" in models
+    assert "gemini-3.1-flash-image-preview" in models
+
+    window.model_combo.setCurrentText("gemini-3-pro-image-preview")
+    app.processEvents()
+
+    image_workflows = [
+        window.workflow_combo.itemData(i) for i in range(window.workflow_combo.count())
+    ]
+    assert image_workflows == ["image_gen_two_shot"]
+    assert window.registration_workflow == "image_gen_two_shot"
+
+    window.model_combo.setCurrentText("gemini-3-flash-preview")
+    app.processEvents()
+
+    text_workflows = [
+        window.workflow_combo.itemData(i) for i in range(window.workflow_combo.count())
+    ]
+    assert "image_gen_two_shot" not in text_workflows
+    assert "single_pass" in text_workflows
+    assert "multimodal_tool_loop" in text_workflows
+
+    main_window.set_model_name("gemini-3-flash-preview")
     window.close()

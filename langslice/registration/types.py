@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 import math
-from dataclasses import dataclass, field
-from typing import Any, Sequence
+from dataclasses import asdict, dataclass, field
+from typing import Any
 
 import numpy as np
+from PIL import Image, ImageDraw
 
 AffineMatrixLike = Sequence[Sequence[float]] | np.ndarray
 
@@ -169,7 +171,7 @@ class AffineResult:
         backend: str,
         reasoning: str,
         provenance: dict[str, Any] | None = None,
-    ) -> "AffineResult":
+    ) -> AffineResult:
         """Construct a matrix-first result from the old reduced parameters."""
         return cls(
             matrix=affine_matrix_from_legacy_params(
@@ -243,6 +245,32 @@ class RegistrationCorrespondence:
     label: str
     confidence: str = "medium"
     rationale: str = ""
+    slice_normalized_yx: tuple[float, float] | None = None
+    atlas_normalized_yx: tuple[float, float] | None = None
+
+
+@dataclass(frozen=True)
+class LandmarkAnnotation:
+    """One visible numbered landmark annotation on an atlas or slice image."""
+
+    image_role: str
+    pixel_xy: tuple[float, float]
+    label: str
+    normalized_yx: tuple[float, float] | None = None
+    status: str = "confirmed"
+    feature_description: str = ""
+    artifact_note: str = ""
+
+
+@dataclass
+class RegistrationAnnotationSession:
+    """Shared landmark annotation state used by registration workflows and the GUI."""
+
+    workflow: str
+    target_count: int | None = None
+    atlas_annotations: list[LandmarkAnnotation] = field(default_factory=list)
+    slice_annotations: list[LandmarkAnnotation] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -282,3 +310,97 @@ class RegistrationResult:
     nonlinear_result: NonlinearResult
     qc_state: str
     debug_dir: str | None = None
+    annotation_session: RegistrationAnnotationSession | None = None
+
+
+def build_annotation_session_from_correspondences(
+    correspondences: Sequence[RegistrationCorrespondence],
+    *,
+    workflow: str = "single_pass",
+    target_count: int | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> RegistrationAnnotationSession:
+    """Project final correspondences into a workflow-neutral annotation session."""
+    atlas_annotations: list[LandmarkAnnotation] = []
+    slice_annotations: list[LandmarkAnnotation] = []
+
+    for corr in correspondences:
+        atlas_annotations.append(
+            LandmarkAnnotation(
+                image_role="atlas",
+                pixel_xy=(float(corr.atlas_xy[0]), float(corr.atlas_xy[1])),
+                label=str(corr.label),
+                normalized_yx=corr.atlas_normalized_yx,
+                feature_description=str(corr.rationale),
+            )
+        )
+        slice_annotations.append(
+            LandmarkAnnotation(
+                image_role="slice",
+                pixel_xy=(float(corr.slice_xy[0]), float(corr.slice_xy[1])),
+                label=str(corr.label),
+                normalized_yx=corr.slice_normalized_yx,
+                feature_description=str(corr.rationale),
+            )
+        )
+
+    return RegistrationAnnotationSession(
+        workflow=str(workflow),
+        target_count=target_count if target_count is not None else len(correspondences),
+        atlas_annotations=atlas_annotations,
+        slice_annotations=slice_annotations,
+        metadata=dict(metadata or {}),
+    )
+
+
+def get_session_marker_points(
+    session: RegistrationAnnotationSession | None,
+    *,
+    image_role: str,
+) -> list[tuple[float, float, str]]:
+    """Return `(x, y, label)` markers for one image role."""
+    if session is None:
+        return []
+    annotations = session.slice_annotations if image_role == "slice" else session.atlas_annotations
+    return [
+        (float(annotation.pixel_xy[0]), float(annotation.pixel_xy[1]), str(annotation.label))
+        for annotation in annotations
+        if annotation.status != "not_visible"
+    ]
+
+
+def render_landmark_annotations(
+    image: Image.Image,
+    annotations: Sequence[LandmarkAnnotation],
+    *,
+    point_outline: tuple[int, int, int] = (255, 80, 80),
+    label_fill: tuple[int, int, int] = (255, 220, 120),
+) -> Image.Image:
+    """Return an image with visible numbered landmark annotations baked in."""
+    annotated = image.convert("RGB").copy()
+    draw = ImageDraw.Draw(annotated)
+    max_dim = max(annotated.size) if annotated.size else 1
+    radius = max(6, int(round(max_dim / 160.0)))
+    x_offset = radius + 2
+    y_offset = max(4, radius // 2)
+
+    for annotation in annotations:
+        if annotation.status == "not_visible":
+            continue
+        x, y = annotation.pixel_xy
+        draw.ellipse(
+            (x - radius, y - radius, x + radius, y + radius),
+            outline=point_outline,
+            width=max(2, radius // 3),
+        )
+        draw.text((x + x_offset, y + y_offset), str(annotation.label), fill=label_fill)
+    return annotated
+
+
+def annotation_session_to_dict(
+    session: RegistrationAnnotationSession | None,
+) -> dict[str, Any] | None:
+    """Serialize an annotation session for debug payloads."""
+    if session is None:
+        return None
+    return asdict(session)

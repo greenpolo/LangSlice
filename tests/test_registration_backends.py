@@ -17,7 +17,10 @@ def fake_runtime(**kwargs: object) -> RegistrationResult:
     image_obj = kwargs["image"]
     assert isinstance(image_obj, Image.Image)
     assert kwargs["target_landmark_count"] == 12
+    assert kwargs["workflow"] == "single_pass"
     assert kwargs.get("on_correspondences") is None
+    assert kwargs.get("on_trace") is None
+    assert kwargs.get("debug_dir") is None
     affine = AffineResult(
         matrix=np.array(
             [[1.0, 0.0, 3.0], [0.0, 1.0, -2.0], [0.0, 0.0, 1.0]],

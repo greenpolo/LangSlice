@@ -13,6 +13,7 @@ from langslice.registration import (
     NonlinearResult,
     RegistrationCorrespondence,
     RegistrationResult,
+    build_annotation_session_from_correspondences,
 )
 
 
@@ -51,6 +52,7 @@ def test_split_view_correspondence_mapping() -> None:
         affine_result=affine,
         nonlinear_result=nonlinear,
         qc_state="accepted",
+        annotation_session=build_annotation_session_from_correspondences([corr_a, corr_b]),
     )
 
     slice_points, atlas_points = build_split_view_correspondence_points(registration_result, affine)

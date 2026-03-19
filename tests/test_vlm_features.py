@@ -32,6 +32,33 @@ def test_feature_flags_for_ai_studio(monkeypatch) -> None:
     assert flags["supports_batch_api"] is False
 
 
+def test_set_temperature_updates_runtime_value() -> None:
+    original = vlm_config.TEMPERATURE
+    try:
+        vlm_config.set_temperature(0.35)
+        assert vlm_config.TEMPERATURE == 0.35
+        vlm_config.set_temperature(3.0)
+        assert vlm_config.TEMPERATURE == 2.0
+        vlm_config.set_temperature(-1.0)
+        assert vlm_config.TEMPERATURE == 0.0
+    finally:
+        vlm_config.set_temperature(original)
+
+
+def test_registration_workflow_options_gate_image_models() -> None:
+    assert "gemini-3-pro-image-preview" in vlm_config.AVAILABLE_MODELS
+    assert "gemini-3.1-flash-image-preview" in vlm_config.AVAILABLE_MODELS
+
+    image_options = vlm_config.get_registration_workflow_options("gemini-3-pro-image-preview")
+    assert image_options == [("Image Gen (2-Shot)", "image_gen_two_shot")]
+
+    text_options = vlm_config.get_registration_workflow_options("gemini-3-flash-preview")
+    assert text_options == [
+        ("Single Pass", "single_pass"),
+        ("Tool Loop", "multimodal_tool_loop"),
+    ]
+
+
 def test_history_metrics_counts_file_parts() -> None:
     content = estimator.types.Content(
         role="user",
@@ -144,6 +171,7 @@ def test_registration_count_tokens_runs_before_generate(monkeypatch) -> None:
     fake_module = SimpleNamespace(
         MODEL_NAME="gemini-3-flash-preview",
         REGISTRATION_THINKING_BUDGET=8192,
+        TEMPERATURE=0.5,
         count_tokens_enabled=lambda: True,
         get_client=lambda: SimpleNamespace(models=FakeModels()),
     )

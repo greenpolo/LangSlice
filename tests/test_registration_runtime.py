@@ -16,11 +16,16 @@ def fake_estimate_registration_correspondences(
     atlas_name,
     position_mm,
     target_landmark_count,
+    workflow="single_pass",
     show_atlas_borders=True,
     on_progress=None,
+    on_trace=None,
+    debug_dir=None,
 ):
     _ = image, atlas_name, position_mm
+    _ = on_trace, debug_dir
     assert target_landmark_count == 14
+    assert workflow == "single_pass"
     assert show_atlas_borders is True
     if on_progress is not None:
         on_progress("fake correspondences")
@@ -130,6 +135,31 @@ def test_registration_runtime(monkeypatch, tmp_path: Path) -> None:
     assert result.nonlinear_result.backend == "tps"
     assert result.qc_state in {"accepted", "review"}
     assert result.debug_dir is not None
+    assert result.annotation_session is not None
+    assert result.annotation_session.workflow == "single_pass"
+    assert result.annotation_session.target_count == 14
+    assert len(result.annotation_session.atlas_annotations) == 14
+    assert len(result.annotation_session.slice_annotations) == 14
+    assert result.annotation_session.slice_annotations[0].normalized_yx is None
     run_dir = Path(result.debug_dir)
     assert (run_dir / "registration.json").exists()
     assert (run_dir / "slice_landmarks.png").exists()
+
+
+def test_registration_runtime_uses_existing_debug_dir(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(
+        runtime,
+        "estimate_registration_correspondences",
+        fake_estimate_registration_correspondences,
+    )
+    existing = tmp_path / "shared_run"
+    existing.mkdir()
+    result = runtime.estimate_registration(
+        Image.new("RGB", (120, 100), (255, 255, 255)),
+        atlas_name="allen_mouse_25um",
+        position_mm=1.0,
+        target_landmark_count=14,
+        debug_dir=str(existing),
+    )
+    assert result.debug_dir == str(existing / "registration")
+    assert (existing / "registration" / "registration.json").exists()

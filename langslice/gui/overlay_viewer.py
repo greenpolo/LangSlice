@@ -8,7 +8,7 @@ QUINT/ABBA export so the preview aligns with exported anchoring math.
 from __future__ import annotations
 
 import importlib
-from typing import Optional, cast
+from typing import Any, cast
 
 from PIL import Image
 
@@ -26,12 +26,18 @@ Signal = _qtcore.Signal
 Slot = _qtcore.Slot
 
 QImage = _qtgui.QImage
+QBrush = _qtgui.QBrush
+QColor = _qtgui.QColor
+QFont = _qtgui.QFont
+QPen = _qtgui.QPen
 QPixmap = _qtgui.QPixmap
 QTransform = _qtgui.QTransform
 
 QFrame = _qtwidgets.QFrame
+QGraphicsEllipseItem = _qtwidgets.QGraphicsEllipseItem
 QGraphicsPixmapItem = _qtwidgets.QGraphicsPixmapItem
 QGraphicsScene = _qtwidgets.QGraphicsScene
+QGraphicsSimpleTextItem = _qtwidgets.QGraphicsSimpleTextItem
 QGraphicsView = _qtwidgets.QGraphicsView
 QLabel = _qtwidgets.QLabel
 QSizePolicy = _qtwidgets.QSizePolicy
@@ -41,11 +47,7 @@ QWidget = _qtwidgets.QWidget
 from langslice.atlas.core import get_composite_slice, get_reference_slice, load_atlas
 from langslice.export import compute_coronal_frame_geometry
 from langslice.gui.theme import (
-    ACCENT,
-    BG_PANEL_SOLID,
-    BORDER_SUBTLE,
     FONT_MONO,
-    TEXT_PRIMARY,
     TEXT_SECONDARY,
 )
 
@@ -122,22 +124,22 @@ class OverlayGraphicsView(QFrame):
     frame contract as :mod:`langslice.export`.
     """
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("glassPanel")
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         # State
-        self._atlas_name: Optional[str] = None
-        self._position_mm: Optional[float] = None
-        self._atlas_shape: Optional[tuple[int, int, int]] = None
+        self._atlas_name: str | None = None
+        self._position_mm: float | None = None
+        self._atlas_shape: tuple[int, int, int] | None = None
         self._show_region_borders: bool = True
         self._atlas_opacity: float = 0.5
         self._generation: int = 0
 
         # Async loader
-        self._active_thread: Optional[QThread] = None
-        self._active_worker: Optional[_AtlasLoaderWorker] = None
+        self._active_thread: QThread | None = None
+        self._active_worker: _AtlasLoaderWorker | None = None
         self._debounce = QTimer(self)
         self._debounce.setSingleShot(True)
         self._debounce.setInterval(200)
@@ -157,8 +159,11 @@ class OverlayGraphicsView(QFrame):
         self._view.setStyleSheet("background: transparent;")
 
         # Pixmap items
-        self._slice_item: Optional[QGraphicsPixmapItem] = None
-        self._atlas_item: Optional[QGraphicsPixmapItem] = None
+        self._slice_item: QGraphicsPixmapItem | None = None
+        self._atlas_item: QGraphicsPixmapItem | None = None
+        self._slice_markers: list[tuple[float, float, str]] = []
+        self._atlas_markers: list[tuple[float, float, str]] = []
+        self._marker_items: list[Any] = []
 
         # Placeholder label (shown when nothing loaded)
         self._placeholder = QLabel("Load an image and run the agent\nto see the overlay", self)
@@ -192,7 +197,7 @@ class OverlayGraphicsView(QFrame):
 
     # --- Public API --------------------------------------------------------
 
-    def set_slice_pixmap(self, pixmap: Optional[QPixmap]) -> None:
+    def set_slice_pixmap(self, pixmap: QPixmap | None) -> None:
         """Set the histology slice image."""
         if self._slice_item is not None:
             self._scene.removeItem(self._slice_item)
@@ -209,6 +214,20 @@ class OverlayGraphicsView(QFrame):
         slice_item.setZValue(0)
         self._slice_item = slice_item
         self._layout_items()
+
+    def set_correspondence_markers(
+        self,
+        slice_markers: list[tuple[float, float, str]] | None = None,
+        atlas_markers: list[tuple[float, float, str]] | None = None,
+    ) -> None:
+        """Set persistent landmark markers for the shared overlay scene."""
+        self._slice_markers = [
+            (float(x), float(y), str(label)) for x, y, label in (slice_markers or [])
+        ]
+        self._atlas_markers = [
+            (float(x), float(y), str(label)) for x, y, label in (atlas_markers or [])
+        ]
+        self._refresh_markers()
 
     def set_atlas(self, atlas_name: str) -> None:
         self._atlas_name = atlas_name.strip() or None
@@ -238,6 +257,8 @@ class OverlayGraphicsView(QFrame):
         self._generation += 1
         self._debounce.stop()
         self._cancel_active()
+        self._clear_marker_items()
+        self._atlas_markers = []
         if self._atlas_item is not None:
             self._scene.removeItem(self._atlas_item)
             self._atlas_item = None
@@ -247,6 +268,7 @@ class OverlayGraphicsView(QFrame):
     def clear_all(self) -> None:
         """Clear both slice and atlas."""
         self.clear()
+        self._slice_markers = []
         if self._slice_item is not None:
             self._scene.removeItem(self._slice_item)
             self._slice_item = None
@@ -302,7 +324,79 @@ class OverlayGraphicsView(QFrame):
                 self._atlas_item.setPos(-atlas_pm.width() / 2.0, -atlas_pm.height() / 2.0)
             self._atlas_item.setOpacity(self._atlas_opacity)
 
+        self._refresh_markers()
         self._fit_scene()
+
+    def _clear_marker_items(self) -> None:
+        for item in self._marker_items:
+            scene_getter = getattr(item, "scene", None)
+            if not callable(scene_getter):
+                continue
+            try:
+                scene = scene_getter()
+            except RuntimeError:
+                scene = None
+            if scene is not None:
+                remove_item = getattr(scene, "removeItem", None)
+                if callable(remove_item):
+                    remove_item(item)
+        self._marker_items = []
+
+    def _refresh_markers(self) -> None:
+        self._clear_marker_items()
+        self._marker_items.extend(
+            self._build_marker_items(self._slice_item, self._slice_markers, QColor(245, 158, 11))
+        )
+        self._marker_items.extend(
+            self._build_marker_items(self._atlas_item, self._atlas_markers, QColor(56, 189, 248))
+        )
+        self._fit_scene()
+
+    def _build_marker_items(
+        self,
+        parent_item: QGraphicsPixmapItem | None,
+        markers: list[tuple[float, float, str]],
+        color: QColor,
+    ) -> list[Any]:
+        if parent_item is None or not markers:
+            return []
+        pixmap = parent_item.pixmap()
+        if pixmap.isNull():
+            return []
+
+        width = pixmap.width()
+        height = pixmap.height()
+        radius = max(4.0, max(width, height) / 150.0)
+        pen = QPen(color)
+        pen.setWidthF(max(1.5, radius / 3.0))
+        text_color = QColor(240, 240, 240)
+        no_brush = QBrush(Qt.BrushStyle.NoBrush)
+        font = QFont(FONT_MONO)
+        font.setPointSizeF(max(8.0, radius * 0.9))
+        created: list[Any] = []
+
+        for x, y, label in markers:
+            if x < 0.0 or y < 0.0 or x >= width or y >= height:
+                continue
+            ellipse = QGraphicsEllipseItem(
+                x - radius,
+                y - radius,
+                radius * 2.0,
+                radius * 2.0,
+                parent_item,
+            )
+            ellipse.setPen(pen)
+            ellipse.setBrush(no_brush)
+            ellipse.setZValue(10)
+
+            text_item = QGraphicsSimpleTextItem(str(label), parent_item)
+            text_item.setBrush(QBrush(text_color))
+            text_item.setFont(font)
+            text_item.setPos(QPointF(x + radius + 3.0, y - radius))
+            text_item.setZValue(11)
+
+            created.extend([ellipse, text_item])
+        return created
 
     def _fit_scene(self) -> None:
         """Fit the visible content into the view."""
@@ -422,7 +516,7 @@ class OverlayGraphicsView(QFrame):
         # Silently ignore atlas load errors in the overlay view;
         # the split-view AtlasViewer already shows errors to the user.
 
-    def _on_loader_done(self, gen: int, thread: Optional[QThread] = None) -> None:
+    def _on_loader_done(self, gen: int, thread: QThread | None = None) -> None:
         if thread is not None and self._active_thread is thread:
             self._active_thread = None
             self._active_worker = None

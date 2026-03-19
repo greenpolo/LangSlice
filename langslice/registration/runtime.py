@@ -2,23 +2,30 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 import json
 import logging
 import os
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Callable
 
-from PIL import Image, ImageDraw
+from PIL import Image
 
+from langslice.agent_trace import image_part_from_pil, json_part, runtime_event
 from langslice.atlas import get_composite_slice, get_reference_slice, load_atlas
 from langslice.registration.agents import estimate_registration_correspondences
 from langslice.registration.solver import (
     fit_affine_from_correspondences,
     fit_tps_from_correspondences,
 )
-from langslice.registration.types import RegistrationCorrespondence, RegistrationResult
+from langslice.registration.types import (
+    RegistrationCorrespondence,
+    RegistrationResult,
+    annotation_session_to_dict,
+    build_annotation_session_from_correspondences,
+    render_landmark_annotations,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,20 +40,16 @@ def _progress(on_progress: Callable[[str], None] | None, message: str) -> None:
     logger.info(message)
 
 
+def _emit_trace(
+    on_trace: Callable[[dict[str, object]], None] | None,
+    event: dict[str, object],
+) -> None:
+    if on_trace:
+        on_trace(event)
+
+
 def _save_image(path: Path, image: Image.Image) -> None:
     image.save(path)
-
-
-def _draw_landmarks(
-    image: Image.Image, points: list[tuple[float, float]], labels: list[str]
-) -> Image.Image:
-    annotated = image.convert("RGB").copy()
-    draw = ImageDraw.Draw(annotated)
-    for (x, y), label in zip(points, labels):
-        r = 6
-        draw.ellipse((x - r, y - r, x + r, y + r), outline=(255, 80, 80), width=2)
-        draw.text((x + 8, y + 4), label, fill=(255, 220, 120))
-    return annotated
 
 
 def _write_debug_artifacts(
@@ -59,21 +62,16 @@ def _write_debug_artifacts(
     run_dir.mkdir(parents=True, exist_ok=True)
     _save_image(run_dir / "slice.png", slice_image)
     _save_image(run_dir / "atlas.png", atlas_image)
+    session = result.annotation_session or build_annotation_session_from_correspondences(
+        result.accepted_correspondences
+    )
     _save_image(
         run_dir / "slice_landmarks.png",
-        _draw_landmarks(
-            slice_image,
-            [c.slice_xy for c in result.accepted_correspondences],
-            [c.label for c in result.accepted_correspondences],
-        ),
+        render_landmark_annotations(slice_image, session.slice_annotations),
     )
     _save_image(
         run_dir / "atlas_landmarks.png",
-        _draw_landmarks(
-            atlas_image,
-            [c.atlas_xy for c in result.accepted_correspondences],
-            [c.label for c in result.accepted_correspondences],
-        ),
+        render_landmark_annotations(atlas_image, session.atlas_annotations),
     )
     payload = {
         "qc_state": result.qc_state,
@@ -95,6 +93,7 @@ def _write_debug_artifacts(
             {**{k: (asdict(v) if hasattr(v, "slice_xy") else v) for k, v in item.items()}}
             for item in result.rejected_correspondences
         ],
+        "annotation_session": annotation_session_to_dict(result.annotation_session),
     }
     (run_dir / "registration.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
@@ -106,9 +105,12 @@ def estimate_registration(
     position_mm: float,
     pixel_size_um: float | None = None,
     target_landmark_count: int = 12,
+    workflow: str = "single_pass",
     show_atlas_borders: bool = True,
     on_correspondences: Callable[[list[RegistrationCorrespondence]], None] | None = None,
     on_progress: Callable[[str], None] | None = None,
+    on_trace: Callable[[dict[str, object]], None] | None = None,
+    debug_dir: str | None = None,
 ) -> RegistrationResult:
     """Run the new registration runtime and return affine + nonlinear results."""
     _ = pixel_size_um
@@ -122,8 +124,11 @@ def estimate_registration(
         atlas_name=atlas_name,
         position_mm=position_mm,
         target_landmark_count=target_landmark_count,
+        workflow=workflow,
         show_atlas_borders=show_atlas_borders,
         on_progress=on_progress,
+        on_trace=on_trace,
+        debug_dir=debug_dir,
     )
     if len(correspondences) < 3:
         raise RegistrationFailure(
@@ -133,6 +138,17 @@ def estimate_registration(
         on_correspondences(correspondences)
     accepted = list(correspondences)
     rejected: list[dict[str, object]] = []
+    annotation_session = build_annotation_session_from_correspondences(
+        accepted,
+        workflow="single_pass",
+        target_count=target_landmark_count,
+        metadata={
+            "atlas_name": atlas_name,
+            "position_mm": round(position_mm, 3),
+            "show_atlas_borders": bool(show_atlas_borders),
+            "workflow": workflow,
+        },
+    )
     affine_result, residuals = fit_affine_from_correspondences(
         accepted,
         source_size=atlas_image.size,
@@ -149,12 +165,11 @@ def estimate_registration(
     )
     qc_state = "accepted"
 
-    debug_dir: str | None = None
+    output_debug_dir: str | None = None
     root = os.environ.get("LANGSLICE_VLM_DEBUG_DIR")
-    if root:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        run_dir = Path(root) / f"{timestamp}_{atlas_name}_registration"
-        debug_dir = str(run_dir)
+    if debug_dir:
+        run_dir = Path(debug_dir) / "registration"
+        output_debug_dir = str(run_dir)
         _write_debug_artifacts(
             run_dir,
             slice_image=image,
@@ -166,9 +181,72 @@ def estimate_registration(
                 affine_result=affine_result,
                 nonlinear_result=nonlinear_result,
                 qc_state=qc_state,
-                debug_dir=debug_dir,
+                debug_dir=output_debug_dir,
+                annotation_session=annotation_session,
             ),
         )
+    elif root:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        run_dir = Path(root) / f"{timestamp}_{atlas_name}_registration"
+        output_debug_dir = str(run_dir)
+        _write_debug_artifacts(
+            run_dir,
+            slice_image=image,
+            atlas_image=atlas_image,
+            result=RegistrationResult(
+                correspondences=correspondences,
+                accepted_correspondences=accepted,
+                rejected_correspondences=rejected,
+                affine_result=affine_result,
+                nonlinear_result=nonlinear_result,
+                qc_state=qc_state,
+                debug_dir=output_debug_dir,
+                annotation_session=annotation_session,
+            ),
+        )
+
+    atlas_landmarks = render_landmark_annotations(atlas_image, annotation_session.atlas_annotations)
+    slice_landmarks = render_landmark_annotations(image, annotation_session.slice_annotations)
+    registration_dir = str(Path(output_debug_dir)) if output_debug_dir else None
+    _emit_trace(
+        on_trace,
+        runtime_event(
+            stage="registration",
+            title="Registration solve completed",
+            summary=f"Affine accepted with {len(accepted)} landmark pairs",
+            parts=[
+                image_part_from_pil(
+                    atlas_landmarks,
+                    label="Atlas landmarks",
+                    image_format="PNG",
+                    path=str(Path(registration_dir) / "atlas_landmarks.png")
+                    if registration_dir
+                    else None,
+                ),
+                image_part_from_pil(
+                    slice_landmarks,
+                    label="Slice landmarks",
+                    image_format="PNG",
+                    path=str(Path(registration_dir) / "slice_landmarks.png")
+                    if registration_dir
+                    else None,
+                ),
+                json_part(
+                    {
+                        "qc_state": qc_state,
+                        "accepted_pairs": len(accepted),
+                        "affine_backend": affine_result.backend,
+                        "rotation_deg": round(affine_result.rotation_deg, 4),
+                        "translation_px": affine_result.translation_px,
+                        "scale": affine_result.scale,
+                        "shear": affine_result.shear,
+                    },
+                    label="Registration result",
+                ),
+            ],
+            metadata={"accepted_pairs": len(accepted), "qc_state": qc_state},
+        ),
+    )
 
     _progress(on_progress, f"Registration runtime completed with state={qc_state}")
     return RegistrationResult(
@@ -178,5 +256,6 @@ def estimate_registration(
         affine_result=affine_result,
         nonlinear_result=nonlinear_result,
         qc_state=qc_state,
-        debug_dir=debug_dir,
+        debug_dir=output_debug_dir,
+        annotation_session=annotation_session,
     )

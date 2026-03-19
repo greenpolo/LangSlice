@@ -17,12 +17,15 @@ def estimate_registration_runtime(
     image: Image.Image,
     *,
     on_progress: Callable[[str], None] | None = None,
+    on_trace: Callable[[dict[str, object]], None] | None = None,
     atlas_name: str | None = None,
     position_mm: float | None = None,
     pixel_size_um: float | None = None,
     target_landmark_count: int = 12,
+    workflow: str = "single_pass",
     show_atlas_borders: bool = True,
     on_correspondences: Callable[[list[RegistrationCorrespondence]], None] | None = None,
+    debug_dir: str | None = None,
 ) -> RegistrationResult:
     """Run the separate registration runtime and return full results."""
 
@@ -40,9 +43,12 @@ def estimate_registration_runtime(
         position_mm=position_mm,
         pixel_size_um=pixel_size_um,
         target_landmark_count=target_landmark_count,
+        workflow=workflow,
         show_atlas_borders=show_atlas_borders,
         on_correspondences=on_correspondences,
         on_progress=on_progress,
+        on_trace=on_trace,
+        debug_dir=debug_dir,
     )
     _progress(
         "Registration outputs derived: "

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 from typing import Any
 
@@ -85,6 +86,7 @@ def _patch_common(monkeypatch: Any) -> None:
         MODEL_NAME="test-model",
         CODE_EXECUTION_ENABLED=False,
         REGISTRATION_THINKING_BUDGET=8192,
+        TEMPERATURE=0.5,
         count_tokens_enabled=lambda: False,
         get_client=lambda: _DummyClient(),
     )
@@ -279,3 +281,158 @@ def test_single_pass_only_filters_not_visible_pairs(monkeypatch: Any) -> None:
         min_edge_landmarks=5,
     )
     assert len(result) == 7
+
+
+def test_registration_request_uses_configured_temperature(monkeypatch: Any) -> None:
+    _patch_common(monkeypatch)
+
+    captured: dict[str, object] = {}
+
+    def mock_generate(*args: Any, **kwargs: Any) -> SimpleNamespace:
+        _ = args
+        captured["config"] = kwargs["config"]
+        return SimpleNamespace(parsed={"correspondences": [_correspondence(10, 10, 10, 10, "a")]})
+
+    current_import_module = agents.importlib.import_module
+    monkeypatch.setattr(agents, "_retry_generate", mock_generate)
+    monkeypatch.setattr(
+        agents.importlib,
+        "import_module",
+        lambda name: (
+            SimpleNamespace(
+                MODEL_NAME="test-model",
+                CODE_EXECUTION_ENABLED=False,
+                REGISTRATION_THINKING_BUDGET=8192,
+                TEMPERATURE=0.2,
+                count_tokens_enabled=lambda: False,
+                get_client=lambda: _DummyClient(),
+            )
+            if name == "langslice.vlm.config"
+            else current_import_module(name)
+        ),
+    )
+
+    agents.estimate_registration_correspondences(
+        Image.new("RGB", (120, 100), (0, 0, 0)),
+        atlas_name="allen_mouse_25um",
+        position_mm=1.0,
+        target_landmark_count=1,
+        min_edge_landmarks=0,
+    )
+
+    assert isinstance(captured["config"], dict)
+    assert captured["config"]["temperature"] == 0.2
+
+
+def test_image_gen_two_shot_pairs_numbered_landmarks(monkeypatch: Any) -> None:
+    _patch_common(monkeypatch)
+
+    responses = [
+        SimpleNamespace(
+            parsed={
+                "landmarks": [
+                    {
+                        "label": str(index),
+                        "atlas_point_2d": [50 * index, 60 * index],
+                        "status": "found",
+                    }
+                    for index in range(1, 5)
+                ]
+            }
+        ),
+        SimpleNamespace(
+            text=json.dumps(
+                {
+                    "landmarks": [
+                        {
+                            "label": str(index),
+                            "slice_point_2d": [70 * index, 80 * index],
+                            "status": "found",
+                        }
+                        for index in range(1, 5)
+                    ]
+                }
+            )
+        ),
+    ]
+
+    current_import_module = agents.importlib.import_module
+    monkeypatch.setattr(
+        agents.importlib,
+        "import_module",
+        lambda name: (
+            SimpleNamespace(
+                MODEL_NAME="gemini-3-pro-image-preview",
+                CODE_EXECUTION_ENABLED=False,
+                REGISTRATION_THINKING_BUDGET=8192,
+                TEMPERATURE=0.2,
+                count_tokens_enabled=lambda: False,
+                get_client=lambda: _DummyClient(),
+                supports_structured_image_output=lambda model: (
+                    model == "gemini-3-pro-image-preview"
+                ),
+            )
+            if name == "langslice.vlm.config"
+            else current_import_module(name)
+        ),
+    )
+    monkeypatch.setattr(agents, "_retry_generate", lambda *args, **kwargs: responses.pop(0))
+
+    result = agents.estimate_registration_correspondences(
+        Image.new("RGB", (200, 120), (0, 0, 0)),
+        atlas_name="allen_mouse_25um",
+        position_mm=2.0,
+        target_landmark_count=4,
+        min_edge_landmarks=2,
+        workflow="image_gen_two_shot",
+    )
+
+    assert [corr.label for corr in result] == ["1", "2", "3", "4"]
+    assert result[0].atlas_normalized_yx == (50.0, 60.0)
+    assert result[0].slice_normalized_yx == (70.0, 80.0)
+
+
+def test_multimodal_tool_loop_places_pairs_before_finish(monkeypatch: Any) -> None:
+    _patch_common(monkeypatch)
+
+    responses = [
+        SimpleNamespace(
+            parsed={
+                "tool_name": "place_point_pair",
+                "tool_args": {
+                    "label": "1",
+                    "atlas_point_2d": [100, 120],
+                    "slice_point_2d": [140, 160],
+                    "feature_description": "outer contour notch",
+                    "status": "found",
+                },
+            }
+        ),
+        SimpleNamespace(
+            parsed={
+                "tool_name": "place_point_pair",
+                "tool_args": {
+                    "label": "2",
+                    "atlas_point_2d": [500, 520],
+                    "slice_point_2d": [540, 560],
+                    "feature_description": "ventricle corner",
+                    "status": "found",
+                },
+            }
+        ),
+        SimpleNamespace(parsed={"tool_name": "finish", "tool_args": {}}),
+    ]
+
+    monkeypatch.setattr(agents, "_retry_generate", lambda *args, **kwargs: responses.pop(0))
+
+    result = agents.estimate_registration_correspondences(
+        Image.new("RGB", (200, 120), (0, 0, 0)),
+        atlas_name="allen_mouse_25um",
+        position_mm=2.0,
+        target_landmark_count=2,
+        min_edge_landmarks=1,
+        workflow="multimodal_tool_loop",
+    )
+
+    assert [corr.label for corr in result] == ["1", "2"]
+    assert result[0].rationale.startswith("status=found")

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from PIL import Image
+
 from langslice.gui import overlay_viewer
 
 
@@ -111,5 +113,28 @@ def test_loader_done_clears_matching_thread_even_with_generation_mismatch(monkey
 
     assert viewer._active_thread is None
     assert viewer._active_worker is None
+    viewer.close()
+    app.processEvents()
+
+
+def test_overlay_viewer_persistent_marker_layer(monkeypatch) -> None:
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    app = (
+        overlay_viewer._qtwidgets.QApplication.instance()
+        or overlay_viewer._qtwidgets.QApplication([])
+    )
+    viewer = overlay_viewer.OverlayGraphicsView()
+
+    slice_pixmap = overlay_viewer._pil_to_qpixmap(Image.new("RGB", (120, 80), (255, 255, 255)))
+    atlas_pixmap = overlay_viewer._pil_to_qpixmap(Image.new("RGB", (120, 80), (0, 0, 0)))
+    viewer.set_slice_pixmap(slice_pixmap)
+    viewer._on_atlas_ready(0, atlas_pixmap, (528, 320, 456))
+    viewer.set_correspondence_markers([(10.0, 12.0, "1")], [(20.0, 24.0, "1")])
+
+    assert len(viewer._marker_items) == 4
+
+    viewer.set_correspondence_markers([], [])
+
+    assert viewer._marker_items == []
     viewer.close()
     app.processEvents()

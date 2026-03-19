@@ -12,6 +12,11 @@ MODEL_NAME = "gemini-3-flash-preview"
 THINKING_LEVEL = "HIGH"
 CODE_EXECUTION_ENABLED = True
 REGISTRATION_THINKING_BUDGET: int = 8192
+TEMPERATURE: float = 0.5
+
+REGISTRATION_WORKFLOW_SINGLE_PASS = "single_pass"
+REGISTRATION_WORKFLOW_IMAGE_GEN_TWO_SHOT = "image_gen_two_shot"
+REGISTRATION_WORKFLOW_MULTIMODAL_TOOL_LOOP = "multimodal_tool_loop"
 
 AVAILABLE_THINKING_BUDGETS: list[tuple[str, int]] = [
     ("Off", 0),
@@ -27,11 +32,29 @@ _ENV_AP_USE_CONTEXT_CACHE = "LANGSLICE_GENAI_AP_USE_CONTEXT_CACHE"
 _ENV_AP_USE_INTERACTIONS = "LANGSLICE_GENAI_AP_USE_INTERACTIONS"
 _ENV_AP_CACHE_TTL = "LANGSLICE_GENAI_AP_CACHE_TTL"
 _ENV_FILE_POLL_TIMEOUT_S = "LANGSLICE_GENAI_FILE_POLL_TIMEOUT_S"
+_ENV_TEMPERATURE = "LANGSLICE_GENAI_TEMPERATURE"
 
 AVAILABLE_MODELS: list[str] = [
     "gemini-3-flash-preview",
     "gemini-3.1-pro-preview",
+    "gemini-3-pro-image-preview",
+    "gemini-3.1-flash-image-preview",
 ]
+
+IMAGE_GENERATION_MODELS: set[str] = {
+    "gemini-3-pro-image-preview",
+    "gemini-3.1-flash-image-preview",
+}
+
+STRUCTURED_OUTPUT_IMAGE_MODELS: set[str] = {
+    "gemini-3-pro-image-preview",
+}
+
+REGISTRATION_WORKFLOW_LABELS: dict[str, str] = {
+    REGISTRATION_WORKFLOW_SINGLE_PASS: "Single Pass",
+    REGISTRATION_WORKFLOW_IMAGE_GEN_TWO_SHOT: "Image Gen (2-Shot)",
+    REGISTRATION_WORKFLOW_MULTIMODAL_TOOL_LOOP: "Tool Loop",
+}
 
 
 def set_model_name(name: str) -> None:
@@ -44,6 +67,56 @@ def set_registration_thinking_budget(budget: int) -> None:
     """Set the thinking budget for registration at runtime."""
     globals()["REGISTRATION_THINKING_BUDGET"] = budget
     logger.info("Registration thinking budget changed to: %d", budget)
+
+
+def set_temperature(value: float) -> None:
+    """Set active generation temperature at runtime for subsequent requests."""
+    clamped = max(0.0, min(2.0, float(value)))
+    globals()["TEMPERATURE"] = clamped
+    logger.info("Temperature changed to: %.2f", clamped)
+
+
+def is_image_generation_model(model_name: str | None) -> bool:
+    """Return True when *model_name* targets an image-generation Gemini model."""
+    if model_name is None:
+        return False
+    return str(model_name).strip() in IMAGE_GENERATION_MODELS
+
+
+def supports_structured_image_output(model_name: str | None) -> bool:
+    """Return True when the selected image model supports structured outputs."""
+    if model_name is None:
+        return False
+    return str(model_name).strip() in STRUCTURED_OUTPUT_IMAGE_MODELS
+
+
+def get_registration_workflow_options(model_name: str | None) -> list[tuple[str, str]]:
+    """Return GUI-ready `(label, value)` registration workflow options."""
+    if is_image_generation_model(model_name):
+        return [
+            (
+                REGISTRATION_WORKFLOW_LABELS[REGISTRATION_WORKFLOW_IMAGE_GEN_TWO_SHOT],
+                REGISTRATION_WORKFLOW_IMAGE_GEN_TWO_SHOT,
+            )
+        ]
+    return [
+        (
+            REGISTRATION_WORKFLOW_LABELS[REGISTRATION_WORKFLOW_SINGLE_PASS],
+            REGISTRATION_WORKFLOW_SINGLE_PASS,
+        ),
+        (
+            REGISTRATION_WORKFLOW_LABELS[REGISTRATION_WORKFLOW_MULTIMODAL_TOOL_LOOP],
+            REGISTRATION_WORKFLOW_MULTIMODAL_TOOL_LOOP,
+        ),
+    ]
+
+
+def default_registration_workflow(model_name: str | None) -> str:
+    """Return the default registration workflow for the selected model."""
+    options = get_registration_workflow_options(model_name)
+    if not options:
+        return REGISTRATION_WORKFLOW_SINGLE_PASS
+    return options[0][1]
 
 
 _BACKEND_AI_STUDIO = "ai_studio"
@@ -183,6 +256,14 @@ def file_poll_timeout_s() -> float:
     return _env_float(_ENV_FILE_POLL_TIMEOUT_S, 10.0)
 
 
+def configured_temperature() -> float:
+    _load_dotenv()
+    return _env_float(_ENV_TEMPERATURE, TEMPERATURE)
+
+
+TEMPERATURE = configured_temperature()
+
+
 def supports_file_api() -> bool:
     return get_backend() == _BACKEND_AI_STUDIO
 
@@ -206,6 +287,7 @@ def feature_flags() -> dict[str, Any]:
         "supports_batch_api": supports_batch_api(),
         "ap_cache_ttl": ap_cache_ttl(),
         "file_poll_timeout_s": file_poll_timeout_s(),
+        "temperature": configured_temperature(),
         "backend": get_backend(),
     }
 

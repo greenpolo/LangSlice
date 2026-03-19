@@ -31,7 +31,13 @@ QSizePolicy = _qtwidgets.QSizePolicy
 QVBoxLayout = _qtwidgets.QVBoxLayout
 QWidget = _qtwidgets.QWidget
 
-from langslice.registration import AffineResult, RegistrationCorrespondence, RegistrationResult
+from langslice.registration import (
+    AffineResult,
+    RegistrationCorrespondence,
+    RegistrationResult,
+    build_annotation_session_from_correspondences,
+    get_session_marker_points,
+)
 from langslice.gui.theme import ACCENT, ERROR, SUCCESS, TEXT_SECONDARY
 from langslice.vlm import APResult
 
@@ -70,21 +76,20 @@ def build_split_view_correspondence_points(
 ) -> tuple[list[tuple[float, float, str]], list[tuple[float, float, str]]]:
     """Return paired marker points for split-view slice and atlas panes."""
     _ = affine_result
-    correspondences: list[RegistrationCorrespondence] = []
+    session = None
     if registration_result is not None:
-        correspondences = registration_result.accepted_correspondences
+        session = registration_result.annotation_session
+        if session is None:
+            session = build_annotation_session_from_correspondences(
+                registration_result.accepted_correspondences
+            )
     elif preview_correspondences is not None:
-        correspondences = preview_correspondences
-    if not correspondences:
+        session = build_annotation_session_from_correspondences(preview_correspondences)
+    if session is None:
         return [], []
 
-    slice_points = [
-        (float(corr.slice_xy[0]), float(corr.slice_xy[1]), corr.label) for corr in correspondences
-    ]
-
-    atlas_points = [
-        (float(corr.atlas_xy[0]), float(corr.atlas_xy[1]), corr.label) for corr in correspondences
-    ]
+    slice_points = get_session_marker_points(session, image_role="slice")
+    atlas_points = get_session_marker_points(session, image_role="atlas")
     return slice_points, atlas_points
 
 

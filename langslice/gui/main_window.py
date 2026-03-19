@@ -11,6 +11,8 @@ from typing import Any, cast
 
 from PIL import Image
 
+from langslice.agent_trace import stage_event, status_event
+
 _qtcore = importlib.import_module("PySide6.QtCore")
 _qtgui = importlib.import_module("PySide6.QtGui")
 _qtwidgets = importlib.import_module("PySide6.QtWidgets")
@@ -20,7 +22,6 @@ Signal = _qtcore.Signal
 QObject = _qtcore.QObject
 QThread = _qtcore.QThread
 QTimer = _qtcore.QTimer
-QTime = _qtcore.QTime
 
 QDragEnterEvent = _qtgui.QDragEnterEvent
 QDropEvent = _qtgui.QDropEvent
@@ -38,7 +39,6 @@ QFrame = _qtwidgets.QFrame
 QHBoxLayout = _qtwidgets.QHBoxLayout
 QLabel = _qtwidgets.QLabel
 QMainWindow = _qtwidgets.QMainWindow
-QPlainTextEdit = _qtwidgets.QPlainTextEdit
 QPushButton = _qtwidgets.QPushButton
 QCheckBox = _qtwidgets.QCheckBox
 QSizePolicy = _qtwidgets.QSizePolicy
@@ -76,8 +76,13 @@ from langslice.vlm.config import (
     AVAILABLE_THINKING_BUDGETS,
     MODEL_NAME,
     REGISTRATION_THINKING_BUDGET,
+    TEMPERATURE,
+    default_registration_workflow,
+    get_registration_workflow_options,
+    is_image_generation_model,
     set_model_name,
     set_registration_thinking_budget,
+    set_temperature,
 )
 from langslice.export import build_quint_export, save_quint_json
 from langslice.gui.run_metadata_dialog import RunMetadataDialog
@@ -95,6 +100,7 @@ build_split_view_correspondence_points = (
 draw_correspondence_markers = _main_window_components.draw_correspondence_markers
 pil_to_qpixmap = _main_window_components.pil_to_qpixmap
 should_apply_affine_to_slice = _main_window_components.should_apply_affine_to_slice
+TraceInspector = importlib.import_module("langslice.gui.trace_inspector").TraceInspector
 
 try:
     AtlasViewer = importlib.import_module("langslice.gui.atlas_viewer").AtlasViewer
@@ -147,6 +153,7 @@ class AgentWorker(QObject):
     step_error = Signal(str, str)
     correspondences_ready = Signal(object)
     log_message = Signal(str)
+    trace_event = Signal(object)
     finished = Signal()
 
     def __init__(
@@ -156,6 +163,7 @@ class AgentWorker(QObject):
         atlas_name: str,
         pixel_size_um: float,
         target_landmark_count: int,
+        registration_workflow: str,
         show_atlas_borders: bool,
     ) -> None:
         super().__init__()
@@ -164,6 +172,7 @@ class AgentWorker(QObject):
         self.atlas_name = atlas_name
         self.pixel_size_um = pixel_size_um
         self.target_landmark_count = target_landmark_count
+        self.registration_workflow = registration_workflow
         self.show_atlas_borders = bool(show_atlas_borders)
 
     def run(self) -> None:
@@ -174,6 +183,7 @@ class AgentWorker(QObject):
                 image=self.vlm_image,
                 atlas_name=self.atlas_name,
                 on_progress=self.log_message.emit,
+                on_trace=self.trace_event.emit,
             )
             self.step_completed.emit("ap", ap_result)
         except Exception as exc:
@@ -185,17 +195,20 @@ class AgentWorker(QObject):
             self.step_started.emit("affine")
             self.log_message.emit(
                 "Starting landmark-based registration... "
-                f"(target_pairs={self.target_landmark_count}, edge_hint_pairs=5)"
+                f"(workflow={self.registration_workflow}, target_pairs={self.target_landmark_count}, edge_hint_pairs=5)"
             )
             registration_result = estimate_registration_runtime(
                 image=self.image,
                 on_progress=self.log_message.emit,
+                on_trace=self.trace_event.emit,
                 atlas_name=self.atlas_name,
                 position_mm=ap_result.position_mm,
                 pixel_size_um=self.pixel_size_um,
                 target_landmark_count=self.target_landmark_count,
+                workflow=self.registration_workflow,
                 show_atlas_borders=self.show_atlas_borders,
                 on_correspondences=self.correspondences_ready.emit,
+                debug_dir=ap_result.debug_dir,
             )
             self.step_completed.emit("affine", registration_result)
         except Exception as exc:
@@ -212,6 +225,7 @@ class ManualRegistrationWorker(QObject):
     step_error = Signal(str, str)
     correspondences_ready = Signal(object)
     log_message = Signal(str)
+    trace_event = Signal(object)
     finished = Signal()
 
     def __init__(
@@ -221,6 +235,7 @@ class ManualRegistrationWorker(QObject):
         position_mm: float,
         pixel_size_um: float,
         target_landmark_count: int,
+        registration_workflow: str,
         show_atlas_borders: bool,
     ) -> None:
         super().__init__()
@@ -229,9 +244,11 @@ class ManualRegistrationWorker(QObject):
         self.position_mm = position_mm
         self.pixel_size_um = pixel_size_um
         self.target_landmark_count = target_landmark_count
+        self.registration_workflow = registration_workflow
         self.show_atlas_borders = bool(show_atlas_borders)
 
     def run(self) -> None:
+        debug_dir = _create_debug_run_dir(self.atlas_name, suffix="manual")
         try:
             self.step_started.emit("ap")
             self.log_message.emit(f"Using manual AP position: {self.position_mm:.2f} mm")
@@ -240,7 +257,7 @@ class ManualRegistrationWorker(QObject):
                 APResult(
                     position_mm=self.position_mm,
                     reasoning="Manual AP position",
-                    debug_dir=None,
+                    debug_dir=debug_dir,
                 ),
             )
         except Exception as exc:
@@ -252,23 +269,40 @@ class ManualRegistrationWorker(QObject):
             self.step_started.emit("affine")
             self.log_message.emit(
                 "Starting landmark-based registration... "
-                f"(target_pairs={self.target_landmark_count}, edge_hint_pairs=5)"
+                f"(workflow={self.registration_workflow}, target_pairs={self.target_landmark_count}, edge_hint_pairs=5)"
             )
             registration_result = estimate_registration_runtime(
                 image=self.image,
                 on_progress=self.log_message.emit,
+                on_trace=self.trace_event.emit,
                 atlas_name=self.atlas_name,
                 position_mm=self.position_mm,
                 pixel_size_um=self.pixel_size_um,
                 target_landmark_count=self.target_landmark_count,
+                workflow=self.registration_workflow,
                 show_atlas_borders=self.show_atlas_borders,
                 on_correspondences=self.correspondences_ready.emit,
+                debug_dir=debug_dir,
             )
             self.step_completed.emit("affine", registration_result)
         except Exception as exc:
             self.step_error.emit("affine", str(exc))
         finally:
             self.finished.emit()
+
+
+def _create_debug_run_dir(atlas_name: str, *, suffix: str | None = None) -> str | None:
+    root = os.environ.get("LANGSLICE_VLM_DEBUG_DIR")
+    if not root:
+        return None
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    safe_atlas = atlas_name.replace("/", "_").replace("\\", "_")
+    folder_name = f"{timestamp}_{safe_atlas}"
+    if suffix:
+        folder_name = f"{folder_name}_{suffix}"
+    run_dir = os.path.join(root, folder_name)
+    os.makedirs(run_dir, exist_ok=True)
+    return run_dir
 
 
 class MainWindow(QMainWindow):
@@ -299,6 +333,7 @@ class MainWindow(QMainWindow):
 
         self.pixel_size_um: float = 4.0
         self.registration_landmark_count: int = 8
+        self.registration_workflow: str = default_registration_workflow(MODEL_NAME)
         self._pixel_size_source: str = "manual_default"
         self._metadata_pixel_size_um: float | None = None
         self._vlm_scale_factor: float = 1.0
@@ -429,8 +464,18 @@ class MainWindow(QMainWindow):
             self.model_combo.addItem(m)
         self.model_combo.setCurrentText(MODEL_NAME)
         self.model_combo.setFixedWidth(180)
-        self.model_combo.setToolTip("VLM model for AP estimation")
+        self.model_combo.setToolTip("Gemini model used for AP estimation and registration")
         self.model_combo.currentTextChanged.connect(self._on_model_changed)
+
+        workflow_label = QLabel("Workflow:")
+        workflow_label.setObjectName("subheading")
+        self.workflow_combo = QComboBox()
+        self.workflow_combo.setFixedWidth(150)
+        self.workflow_combo.setToolTip(
+            "Registration workflow. Image-gen mode is only available when an image-generation model is selected."
+        )
+        self._refresh_registration_workflow_options(self.registration_workflow)
+        self.workflow_combo.currentIndexChanged.connect(self._on_registration_workflow_changed)
 
         px_size_label = QLabel("Pixel Size:")
         px_size_label.setObjectName("subheading")
@@ -476,6 +521,20 @@ class MainWindow(QMainWindow):
         )
         self.thinking_combo.currentIndexChanged.connect(self._on_thinking_budget_changed)
 
+        temperature_label = QLabel("Temp:")
+        temperature_label.setObjectName("subheading")
+        self.temperature_spin = QDoubleSpinBox()
+        self.temperature_spin.setRange(0.0, 2.0)
+        self.temperature_spin.setDecimals(2)
+        self.temperature_spin.setSingleStep(0.05)
+        self.temperature_spin.setValue(TEMPERATURE)
+        self.temperature_spin.setFixedWidth(90)
+        self.temperature_spin.setToolTip(
+            "Gemini temperature for AP estimation and registration. "
+            "Lower values are more deterministic; higher values are more exploratory."
+        )
+        self.temperature_spin.valueChanged.connect(self._on_temperature_changed)
+
         self.upload_button = QPushButton("Open Image...")
         self.upload_button.setObjectName("secondary")
         self.upload_button.clicked.connect(self._browse_image)
@@ -491,12 +550,16 @@ class MainWindow(QMainWindow):
         right.addWidget(self.atlas_combo)
         right.addWidget(model_label)
         right.addWidget(self.model_combo)
+        right.addWidget(workflow_label)
+        right.addWidget(self.workflow_combo)
         right.addWidget(px_size_label)
         right.addWidget(self.pixel_size_spin)
         right.addWidget(landmark_count_label)
         right.addWidget(self.landmark_count_spin)
         right.addWidget(thinking_label)
         right.addWidget(self.thinking_combo)
+        right.addWidget(temperature_label)
+        right.addWidget(self.temperature_spin)
         right.addWidget(self.upload_button)
         right.addWidget(self.settings_button)
         right.addWidget(self.export_button)
@@ -832,15 +895,13 @@ class MainWindow(QMainWindow):
         self.feedback_wrap.hide()
         layout.addWidget(self.feedback_wrap)
 
-        logs_label = QLabel("Agent Logs")
+        logs_label = QLabel("Agent Trace")
         logs_label.setObjectName("monoLabel")
         layout.addWidget(logs_label)
 
-        self.logs = QPlainTextEdit()
-        self.logs.setReadOnly(True)
-        self.logs.setPlaceholderText("Waiting for input...")
-        self.logs.setMinimumHeight(180)
-        layout.addWidget(self.logs, stretch=1)
+        self.trace_inspector = TraceInspector()
+        self.trace_inspector.setMinimumHeight(220)
+        layout.addWidget(self.trace_inspector, stretch=1)
 
         return panel
 
@@ -927,6 +988,7 @@ class MainWindow(QMainWindow):
             "image_path": self.image_path,
             "atlas_name": run_context.get("atlas_name") or self._current_atlas_name(),
             "model_name": run_context.get("model_name") or self.model_combo.currentText(),
+            "temperature": run_context.get("temperature") or self.temperature_spin.value(),
             "pixel_size_um": run_context.get("pixel_size_um") or self.pixel_size_um,
             "pixel_size_source": run_context.get("pixel_size_source") or self._pixel_size_source,
             "metadata_pixel_size_um": run_context.get("metadata_pixel_size_um"),
@@ -938,6 +1000,8 @@ class MainWindow(QMainWindow):
             "vlm_effective_pixel_size_um": run_context.get("vlm_effective_pixel_size_um"),
             "registration_landmark_count": run_context.get("registration_landmark_count")
             or self.registration_landmark_count,
+            "registration_workflow": run_context.get("registration_workflow")
+            or self.registration_workflow,
             "channel_enabled": run_context.get("channel_enabled"),
             "channel_labels": run_context.get("channel_labels"),
             "exposure_ev": run_context.get("exposure_ev"),
@@ -1064,7 +1128,7 @@ class MainWindow(QMainWindow):
         self._last_run_context = None
         self._slice_adjust_timer.stop()
 
-        self.logs.clear()
+        self.trace_inspector.clear_events()
         self.single_image_label.set_source_pixmap(None)
         self.split_image_label.set_source_pixmap(None)
         self.overlay_viewer.clear_all()
@@ -1225,7 +1289,9 @@ class MainWindow(QMainWindow):
         self.run_registration_button.setEnabled(manual_enabled)
         self.agent_input_wrap.setEnabled(input_enabled)
         self.ap_adjust_wrap.setEnabled(input_enabled)
-        self.run_button.setToolTip("Run AP agent + landmark registration")
+        self.run_button.setToolTip(
+            f"Run AP agent + landmark registration ({self.registration_workflow})"
+        )
 
         message = self._manual_registration_status_text()
         self.run_registration_button.setToolTip(message)
@@ -1241,7 +1307,7 @@ class MainWindow(QMainWindow):
         return (
             f"Ready: Run landmark registration from manual position {self.current_pos:.2f} mm "
             "(without AP agent estimation, "
-            f"target={self.registration_landmark_count} pairs, edge hint=5 pairs)."
+            f"workflow={self.registration_workflow}, target={self.registration_landmark_count} pairs, edge hint=5 pairs)."
         )
 
     def _set_pipeline_mode(self, mode: str) -> None:
@@ -1276,6 +1342,8 @@ class MainWindow(QMainWindow):
             "vlm_scale_factor": vlm_scale_factor,
             "vlm_effective_pixel_size_um": vlm_effective_pixel_size_um,
             "registration_landmark_count": self.registration_landmark_count,
+            "registration_workflow": self.registration_workflow,
+            "temperature": self.temperature_spin.value(),
             "channel_enabled": list(self._current_channel_enabled()),
             "channel_labels": list(self._slice_channel_labels),
             "exposure_ev": self.exposure_slider.value() / 10.0,
@@ -1298,6 +1366,7 @@ class MainWindow(QMainWindow):
         worker.step_error.connect(self._on_step_error)
         worker.correspondences_ready.connect(self._on_correspondences_ready)
         worker.log_message.connect(self._append_log)
+        worker.trace_event.connect(self._append_trace_event)
         worker.finished.connect(self._on_worker_finished)
         worker.finished.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)
@@ -1318,6 +1387,7 @@ class MainWindow(QMainWindow):
         self.preview_correspondences = None
         self._reset_steps()
         self._update_display_pixmaps()
+        self.trace_inspector.clear_events()
         self._append_log("Starting agentic registration pipeline...")
 
         atlas_name = self._current_atlas_name()
@@ -1336,6 +1406,7 @@ class MainWindow(QMainWindow):
                 atlas_name,
                 pixel_size_um=self.pixel_size_um,
                 target_landmark_count=self.registration_landmark_count,
+                registration_workflow=self.registration_workflow,
                 show_atlas_borders=self._show_atlas_region_borders,
             )
         )
@@ -1355,6 +1426,7 @@ class MainWindow(QMainWindow):
         self.preview_correspondences = None
         self._reset_steps()
         self._update_display_pixmaps()
+        self.trace_inspector.clear_events()
         self._append_log("Starting registration runtime from manual AP position...")
 
         atlas_name = self._current_atlas_name()
@@ -1368,6 +1440,7 @@ class MainWindow(QMainWindow):
                 position_mm,
                 pixel_size_um=self.pixel_size_um,
                 target_landmark_count=self.registration_landmark_count,
+                registration_workflow=self.registration_workflow,
                 show_atlas_borders=self._show_atlas_region_borders,
             )
         )
@@ -1375,8 +1448,10 @@ class MainWindow(QMainWindow):
     def _on_step_started(self, step_id: str) -> None:
         if step_id == "ap":
             self.step_ap.set_status("running")
+            self._append_trace_event(stage_event("ap", "AP Estimation"))
         elif step_id == "affine":
             self.step_affine.set_status("running")
+            self._append_trace_event(stage_event("registration", "Registration"))
 
     def _on_step_completed(self, step_id: str, result: object) -> None:
         if step_id == "ap" and isinstance(result, APResult):
@@ -1467,9 +1542,54 @@ class MainWindow(QMainWindow):
     def _is_worker_running(self) -> bool:
         return self.worker_thread is not None
 
+    def _refresh_registration_workflow_options(self, preferred_workflow: str | None = None) -> None:
+        options = get_registration_workflow_options(self.model_combo.currentText())
+        previous = preferred_workflow or self.registration_workflow
+        self.workflow_combo.blockSignals(True)
+        self.workflow_combo.clear()
+        selected_index = 0
+        for index, (label, value) in enumerate(options):
+            self.workflow_combo.addItem(label, value)
+            if value == previous:
+                selected_index = index
+        self.workflow_combo.setCurrentIndex(selected_index)
+        self.workflow_combo.blockSignals(False)
+        current_value = self.workflow_combo.currentData()
+        if isinstance(current_value, str) and current_value:
+            self.registration_workflow = current_value
+        else:
+            self.registration_workflow = default_registration_workflow(
+                self.model_combo.currentText()
+            )
+
+    def _on_registration_workflow_changed(self, index: int) -> None:
+        _ = index
+        workflow_value = self.workflow_combo.currentData()
+        if not isinstance(workflow_value, str) or not workflow_value:
+            return
+        self.registration_workflow = workflow_value
+        self._append_log(f"Registration workflow set to {workflow_value}")
+        self._update_run_buttons()
+
     def _on_model_changed(self, model_name: str) -> None:
         set_model_name(model_name)
-        self._append_log(f"Model changed: {model_name}")
+        previous_workflow = self.registration_workflow
+        self._refresh_registration_workflow_options(self.registration_workflow)
+        if previous_workflow != self.registration_workflow:
+            self._append_log(
+                f"Model changed: {model_name}; registration workflow switched to {self.registration_workflow}"
+            )
+        else:
+            self._append_log(f"Model changed: {model_name}")
+        if is_image_generation_model(model_name):
+            self.workflow_combo.setToolTip(
+                "Image-generation model selected. Registration uses the two-shot image-gen workflow."
+            )
+        else:
+            self.workflow_combo.setToolTip(
+                "Registration workflow. Image-gen mode is only available when an image-generation model is selected."
+            )
+        self._update_run_buttons()
 
     def _on_atlas_changed(self) -> None:
         atlas_name = self._current_atlas_name()
@@ -1550,6 +1670,10 @@ class MainWindow(QMainWindow):
             label = self.thinking_combo.itemText(index)
             self._append_log(f"Registration thinking budget set to {label} ({budget} tokens)")
 
+    def _on_temperature_changed(self, value: float) -> None:
+        set_temperature(value)
+        self._append_log(f"Model temperature set to {value:.2f}")
+
     def _set_ap_slider_value(self, position_mm: float) -> None:
         min_pos = self.ap_slider.minimum() / 100.0
         max_pos = self.ap_slider.maximum() / 100.0
@@ -1607,13 +1731,17 @@ class MainWindow(QMainWindow):
         self.split_image_label.set_source_pixmap(split_pixmap)
         self.split_atlas.set_correspondence_markers(split_atlas_points)
         self.overlay_viewer.set_slice_pixmap(base_pixmap)
+        self.overlay_viewer.set_correspondence_markers(split_slice_points, split_atlas_points)
         self._sync_atlas_viewers()
 
     def _append_log(self, message: str) -> None:
-        now = QTime.currentTime().toString("HH:mm:ss")
-        self.logs.appendPlainText(f"[{now}] {message}")
-        scrollbar = self.logs.verticalScrollBar()
-        scrollbar.setValue(scrollbar.maximum())
+        stage = "registration" if self.step_affine._status == "running" else "session"
+        self._append_trace_event(status_event(stage, message))
+
+    def _append_trace_event(self, event_obj: object) -> None:
+        if not isinstance(event_obj, dict):
+            return
+        self.trace_inspector.append_event(event_obj)
 
     def _export_abba(self) -> None:
         if not self._all_steps_completed() or self.pil_image is None or self.image_path is None:
