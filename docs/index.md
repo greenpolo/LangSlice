@@ -1,10 +1,17 @@
 # Documentation Index
 
-- `architecture_overview.md` - current package structure, runtime flow, and non-goals
-- `current_workflow.md` - current GUI workflow, preview behavior, debug traces, and limitations
-- `abba_ap_coordinate_system.md` - atlas-native AP coordinate notes and export assumptions
-- `ap_tooling_implementation_plan.md` - staged plan for analyzing AP debug traces and expanding/pruning the AP agent toolset
-- `debug_run_analysis_20260306.md` - analysis of the first 15 AP estimation runs: accuracy, tool patterns, failure modes, latency
-- `legacy_ai_studio_readme.md` - preserved note from the original AI Studio prototype
+This directory documents the code that is currently in `langslice/`.
+These files are meant to describe the implementation that exists now, not a separate design target.
 
-Primary usage and setup docs live in the repository root `README.md`.
+## Files
+
+- `architecture_overview.md` - package boundaries, major modules, and end-to-end control flow
+- `current_workflow.md` - what the GUI does today, including the agent and manual-position paths
+- `abba_ap_coordinate_system.md` - the AP coordinate rules used by atlas helpers and export
+- `registration_plan.md` - current registration runtime status, limitations, and gaps under its legacy filename
+
+## Related Top-Level Docs
+
+- `README.md` - setup, auth modes, CLI, and high-level behavior
+- `REPO_MAP.md` - short navigation map for the repository
+- `AGENTS.md` and `langslice/**/AGENTS.md` - agent-facing implementation notes

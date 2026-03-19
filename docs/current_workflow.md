@@ -1,119 +1,157 @@
 # Current Workflow
 
-## What The GUI Does Today
+This file describes what the GUI currently does in code.
 
-The current desktop workflow is:
+## Loading A Slice
 
-1. load a histology image
-2. select a BrainGlobe atlas
-3. optionally choose the Gemini model
-4. run AP estimation
-5. run affine estimation
-6. inspect the result in the preview panes
-7. export QUINT/ABBA-compatible JSON
+When the user loads an image, `MainWindow._load_image(...)`:
 
-The GUI entrypoint is `langslice gui`.
+1. calls `load_image_state(...)`
+2. normalizes the source image to 8-bit RGB
+3. detects pixel size from TIFF or OME metadata when available
+4. stores a canonical image and a VLM-ready downsampled image
+5. resets prior AP and registration results
+6. switches the step label to `Manual Position`
+7. initializes the AP slider and manual-position UI
 
-## AP Estimation
+The GUI supports these file types through the file picker and drag-and-drop path:
 
-AP estimation is agentic.
-The model receives the target image plus a small atlas toolset that lets it request atlas slices, atlas metadata, and visible region names before submitting a final AP estimate.
+- `.png`
+- `.jpg`
+- `.jpeg`
+- `.tif`
+- `.tiff`
 
-Atlas AP/index conversion now runs through a `brainglobe-space` adapter in `langslice.atlas.space`, with current guardrails that keep the runtime on coronal atlas layout assumptions.
+## Agent Input Adjustments
 
-The output shown in the GUI is:
+Before running either workflow, the operator can change the exact image shown to the model.
+The current controls are:
 
-- estimated `position_mm`
-- model reasoning text
-- optional debug trace directory when `LANGSLICE_VLM_DEBUG_DIR` is set
+- channel toggles
+- exposure slider
+- brightness slider
+- contrast slider
+- atlas border toggle
 
-## Affine Estimation
+Current implementation details:
 
-Affine estimation runs after AP estimation.
-The current affine result is matrix-first.
-The current affine path uses the LangSlice registration runtime, which consumes one agent-produced landmark set and derives the affine deterministically from vetted correspondences.
+- these settings update the displayed slice image
+- a VLM-sized derivative image is rebuilt after adjustments
+- changing them clears prior AP and registration outputs
+- atlas border visibility also updates the split and overlay atlas viewers
 
-The GUI shows derived values such as:
+## Automatic Workflow: `Run Agent`
 
-- `backend`
-- `rotation_deg`
-- translation in pixels
-- scale
-- shear
+The automatic button starts `AgentWorker` on a `QThread`.
+That worker does two steps in order:
 
-The affine result also carries the full 3x3 transform matrix and an explicit output frame size.
-Those values are used for:
+1. `estimate_position(...)` in `langslice.vlm.estimator`
+2. `estimate_registration_runtime(...)` in `langslice.registration.core`
 
-- transformed preview rendering in the GUI
-- QUINT export anchoring
+The AP step returns an `APResult(position_mm, reasoning, debug_dir)`.
+The registration step returns a `RegistrationResult` containing correspondences, affine output, nonlinear output, QC state, and optional debug-dir metadata.
 
-## Preview Modes
+## Manual Workflow: `Run Registration at Manual Position`
 
-### Single view
+The manual button starts `ManualRegistrationWorker` on a `QThread`.
+That worker does not call the AP estimator.
+Instead it:
 
-Shows the current slice image rendered into the affine result's output frame after the estimated in-plane affine transform is applied.
+1. emits an `APResult` built directly from the current slider value
+2. runs `estimate_registration_runtime(...)` at that exact `position_mm`
 
-### Split view
+The GUI still shows two steps, but the first step is labeled `Manual Position` in this mode.
 
-Shows the transformed histology slice beside an asynchronously loaded atlas reference slice for the current AP position.
+## Registration Runtime Behavior
 
-### Overlay view
+The active registration runtime currently does the following:
 
-Shows the transformed slice and atlas composite in a shared `QGraphicsView`.
-The atlas layer is placed with the same coronal frame geometry contract used by export anchoring, so preview placement aligns with exported geometry semantics.
-The overlay remains a visual inspection tool, not a full physically calibrated ABBA-style viewer, and the GUI does not yet compute quantitative registration quality metrics.
+1. load the selected atlas
+2. build either a composite atlas slice or a plain reference slice
+3. ask Gemini for correspondence pairs in `registration/agents.py`
+4. require at least 3 pairs
+5. fit one affine transform from atlas coordinates to slice coordinates
+6. fit one TPS result from the same pairs
+7. return both results to the GUI
 
-## Pixel Size Input
+Important current limitations of the live runtime:
 
-Image ingest now attempts pixel-size auto-detection from TIFF metadata.
-If metadata is found, pixel size is auto-applied immediately; otherwise the existing manual value is retained.
-The canonical normalized image is kept for preview/export/registration, while a VLM-ready derivative is generated for Gemini calls using aspect-ratio-preserving resize constraints.
+- `vet_correspondences(...)` exists in `registration/solver.py` but is not called by `registration/runtime.py`
+- `qc_state` is currently always set to `accepted`
+- `rejected_correspondences` is currently empty in runtime output
 
-In other words:
+## View Modes
 
-- pixel size can be metadata-derived or manually overridden
-- VLM/AP calls can use a downsampled derivative with dynamically adjusted effective um/px
-- full physical pixel-size calibration in registration/orchestration is still incomplete
+### Single
 
-## Debug Trace Curation
+Shows the current slice image.
+If the affine result is defined in the slice-image frame, the GUI applies that transform to a transparent output canvas before display.
+If the affine result is marked as `atlas_to_slice`, the base slice image is shown without applying the transform.
 
-If `LANGSLICE_VLM_DEBUG_DIR` is configured, successful AP runs produce a trace directory on disk.
-After the pipeline finishes, the GUI exposes:
+### Split
 
-- `Mark Success`
-- `Mark Failure`
+Shows:
 
-These buttons move the run directory into corresponding subfolders so traces can be curated for later inspection.
-During classification, the GUI can also capture optional run metadata such as:
+- the current slice image on the left
+- an asynchronously loaded atlas slice on the right
 
-- ground-truth `position_mm`
-- signed and absolute AP estimation error
-- freeform notes about the run
+If preview or accepted correspondences are available, both panes draw labeled marker overlays.
 
-That metadata is written to `classification.json` inside the curated trace folder.
+### Overlay
+
+Shows the slice and atlas in a shared `QGraphicsScene`.
+Atlas placement uses `compute_coronal_frame_geometry(...)`, which is the same coronal frame contract used by export anchoring.
+The opacity slider only affects the atlas layer.
+
+## AP Slider Behavior
+
+The AP slider is always expressed in hundredths of a millimeter.
+When atlas loading succeeds, the GUI updates the slider range from `get_position_range_mm(...)`.
+
+Changing the slider:
+
+- updates `current_pos`
+- updates the manual-position label
+- updates the split atlas viewer
+- updates the overlay viewer
 
 ## Export Behavior
 
-The export button writes QUINT/ABBA-compatible JSON.
-The current export path is intended for downstream import into QUINT-family tooling such as QuickNII, VisuAlign, and ABBA-compatible workflows.
+Export is enabled only after both steps have completed successfully.
+The current export path:
 
-What export does today:
+- loads atlas shape and resolution from BrainGlobe when possible
+- falls back to Allen Mouse 25 um defaults if atlas loading fails at export time
+- calls `build_quint_export(...)`
+- writes JSON with `save_quint_json(...)`
 
-- builds a single-slice QUINT payload
-- encodes the atlas plane using an anchoring vector
-- uses atlas-native AP coordinates derived from `position_mm`
-- derives anchoring from transformed image corners using the full affine matrix
+The export currently uses the affine result only.
+The nonlinear TPS result is not written into the JSON output.
 
-What export does not do:
+## Trace Viewer And Run Classification
 
-- invoke ABBA directly
-- require Fiji or a JVM
-- guarantee full physical-space registration semantics in the preview widgets
+The right panel includes a `TraceInspector`.
+It displays:
 
-## Current Limitations
+- stage events
+- runtime status events
+- model events
+- tool-call events
+- tool-result events
 
-- Overlay geometry now mirrors export geometry, but full physical-space calibration from per-image pixel size is not complete yet.
-- Pixel-size auto-detection currently focuses on TIFF metadata.
-- The GUI currently validates affine results visually; it does not report quantitative alignment metrics.
-- The app exports compatible JSON but does not embed itself into ABBA runtime workflows.
-- Broad non-coronal orientation support is not enabled yet; sagittal-first workflows are not a current target.
+If a completed run has a debug directory, the GUI shows `Mark Success` and `Mark Failure` buttons.
+Using either button:
+
+- opens `RunMetadataDialog`
+- moves the run directory into a sibling `success/` or `failure/` folder
+- writes `classification.json` with current run context and optional ground-truth AP
+
+## Pixel Size Notes
+
+Pixel size is tracked through the GUI and image-prep pipeline.
+Current behavior is literal:
+
+- metadata-derived pixel size is applied immediately when available
+- manual pixel-size edits update GUI state and the VLM-prepared image
+- the registration runtime currently accepts `pixel_size_um` but does not use it internally
+- `OverlayGraphicsView.set_pixel_size(...)` is currently a no-op kept for API compatibility

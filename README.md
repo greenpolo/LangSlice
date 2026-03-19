@@ -1,17 +1,19 @@
 # LangSlice
 
-LangSlice is a Python desktop app for VLM-assisted histological brain slice registration against BrainGlobe atlases.
-It uses Gemini to estimate anterior-posterior position, runs matrix-first in-plane affine registration, and exports QUINT/ABBA-compatible JSON.
+LangSlice is a PySide6 desktop application for registering histology slice images to BrainGlobe atlases.
+The current implementation uses Gemini for AP estimation and landmark correspondence finding, derives affine and TPS outputs in local Python code, and exports QUINT/ABBA-compatible JSON.
 
-## Current Workflow
+## What The App Does Today
 
-1. Load a histology image in the GUI.
-2. Pixel size is auto-detected from TIFF metadata when available; otherwise the current manual value is used.
-3. Choose a BrainGlobe atlas.
-4. Run AP estimation.
-5. Run affine estimation from the full agent pipeline.
-6. Review the result in single, split, or overlay view.
-7. Export QUINT/ABBA-compatible JSON.
+1. Load an image file (`.png`, `.jpg`, `.jpeg`, `.tif`, `.tiff`).
+2. Normalize the image to 8-bit RGB and try to detect pixel size from TIFF or OME metadata.
+3. Let the user choose a BrainGlobe atlas, Gemini model, landmark target count, and registration thinking budget.
+4. Let the user adjust the image that will be shown to the model: channel toggles, exposure, brightness, contrast, and atlas-border visibility.
+5. Run either:
+   - `Run Agent`: AP estimation plus registration, or
+   - `Run Registration at Manual Position`: registration only, using the AP slider value.
+6. Show the result in single, split, or overlay view.
+7. Export a single-slice QUINT/ABBA-compatible JSON file.
 
 ## Setup
 
@@ -19,34 +21,34 @@ It uses Gemini to estimate anterior-posterior position, runs matrix-first in-pla
    `conda env create -f environment.yml`
 2. Activate it:
    `conda activate langslice`
-3. Install in editable mode:
+3. Install the package in editable mode:
    `pip install -e .`
 4. Configure authentication in `.env` using `.env.example`.
 5. Launch the GUI:
    `langslice gui`
 
-## Authentication Modes
+## Authentication Backends
 
-LangSlice supports the backends implemented in `langslice/vlm/config.py`:
+`langslice/vlm/config.py` currently supports three backend modes:
 
 - `ai_studio`
 - `vertex_api_key`
 - `vertex_adc`
 
-Relevant environment variables are documented in `.env.example`.
+The GUI settings dialog writes the selected backend and related credentials to the repo-root `.env` file.
 
-### Optional Gemini Rollout Flags
+## Optional Gemini Flags
 
-These flags are intended for staged evaluation of newer Gemini integrations in the AP estimator:
+The AP estimator has opt-in rollout flags in `langslice/vlm/config.py`:
 
-- `LANGSLICE_GENAI_COUNT_TOKENS=true` - log a turn-1 token preflight for AP and registration requests
-- `LANGSLICE_GENAI_AP_USE_FILE_API=true` - send AP images through Gemini File API instead of inline blobs (AI Studio only)
-- `LANGSLICE_GENAI_AP_USE_CONTEXT_CACHE=true` - cache the stable AP target-image prefix for repeated turns
-- `LANGSLICE_GENAI_AP_USE_INTERACTIONS=true` - run the AP estimator through the Interactions API pilot path (AI Studio only)
-- `LANGSLICE_GENAI_AP_CACHE_TTL=3600s` - override the AP cache TTL
-- `LANGSLICE_GENAI_FILE_POLL_TIMEOUT_S=10.0` - adjust File API processing timeout in seconds
+- `LANGSLICE_GENAI_COUNT_TOKENS=true`
+- `LANGSLICE_GENAI_AP_USE_FILE_API=true`
+- `LANGSLICE_GENAI_AP_USE_CONTEXT_CACHE=true`
+- `LANGSLICE_GENAI_AP_USE_INTERACTIONS=true`
+- `LANGSLICE_GENAI_AP_CACHE_TTL=3600s`
+- `LANGSLICE_GENAI_FILE_POLL_TIMEOUT_S=10.0`
 
-The offline Batch API helper in `langslice.vlm.batch_eval` is currently guarded to `vertex_adc` only.
+The offline Batch API helper in `langslice.vlm.batch_eval` is currently guarded to `vertex_adc` mode.
 
 ## CLI
 
@@ -55,23 +57,27 @@ The offline Batch API helper in `langslice.vlm.batch_eval` is currently guarded 
 
 ## Debug Traces
 
-Set `LANGSLICE_VLM_DEBUG_DIR` to save per-run AP estimation artifacts, including the target image, atlas slices fetched by the model, and a reasoning log.
-The GUI exposes `Mark Success` and `Mark Failure` buttons to help sort those traces after a run completes.
-When classifying a run, the GUI can also save optional evaluation metadata such as the ground-truth AP position, computed AP error, and freeform notes into `classification.json` inside the trace folder.
+Set `LANGSLICE_VLM_DEBUG_DIR` to save per-run artifacts.
 
-## Current Limitations
+Current behavior:
 
-- Overlay preview now follows the same coronal frame geometry contract as export, but full physical-space calibration from per-image pixel size is not complete yet.
-- Pixel-size metadata auto-detection currently focuses on TIFF metadata; non-TIFF inputs usually require manual pixel size.
-- Affine verification in the GUI is currently visual; there are no built-in landmark or overlap-error metrics yet.
-- Export targets QUINT/ABBA-compatible JSON only; LangSlice does not depend on ABBA, Fiji, or a JVM at runtime.
+- AP estimation writes the prepared target image, `reasoning.txt`, and `telemetry.json`.
+- Registration writes a `registration/` subdirectory with `slice.png`, `atlas.png`, landmark overlays, and `registration.json`.
+- The GUI can move a completed run into `success/` or `failure/` and write `classification.json` with optional ground-truth AP, AP error, and notes.
+
+## Current Constraints
+
+- Atlas coordinate helpers and export currently assume coronal layout with AP/DV/ML on axes `0/1/2`.
+- The registration runtime computes both affine and TPS outputs, but export uses the affine result only.
+- `pixel_size_um` is tracked through the GUI and image-prep pipeline, but the registration runtime currently accepts it without using it.
+- The overlay viewer accepts pixel-size input for API compatibility, but does not apply physical calibration from it.
 
 ## Repository Layout
 
-- `langslice/` - main package source
-- `tests/` - script-style verification checks
-- `docs/` - current architecture and workflow docs
-- `references/` - external reference code kept for research
-- `archive/` - legacy prototype and preserved artifacts
+- `langslice/` - installable package source
+- `tests/` - pytest suite
+- `docs/` - maintained project docs
+- `references/` - external reference code
+- `archive/` - preserved legacy material
 
-See `docs/index.md` for the maintained docs set and `REPO_MAP.md` for a concise navigation map.
+See `docs/index.md` for the maintained docs set and `REPO_MAP.md` for the short navigation map.

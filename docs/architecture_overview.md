@@ -2,132 +2,44 @@
 
 ## Purpose
 
-LangSlice is a Python desktop application for VLM-assisted registration of histological brain slice images to BrainGlobe atlases.
-The active runtime is organized around four package areas:
-
-- `langslice.atlas` - BrainGlobe atlas loading, AP indexing, and slice extraction
-- `langslice.vlm` - Gemini configuration and AP estimation
-- `langslice.registration` - matrix-first affine registration types and backend orchestration
-- `langslice.gui` - PySide6 desktop workflow and threaded execution
-- `langslice.export` - QUINT/ABBA-compatible JSON export
+LangSlice is a desktop application for aligning a histology slice image to a BrainGlobe atlas.
+The active implementation combines model-assisted image understanding with deterministic local geometry code.
 
 ## Package Boundaries
 
 ### `langslice.atlas`
 
 `langslice.atlas.core` wraps BrainGlobe access behind plain Python helpers.
-`langslice.atlas.space` provides the orientation adapter layer using `brainglobe-space` (`AnatomicalSpace`).
-The active responsibilities are:
+Current responsibilities:
 
-- atlas name canonicalization
-- atlas loading and caching
-- conversion between `position_mm` and AP index through atlas-space context
-- extraction of reference, boundary, and composite slices
-- structure and region lookup helpers
-- atlas metadata and atlas listing helpers
+- atlas-name normalization in `canonicalize_atlas_name(...)`
+- cached atlas loading in `load_atlas(...)`
+- AP mm/index conversion through `position_mm_to_index(...)`, `index_to_position_mm(...)`, and `get_position_range_mm(...)`
+- reference, boundary, composite, and additional-reference slice extraction
+- structure, hierarchy, mask, and visible-region helpers
+- local and remote atlas listing helpers
 
-The atlas layer is the source of truth for atlas-native AP coordinates.
-Current runtime guardrails require coronal layout with AP/DV/ML mapped to axes `0/1/2`.
+`langslice.atlas.space` is the only place that interprets atlas orientation metadata.
+It builds an `AtlasSpaceContext` from `brainglobe-space`, requires AP to increase from anterior to posterior, and then requires coronal layout with AP/DV/ML on axes `0/1/2`.
 
 ### `langslice.vlm`
 
-`langslice.vlm.config` builds the Gemini client from environment configuration.
-The supported backends are:
+`langslice.vlm.config` owns Gemini configuration and backend selection.
+Current backends:
 
 - `ai_studio`
 - `vertex_api_key`
 - `vertex_adc`
 
-`langslice.vlm.estimator` contains AP estimation via manual function calling.
+It also exposes:
 
-`langslice.vlm.batch_eval` contains offline-only Batch API helpers for AP prompt/model evaluation on Vertex (`vertex_adc` guarded), separate from the live GUI runtime path.
+- `AVAILABLE_MODELS`
+- `AVAILABLE_THINKING_BUDGETS`
+- AP rollout flags for token counting, File API, context cache, and Interactions API
+- a cached shared `google.genai.Client`
 
-`langslice.vlm.config` also exposes rollout flags for staged Gemini integrations (token preflight, AP File API transport, AP context caching, and AP Interactions pilot).
-
-### `langslice.registration`
-
-`langslice.registration` is the registration runtime layer.
-It owns:
-
-- the matrix-first `AffineResult` model
-- the nonlinear `NonlinearResult` model
-- affine matrix helpers and decomposition helpers
-- registration-agent orchestration
-- deterministic landmark vetting, affine fitting, and TPS fitting
-
-`langslice.image_prep` handles ingest normalization, pixel-size metadata detection, and VLM-target downsampling policy.
-
-### `langslice.gui`
-
-The GUI is centered on `MainWindow` in `langslice.gui.main_window`.
-It owns:
-
-- image loading
-- atlas and model selection
-- threaded AP and landmark registration estimation
-- single, split, and overlay previews
-- export
-- debug trace curation buttons
-
-Async atlas preview loading is handled separately in:
-
-- `langslice.gui.atlas_viewer`
-- `langslice.gui.overlay_viewer`
-
-### `langslice.export`
-
-`langslice.export` converts the estimated AP position and affine transform into a QUINT export payload.
-The output is designed to be imported by QUINT-family tooling and ABBA-compatible workflows, but LangSlice itself does not depend on ABBA at runtime.
-
-## Runtime Data Flow
-
-### 1. GUI input
-
-The user loads a slice image and selects an atlas in the GUI.
-The image ingest layer normalizes to 8-bit RGB, tries to detect pixel size from TIFF metadata, and prepares a VLM derivative image for Gemini calls.
-The canonical normalized image remains the source for preview/export/registration.
-
-### 2. AP estimation
-
-`AgentWorker` runs `estimate_position(...)` in a worker thread.
-That function:
-
-- loads the selected atlas
-- computes the valid AP range in millimeters
-- sends the target image to Gemini
-- uses manual function calling so tool responses can include atlas images
-- returns `APResult(position_mm, reasoning, debug_dir)`
-
-### 3. Landmark registration
-
-Once AP estimation completes, the same worker runs the LangSlice registration runtime.
-That runtime asks a dedicated registration agent for paired anatomical correspondences, then derives affine and TPS outputs deterministically from the same vetted landmark set.
-The affine result remains the current preview/export contract.
-
-### 4. Preview
-
-The GUI updates:
-
-- a single transformed slice view
-- a split view with the target and atlas
-- an overlay view that layers the atlas composite over the slice
-
-Atlas preview loading is asynchronous so atlas I/O does not block the UI thread.
-
-### 5. Export
-
-After AP and landmark registration complete, the GUI calls `build_quint_export(...)` and writes JSON through `save_quint_json(...)`.
-
-The export uses:
-
-- `position_mm`
-- atlas shape and resolution
-- the full 3x3 affine matrix
-- the affine result output frame size
-
-## AP Estimation Tool Loop
-
-The AP agent currently exposes these tools to Gemini:
+`langslice.vlm.estimator` implements AP estimation.
+`estimate_position(...)` runs a multi-turn tool loop with these tool names:
 
 - `fetch_atlas_slice`
 - `fetch_multiple_atlas_slices`
@@ -135,44 +47,151 @@ The AP agent currently exposes these tools to Gemini:
 - `get_region_names`
 - `submit_estimate`
 
-The model is expected to:
+The file also contains:
 
-1. sweep broadly across AP space
-2. narrow around promising positions
-3. verify landmarks or region identities
-4. submit a final estimate
+- retry/backoff around `generate_content`
+- optional File API transport
+- optional cached-content use
+- optional Interactions API pilot path
+- trace emission and debug-artifact writing
+- `estimate_ap(...)` as a thin alias to `estimate_position(...)`
 
-Automatic function calling is disabled.
-The implementation handles the loop manually so atlas images can be injected directly into tool responses.
+`langslice.vlm.batch_eval` is an offline helper for one-shot AP Batch API experiments. It is not part of the live GUI workflow.
 
-## Worker-Thread Model
+### `langslice.registration`
 
-The GUI does not run AP or registration work on the main thread.
-`AgentWorker` executes AP estimation and landmark registration inside a `QThread`, then emits progress and result signals back to the main window.
+The registration subsystem is split across five files:
 
-Separate background loader workers are used for atlas preview widgets so atlas slice rendering stays responsive while the user changes atlas or AP position.
+- `types.py` - affine helpers plus `AffineResult`, `RegistrationCorrespondence`, `NonlinearResult`, `RegistrationResult`
+- `agents.py` - Gemini prompt and parsing logic for landmark correspondences
+- `solver.py` - deterministic affine least-squares fit and TPS fit
+- `runtime.py` - registration orchestration and debug artifact writing
+- `core.py` - public wrapper `estimate_registration_runtime(...)`
 
-## Debug Traces
+Current runtime behavior in `runtime.py` is literal and simple:
 
-If `LANGSLICE_VLM_DEBUG_DIR` is set, AP estimation writes per-run artifacts such as:
+1. Load the atlas.
+2. Build either a composite or reference atlas slice.
+3. Ask Gemini for correspondence pairs.
+4. Require at least 3 pairs.
+5. Fit one affine transform from atlas coordinates to slice coordinates.
+6. Fit one TPS result from the same pairs.
+7. Return both results and optionally save debug artifacts.
 
-- the normalized target image
-- fetched atlas slice images
-- a reasoning log
-- the recorded tool conversation
+Important current facts:
 
-The GUI can then move the trace folder into `success/` or `failure/` subdirectories using the post-run feedback buttons.
+- `pixel_size_um` is accepted by the runtime but ignored there.
+- `affine_result.provenance["transform_direction"]` is set to `atlas_to_slice`.
+- `rejected_correspondences` is currently returned as an empty list by the runtime.
+- `qc_state` is currently hardcoded to `accepted` in the runtime.
+- `vet_correspondences(...)` exists in `solver.py` and is tested, but `runtime.py` does not call it.
 
-## Non-Goals In The Current Codebase
+### `langslice.image_prep`
 
-The following are not current runtime goals:
+This module handles image ingest and the image that is actually shown to Gemini.
+Current responsibilities:
 
-- ABBA, Fiji, or JVM integration at runtime
-- Bregma-referenced internal coordinates
-- fully physically calibrated viewer overlays
-- complete pixel-size-aware affine orchestration across all backends
-- full non-coronal atlas orientation support in GUI/export/runtime
-- quantitative affine quality scoring in the GUI
-- automatic migration of atlas coordinates into a skull landmark space
+- normalize arbitrary PIL modes to 8-bit RGB
+- infer channel labels for the GUI
+- render the operator-selected channel/exposure/brightness/contrast settings into a new image
+- detect pixel size from OME metadata or TIFF resolution tags
+- downsample the image for VLM use to the configured pixel and long-edge limits
+- return a `LoadedImageState` with canonical and VLM-ready images
 
-LangSlice is atlas-native, BrainGlobe-based, and export-oriented.
+### `langslice.export`
+
+This module converts the current AP choice and affine result into QUINT/ABBA-compatible JSON.
+Key points:
+
+- BrainGlobe AP/DV/ML is mapped to QuickNII ML/AP/DV axis order
+- anchoring is computed in atlas voxel space
+- `compute_coronal_frame_geometry(...)` is shared with the overlay preview contract
+- `build_quint_export(...)` builds one-slice exports only
+- `save_quint_json(...)` writes the JSON file
+
+### `langslice.gui`
+
+The GUI is centered on `MainWindow` in `langslice.gui.main_window`.
+Other GUI files are support modules:
+
+- `main_window_components.py` - reusable widgets and display helpers
+- `atlas_viewer.py` - threaded split-view atlas loader
+- `overlay_viewer.py` - shared-scene overlay viewer using export-style coronal geometry
+- `settings_dialog.py` - backend and credential editor for `.env`
+- `trace_inspector.py` - in-app viewer for structured AP and registration trace events
+- `run_metadata_dialog.py` - dialog used when classifying a saved trace as success or failure
+
+## End-To-End Control Flow
+
+### 1. Image load
+
+When the user loads a file, `MainWindow._load_image(...)` calls `load_image_state(...)`.
+That sets:
+
+- `source_image` to the canonical normalized image
+- `pixel_size_um` and pixel-size source metadata
+- `pil_image` and `agent_vlm_image` after slice-adjustment rendering
+- the GUI into manual-position mode with the AP slider initialized to the current slider range
+
+### 2. Agent input adjustments
+
+The main window keeps a second layer of operator-controlled image settings:
+
+- channel enable/disable
+- exposure
+- brightness
+- contrast
+- atlas border visibility
+
+`_apply_slice_adjustments()` renders a new display image with `render_slice_agent_image(...)`, prepares a VLM-ready copy with `prepare_image_for_vlm(...)`, and clears old AP/registration outputs when inputs changed.
+
+### 3. AP estimation path
+
+If the user clicks `Run Agent`, `AgentWorker` runs in a `QThread` and calls:
+
+1. `estimate_position(...)`
+2. `estimate_registration_runtime(...)` using the returned `position_mm`
+
+### 4. Manual-position path
+
+If the user clicks `Run Registration at Manual Position`, `ManualRegistrationWorker` runs in a `QThread` and:
+
+1. emits an `APResult` built from the slider-selected position
+2. calls `estimate_registration_runtime(...)` directly
+
+### 5. Registration solve
+
+`estimate_registration_runtime(...)` delegates to `registration.runtime.estimate_registration(...)`, which produces:
+
+- `RegistrationResult.correspondences`
+- `RegistrationResult.affine_result`
+- `RegistrationResult.nonlinear_result`
+- optional debug artifacts
+
+### 6. Preview and export
+
+The GUI then updates:
+
+- single view: transformed slice image
+- split view: transformed slice plus async atlas view with optional landmark markers
+- overlay view: slice and atlas in a shared scene using `compute_coronal_frame_geometry(...)`
+
+Export is enabled only after both AP and affine steps complete.
+The export path uses `build_quint_export(...)` plus `save_quint_json(...)`.
+
+## Trace And Debug Artifacts
+
+Trace events are assembled with helpers in `langslice.agent_trace` and shown in the GUI trace inspector.
+
+When `LANGSLICE_VLM_DEBUG_DIR` is set:
+
+- AP estimation creates a run directory with the prepared target image, `reasoning.txt`, and `telemetry.json`
+- registration writes a `registration/` subdirectory when it receives the AP run directory, or a standalone registration directory when run manually
+- the GUI can move the run directory into `success/` or `failure/` and add `classification.json`
+
+## Current Gaps
+
+- Only coronal-layout atlases are supported by the active helpers and export math.
+- Registration computes a TPS result, but GUI export still uses the affine result only.
+- The runtime does not currently use `vet_correspondences(...)`, even though that helper exists and is tested.
+- The overlay viewer accepts pixel-size input for compatibility but does not calibrate placement from it.

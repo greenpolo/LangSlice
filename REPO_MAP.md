@@ -1,40 +1,41 @@
 # Repository Map
 
-This map is intentionally short and stable so human and AI agents can navigate quickly.
+This map is intentionally short and stable so humans and agents can find the active code quickly.
 
-## Active Project Paths
+## Active Code Paths
 
-- `langslice/` - installable package source
-- `langslice/atlas/` - BrainGlobe loading, AP indexing, atlas metadata + `brainglobe-space` adapter
-- `langslice/vlm/` - Gemini client/config, AP agent loop, and Gemini affine fallback
-- `langslice/registration/` - matrix-first affine and nonlinear registration runtime
-- `langslice/gui/` - PySide6 application UI
-- `langslice/export.py` - QUINT/ABBA-compatible export helpers
-- `tests/` - pytest suite (`smoke_test.py`, `test_atlas_features.py`, `test_atlas_space.py`, `test_quicknii_math.py`, `test_registration_backends.py`)
-- `pyproject.toml` - package metadata and dependencies
-- `environment.yml` - conda environment definition
-- `.env.example` - required environment variable template
+- `langslice/cli.py` - CLI entry point for `langslice gui` and `langslice version`
+- `langslice/atlas/` - BrainGlobe atlas loading, AP/index conversion, coronal slice extraction
+- `langslice/vlm/` - Gemini configuration, AP estimator, offline batch helpers
+- `langslice/registration/` - registration prompt, runtime wrapper, affine/TPS solving, result types
+- `langslice/image_prep.py` - image normalization, metadata-driven pixel size detection, VLM downsampling
+- `langslice/agent_trace.py` - structured trace-event helpers shared by AP and registration flows
+- `langslice/export.py` - coronal anchoring math and QUINT/ABBA-compatible JSON export
+- `langslice/gui/` - main window, viewers, settings dialog, trace inspector, run-metadata dialog
 
-## Context and Documentation
+## Tests
 
-- `README.md` - setup, current workflow, and limitations
-- `docs/index.md` - current documentation index
-- `docs/architecture_overview.md` - package boundaries and runtime data flow
-- `docs/current_workflow.md` - current GUI workflow, preview behavior, and limitations
-- `docs/abba_ap_coordinate_system.md` - atlas-native AP coordinate notes
-- `docs/legacy_ai_studio_readme.md` - preserved note from the old AI Studio prototype
-- `AGENTS.md` - root agent operating guide
+- `tests/smoke_test.py` - package import and export smoke coverage
+- `tests/test_atlas_features.py` and `tests/test_atlas_space.py` - atlas helpers and orientation guardrails
+- `tests/test_image_prep.py` - image ingest, metadata detection, VLM resize behavior
+- `tests/test_quicknii_math.py` - anchoring and coronal-frame export math
+- `tests/test_registration_*.py` - registration runtime, solver, agent prompt behavior, and backends
+- `tests/test_split_view_correspondences.py`, `tests/test_overlay_viewer_thread_cleanup.py`, `tests/test_main_window_manual_registration.py` - GUI behavior
 
-## Non-Active but Kept Intact
+## Documentation
 
-- `archive/old_ai_studio_prototype/` - original React/Vite prototype kept for provenance
-- `archive/langsliceatlas/` - early empty package split attempt
-- `archive/langslicegui/` - early empty package split attempt
-- `archive/langslicevlm/` - early empty package split attempt
-- `archive/nul_artifact.txt` - terminal artifact preserved for provenance
-- `references/DeepSlice_upstream/` - copied upstream DeepSlice code for reference
-- `archive/AGENTS.md` - archive edit boundary guidance
-- `references/AGENTS.md` - references edit boundary guidance
+- `README.md` - user-facing setup and current runtime behavior
+- `docs/index.md` - maintained documentation index
+- `docs/architecture_overview.md` - package boundaries and end-to-end runtime flow
+- `docs/current_workflow.md` - current GUI behavior and operator-facing workflow
+- `docs/abba_ap_coordinate_system.md` - atlas-native AP coordinate rules used by code and export
+- `docs/registration_plan.md` - current registration runtime status and gaps, despite the legacy filename
+- `AGENTS.md` and `langslice/**/AGENTS.md` - agent-facing guidance kept aligned with code
+
+## Non-Active Paths
+
+- `archive/` - preserved legacy prototypes and earlier package split attempts
+- `references/` - copied external reference material
 
 ## Common Commands
 
