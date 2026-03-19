@@ -2,12 +2,14 @@
 
 from langslice.vlm.config import (
     MODEL_NAME,
+    TEMPERATURE,
     THINKING_LEVEL,
     create_batch_client,
     close_client,
     count_tokens_enabled,
     get_api_key,
     get_client,
+    set_temperature,
 )
 from langslice.vlm.batch_eval import APBatchCase, build_ap_batch_requests, create_ap_batch_job
 from langslice.vlm.estimator import (
@@ -22,8 +24,10 @@ __all__ = [
     "create_batch_client",
     "close_client",
     "MODEL_NAME",
+    "TEMPERATURE",
     "THINKING_LEVEL",
     "count_tokens_enabled",
+    "set_temperature",
     "estimate_ap",
     "estimate_position",
     "APResult",

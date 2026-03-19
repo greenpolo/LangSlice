@@ -10,6 +10,14 @@ from typing import Any, Callable, Mapping, Sequence, cast
 import numpy as np
 from PIL import Image
 from google.genai import types
+from langslice.agent_trace import (
+    image_part_from_pil,
+    json_part,
+    model_event,
+    runtime_event,
+    tool_call_event,
+    tool_result_event,
+)
 from langslice.image_prep import normalize_image, prepare_image_for_vlm
 from langslice.vlm import config as vlm_config
 from langslice.vlm.config import get_client
@@ -385,6 +393,43 @@ def _format_count_tokens(metadata: dict[str, int | float | str | bool]) -> str:
     return ", ".join(parts) if parts else "count_tokens unavailable"
 
 
+def _emit_trace(
+    on_trace: Callable[[dict[str, object]], None] | None,
+    event: dict[str, object],
+) -> None:
+    if on_trace:
+        on_trace(event)
+
+
+def _extract_model_text_parts(model_content: types.Content) -> tuple[list[str], list[str]]:
+    text_parts: list[str] = []
+    thought_parts: list[str] = []
+    for part in getattr(model_content, "parts", None) or []:
+        text = getattr(part, "text", None)
+        if not isinstance(text, str) or not text:
+            continue
+        if bool(getattr(part, "thought", False)):
+            thought_parts.append(text)
+        else:
+            text_parts.append(text)
+    return text_parts, thought_parts
+
+
+def _extract_interaction_text_outputs(interaction: object) -> tuple[list[str], list[str]]:
+    text_outputs: list[str] = []
+    thought_outputs: list[str] = []
+    for output in getattr(interaction, "outputs", None) or []:
+        output_type = getattr(output, "type", None)
+        text = getattr(output, "text", None)
+        if output_type != "text" or not isinstance(text, str) or not text:
+            continue
+        if bool(getattr(output, "thought", False)):
+            thought_outputs.append(text)
+        else:
+            text_outputs.append(text)
+    return text_outputs, thought_outputs
+
+
 def _build_nudge_text(state: _APLoopState) -> str:
     if not state.saw_broad_sweep:
         return (
@@ -555,6 +600,7 @@ def _process_ap_function_calls(
     uploaded_file_names: list[str],
     state: _APLoopState,
     on_progress: Callable[[str], None] | None = None,
+    on_trace: Callable[[dict[str, object]], None] | None = None,
 ) -> tuple[list[types.Part], list[dict[str, object]]]:
     import os
 
@@ -587,6 +633,16 @@ def _process_ap_function_calls(
         args_obj = call.get("args", {})
         args = args_obj if isinstance(args_obj, dict) else {}
         call_id = call.get("call_id")
+
+        _emit_trace(
+            on_trace,
+            tool_call_event(
+                stage="ap",
+                tool_name=name,
+                args=args,
+                iteration=iteration + 1,
+            ),
+        )
 
         if on_progress:
             on_progress(f"Tool call [{iteration + 1}]: {name}({args})")
@@ -641,6 +697,33 @@ def _process_ap_function_calls(
                         "result": f"Image at {pos:.2f}mm via {image_payload.transport}",
                     }
                 )
+                image_path = (
+                    os.path.join(run_dir, f"tool_{iteration + 1:02d}_slice_{pos:.2f}mm.jpg")
+                    if run_dir
+                    else None
+                )
+                _emit_trace(
+                    on_trace,
+                    tool_result_event(
+                        stage="ap",
+                        tool_name=name,
+                        summary=f"Fetched atlas slice at {pos:.2f} mm",
+                        parts=[
+                            image_part_from_pil(
+                                ref_scaled,
+                                label=f"Atlas slice {pos:.2f} mm",
+                                image_bytes=ref_bytes,
+                                path=image_path,
+                                metadata={"transport": image_payload.transport},
+                            )
+                        ],
+                        metadata={
+                            "iteration": iteration + 1,
+                            "position_mm": round(pos, 3),
+                            "transport": image_payload.transport,
+                        },
+                    ),
+                )
             except ValueError as exc:
                 _append_response(
                     call_id=call_id,
@@ -655,6 +738,16 @@ def _process_ap_function_calls(
                         "args": args,
                         "result": f"Error: {exc}",
                     }
+                )
+                _emit_trace(
+                    on_trace,
+                    tool_result_event(
+                        stage="ap",
+                        tool_name=name,
+                        summary=f"Error: {exc}",
+                        parts=[json_part({"error": str(exc)}, label="Error")],
+                        metadata={"iteration": iteration + 1, "status": "error"},
+                    ),
                 )
 
         elif name == "fetch_multiple_atlas_slices":
@@ -687,6 +780,7 @@ def _process_ap_function_calls(
                 continue
 
             successes: list[str] = []
+            image_parts: list[dict[str, object]] = []
             from langslice.atlas.core import get_reference_slice
 
             for pos in positions:
@@ -729,6 +823,20 @@ def _process_ap_function_calls(
                     if image_payload.interaction_input is not None:
                         interaction_inputs.append(image_payload.interaction_input)
                     successes.append(f"{pos:.2f}mm")
+                    image_path = (
+                        os.path.join(run_dir, f"tool_{iteration + 1:02d}_multi_{pos:.2f}mm.jpg")
+                        if run_dir
+                        else None
+                    )
+                    image_parts.append(
+                        image_part_from_pil(
+                            ref_scaled,
+                            label=f"Atlas slice {pos:.2f} mm",
+                            image_bytes=ref_bytes,
+                            path=image_path,
+                            metadata={"transport": image_payload.transport},
+                        )
+                    )
                 except Exception as exc:
                     _append_response(
                         call_id=call_id,
@@ -745,6 +853,17 @@ def _process_ap_function_calls(
                     "result": f"Fetched {len(successes)} slices: {', '.join(successes)}",
                 }
             )
+            _emit_trace(
+                on_trace,
+                tool_result_event(
+                    stage="ap",
+                    tool_name=name,
+                    summary=f"Fetched {len(successes)} atlas slices",
+                    parts=image_parts
+                    or [json_part({"positions_mm": positions}, label="Positions")],
+                    metadata={"iteration": iteration + 1, "positions_mm": positions},
+                ),
+            )
 
         elif name == "get_atlas_info":
             from langslice.atlas.core import get_atlas_info as _get_atlas_info_core
@@ -754,6 +873,16 @@ def _process_ap_function_calls(
             _append_response(call_id=call_id, name=name, response=info)
             state.reasoning_log.append(
                 {"iteration": iteration + 1, "tool": name, "args": {}, "result": str(info)}
+            )
+            _emit_trace(
+                on_trace,
+                tool_result_event(
+                    stage="ap",
+                    tool_name=name,
+                    summary="Atlas metadata returned",
+                    parts=[json_part(info, label="Atlas info")],
+                    metadata={"iteration": iteration + 1},
+                ),
             )
             if on_progress:
                 on_progress(f"  -> Atlas range: [{pos_lo:.2f}, {pos_hi:.2f}] mm")
@@ -773,6 +902,16 @@ def _process_ap_function_calls(
                     "args": args,
                     "result": f"{len(regions)} regions",
                 }
+            )
+            _emit_trace(
+                on_trace,
+                tool_result_event(
+                    stage="ap",
+                    tool_name=name,
+                    summary=f"Returned {len(regions)} visible regions at {pos:.2f} mm",
+                    parts=[json_part({"position_mm": pos, "regions": regions}, label="Regions")],
+                    metadata={"iteration": iteration + 1, "position_mm": round(pos, 3)},
+                ),
             )
             if on_progress:
                 on_progress(f"  -> {len(regions)} regions at {pos:.2f}mm")
@@ -807,6 +946,16 @@ def _process_ap_function_calls(
                         "result": f"Rejected submit at {est_pos:.2f}mm: no broad sweep yet",
                     }
                 )
+                _emit_trace(
+                    on_trace,
+                    tool_result_event(
+                        stage="ap",
+                        tool_name=name,
+                        summary="Submit rejected: broad sweep required",
+                        parts=[json_part(args, label="Rejected submit")],
+                        metadata={"iteration": iteration + 1, "status": "rejected"},
+                    ),
+                )
                 continue
 
             if not state.saw_narrow_sweep and not near_iteration_limit:
@@ -826,6 +975,16 @@ def _process_ap_function_calls(
                         "args": args,
                         "result": f"Rejected submit at {est_pos:.2f}mm: no narrow sweep yet",
                     }
+                )
+                _emit_trace(
+                    on_trace,
+                    tool_result_event(
+                        stage="ap",
+                        tool_name=name,
+                        summary="Submit rejected: narrow sweep required",
+                        parts=[json_part(args, label="Rejected submit")],
+                        metadata={"iteration": iteration + 1, "status": "rejected"},
+                    ),
                 )
                 continue
 
@@ -852,6 +1011,16 @@ def _process_ap_function_calls(
                         "result": f"Rejected submit at {est_pos:.2f}mm: neighborhood not bracketed",
                     }
                 )
+                _emit_trace(
+                    on_trace,
+                    tool_result_event(
+                        stage="ap",
+                        tool_name=name,
+                        summary="Submit rejected: neighboring AP checks required",
+                        parts=[json_part(args, label="Rejected submit")],
+                        metadata={"iteration": iteration + 1, "status": "rejected"},
+                    ),
+                )
                 continue
 
             state.estimate_result = {
@@ -871,6 +1040,16 @@ def _process_ap_function_calls(
                 on_progress(
                     f"Agent submitted estimate: {est_pos:.2f}mm (confidence: {est_confidence})"
                 )
+            _emit_trace(
+                on_trace,
+                tool_result_event(
+                    stage="ap",
+                    tool_name=name,
+                    summary=f"Submitted estimate {est_pos:.2f} mm ({est_confidence})",
+                    parts=[json_part(state.estimate_result, label="Submitted estimate")],
+                    metadata={"iteration": iteration + 1, "status": "accepted"},
+                ),
+            )
 
         else:
             _append_response(
@@ -898,6 +1077,7 @@ def _run_interactions_ap_loop(
     uploaded_file_names: list[str],
     state: _APLoopState,
     on_progress: Callable[[str], None] | None = None,
+    on_trace: Callable[[dict[str, object]], None] | None = None,
 ) -> list[dict[str, object]]:
     interaction_trace: list[dict[str, object]] = []
     previous_interaction_id: str | None = None
@@ -950,6 +1130,7 @@ def _run_interactions_ap_loop(
             previous_interaction_id=previous_interaction_id,
             system_instruction=system_instruction,
             tools=[tool_declarations],
+            generation_config={"temperature": vlm_config.TEMPERATURE},
         )
         turn_metric["wall_time_s"] = round(time.perf_counter() - started_at, 3)
         usage_metadata = _extract_interaction_usage_metadata(interaction)
@@ -975,6 +1156,26 @@ def _run_interactions_ap_loop(
             }
         )
 
+        text_outputs, thought_outputs = _extract_interaction_text_outputs(interaction)
+        if text_outputs or thought_outputs:
+            trace_parts: list[dict[str, object]] = []
+            if thought_outputs:
+                trace_parts.append(
+                    json_part(thought_outputs, label="Reasoning summary", collapsible=True)
+                )
+            if text_outputs:
+                trace_parts.append(json_part(text_outputs, label="Model text", collapsible=True))
+            _emit_trace(
+                on_trace,
+                model_event(
+                    stage="ap",
+                    title=f"Model turn {iteration + 1}",
+                    summary="Model returned text before the next tool step",
+                    parts=trace_parts,
+                    metadata={"iteration": iteration + 1, **usage_metadata},
+                ),
+            )
+
         function_calls, text_preview = _extract_interaction_function_calls(interaction)
         if not function_calls:
             if text_preview and on_progress:
@@ -995,6 +1196,7 @@ def _run_interactions_ap_loop(
             uploaded_file_names=uploaded_file_names,
             state=state,
             on_progress=on_progress,
+            on_trace=on_trace,
         )
         if state.estimate_result:
             break
@@ -1007,6 +1209,8 @@ def estimate_position(
     image: Image.Image,
     atlas_name: str,
     on_progress: Callable[[str], None] | None = None,
+    on_trace: Callable[[dict[str, object]], None] | None = None,
+    debug_dir: str | None = None,
 ) -> APResult:
     """Agentic AP estimation using tool-use with self-correction.
 
@@ -1068,15 +1272,39 @@ def estimate_position(
     )
 
     # --- Debug artifact setup ---
-    debug_dir: str | None = os.environ.get("LANGSLICE_VLM_DEBUG_DIR")
+    debug_root = debug_dir if debug_dir is not None else os.environ.get("LANGSLICE_VLM_DEBUG_DIR")
     run_dir: str | None = None
-    if debug_dir:
+    if debug_root:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         safe_atlas = atlas_name.replace("/", "_").replace("\\", "_")
-        run_dir = os.path.join(debug_dir, f"{timestamp}_{safe_atlas}")
+        run_dir = os.path.join(debug_root, f"{timestamp}_{safe_atlas}")
         os.makedirs(run_dir, exist_ok=True)
         target_prepared.save(os.path.join(run_dir, "target.jpg"), quality=95)
         _progress(f"Debug artifacts -> {run_dir}")
+
+    _emit_trace(
+        on_trace,
+        runtime_event(
+            stage="ap",
+            title="Prepared AP estimation inputs",
+            summary=(
+                f"Target image {target_prepared.width}x{target_prepared.height}px prepared for Gemini"
+            ),
+            parts=[
+                image_part_from_pil(
+                    target_prepared,
+                    label="Target slice",
+                    image_bytes=target_bytes,
+                    path=os.path.join(run_dir, "target.jpg") if run_dir else None,
+                    metadata={
+                        "transport": "pending",
+                        "vlm_scale_factor": target_info["vlm_scale_factor"],
+                    },
+                )
+            ],
+            metadata=target_info,
+        ),
+    )
 
     # --- Tool declarations ---
     tool_declarations = types.Tool(
@@ -1240,6 +1468,28 @@ def estimate_position(
             on_progress=_progress,
         )
         target_info["input_transport"] = target_payload.transport
+        _emit_trace(
+            on_trace,
+            runtime_event(
+                stage="ap",
+                title="Initial AP request queued",
+                summary="Target slice attached to the first model turn",
+                parts=[
+                    json_part(
+                        {
+                            "transport": target_payload.transport,
+                            "temperature": vlm_config.TEMPERATURE,
+                            "prompt": "Here is the target brain slice. Determine its AP position in the atlas.",
+                        },
+                        label="Request context",
+                    )
+                ],
+                metadata={
+                    "transport": target_payload.transport,
+                    "temperature": vlm_config.TEMPERATURE,
+                },
+            ),
+        )
 
         initial_parts = [
             types.Part(
@@ -1297,6 +1547,7 @@ def estimate_position(
                 automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
                 thinking_config=types.ThinkingConfig(thinking_level=thinking_level),
                 cached_content=cache_name,
+                temperature=vlm_config.TEMPERATURE,
             )
         else:
             config = types.GenerateContentConfig(
@@ -1304,6 +1555,7 @@ def estimate_position(
                 automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
                 thinking_config=types.ThinkingConfig(thinking_level=thinking_level),
                 system_instruction=system_instruction,
+                temperature=vlm_config.TEMPERATURE,
             )
 
         _progress(f"Starting agentic estimation (max {max_iterations} tool calls)...")
@@ -1332,6 +1584,7 @@ def estimate_position(
                     uploaded_file_names=uploaded_file_names,
                     state=state,
                     on_progress=_progress,
+                    on_trace=on_trace,
                 )
                 mode_used = "interactions"
             except Exception as exc:
@@ -1391,6 +1644,28 @@ def estimate_position(
                 model_content = cast(types.Content, _first_model_content(response))
                 history.append(model_content)
                 function_calls, text_preview = _extract_generate_function_calls(model_content)
+                text_parts, thought_parts = _extract_model_text_parts(model_content)
+
+                if text_parts or thought_parts:
+                    trace_parts: list[dict[str, object]] = []
+                    if thought_parts:
+                        trace_parts.append(
+                            json_part(thought_parts, label="Reasoning summary", collapsible=True)
+                        )
+                    if text_parts:
+                        trace_parts.append(
+                            json_part(text_parts, label="Model text", collapsible=True)
+                        )
+                    _emit_trace(
+                        on_trace,
+                        model_event(
+                            stage="ap",
+                            title=f"Model turn {iteration + 1}",
+                            summary="Model responded before the next tool step",
+                            parts=trace_parts,
+                            metadata={"iteration": iteration + 1, **usage_metadata},
+                        ),
+                    )
 
                 if not function_calls:
                     if text_preview:
@@ -1417,6 +1692,7 @@ def estimate_position(
                     uploaded_file_names=uploaded_file_names,
                     state=state,
                     on_progress=_progress,
+                    on_trace=on_trace,
                 )
                 if state.estimate_result:
                     break
@@ -1436,6 +1712,25 @@ def estimate_position(
         _progress(
             f"Final position estimated: {final_pos:.2f} mm ({state.images_fetched} atlas images fetched)"
         )
+        _emit_trace(
+            on_trace,
+            runtime_event(
+                stage="ap",
+                title="AP estimation completed",
+                summary=f"Final position {final_pos:.2f} mm",
+                parts=[
+                    json_part(
+                        {
+                            "position_mm": final_pos,
+                            "reasoning": final_reasoning,
+                            "images_fetched": state.images_fetched,
+                        },
+                        label="AP result",
+                    )
+                ],
+                metadata={"images_fetched": state.images_fetched},
+            ),
+        )
 
         feature_flags["effective_ap_use_file_api"] = (
             target_info.get("input_transport") == "file_api"
@@ -1448,6 +1743,7 @@ def estimate_position(
             with open(reasoning_path, "w", encoding="utf-8") as f:
                 f.write(f"AP Estimation - {atlas_name} - {datetime.now().isoformat()}\n")
                 f.write(f"Model: {vlm_config.MODEL_NAME}\n")
+                f.write(f"Temperature: {vlm_config.TEMPERATURE:.2f}\n")
                 f.write(f"Mode: {mode_used}\n")
                 f.write(
                     "Target Image: "
@@ -1538,6 +1834,7 @@ def estimate_position(
                         "atlas_name": atlas_name,
                         "target_image": target_info,
                         "feature_flags": feature_flags,
+                        "temperature": vlm_config.TEMPERATURE,
                         "max_iterations": max_iterations,
                         "images_fetched": state.images_fetched,
                         "cache_name": cache_name,
