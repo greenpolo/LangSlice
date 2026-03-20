@@ -20,6 +20,7 @@ from langslice.registration.solver import (
     fit_tps_from_correspondences,
 )
 from langslice.registration.types import (
+    RegistrationAnnotationSession,
     RegistrationCorrespondence,
     RegistrationResult,
     annotation_session_to_dict,
@@ -108,9 +109,12 @@ def estimate_registration(
     workflow: str = "single_pass",
     show_atlas_borders: bool = True,
     on_correspondences: Callable[[list[RegistrationCorrespondence]], None] | None = None,
+    on_annotation_session: Callable[[RegistrationAnnotationSession], None] | None = None,
     on_progress: Callable[[str], None] | None = None,
     on_trace: Callable[[dict[str, object]], None] | None = None,
     debug_dir: str | None = None,
+    enable_code_execution: bool | None = None,
+    tool_loop_max_steps: int | None = None,
 ) -> RegistrationResult:
     """Run the new registration runtime and return affine + nonlinear results."""
     _ = pixel_size_um
@@ -128,19 +132,22 @@ def estimate_registration(
         show_atlas_borders=show_atlas_borders,
         on_progress=on_progress,
         on_trace=on_trace,
+        on_annotation_session=on_annotation_session,
         debug_dir=debug_dir,
+        enable_code_execution=enable_code_execution,
+        tool_loop_max_steps=tool_loop_max_steps,
     )
+    if on_correspondences is not None:
+        on_correspondences(correspondences)
     if len(correspondences) < 3:
         raise RegistrationFailure(
             f"Need at least 3 correspondence pairs to fit registration, got {len(correspondences)}"
         )
-    if on_correspondences is not None:
-        on_correspondences(correspondences)
     accepted = list(correspondences)
     rejected: list[dict[str, object]] = []
     annotation_session = build_annotation_session_from_correspondences(
         accepted,
-        workflow="single_pass",
+        workflow=workflow,
         target_count=target_landmark_count,
         metadata={
             "atlas_name": atlas_name,

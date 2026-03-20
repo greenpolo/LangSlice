@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
 import langslice.registration.runtime as runtime
@@ -20,12 +21,15 @@ def fake_estimate_registration_correspondences(
     show_atlas_borders=True,
     on_progress=None,
     on_trace=None,
+    on_annotation_session=None,
     debug_dir=None,
+    enable_code_execution=None,
+    tool_loop_max_steps=None,
 ):
     _ = image, atlas_name, position_mm
-    _ = on_trace, debug_dir
+    _ = on_trace, on_annotation_session, debug_dir, enable_code_execution, tool_loop_max_steps
     assert target_landmark_count == 14
-    assert workflow == "single_pass"
+    assert isinstance(workflow, str)
     assert show_atlas_borders is True
     if on_progress is not None:
         on_progress("fake correspondences")
@@ -163,3 +167,60 @@ def test_registration_runtime_uses_existing_debug_dir(monkeypatch, tmp_path: Pat
     )
     assert result.debug_dir == str(existing / "registration")
     assert (existing / "registration" / "registration.json").exists()
+
+
+def test_registration_runtime_keeps_workflow_in_annotation_session(monkeypatch) -> None:
+    monkeypatch.setattr(
+        runtime,
+        "estimate_registration_correspondences",
+        fake_estimate_registration_correspondences,
+    )
+
+    result = runtime.estimate_registration(
+        Image.new("RGB", (120, 100), (255, 255, 255)),
+        atlas_name="allen_mouse_25um",
+        position_mm=1.0,
+        target_landmark_count=14,
+        workflow="image_gen_two_shot",
+    )
+
+    assert result.annotation_session is not None
+    assert result.annotation_session.workflow == "image_gen_two_shot"
+
+
+def test_registration_runtime_emits_preview_correspondences_before_min_pair_failure(
+    monkeypatch,
+) -> None:
+    preview_calls: list[list[RegistrationCorrespondence]] = []
+
+    def fake_two_correspondences(*args, **kwargs):
+        _ = args, kwargs
+        return [
+            RegistrationCorrespondence(
+                slice_xy=(15.0, 18.0),
+                atlas_xy=(12.0, 16.0),
+                label="1",
+                confidence="high",
+            ),
+            RegistrationCorrespondence(
+                slice_xy=(35.0, 38.0),
+                atlas_xy=(32.0, 36.0),
+                label="2",
+                confidence="high",
+            ),
+        ]
+
+    monkeypatch.setattr(runtime, "estimate_registration_correspondences", fake_two_correspondences)
+
+    with pytest.raises(runtime.RegistrationFailure):
+        runtime.estimate_registration(
+            Image.new("RGB", (120, 100), (255, 255, 255)),
+            atlas_name="allen_mouse_25um",
+            position_mm=1.0,
+            target_landmark_count=2,
+            workflow="image_gen_two_shot",
+            on_correspondences=preview_calls.append,
+        )
+
+    assert len(preview_calls) == 1
+    assert [corr.label for corr in preview_calls[0]] == ["1", "2"]

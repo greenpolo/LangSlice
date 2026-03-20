@@ -8,7 +8,11 @@ from typing import Callable
 from PIL import Image
 
 from langslice.registration.runtime import RegistrationFailure, estimate_registration
-from langslice.registration.types import RegistrationCorrespondence, RegistrationResult
+from langslice.registration.types import (
+    RegistrationAnnotationSession,
+    RegistrationCorrespondence,
+    RegistrationResult,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +29,10 @@ def estimate_registration_runtime(
     workflow: str = "single_pass",
     show_atlas_borders: bool = True,
     on_correspondences: Callable[[list[RegistrationCorrespondence]], None] | None = None,
+    on_annotation_session: Callable[[RegistrationAnnotationSession], None] | None = None,
     debug_dir: str | None = None,
+    enable_code_execution: bool | None = None,
+    tool_loop_max_steps: int | None = None,
 ) -> RegistrationResult:
     """Run the separate registration runtime and return full results."""
 
@@ -46,9 +53,12 @@ def estimate_registration_runtime(
         workflow=workflow,
         show_atlas_borders=show_atlas_borders,
         on_correspondences=on_correspondences,
+        on_annotation_session=on_annotation_session,
         on_progress=on_progress,
         on_trace=on_trace,
         debug_dir=debug_dir,
+        enable_code_execution=enable_code_execution,
+        tool_loop_max_steps=tool_loop_max_steps,
     )
     _progress(
         "Registration outputs derived: "
