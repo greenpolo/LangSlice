@@ -11,19 +11,17 @@ logger = logging.getLogger(__name__)
 MODEL_NAME = "gemini-3-flash-preview"
 THINKING_LEVEL = "HIGH"
 CODE_EXECUTION_ENABLED = True
-REGISTRATION_THINKING_BUDGET: int = 8192
 TEMPERATURE: float = 0.5
 
 REGISTRATION_WORKFLOW_SINGLE_PASS = "single_pass"
 REGISTRATION_WORKFLOW_IMAGE_GEN_TWO_SHOT = "image_gen_two_shot"
 REGISTRATION_WORKFLOW_MULTIMODAL_TOOL_LOOP = "multimodal_tool_loop"
 
-AVAILABLE_THINKING_BUDGETS: list[tuple[str, int]] = [
-    ("Off", 0),
-    ("Low (1k)", 1024),
-    ("Medium (4k)", 4096),
-    ("High (8k)", 8192),
-    ("Max (24k)", 24576),
+AVAILABLE_THINKING_LEVELS: list[tuple[str, str]] = [
+    ("Off", "OFF"),
+    ("Low", "LOW"),
+    ("Medium", "MEDIUM"),
+    ("High", "HIGH"),
 ]
 
 _ENV_COUNT_TOKENS = "LANGSLICE_GENAI_COUNT_TOKENS"
@@ -41,13 +39,19 @@ AVAILABLE_MODELS: list[str] = [
     "gemini-3.1-flash-image-preview",
 ]
 
+CODE_EXECUTION_MODELS: set[str] = {
+    "gemini-3-flash-preview",
+}
+
 IMAGE_GENERATION_MODELS: set[str] = {
     "gemini-3-pro-image-preview",
     "gemini-3.1-flash-image-preview",
 }
 
-STRUCTURED_OUTPUT_IMAGE_MODELS: set[str] = {
-    "gemini-3-pro-image-preview",
+STRUCTURED_OUTPUT_IMAGE_MODELS: set[str] = set()
+
+IMAGE_MODEL_THINKING_MODELS: set[str] = {
+    "gemini-3.1-flash-image-preview",
 }
 
 REGISTRATION_WORKFLOW_LABELS: dict[str, str] = {
@@ -63,10 +67,15 @@ def set_model_name(name: str) -> None:
     logger.info("Model changed to: %s", name)
 
 
-def set_registration_thinking_budget(budget: int) -> None:
-    """Set the thinking budget for registration at runtime."""
-    globals()["REGISTRATION_THINKING_BUDGET"] = budget
-    logger.info("Registration thinking budget changed to: %d", budget)
+def set_thinking_level(level: str) -> None:
+    """Set active Gemini thinking level at runtime for subsequent requests."""
+    normalized = str(level).strip().upper()
+    valid_levels = {value for _label, value in AVAILABLE_THINKING_LEVELS}
+    if normalized not in valid_levels:
+        allowed = ", ".join(sorted(valid_levels))
+        raise ValueError(f"Invalid thinking level {level!r}. Expected one of: {allowed}")
+    globals()["THINKING_LEVEL"] = normalized
+    logger.info("Thinking level changed to: %s", normalized)
 
 
 def set_temperature(value: float) -> None:
@@ -74,6 +83,12 @@ def set_temperature(value: float) -> None:
     clamped = max(0.0, min(2.0, float(value)))
     globals()["TEMPERATURE"] = clamped
     logger.info("Temperature changed to: %.2f", clamped)
+
+
+def set_code_execution_enabled(enabled: bool) -> None:
+    """Set whether Gemini code execution should be enabled when supported."""
+    globals()["CODE_EXECUTION_ENABLED"] = bool(enabled)
+    logger.info("Code execution enabled: %s", bool(enabled))
 
 
 def is_image_generation_model(model_name: str | None) -> bool:
@@ -88,6 +103,20 @@ def supports_structured_image_output(model_name: str | None) -> bool:
     if model_name is None:
         return False
     return str(model_name).strip() in STRUCTURED_OUTPUT_IMAGE_MODELS
+
+
+def supports_image_model_thinking(model_name: str | None) -> bool:
+    """Return True when the image-gen model supports thinking_config."""
+    if model_name is None:
+        return False
+    return str(model_name).strip() in IMAGE_MODEL_THINKING_MODELS
+
+
+def supports_code_execution(model_name: str | None) -> bool:
+    """Return True when the selected model supports Gemini code execution."""
+    if model_name is None:
+        return False
+    return str(model_name).strip() in CODE_EXECUTION_MODELS
 
 
 def get_registration_workflow_options(model_name: str | None) -> list[tuple[str, str]]:

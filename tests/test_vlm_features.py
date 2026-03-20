@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from types import SimpleNamespace
 from typing import cast
 
@@ -43,6 +44,50 @@ def test_set_temperature_updates_runtime_value() -> None:
         assert vlm_config.TEMPERATURE == 0.0
     finally:
         vlm_config.set_temperature(original)
+
+
+def test_set_code_execution_updates_runtime_value() -> None:
+    original = vlm_config.CODE_EXECUTION_ENABLED
+    try:
+        vlm_config.set_code_execution_enabled(False)
+        assert vlm_config.CODE_EXECUTION_ENABLED is False
+        vlm_config.set_code_execution_enabled(True)
+        assert vlm_config.CODE_EXECUTION_ENABLED is True
+    finally:
+        vlm_config.set_code_execution_enabled(original)
+
+
+def test_supports_code_execution_only_for_supported_models() -> None:
+    assert vlm_config.supports_code_execution("gemini-3-flash-preview") is True
+    assert vlm_config.supports_code_execution("gemini-3.1-pro-preview") is False
+    assert vlm_config.supports_code_execution(None) is False
+
+
+def test_set_thinking_level_updates_runtime_value() -> None:
+    original = vlm_config.THINKING_LEVEL
+    try:
+        vlm_config.set_thinking_level("low")
+        assert vlm_config.THINKING_LEVEL == "LOW"
+        vlm_config.set_thinking_level("HIGH")
+        assert vlm_config.THINKING_LEVEL == "HIGH"
+    finally:
+        vlm_config.set_thinking_level(original)
+
+
+def test_ap_progress_heartbeat_reports_wait_and_completion() -> None:
+    messages: list[str] = []
+
+    result = estimator._run_with_progress_heartbeat(
+        lambda: (time.sleep(0.03), "ok")[1],
+        request_label="AP test request",
+        on_progress=messages.append,
+        heartbeat_interval_s=0.01,
+    )
+
+    assert result == "ok"
+    assert messages[0] == "AP test request: request started"
+    assert any("still waiting for Gemini" in message for message in messages)
+    assert messages[-1].startswith("AP test request: response received in ")
 
 
 def test_registration_workflow_options_gate_image_models() -> None:
@@ -170,7 +215,7 @@ def test_registration_count_tokens_runs_before_generate(monkeypatch) -> None:
 
     fake_module = SimpleNamespace(
         MODEL_NAME="gemini-3-flash-preview",
-        REGISTRATION_THINKING_BUDGET=8192,
+        THINKING_LEVEL="HIGH",
         TEMPERATURE=0.5,
         count_tokens_enabled=lambda: True,
         get_client=lambda: SimpleNamespace(models=FakeModels()),

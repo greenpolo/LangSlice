@@ -1,6 +1,8 @@
 """LangSlice VLM module - Gemini-based visual estimation."""
 
 from langslice.vlm.config import (
+    AVAILABLE_THINKING_LEVELS,
+    CODE_EXECUTION_ENABLED,
     MODEL_NAME,
     TEMPERATURE,
     THINKING_LEVEL,
@@ -9,7 +11,10 @@ from langslice.vlm.config import (
     count_tokens_enabled,
     get_api_key,
     get_client,
+    set_code_execution_enabled,
+    set_thinking_level,
     set_temperature,
+    supports_code_execution,
 )
 from langslice.vlm.batch_eval import APBatchCase, build_ap_batch_requests, create_ap_batch_job
 from langslice.vlm.estimator import (
@@ -23,11 +28,16 @@ __all__ = [
     "get_client",
     "create_batch_client",
     "close_client",
+    "AVAILABLE_THINKING_LEVELS",
+    "CODE_EXECUTION_ENABLED",
     "MODEL_NAME",
     "TEMPERATURE",
     "THINKING_LEVEL",
     "count_tokens_enabled",
+    "set_code_execution_enabled",
+    "set_thinking_level",
     "set_temperature",
+    "supports_code_execution",
     "estimate_ap",
     "estimate_position",
     "APResult",
