@@ -3,6 +3,7 @@
 import io
 import json
 import logging
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Mapping, Sequence, cast
@@ -29,6 +30,61 @@ _RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 _MAX_RETRIES = 3
 _INITIAL_BACKOFF_S = 1.0
 _RESAMPLE_LANCZOS = getattr(getattr(Image, "Resampling", Image), "LANCZOS")
+_HEARTBEAT_INTERVAL_S = 10.0
+
+
+def _format_elapsed_seconds(elapsed_s: float) -> str:
+    if elapsed_s < 60.0:
+        return f"{elapsed_s:.1f}s"
+    minutes = int(elapsed_s // 60.0)
+    seconds = int(round(elapsed_s - (minutes * 60)))
+    return f"{minutes}m {seconds:02d}s"
+
+
+def _run_with_progress_heartbeat(
+    fn: Callable[[], Any],
+    *,
+    request_label: str,
+    on_progress: Callable[[str], None] | None = None,
+    heartbeat_interval_s: float = _HEARTBEAT_INTERVAL_S,
+) -> Any:
+    started_at = time.perf_counter()
+    stop_event = threading.Event()
+    heartbeat_thread: threading.Thread | None = None
+
+    if on_progress:
+        on_progress(f"{request_label}: request started")
+        if heartbeat_interval_s > 0:
+
+            def _heartbeat_loop() -> None:
+                while not stop_event.wait(heartbeat_interval_s):
+                    elapsed_s = time.perf_counter() - started_at
+                    on_progress(
+                        f"{request_label}: still waiting for Gemini after {_format_elapsed_seconds(elapsed_s)}"
+                    )
+
+            heartbeat_thread = threading.Thread(target=_heartbeat_loop, daemon=True)
+            heartbeat_thread.start()
+
+    try:
+        result = fn()
+    except Exception as exc:
+        elapsed_s = time.perf_counter() - started_at
+        if on_progress:
+            on_progress(
+                f"{request_label}: request failed after {_format_elapsed_seconds(elapsed_s)} "
+                f"({type(exc).__name__}: {exc})"
+            )
+        raise
+    finally:
+        stop_event.set()
+        if heartbeat_thread is not None:
+            heartbeat_thread.join(timeout=0.05)
+
+    elapsed_s = time.perf_counter() - started_at
+    if on_progress:
+        on_progress(f"{request_label}: response received in {_format_elapsed_seconds(elapsed_s)}")
+    return result
 
 
 def _retry_generate(
@@ -37,13 +93,20 @@ def _retry_generate(
     model: str,
     contents: object,
     config: object,
+    request_label: str,
     on_progress: Callable[[str], None] | None = None,
 ) -> Any:
     """Wrapper around client.models.generate_content with exponential backoff."""
     last_exc: Exception | None = None
     for attempt in range(_MAX_RETRIES + 1):
         try:
-            return client.models.generate_content(model=model, contents=contents, config=config)
+            return _run_with_progress_heartbeat(
+                lambda: client.models.generate_content(
+                    model=model, contents=contents, config=config
+                ),
+                request_label=f"{request_label} (attempt {attempt + 1}/{_MAX_RETRIES + 1})",
+                on_progress=on_progress,
+            )
         except Exception as exc:
             last_exc = exc
             # Check if the error has a retryable HTTP status code
@@ -351,7 +414,13 @@ def _count_tokens_if_enabled(
     if tools:
         config["tools"] = tools
     try:
-        response = client.models.count_tokens(model=model, contents=contents, config=config or None)
+        response = _run_with_progress_heartbeat(
+            lambda: client.models.count_tokens(
+                model=model, contents=contents, config=config or None
+            ),
+            request_label="AP token preflight",
+            on_progress=on_progress,
+        )
     except Exception as exc:
         message = f"Token preflight failed: {type(exc).__name__}: {exc}"
         logger.warning(message)
@@ -1124,13 +1193,17 @@ def _run_interactions_ap_loop(
             )
 
         started_at = time.perf_counter()
-        interaction = client.interactions.create(
-            model=model_name,
-            input=next_input,
-            previous_interaction_id=previous_interaction_id,
-            system_instruction=system_instruction,
-            tools=[tool_declarations],
-            generation_config={"temperature": vlm_config.TEMPERATURE},
+        interaction = _run_with_progress_heartbeat(
+            lambda: client.interactions.create(
+                model=model_name,
+                input=next_input,
+                previous_interaction_id=previous_interaction_id,
+                system_instruction=system_instruction,
+                tools=[tool_declarations],
+                generation_config={"temperature": vlm_config.TEMPERATURE},
+            ),
+            request_label=f"AP interactions turn {iteration + 1}",
+            on_progress=on_progress,
         )
         turn_metric["wall_time_s"] = round(time.perf_counter() - started_at, 3)
         usage_metadata = _extract_interaction_usage_metadata(interaction)
@@ -1211,6 +1284,7 @@ def estimate_position(
     on_progress: Callable[[str], None] | None = None,
     on_trace: Callable[[dict[str, object]], None] | None = None,
     debug_dir: str | None = None,
+    max_iterations: int = 20,
 ) -> APResult:
     """Agentic AP estimation using tool-use with self-correction.
 
@@ -1450,7 +1524,7 @@ def estimate_position(
     feature_flags["effective_ap_use_interactions"] = use_interactions
 
     thinking_level = getattr(types.ThinkingLevel, vlm_config.THINKING_LEVEL, None)
-    max_iterations = 20
+    max_iterations = max(1, int(max_iterations))
     state = _APLoopState(max_iterations=max_iterations)
     history: list[types.Content] = []
     interaction_trace: list[dict[str, object]] = []
@@ -1475,18 +1549,30 @@ def estimate_position(
                 title="Initial AP request queued",
                 summary="Target slice attached to the first model turn",
                 parts=[
+                    image_part_from_pil(
+                        target_prepared,
+                        label="Target slice sent to Gemini",
+                        image_bytes=target_bytes,
+                        path=os.path.join(run_dir, "target.jpg") if run_dir else None,
+                        metadata={
+                            "transport": target_payload.transport,
+                            "vlm_scale_factor": target_info["vlm_scale_factor"],
+                        },
+                    ),
                     json_part(
                         {
                             "transport": target_payload.transport,
                             "temperature": vlm_config.TEMPERATURE,
+                            "max_iterations": max_iterations,
                             "prompt": "Here is the target brain slice. Determine its AP position in the atlas.",
                         },
                         label="Request context",
-                    )
+                    ),
                 ],
                 metadata={
                     "transport": target_payload.transport,
                     "temperature": vlm_config.TEMPERATURE,
+                    "max_iterations": max_iterations,
                 },
             ),
         )
@@ -1629,6 +1715,7 @@ def estimate_position(
                     model=vlm_config.MODEL_NAME,
                     contents=history,
                     config=config,
+                    request_label=f"AP model turn {iteration + 1}",
                     on_progress=_progress,
                 )
                 wall_time_s = time.perf_counter() - turn_started_at
