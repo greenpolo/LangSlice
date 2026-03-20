@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-import json
+import time
 from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
+import pytest
 from PIL import Image
 
 import langslice.registration.agents as agents
@@ -79,13 +80,13 @@ def _patch_common(monkeypatch: Any) -> None:
     monkeypatch.setattr(
         agents,
         "prepare_image_for_vlm",
-        lambda img: SimpleNamespace(image=img, output_size=img.size),
+        lambda img: SimpleNamespace(image=img, output_size=img.size, original_size=img.size),
     )
 
     vlm_config = SimpleNamespace(
         MODEL_NAME="test-model",
         CODE_EXECUTION_ENABLED=False,
-        REGISTRATION_THINKING_BUDGET=8192,
+        THINKING_LEVEL="HIGH",
         TEMPERATURE=0.5,
         count_tokens_enabled=lambda: False,
         get_client=lambda: _DummyClient(),
@@ -302,7 +303,7 @@ def test_registration_request_uses_configured_temperature(monkeypatch: Any) -> N
             SimpleNamespace(
                 MODEL_NAME="test-model",
                 CODE_EXECUTION_ENABLED=False,
-                REGISTRATION_THINKING_BUDGET=8192,
+                THINKING_LEVEL="LOW",
                 TEMPERATURE=0.2,
                 count_tokens_enabled=lambda: False,
                 get_client=lambda: _DummyClient(),
@@ -324,36 +325,122 @@ def test_registration_request_uses_configured_temperature(monkeypatch: Any) -> N
     assert captured["config"]["temperature"] == 0.2
 
 
-def test_image_gen_two_shot_pairs_numbered_landmarks(monkeypatch: Any) -> None:
+def test_registration_request_can_force_code_execution(monkeypatch: Any) -> None:
     _patch_common(monkeypatch)
 
-    responses = [
-        SimpleNamespace(
-            parsed={
-                "landmarks": [
-                    {
-                        "label": str(index),
-                        "atlas_point_2d": [50 * index, 60 * index],
-                        "status": "found",
-                    }
-                    for index in range(1, 5)
-                ]
-            }
-        ),
-        SimpleNamespace(
-            text=json.dumps(
-                {
-                    "landmarks": [
-                        {
-                            "label": str(index),
-                            "slice_point_2d": [70 * index, 80 * index],
-                            "status": "found",
-                        }
-                        for index in range(1, 5)
-                    ]
-                }
+    captured: dict[str, object] = {}
+
+    def mock_generate(*args: Any, **kwargs: Any) -> SimpleNamespace:
+        _ = args
+        captured["config"] = kwargs["config"]
+        return SimpleNamespace(parsed={"correspondences": [_correspondence(10, 10, 10, 10, "a")]})
+
+    current_import_module = agents.importlib.import_module
+    monkeypatch.setattr(agents, "_retry_generate", mock_generate)
+    monkeypatch.setattr(
+        agents.importlib,
+        "import_module",
+        lambda name: (
+            SimpleNamespace(
+                MODEL_NAME="gemini-3-flash-preview",
+                CODE_EXECUTION_ENABLED=False,
+                THINKING_LEVEL="LOW",
+                TEMPERATURE=0.2,
+                count_tokens_enabled=lambda: False,
+                get_client=lambda: _DummyClient(),
             )
+            if name == "langslice.vlm.config"
+            else current_import_module(name)
         ),
+    )
+
+    agents.estimate_registration_correspondences(
+        Image.new("RGB", (120, 100), (0, 0, 0)),
+        atlas_name="allen_mouse_25um",
+        position_mm=1.0,
+        target_landmark_count=1,
+        min_edge_landmarks=0,
+        enable_code_execution=True,
+    )
+
+    assert isinstance(captured["config"], dict)
+    assert captured["config"]["tools"] == [{"code_execution": {}}]
+
+
+def _make_image_with_markers(
+    base: Image.Image,
+    markers: list[tuple[int, int]],
+    colour: tuple[int, int, int] = (255, 0, 0),
+    radius: int = 5,
+) -> Image.Image:
+    """Draw bright circles on *base* at *markers* positions (x, y)."""
+    img = base.copy()
+    from PIL import ImageDraw
+
+    draw = ImageDraw.Draw(img)
+    for x, y in markers:
+        draw.ellipse(
+            [x - radius, y - radius, x + radius, y + radius], fill=colour
+        )
+    return img
+
+
+def _fake_image_response(
+    image: Image.Image, text: str | None = None
+) -> SimpleNamespace:
+    """Build a mock Gemini response containing an inline image and optional text."""
+    import io
+
+    buf = io.BytesIO()
+    image.save(buf, format="PNG")
+    parts = [
+        SimpleNamespace(
+            inline_data=SimpleNamespace(
+                data=buf.getvalue(),
+                mime_type="image/png",
+            ),
+            text=None,
+            thought=False,
+        )
+    ]
+    if text is not None:
+        parts.append(
+            SimpleNamespace(inline_data=None, text=text, thought=False)
+        )
+    return SimpleNamespace(
+        candidates=[
+            SimpleNamespace(content=SimpleNamespace(parts=parts))
+        ],
+        # Also expose text at top level for _extract_json_payload fallback.
+        text=text,
+        parsed=None,
+    )
+
+
+def test_image_gen_two_shot_extracts_markers_from_generated_images(monkeypatch: Any) -> None:
+    _patch_common(monkeypatch)
+
+    # Create base images (grey, like real tissue) and annotated versions.
+    # Markers are drawn in the adaptively-chosen colour.  Since the base
+    # images are grey, _choose_marker_colour will pick a bright saturated
+    # colour.  We draw markers in cyan (the first candidate) to match.
+    from langslice.registration.agents_image_gen import _choose_marker_colour
+
+    atlas_base = Image.new("RGB", (456, 320), (128, 128, 128))
+    slice_base = Image.new("RGB", (200, 120), (128, 128, 128))
+
+    chosen_name, chosen_rgb = _choose_marker_colour([atlas_base, slice_base])
+
+    atlas_markers = [(100, 50), (200, 100), (300, 150), (400, 250)]
+    slice_markers = [(30, 20), (80, 50), (150, 80), (180, 100)]
+
+    atlas_annotated = _make_image_with_markers(atlas_base, atlas_markers, colour=chosen_rgb)
+    slice_annotated = _make_image_with_markers(slice_base, slice_markers, colour=chosen_rgb)
+
+    # Image-only responses — no text.
+    responses = [
+        _fake_image_response(atlas_annotated),
+        _fake_image_response(slice_annotated),
     ]
 
     current_import_module = agents.importlib.import_module
@@ -364,13 +451,10 @@ def test_image_gen_two_shot_pairs_numbered_landmarks(monkeypatch: Any) -> None:
             SimpleNamespace(
                 MODEL_NAME="gemini-3-pro-image-preview",
                 CODE_EXECUTION_ENABLED=False,
-                REGISTRATION_THINKING_BUDGET=8192,
+                THINKING_LEVEL="MEDIUM",
                 TEMPERATURE=0.2,
                 count_tokens_enabled=lambda: False,
                 get_client=lambda: _DummyClient(),
-                supports_structured_image_output=lambda model: (
-                    model == "gemini-3-pro-image-preview"
-                ),
             )
             if name == "langslice.vlm.config"
             else current_import_module(name)
@@ -379,7 +463,7 @@ def test_image_gen_two_shot_pairs_numbered_landmarks(monkeypatch: Any) -> None:
     monkeypatch.setattr(agents, "_retry_generate", lambda *args, **kwargs: responses.pop(0))
 
     result = agents.estimate_registration_correspondences(
-        Image.new("RGB", (200, 120), (0, 0, 0)),
+        slice_base,
         atlas_name="allen_mouse_25um",
         position_mm=2.0,
         target_landmark_count=4,
@@ -387,9 +471,75 @@ def test_image_gen_two_shot_pairs_numbered_landmarks(monkeypatch: Any) -> None:
         workflow="image_gen_two_shot",
     )
 
+    assert len(result) == 4
     assert [corr.label for corr in result] == ["1", "2", "3", "4"]
-    assert result[0].atlas_normalized_yx == (50.0, 60.0)
-    assert result[0].slice_normalized_yx == (70.0, 80.0)
+    # Coordinates are CV-extracted centroids — check proximity to drawn markers.
+    for corr, (ax, ay), (sx, sy) in zip(result, atlas_markers, slice_markers, strict=True):
+        assert abs(corr.atlas_xy[0] - float(ax)) < 3.0
+        assert abs(corr.atlas_xy[1] - float(ay)) < 3.0
+        assert abs(corr.slice_xy[0] - float(sx)) < 3.0
+        assert abs(corr.slice_xy[1] - float(sy)) < 3.0
+
+
+def test_image_gen_two_shot_emits_annotation_sessions(monkeypatch: Any) -> None:
+    _patch_common(monkeypatch)
+
+    from langslice.registration.agents_image_gen import _choose_marker_colour
+
+    atlas_base = Image.new("RGB", (456, 320), (128, 128, 128))
+    slice_base = Image.new("RGB", (200, 120), (128, 128, 128))
+
+    _chosen_name, chosen_rgb = _choose_marker_colour([atlas_base, slice_base])
+
+    atlas_annotated = _make_image_with_markers(
+        atlas_base, [(100, 80), (300, 200)], colour=chosen_rgb
+    )
+    slice_annotated = _make_image_with_markers(slice_base, [(50, 30), (150, 90)], colour=chosen_rgb)
+
+    # Image-only responses — no text.
+    responses = [
+        _fake_image_response(atlas_annotated),
+        _fake_image_response(slice_annotated),
+    ]
+
+    current_import_module = agents.importlib.import_module
+    monkeypatch.setattr(
+        agents.importlib,
+        "import_module",
+        lambda name: (
+            SimpleNamespace(
+                MODEL_NAME="gemini-3-pro-image-preview",
+                CODE_EXECUTION_ENABLED=False,
+                THINKING_LEVEL="MEDIUM",
+                TEMPERATURE=0.2,
+                count_tokens_enabled=lambda: False,
+                get_client=lambda: _DummyClient(),
+            )
+            if name == "langslice.vlm.config"
+            else current_import_module(name)
+        ),
+    )
+    monkeypatch.setattr(agents, "_retry_generate", lambda *args, **kwargs: responses.pop(0))
+
+    from langslice.registration.types import RegistrationAnnotationSession
+
+    sessions: list[RegistrationAnnotationSession] = []
+    agents.estimate_registration_correspondences(
+        slice_base,
+        atlas_name="allen_mouse_25um",
+        position_mm=2.0,
+        target_landmark_count=2,
+        min_edge_landmarks=1,
+        workflow="image_gen_two_shot",
+        on_annotation_session=sessions.append,
+    )
+
+    # Two sessions emitted: atlas-only preview, then atlas+slice.
+    assert len(sessions) == 2
+    assert len(sessions[0].atlas_annotations) == 2
+    assert len(sessions[0].slice_annotations) == 0
+    assert len(sessions[1].atlas_annotations) == 2
+    assert len(sessions[1].slice_annotations) == 2
 
 
 def test_multimodal_tool_loop_places_pairs_before_finish(monkeypatch: Any) -> None:
@@ -436,3 +586,137 @@ def test_multimodal_tool_loop_places_pairs_before_finish(monkeypatch: Any) -> No
 
     assert [corr.label for corr in result] == ["1", "2"]
     assert result[0].rationale.startswith("status=found")
+
+
+def test_multimodal_tool_loop_accepts_zoom_local_coordinates(monkeypatch: Any) -> None:
+    _patch_common(monkeypatch)
+
+    responses = [
+        SimpleNamespace(
+            parsed={
+                "tool_name": "view_zoom_pair",
+                "tool_args": {
+                    "zoom": 2.0,
+                    "atlas_center_2d": [500, 500],
+                    "slice_center_2d": [500, 500],
+                },
+            }
+        ),
+        SimpleNamespace(
+            parsed={
+                "tool_name": "place_point_pair",
+                "tool_args": {
+                    "label": "1",
+                    "atlas_point_2d_local": [0, 0],
+                    "slice_point_2d_local": [0, 0],
+                    "feature_description": "upper-left corner of zoom window",
+                    "status": "found",
+                },
+            }
+        ),
+        SimpleNamespace(parsed={"tool_name": "finish", "tool_args": {}}),
+    ]
+
+    monkeypatch.setattr(agents, "_retry_generate", lambda *args, **kwargs: responses.pop(0))
+
+    result = agents.estimate_registration_correspondences(
+        Image.new("RGB", (456, 320), (0, 0, 0)),
+        atlas_name="allen_mouse_25um",
+        position_mm=2.0,
+        target_landmark_count=1,
+        min_edge_landmarks=1,
+        workflow="multimodal_tool_loop",
+    )
+
+    assert [corr.label for corr in result] == ["1"]
+    assert result[0].atlas_normalized_yx == pytest.approx((250.78369905956112, 250.54945054945054))
+    assert result[0].slice_normalized_yx == pytest.approx((250.78369905956112, 250.54945054945054))
+
+
+def test_multimodal_tool_loop_uses_explicit_step_limit(monkeypatch: Any) -> None:
+    _patch_common(monkeypatch)
+
+    responses = [
+        SimpleNamespace(
+            parsed={
+                "tool_name": "place_point_pair",
+                "tool_args": {
+                    "label": "1",
+                    "atlas_point_2d": [100, 120],
+                    "slice_point_2d": [140, 160],
+                    "feature_description": "outer contour notch",
+                    "status": "found",
+                },
+            }
+        )
+    ]
+
+    monkeypatch.setattr(agents, "_retry_generate", lambda *args, **kwargs: responses.pop(0))
+
+    with pytest.raises(RuntimeError, match="exceeded the maximum number of steps"):
+        agents.estimate_registration_correspondences(
+            Image.new("RGB", (200, 120), (0, 0, 0)),
+            atlas_name="allen_mouse_25um",
+            position_mm=2.0,
+            target_landmark_count=2,
+            min_edge_landmarks=1,
+            workflow="multimodal_tool_loop",
+            tool_loop_max_steps=1,
+        )
+
+
+def test_registration_request_uses_configured_thinking_level(monkeypatch: Any) -> None:
+    _patch_common(monkeypatch)
+
+    captured: dict[str, object] = {}
+
+    def mock_generate(*args: Any, **kwargs: Any) -> SimpleNamespace:
+        _ = args
+        captured["config"] = kwargs["config"]
+        return SimpleNamespace(parsed={"correspondences": [_correspondence(10, 10, 10, 10, "a")]})
+
+    current_import_module = agents.importlib.import_module
+    monkeypatch.setattr(agents, "_retry_generate", mock_generate)
+    monkeypatch.setattr(
+        agents.importlib,
+        "import_module",
+        lambda name: (
+            SimpleNamespace(
+                MODEL_NAME="test-model",
+                CODE_EXECUTION_ENABLED=False,
+                THINKING_LEVEL="LOW",
+                TEMPERATURE=0.2,
+                count_tokens_enabled=lambda: False,
+                get_client=lambda: _DummyClient(),
+            )
+            if name == "langslice.vlm.config"
+            else current_import_module(name)
+        ),
+    )
+
+    agents.estimate_registration_correspondences(
+        Image.new("RGB", (120, 100), (0, 0, 0)),
+        atlas_name="allen_mouse_25um",
+        position_mm=1.0,
+        target_landmark_count=1,
+        min_edge_landmarks=0,
+    )
+
+    assert isinstance(captured["config"], dict)
+    assert captured["config"]["thinking_config"] == {"thinking_level": "LOW"}
+
+
+def test_registration_progress_heartbeat_reports_wait_and_completion() -> None:
+    messages: list[str] = []
+
+    result = agents._run_with_progress_heartbeat(
+        lambda: (time.sleep(0.03), "ok")[1],
+        request_label="Registration test request",
+        on_progress=messages.append,
+        heartbeat_interval_s=0.01,
+    )
+
+    assert result == "ok"
+    assert messages[0] == "Registration test request: request started"
+    assert any("still waiting for Gemini" in message for message in messages)
+    assert messages[-1].startswith("Registration test request: response received in ")
