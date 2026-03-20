@@ -230,15 +230,23 @@ class OverlayGraphicsView(QFrame):
         self._refresh_markers()
 
     def set_atlas(self, atlas_name: str) -> None:
-        self._atlas_name = atlas_name.strip() or None
+        new_name = atlas_name.strip() or None
+        if self._atlas_name == new_name:
+            return
+        self._atlas_name = new_name
         self._queue_atlas_reload()
 
     def set_position(self, position_mm: float) -> None:
+        if self._position_mm == position_mm:
+            return
         self._position_mm = position_mm
         self._queue_atlas_reload()
 
     def set_show_region_borders(self, visible: bool) -> None:
-        self._show_region_borders = bool(visible)
+        value = bool(visible)
+        if self._show_region_borders == value:
+            return
+        self._show_region_borders = value
         self._queue_atlas_reload()
 
     def set_pixel_size(self, um_per_px: float) -> None:  # noqa: ARG002

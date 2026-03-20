@@ -58,6 +58,7 @@ from langslice.atlas import (
     list_downloaded_atlases,
 )
 from langslice.image_prep import (
+    DEFAULT_VLM_MAX_LONG_EDGE,
     LoadedImageState,
     load_image_state,
     prepare_image_for_vlm,
@@ -65,6 +66,7 @@ from langslice.image_prep import (
 )
 from langslice.registration import (
     AffineResult,
+    RegistrationAnnotationSession,
     RegistrationCorrespondence,
     RegistrationResult,
     estimate_registration_runtime,
@@ -73,16 +75,22 @@ from langslice.gui.theme import ACCENT, STYLESHEET, TEXT_SECONDARY
 from langslice.vlm import APResult, estimate_position
 from langslice.vlm.config import (
     AVAILABLE_MODELS,
-    AVAILABLE_THINKING_BUDGETS,
+    AVAILABLE_THINKING_LEVELS,
+    CODE_EXECUTION_ENABLED,
     MODEL_NAME,
-    REGISTRATION_THINKING_BUDGET,
     TEMPERATURE,
+    THINKING_LEVEL,
+    ap_use_context_cache,
+    ap_use_file_api,
+    ap_use_interactions,
+    count_tokens_enabled,
     default_registration_workflow,
     get_registration_workflow_options,
     is_image_generation_model,
     set_model_name,
-    set_registration_thinking_budget,
+    set_thinking_level,
     set_temperature,
+    supports_code_execution,
 )
 from langslice.export import build_quint_export, save_quint_json
 from langslice.gui.run_metadata_dialog import RunMetadataDialog
@@ -101,6 +109,13 @@ draw_correspondence_markers = _main_window_components.draw_correspondence_marker
 pil_to_qpixmap = _main_window_components.pil_to_qpixmap
 should_apply_affine_to_slice = _main_window_components.should_apply_affine_to_slice
 TraceInspector = importlib.import_module("langslice.gui.trace_inspector").TraceInspector
+
+VLM_RESOLUTION_OPTIONS: list[tuple[str, int]] = [
+    ("512", 512),
+    ("1K", 1024),
+    ("2K", 2048),
+    ("4K", 4096),
+]
 
 try:
     AtlasViewer = importlib.import_module("langslice.gui.atlas_viewer").AtlasViewer
@@ -151,6 +166,7 @@ class AgentWorker(QObject):
     step_started = Signal(str)
     step_completed = Signal(str, object)
     step_error = Signal(str, str)
+    annotation_session_ready = Signal(object)
     correspondences_ready = Signal(object)
     log_message = Signal(str)
     trace_event = Signal(object)
@@ -165,6 +181,9 @@ class AgentWorker(QObject):
         target_landmark_count: int,
         registration_workflow: str,
         show_atlas_borders: bool,
+        ap_max_iterations: int,
+        enable_code_execution: bool,
+        tool_loop_max_steps: int,
     ) -> None:
         super().__init__()
         self.image = canonical_image
@@ -174,6 +193,9 @@ class AgentWorker(QObject):
         self.target_landmark_count = target_landmark_count
         self.registration_workflow = registration_workflow
         self.show_atlas_borders = bool(show_atlas_borders)
+        self.ap_max_iterations = max(1, int(ap_max_iterations))
+        self.enable_code_execution = bool(enable_code_execution)
+        self.tool_loop_max_steps = max(1, int(tool_loop_max_steps))
 
     def run(self) -> None:
         try:
@@ -184,6 +206,7 @@ class AgentWorker(QObject):
                 atlas_name=self.atlas_name,
                 on_progress=self.log_message.emit,
                 on_trace=self.trace_event.emit,
+                max_iterations=self.ap_max_iterations,
             )
             self.step_completed.emit("ap", ap_result)
         except Exception as exc:
@@ -208,7 +231,10 @@ class AgentWorker(QObject):
                 workflow=self.registration_workflow,
                 show_atlas_borders=self.show_atlas_borders,
                 on_correspondences=self.correspondences_ready.emit,
+                on_annotation_session=self.annotation_session_ready.emit,
                 debug_dir=ap_result.debug_dir,
+                enable_code_execution=self.enable_code_execution,
+                tool_loop_max_steps=self.tool_loop_max_steps,
             )
             self.step_completed.emit("affine", registration_result)
         except Exception as exc:
@@ -223,6 +249,7 @@ class ManualRegistrationWorker(QObject):
     step_started = Signal(str)
     step_completed = Signal(str, object)
     step_error = Signal(str, str)
+    annotation_session_ready = Signal(object)
     correspondences_ready = Signal(object)
     log_message = Signal(str)
     trace_event = Signal(object)
@@ -237,6 +264,8 @@ class ManualRegistrationWorker(QObject):
         target_landmark_count: int,
         registration_workflow: str,
         show_atlas_borders: bool,
+        enable_code_execution: bool,
+        tool_loop_max_steps: int,
     ) -> None:
         super().__init__()
         self.image = canonical_image
@@ -246,6 +275,8 @@ class ManualRegistrationWorker(QObject):
         self.target_landmark_count = target_landmark_count
         self.registration_workflow = registration_workflow
         self.show_atlas_borders = bool(show_atlas_borders)
+        self.enable_code_execution = bool(enable_code_execution)
+        self.tool_loop_max_steps = max(1, int(tool_loop_max_steps))
 
     def run(self) -> None:
         debug_dir = _create_debug_run_dir(self.atlas_name, suffix="manual")
@@ -282,7 +313,10 @@ class ManualRegistrationWorker(QObject):
                 workflow=self.registration_workflow,
                 show_atlas_borders=self.show_atlas_borders,
                 on_correspondences=self.correspondences_ready.emit,
+                on_annotation_session=self.annotation_session_ready.emit,
                 debug_dir=debug_dir,
+                enable_code_execution=self.enable_code_execution,
+                tool_loop_max_steps=self.tool_loop_max_steps,
             )
             self.step_completed.emit("affine", registration_result)
         except Exception as exc:
@@ -324,6 +358,7 @@ class MainWindow(QMainWindow):
         self.ap_result: APResult | None = None
         self.affine_result: AffineResult | None = None
         self.registration_result: RegistrationResult | None = None
+        self.preview_annotation_session: RegistrationAnnotationSession | None = None
         self.preview_correspondences: list[RegistrationCorrespondence] | None = None
         self._last_run_context: dict[str, object] | None = None
         self.current_view_mode = "single"
@@ -332,8 +367,11 @@ class MainWindow(QMainWindow):
         self.worker: AgentWorker | ManualRegistrationWorker | None = None
 
         self.pixel_size_um: float = 4.0
+        self.vlm_max_long_edge: int = DEFAULT_VLM_MAX_LONG_EDGE
         self.registration_landmark_count: int = 8
         self.registration_workflow: str = default_registration_workflow(MODEL_NAME)
+        self.ap_max_iterations: int = 20
+        self.registration_tool_loop_max_steps: int = 24
         self._pixel_size_source: str = "manual_default"
         self._metadata_pixel_size_um: float | None = None
         self._vlm_scale_factor: float = 1.0
@@ -343,6 +381,7 @@ class MainWindow(QMainWindow):
         self._slice_brightness: float = 0.0
         self._slice_contrast: float = 1.0
         self._show_atlas_region_borders: bool = True
+        self._code_execution_enabled: bool = CODE_EXECUTION_ENABLED
 
         self._slice_adjust_timer = QTimer(self)
         self._slice_adjust_timer.setSingleShot(True)
@@ -350,6 +389,7 @@ class MainWindow(QMainWindow):
         self._slice_adjust_timer.timeout.connect(self._apply_slice_adjustments)
 
         self._build_ui()
+        self._refresh_model_specific_controls()
         self._set_pipeline_mode("agent")
         self._set_view_mode("single")
         self._set_export_enabled(False)
@@ -365,12 +405,14 @@ class MainWindow(QMainWindow):
         root_layout.addWidget(self._build_header())
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.setChildrenCollapsible(False)
+        splitter.setChildrenCollapsible(True)
+        splitter.addWidget(self._build_settings_panel())
         splitter.addWidget(self._build_canvas_panel())
         splitter.addWidget(self._build_agent_panel())
-        splitter.setStretchFactor(0, 1)
-        splitter.setStretchFactor(1, 0)
-        splitter.setSizes([1020, 400])
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+        splitter.setStretchFactor(2, 0)
+        splitter.setSizes([300, 760, 400])
         root_layout.addWidget(splitter, stretch=1)
 
     @staticmethod
@@ -453,88 +495,6 @@ class MainWindow(QMainWindow):
         right = QHBoxLayout()
         right.setSpacing(8)
 
-        self.atlas_combo = QComboBox()
-        self._populate_atlas_combo()
-        self.atlas_combo.currentIndexChanged.connect(self._on_atlas_changed)
-
-        model_label = QLabel("Model:")
-        model_label.setObjectName("subheading")
-        self.model_combo = QComboBox()
-        for m in AVAILABLE_MODELS:
-            self.model_combo.addItem(m)
-        self.model_combo.setCurrentText(MODEL_NAME)
-        self.model_combo.setFixedWidth(180)
-        self.model_combo.setToolTip("Gemini model used for AP estimation and registration")
-        self.model_combo.currentTextChanged.connect(self._on_model_changed)
-
-        workflow_label = QLabel("Workflow:")
-        workflow_label.setObjectName("subheading")
-        self.workflow_combo = QComboBox()
-        self.workflow_combo.setFixedWidth(150)
-        self.workflow_combo.setToolTip(
-            "Registration workflow. Image-gen mode is only available when an image-generation model is selected."
-        )
-        self._refresh_registration_workflow_options(self.registration_workflow)
-        self.workflow_combo.currentIndexChanged.connect(self._on_registration_workflow_changed)
-
-        px_size_label = QLabel("Pixel Size:")
-        px_size_label.setObjectName("subheading")
-        self.pixel_size_spin = QDoubleSpinBox()
-        self.pixel_size_spin.setRange(0.1, 100.0)
-        self.pixel_size_spin.setValue(self.pixel_size_um)
-        self.pixel_size_spin.setSuffix(" um/px")
-        self.pixel_size_spin.setDecimals(2)
-        self.pixel_size_spin.setSingleStep(0.5)
-        self.pixel_size_spin.setFixedWidth(130)
-        self.pixel_size_spin.setToolTip(
-            "Pixel size of the histology image in micrometers per pixel"
-        )
-        self.pixel_size_spin.valueChanged.connect(self._on_pixel_size_changed)
-
-        landmark_count_label = QLabel("Landmarks:")
-        landmark_count_label.setObjectName("subheading")
-        self.landmark_count_spin = QSpinBox()
-        self.landmark_count_spin.setRange(6, 24)
-        self.landmark_count_spin.setValue(self.registration_landmark_count)
-        self.landmark_count_spin.setSuffix(" pts")
-        self.landmark_count_spin.setFixedWidth(110)
-        self.landmark_count_spin.setToolTip(
-            "Total correspondence pairs requested from the registration agent. "
-            "At least 5 are enforced near image borders."
-        )
-        self.landmark_count_spin.valueChanged.connect(self._on_landmark_count_changed)
-
-        thinking_label = QLabel("Thinking:")
-        thinking_label.setObjectName("subheading")
-        self.thinking_combo = QComboBox()
-        current_budget = REGISTRATION_THINKING_BUDGET
-        selected_index = 0
-        for i, (label, budget) in enumerate(AVAILABLE_THINKING_BUDGETS):
-            self.thinking_combo.addItem(label, budget)
-            if budget == current_budget:
-                selected_index = i
-        self.thinking_combo.setCurrentIndex(selected_index)
-        self.thinking_combo.setFixedWidth(120)
-        self.thinking_combo.setToolTip(
-            "Thinking budget for registration (landmark correspondence). "
-            "Higher values give the model more reasoning tokens."
-        )
-        self.thinking_combo.currentIndexChanged.connect(self._on_thinking_budget_changed)
-
-        temperature_label = QLabel("Temp:")
-        temperature_label.setObjectName("subheading")
-        self.temperature_spin = QDoubleSpinBox()
-        self.temperature_spin.setRange(0.0, 2.0)
-        self.temperature_spin.setDecimals(2)
-        self.temperature_spin.setSingleStep(0.05)
-        self.temperature_spin.setValue(TEMPERATURE)
-        self.temperature_spin.setFixedWidth(90)
-        self.temperature_spin.setToolTip(
-            "Gemini temperature for AP estimation and registration. "
-            "Lower values are more deterministic; higher values are more exploratory."
-        )
-        self.temperature_spin.valueChanged.connect(self._on_temperature_changed)
-
         self.upload_button = QPushButton("Open Image...")
         self.upload_button.setObjectName("secondary")
         self.upload_button.clicked.connect(self._browse_image)
@@ -547,19 +507,6 @@ class MainWindow(QMainWindow):
         self.export_button.setObjectName("secondary")
         self.export_button.clicked.connect(self._export_abba)
 
-        right.addWidget(self.atlas_combo)
-        right.addWidget(model_label)
-        right.addWidget(self.model_combo)
-        right.addWidget(workflow_label)
-        right.addWidget(self.workflow_combo)
-        right.addWidget(px_size_label)
-        right.addWidget(self.pixel_size_spin)
-        right.addWidget(landmark_count_label)
-        right.addWidget(self.landmark_count_spin)
-        right.addWidget(thinking_label)
-        right.addWidget(self.thinking_combo)
-        right.addWidget(temperature_label)
-        right.addWidget(self.temperature_spin)
         right.addWidget(self.upload_button)
         right.addWidget(self.settings_button)
         right.addWidget(self.export_button)
@@ -568,7 +515,285 @@ class MainWindow(QMainWindow):
 
     def _open_settings(self) -> None:
         dialog = SettingsDialog(self)
+        dialog.settings_saved.connect(self._on_settings_saved)
         dialog.exec()
+
+    def _build_settings_panel(self) -> QWidget:
+        scroll = _qtwidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFixedWidth(300)
+        scroll.setStyleSheet(
+            "QScrollArea { border: none; border-right: 1px solid rgba(255,255,255,20); background: transparent; } QWidget#settingsPanel { background: transparent; }"
+        )
+
+        panel = QWidget()
+        panel.setObjectName("settingsPanel")
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(24)
+
+        # 1. Project Setup
+        project_group = QFrame()
+        project_layout = QVBoxLayout(project_group)
+        project_layout.setContentsMargins(0, 0, 0, 0)
+        project_layout.setSpacing(8)
+        project_title = QLabel("Project Setup")
+        project_title.setStyleSheet("font-size: 13px; font-weight: 600; color: #ffffff;")
+        project_layout.addWidget(project_title)
+
+        atlas_label = QLabel("Atlas:")
+        atlas_label.setObjectName("subheading")
+        self.atlas_combo = QComboBox()
+        self._populate_atlas_combo()
+        self.atlas_combo.currentIndexChanged.connect(self._on_atlas_changed)
+        project_layout.addWidget(atlas_label)
+        project_layout.addWidget(self.atlas_combo)
+
+        px_size_label = QLabel("Pixel Size:")
+        px_size_label.setObjectName("subheading")
+        self.pixel_size_spin = QDoubleSpinBox()
+        self.pixel_size_spin.setRange(0.1, 100.0)
+        self.pixel_size_spin.setValue(self.pixel_size_um)
+        self.pixel_size_spin.setSuffix(" um/px")
+        self.pixel_size_spin.setDecimals(2)
+        self.pixel_size_spin.setSingleStep(0.5)
+        self.pixel_size_spin.setToolTip(
+            "Pixel size of the histology image in micrometers per pixel"
+        )
+        self.pixel_size_spin.valueChanged.connect(self._on_pixel_size_changed)
+        project_layout.addWidget(px_size_label)
+        project_layout.addWidget(self.pixel_size_spin)
+
+        vlm_resolution_label = QLabel("VLM Resolution:")
+        vlm_resolution_label.setObjectName("subheading")
+        self.vlm_resolution_combo = QComboBox()
+        for label, edge in VLM_RESOLUTION_OPTIONS:
+            self.vlm_resolution_combo.addItem(label, edge)
+        resolution_index = self.vlm_resolution_combo.findData(self.vlm_max_long_edge)
+        self.vlm_resolution_combo.setCurrentIndex(max(0, resolution_index))
+        self.vlm_resolution_combo.setToolTip(
+            "Maximum long-edge size for the image sent to Gemini. Lower values are faster but lose detail."
+        )
+        self.vlm_resolution_combo.currentIndexChanged.connect(self._on_vlm_resolution_changed)
+        project_layout.addWidget(vlm_resolution_label)
+        project_layout.addWidget(self.vlm_resolution_combo)
+
+        layout.addWidget(project_group)
+
+        # 2. Agent Parameters
+        agent_group = QFrame()
+        agent_layout = QVBoxLayout(agent_group)
+        agent_layout.setContentsMargins(0, 0, 0, 0)
+        agent_layout.setSpacing(8)
+        agent_title = QLabel("Agent Parameters")
+        agent_title.setStyleSheet("font-size: 13px; font-weight: 600; color: #ffffff;")
+        agent_layout.addWidget(agent_title)
+
+        model_label = QLabel("Model:")
+        model_label.setObjectName("subheading")
+        self.model_combo = QComboBox()
+        for m in AVAILABLE_MODELS:
+            self.model_combo.addItem(m)
+        self.model_combo.setCurrentText(MODEL_NAME)
+        self.model_combo.setToolTip("Gemini model used for AP estimation and registration")
+        self.model_combo.currentTextChanged.connect(self._on_model_changed)
+        agent_layout.addWidget(model_label)
+        agent_layout.addWidget(self.model_combo)
+
+        workflow_label = QLabel("Workflow:")
+        workflow_label.setObjectName("subheading")
+        self.workflow_combo = QComboBox()
+        self.workflow_combo.setToolTip(
+            "Registration workflow. Image-gen mode is only available when an image-generation model is selected."
+        )
+        self._refresh_registration_workflow_options(self.registration_workflow)
+        self.workflow_combo.currentIndexChanged.connect(self._on_registration_workflow_changed)
+        agent_layout.addWidget(workflow_label)
+        agent_layout.addWidget(self.workflow_combo)
+
+        thinking_label = QLabel("Thinking:")
+        thinking_label.setObjectName("subheading")
+        self.thinking_combo = QComboBox()
+        current_level = THINKING_LEVEL
+        selected_index = 0
+        for i, (label, level) in enumerate(AVAILABLE_THINKING_LEVELS):
+            self.thinking_combo.addItem(label, level)
+            if level == current_level:
+                selected_index = i
+        self.thinking_combo.setCurrentIndex(selected_index)
+        self.thinking_combo.setToolTip(
+            "Gemini thinking level used for registration. Gemini 3 models use thinking_level rather than token budgets."
+        )
+        self.thinking_combo.currentIndexChanged.connect(self._on_thinking_level_changed)
+        agent_layout.addWidget(thinking_label)
+        agent_layout.addWidget(self.thinking_combo)
+
+        row1 = QHBoxLayout()
+        landmark_count_label = QLabel("Landmarks:")
+        landmark_count_label.setObjectName("subheading")
+        self.landmark_count_spin = QSpinBox()
+        self.landmark_count_spin.setRange(6, 24)
+        self.landmark_count_spin.setValue(self.registration_landmark_count)
+        self.landmark_count_spin.setSuffix(" pts")
+        self.landmark_count_spin.setToolTip(
+            "Total correspondence pairs requested from the registration agent."
+        )
+        self.landmark_count_spin.valueChanged.connect(self._on_landmark_count_changed)
+        row1.addWidget(landmark_count_label)
+        row1.addWidget(self.landmark_count_spin)
+        agent_layout.addLayout(row1)
+
+        row2 = QHBoxLayout()
+        temperature_label = QLabel("Temp:")
+        temperature_label.setObjectName("subheading")
+        self.temperature_spin = QDoubleSpinBox()
+        self.temperature_spin.setRange(0.0, 2.0)
+        self.temperature_spin.setDecimals(2)
+        self.temperature_spin.setSingleStep(0.05)
+        self.temperature_spin.setValue(TEMPERATURE)
+        self.temperature_spin.setToolTip("Gemini temperature for AP estimation and registration.")
+        self.temperature_spin.valueChanged.connect(self._on_temperature_changed)
+        row2.addWidget(temperature_label)
+        row2.addWidget(self.temperature_spin)
+        agent_layout.addLayout(row2)
+
+        self.code_execution_checkbox = QCheckBox("Enable code execution")
+        self.code_execution_checkbox.setChecked(self._code_execution_enabled)
+        self.code_execution_checkbox.setToolTip(
+            "Lets supported Gemini Flash models use code execution during registration requests."
+        )
+        self.code_execution_checkbox.toggled.connect(self._on_code_execution_toggled)
+        agent_layout.addWidget(self.code_execution_checkbox)
+
+        ap_iterations_row = QHBoxLayout()
+        ap_iterations_label = QLabel("AP Max Turns:")
+        ap_iterations_label.setObjectName("subheading")
+        self.ap_iterations_spin = QSpinBox()
+        self.ap_iterations_spin.setRange(1, 50)
+        self.ap_iterations_spin.setValue(self.ap_max_iterations)
+        self.ap_iterations_spin.setToolTip(
+            "Maximum number of AP-estimation tool turns before the agent must stop."
+        )
+        self.ap_iterations_spin.valueChanged.connect(self._on_ap_max_iterations_changed)
+        ap_iterations_row.addWidget(ap_iterations_label)
+        ap_iterations_row.addWidget(self.ap_iterations_spin)
+        agent_layout.addLayout(ap_iterations_row)
+
+        tool_loop_row = QHBoxLayout()
+        tool_loop_label = QLabel("Loop Max Steps:")
+        tool_loop_label.setObjectName("subheading")
+        self.tool_loop_steps_spin = QSpinBox()
+        self.tool_loop_steps_spin.setRange(1, 50)
+        self.tool_loop_steps_spin.setValue(self.registration_tool_loop_max_steps)
+        self.tool_loop_steps_spin.setToolTip(
+            "Maximum number of multimodal tool-loop steps during registration."
+        )
+        self.tool_loop_steps_spin.valueChanged.connect(self._on_tool_loop_max_steps_changed)
+        tool_loop_row.addWidget(tool_loop_label)
+        tool_loop_row.addWidget(self.tool_loop_steps_spin)
+        agent_layout.addLayout(tool_loop_row)
+
+        layout.addWidget(agent_group)
+
+        # 3. Image Pre-processing
+        self.agent_input_wrap = QFrame()
+        input_layout = QVBoxLayout(self.agent_input_wrap)
+        input_layout.setContentsMargins(0, 0, 0, 0)
+        input_layout.setSpacing(8)
+
+        input_title = QLabel("Image Adjustments")
+        input_title.setStyleSheet("font-size: 13px; font-weight: 600; color: #ffffff;")
+        input_copy = QLabel("Updates the preview and the image sent to the agents.")
+        input_copy.setWordWrap(True)
+        input_copy.setObjectName("subheading")
+        self.agent_input_status_label = QLabel("Preview matches current agent input.")
+        self.agent_input_status_label.setWordWrap(True)
+        self.agent_input_status_label.setObjectName("subheading")
+
+        channel_label = QLabel("Channels")
+        channel_label.setObjectName("monoLabel")
+        channel_row = QHBoxLayout()
+        channel_row.setContentsMargins(0, 0, 0, 0)
+        channel_row.setSpacing(8)
+        self.channel_checkboxes: list[QCheckBox] = []
+        for label in ("Red", "Green", "Blue"):
+            checkbox = QCheckBox(label)
+            checkbox.setChecked(True)
+            checkbox.toggled.connect(self._queue_slice_adjustment_refresh)
+            self.channel_checkboxes.append(checkbox)
+            channel_row.addWidget(checkbox)
+        channel_row.addStretch(1)
+
+        exposure_row = QHBoxLayout()
+        exposure_row.setContentsMargins(0, 0, 0, 0)
+        exposure_row.setSpacing(8)
+        exposure_label = QLabel("Exposure")
+        exposure_label.setObjectName("monoLabel")
+        self.exposure_slider = QSlider(Qt.Orientation.Horizontal)
+        self.exposure_slider.setRange(-30, 30)
+        self.exposure_slider.setValue(0)
+        self.exposure_slider.valueChanged.connect(self._queue_slice_adjustment_refresh)
+        self.exposure_value_label = QLabel("0.0 EV")
+        self.exposure_value_label.setObjectName("monoLabel")
+        exposure_row.addWidget(exposure_label)
+        exposure_row.addWidget(self.exposure_slider, stretch=1)
+        exposure_row.addWidget(self.exposure_value_label)
+
+        brightness_row = QHBoxLayout()
+        brightness_row.setContentsMargins(0, 0, 0, 0)
+        brightness_row.setSpacing(8)
+        brightness_label = QLabel("Brightness")
+        brightness_label.setObjectName("monoLabel")
+        self.brightness_slider = QSlider(Qt.Orientation.Horizontal)
+        self.brightness_slider.setRange(-100, 100)
+        self.brightness_slider.setValue(0)
+        self.brightness_slider.valueChanged.connect(self._queue_slice_adjustment_refresh)
+        self.brightness_value_label = QLabel("0%")
+        self.brightness_value_label.setObjectName("monoLabel")
+        brightness_row.addWidget(brightness_label)
+        brightness_row.addWidget(self.brightness_slider, stretch=1)
+        brightness_row.addWidget(self.brightness_value_label)
+
+        contrast_row = QHBoxLayout()
+        contrast_row.setContentsMargins(0, 0, 0, 0)
+        contrast_row.setSpacing(8)
+        contrast_label = QLabel("Contrast")
+        contrast_label.setObjectName("monoLabel")
+        self.contrast_slider = QSlider(Qt.Orientation.Horizontal)
+        self.contrast_slider.setRange(0, 200)
+        self.contrast_slider.setValue(100)
+        self.contrast_slider.valueChanged.connect(self._queue_slice_adjustment_refresh)
+        self.contrast_value_label = QLabel("100%")
+        self.contrast_value_label.setObjectName("monoLabel")
+        contrast_row.addWidget(contrast_label)
+        contrast_row.addWidget(self.contrast_slider, stretch=1)
+        contrast_row.addWidget(self.contrast_value_label)
+
+        self.atlas_borders_checkbox = QCheckBox("Show atlas region borders")
+        self.atlas_borders_checkbox.setChecked(True)
+        self.atlas_borders_checkbox.toggled.connect(self._on_atlas_borders_toggled)
+
+        reset_adjustments_button = QPushButton("Reset Adjustments")
+        reset_adjustments_button.setObjectName("secondary")
+        reset_adjustments_button.clicked.connect(self._reset_slice_adjustments)
+
+        input_layout.addWidget(input_title)
+        input_layout.addWidget(input_copy)
+        input_layout.addWidget(self.agent_input_status_label)
+        input_layout.addWidget(channel_label)
+        input_layout.addLayout(channel_row)
+        input_layout.addLayout(exposure_row)
+        input_layout.addLayout(brightness_row)
+        input_layout.addLayout(contrast_row)
+        input_layout.addWidget(self.atlas_borders_checkbox)
+        input_layout.addWidget(reset_adjustments_button)
+
+        self.agent_input_wrap.hide()
+        layout.addWidget(self.agent_input_wrap)
+
+        layout.addStretch(1)
+        scroll.setWidget(panel)
+        return scroll
 
     def _build_canvas_panel(self) -> QWidget:
         self.canvas = CanvasArea()
@@ -668,7 +893,7 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         self.single_image_label = ImageLabel()
         self.single_image_label.setStyleSheet(
-            "border: 1px solid rgba(255,255,255,20); border-radius: 10px;"
+            "border: 1px solid rgba(255,255,255,30); border-radius: 10px; background-color: #000000;"
         )
         layout.addWidget(self.single_image_label)
         return page
@@ -726,7 +951,15 @@ class MainWindow(QMainWindow):
         self.clear_all_button.setObjectName("secondary")
         self.clear_all_button.clicked.connect(self._clear_all)
         self.run_button = QPushButton("Run Agent")
+
+        # Give the Run Agent button strong visual pop
+        self.run_button.setStyleSheet(
+            "QPushButton { background-color: #6366f1; color: white; font-weight: bold; padding: 8px 16px; border-radius: 6px; border: none; }"
+            "QPushButton:hover { background-color: #818cf8; }"
+            "QPushButton:disabled { background-color: #374151; color: #9ca3af; }"
+        )
         self.run_button.clicked.connect(self._run_agent)
+
         hrow.addWidget(title)
         hrow.addStretch(1)
         hrow.addWidget(self.clear_all_button)
@@ -739,104 +972,6 @@ class MainWindow(QMainWindow):
         workflow_copy.setWordWrap(True)
         workflow_copy.setObjectName("subheading")
         layout.addWidget(workflow_copy)
-
-        self.agent_input_wrap = QFrame()
-        self.agent_input_wrap.setObjectName("glassPanel")
-        input_layout = QVBoxLayout(self.agent_input_wrap)
-        input_layout.setContentsMargins(10, 10, 10, 10)
-        input_layout.setSpacing(6)
-
-        input_title = QLabel("Agent Input Adjustments")
-        input_title.setStyleSheet("font-size: 13px; font-weight: 600;")
-        input_copy = QLabel(
-            "Slice adjustments update the preview and the image sent to the agents. "
-            "The atlas border toggle also matches landmark-registration atlas inputs."
-        )
-        input_copy.setWordWrap(True)
-        input_copy.setObjectName("subheading")
-        self.agent_input_status_label = QLabel("Preview matches current agent input.")
-        self.agent_input_status_label.setWordWrap(True)
-        self.agent_input_status_label.setObjectName("subheading")
-
-        channel_label = QLabel("Channels")
-        channel_label.setObjectName("monoLabel")
-        channel_row = QHBoxLayout()
-        channel_row.setContentsMargins(0, 0, 0, 0)
-        channel_row.setSpacing(8)
-        self.channel_checkboxes: list[QCheckBox] = []
-        for label in ("Red", "Green", "Blue"):
-            checkbox = QCheckBox(label)
-            checkbox.setChecked(True)
-            checkbox.toggled.connect(self._queue_slice_adjustment_refresh)
-            self.channel_checkboxes.append(checkbox)
-            channel_row.addWidget(checkbox)
-        channel_row.addStretch(1)
-
-        exposure_row = QHBoxLayout()
-        exposure_row.setContentsMargins(0, 0, 0, 0)
-        exposure_row.setSpacing(8)
-        exposure_label = QLabel("Exposure")
-        exposure_label.setObjectName("monoLabel")
-        self.exposure_slider = QSlider(Qt.Orientation.Horizontal)
-        self.exposure_slider.setRange(-30, 30)
-        self.exposure_slider.setValue(0)
-        self.exposure_slider.valueChanged.connect(self._queue_slice_adjustment_refresh)
-        self.exposure_value_label = QLabel("0.0 EV")
-        self.exposure_value_label.setObjectName("monoLabel")
-        exposure_row.addWidget(exposure_label)
-        exposure_row.addWidget(self.exposure_slider, stretch=1)
-        exposure_row.addWidget(self.exposure_value_label)
-
-        brightness_row = QHBoxLayout()
-        brightness_row.setContentsMargins(0, 0, 0, 0)
-        brightness_row.setSpacing(8)
-        brightness_label = QLabel("Brightness")
-        brightness_label.setObjectName("monoLabel")
-        self.brightness_slider = QSlider(Qt.Orientation.Horizontal)
-        self.brightness_slider.setRange(-100, 100)
-        self.brightness_slider.setValue(0)
-        self.brightness_slider.valueChanged.connect(self._queue_slice_adjustment_refresh)
-        self.brightness_value_label = QLabel("0%")
-        self.brightness_value_label.setObjectName("monoLabel")
-        brightness_row.addWidget(brightness_label)
-        brightness_row.addWidget(self.brightness_slider, stretch=1)
-        brightness_row.addWidget(self.brightness_value_label)
-
-        contrast_row = QHBoxLayout()
-        contrast_row.setContentsMargins(0, 0, 0, 0)
-        contrast_row.setSpacing(8)
-        contrast_label = QLabel("Contrast")
-        contrast_label.setObjectName("monoLabel")
-        self.contrast_slider = QSlider(Qt.Orientation.Horizontal)
-        self.contrast_slider.setRange(0, 200)
-        self.contrast_slider.setValue(100)
-        self.contrast_slider.valueChanged.connect(self._queue_slice_adjustment_refresh)
-        self.contrast_value_label = QLabel("100%")
-        self.contrast_value_label.setObjectName("monoLabel")
-        contrast_row.addWidget(contrast_label)
-        contrast_row.addWidget(self.contrast_slider, stretch=1)
-        contrast_row.addWidget(self.contrast_value_label)
-
-        self.atlas_borders_checkbox = QCheckBox("Show atlas region borders")
-        self.atlas_borders_checkbox.setChecked(True)
-        self.atlas_borders_checkbox.toggled.connect(self._on_atlas_borders_toggled)
-
-        reset_adjustments_button = QPushButton("Reset Adjustments")
-        reset_adjustments_button.setObjectName("secondary")
-        reset_adjustments_button.clicked.connect(self._reset_slice_adjustments)
-
-        input_layout.addWidget(input_title)
-        input_layout.addWidget(input_copy)
-        input_layout.addWidget(self.agent_input_status_label)
-        input_layout.addWidget(channel_label)
-        input_layout.addLayout(channel_row)
-        input_layout.addLayout(exposure_row)
-        input_layout.addLayout(brightness_row)
-        input_layout.addLayout(contrast_row)
-        input_layout.addWidget(self.atlas_borders_checkbox)
-        input_layout.addWidget(reset_adjustments_button)
-        self.agent_input_wrap.hide()
-        layout.addWidget(self.agent_input_wrap)
 
         self.ap_adjust_wrap = QFrame()
         self.ap_adjust_wrap.setObjectName("glassPanel")
@@ -890,14 +1025,24 @@ class MainWindow(QMainWindow):
         self.failure_btn.setObjectName("secondary")
         self.failure_btn.clicked.connect(lambda: self._mark_run("failure"))
 
+        self.save_trace_btn = QPushButton("Save Agent Trace...")
+        self.save_trace_btn.setObjectName("secondary")
+        self.save_trace_btn.clicked.connect(self._save_agent_trace)
+
         fb_layout.addWidget(self.success_btn)
         fb_layout.addWidget(self.failure_btn)
         self.feedback_wrap.hide()
         layout.addWidget(self.feedback_wrap)
 
+        logs_header = QHBoxLayout()
+        logs_header.setContentsMargins(0, 0, 0, 0)
+        logs_header.setSpacing(8)
         logs_label = QLabel("Agent Trace")
         logs_label.setObjectName("monoLabel")
-        layout.addWidget(logs_label)
+        logs_header.addWidget(logs_label)
+        logs_header.addStretch(1)
+        logs_header.addWidget(self.save_trace_btn)
+        layout.addLayout(logs_header)
 
         self.trace_inspector = TraceInspector()
         self.trace_inspector.setMinimumHeight(220)
@@ -947,6 +1092,27 @@ class MainWindow(QMainWindow):
             self.failure_btn.setEnabled(False)
         except Exception as exc:
             self._append_log(f"Failed to move trace: {exc}")
+
+    def _save_agent_trace(self) -> None:
+        if not self.trace_inspector.has_events():
+            self._append_log("No agent trace events available to save.")
+            return
+
+        default_name = f"agent_trace_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        out_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Agent Trace",
+            default_name,
+            "JSON (*.json)",
+        )
+        if not out_path:
+            return
+
+        try:
+            event_count = self.trace_inspector.export_events(out_path)
+            self._append_log(f"Saved {event_count} trace events to {out_path}")
+        except Exception as exc:
+            self._append_log(f"Failed to save agent trace: {exc}")
 
     @staticmethod
     def _unique_target_path(base_path: str) -> str:
@@ -998,16 +1164,26 @@ class MainWindow(QMainWindow):
             "vlm_height": run_context.get("vlm_height"),
             "vlm_scale_factor": run_context.get("vlm_scale_factor"),
             "vlm_effective_pixel_size_um": run_context.get("vlm_effective_pixel_size_um"),
+            "vlm_max_long_edge": run_context.get("vlm_max_long_edge"),
+            "vlm_resolution_label": run_context.get("vlm_resolution_label"),
             "registration_landmark_count": run_context.get("registration_landmark_count")
             or self.registration_landmark_count,
             "registration_workflow": run_context.get("registration_workflow")
             or self.registration_workflow,
+            "ap_max_iterations": run_context.get("ap_max_iterations") or self.ap_max_iterations,
+            "tool_loop_max_steps": run_context.get("tool_loop_max_steps")
+            or self.registration_tool_loop_max_steps,
+            "code_execution_enabled": run_context.get("code_execution_enabled"),
             "channel_enabled": run_context.get("channel_enabled"),
             "channel_labels": run_context.get("channel_labels"),
             "exposure_ev": run_context.get("exposure_ev"),
             "brightness_pct": run_context.get("brightness_pct"),
             "contrast_pct": run_context.get("contrast_pct"),
             "show_atlas_region_borders": run_context.get("show_atlas_region_borders"),
+            "count_tokens_enabled": run_context.get("count_tokens_enabled"),
+            "ap_use_file_api": run_context.get("ap_use_file_api"),
+            "ap_use_context_cache": run_context.get("ap_use_context_cache"),
+            "ap_use_interactions": run_context.get("ap_use_interactions"),
             "run_started_at": run_context.get("run_started_at"),
             "estimated_position_mm": estimated_position,
             "actual_position_mm": actual_position,
@@ -1059,6 +1235,7 @@ class MainWindow(QMainWindow):
             loaded_state = load_image_state(
                 file_path,
                 fallback_pixel_size_um=self.pixel_size_um,
+                max_long_edge=self.vlm_max_long_edge,
             )
         except Exception as exc:
             self._append_log(f"Failed to open image: {exc}")
@@ -1079,6 +1256,7 @@ class MainWindow(QMainWindow):
         self.ap_result = None
         self.affine_result = None
         self.registration_result = None
+        self.preview_annotation_session = None
         self.preview_correspondences = None
         self._last_run_context = None
         self._refresh_agent_input_controls()
@@ -1124,6 +1302,7 @@ class MainWindow(QMainWindow):
         self.ap_result = None
         self.affine_result = None
         self.registration_result = None
+        self.preview_annotation_session = None
         self.preview_correspondences = None
         self._last_run_context = None
         self._slice_adjust_timer.stop()
@@ -1181,6 +1360,7 @@ class MainWindow(QMainWindow):
             + f"exposure={self.exposure_slider.value() / 10.0:+.1f} EV, "
             + f"brightness={self.brightness_slider.value():+d}%, "
             + f"contrast={self.contrast_slider.value()}%, "
+            + f"vlm={self._current_vlm_resolution_label()}, "
             + f"atlas borders={atlas_mode}."
         )
 
@@ -1197,6 +1377,7 @@ class MainWindow(QMainWindow):
         self.ap_result = None
         self.affine_result = None
         self.registration_result = None
+        self.preview_annotation_session = None
         self.preview_correspondences = None
         self._last_run_context = None
         self._reset_steps()
@@ -1216,7 +1397,11 @@ class MainWindow(QMainWindow):
             brightness=self.brightness_slider.value() / 100.0,
             contrast=self.contrast_slider.value() / 100.0,
         )
-        prep = prepare_image_for_vlm(self.pil_image, pixel_size_um=self.pixel_size_um)
+        prep = prepare_image_for_vlm(
+            self.pil_image,
+            pixel_size_um=self.pixel_size_um,
+            max_long_edge=self.vlm_max_long_edge,
+        )
         self.agent_vlm_image = prep.image
         self._vlm_scale_factor = prep.scale_factor
         self._vlm_effective_pixel_size_um = (
@@ -1310,6 +1495,23 @@ class MainWindow(QMainWindow):
             f"workflow={self.registration_workflow}, target={self.registration_landmark_count} pairs, edge hint=5 pairs)."
         )
 
+    def _current_vlm_resolution_label(self) -> str:
+        index = self.vlm_resolution_combo.currentIndex()
+        if index < 0:
+            return str(self.vlm_max_long_edge)
+        label = self.vlm_resolution_combo.itemText(index)
+        return label or str(self.vlm_max_long_edge)
+
+    def _current_code_execution_enabled(self) -> bool:
+        return bool(self._code_execution_enabled) and supports_code_execution(
+            self.model_combo.currentText()
+        )
+
+    def _refresh_model_specific_controls(self) -> None:
+        supported = supports_code_execution(self.model_combo.currentText())
+        self.code_execution_checkbox.setVisible(supported)
+        self.code_execution_checkbox.setEnabled(supported)
+
     def _set_pipeline_mode(self, mode: str) -> None:
         self._active_pipeline_mode = mode
         if mode == "manual":
@@ -1341,15 +1543,24 @@ class MainWindow(QMainWindow):
             "vlm_height": vlm_height,
             "vlm_scale_factor": vlm_scale_factor,
             "vlm_effective_pixel_size_um": vlm_effective_pixel_size_um,
+            "vlm_max_long_edge": self.vlm_max_long_edge,
+            "vlm_resolution_label": self._current_vlm_resolution_label(),
             "registration_landmark_count": self.registration_landmark_count,
             "registration_workflow": self.registration_workflow,
             "temperature": self.temperature_spin.value(),
+            "ap_max_iterations": self.ap_max_iterations,
+            "tool_loop_max_steps": self.registration_tool_loop_max_steps,
+            "code_execution_enabled": self._current_code_execution_enabled(),
             "channel_enabled": list(self._current_channel_enabled()),
             "channel_labels": list(self._slice_channel_labels),
             "exposure_ev": self.exposure_slider.value() / 10.0,
             "brightness_pct": self.brightness_slider.value(),
             "contrast_pct": self.contrast_slider.value(),
             "show_atlas_region_borders": self._show_atlas_region_borders,
+            "count_tokens_enabled": count_tokens_enabled(),
+            "ap_use_file_api": ap_use_file_api(),
+            "ap_use_context_cache": ap_use_context_cache(),
+            "ap_use_interactions": ap_use_interactions(),
             "run_started_at": datetime.now().isoformat(timespec="seconds"),
         }
 
@@ -1364,6 +1575,7 @@ class MainWindow(QMainWindow):
         worker.step_started.connect(self._on_step_started)
         worker.step_completed.connect(self._on_step_completed)
         worker.step_error.connect(self._on_step_error)
+        worker.annotation_session_ready.connect(self._on_annotation_session_ready)
         worker.correspondences_ready.connect(self._on_correspondences_ready)
         worker.log_message.connect(self._append_log)
         worker.trace_event.connect(self._append_trace_event)
@@ -1384,6 +1596,7 @@ class MainWindow(QMainWindow):
         self.ap_result = None
         self.affine_result = None
         self.registration_result = None
+        self.preview_annotation_session = None
         self.preview_correspondences = None
         self._reset_steps()
         self._update_display_pixmaps()
@@ -1408,6 +1621,9 @@ class MainWindow(QMainWindow):
                 target_landmark_count=self.registration_landmark_count,
                 registration_workflow=self.registration_workflow,
                 show_atlas_borders=self._show_atlas_region_borders,
+                ap_max_iterations=self.ap_max_iterations,
+                enable_code_execution=self._current_code_execution_enabled(),
+                tool_loop_max_steps=self.registration_tool_loop_max_steps,
             )
         )
 
@@ -1423,6 +1639,7 @@ class MainWindow(QMainWindow):
         self.ap_result = None
         self.affine_result = None
         self.registration_result = None
+        self.preview_annotation_session = None
         self.preview_correspondences = None
         self._reset_steps()
         self._update_display_pixmaps()
@@ -1442,6 +1659,8 @@ class MainWindow(QMainWindow):
                 target_landmark_count=self.registration_landmark_count,
                 registration_workflow=self.registration_workflow,
                 show_atlas_borders=self._show_atlas_region_borders,
+                enable_code_execution=self._current_code_execution_enabled(),
+                tool_loop_max_steps=self.registration_tool_loop_max_steps,
             )
         )
 
@@ -1474,6 +1693,7 @@ class MainWindow(QMainWindow):
         if step_id == "affine" and isinstance(result, RegistrationResult):
             self.registration_result = result
             self.affine_result = result.affine_result
+            self.preview_annotation_session = None
             self.preview_correspondences = None
             affine_result = result.affine_result
             self.step_affine.set_status("completed")
@@ -1504,6 +1724,33 @@ class MainWindow(QMainWindow):
             return
         self.preview_correspondences = correspondences
         self._append_log(f"Received {len(correspondences)} landmark pairs for visual review")
+        self._update_display_pixmaps()
+        self._set_view_mode("split")
+
+    def _on_annotation_session_ready(self, session_obj: object) -> None:
+        if not isinstance(session_obj, RegistrationAnnotationSession):
+            return
+        self.preview_annotation_session = session_obj
+        if self.current_pos is None:
+            position_hint = session_obj.metadata.get("position_mm")
+            if isinstance(position_hint, (int, float)):
+                self._set_ap_slider_value(float(position_hint))
+        atlas_count = len(session_obj.atlas_annotations)
+        slice_count = len(session_obj.slice_annotations)
+        pass_label = session_obj.metadata.get("pass")
+        if pass_label == 1:
+            self._append_log(
+                f"Atlas annotation pass ready: showing {atlas_count} proposed atlas landmarks"
+            )
+        elif pass_label == 2:
+            self._append_log(
+                "Slice transfer pass ready: showing "
+                f"{atlas_count} atlas landmarks and {slice_count} slice landmarks"
+            )
+        else:
+            self._append_log(
+                f"Registration annotation preview updated: atlas={atlas_count}, slice={slice_count}"
+            )
         self._update_display_pixmaps()
         self._set_view_mode("split")
 
@@ -1571,6 +1818,9 @@ class MainWindow(QMainWindow):
         self._append_log(f"Registration workflow set to {workflow_value}")
         self._update_run_buttons()
 
+    def _on_settings_saved(self) -> None:
+        self._append_log("Settings saved. Transport toggles will apply to the next run.")
+
     def _on_model_changed(self, model_name: str) -> None:
         set_model_name(model_name)
         previous_workflow = self.registration_workflow
@@ -1589,6 +1839,7 @@ class MainWindow(QMainWindow):
             self.workflow_combo.setToolTip(
                 "Registration workflow. Image-gen mode is only available when an image-generation model is selected."
             )
+        self._refresh_model_specific_controls()
         self._update_run_buttons()
 
     def _on_atlas_changed(self) -> None:
@@ -1649,6 +1900,36 @@ class MainWindow(QMainWindow):
         self._apply_slice_adjustments()
         self._sync_atlas_viewers()
 
+    def _on_vlm_resolution_changed(self, index: int) -> None:
+        value = self.vlm_resolution_combo.itemData(index)
+        if not isinstance(value, int) or value <= 0:
+            return
+        self.vlm_max_long_edge = int(value)
+        self._append_log(
+            f"VLM max resolution set to {self._current_vlm_resolution_label()} ({self.vlm_max_long_edge}px long edge)"
+        )
+        if self.source_image is None or self._is_worker_running():
+            return
+        self._apply_slice_adjustments()
+        self._invalidate_pipeline_outputs(
+            "VLM resolution changed; cleared prior AP/registration results."
+        )
+
+    def _on_code_execution_toggled(self, checked: bool) -> None:
+        self._code_execution_enabled = bool(checked)
+        status = "enabled" if self._current_code_execution_enabled() else "disabled"
+        self._append_log(f"Registration code execution {status}")
+
+    def _on_ap_max_iterations_changed(self, value: int) -> None:
+        self.ap_max_iterations = max(1, int(value))
+        self._append_log(f"AP max turns set to {self.ap_max_iterations}")
+
+    def _on_tool_loop_max_steps_changed(self, value: int) -> None:
+        self.registration_tool_loop_max_steps = max(1, int(value))
+        self._append_log(
+            f"Registration tool-loop max steps set to {self.registration_tool_loop_max_steps}"
+        )
+
     def _on_atlas_borders_toggled(self, checked: bool) -> None:
         self._show_atlas_region_borders = bool(checked)
         self._sync_atlas_viewers()
@@ -1663,12 +1944,12 @@ class MainWindow(QMainWindow):
         )
         self._update_run_buttons()
 
-    def _on_thinking_budget_changed(self, index: int) -> None:
-        budget = self.thinking_combo.itemData(index)
-        if isinstance(budget, int):
-            set_registration_thinking_budget(budget)
+    def _on_thinking_level_changed(self, index: int) -> None:
+        level = self.thinking_combo.itemData(index)
+        if isinstance(level, str) and level:
+            set_thinking_level(level)
             label = self.thinking_combo.itemText(index)
-            self._append_log(f"Registration thinking budget set to {label} ({budget} tokens)")
+            self._append_log(f"Registration thinking level set to {label} ({level})")
 
     def _on_temperature_changed(self, value: float) -> None:
         set_temperature(value)
@@ -1718,8 +1999,16 @@ class MainWindow(QMainWindow):
         split_slice_points, split_atlas_points = build_split_view_correspondence_points(
             self.registration_result,
             self.affine_result,
+            self.preview_annotation_session,
             self.preview_correspondences,
         )
+        single_pixmap = base_pixmap
+        if single_pixmap is not None and split_slice_points:
+            single_pixmap = draw_correspondence_markers(
+                single_pixmap,
+                split_slice_points,
+                color=QColor(245, 158, 11),
+            )
         split_pixmap = base_pixmap
         if split_pixmap is not None and split_slice_points:
             split_pixmap = draw_correspondence_markers(
@@ -1727,7 +2016,7 @@ class MainWindow(QMainWindow):
                 split_slice_points,
                 color=QColor(245, 158, 11),
             )
-        self.single_image_label.set_source_pixmap(base_pixmap)
+        self.single_image_label.set_source_pixmap(single_pixmap)
         self.split_image_label.set_source_pixmap(split_pixmap)
         self.split_atlas.set_correspondence_markers(split_atlas_points)
         self.overlay_viewer.set_slice_pixmap(base_pixmap)

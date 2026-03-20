@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import os
 from typing import Any, cast
 
@@ -18,6 +19,7 @@ Signal = _qtcore.Signal
 
 QCursor = _qtgui.QCursor
 QPixmap = _qtgui.QPixmap
+QResizeEvent = _qtgui.QResizeEvent
 
 QDialog = _qtwidgets.QDialog
 QDialogButtonBox = _qtwidgets.QDialogButtonBox
@@ -30,12 +32,19 @@ QVBoxLayout = _qtwidgets.QVBoxLayout
 QWidget = _qtwidgets.QWidget
 
 
-def _stage_accent(stage: str) -> str:
-    if stage == "ap":
-        return "#dbeafe"
-    if stage in {"affine", "registration"}:
-        return "#dcfce7"
-    return "#f3f4f6"
+def _event_colors(event_type: str, role: str) -> tuple[str, str, str]:
+    # Returns (Border Color, Background Color, Accent Color)
+    if event_type == "tool_call":
+        return ("rgba(59, 130, 246, 0.4)", "rgba(59, 130, 246, 0.05)", "#3b82f6")  # Blue
+    if event_type == "tool_result":
+        return ("rgba(34, 197, 94, 0.4)", "rgba(34, 197, 94, 0.05)", "#22c55e")  # Green
+    if role == "model":
+        return ("rgba(99, 102, 241, 0.4)", "rgba(99, 102, 241, 0.05)", "#6366f1")  # Indigo
+    if event_type == "error":
+        return ("rgba(239, 68, 68, 0.4)", "rgba(239, 68, 68, 0.05)", "#ef4444")  # Red
+
+    # Default (Runtime / System)
+    return ("rgba(255, 255, 255, 0.15)", "rgba(255, 255, 255, 0.03)", "#888888")  # Dark Gray
 
 
 def _role_label(event_type: str, role: str) -> str:
@@ -59,6 +68,37 @@ class _TraceThumbnail(QLabel):
         super().mousePressEvent(event)
 
 
+class _TraceImageLabel(_TraceThumbnail):
+    def __init__(self, pixmap: QPixmap, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._pixmap = pixmap
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setMinimumHeight(180)
+        self.setStyleSheet(
+            "border: 1px solid rgba(255,255,255,0.12);"
+            "background: rgba(255,255,255,0.04); border-radius: 8px;"
+        )
+        self._update_scaled_pixmap()
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        self._update_scaled_pixmap()
+
+    def _update_scaled_pixmap(self) -> None:
+        if self._pixmap.isNull() or self.width() <= 8:
+            self.clear()
+            return
+        target_width = max(64, self.width() - 12)
+        target_height = max(160, min(420, int(round(target_width * 0.75))))
+        scaled = self._pixmap.scaled(
+            target_width,
+            target_height,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        self.setPixmap(scaled)
+
+
 class ImagePreviewDialog(QDialog):
     def __init__(
         self,
@@ -70,7 +110,7 @@ class ImagePreviewDialog(QDialog):
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(title)
-        self.resize(920, 720)
+        self.resize(1100, 820)
 
         layout = QVBoxLayout(self)
         info = QLabel(path or "In-memory trace image")
@@ -101,11 +141,14 @@ class TraceEntryWidget(QFrame):
         super().__init__(parent)
         self._event = event
         self.setFrameShape(QFrame.Shape.StyledPanel)
-        stage = str(event.get("stage", ""))
+        event_type = str(event.get("event_type", ""))
+        role = str(event.get("role", ""))
+        border_color, bg_color, accent_color = _event_colors(event_type, role)
+
         self.setStyleSheet(
             "QFrame {"
-            f"border: 1px solid #d1d5db; border-left: 4px solid {_stage_accent(stage)};"
-            "border-radius: 8px; background: white; }"
+            f"border: 1px solid {border_color}; border-left: 4px solid {accent_color};"
+            f"border-radius: 8px; background: {bg_color}; }}"
         )
 
         layout = QVBoxLayout(self)
@@ -113,12 +156,12 @@ class TraceEntryWidget(QFrame):
         layout.setSpacing(8)
 
         title = QLabel(str(event.get("title", "")))
-        title.setStyleSheet("font-size: 13px; font-weight: 600; color: #111827;")
+        title.setStyleSheet("font-size: 13px; font-weight: 600; color: #ffffff;")
         title.setWordWrap(True)
         layout.addWidget(title)
 
         meta = QLabel(self._build_meta_line(event))
-        meta.setStyleSheet("font-size: 11px; color: #6b7280;")
+        meta.setStyleSheet("font-size: 11px; color: #888888;")
         meta.setWordWrap(True)
         layout.addWidget(meta)
 
@@ -127,7 +170,7 @@ class TraceEntryWidget(QFrame):
             summary_label = QLabel(summary)
             summary_label.setWordWrap(True)
             summary_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-            summary_label.setStyleSheet("font-size: 12px; color: #1f2937;")
+            summary_label.setStyleSheet("font-size: 12px; color: #ededed;")
             layout.addWidget(summary_label)
 
         parts = event.get("parts", [])
@@ -144,7 +187,7 @@ class TraceEntryWidget(QFrame):
             metadata_label.setWordWrap(True)
             metadata_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             metadata_label.setStyleSheet(
-                "font-family: Consolas, 'Courier New', monospace; font-size: 11px; color: #4b5563;"
+                "font-family: Consolas, 'Courier New', monospace; font-size: 11px; color: #888888;"
             )
             layout.addWidget(metadata_label)
 
@@ -182,7 +225,7 @@ class TraceEntryWidget(QFrame):
         label_text = part.get("label")
         if isinstance(label_text, str) and label_text:
             label = QLabel(label_text)
-            label.setStyleSheet("font-size: 11px; font-weight: 600; color: #374151;")
+            label.setStyleSheet("font-size: 11px; font-weight: 600; color: #bbbbbb;")
             layout.addWidget(label)
 
         body = QLabel(str(part.get("text", "")))
@@ -190,10 +233,10 @@ class TraceEntryWidget(QFrame):
         body.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         if part.get("monospace"):
             body.setStyleSheet(
-                "font-family: Consolas, 'Courier New', monospace; font-size: 11px; color: #111827; background: #f9fafb; padding: 6px; border-radius: 6px;"
+                "font-family: Consolas, 'Courier New', monospace; font-size: 11px; color: #ffffff; background: rgba(0,0,0,0.3); padding: 6px; border-radius: 6px; border: 1px solid rgba(255,255,255,10);"
             )
         else:
-            body.setStyleSheet("font-size: 12px; color: #111827;")
+            body.setStyleSheet("font-size: 12px; color: #ededed;")
 
         if part.get("collapsible"):
             body.setVisible(False)
@@ -222,30 +265,14 @@ class TraceEntryWidget(QFrame):
 
         label_text = str(part.get("label", "Image"))
         label = QLabel(label_text)
-        label.setStyleSheet("font-size: 11px; font-weight: 600; color: #374151;")
+        label.setStyleSheet("font-size: 11px; font-weight: 600; color: #bbbbbb;")
         layout.addWidget(label)
-
-        row = QHBoxLayout()
-        row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(8)
-
-        thumbnail = _TraceThumbnail()
-        thumbnail.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        thumbnail.setFixedSize(160, 120)
-        thumbnail.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        thumbnail.setStyleSheet(
-            "border: 1px solid #d1d5db; background: #f9fafb; border-radius: 6px;"
-        )
 
         pixmap = self._pixmap_from_part(part)
         if pixmap is not None and not pixmap.isNull():
-            scaled = pixmap.scaled(
-                thumbnail.size(),
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
-            )
-            thumbnail.setPixmap(scaled)
-            thumbnail.clicked.connect(
+            image_label = _TraceImageLabel(pixmap)
+            image_label.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+            image_label.clicked.connect(
                 lambda: ImagePreviewDialog(
                     title=label_text,
                     pixmap=pixmap,
@@ -253,17 +280,22 @@ class TraceEntryWidget(QFrame):
                     parent=self,
                 ).exec()
             )
+            layout.addWidget(image_label)
         else:
-            thumbnail.setText("Image unavailable")
-        row.addWidget(thumbnail)
+            image_label = QLabel("Image unavailable")
+            image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            image_label.setMinimumHeight(120)
+            image_label.setStyleSheet(
+                "border: 1px solid rgba(255,255,255,0.12); color: #bbbbbb;"
+                "background: rgba(255,255,255,0.04); border-radius: 8px;"
+            )
+            layout.addWidget(image_label)
 
         info = QLabel(self._image_info(part))
         info.setWordWrap(True)
         info.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        info.setStyleSheet("font-size: 11px; color: #4b5563;")
-        row.addWidget(info, stretch=1)
-
-        layout.addLayout(row)
+        info.setStyleSheet("font-size: 11px; color: #9ca3af;")
+        layout.addWidget(info)
         return wrap
 
     def _pixmap_from_part(self, part: dict[str, object]) -> QPixmap | None:
@@ -318,6 +350,7 @@ class TraceInspector(QScrollArea):
         super().__init__(parent)
         self.setWidgetResizable(True)
         self.setFrameShape(QFrame.Shape.NoFrame)
+        self._events: list[dict[str, object]] = []
 
         self._content = QWidget()
         self._layout = QVBoxLayout(self._content)
@@ -333,6 +366,7 @@ class TraceInspector(QScrollArea):
         self.setWidget(self._content)
 
     def clear_events(self) -> None:
+        self._events = []
         while self._layout.count() > 1:
             item = self._layout.takeAt(0)
             widget = item.widget()
@@ -341,6 +375,7 @@ class TraceInspector(QScrollArea):
         self._placeholder.show()
 
     def append_event(self, event: dict[str, object]) -> None:
+        self._events.append(dict(event))
         scrollbar = self.verticalScrollBar()
         was_near_bottom = scrollbar.value() >= max(0, scrollbar.maximum() - 24)
         self._placeholder.hide()
@@ -352,3 +387,61 @@ class TraceInspector(QScrollArea):
         self._layout.insertWidget(self._layout.count() - 1, widget)
         if was_near_bottom:
             scrollbar.setValue(scrollbar.maximum())
+
+    def has_events(self) -> bool:
+        return bool(self._events)
+
+    def export_events(self, json_path: str) -> int:
+        export_path = os.path.abspath(json_path)
+        export_dir = os.path.dirname(export_path)
+        if export_dir:
+            os.makedirs(export_dir, exist_ok=True)
+        base_name = os.path.splitext(os.path.basename(export_path))[0] or "agent_trace"
+        assets_dir = os.path.join(export_dir or os.getcwd(), f"{base_name}_assets")
+        os.makedirs(assets_dir, exist_ok=True)
+
+        exported_events: list[dict[str, object]] = []
+        image_count = 0
+        for event_index, event in enumerate(self._events, start=1):
+            exported_event = dict(event)
+            exported_parts: list[dict[str, object]] = []
+            for part_index, part in enumerate(cast(list[object], event.get("parts", [])), start=1):
+                if not isinstance(part, dict):
+                    continue
+                exported_part = dict(part)
+                if part.get("kind") == "image":
+                    image_count += 1
+                    mime_type = str(part.get("mime_type", "image/jpeg"))
+                    ext = ".png" if mime_type == "image/png" else ".jpg"
+                    label = (
+                        str(part.get("label", f"image_{image_count}")).strip()
+                        or f"image_{image_count}"
+                    )
+                    safe_label = "".join(
+                        ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in label
+                    )
+                    image_name = f"event_{event_index:03d}_part_{part_index:02d}_{safe_label}{ext}"
+                    image_path = os.path.join(assets_dir, image_name)
+                    data = part.get("data")
+                    if isinstance(data, (bytes, bytearray)):
+                        with open(image_path, "wb") as fh:
+                            fh.write(bytes(data))
+                    elif isinstance(part.get("path"), str) and os.path.exists(
+                        str(part.get("path"))
+                    ):
+                        with (
+                            open(str(part.get("path")), "rb") as src,
+                            open(image_path, "wb") as dst,
+                        ):
+                            dst.write(src.read())
+                    exported_part["saved_path"] = os.path.relpath(
+                        image_path, os.path.dirname(export_path) or os.getcwd()
+                    )
+                    exported_part.pop("data", None)
+                exported_parts.append(exported_part)
+            exported_event["parts"] = exported_parts
+            exported_events.append(exported_event)
+
+        with open(export_path, "w", encoding="utf-8") as fh:
+            json.dump(exported_events, fh, indent=2)
+        return len(exported_events)

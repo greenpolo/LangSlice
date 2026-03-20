@@ -188,16 +188,25 @@ class AtlasViewer(QFrame):
         self._show_placeholder_state()
 
     def set_position(self, position_mm: float) -> None:
-        self._position_mm = float(position_mm)
+        value = float(position_mm)
+        if self._position_mm == value:
+            return
+        self._position_mm = value
         self._queue_reload()
 
     def set_atlas(self, atlas_name: str) -> None:
         cleaned = atlas_name.strip()
-        self._atlas_name = cleaned if cleaned else None
+        new_name = cleaned if cleaned else None
+        if self._atlas_name == new_name:
+            return
+        self._atlas_name = new_name
         self._queue_reload()
 
     def set_show_region_borders(self, visible: bool) -> None:
-        self._show_region_borders = bool(visible)
+        value = bool(visible)
+        if self._show_region_borders == value:
+            return
+        self._show_region_borders = value
         self._queue_reload()
 
     def clear(self) -> None:

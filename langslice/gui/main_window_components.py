@@ -33,6 +33,7 @@ QWidget = _qtwidgets.QWidget
 
 from langslice.registration import (
     AffineResult,
+    RegistrationAnnotationSession,
     RegistrationCorrespondence,
     RegistrationResult,
     build_annotation_session_from_correspondences,
@@ -72,11 +73,12 @@ def affine_matrix_to_qtransform(matrix: object) -> QTransform:
 def build_split_view_correspondence_points(
     registration_result: RegistrationResult | None,
     affine_result: AffineResult | None,
+    preview_annotation_session: RegistrationAnnotationSession | None = None,
     preview_correspondences: list[RegistrationCorrespondence] | None = None,
 ) -> tuple[list[tuple[float, float, str]], list[tuple[float, float, str]]]:
     """Return paired marker points for split-view slice and atlas panes."""
     _ = affine_result
-    session = None
+    session = preview_annotation_session
     if registration_result is not None:
         session = registration_result.annotation_session
         if session is None:
