@@ -34,7 +34,8 @@ Current backends:
 It also exposes:
 
 - `AVAILABLE_MODELS`
-- `AVAILABLE_THINKING_BUDGETS`
+- `AVAILABLE_THINKING_LEVELS` (OFF / LOW / MEDIUM / HIGH)
+- `CODE_EXECUTION_ENABLED` and `supports_code_execution()`
 - AP rollout flags for token counting, File API, context cache, and Interactions API
 - a cached shared `google.genai.Client`
 
@@ -60,19 +61,28 @@ The file also contains:
 
 ### `langslice.registration`
 
-The registration subsystem is split across five files:
+The registration subsystem is split across eight files:
 
-- `types.py` - affine helpers plus `AffineResult`, `RegistrationCorrespondence`, `NonlinearResult`, `RegistrationResult`
-- `agents.py` - Gemini prompt and parsing logic for landmark correspondences
+- `types.py` - affine helpers plus `AffineResult`, `RegistrationCorrespondence`, `NonlinearResult`, `RegistrationResult`, `LandmarkAnnotation`, `RegistrationAnnotationSession`
+- `agents.py` - shared utilities (retry, heartbeat, JSON extraction, coordinate conversion) and workflow router
+- `agents_single_pass.py` - single-pass structured JSON workflow for text-centric models (e.g. gemini-3-flash-preview, gemini-3.1-pro-preview)
+- `agents_image_gen.py` - two-shot image-generation workflow for Gemini image-gen models (e.g. gemini-3-pro-image-preview)
+- `agents_tool_loop.py` - iterative tool-loop workflow for text-centric models
 - `solver.py` - deterministic affine least-squares fit and TPS fit
 - `runtime.py` - registration orchestration and debug artifact writing
 - `core.py` - public wrapper `estimate_registration_runtime(...)`
 
-Current runtime behavior in `runtime.py` is literal and simple:
+Three registration workflows are available, selected by model capabilities or user override:
+
+- **single_pass** — the model receives both images in one turn and returns all paired correspondences as structured JSON.  Points use a flexible coordinate system (pixel, normalized, etc.) declared by the model.
+- **multimodal_tool_loop** — the model iteratively proposes and refines landmarks across multiple turns using tool calls.
+- **image_gen_two_shot** — exclusively for image-generation models.  The model draws numbered landmark annotations directly on the images (no text output).  Marker positions are extracted via classical CV: adaptive colour selection, Euclidean RGB distance thresholding, connected-component analysis.  Pairs are matched by nearest-neighbour in normalised coordinate space.
+
+Current runtime behavior in `runtime.py`:
 
 1. Load the atlas.
 2. Build either a composite or reference atlas slice.
-3. Ask Gemini for correspondence pairs.
+3. Ask Gemini for correspondence pairs via the selected workflow.
 4. Require at least 3 pairs.
 5. Fit one affine transform from atlas coordinates to slice coordinates.
 6. Fit one TPS result from the same pairs.

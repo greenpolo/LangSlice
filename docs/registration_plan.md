@@ -6,9 +6,12 @@ This file keeps its legacy filename, but the content below is a description of t
 
 - `langslice/registration/core.py` - public wrapper `estimate_registration_runtime(...)`
 - `langslice/registration/runtime.py` - runtime orchestration and debug-artifact writing
-- `langslice/registration/agents.py` - Gemini prompt and parsing for correspondence pairs
+- `langslice/registration/agents.py` - shared utilities (retry, heartbeat, JSON extraction, coordinate conversion) and workflow router
+- `langslice/registration/agents_single_pass.py` - single-pass structured JSON workflow for text-centric models
+- `langslice/registration/agents_image_gen.py` - two-shot workflow for image-generation models (CV-based landmark extraction)
+- `langslice/registration/agents_tool_loop.py` - iterative tool-loop workflow for text-centric models
 - `langslice/registration/solver.py` - affine and TPS fitting helpers
-- `langslice/registration/types.py` - result classes and affine helper functions
+- `langslice/registration/types.py` - result classes, annotation types, and affine helper functions
 
 ## Current Registration Pipeline
 
@@ -25,15 +28,36 @@ The live runtime currently does this:
 
 ## Agent Stage
 
-The current correspondence agent lives in `langslice/registration/agents.py`.
+The correspondence agent system is split across `agents.py` (shared utilities and router) and three workflow modules.
 
-Current facts from the code:
+### Workflow: single_pass (agents_single_pass.py)
 
-- it prepares one atlas image and one slice image
-- it builds a single-pass schema for paired landmarks
-- points are requested in normalized `[y, x]` coordinates on a `0..1000` scale
-- those normalized values are converted back into pixel coordinates for both atlas and slice
-- the registration thinking budget comes from `REGISTRATION_THINKING_BUDGET` in `langslice/vlm/config.py`
+- Sends both atlas and slice images in one turn
+- Model returns structured JSON with paired landmarks
+- Points use a flexible coordinate system declared by the model (pixel, normalised, etc.)
+- Supports thinking levels and code execution
+
+### Workflow: image_gen_two_shot (agents_image_gen.py)
+
+- Exclusively for Gemini image-generation models (e.g. gemini-3-pro-image-preview)
+- Model draws numbered landmark annotations directly on images — no text output
+- Two passes: (1) atlas annotation, (2) slice transfer using annotated atlas as reference
+- Adaptive colour selection picks the least-present colour from input images to avoid conflicts with fluorescence
+- Marker positions extracted via classical CV: Euclidean RGB distance thresholding + connected-component analysis
+- Coordinates rescaled from generated image space to original image space
+- Pairs matched by nearest-neighbour in normalised coordinate space (not scan-order)
+
+### Workflow: multimodal_tool_loop (agents_tool_loop.py)
+
+- Model iteratively proposes and refines landmarks across multiple turns using tool calls
+- Configurable max steps via `REGISTRATION_TOOL_LOOP_MAX_STEPS`
+
+### Shared utilities (agents.py)
+
+- Retry with exponential backoff and heartbeat progress reporting
+- JSON extraction from Gemini responses (structured output + text fallback)
+- Coordinate conversion: normalised [y,x] to pixel [x,y], with `pixel_coordinates` flag for image-gen bypass
+- Thinking level comes from `THINKING_LEVEL` in `langslice/vlm/config.py`
 
 ## Deterministic Stage
 

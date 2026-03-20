@@ -4,10 +4,14 @@ This map is intentionally short and stable so humans and agents can find the act
 
 ## Active Code Paths
 
-- `langslice/cli.py` - CLI entry point for `langslice gui` and `langslice version`
+- `langslice/cli.py` - CLI entry point for `langslice gui`, `langslice version`, and `langslice register`
 - `langslice/atlas/` - BrainGlobe atlas loading, AP/index conversion, coronal slice extraction
 - `langslice/vlm/` - Gemini configuration, AP estimator, offline batch helpers
-- `langslice/registration/` - registration prompt, runtime wrapper, affine/TPS solving, result types
+- `langslice/registration/` - registration workflows, runtime wrapper, affine/TPS solving, result types
+  - `agents.py` - shared utilities (retry, JSON extraction, coordinate conversion) and workflow router
+  - `agents_single_pass.py` - single-pass structured JSON workflow for text-centric models
+  - `agents_image_gen.py` - two-shot workflow exclusively for image-gen models (gemini-3-pro-image-preview, gemini-3.1-flash-image-preview)
+  - `agents_tool_loop.py` - iterative tool-loop workflow for text-centric models
 - `langslice/image_prep.py` - image normalization, metadata-driven pixel size detection, VLM downsampling
 - `langslice/agent_trace.py` - structured trace-event helpers shared by AP and registration flows
 - `langslice/export.py` - coronal anchoring math and QUINT/ABBA-compatible JSON export
@@ -45,3 +49,4 @@ This map is intentionally short and stable so humans and agents can find the act
 - `python -m basedpyright`
 - `langslice gui`
 - `langslice version`
+- `langslice register <image> --position <mm> [--workflow ...] [--model ...] [--out ...]`

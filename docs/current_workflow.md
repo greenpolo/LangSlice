@@ -62,17 +62,33 @@ Instead it:
 
 The GUI still shows two steps, but the first step is labeled `Manual Position` in this mode.
 
+## CLI Registration: `langslice register`
+
+The `register` CLI subcommand runs end-to-end registration from the command line:
+
+```
+langslice register <image> --position <mm> [--workflow ...] [--model ...] [--out ...]
+```
+
+It supports workflow selection (`single_pass`, `multimodal_tool_loop`, `image_gen_two_shot`), model override, landmark count, temperature, VLM resolution, and optional output directory for debug artifacts.
+
 ## Registration Runtime Behavior
 
 The active registration runtime currently does the following:
 
 1. load the selected atlas
 2. build either a composite atlas slice or a plain reference slice
-3. ask Gemini for correspondence pairs in `registration/agents.py`
+3. ask Gemini for correspondence pairs via the selected workflow in `registration/agents.py`
 4. require at least 3 pairs
 5. fit one affine transform from atlas coordinates to slice coordinates
 6. fit one TPS result from the same pairs
-7. return both results to the GUI
+7. return both results to the GUI or CLI
+
+Three registration workflows are available:
+
+- **single_pass** — structured JSON output from a text-centric model
+- **multimodal_tool_loop** — iterative landmark refinement via tool calls
+- **image_gen_two_shot** — image-generation models draw landmarks directly; positions extracted via CV
 
 Important current limitations of the live runtime:
 
