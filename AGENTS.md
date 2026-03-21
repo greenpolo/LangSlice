@@ -7,9 +7,8 @@ The current runtime is split into:
 
 - AP estimation in `langslice/ai/estimator.py`
 - landmark correspondence generation in `langslice/registration/agents.py` (shared utilities and router), with workflow-specific code in:
-  - `agents_single_pass.py` — single-pass structured JSON for text-centric models (gemini-3-flash, gemini-3.1-pro)
   - `agents_image_gen.py` — two-shot workflow exclusively for image-gen models (gemini-3-pro-image-preview, gemini-3.1-flash-image-preview)
-  - `agents_tool_loop.py` — iterative tool-loop workflow for text-centric models
+  - `agents_tool_loop.py` — iterative tool-loop workflow for text-centric models (default)
 - deterministic affine and TPS solving in `langslice/registration/solver.py`
 - PySide6 workflow orchestration in `langslice/gui/main_window.py`
 - QUINT/ABBA-compatible JSON export in `langslice/export.py`

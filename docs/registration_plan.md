@@ -7,9 +7,8 @@ This file keeps its legacy filename, but the content below is a description of t
 - `langslice/registration/core.py` - public wrapper `estimate_registration_runtime(...)`
 - `langslice/registration/runtime.py` - runtime orchestration and debug-artifact writing
 - `langslice/registration/agents.py` - shared utilities (retry, heartbeat, JSON extraction, coordinate conversion) and workflow router
-- `langslice/registration/agents_single_pass.py` - single-pass structured JSON workflow for text-centric models
 - `langslice/registration/agents_image_gen.py` - two-shot workflow for image-generation models (CV-based landmark extraction)
-- `langslice/registration/agents_tool_loop.py` - iterative tool-loop workflow for text-centric models
+- `langslice/registration/agents_tool_loop.py` - iterative tool-loop workflow for text-centric models (default)
 - `langslice/registration/solver.py` - affine and TPS fitting helpers
 - `langslice/registration/types.py` - result classes, annotation types, and affine helper functions
 
@@ -28,14 +27,7 @@ The live runtime currently does this:
 
 ## Agent Stage
 
-The correspondence agent system is split across `agents.py` (shared utilities and router) and three workflow modules.
-
-### Workflow: single_pass (agents_single_pass.py)
-
-- Sends both atlas and slice images in one turn
-- Model returns structured JSON with paired landmarks
-- Points use a flexible coordinate system declared by the model (pixel, normalised, etc.)
-- Supports thinking levels and code execution
+The correspondence agent system is split across `agents.py` (shared utilities and router) and two workflow modules.
 
 ### Workflow: image_gen_two_shot (agents_image_gen.py)
 
@@ -94,7 +86,8 @@ If registration is launched from the manual workflow and `LANGSLICE_VLM_DEBUG_DI
 
 ## Important Literal Gaps In The Current Runtime
 
-- `NonlinearResult` is computed and returned, but the GUI export path does not serialize it.
+- `NonlinearResult` is computed and returned but the GUI export path does not serialize it.
+- The `image_gen_two_shot` workflow generates annotated images but marker extraction from those images is not yet implemented.
 
 ## What The GUI Uses
 
@@ -118,4 +111,4 @@ It already contains:
 - GUI integration
 - debug-artifact writing
 
-The remaining gaps are mostly about stricter vetting, richer QC states, and using the nonlinear result beyond internal storage and tests.
+The remaining gaps are mostly about completing marker extraction for the image-gen workflow and using the nonlinear result beyond internal storage and tests.

@@ -8,7 +8,9 @@ It does not own the active registration runtime.
 ## Files
 
 - `config.py` - backend selection, client creation, model list, thinking budgets, feature flags
-- `estimator.py` - AP tool loop, retries, File API/cache/interactions support, debug-artifact writing
+- `estimator.py` - AP tool loop, retries, File API/cache/interactions support, trace emission
+- `estimator_tools.py` - tool definitions and tool-response construction helpers
+- `estimator_debug.py` - debug-artifact writing helpers
 - `batch_eval.py` - offline Batch API helpers for one-shot AP evaluation
 - `__init__.py` - public exports including `estimate_position(...)`, `estimate_ap(...)`, and batch helpers
 

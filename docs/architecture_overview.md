@@ -48,34 +48,29 @@ It also exposes:
 - `get_region_names`
 - `submit_estimate`
 
-The file also contains:
+The estimator is split across three files:
 
-- retry/backoff around `generate_content`
-- optional File API transport
-- optional cached-content use
-- optional Interactions API pilot path
-- trace emission and debug-artifact writing
-- `estimate_ap(...)` as a thin alias to `estimate_position(...)`
+- `estimator.py` - the tool loop, retry/backoff, optional File API/cache/Interactions API, trace emission, debug-artifact writing, and `estimate_ap(...)` alias
+- `estimator_tools.py` - tool definitions and tool-response construction helpers
+- `estimator_debug.py` - debug-artifact writing helpers
 
 `langslice.ai.batch_eval` is an offline helper for one-shot AP Batch API experiments. It is not part of the live GUI workflow.
 
 ### `langslice.registration`
 
-The registration subsystem is split across eight files:
+The registration subsystem is split across seven files:
 
 - `types.py` - affine helpers plus `AffineResult`, `RegistrationCorrespondence`, `NonlinearResult`, `RegistrationResult`, `LandmarkAnnotation`, `RegistrationAnnotationSession`
 - `agents.py` - shared utilities (retry, heartbeat, JSON extraction, coordinate conversion) and workflow router
-- `agents_single_pass.py` - single-pass structured JSON workflow for text-centric models (e.g. gemini-3-flash-preview, gemini-3.1-pro-preview)
 - `agents_image_gen.py` - two-shot image-generation workflow for Gemini image-gen models (e.g. gemini-3-pro-image-preview)
-- `agents_tool_loop.py` - iterative tool-loop workflow for text-centric models
+- `agents_tool_loop.py` - iterative tool-loop workflow for text-centric models (default)
 - `solver.py` - deterministic affine least-squares fit and TPS fit
 - `runtime.py` - registration orchestration and debug artifact writing
 - `core.py` - public wrapper `estimate_registration_runtime(...)`
 
-Three registration workflows are available, selected by model capabilities or user override:
+Two registration workflows are available, selected by model capabilities or user override:
 
-- **single_pass** — the model receives both images in one turn and returns all paired correspondences as structured JSON.  Points use a flexible coordinate system (pixel, normalized, etc.) declared by the model.
-- **multimodal_tool_loop** — the model iteratively proposes and refines landmarks across multiple turns using tool calls.
+- **multimodal_tool_loop** — the default workflow; the model iteratively proposes and refines landmarks across multiple turns using tool calls.
 - **image_gen_two_shot** — exclusively for image-generation models.  Two passes: (1) the model draws numbered landmark annotations on the atlas, (2) a second call transfers matching landmarks onto the histology slice.  The atlas is upscaled to ~1K before pass 1 and the slice receives an exposure boost before pass 2.  Generated images are saved for inspection; marker extraction is not yet implemented.
 
 Current runtime behavior in `runtime.py`:
@@ -120,6 +115,7 @@ Key points:
 The GUI is centered on `MainWindow` in `langslice.gui.main_window`.
 Other GUI files are support modules:
 
+- `workers.py` - `AgentWorker` and `ManualRegistrationWorker` QThread subclasses
 - `main_window_components.py` - reusable widgets and display helpers
 - `atlas_viewer.py` - threaded split-view atlas loader
 - `overlay_viewer.py` - shared-scene overlay viewer using export-style coronal geometry

@@ -70,7 +70,7 @@ The `register` CLI subcommand runs end-to-end registration from the command line
 langslice register <image> --position <mm> [--workflow ...] [--model ...] [--out ...]
 ```
 
-It supports workflow selection (`single_pass`, `multimodal_tool_loop`, `image_gen_two_shot`), model override, landmark count, temperature, VLM resolution, and optional output directory for debug artifacts.
+It supports workflow selection (`multimodal_tool_loop`, `image_gen_two_shot`), model override, landmark count, temperature, VLM resolution, and optional output directory for debug artifacts.
 
 ## Registration Runtime Behavior
 
