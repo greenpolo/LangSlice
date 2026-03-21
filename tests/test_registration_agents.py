@@ -181,18 +181,13 @@ def test_registration_request_uses_configured_temperature(monkeypatch: Any) -> N
 
     captured: dict[str, object] = {}
 
-    # The new code uses place -> zoom -> confirm -> finish.
-    # For a 1-landmark run: border_count=1, interior_count=0 (50/50 split of 1)
+    # Simplified flow: place -> finish
     tool_loop_responses = [
         _fc_response(("place_point_pair", {
             "label": "1", "category": "border",
             "atlas_point_2d": [100, 120], "slice_point_2d": [140, 160],
             "feature_description": "anchor",
         })),
-        _fc_response(("view_zoom_pair", {
-            "zoom": 3.0, "atlas_center_2d": [100, 120], "slice_center_2d": [140, 160],
-        })),
-        _fc_response(("confirm_point", {"label": "1"})),
         _fc_response(("finish", {})),
     ]
 
@@ -249,10 +244,6 @@ def test_registration_request_uses_configured_thinking_level(monkeypatch: Any) -
             "atlas_point_2d": [100, 120], "slice_point_2d": [140, 160],
             "feature_description": "anchor",
         })),
-        _fc_response(("view_zoom_pair", {
-            "zoom": 3.0, "atlas_center_2d": [100, 120], "slice_center_2d": [140, 160],
-        })),
-        _fc_response(("confirm_point", {"label": "1"})),
         _fc_response(("finish", {})),
     ]
 
@@ -574,12 +565,12 @@ def test_image_gen_slice_request_reuses_generated_atlas_payload_bytes() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Tool-loop workflow tests (updated for native function calling + confirm gate)
+# Tool-loop workflow tests (simplified — place points directly, then finish)
 # ---------------------------------------------------------------------------
 
 
-def test_multimodal_tool_loop_places_and_confirms_before_finish(monkeypatch: Any) -> None:
-    """Full place -> zoom -> confirm -> finish workflow for 2 border points."""
+def test_multimodal_tool_loop_places_and_finishes(monkeypatch: Any) -> None:
+    """Full place -> finish workflow for 2 border points."""
     _patch_common(monkeypatch)
 
     responses = [
@@ -589,24 +580,12 @@ def test_multimodal_tool_loop_places_and_confirms_before_finish(monkeypatch: Any
             "atlas_point_2d": [100, 120], "slice_point_2d": [140, 160],
             "feature_description": "outer contour notch",
         })),
-        # Zoom to inspect point 1
-        _fc_response(("view_zoom_pair", {
-            "zoom": 3.0, "atlas_center_2d": [100, 120], "slice_center_2d": [140, 160],
-        })),
-        # Confirm point 1
-        _fc_response(("confirm_point", {"label": "1"})),
         # Place point 2
         _fc_response(("place_point_pair", {
             "label": "2", "category": "border",
             "atlas_point_2d": [500, 520], "slice_point_2d": [540, 560],
             "feature_description": "ventricle corner",
         })),
-        # Zoom to inspect point 2
-        _fc_response(("view_zoom_pair", {
-            "zoom": 3.0, "atlas_center_2d": [500, 520], "slice_center_2d": [540, 560],
-        })),
-        # Confirm point 2
-        _fc_response(("confirm_point", {"label": "2"})),
         # Finish
         _fc_response(("finish", {})),
     ]
@@ -642,12 +621,6 @@ def test_multimodal_tool_loop_accepts_zoom_local_coordinates(monkeypatch: Any) -
             "atlas_point_2d_local": [0, 0], "slice_point_2d_local": [0, 0],
             "feature_description": "upper-left corner of zoom window",
         })),
-        # Zoom to inspect
-        _fc_response(("view_zoom_pair", {
-            "zoom": 3.0, "atlas_center_2d": [250, 250], "slice_center_2d": [250, 250],
-        })),
-        # Confirm
-        _fc_response(("confirm_point", {"label": "1"})),
         # Finish
         _fc_response(("finish", {})),
     ]
@@ -704,54 +677,11 @@ def test_multimodal_tool_loop_uses_explicit_step_limit(monkeypatch: Any) -> None
         )
 
 
-def test_multimodal_tool_loop_confirm_rejected_without_zoom(monkeypatch: Any) -> None:
-    """Confirm gate: trying to confirm without zooming returns an error."""
-    _patch_common(monkeypatch)
-
-    responses = [
-        # Place point 1
-        _fc_response(("place_point_pair", {
-            "label": "1", "category": "border",
-            "atlas_point_2d": [100, 120], "slice_point_2d": [140, 160],
-            "feature_description": "notch",
-        })),
-        # Try to confirm without zoom — should get rejection
-        _fc_response(("confirm_point", {"label": "1"})),
-        # Now zoom
-        _fc_response(("view_zoom_pair", {
-            "zoom": 3.0, "atlas_center_2d": [100, 120], "slice_center_2d": [140, 160],
-        })),
-        # Now confirm succeeds
-        _fc_response(("confirm_point", {"label": "1"})),
-        # Finish
-        _fc_response(("finish", {})),
-    ]
-
-    def mock_generate(*args: Any, **kwargs: Any) -> SimpleNamespace:
-        _ = args
-        return responses.pop(0)
-
-    monkeypatch.setattr(agents, "_retry_generate", mock_generate)
-
-    result = agents.estimate_registration_correspondences(
-        Image.new("RGB", (200, 120), (0, 0, 0)),
-        atlas_name="allen_mouse_25um",
-        position_mm=2.0,
-        target_landmark_count=1,
-        min_edge_landmarks=0,
-        workflow="multimodal_tool_loop",
-        border_count=1,
-        interior_count=0,
-    )
-
-    assert [corr.label for corr in result] == ["1"]
-
-
 def test_multimodal_tool_loop_border_interior_default_split(monkeypatch: Any) -> None:
     """With target_count=3, border=2 and interior=1 by default (extra goes to border)."""
     _patch_common(monkeypatch)
 
-    # We need 2 border + 1 interior confirmed
+    # We need 2 border + 1 interior placed
     responses = [
         # Place border 1
         _fc_response(("place_point_pair", {
@@ -759,30 +689,18 @@ def test_multimodal_tool_loop_border_interior_default_split(monkeypatch: Any) ->
             "atlas_point_2d": [100, 120], "slice_point_2d": [140, 160],
             "feature_description": "notch",
         })),
-        _fc_response(("view_zoom_pair", {
-            "zoom": 3.0, "atlas_center_2d": [100, 120], "slice_center_2d": [140, 160],
-        })),
-        _fc_response(("confirm_point", {"label": "1"})),
         # Place border 2
         _fc_response(("place_point_pair", {
             "label": "2", "category": "border",
             "atlas_point_2d": [200, 220], "slice_point_2d": [240, 260],
             "feature_description": "edge",
         })),
-        _fc_response(("view_zoom_pair", {
-            "zoom": 3.0, "atlas_center_2d": [200, 220], "slice_center_2d": [240, 260],
-        })),
-        _fc_response(("confirm_point", {"label": "2"})),
         # Place interior 1
         _fc_response(("place_point_pair", {
             "label": "3", "category": "interior",
             "atlas_point_2d": [500, 500], "slice_point_2d": [500, 500],
             "feature_description": "deep feature",
         })),
-        _fc_response(("view_zoom_pair", {
-            "zoom": 3.0, "atlas_center_2d": [500, 500], "slice_center_2d": [500, 500],
-        })),
-        _fc_response(("confirm_point", {"label": "3"})),
         # Finish
         _fc_response(("finish", {})),
     ]

@@ -2,9 +2,7 @@
 
 Uses ``types.FunctionDeclaration`` and ``types.Tool`` so the model invokes
 host-side tools through the official function-calling protocol rather than
-structured JSON output.  A confirm-after-zoom gate enforces quality
-verification before locking landmark points, and border/interior quotas
-ensure balanced coverage.
+structured JSON output.  Border/interior quotas ensure balanced coverage.
 """
 
 from __future__ import annotations
@@ -82,8 +80,8 @@ _VIEW_ZOOM_PAIR_DECL = types.FunctionDeclaration(
 _PLACE_POINT_PAIR_DECL = types.FunctionDeclaration(
     name="place_point_pair",
     description=(
-        "Place a provisional landmark pair on atlas and slice. "
-        "The point is NOT confirmed until confirm_point is called after zoom inspection."
+        "Place a matched landmark pair on atlas and slice. "
+        "Re-calling with the same label updates the position."
     ),
     parameters=types.Schema(
         type="OBJECT",
@@ -130,21 +128,6 @@ _PLACE_POINT_PAIR_DECL = types.FunctionDeclaration(
     ),
 )
 
-_CONFIRM_POINT_DECL = types.FunctionDeclaration(
-    name="confirm_point",
-    description=(
-        "Confirm a provisional point after zoom inspection. "
-        "You MUST call view_zoom_pair between placing and confirming."
-    ),
-    parameters=types.Schema(
-        type="OBJECT",
-        properties={
-            "label": types.Schema(type="STRING", description="Label of the point to confirm"),
-        },
-        required=["label"],
-    ),
-)
-
 _FINISH_DECL = types.FunctionDeclaration(
     name="finish",
     description=(
@@ -160,7 +143,6 @@ _ALL_TOOL_DECLARATIONS = [
     _VIEW_OVERVIEW_DECL,
     _VIEW_ZOOM_PAIR_DECL,
     _PLACE_POINT_PAIR_DECL,
-    _CONFIRM_POINT_DECL,
     _FINISH_DECL,
 ]
 
@@ -292,37 +274,31 @@ def _upsert_annotation(
 
 
 def _session_summary(session: RegistrationAnnotationSession) -> dict[str, object]:
-    confirmed: set[str] = session.metadata.get("confirmed", set())
-    awaiting_zoom: set[str] = session.metadata.get("awaiting_zoom", set())
-
-    confirmed_border = 0
-    confirmed_interior = 0
+    placed_border = 0
+    placed_interior = 0
     for ann in session.atlas_annotations:
-        if ann.label in confirmed:
-            if ann.category == "interior":
-                confirmed_interior += 1
-            else:
-                confirmed_border += 1
+        if ann.category == "interior":
+            placed_interior += 1
+        else:
+            placed_border += 1
 
     return {
         "workflow": session.workflow,
         "target_count": session.target_count,
         "border_count": session.border_count,
         "interior_count": session.interior_count,
-        "confirmed_border": confirmed_border,
-        "confirmed_interior": confirmed_interior,
-        "confirmed_labels": sorted(confirmed),
-        "awaiting_zoom_labels": sorted(awaiting_zoom),
+        "placed_border": placed_border,
+        "placed_interior": placed_interior,
+        "placed_labels": [ann.label for ann in session.atlas_annotations],
         "atlas_labels": [ann.label for ann in session.atlas_annotations],
         "slice_labels": [ann.label for ann in session.slice_annotations],
     }
 
 
-def _confirmed_tool_loop_entries(
+def _placed_tool_loop_entries(
     session: RegistrationAnnotationSession,
 ) -> list[dict[str, object]]:
-    """Return entries for labels that are confirmed and have both atlas and slice annotations."""
-    confirmed: set[str] = session.metadata.get("confirmed", set())
+    """Return entries for labels that have both atlas and slice annotations."""
     atlas_by_label = {ann.label: ann for ann in session.atlas_annotations}
     slice_by_label = {ann.label: ann for ann in session.slice_annotations}
 
@@ -331,7 +307,7 @@ def _confirmed_tool_loop_entries(
         return (0, int(stripped)) if stripped.isdigit() else (1, stripped)
 
     shared_labels = sorted(
-        {label for label in confirmed if label in atlas_by_label and label in slice_by_label},
+        {label for label in atlas_by_label if label in slice_by_label},
         key=_label_sort_key,
     )
     entries: list[dict[str, object]] = []
@@ -364,58 +340,42 @@ def _build_tool_loop_prompt(
     interior_count: int,
 ) -> str:
     return (
-        "You are an expert neuroanatomist placing matched landmark points between a\n"
-        "histology brain slice and a reference atlas.\n"
+        "You are an expert neuroanatomist. You are placing matched landmark points\n"
+        "between a brain atlas image (left) and a histology slice image (right).\n"
+        "\n"
         f"Atlas: {atlas_name}\n"
         f"AP position: {position_mm:.3f} mm\n"
         "\n"
-        f"Place {border_count} paired landmarks on the outermost edge/border of the\n"
-        f"brain, then {interior_count} paired landmarks in the interior.\n"
-        f"Label points sequentially: 1, 2, 3, ...\n"
+        "COORDINATE SYSTEM: All point coordinates use [y, x] format normalized to\n"
+        "0-1000, where [0, 0] is the top-left corner and [1000, 1000] is the\n"
+        "bottom-right corner. These coordinates are relative to EACH IMAGE\n"
+        "INDEPENDENTLY (atlas and slice have their own coordinate spaces).\n"
         "\n"
-        "For each point, follow this workflow:\n"
+        f"TASK: Place {border_count} landmark pairs on the outermost edge/border\n"
+        f"of the brain, then {interior_count} landmark pairs in the interior.\n"
         "\n"
-        "1. DEFINE the target feature before placing anything.\n"
-        "   State the exact local anatomical/geometric feature you are matching.\n"
-        '   Use rich, specific descriptions such as "the deepest point of the dorsal\n'
-        '   midline notch" or "the lower third of the intact medial wall of the right\n'
-        '   lateral ventricle" -- not broad labels like "in the ventricle."\n'
+        "STRATEGY:\n"
+        "1. Start by calling view_overview to see both images side by side.\n"
+        "2. Place your border points first -- choose anatomically distinct features\n"
+        "   on the brain outline that are clearly identifiable in both images.\n"
+        "   Good border landmarks: midline notches (dorsal/ventral), points of\n"
+        "   maximum lateral curvature, hemisphere tips.\n"
+        "3. Then place interior points -- use internal structures visible in both\n"
+        "   images like ventricle tips, commissure boundaries, or distinct\n"
+        "   tissue boundaries.\n"
+        "4. Use view_zoom_pair to verify any placements you are uncertain about.\n"
+        "   You can re-place a point by calling place_point_pair with the same\n"
+        "   label to update its position.\n"
+        "5. When all points are placed, call finish.\n"
         "\n"
-        "2. PLACE the point pair using place_point_pair.\n"
-        "   Choose the same kind of local feature in both images.\n"
-        "   Prioritize local correspondence in depth, curvature, neighboring contours,\n"
-        "   and boundary context over global shape similarity.\n"
-        "\n"
-        "3. ZOOM IN at 3x and inspect locally using view_zoom_pair.\n"
-        "   Compare the atlas and slice placements side by side.\n"
-        "\n"
-        "4. ZOOM OUT to 1.5x and sanity-check in broader context.\n"
-        "   Verify the point still makes sense within the surrounding anatomy.\n"
-        "   Adjust the point (re-place) if needed before confirming.\n"
-        "\n"
-        "5. HANDLE DAMAGE explicitly.\n"
-        "   If the slice region is torn, distorted, collapsed, bubbled, folded, or\n"
-        "   weakly stained, say so in the artifact_note.\n"
-        "   Prefer a stable intact neighboring feature over a distorted tip or\n"
-        "   artificial edge.\n"
-        "\n"
-        "6. CONFIRM the point using confirm_point.\n"
-        "   You MUST zoom (step 3 or 4) between placing and confirming.\n"
-        "   The system will reject confirm_point if no zoom has occurred since placement.\n"
-        "\n"
-        "Use [y, x] integers in the 0-1000 normalized range.\n"
-        "After a zoom view, prefer atlas_point_2d_local and slice_point_2d_local\n"
-        "so coordinates are relative to the zoomed images. The system maps them back\n"
-        "to the full image automatically.\n"
-        "From the full overview, use atlas_point_2d and slice_point_2d.\n"
-        "\n"
+        "IMPORTANT:\n"
+        "- Prioritize local anatomical correspondence over global position.\n"
+        '- Use rich feature descriptions (e.g., "deepest point of dorsal midline\n'
+        '  notch" not "top of brain").\n'
+        "- If a region is damaged/torn in the slice, note it in artifact_note\n"
+        "  and choose a nearby intact feature instead.\n"
         "- Do NOT place points on the black background.\n"
-        "- Do NOT assume left-right symmetry. Hemispheres may differ substantially.\n"
-        "- Do NOT rely on broad anatomical guesses without local confirmation.\n"
-        "- Use already confirmed points only as loose anchors, not rigid constraints.\n"
-        "- Do not keep moving previously confirmed points unless you conclude the\n"
-        "  prior feature definition was wrong.\n"
-        "- When all quotas are met, call finish."
+        "- Do NOT assume left-right symmetry -- hemispheres may differ."
     )
 
 
@@ -588,14 +548,6 @@ def _execute_tool(
             on_trace=on_trace,
         )
 
-    if tool_name == "confirm_point":
-        return _handle_confirm_point(
-            tool_args=tool_args,
-            session=session,
-            iteration=iteration,
-            on_trace=on_trace,
-        )
-
     if tool_name == "finish":
         return _handle_finish(
             session=session,
@@ -675,20 +627,12 @@ def _handle_view_zoom_pair(
         "zoom": zoom,
     }
 
-    # Clear awaiting_zoom for all labels that were pending
-    awaiting_zoom: set[str] = session.metadata.get("awaiting_zoom", set())
-    cleared = set(awaiting_zoom)
-    awaiting_zoom.clear()
-    session.metadata["awaiting_zoom"] = awaiting_zoom
-
     result_dict: dict[str, Any] = {
         "status": "ok",
         "zoom": zoom,
         "atlas_window": _window_to_normalized_bounds(atlas_window_px, image_size=atlas_image.size),
         "slice_window": _window_to_normalized_bounds(slice_window_px, image_size=slice_image.size),
     }
-    if cleared:
-        result_dict["cleared_awaiting_zoom"] = sorted(cleared)
 
     zoom_composite = _side_by_side(atlas_zoom, slice_zoom, max_height=512)
     image_parts: list[types.Part] = [
@@ -768,15 +712,6 @@ def _handle_place_point_pair(
         ),
     )
 
-    # Add to awaiting_zoom, remove from confirmed if re-placing
-    awaiting_zoom: set[str] = session.metadata.setdefault("awaiting_zoom", set())
-    awaiting_zoom.add(label)
-    confirmed: set[str] = session.metadata.setdefault("confirmed", set())
-    confirmed.discard(label)
-
-    # Reset zoom window so local coords cannot be reused for confirm
-    session.metadata.pop("last_zoom_pair", None)
-
     atlas_annotated = render_landmark_annotations(atlas_image, session.atlas_annotations)
     slice_annotated = render_landmark_annotations(slice_image, session.slice_annotations)
     composite = _side_by_side(atlas_annotated, slice_annotated)
@@ -785,13 +720,12 @@ def _handle_place_point_pair(
         "status": "ok",
         "label": label,
         "category": category,
-        "message": f"Point {label} placed provisionally. Zoom to inspect, then confirm_point.",
+        "message": f"Point {label} placed ({category}).",
     }
     image_parts: list[types.Part] = [
         types.Part.from_text(
-            text=f"Saved provisional point pair {label} ({category}). "
-            "Side-by-side: Atlas (left) | Slice (right). "
-            "Now zoom in to verify placement."
+            text=f"Saved point pair {label} ({category}). "
+            "Side-by-side: Atlas (left) | Slice (right)."
         ),
         _image_to_part(composite, fmt="JPEG"),
         types.Part.from_text(text=json.dumps(_session_summary(session), indent=2)),
@@ -801,98 +735,11 @@ def _handle_place_point_pair(
         tool_result_event(
             stage="registration",
             tool_name="place_point_pair",
-            summary=f"Saved provisional point pair {label} ({category})",
+            summary=f"Saved point pair {label} ({category})",
             metadata={"iteration": iteration, "label": label, "category": category},
         ),
     )
     return result_dict, image_parts, False
-
-
-def _handle_confirm_point(
-    *,
-    tool_args: dict[str, Any],
-    session: RegistrationAnnotationSession,
-    iteration: int,
-    on_trace: Callable[[dict[str, object]], None] | None,
-) -> tuple[dict[str, Any], list[types.Part], bool]:
-    label = str(tool_args.get("label", "")).strip()
-
-    # Check the label was placed
-    atlas_labels = {ann.label for ann in session.atlas_annotations}
-    if label not in atlas_labels:
-        result_dict: dict[str, Any] = {
-            "status": "error",
-            "message": f"No provisional point with label {label!r}.",
-        }
-        _agents._emit_trace(
-            on_trace,
-            tool_result_event(
-                stage="registration",
-                tool_name="confirm_point",
-                summary=f"Confirm rejected: no provisional point {label!r}",
-                metadata={"iteration": iteration, "label": label},
-            ),
-        )
-        return result_dict, [], False
-
-    confirmed: set[str] = session.metadata.setdefault("confirmed", set())
-    # Idempotent: already confirmed
-    if label in confirmed:
-        result_dict = {
-            "status": "ok",
-            "message": f"Point {label} was already confirmed.",
-        }
-        _agents._emit_trace(
-            on_trace,
-            tool_result_event(
-                stage="registration",
-                tool_name="confirm_point",
-                summary=f"Point {label} already confirmed (no-op)",
-                metadata={"iteration": iteration, "label": label},
-            ),
-        )
-        return result_dict, [], False
-
-    # Hard gate: must have zoomed since placement
-    awaiting_zoom: set[str] = session.metadata.get("awaiting_zoom", set())
-    if label in awaiting_zoom:
-        result_dict = {
-            "status": "error",
-            "message": (
-                f"Cannot confirm point {label}: you must call view_zoom_pair "
-                "to inspect the point before confirming."
-            ),
-        }
-        _agents._emit_trace(
-            on_trace,
-            tool_result_event(
-                stage="registration",
-                tool_name="confirm_point",
-                summary=f"Confirm rejected: {label} needs zoom inspection first",
-                metadata={"iteration": iteration, "label": label},
-            ),
-        )
-        return result_dict, [], False
-
-    # Confirm the point
-    confirmed.add(label)
-    session.metadata["confirmed"] = confirmed
-
-    result_dict = {
-        "status": "ok",
-        "message": f"Point {label} confirmed.",
-        "summary": json.loads(json.dumps(_session_summary(session))),
-    }
-    _agents._emit_trace(
-        on_trace,
-        tool_result_event(
-            stage="registration",
-            tool_name="confirm_point",
-            summary=f"Point {label} confirmed",
-            metadata={"iteration": iteration, "label": label},
-        ),
-    )
-    return result_dict, [], False
 
 
 def _handle_finish(
@@ -901,25 +748,25 @@ def _handle_finish(
     iteration: int,
     on_trace: Callable[[dict[str, object]], None] | None,
 ) -> tuple[dict[str, Any], list[types.Part], bool]:
-    confirmed: set[str] = session.metadata.get("confirmed", set())
     border_count_target = session.border_count or 0
     interior_count_target = session.interior_count or 0
 
-    # Count confirmed border/interior
-    confirmed_border = 0
-    confirmed_interior = 0
+    # Count placed border/interior (points with both atlas and slice annotations)
+    slice_labels = {ann.label for ann in session.slice_annotations}
+    placed_border = 0
+    placed_interior = 0
     for ann in session.atlas_annotations:
-        if ann.label in confirmed:
+        if ann.label in slice_labels:
             if ann.category == "interior":
-                confirmed_interior += 1
+                placed_interior += 1
             else:
-                confirmed_border += 1
+                placed_border += 1
 
-    if confirmed_border < border_count_target or confirmed_interior < interior_count_target:
+    if placed_border < border_count_target or placed_interior < interior_count_target:
         message = (
             f"Cannot finish yet. "
-            f"Border: {confirmed_border}/{border_count_target} confirmed. "
-            f"Interior: {confirmed_interior}/{interior_count_target} confirmed."
+            f"Border: {placed_border}/{border_count_target} placed. "
+            f"Interior: {placed_interior}/{interior_count_target} placed."
         )
         result_dict: dict[str, Any] = {
             "status": "error",
@@ -934,30 +781,30 @@ def _handle_finish(
                 summary="Finish rejected because quotas not met",
                 metadata={
                     "iteration": iteration,
-                    "confirmed_border": confirmed_border,
-                    "confirmed_interior": confirmed_interior,
+                    "placed_border": placed_border,
+                    "placed_interior": placed_interior,
                 },
             ),
         )
         return result_dict, [], False
 
-    total_confirmed = confirmed_border + confirmed_interior
+    total_placed = placed_border + placed_interior
     _agents._emit_trace(
         on_trace,
         tool_result_event(
             stage="registration",
             tool_name="finish",
-            summary=f"Finish accepted with {total_confirmed} confirmed pairs",
+            summary=f"Finish accepted with {total_placed} placed pairs",
             metadata={
                 "iteration": iteration,
-                "confirmed_border": confirmed_border,
-                "confirmed_interior": confirmed_interior,
+                "placed_border": placed_border,
+                "placed_interior": placed_interior,
             },
         ),
     )
     result_dict = {
         "status": "ok",
-        "message": f"Finished with {total_confirmed} confirmed point pairs.",
+        "message": f"Finished with {total_placed} point pairs.",
     }
     return result_dict, [], True
 
@@ -996,8 +843,6 @@ def _estimate_correspondences_tool_loop(
         metadata={
             "atlas_name": atlas_name,
             "position_mm": round(position_mm, 3),
-            "confirmed": set(),
-            "awaiting_zoom": set(),
         },
     )
 
@@ -1190,21 +1035,21 @@ def _estimate_correspondences_tool_loop(
             else:
                 # Model returned text/thought but no function calls. We must send
                 # a user turn to avoid consecutive model turns, which stalls the loop.
-                confirmed = session.metadata.get("confirmed", set())
+                placed_count = len(session.atlas_annotations)
                 total_needed = (border_count or 0) + (interior_count or 0)
                 history.append(
                     types.Content(
                         role="user",
                         parts=[types.Part.from_text(
                             text=f"Continue placing landmarks. You have "
-                            f"{len(confirmed)}/{total_needed} confirmed points. "
+                            f"{placed_count}/{total_needed} placed points. "
                             f"Use your tools to place the next point."
                         )],
                     )
                 )
 
             if finished:
-                entries = _confirmed_tool_loop_entries(session)
+                entries = _placed_tool_loop_entries(session)
                 logger.info("Tool loop token usage: %s", accumulated_usage)
                 session.metadata["token_usage"] = accumulated_usage
                 return entries
