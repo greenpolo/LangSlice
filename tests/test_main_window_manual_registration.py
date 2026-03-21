@@ -10,6 +10,7 @@ from PIL import Image
 
 import langslice.atlas as atlas
 from langslice.gui import main_window
+from langslice.gui import workers as gui_workers
 from langslice.image_prep import LoadedImageState
 from langslice.registration import (
     AffineResult,
@@ -257,7 +258,7 @@ def test_manual_registration_path_updates_state(monkeypatch) -> None:
         return fresh_result
 
     monkeypatch.setattr(
-        main_window, "estimate_registration_runtime", fake_estimate_registration_runtime
+        gui_workers, "estimate_registration_runtime", fake_estimate_registration_runtime
     )
 
     window.source_image = Image.new("RGB", (120, 80), (255, 255, 255))
@@ -478,7 +479,7 @@ def test_successful_registration_displays_annotation_markers(monkeypatch) -> Non
         return result_with_session
 
     monkeypatch.setattr(
-        main_window, "estimate_registration_runtime", fake_estimate_registration_runtime
+        gui_workers, "estimate_registration_runtime", fake_estimate_registration_runtime
     )
 
     window._run_manual_registration()
@@ -621,7 +622,7 @@ def test_manual_registration_shows_preview_pairs_on_solver_failure(monkeypatch) 
         raise ValueError("Landmark spread too small (coverage=0.0514)")
 
     monkeypatch.setattr(
-        main_window, "estimate_registration_runtime", fake_estimate_registration_runtime
+        gui_workers, "estimate_registration_runtime", fake_estimate_registration_runtime
     )
 
     window._run_manual_registration()
@@ -765,7 +766,7 @@ def test_manual_registration_shows_image_gen_first_pass_annotations(monkeypatch)
         raise ValueError("Need at least 3 correspondence pairs to fit registration, got 2")
 
     monkeypatch.setattr(
-        main_window, "estimate_registration_runtime", fake_estimate_registration_runtime
+        gui_workers, "estimate_registration_runtime", fake_estimate_registration_runtime
     )
 
     window._run_manual_registration()
