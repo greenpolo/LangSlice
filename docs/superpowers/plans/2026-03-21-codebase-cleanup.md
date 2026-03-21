@@ -111,10 +111,39 @@
 
 ---
 
-### Task 3: Clean up VLM config.py
+### Task 3: Rename `vlm/` module to `ai/`
+
+The name "vlm" (vision-language model) is too generic and doesn't capture what the module does. Rename to `ai/` — short, clear, not vendor-specific, extensible for future non-Google models.
 
 **Files:**
-- Modify: `langslice/vlm/config.py` — consolidate `_load_dotenv()` calls, remove unused predicates
+- Rename: `langslice/vlm/` → `langslice/ai/`
+- Modify: Every file that imports from `langslice.vlm` — update to `langslice.ai`
+- Modify: `langslice/ai/__init__.py` — update internal imports
+- Modify: `tests/` — update imports
+- Modify: `pyproject.toml` — if vlm is referenced in any config
+
+- [ ] **Step 1: Rename the directory** `langslice/vlm/` → `langslice/ai/`
+- [ ] **Step 2: Update all internal imports within `langslice/ai/`** — change `langslice.vlm` → `langslice.ai`
+- [ ] **Step 3: Update all imports across the codebase** — grep for `langslice.vlm` and `from langslice.vlm` in all `.py` files and update
+- [ ] **Step 4: Update tests** — grep for `vlm` in test imports and mock paths
+- [ ] **Step 5: Run verification**
+  ```bash
+  python -m pytest
+  python -m ruff check .
+  python -m basedpyright
+  ```
+- [ ] **Step 6: Commit**
+  ```bash
+  git add -A
+  git commit -m "refactor: rename vlm/ module to ai/"
+  ```
+
+---
+
+### Task 4: Clean up ai/config.py
+
+**Files:**
+- Modify: `langslice/ai/config.py` — consolidate `_load_dotenv()` calls, remove unused predicates
 
 - [ ] **Step 1: Move `_load_dotenv()` to module-level init** — call once at import time instead of in every getter function
 - [ ] **Step 2: Remove unused predicate** — `supports_structured_image_output()` only (the `STRUCTURED_OUTPUT_IMAGE_MODELS` set is empty and no callers exist outside config.py). **DO NOT remove `supports_image_model_thinking()`** — it is actively called by `agents_image_gen.py` (~line 120-125) and tested in `test_registration_agents.py`
@@ -126,21 +155,21 @@
   ```
 - [ ] **Step 4: Commit**
   ```bash
-  git add langslice/vlm/config.py
+  git add langslice/ai/config.py
   git commit -m "refactor: consolidate dotenv loading, remove unused config predicates"
   ```
 
 ---
 
-### Task 4: Split estimator.py (~1966 lines → ~3-4 files)
+### Task 5: Split estimator.py (~1966 lines → ~3 files)
 
 This is the highest-risk refactor. The goal is to split without changing any behavior or prompt logic.
 
 **Files:**
-- Modify: `langslice/vlm/estimator.py` — extract chunks into new files
-- Create: `langslice/vlm/estimator_tools.py` — tool handler logic (`_process_ap_function_calls` and its helpers)
-- Create: `langslice/vlm/estimator_debug.py` — debug artifact writing, telemetry formatting
-- Modify: `langslice/vlm/__init__.py` — ensure public API unchanged
+- Modify: `langslice/ai/estimator.py` — extract chunks into new files
+- Create: `langslice/ai/estimator_tools.py` — tool handler logic (`_process_ap_function_calls` and its helpers)
+- Create: `langslice/ai/estimator_debug.py` — debug artifact writing
+- Modify: `langslice/ai/__init__.py` — ensure public API unchanged
 
 **Split strategy:**
 - `estimator_tools.py`: `_process_ap_function_calls()`, `_get_regions_at_position()`, `_is_broad_multi_sweep()`, `_is_narrow_multi_sweep()`, `_sorted_unique_positions()`, `_has_neighbor_bracket()`, `_build_nudge_text()`, `_extract_generate_function_calls()`, `_extract_interaction_function_calls()` (~600 lines)
@@ -164,13 +193,13 @@ This is the highest-risk refactor. The goal is to split without changing any beh
   ```
 - [ ] **Step 6: Commit**
   ```bash
-  git add langslice/vlm/
+  git add langslice/ai/
   git commit -m "refactor: split estimator.py into tools, debug, and core modules"
   ```
 
 ---
 
-### Task 5: GUI cleanup — consolidate duplicates, remove vestigial code
+### Task 6: GUI cleanup — consolidate duplicates, remove vestigial code
 
 **Files:**
 - Modify: `langslice/gui/main_window.py` — remove fallback AtlasViewer (lines 124-161), remove empty `resizeEvent()` override
@@ -200,7 +229,7 @@ This is the highest-risk refactor. The goal is to split without changing any beh
 
 ---
 
-### Task 6: Split main_window.py (~2087 lines → extract worker classes)
+### Task 7: Split main_window.py (~2087 lines → extract worker classes)
 
 **Files:**
 - Create: `langslice/gui/workers.py` — AgentWorker, ManualRegistrationWorker, _create_debug_run_dir
@@ -226,7 +255,7 @@ This is the minimum useful split. The worker classes (lines ~163-340) are pure b
 
 ---
 
-### Task 7: Root cleanup and docs update
+### Task 8: Root cleanup and docs update
 
 **Files:**
 - Delete: `nul` (empty Windows artifact)
@@ -239,6 +268,7 @@ This is the minimum useful split. The worker classes (lines ~163-340) are pure b
 - [ ] **Step 1: Delete `nul` file**
 - [ ] **Step 2: Update `REPO_MAP.md`**
   - Remove `agents_single_pass.py` reference
+  - Update `vlm/` → `ai/` throughout
   - Add `estimator_tools.py`, `estimator_debug.py`, `workers.py`
   - Update descriptions as needed
 - [ ] **Step 3: Update `AGENTS.md`** — remove single_pass workflow references (check root `AGENTS.md` and any module-level `AGENTS.md` files under `langslice/`)
