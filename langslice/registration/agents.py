@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass
 import importlib
 import io
 import json
@@ -11,6 +9,9 @@ import logging
 import os
 import threading
 import time
+from collections.abc import Callable
+from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Any, cast
 
 from PIL import Image
@@ -108,6 +109,70 @@ def _retry_generate(
     raise last_exc
 
 
+def _retry_generate_stream(
+    client: Any,
+    *,
+    model: str,
+    contents: object,
+    config: object,
+    request_label: str,
+    on_progress: Callable[[str], None] | None = None,
+) -> Any:
+    """Like :func:`_retry_generate` but uses ``generate_content_stream``.
+
+    Iterates the stream, collects all parts (images **and** text), and
+    returns a synthetic response object whose ``.candidates[0].content.parts``
+    list mirrors the non-streaming structure so that downstream helpers
+    (e.g. ``_extract_generated_image``) work unchanged.
+    """
+
+    def _stream_and_collect() -> SimpleNamespace:
+        all_parts: list[object] = []
+        stream = client.models.generate_content_stream(
+            model=model, contents=contents, config=config
+        )
+        for chunk in stream:
+            parts = getattr(chunk, "parts", None)
+            if parts is None:
+                continue
+            for part in parts:
+                all_parts.append(part)
+                # Surface streamed text in the progress callback.
+                text = getattr(part, "text", None)
+                if text and on_progress:
+                    snippet = str(text)[:120].replace("\n", " ")
+                    on_progress(f"{request_label}: model text: {snippet}")
+        return SimpleNamespace(
+            candidates=[SimpleNamespace(content=SimpleNamespace(parts=all_parts))]
+        )
+
+    last_exc: Exception | None = None
+    for attempt in range(_MAX_RETRIES + 1):
+        attempt_label = f"{request_label} (attempt {attempt + 1}/{_MAX_RETRIES + 1})"
+        try:
+            return _run_with_progress_heartbeat(
+                _stream_and_collect,
+                request_label=attempt_label,
+                on_progress=on_progress,
+            )
+        except Exception as exc:
+            last_exc = exc
+            status = getattr(exc, "status_code", None) or getattr(exc, "code", None)
+            if (
+                isinstance(status, int)
+                and status in _RETRYABLE_STATUS_CODES
+                and attempt < _MAX_RETRIES
+            ):
+                delay = _INITIAL_BACKOFF_S * (2**attempt)
+                if on_progress:
+                    on_progress(f"Gemini registration retry in {delay:.1f}s after status {status}")
+                time.sleep(delay)
+                continue
+            raise
+    assert last_exc is not None
+    raise last_exc
+
+
 def _format_elapsed_seconds(elapsed_s: float) -> str:
     if elapsed_s < 60.0:
         return f"{elapsed_s:.1f}s"
@@ -135,7 +200,8 @@ def _run_with_progress_heartbeat(
                 while not stop_event.wait(heartbeat_interval_s):
                     elapsed_s = time.perf_counter() - started_at
                     on_progress(
-                        f"{request_label}: still waiting for Gemini after {_format_elapsed_seconds(elapsed_s)}"
+                        f"{request_label}: still waiting for Gemini after "
+                        f"{_format_elapsed_seconds(elapsed_s)}"
                     )
 
             heartbeat_thread = threading.Thread(target=_heartbeat_loop, daemon=True)
@@ -170,8 +236,8 @@ def _run_with_progress_heartbeat(
 def _image_to_inline_data(img: Image.Image) -> dict[str, object]:
     buf = io.BytesIO()
     prepared = img.convert("RGB") if img.mode != "RGB" else img
-    prepared.save(buf, format="JPEG", quality=95, subsampling=0)
-    return {"inline_data": {"mime_type": "image/jpeg", "data": buf.getvalue()}}
+    prepared.save(buf, format="PNG")
+    return {"inline_data": {"mime_type": "image/png", "data": buf.getvalue()}}
 
 
 def _extract_result(response: object) -> dict[str, object]:
@@ -356,7 +422,8 @@ def _build_region_metadata_text(
         else:
             vertical = "central"
         rows.append(
-            f"- {acronym} | {name} | [{norm_y}, {norm_x}] | {area_fraction * 100.0:.1f}% | {vertical} {lateral}"
+            f"- {acronym} | {name} | [{norm_y}, {norm_x}] | "
+            f"{area_fraction * 100.0:.1f}% | {vertical} {lateral}"
         )
     return "\n".join(rows)
 
@@ -419,10 +486,10 @@ def _prepare_registration_inputs(
     if debug_dir:
         registration_dir = os.path.join(debug_dir, "registration")
         os.makedirs(registration_dir, exist_ok=True)
-        atlas_path = os.path.join(registration_dir, "request_atlas.jpg")
-        slice_path = os.path.join(registration_dir, "request_slice.jpg")
-        atlas_prep.image.save(atlas_path, quality=95)
-        slice_prep.image.save(slice_path, quality=95)
+        atlas_path = os.path.join(registration_dir, "request_atlas.png")
+        slice_path = os.path.join(registration_dir, "request_slice.png")
+        atlas_prep.image.convert("RGB").save(atlas_path, format="PNG")
+        slice_prep.image.convert("RGB").save(slice_path, format="PNG")
         with open(
             os.path.join(registration_dir, "request_region_metadata.txt"), "w", encoding="utf-8"
         ) as fh:
@@ -615,7 +682,7 @@ def estimate_registration_correspondences(
     )
 
     vlm_config = importlib.import_module("langslice.vlm.config")
-    get_client = cast(Callable[[], Any], getattr(vlm_config, "get_client"))
+    get_client = cast(Callable[[], Any], vlm_config.get_client)
     prepared = _prepare_registration_inputs(
         image,
         atlas_name=atlas_name,
@@ -653,7 +720,7 @@ def estimate_registration_correspondences(
 
     client = get_client()
 
-    if selected_workflow == "single_pass" and getattr(vlm_config, "count_tokens_enabled")():
+    if selected_workflow == "single_pass" and vlm_config.count_tokens_enabled():
         try:
             count_contents, count_config = _build_single_pass_request(
                 atlas_prep=prepared.atlas_prep,
