@@ -51,12 +51,79 @@ Identified two optimal workflows, one for the text-based multimodal LLMs, the ot
 1\. First Call  
 This is a coronal section of a \[insert animal\] brain anatomical atlas. I’d like you to place landmark points as annotations on the atlas. Prioritize placing landmarks which are evenly distributed, visually distinct, and would be easily identifiable in a real brain section or easily identifiable if described in text. Please place \[n\] points on the outline/border of the brain slice atlas, and \[n\] points in the interior of the brain slice atlas. Label each annotation with a number.
 
-\[Output: Image or Text\] (The model can output a json with 0-1000 coordinates, however I haven’t tested to see if it’s more or less accurate than the image output)
+Output the atlas as an image edited with the point annotations.Please ensure the points are small, such that they do not block local features. 
 
 2\. Second Call  
 This is an \[insert animal\] brain slice and a corresponding anatomical atlas. The anatomical atlas is annotated with landmark points. I'd like you to place corresponding point annotations on the histological slice in the same relative anatomical positions as the atlas points. Ensure the numbers of the annotations are preserved. 
 
-\[Output: Image or Text\] (The model can output a json with x,y 0-1000 coordinates, however I haven’t tested to see if it’s more or less accurate than the image output)
+Output the histology slice as an image edited with the point annotations. Please ensure the points are small.
+
+Code:
+
+\# To run this code you need to install the following dependencies:  
+\# pip install google-genai
+
+import mimetypes  
+import os  
+from google import genai  
+from google.genai import types
+
+def save\_binary\_file(file\_name, data):  
+    f \= open(file\_name, "wb")  
+    f.write(data)  
+    f.close()  
+    print(f"File saved to to: {file\_name}")
+
+def generate():  
+    client \= genai.Client(  
+        api\_key=os.environ.get("GEMINI\_API\_KEY"),  
+    )
+
+    model \= "gemini-3.1-flash-image-preview"  
+    contents \= \[  
+        types.Content(  
+            role="user",  
+            parts=\[  
+                types.Part.from\_text(text="""INSERT\_INPUT\_HERE"""),  
+            \],  
+        ),  
+    \]  
+    generate\_content\_config \= types.GenerateContentConfig(  
+        thinking\_config=types.ThinkingConfig(  
+            thinking\_level="MINIMAL",  
+        ),  
+        image\_config \= types.ImageConfig(  
+            aspect\_ratio="",  
+            image\_size="1K",  
+            person\_generation="",  
+        ),  
+        response\_modalities=\[  
+            "IMAGE",  
+        \],  
+    )
+
+    file\_index \= 0  
+    for chunk in client.models.generate\_content\_stream(  
+        model=model,  
+        contents=contents,  
+        config=generate\_content\_config,  
+    ):  
+        if (  
+            chunk.parts is None  
+        ):  
+            continue  
+        if chunk.parts\[0\].inline\_data and chunk.parts\[0\].inline\_data.data:  
+            file\_name \= f"ENTER\_FILE\_NAME\_{file\_index}"  
+            file\_index \+= 1  
+            inline\_data \= chunk.parts\[0\].inline\_data  
+            data\_buffer \= inline\_data.data  
+            file\_extension \= mimetypes.guess\_extension(inline\_data.mime\_type)  
+            save\_binary\_file(f"{file\_name}{file\_extension}", data\_buffer)  
+        else:  
+            print(chunk.text)
+
+if \_\_name\_\_ \== "\_\_main\_\_":  
+    generate()
 
 **Landmark Workflow for Text-Centric Multimodal Models:**  
 (gemini-3.1-pro, gemini-3-flash, gemini-3.1-flash-lite)
@@ -115,5 +182,4 @@ Task:
   \- point number,  
   \- feature description,  
   \- why that feature matches locally,  
-  \- and whether the zoomed-out anatomical context still supports the placement.
-
+  \- and whether the zoomed-out anatomical context still supports the placement.  
