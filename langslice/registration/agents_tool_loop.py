@@ -424,6 +424,36 @@ def _build_tool_loop_prompt(
 # ---------------------------------------------------------------------------
 
 
+def _side_by_side(
+    left: Image.Image,
+    right: Image.Image,
+    *,
+    label_left: str = "Atlas",
+    label_right: str = "Slice",
+    gap: int = 8,
+    max_height: int = 768,
+) -> Image.Image:
+    """Create a side-by-side composite of two images, scaled to match heights."""
+    # Scale both to the same height
+    lw, lh = left.size
+    rw, rh = right.size
+    target_h = min(max_height, max(lh, rh))
+    left_scaled = left.resize(
+        (int(lw * target_h / lh), target_h), Image.Resampling.LANCZOS
+    )
+    right_scaled = right.resize(
+        (int(rw * target_h / rh), target_h), Image.Resampling.LANCZOS
+    )
+    sw, _ = left_scaled.size
+    rw2, _ = right_scaled.size
+    total_w = sw + gap + rw2
+    # Black background with white divider
+    composite = Image.new("RGB", (total_w, target_h), (0, 0, 0))
+    composite.paste(left_scaled.convert("RGB"), (0, 0))
+    composite.paste(right_scaled.convert("RGB"), (sw + gap, 0))
+    return composite
+
+
 def _image_to_bytes(img: Image.Image, *, fmt: str = "PNG", quality: int = 85) -> bytes:
     """Convert a PIL image to bytes in the given format."""
     buf = io.BytesIO()
@@ -587,12 +617,14 @@ def _handle_view_overview(
     session.metadata.pop("last_zoom_pair", None)
     atlas_annotated = render_landmark_annotations(atlas_image, session.atlas_annotations)
     slice_annotated = render_landmark_annotations(slice_image, session.slice_annotations)
+    composite = _side_by_side(atlas_annotated, slice_annotated)
     result_dict = {"status": "ok"}
     image_parts: list[types.Part] = [
-        types.Part.from_text(text="Atlas overview with current annotations:"),
-        _image_to_part(atlas_annotated),
-        types.Part.from_text(text="Slice overview with current annotations:"),
-        _image_to_part(slice_annotated, fmt="JPEG"),
+        types.Part.from_text(
+            text="Side-by-side overview: Atlas (left) | Slice (right). "
+            "Current annotations shown."
+        ),
+        _image_to_part(composite, fmt="JPEG"),
         types.Part.from_text(text=json.dumps(_session_summary(session), indent=2)),
     ]
     _agents._emit_trace(
@@ -658,14 +690,13 @@ def _handle_view_zoom_pair(
     if cleared:
         result_dict["cleared_awaiting_zoom"] = sorted(cleared)
 
+    zoom_composite = _side_by_side(atlas_zoom, slice_zoom, max_height=512)
     image_parts: list[types.Part] = [
-        _image_to_part(atlas_zoom),
-        types.Part.from_text(text=f"Zoomed atlas view at {zoom:.1f}x"),
-        _image_to_part(slice_zoom, fmt="JPEG"),
         types.Part.from_text(
-            text=f"Zoomed slice view at {zoom:.1f}x. "
+            text=f"Side-by-side zoom at {zoom:.1f}x: Atlas (left) | Slice (right). "
             "Use *_point_2d_local to place points relative to these zoomed views."
         ),
+        _image_to_part(zoom_composite, fmt="JPEG"),
     ]
     _agents._emit_trace(
         on_trace,
@@ -748,6 +779,7 @@ def _handle_place_point_pair(
 
     atlas_annotated = render_landmark_annotations(atlas_image, session.atlas_annotations)
     slice_annotated = render_landmark_annotations(slice_image, session.slice_annotations)
+    composite = _side_by_side(atlas_annotated, slice_annotated)
 
     result_dict: dict[str, Any] = {
         "status": "ok",
@@ -758,10 +790,10 @@ def _handle_place_point_pair(
     image_parts: list[types.Part] = [
         types.Part.from_text(
             text=f"Saved provisional point pair {label} ({category}). "
-            "Updated annotations shown below."
+            "Side-by-side: Atlas (left) | Slice (right). "
+            "Now zoom in to verify placement."
         ),
-        _image_to_part(atlas_annotated),
-        _image_to_part(slice_annotated, fmt="JPEG"),
+        _image_to_part(composite, fmt="JPEG"),
         types.Part.from_text(text=json.dumps(_session_summary(session), indent=2)),
     ]
     _agents._emit_trace(
