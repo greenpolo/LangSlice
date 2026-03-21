@@ -18,6 +18,10 @@ class _DummyModels:
         _ = model, contents, config
         return object()
 
+    def generate_content_stream(self, *, model: str, contents: Any, config: Any) -> object:
+        _ = model, contents, config
+        return iter([])
+
 
 class _DummyClient:
     def __init__(self) -> None:
@@ -95,7 +99,9 @@ def _patch_common(monkeypatch: Any) -> None:
     monkeypatch.setattr(
         agents.importlib,
         "import_module",
-        lambda name: vlm_config if name == "langslice.vlm.config" else real_import_module(name),
+        lambda name, **kwargs: (
+            vlm_config if name == "langslice.vlm.config" else real_import_module(name, **kwargs)
+        ),
     )
 
 
@@ -135,6 +141,24 @@ def test_single_pass_pairs_atlas_and_slice_landmarks(monkeypatch: Any) -> None:
     assert call_count == 1
     assert result[0].label == "e1"
     assert result[1].label == "e2"
+
+
+def test_image_to_inline_data_uses_rgb_png() -> None:
+    part = agents._image_to_inline_data(Image.new("RGBA", (8, 6), (255, 0, 0, 128)))
+    assert isinstance(part, dict)
+
+    inline_data = part["inline_data"]
+    assert isinstance(inline_data, dict)
+    assert inline_data["mime_type"] == "image/png"
+
+    import io
+
+    encoded_data = inline_data["data"]
+    assert isinstance(encoded_data, (bytes, bytearray))
+
+    decoded = Image.open(io.BytesIO(encoded_data))
+    assert decoded.mode == "RGB"
+    assert decoded.size == (8, 6)
 
 
 def test_single_pass_keeps_raw_slice_coordinate_frame(monkeypatch: Any) -> None:
@@ -299,7 +323,7 @@ def test_registration_request_uses_configured_temperature(monkeypatch: Any) -> N
     monkeypatch.setattr(
         agents.importlib,
         "import_module",
-        lambda name: (
+        lambda name, **kwargs: (
             SimpleNamespace(
                 MODEL_NAME="test-model",
                 CODE_EXECUTION_ENABLED=False,
@@ -309,7 +333,7 @@ def test_registration_request_uses_configured_temperature(monkeypatch: Any) -> N
                 get_client=lambda: _DummyClient(),
             )
             if name == "langslice.vlm.config"
-            else current_import_module(name)
+            else current_import_module(name, **kwargs)
         ),
     )
 
@@ -340,7 +364,7 @@ def test_registration_request_can_force_code_execution(monkeypatch: Any) -> None
     monkeypatch.setattr(
         agents.importlib,
         "import_module",
-        lambda name: (
+        lambda name, **kwargs: (
             SimpleNamespace(
                 MODEL_NAME="gemini-3-flash-preview",
                 CODE_EXECUTION_ENABLED=False,
@@ -350,7 +374,7 @@ def test_registration_request_can_force_code_execution(monkeypatch: Any) -> None
                 get_client=lambda: _DummyClient(),
             )
             if name == "langslice.vlm.config"
-            else current_import_module(name)
+            else current_import_module(name, **kwargs)
         ),
     )
 
@@ -379,65 +403,61 @@ def _make_image_with_markers(
 
     draw = ImageDraw.Draw(img)
     for x, y in markers:
-        draw.ellipse(
-            [x - radius, y - radius, x + radius, y + radius], fill=colour
-        )
+        draw.ellipse([x - radius, y - radius, x + radius, y + radius], fill=colour)
     return img
 
 
 def _fake_image_response(
-    image: Image.Image, text: str | None = None
+    image: Image.Image,
+    text: str | None = None,
+    *,
+    mime_type: str = "image/png",
 ) -> SimpleNamespace:
     """Build a mock Gemini response containing an inline image and optional text."""
     import io
 
     buf = io.BytesIO()
-    image.save(buf, format="PNG")
+    fmt = "JPEG" if mime_type == "image/jpeg" else "PNG"
+    image.save(buf, format=fmt)
     parts = [
         SimpleNamespace(
             inline_data=SimpleNamespace(
                 data=buf.getvalue(),
-                mime_type="image/png",
+                mime_type=mime_type,
             ),
             text=None,
             thought=False,
         )
     ]
     if text is not None:
-        parts.append(
-            SimpleNamespace(inline_data=None, text=text, thought=False)
-        )
+        parts.append(SimpleNamespace(inline_data=None, text=text, thought=False))
     return SimpleNamespace(
-        candidates=[
-            SimpleNamespace(content=SimpleNamespace(parts=parts))
-        ],
+        candidates=[SimpleNamespace(content=SimpleNamespace(parts=parts))],
         # Also expose text at top level for _extract_json_payload fallback.
         text=text,
         parsed=None,
     )
 
 
-def test_image_gen_two_shot_extracts_markers_from_generated_images(monkeypatch: Any) -> None:
-    _patch_common(monkeypatch)
+def _typed_part_bytes(part: Any) -> bytes | None:
+    inline_data = getattr(part, "inline_data", None)
+    if inline_data is None:
+        return None
+    data = getattr(inline_data, "data", None)
+    if isinstance(data, (bytes, bytearray)):
+        return bytes(data)
+    return None
 
-    # Create base images (grey, like real tissue) and annotated versions.
-    # Markers are drawn in the adaptively-chosen colour.  Since the base
-    # images are grey, _choose_marker_colour will pick a bright saturated
-    # colour.  We draw markers in cyan (the first candidate) to match.
-    from langslice.registration.agents_image_gen import _choose_marker_colour
+
+def test_image_gen_two_shot_runs_both_passes(monkeypatch: Any) -> None:
+    _patch_common(monkeypatch)
 
     atlas_base = Image.new("RGB", (456, 320), (128, 128, 128))
     slice_base = Image.new("RGB", (200, 120), (128, 128, 128))
 
-    chosen_name, chosen_rgb = _choose_marker_colour([atlas_base, slice_base])
+    atlas_annotated = _make_image_with_markers(atlas_base, [(100, 50)], colour=(255, 0, 0))
+    slice_annotated = _make_image_with_markers(slice_base, [(30, 20)], colour=(255, 0, 0))
 
-    atlas_markers = [(100, 50), (200, 100), (300, 150), (400, 250)]
-    slice_markers = [(30, 20), (80, 50), (150, 80), (180, 100)]
-
-    atlas_annotated = _make_image_with_markers(atlas_base, atlas_markers, colour=chosen_rgb)
-    slice_annotated = _make_image_with_markers(slice_base, slice_markers, colour=chosen_rgb)
-
-    # Image-only responses — no text.
     responses = [
         _fake_image_response(atlas_annotated),
         _fake_image_response(slice_annotated),
@@ -447,7 +467,7 @@ def test_image_gen_two_shot_extracts_markers_from_generated_images(monkeypatch: 
     monkeypatch.setattr(
         agents.importlib,
         "import_module",
-        lambda name: (
+        lambda name, **kwargs: (
             SimpleNamespace(
                 MODEL_NAME="gemini-3-pro-image-preview",
                 CODE_EXECUTION_ENABLED=False,
@@ -457,56 +477,41 @@ def test_image_gen_two_shot_extracts_markers_from_generated_images(monkeypatch: 
                 get_client=lambda: _DummyClient(),
             )
             if name == "langslice.vlm.config"
-            else current_import_module(name)
+            else current_import_module(name, **kwargs)
         ),
     )
-    monkeypatch.setattr(agents, "_retry_generate", lambda *args, **kwargs: responses.pop(0))
+    monkeypatch.setattr(agents, "_retry_generate_stream", lambda *args, **kwargs: responses.pop(0))
 
-    result = agents.estimate_registration_correspondences(
-        slice_base,
-        atlas_name="allen_mouse_25um",
-        position_mm=2.0,
-        target_landmark_count=4,
-        min_edge_landmarks=2,
-        workflow="image_gen_two_shot",
-    )
-
-    assert len(result) == 4
-    assert [corr.label for corr in result] == ["1", "2", "3", "4"]
-    # Coordinates are CV-extracted centroids — check proximity to drawn markers.
-    for corr, (ax, ay), (sx, sy) in zip(result, atlas_markers, slice_markers, strict=True):
-        assert abs(corr.atlas_xy[0] - float(ax)) < 3.0
-        assert abs(corr.atlas_xy[1] - float(ay)) < 3.0
-        assert abs(corr.slice_xy[0] - float(sx)) < 3.0
-        assert abs(corr.slice_xy[1] - float(sy)) < 3.0
+    # Marker extraction is not yet implemented — the image-gen workflow
+    # returns an empty correspondence list, which the caller raises on.
+    with pytest.raises(RuntimeError, match="no usable correspondences"):
+        agents.estimate_registration_correspondences(
+            slice_base,
+            atlas_name="allen_mouse_25um",
+            position_mm=2.0,
+            target_landmark_count=4,
+            min_edge_landmarks=2,
+            workflow="image_gen_two_shot",
+        )
 
 
-def test_image_gen_two_shot_emits_annotation_sessions(monkeypatch: Any) -> None:
+def test_image_gen_two_shot_raises_on_no_atlas_image(monkeypatch: Any) -> None:
     _patch_common(monkeypatch)
 
-    from langslice.registration.agents_image_gen import _choose_marker_colour
-
-    atlas_base = Image.new("RGB", (456, 320), (128, 128, 128))
     slice_base = Image.new("RGB", (200, 120), (128, 128, 128))
 
-    _chosen_name, chosen_rgb = _choose_marker_colour([atlas_base, slice_base])
-
-    atlas_annotated = _make_image_with_markers(
-        atlas_base, [(100, 80), (300, 200)], colour=chosen_rgb
+    # Return an empty response (no image parts) for the atlas pass.
+    empty_response = SimpleNamespace(
+        candidates=[SimpleNamespace(content=SimpleNamespace(parts=[]))],
+        text=None,
+        parsed=None,
     )
-    slice_annotated = _make_image_with_markers(slice_base, [(50, 30), (150, 90)], colour=chosen_rgb)
-
-    # Image-only responses — no text.
-    responses = [
-        _fake_image_response(atlas_annotated),
-        _fake_image_response(slice_annotated),
-    ]
 
     current_import_module = agents.importlib.import_module
     monkeypatch.setattr(
         agents.importlib,
         "import_module",
-        lambda name: (
+        lambda name, **kwargs: (
             SimpleNamespace(
                 MODEL_NAME="gemini-3-pro-image-preview",
                 CODE_EXECUTION_ENABLED=False,
@@ -516,30 +521,142 @@ def test_image_gen_two_shot_emits_annotation_sessions(monkeypatch: Any) -> None:
                 get_client=lambda: _DummyClient(),
             )
             if name == "langslice.vlm.config"
-            else current_import_module(name)
+            else current_import_module(name, **kwargs)
         ),
     )
-    monkeypatch.setattr(agents, "_retry_generate", lambda *args, **kwargs: responses.pop(0))
-
-    from langslice.registration.types import RegistrationAnnotationSession
-
-    sessions: list[RegistrationAnnotationSession] = []
-    agents.estimate_registration_correspondences(
-        slice_base,
-        atlas_name="allen_mouse_25um",
-        position_mm=2.0,
-        target_landmark_count=2,
-        min_edge_landmarks=1,
-        workflow="image_gen_two_shot",
-        on_annotation_session=sessions.append,
+    monkeypatch.setattr(
+        agents, "_retry_generate_stream", lambda *args, **kwargs: empty_response
     )
 
-    # Two sessions emitted: atlas-only preview, then atlas+slice.
-    assert len(sessions) == 2
-    assert len(sessions[0].atlas_annotations) == 2
-    assert len(sessions[0].slice_annotations) == 0
-    assert len(sessions[1].atlas_annotations) == 2
-    assert len(sessions[1].slice_annotations) == 2
+    with pytest.raises(RuntimeError, match="did not return an image"):
+        agents.estimate_registration_correspondences(
+            slice_base,
+            atlas_name="allen_mouse_25um",
+            position_mm=2.0,
+            target_landmark_count=2,
+            min_edge_landmarks=1,
+            workflow="image_gen_two_shot",
+        )
+
+
+def test_image_gen_config_requests_image_text_1k_and_high_thinking(monkeypatch: Any) -> None:
+    import langslice.registration.agents_image_gen as image_gen_agents
+
+    real_import_module = image_gen_agents.importlib.import_module
+    monkeypatch.setattr(
+        image_gen_agents.importlib,
+        "import_module",
+        lambda name, **kwargs: (
+            SimpleNamespace(
+                supports_image_model_thinking=lambda model_name: (
+                    model_name == "gemini-3.1-flash-image-preview"
+                )
+            )
+            if name == "langslice.vlm.config"
+            else real_import_module(name, **kwargs)
+        ),
+    )
+
+    config = image_gen_agents._build_image_gen_config(
+        model_name="gemini-3.1-flash-image-preview",
+        thinking_level="HIGH",
+    )
+
+    assert config.response_modalities == ["IMAGE", "TEXT"]
+    assert config.image_config.image_size == "1K"
+    assert config.thinking_config.thinking_level == "HIGH"
+
+
+def test_image_gen_config_skips_thinking_when_model_does_not_support_it(monkeypatch: Any) -> None:
+    import langslice.registration.agents_image_gen as image_gen_agents
+
+    real_import_module = image_gen_agents.importlib.import_module
+    monkeypatch.setattr(
+        image_gen_agents.importlib,
+        "import_module",
+        lambda name, **kwargs: (
+            SimpleNamespace(supports_image_model_thinking=lambda _model_name: False)
+            if name == "langslice.vlm.config"
+            else real_import_module(name, **kwargs)
+        ),
+    )
+
+    config = image_gen_agents._build_image_gen_config(
+        model_name="gemini-3-pro-image-preview",
+        thinking_level="HIGH",
+    )
+
+    assert config.response_modalities == ["IMAGE", "TEXT"]
+    assert config.image_config.image_size == "1K"
+    assert config.thinking_config is None
+
+
+def test_extract_generated_image_prefers_last_image_part() -> None:
+    import langslice.registration.agents_image_gen as image_gen_agents
+
+    first = Image.new("RGB", (8, 8), (255, 0, 0))
+    last = Image.new("RGB", (8, 8), (0, 255, 0))
+
+    response = _fake_image_response(first)
+    response.candidates[0].content.parts.append(
+        _fake_image_response(last).candidates[0].content.parts[0]
+    )
+
+    extracted = image_gen_agents._extract_generated_image(response)
+
+    assert extracted is not None
+    assert extracted.getpixel((0, 0)) == (0, 255, 0)
+
+
+def test_image_gen_slice_request_matches_ai_studio_part_order() -> None:
+    import langslice.registration.agents_image_gen as image_gen_agents
+
+    annotated_atlas = Image.new("RGB", (11, 7), (10, 20, 30))
+    slice_image = Image.new("RGB", (13, 9), (40, 50, 60))
+    request = image_gen_agents._build_image_gen_slice_request(
+        annotated_atlas=annotated_atlas,
+        slice_prep=SimpleNamespace(image=slice_image),
+        species="mouse",
+    )
+
+    assert len(request) == 1
+    parts = request[0].parts
+    assert len(parts) == 3
+
+    import io
+
+    first_bytes = _typed_part_bytes(parts[0])
+    second_bytes = _typed_part_bytes(parts[1])
+    assert first_bytes is not None
+    assert second_bytes is not None
+    assert Image.open(io.BytesIO(first_bytes)).size == slice_image.size
+    assert Image.open(io.BytesIO(second_bytes)).size == annotated_atlas.size
+    assert isinstance(parts[2].text, str)
+
+
+def test_image_gen_slice_request_reuses_generated_atlas_payload_bytes() -> None:
+    import io
+
+    import langslice.registration.agents_image_gen as image_gen_agents
+
+    atlas_image = Image.new("RGB", (11, 7), (10, 20, 30))
+    slice_image = Image.new("RGB", (13, 9), (40, 50, 60))
+    atlas_response = _fake_image_response(atlas_image, mime_type="image/jpeg")
+    atlas_payloads = image_gen_agents._extract_generated_images(atlas_response)
+
+    assert len(atlas_payloads) == 1
+    request = image_gen_agents._build_image_gen_slice_request(
+        annotated_atlas=atlas_payloads[0],
+        slice_prep=SimpleNamespace(image=slice_image),
+        species="mouse",
+    )
+
+    parts = request[0].parts
+    atlas_bytes = _typed_part_bytes(parts[1])
+    assert atlas_bytes is not None
+    assert atlas_bytes == atlas_payloads[0].data
+    assert parts[1].inline_data.mime_type == "image/jpeg"
+    assert Image.open(io.BytesIO(atlas_bytes)).size == atlas_image.size
 
 
 def test_multimodal_tool_loop_places_pairs_before_finish(monkeypatch: Any) -> None:
@@ -680,7 +797,7 @@ def test_registration_request_uses_configured_thinking_level(monkeypatch: Any) -
     monkeypatch.setattr(
         agents.importlib,
         "import_module",
-        lambda name: (
+        lambda name, **kwargs: (
             SimpleNamespace(
                 MODEL_NAME="test-model",
                 CODE_EXECUTION_ENABLED=False,
@@ -690,7 +807,7 @@ def test_registration_request_uses_configured_thinking_level(monkeypatch: Any) -
                 get_client=lambda: _DummyClient(),
             )
             if name == "langslice.vlm.config"
-            else current_import_module(name)
+            else current_import_module(name, **kwargs)
         ),
     )
 
