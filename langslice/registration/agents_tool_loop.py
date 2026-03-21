@@ -196,7 +196,16 @@ def _crop_zoom_view(
     left, top, right, bottom = _compute_zoom_window(
         (width, height), center_yx=center_yx, zoom=zoom
     )
-    cropped = image.crop((left, top, right, bottom)).resize(image.size, Image.Resampling.BICUBIC)
+    cropped = image.crop((left, top, right, bottom))
+    # Upscale the crop to a fixed max size for readability, not to the
+    # full image dimensions (which produces unnecessarily huge images).
+    _ZOOM_MAX_EDGE = 512
+    cw, ch = cropped.size
+    scale = _ZOOM_MAX_EDGE / max(cw, ch)
+    if scale > 1.0:
+        cropped = cropped.resize(
+            (int(cw * scale), int(ch * scale)), Image.Resampling.BICUBIC
+        )
     return cropped, (left, top, right, bottom)
 
 
@@ -415,17 +424,23 @@ def _build_tool_loop_prompt(
 # ---------------------------------------------------------------------------
 
 
-def _image_to_bytes(img: Image.Image) -> bytes:
-    """Convert a PIL image to PNG bytes."""
+def _image_to_bytes(img: Image.Image, *, fmt: str = "PNG", quality: int = 85) -> bytes:
+    """Convert a PIL image to bytes in the given format."""
     buf = io.BytesIO()
     prepared = img.convert("RGB") if img.mode != "RGB" else img
-    prepared.save(buf, format="PNG")
+    if fmt.upper() == "JPEG":
+        prepared.save(buf, format="JPEG", quality=quality)
+    else:
+        prepared.save(buf, format="PNG")
     return buf.getvalue()
 
 
-def _image_to_part(img: Image.Image) -> types.Part:
-    """Convert a PIL image to a ``types.Part`` via ``from_bytes``."""
-    return types.Part.from_bytes(data=_image_to_bytes(img), mime_type="image/png")
+def _image_to_part(
+    img: Image.Image, *, fmt: str = "PNG", quality: int = 85
+) -> types.Part:
+    """Convert a PIL image to a ``types.Part``."""
+    mime = "image/jpeg" if fmt.upper() == "JPEG" else "image/png"
+    return types.Part.from_bytes(data=_image_to_bytes(img, fmt=fmt, quality=quality), mime_type=mime)
 
 
 def _prepare_base_images(
@@ -433,6 +448,7 @@ def _prepare_base_images(
     prepared: _agents._PreparedRegistrationInputs,
     *,
     atlas_override: Image.Image | None = None,
+    slice_override: Image.Image | None = None,
 ) -> tuple[types.Part | Any, types.Part | Any, list[Any]]:
     """Upload or inline the base atlas and slice images.
 
@@ -441,26 +457,27 @@ def _prepare_base_images(
     """
     _ai_config = importlib.import_module("langslice.ai.config")
     atlas_image = atlas_override or prepared.atlas_prep.image
+    slice_image = slice_override or prepared.slice_prep.image
 
     uploaded_files: list[Any] = []
     if _ai_config.supports_file_api():
         atlas_bytes_io = io.BytesIO(_image_to_bytes(atlas_image))
-        slice_bytes_io = io.BytesIO(_image_to_bytes(prepared.slice_prep.image))
+        slice_bytes_io = io.BytesIO(_image_to_bytes(slice_image, fmt="JPEG"))
         atlas_file = client.files.upload(
             file=atlas_bytes_io,
             config=types.UploadFileConfig(mime_type="image/png"),
         )
         slice_file = client.files.upload(
             file=slice_bytes_io,
-            config=types.UploadFileConfig(mime_type="image/png"),
+            config=types.UploadFileConfig(mime_type="image/jpeg"),
         )
         uploaded_files = [atlas_file, slice_file]
         atlas_part = types.Part.from_uri(file_uri=atlas_file.uri, mime_type="image/png")
-        slice_part = types.Part.from_uri(file_uri=slice_file.uri, mime_type="image/png")
+        slice_part = types.Part.from_uri(file_uri=slice_file.uri, mime_type="image/jpeg")
         return atlas_part, slice_part, uploaded_files
     else:
         atlas_part = _image_to_part(atlas_image)
-        slice_part = _image_to_part(prepared.slice_prep.image)
+        slice_part = _image_to_part(slice_image, fmt="JPEG")
         return atlas_part, slice_part, uploaded_files
 
 
@@ -575,7 +592,7 @@ def _handle_view_overview(
         types.Part.from_text(text="Atlas overview with current annotations:"),
         _image_to_part(atlas_annotated),
         types.Part.from_text(text="Slice overview with current annotations:"),
-        _image_to_part(slice_annotated),
+        _image_to_part(slice_annotated, fmt="JPEG"),
         types.Part.from_text(text=json.dumps(_session_summary(session), indent=2)),
     ]
     _agents._emit_trace(
@@ -644,7 +661,7 @@ def _handle_view_zoom_pair(
     image_parts: list[types.Part] = [
         _image_to_part(atlas_zoom),
         types.Part.from_text(text=f"Zoomed atlas view at {zoom:.1f}x"),
-        _image_to_part(slice_zoom),
+        _image_to_part(slice_zoom, fmt="JPEG"),
         types.Part.from_text(
             text=f"Zoomed slice view at {zoom:.1f}x. "
             "Use *_point_2d_local to place points relative to these zoomed views."
@@ -744,7 +761,7 @@ def _handle_place_point_pair(
             "Updated annotations shown below."
         ),
         _image_to_part(atlas_annotated),
-        _image_to_part(slice_annotated),
+        _image_to_part(slice_annotated, fmt="JPEG"),
         types.Part.from_text(text=json.dumps(_session_summary(session), indent=2)),
     ]
     _agents._emit_trace(
@@ -952,6 +969,11 @@ def _estimate_correspondences_tool_loop(
         },
     )
 
+    # Boost slice exposure by 50% for better visibility of structures.
+    from PIL import ImageEnhance
+
+    slice_for_model = ImageEnhance.Brightness(prepared.slice_prep.image).enhance(1.5)
+
     # Upscale atlas for better visual comparison. The raw atlas is tiny
     # (e.g. 456x320) which makes landmark matching hard. Upscale to ~1K
     # on the long edge — large enough for detail, small enough for inline
@@ -970,7 +992,7 @@ def _estimate_correspondences_tool_loop(
 
     # Prepare base image parts
     atlas_part, slice_part, uploaded_files = _prepare_base_images(
-        client, prepared, atlas_override=atlas_for_model
+        client, prepared, atlas_override=atlas_for_model, slice_override=slice_for_model
     )
 
     # Build tools
@@ -1084,7 +1106,7 @@ def _estimate_correspondences_tool_loop(
                     fc,
                     session=session,
                     atlas_image=atlas_for_model,
-                    slice_image=prepared.slice_prep.image,
+                    slice_image=slice_for_model,
                     iteration=iteration,
                     on_trace=on_trace,
                 )
