@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 MODEL_NAME = "gemini-3-flash-preview"
 THINKING_LEVEL = "HIGH"
 CODE_EXECUTION_ENABLED = True
-TEMPERATURE: float = 0.5
+TEMPERATURE: float = 1.0
 
 REGISTRATION_WORKFLOW_IMAGE_GEN_TWO_SHOT = "image_gen_two_shot"
 REGISTRATION_WORKFLOW_MULTIMODAL_TOOL_LOOP = "multimodal_tool_loop"

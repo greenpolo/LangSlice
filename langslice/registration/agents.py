@@ -43,7 +43,7 @@ _INITIAL_BACKOFF_S = 1.0
 _HEARTBEAT_INTERVAL_S = 10.0
 
 _MAX_REGION_METADATA = 30
-_TOOL_LOOP_MAX_STEPS = 24
+_TOOL_LOOP_MAX_STEPS = 64
 
 
 @dataclass
@@ -466,7 +466,7 @@ def _prepare_registration_inputs(
     min_edge = max(0, min(int(min_edge_landmarks), target_count))
     model_name = str(getattr(vlm_config, "MODEL_NAME", "gemini-3-flash-preview"))
     thinking_level = str(getattr(vlm_config, "THINKING_LEVEL", "HIGH")).strip().upper()
-    temperature = float(getattr(vlm_config, "TEMPERATURE", 0.5))
+    temperature = float(getattr(vlm_config, "TEMPERATURE", 1.0))
     supports_code_execution = cast(
         Callable[[str | None], bool],
         getattr(
