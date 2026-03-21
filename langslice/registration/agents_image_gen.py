@@ -14,28 +14,27 @@ instructions.  Instead, we use a two-pass strategy:
    alongside the raw histology slice.  The model draws matching numbered
    landmarks on the slice.
 
-Landmark pixel positions are extracted from the generated images via
-classical CV: colour thresholding and connected-component analysis.
-The model never outputs text — only annotated images.
+Calls use the streaming API (``generate_content_stream``) with typed
+``google.genai.types`` objects and ``response_modalities=["IMAGE", "TEXT"]``
+so the model can emit reasoning text alongside generated images — matching
+the behaviour observed in Google AI Studio.
 """
 
 from __future__ import annotations
 
+import importlib
 import io
 import logging
+import os
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
-import numpy as np
 from PIL import Image
-from scipy import ndimage as _ndimage
 
 import langslice.registration.agents as _agents
-from langslice.agent_trace import image_part_from_pil, json_part, runtime_event
-from langslice.registration.types import (
-    LandmarkAnnotation,
-    RegistrationAnnotationSession,
-)
+from langslice.agent_trace import image_part_from_pil, runtime_event
+from langslice.registration.types import RegistrationAnnotationSession
 
 logger = logging.getLogger(__name__)
 
@@ -54,21 +53,94 @@ def _species_from_atlas_name(atlas_name: str) -> str:
     return "animal"
 
 
-def _build_image_gen_config() -> dict[str, object]:
-    """Build generation config for image-gen models.
+@dataclass(frozen=True)
+class _GeneratedImagePayload:
+    image: Image.Image
+    data: bytes
+    mime_type: str
 
-    Image-generation models reject most generation config fields with
-    400 INVALID_ARGUMENT.  We pass an empty config.
+
+def _upscale_to_min_long_edge(img: Image.Image, min_long_edge: int = 1024) -> Image.Image:
+    """Upscale *img* so its long edge is at least *min_long_edge* pixels."""
+    w, h = img.size
+    long_edge = max(w, h)
+    if long_edge >= min_long_edge:
+        return img
+    scale = min_long_edge / long_edge
+    new_w = round(w * scale)
+    new_h = round(h * scale)
+    return img.resize((new_w, new_h), resample=Image.Resampling.LANCZOS)
+
+
+def _boost_exposure(img: Image.Image, factor: float = 1.5) -> Image.Image:
+    """Brighten *img* by *factor* to improve visibility for the model."""
+    from PIL import ImageEnhance
+
+    return ImageEnhance.Brightness(img.convert("RGB")).enhance(factor)
+
+
+def _image_to_typed_part(img: Image.Image) -> Any:
+    """Convert a PIL Image to a typed ``google.genai.types.Part``."""
+    buf = io.BytesIO()
+    prepared = img.convert("RGB") if img.mode != "RGB" else img
+    prepared.save(buf, format="PNG")
+    types_mod = importlib.import_module("google.genai.types")
+    part_cls = types_mod.Part
+    return part_cls.from_bytes(mime_type="image/png", data=buf.getvalue())
+
+
+def _generated_payload_to_typed_part(payload: _GeneratedImagePayload) -> Any:
+    types_mod = importlib.import_module("google.genai.types")
+    return types_mod.Part.from_bytes(mime_type=payload.mime_type, data=payload.data)
+
+
+def _build_image_gen_config(
+    *,
+    model_name: str,
+    thinking_level: str = "HIGH",
+) -> Any:
+    """Build a typed ``GenerateContentConfig`` for image-gen models.
+
+    Requests ``response_modalities=["IMAGE", "TEXT"]`` so the model can emit
+    reasoning text alongside generated images (matching AI Studio behaviour),
+    and enables image-model thinking when supported.
+
+    Config mirrors AI Studio's exported code: ``image_size="1K"``.
     """
-    return {}
+    types_mod = importlib.import_module("google.genai.types")
+    generate_content_config_cls = types_mod.GenerateContentConfig
+    image_config_cls = types_mod.ImageConfig
+
+    kwargs: dict[str, Any] = {
+        "response_modalities": ["IMAGE", "TEXT"],
+        "image_config": image_config_cls(image_size="1K"),
+    }
+
+    vlm_config = importlib.import_module("langslice.vlm.config")
+    supports_image_model_thinking = getattr(
+        vlm_config,
+        "supports_image_model_thinking",
+        lambda _model_name: False,
+    )
+    if bool(supports_image_model_thinking(model_name)):
+        thinking_config_cls = types_mod.ThinkingConfig
+        level = str(thinking_level).strip().upper() or "HIGH"
+        kwargs["thinking_config"] = thinking_config_cls(thinking_level=level)
+
+    return generate_content_config_cls(**kwargs)
 
 
-def _extract_generated_image(response: object) -> Image.Image | None:
-    """Pull the first generated image from a Gemini response."""
+def _extract_generated_images(response: object) -> list[_GeneratedImagePayload]:
+    """Collect generated image parts from a Gemini response.
+
+    Preserves the original bytes and MIME type so later requests can reuse the
+    exact returned image payload instead of re-encoding through PIL.
+    """
     candidates = getattr(response, "candidates", None)
     if not isinstance(candidates, list) or not candidates:
-        return None
+        return []
     content = getattr(candidates[0], "content", None)
+    images: list[_GeneratedImagePayload] = []
     for part in getattr(content, "parts", None) or []:
         inline = getattr(part, "inline_data", None)
         if inline is None:
@@ -76,168 +148,52 @@ def _extract_generated_image(response: object) -> Image.Image | None:
         data = getattr(inline, "data", None)
         mime = getattr(inline, "mime_type", "")
         if isinstance(data, (bytes, bytearray)) and str(mime).startswith("image/"):
-            return Image.open(io.BytesIO(data)).convert("RGB")
-    return None
+            images.append(
+                _GeneratedImagePayload(
+                    image=Image.open(io.BytesIO(data)).convert("RGB"),
+                    data=bytes(data),
+                    mime_type=str(mime),
+                )
+            )
+    return images
+
+
+def _extract_generated_image(response: object) -> Image.Image | None:
+    """Pull the last generated image from a Gemini response.
+
+    AI Studio exports for image-editing flows can include multiple generated
+    images interleaved with text. The final image part has been the closest
+    match to the visible result the user sees in AI Studio, so we keep the
+    last image encountered.
+    """
+    images = _extract_generated_images(response)
+    return images[-1].image if images else None
 
 
 # ---------------------------------------------------------------------------
-# Adaptive colour selection
-# ---------------------------------------------------------------------------
-
-_CANDIDATE_COLOURS: list[tuple[str, tuple[int, int, int]]] = [
-    ("cyan", (0, 255, 255)),
-    ("magenta", (255, 0, 255)),
-    ("lime green", (0, 255, 0)),
-    ("bright orange", (255, 165, 0)),
-    ("bright yellow", (255, 255, 0)),
-    ("hot pink", (255, 105, 180)),
-    ("red", (255, 0, 0)),
-    ("blue", (0, 0, 255)),
-]
-
-
-def _choose_marker_colour(
-    images: list[Image.Image],
-    *,
-    threshold: int = 80,
-) -> tuple[str, tuple[int, int, int]]:
-    """Pick the candidate colour least present in the input images.
-
-    For each candidate, count how many pixels across all *images* have an
-    Euclidean RGB distance less than *threshold* from the candidate colour.
-    Return the candidate with the fewest nearby pixels.
-    """
-    # Stack all image pixels into one array for efficiency.
-    all_pixels: list[np.ndarray] = []
-    for img in images:
-        arr = np.asarray(img.convert("RGB"), dtype=np.float64)
-        all_pixels.append(arr.reshape(-1, 3))
-    if not all_pixels:
-        return _CANDIDATE_COLOURS[0]
-    pixels = np.concatenate(all_pixels, axis=0)
-
-    best_name, best_rgb = _CANDIDATE_COLOURS[0]
-    best_count = pixels.shape[0] + 1  # worse than any real count
-
-    threshold_sq = float(threshold * threshold)
-    for name, rgb in _CANDIDATE_COLOURS:
-        colour = np.array(rgb, dtype=np.float64)
-        dist_sq = np.sum((pixels - colour) ** 2, axis=1)
-        count = int(np.sum(dist_sq < threshold_sq))
-        if count < best_count:
-            best_count = count
-            best_name = name
-            best_rgb = rgb
-
-    return best_name, best_rgb
-
-
-# ---------------------------------------------------------------------------
-# CV marker extraction
+# Artifact saving
 # ---------------------------------------------------------------------------
 
 
-def _extract_colour_markers(
-    image: Image.Image,
-    colour_rgb: tuple[int, int, int],
+def _save_image_gen_artifacts(
+    registration_dir: str | None,
     *,
-    tolerance: int = 80,
-    min_area: int = 15,
-    max_area: int = 8000,
-) -> list[tuple[float, float]]:
-    """Find marker centroids by detecting regions matching *colour_rgb*.
-
-    Filters pixels by Euclidean RGB distance from the target colour,
-    performs connected-component labeling, filters blobs by area, and
-    returns centroids sorted in scan order (top-to-bottom, left-to-right).
-
-    Returns a list of ``(x, y)`` pixel positions.
-    """
-    arr = np.asarray(image.convert("RGB"), dtype=np.float64)
-    colour = np.array(colour_rgb, dtype=np.float64)
-    dist_sq = np.sum((arr - colour) ** 2, axis=2)
-    mask = (dist_sq < float(tolerance * tolerance)).astype(np.int32)
-
-    labeled, n_features = _ndimage.label(mask)
-
-    centroids: list[tuple[float, float]] = []
-    for i in range(1, n_features + 1):
-        ys, xs = np.where(labeled == i)
-        area = len(ys)
-        if area < min_area or area > max_area:
-            continue
-        cx = float(np.mean(xs))
-        cy = float(np.mean(ys))
-        centroids.append((cx, cy))
-
-    # Scan order: top-to-bottom, then left-to-right.
-    centroids.sort(key=lambda p: (p[1], p[0]))
-    return centroids
-
-
-def _rescale_markers(
-    markers: list[tuple[float, float]],
-    *,
-    from_size: tuple[int, int],
-    to_size: tuple[int, int],
-) -> list[tuple[float, float]]:
-    """Scale marker coordinates from one image size to another.
-
-    Both sizes are (width, height).  Returns markers in the target space.
-    """
-    fw, fh = from_size
-    tw, th = to_size
-    if fw <= 0 or fh <= 0:
-        return markers
-    sx = tw / fw
-    sy = th / fh
-    return [(x * sx, y * sy) for x, y in markers]
-
-
-def _match_markers_nearest(
-    atlas_markers: list[tuple[float, float]],
-    slice_markers: list[tuple[float, float]],
-    *,
-    atlas_image_size: tuple[int, int],
-    slice_image_size: tuple[int, int],
-    max_pairs: int,
-) -> list[tuple[tuple[float, float], tuple[float, float]]]:
-    """Pair atlas and slice markers using nearest-neighbour in normalised space.
-
-    Normalises both sets of markers to [0, 1] based on their respective image
-    dimensions, then greedily pairs each atlas marker to the nearest unmatched
-    slice marker.  Returns up to *max_pairs* ``(atlas_xy, slice_xy)`` tuples
-    in original pixel coordinates.
-    """
-    aw, ah = atlas_image_size
-    sw, sh = slice_image_size
-    if aw <= 0 or ah <= 0 or sw <= 0 or sh <= 0:
-        return []
-
-    # Normalise to [0, 1].
-    a_norm = np.array([(x / aw, y / ah) for x, y in atlas_markers], dtype=np.float64)
-    s_norm = np.array([(x / sw, y / sh) for x, y in slice_markers], dtype=np.float64)
-
-    used_slice: set[int] = set()
-    pairs: list[tuple[tuple[float, float], tuple[float, float]]] = []
-
-    for ai in range(len(a_norm)):
-        best_si = -1
-        best_dist = float("inf")
-        for si in range(len(s_norm)):
-            if si in used_slice:
-                continue
-            d = float(np.sum((a_norm[ai] - s_norm[si]) ** 2))
-            if d < best_dist:
-                best_dist = d
-                best_si = si
-        if best_si >= 0:
-            used_slice.add(best_si)
-            pairs.append((atlas_markers[ai], slice_markers[best_si]))
-        if len(pairs) >= max_pairs:
-            break
-
-    return pairs
+    annotated_atlas: Image.Image,
+    annotated_slice: Image.Image | None = None,
+    atlas_candidates: list[Image.Image] | None = None,
+    slice_candidates: list[Image.Image] | None = None,
+) -> None:
+    """Save model-generated images to the debug directory for visual inspection."""
+    if not registration_dir:
+        return
+    os.makedirs(registration_dir, exist_ok=True)
+    annotated_atlas.save(os.path.join(registration_dir, "model_atlas_annotated.png"))
+    if annotated_slice is not None:
+        annotated_slice.save(os.path.join(registration_dir, "model_slice_annotated.png"))
+    for idx, candidate in enumerate(atlas_candidates or [], start=1):
+        candidate.save(os.path.join(registration_dir, f"model_atlas_candidate_{idx:02d}.png"))
+    for idx, candidate in enumerate(slice_candidates or [], start=1):
+        candidate.save(os.path.join(registration_dir, f"model_slice_candidate_{idx:02d}.png"))
 
 
 # ---------------------------------------------------------------------------
@@ -250,57 +206,86 @@ def _build_image_gen_atlas_request(
     atlas_prep: Any,
     species: str,
     target_count: int,
-    colour_name: str,
-) -> list[dict[str, object]]:
+) -> list[Any]:
+    """Build typed ``Content`` list for the atlas annotation pass.
+
+    Image part comes **before** text, matching the AI Studio pattern.
+    """
+    types_mod = importlib.import_module("google.genai.types")
+    content_cls = types_mod.Content
+    part_cls = types_mod.Part
+
     border_count = max(1, target_count // 2)
     interior_count = max(1, target_count - border_count)
     prompt = (
         f"This is a coronal section of a {species} brain anatomical atlas. "
         "I'd like you to place landmark points as annotations on the atlas. "
         "Prioritize placing landmarks which are evenly distributed, visually "
-        "distinct, and would be easily identifiable in a real brain section. "
+        "distinct, and would be easily identifiable in a real brain section "
+        "or easily identifiable if described in text. "
         f"Please place {border_count} points on the outline/border of the "
         f"brain slice atlas, and {interior_count} points in the interior of "
-        "the brain slice atlas. Label each annotation with a number. "
-        f"Make both the points and their numbered labels {colour_name} with "
-        "white outlines. Please output only the annotated image, no text."
+        "the brain slice atlas. Label each annotation with a number.\n\n"
+        "Draw the point annotations directly on this image. Make no other "
+        "edits to the image. Please ensure the points are small, such that "
+        "they do not block local features."
     )
+    atlas_image = _upscale_to_min_long_edge(atlas_prep.image)
     return [
-        {
-            "role": "user",
-            "parts": [
-                {"text": prompt},
-                _agents._image_to_inline_data(atlas_prep.image),
+        content_cls(
+            role="user",
+            parts=[
+                _image_to_typed_part(atlas_image),
+                part_cls.from_text(text=prompt),
             ],
-        }
+        )
     ]
 
 
 def _build_image_gen_slice_request(
     *,
-    annotated_atlas: Image.Image,
+    annotated_atlas: Image.Image | _GeneratedImagePayload,
     slice_prep: Any,
     species: str,
-    colour_name: str,
-) -> list[dict[str, object]]:
+) -> list[Any]:
+    """Build typed ``Content`` list for the slice annotation pass.
+
+    AI Studio's exported second-pass example orders parts as slice image,
+    annotated atlas, then prompt text.
+    """
+    types_mod = importlib.import_module("google.genai.types")
+    content_cls = types_mod.Content
+    part_cls = types_mod.Part
+
     prompt = (
         f"This is a {species} brain slice and a corresponding anatomical atlas. "
         "The anatomical atlas is annotated with landmark points. "
         "I'd like you to place corresponding point annotations on the "
         "histological slice in the same relative anatomical positions as "
-        "the atlas points. Ensure the numbers of the annotations are preserved. "
-        f"Make both the points and their numbered labels {colour_name} with "
-        "white outlines. Please output only the annotated histology slice image, no text."
+        "the atlas points. Ensure the numbers of the annotations are preserved.\n\n"
+        "Important: this is a real histology slide and may contain common "
+        "microscopy artifacts such as air bubbles, tears, or tissue damage. "
+        "Do not mistake these artifacts for anatomical structures. Place "
+        "landmarks only on real brain anatomy.\n\n"
+        "Output the histology slice as an image edited with the point "
+        "annotations. Please ensure the points are small, such that they "
+        "do not block local features."
+    )
+    slice_image = _boost_exposure(slice_prep.image)
+    atlas_part = (
+        _generated_payload_to_typed_part(annotated_atlas)
+        if isinstance(annotated_atlas, _GeneratedImagePayload)
+        else _image_to_typed_part(annotated_atlas)
     )
     return [
-        {
-            "role": "user",
-            "parts": [
-                _agents._image_to_inline_data(annotated_atlas),
-                _agents._image_to_inline_data(slice_prep.image),
-                {"text": prompt},
+        content_cls(
+            role="user",
+            parts=[
+                _image_to_typed_part(slice_image),
+                atlas_part,
+                part_cls.from_text(text=prompt),
             ],
-        }
+        )
     ]
 
 
@@ -321,19 +306,26 @@ def _estimate_correspondences_image_gen_two_shot(
 ) -> list[dict[str, object]]:
     """Run the two-shot image-gen landmark workflow.
 
-    The model draws landmark annotations directly on the images.  Marker
-    positions are extracted via classical CV (colour thresholding + blob
-    detection).  The model never outputs text — only annotated images.
+    The model draws landmark annotations directly on the images.  Generated
+    images are saved to the registration debug directory for visual inspection.
+
+    Marker extraction from the generated images is not yet implemented —
+    this function currently returns an empty correspondence list.
     """
     species = _species_from_atlas_name(atlas_name)
     atlas_image = prepared.atlas_prep.image
     slice_image = prepared.slice_prep.image
 
-    # ------------------------------------------------------------------
-    # Choose adaptive marker colour
-    # ------------------------------------------------------------------
-    colour_name, colour_rgb = _choose_marker_colour([atlas_image, slice_image])
-    logger.info("Chosen marker colour: %s %s", colour_name, colour_rgb)
+    # Save the exact images Gemini will see for pass 1 (atlas upscaled to 1K).
+    atlas_for_model = _upscale_to_min_long_edge(atlas_image)
+    if prepared.registration_dir:
+        os.makedirs(prepared.registration_dir, exist_ok=True)
+        atlas_for_model.convert("RGB").save(
+            os.path.join(prepared.registration_dir, "pass1_atlas_sent.png"), format="PNG"
+        )
+        _boost_exposure(slice_image).save(
+            os.path.join(prepared.registration_dir, "pass2_slice_sent.png"), format="PNG"
+        )
 
     # ------------------------------------------------------------------
     # Atlas pass — model annotates the atlas image
@@ -345,94 +337,54 @@ def _estimate_correspondences_image_gen_two_shot(
         runtime_event(
             stage="registration",
             title="Image-gen atlas request",
-            summary=f"Atlas image sent to Gemini for landmark annotation (colour={colour_name})",
+            summary="Atlas image sent to Gemini for landmark annotation",
             parts=[
                 image_part_from_pil(atlas_image, label="Atlas image sent to Gemini"),
             ],
-            metadata={"workflow": "image_gen_two_shot", "pass": 1, "marker_colour": colour_name},
+            metadata={"workflow": "image_gen_two_shot", "pass": 1},
         ),
     )
 
-    atlas_response = _agents._retry_generate(
+    atlas_response = _agents._retry_generate_stream(
         client,
         model=prepared.model_name,
         contents=_build_image_gen_atlas_request(
             atlas_prep=prepared.atlas_prep,
             species=species,
             target_count=prepared.target_count,
-            colour_name=colour_name,
         ),
-        config=_build_image_gen_config(),
+        config=_build_image_gen_config(
+            model_name=prepared.model_name,
+            thinking_level=prepared.thinking_level,
+        ),
         request_label="Registration image-gen atlas pass",
         on_progress=on_progress,
     )
 
-    # Extract generated annotated atlas image.
-    annotated_atlas = _extract_generated_image(atlas_response)
-    if annotated_atlas is None:
+    atlas_payloads = _extract_generated_images(atlas_response)
+    if not atlas_payloads:
         raise RuntimeError(
             "Image-gen atlas pass did not return an image — "
             "this workflow requires the model to generate annotated images"
         )
+    annotated_atlas_payload = atlas_payloads[-1]
+    annotated_atlas = annotated_atlas_payload.image
+    logger.info("Atlas pass: received %d generated image(s)", len(atlas_payloads))
 
-    # Extract marker positions from the annotated atlas via CV, then rescale
-    # from generated-image space to the original atlas image space.
-    raw_atlas_markers = _extract_colour_markers(annotated_atlas, colour_rgb)
-    atlas_markers = _rescale_markers(
-        raw_atlas_markers,
-        from_size=annotated_atlas.size,
-        to_size=prepared.atlas_prep.original_size,
-    )
-    logger.info("Atlas pass: extracted %d markers", len(atlas_markers))
-
-    if not atlas_markers:
-        raise RuntimeError(
-            "No markers detected in model-generated atlas image. "
-            f"Expected {colour_name} annotations."
-        )
-
-    atlas_annotations = [
-        LandmarkAnnotation(
-            image_role="atlas",
-            pixel_xy=(mx, my),
-            label=str(idx + 1),
-            status="confirmed",
-        )
-        for idx, (mx, my) in enumerate(atlas_markers)
-    ]
-
-    if on_annotation_session is not None:
-        on_annotation_session(
-            RegistrationAnnotationSession(
-                workflow="image_gen_two_shot",
-                target_count=prepared.target_count,
-                atlas_annotations=atlas_annotations,
-                slice_annotations=[],
-                metadata={
-                    "atlas_name": atlas_name,
-                    "position_mm": round(position_mm, 3),
-                    "pass": 1,
-                    "marker_colour": colour_name,
-                },
-            )
-        )
     _agents._emit_trace(
         on_trace,
         runtime_event(
             stage="registration",
-            title="Image-gen atlas landmarks",
-            summary=f"Atlas pass extracted {len(atlas_markers)} markers via CV",
+            title="Image-gen atlas result",
+            summary=f"Atlas pass returned {len(atlas_payloads)} image(s)",
             parts=[
-                image_part_from_pil(
-                    annotated_atlas, label="Annotated atlas (model-generated)"
-                ),
-                json_part(
-                    [{"label": str(i + 1), "xy": list(m)} for i, m in enumerate(atlas_markers)],
-                    label="Atlas marker positions (CV-extracted)",
-                    collapsible=True,
-                ),
+                image_part_from_pil(annotated_atlas, label="Annotated atlas (model-generated)"),
             ],
-            metadata={"workflow": "image_gen_two_shot", "pass": 1, "marker_count": len(atlas_markers)},
+            metadata={
+                "workflow": "image_gen_two_shot",
+                "pass": 1,
+                "image_count": len(atlas_payloads),
+            },
         ),
     )
 
@@ -455,110 +407,60 @@ def _estimate_correspondences_image_gen_two_shot(
         ),
     )
 
-    slice_response = _agents._retry_generate(
+    slice_response = _agents._retry_generate_stream(
         client,
         model=prepared.model_name,
         contents=_build_image_gen_slice_request(
-            annotated_atlas=annotated_atlas,
+            annotated_atlas=annotated_atlas_payload,
             slice_prep=prepared.slice_prep,
             species=species,
-            colour_name=colour_name,
         ),
-        config=_build_image_gen_config(),
+        config=_build_image_gen_config(
+            model_name=prepared.model_name,
+            thinking_level=prepared.thinking_level,
+        ),
         request_label="Registration image-gen slice pass",
         on_progress=on_progress,
     )
 
-    annotated_slice = _extract_generated_image(slice_response)
+    slice_payloads = _extract_generated_images(slice_response)
+    annotated_slice = slice_payloads[-1].image if slice_payloads else None
+    logger.info("Slice pass: received %d generated image(s)", len(slice_payloads))
+
+    if annotated_slice is not None:
+        _agents._emit_trace(
+            on_trace,
+            runtime_event(
+                stage="registration",
+                title="Image-gen slice result",
+                summary=f"Slice pass returned {len(slice_payloads)} image(s)",
+                parts=[
+                    image_part_from_pil(annotated_slice, label="Annotated slice (model-generated)"),
+                ],
+                metadata={
+                    "workflow": "image_gen_two_shot",
+                    "pass": 2,
+                    "image_count": len(slice_payloads),
+                },
+            ),
+        )
+
+    # Save all model-generated images for visual inspection.
+    _save_image_gen_artifacts(
+        prepared.registration_dir,
+        annotated_atlas=annotated_atlas,
+        annotated_slice=annotated_slice,
+        atlas_candidates=[p.image for p in atlas_payloads],
+        slice_candidates=[p.image for p in slice_payloads],
+    )
+
     if annotated_slice is None:
         raise RuntimeError(
             "Image-gen slice pass did not return an image — "
             "this workflow requires the model to generate annotated images"
         )
 
-    # Extract marker positions from the annotated slice via CV, then rescale
-    # from generated-image space to the original slice image space.
-    raw_slice_markers = _extract_colour_markers(annotated_slice, colour_rgb)
-    slice_markers = _rescale_markers(
-        raw_slice_markers,
-        from_size=annotated_slice.size,
-        to_size=prepared.slice_prep.original_size,
-    )
-    logger.info("Slice pass: extracted %d markers", len(slice_markers))
-
-    if not slice_markers:
-        raise RuntimeError(
-            "No markers detected in model-generated slice image. "
-            f"Expected {colour_name} annotations."
-        )
-
-    slice_annotations = [
-        LandmarkAnnotation(
-            image_role="slice",
-            pixel_xy=(mx, my),
-            label=str(idx + 1),
-            status="confirmed",
-        )
-        for idx, (mx, my) in enumerate(slice_markers)
-    ]
-
-    if on_annotation_session is not None:
-        on_annotation_session(
-            RegistrationAnnotationSession(
-                workflow="image_gen_two_shot",
-                target_count=prepared.target_count,
-                atlas_annotations=atlas_annotations,
-                slice_annotations=slice_annotations,
-                metadata={
-                    "atlas_name": atlas_name,
-                    "position_mm": round(position_mm, 3),
-                    "pass": 2,
-                    "marker_colour": colour_name,
-                },
-            )
-        )
-
-    _agents._emit_trace(
-        on_trace,
-        runtime_event(
-            stage="registration",
-            title="Image-gen slice transfer",
-            summary=f"Slice pass extracted {len(slice_markers)} markers via CV",
-            parts=[
-                image_part_from_pil(annotated_slice, label="Model-generated annotated slice"),
-                json_part(
-                    [{"label": str(i + 1), "xy": list(m)} for i, m in enumerate(slice_markers)],
-                    label="Slice marker positions (CV-extracted)",
-                    collapsible=True,
-                ),
-            ],
-            metadata={"workflow": "image_gen_two_shot", "pass": 2, "marker_count": len(slice_markers)},
-        ),
-    )
-
-    # ------------------------------------------------------------------
-    # Pair by nearest-neighbour in normalised coordinate space
-    # ------------------------------------------------------------------
-    pairs = _match_markers_nearest(
-        atlas_markers,
-        slice_markers,
-        atlas_image_size=prepared.atlas_prep.original_size,
-        slice_image_size=prepared.slice_prep.original_size,
-        max_pairs=prepared.target_count,
-    )
-
-    merged: list[dict[str, object]] = []
-    for i, ((ax, ay), (sx, sy)) in enumerate(pairs):
-        merged.append(
-            {
-                "label": str(i + 1),
-                "status": "found",
-                "atlas_point_2d": [ay, ax],   # [y, x] format
-                "slice_point_2d": [sy, sx],   # [y, x] format
-            }
-        )
-
-    if not merged:
-        raise RuntimeError("No marker pairs could be formed from atlas and slice passes")
-
-    return merged
+    # TODO: extract marker positions from model-generated images and
+    # return paired correspondences.  For now, return an empty list so
+    # callers can inspect the saved images and iterate on model quality.
+    return []
