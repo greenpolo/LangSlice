@@ -13,6 +13,7 @@ import importlib
 import io
 import json
 import logging
+import os
 from collections.abc import Callable
 from typing import Any
 
@@ -430,6 +431,8 @@ def _image_to_part(img: Image.Image) -> types.Part:
 def _prepare_base_images(
     client: Any,
     prepared: _agents._PreparedRegistrationInputs,
+    *,
+    atlas_override: Image.Image | None = None,
 ) -> tuple[types.Part | Any, types.Part | Any, list[Any]]:
     """Upload or inline the base atlas and slice images.
 
@@ -437,10 +440,11 @@ def _prepare_base_images(
     *uploaded_files* is non-empty only when File API was used.
     """
     _ai_config = importlib.import_module("langslice.ai.config")
+    atlas_image = atlas_override or prepared.atlas_prep.image
 
     uploaded_files: list[Any] = []
     if _ai_config.supports_file_api():
-        atlas_bytes_io = io.BytesIO(_image_to_bytes(prepared.atlas_prep.image))
+        atlas_bytes_io = io.BytesIO(_image_to_bytes(atlas_image))
         slice_bytes_io = io.BytesIO(_image_to_bytes(prepared.slice_prep.image))
         atlas_file = client.files.upload(
             file=atlas_bytes_io,
@@ -455,7 +459,7 @@ def _prepare_base_images(
         slice_part = types.Part.from_uri(file_uri=slice_file.uri, mime_type="image/png")
         return atlas_part, slice_part, uploaded_files
     else:
-        atlas_part = _image_to_part(prepared.atlas_prep.image)
+        atlas_part = _image_to_part(atlas_image)
         slice_part = _image_to_part(prepared.slice_prep.image)
         return atlas_part, slice_part, uploaded_files
 
@@ -948,8 +952,26 @@ def _estimate_correspondences_tool_loop(
         },
     )
 
+    # Upscale atlas for better visual comparison. The raw atlas is tiny
+    # (e.g. 456x320) which makes landmark matching hard. Upscale to ~1K
+    # on the long edge — large enough for detail, small enough for inline
+    # image payloads in tool responses.
+    _ATLAS_TARGET_LONG_EDGE = 1024
+    atlas_orig = prepared.atlas_prep.image
+    aw, ah = atlas_orig.size
+    atlas_scale = _ATLAS_TARGET_LONG_EDGE / max(aw, ah)
+    if atlas_scale > 1.0:
+        atlas_for_model = atlas_orig.resize(
+            (int(aw * atlas_scale), int(ah * atlas_scale)),
+            Image.Resampling.LANCZOS,
+        )
+    else:
+        atlas_for_model = atlas_orig
+
     # Prepare base image parts
-    atlas_part, slice_part, uploaded_files = _prepare_base_images(client, prepared)
+    atlas_part, slice_part, uploaded_files = _prepare_base_images(
+        client, prepared, atlas_override=atlas_for_model
+    )
 
     # Build tools
     tools = types.Tool(function_declarations=_ALL_TOOL_DECLARATIONS)
@@ -1029,11 +1051,23 @@ def _estimate_correspondences_tool_loop(
             function_response_parts: list[types.Part] = []
             image_parts: list[types.Part] = []
 
-            # Debug: log what model returned
+            # Debug: log what model returned (including thoughts)
             fc_names = [p.function_call.name for p in model_content.parts if p.function_call]
-            text_parts = [p.text[:80] for p in model_content.parts if p.text]
             if on_progress:
-                on_progress(f"  -> Model returned: functions={fc_names}, text={text_parts}")
+                on_progress(f"  -> Model returned: {len(model_content.parts)} parts, functions={fc_names}")
+                for idx, p in enumerate(model_content.parts):
+                    p_type = "unknown"
+                    if p.function_call:
+                        p_type = f"function_call({p.function_call.name})"
+                    elif getattr(p, "thought", False) and p.text:
+                        p_type = f"thought({len(p.text)} chars)"
+                        on_progress(f"  -> Thought: {p.text[:200].replace(chr(10), ' ')}")
+                    elif p.text:
+                        p_type = f"text({len(p.text)} chars)"
+                        on_progress(f"  -> Text: {p.text[:120]}")
+                    elif getattr(p, "thought_signature", None):
+                        p_type = "thought_signature"
+                    on_progress(f"  -> Part[{idx}]: {p_type}")
 
             for part in model_content.parts:
                 if not part.function_call:
@@ -1045,11 +1079,35 @@ def _estimate_correspondences_tool_loop(
                 result_dict, result_images, is_finished = _execute_tool(
                     fc,
                     session=session,
-                    atlas_image=prepared.atlas_prep.image,
+                    atlas_image=atlas_for_model,
                     slice_image=prepared.slice_prep.image,
                     iteration=iteration,
                     on_trace=on_trace,
                 )
+
+                # Save debug images per tool call if debug_dir is set
+                if prepared.registration_dir and result_images:
+                    step_dir = os.path.join(
+                        prepared.registration_dir,
+                        f"step_{iteration:02d}_{fc.name}",
+                    )
+                    os.makedirs(step_dir, exist_ok=True)
+                    img_idx = 0
+                    for rp in result_images:
+                        inline = getattr(rp, "inline_data", None)
+                        if inline and getattr(inline, "data", None):
+                            img = Image.open(io.BytesIO(inline.data))
+                            img.save(
+                                os.path.join(step_dir, f"image_{img_idx}.png"),
+                                format="PNG",
+                            )
+                            img_idx += 1
+                        text_val = getattr(rp, "text", None)
+                        if text_val:
+                            with open(
+                                os.path.join(step_dir, "context.txt"), "a", encoding="utf-8"
+                            ) as fh:
+                                fh.write(text_val + "\n")
 
                 function_response_parts.append(
                     types.Part(
