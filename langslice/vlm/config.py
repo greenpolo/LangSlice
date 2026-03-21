@@ -161,6 +161,10 @@ _VALID_BACKENDS = {
 class _GenAIModelsProtocol(Protocol):
     def generate_content(self, *, model: str, contents: object, config: object) -> object: ...
 
+    def generate_content_stream(
+        self, *, model: str, contents: object, config: object
+    ) -> object: ...
+
     def count_tokens(
         self, *, model: str, contents: object, config: object | None = None
     ) -> object: ...
