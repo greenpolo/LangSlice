@@ -567,8 +567,9 @@ def _handle_view_overview(
     on_trace: Callable[[dict[str, object]], None] | None,
 ) -> tuple[dict[str, Any], list[types.Part], bool]:
     session.metadata.pop("last_zoom_pair", None)
-    atlas_annotated = render_landmark_annotations(atlas_image, session.atlas_annotations)
-    slice_annotated = render_landmark_annotations(slice_image, session.slice_annotations)
+    ref_size = max(slice_image.size)
+    atlas_annotated = render_landmark_annotations(atlas_image, session.atlas_annotations, reference_size=ref_size)
+    slice_annotated = render_landmark_annotations(slice_image, session.slice_annotations, reference_size=ref_size)
     composite = _side_by_side(atlas_annotated, slice_annotated)
     result_dict = {"status": "ok"}
     image_parts: list[types.Part] = [
@@ -611,13 +612,14 @@ def _handle_view_zoom_pair(
     slice_center = _agents._extract_normalized_point(
         tool_args.get("slice_center_2d"), field_name="slice_center_2d"
     )
+    ref_size = max(slice_image.size)
     atlas_zoom, atlas_window_px = _crop_zoom_view(
-        render_landmark_annotations(atlas_image, session.atlas_annotations),
+        render_landmark_annotations(atlas_image, session.atlas_annotations, reference_size=ref_size),
         center_yx=atlas_center,
         zoom=zoom,
     )
     slice_zoom, slice_window_px = _crop_zoom_view(
-        render_landmark_annotations(slice_image, session.slice_annotations),
+        render_landmark_annotations(slice_image, session.slice_annotations, reference_size=ref_size),
         center_yx=slice_center,
         zoom=zoom,
     )
@@ -712,8 +714,9 @@ def _handle_place_point_pair(
         ),
     )
 
-    atlas_annotated = render_landmark_annotations(atlas_image, session.atlas_annotations)
-    slice_annotated = render_landmark_annotations(slice_image, session.slice_annotations)
+    ref_size = max(slice_image.size)
+    atlas_annotated = render_landmark_annotations(atlas_image, session.atlas_annotations, reference_size=ref_size)
+    slice_annotated = render_landmark_annotations(slice_image, session.slice_annotations, reference_size=ref_size)
     composite = _side_by_side(atlas_annotated, slice_annotated)
 
     result_dict: dict[str, Any] = {

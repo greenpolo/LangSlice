@@ -374,26 +374,39 @@ def render_landmark_annotations(
     image: Image.Image,
     annotations: Sequence[LandmarkAnnotation],
     *,
-    point_outline: tuple[int, int, int] = (255, 80, 80),
-    label_fill: tuple[int, int, int] = (255, 220, 120),
+    point_outline: tuple[int, int, int] = (0, 255, 200),
+    label_fill: tuple[int, int, int] = (255, 255, 255),
+    reference_size: int | None = None,
 ) -> Image.Image:
-    """Return an image with visible numbered landmark annotations baked in."""
+    """Return an image with visible numbered landmark annotations baked in.
+
+    *reference_size* (optional) fixes the radius calculation to a specific
+    image dimension so that annotations appear the same relative size
+    regardless of actual image dimensions.  Pass the same value for atlas
+    and slice to get consistent marker sizes in side-by-side views.
+    """
     annotated = image.convert("RGB").copy()
     draw = ImageDraw.Draw(annotated)
-    max_dim = max(annotated.size) if annotated.size else 1
-    radius = max(6, int(round(max_dim / 160.0)))
-    x_offset = radius + 2
+    ref = reference_size if reference_size is not None else max(annotated.size)
+    ref = max(ref, 1)
+    radius = max(6, int(round(ref / 100.0)))
+    stroke = max(2, radius // 3)
+    x_offset = radius + 3
     y_offset = max(4, radius // 2)
 
     for annotation in annotations:
         if annotation.status == "not_visible":
             continue
         x, y = annotation.pixel_xy
+        # Filled dot with contrasting outline for visibility on any background
         draw.ellipse(
             (x - radius, y - radius, x + radius, y + radius),
-            outline=point_outline,
-            width=max(2, radius // 3),
+            fill=point_outline,
+            outline=(0, 0, 0),
+            width=stroke,
         )
+        # White label text with dark shadow for readability
+        draw.text((x + x_offset + 1, y + y_offset + 1), str(annotation.label), fill=(0, 0, 0))
         draw.text((x + x_offset, y + y_offset), str(annotation.label), fill=label_fill)
     return annotated
 
