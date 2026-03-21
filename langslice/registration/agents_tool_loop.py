@@ -564,6 +564,8 @@ def _execute_tool(
     if tool_name == "finish":
         return _handle_finish(
             session=session,
+            atlas_image=atlas_image,
+            slice_image=slice_image,
             iteration=iteration,
             on_trace=on_trace,
         )
@@ -683,18 +685,37 @@ def _handle_place_point_pair(
     feature_description = str(tool_args.get("feature_description", "")).strip()
     artifact_note = str(tool_args.get("artifact_note", "")).strip()
 
-    atlas_norm = _resolve_action_point(
-        tool_args,
-        image_role="atlas",
-        image_size=atlas_image.size,
-        session=session,
-    )
-    slice_norm = _resolve_action_point(
-        tool_args,
-        image_role="slice",
-        image_size=slice_image.size,
-        session=session,
-    )
+    try:
+        atlas_norm = _resolve_action_point(
+            tool_args,
+            image_role="atlas",
+            image_size=atlas_image.size,
+            session=session,
+        )
+        slice_norm = _resolve_action_point(
+            tool_args,
+            image_role="slice",
+            image_size=slice_image.size,
+            session=session,
+        )
+    except RuntimeError as exc:
+        # Return error to model so it can retry with correct coordinates
+        error_dict: dict[str, Any] = {
+            "status": "error",
+            "message": f"Missing coordinates: {exc}. "
+            "You must provide BOTH atlas_point_2d and slice_point_2d "
+            "(or both local variants after a zoom).",
+        }
+        _agents._emit_trace(
+            on_trace,
+            tool_result_event(
+                stage="registration",
+                tool_name="place_point_pair",
+                summary=f"Point placement rejected: {exc}",
+                metadata={"iteration": iteration, "label": label},
+            ),
+        )
+        return error_dict, [], False
 
     _upsert_annotation(
         session.atlas_annotations,
@@ -726,6 +747,9 @@ def _handle_place_point_pair(
             category=category,
         ),
     )
+
+    # Reset finish review flag since a point was re-placed
+    session.metadata.pop("finish_reviewed", None)
 
     ref_size = max(slice_image.size)
     atlas_annotated = render_landmark_annotations(atlas_image, session.atlas_annotations, reference_size=ref_size)
@@ -761,6 +785,8 @@ def _handle_place_point_pair(
 def _handle_finish(
     *,
     session: RegistrationAnnotationSession,
+    atlas_image: Image.Image,
+    slice_image: Image.Image,
     iteration: int,
     on_trace: Callable[[dict[str, object]], None] | None,
 ) -> tuple[dict[str, Any], list[types.Part], bool]:
@@ -805,6 +831,51 @@ def _handle_finish(
         return result_dict, [], False
 
     total_placed = placed_border + placed_interior
+
+    # First finish call: show full annotated review, ask model to verify
+    reviewed = session.metadata.get("finish_reviewed", False)
+    if not reviewed:
+        session.metadata["finish_reviewed"] = True
+        ref_size = max(slice_image.size)
+        atlas_annotated = render_landmark_annotations(
+            atlas_image, session.atlas_annotations, reference_size=ref_size
+        )
+        slice_annotated = render_landmark_annotations(
+            slice_image, session.slice_annotations, reference_size=ref_size
+        )
+        composite = _side_by_side(atlas_annotated, slice_annotated)
+
+        result_dict: dict[str, Any] = {
+            "status": "review",
+            "message": (
+                f"Before finishing: review all {total_placed} placed points. "
+                "The side-by-side image below shows your atlas points (left) "
+                "and slice points (right). Check that each numbered point "
+                "matches the same anatomical feature in both images. "
+                "If any point is misaligned, call place_point_pair to fix it. "
+                "If all points look correct, call finish again to confirm."
+            ),
+        }
+        image_parts: list[types.Part] = [
+            types.Part.from_text(
+                text="REVIEW: All points placed. Atlas (left) | Slice (right). "
+                "Check alignment of each numbered point. Fix any misaligned "
+                "points, then call finish again."
+            ),
+            _image_to_part(composite, fmt="JPEG"),
+        ]
+        _agents._emit_trace(
+            on_trace,
+            tool_result_event(
+                stage="registration",
+                tool_name="finish",
+                summary=f"Finish review: showing {total_placed} points for verification",
+                metadata={"iteration": iteration, "total_placed": total_placed},
+            ),
+        )
+        return result_dict, image_parts, False
+
+    # Second finish call: accept
     _agents._emit_trace(
         on_trace,
         tool_result_event(

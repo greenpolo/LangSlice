@@ -188,7 +188,8 @@ def test_registration_request_uses_configured_temperature(monkeypatch: Any) -> N
             "atlas_point_2d": [100, 120], "slice_point_2d": [140, 160],
             "feature_description": "anchor",
         })),
-        _fc_response(("finish", {})),
+        _fc_response(("finish", {})),  # triggers review
+        _fc_response(("finish", {})),  # confirms
     ]
 
     def mock_generate(*args: Any, **kwargs: Any) -> SimpleNamespace:
@@ -244,7 +245,8 @@ def test_registration_request_uses_configured_thinking_level(monkeypatch: Any) -
             "atlas_point_2d": [100, 120], "slice_point_2d": [140, 160],
             "feature_description": "anchor",
         })),
-        _fc_response(("finish", {})),
+        _fc_response(("finish", {})),  # triggers review
+        _fc_response(("finish", {})),  # confirms
     ]
 
     def mock_generate(*args: Any, **kwargs: Any) -> SimpleNamespace:
@@ -586,7 +588,8 @@ def test_multimodal_tool_loop_places_and_finishes(monkeypatch: Any) -> None:
             "atlas_point_2d": [500, 520], "slice_point_2d": [540, 560],
             "feature_description": "ventricle corner",
         })),
-        # Finish
+        # Finish (review + confirm)
+        _fc_response(("finish", {})),
         _fc_response(("finish", {})),
     ]
 
@@ -621,7 +624,8 @@ def test_multimodal_tool_loop_accepts_zoom_local_coordinates(monkeypatch: Any) -
             "atlas_point_2d_local": [0, 0], "slice_point_2d_local": [0, 0],
             "feature_description": "upper-left corner of zoom window",
         })),
-        # Finish
+        # Finish (review + confirm)
+        _fc_response(("finish", {})),
         _fc_response(("finish", {})),
     ]
 
@@ -701,7 +705,8 @@ def test_multimodal_tool_loop_border_interior_default_split(monkeypatch: Any) ->
             "atlas_point_2d": [500, 500], "slice_point_2d": [500, 500],
             "feature_description": "deep feature",
         })),
-        # Finish
+        # Finish (review + confirm)
+        _fc_response(("finish", {})),
         _fc_response(("finish", {})),
     ]
 
