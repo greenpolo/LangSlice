@@ -23,9 +23,20 @@ class _DummyModels:
         return iter([])
 
 
+class _DummyFiles:
+    """Stub for client.files used by the tool loop File API path."""
+
+    def upload(self, *, file: Any, config: Any) -> SimpleNamespace:
+        return SimpleNamespace(name="fake-file-id")
+
+    def delete(self, *, name: str) -> None:
+        pass
+
+
 class _DummyClient:
     def __init__(self) -> None:
         self.models = _DummyModels()
+        self.files = _DummyFiles()
 
 
 def _correspondence(
@@ -84,7 +95,7 @@ def _patch_common(monkeypatch: Any) -> None:
     monkeypatch.setattr(
         agents,
         "prepare_image_for_vlm",
-        lambda img: SimpleNamespace(image=img, output_size=img.size, original_size=img.size),
+        lambda img, **kw: SimpleNamespace(image=img, output_size=img.size, original_size=img.size),
     )
 
     vlm_config = SimpleNamespace(
@@ -94,6 +105,7 @@ def _patch_common(monkeypatch: Any) -> None:
         TEMPERATURE=0.5,
         count_tokens_enabled=lambda: False,
         get_client=lambda: _DummyClient(),
+        supports_file_api=lambda: False,
     )
     real_import_module = agents.importlib.import_module
     monkeypatch.setattr(
@@ -103,6 +115,42 @@ def _patch_common(monkeypatch: Any) -> None:
             vlm_config if name == "langslice.ai.config" else real_import_module(name, **kwargs)
         ),
     )
+
+
+# ---------------------------------------------------------------------------
+# Helper: build mock function-call responses for the tool loop
+# ---------------------------------------------------------------------------
+
+
+def _fc_response(*calls: tuple[str, dict[str, Any]]) -> SimpleNamespace:
+    """Build a mock Gemini response containing one or more FunctionCall parts.
+
+    Each *call* is ``(tool_name, tool_args)``.  The returned object has the
+    same shape the tool-loop code accesses:
+
+    - ``response.candidates[0].content.parts[i].function_call.name``
+    - ``response.candidates[0].content.parts[i].function_call.args``
+    - ``response.usage_metadata`` (set to None for simplicity)
+    """
+    parts = []
+    for name, args in calls:
+        parts.append(
+            SimpleNamespace(
+                function_call=SimpleNamespace(name=name, args=args, id=None),
+                text=None,
+                thought=False,
+            )
+        )
+    content = SimpleNamespace(parts=parts, role="model")
+    return SimpleNamespace(
+        candidates=[SimpleNamespace(content=content)],
+        usage_metadata=None,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Shared helper tests
+# ---------------------------------------------------------------------------
 
 
 def test_image_to_inline_data_uses_rgb_png() -> None:
@@ -123,25 +171,29 @@ def test_image_to_inline_data_uses_rgb_png() -> None:
     assert decoded.size == (8, 6)
 
 
+# ---------------------------------------------------------------------------
+# Temperature / thinking level config tests
+# ---------------------------------------------------------------------------
+
+
 def test_registration_request_uses_configured_temperature(monkeypatch: Any) -> None:
     _patch_common(monkeypatch)
 
     captured: dict[str, object] = {}
 
+    # The new code uses place -> zoom -> confirm -> finish.
+    # For a 1-landmark run: border_count=1, interior_count=0 (50/50 split of 1)
     tool_loop_responses = [
-        SimpleNamespace(
-            parsed={
-                "tool_name": "place_point_pair",
-                "tool_args": {
-                    "label": "1",
-                    "atlas_point_2d": [100, 120],
-                    "slice_point_2d": [140, 160],
-                    "feature_description": "anchor",
-                    "status": "found",
-                },
-            }
-        ),
-        SimpleNamespace(parsed={"tool_name": "finish", "tool_args": {}}),
+        _fc_response(("place_point_pair", {
+            "label": "1", "category": "border",
+            "atlas_point_2d": [100, 120], "slice_point_2d": [140, 160],
+            "feature_description": "anchor",
+        })),
+        _fc_response(("view_zoom_pair", {
+            "zoom": 3.0, "atlas_center_2d": [100, 120], "slice_center_2d": [140, 160],
+        })),
+        _fc_response(("confirm_point", {"label": "1"})),
+        _fc_response(("finish", {})),
     ]
 
     def mock_generate(*args: Any, **kwargs: Any) -> SimpleNamespace:
@@ -163,6 +215,7 @@ def test_registration_request_uses_configured_temperature(monkeypatch: Any) -> N
                 TEMPERATURE=0.2,
                 count_tokens_enabled=lambda: False,
                 get_client=lambda: _DummyClient(),
+                supports_file_api=lambda: False,
             )
             if name == "langslice.ai.config"
             else current_import_module(name, **kwargs)
@@ -177,8 +230,77 @@ def test_registration_request_uses_configured_temperature(monkeypatch: Any) -> N
         min_edge_landmarks=0,
     )
 
-    assert isinstance(captured["config"], dict)
-    assert captured["config"]["temperature"] == 0.2
+    # Config is now a types.GenerateContentConfig, not a dict.
+    from google.genai import types
+
+    config = captured["config"]
+    assert isinstance(config, types.GenerateContentConfig)
+    assert config.temperature == 0.2
+
+
+def test_registration_request_uses_configured_thinking_level(monkeypatch: Any) -> None:
+    _patch_common(monkeypatch)
+
+    captured: dict[str, object] = {}
+
+    tool_loop_responses = [
+        _fc_response(("place_point_pair", {
+            "label": "1", "category": "border",
+            "atlas_point_2d": [100, 120], "slice_point_2d": [140, 160],
+            "feature_description": "anchor",
+        })),
+        _fc_response(("view_zoom_pair", {
+            "zoom": 3.0, "atlas_center_2d": [100, 120], "slice_center_2d": [140, 160],
+        })),
+        _fc_response(("confirm_point", {"label": "1"})),
+        _fc_response(("finish", {})),
+    ]
+
+    def mock_generate(*args: Any, **kwargs: Any) -> SimpleNamespace:
+        _ = args
+        if "config" not in captured:
+            captured["config"] = kwargs["config"]
+        return tool_loop_responses.pop(0)
+
+    current_import_module = agents.importlib.import_module
+    monkeypatch.setattr(agents, "_retry_generate", mock_generate)
+    monkeypatch.setattr(
+        agents.importlib,
+        "import_module",
+        lambda name, **kwargs: (
+            SimpleNamespace(
+                MODEL_NAME="test-model",
+                CODE_EXECUTION_ENABLED=False,
+                THINKING_LEVEL="LOW",
+                TEMPERATURE=0.2,
+                count_tokens_enabled=lambda: False,
+                get_client=lambda: _DummyClient(),
+                supports_file_api=lambda: False,
+            )
+            if name == "langslice.ai.config"
+            else current_import_module(name, **kwargs)
+        ),
+    )
+
+    agents.estimate_registration_correspondences(
+        Image.new("RGB", (120, 100), (0, 0, 0)),
+        atlas_name="allen_mouse_25um",
+        position_mm=1.0,
+        target_landmark_count=1,
+        min_edge_landmarks=0,
+    )
+
+    from google.genai import types
+
+    config = captured["config"]
+    assert isinstance(config, types.GenerateContentConfig)
+    assert config.thinking_config is not None
+    assert config.thinking_config.thinking_level == "LOW"
+
+
+# ---------------------------------------------------------------------------
+# Image-gen workflow tests (unchanged — they don't use the tool loop)
+# ---------------------------------------------------------------------------
 
 
 def _make_image_with_markers(
@@ -265,6 +387,7 @@ def test_image_gen_two_shot_runs_both_passes(monkeypatch: Any) -> None:
                 TEMPERATURE=0.2,
                 count_tokens_enabled=lambda: False,
                 get_client=lambda: _DummyClient(),
+                supports_file_api=lambda: False,
             )
             if name == "langslice.ai.config"
             else current_import_module(name, **kwargs)
@@ -309,6 +432,7 @@ def test_image_gen_two_shot_raises_on_no_atlas_image(monkeypatch: Any) -> None:
                 TEMPERATURE=0.2,
                 count_tokens_enabled=lambda: False,
                 get_client=lambda: _DummyClient(),
+                supports_file_api=lambda: False,
             )
             if name == "langslice.ai.config"
             else current_import_module(name, **kwargs)
@@ -449,35 +573,42 @@ def test_image_gen_slice_request_reuses_generated_atlas_payload_bytes() -> None:
     assert Image.open(io.BytesIO(atlas_bytes)).size == atlas_image.size
 
 
-def test_multimodal_tool_loop_places_pairs_before_finish(monkeypatch: Any) -> None:
+# ---------------------------------------------------------------------------
+# Tool-loop workflow tests (updated for native function calling + confirm gate)
+# ---------------------------------------------------------------------------
+
+
+def test_multimodal_tool_loop_places_and_confirms_before_finish(monkeypatch: Any) -> None:
+    """Full place -> zoom -> confirm -> finish workflow for 2 border points."""
     _patch_common(monkeypatch)
 
     responses = [
-        SimpleNamespace(
-            parsed={
-                "tool_name": "place_point_pair",
-                "tool_args": {
-                    "label": "1",
-                    "atlas_point_2d": [100, 120],
-                    "slice_point_2d": [140, 160],
-                    "feature_description": "outer contour notch",
-                    "status": "found",
-                },
-            }
-        ),
-        SimpleNamespace(
-            parsed={
-                "tool_name": "place_point_pair",
-                "tool_args": {
-                    "label": "2",
-                    "atlas_point_2d": [500, 520],
-                    "slice_point_2d": [540, 560],
-                    "feature_description": "ventricle corner",
-                    "status": "found",
-                },
-            }
-        ),
-        SimpleNamespace(parsed={"tool_name": "finish", "tool_args": {}}),
+        # Place point 1
+        _fc_response(("place_point_pair", {
+            "label": "1", "category": "border",
+            "atlas_point_2d": [100, 120], "slice_point_2d": [140, 160],
+            "feature_description": "outer contour notch",
+        })),
+        # Zoom to inspect point 1
+        _fc_response(("view_zoom_pair", {
+            "zoom": 3.0, "atlas_center_2d": [100, 120], "slice_center_2d": [140, 160],
+        })),
+        # Confirm point 1
+        _fc_response(("confirm_point", {"label": "1"})),
+        # Place point 2
+        _fc_response(("place_point_pair", {
+            "label": "2", "category": "border",
+            "atlas_point_2d": [500, 520], "slice_point_2d": [540, 560],
+            "feature_description": "ventricle corner",
+        })),
+        # Zoom to inspect point 2
+        _fc_response(("view_zoom_pair", {
+            "zoom": 3.0, "atlas_center_2d": [500, 520], "slice_center_2d": [540, 560],
+        })),
+        # Confirm point 2
+        _fc_response(("confirm_point", {"label": "2"})),
+        # Finish
+        _fc_response(("finish", {})),
     ]
 
     monkeypatch.setattr(agents, "_retry_generate", lambda *args, **kwargs: responses.pop(0))
@@ -489,6 +620,8 @@ def test_multimodal_tool_loop_places_pairs_before_finish(monkeypatch: Any) -> No
         target_landmark_count=2,
         min_edge_landmarks=1,
         workflow="multimodal_tool_loop",
+        border_count=2,
+        interior_count=0,
     )
 
     assert [corr.label for corr in result] == ["1", "2"]
@@ -499,29 +632,24 @@ def test_multimodal_tool_loop_accepts_zoom_local_coordinates(monkeypatch: Any) -
     _patch_common(monkeypatch)
 
     responses = [
-        SimpleNamespace(
-            parsed={
-                "tool_name": "view_zoom_pair",
-                "tool_args": {
-                    "zoom": 2.0,
-                    "atlas_center_2d": [500, 500],
-                    "slice_center_2d": [500, 500],
-                },
-            }
-        ),
-        SimpleNamespace(
-            parsed={
-                "tool_name": "place_point_pair",
-                "tool_args": {
-                    "label": "1",
-                    "atlas_point_2d_local": [0, 0],
-                    "slice_point_2d_local": [0, 0],
-                    "feature_description": "upper-left corner of zoom window",
-                    "status": "found",
-                },
-            }
-        ),
-        SimpleNamespace(parsed={"tool_name": "finish", "tool_args": {}}),
+        # Zoom first (overview context)
+        _fc_response(("view_zoom_pair", {
+            "zoom": 2.0, "atlas_center_2d": [500, 500], "slice_center_2d": [500, 500],
+        })),
+        # Place with local coordinates
+        _fc_response(("place_point_pair", {
+            "label": "1", "category": "border",
+            "atlas_point_2d_local": [0, 0], "slice_point_2d_local": [0, 0],
+            "feature_description": "upper-left corner of zoom window",
+        })),
+        # Zoom to inspect
+        _fc_response(("view_zoom_pair", {
+            "zoom": 3.0, "atlas_center_2d": [250, 250], "slice_center_2d": [250, 250],
+        })),
+        # Confirm
+        _fc_response(("confirm_point", {"label": "1"})),
+        # Finish
+        _fc_response(("finish", {})),
     ]
 
     monkeypatch.setattr(agents, "_retry_generate", lambda *args, **kwargs: responses.pop(0))
@@ -533,29 +661,32 @@ def test_multimodal_tool_loop_accepts_zoom_local_coordinates(monkeypatch: Any) -
         target_landmark_count=1,
         min_edge_landmarks=1,
         workflow="multimodal_tool_loop",
+        border_count=1,
+        interior_count=0,
     )
 
     assert [corr.label for corr in result] == ["1"]
-    assert result[0].atlas_normalized_yx == pytest.approx((250.78369905956112, 250.54945054945054))
-    assert result[0].slice_normalized_yx == pytest.approx((250.78369905956112, 250.54945054945054))
+    # The local [0,0] maps to the top-left corner of the zoom window.
+    # With zoom=2.0 centered at [500,500], the window is roughly the middle half.
+    assert result[0].atlas_normalized_yx == pytest.approx(
+        (250.78369905956112, 250.54945054945054)
+    )
+    assert result[0].slice_normalized_yx == pytest.approx(
+        (250.78369905956112, 250.54945054945054)
+    )
 
 
 def test_multimodal_tool_loop_uses_explicit_step_limit(monkeypatch: Any) -> None:
     _patch_common(monkeypatch)
 
+    # This response will be returned once (the only allowed step), and since
+    # it doesn't finish, the loop should exceed max steps.
     responses = [
-        SimpleNamespace(
-            parsed={
-                "tool_name": "place_point_pair",
-                "tool_args": {
-                    "label": "1",
-                    "atlas_point_2d": [100, 120],
-                    "slice_point_2d": [140, 160],
-                    "feature_description": "outer contour notch",
-                    "status": "found",
-                },
-            }
-        )
+        _fc_response(("place_point_pair", {
+            "label": "1", "category": "border",
+            "atlas_point_2d": [100, 120], "slice_point_2d": [140, 160],
+            "feature_description": "outer contour notch",
+        })),
     ]
 
     monkeypatch.setattr(agents, "_retry_generate", lambda *args, **kwargs: responses.pop(0))
@@ -572,62 +703,108 @@ def test_multimodal_tool_loop_uses_explicit_step_limit(monkeypatch: Any) -> None
         )
 
 
-def test_registration_request_uses_configured_thinking_level(monkeypatch: Any) -> None:
+def test_multimodal_tool_loop_confirm_rejected_without_zoom(monkeypatch: Any) -> None:
+    """Confirm gate: trying to confirm without zooming returns an error."""
     _patch_common(monkeypatch)
 
-    captured: dict[str, object] = {}
-
-    tool_loop_responses = [
-        SimpleNamespace(
-            parsed={
-                "tool_name": "place_point_pair",
-                "tool_args": {
-                    "label": "1",
-                    "atlas_point_2d": [100, 120],
-                    "slice_point_2d": [140, 160],
-                    "feature_description": "anchor",
-                    "status": "found",
-                },
-            }
-        ),
-        SimpleNamespace(parsed={"tool_name": "finish", "tool_args": {}}),
+    responses = [
+        # Place point 1
+        _fc_response(("place_point_pair", {
+            "label": "1", "category": "border",
+            "atlas_point_2d": [100, 120], "slice_point_2d": [140, 160],
+            "feature_description": "notch",
+        })),
+        # Try to confirm without zoom — should get rejection
+        _fc_response(("confirm_point", {"label": "1"})),
+        # Now zoom
+        _fc_response(("view_zoom_pair", {
+            "zoom": 3.0, "atlas_center_2d": [100, 120], "slice_center_2d": [140, 160],
+        })),
+        # Now confirm succeeds
+        _fc_response(("confirm_point", {"label": "1"})),
+        # Finish
+        _fc_response(("finish", {})),
     ]
 
     def mock_generate(*args: Any, **kwargs: Any) -> SimpleNamespace:
         _ = args
-        if "config" not in captured:
-            captured["config"] = kwargs["config"]
-        return tool_loop_responses.pop(0)
+        return responses.pop(0)
 
-    current_import_module = agents.importlib.import_module
     monkeypatch.setattr(agents, "_retry_generate", mock_generate)
-    monkeypatch.setattr(
-        agents.importlib,
-        "import_module",
-        lambda name, **kwargs: (
-            SimpleNamespace(
-                MODEL_NAME="test-model",
-                CODE_EXECUTION_ENABLED=False,
-                THINKING_LEVEL="LOW",
-                TEMPERATURE=0.2,
-                count_tokens_enabled=lambda: False,
-                get_client=lambda: _DummyClient(),
-            )
-            if name == "langslice.ai.config"
-            else current_import_module(name, **kwargs)
-        ),
-    )
 
-    agents.estimate_registration_correspondences(
-        Image.new("RGB", (120, 100), (0, 0, 0)),
+    result = agents.estimate_registration_correspondences(
+        Image.new("RGB", (200, 120), (0, 0, 0)),
         atlas_name="allen_mouse_25um",
-        position_mm=1.0,
+        position_mm=2.0,
         target_landmark_count=1,
         min_edge_landmarks=0,
+        workflow="multimodal_tool_loop",
+        border_count=1,
+        interior_count=0,
     )
 
-    assert isinstance(captured["config"], dict)
-    assert captured["config"]["thinking_config"] == {"thinking_level": "LOW"}
+    assert [corr.label for corr in result] == ["1"]
+
+
+def test_multimodal_tool_loop_border_interior_default_split(monkeypatch: Any) -> None:
+    """With target_count=3, border=2 and interior=1 by default (extra goes to border)."""
+    _patch_common(monkeypatch)
+
+    # We need 2 border + 1 interior confirmed
+    responses = [
+        # Place border 1
+        _fc_response(("place_point_pair", {
+            "label": "1", "category": "border",
+            "atlas_point_2d": [100, 120], "slice_point_2d": [140, 160],
+            "feature_description": "notch",
+        })),
+        _fc_response(("view_zoom_pair", {
+            "zoom": 3.0, "atlas_center_2d": [100, 120], "slice_center_2d": [140, 160],
+        })),
+        _fc_response(("confirm_point", {"label": "1"})),
+        # Place border 2
+        _fc_response(("place_point_pair", {
+            "label": "2", "category": "border",
+            "atlas_point_2d": [200, 220], "slice_point_2d": [240, 260],
+            "feature_description": "edge",
+        })),
+        _fc_response(("view_zoom_pair", {
+            "zoom": 3.0, "atlas_center_2d": [200, 220], "slice_center_2d": [240, 260],
+        })),
+        _fc_response(("confirm_point", {"label": "2"})),
+        # Place interior 1
+        _fc_response(("place_point_pair", {
+            "label": "3", "category": "interior",
+            "atlas_point_2d": [500, 500], "slice_point_2d": [500, 500],
+            "feature_description": "deep feature",
+        })),
+        _fc_response(("view_zoom_pair", {
+            "zoom": 3.0, "atlas_center_2d": [500, 500], "slice_center_2d": [500, 500],
+        })),
+        _fc_response(("confirm_point", {"label": "3"})),
+        # Finish
+        _fc_response(("finish", {})),
+    ]
+
+    monkeypatch.setattr(agents, "_retry_generate", lambda *args, **kwargs: responses.pop(0))
+
+    result = agents.estimate_registration_correspondences(
+        Image.new("RGB", (200, 120), (0, 0, 0)),
+        atlas_name="allen_mouse_25um",
+        position_mm=2.0,
+        target_landmark_count=3,
+        min_edge_landmarks=0,
+        workflow="multimodal_tool_loop",
+        # border_count and interior_count not set — should default to 2/1
+    )
+
+    assert len(result) == 3
+    assert [corr.label for corr in result] == ["1", "2", "3"]
+
+
+# ---------------------------------------------------------------------------
+# Heartbeat / progress tests (unchanged)
+# ---------------------------------------------------------------------------
 
 
 def test_registration_progress_heartbeat_reports_wait_and_completion() -> None:

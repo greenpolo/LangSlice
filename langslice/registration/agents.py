@@ -240,6 +240,16 @@ def _image_to_inline_data(img: Image.Image) -> dict[str, object]:
     return {"inline_data": {"mime_type": "image/png", "data": buf.getvalue()}}
 
 
+def _image_to_part(img: Image.Image) -> object:
+    """Convert a PIL image to a ``types.Part`` via ``types.Part.from_bytes``."""
+    from google.genai import types
+
+    buf = io.BytesIO()
+    prepared = img.convert("RGB") if img.mode != "RGB" else img
+    prepared.save(buf, format="PNG")
+    return types.Part.from_bytes(data=buf.getvalue(), mime_type="image/png")
+
+
 def _extract_result(response: object) -> dict[str, object]:
     decoded = _extract_json_dict(response)
     if not decoded:
@@ -666,6 +676,8 @@ def estimate_registration_correspondences(
     debug_dir: str | None = None,
     enable_code_execution: bool | None = None,
     tool_loop_max_steps: int | None = None,
+    border_count: int | None = None,
+    interior_count: int | None = None,
 ) -> list[RegistrationCorrespondence]:
     """Run the configured Gemini registration workflow to produce paired correspondences."""
     # Late imports to avoid circular dependencies and to keep workflow modules
@@ -732,6 +744,8 @@ def estimate_registration_correspondences(
             prepared=prepared,
             atlas_name=atlas_name,
             position_mm=position_mm,
+            border_count=border_count,
+            interior_count=interior_count,
             on_progress=on_progress,
             on_trace=on_trace,
         )

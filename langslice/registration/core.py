@@ -32,6 +32,8 @@ def estimate_registration_runtime(
     debug_dir: str | None = None,
     enable_code_execution: bool | None = None,
     tool_loop_max_steps: int | None = None,
+    border_count: int | None = None,
+    interior_count: int | None = None,
 ) -> RegistrationResult:
     """Run the separate registration runtime and return full results."""
 
@@ -57,6 +59,8 @@ def estimate_registration_runtime(
         debug_dir=debug_dir,
         enable_code_execution=enable_code_execution,
         tool_loop_max_steps=tool_loop_max_steps,
+        border_count=border_count,
+        interior_count=interior_count,
     )
     _progress(
         "Registration outputs derived: "

@@ -260,6 +260,7 @@ class LandmarkAnnotation:
     status: str = "confirmed"
     feature_description: str = ""
     artifact_note: str = ""
+    category: str = "border"
 
 
 @dataclass
@@ -268,6 +269,8 @@ class RegistrationAnnotationSession:
 
     workflow: str
     target_count: int | None = None
+    border_count: int | None = None
+    interior_count: int | None = None
     atlas_annotations: list[LandmarkAnnotation] = field(default_factory=list)
     slice_annotations: list[LandmarkAnnotation] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)

@@ -26,6 +26,18 @@ def _add_register_parser(subparsers: argparse._SubParsersAction) -> None:
     reg.add_argument("--temperature", type=float, default=None, help="Generation temperature")
     reg.add_argument("--no-borders", action="store_true", help="Disable atlas region borders")
     reg.add_argument(
+        "--border-count",
+        type=int,
+        default=None,
+        help="Number of border landmarks (default: half of --landmarks, rounded up)",
+    )
+    reg.add_argument(
+        "--interior-count",
+        type=int,
+        default=None,
+        help="Number of interior landmarks (default: half of --landmarks, rounded down)",
+    )
+    reg.add_argument(
         "--out",
         default=None,
         help="Output directory for results. Default: ./langslice_output/<timestamp>",
@@ -84,7 +96,9 @@ def _run_register(args: argparse.Namespace) -> None:
 
     print(f"Atlas: {args.atlas}  Position: {args.position:.2f} mm")
     print(f"Workflow: {workflow}  Model: {vlm_config.MODEL_NAME}")
-    print(f"Landmarks: {args.landmarks}  Borders: {not args.no_borders}")
+    border_label = f"border={args.border_count}" if args.border_count is not None else "auto"
+    interior_label = f"interior={args.interior_count}" if args.interior_count is not None else "auto"
+    print(f"Landmarks: {args.landmarks} ({border_label}/{interior_label})  Borders: {not args.no_borders}")
     print(f"Output: {out_dir}")
     print()
 
@@ -101,6 +115,8 @@ def _run_register(args: argparse.Namespace) -> None:
         show_atlas_borders=not args.no_borders,
         on_progress=on_progress,
         debug_dir=debug_dir,
+        border_count=args.border_count,
+        interior_count=args.interior_count,
     )
 
     # Summary.

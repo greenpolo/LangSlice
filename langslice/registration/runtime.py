@@ -109,6 +109,8 @@ def estimate_registration(
     debug_dir: str | None = None,
     enable_code_execution: bool | None = None,
     tool_loop_max_steps: int | None = None,
+    border_count: int | None = None,
+    interior_count: int | None = None,
 ) -> RegistrationResult:
     """Run the new registration runtime and return affine + nonlinear results."""
     atlas = load_atlas(atlas_name)
@@ -129,6 +131,8 @@ def estimate_registration(
         debug_dir=debug_dir,
         enable_code_execution=enable_code_execution,
         tool_loop_max_steps=tool_loop_max_steps,
+        border_count=border_count,
+        interior_count=interior_count,
     )
     if on_correspondences is not None:
         on_correspondences(correspondences)

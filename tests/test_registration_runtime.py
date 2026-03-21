@@ -25,9 +25,12 @@ def fake_estimate_registration_correspondences(
     debug_dir=None,
     enable_code_execution=None,
     tool_loop_max_steps=None,
+    border_count=None,
+    interior_count=None,
 ):
     _ = image, atlas_name, position_mm
     _ = on_trace, on_annotation_session, debug_dir, enable_code_execution, tool_loop_max_steps
+    _ = border_count, interior_count
     assert target_landmark_count == 14
     assert isinstance(workflow, str)
     assert show_atlas_borders is True
