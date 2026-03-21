@@ -76,7 +76,7 @@ Three registration workflows are available, selected by model capabilities or us
 
 - **single_pass** — the model receives both images in one turn and returns all paired correspondences as structured JSON.  Points use a flexible coordinate system (pixel, normalized, etc.) declared by the model.
 - **multimodal_tool_loop** — the model iteratively proposes and refines landmarks across multiple turns using tool calls.
-- **image_gen_two_shot** — exclusively for image-generation models.  The model draws numbered landmark annotations directly on the images (no text output).  Marker positions are extracted via classical CV: adaptive colour selection, Euclidean RGB distance thresholding, connected-component analysis.  Pairs are matched by nearest-neighbour in normalised coordinate space.
+- **image_gen_two_shot** — exclusively for image-generation models.  Two passes: (1) the model draws numbered landmark annotations on the atlas, (2) a second call transfers matching landmarks onto the histology slice.  The atlas is upscaled to ~1K before pass 1 and the slice receives an exposure boost before pass 2.  Generated images are saved for inspection; marker extraction is not yet implemented.
 
 Current runtime behavior in `runtime.py`:
 

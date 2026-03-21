@@ -39,13 +39,13 @@ The correspondence agent system is split across `agents.py` (shared utilities an
 
 ### Workflow: image_gen_two_shot (agents_image_gen.py)
 
-- Exclusively for Gemini image-generation models (e.g. gemini-3-pro-image-preview)
-- Model draws numbered landmark annotations directly on images — no text output
+- Exclusively for Gemini image-generation models (e.g. gemini-3-pro-image-preview, gemini-3.1-flash-image-preview)
 - Two passes: (1) atlas annotation, (2) slice transfer using annotated atlas as reference
-- Adaptive colour selection picks the least-present colour from input images to avoid conflicts with fluorescence
-- Marker positions extracted via classical CV: Euclidean RGB distance thresholding + connected-component analysis
-- Coordinates rescaled from generated image space to original image space
-- Pairs matched by nearest-neighbour in normalised coordinate space (not scan-order)
+- Atlas upscaled to ~1K before pass 1 to match model output resolution and avoid spatial copying
+- Slice receives 1.5x exposure boost before pass 2 to improve anatomical visibility
+- Prompt warns model about common microscopy artifacts (bubbles, tears, tissue damage)
+- Generated images saved for visual inspection; marker extraction is TODO
+- Must use `ai_studio` backend — Vertex serves degraded image-gen quality
 
 ### Workflow: multimodal_tool_loop (agents_tool_loop.py)
 
