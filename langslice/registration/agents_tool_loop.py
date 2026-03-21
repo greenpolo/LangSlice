@@ -9,6 +9,7 @@ ensure balanced coverage.
 
 from __future__ import annotations
 
+import importlib
 import io
 import json
 import logging
@@ -435,7 +436,7 @@ def _prepare_base_images(
     Returns (atlas_part, slice_part, uploaded_files).
     *uploaded_files* is non-empty only when File API was used.
     """
-    import langslice.ai.config as _ai_config
+    _ai_config = importlib.import_module("langslice.ai.config")
 
     uploaded_files: list[Any] = []
     if _ai_config.supports_file_api():
@@ -450,7 +451,9 @@ def _prepare_base_images(
             config=types.UploadFileConfig(mime_type="image/png"),
         )
         uploaded_files = [atlas_file, slice_file]
-        return atlas_file, slice_file, uploaded_files
+        atlas_part = types.Part.from_uri(file_uri=atlas_file.uri, mime_type="image/png")
+        slice_part = types.Part.from_uri(file_uri=slice_file.uri, mime_type="image/png")
+        return atlas_part, slice_part, uploaded_files
     else:
         atlas_part = _image_to_part(prepared.atlas_prep.image)
         slice_part = _image_to_part(prepared.slice_prep.image)
