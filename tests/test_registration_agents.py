@@ -100,7 +100,7 @@ def _patch_common(monkeypatch: Any) -> None:
         agents.importlib,
         "import_module",
         lambda name, **kwargs: (
-            vlm_config if name == "langslice.vlm.config" else real_import_module(name, **kwargs)
+            vlm_config if name == "langslice.ai.config" else real_import_module(name, **kwargs)
         ),
     )
 
@@ -164,7 +164,7 @@ def test_registration_request_uses_configured_temperature(monkeypatch: Any) -> N
                 count_tokens_enabled=lambda: False,
                 get_client=lambda: _DummyClient(),
             )
-            if name == "langslice.vlm.config"
+            if name == "langslice.ai.config"
             else current_import_module(name, **kwargs)
         ),
     )
@@ -266,7 +266,7 @@ def test_image_gen_two_shot_runs_both_passes(monkeypatch: Any) -> None:
                 count_tokens_enabled=lambda: False,
                 get_client=lambda: _DummyClient(),
             )
-            if name == "langslice.vlm.config"
+            if name == "langslice.ai.config"
             else current_import_module(name, **kwargs)
         ),
     )
@@ -310,7 +310,7 @@ def test_image_gen_two_shot_raises_on_no_atlas_image(monkeypatch: Any) -> None:
                 count_tokens_enabled=lambda: False,
                 get_client=lambda: _DummyClient(),
             )
-            if name == "langslice.vlm.config"
+            if name == "langslice.ai.config"
             else current_import_module(name, **kwargs)
         ),
     )
@@ -342,7 +342,7 @@ def test_image_gen_config_requests_image_text_1k_and_high_thinking(monkeypatch: 
                     model_name == "gemini-3.1-flash-image-preview"
                 )
             )
-            if name == "langslice.vlm.config"
+            if name == "langslice.ai.config"
             else real_import_module(name, **kwargs)
         ),
     )
@@ -366,7 +366,7 @@ def test_image_gen_config_skips_thinking_when_model_does_not_support_it(monkeypa
         "import_module",
         lambda name, **kwargs: (
             SimpleNamespace(supports_image_model_thinking=lambda _model_name: False)
-            if name == "langslice.vlm.config"
+            if name == "langslice.ai.config"
             else real_import_module(name, **kwargs)
         ),
     )
@@ -613,7 +613,7 @@ def test_registration_request_uses_configured_thinking_level(monkeypatch: Any) -
                 count_tokens_enabled=lambda: False,
                 get_client=lambda: _DummyClient(),
             )
-            if name == "langslice.vlm.config"
+            if name == "langslice.ai.config"
             else current_import_module(name, **kwargs)
         ),
     )

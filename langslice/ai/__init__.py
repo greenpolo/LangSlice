@@ -1,6 +1,6 @@
-"""LangSlice VLM module - Gemini-based visual estimation."""
+"""LangSlice AI module - Gemini-based visual estimation."""
 
-from langslice.vlm.config import (
+from langslice.ai.config import (
     AVAILABLE_THINKING_LEVELS,
     CODE_EXECUTION_ENABLED,
     MODEL_NAME,
@@ -16,8 +16,8 @@ from langslice.vlm.config import (
     set_temperature,
     supports_code_execution,
 )
-from langslice.vlm.batch_eval import APBatchCase, build_ap_batch_requests, create_ap_batch_job
-from langslice.vlm.estimator import (
+from langslice.ai.batch_eval import APBatchCase, build_ap_batch_requests, create_ap_batch_job
+from langslice.ai.estimator import (
     APResult,
     estimate_ap,
     estimate_position,

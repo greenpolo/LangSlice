@@ -33,7 +33,7 @@ LangSlice is a PySide6 desktop app that registers histology slice images to Brai
 The code is split into five modules with clear boundaries:
 
 - **`langslice/atlas/`** — BrainGlobe atlas loading, AP/index conversion, coronal slice extraction. Orientation assumptions are centralized in `space.py` and require coronal layout (AP/DV/ML on axes 0/1/2).
-- **`langslice/vlm/`** — Gemini client configuration (`config.py`), multi-turn AP estimator with tool-use loop (`estimator.py`), offline batch helper (`batch_eval.py`). Three auth backends: `ai_studio`, `vertex_api_key`, `vertex_adc`.
+- **`langslice/ai/`** — Gemini client configuration (`config.py`), multi-turn AP estimator with tool-use loop (`estimator.py`), offline batch helper (`batch_eval.py`). Three auth backends: `ai_studio`, `vertex_api_key`, `vertex_adc`.
 - **`langslice/registration/`** — Prompt construction and correspondence parsing (`agents.py`), deterministic affine and TPS fitting (`solver.py`), orchestration and debug artifacts (`runtime.py`), data classes (`types.py`). Public entry point: `estimate_registration_runtime(...)` in `core.py`.
 - **`langslice/gui/`** — PySide6 main window orchestrates the full pipeline. Atlas viewer, overlay viewer, settings dialog, trace inspector, and run-metadata dialog are separate widgets.
 - **`langslice/export.py`** — Coronal anchoring math and QUINT/ABBA-compatible single-slice JSON export.

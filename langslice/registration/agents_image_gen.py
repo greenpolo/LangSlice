@@ -116,7 +116,7 @@ def _build_image_gen_config(
         "image_config": image_config_cls(image_size="1K"),
     }
 
-    vlm_config = importlib.import_module("langslice.vlm.config")
+    vlm_config = importlib.import_module("langslice.ai.config")
     supports_image_model_thinking = getattr(
         vlm_config,
         "supports_image_model_thinking",

@@ -20,8 +20,8 @@ from langslice.agent_trace import (
     tool_result_event,
 )
 from langslice.image_prep import normalize_image, prepare_image_for_vlm
-from langslice.vlm import config as vlm_config
-from langslice.vlm.config import get_client
+from langslice.ai import config as vlm_config
+from langslice.ai.config import get_client
 
 logger = logging.getLogger(__name__)
 

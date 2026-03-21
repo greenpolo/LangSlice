@@ -48,7 +48,7 @@ def _run_register(args: argparse.Namespace) -> None:
         annotation_session_to_dict,
         build_annotation_session_from_correspondences,
     )
-    from langslice.vlm import config as vlm_config
+    from langslice.ai import config as vlm_config
 
     # Configure model before anything touches the client.
     if args.model:

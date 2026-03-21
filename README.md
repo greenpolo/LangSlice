@@ -29,7 +29,7 @@ The current implementation uses Gemini for AP estimation and landmark correspond
 
 ## Authentication Backends
 
-`langslice/vlm/config.py` currently supports three backend modes:
+`langslice/ai/config.py` currently supports three backend modes:
 
 - `ai_studio`
 - `vertex_api_key`
@@ -39,7 +39,7 @@ The GUI settings dialog writes the selected backend and related credentials to t
 
 ## Optional Gemini Flags
 
-The AP estimator has opt-in rollout flags in `langslice/vlm/config.py`:
+The AP estimator has opt-in rollout flags in `langslice/ai/config.py`:
 
 - `LANGSLICE_GENAI_COUNT_TOKENS=true`
 - `LANGSLICE_GENAI_AP_USE_FILE_API=true`
@@ -48,7 +48,7 @@ The AP estimator has opt-in rollout flags in `langslice/vlm/config.py`:
 - `LANGSLICE_GENAI_AP_CACHE_TTL=3600s`
 - `LANGSLICE_GENAI_FILE_POLL_TIMEOUT_S=10.0`
 
-The offline Batch API helper in `langslice.vlm.batch_eval` is currently guarded to `vertex_adc` mode.
+The offline Batch API helper in `langslice.ai.batch_eval` is currently guarded to `vertex_adc` mode.
 
 ## CLI
 

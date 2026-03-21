@@ -22,9 +22,9 @@ Current responsibilities:
 `langslice.atlas.space` is the only place that interprets atlas orientation metadata.
 It builds an `AtlasSpaceContext` from `brainglobe-space`, requires AP to increase from anterior to posterior, and then requires coronal layout with AP/DV/ML on axes `0/1/2`.
 
-### `langslice.vlm`
+### `langslice.ai`
 
-`langslice.vlm.config` owns Gemini configuration and backend selection.
+`langslice.ai.config` owns Gemini configuration and backend selection.
 Current backends:
 
 - `ai_studio`
@@ -39,7 +39,7 @@ It also exposes:
 - AP rollout flags for token counting, File API, context cache, and Interactions API
 - a cached shared `google.genai.Client`
 
-`langslice.vlm.estimator` implements AP estimation.
+`langslice.ai.estimator` implements AP estimation.
 `estimate_position(...)` runs a multi-turn tool loop with these tool names:
 
 - `fetch_atlas_slice`
@@ -57,7 +57,7 @@ The file also contains:
 - trace emission and debug-artifact writing
 - `estimate_ap(...)` as a thin alias to `estimate_position(...)`
 
-`langslice.vlm.batch_eval` is an offline helper for one-shot AP Batch API experiments. It is not part of the live GUI workflow.
+`langslice.ai.batch_eval` is an offline helper for one-shot AP Batch API experiments. It is not part of the live GUI workflow.
 
 ### `langslice.registration`
 

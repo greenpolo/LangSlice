@@ -7,7 +7,7 @@ from typing import Any, Sequence
 
 from google.genai import types
 
-import langslice.vlm.config as vlm_config
+import langslice.ai.config as vlm_config
 
 
 @dataclass(frozen=True)

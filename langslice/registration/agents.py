@@ -677,7 +677,7 @@ def estimate_registration_correspondences(
         _estimate_correspondences_tool_loop,
     )
 
-    vlm_config = importlib.import_module("langslice.vlm.config")
+    vlm_config = importlib.import_module("langslice.ai.config")
     get_client = cast(Callable[[], Any], vlm_config.get_client)
     prepared = _prepare_registration_inputs(
         image,

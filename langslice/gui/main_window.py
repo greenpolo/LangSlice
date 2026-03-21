@@ -72,8 +72,8 @@ from langslice.registration import (
     estimate_registration_runtime,
 )
 from langslice.gui.theme import ACCENT, STYLESHEET, TEXT_SECONDARY
-from langslice.vlm import APResult, estimate_position
-from langslice.vlm.config import (
+from langslice.ai import APResult, estimate_position
+from langslice.ai.config import (
     AVAILABLE_MODELS,
     AVAILABLE_THINKING_LEVELS,
     CODE_EXECUTION_ENABLED,

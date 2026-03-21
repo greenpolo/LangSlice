@@ -57,7 +57,7 @@ The correspondence agent system is split across `agents.py` (shared utilities an
 - Retry with exponential backoff and heartbeat progress reporting
 - JSON extraction from Gemini responses (structured output + text fallback)
 - Coordinate conversion: normalised [y,x] to pixel [x,y], with `pixel_coordinates` flag for image-gen bypass
-- Thinking level comes from `THINKING_LEVEL` in `langslice/vlm/config.py`
+- Thinking level comes from `THINKING_LEVEL` in `langslice/ai/config.py`
 
 ## Deterministic Stage
 

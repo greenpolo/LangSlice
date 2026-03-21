@@ -45,7 +45,7 @@ Current implementation details:
 The automatic button starts `AgentWorker` on a `QThread`.
 That worker does two steps in order:
 
-1. `estimate_position(...)` in `langslice.vlm.estimator`
+1. `estimate_position(...)` in `langslice.ai.estimator`
 2. `estimate_registration_runtime(...)` in `langslice.registration.core`
 
 The AP step returns an `APResult(position_mm, reasoning, debug_dir)`.

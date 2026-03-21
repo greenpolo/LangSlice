@@ -6,9 +6,9 @@ import time
 from types import SimpleNamespace
 from typing import cast
 
-import langslice.vlm.batch_eval as batch_eval
-import langslice.vlm.config as vlm_config
-import langslice.vlm.estimator as estimator
+import langslice.ai.batch_eval as batch_eval
+import langslice.ai.config as vlm_config
+import langslice.ai.estimator as estimator
 
 
 def test_feature_flags_for_ai_studio(monkeypatch) -> None:

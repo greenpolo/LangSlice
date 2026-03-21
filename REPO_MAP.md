@@ -6,7 +6,7 @@ This map is intentionally short and stable so humans and agents can find the act
 
 - `langslice/cli.py` - CLI entry point for `langslice gui`, `langslice version`, and `langslice register`
 - `langslice/atlas/` - BrainGlobe atlas loading, AP/index conversion, coronal slice extraction
-- `langslice/vlm/` - Gemini configuration, AP estimator, offline batch helpers
+- `langslice/ai/` - Gemini configuration, AP estimator, offline batch helpers
 - `langslice/registration/` - registration workflows, runtime wrapper, affine/TPS solving, result types
   - `agents.py` - shared utilities (retry, JSON extraction, coordinate conversion) and workflow router
   - `agents_image_gen.py` - two-shot workflow exclusively for image-gen models (gemini-3-pro-image-preview, gemini-3.1-flash-image-preview)

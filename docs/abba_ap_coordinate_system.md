@@ -35,7 +35,7 @@ Current guardrails intentionally require coronal-layout atlases (`AP/DV/ML -> ax
 LangSlice uses `position_mm` consistently in the current implementation:
 
 - atlas slice loading in `langslice.atlas.core`
-- AP estimation prompts and tool calls in `langslice.vlm.estimator`
+- AP estimation prompts and tool calls in `langslice.ai.estimator`
 - GUI state and manual AP slider updates in `langslice.gui.main_window`
 - QUINT export anchoring in `langslice.export`
 

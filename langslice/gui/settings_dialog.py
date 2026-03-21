@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from langslice.gui.theme import TEXT_SECONDARY
-from langslice.vlm.config import (
+from langslice.ai.config import (
     _BACKEND_AI_STUDIO,
     _BACKEND_VERTEX_ADC,
     _BACKEND_VERTEX_API_KEY,

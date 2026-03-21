@@ -40,7 +40,7 @@ from langslice.registration import (
     get_session_marker_points,
 )
 from langslice.gui.theme import ACCENT, ERROR, SUCCESS, TEXT_SECONDARY
-from langslice.vlm import APResult
+from langslice.ai import APResult
 
 
 def pil_to_qpixmap(image: Image.Image) -> QPixmap:
