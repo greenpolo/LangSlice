@@ -1029,11 +1029,19 @@ def _estimate_correspondences_tool_loop(
             function_response_parts: list[types.Part] = []
             image_parts: list[types.Part] = []
 
+            # Debug: log what model returned
+            fc_names = [p.function_call.name for p in model_content.parts if p.function_call]
+            text_parts = [p.text[:80] for p in model_content.parts if p.text]
+            if on_progress:
+                on_progress(f"  -> Model returned: functions={fc_names}, text={text_parts}")
+
             for part in model_content.parts:
                 if not part.function_call:
                     continue
 
                 fc = part.function_call
+                if on_progress:
+                    on_progress(f"  -> FC: {fc.name}({fc.args})")
                 result_dict, result_images, is_finished = _execute_tool(
                     fc,
                     session=session,
@@ -1044,9 +1052,12 @@ def _estimate_correspondences_tool_loop(
                 )
 
                 function_response_parts.append(
-                    types.Part.from_function_response(
-                        name=fc.name,
-                        response=result_dict,
+                    types.Part(
+                        function_response=types.FunctionResponse(
+                            name=fc.name,
+                            response=result_dict,
+                            id=fc.id,
+                        )
                     )
                 )
                 image_parts.extend(result_images)
@@ -1054,15 +1065,13 @@ def _estimate_correspondences_tool_loop(
                 if is_finished:
                     finished = True
 
-            # Send function responses (role="user" per SDK convention)
-            if function_response_parts:
+            # Send function responses + images in a single role="user" message.
+            # Two consecutive user messages breaks the model's turn structure.
+            all_response_parts = function_response_parts + image_parts
+            if all_response_parts:
                 history.append(
-                    types.Content(role="user", parts=function_response_parts)
+                    types.Content(role="user", parts=all_response_parts)
                 )
-
-            # Send result images as a separate user message (if any)
-            if image_parts:
-                history.append(types.Content(role="user", parts=image_parts))
 
             if finished:
                 entries = _confirmed_tool_loop_entries(session)
