@@ -6,10 +6,6 @@ import time
 from types import SimpleNamespace
 from typing import cast
 
-import numpy as np
-from PIL import Image
-
-import langslice.registration.agents as registration_agents
 import langslice.vlm.batch_eval as batch_eval
 import langslice.vlm.config as vlm_config
 import langslice.vlm.estimator as estimator
@@ -99,7 +95,6 @@ def test_registration_workflow_options_gate_image_models() -> None:
 
     text_options = vlm_config.get_registration_workflow_options("gemini-3-flash-preview")
     assert text_options == [
-        ("Single Pass", "single_pass"),
         ("Tool Loop", "multimodal_tool_loop"),
     ]
 
@@ -184,88 +179,3 @@ def test_create_ap_batch_job_uses_vertex_batch_client(monkeypatch) -> None:
     assert getattr(config, "display_name", None) == "langslice-ap-eval"
 
 
-def test_registration_count_tokens_runs_before_generate(monkeypatch) -> None:
-    progress_messages: list[str] = []
-    model_calls: list[str] = []
-
-    class FakeModels:
-        def count_tokens(
-            self, *, model: str, contents: object, config: object | None = None
-        ) -> object:
-            _ = model, contents, config
-            model_calls.append("count_tokens")
-            return SimpleNamespace(total_tokens=123, total_billable_characters=456)
-
-        def generate_content(self, *, model: str, contents: object, config: object) -> object:
-            _ = model, contents, config
-            model_calls.append("generate_content")
-            return SimpleNamespace(
-                parsed={
-                    "correspondences": [
-                        {
-                            "atlas_point_2d": [int(80 + idx * 70), int(50 + idx * 75)],
-                            "slice_point_2d": [int(100 + idx * 65), int(60 + idx * 70)],
-                            "label": f"pt-{idx}",
-                            "status": "found",
-                        }
-                        for idx in range(8)
-                    ]
-                }
-            )
-
-    fake_module = SimpleNamespace(
-        MODEL_NAME="gemini-3-flash-preview",
-        THINKING_LEVEL="HIGH",
-        TEMPERATURE=0.5,
-        count_tokens_enabled=lambda: True,
-        get_client=lambda: SimpleNamespace(models=FakeModels()),
-    )
-
-    monkeypatch.setattr(
-        registration_agents.importlib,
-        "import_module",
-        lambda name: fake_module if name == "langslice.vlm.config" else None,
-    )
-    atlas = SimpleNamespace(
-        atlas_name="allen_mouse_25um",
-        orientation="asr",
-        reference=np.ones((1, 100, 120), dtype=np.uint8),
-        annotation=np.ones((1, 100, 120), dtype=np.int32),
-        resolution=(25.0, 25.0, 25.0),
-        metadata={},
-        structures={1: {"acronym": "CTX", "name": "Cortex"}},
-    )
-    monkeypatch.setattr(registration_agents, "load_atlas", lambda atlas_name: atlas)
-    monkeypatch.setattr(
-        registration_agents,
-        "get_atlas_info",
-        lambda atlas: {"shape": (1, 2, 3), "resolution_um": (25.0, 25.0, 25.0)},
-    )
-    monkeypatch.setattr(
-        registration_agents,
-        "get_slice_region_metadata",
-        lambda atlas, position_mm: [
-            {
-                "acronym": "CTX",
-                "name": "Cortex",
-                "centroid_normalized": (500, 500),
-                "area_fraction": 0.5,
-            }
-        ],
-    )
-    monkeypatch.setattr(
-        registration_agents,
-        "get_composite_slice",
-        lambda atlas, position_mm: Image.new("RGB", (120, 100), "white"),
-    )
-
-    result = registration_agents.estimate_registration_correspondences(
-        Image.new("RGB", (140, 120), "black"),
-        atlas_name="allen_mouse_25um",
-        position_mm=1.5,
-        on_progress=progress_messages.append,
-    )
-
-    assert len(result) == 8
-    assert model_calls == ["count_tokens", "generate_content"]
-    assert any("Registration token preflight" in message for message in progress_messages)

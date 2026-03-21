@@ -105,44 +105,6 @@ def _patch_common(monkeypatch: Any) -> None:
     )
 
 
-def test_single_pass_pairs_atlas_and_slice_landmarks(monkeypatch: Any) -> None:
-    _patch_common(monkeypatch)
-
-    correspondences = [
-        _correspondence(10, 10, 10, 10, "e1"),
-        _correspondence(450, 10, 950, 10, "e2"),
-        _correspondence(200, 140, 300, 400, "i1"),
-        _correspondence(210, 150, 350, 450, "i2"),
-        _correspondence(220, 160, 400, 500, "i3"),
-        _correspondence(230, 170, 450, 550, "i4"),
-        _correspondence(240, 180, 500, 600, "i5"),
-        _correspondence(250, 190, 550, 650, "i6"),
-    ]
-
-    call_count = 0
-
-    def mock_generate(*args: Any, **kwargs: Any) -> SimpleNamespace:
-        _ = args, kwargs
-        nonlocal call_count
-        call_count += 1
-        return SimpleNamespace(parsed={"correspondences": correspondences})
-
-    monkeypatch.setattr(agents, "_retry_generate", mock_generate)
-
-    image = Image.new("RGB", (3790, 2844), (0, 0, 0))
-    result = agents.estimate_registration_correspondences(
-        image,
-        atlas_name="allen_mouse_25um",
-        position_mm=4.28,
-        target_landmark_count=8,
-        min_edge_landmarks=5,
-    )
-    assert len(result) == 8
-    assert call_count == 1
-    assert result[0].label == "e1"
-    assert result[1].label == "e2"
-
-
 def test_image_to_inline_data_uses_rgb_png() -> None:
     part = agents._image_to_inline_data(Image.new("RGBA", (8, 6), (255, 0, 0, 128)))
     assert isinstance(part, dict)
@@ -161,162 +123,32 @@ def test_image_to_inline_data_uses_rgb_png() -> None:
     assert decoded.size == (8, 6)
 
 
-def test_single_pass_keeps_raw_slice_coordinate_frame(monkeypatch: Any) -> None:
-    _patch_common(monkeypatch)
-
-    correspondences = [
-        _correspondence(20, 20, 2, 2, "p1"),
-        _correspondence(430, 22, 43, 3, "p2"),
-        _correspondence(24, 300, 2, 36, "p3"),
-        _correspondence(430, 300, 43, 36, "p4"),
-        _correspondence(230, 20, 23, 2, "p5"),
-        _correspondence(230, 300, 23, 36, "p6"),
-        _correspondence(20, 160, 2, 19, "p7"),
-        _correspondence(430, 160, 43, 19, "p8"),
-        _correspondence(120, 90, 12, 11, "p9"),
-        _correspondence(180, 110, 18, 13, "p10"),
-        _correspondence(260, 140, 26, 17, "p11"),
-        _correspondence(300, 180, 30, 22, "p12"),
-    ]
-
-    call_count = 0
-
-    def mock_generate(*args: Any, **kwargs: Any) -> SimpleNamespace:
-        _ = args, kwargs
-        nonlocal call_count
-        call_count += 1
-        return SimpleNamespace(parsed={"correspondences": correspondences})
-
-    monkeypatch.setattr(agents, "_retry_generate", mock_generate)
-
-    image = Image.new("RGB", (3780, 3174), (0, 0, 0))
-    result = agents.estimate_registration_correspondences(
-        image,
-        atlas_name="allen_mouse_25um",
-        position_mm=4.28,
-        target_landmark_count=12,
-        min_edge_landmarks=8,
-    )
-    assert len(result) == 12
-    assert call_count == 1
-    # Without atlas-frame rescue, tiny normalized slice coordinates remain small.
-    assert result[3].slice_xy[0] < 200.0
-    assert result[3].slice_xy[1] < 200.0
-    assert result[0].slice_xy[0] < 20.0
-
-
-def test_single_pass_normalized_coordinates_map_to_exact_pixel_xy(monkeypatch: Any) -> None:
-    _patch_common(monkeypatch)
-    monkeypatch.setattr(
-        agents,
-        "get_composite_slice",
-        lambda _atlas, _pos: Image.new("RGB", (123, 77), (0, 0, 0)),
-    )
-
-    correspondences = [
-        _correspondence(1000, 500, 250, 1000, "endpoint"),
-        _correspondence(0, 0, 0, 0, "origin"),
-        _correspondence(500, 0, 500, 0, "mid_left"),
-        _correspondence(0, 1000, 0, 500, "top_right"),
-        _correspondence(1000, 1000, 1000, 1000, "bottom_right"),
-        _correspondence(500, 500, 500, 500, "center"),
-    ]
-
-    monkeypatch.setattr(
-        agents,
-        "_retry_generate",
-        lambda *args, **kwargs: SimpleNamespace(parsed={"correspondences": correspondences}),
-    )
-
-    result = agents.estimate_registration_correspondences(
-        Image.new("RGB", (301, 201), (0, 0, 0)),
-        atlas_name="allen_mouse_25um",
-        position_mm=4.28,
-        target_landmark_count=6,
-        min_edge_landmarks=5,
-    )
-
-    assert len(result) == 6
-    assert result[0].atlas_xy == (61.0, 76.0)
-    assert result[0].slice_xy == (300.0, 50.0)
-    assert result[4].atlas_xy == (122.0, 76.0)
-    assert result[4].slice_xy == (300.0, 200.0)
-
-
-def test_single_pass_keeps_out_of_range_points_without_filtering(monkeypatch: Any) -> None:
-    _patch_common(monkeypatch)
-
-    correspondences = [
-        _correspondence(10, 10, 10, 10, "keep_1"),
-        _correspondence(100, 100, 100, 100, "keep_2"),
-        _correspondence(200, 200, 200, 200, "keep_3"),
-        _correspondence(300, 300, 300, 300, "keep_4"),
-        _correspondence(400, 400, 400, 400, "keep_5"),
-        _correspondence(500, 500, 500, 500, "keep_6"),
-        _correspondence(1001, 600, 600, 600, "reject_atlas"),
-        _correspondence(600, 600, -1, 600, "keep_negative_slice"),
-    ]
-
-    monkeypatch.setattr(
-        agents,
-        "_retry_generate",
-        lambda *args, **kwargs: SimpleNamespace(parsed={"correspondences": correspondences}),
-    )
-
-    result = agents.estimate_registration_correspondences(
-        Image.new("RGB", (3790, 2844), (0, 0, 0)),
-        atlas_name="allen_mouse_25um",
-        position_mm=4.28,
-        target_landmark_count=8,
-        min_edge_landmarks=5,
-    )
-
-    labels = [corr.label for corr in result]
-    assert len(result) == 8
-    assert "reject_atlas" in labels
-    assert "keep_negative_slice" in labels
-
-
-def test_single_pass_only_filters_not_visible_pairs(monkeypatch: Any) -> None:
-    _patch_common(monkeypatch)
-
-    correspondences = [
-        _correspondence(10, 10, 10, 10, "keep_1"),
-        _correspondence(100, 100, 100, 100, "keep_2"),
-        _correspondence(200, 200, 200, 200, "keep_3"),
-        _correspondence(300, 300, 300, 300, "keep_4"),
-        _correspondence(400, 400, 400, 400, "keep_5"),
-        _correspondence(500, 500, 500, 500, "drop_not_visible", status="not_visible"),
-        _correspondence(1001, 600, 600, 600, "keep_out_of_range"),
-        _correspondence(600, 600, 1001, 600, "keep_slice_out_of_range"),
-    ]
-
-    monkeypatch.setattr(
-        agents,
-        "_retry_generate",
-        lambda *args, **kwargs: SimpleNamespace(parsed={"correspondences": correspondences}),
-    )
-
-    image = Image.new("RGB", (3790, 2844), (0, 0, 0))
-    result = agents.estimate_registration_correspondences(
-        image,
-        atlas_name="allen_mouse_25um",
-        position_mm=4.28,
-        target_landmark_count=8,
-        min_edge_landmarks=5,
-    )
-    assert len(result) == 7
-
-
 def test_registration_request_uses_configured_temperature(monkeypatch: Any) -> None:
     _patch_common(monkeypatch)
 
     captured: dict[str, object] = {}
 
+    tool_loop_responses = [
+        SimpleNamespace(
+            parsed={
+                "tool_name": "place_point_pair",
+                "tool_args": {
+                    "label": "1",
+                    "atlas_point_2d": [100, 120],
+                    "slice_point_2d": [140, 160],
+                    "feature_description": "anchor",
+                    "status": "found",
+                },
+            }
+        ),
+        SimpleNamespace(parsed={"tool_name": "finish", "tool_args": {}}),
+    ]
+
     def mock_generate(*args: Any, **kwargs: Any) -> SimpleNamespace:
         _ = args
-        captured["config"] = kwargs["config"]
-        return SimpleNamespace(parsed={"correspondences": [_correspondence(10, 10, 10, 10, "a")]})
+        if "config" not in captured:
+            captured["config"] = kwargs["config"]
+        return tool_loop_responses.pop(0)
 
     current_import_module = agents.importlib.import_module
     monkeypatch.setattr(agents, "_retry_generate", mock_generate)
@@ -347,48 +179,6 @@ def test_registration_request_uses_configured_temperature(monkeypatch: Any) -> N
 
     assert isinstance(captured["config"], dict)
     assert captured["config"]["temperature"] == 0.2
-
-
-def test_registration_request_can_force_code_execution(monkeypatch: Any) -> None:
-    _patch_common(monkeypatch)
-
-    captured: dict[str, object] = {}
-
-    def mock_generate(*args: Any, **kwargs: Any) -> SimpleNamespace:
-        _ = args
-        captured["config"] = kwargs["config"]
-        return SimpleNamespace(parsed={"correspondences": [_correspondence(10, 10, 10, 10, "a")]})
-
-    current_import_module = agents.importlib.import_module
-    monkeypatch.setattr(agents, "_retry_generate", mock_generate)
-    monkeypatch.setattr(
-        agents.importlib,
-        "import_module",
-        lambda name, **kwargs: (
-            SimpleNamespace(
-                MODEL_NAME="gemini-3-flash-preview",
-                CODE_EXECUTION_ENABLED=False,
-                THINKING_LEVEL="LOW",
-                TEMPERATURE=0.2,
-                count_tokens_enabled=lambda: False,
-                get_client=lambda: _DummyClient(),
-            )
-            if name == "langslice.vlm.config"
-            else current_import_module(name, **kwargs)
-        ),
-    )
-
-    agents.estimate_registration_correspondences(
-        Image.new("RGB", (120, 100), (0, 0, 0)),
-        atlas_name="allen_mouse_25um",
-        position_mm=1.0,
-        target_landmark_count=1,
-        min_edge_landmarks=0,
-        enable_code_execution=True,
-    )
-
-    assert isinstance(captured["config"], dict)
-    assert captured["config"]["tools"] == [{"code_execution": {}}]
 
 
 def _make_image_with_markers(
@@ -787,10 +577,27 @@ def test_registration_request_uses_configured_thinking_level(monkeypatch: Any) -
 
     captured: dict[str, object] = {}
 
+    tool_loop_responses = [
+        SimpleNamespace(
+            parsed={
+                "tool_name": "place_point_pair",
+                "tool_args": {
+                    "label": "1",
+                    "atlas_point_2d": [100, 120],
+                    "slice_point_2d": [140, 160],
+                    "feature_description": "anchor",
+                    "status": "found",
+                },
+            }
+        ),
+        SimpleNamespace(parsed={"tool_name": "finish", "tool_args": {}}),
+    ]
+
     def mock_generate(*args: Any, **kwargs: Any) -> SimpleNamespace:
         _ = args
-        captured["config"] = kwargs["config"]
-        return SimpleNamespace(parsed={"correspondences": [_correspondence(10, 10, 10, 10, "a")]})
+        if "config" not in captured:
+            captured["config"] = kwargs["config"]
+        return tool_loop_responses.pop(0)
 
     current_import_module = agents.importlib.import_module
     monkeypatch.setattr(agents, "_retry_generate", mock_generate)

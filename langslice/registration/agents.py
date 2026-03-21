@@ -658,7 +658,7 @@ def estimate_registration_correspondences(
     position_mm: float,
     target_landmark_count: int = 8,
     min_edge_landmarks: int = 5,
-    workflow: str = "single_pass",
+    workflow: str = "multimodal_tool_loop",
     show_atlas_borders: bool = True,
     on_progress: Callable[[str], None] | None = None,
     on_trace: Callable[[dict[str, object]], None] | None = None,
@@ -672,10 +672,6 @@ def estimate_registration_correspondences(
     # patchable via monkeypatch on this module.
     from langslice.registration.agents_image_gen import (
         _estimate_correspondences_image_gen_two_shot,
-    )
-    from langslice.registration.agents_single_pass import (
-        _build_single_pass_request,
-        _estimate_correspondences_single_pass,
     )
     from langslice.registration.agents_tool_loop import (
         _estimate_correspondences_tool_loop,
@@ -696,7 +692,7 @@ def estimate_registration_correspondences(
         tool_loop_max_steps=tool_loop_max_steps,
     )
     selected_workflow = str(workflow).strip() or str(
-        getattr(vlm_config, "default_registration_workflow", lambda _name: "single_pass")(
+        getattr(vlm_config, "default_registration_workflow", lambda _name: "multimodal_tool_loop")(
             prepared.model_name
         )
     )
@@ -720,39 +716,6 @@ def estimate_registration_correspondences(
 
     client = get_client()
 
-    if selected_workflow == "single_pass" and vlm_config.count_tokens_enabled():
-        try:
-            count_contents, count_config = _build_single_pass_request(
-                atlas_prep=prepared.atlas_prep,
-                slice_prep=prepared.slice_prep,
-                region_metadata_text=prepared.region_metadata_text,
-                atlas_name=atlas_name,
-                atlas_info=prepared.atlas_info,
-                position_mm=position_mm,
-                target_count=prepared.target_count,
-                min_edge=prepared.min_edge,
-                thinking_level=prepared.thinking_level,
-                temperature=prepared.temperature,
-                enable_code_execution=prepared.enable_code_execution,
-            )
-            count_response = _run_with_progress_heartbeat(
-                lambda: client.models.count_tokens(
-                    model=prepared.model_name,
-                    contents=count_contents,
-                    config={"system_instruction": count_config.get("system_instruction")},
-                ),
-                request_label="Registration token preflight",
-                on_progress=on_progress,
-            )
-            if on_progress:
-                on_progress(
-                    "Registration token preflight: "
-                    f"{_format_count_tokens(_extract_count_tokens_metadata(count_response))}"
-                )
-        except Exception as exc:
-            if on_progress:
-                on_progress(f"Registration token preflight failed: {type(exc).__name__}: {exc}")
-
     if selected_workflow == "image_gen_two_shot":
         raw_correspondences = _estimate_correspondences_image_gen_two_shot(
             client,
@@ -773,23 +736,9 @@ def estimate_registration_correspondences(
             on_trace=on_trace,
         )
     else:
-        raw_correspondences = _estimate_correspondences_single_pass(
-            client,
-            model=prepared.model_name,
-            atlas_prep=prepared.atlas_prep,
-            slice_prep=prepared.slice_prep,
-            region_metadata_text=prepared.region_metadata_text,
-            atlas_name=atlas_name,
-            atlas_info=prepared.atlas_info,
-            position_mm=position_mm,
-            target_count=prepared.target_count,
-            min_edge=prepared.min_edge,
-            thinking_level=prepared.thinking_level,
-            temperature=prepared.temperature,
-            enable_code_execution=prepared.enable_code_execution,
-            show_atlas_borders=show_atlas_borders,
-            on_progress=on_progress,
-            on_trace=on_trace,
+        raise ValueError(
+            f"Unknown registration workflow {selected_workflow!r}. "
+            "Expected 'image_gen_two_shot' or 'multimodal_tool_loop'."
         )
 
     correspondences = _entries_to_correspondences(

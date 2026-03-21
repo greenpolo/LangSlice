@@ -17,7 +17,7 @@ def fake_estimate_registration_correspondences(
     atlas_name,
     position_mm,
     target_landmark_count,
-    workflow="single_pass",
+    workflow="multimodal_tool_loop",
     show_atlas_borders=True,
     on_progress=None,
     on_trace=None,
@@ -140,7 +140,7 @@ def test_registration_runtime(monkeypatch, tmp_path: Path) -> None:
     assert result.qc_state in {"accepted", "review"}
     assert result.debug_dir is not None
     assert result.annotation_session is not None
-    assert result.annotation_session.workflow == "single_pass"
+    assert result.annotation_session.workflow == "multimodal_tool_loop"
     assert result.annotation_session.target_count == 14
     assert len(result.annotation_session.atlas_annotations) == 14
     assert len(result.annotation_session.slice_annotations) == 14

@@ -13,7 +13,6 @@ THINKING_LEVEL = "HIGH"
 CODE_EXECUTION_ENABLED = True
 TEMPERATURE: float = 0.5
 
-REGISTRATION_WORKFLOW_SINGLE_PASS = "single_pass"
 REGISTRATION_WORKFLOW_IMAGE_GEN_TWO_SHOT = "image_gen_two_shot"
 REGISTRATION_WORKFLOW_MULTIMODAL_TOOL_LOOP = "multimodal_tool_loop"
 
@@ -55,7 +54,6 @@ IMAGE_MODEL_THINKING_MODELS: set[str] = {
 }
 
 REGISTRATION_WORKFLOW_LABELS: dict[str, str] = {
-    REGISTRATION_WORKFLOW_SINGLE_PASS: "Single Pass",
     REGISTRATION_WORKFLOW_IMAGE_GEN_TWO_SHOT: "Image Gen (2-Shot)",
     REGISTRATION_WORKFLOW_MULTIMODAL_TOOL_LOOP: "Tool Loop",
 }
@@ -130,10 +128,6 @@ def get_registration_workflow_options(model_name: str | None) -> list[tuple[str,
         ]
     return [
         (
-            REGISTRATION_WORKFLOW_LABELS[REGISTRATION_WORKFLOW_SINGLE_PASS],
-            REGISTRATION_WORKFLOW_SINGLE_PASS,
-        ),
-        (
             REGISTRATION_WORKFLOW_LABELS[REGISTRATION_WORKFLOW_MULTIMODAL_TOOL_LOOP],
             REGISTRATION_WORKFLOW_MULTIMODAL_TOOL_LOOP,
         ),
@@ -144,7 +138,7 @@ def default_registration_workflow(model_name: str | None) -> str:
     """Return the default registration workflow for the selected model."""
     options = get_registration_workflow_options(model_name)
     if not options:
-        return REGISTRATION_WORKFLOW_SINGLE_PASS
+        return REGISTRATION_WORKFLOW_MULTIMODAL_TOOL_LOOP
     return options[0][1]
 
 

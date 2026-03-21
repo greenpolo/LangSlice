@@ -26,7 +26,7 @@ def estimate_registration_runtime(
     position_mm: float | None = None,
     pixel_size_um: float | None = None,
     target_landmark_count: int = 12,
-    workflow: str = "single_pass",
+    workflow: str = "multimodal_tool_loop",
     show_atlas_borders: bool = True,
     on_correspondences: Callable[[list[RegistrationCorrespondence]], None] | None = None,
     on_annotation_session: Callable[[RegistrationAnnotationSession], None] | None = None,

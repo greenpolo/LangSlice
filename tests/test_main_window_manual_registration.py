@@ -305,7 +305,7 @@ def test_manual_registration_path_updates_state(monkeypatch) -> None:
     assert captured["atlas_name"] == "allen_mouse_25um"
     assert captured["position_mm"] == 1.23
     assert captured["target_landmark_count"] == 18
-    assert captured["workflow"] == "single_pass"
+    assert captured["workflow"] == "multimodal_tool_loop"
     assert captured["show_atlas_borders"] is True
     assert captured["enable_code_execution"] is False
     assert captured["tool_loop_max_steps"] == 9
@@ -999,7 +999,7 @@ def test_image_model_selection_gates_registration_workflow(monkeypatch) -> None:
         window.workflow_combo.itemData(i) for i in range(window.workflow_combo.count())
     ]
     assert "image_gen_two_shot" not in text_workflows
-    assert "single_pass" in text_workflows
+    assert "single_pass" not in text_workflows
     assert "multimodal_tool_loop" in text_workflows
     assert not window.code_execution_checkbox.isHidden()
 

@@ -17,7 +17,7 @@ def fake_runtime(**kwargs: object) -> RegistrationResult:
     image_obj = kwargs["image"]
     assert isinstance(image_obj, Image.Image)
     assert kwargs["target_landmark_count"] == 12
-    assert kwargs["workflow"] == "single_pass"
+    assert kwargs["workflow"] == "multimodal_tool_loop"
     assert kwargs.get("on_correspondences") is None
     assert kwargs.get("on_trace") is None
     assert kwargs.get("debug_dir") is None

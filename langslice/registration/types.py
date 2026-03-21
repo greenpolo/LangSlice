@@ -316,7 +316,7 @@ class RegistrationResult:
 def build_annotation_session_from_correspondences(
     correspondences: Sequence[RegistrationCorrespondence],
     *,
-    workflow: str = "single_pass",
+    workflow: str = "multimodal_tool_loop",
     target_count: int | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> RegistrationAnnotationSession:
