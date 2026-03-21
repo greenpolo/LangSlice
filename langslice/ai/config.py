@@ -47,8 +47,6 @@ IMAGE_GENERATION_MODELS: set[str] = {
     "gemini-3.1-flash-image-preview",
 }
 
-STRUCTURED_OUTPUT_IMAGE_MODELS: set[str] = set()
-
 IMAGE_MODEL_THINKING_MODELS: set[str] = {
     "gemini-3.1-flash-image-preview",
 }
@@ -94,13 +92,6 @@ def is_image_generation_model(model_name: str | None) -> bool:
     if model_name is None:
         return False
     return str(model_name).strip() in IMAGE_GENERATION_MODELS
-
-
-def supports_structured_image_output(model_name: str | None) -> bool:
-    """Return True when the selected image model supports structured outputs."""
-    if model_name is None:
-        return False
-    return str(model_name).strip() in STRUCTURED_OUTPUT_IMAGE_MODELS
 
 
 def supports_image_model_thinking(model_name: str | None) -> bool:
@@ -208,6 +199,9 @@ def _load_dotenv() -> None:
         pass
 
 
+_load_dotenv()
+
+
 def _env(name: str) -> str | None:
     value = os.environ.get(name)
     if value is None:
@@ -236,8 +230,6 @@ def _env_float(name: str, default: float) -> float:
 
 def get_backend() -> str:
     """Resolve authentication backend for google-genai client."""
-    _load_dotenv()
-
     backend = _env("LANGSLICE_GENAI_BACKEND")
     if backend is None:
         if _env_bool("GOOGLE_GENAI_USE_VERTEXAI"):
@@ -254,37 +246,30 @@ def get_backend() -> str:
 
 
 def count_tokens_enabled() -> bool:
-    _load_dotenv()
     return _env_bool(_ENV_COUNT_TOKENS)
 
 
 def ap_use_file_api() -> bool:
-    _load_dotenv()
     return _env_bool(_ENV_AP_USE_FILE_API)
 
 
 def ap_use_context_cache() -> bool:
-    _load_dotenv()
     return _env_bool(_ENV_AP_USE_CONTEXT_CACHE)
 
 
 def ap_use_interactions() -> bool:
-    _load_dotenv()
     return _env_bool(_ENV_AP_USE_INTERACTIONS)
 
 
 def ap_cache_ttl() -> str:
-    _load_dotenv()
     return _env(_ENV_AP_CACHE_TTL) or "3600s"
 
 
 def file_poll_timeout_s() -> float:
-    _load_dotenv()
     return _env_float(_ENV_FILE_POLL_TIMEOUT_S, 10.0)
 
 
 def configured_temperature() -> float:
-    _load_dotenv()
     return _env_float(_ENV_TEMPERATURE, TEMPERATURE)
 
 
@@ -321,7 +306,6 @@ def feature_flags() -> dict[str, Any]:
 
 def get_api_key() -> str:
     """Load API key for the selected backend mode."""
-    _load_dotenv()
     backend = get_backend()
 
     if backend == _BACKEND_AI_STUDIO:
@@ -380,7 +364,6 @@ def get_client() -> GenAIClientProtocol:
     if _client_instance is not None:
         return _client_instance
 
-    _load_dotenv()
     genai_module = importlib.import_module("google.genai")
     client_cls = cast(Callable[..., GenAIClientProtocol], getattr(genai_module, "Client"))
     backend = get_backend()
@@ -411,7 +394,6 @@ def create_batch_client() -> GenAIClientProtocol:
     if not supports_batch_api():
         raise RuntimeError("Batch API is only supported with Vertex backends.")
 
-    _load_dotenv()
     genai_module = importlib.import_module("google.genai")
     types_module = importlib.import_module("google.genai.types")
     client_cls = cast(Callable[..., GenAIClientProtocol], getattr(genai_module, "Client"))
