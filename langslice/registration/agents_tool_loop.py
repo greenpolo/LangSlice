@@ -375,7 +375,20 @@ def _build_tool_loop_prompt(
         "- If a region is damaged/torn in the slice, note it in artifact_note\n"
         "  and choose a nearby intact feature instead.\n"
         "- Do NOT place points on the black background.\n"
-        "- Do NOT assume left-right symmetry -- hemispheres may differ."
+        "- Do NOT assume left-right symmetry -- hemispheres may differ.\n"
+        "- CRITICAL: Place border points only on the MAIN continuous brain\n"
+        "  outline. Histology slices often have detached tissue fragments,\n"
+        "  debris, or separate tissue pieces visible around the main section.\n"
+        "  Ignore these — only use the largest connected brain section.\n"
+        "- For border points, match the SAME anatomical curvature feature\n"
+        "  in both atlas and slice. The atlas shows the idealized shape;\n"
+        "  find where that same curve appears on the slice.\n"
+        "- VENTRICLE WARNING: Lateral ventricles are often deformed, collapsed,\n"
+        "  or expanded during histological slicing. Do NOT place points in\n"
+        "  the open lumen/void. Instead, place points on the ventricle WALLS\n"
+        "  or EDGES — match a specific wall segment or corner in both images\n"
+        "  (e.g., 'the medial wall of the left ventricle where it meets the\n"
+        "  septum'). Match wall-to-wall, edge-to-edge."
     )
 
 
