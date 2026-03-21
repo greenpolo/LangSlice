@@ -19,9 +19,11 @@ from langslice.ai.config import (
 from langslice.ai.batch_eval import APBatchCase, build_ap_batch_requests, create_ap_batch_job
 from langslice.ai.estimator import (
     APResult,
-    estimate_ap,
     estimate_position,
 )
+
+# Backwards-compatible alias (estimate_ap was identical to estimate_position)
+estimate_ap = estimate_position
 
 __all__ = [
     "get_api_key",
