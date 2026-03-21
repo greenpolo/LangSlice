@@ -249,10 +249,6 @@ class OverlayGraphicsView(QFrame):
         self._show_region_borders = value
         self._queue_atlas_reload()
 
-    def set_pixel_size(self, um_per_px: float) -> None:  # noqa: ARG002
-        """Accepted for API compatibility; pixel-size calibration is not yet used here."""
-        pass
-
     def set_atlas_opacity(self, opacity: float) -> None:
         self._atlas_opacity = max(0.0, min(1.0, opacity))
         if self._atlas_item is not None:

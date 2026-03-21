@@ -49,10 +49,8 @@ def _build_registration_result(translate_x_px: float) -> RegistrationResult:
     return RegistrationResult(
         correspondences=[corr],
         accepted_correspondences=[corr],
-        rejected_correspondences=[],
         affine_result=affine,
         nonlinear_result=nonlinear,
-        qc_state="accepted",
     )
 
 
@@ -89,9 +87,6 @@ def test_load_image_initializes_manual_position_and_manual_ui(monkeypatch) -> No
         def __init__(self, parent=None) -> None:
             super().__init__(parent)
             self.positions: list[float] = []
-
-        def set_pixel_size(self, pixel_size_um: float) -> None:
-            _ = pixel_size_um
 
         def set_atlas(self, atlas_name: str) -> None:
             _ = atlas_name
@@ -190,9 +185,6 @@ def test_manual_registration_path_updates_state(monkeypatch) -> None:
             _ = visible
 
     class DummyOverlayGraphicsView(main_window.QFrame):
-        def set_pixel_size(self, pixel_size_um: float) -> None:
-            _ = pixel_size_um
-
         def set_atlas(self, atlas_name: str) -> None:
             _ = atlas_name
 
@@ -240,7 +232,6 @@ def test_manual_registration_path_updates_state(monkeypatch) -> None:
         on_annotation_session,
         atlas_name,
         position_mm,
-        pixel_size_um,
         target_landmark_count,
         workflow,
         show_atlas_borders,
@@ -251,7 +242,6 @@ def test_manual_registration_path_updates_state(monkeypatch) -> None:
         captured["image_size"] = image.size
         captured["atlas_name"] = atlas_name
         captured["position_mm"] = position_mm
-        captured["pixel_size_um"] = pixel_size_um
         captured["target_landmark_count"] = target_landmark_count
         captured["workflow"] = workflow
         captured["show_atlas_borders"] = show_atlas_borders
@@ -366,9 +356,6 @@ def test_successful_registration_displays_annotation_markers(monkeypatch) -> Non
             super().__init__(parent)
             self.marker_history: list[tuple[list, list]] = []
 
-        def set_pixel_size(self, pixel_size_um: float) -> None:
-            _ = pixel_size_um
-
         def set_atlas(self, atlas_name: str) -> None:
             _ = atlas_name
 
@@ -415,7 +402,6 @@ def test_successful_registration_displays_annotation_markers(monkeypatch) -> Non
     result_with_session = RegistrationResult(
         correspondences=[corr1, corr2],
         accepted_correspondences=[corr1, corr2],
-        rejected_correspondences=[],
         affine_result=AffineResult(
             matrix=np.array(
                 [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], dtype=np.float64,
@@ -433,7 +419,6 @@ def test_successful_registration_displays_annotation_markers(monkeypatch) -> Non
             reasoning="synthetic",
             output_size=(120, 80),
         ),
-        qc_state="accepted",
         annotation_session=RegistrationAnnotationSession(
             workflow="image_gen_two_shot",
             target_count=2,
@@ -471,7 +456,6 @@ def test_successful_registration_displays_annotation_markers(monkeypatch) -> Non
         on_annotation_session,
         atlas_name,
         position_mm,
-        pixel_size_um,
         target_landmark_count,
         workflow,
         show_atlas_borders,
@@ -481,7 +465,7 @@ def test_successful_registration_displays_annotation_markers(monkeypatch) -> Non
     ):
         _ = (
             image, on_progress, on_trace, atlas_name, position_mm,
-            pixel_size_um, target_landmark_count, workflow,
+            target_landmark_count, workflow,
             show_atlas_borders, debug_dir, enable_code_execution,
             tool_loop_max_steps,
         )
@@ -556,9 +540,6 @@ def test_manual_registration_shows_preview_pairs_on_solver_failure(monkeypatch) 
             _ = visible
 
     class DummyOverlayGraphicsView(main_window.QFrame):
-        def set_pixel_size(self, pixel_size_um: float) -> None:
-            _ = pixel_size_um
-
         def set_atlas(self, atlas_name: str) -> None:
             _ = atlas_name
 
@@ -614,7 +595,6 @@ def test_manual_registration_shows_preview_pairs_on_solver_failure(monkeypatch) 
         on_annotation_session,
         atlas_name,
         position_mm,
-        pixel_size_um,
         target_landmark_count,
         workflow,
         show_atlas_borders,
@@ -628,7 +608,6 @@ def test_manual_registration_shows_preview_pairs_on_solver_failure(monkeypatch) 
             on_trace,
             atlas_name,
             position_mm,
-            pixel_size_um,
             target_landmark_count,
             workflow,
             show_atlas_borders,
@@ -700,9 +679,6 @@ def test_manual_registration_shows_image_gen_first_pass_annotations(monkeypatch)
                 tuple[list[tuple[float, float, str]], list[tuple[float, float, str]]]
             ] = []
 
-        def set_pixel_size(self, pixel_size_um: float) -> None:
-            _ = pixel_size_um
-
         def set_atlas(self, atlas_name: str) -> None:
             _ = atlas_name
 
@@ -763,7 +739,6 @@ def test_manual_registration_shows_image_gen_first_pass_annotations(monkeypatch)
         on_annotation_session,
         atlas_name,
         position_mm,
-        pixel_size_um,
         target_landmark_count,
         workflow,
         show_atlas_borders,
@@ -778,7 +753,6 @@ def test_manual_registration_shows_image_gen_first_pass_annotations(monkeypatch)
             on_correspondences,
             atlas_name,
             position_mm,
-            pixel_size_um,
             target_landmark_count,
             workflow,
             show_atlas_borders,
@@ -849,9 +823,6 @@ def test_annotation_session_uses_position_hint_when_ap_not_set(monkeypatch) -> N
         def __init__(self, parent=None) -> None:
             super().__init__(parent)
             self.positions: list[float] = []
-
-        def set_pixel_size(self, pixel_size_um: float) -> None:
-            _ = pixel_size_um
 
         def set_atlas(self, atlas_name: str) -> None:
             _ = atlas_name
@@ -941,9 +912,6 @@ def test_image_model_selection_gates_registration_workflow(monkeypatch) -> None:
             _ = visible
 
     class DummyOverlayGraphicsView(main_window.QFrame):
-        def set_pixel_size(self, pixel_size_um: float) -> None:
-            _ = pixel_size_um
-
         def set_atlas(self, atlas_name: str) -> None:
             _ = atlas_name
 
@@ -1032,9 +1000,6 @@ def test_save_agent_trace_exports_visible_events(monkeypatch, tmp_path) -> None:
             _ = visible
 
     class DummyOverlayGraphicsView(main_window.QFrame):
-        def set_pixel_size(self, pixel_size_um: float) -> None:
-            _ = pixel_size_um
-
         def set_atlas(self, atlas_name: str) -> None:
             _ = atlas_name
 

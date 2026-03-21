@@ -75,7 +75,6 @@ def _write_debug_artifacts(
         render_landmark_annotations(atlas_image, session.atlas_annotations),
     )
     payload = {
-        "qc_state": result.qc_state,
         "affine": {
             "backend": result.affine_result.backend,
             "reasoning": result.affine_result.reasoning,
@@ -90,10 +89,6 @@ def _write_debug_artifacts(
             "smoothing": result.nonlinear_result.smoothing,
         },
         "accepted_correspondences": [asdict(c) for c in result.accepted_correspondences],
-        "rejected_correspondences": [
-            {**{k: (asdict(v) if hasattr(v, "slice_xy") else v) for k, v in item.items()}}
-            for item in result.rejected_correspondences
-        ],
         "annotation_session": annotation_session_to_dict(result.annotation_session),
     }
     (run_dir / "registration.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
@@ -104,7 +99,6 @@ def estimate_registration(
     *,
     atlas_name: str,
     position_mm: float,
-    pixel_size_um: float | None = None,
     target_landmark_count: int = 12,
     workflow: str = "multimodal_tool_loop",
     show_atlas_borders: bool = True,
@@ -117,7 +111,6 @@ def estimate_registration(
     tool_loop_max_steps: int | None = None,
 ) -> RegistrationResult:
     """Run the new registration runtime and return affine + nonlinear results."""
-    _ = pixel_size_um
     atlas = load_atlas(atlas_name)
     if show_atlas_borders:
         atlas_image = get_composite_slice(atlas, position_mm)
@@ -144,7 +137,6 @@ def estimate_registration(
             f"Need at least 3 correspondence pairs to fit registration, got {len(correspondences)}"
         )
     accepted = list(correspondences)
-    rejected: list[dict[str, object]] = []
     annotation_session = build_annotation_session_from_correspondences(
         accepted,
         workflow=workflow,
@@ -170,7 +162,6 @@ def estimate_registration(
         output_size=image.size,
         reasoning="Regularized TPS derived from registration correspondences.",
     )
-    qc_state = "accepted"
 
     output_debug_dir: str | None = None
     root = os.environ.get("LANGSLICE_VLM_DEBUG_DIR")
@@ -184,10 +175,8 @@ def estimate_registration(
             result=RegistrationResult(
                 correspondences=correspondences,
                 accepted_correspondences=accepted,
-                rejected_correspondences=rejected,
                 affine_result=affine_result,
                 nonlinear_result=nonlinear_result,
-                qc_state=qc_state,
                 debug_dir=output_debug_dir,
                 annotation_session=annotation_session,
             ),
@@ -203,10 +192,8 @@ def estimate_registration(
             result=RegistrationResult(
                 correspondences=correspondences,
                 accepted_correspondences=accepted,
-                rejected_correspondences=rejected,
                 affine_result=affine_result,
                 nonlinear_result=nonlinear_result,
-                qc_state=qc_state,
                 debug_dir=output_debug_dir,
                 annotation_session=annotation_session,
             ),
@@ -240,7 +227,6 @@ def estimate_registration(
                 ),
                 json_part(
                     {
-                        "qc_state": qc_state,
                         "accepted_pairs": len(accepted),
                         "affine_backend": affine_result.backend,
                         "rotation_deg": round(affine_result.rotation_deg, 4),
@@ -251,18 +237,16 @@ def estimate_registration(
                     label="Registration result",
                 ),
             ],
-            metadata={"accepted_pairs": len(accepted), "qc_state": qc_state},
+            metadata={"accepted_pairs": len(accepted)},
         ),
     )
 
-    _progress(on_progress, f"Registration runtime completed with state={qc_state}")
+    _progress(on_progress, "Registration runtime completed")
     return RegistrationResult(
         correspondences=correspondences,
         accepted_correspondences=accepted,
-        rejected_correspondences=rejected,
         affine_result=affine_result,
         nonlinear_result=nonlinear_result,
-        qc_state=qc_state,
         debug_dir=output_debug_dir,
         annotation_session=annotation_session,
     )

@@ -177,7 +177,6 @@ class AgentWorker(QObject):
         canonical_image: Image.Image,
         vlm_image: Image.Image,
         atlas_name: str,
-        pixel_size_um: float,
         target_landmark_count: int,
         registration_workflow: str,
         show_atlas_borders: bool,
@@ -189,7 +188,6 @@ class AgentWorker(QObject):
         self.image = canonical_image
         self.vlm_image = vlm_image
         self.atlas_name = atlas_name
-        self.pixel_size_um = pixel_size_um
         self.target_landmark_count = target_landmark_count
         self.registration_workflow = registration_workflow
         self.show_atlas_borders = bool(show_atlas_borders)
@@ -226,7 +224,6 @@ class AgentWorker(QObject):
                 on_trace=self.trace_event.emit,
                 atlas_name=self.atlas_name,
                 position_mm=ap_result.position_mm,
-                pixel_size_um=self.pixel_size_um,
                 target_landmark_count=self.target_landmark_count,
                 workflow=self.registration_workflow,
                 show_atlas_borders=self.show_atlas_borders,
@@ -260,7 +257,6 @@ class ManualRegistrationWorker(QObject):
         canonical_image: Image.Image,
         atlas_name: str,
         position_mm: float,
-        pixel_size_um: float,
         target_landmark_count: int,
         registration_workflow: str,
         show_atlas_borders: bool,
@@ -271,7 +267,6 @@ class ManualRegistrationWorker(QObject):
         self.image = canonical_image
         self.atlas_name = atlas_name
         self.position_mm = position_mm
-        self.pixel_size_um = pixel_size_um
         self.target_landmark_count = target_landmark_count
         self.registration_workflow = registration_workflow
         self.show_atlas_borders = bool(show_atlas_borders)
@@ -308,7 +303,6 @@ class ManualRegistrationWorker(QObject):
                 on_trace=self.trace_event.emit,
                 atlas_name=self.atlas_name,
                 position_mm=self.position_mm,
-                pixel_size_um=self.pixel_size_um,
                 target_landmark_count=self.target_landmark_count,
                 workflow=self.registration_workflow,
                 show_atlas_borders=self.show_atlas_borders,
@@ -928,7 +922,6 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
 
         self.overlay_viewer = OverlayGraphicsView()
-        self.overlay_viewer.set_pixel_size(self.pixel_size_um)
         layout.addWidget(self.overlay_viewer)
         return page
 
@@ -1617,7 +1610,6 @@ class MainWindow(QMainWindow):
                 image_copy,
                 vlm_image_copy,
                 atlas_name,
-                pixel_size_um=self.pixel_size_um,
                 target_landmark_count=self.registration_landmark_count,
                 registration_workflow=self.registration_workflow,
                 show_atlas_borders=self._show_atlas_region_borders,
@@ -1655,7 +1647,6 @@ class MainWindow(QMainWindow):
                 self.pil_image.copy(),
                 atlas_name,
                 position_mm,
-                pixel_size_um=self.pixel_size_um,
                 target_landmark_count=self.registration_landmark_count,
                 registration_workflow=self.registration_workflow,
                 show_atlas_borders=self._show_atlas_region_borders,
@@ -1861,7 +1852,6 @@ class MainWindow(QMainWindow):
         self.split_atlas.set_show_region_borders(self._show_atlas_region_borders)
         self.overlay_viewer.set_atlas(atlas_name)
         self.overlay_viewer.set_show_region_borders(self._show_atlas_region_borders)
-        self.overlay_viewer.set_pixel_size(self.pixel_size_um)
 
         # Update slider range based on atlas
         try:

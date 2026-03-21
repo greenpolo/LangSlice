@@ -24,7 +24,6 @@ def estimate_registration_runtime(
     on_trace: Callable[[dict[str, object]], None] | None = None,
     atlas_name: str | None = None,
     position_mm: float | None = None,
-    pixel_size_um: float | None = None,
     target_landmark_count: int = 12,
     workflow: str = "multimodal_tool_loop",
     show_atlas_borders: bool = True,
@@ -48,7 +47,6 @@ def estimate_registration_runtime(
         image=image,
         atlas_name=atlas_name,
         position_mm=position_mm,
-        pixel_size_um=pixel_size_um,
         target_landmark_count=target_landmark_count,
         workflow=workflow,
         show_atlas_borders=show_atlas_borders,
@@ -64,6 +62,6 @@ def estimate_registration_runtime(
         "Registration outputs derived: "
         f"rot={result.affine_result.rotation_deg:.2f} deg, "
         f"scale=({result.affine_result.scale[0]:.3f}, {result.affine_result.scale[1]:.3f}), "
-        f"shear={result.affine_result.shear:.3f}, state={result.qc_state}"
+        f"shear={result.affine_result.shear:.3f}"
     )
     return result

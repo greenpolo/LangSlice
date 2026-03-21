@@ -137,7 +137,6 @@ def test_registration_runtime(monkeypatch, tmp_path: Path) -> None:
     assert result.affine_result.backend == "landmark_affine"
     assert result.affine_result.provenance.get("transform_direction") == "atlas_to_slice"
     assert result.nonlinear_result.backend == "tps"
-    assert result.qc_state in {"accepted", "review"}
     assert result.debug_dir is not None
     assert result.annotation_session is not None
     assert result.annotation_session.workflow == "multimodal_tool_loop"

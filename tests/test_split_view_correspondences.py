@@ -48,10 +48,8 @@ def test_split_view_correspondence_mapping() -> None:
     registration_result = RegistrationResult(
         correspondences=[corr_a, corr_b],
         accepted_correspondences=[corr_a, corr_b],
-        rejected_correspondences=[],
         affine_result=affine,
         nonlinear_result=nonlinear,
-        qc_state="accepted",
         annotation_session=build_annotation_session_from_correspondences([corr_a, corr_b]),
     )
 

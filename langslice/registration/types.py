@@ -305,10 +305,8 @@ class RegistrationResult:
 
     correspondences: list[RegistrationCorrespondence]
     accepted_correspondences: list[RegistrationCorrespondence]
-    rejected_correspondences: list[dict[str, Any]]
     affine_result: AffineResult
     nonlinear_result: NonlinearResult
-    qc_state: str
     debug_dir: str | None = None
     annotation_session: RegistrationAnnotationSession | None = None
 

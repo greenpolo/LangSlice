@@ -49,10 +49,8 @@ def fake_runtime(**kwargs: object) -> RegistrationResult:
     return RegistrationResult(
         correspondences=[corr],
         accepted_correspondences=[corr],
-        rejected_correspondences=[],
         affine_result=affine,
         nonlinear_result=nonlinear,
-        qc_state="accepted",
     )
 
 

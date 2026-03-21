@@ -94,13 +94,6 @@ If registration is launched from the manual workflow and `LANGSLICE_VLM_DEBUG_DI
 
 ## Important Literal Gaps In The Current Runtime
 
-The codebase contains some helpers and concepts that are not fully wired into the live runtime yet.
-
-- `vet_correspondences(...)` exists in `registration/solver.py`, but `registration/runtime.py` does not call it.
-- `runtime.py` currently copies all returned correspondences into `accepted_correspondences`.
-- `rejected_correspondences` is currently returned as an empty list.
-- `qc_state` is currently set to `accepted` without additional branching.
-- `pixel_size_um` is accepted by the runtime signature but ignored inside `registration/runtime.py`.
 - `NonlinearResult` is computed and returned, but the GUI export path does not serialize it.
 
 ## What The GUI Uses

@@ -86,15 +86,8 @@ The active registration runtime currently does the following:
 
 Three registration workflows are available:
 
-- **single_pass** — structured JSON output from a text-centric model
 - **multimodal_tool_loop** — iterative landmark refinement via tool calls
 - **image_gen_two_shot** — image-generation models draw landmarks directly; positions extracted via CV
-
-Important current limitations of the live runtime:
-
-- `vet_correspondences(...)` exists in `registration/solver.py` but is not called by `registration/runtime.py`
-- `qc_state` is currently always set to `accepted`
-- `rejected_correspondences` is currently empty in runtime output
 
 ## View Modes
 

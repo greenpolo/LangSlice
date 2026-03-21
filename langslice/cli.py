@@ -108,7 +108,7 @@ def _run_register(args: argparse.Namespace) -> None:
     tx, ty = affine.translation_px
     sx, sy = affine.scale
     print()
-    print(f"Registration complete ({result.qc_state})")
+    print("Registration complete")
     print(f"  Accepted pairs: {len(result.accepted_correspondences)}")
     print(f"  Rotation: {affine.rotation_deg:.2f} deg")
     print(f"  Translation: ({tx:.1f}, {ty:.1f}) px")
@@ -125,7 +125,6 @@ def _run_register(args: argparse.Namespace) -> None:
             result.accepted_correspondences
         )
         payload = {
-            "qc_state": result.qc_state,
             "accepted_correspondences": [
                 {
                     "label": c.label,

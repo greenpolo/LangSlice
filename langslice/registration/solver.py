@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
-from typing import Any, Sequence
+from typing import Sequence
 
 import numpy as np
 from scipy.interpolate import RBFInterpolator
@@ -17,15 +16,7 @@ from langslice.registration.types import (
 )
 
 
-MIN_CORRESPONDENCES = 6
 DEFAULT_TPS_SMOOTHING = 1.0
-
-
-@dataclass
-class VettingResult:
-    accepted: list[RegistrationCorrespondence]
-    rejected: list[dict[str, Any]]
-    qc_metrics: dict[str, float]
 
 
 def _points_from_correspondences(
@@ -35,52 +26,6 @@ def _points_from_correspondences(
     slice_points = np.asarray([c.slice_xy for c in correspondences], dtype=np.float64)
     weights = np.ones(len(correspondences), dtype=np.float64)
     return atlas_points, slice_points, weights
-
-
-def vet_correspondences(
-    correspondences: Sequence[RegistrationCorrespondence],
-    *,
-    slice_size: tuple[int, int],
-    min_count: int = MIN_CORRESPONDENCES,
-) -> VettingResult:
-    rejected: list[dict[str, Any]] = []
-    accepted: list[RegistrationCorrespondence] = []
-    seen: set[tuple[int, int, int, int, str]] = set()
-    for corr in correspondences:
-        key = (
-            int(round(corr.slice_xy[0])),
-            int(round(corr.slice_xy[1])),
-            int(round(corr.atlas_xy[0])),
-            int(round(corr.atlas_xy[1])),
-            corr.label.strip().lower(),
-        )
-        if key in seen:
-            rejected.append({"correspondence": corr, "reason": "duplicate"})
-            continue
-        seen.add(key)
-        accepted.append(corr)
-
-    if len(accepted) < min_count:
-        raise ValueError(f"Need at least {min_count} correspondences, got {len(accepted)}")
-
-    _, slice_points, _ = _points_from_correspondences(accepted)
-    width, height = slice_size
-    bbox_w = (
-        float(slice_points[:, 0].max() - slice_points[:, 0].min()) if len(slice_points) else 0.0
-    )
-    bbox_h = (
-        float(slice_points[:, 1].max() - slice_points[:, 1].min()) if len(slice_points) else 0.0
-    )
-    coverage = (bbox_w * bbox_h) / max(float(width * height), 1.0)
-    if coverage < 0.08:
-        raise ValueError(f"Landmark spread too small (coverage={coverage:.4f})")
-
-    qc_metrics = {
-        "accepted_count": float(len(accepted)),
-        "rejected_count": float(len(rejected)),
-        "slice_bbox_coverage": float(coverage),
-    }
-    return VettingResult(accepted=accepted, rejected=rejected, qc_metrics=qc_metrics)
 
 
 def fit_affine_from_correspondences(

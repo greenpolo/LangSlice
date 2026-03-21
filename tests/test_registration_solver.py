@@ -7,7 +7,6 @@ import math
 from langslice.registration.solver import (
     fit_affine_from_correspondences,
     fit_tps_from_correspondences,
-    vet_correspondences,
 )
 from langslice.registration.types import RegistrationCorrespondence
 
@@ -36,12 +35,10 @@ def _sample_correspondences() -> list[RegistrationCorrespondence]:
 
 
 def test_registration_solver_math() -> None:
-    vetting = vet_correspondences(_sample_correspondences(), slice_size=(120, 100))
-    assert len(vetting.accepted) == 6
-    assert vetting.qc_metrics["slice_bbox_coverage"] > 0.08
+    correspondences = _sample_correspondences()
 
     affine, residuals = fit_affine_from_correspondences(
-        vetting.accepted,
+        correspondences,
         source_size=(100, 80),
         output_size=(120, 100),
         backend="test_affine",
@@ -54,7 +51,7 @@ def test_registration_solver_math() -> None:
     assert math.isclose(affine.translation_px[1], 10.0, abs_tol=1e-6)
 
     nonlinear = fit_tps_from_correspondences(
-        vetting.accepted,
+        correspondences,
         output_size=(120, 100),
         smoothing=0.5,
         reasoning="test",

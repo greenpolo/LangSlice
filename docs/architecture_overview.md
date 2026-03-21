@@ -90,11 +90,7 @@ Current runtime behavior in `runtime.py`:
 
 Important current facts:
 
-- `pixel_size_um` is accepted by the runtime but ignored there.
 - `affine_result.provenance["transform_direction"]` is set to `atlas_to_slice`.
-- `rejected_correspondences` is currently returned as an empty list by the runtime.
-- `qc_state` is currently hardcoded to `accepted` in the runtime.
-- `vet_correspondences(...)` exists in `solver.py` and is tested, but `runtime.py` does not call it.
 
 ### `langslice.image_prep`
 
@@ -203,5 +199,3 @@ When `LANGSLICE_VLM_DEBUG_DIR` is set:
 
 - Only coronal-layout atlases are supported by the active helpers and export math.
 - Registration computes a TPS result, but GUI export still uses the affine result only.
-- The runtime does not currently use `vet_correspondences(...)`, even though that helper exists and is tested.
-- The overlay viewer accepts pixel-size input for compatibility but does not calibrate placement from it.
