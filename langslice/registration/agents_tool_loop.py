@@ -1059,14 +1059,18 @@ def _estimate_correspondences_tool_loop(
                     p_type = "unknown"
                     if p.function_call:
                         p_type = f"function_call({p.function_call.name})"
-                    elif getattr(p, "thought", False) and p.text:
+                    elif getattr(p, "thought", False) and getattr(p, "text", None):
                         p_type = f"thought({len(p.text)} chars)"
                         on_progress(f"  -> Thought: {p.text[:200].replace(chr(10), ' ')}")
-                    elif p.text:
+                    elif getattr(p, "text", None):
                         p_type = f"text({len(p.text)} chars)"
                         on_progress(f"  -> Text: {p.text[:120]}")
                     elif getattr(p, "thought_signature", None):
                         p_type = "thought_signature"
+                    else:
+                        # Dump all non-None attributes to understand unknown parts
+                        attrs = {k: type(v).__name__ for k, v in vars(p).items() if v is not None and not k.startswith("_")}
+                        p_type = f"unknown(attrs={attrs})"
                     on_progress(f"  -> Part[{idx}]: {p_type}")
 
             for part in model_content.parts:
@@ -1124,11 +1128,25 @@ def _estimate_correspondences_tool_loop(
                     finished = True
 
             # Send function responses + images in a single role="user" message.
-            # Two consecutive user messages breaks the model's turn structure.
             all_response_parts = function_response_parts + image_parts
             if all_response_parts:
                 history.append(
                     types.Content(role="user", parts=all_response_parts)
+                )
+            else:
+                # Model returned text/thought but no function calls. We must send
+                # a user turn to avoid consecutive model turns, which stalls the loop.
+                confirmed = session.metadata.get("confirmed", set())
+                total_needed = (border_count or 0) + (interior_count or 0)
+                history.append(
+                    types.Content(
+                        role="user",
+                        parts=[types.Part.from_text(
+                            text=f"Continue placing landmarks. You have "
+                            f"{len(confirmed)}/{total_needed} confirmed points. "
+                            f"Use your tools to place the next point."
+                        )],
+                    )
                 )
 
             if finished:
