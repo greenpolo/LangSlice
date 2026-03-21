@@ -10,8 +10,6 @@ from __future__ import annotations
 import importlib
 from typing import Any, cast
 
-from PIL import Image
-
 _qtcore = importlib.import_module("PySide6.QtCore")
 _qtgui = importlib.import_module("PySide6.QtGui")
 _qtwidgets = importlib.import_module("PySide6.QtWidgets")
@@ -25,7 +23,6 @@ QTimer = _qtcore.QTimer
 Signal = _qtcore.Signal
 Slot = _qtcore.Slot
 
-QImage = _qtgui.QImage
 QBrush = _qtgui.QBrush
 QColor = _qtgui.QColor
 QFont = _qtgui.QFont
@@ -46,28 +43,11 @@ QWidget = _qtwidgets.QWidget
 
 from langslice.atlas.core import get_composite_slice, get_reference_slice, load_atlas
 from langslice.export import compute_coronal_frame_geometry
+from langslice.gui.main_window_components import pil_to_qpixmap
 from langslice.gui.theme import (
     FONT_MONO,
     TEXT_SECONDARY,
 )
-
-
-def _pil_to_qpixmap(img: Image.Image) -> QPixmap:
-    """Convert a PIL Image to QPixmap."""
-    if img.mode == "RGBA":
-        data = img.tobytes("raw", "RGBA")
-        qimg = QImage(data, img.width, img.height, 4 * img.width, QImage.Format.Format_RGBA8888)
-    elif img.mode == "RGB":
-        data = img.tobytes("raw", "RGB")
-        qimg = QImage(data, img.width, img.height, 3 * img.width, QImage.Format.Format_RGB888)
-    elif img.mode == "L":
-        data = img.tobytes("raw", "L")
-        qimg = QImage(data, img.width, img.height, img.width, QImage.Format.Format_Grayscale8)
-    else:
-        img = img.convert("RGBA")
-        data = img.tobytes("raw", "RGBA")
-        qimg = QImage(data, img.width, img.height, 4 * img.width, QImage.Format.Format_RGBA8888)
-    return QPixmap.fromImage(qimg.copy())
 
 
 # ---------------------------------------------------------------------------
@@ -103,7 +83,7 @@ class _AtlasLoaderWorker(QObject):
                 composite = get_reference_slice(atlas, self._position_mm)
             atlas_shape = cast(tuple[int, int, int], tuple(atlas.reference.shape))
             self.slice_ready.emit(
-                _pil_to_qpixmap(composite),
+                pil_to_qpixmap(composite),
                 atlas_shape,
             )
         except Exception as exc:

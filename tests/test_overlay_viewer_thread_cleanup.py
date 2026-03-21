@@ -125,8 +125,8 @@ def test_overlay_viewer_persistent_marker_layer(monkeypatch) -> None:
     )
     viewer = overlay_viewer.OverlayGraphicsView()
 
-    slice_pixmap = overlay_viewer._pil_to_qpixmap(Image.new("RGB", (120, 80), (255, 255, 255)))
-    atlas_pixmap = overlay_viewer._pil_to_qpixmap(Image.new("RGB", (120, 80), (0, 0, 0)))
+    slice_pixmap = overlay_viewer.pil_to_qpixmap(Image.new("RGB", (120, 80), (255, 255, 255)))
+    atlas_pixmap = overlay_viewer.pil_to_qpixmap(Image.new("RGB", (120, 80), (0, 0, 0)))
     viewer.set_slice_pixmap(slice_pixmap)
     viewer._on_atlas_ready(0, atlas_pixmap, (528, 320, 456))
     viewer.set_correspondence_markers([(10.0, 12.0, "1")], [(20.0, 24.0, "1")])

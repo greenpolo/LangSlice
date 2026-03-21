@@ -3,8 +3,6 @@ from __future__ import annotations
 import importlib
 from typing import Optional
 
-from PIL import Image
-
 QtCore = importlib.import_module("PySide6.QtCore")
 QtGui = importlib.import_module("PySide6.QtGui")
 QtWidgets = importlib.import_module("PySide6.QtWidgets")
@@ -17,7 +15,6 @@ QTimer = QtCore.QTimer
 Signal = QtCore.Signal
 Slot = QtCore.Slot
 
-QImage = QtGui.QImage
 QColor = QtGui.QColor
 QPainter = QtGui.QPainter
 QPen = QtGui.QPen
@@ -32,6 +29,7 @@ QVBoxLayout = QtWidgets.QVBoxLayout
 QWidget = QtWidgets.QWidget
 
 from langslice.atlas.core import get_composite_slice, get_reference_slice, load_atlas
+from langslice.gui.main_window_components import pil_to_qpixmap
 from langslice.gui.theme import (
     ACCENT,
     BG_PANEL_SOLID,
@@ -40,23 +38,6 @@ from langslice.gui.theme import (
     TEXT_PRIMARY,
     TEXT_SECONDARY,
 )
-
-
-def pil_to_qpixmap(img: Image.Image) -> QPixmap:
-    if img.mode == "RGB":
-        data = img.tobytes("raw", "RGB")
-        qimg = QImage(data, img.width, img.height, 3 * img.width, QImage.Format.Format_RGB888)
-    elif img.mode == "RGBA":
-        data = img.tobytes("raw", "RGBA")
-        qimg = QImage(data, img.width, img.height, 4 * img.width, QImage.Format.Format_RGBA8888)
-    elif img.mode == "L":
-        data = img.tobytes("raw", "L")
-        qimg = QImage(data, img.width, img.height, img.width, QImage.Format.Format_Grayscale8)
-    else:
-        img = img.convert("RGB")
-        data = img.tobytes("raw", "RGB")
-        qimg = QImage(data, img.width, img.height, 3 * img.width, QImage.Format.Format_RGB888)
-    return QPixmap.fromImage(qimg.copy())
 
 
 class AtlasLoaderWorker(QObject):

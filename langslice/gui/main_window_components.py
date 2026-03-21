@@ -43,13 +43,22 @@ from langslice.gui.theme import ACCENT, ERROR, SUCCESS, TEXT_SECONDARY
 from langslice.ai import APResult
 
 
-def pil_to_qpixmap(image: Image.Image) -> QPixmap:
-    """Convert PIL Image to QPixmap."""
-    rgba_image = image.convert("RGBA")
-    width, height = rgba_image.size
-    data = rgba_image.tobytes("raw", "RGBA")
-    qt_image = QImage(data, width, height, width * 4, QImage.Format.Format_RGBA8888)
-    return QPixmap.fromImage(qt_image.copy())
+def pil_to_qpixmap(img: Image.Image) -> QPixmap:
+    """Convert PIL Image to QPixmap, handling RGB, RGBA, and L modes."""
+    if img.mode == "RGB":
+        data = img.tobytes("raw", "RGB")
+        qimg = QImage(data, img.width, img.height, 3 * img.width, QImage.Format.Format_RGB888)
+    elif img.mode == "RGBA":
+        data = img.tobytes("raw", "RGBA")
+        qimg = QImage(data, img.width, img.height, 4 * img.width, QImage.Format.Format_RGBA8888)
+    elif img.mode == "L":
+        data = img.tobytes("raw", "L")
+        qimg = QImage(data, img.width, img.height, img.width, QImage.Format.Format_Grayscale8)
+    else:
+        img = img.convert("RGBA")
+        data = img.tobytes("raw", "RGBA")
+        qimg = QImage(data, img.width, img.height, 4 * img.width, QImage.Format.Format_RGBA8888)
+    return QPixmap.fromImage(qimg.copy())
 
 
 def affine_matrix_to_qtransform(matrix: object) -> QTransform:
@@ -72,12 +81,10 @@ def affine_matrix_to_qtransform(matrix: object) -> QTransform:
 
 def build_split_view_correspondence_points(
     registration_result: RegistrationResult | None,
-    affine_result: AffineResult | None,
     preview_annotation_session: RegistrationAnnotationSession | None = None,
     preview_correspondences: list[RegistrationCorrespondence] | None = None,
 ) -> tuple[list[tuple[float, float, str]], list[tuple[float, float, str]]]:
     """Return paired marker points for split-view slice and atlas panes."""
-    _ = affine_result
     session = preview_annotation_session
     if registration_result is not None:
         session = registration_result.annotation_session

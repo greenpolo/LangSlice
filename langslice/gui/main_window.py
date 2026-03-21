@@ -117,47 +117,7 @@ VLM_RESOLUTION_OPTIONS: list[tuple[str, int]] = [
     ("4K", 4096),
 ]
 
-try:
-    AtlasViewer = importlib.import_module("langslice.gui.atlas_viewer").AtlasViewer
-except Exception:
-
-    class AtlasViewer(QFrame):
-        """Fallback atlas widget when atlas_viewer.py is unavailable."""
-
-        def __init__(self, parent: QWidget | None = None) -> None:
-            super().__init__(parent)
-            self._atlas_name = ""
-            self._position_mm: float | None = None
-            layout = QVBoxLayout(self)
-            layout.setContentsMargins(16, 16, 16, 16)
-            layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            self._label = QLabel("Atlas pending position estimate")
-            self._label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            self._label.setStyleSheet(f"color: {TEXT_SECONDARY};")
-            layout.addWidget(self._label)
-
-        def set_position(self, position_mm: float) -> None:
-            self._position_mm = position_mm
-            self._label.setText(f"{self._atlas_name}\nPos: {position_mm:.2f} mm")
-
-        def set_atlas(self, atlas_name: str) -> None:
-            self._atlas_name = atlas_name
-            if self._position_mm is None:
-                self._label.setText(f"{atlas_name}\nAwaiting position estimate")
-            else:
-                self._label.setText(f"{atlas_name}\nPos: {self._position_mm:.2f} mm")
-
-        def clear(self) -> None:
-            self._position_mm = None
-            self._label.setText("Atlas pending position estimate")
-
-        def set_correspondence_markers(
-            self, markers: list[tuple[float, float, str]] | None
-        ) -> None:
-            _ = markers
-
-        def set_show_region_borders(self, visible: bool) -> None:
-            _ = visible
+AtlasViewer = importlib.import_module("langslice.gui.atlas_viewer").AtlasViewer
 
 
 class AgentWorker(QObject):
@@ -1192,9 +1152,6 @@ class MainWindow(QMainWindow):
             json.dump(metadata, fh, indent=2)
         self._append_log(f"Saved classification metadata: {metadata_path}")
 
-    def resizeEvent(self, event: Any) -> None:
-        super().resizeEvent(event)
-
     def _set_view_mode(self, mode: str) -> None:
         self.current_view_mode = mode
         self.single_btn.setChecked(mode == "single")
@@ -1988,7 +1945,6 @@ class MainWindow(QMainWindow):
         base_pixmap = self._transformed_pixmap()
         split_slice_points, split_atlas_points = build_split_view_correspondence_points(
             self.registration_result,
-            self.affine_result,
             self.preview_annotation_session,
             self.preview_correspondences,
         )

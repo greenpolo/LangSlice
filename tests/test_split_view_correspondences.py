@@ -53,11 +53,11 @@ def test_split_view_correspondence_mapping() -> None:
         annotation_session=build_annotation_session_from_correspondences([corr_a, corr_b]),
     )
 
-    slice_points, atlas_points = build_split_view_correspondence_points(registration_result, affine)
+    slice_points, atlas_points = build_split_view_correspondence_points(registration_result)
     assert slice_points == [(10.0, 20.0, "A"), (30.0, 25.0, "B")]
     assert atlas_points == [(40.0, 50.0, "A"), (60.0, 55.0, "B")]
 
-    empty_slice, empty_atlas = build_split_view_correspondence_points(None, affine)
+    empty_slice, empty_atlas = build_split_view_correspondence_points(None)
     assert empty_slice == []
     assert empty_atlas == []
 
