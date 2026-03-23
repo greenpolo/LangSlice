@@ -17,7 +17,7 @@ REGISTRATION_WORKFLOW_IMAGE_GEN_TWO_SHOT = "image_gen_two_shot"
 REGISTRATION_WORKFLOW_MULTIMODAL_TOOL_LOOP = "multimodal_tool_loop"
 
 AVAILABLE_THINKING_LEVELS: list[tuple[str, str]] = [
-    ("Off", "OFF"),
+    ("Minimal", "MINIMAL"),
     ("Low", "LOW"),
     ("Medium", "MEDIUM"),
     ("High", "HIGH"),
