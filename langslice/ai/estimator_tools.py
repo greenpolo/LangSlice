@@ -7,12 +7,13 @@ for readability — no behavioral changes.
 
 from __future__ import annotations
 
+import base64
+import json
 import os
 from typing import TYPE_CHECKING, Any, Callable, cast
 
 import numpy as np
 from PIL import Image
-from google.genai import types
 from langslice.agent_trace import (
     image_part_from_pil,
     json_part,
@@ -25,6 +26,107 @@ if TYPE_CHECKING:
     from langslice.ai.estimator import _APLoopState
 
 _RESAMPLE_LANCZOS = getattr(getattr(Image, "Resampling", Image), "LANCZOS")
+
+
+# ---------------------------------------------------------------------------
+# Tool declarations as FunctionParam dicts for the Interactions API
+# ---------------------------------------------------------------------------
+
+
+def _tool_dicts() -> list[dict[str, Any]]:
+    """Return tool declarations as FunctionParam dicts for the Interactions API."""
+    return [
+        {
+            "type": "function",
+            "name": "fetch_atlas_slice",
+            "description": (
+                "Fetch a coronal brain atlas reference image at a specific "
+                "anterior-posterior position. The image will be shown to you. "
+                "Use this to visually compare against the target slice."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "position_mm": {
+                        "type": "number",
+                        "description": "AP position in mm from the anterior edge of the atlas",
+                    },
+                },
+                "required": ["position_mm"],
+            },
+        },
+        {
+            "type": "function",
+            "name": "get_atlas_info",
+            "description": (
+                "Get atlas metadata including the valid AP coordinate range, "
+                "resolution, species, and number of slices."
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+        {
+            "type": "function",
+            "name": "get_region_names",
+            "description": (
+                "Get the names and acronyms of brain regions visible at a "
+                "specific AP position. Useful for confirming anatomical identity."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "position_mm": {
+                        "type": "number",
+                        "description": "AP position in mm from the anterior edge",
+                    },
+                },
+                "required": ["position_mm"],
+            },
+        },
+        {
+            "type": "function",
+            "name": "fetch_multiple_atlas_slices",
+            "description": (
+                "Fetch up to 5 coronal brain atlas reference images at multiple "
+                "anterior-posterior positions at once. The images will be shown to you "
+                "in order. Use this to perform a rapid coarse sweep (e.g., check every 2mm) "
+                "to quickly narrow down the general neighborhood."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "positions_mm": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "maxItems": 5,
+                        "description": "List of up to 5 AP positions in mm to fetch",
+                    },
+                },
+                "required": ["positions_mm"],
+            },
+        },
+        {
+            "type": "function",
+            "name": "submit_estimate",
+            "description": (
+                "Submit your final AP position estimate. Only call this when "
+                "you are confident in your answer."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "position_mm": {
+                        "type": "number",
+                        "description": "Final estimated AP position in mm from the anterior edge",
+                    },
+                    "reasoning": {
+                        "type": "string",
+                        "description": "Detailed reasoning for the estimate",
+                    },
+                },
+                "required": ["position_mm", "reasoning"],
+            },
+        },
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -99,37 +201,18 @@ def _get_regions_at_position(atlas: object, position_mm: float) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# Function call extraction
+# Function call extraction (Interactions API only)
 # ---------------------------------------------------------------------------
 
 
-def _extract_generate_function_calls(
-    model_content: types.Content,
-) -> tuple[list[dict[str, object]], str | None]:
-    model_parts = getattr(model_content, "parts", None) or []
-    text_preview: str | None = None
-    function_calls: list[dict[str, object]] = []
-    for part in model_parts:
-        text = getattr(part, "text", None)
-        if text_preview is None and isinstance(text, str) and text:
-            text_preview = text
-        function_call = getattr(part, "function_call", None)
-        if function_call is None:
-            continue
-        args = dict(function_call.args) if getattr(function_call, "args", None) else {}
-        function_calls.append(
-            {
-                "call_id": None,
-                "name": getattr(function_call, "name", ""),
-                "args": args,
-            }
-        )
-    return function_calls, text_preview
-
-
-def _extract_interaction_function_calls(
+def _extract_function_calls(
     interaction: object,
 ) -> tuple[list[dict[str, object]], str | None]:
+    """Extract function calls from an Interactions API response.
+
+    Returns (function_calls, text_preview) where each function call is a dict
+    with keys 'call_id', 'name', 'args'.
+    """
     outputs = getattr(interaction, "outputs", None) or []
     text_preview: str | None = None
     function_calls: list[dict[str, object]] = []
@@ -176,7 +259,7 @@ def _build_nudge_text(state: _APLoopState) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Main tool dispatch
+# Main tool dispatch (Interactions API format only)
 # ---------------------------------------------------------------------------
 
 
@@ -189,18 +272,23 @@ def _process_ap_function_calls(
     pos_hi: float,
     target_h: int,
     run_dir: str | None,
-    client: Any,
-    use_file_api: bool,
-    uploaded_file_names: list[str],
     state: _APLoopState,
+    media_resolution: str = "high",
+    show_borders: bool = False,
     on_progress: Callable[[str], None] | None = None,
     on_trace: Callable[[dict[str, object]], None] | None = None,
-) -> tuple[list[types.Part], list[dict[str, object]]]:
-    # Lazy imports to avoid circular dependency with estimator.py
-    from langslice.ai.estimator import _build_image_payload, _emit_trace, _image_to_bytes
+) -> list[dict[str, object]]:
+    """Process function calls and return Interactions API content items.
+
+    Returns a list of dicts suitable for use as ``input`` in the next
+    ``interactions.create`` call.  Each tool result is a
+    ``{"type": "function_result", ...}`` dict, and images are sent as
+    separate ``{"type": "image", ...}`` content items alongside (NOT
+    inside result.items -- that causes 400 errors after ~8 turns).
+    """
+    from langslice.ai.estimator import _emit_trace, _image_to_bytes
 
     atlas_obj = cast(Any, atlas)
-    generate_parts: list[types.Part] = []
     interaction_inputs: list[dict[str, object]] = []
 
     def _append_response(
@@ -210,7 +298,6 @@ def _process_ap_function_calls(
         response: dict[str, object],
         is_error: bool = False,
     ) -> None:
-        generate_parts.append(types.Part.from_function_response(name=name, response=response))
         interaction_inputs.append(
             {
                 "type": "function_result",
@@ -218,8 +305,20 @@ def _process_ap_function_calls(
                 if isinstance(call_id, str) and call_id
                 else f"{iteration + 1}:{name}",
                 "name": name,
-                "result": response,
+                "result": json.dumps(response),
                 "is_error": is_error,
+            }
+        )
+
+    def _append_image(image: Image.Image, ref_bytes: bytes) -> None:
+        """Append an image as a separate content item with base64 encoding."""
+        b64_data = base64.b64encode(ref_bytes).decode("utf-8")
+        interaction_inputs.append(
+            {
+                "type": "image",
+                "data": b64_data,
+                "mime_type": "image/jpeg",
+                "resolution": media_resolution,
             }
         )
 
@@ -247,29 +346,24 @@ def _process_ap_function_calls(
             pos = max(pos_lo, min(pos_hi, pos))
             state.fetched_positions.append(pos)
             try:
-                from langslice.atlas.core import get_reference_slice
-
-                ref_img = get_reference_slice(atlas_obj, pos)
+                if show_borders:
+                    from langslice.atlas.core import get_composite_slice
+                    ref_img = get_composite_slice(atlas_obj, pos)
+                else:
+                    from langslice.atlas.core import get_reference_slice
+                    ref_img = get_reference_slice(atlas_obj, pos)
                 ref_prepared = normalize_image(ref_img)
                 scale = target_h / ref_prepared.height
                 new_w = max(1, int(round(ref_prepared.width * scale)))
                 new_h = max(1, int(round(ref_prepared.height * scale)))
                 ref_scaled = ref_prepared.resize((new_w, new_h), _RESAMPLE_LANCZOS)
                 ref_bytes = _image_to_bytes(ref_scaled)
-                image_payload = _build_image_payload(
-                    client,
-                    image_bytes=ref_bytes,
-                    display_name=f"ap_{iteration + 1:02d}_slice_{pos:.3f}mm",
-                    use_file_api=use_file_api,
-                    uploaded_file_names=uploaded_file_names,
-                    on_progress=on_progress,
-                )
                 state.images_fetched += 1
 
                 if run_dir:
                     ref_scaled.save(
                         os.path.join(run_dir, f"tool_{iteration + 1:02d}_slice_{pos:.2f}mm.jpg"),
-                        quality=95,
+                        quality=85,
                     )
 
                 _append_response(
@@ -281,15 +375,13 @@ def _process_ap_function_calls(
                         "description": f"Atlas coronal section at {pos:.2f}mm from anterior edge",
                     },
                 )
-                generate_parts.append(image_payload.part)
-                if image_payload.interaction_input is not None:
-                    interaction_inputs.append(image_payload.interaction_input)
+                _append_image(ref_scaled, ref_bytes)
                 state.reasoning_log.append(
                     {
                         "iteration": iteration + 1,
                         "tool": name,
                         "args": args,
-                        "result": f"Image at {pos:.2f}mm via {image_payload.transport}",
+                        "result": f"Image at {pos:.2f}mm via base64_inline",
                     }
                 )
                 image_path = (
@@ -309,13 +401,13 @@ def _process_ap_function_calls(
                                 label=f"Atlas slice {pos:.2f} mm",
                                 image_bytes=ref_bytes,
                                 path=image_path,
-                                metadata={"transport": image_payload.transport},
+                                metadata={"transport": "base64_inline"},
                             )
                         ],
                         metadata={
                             "iteration": iteration + 1,
                             "position_mm": round(pos, 3),
-                            "transport": image_payload.transport,
+                            "transport": "base64_inline",
                         },
                     ),
                 )
@@ -376,25 +468,21 @@ def _process_ap_function_calls(
 
             successes: list[str] = []
             image_parts: list[dict[str, object]] = []
-            from langslice.atlas.core import get_reference_slice
 
             for pos in positions:
                 try:
-                    ref_img = get_reference_slice(atlas_obj, pos)
+                    if show_borders:
+                        from langslice.atlas.core import get_composite_slice
+                        ref_img = get_composite_slice(atlas_obj, pos)
+                    else:
+                        from langslice.atlas.core import get_reference_slice
+                        ref_img = get_reference_slice(atlas_obj, pos)
                     ref_prepared = normalize_image(ref_img)
                     scale = target_h / ref_prepared.height
                     new_w = max(1, int(round(ref_prepared.width * scale)))
                     new_h = max(1, int(round(ref_prepared.height * scale)))
                     ref_scaled = ref_prepared.resize((new_w, new_h), _RESAMPLE_LANCZOS)
                     ref_bytes = _image_to_bytes(ref_scaled)
-                    image_payload = _build_image_payload(
-                        client,
-                        image_bytes=ref_bytes,
-                        display_name=f"ap_{iteration + 1:02d}_multi_{pos:.3f}mm",
-                        use_file_api=use_file_api,
-                        uploaded_file_names=uploaded_file_names,
-                        on_progress=on_progress,
-                    )
                     state.images_fetched += 1
 
                     if run_dir:
@@ -402,7 +490,7 @@ def _process_ap_function_calls(
                             os.path.join(
                                 run_dir, f"tool_{iteration + 1:02d}_multi_{pos:.2f}mm.jpg"
                             ),
-                            quality=95,
+                            quality=85,
                         )
 
                     _append_response(
@@ -414,9 +502,7 @@ def _process_ap_function_calls(
                             "description": f"Atlas coronal section at {pos:.2f}mm",
                         },
                     )
-                    generate_parts.append(image_payload.part)
-                    if image_payload.interaction_input is not None:
-                        interaction_inputs.append(image_payload.interaction_input)
+                    _append_image(ref_scaled, ref_bytes)
                     successes.append(f"{pos:.2f}mm")
                     image_path = (
                         os.path.join(run_dir, f"tool_{iteration + 1:02d}_multi_{pos:.2f}mm.jpg")
@@ -429,7 +515,7 @@ def _process_ap_function_calls(
                             label=f"Atlas slice {pos:.2f} mm",
                             image_bytes=ref_bytes,
                             path=image_path,
-                            metadata={"transport": image_payload.transport},
+                            metadata={"transport": "base64_inline"},
                         )
                     )
                 except Exception as exc:
@@ -513,7 +599,6 @@ def _process_ap_function_calls(
 
         elif name == "submit_estimate":
             est_pos = float(args.get("position_mm", 0.0))
-            est_confidence = str(args.get("confidence", "unknown"))
             est_reasoning = str(args.get("reasoning", ""))
             has_neighbor_check = _has_neighbor_bracket(
                 state.fetched_positions,
@@ -620,7 +705,6 @@ def _process_ap_function_calls(
 
             state.estimate_result = {
                 "position_mm": est_pos,
-                "confidence": est_confidence,
                 "reasoning": est_reasoning,
             }
             state.reasoning_log.append(
@@ -628,19 +712,19 @@ def _process_ap_function_calls(
                     "iteration": iteration + 1,
                     "tool": name,
                     "args": args,
-                    "result": f"Submitted {est_pos:.2f}mm ({est_confidence})",
+                    "result": f"Submitted {est_pos:.2f}mm",
                 }
             )
             if on_progress:
                 on_progress(
-                    f"Agent submitted estimate: {est_pos:.2f}mm (confidence: {est_confidence})"
+                    f"Agent submitted estimate: {est_pos:.2f}mm"
                 )
             _emit_trace(
                 on_trace,
                 tool_result_event(
                     stage="ap",
                     tool_name=name,
-                    summary=f"Submitted estimate {est_pos:.2f} mm ({est_confidence})",
+                    summary=f"Submitted estimate {est_pos:.2f} mm",
                     parts=[json_part(state.estimate_result, label="Submitted estimate")],
                     metadata={"iteration": iteration + 1, "status": "accepted"},
                 ),
@@ -654,4 +738,4 @@ def _process_ap_function_calls(
                 is_error=True,
             )
 
-    return generate_parts, interaction_inputs
+    return interaction_inputs
