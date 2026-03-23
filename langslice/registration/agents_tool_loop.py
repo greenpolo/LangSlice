@@ -1,8 +1,41 @@
-"""Multimodal tool-loop registration workflow using native Gemini function calling.
+"""Multimodal tool-loop registration workflow using the Gemini Interactions API.
 
-Uses ``types.FunctionDeclaration`` and ``types.Tool`` so the model invokes
-host-side tools through the official function-calling protocol rather than
-structured JSON output.  Border/interior quotas ensure balanced coverage.
+STATUS: Experimental / on hold (2026-03-22).  Image-gen workflow is the
+default for landmark placement.  This tool-loop approach is retained for
+future model improvements but is NOT production-quality yet.
+
+ARCHITECTURE DECISIONS (preserved for future iteration):
+- Uses the Interactions API (``client.interactions.create``) with
+  ``previous_interaction_id`` for server-side conversation state.  This
+  eliminates the image-accumulation problem where 30+ images pile up in
+  context — the server holds history, we only send the latest tool result.
+- Atlas and slice are returned as SEPARATE images (not composites).
+  Composites confuse coordinate spaces; separate images + rich text
+  descriptions of features work better as verbal anchors.
+- Review gate (two-pass finish) was removed — the model gets stuck in
+  infinite verify loops when it can't judge its own placement quality.
+- Zoom persistence: after placing a point, the zoomed view (if active) is
+  returned so the model can verify without re-zooming.
+
+KNOWN LIMITATIONS (as of gemini-3-flash-preview / gemini-3.1-pro-preview):
+- Models use numerical/textual heuristics for coordinates rather than true
+  visual grounding.  "Dorsal midline notch" → ~[130, 500] every time.
+- Geometric triangulation: points form perfect symmetric patterns instead
+  of matching actual anatomy.
+- Coordinate scrubbing from history doesn't work: model leaks coords into
+  free text, and scrubbing causes degenerate re-placement loops.
+- Pro model (3.1-pro) is not better than Flash for spatial tasks — it's
+  more methodical but equally inaccurate.
+- The Interactions API occasionally returns ``status: incomplete`` after
+  ~300s on complex turns (server-side timeout).
+
+WHAT WORKS for future reference:
+- Interactions API eliminates payload bloat (genuine infrastructure win).
+- Separate images + rich text feature descriptions produce better feature
+  targeting than composites.
+- Place-then-verify prompt ordering gets the model to zoom after placing.
+- Temperature 1.0, LOW thinking level, JPEG compression, atlas upscaled
+  to 1K, slice exposure boost 1.5x.
 """
 
 from __future__ import annotations
@@ -273,6 +306,7 @@ def _upsert_annotation(
     annotations.append(annotation)
 
 
+
 def _session_summary(session: RegistrationAnnotationSession) -> dict[str, object]:
     placed_border = 0
     placed_interior = 0
@@ -341,7 +375,13 @@ def _build_tool_loop_prompt(
 ) -> str:
     return (
         "You are an expert neuroanatomist. You are placing matched landmark points\n"
-        "between a brain atlas image (left) and a histology slice image (right).\n"
+        "between a brain atlas image and a histology slice image.\n"
+        "These points will be used for REGISTRATION — aligning the slice to the\n"
+        "atlas. Accurate, well-distributed points across the brain are essential\n"
+        "for a good registration result.\n"
+        "\n"
+        "The images are shown SEPARATELY — atlas and slice are independent images\n"
+        "with their own coordinate spaces.\n"
         "\n"
         f"Atlas: {atlas_name}\n"
         f"AP position: {position_mm:.3f} mm\n"
@@ -355,28 +395,35 @@ def _build_tool_loop_prompt(
         f"of the brain, then {interior_count} landmark pairs in the interior.\n"
         "\n"
         "STRATEGY:\n"
-        "1. Start by calling view_overview to see both images side by side.\n"
-        "2. Place your border points first -- choose anatomically distinct features\n"
-        "   on the brain outline that are clearly identifiable in both images.\n"
-        "   Good border landmarks: midline notches (dorsal/ventral), points of\n"
-        "   maximum lateral curvature, hemisphere tips.\n"
-        "3. Then place interior points -- use internal structures visible in both\n"
-        "   images like ventricle walls, commissure boundaries, or distinct\n"
-        "   tissue boundaries.\n"
-        "4. ALWAYS zoom (view_zoom_pair) into a region BEFORE placing a point\n"
-        "   there. The overview is too small for precise coordinate placement.\n"
-        "   Zoom in, examine both images, THEN place using local coordinates\n"
-        "   (*_point_2d_local). This is critical for accuracy.\n"
-        "5. The atlas and slice brains occupy DIFFERENT proportions of their\n"
-        "   images. Do NOT assume the same normalized coordinates correspond\n"
-        "   to the same anatomy. Always visually match features independently\n"
-        "   in each image.\n"
-        "6. When all points are placed, call finish.\n"
+        "1. Start by calling view_overview to see both images.\n"
+        "2. Place your border points first. For each point:\n"
+        "   a. Identify a VISUALLY DISTINCT feature on the brain outline —\n"
+        "      a sharp notch, a corner, a distinct curvature change.\n"
+        "   b. Write a RICH TEXT DESCRIPTION in feature_description. Be very\n"
+        "      specific (e.g., 'the sharp inward notch on the left lateral\n"
+        "      cortical surface where the rhinal fissure creates a visible\n"
+        "      indentation'). This is your anchor for matching.\n"
+        "   c. Place the point pair (atlas and slice coordinates).\n"
+        "   d. THEN zoom in (view_zoom_pair) to VERIFY your placement visually.\n"
+        "      Check that the annotation marker sits exactly on the feature you\n"
+        "      described. If it's off, re-place the point with corrected coords.\n"
+        "   Good border landmarks: midline notches (dorsal/ventral), rhinal\n"
+        "   fissure notches, points of maximum lateral curvature.\n"
+        "3. Then place interior points the same way — place, then zoom to verify.\n"
+        "   Good interior landmarks: ventricle wall corners, commissure\n"
+        "   boundaries, distinct tissue boundary junctions.\n"
+        "4. VERIFY every point by zooming AFTER placing it. If the marker is not\n"
+        "   on the intended feature, call place_point_pair again to fix it.\n"
+        "5. AVOID featureless regions. Do NOT place points in smooth, uniform\n"
+        "   areas (e.g., middle of the caudate putamen, smooth cortical surface).\n"
+        "   Only choose locations with a distinct visual landmark you can describe\n"
+        "   in text and re-identify in the other image.\n"
+        "6. When all points are placed and verified, call finish.\n"
         "\n"
         "IMPORTANT:\n"
+        "- The atlas and slice are SEPARATE images. You will see them labeled\n"
+        "  individually. Use your text description to bridge between them.\n"
         "- Prioritize local anatomical correspondence over global position.\n"
-        '- Use rich feature descriptions (e.g., "deepest point of dorsal midline\n'
-        '  notch" not "top of brain").\n'
         "- If a region is damaged/torn in the slice, note it in artifact_note\n"
         "  and choose a nearby intact feature instead.\n"
         "- Do NOT place points on the black background.\n"
@@ -385,9 +432,6 @@ def _build_tool_loop_prompt(
         "  outline. Histology slices often have detached tissue fragments,\n"
         "  debris, or separate tissue pieces visible around the main section.\n"
         "  Ignore these — only use the largest connected brain section.\n"
-        "- For border points, match the SAME anatomical curvature feature\n"
-        "  in both atlas and slice. The atlas shows the idealized shape;\n"
-        "  find where that same curve appears on the slice.\n"
         "- VENTRICLE WARNING: Lateral ventricles are often deformed, collapsed,\n"
         "  or expanded during histological slicing. Do NOT place points in\n"
         "  the open lumen/void. Instead, place points on the ventricle WALLS\n"
@@ -590,14 +634,12 @@ def _handle_view_overview(
     ref_size = max(slice_image.size)
     atlas_annotated = render_landmark_annotations(atlas_image, session.atlas_annotations, reference_size=ref_size)
     slice_annotated = render_landmark_annotations(slice_image, session.slice_annotations, reference_size=ref_size)
-    composite = _side_by_side(atlas_annotated, slice_annotated)
     result_dict = {"status": "ok"}
     image_parts: list[types.Part] = [
-        types.Part.from_text(
-            text="Side-by-side overview: Atlas (left) | Slice (right). "
-            "Current annotations shown."
-        ),
-        _image_to_part(composite, fmt="JPEG"),
+        types.Part.from_text(text="ATLAS overview (with current annotations):"),
+        _image_to_part(atlas_annotated, fmt="JPEG"),
+        types.Part.from_text(text="SLICE overview (with current annotations):"),
+        _image_to_part(slice_annotated, fmt="JPEG"),
         types.Part.from_text(text=json.dumps(_session_summary(session), indent=2)),
     ]
     _agents._emit_trace(
@@ -656,13 +698,17 @@ def _handle_view_zoom_pair(
         "slice_window": _window_to_normalized_bounds(slice_window_px, image_size=slice_image.size),
     }
 
-    zoom_composite = _side_by_side(atlas_zoom, slice_zoom, max_height=512)
     image_parts: list[types.Part] = [
         types.Part.from_text(
-            text=f"Side-by-side zoom at {zoom:.1f}x: Atlas (left) | Slice (right). "
-            "Use *_point_2d_local to place points relative to these zoomed views."
+            text=f"ATLAS zoomed at {zoom:.1f}x. "
+            "Use atlas_point_2d_local to place points relative to this view."
         ),
-        _image_to_part(zoom_composite, fmt="JPEG"),
+        _image_to_part(atlas_zoom, fmt="JPEG"),
+        types.Part.from_text(
+            text=f"SLICE zoomed at {zoom:.1f}x. "
+            "Use slice_point_2d_local to place points relative to this view."
+        ),
+        _image_to_part(slice_zoom, fmt="JPEG"),
     ]
     _agents._emit_trace(
         on_trace,
@@ -759,22 +805,67 @@ def _handle_place_point_pair(
     ref_size = max(slice_image.size)
     atlas_annotated = render_landmark_annotations(atlas_image, session.atlas_annotations, reference_size=ref_size)
     slice_annotated = render_landmark_annotations(slice_image, session.slice_annotations, reference_size=ref_size)
-    composite = _side_by_side(atlas_annotated, slice_annotated)
 
-    result_dict: dict[str, Any] = {
-        "status": "ok",
-        "label": label,
-        "category": category,
-        "message": f"Point {label} placed ({category}).",
-    }
-    image_parts: list[types.Part] = [
-        types.Part.from_text(
-            text=f"Saved point pair {label} ({category}). "
-            "Side-by-side: Atlas (left) | Slice (right)."
-        ),
-        _image_to_part(composite, fmt="JPEG"),
-        types.Part.from_text(text=json.dumps(_session_summary(session), indent=2)),
-    ]
+    # If there's an active zoom, return the zoomed view with the new point
+    # rendered so the model can verify placement at high resolution and
+    # continue placing nearby points without re-zooming.
+    last_zoom = session.metadata.get("last_zoom_pair")
+    if isinstance(last_zoom, dict) and "atlas_window_px" in last_zoom:
+        zoom_factor = last_zoom.get("zoom", 3.0)
+        atlas_window = last_zoom["atlas_window_px"]
+        slice_window = last_zoom["slice_window_px"]
+
+        atlas_crop = atlas_annotated.crop(atlas_window)
+        slice_crop = slice_annotated.crop(slice_window)
+        _ZOOM_MAX_EDGE = 512
+        acw, ach = atlas_crop.size
+        a_scale = _ZOOM_MAX_EDGE / max(acw, ach)
+        if a_scale > 1.0:
+            atlas_crop = atlas_crop.resize(
+                (int(acw * a_scale), int(ach * a_scale)), Image.Resampling.BICUBIC
+            )
+        scw, sch = slice_crop.size
+        s_scale = _ZOOM_MAX_EDGE / max(scw, sch)
+        if s_scale > 1.0:
+            slice_crop = slice_crop.resize(
+                (int(scw * s_scale), int(sch * s_scale)), Image.Resampling.BICUBIC
+            )
+
+        result_dict: dict[str, Any] = {
+            "status": "ok",
+            "label": label,
+            "category": category,
+            "message": f"Point {label} placed ({category}). Showing current zoom view with annotation.",
+        }
+        image_parts: list[types.Part] = [
+            types.Part.from_text(
+                text=f"Saved point pair {label} ({category}). "
+                f"ATLAS zoomed at {zoom_factor:.1f}x with annotation:"
+            ),
+            _image_to_part(atlas_crop, fmt="JPEG"),
+            types.Part.from_text(
+                text=f"SLICE zoomed at {zoom_factor:.1f}x with annotation:"
+            ),
+            _image_to_part(slice_crop, fmt="JPEG"),
+            types.Part.from_text(text=json.dumps(_session_summary(session), indent=2)),
+        ]
+    else:
+        result_dict = {
+            "status": "ok",
+            "label": label,
+            "category": category,
+            "message": f"Point {label} placed ({category}).",
+        }
+        image_parts = [
+            types.Part.from_text(
+                text=f"Saved point pair {label} ({category}). ATLAS overview:"
+            ),
+            _image_to_part(atlas_annotated, fmt="JPEG"),
+            types.Part.from_text(text=f"SLICE overview:"),
+            _image_to_part(slice_annotated, fmt="JPEG"),
+            types.Part.from_text(text=json.dumps(_session_summary(session), indent=2)),
+        ]
+
     _agents._emit_trace(
         on_trace,
         tool_result_event(
@@ -837,50 +928,7 @@ def _handle_finish(
 
     total_placed = placed_border + placed_interior
 
-    # First finish call: show full annotated review, ask model to verify
-    reviewed = session.metadata.get("finish_reviewed", False)
-    if not reviewed:
-        session.metadata["finish_reviewed"] = True
-        ref_size = max(slice_image.size)
-        atlas_annotated = render_landmark_annotations(
-            atlas_image, session.atlas_annotations, reference_size=ref_size
-        )
-        slice_annotated = render_landmark_annotations(
-            slice_image, session.slice_annotations, reference_size=ref_size
-        )
-        composite = _side_by_side(atlas_annotated, slice_annotated)
-
-        result_dict: dict[str, Any] = {
-            "status": "review",
-            "message": (
-                f"Before finishing: review all {total_placed} placed points. "
-                "The side-by-side image below shows your atlas points (left) "
-                "and slice points (right). Check that each numbered point "
-                "matches the same anatomical feature in both images. "
-                "If any point is misaligned, call place_point_pair to fix it. "
-                "If all points look correct, call finish again to confirm."
-            ),
-        }
-        image_parts: list[types.Part] = [
-            types.Part.from_text(
-                text="REVIEW: All points placed. Atlas (left) | Slice (right). "
-                "Check alignment of each numbered point. Fix any misaligned "
-                "points, then call finish again."
-            ),
-            _image_to_part(composite, fmt="JPEG"),
-        ]
-        _agents._emit_trace(
-            on_trace,
-            tool_result_event(
-                stage="registration",
-                tool_name="finish",
-                summary=f"Finish review: showing {total_placed} points for verification",
-                metadata={"iteration": iteration, "total_placed": total_placed},
-            ),
-        )
-        return result_dict, image_parts, False
-
-    # Second finish call: accept
+    # Accept immediately (no review gate)
     _agents._emit_trace(
         on_trace,
         tool_result_event(
@@ -902,7 +950,179 @@ def _handle_finish(
 
 
 # ---------------------------------------------------------------------------
-# Main loop
+# Interactions API helpers
+# ---------------------------------------------------------------------------
+
+import base64
+
+
+def _pil_to_image_content(
+    img: Image.Image, *, fmt: str = "JPEG", resolution: str = "high"
+) -> dict[str, Any]:
+    """Convert a PIL image to an Interactions API ImageContentParam dict."""
+    data = _image_to_bytes(img, fmt=fmt)
+    b64 = base64.b64encode(data).decode("utf-8")
+    return {
+        "type": "image",
+        "data": b64,
+        "mime_type": f"image/{fmt.lower()}",
+        "resolution": resolution,
+    }
+
+
+def _upload_to_file_api(
+    client: Any, img: Image.Image, *, fmt: str = "PNG"
+) -> tuple[str, str, Any]:
+    """Upload a PIL image via the Files API and return (uri, mime_type, file_obj)."""
+    mime = f"image/{fmt.lower()}"
+    data = _image_to_bytes(img, fmt=fmt)
+    buf = io.BytesIO(data)
+    uploaded = client.files.upload(
+        file=buf,
+        config=types.UploadFileConfig(mime_type=mime),
+    )
+    return uploaded.uri, mime, uploaded
+
+
+def _cleanup_uploaded_files(client: Any, uploaded_files: list[Any]) -> None:
+    """Delete files uploaded to the Files API."""
+    for f in uploaded_files:
+        try:
+            client.files.delete(name=f.name)
+        except Exception:
+            logger.warning("Failed to delete uploaded file %s", getattr(f, "name", "?"))
+
+
+def _tool_dicts() -> list[dict[str, Any]]:
+    """Return tool declarations as FunctionParam dicts for the Interactions API."""
+    return [
+        {
+            "type": "function",
+            "name": "view_overview",
+            "description": (
+                "Returns the full atlas and slice images (separately) "
+                "with all current annotations rendered."
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+        {
+            "type": "function",
+            "name": "view_zoom_pair",
+            "description": (
+                "Zooms into a region of both atlas and slice for detailed "
+                "inspection. Returns separate atlas and slice zoomed images. "
+                "Existing annotations are visible in the zoomed views."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "zoom": {
+                        "type": "number",
+                        "description": "Zoom factor (e.g., 3.0 for 3x)",
+                    },
+                    "atlas_center_2d": {
+                        "type": "array",
+                        "description": "[y, x] in 0-1000 normalized range",
+                        "items": {"type": "integer"},
+                    },
+                    "slice_center_2d": {
+                        "type": "array",
+                        "description": "[y, x] in 0-1000 normalized range",
+                        "items": {"type": "integer"},
+                    },
+                },
+                "required": ["zoom", "atlas_center_2d", "slice_center_2d"],
+            },
+        },
+        {
+            "type": "function",
+            "name": "place_point_pair",
+            "description": (
+                "Place a matched landmark pair on atlas and slice. "
+                "Re-calling with the same label updates the position."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "label": {"type": "string", "description": 'Point label (e.g., "1", "2")'},
+                    "category": {
+                        "type": "string",
+                        "description": '"border" or "interior"',
+                        "enum": ["border", "interior"],
+                    },
+                    "feature_description": {
+                        "type": "string",
+                        "description": (
+                            "Rich description of the anatomical feature being matched "
+                            "(e.g., 'the deepest point of the dorsal midline notch')"
+                        ),
+                    },
+                    "atlas_point_2d": {
+                        "type": "array",
+                        "description": "[y, x] global coordinates in 0-1000 range",
+                        "items": {"type": "integer"},
+                    },
+                    "slice_point_2d": {
+                        "type": "array",
+                        "description": "[y, x] global coordinates in 0-1000 range",
+                        "items": {"type": "integer"},
+                    },
+                    "atlas_point_2d_local": {
+                        "type": "array",
+                        "description": "[y, x] local coordinates relative to last zoom view",
+                        "items": {"type": "integer"},
+                    },
+                    "slice_point_2d_local": {
+                        "type": "array",
+                        "description": "[y, x] local coordinates relative to last zoom view",
+                        "items": {"type": "integer"},
+                    },
+                    "artifact_note": {
+                        "type": "string",
+                        "description": "Note about damage/artifacts at this location",
+                    },
+                },
+                "required": ["label", "category", "feature_description"],
+            },
+        },
+        {
+            "type": "function",
+            "name": "finish",
+            "description": (
+                "Complete landmark placement. Rejected if border and "
+                "interior quotas are not met."
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+    ]
+
+
+def _result_items_from_tool(
+    result_dict: dict[str, Any],
+    result_images: list[types.Part],
+) -> list[dict[str, Any]]:
+    """Convert tool execution output to Interactions API result items."""
+    items: list[dict[str, Any]] = []
+    for rp in result_images:
+        text_val = getattr(rp, "text", None)
+        if text_val:
+            items.append({"type": "text", "text": text_val})
+        inline = getattr(rp, "inline_data", None)
+        if inline and getattr(inline, "data", None):
+            mime = getattr(inline, "mime_type", "image/jpeg")
+            b64 = base64.b64encode(inline.data).decode("utf-8")
+            items.append({
+                "type": "image", "data": b64, "mime_type": mime,
+                "resolution": "high",
+            })
+    # Always include the result dict as text for structured info
+    if not items:
+        items.append({"type": "text", "text": json.dumps(result_dict, indent=2)})
+    return items
+
+
+# ---------------------------------------------------------------------------
+# Main loop (Interactions API)
 # ---------------------------------------------------------------------------
 
 
@@ -943,10 +1163,7 @@ def _estimate_correspondences_tool_loop(
 
     slice_for_model = ImageEnhance.Brightness(prepared.slice_prep.image).enhance(1.5)
 
-    # Upscale atlas for better visual comparison. The raw atlas is tiny
-    # (e.g. 456x320) which makes landmark matching hard. Upscale to ~1K
-    # on the long edge — large enough for detail, small enough for inline
-    # image payloads in tool responses.
+    # Upscale atlas for better visual comparison.
     _ATLAS_TARGET_LONG_EDGE = 1024
     atlas_orig = prepared.atlas_prep.image
     aw, ah = atlas_orig.size
@@ -959,24 +1176,6 @@ def _estimate_correspondences_tool_loop(
     else:
         atlas_for_model = atlas_orig
 
-    # Prepare base image parts
-    atlas_part, slice_part, uploaded_files = _prepare_base_images(
-        client, prepared, atlas_override=atlas_for_model, slice_override=slice_for_model
-    )
-
-    # Build tools
-    tools = types.Tool(function_declarations=_ALL_TOOL_DECLARATIONS)
-
-    # Build config
-    config = types.GenerateContentConfig(
-        tools=[tools],
-        thinking_config=types.ThinkingConfig(
-            thinking_level=prepared.thinking_level,  # type: ignore[arg-type]
-        ),
-        temperature=prepared.temperature,
-        automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
-    )
-
     # Build prompt
     prompt_text = _build_tool_loop_prompt(
         atlas_name=atlas_name,
@@ -985,176 +1184,222 @@ def _estimate_correspondences_tool_loop(
         interior_count=interior_count,
     )
 
-    # Initial history
-    history: list[types.Content] = [
-        types.Content(
-            role="user",
-            parts=[
-                types.Part.from_text(text=prompt_text),
-                types.Part.from_text(text="Atlas reference image:"),
-                atlas_part,
-                types.Part.from_text(text="Histology slice image:"),
-                slice_part,
-                types.Part.from_text(text=json.dumps(_session_summary(session), indent=2)),
-            ],
+    # Upload base images via Files API for maximum resolution, falling back
+    # to inline base64 if the Files API is unavailable.
+    _ai_config = importlib.import_module("langslice.ai.config")
+    uploaded_files: list[Any] = []
+    if _ai_config.supports_file_api():
+        atlas_uri, atlas_mime, atlas_file = _upload_to_file_api(
+            client, atlas_for_model, fmt="PNG"
         )
+        slice_uri, slice_mime, slice_file = _upload_to_file_api(
+            client, slice_for_model, fmt="JPEG"
+        )
+        uploaded_files = [atlas_file, slice_file]
+        atlas_content: dict[str, Any] = {
+            "type": "image", "uri": atlas_uri,
+            "mime_type": atlas_mime, "resolution": "high",
+        }
+        slice_content: dict[str, Any] = {
+            "type": "image", "uri": slice_uri,
+            "mime_type": slice_mime, "resolution": "high",
+        }
+        if on_progress:
+            on_progress("  Uploaded base images via Files API (high resolution)")
+    else:
+        atlas_content = _pil_to_image_content(atlas_for_model, fmt="PNG")
+        slice_content = _pil_to_image_content(slice_for_model, fmt="JPEG")
+        if on_progress:
+            on_progress("  Using inline base64 images (high resolution)")
+
+    initial_input: list[dict[str, Any]] = [
+        {"type": "text", "text": prompt_text},
+        {"type": "text", "text": "Atlas reference image:"},
+        atlas_content,
+        {"type": "text", "text": "Histology slice image:"},
+        slice_content,
+        {"type": "text", "text": json.dumps(_session_summary(session), indent=2)},
     ]
 
-    accumulated_usage: dict[str, int] = {}
+    tools = _tool_dicts()
+    prev_id: str | None = None
 
-    try:
-        for iteration in range(1, prepared.tool_loop_max_steps + 1):
-            if on_progress:
-                on_progress(
-                    f"Registration tool loop: step {iteration}/{prepared.tool_loop_max_steps}..."
-                )
-
-            response = _agents._retry_generate(
-                client,
-                model=prepared.model_name,
-                contents=history,
-                config=config,
-                request_label=f"Registration tool-loop step {iteration}",
-                on_progress=on_progress,
+    for iteration in range(1, prepared.tool_loop_max_steps + 1):
+        if on_progress:
+            on_progress(
+                f"Registration tool loop: step {iteration}/{prepared.tool_loop_max_steps}..."
             )
 
-            # Track tokens
-            _accumulate_usage(accumulated_usage, getattr(response, "usage_metadata", None))
+        # Build the interaction request
+        create_kwargs: dict[str, Any] = {
+            "model": prepared.model_name,
+            "tools": tools,
+            "system_instruction": (
+                "You are an expert neuroanatomist placing matched landmark "
+                "points. Follow the instructions in the user message exactly."
+            ),
+            "generation_config": {"temperature": prepared.temperature, "max_output_tokens": 4000},
+        }
+        if prev_id is None:
+            create_kwargs["input"] = initial_input
+        else:
+            create_kwargs["input"] = current_input  # noqa: F821 — set below on prior iteration
+            create_kwargs["previous_interaction_id"] = prev_id
 
-            # Emit model trace event
-            model_content = response.candidates[0].content
-            _agents._emit_trace(
-                on_trace,
-                model_event(
-                    stage="registration",
-                    title="Tool-loop model response",
-                    summary=f"Iteration {iteration}: {len(model_content.parts)} parts",
-                    parts=[json_part({"iteration": iteration}, label="Model response metadata")],
-                    metadata={"workflow": "multimodal_tool_loop", "iteration": iteration},
-                ),
-            )
-
-            # Add model response to history
-            history.append(model_content)
-
-            # Process function calls
-            finished = False
-            function_response_parts: list[types.Part] = []
-            image_parts: list[types.Part] = []
-
-            # Debug: log what model returned (including thoughts)
-            fc_names = [p.function_call.name for p in model_content.parts if p.function_call]
-            if on_progress:
-                on_progress(f"  -> Model returned: {len(model_content.parts)} parts, functions={fc_names}")
-                for idx, p in enumerate(model_content.parts):
-                    p_type = "unknown"
-                    if p.function_call:
-                        p_type = f"function_call({p.function_call.name})"
-                    elif getattr(p, "thought", False) and getattr(p, "text", None):
-                        p_type = f"thought({len(p.text)} chars)"
-                        on_progress(f"  -> Thought: {p.text[:200].replace(chr(10), ' ')}")
-                    elif getattr(p, "text", None):
-                        p_type = f"text({len(p.text)} chars)"
-                        on_progress(f"  -> Text: {p.text[:120]}")
-                    elif getattr(p, "thought_signature", None):
-                        p_type = "thought_signature"
-                    else:
-                        # Dump all non-None attributes to understand unknown parts
-                        attrs = {k: type(v).__name__ for k, v in vars(p).items() if v is not None and not k.startswith("_")}
-                        p_type = f"unknown(attrs={attrs})"
-                    on_progress(f"  -> Part[{idx}]: {p_type}")
-
-            for part in model_content.parts:
-                if not part.function_call:
-                    continue
-
-                fc = part.function_call
-                if on_progress:
-                    on_progress(f"  -> FC: {fc.name}({fc.args})")
-                result_dict, result_images, is_finished = _execute_tool(
-                    fc,
-                    session=session,
-                    atlas_image=atlas_for_model,
-                    slice_image=slice_for_model,
-                    iteration=iteration,
-                    on_trace=on_trace,
-                )
-
-                # Save debug images per tool call if debug_dir is set
-                if prepared.registration_dir and result_images:
-                    step_dir = os.path.join(
-                        prepared.registration_dir,
-                        f"step_{iteration:02d}_{fc.name}",
-                    )
-                    os.makedirs(step_dir, exist_ok=True)
-                    img_idx = 0
-                    for rp in result_images:
-                        inline = getattr(rp, "inline_data", None)
-                        if inline and getattr(inline, "data", None):
-                            img = Image.open(io.BytesIO(inline.data))
-                            img.save(
-                                os.path.join(step_dir, f"image_{img_idx}.png"),
-                                format="PNG",
-                            )
-                            img_idx += 1
-                        text_val = getattr(rp, "text", None)
-                        if text_val:
-                            with open(
-                                os.path.join(step_dir, "context.txt"), "a", encoding="utf-8"
-                            ) as fh:
-                                fh.write(text_val + "\n")
-
-                function_response_parts.append(
-                    types.Part(
-                        function_response=types.FunctionResponse(
-                            name=fc.name,
-                            response=result_dict,
-                            id=fc.id,
-                        )
-                    )
-                )
-                image_parts.extend(result_images)
-
-                if is_finished:
-                    finished = True
-
-            # Send function responses + images in a single role="user" message.
-            all_response_parts = function_response_parts + image_parts
-            if all_response_parts:
-                history.append(
-                    types.Content(role="user", parts=all_response_parts)
-                )
-            else:
-                # Model returned text/thought but no function calls. We must send
-                # a user turn to avoid consecutive model turns, which stalls the loop.
-                placed_count = len(session.atlas_annotations)
-                total_needed = (border_count or 0) + (interior_count or 0)
-                history.append(
-                    types.Content(
-                        role="user",
-                        parts=[types.Part.from_text(
-                            text=f"Continue placing landmarks. You have "
-                            f"{placed_count}/{total_needed} placed points. "
-                            f"Use your tools to place the next point."
-                        )],
-                    )
-                )
-
-            if finished:
-                entries = _placed_tool_loop_entries(session)
-                logger.info("Tool loop token usage: %s", accumulated_usage)
-                session.metadata["token_usage"] = accumulated_usage
-                return entries
-
-        raise RuntimeError("Tool-loop registration exceeded the maximum number of steps")
-
-    finally:
-        # Clean up File API uploads
-        for f in uploaded_files:
+        # Call the Interactions API with retries
+        interaction = None
+        last_err = None
+        for attempt in range(1, 5):
             try:
-                client.files.delete(name=f.name)
-            except Exception:
-                logger.warning("Failed to delete uploaded file %s", getattr(f, "name", "unknown"))
-        # Always log token usage
-        logger.info("Tool loop token usage: %s", accumulated_usage)
-        session.metadata["token_usage"] = accumulated_usage
+                if on_progress:
+                    on_progress(f"  step {iteration} (attempt {attempt}/4): request started")
+                import time as _time
+                _t0 = _time.monotonic()
+                interaction = client.interactions.create(**create_kwargs)
+                _elapsed = _time.monotonic() - _t0
+                if on_progress:
+                    on_progress(f"  step {iteration} (attempt {attempt}/4): response in {_elapsed:.1f}s")
+                break
+            except Exception as exc:
+                last_err = exc
+                if on_progress:
+                    on_progress(f"  step {iteration} (attempt {attempt}/4): failed ({exc})")
+                    # Log input shape for debugging 400 errors
+                    inp = create_kwargs.get("input")
+                    if isinstance(inp, list):
+                        for ii, item in enumerate(inp):
+                            if isinstance(item, dict):
+                                itype = item.get("type", "?")
+                                if itype == "function_result":
+                                    result = item.get("result", {})
+                                    ritems = result.get("items", []) if isinstance(result, dict) else []
+                                    sizes = []
+                                    for ri in ritems:
+                                        if isinstance(ri, dict) and ri.get("type") == "image":
+                                            sizes.append(f"img:{len(ri.get('data',''))//1024}KB")
+                                        elif isinstance(ri, dict) and ri.get("type") == "text":
+                                            sizes.append(f"txt:{len(ri.get('text',''))}ch")
+                                    on_progress(f"    input[{ii}]: {itype} name={item.get('name')} items=[{', '.join(sizes)}]")
+                if attempt < 4:
+                    import time as _time
+                    _time.sleep(min(2 ** attempt, 8))
+        if interaction is None:
+            raise RuntimeError(f"Interactions API failed after 4 attempts: {last_err}")
+
+        prev_id = interaction.id
+
+        # Log outputs
+        fc_outputs = [o for o in interaction.outputs if getattr(o, "type", None) == "function_call"]
+        if on_progress:
+            on_progress(
+                f"  -> Status: {interaction.status}, "
+                f"outputs: {len(interaction.outputs)}, "
+                f"function_calls: {[o.name for o in fc_outputs]}"
+            )
+
+        # If no function calls, nudge the model
+        if not fc_outputs:
+            placed_count = len(session.atlas_annotations)
+            total_needed = (border_count or 0) + (interior_count or 0)
+            current_input: Any = [
+                {
+                    "type": "text",
+                    "text": (
+                        f"Continue placing landmarks. You have "
+                        f"{placed_count}/{total_needed} placed points. "
+                        f"Use your tools to place the next point."
+                    ),
+                }
+            ]
+            continue
+
+        # Process function calls
+        finished = False
+        result_contents: list[dict[str, Any]] = []
+
+        for fc_out in fc_outputs:
+            tool_name = fc_out.name
+            tool_args = dict(fc_out.arguments) if fc_out.arguments else {}
+            call_id = fc_out.id
+
+            if on_progress:
+                on_progress(f"  -> FC: {tool_name}({tool_args})")
+
+            # Build a lightweight shim so existing _execute_tool works
+            class _FCShim:
+                def __init__(self, name: str, args: dict, id: str):
+                    self.name = name
+                    self.args = args
+                    self.id = id
+
+            fc_shim = _FCShim(tool_name, tool_args, call_id)
+            result_dict, result_images, is_finished = _execute_tool(
+                fc_shim,
+                session=session,
+                atlas_image=atlas_for_model,
+                slice_image=slice_for_model,
+                iteration=iteration,
+                on_trace=on_trace,
+            )
+
+            # Save debug images
+            if prepared.registration_dir and result_images:
+                step_dir = os.path.join(
+                    prepared.registration_dir,
+                    f"step_{iteration:02d}_{tool_name}",
+                )
+                os.makedirs(step_dir, exist_ok=True)
+                img_idx = 0
+                for rp in result_images:
+                    inline = getattr(rp, "inline_data", None)
+                    if inline and getattr(inline, "data", None):
+                        img = Image.open(io.BytesIO(inline.data))
+                        img.save(
+                            os.path.join(step_dir, f"image_{img_idx}.png"),
+                            format="PNG",
+                        )
+                        img_idx += 1
+                    text_val = getattr(rp, "text", None)
+                    if text_val:
+                        with open(
+                            os.path.join(step_dir, "context.txt"), "a", encoding="utf-8"
+                        ) as fh:
+                            fh.write(text_val + "\n")
+
+            # Build function result for next turn.
+            # Send the structured result as a simple string in the function_result,
+            # and images as separate content items alongside it.
+            result_contents.append({
+                "type": "function_result",
+                "call_id": call_id,
+                "name": tool_name,
+                "result": json.dumps(result_dict),
+            })
+            # Add images and text labels as separate content items
+            for rp in result_images:
+                text_val = getattr(rp, "text", None)
+                if text_val:
+                    result_contents.append({"type": "text", "text": text_val})
+                inline = getattr(rp, "inline_data", None)
+                if inline and getattr(inline, "data", None):
+                    mime = getattr(inline, "mime_type", "image/jpeg")
+                    b64 = base64.b64encode(inline.data).decode("utf-8")
+                    result_contents.append({
+                        "type": "image", "data": b64, "mime_type": mime,
+                        "resolution": "high",
+                    })
+
+            if is_finished:
+                finished = True
+
+        # Set the input for the next turn
+        current_input = result_contents
+
+        if finished:
+            entries = _placed_tool_loop_entries(session)
+            logger.info("Tool loop completed via Interactions API")
+            _cleanup_uploaded_files(client, uploaded_files)
+            return entries
+
+    _cleanup_uploaded_files(client, uploaded_files)
+    raise RuntimeError("Tool-loop registration exceeded the maximum number of steps")
