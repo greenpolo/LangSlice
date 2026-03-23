@@ -24,6 +24,18 @@ def _add_register_parser(subparsers: argparse._SubParsersAction) -> None:
     reg.add_argument("--landmarks", type=int, default=14, help="Target landmark count")
     reg.add_argument("--vlm-resolution", type=int, default=2048, help="Max long-edge pixels for VLM")
     reg.add_argument("--temperature", type=float, default=None, help="Generation temperature")
+    reg.add_argument(
+        "--thinking",
+        default=None,
+        choices=["MINIMAL", "LOW", "MEDIUM", "HIGH"],
+        help="Gemini thinking level",
+    )
+    reg.add_argument(
+        "--media-resolution",
+        default="high",
+        choices=["low", "medium", "high", "ultra_high"],
+        help="Gemini media resolution for input images",
+    )
     reg.add_argument("--no-borders", action="store_true", help="Disable atlas region borders")
     reg.add_argument(
         "--border-count",
@@ -67,6 +79,8 @@ def _run_register(args: argparse.Namespace) -> None:
         vlm_config.set_model_name(args.model)
     if args.temperature is not None:
         vlm_config.set_temperature(args.temperature)
+    if args.thinking:
+        vlm_config.set_thinking_level(args.thinking)
 
     workflow = args.workflow
     if workflow is None:
@@ -165,6 +179,130 @@ def _run_register(args: argparse.Namespace) -> None:
         print(json.dumps(payload, indent=2))
 
 
+def _add_estimate_parser(subparsers: argparse._SubParsersAction) -> None:
+    est = subparsers.add_parser(
+        "estimate",
+        help="Estimate the AP position of a brain slice image",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    est.add_argument("image", help="Path to slice image (PNG, TIFF, JPEG)")
+    est.add_argument("--atlas", default="allen_mouse_25um", help="BrainGlobe atlas name")
+    est.add_argument(
+        "--workflow",
+        default="tool_use",
+        choices=["tool_use"],
+        help="AP estimation workflow. Currently only tool_use is supported.",
+    )
+    est.add_argument("--model", default=None, help="Gemini model name")
+    est.add_argument(
+        "--thinking",
+        default=None,
+        choices=["MINIMAL", "LOW", "MEDIUM", "HIGH"],
+        help="Gemini thinking level",
+    )
+    est.add_argument("--temperature", type=float, default=None, help="Generation temperature")
+    est.add_argument(
+        "--media-resolution",
+        default="high",
+        choices=["low", "medium", "high", "ultra_high"],
+        help="Gemini media resolution for input images",
+    )
+    est.add_argument("--vlm-resolution", type=int, default=2048, help="Max long-edge pixels for VLM")
+    est.add_argument("--max-iterations", type=int, default=20, help="Max tool-loop iterations")
+    est.add_argument("--exposure-boost", type=float, default=1.0,
+                      help="Brightness multiplier for target slice (e.g., 1.5 for 50%% boost)")
+    est.add_argument("--borders", action="store_true", help="Enable atlas region borders (off by default)")
+    est.add_argument(
+        "--out",
+        default=None,
+        help="Output directory for debug artifacts",
+    )
+    est.add_argument("--json", action="store_true", help="Print result JSON to stdout")
+
+
+def _run_estimate(args: argparse.Namespace) -> None:
+    import json
+    import os
+    from datetime import datetime
+    from pathlib import Path
+
+    from PIL import Image
+
+    from langslice.image_prep import normalize_image, prepare_image_for_vlm
+    from langslice.ai import config as vlm_config
+    from langslice.ai.estimator import estimate_position
+
+    # Configure model before anything touches the client.
+    if args.model:
+        vlm_config.set_model_name(args.model)
+    if args.temperature is not None:
+        vlm_config.set_temperature(args.temperature)
+    if args.thinking:
+        vlm_config.set_thinking_level(args.thinking)
+
+    # Load and downscale image.
+    print(f"Loading {args.image} ...")
+    raw_image = Image.open(args.image)
+    canonical = normalize_image(raw_image)
+    original_size = canonical.size
+    prep = prepare_image_for_vlm(canonical, max_long_edge=args.vlm_resolution)
+    image = prep.image
+    if args.exposure_boost != 1.0:
+        from PIL import ImageEnhance
+        image = ImageEnhance.Brightness(image.convert("RGB")).enhance(args.exposure_boost)
+    print(
+        f"  Original: {original_size[0]}x{original_size[1]} -> "
+        f"VLM input: {image.size[0]}x{image.size[1]}  "
+        f"(scale={prep.scale_factor:.3f}, max_edge={args.vlm_resolution}, "
+        f"exposure={args.exposure_boost:.1f}x)"
+    )
+
+    # Set up output directory.
+    debug_dir = None
+    if args.out:
+        out_dir = Path(args.out)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        debug_dir = str(out_dir)
+        os.environ["LANGSLICE_VLM_DEBUG_DIR"] = debug_dir
+
+    print(f"Atlas: {args.atlas}")
+    print(f"Model: {vlm_config.MODEL_NAME}  Thinking: {vlm_config.THINKING_LEVEL}  Temp: {vlm_config.TEMPERATURE}")
+    print(f"Max iterations: {args.max_iterations}")
+    if debug_dir:
+        print(f"Output: {debug_dir}")
+    print()
+
+    def on_progress(msg: str) -> None:
+        print(f"  {msg}")
+
+    # Run AP estimation.
+    result = estimate_position(
+        image=image,
+        atlas_name=args.atlas,
+        on_progress=on_progress,
+        max_iterations=args.max_iterations,
+        media_resolution=args.media_resolution,
+        show_borders=args.borders,
+    )
+
+    # Summary.
+    print()
+    print("AP Estimation complete")
+    print(f"  Position: {result.position_mm:.3f} mm")
+    print(f"  Reasoning: {result.reasoning}")
+    if result.debug_dir:
+        print(f"  Artifacts: {result.debug_dir}")
+
+    if args.json:
+        payload = {
+            "position_mm": result.position_mm,
+            "reasoning": result.reasoning,
+            "debug_dir": result.debug_dir,
+        }
+        print()
+        print(json.dumps(payload, indent=2))
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="langslice",
@@ -181,6 +319,9 @@ def main():
     # langslice register
     _add_register_parser(subparsers)
 
+    # langslice estimate
+    _add_estimate_parser(subparsers)
+
     args = parser.parse_args()
 
     if args.command == "gui":
@@ -190,6 +331,8 @@ def main():
         print(f"langslice {langslice.__version__}")
     elif args.command == "register":
         _run_register(args)
+    elif args.command == "estimate":
+        _run_estimate(args)
     else:
         parser.print_help()
         sys.exit(1)
