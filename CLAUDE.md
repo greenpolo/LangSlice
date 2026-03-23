@@ -40,6 +40,16 @@ The code is split into five modules with clear boundaries:
 
 Supporting utilities: `image_prep.py` (normalization, pixel-size detection, VLM downsampling), `agent_trace.py` (structured trace events), `cli.py` (argparse entry point).
 
+## Gemini API — ALWAYS Check Docs First
+
+The google-genai SDK is newer than your training data. **Before writing or modifying ANY code that uses the google-genai SDK**, you MUST look up the relevant API in context7 (`/googleapis/python-genai`). Never assume you know the API surface — check types, method signatures, and supported parameters before writing code. This applies to:
+
+- `langslice/ai/` (client config, estimator, batch)
+- `langslice/registration/` (agents, tool loop, image gen)
+- Any file importing `google.genai` or `google.genai.types`
+
+Common things to verify: `GenerateContentConfig` fields, `types.Part` constructors, Interactions API parameters, File API methods, thinking config, media resolution options.
+
 ## Key Conventions
 
 - AP coordinates are atlas-native millimeters from the anterior edge of the volume.
