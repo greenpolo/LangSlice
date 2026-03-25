@@ -209,8 +209,13 @@ def _add_estimate_parser(subparsers: argparse._SubParsersAction) -> None:
     )
     est.add_argument("--vlm-resolution", type=int, default=2048, help="Max long-edge pixels for VLM")
     est.add_argument("--max-iterations", type=int, default=20, help="Max tool-loop iterations")
-    est.add_argument("--exposure-boost", type=float, default=1.0,
-                      help="Brightness multiplier for target slice (e.g., 1.5 for 50%% boost)")
+    est.add_argument(
+        "--preprocess",
+        default="auto",
+        choices=["auto", "none"],
+        help="Image preprocessing: 'auto' applies adaptive CLAHE + brightness normalization, "
+        "'none' sends the raw image",
+    )
     est.add_argument("--borders", action="store_true", help="Enable atlas region borders (off by default)")
     est.add_argument(
         "--out",
@@ -247,14 +252,17 @@ def _run_estimate(args: argparse.Namespace) -> None:
     original_size = canonical.size
     prep = prepare_image_for_vlm(canonical, max_long_edge=args.vlm_resolution)
     image = prep.image
-    if args.exposure_boost != 1.0:
-        from PIL import ImageEnhance
-        image = ImageEnhance.Brightness(image.convert("RGB")).enhance(args.exposure_boost)
+    if args.preprocess == "auto":
+        from langslice.image_prep import adaptive_preprocess
+        image = adaptive_preprocess(image)
+        preprocess_label = "adaptive (CLAHE + brightness)"
+    else:
+        preprocess_label = "none"
     print(
         f"  Original: {original_size[0]}x{original_size[1]} -> "
         f"VLM input: {image.size[0]}x{image.size[1]}  "
         f"(scale={prep.scale_factor:.3f}, max_edge={args.vlm_resolution}, "
-        f"exposure={args.exposure_boost:.1f}x)"
+        f"preprocess={preprocess_label})"
     )
 
     # Set up output directory.

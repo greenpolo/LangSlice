@@ -77,6 +77,55 @@ def normalize_image(image: Image.Image) -> Image.Image:
     return image.convert("RGB")
 
 
+def adaptive_preprocess(
+    image: Image.Image,
+    *,
+    clahe_clip: float = 4.0,
+    clahe_tile: tuple[int, int] = (8, 8),
+    target_brightness: float = 90.0,
+    max_boost: float = 3.0,
+    channel_weights: tuple[float, float, float] = (0.15, 0.15, 0.70),
+) -> Image.Image:
+    """Adaptive preprocessing for VLM input: CLAHE + weighted blend + brightness.
+
+    Designed for fluorescent histology with DAPI (blue) as the structural
+    channel and viral tracers in red/green.  Produces a consistent grayscale
+    output that matches atlas appearance regardless of stain intensity.
+
+    Steps:
+        1. CLAHE on each R, G, B channel independently (local contrast)
+        2. Weighted blend to grayscale (default 70% blue + 15% red + 15% green)
+        3. Adaptive brightness boost to reach *target_brightness* mean
+    """
+    import cv2
+
+    arr = np.asarray(normalize_image(image), dtype=np.uint8)
+    r, g, b = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2]
+
+    clahe = cv2.createCLAHE(clipLimit=clahe_clip, tileGridSize=clahe_tile)
+    r_enh = clahe.apply(r).astype(np.float32)
+    g_enh = clahe.apply(g).astype(np.float32)
+    b_enh = clahe.apply(b).astype(np.float32)
+
+    wr, wg, wb = channel_weights
+    blended = wr * r_enh + wg * g_enh + wb * b_enh
+    blended = np.clip(blended, 0, 255)
+
+    brain_mask = blended > 10
+    if brain_mask.sum() > 0:
+        current_mean = float(blended[brain_mask].mean())
+        boost = min(target_brightness / max(current_mean, 1.0), max_boost)
+    else:
+        boost = 1.0
+
+    if boost > 1.05:
+        blended = blended * boost
+
+    blended = np.clip(blended, 0, 255).astype(np.uint8)
+    gray_rgb = np.stack([blended, blended, blended], axis=-1)
+    return Image.fromarray(gray_rgb)
+
+
 def infer_channel_labels(mode: str | None) -> tuple[str, ...]:
     """Infer simple UI labels for the source image channels."""
     cleaned = (mode or "").upper()
