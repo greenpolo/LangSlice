@@ -38,21 +38,30 @@ def _tool_dicts() -> list[dict[str, Any]]:
     return [
         {
             "type": "function",
-            "name": "fetch_atlas_slice",
+            "name": "fetch_atlas",
             "description": (
-                "Fetch a coronal brain atlas reference image at a specific "
-                "anterior-posterior position. The image will be shown to you. "
-                "Use this to visually compare against the target slice."
+                "Fetch atlas coronal sections at specific AP positions. Returns "
+                "a single labeled grid image for direct visual comparison. You "
+                "choose exactly which positions to see (1 to 8). Use this to "
+                "compare multiple positions at once — you can space them however "
+                "you like (evenly, densely around a candidate, etc.)."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "position_mm": {
-                        "type": "number",
-                        "description": "AP position in mm from the anterior edge of the atlas",
+                    "positions_mm": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "minItems": 1,
+                        "maxItems": 8,
+                        "description": (
+                            "List of AP positions in mm to fetch. Choose any "
+                            "positions you want — you can cluster them densely "
+                            "around a candidate or spread them widely."
+                        ),
                     },
                 },
-                "required": ["position_mm"],
+                "required": ["positions_mm"],
             },
         },
         {
@@ -80,52 +89,6 @@ def _tool_dicts() -> list[dict[str, Any]]:
                     },
                 },
                 "required": ["position_mm"],
-            },
-        },
-        {
-            "type": "function",
-            "name": "fetch_atlas_grid",
-            "description": (
-                "Fetch a 2x2 grid of atlas coronal sections spanning a range. "
-                "Returns a single labeled image with 4 evenly spaced atlas slices "
-                "for direct visual comparison. Each cell is labeled with its AP "
-                "position. Use this to quickly compare multiple positions at once."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "start_mm": {
-                        "type": "number",
-                        "description": "Start of the AP range in mm",
-                    },
-                    "end_mm": {
-                        "type": "number",
-                        "description": "End of the AP range in mm",
-                    },
-                },
-                "required": ["start_mm", "end_mm"],
-            },
-        },
-        {
-            "type": "function",
-            "name": "fetch_multiple_atlas_slices",
-            "description": (
-                "Fetch up to 5 coronal brain atlas reference images at specific "
-                "anterior-posterior positions. The images will be shown to you "
-                "individually. Use this when you need images at exact positions "
-                "rather than an evenly spaced range."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "positions_mm": {
-                        "type": "array",
-                        "items": {"type": "number"},
-                        "maxItems": 5,
-                        "description": "List of up to 5 AP positions in mm to fetch",
-                    },
-                },
-                "required": ["positions_mm"],
             },
         },
         {
@@ -176,11 +139,21 @@ def _build_atlas_grid(
     from langslice.image_prep import normalize_image
 
     atlas_obj = cast(Any, atlas)
-    cols = 2
+    n = min(len(positions), 8)
+
+    # Dynamic grid layout based on count
+    if n <= 2:
+        cols = n
+    elif n <= 4:
+        cols = 2
+    elif n <= 6:
+        cols = 3
+    else:
+        cols = 4
 
     # Fetch and normalize atlas slices
     slices: list[tuple[Image.Image, float]] = []
-    for pos in positions[:4]:
+    for pos in positions[:8]:
         try:
             if show_borders:
                 from langslice.atlas.core import get_composite_slice
@@ -285,7 +258,8 @@ def _is_broad_multi_sweep(positions: list[float]) -> bool:
 def _is_narrow_multi_sweep(positions: list[float]) -> bool:
     if len(positions) < 3:
         return False
-    return (max(positions) - min(positions)) <= 1.5
+    # Require a tight sweep: total span ≤ 1.0mm (was 1.5mm)
+    return (max(positions) - min(positions)) <= 1.0
 
 
 def _has_neighbor_bracket(
@@ -294,7 +268,7 @@ def _has_neighbor_bracket(
     *,
     pos_lo: float,
     pos_hi: float,
-    tolerance: float = 0.35,
+    tolerance: float = 0.25,
     edge_margin: float = 0.25,
 ) -> bool:
     unique_positions = _sorted_unique_positions(fetched_positions)
@@ -374,19 +348,17 @@ def _extract_function_calls(
 def _build_nudge_text(state: _APLoopState) -> str:
     if not state.saw_broad_sweep:
         return (
-            "Please continue with a broad coarse sweep now. Call `fetch_atlas_grid` "
-            "with a wide range (e.g., start_mm=2, end_mm=10) to see 4 atlas sections "
-            "spanning most of the brain and find the correct neighborhood."
+            "Please continue. Call `fetch_atlas` with widely spaced positions "
+            "(e.g., [2, 4, 6, 8, 10]) to find the correct neighborhood."
         )
     if not state.saw_narrow_sweep:
         return (
-            "Please continue with a narrowed sweep now. Call `fetch_atlas_grid` "
-            "with a tighter range around your best candidate (e.g., 1-2mm span) "
-            "to narrow down the exact position."
+            "Please narrow down. Call `fetch_atlas` with tightly spaced positions "
+            "around your best candidate (e.g., [4.0, 4.2, 4.4, 4.6, 4.8])."
         )
     return (
-        "Please continue. Before submitting, verify your leading candidate by checking "
-        "neighboring positions using `fetch_atlas_grid` or `fetch_atlas_slice`."
+        "Please continue. Verify your candidate by checking nearby positions "
+        "with `fetch_atlas`, or call `submit_estimate` if confident."
     )
 
 
@@ -474,131 +446,40 @@ def _process_ap_function_calls(
         if on_progress:
             on_progress(f"Tool call [{iteration + 1}]: {name}({args})")
 
-        if name == "fetch_atlas_slice":
-            pos = float(args.get("position_mm", (pos_lo + pos_hi) / 2))
-            pos = max(pos_lo, min(pos_hi, pos))
-            state.fetched_positions.append(pos)
-            try:
-                if show_borders:
-                    from langslice.atlas.core import get_composite_slice
-                    ref_img = get_composite_slice(atlas_obj, pos)
-                else:
-                    from langslice.atlas.core import get_reference_slice
-                    ref_img = get_reference_slice(atlas_obj, pos)
-                ref_prepared = normalize_image(ref_img)
-                scale = target_h / ref_prepared.height
-                new_w = max(1, int(round(ref_prepared.width * scale)))
-                new_h = max(1, int(round(ref_prepared.height * scale)))
-                ref_scaled = ref_prepared.resize((new_w, new_h), _RESAMPLE_LANCZOS)
-                ref_bytes = _image_to_bytes(ref_scaled)
-                state.images_fetched += 1
+        if name == "fetch_atlas":
+            positions_list = args.get("positions_mm", [])
+            if not isinstance(positions_list, list):
+                positions_list = []
 
-                if run_dir:
-                    ref_scaled.save(
-                        os.path.join(run_dir, f"tool_{iteration + 1:02d}_slice_{pos:.2f}mm.jpg"),
-                        quality=85,
-                    )
+            positions = [max(pos_lo, min(pos_hi, float(p))) for p in positions_list[:8]]
 
+            if not positions:
                 _append_response(
                     call_id=call_id,
                     name=name,
-                    response={
-                        "position_mm": pos,
-                        "status": "ok",
-                        "description": f"Atlas coronal section at {pos:.2f}mm from anterior edge",
-                    },
-                )
-                _append_image(ref_scaled, ref_bytes)
-                state.reasoning_log.append(
-                    {
-                        "iteration": iteration + 1,
-                        "tool": name,
-                        "args": args,
-                        "result": f"Image at {pos:.2f}mm via base64_inline",
-                    }
-                )
-                image_path = (
-                    os.path.join(run_dir, f"tool_{iteration + 1:02d}_slice_{pos:.2f}mm.jpg")
-                    if run_dir
-                    else None
-                )
-                _emit_trace(
-                    on_trace,
-                    tool_result_event(
-                        stage="ap",
-                        tool_name=name,
-                        summary=f"Fetched atlas slice at {pos:.2f} mm",
-                        parts=[
-                            image_part_from_pil(
-                                ref_scaled,
-                                label=f"Atlas slice {pos:.2f} mm",
-                                image_bytes=ref_bytes,
-                                path=image_path,
-                                metadata={"transport": "base64_inline"},
-                            )
-                        ],
-                        metadata={
-                            "iteration": iteration + 1,
-                            "position_mm": round(pos, 3),
-                            "transport": "base64_inline",
-                        },
-                    ),
-                )
-            except ValueError as exc:
-                _append_response(
-                    call_id=call_id,
-                    name=name,
-                    response={"status": "error", "error": str(exc)},
+                    response={"status": "error", "error": "No valid positions provided"},
                     is_error=True,
                 )
-                state.reasoning_log.append(
-                    {
-                        "iteration": iteration + 1,
-                        "tool": name,
-                        "args": args,
-                        "result": f"Error: {exc}",
-                    }
-                )
-                _emit_trace(
-                    on_trace,
-                    tool_result_event(
-                        stage="ap",
-                        tool_name=name,
-                        summary=f"Error: {exc}",
-                        parts=[json_part({"error": str(exc)}, label="Error")],
-                        metadata={"iteration": iteration + 1, "status": "error"},
-                    ),
-                )
+                continue
 
-        elif name == "fetch_atlas_grid":
-            start = float(args.get("start_mm", pos_lo))
-            end = float(args.get("end_mm", pos_hi))
-            start = max(pos_lo, min(pos_hi, start))
-            end = max(pos_lo, min(pos_hi, end))
-            if end <= start:
-                end = start + 1.0
-
-            # 4 evenly spaced positions
-            step = (end - start) / 3
-            positions = [round(start + i * step, 3) for i in range(4)]
             state.fetched_positions.extend(positions)
-
             if _is_broad_multi_sweep(positions):
                 state.saw_broad_sweep = True
             if _is_narrow_multi_sweep(positions):
                 state.saw_narrow_sweep = True
 
             grid_img = _build_atlas_grid(
-                atlas, positions,
-                show_borders=show_borders,
+                atlas, positions, show_borders=show_borders,
             )
             grid_bytes = _image_to_bytes(grid_img)
+            state.images_fetched += len(positions)
 
+            pos_label = ", ".join(f"{p:.2f}" for p in positions)
             if run_dir:
                 grid_img.save(
                     os.path.join(
                         run_dir,
-                        f"tool_{iteration + 1:02d}_grid_{start:.2f}-{end:.2f}mm.jpg",
+                        f"tool_{iteration + 1:02d}_atlas_{len(positions)}x.jpg",
                     ),
                     quality=85,
                 )
@@ -610,20 +491,18 @@ def _process_ap_function_calls(
                     "status": "ok",
                     "positions_mm": positions,
                     "description": (
-                        f"2x2 grid of atlas sections from {start:.2f} to {end:.2f}mm. "
-                        f"Positions: {', '.join(f'{p:.2f}mm' for p in positions)}. "
-                        "Each cell is labeled with its AP position."
+                        f"Grid of {len(positions)} atlas sections at: {pos_label} mm. "
+                        "Each cell is numbered and labeled with its AP position."
                     ),
                 },
             )
             _append_image(grid_img, grid_bytes)
-            state.images_fetched += 4
             state.reasoning_log.append(
                 {
                     "iteration": iteration + 1,
                     "tool": name,
                     "args": args,
-                    "result": f"Grid {start:.2f}-{end:.2f}mm: {positions}",
+                    "result": f"Grid: [{pos_label}] mm",
                 }
             )
             _emit_trace(
@@ -631,120 +510,11 @@ def _process_ap_function_calls(
                 tool_result_event(
                     stage="ap",
                     tool_name=name,
-                    summary=f"Returned 2x2 atlas grid {start:.2f}-{end:.2f}mm",
+                    summary=f"Returned {len(positions)}-cell atlas grid",
                     metadata={
                         "iteration": iteration + 1,
                         "positions": positions,
                     },
-                ),
-            )
-
-        elif name == "fetch_multiple_atlas_slices":
-            positions_list = args.get("positions_mm", [])
-            if not isinstance(positions_list, list):
-                positions_list = []
-
-            positions = [max(pos_lo, min(pos_hi, float(p))) for p in positions_list[:5]]
-            state.fetched_positions.extend(positions)
-            if positions and _is_broad_multi_sweep(positions):
-                state.saw_broad_sweep = True
-            if positions and _is_narrow_multi_sweep(positions):
-                state.saw_narrow_sweep = True
-
-            if not positions:
-                _append_response(
-                    call_id=call_id,
-                    name=name,
-                    response={"status": "error", "error": "No valid positions provided"},
-                    is_error=True,
-                )
-                state.reasoning_log.append(
-                    {
-                        "iteration": iteration + 1,
-                        "tool": name,
-                        "args": args,
-                        "result": "Error: empty input",
-                    }
-                )
-                continue
-
-            successes: list[str] = []
-            image_parts: list[dict[str, object]] = []
-
-            for pos in positions:
-                try:
-                    if show_borders:
-                        from langslice.atlas.core import get_composite_slice
-                        ref_img = get_composite_slice(atlas_obj, pos)
-                    else:
-                        from langslice.atlas.core import get_reference_slice
-                        ref_img = get_reference_slice(atlas_obj, pos)
-                    ref_prepared = normalize_image(ref_img)
-                    scale = target_h / ref_prepared.height
-                    new_w = max(1, int(round(ref_prepared.width * scale)))
-                    new_h = max(1, int(round(ref_prepared.height * scale)))
-                    ref_scaled = ref_prepared.resize((new_w, new_h), _RESAMPLE_LANCZOS)
-                    ref_bytes = _image_to_bytes(ref_scaled)
-                    state.images_fetched += 1
-
-                    if run_dir:
-                        ref_scaled.save(
-                            os.path.join(
-                                run_dir, f"tool_{iteration + 1:02d}_multi_{pos:.2f}mm.jpg"
-                            ),
-                            quality=85,
-                        )
-
-                    _append_response(
-                        call_id=call_id,
-                        name=name,
-                        response={
-                            "position_mm": pos,
-                            "status": "ok",
-                            "description": f"Atlas coronal section at {pos:.2f}mm",
-                        },
-                    )
-                    _append_image(ref_scaled, ref_bytes)
-                    successes.append(f"{pos:.2f}mm")
-                    image_path = (
-                        os.path.join(run_dir, f"tool_{iteration + 1:02d}_multi_{pos:.2f}mm.jpg")
-                        if run_dir
-                        else None
-                    )
-                    image_parts.append(
-                        image_part_from_pil(
-                            ref_scaled,
-                            label=f"Atlas slice {pos:.2f} mm",
-                            image_bytes=ref_bytes,
-                            path=image_path,
-                            metadata={"transport": "base64_inline"},
-                        )
-                    )
-                except Exception as exc:
-                    _append_response(
-                        call_id=call_id,
-                        name=name,
-                        response={"position_mm": pos, "status": "error", "error": str(exc)},
-                        is_error=True,
-                    )
-
-            state.reasoning_log.append(
-                {
-                    "iteration": iteration + 1,
-                    "tool": name,
-                    "args": args,
-                    "result": f"Fetched {len(successes)} slices: {', '.join(successes)}",
-                }
-            )
-            _emit_trace(
-                on_trace,
-                tool_result_event(
-                    stage="ap",
-                    tool_name=name,
-                    summary=f"Fetched {len(successes)} atlas slices",
-                    parts=image_parts
-                    or [json_part({"positions_mm": positions}, label="Positions")],
-                    metadata={"iteration": iteration + 1, "positions_mm": positions},
                 ),
             )
 
