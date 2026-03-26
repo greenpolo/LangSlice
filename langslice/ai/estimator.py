@@ -417,6 +417,7 @@ def estimate_position(
     max_iterations: int = 20,
     media_resolution: str = "high",
     show_borders: bool = False,
+    anatomy_hints: str = "",
 ) -> APResult:
     """Agentic AP estimation using tool-use with self-correction.
 
@@ -513,16 +514,20 @@ def estimate_position(
         "while larger mm values move posterior toward the cerebellum and brainstem. "
         "You have tools to fetch atlas reference images at any AP coordinate, query which "
         "brain regions exist at a given position, and get atlas metadata.\n\n"
+        "{anatomy_hints}"
         "RECOMMENDED STRATEGY:\n"
-        "1. Coarse Sweep: Call `fetch_multiple_atlas_slices` with 4-5 widely spaced coordinates "
-        "   (e.g., 2.0, 4.0, 6.0, 8.0) as your first real image search step to instantly find the correct neighborhood.\n"
-        "2. Finer Search: Identify the closest match, then call `fetch_multiple_atlas_slices` "
-        "   again around that match with tighter spacing (e.g., +/-0.5 mm).\n"
-        "3. Verification: Once narrowed down, check specific structural landmarks or use "
-        "   `get_region_names` to confirm anatomical identity. Before submitting, compare at least one lower and one higher neighboring AP position around your leading candidate.\n"
-        "4. Submit: Call `submit_estimate` only when you are highly confident.\n\n"
+        "1. Look at the target slice and estimate its AP region based on "
+        "   visible anatomy.\n"
+        "2. Call `fetch_atlas_grid` with your estimated range to see 4 labeled "
+        "   atlas sections for direct visual comparison.\n"
+        "3. Narrow down: Call `fetch_atlas_grid` with a tighter range.\n"
+        "4. Fine-tune: Use `fetch_atlas_grid` with a narrow range (e.g., 0.5mm) "
+        "   or `fetch_atlas_slice` for individual positions.\n"
+        "5. Cross-check: If the atlas images don't look similar to the target, "
+        "   GO BACK and try a different region.\n"
+        "6. Submit: Call `submit_estimate` when confident.\n\n"
         "Think carefully before each tool call, but always follow up with an action."
-    )
+    ).format(anatomy_hints=anatomy_hints)
 
     feature_flags = vlm_config.feature_flags()
     temperature = vlm_config.TEMPERATURE
@@ -724,6 +729,7 @@ def estimate_position(
                 target_h=target_h,
                 run_dir=run_dir,
                 state=state,
+                target_image=target_prepared,
                 media_resolution=media_resolution,
                 show_borders=show_borders,
                 on_progress=_progress,

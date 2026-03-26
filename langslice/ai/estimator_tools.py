@@ -84,12 +84,36 @@ def _tool_dicts() -> list[dict[str, Any]]:
         },
         {
             "type": "function",
+            "name": "fetch_atlas_grid",
+            "description": (
+                "Fetch a 2x2 grid of atlas coronal sections spanning a range. "
+                "Returns a single labeled image with 4 evenly spaced atlas slices "
+                "for direct visual comparison. Each cell is labeled with its AP "
+                "position. Use this to quickly compare multiple positions at once."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "start_mm": {
+                        "type": "number",
+                        "description": "Start of the AP range in mm",
+                    },
+                    "end_mm": {
+                        "type": "number",
+                        "description": "End of the AP range in mm",
+                    },
+                },
+                "required": ["start_mm", "end_mm"],
+            },
+        },
+        {
+            "type": "function",
             "name": "fetch_multiple_atlas_slices",
             "description": (
-                "Fetch up to 5 coronal brain atlas reference images at multiple "
-                "anterior-posterior positions at once. The images will be shown to you "
-                "in order. Use this to perform a rapid coarse sweep (e.g., check every 2mm) "
-                "to quickly narrow down the general neighborhood."
+                "Fetch up to 5 coronal brain atlas reference images at specific "
+                "anterior-posterior positions. The images will be shown to you "
+                "individually. Use this when you need images at exact positions "
+                "rather than an evenly spaced range."
             ),
             "parameters": {
                 "type": "object",
@@ -134,6 +158,111 @@ def _tool_dicts() -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 
+def _build_atlas_grid(
+    atlas: object,
+    positions: list[float],
+    *,
+    target_image: Image.Image | None = None,
+    grid_width: int = 2048,
+    show_borders: bool = False,
+) -> Image.Image:
+    """Build a comparison image: target slice (left) + 2x2 atlas grid (right).
+
+    If *target_image* is provided, it is placed on the left at its natural
+    aspect ratio, scaled to match the grid height.  The atlas grid occupies
+    the right side.  If no target, returns just the 2x2 grid.
+    """
+    from PIL import ImageDraw, ImageFont
+    from langslice.image_prep import normalize_image
+
+    atlas_obj = cast(Any, atlas)
+    cols = 2
+
+    # Fetch and normalize atlas slices
+    slices: list[tuple[Image.Image, float]] = []
+    for pos in positions[:4]:
+        try:
+            if show_borders:
+                from langslice.atlas.core import get_composite_slice
+                ref_img = get_composite_slice(atlas_obj, pos)
+            else:
+                from langslice.atlas.core import get_reference_slice
+                ref_img = get_reference_slice(atlas_obj, pos)
+            slices.append((normalize_image(ref_img), pos))
+        except (ValueError, IndexError):
+            pass
+
+    if not slices:
+        return Image.new("RGB", (grid_width, grid_width // 2), (0, 0, 0))
+
+    label_height = 100
+    gap = 12
+
+    try:
+        font_large = ImageFont.truetype("arial.ttf", 70)
+        font_small = ImageFont.truetype("arial.ttf", 50)
+    except (OSError, IOError):
+        font_large = ImageFont.load_default()
+        font_small = font_large
+
+    # Calculate atlas grid dimensions
+    cell_width = grid_width // cols
+    sample_w, sample_h = slices[0][0].size
+    aspect = sample_h / sample_w
+    cell_img_height = int(cell_width * aspect)
+    cell_height = cell_img_height + label_height
+    rows = (len(slices) + cols - 1) // cols
+    grid_height = rows * cell_height
+
+    # Scale target to match grid height (preserve aspect ratio)
+    target_section_width = 0
+    target_resized = None
+    if target_image is not None:
+        tw, th = target_image.size
+        target_img_height = grid_height - label_height
+        target_scale = target_img_height / th
+        target_section_width = int(tw * target_scale) + gap
+        target_resized = target_image.resize(
+            (int(tw * target_scale), target_img_height),
+            Image.Resampling.LANCZOS,
+        )
+
+    total_width = target_section_width + grid_width
+    canvas = Image.new("RGB", (total_width, grid_height), (0, 0, 0))
+    draw = ImageDraw.Draw(canvas)
+
+    # Draw target on left
+    if target_resized is not None:
+        canvas.paste(target_resized.convert("RGB"), (0, 0))
+        label = "TARGET SLICE"
+        bbox = draw.textbbox((0, 0), label, font=font_large)
+        text_w = bbox[2] - bbox[0]
+        text_x = (target_section_width - gap - text_w) // 2
+        text_y = grid_height - label_height + 10
+        draw.text((text_x, text_y), label, fill=(255, 200, 0), font=font_large)
+
+    # Draw 2x2 atlas grid on right
+    for idx, (img, pos) in enumerate(slices):
+        row = idx // cols
+        col = idx % cols
+        x = target_section_width + col * cell_width
+        y = row * cell_height
+
+        upscaled = img.resize(
+            (cell_width - gap, cell_img_height), Image.Resampling.LANCZOS
+        )
+        canvas.paste(upscaled.convert("RGB"), (x, y))
+
+        label = f"[{idx + 1}] {pos:.2f} mm"
+        bbox = draw.textbbox((0, 0), label, font=font_small)
+        text_w = bbox[2] - bbox[0]
+        text_x = x + (cell_width - gap - text_w) // 2
+        text_y = y + cell_img_height + 8
+        draw.text((text_x, text_y), label, fill=(255, 255, 255), font=font_small)
+
+    return canvas
+
+
 def _sorted_unique_positions(
     positions: list[float],
     *,
@@ -147,9 +276,10 @@ def _sorted_unique_positions(
 
 
 def _is_broad_multi_sweep(positions: list[float]) -> bool:
-    if len(positions) < 4:
+    # Broad sweep no longer enforced — any grid/multi fetch counts
+    if len(positions) < 3:
         return False
-    return (max(positions) - min(positions)) >= 3.0
+    return True
 
 
 def _is_narrow_multi_sweep(positions: list[float]) -> bool:
@@ -244,17 +374,19 @@ def _extract_function_calls(
 def _build_nudge_text(state: _APLoopState) -> str:
     if not state.saw_broad_sweep:
         return (
-            "Please continue with a broad coarse sweep now. Call `fetch_multiple_atlas_slices` "
-            "with 4-5 widely spaced AP positions to find the correct neighborhood before reasoning further."
+            "Please continue with a broad coarse sweep now. Call `fetch_atlas_grid` "
+            "with a wide range (e.g., start_mm=2, end_mm=10) to see 4 atlas sections "
+            "spanning most of the brain and find the correct neighborhood."
         )
     if not state.saw_narrow_sweep:
         return (
-            "Please continue with a narrowed sweep now. Call `fetch_multiple_atlas_slices` "
-            "around your best current neighborhood with tighter spacing before considering submission."
+            "Please continue with a narrowed sweep now. Call `fetch_atlas_grid` "
+            "with a tighter range around your best candidate (e.g., 1-2mm span) "
+            "to narrow down the exact position."
         )
     return (
-        "Please continue. Before submitting, verify your leading candidate by checking at least one "
-        "lower and one higher neighboring AP position around it using `fetch_multiple_atlas_slices` or `fetch_atlas_slice`."
+        "Please continue. Before submitting, verify your leading candidate by checking "
+        "neighboring positions using `fetch_atlas_grid` or `fetch_atlas_slice`."
     )
 
 
@@ -273,6 +405,7 @@ def _process_ap_function_calls(
     target_h: int,
     run_dir: str | None,
     state: _APLoopState,
+    target_image: Image.Image | None = None,
     media_resolution: str = "high",
     show_borders: bool = False,
     on_progress: Callable[[str], None] | None = None,
@@ -436,6 +569,75 @@ def _process_ap_function_calls(
                         metadata={"iteration": iteration + 1, "status": "error"},
                     ),
                 )
+
+        elif name == "fetch_atlas_grid":
+            start = float(args.get("start_mm", pos_lo))
+            end = float(args.get("end_mm", pos_hi))
+            start = max(pos_lo, min(pos_hi, start))
+            end = max(pos_lo, min(pos_hi, end))
+            if end <= start:
+                end = start + 1.0
+
+            # 4 evenly spaced positions
+            step = (end - start) / 3
+            positions = [round(start + i * step, 3) for i in range(4)]
+            state.fetched_positions.extend(positions)
+
+            if _is_broad_multi_sweep(positions):
+                state.saw_broad_sweep = True
+            if _is_narrow_multi_sweep(positions):
+                state.saw_narrow_sweep = True
+
+            grid_img = _build_atlas_grid(
+                atlas, positions,
+                show_borders=show_borders,
+            )
+            grid_bytes = _image_to_bytes(grid_img)
+
+            if run_dir:
+                grid_img.save(
+                    os.path.join(
+                        run_dir,
+                        f"tool_{iteration + 1:02d}_grid_{start:.2f}-{end:.2f}mm.jpg",
+                    ),
+                    quality=85,
+                )
+
+            _append_response(
+                call_id=call_id,
+                name=name,
+                response={
+                    "status": "ok",
+                    "positions_mm": positions,
+                    "description": (
+                        f"2x2 grid of atlas sections from {start:.2f} to {end:.2f}mm. "
+                        f"Positions: {', '.join(f'{p:.2f}mm' for p in positions)}. "
+                        "Each cell is labeled with its AP position."
+                    ),
+                },
+            )
+            _append_image(grid_img, grid_bytes)
+            state.images_fetched += 4
+            state.reasoning_log.append(
+                {
+                    "iteration": iteration + 1,
+                    "tool": name,
+                    "args": args,
+                    "result": f"Grid {start:.2f}-{end:.2f}mm: {positions}",
+                }
+            )
+            _emit_trace(
+                on_trace,
+                tool_result_event(
+                    stage="ap",
+                    tool_name=name,
+                    summary=f"Returned 2x2 atlas grid {start:.2f}-{end:.2f}mm",
+                    metadata={
+                        "iteration": iteration + 1,
+                        "positions": positions,
+                    },
+                ),
+            )
 
         elif name == "fetch_multiple_atlas_slices":
             positions_list = args.get("positions_mm", [])
