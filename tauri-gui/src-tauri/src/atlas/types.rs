@@ -62,9 +62,10 @@ pub struct AtlasState {
     pub metadata: AtlasMetadata,
     pub structures: Vec<AtlasStructure>,
     pub structure_map: HashMap<u32, AtlasStructure>,
-    /// Lazy-loaded: only read from disk when a 2D view needs it.
-    pub reference_volume: Option<Array3<u16>>,
+    pub reference_volume: Array3<u16>,
     pub annotation_volume: Array3<u32>,
+    /// Additional reference volumes (e.g. Nissl). Key = name, value = volume.
+    pub additional_volumes: HashMap<String, Array3<u16>>,
     /// Pre-computed border volume: 1 = border pixel, 0 = background.
     /// Computed once at load time from annotation_volume.
     pub border_volume: Array3<u8>,

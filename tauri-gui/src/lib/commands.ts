@@ -38,6 +38,73 @@ export async function getBorderVolume(): Promise<BorderVolumeResult> {
   return invoke<BorderVolumeResult>("get_border_volume");
 }
 
+export interface AllVolumesResult {
+  reference: string; // base64 u8 volume
+  additional: Record<string, string>; // name → base64 u8 volume
+  additionalNames: string[];
+  depth: number;
+  height: number;
+  width: number;
+}
+
+export async function getAllVolumes(): Promise<AllVolumesResult> {
+  return invoke<AllVolumesResult>("get_all_volumes");
+}
+
+export async function runEstimate(params: {
+  imagePath: string;
+  atlas: string;
+  model: string;
+  thinking: string;
+  temperature: number;
+  vlmResolution: number;
+  maxIterations: number;
+  workflow: string;
+}): Promise<Record<string, unknown>> {
+  return invoke<Record<string, unknown>>("run_estimate", params);
+}
+
+export async function runRegister(params: {
+  imagePath: string;
+  positionMm: number;
+  atlas: string;
+  model: string;
+  thinking: string;
+  temperature: number;
+  landmarks: number;
+  vlmResolution: number;
+  workflow: string;
+}): Promise<Record<string, unknown>> {
+  return invoke<Record<string, unknown>>("run_register", params);
+}
+
+export async function runExport(params: {
+  imagePath: string;
+  positionMm: number;
+  atlas: string;
+  outputDir: string;
+}): Promise<string> {
+  return invoke<string>("run_export", params);
+}
+
+export interface LoadedSliceImage {
+  image: string; // base64 PNG
+  originalWidth: number;
+  originalHeight: number;
+  displayWidth: number;
+  displayHeight: number;
+}
+
+export async function loadSliceImage(
+  path: string,
+  maxEdge?: number,
+): Promise<LoadedSliceImage> {
+  return invoke<LoadedSliceImage>("load_slice_image", {
+    path,
+    maxEdge: maxEdge ?? 2048,
+  });
+}
+
 export interface ImageFileInfo {
   path: string;
   name: string;

@@ -5,16 +5,43 @@ export function SettingsPanel() {
   const currentApMm = useAppStore((s) => s.currentApMm);
   const setApPosition = useAppStore((s) => s.setApPosition);
   const selectedBrainId = useAppStore((s) => s.selectedBrainId);
+  const selectedSliceIndex = useAppStore((s) => s.selectedSliceIndex);
+  const sliceImageLoading = useAppStore((s) => s.sliceImageLoading);
   const brains = useAppStore((s) => s.brains);
+  const selectSlice = useAppStore((s) => s.selectSlice);
+  const pipelineRunning = useAppStore((s) => s.pipelineRunning);
+  const runPipeline = useAppStore((s) => s.runPipeline);
+  const exportResults = useAppStore((s) => s.exportResults);
+
+  // Agent settings
+  const agentModel = useAppStore((s) => s.agentModel);
+  const agentWorkflow = useAppStore((s) => s.agentWorkflow);
+  const agentThinking = useAppStore((s) => s.agentThinking);
+  const agentTemperature = useAppStore((s) => s.agentTemperature);
+  const agentLandmarks = useAppStore((s) => s.agentLandmarks);
+  const agentVlmResolution = useAppStore((s) => s.agentVlmResolution);
+  const agentMaxIterations = useAppStore((s) => s.agentMaxIterations);
+  const setSetting = useAppStore((s) => s.setAgentSetting);
 
   const selectedBrain = brains.find((b) => b.id === selectedBrainId);
+  const selectedSlice = selectedBrain && selectedSliceIndex !== null
+    ? selectedBrain.slices[selectedSliceIndex] : null;
+  const canRun = selectedSlice && !pipelineRunning;
+  const canExport = selectedSlice && selectedSlice.apMm !== undefined;
 
   return (
     <div className="panel-left">
-      {/* Brain slice list */}
+      {/* Slice list */}
       {selectedBrain && (
-        <div className="section-block">
-          <div className="section-label">Slices</div>
+        <div className="section-block" style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+          <div className="section-label">
+            Slices
+            {selectedBrain.slices.length > 0 && (
+              <span style={{ float: "right", textTransform: "none", letterSpacing: 0 }}>
+                {selectedBrain.slices.length}
+              </span>
+            )}
+          </div>
           {selectedBrain.slices.length === 0 ? (
             <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--text-dim)" }}>
               No images loaded
@@ -22,7 +49,11 @@ export function SettingsPanel() {
           ) : (
             <div className="slice-list">
               {selectedBrain.slices.map((slice, i) => (
-                <div key={i} className="slice-list-item">
+                <div
+                  key={i}
+                  className={`slice-list-item ${selectedSliceIndex === i ? "slice-list-item--selected" : ""}`}
+                  onClick={() => selectSlice(i)}
+                >
                   <span className="slice-list-status">
                     {slice.status === "done" ? "\u2713" :
                      slice.status === "running" ? "\u27F3" : "\u25CB"}
@@ -35,23 +66,112 @@ export function SettingsPanel() {
               ))}
             </div>
           )}
+          {sliceImageLoading && (
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-dim)", marginTop: 6 }}>
+              Loading image...
+            </div>
+          )}
         </div>
       )}
 
-      {/* Atlas Info */}
-      {atlasInfo && (
-        <div className="section-block">
-          <div className="section-label">Atlas</div>
-          <div className="info-grid">
-            <span className="info-key">Name</span>
-            <span className="info-val">{atlasInfo.name}</span>
-            <span className="info-key">Shape</span>
-            <span className="info-val">{atlasInfo.shape.join(" x ")}</span>
-            <span className="info-key">AP</span>
-            <span className="info-val">{atlasInfo.ap_min_mm.toFixed(1)} - {atlasInfo.ap_max_mm.toFixed(1)} mm</span>
-          </div>
+      {/* Run / Export buttons */}
+      <div className="section-block">
+        <button
+          className="btn-primary"
+          onClick={runPipeline}
+          disabled={!canRun}
+          style={{ marginBottom: 6 }}
+        >
+          {pipelineRunning ? "Running..." : "Run Agent"}
+        </button>
+        <button
+          className="btn-primary"
+          onClick={exportResults}
+          disabled={!canExport}
+          style={{ background: canExport ? "var(--bg-surface)" : undefined, color: canExport ? "var(--accent)" : undefined, border: "1px solid var(--border)" }}
+        >
+          Export
+        </button>
+      </div>
+
+      {/* Agent Parameters */}
+      <div className="section-block">
+        <div className="section-label">Agent</div>
+
+        <div className="settings-row">
+          <label className="settings-label">Model</label>
+          <select className="control-select" value={agentModel} onChange={(e) => setSetting("agentModel", e.target.value)}>
+            <option value="gemini-2.5-flash-preview-04-17">gemini-2.5-flash</option>
+            <option value="gemini-2.5-pro-preview-05-06">gemini-2.5-pro</option>
+            <option value="gemini-2.0-flash">gemini-2.0-flash</option>
+          </select>
         </div>
-      )}
+
+        <div className="settings-row">
+          <label className="settings-label">Workflow</label>
+          <select className="control-select" value={agentWorkflow} onChange={(e) => setSetting("agentWorkflow", e.target.value)}>
+            <option value="auto">Auto</option>
+            <option value="tool_use">Tool Use</option>
+            <option value="image_gen">Image Gen</option>
+          </select>
+        </div>
+
+        <div className="settings-row">
+          <label className="settings-label">Thinking</label>
+          <select className="control-select" value={agentThinking} onChange={(e) => setSetting("agentThinking", e.target.value)}>
+            <option value="MINIMAL">Minimal</option>
+            <option value="LOW">Low</option>
+            <option value="MEDIUM">Medium</option>
+            <option value="HIGH">High</option>
+          </select>
+        </div>
+
+        <div className="settings-row">
+          <label className="settings-label">Temp</label>
+          <input
+            type="number"
+            className="control-select"
+            style={{ width: 70 }}
+            min={0} max={2} step={0.05}
+            value={agentTemperature}
+            onChange={(e) => setSetting("agentTemperature", parseFloat(e.target.value))}
+          />
+        </div>
+
+        <div className="settings-row">
+          <label className="settings-label">Landmarks</label>
+          <input
+            type="number"
+            className="control-select"
+            style={{ width: 60 }}
+            min={6} max={24}
+            value={agentLandmarks}
+            onChange={(e) => setSetting("agentLandmarks", parseInt(e.target.value))}
+          />
+        </div>
+
+        <div className="settings-row">
+          <label className="settings-label">VLM Res</label>
+          <select className="control-select" value={agentVlmResolution} onChange={(e) => setSetting("agentVlmResolution", parseInt(e.target.value))}>
+            <option value={512}>512</option>
+            <option value={1024}>1K</option>
+            <option value={2048}>2K</option>
+            <option value={4096}>4K</option>
+          </select>
+        </div>
+
+        <div className="settings-row">
+          <label className="settings-label">AP Turns</label>
+          <input
+            type="number"
+            className="control-select"
+            style={{ width: 60 }}
+            min={1} max={50}
+            value={agentMaxIterations}
+            onChange={(e) => setSetting("agentMaxIterations", parseInt(e.target.value))}
+          />
+        </div>
+      </div>
 
       {/* AP Slider */}
       {atlasInfo && (
@@ -74,8 +194,6 @@ export function SettingsPanel() {
           </div>
         </div>
       )}
-
-      <div style={{ flex: 1 }} />
     </div>
   );
 }

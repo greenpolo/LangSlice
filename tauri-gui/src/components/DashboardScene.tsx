@@ -33,79 +33,19 @@ function useSharedGeo() {
   }, [brainMesh]);
 }
 
-function HoveredSliceLines() {
-  const hoveredBrainId = useAppStore((s) => s.hoveredBrainId);
-  const brains = useAppStore((s) => s.brains);
-  const atlasInfo = useAppStore((s) => s.atlasInfo);
-  const geo = useSharedGeo();
-
-  const lines = useMemo(() => {
-    if (!hoveredBrainId || !atlasInfo || !geo) return [];
-    const brain = brains.find((b) => b.id === hoveredBrainId);
-    if (!brain || brain.slices.length === 0) return [];
-
-    const bb = geo.boundingBox!;
-    const apExtent = bb.max.x - bb.min.x;
-    const halfAp = apExtent / 2;
-    const apRange = atlasInfo.ap_max_mm - atlasInfo.ap_min_mm;
-
-    return brain.slices.map((slice, i) => {
-      let fraction: number;
-      if (slice.apMm !== undefined) {
-        fraction = (slice.apMm - atlasInfo.ap_min_mm) / apRange;
-      } else {
-        fraction = brain.slices.length > 1 ? i / (brain.slices.length - 1) : 0.5;
-      }
-      const x = -halfAp + fraction * apExtent;
-      const color =
-        slice.status === "done" ? "#2dd4bf" :
-        slice.status === "running" ? "#f97316" : "#4b5563";
-      const opacity =
-        slice.status === "done" ? 0.5 :
-        slice.status === "running" ? 0.6 : 0.2;
-      return { x, color, opacity };
-    });
-  }, [hoveredBrainId, brains, atlasInfo, geo]);
-
-  if (lines.length === 0 || !geo) return null;
-
-  const bb = geo.boundingBox!;
-  const height = (bb.max.y - bb.min.y) * 0.8;
-
-  return (
-    <>
-      {lines.map((line, i) => (
-        <mesh key={i} position={[line.x, 0, 0]} rotation={[0, Math.PI / 2, 0]}>
-          <planeGeometry args={[0.08, height]} />
-          <meshBasicMaterial
-            color={line.color}
-            transparent
-            opacity={line.opacity}
-            side={THREE.DoubleSide}
-            depthWrite={false}
-          />
-        </mesh>
-      ))}
-    </>
-  );
-}
-
 function RotatingBrain() {
   const geo = useSharedGeo();
   const groupRef = useRef<THREE.Group>(null);
   const hoveredBrainId = useAppStore((s) => s.hoveredBrainId);
-
   const timeRef = useRef(0);
 
   useFrame((_, delta) => {
     if (!groupRef.current) return;
-    // Gentle rocking around a three-quarter view — AP axis always visible
     if (!hoveredBrainId) {
       timeRef.current += delta;
     }
-    // Base angle: ~40 degrees (three-quarter view), oscillate +/- 15 degrees
-    const baseAngle = 0.7; // ~40 deg
-    const swing = 0.26;    // ~15 deg
+    const baseAngle = 0.7;
+    const swing = 0.26;
     const speed = 0.3;
     groupRef.current.rotation.y = baseAngle + Math.sin(timeRef.current * speed) * swing;
   });
@@ -114,7 +54,6 @@ function RotatingBrain() {
 
   return (
     <group ref={groupRef}>
-      {/* Ghost mesh */}
       <mesh geometry={geo}>
         <meshPhongMaterial
           color="#8890a0"
@@ -126,7 +65,6 @@ function RotatingBrain() {
         />
       </mesh>
 
-      {/* Wireframe */}
       <lineSegments>
         <edgesGeometry args={[geo, 15]} />
         <lineBasicMaterial
@@ -136,8 +74,6 @@ function RotatingBrain() {
         />
       </lineSegments>
 
-      {/* Slice lines for hovered brain */}
-      <HoveredSliceLines />
     </group>
   );
 }

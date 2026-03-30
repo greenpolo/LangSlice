@@ -4,7 +4,22 @@ import { SettingsPanel } from "./components/SettingsPanel";
 import { AgentPanel } from "./components/AgentPanel";
 import { ViewToolbar } from "./components/ViewToolbar";
 import { Scene3D } from "./components/Scene3D";
+import { SplitView } from "./components/SplitView";
+import { OverlayView } from "./components/OverlayView";
 import { useAppStore } from "./stores/appStore";
+
+function MainView() {
+  const viewMode = useAppStore((s) => s.viewMode);
+
+  switch (viewMode) {
+    case "3d":
+      return <Scene3D />;
+    case "split":
+      return <SplitView />;
+    case "overlay":
+      return <OverlayView />;
+  }
+}
 
 function BrainDetailView() {
   return (
@@ -12,7 +27,7 @@ function BrainDetailView() {
       <SettingsPanel />
       <div className="main-area">
         <ViewToolbar />
-        <Scene3D />
+        <MainView />
       </div>
       <AgentPanel />
     </div>

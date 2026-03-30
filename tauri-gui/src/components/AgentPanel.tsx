@@ -1,17 +1,38 @@
+import { useEffect, useRef } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { useAppStore } from "../stores/appStore";
 
 export function AgentPanel() {
-  const { logs, pipelineStatus, pipelineError } = useAppStore();
+  const { logs, pipelineStatus, pipelineError, pipelineRunning, addLog } = useAppStore();
+  const logEndRef = useRef<HTMLDivElement>(null);
+
+  // Listen for pipeline-log events from Rust sidecar
+  useEffect(() => {
+    const unlisten = listen<string>("pipeline-log", (event) => {
+      if (event.payload.trim()) {
+        addLog(event.payload);
+      }
+    });
+    return () => { unlisten.then((fn) => fn()); };
+  }, [addLog]);
+
+  // Auto-scroll log area
+  useEffect(() => {
+    logEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [logs]);
 
   const statusLabel =
     pipelineStatus === "idle" ? "Ready" :
     pipelineStatus === "loading_atlas" ? "Loading atlas..." :
+    pipelineStatus === "estimating" ? "Estimating AP..." :
+    pipelineStatus === "registering" ? "Registering..." :
+    pipelineStatus === "complete" ? "Complete" :
     pipelineStatus === "error" ? (pipelineError || "Error") :
     pipelineStatus;
 
   const dotClass =
-    pipelineStatus === "idle" ? "idle" :
-    pipelineStatus === "loading_atlas" ? "loading" :
+    pipelineRunning ? "loading" :
+    pipelineStatus === "complete" ? "success" :
     pipelineStatus === "error" ? "error" :
     "idle";
 
@@ -40,6 +61,7 @@ export function AgentPanel() {
               <span className="log-msg">{msg}</span>
             </div>
           ))}
+          <div ref={logEndRef} />
         </div>
       </div>
     </div>

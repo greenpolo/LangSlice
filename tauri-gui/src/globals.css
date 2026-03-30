@@ -949,6 +949,24 @@ body {
   pointer-events: none;
 }
 
+/* ── Settings rows ───────────────────── */
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.settings-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+  min-width: 60px;
+}
+
 /* ── Slice list (brain detail sidebar) ── */
 
 .slice-list {
@@ -971,6 +989,17 @@ body {
 }
 .slice-list-item:hover {
   background: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+}
+
+.slice-list-item--selected {
+  background: var(--accent-dim) !important;
+  border-left: 2px solid var(--accent);
+  padding-left: 6px;
+}
+
+.slice-list-item--selected .slice-list-name {
+  color: var(--text-primary);
 }
 
 .slice-list-status {
@@ -993,6 +1022,217 @@ body {
   color: var(--accent);
   font-size: 10px;
   flex-shrink: 0;
+}
+
+/* ── Split View ──────────────────────── */
+
+.split-view {
+  flex: 1;
+  display: flex;
+  gap: 0;
+  overflow: hidden;
+}
+
+.split-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+.split-panel-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.split-panel-ap {
+  color: var(--accent);
+  text-transform: none;
+  letter-spacing: -0.3px;
+}
+
+.split-panel-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.01);
+  flex-shrink: 0;
+}
+
+.split-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.split-toggle input[type="checkbox"] {
+  accent-color: var(--accent);
+}
+
+.split-channel-select {
+  width: auto;
+  padding: 3px 8px;
+  font-size: 10px;
+}
+
+.split-panel-image {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: var(--bg-deep);
+}
+
+.split-image {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.split-panel-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-deep);
+}
+
+.split-panel-empty-text {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.split-divider {
+  width: 1px;
+  background: var(--border-strong);
+  flex-shrink: 0;
+}
+
+/* ── Overlay View ────────────────────── */
+
+.overlay-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.overlay-canvas {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: var(--bg-deep);
+  position: relative;
+}
+
+.overlay-layers {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+.overlay-base-image {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.overlay-atlas-image {
+  position: absolute;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.overlay-atlas-only {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.overlay-image {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.overlay-badge {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-primary);
+  background: rgba(0, 0, 0, 0.75);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 4px 10px;
+}
+
+.overlay-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.overlay-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--bg-panel);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.overlay-control-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.overlay-control-value {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--accent);
+  min-width: 36px;
+  text-align: right;
 }
 
 /* ── Canvas container ────────────────── */

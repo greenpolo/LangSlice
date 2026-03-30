@@ -20,6 +20,11 @@ pub fn run() {
             commands::get_coronal_slice,
             commands::get_border_volume,
             commands::get_brain_mesh,
+            commands::get_all_volumes,
+            commands::run_estimate,
+            commands::run_register,
+            commands::run_export,
+            commands::load_slice_image,
             commands::scan_image_folder,
         ])
         .run(tauri::generate_context!())

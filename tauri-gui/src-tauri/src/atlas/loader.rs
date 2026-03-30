@@ -182,7 +182,7 @@ pub fn load_atlas(name: &str) -> Result<AtlasState, String> {
 
     log::info!("Loading atlas '{}' from {}", name, atlas_dir.display());
 
-    let metadata = load_metadata(&atlas_dir)?;
+    let mut metadata = load_metadata(&atlas_dir)?;
     let structures = load_structures(&atlas_dir)?;
     let structure_map: HashMap<u32, AtlasStructure> =
         structures.iter().map(|s| (s.id, s.clone())).collect();
@@ -194,29 +194,168 @@ pub fn load_atlas(name: &str) -> Result<AtlasState, String> {
         metadata.orientation
     );
 
-    // Skip reference.tiff for now — lazy-loaded when 2D views need it
-    log::info!("Skipping reference.tiff (deferred to 2D view)");
+    log::info!("Loading reference.tiff...");
+    let reference_volume = load_tiff_u16(&atlas_dir.join("reference.tiff"))?;
+    log::info!("Reference volume loaded: shape={:?}", reference_volume.shape());
 
     log::info!("Loading annotation.tiff...");
     let annotation_volume = load_tiff_u32(&atlas_dir.join("annotation.tiff"))?;
-    log::info!(
-        "Annotation volume loaded: shape={:?}",
-        annotation_volume.shape()
-    );
+    log::info!("Annotation volume loaded: shape={:?}", annotation_volume.shape());
 
     log::info!("Pre-computing border volume (parallel)...");
     let border_volume = super::slicer::precompute_border_volume_parallel(&annotation_volume);
     log::info!("Border volume ready: shape={:?}", border_volume.shape());
 
+    // Load additional reference volumes (e.g. Nissl)
+    // BrainGlobe stores these either in additional_references/ subdir
+    // or at the atlas root level as <name>.tiff
+    let mut additional_volumes: HashMap<String, Array3<u16>> = HashMap::new();
+    for name in &metadata.additional_references {
+        let candidates = [
+            atlas_dir.join("additional_references").join(format!("{}.tiff", name)),
+            atlas_dir.join(format!("{}.tiff", name)),
+        ];
+        let found = candidates.iter().find(|p| p.exists());
+        if let Some(tiff_path) = found {
+            log::info!("Loading additional reference: {} from {}", name, tiff_path.display());
+            match load_tiff_u16(tiff_path) {
+                Ok(vol) => {
+                    log::info!("  {} loaded: shape={:?}", name, vol.shape());
+                    additional_volumes.insert(name.clone(), vol);
+                }
+                Err(e) => {
+                    log::warn!("  Failed to load {}: {}", name, e);
+                }
+            }
+        } else {
+            log::warn!("  Additional reference '{}' not found on disk", name);
+        }
+    }
+    if !additional_volumes.is_empty() {
+        log::info!("Loaded {} additional reference(s)", additional_volumes.len());
+    }
+
+    // For Allen CCFv3 atlases without Nissl: try to borrow it from
+    // ccfv3augmented_mouse_25um if that atlas is downloaded.
+    if additional_volumes.is_empty() && is_allen_ccfv3_compatible(name) {
+        if let Some(nissl) = try_load_augmented_nissl(name, &reference_volume) {
+            log::info!("Injected Nissl from ccfv3augmented atlas");
+            additional_volumes.insert("nissl".to_string(), nissl);
+            // Update metadata so frontend knows about it
+            metadata.additional_references.push("nissl".to_string());
+        }
+    }
+
     Ok(AtlasState {
         metadata,
         structures,
         structure_map,
-        reference_volume: None,
+        reference_volume,
         annotation_volume,
+        additional_volumes,
         border_volume,
         atlas_dir,
     })
+}
+
+/// Allen CCFv3-compatible atlas names that can borrow Nissl from the augmented atlas.
+const ALLEN_CCFV3_COMPATIBLE: &[&str] = &[
+    "allen_mouse_10um",
+    "allen_mouse_25um",
+    "allen_mouse_50um",
+    "allen_mouse_100um",
+    "kim_mouse_10um",
+    "kim_mouse_25um",
+    "kim_mouse_50um",
+    "kim_mouse_100um",
+    "osten_mouse_10um",
+    "osten_mouse_25um",
+    "osten_mouse_50um",
+    "osten_mouse_100um",
+    "perens_lsfm_mouse_20um",
+    "princeton_mouse_20um",
+];
+
+fn is_allen_ccfv3_compatible(name: &str) -> bool {
+    ALLEN_CCFV3_COMPATIBLE.contains(&name)
+}
+
+/// Try to load the Nissl volume from ccfv3augmented_mouse_25um and
+/// crop/resample it to match the target atlas.
+fn try_load_augmented_nissl(
+    target_name: &str,
+    target_reference: &Array3<u16>,
+) -> Option<Array3<u16>> {
+    // Find the augmented atlas directory (try 25um first, then 10um)
+    let aug_dir = find_atlas_dir("ccfv3augmented_mouse_25um").ok()?;
+
+    // Load the Nissl TIFF from the augmented atlas
+    let nissl_candidates = [
+        aug_dir.join("additional_references").join("single_animal_nissl.tiff"),
+        aug_dir.join("single_animal_nissl.tiff"),
+    ];
+    let nissl_path = nissl_candidates.iter().find(|p| p.exists())?;
+
+    log::info!(
+        "Found augmented Nissl for '{}' at {}",
+        target_name,
+        nissl_path.display()
+    );
+
+    let nissl_vol = load_tiff_u16(nissl_path).ok()?;
+    let aug_depth = nissl_vol.shape()[0];
+    let target_depth = target_reference.shape()[0];
+    let target_height = target_reference.shape()[1];
+    let target_width = target_reference.shape()[2];
+
+    // Check DV/ML dimensions match
+    if nissl_vol.shape()[1] != target_height || nissl_vol.shape()[2] != target_width {
+        log::warn!(
+            "Nissl DV/ML dimensions don't match target atlas: {:?} vs ({}, {})",
+            &nissl_vol.shape()[1..],
+            target_height,
+            target_width
+        );
+        // Would need resampling — skip for now
+        return None;
+    }
+
+    if aug_depth == target_depth {
+        // Same depth — direct copy
+        return Some(nissl_vol);
+    }
+
+    if aug_depth > target_depth {
+        // Augmented is larger — find the best AP offset by correlating annotation.
+        // Use a simple heuristic: offset 14 is known for 25um CCFv3 augmented vs standard.
+        // For other resolutions, try a small search.
+        let offset = if target_depth == 528 && aug_depth == 566 {
+            14 // Known offset for 25um
+        } else {
+            // Rough estimate: center the smaller volume in the larger one
+            (aug_depth - target_depth) / 2
+        };
+
+        log::info!(
+            "Cropping augmented Nissl: offset={}, {} -> {} slices",
+            offset,
+            aug_depth,
+            target_depth
+        );
+
+        let cropped = nissl_vol
+            .slice(ndarray::s![offset..offset + target_depth, .., ..])
+            .to_owned();
+        return Some(cropped);
+    }
+
+    // Augmented is smaller than target — can't crop
+    log::warn!(
+        "Augmented Nissl is smaller than target: {} < {}",
+        aug_depth,
+        target_depth
+    );
+    None
 }
 
 /// Load an OBJ mesh file and return vertex/index data.
