@@ -1,0 +1,34 @@
+[package]
+name = "langslice-gui"
+version = "0.1.0"
+description = "LangSlice Tauri GUI — brain atlas visualization and registration"
+authors = ["WalshLab"]
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.5.6", features = [] }
+
+[dependencies]
+tauri = { version = "2.10.3", features = [] }
+tauri-plugin-log = "2"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+log = "0.4"
+
+# Atlas loading
+ndarray = "0.16"
+tiff = "0.9"
+tobj = "4.0"
+image = "0.25"
+rayon = "1.10"
+base64 = "0.22"
+dirs = "6.0"
+
+# Async
+tokio = { version = "1", features = ["process", "rt"] }
+tauri-plugin-dialog = "2.6.0"
