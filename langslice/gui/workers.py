@@ -8,7 +8,8 @@ from datetime import datetime
 
 from PIL import Image
 
-from langslice.ai import APResult, estimate_position
+from langslice.ai import APResult, estimate_position, estimate_position_image_gen
+from langslice.ai.config import MODEL_NAME, is_image_generation_model
 from langslice.registration import estimate_registration_runtime
 
 _qtcore = importlib.import_module("PySide6.QtCore")
@@ -65,18 +66,27 @@ class AgentWorker(QObject):
         self.ap_max_iterations = max(1, int(ap_max_iterations))
         self.enable_code_execution = bool(enable_code_execution)
         self.tool_loop_max_steps = max(1, int(tool_loop_max_steps))
+        self._use_image_gen_ap = is_image_generation_model(MODEL_NAME)
 
     def run(self) -> None:
         try:
             self.step_started.emit("ap")
             self.log_message.emit("Starting position estimation...")
-            ap_result = estimate_position(
-                image=self.vlm_image,
-                atlas_name=self.atlas_name,
-                on_progress=self.log_message.emit,
-                on_trace=self.trace_event.emit,
-                max_iterations=self.ap_max_iterations,
-            )
+            if self._use_image_gen_ap:
+                ap_result = estimate_position_image_gen(
+                    image=self.vlm_image,
+                    atlas_name=self.atlas_name,
+                    on_progress=self.log_message.emit,
+                    on_trace=self.trace_event.emit,
+                )
+            else:
+                ap_result = estimate_position(
+                    image=self.vlm_image,
+                    atlas_name=self.atlas_name,
+                    on_progress=self.log_message.emit,
+                    on_trace=self.trace_event.emit,
+                    max_iterations=self.ap_max_iterations,
+                )
             self.step_completed.emit("ap", ap_result)
         except Exception as exc:
             self.step_error.emit("ap", str(exc))

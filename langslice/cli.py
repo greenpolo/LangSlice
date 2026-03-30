@@ -189,9 +189,9 @@ def _add_estimate_parser(subparsers: argparse._SubParsersAction) -> None:
     est.add_argument("--atlas", default="allen_mouse_25um", help="BrainGlobe atlas name")
     est.add_argument(
         "--workflow",
-        default="tool_use",
-        choices=["tool_use"],
-        help="AP estimation workflow. Currently only tool_use is supported.",
+        default=None,
+        choices=["tool_use", "image_gen"],
+        help="AP estimation workflow. Default: auto-select based on model.",
     )
     est.add_argument("--model", default=None, help="Gemini model name")
     est.add_argument(
@@ -223,6 +223,17 @@ def _add_estimate_parser(subparsers: argparse._SubParsersAction) -> None:
         help="Output directory for debug artifacts",
     )
     est.add_argument("--json", action="store_true", help="Print result JSON to stdout")
+    est.add_argument(
+        "--individual",
+        action="store_true",
+        help="Send atlas slices as individual images instead of a grid",
+    )
+    est.add_argument(
+        "--atlas-resolution",
+        type=int,
+        default=512,
+        help="Max long-edge pixels for atlas slices (individual mode)",
+    )
 
 
 def _run_estimate(args: argparse.Namespace) -> None:
@@ -233,9 +244,10 @@ def _run_estimate(args: argparse.Namespace) -> None:
 
     from PIL import Image
 
-    from langslice.image_prep import normalize_image, prepare_image_for_vlm
     from langslice.ai import config as vlm_config
     from langslice.ai.estimator import estimate_position
+    from langslice.ai.estimator_image_gen import estimate_position_image_gen
+    from langslice.image_prep import normalize_image, prepare_image_for_vlm
 
     # Configure model before anything touches the client.
     if args.model:
@@ -283,15 +295,32 @@ def _run_estimate(args: argparse.Namespace) -> None:
     def on_progress(msg: str) -> None:
         print(f"  {msg}")
 
+    # Resolve workflow: explicit flag > auto-detect from model.
+    workflow = args.workflow
+    if workflow is None:
+        is_img_model = vlm_config.is_image_generation_model(vlm_config.MODEL_NAME)
+        workflow = "image_gen" if is_img_model else "tool_use"
+    print(f"Workflow: {workflow}")
+
     # Run AP estimation.
-    result = estimate_position(
-        image=image,
-        atlas_name=args.atlas,
-        on_progress=on_progress,
-        max_iterations=args.max_iterations,
-        media_resolution=args.media_resolution,
-        show_borders=args.borders,
-    )
+    if workflow == "image_gen":
+        result = estimate_position_image_gen(
+            image=image,
+            atlas_name=args.atlas,
+            on_progress=on_progress,
+            show_borders=args.borders,
+            send_individually=args.individual,
+            atlas_resolution=args.atlas_resolution,
+        )
+    else:
+        result = estimate_position(
+            image=image,
+            atlas_name=args.atlas,
+            on_progress=on_progress,
+            max_iterations=args.max_iterations,
+            media_resolution=args.media_resolution,
+            show_borders=args.borders,
+        )
 
     # Summary.
     print()

@@ -21,6 +21,7 @@ from langslice.ai.estimator import (
     APResult,
     estimate_position,
 )
+from langslice.ai.estimator_image_gen import estimate_position_image_gen
 
 # Backwards-compatible alias (estimate_ap was identical to estimate_position)
 estimate_ap = estimate_position
@@ -42,6 +43,7 @@ __all__ = [
     "supports_code_execution",
     "estimate_ap",
     "estimate_position",
+    "estimate_position_image_gen",
     "APResult",
     "APBatchCase",
     "build_ap_batch_requests",

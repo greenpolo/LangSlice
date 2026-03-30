@@ -128,6 +128,7 @@ def _build_atlas_grid(
     target_image: Image.Image | None = None,
     grid_width: int = 2048,
     show_borders: bool = False,
+    max_positions: int = 8,
 ) -> Image.Image:
     """Build a comparison image: target slice (left) + 2x2 atlas grid (right).
 
@@ -139,7 +140,7 @@ def _build_atlas_grid(
     from langslice.image_prep import normalize_image
 
     atlas_obj = cast(Any, atlas)
-    n = min(len(positions), 8)
+    n = min(len(positions), max_positions)
 
     # Dynamic grid layout based on count
     if n <= 2:
@@ -153,7 +154,7 @@ def _build_atlas_grid(
 
     # Fetch and normalize atlas slices
     slices: list[tuple[Image.Image, float]] = []
-    for pos in positions[:8]:
+    for pos in positions[:max_positions]:
         try:
             if show_borders:
                 from langslice.atlas.core import get_composite_slice
