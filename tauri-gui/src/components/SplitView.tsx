@@ -48,7 +48,7 @@ export function SplitView() {
         ) : selectedSliceImage ? (
           <div className="split-panel-image">
             <img
-              src={`data:image/png;base64,${selectedSliceImage}`}
+              src={`data:image/jpeg;base64,${selectedSliceImage}`}
               alt="Histology slice"
               className="split-image"
             />

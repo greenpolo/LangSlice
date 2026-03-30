@@ -22,9 +22,6 @@ def test_public_module_imports() -> None:
     importlib.import_module("langslice.registration")
     importlib.import_module("langslice.export")
     importlib.import_module("langslice.image_prep")
-    importlib.import_module("langslice.gui.theme")
-    importlib.import_module("langslice.gui.atlas_viewer")
-    importlib.import_module("langslice.gui.main_window")
     importlib.import_module("langslice.cli")
 
 

@@ -6,7 +6,7 @@ use std::sync::Mutex;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .manage(Mutex::new(commands::AppState { atlas: None }))
+        .manage(Mutex::new(commands::AppState::new()))
         .plugin(
             tauri_plugin_log::Builder::default()
                 .level(log::LevelFilter::Info)
@@ -24,7 +24,10 @@ pub fn run() {
             commands::run_estimate,
             commands::run_register,
             commands::run_export,
+            commands::read_env_file,
+            commands::write_env_file,
             commands::load_slice_image,
+            commands::precache_images,
             commands::scan_image_folder,
         ])
         .run(tauri::generate_context!())

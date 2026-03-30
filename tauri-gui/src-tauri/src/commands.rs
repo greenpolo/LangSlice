@@ -1,6 +1,8 @@
+use std::num::NonZeroUsize;
 use std::sync::Mutex;
 
 use base64::Engine;
+use lru::LruCache;
 use tauri::State;
 
 use std::path::Path;
@@ -9,9 +11,29 @@ use crate::atlas::loader;
 use crate::atlas::slicer;
 use crate::atlas::types::{AtlasMetadata, MeshData, SliceResult};
 
-/// Holds the currently loaded atlas (if any).
+/// Cached thumbnail: pre-encoded JPEG base64 + dimensions.
+struct CachedThumb {
+    b64: String,
+    original_w: u32,
+    original_h: u32,
+    display_w: u32,
+    display_h: u32,
+}
+
+/// Holds the currently loaded atlas and image cache.
 pub struct AppState {
     pub atlas: Option<crate::atlas::types::AtlasState>,
+    /// LRU cache of pre-encoded JPEG thumbnails, keyed by file path.
+    pub image_cache: LruCache<String, CachedThumb>,
+}
+
+impl AppState {
+    pub fn new() -> Self {
+        Self {
+            atlas: None,
+            image_cache: LruCache::new(NonZeroUsize::new(500).unwrap()),
+        }
+    }
 }
 
 /// List downloaded BrainGlobe atlases.
@@ -217,41 +239,72 @@ pub fn get_all_volumes(
     }))
 }
 
-/// Load an image file and return as base64 PNG, downsampled for display.
+/// Load an image file and return as base64 JPEG, downsampled for display.
+/// Uses an LRU cache — second load of the same image is instant.
 #[tauri::command]
 pub fn load_slice_image(
     path: String,
     max_edge: Option<u32>,
+    state: State<'_, Mutex<AppState>>,
 ) -> Result<serde_json::Value, String> {
+    // Check cache first
+    {
+        let mut app = state.lock().map_err(|e| format!("Lock: {}", e))?;
+        if let Some(cached) = app.image_cache.get(&path) {
+            return Ok(serde_json::json!({
+                "image": cached.b64,
+                "originalWidth": cached.original_w,
+                "originalHeight": cached.original_h,
+                "displayWidth": cached.display_w,
+                "displayHeight": cached.display_h,
+            }));
+        }
+    }
+
+    // Cache miss — load from disk
     let img = image::open(&path)
         .map_err(|e| format!("Cannot open image {}: {}", path, e))?;
 
-    let max = max_edge.unwrap_or(2048);
+    let max = max_edge.unwrap_or(1024);
     let (w, h) = (img.width(), img.height());
 
     let resized = if w > max || h > max {
         let scale = max as f64 / w.max(h) as f64;
         let new_w = (w as f64 * scale).round() as u32;
         let new_h = (h as f64 * scale).round() as u32;
-        img.resize(new_w, new_h, image::imageops::FilterType::Lanczos3)
+        img.resize(new_w, new_h, image::imageops::FilterType::Triangle)
     } else {
         img
     };
 
     let rgb = resized.to_rgb8();
     let (out_w, out_h) = (rgb.width(), rgb.height());
+
     let mut buf: Vec<u8> = Vec::new();
-    let encoder = image::codecs::png::PngEncoder::new(std::io::Cursor::new(&mut buf));
-    image::ImageEncoder::write_image(
-        encoder,
-        rgb.as_raw(),
-        out_w,
-        out_h,
-        image::ColorType::Rgb8.into(),
-    )
-    .map_err(|e| format!("PNG encode error: {}", e))?;
+    let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(
+        std::io::Cursor::new(&mut buf),
+        85,
+    );
+    encoder
+        .encode(rgb.as_raw(), out_w, out_h, image::ColorType::Rgb8.into())
+        .map_err(|e| format!("JPEG encode error: {}", e))?;
 
     let b64 = base64::engine::general_purpose::STANDARD.encode(&buf);
+
+    // Store in cache
+    {
+        let mut app = state.lock().map_err(|e| format!("Lock: {}", e))?;
+        app.image_cache.put(
+            path.clone(),
+            CachedThumb {
+                b64: b64.clone(),
+                original_w: w,
+                original_h: h,
+                display_w: out_w,
+                display_h: out_h,
+            },
+        );
+    }
 
     Ok(serde_json::json!({
         "image": b64,
@@ -469,6 +522,197 @@ pub async fn run_export(
     }
 
     Ok(output_dir)
+}
+
+/// Read the .env file and return all key-value pairs.
+#[tauri::command]
+pub fn read_env_file() -> Result<serde_json::Value, String> {
+    let env_path = find_env_path();
+    let mut vars: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+
+    if env_path.exists() {
+        let content = std::fs::read_to_string(&env_path)
+            .map_err(|e| format!("Cannot read .env: {}", e))?;
+        for line in content.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                continue;
+            }
+            if let Some((key, val)) = trimmed.split_once('=') {
+                let val = val.trim().trim_matches('"').trim_matches('\'');
+                vars.insert(key.trim().to_string(), serde_json::json!(val));
+            }
+        }
+    }
+
+    Ok(serde_json::json!({
+        "path": env_path.to_string_lossy(),
+        "vars": vars,
+    }))
+}
+
+/// Write key-value pairs to the .env file.
+#[tauri::command]
+pub fn write_env_file(vars: serde_json::Value) -> Result<(), String> {
+    let env_path = find_env_path();
+    let obj = vars.as_object().ok_or("Expected object")?;
+
+    // Read existing content to preserve comments and ordering
+    let mut lines: Vec<String> = Vec::new();
+    let mut existing_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    if env_path.exists() {
+        let content = std::fs::read_to_string(&env_path)
+            .map_err(|e| format!("Cannot read .env: {}", e))?;
+        for line in content.lines() {
+            let trimmed = line.trim();
+            if let Some((key, _)) = trimmed.split_once('=') {
+                let key = key.trim().to_string();
+                if !trimmed.starts_with('#') {
+                    if let Some(new_val) = obj.get(&key) {
+                        let val_str = new_val.as_str().unwrap_or("");
+                        lines.push(format!("{}=\"{}\"", key, val_str));
+                        existing_keys.insert(key);
+                        continue;
+                    }
+                }
+            }
+            lines.push(line.to_string());
+        }
+    }
+
+    // Add new keys not already in the file
+    for (key, val) in obj {
+        if !existing_keys.contains(key) {
+            let val_str = val.as_str().unwrap_or("");
+            if !val_str.is_empty() {
+                lines.push(format!("{}=\"{}\"", key, val_str));
+            }
+        }
+    }
+
+    std::fs::write(&env_path, lines.join("\n") + "\n")
+        .map_err(|e| format!("Cannot write .env: {}", e))?;
+
+    log::info!("Saved .env at {}", env_path.display());
+    Ok(())
+}
+
+/// Find the .env file path (project root).
+fn find_env_path() -> std::path::PathBuf {
+    // Look for .env relative to the langslice package
+    // In development, this is C:\LabSoftware\LangSlice\.env
+    let candidates = [
+        std::path::PathBuf::from("C:/LabSoftware/LangSlice/.env"),
+        dirs::home_dir().unwrap_or_default().join(".langslice.env"),
+    ];
+    for c in &candidates {
+        if c.exists() {
+            return c.clone();
+        }
+    }
+    // Default to the first candidate
+    candidates[0].clone()
+}
+
+/// Pre-cache all images in a folder as JPEG thumbnails using parallel processing.
+/// Emits "cache-progress" events to the frontend as images are processed.
+#[tauri::command]
+pub async fn precache_images(
+    paths: Vec<String>,
+    max_edge: Option<u32>,
+    state: State<'_, Mutex<AppState>>,
+    app: tauri::AppHandle,
+) -> Result<u32, String> {
+    use rayon::prelude::*;
+    use tauri::Emitter;
+
+    let max = max_edge.unwrap_or(1024);
+    let total = paths.len();
+
+    // Filter out already-cached paths
+    let uncached: Vec<String> = {
+        let app_state = state.lock().map_err(|e| format!("Lock: {}", e))?;
+        paths
+            .into_iter()
+            .filter(|p| !app_state.image_cache.contains(p))
+            .collect()
+    };
+
+    if uncached.is_empty() {
+        return Ok(total as u32);
+    }
+
+    let _ = app.emit("cache-progress", serde_json::json!({
+        "done": total - uncached.len(),
+        "total": total,
+    }));
+
+    // Process all images in parallel using rayon
+    let results: Vec<(String, Option<CachedThumb>)> = uncached
+        .par_iter()
+        .map(|path| {
+            let thumb = encode_thumbnail(path, max);
+            (path.clone(), thumb)
+        })
+        .collect();
+
+    // Insert all results into the cache (must hold lock)
+    let mut cached_count = 0u32;
+    {
+        let mut app_state = state.lock().map_err(|e| format!("Lock: {}", e))?;
+        for (path, thumb) in results {
+            if let Some(t) = thumb {
+                app_state.image_cache.put(path, t);
+                cached_count += 1;
+            }
+        }
+    }
+
+    let _ = app.emit("cache-progress", serde_json::json!({
+        "done": total,
+        "total": total,
+    }));
+
+    log::info!("Pre-cached {}/{} images", cached_count, total);
+    Ok(cached_count)
+}
+
+/// Encode a single image to a JPEG thumbnail. Pure function, no state.
+fn encode_thumbnail(path: &str, max_edge: u32) -> Option<CachedThumb> {
+    let img = image::open(path).ok()?;
+    let (w, h) = (img.width(), img.height());
+
+    let resized = if w > max_edge || h > max_edge {
+        let scale = max_edge as f64 / w.max(h) as f64;
+        let new_w = (w as f64 * scale).round() as u32;
+        let new_h = (h as f64 * scale).round() as u32;
+        img.resize(new_w, new_h, image::imageops::FilterType::Triangle)
+    } else {
+        img
+    };
+
+    let rgb = resized.to_rgb8();
+    let (out_w, out_h) = (rgb.width(), rgb.height());
+
+    let mut buf: Vec<u8> = Vec::new();
+    let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(
+        std::io::Cursor::new(&mut buf),
+        85,
+    );
+    encoder
+        .encode(rgb.as_raw(), out_w, out_h, image::ColorType::Rgb8.into())
+        .ok()?;
+
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&buf);
+
+    Some(CachedThumb {
+        b64,
+        original_w: w,
+        original_h: h,
+        display_w: out_w,
+        display_h: out_h,
+    })
 }
 
 const IMAGE_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "tif", "tiff", "bmp"];

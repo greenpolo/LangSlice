@@ -25,7 +25,7 @@ export function OverlayView() {
         {hasSlice ? (
           <div className="overlay-layers">
             <img
-              src={`data:image/png;base64,${selectedSliceImage}`}
+              src={`data:image/jpeg;base64,${selectedSliceImage}`}
               alt="Histology"
               className="overlay-base-image"
             />

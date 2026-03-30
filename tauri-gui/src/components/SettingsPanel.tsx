@@ -101,9 +101,10 @@ export function SettingsPanel() {
         <div className="settings-row">
           <label className="settings-label">Model</label>
           <select className="control-select" value={agentModel} onChange={(e) => setSetting("agentModel", e.target.value)}>
-            <option value="gemini-2.5-flash-preview-04-17">gemini-2.5-flash</option>
-            <option value="gemini-2.5-pro-preview-05-06">gemini-2.5-pro</option>
-            <option value="gemini-2.0-flash">gemini-2.0-flash</option>
+            <option value="gemini-3-flash-preview">gemini-3-flash</option>
+            <option value="gemini-3.1-pro-preview">gemini-3.1-pro</option>
+            <option value="gemini-3-pro-image-preview">gemini-3-pro-image</option>
+            <option value="gemini-3.1-flash-image-preview">gemini-3.1-flash-image</option>
           </select>
         </div>
 

@@ -186,7 +186,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   atlasOpacity: 0.5,
 
   // Agent settings defaults (match CLI defaults)
-  agentModel: "gemini-2.5-flash-preview-04-17",
+  agentModel: "gemini-3-flash-preview",
   agentWorkflow: "auto",
   agentThinking: "HIGH",
   agentTemperature: 1.0,
@@ -247,6 +247,13 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       set((s) => ({ brains: [...s.brains, brain] }));
       get().addLog(`Added brain "${folderName}": ${slices.length} slices`);
+
+      // Pre-cache all thumbnails in parallel (background)
+      const paths = slices.map((s) => s.path);
+      get().addLog(`Pre-caching ${paths.length} thumbnails...`);
+      commands.precacheImages(paths).then((n) => {
+        get().addLog(`Pre-cached ${n} thumbnails`);
+      });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       get().addLog(`Error scanning folder: ${msg}`);
@@ -276,6 +283,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         ),
       }));
       get().addLog(`Loaded ${images.length} slices into brain`);
+
+      // Pre-cache all thumbnails in parallel (background)
+      const paths = slices.map((s) => s.path);
+      get().addLog(`Pre-caching ${paths.length} thumbnails...`);
+      commands.precacheImages(paths).then((n) => {
+        get().addLog(`Pre-cached ${n} thumbnails`);
+      });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       get().addLog(`Error loading images: ${msg}`);

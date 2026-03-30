@@ -7,7 +7,6 @@ dependencies:
   - scipy
   - pillow
   - tifffile
-  - pyside6
   - pip
   - pip:
     - google-genai

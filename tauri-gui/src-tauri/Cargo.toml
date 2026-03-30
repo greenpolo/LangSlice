@@ -32,3 +32,4 @@ dirs = "6.0"
 # Async
 tokio = { version = "1", features = ["process", "rt"] }
 tauri-plugin-dialog = "2.6.0"
+lru = "0.16.3"

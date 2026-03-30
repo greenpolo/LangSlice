@@ -105,6 +105,26 @@ export async function loadSliceImage(
   });
 }
 
+export interface EnvFileResult {
+  path: string;
+  vars: Record<string, string>;
+}
+
+export async function readEnvFile(): Promise<EnvFileResult> {
+  return invoke<EnvFileResult>("read_env_file");
+}
+
+export async function writeEnvFile(vars: Record<string, string>): Promise<void> {
+  return invoke<void>("write_env_file", { vars });
+}
+
+export async function precacheImages(
+  paths: string[],
+  maxEdge?: number,
+): Promise<number> {
+  return invoke<number>("precache_images", { paths, maxEdge: maxEdge ?? 1024 });
+}
+
 export interface ImageFileInfo {
   path: string;
   name: string;

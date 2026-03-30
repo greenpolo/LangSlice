@@ -348,7 +348,7 @@ def main():
     subparsers = parser.add_subparsers(dest="command")
 
     # langslice gui
-    subparsers.add_parser("gui", help="Launch the PySide6 desktop application")
+    subparsers.add_parser("gui", help="Launch the Tauri desktop application")
 
     # langslice version
     subparsers.add_parser("version", help="Print version info")
@@ -362,8 +362,13 @@ def main():
     args = parser.parse_args()
 
     if args.command == "gui":
-        from langslice.gui import launch
-        launch()
+        print("The PySide6 GUI has been replaced by the Tauri desktop app.")
+        print("To launch the Tauri GUI:")
+        print("  cd tauri-gui && pnpm tauri dev")
+        print()
+        print("For headless operation, use the CLI commands:")
+        print("  langslice estimate <image>")
+        print("  langslice register <image> --position <mm>")
     elif args.command == "version":
         print(f"langslice {langslice.__version__}")
     elif args.command == "register":

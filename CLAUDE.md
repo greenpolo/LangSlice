@@ -26,7 +26,7 @@ langslice version
 
 ## Architecture
 
-LangSlice is a PySide6 desktop app that registers histology slice images to BrainGlobe atlases using Gemini vision-language models for estimation and deterministic local solvers for geometry.
+LangSlice registers histology slice images to BrainGlobe atlases using Gemini vision-language models for estimation and deterministic local solvers for geometry. The desktop GUI is a Tauri app (Rust + React + Three.js) in `tauri-gui/`.
 
 **Pipeline:** `AP estimation → landmark correspondences → affine/TPS solve → preview/export`
 
@@ -35,7 +35,7 @@ The code is split into five modules with clear boundaries:
 - **`langslice/atlas/`** — BrainGlobe atlas loading, AP/index conversion, coronal slice extraction. Orientation assumptions are centralized in `space.py` and require coronal layout (AP/DV/ML on axes 0/1/2).
 - **`langslice/ai/`** — Gemini client configuration (`config.py`), multi-turn AP estimator split across `estimator.py`, `estimator_tools.py`, and `estimator_debug.py`, offline batch helper (`batch_eval.py`). Three auth backends: `ai_studio`, `vertex_api_key`, `vertex_adc`.
 - **`langslice/registration/`** — Prompt construction and correspondence parsing (`agents.py`), workflow implementations (`agents_tool_loop.py`, `agents_image_gen.py`), deterministic affine and TPS fitting (`solver.py`), orchestration and debug artifacts (`runtime.py`), data classes (`types.py`). Public entry point: `estimate_registration_runtime(...)` in `core.py`.
-- **`langslice/gui/`** — PySide6 main window orchestrates the full pipeline. Worker threads (`workers.py`), atlas viewer, overlay viewer, settings dialog, trace inspector, and run-metadata dialog are separate modules.
+- **`tauri-gui/`** — Tauri desktop app. Rust backend (`src-tauri/`) for atlas loading, reslicing, mesh serving. React + Three.js frontend (`src/`) for 3D visualization, dashboard, split/overlay views. Launched via `cd tauri-gui && pnpm tauri dev`.
 - **`langslice/export.py`** — Coronal anchoring math and QUINT/ABBA-compatible single-slice JSON export.
 
 Supporting utilities: `image_prep.py` (normalization, pixel-size detection, VLM downsampling), `agent_trace.py` (structured trace events), `cli.py` (argparse entry point).
