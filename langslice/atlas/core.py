@@ -4,8 +4,10 @@ from collections.abc import Callable, Sequence
 from functools import lru_cache
 from typing import Any, Protocol, cast
 
+import cv2
 import numpy as np
 from PIL import Image
+from scipy.ndimage import gaussian_filter1d
 
 from langslice.atlas.space import atlas_space_context, require_coronal_layout
 
@@ -221,6 +223,67 @@ def get_composite_slice(atlas: _AtlasLike, position_mm: float, opacity: float = 
     result[edge_mask] = result[edge_mask] * (1.0 - opacity) + boundary_color * opacity
 
     return Image.fromarray(result.astype(np.uint8), mode="RGB")
+
+
+def get_colored_region_slice(atlas: _AtlasLike, position_mm: float) -> Image.Image:
+    """Get coronal annotation slice as RGB PIL image with official atlas region colors."""
+    idx = position_mm_to_index(atlas, position_mm)
+    annotation_slice = np.asarray(atlas.annotation[idx, :, :])
+    h, w = cast(tuple[int, int], annotation_slice.shape)
+
+    rgb = np.zeros((h, w, 3), dtype=np.uint8)
+
+    unique_ids = np.unique(annotation_slice)
+    structures = getattr(atlas, "structures", None)
+
+    for uid in unique_ids:
+        uid_int = int(uid)
+        if uid_int == 0:
+            continue
+        try:
+            color = structures[uid_int]["rgb_triplet"]  # type: ignore[index]
+            rgb[annotation_slice == uid] = color
+        except Exception:
+            pass
+
+    return Image.fromarray(rgb, mode="RGB")
+
+
+def get_smoothed_boundary_slice(
+    atlas: _AtlasLike, position_mm: float, *, target_size: tuple[int, int] | None = None
+) -> Image.Image:
+    """Get coronal annotation boundaries with smoothed vector contours as grayscale PIL image."""
+    idx = position_mm_to_index(atlas, position_mm)
+    annotation_slice = np.asarray(atlas.annotation[idx, :, :])
+
+    if target_size is not None:
+        tw, th = target_size
+        annotation_slice = cv2.resize(
+            annotation_slice, (tw, th), interpolation=cv2.INTER_NEAREST
+        )
+
+    h, w = cast(tuple[int, int], annotation_slice.shape)
+    canvas = np.zeros((h, w), dtype=np.uint8)
+
+    unique_ids = np.unique(annotation_slice)
+    for uid in unique_ids:
+        uid_int = int(uid)
+        if uid_int == 0:
+            continue
+
+        mask = np.where(annotation_slice == uid, 255, 0).astype(np.uint8)
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+
+        for contour in contours:
+            if len(contour) < 10:
+                continue
+            pts = contour.squeeze(axis=1).astype(np.float64)
+            pts[:, 0] = gaussian_filter1d(pts[:, 0], sigma=3.0, mode="wrap")
+            pts[:, 1] = gaussian_filter1d(pts[:, 1], sigma=3.0, mode="wrap")
+            smoothed = pts.astype(np.int32).reshape(-1, 1, 2)
+            cv2.drawContours(canvas, [smoothed], -1, 255, 1, cv2.LINE_AA)
+
+    return Image.fromarray(canvas, mode="L")
 
 
 def list_additional_references(atlas: _AtlasLike) -> list[str]:

@@ -2,8 +2,8 @@
 
 ## Purpose
 
-LangSlice is a desktop application for aligning a histology slice image to a BrainGlobe atlas.
-The active implementation combines model-assisted image understanding with deterministic local geometry code.
+LangSlice is a CLI tool and Tauri desktop application for aligning a histology slice image to a BrainGlobe atlas.
+The active implementation combines model-assisted image understanding with itk-elastix B-spline registration for dense deformation recovery.
 
 ## Package Boundaries
 
@@ -16,6 +16,8 @@ Current responsibilities:
 - cached atlas loading in `load_atlas(...)`
 - AP mm/index conversion through `position_mm_to_index(...)`, `index_to_position_mm(...)`, and `get_position_range_mm(...)`
 - reference, boundary, composite, and additional-reference slice extraction
+- colored region slice extraction in `get_colored_region_slice(...)` -- returns annotation slice as RGB with atlas-defined colors
+- smoothed boundary contour extraction in `get_smoothed_boundary_slice(...)` -- returns annotation boundaries with smoothed vector contours
 - structure, hierarchy, mask, and visible-region helpers
 - local and remote atlas listing helpers
 
@@ -36,6 +38,7 @@ It also exposes:
 - `AVAILABLE_MODELS`
 - `AVAILABLE_THINKING_LEVELS` (OFF / LOW / MEDIUM / HIGH)
 - `CODE_EXECUTION_ENABLED` and `supports_code_execution()`
+- Registration workflow constants and `default_registration_workflow()`
 - AP rollout flags for token counting, File API, context cache, and Interactions API
 - a cached shared `google.genai.Client`
 
@@ -50,30 +53,32 @@ It also exposes:
 
 The estimator is split across three files:
 
-- `estimator.py` - the tool loop, retry/backoff, optional File API/cache/Interactions API, trace emission, debug-artifact writing, and `estimate_ap(...)` alias
-- `estimator_tools.py` - tool definitions and tool-response construction helpers
-- `estimator_debug.py` - debug-artifact writing helpers
+- `estimator.py` -- the tool loop, retry/backoff, optional File API/cache/Interactions API, trace emission, debug-artifact writing, and `estimate_ap(...)` alias
+- `estimator_tools.py` -- tool definitions and tool-response construction helpers
+- `estimator_debug.py` -- debug-artifact writing helpers
 
-`langslice.ai.batch_eval` is an offline helper for one-shot AP Batch API experiments. It is not part of the live GUI workflow.
+`langslice.ai.batch_eval` is an offline helper for one-shot AP Batch API experiments. It is not part of the live pipeline.
 
 ### `langslice.registration`
 
-The registration subsystem is split across seven files:
+The registration subsystem is split across eight files:
 
-- `types.py` - affine helpers plus `AffineResult`, `RegistrationCorrespondence`, `NonlinearResult`, `RegistrationResult`, `LandmarkAnnotation`, `RegistrationAnnotationSession`
-- `agents.py` - shared utilities (retry, heartbeat, JSON extraction, coordinate conversion) and workflow router
-- `agents_image_gen.py` - two-shot image-generation workflow for Gemini image-gen models (e.g. gemini-3-pro-image-preview)
-- `agents_tool_loop.py` - iterative tool-loop workflow for text-centric models (default)
-- `solver.py` - deterministic affine least-squares fit and TPS fit
-- `runtime.py` - registration orchestration and debug artifact writing
-- `core.py` - public wrapper `estimate_registration_runtime(...)`
+- `types.py` -- affine helpers plus `AffineResult`, `RegistrationCorrespondence`, `NonlinearResult`, `RegistrationResult`, `LandmarkAnnotation`, `RegistrationAnnotationSession`
+- `agents.py` -- shared utilities (retry, heartbeat, JSON extraction, coordinate conversion) and workflow router
+- `agents_colored_segmentation.py` -- colored segmentation workflow (default for image-gen models): model produces atlas-colored tissue segmentation, Elastix B-spline extracts deformation, VisuAlign markers from control points
+- `agents_image_gen.py` -- legacy two-shot landmark workflow for image-gen models (superseded by colored segmentation)
+- `agents_tool_loop.py` -- iterative tool-loop workflow for text-centric models (experimental, on hold)
+- `solver.py` -- deterministic affine least-squares fit and TPS fit
+- `runtime.py` -- registration orchestration and debug artifact writing
+- `core.py` -- public wrapper `estimate_registration_runtime(...)`
 
-Two registration workflows are available, selected by model capabilities or user override:
+Three registration workflows are available, selected by model capabilities or user override:
 
-- **multimodal_tool_loop** — the default workflow; the model iteratively proposes and refines landmarks across multiple turns using tool calls.
-- **image_gen_two_shot** — exclusively for image-generation models.  Two passes: (1) the model draws numbered landmark annotations on the atlas, (2) a second call transfers matching landmarks onto the histology slice.  The atlas is upscaled to ~1K before pass 1 and the slice receives an exposure boost before pass 2.  Generated images are saved for inspection; marker extraction is not yet implemented.
+- **colored_segmentation** (default for image-gen models) -- The model produces a colored segmentation of the tissue guided by four atlas input images (colored region map, smoothed boundaries, grayscale reference, histology slice). Pixels are classified back to atlas region IDs via nearest-color matching. Smoothed borders are extracted from both atlas and model-output classified maps. itk-elastix B-spline registration recovers the dense deformation field. The atlas RGB is warped through the recovered transform. VisuAlign-compatible `[ox, oy, nx, ny]` markers are extracted from B-spline control points.
+- **image_gen_two_shot** (legacy) -- Two passes: (1) the model draws numbered landmark annotations on the atlas, (2) a second call transfers matching landmarks onto the histology slice. Superseded by colored segmentation.
+- **multimodal_tool_loop** (experimental, on hold) -- The model iteratively proposes and refines landmarks across multiple turns using tool calls.
 
-Current runtime behavior in `runtime.py`:
+Current runtime behavior in `runtime.py` for legacy workflows:
 
 1. Load the atlas.
 2. Build either a composite or reference atlas slice.
@@ -83,9 +88,16 @@ Current runtime behavior in `runtime.py`:
 6. Fit one TPS result from the same pairs.
 7. Return both results and optionally save debug artifacts.
 
-Important current facts:
+Current runtime behavior for the colored segmentation workflow:
 
-- `affine_result.provenance["transform_direction"]` is set to `atlas_to_slice`.
+1. Generate four atlas input images at the target AP position.
+2. Send all four images with prompt to Gemini image-gen.
+3. Classify model output pixels to atlas region IDs.
+4. Extract smoothed borders from both atlas and model-output classified maps.
+5. Run itk-elastix B-spline registration on the border images.
+6. Warp atlas RGB through the recovered transform.
+7. Extract VisuAlign markers from B-spline control points.
+8. Return results and optionally save debug artifacts.
 
 ### `langslice.image_prep`
 
@@ -93,8 +105,7 @@ This module handles image ingest and the image that is actually shown to Gemini.
 Current responsibilities:
 
 - normalize arbitrary PIL modes to 8-bit RGB
-- infer channel labels for the GUI
-- render the operator-selected channel/exposure/brightness/contrast settings into a new image
+- infer channel labels
 - detect pixel size from OME metadata or TIFF resolution tags
 - downsample the image for VLM use to the configured pixel and long-edge limits
 - return a `LoadedImageState` with canonical and VLM-ready images
@@ -108,90 +119,46 @@ Key points:
 - anchoring is computed in atlas voxel space
 - `compute_coronal_frame_geometry(...)` is shared with the overlay preview contract
 - `build_quint_export(...)` builds one-slice exports only
+- `SliceExport.markers` supports VisuAlign `[ox, oy, nx, ny]` pairs from Elastix B-spline control points
 - `save_quint_json(...)` writes the JSON file
 
-### `langslice.gui`
+### `tauri-gui/`
 
-The GUI is centered on `MainWindow` in `langslice.gui.main_window`.
-Other GUI files are support modules:
+The Tauri desktop app lives in `tauri-gui/`. Rust backend (`src-tauri/`) handles atlas loading, reslicing, and mesh serving. React + Three.js frontend (`src/`) provides 3D atlas visualization, dashboard, split/overlay views, and settings management.
 
-- `workers.py` - `AgentWorker` and `ManualRegistrationWorker` QThread subclasses
-- `main_window_components.py` - reusable widgets and display helpers
-- `atlas_viewer.py` - threaded split-view atlas loader
-- `overlay_viewer.py` - shared-scene overlay viewer using export-style coronal geometry
-- `settings_dialog.py` - backend and credential editor for `.env`
-- `trace_inspector.py` - in-app viewer for structured AP and registration trace events
-- `run_metadata_dialog.py` - dialog used when classifying a saved trace as success or failure
+Launched via `cd tauri-gui && pnpm tauri dev`.
 
 ## End-To-End Control Flow
 
-### 1. Image load
+### CLI: `langslice estimate`
 
-When the user loads a file, `MainWindow._load_image(...)` calls `load_image_state(...)`.
-That sets:
+1. Load and normalize the image with `load_image_state(...)`.
+2. Optionally apply adaptive preprocessing (CLAHE + brightness normalization).
+3. Downscale to VLM resolution.
+4. Run `estimate_position(...)` or `estimate_position_image_gen(...)` depending on model type.
+5. Print position and reasoning; optionally write debug artifacts.
 
-- `source_image` to the canonical normalized image
-- `pixel_size_um` and pixel-size source metadata
-- `pil_image` and `agent_vlm_image` after slice-adjustment rendering
-- the GUI into manual-position mode with the AP slider initialized to the current slider range
+### CLI: `langslice register`
 
-### 2. Agent input adjustments
+1. Load, normalize, and downscale the image.
+2. Call `estimate_registration_runtime(...)` at the specified AP position with the selected workflow.
+3. Print registration summary (correspondences, rotation, translation, scale, residuals).
+4. Write debug artifacts to output directory.
 
-The main window keeps a second layer of operator-controlled image settings:
+### Tauri GUI
 
-- channel enable/disable
-- exposure
-- brightness
-- contrast
-- atlas border visibility
-
-`_apply_slice_adjustments()` renders a new display image with `render_slice_agent_image(...)`, prepares a VLM-ready copy with `prepare_image_for_vlm(...)`, and clears old AP/registration outputs when inputs changed.
-
-### 3. AP estimation path
-
-If the user clicks `Run Agent`, `AgentWorker` runs in a `QThread` and calls:
-
-1. `estimate_position(...)`
-2. `estimate_registration_runtime(...)` using the returned `position_mm`
-
-### 4. Manual-position path
-
-If the user clicks `Run Registration at Manual Position`, `ManualRegistrationWorker` runs in a `QThread` and:
-
-1. emits an `APResult` built from the slider-selected position
-2. calls `estimate_registration_runtime(...)` directly
-
-### 5. Registration solve
-
-`estimate_registration_runtime(...)` delegates to `registration.runtime.estimate_registration(...)`, which produces:
-
-- `RegistrationResult.correspondences`
-- `RegistrationResult.affine_result`
-- `RegistrationResult.nonlinear_result`
-- optional debug artifacts
-
-### 6. Preview and export
-
-The GUI then updates:
-
-- single view: transformed slice image
-- split view: transformed slice plus async atlas view with optional landmark markers
-- overlay view: slice and atlas in a shared scene using `compute_coronal_frame_geometry(...)`
-
-Export is enabled only after both AP and affine steps complete.
-The export path uses `build_quint_export(...)` plus `save_quint_json(...)`.
+The Tauri GUI communicates with the Python pipeline via a sidecar process. The Rust backend handles atlas loading and 3D mesh serving; the Python sidecar runs AP estimation and registration. Results are displayed in the React frontend with split/overlay views.
 
 ## Trace And Debug Artifacts
 
-Trace events are assembled with helpers in `langslice.agent_trace` and shown in the GUI trace inspector.
+Trace events are assembled with helpers in `langslice.agent_trace`.
 
 When `LANGSLICE_VLM_DEBUG_DIR` is set:
 
 - AP estimation creates a run directory with the prepared target image, `reasoning.txt`, and `telemetry.json`
-- registration writes a `registration/` subdirectory when it receives the AP run directory, or a standalone registration directory when run manually
-- the GUI can move the run directory into `success/` or `failure/` and add `classification.json`
+- Registration writes a `registration/` subdirectory with atlas images, model output, border images, warped atlas, and `registration.json`
 
 ## Current Gaps
 
 - Only coronal-layout atlases are supported by the active helpers and export math.
-- Registration computes a TPS result, but GUI export still uses the affine result only.
+- The legacy workflows compute a TPS result, but export still uses the affine result only for those paths.

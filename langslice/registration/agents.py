@@ -728,7 +728,24 @@ def estimate_registration_correspondences(
 
     client = get_client()
 
-    if selected_workflow == "image_gen_two_shot":
+    if selected_workflow == "colored_segmentation":
+        agents_colored_seg = importlib.import_module(
+            "langslice.registration.agents_colored_segmentation"
+        )
+        _estimate_colored_seg = cast(
+            Callable[..., list[dict[str, object]]],
+            agents_colored_seg._estimate_correspondences_colored_segmentation,
+        )
+        raw_correspondences = _estimate_colored_seg(
+            client,
+            prepared=prepared,
+            atlas_name=atlas_name,
+            position_mm=position_mm,
+            on_progress=on_progress,
+            on_trace=on_trace,
+            on_annotation_session=on_annotation_session,
+        )
+    elif selected_workflow == "image_gen_two_shot":
         raw_correspondences = _estimate_correspondences_image_gen_two_shot(
             client,
             prepared=prepared,
@@ -752,7 +769,8 @@ def estimate_registration_correspondences(
     else:
         raise ValueError(
             f"Unknown registration workflow {selected_workflow!r}. "
-            "Expected 'image_gen_two_shot' or 'multimodal_tool_loop'."
+            "Expected 'colored_segmentation', 'image_gen_two_shot', "
+            "or 'multimodal_tool_loop'."
         )
 
     correspondences = _entries_to_correspondences(

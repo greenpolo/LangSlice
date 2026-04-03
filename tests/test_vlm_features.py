@@ -91,7 +91,10 @@ def test_registration_workflow_options_gate_image_models() -> None:
     assert "gemini-3.1-flash-image-preview" in vlm_config.AVAILABLE_MODELS
 
     image_options = vlm_config.get_registration_workflow_options("gemini-3-pro-image-preview")
-    assert image_options == [("Image Gen (2-Shot)", "image_gen_two_shot")]
+    assert image_options == [
+        ("Colored Segmentation", "colored_segmentation"),
+        ("Image Gen (2-Shot)", "image_gen_two_shot"),
+    ]
 
     text_options = vlm_config.get_registration_workflow_options("gemini-3-flash-preview")
     assert text_options == [

@@ -16,6 +16,7 @@ dependencies = [
     "Pillow",
     "tifffile",
     "python-dotenv",
+    "itk-elastix",
 ]
 
 [project.scripts]

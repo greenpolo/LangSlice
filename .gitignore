@@ -33,4 +33,11 @@ archive/*.md
 
 # Local agent/session artifacts
 .sisyphus/
+.claude/
+.superpowers/
 debug_runs/
+test_runs/
+
+# Large binary data
+*.nii
+*.nii.gz

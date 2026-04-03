@@ -1,166 +1,88 @@
 # Current Workflow
 
-This file describes what the GUI currently does in code.
+This file describes the CLI and Tauri GUI workflows as currently implemented.
 
-## Loading A Slice
+## CLI: `langslice estimate`
 
-When the user loads an image, `MainWindow._load_image(...)`:
-
-1. calls `load_image_state(...)`
-2. normalizes the source image to 8-bit RGB
-3. detects pixel size from TIFF or OME metadata when available
-4. stores a canonical image and a VLM-ready downsampled image
-5. resets prior AP and registration results
-6. switches the step label to `Manual Position`
-7. initializes the AP slider and manual-position UI
-
-The GUI supports these file types through the file picker and drag-and-drop path:
-
-- `.png`
-- `.jpg`
-- `.jpeg`
-- `.tif`
-- `.tiff`
-
-## Agent Input Adjustments
-
-Before running either workflow, the operator can change the exact image shown to the model.
-The current controls are:
-
-- channel toggles
-- exposure slider
-- brightness slider
-- contrast slider
-- atlas border toggle
-
-Current implementation details:
-
-- these settings update the displayed slice image
-- a VLM-sized derivative image is rebuilt after adjustments
-- changing them clears prior AP and registration outputs
-- atlas border visibility also updates the split and overlay atlas viewers
-
-## Automatic Workflow: `Run Agent`
-
-The automatic button starts `AgentWorker` on a `QThread`.
-That worker does two steps in order:
-
-1. `estimate_position(...)` in `langslice.ai.estimator`
-2. `estimate_registration_runtime(...)` in `langslice.registration.core`
-
-The AP step returns an `APResult(position_mm, reasoning, debug_dir)`.
-The registration step returns a `RegistrationResult` containing correspondences, affine output, nonlinear output, QC state, and optional debug-dir metadata.
-
-## Manual Workflow: `Run Registration at Manual Position`
-
-The manual button starts `ManualRegistrationWorker` on a `QThread`.
-That worker does not call the AP estimator.
-Instead it:
-
-1. emits an `APResult` built directly from the current slider value
-2. runs `estimate_registration_runtime(...)` at that exact `position_mm`
-
-The GUI still shows two steps, but the first step is labeled `Manual Position` in this mode.
-
-## CLI Registration: `langslice register`
-
-The `register` CLI subcommand runs end-to-end registration from the command line:
+Run AP estimation from the command line:
 
 ```
-langslice register <image> --position <mm> [--workflow ...] [--model ...] [--out ...]
+langslice estimate <image> [--atlas ...] [--model ...] [--workflow ...]
 ```
 
-It supports workflow selection (`multimodal_tool_loop`, `image_gen_two_shot`), model override, landmark count, temperature, VLM resolution, and optional output directory for debug artifacts.
+1. Load and normalize the image to 8-bit RGB.
+2. Detect pixel size from TIFF or OME metadata when available.
+3. Downscale to VLM resolution (default 2048px long edge).
+4. Optionally apply adaptive preprocessing (`--preprocess auto`): CLAHE + brightness normalization.
+5. Run AP estimation via Gemini tool-use or image-gen workflow.
+6. Print the estimated AP position and reasoning.
+7. Optionally write debug artifacts (`--out`).
+
+Supported file types: `.png`, `.jpg`, `.jpeg`, `.tif`, `.tiff`.
+
+## CLI: `langslice register`
+
+Run registration at a known AP position:
+
+```
+langslice register <image> --position <mm> [--workflow colored_segmentation] [--model ...] [--out ...]
+```
+
+1. Load, normalize, and downscale the image.
+2. Call `estimate_registration_runtime(...)` at the specified position with the selected workflow.
+3. Print registration summary: accepted pairs, rotation, translation, scale, shear, residuals.
+4. Write debug artifacts to the output directory.
+
+Workflow selection (`--workflow`):
+- `colored_segmentation` (default for image-gen models)
+- `image_gen_two_shot` (legacy)
+- `multimodal_tool_loop` (experimental, on hold)
+
+If `--workflow` is not specified, the default is auto-selected based on the model via `default_registration_workflow()`.
+
+## Tauri GUI
+
+The desktop application lives in `tauri-gui/` and is launched via `cd tauri-gui && pnpm tauri dev`.
+
+The GUI provides:
+- 3D atlas viewer with region mesh rendering
+- Pipeline sidecar for running AP estimation and registration
+- Settings management (auth backends, model selection)
+- Split and overlay views for reviewing registration results
+- Dashboard for managing runs
+
+The Python pipeline runs as a sidecar process; the Rust backend handles atlas loading, reslicing, and mesh serving.
 
 ## Registration Runtime Behavior
 
-The active registration runtime currently does the following:
+### Colored segmentation workflow (default for image-gen models)
 
-1. load the selected atlas
-2. build either a composite atlas slice or a plain reference slice
-3. ask Gemini for correspondence pairs via the selected workflow in `registration/agents.py`
-4. require at least 3 pairs
-5. fit one affine transform from atlas coordinates to slice coordinates
-6. fit one TPS result from the same pairs
-7. return both results to the GUI or CLI
+The colored segmentation workflow in `agents_colored_segmentation.py`:
 
-Three registration workflows are available:
+1. Generate four atlas input images at the target AP position: colored region map, smoothed boundary lines, grayscale reference, and the histology slice.
+2. Send all four images with prompt to Gemini image-gen. The model warps the colored atlas regions to match the histology anatomy.
+3. Classify pixels in the model output back to atlas region IDs using nearest-color matching.
+4. Extract smoothed borders from both the atlas and model-output classified maps.
+5. Run itk-elastix B-spline registration on the border images to recover the dense deformation field.
+6. Warp the atlas RGB through the recovered transform.
+7. Extract VisuAlign-compatible `[ox, oy, nx, ny]` markers from B-spline control points.
+8. Return results including the warped atlas, border images, and markers.
 
-- **multimodal_tool_loop** — iterative landmark refinement via tool calls
-- **image_gen_two_shot** — image-generation models draw landmarks directly; positions extracted via CV
+### Legacy workflows
 
-## View Modes
+The legacy workflows (`image_gen_two_shot`, `multimodal_tool_loop`) follow the correspondence-based pipeline:
 
-### Single
-
-Shows the current slice image.
-If the affine result is defined in the slice-image frame, the GUI applies that transform to a transparent output canvas before display.
-If the affine result is marked as `atlas_to_slice`, the base slice image is shown without applying the transform.
-
-### Split
-
-Shows:
-
-- the current slice image on the left
-- an asynchronously loaded atlas slice on the right
-
-If preview or accepted correspondences are available, both panes draw labeled marker overlays.
-
-### Overlay
-
-Shows the slice and atlas in a shared `QGraphicsScene`.
-Atlas placement uses `compute_coronal_frame_geometry(...)`, which is the same coronal frame contract used by export anchoring.
-The opacity slider only affects the atlas layer.
-
-## AP Slider Behavior
-
-The AP slider is always expressed in hundredths of a millimeter.
-When atlas loading succeeds, the GUI updates the slider range from `get_position_range_mm(...)`.
-
-Changing the slider:
-
-- updates `current_pos`
-- updates the manual-position label
-- updates the split atlas viewer
-- updates the overlay viewer
+1. Load the atlas and build an atlas slice.
+2. Ask Gemini for correspondence pairs via the selected workflow.
+3. Require at least 3 pairs.
+4. Fit one affine transform from atlas coordinates to slice coordinates.
+5. Fit one TPS result from the same pairs.
+6. Return both results.
 
 ## Export Behavior
 
-Export is enabled only after both steps have completed successfully.
-The current export path:
+The export path uses `build_quint_export(...)` plus `save_quint_json(...)`.
 
-- loads atlas shape and resolution from BrainGlobe when possible
-- falls back to Allen Mouse 25 um defaults if atlas loading fails at export time
-- calls `build_quint_export(...)`
-- writes JSON with `save_quint_json(...)`
-
-The export currently uses the affine result only.
-The nonlinear TPS result is not written into the JSON output.
-
-## Trace Viewer And Run Classification
-
-The right panel includes a `TraceInspector`.
-It displays:
-
-- stage events
-- runtime status events
-- model events
-- tool-call events
-- tool-result events
-
-If a completed run has a debug directory, the GUI shows `Mark Success` and `Mark Failure` buttons.
-Using either button:
-
-- opens `RunMetadataDialog`
-- moves the run directory into a sibling `success/` or `failure/` folder
-- writes `classification.json` with current run context and optional ground-truth AP
-
-## Pixel Size Notes
-
-Pixel size is tracked through the GUI and image-prep pipeline.
-Current behavior is literal:
-
-- metadata-derived pixel size is applied immediately when available
-- manual pixel-size edits update GUI state and the VLM-prepared image
-- the registration runtime currently accepts `pixel_size_um` but does not use it internally
-- `OverlayGraphicsView.set_pixel_size(...)` is currently a no-op kept for API compatibility
+- Loads atlas shape and resolution from BrainGlobe.
+- `SliceExport.markers` can be populated with VisuAlign `[ox, oy, nx, ny]` pairs from Elastix B-spline control points (colored segmentation workflow).
+- The legacy workflows use the affine result only; the nonlinear TPS result is not exported.

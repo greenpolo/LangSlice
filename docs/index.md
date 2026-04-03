@@ -6,7 +6,7 @@ These files are meant to describe the implementation that exists now, not a sepa
 ## Files
 
 - `architecture_overview.md` - package boundaries, major modules, and end-to-end control flow
-- `current_workflow.md` - what the GUI does today, including the agent and manual-position paths
+- `current_workflow.md` - current CLI and Tauri GUI workflows
 - `abba_ap_coordinate_system.md` - the AP coordinate rules used by atlas helpers and export
 - `registration_plan.md` - current registration runtime status, limitations, and gaps under its legacy filename
 

@@ -7,14 +7,13 @@ All runtime behavior described by the maintained docs lives here.
 
 ## Package Surface
 
-- `cli.py` - CLI parser for `gui` and `version`
-- `atlas/` - BrainGlobe atlas access, AP conversion, slice helpers
-- `ai/` - Gemini config, AP estimator, offline batch helpers
-- `registration/` - registration prompt, runtime wrapper, affine/TPS solvers, result types
-- `image_prep.py` - normalization, metadata pixel-size detection, VLM image preparation
-- `agent_trace.py` - structured event builders for the GUI trace inspector
-- `export.py` - QUINT/ABBA-compatible JSON export helpers
-- `gui/` - PySide6 main window and support widgets
+- `cli.py` -- CLI parser for `version`, `register`, and `estimate`
+- `atlas/` -- BrainGlobe atlas access, AP conversion, slice helpers, colored region and boundary helpers
+- `ai/` -- Gemini config, AP estimator, offline batch helpers
+- `registration/` -- registration workflows (colored segmentation, legacy image-gen, tool loop), runtime wrapper, affine/TPS solvers, result types
+- `image_prep.py` -- normalization, metadata pixel-size detection, VLM image preparation
+- `agent_trace.py` -- structured event builders for trace inspection
+- `export.py` -- QUINT/ABBA-compatible JSON export helpers with VisuAlign marker support
 
 ## Local Conventions
 
@@ -28,7 +27,6 @@ All runtime behavior described by the maintained docs lives here.
 ## Local Anti-Patterns
 
 - Do not move runtime logic into ad hoc root scripts.
-- Do not bypass `QThread` for AP or registration work launched from the GUI.
 - Do not describe aspirational behavior in docs when the code does something simpler.
 
 ## Verify After Edits

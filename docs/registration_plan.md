@@ -4,45 +4,71 @@ This file keeps its legacy filename, but the content below is a description of t
 
 ## Implemented Files
 
-- `langslice/registration/core.py` - public wrapper `estimate_registration_runtime(...)`
-- `langslice/registration/runtime.py` - runtime orchestration and debug-artifact writing
-- `langslice/registration/agents.py` - shared utilities (retry, heartbeat, JSON extraction, coordinate conversion) and workflow router
-- `langslice/registration/agents_image_gen.py` - two-shot workflow for image-generation models (CV-based landmark extraction)
-- `langslice/registration/agents_tool_loop.py` - iterative tool-loop workflow for text-centric models (default)
-- `langslice/registration/solver.py` - affine and TPS fitting helpers
-- `langslice/registration/types.py` - result classes, annotation types, and affine helper functions
+- `langslice/registration/core.py` -- public wrapper `estimate_registration_runtime(...)`
+- `langslice/registration/runtime.py` -- runtime orchestration and debug-artifact writing
+- `langslice/registration/agents.py` -- shared utilities (retry, heartbeat, JSON extraction, coordinate conversion) and workflow router
+- `langslice/registration/agents_colored_segmentation.py` -- colored segmentation workflow (default for image-gen models): model produces atlas-colored tissue segmentation, itk-elastix B-spline extracts deformation, VisuAlign markers from control points
+- `langslice/registration/agents_image_gen.py` -- legacy two-shot workflow for image-generation models (superseded by colored segmentation)
+- `langslice/registration/agents_tool_loop.py` -- iterative tool-loop workflow for text-centric models (experimental, on hold)
+- `langslice/registration/solver.py` -- affine and TPS fitting helpers
+- `langslice/registration/types.py` -- result classes, annotation types, and affine helper functions
 
 ## Current Registration Pipeline
 
-The live runtime currently does this:
+### Colored segmentation workflow (default for image-gen models)
 
-1. receive the slice image, atlas name, and `position_mm`
-2. load the atlas in `registration/runtime.py`
-3. build either a composite atlas slice or a plain reference slice
-4. ask Gemini for correspondence pairs through `estimate_registration_correspondences(...)`
-5. require at least 3 pairs in `runtime.py`
-6. fit an affine transform from atlas coordinates to slice coordinates
-7. fit a TPS result from the same correspondence list
-8. return a `RegistrationResult`
+The primary registration workflow in `agents_colored_segmentation.py`:
+
+1. Generate four atlas input images at the target AP position: colored region map, smoothed boundary lines, grayscale reference, and the histology slice.
+2. Send all four images with prompt to Gemini image-gen. The model warps the colored atlas regions to match the histology anatomy.
+3. Classify pixels in the model output back to atlas region IDs using nearest-color matching.
+4. Extract smoothed borders from both the atlas and model-output classified maps.
+5. Run itk-elastix B-spline registration on the border images to recover the dense deformation field.
+6. Warp the atlas RGB through the recovered transform.
+7. Extract VisuAlign-compatible `[ox, oy, nx, ny]` markers from B-spline control points.
+
+### Legacy correspondence-based pipeline
+
+Used by the `image_gen_two_shot` and `multimodal_tool_loop` workflows:
+
+1. Receive the slice image, atlas name, and `position_mm`.
+2. Load the atlas in `registration/runtime.py`.
+3. Build either a composite atlas slice or a plain reference slice.
+4. Ask Gemini for correspondence pairs through `estimate_registration_correspondences(...)`.
+5. Require at least 3 pairs in `runtime.py`.
+6. Fit an affine transform from atlas coordinates to slice coordinates.
+7. Fit a TPS result from the same correspondence list.
+8. Return a `RegistrationResult`.
 
 ## Agent Stage
 
-The correspondence agent system is split across `agents.py` (shared utilities and router) and two workflow modules.
+The correspondence agent system is split across `agents.py` (shared utilities and router) and three workflow modules.
+
+### Workflow: colored_segmentation (agents_colored_segmentation.py)
+
+- Default for Gemini image-generation models.
+- Uses itk-elastix B-spline registration instead of landmark correspondences.
+- Generates four atlas input images: colored region map, smoothed boundaries, grayscale reference, histology slice.
+- Model produces a colored segmentation of the tissue anatomy.
+- Pixels classified to atlas region IDs via nearest-color matching.
+- Border images extracted from both atlas and model-output classification.
+- Elastix B-spline registration recovers the dense deformation field between border images.
+- Atlas RGB warped through the recovered transform.
+- VisuAlign markers extracted from B-spline control points as `[ox, oy, nx, ny]` pairs.
+- Must use `ai_studio` backend -- Vertex serves degraded image-gen quality.
 
 ### Workflow: image_gen_two_shot (agents_image_gen.py)
 
-- Exclusively for Gemini image-generation models (e.g. gemini-3-pro-image-preview, gemini-3.1-flash-image-preview)
-- Two passes: (1) atlas annotation, (2) slice transfer using annotated atlas as reference
-- Atlas upscaled to ~1K before pass 1 to match model output resolution and avoid spatial copying
-- Slice receives 1.5x exposure boost before pass 2 to improve anatomical visibility
-- Prompt warns model about common microscopy artifacts (bubbles, tears, tissue damage)
-- Generated images saved for visual inspection; marker extraction is TODO
-- Must use `ai_studio` backend — Vertex serves degraded image-gen quality
+- Legacy workflow for Gemini image-generation models, superseded by colored segmentation.
+- Two passes: (1) atlas annotation, (2) slice transfer using annotated atlas as reference.
+- Atlas upscaled to ~1K before pass 1 to match model output resolution and avoid spatial copying.
+- Slice receives 1.5x exposure boost before pass 2 to improve anatomical visibility.
 
 ### Workflow: multimodal_tool_loop (agents_tool_loop.py)
 
-- Model iteratively proposes and refines landmarks across multiple turns using tool calls
-- Configurable max steps via `REGISTRATION_TOOL_LOOP_MAX_STEPS`
+- Experimental, on hold.
+- Model iteratively proposes and refines landmarks across multiple turns using tool calls.
+- Configurable max steps via `REGISTRATION_TOOL_LOOP_MAX_STEPS`.
 
 ### Shared utilities (agents.py)
 
@@ -57,6 +83,8 @@ The current deterministic helpers are:
 
 - `fit_affine_from_correspondences(...)`
 - `fit_tps_from_correspondences(...)`
+
+These are used by the legacy correspondence-based workflows. The colored segmentation workflow uses itk-elastix B-spline registration instead.
 
 `fit_affine_from_correspondences(...)`:
 
@@ -81,34 +109,18 @@ When a debug directory is available, `registration/runtime.py` writes:
 - `atlas_landmarks.png`
 - `registration.json`
 
-If registration is launched from the AP agent pipeline, those files are written to a `registration/` subdirectory under the AP run directory.
-If registration is launched from the manual workflow and `LANGSLICE_VLM_DEBUG_DIR` is set, the GUI creates a manual run directory first and registration writes into its `registration/` subdirectory.
+The colored segmentation workflow additionally writes atlas input images, model output, classified maps, border images, warped atlas, and marker data.
 
 ## Important Literal Gaps In The Current Runtime
 
-- `NonlinearResult` is computed and returned but the GUI export path does not serialize it.
-- The `image_gen_two_shot` workflow generates annotated images but marker extraction from those images is not yet implemented.
-
-## What The GUI Uses
-
-The GUI currently uses registration results for:
-
-- split-view correspondence markers
-- overlay display setup
-- affine summary text in the step indicator
-- export of the affine path through `build_quint_export(...)`
-
-The GUI does not currently expose a dedicated nonlinear review view or nonlinear export path.
+- `NonlinearResult` from the legacy workflows is computed and returned but the export path does not serialize it.
 
 ## Summary
 
-The registration subsystem is no longer just a plan.
-It already contains:
+The registration subsystem contains three workflows:
 
-- a model prompt for correspondences
-- deterministic affine fitting
-- deterministic TPS fitting
-- GUI integration
-- debug-artifact writing
+- colored segmentation (default for image-gen models): dense deformation via Elastix B-spline with VisuAlign markers
+- image_gen_two_shot (legacy): landmark correspondences from image-gen models
+- multimodal_tool_loop (experimental, on hold): iterative landmark refinement
 
-The remaining gaps are mostly about completing marker extraction for the image-gen workflow and using the nonlinear result beyond internal storage and tests.
+The colored segmentation workflow is the primary path. It produces a dense deformation field and VisuAlign markers without relying on sparse landmark extraction.

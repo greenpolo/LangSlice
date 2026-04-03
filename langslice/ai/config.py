@@ -14,6 +14,7 @@ CODE_EXECUTION_ENABLED = True
 TEMPERATURE: float = 1.0
 
 REGISTRATION_WORKFLOW_IMAGE_GEN_TWO_SHOT = "image_gen_two_shot"
+REGISTRATION_WORKFLOW_COLORED_SEGMENTATION = "colored_segmentation"
 REGISTRATION_WORKFLOW_MULTIMODAL_TOOL_LOOP = "multimodal_tool_loop"
 
 AVAILABLE_THINKING_LEVELS: list[tuple[str, str]] = [
@@ -52,6 +53,7 @@ IMAGE_MODEL_THINKING_MODELS: set[str] = {
 }
 
 REGISTRATION_WORKFLOW_LABELS: dict[str, str] = {
+    REGISTRATION_WORKFLOW_COLORED_SEGMENTATION: "Colored Segmentation",
     REGISTRATION_WORKFLOW_IMAGE_GEN_TWO_SHOT: "Image Gen (2-Shot)",
     REGISTRATION_WORKFLOW_MULTIMODAL_TOOL_LOOP: "Tool Loop",
 }
@@ -113,9 +115,13 @@ def get_registration_workflow_options(model_name: str | None) -> list[tuple[str,
     if is_image_generation_model(model_name):
         return [
             (
+                REGISTRATION_WORKFLOW_LABELS[REGISTRATION_WORKFLOW_COLORED_SEGMENTATION],
+                REGISTRATION_WORKFLOW_COLORED_SEGMENTATION,
+            ),
+            (
                 REGISTRATION_WORKFLOW_LABELS[REGISTRATION_WORKFLOW_IMAGE_GEN_TWO_SHOT],
                 REGISTRATION_WORKFLOW_IMAGE_GEN_TWO_SHOT,
-            )
+            ),
         ]
     return [
         (

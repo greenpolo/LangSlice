@@ -17,8 +17,8 @@ def _add_register_parser(subparsers: argparse._SubParsersAction) -> None:
     reg.add_argument(
         "--workflow",
         default=None,
-        help="Registration workflow (image_gen_two_shot, multimodal_tool_loop). "
-        "Default: auto-select based on model.",
+        help="Registration workflow (colored_segmentation, image_gen_two_shot, "
+        "multimodal_tool_loop). Default: auto-select based on model.",
     )
     reg.add_argument("--model", default=None, help="Gemini model name")
     reg.add_argument("--landmarks", type=int, default=14, help="Target landmark count")

@@ -36,7 +36,7 @@ LangSlice uses `position_mm` consistently in the current implementation:
 
 - atlas slice loading in `langslice.atlas.core`
 - AP estimation prompts and tool calls in `langslice.ai.estimator`
-- GUI state and manual AP slider updates in `langslice.gui.main_window`
+- CLI and Tauri GUI state management
 - QUINT export anchoring in `langslice.export`
 
 The AP estimator asks Gemini to search the atlas in millimeters from the anterior edge, not in Bregma-relative units.

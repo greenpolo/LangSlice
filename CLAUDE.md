@@ -20,23 +20,27 @@ python -m ruff check .
 python -m basedpyright
 
 # Run the app
-langslice gui
 langslice version
+langslice estimate <image> [--atlas ...] [--model ...]
+langslice register <image> --position <mm> [--workflow ...] [--out ...]
+
+# Tauri GUI
+cd tauri-gui && pnpm tauri dev
 ```
 
 ## Architecture
 
 LangSlice registers histology slice images to BrainGlobe atlases using Gemini vision-language models for estimation and deterministic local solvers for geometry. The desktop GUI is a Tauri app (Rust + React + Three.js) in `tauri-gui/`.
 
-**Pipeline:** `AP estimation → landmark correspondences → affine/TPS solve → preview/export`
+**Pipeline:** `AP estimation → colored segmentation → Elastix B-spline registration → preview/export`
 
 The code is split into five modules with clear boundaries:
 
-- **`langslice/atlas/`** — BrainGlobe atlas loading, AP/index conversion, coronal slice extraction. Orientation assumptions are centralized in `space.py` and require coronal layout (AP/DV/ML on axes 0/1/2).
+- **`langslice/atlas/`** — BrainGlobe atlas loading, AP/index conversion, coronal slice extraction, colored region and smoothed boundary helpers (`get_colored_region_slice()`, `get_smoothed_boundary_slice()`). Orientation assumptions are centralized in `space.py` and require coronal layout (AP/DV/ML on axes 0/1/2).
 - **`langslice/ai/`** — Gemini client configuration (`config.py`), multi-turn AP estimator split across `estimator.py`, `estimator_tools.py`, and `estimator_debug.py`, offline batch helper (`batch_eval.py`). Three auth backends: `ai_studio`, `vertex_api_key`, `vertex_adc`.
-- **`langslice/registration/`** — Prompt construction and correspondence parsing (`agents.py`), workflow implementations (`agents_tool_loop.py`, `agents_image_gen.py`), deterministic affine and TPS fitting (`solver.py`), orchestration and debug artifacts (`runtime.py`), data classes (`types.py`). Public entry point: `estimate_registration_runtime(...)` in `core.py`.
+- **`langslice/registration/`** — Shared utilities and workflow router (`agents.py`), colored segmentation workflow (`agents_colored_segmentation.py`, default for image-gen models), legacy two-shot workflow (`agents_image_gen.py`), experimental tool-loop workflow (`agents_tool_loop.py`, on hold), deterministic affine and TPS fitting (`solver.py`), orchestration and debug artifacts (`runtime.py`), data classes (`types.py`). Public entry point: `estimate_registration_runtime(...)` in `core.py`. The colored segmentation workflow uses itk-elastix for B-spline registration.
 - **`tauri-gui/`** — Tauri desktop app. Rust backend (`src-tauri/`) for atlas loading, reslicing, mesh serving. React + Three.js frontend (`src/`) for 3D visualization, dashboard, split/overlay views. Launched via `cd tauri-gui && pnpm tauri dev`.
-- **`langslice/export.py`** — Coronal anchoring math and QUINT/ABBA-compatible single-slice JSON export.
+- **`langslice/export.py`** — Coronal anchoring math and QUINT/ABBA-compatible single-slice JSON export. `SliceExport.markers` supports VisuAlign `[ox, oy, nx, ny]` pairs from Elastix B-spline control points.
 
 Supporting utilities: `image_prep.py` (normalization, pixel-size detection, VLM downsampling), `agent_trace.py` (structured trace events), `cli.py` (argparse entry point).
 
@@ -53,7 +57,8 @@ Common things to verify: `GenerateContentConfig` fields, `types.Part` constructo
 ## Key Conventions
 
 - AP coordinates are atlas-native millimeters from the anterior edge of the volume.
-- Registration computes both affine and TPS results, but export uses affine only.
+- The colored segmentation workflow (default for image-gen models) produces an Elastix B-spline transform and VisuAlign markers from B-spline control points. The legacy workflows compute affine and TPS results from landmark correspondences; export uses the affine result only.
+- itk-elastix is a required dependency for the colored segmentation workflow.
 - Debug traces are written only when `LANGSLICE_VLM_DEBUG_DIR` is set.
 - Ruff and basedpyright are scoped to specific directories (see `pyproject.toml` `include` lists), not the full package.
 - `archive/` and `references/` are read-only unless a task explicitly targets them.
