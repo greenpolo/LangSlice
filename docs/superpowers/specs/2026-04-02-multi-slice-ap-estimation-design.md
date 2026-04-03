@@ -185,7 +185,7 @@ Window 0.12mm wide -> 5 images (minimum)
 
 ### Minimum window threshold
 
-If the window is smaller than ~0.075mm (3 images at 0.025mm spacing), nano-banana has too little to work with. Below this threshold, accept the interpolated position as-is — the locked neighbors have already constrained it to a very narrow range. Skip the API call entirely.
+If the window is smaller than the slice thickness, nano-banana has too little to work with — the locked neighbors have already constrained the position to within one physical slice. Below this threshold, accept the interpolated position as-is. Skip the API call entirely.
 
 ### Locking
 
