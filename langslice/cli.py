@@ -22,7 +22,12 @@ def _add_register_parser(subparsers: argparse._SubParsersAction) -> None:
     )
     reg.add_argument("--model", default=None, help="Gemini model name")
     reg.add_argument("--landmarks", type=int, default=14, help="Target landmark count")
-    reg.add_argument("--vlm-resolution", type=int, default=2048, help="Max long-edge pixels for VLM")
+    reg.add_argument(
+        "--vlm-resolution",
+        type=int,
+        default=2048,
+        help="Max long-edge pixels for VLM",
+    )
     reg.add_argument("--temperature", type=float, default=None, help="Generation temperature")
     reg.add_argument(
         "--thinking",
@@ -59,20 +64,18 @@ def _add_register_parser(subparsers: argparse._SubParsersAction) -> None:
 
 def _run_register(args: argparse.Namespace) -> None:
     import json
-    import os
     from datetime import datetime
     from pathlib import Path
 
     from PIL import Image
 
+    from langslice.ai import config as vlm_config
     from langslice.image_prep import normalize_image, prepare_image_for_vlm
     from langslice.registration.core import estimate_registration_runtime
-    from langslice.registration.runtime import _write_debug_artifacts
     from langslice.registration.types import (
         annotation_session_to_dict,
         build_annotation_session_from_correspondences,
     )
-    from langslice.ai import config as vlm_config
 
     # Configure model before anything touches the client.
     if args.model:
@@ -110,9 +113,21 @@ def _run_register(args: argparse.Namespace) -> None:
 
     print(f"Atlas: {args.atlas}  Position: {args.position:.2f} mm")
     print(f"Workflow: {workflow}  Model: {vlm_config.MODEL_NAME}")
-    border_label = f"border={args.border_count}" if args.border_count is not None else "auto"
-    interior_label = f"interior={args.interior_count}" if args.interior_count is not None else "auto"
-    print(f"Landmarks: {args.landmarks} ({border_label}/{interior_label})  Borders: {not args.no_borders}")
+    border_label = (
+        f"border={args.border_count}"
+        if args.border_count is not None
+        else "auto"
+    )
+    interior_label = (
+        f"interior={args.interior_count}"
+        if args.interior_count is not None
+        else "auto"
+    )
+    print(
+        f"Landmarks: {args.landmarks} "
+        f"({border_label}/{interior_label})  "
+        f"Borders: {not args.no_borders}"
+    )
     print(f"Output: {out_dir}")
     print()
 
@@ -207,8 +222,18 @@ def _add_estimate_parser(subparsers: argparse._SubParsersAction) -> None:
         choices=["low", "medium", "high", "ultra_high"],
         help="Gemini media resolution for input images",
     )
-    est.add_argument("--vlm-resolution", type=int, default=2048, help="Max long-edge pixels for VLM")
-    est.add_argument("--max-iterations", type=int, default=20, help="Max tool-loop iterations")
+    est.add_argument(
+        "--vlm-resolution",
+        type=int,
+        default=2048,
+        help="Max long-edge pixels for VLM",
+    )
+    est.add_argument(
+        "--max-iterations",
+        type=int,
+        default=20,
+        help="Max tool-loop iterations",
+    )
     est.add_argument(
         "--preprocess",
         default="auto",
@@ -216,7 +241,11 @@ def _add_estimate_parser(subparsers: argparse._SubParsersAction) -> None:
         help="Image preprocessing: 'auto' applies adaptive CLAHE + brightness normalization, "
         "'none' sends the raw image",
     )
-    est.add_argument("--borders", action="store_true", help="Enable atlas region borders (off by default)")
+    est.add_argument(
+        "--borders",
+        action="store_true",
+        help="Enable atlas region borders (off by default)",
+    )
     est.add_argument(
         "--out",
         default=None,
@@ -239,7 +268,6 @@ def _add_estimate_parser(subparsers: argparse._SubParsersAction) -> None:
 def _run_estimate(args: argparse.Namespace) -> None:
     import json
     import os
-    from datetime import datetime
     from pathlib import Path
 
     from PIL import Image
@@ -286,7 +314,11 @@ def _run_estimate(args: argparse.Namespace) -> None:
         os.environ["LANGSLICE_VLM_DEBUG_DIR"] = debug_dir
 
     print(f"Atlas: {args.atlas}")
-    print(f"Model: {vlm_config.MODEL_NAME}  Thinking: {vlm_config.THINKING_LEVEL}  Temp: {vlm_config.TEMPERATURE}")
+    print(
+        f"Model: {vlm_config.MODEL_NAME}  "
+        f"Thinking: {vlm_config.THINKING_LEVEL}  "
+        f"Temp: {vlm_config.TEMPERATURE}"
+    )
     print(f"Max iterations: {args.max_iterations}")
     if debug_dir:
         print(f"Output: {debug_dir}")

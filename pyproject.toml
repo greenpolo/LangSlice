@@ -41,7 +41,7 @@ addopts = "-ra"
 target-version = "py310"
 line-length = 100
 include = [
-    "langslice/atlas/*.py",
+    "langslice/**/*.py",
     "tests/test_*.py",
     "tests/*_test.py",
 ]
@@ -50,6 +50,6 @@ include = [
 select = ["E", "F", "I", "B", "UP"]
 
 [tool.pyright]
-include = ["langslice/atlas", "tests"]
+include = ["langslice", "tests"]
 pythonVersion = "3.10"
 typeCheckingMode = "basic"

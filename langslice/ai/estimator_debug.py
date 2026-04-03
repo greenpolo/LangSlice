@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Callable
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Callable, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from langslice.ai import config as vlm_config
 
@@ -67,9 +68,13 @@ def write_debug_artifacts(
                 dict[str, int | float | str | bool], turn.get("preflight_count_tokens", {})
             )
             f.write(
-                f"Turn {turn['iteration']}: mode={turn.get('mode')}, wall_time_s={turn.get('wall_time_s')}, "
-                f"messages={request.get('content_count')}, parts={request.get('part_count')}, "
-                f"images={request.get('image_parts')}, image_bytes={request.get('image_bytes')}\n"
+                f"Turn {turn['iteration']}: "
+                f"mode={turn.get('mode')}, "
+                f"wall_time_s={turn.get('wall_time_s')}, "
+                f"messages={request.get('content_count')}, "
+                f"parts={request.get('part_count')}, "
+                f"images={request.get('image_parts')}, "
+                f"image_bytes={request.get('image_bytes')}\n"
             )
             if preflight:
                 f.write(f"    preflight: {_format_count_tokens(preflight)}\n")
@@ -105,12 +110,16 @@ def write_debug_artifacts(
                     if part.text:
                         f.write(f"  TEXT: {part.text[:500]}\n")
                     if part.function_call:
+                        fc = part.function_call
+                        fc_args = dict(fc.args) if fc.args else {}
                         f.write(
-                            f"  CALL: {part.function_call.name}({dict(part.function_call.args) if part.function_call.args else {}})\n"
+                            f"  CALL: {fc.name}({fc_args})\n"
                         )
                     if part.function_response:
+                        fr = part.function_response
                         f.write(
-                            f"  RESPONSE: {part.function_response.name} -> {part.function_response.response}\n"
+                            f"  RESPONSE: {fr.name} "
+                            f"-> {fr.response}\n"
                         )
                     if part.inline_data:
                         blob_data = part.inline_data.data

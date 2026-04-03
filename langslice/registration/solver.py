@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import Sequence
+from collections.abc import Sequence
 
 import numpy as np
 from scipy.interpolate import RBFInterpolator
@@ -14,7 +14,6 @@ from langslice.registration.types import (
     RegistrationCorrespondence,
     is_valid_affine_matrix,
 )
-
 
 DEFAULT_TPS_SMOOTHING = 1.0
 

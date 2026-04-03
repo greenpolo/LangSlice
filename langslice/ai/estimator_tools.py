@@ -10,12 +10,13 @@ from __future__ import annotations
 import base64
 import json
 import os
-from typing import TYPE_CHECKING, Any, Callable, cast
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 from PIL import Image
+
 from langslice.agent_trace import (
-    image_part_from_pil,
     json_part,
     tool_call_event,
     tool_result_event,
@@ -25,7 +26,7 @@ from langslice.image_prep import normalize_image
 if TYPE_CHECKING:
     from langslice.ai.estimator import _APLoopState
 
-_RESAMPLE_LANCZOS = getattr(getattr(Image, "Resampling", Image), "LANCZOS")
+_RESAMPLE_LANCZOS = Image.Resampling.LANCZOS
 
 
 # ---------------------------------------------------------------------------
@@ -137,7 +138,6 @@ def _build_atlas_grid(
     the right side.  If no target, returns just the 2x2 grid.
     """
     from PIL import ImageDraw, ImageFont
-    from langslice.image_prep import normalize_image
 
     atlas_obj = cast(Any, atlas)
     n = min(len(positions), max_positions)
@@ -175,7 +175,7 @@ def _build_atlas_grid(
     try:
         font_large = ImageFont.truetype("arial.ttf", 70)
         font_small = ImageFont.truetype("arial.ttf", 50)
-    except (OSError, IOError):
+    except OSError:
         font_large = ImageFont.load_default()
         font_small = font_large
 
@@ -587,7 +587,10 @@ def _process_ap_function_calls(
                     name=name,
                     response={
                         "status": "error",
-                        "error": "Run a broad `fetch_multiple_atlas_slices` sweep before submitting.",
+                        "error": (
+                            "Run a broad `fetch_multiple_atlas_slices`"
+                            " sweep before submitting."
+                        ),
                     },
                     is_error=True,
                 )
@@ -617,7 +620,12 @@ def _process_ap_function_calls(
                     name=name,
                     response={
                         "status": "error",
-                        "error": "Run a narrowed `fetch_multiple_atlas_slices` sweep around your best candidate before submitting.",
+                        "error": (
+                            "Run a narrowed"
+                            " `fetch_multiple_atlas_slices`"
+                            " sweep around your best candidate"
+                            " before submitting."
+                        ),
                     },
                     is_error=True,
                 )
@@ -650,8 +658,12 @@ def _process_ap_function_calls(
                     response={
                         "status": "error",
                         "error": (
-                            "Before submitting, verify at least one lower and one higher neighboring AP position "
-                            f"around {est_pos:.2f} mm (for example {lower:.2f} mm and {upper:.2f} mm)."
+                            "Before submitting, verify at least"
+                            " one lower and one higher"
+                            " neighboring AP position around"
+                            f" {est_pos:.2f} mm (for example"
+                            f" {lower:.2f} mm and"
+                            f" {upper:.2f} mm)."
                         ),
                     },
                     is_error=True,

@@ -19,7 +19,7 @@ It does not own the active registration runtime.
 - `estimate_position(...)` is the active AP estimator.
 - `estimate_ap(...)` is just a thin alias to `estimate_position(...)`.
 - The estimator uses manual function calling and injects atlas images into tool responses.
-- The tool names are `fetch_atlas_slice`, `fetch_multiple_atlas_slices`, `get_atlas_info`, `get_region_names`, and `submit_estimate`.
+- The tool names are `fetch_atlas`, `get_atlas_info`, `get_region_names`, and `submit_estimate`.
 - The estimator can optionally use Gemini File API transport, cached content, and the Interactions API pilot path.
 - Debug traces are written only when a debug directory is available.
 

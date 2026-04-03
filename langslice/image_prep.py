@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import math
 import xml.etree.ElementTree as ET
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
-from typing import Sequence
 
 import numpy as np
 from PIL import Image
 
-_RESAMPLE_LANCZOS = getattr(getattr(Image, "Resampling", Image), "LANCZOS")
+_RESAMPLE_LANCZOS = Image.Resampling.LANCZOS
 
 DEFAULT_VLM_MAX_PIXELS = 12_000_000
 DEFAULT_VLM_MAX_LONG_EDGE = 4096
@@ -48,7 +48,7 @@ class LoadedImageState:
     vlm_effective_pixel_size_um: float
     channel_labels: tuple[str, ...] = ("Red", "Green", "Blue")
 
-    def with_pixel_size(self, pixel_size_um: float, source: str) -> "LoadedImageState":
+    def with_pixel_size(self, pixel_size_um: float, source: str) -> LoadedImageState:
         effective = pixel_size_um / self.vlm_scale_factor
         return replace(
             self,

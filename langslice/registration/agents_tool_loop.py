@@ -40,6 +40,7 @@ WHAT WORKS for future reference:
 
 from __future__ import annotations
 
+import base64
 import importlib
 import io
 import json
@@ -54,8 +55,6 @@ from PIL import Image
 import langslice.registration.agents as _agents
 from langslice.agent_trace import (
     image_part_from_pil,
-    json_part,
-    model_event,
     tool_call_event,
     tool_result_event,
 )
@@ -77,7 +76,7 @@ _VIEW_OVERVIEW_DECL = types.FunctionDeclaration(
         "Returns the full atlas and slice images with all current annotations rendered."
     ),
     parameters=types.Schema(
-        type="OBJECT",
+        type=types.Type.OBJECT,
         properties={},
     ),
 )
@@ -89,21 +88,21 @@ _VIEW_ZOOM_PAIR_DECL = types.FunctionDeclaration(
         "Existing annotations are visible in the zoomed view."
     ),
     parameters=types.Schema(
-        type="OBJECT",
+        type=types.Type.OBJECT,
         properties={
             "zoom": types.Schema(
-                type="NUMBER",
+                type=types.Type.NUMBER,
                 description="Zoom factor (e.g., 3.0 for 3x, 1.5 for 1.5x)",
             ),
             "atlas_center_2d": types.Schema(
-                type="ARRAY",
+                type=types.Type.ARRAY,
                 description="[y, x] in 0-1000 normalized range",
-                items=types.Schema(type="INTEGER"),
+                items=types.Schema(type=types.Type.INTEGER),
             ),
             "slice_center_2d": types.Schema(
-                type="ARRAY",
+                type=types.Type.ARRAY,
                 description="[y, x] in 0-1000 normalized range",
-                items=types.Schema(type="INTEGER"),
+                items=types.Schema(type=types.Type.INTEGER),
             ),
         },
         required=["zoom", "atlas_center_2d", "slice_center_2d"],
@@ -117,43 +116,46 @@ _PLACE_POINT_PAIR_DECL = types.FunctionDeclaration(
         "Re-calling with the same label updates the position."
     ),
     parameters=types.Schema(
-        type="OBJECT",
+        type=types.Type.OBJECT,
         properties={
-            "label": types.Schema(type="STRING", description='Point label (e.g., "1", "2")'),
+            "label": types.Schema(
+                type=types.Type.STRING,
+                description='Point label (e.g., "1", "2")',
+            ),
             "category": types.Schema(
-                type="STRING",
+                type=types.Type.STRING,
                 description='"border" or "interior"',
                 enum=["border", "interior"],
             ),
             "feature_description": types.Schema(
-                type="STRING",
+                type=types.Type.STRING,
                 description=(
                     "Rich description of the anatomical feature being matched "
                     '(e.g., "the deepest point of the dorsal midline notch")'
                 ),
             ),
             "atlas_point_2d": types.Schema(
-                type="ARRAY",
+                type=types.Type.ARRAY,
                 description="[y, x] global coordinates in 0-1000 range",
-                items=types.Schema(type="INTEGER"),
+                items=types.Schema(type=types.Type.INTEGER),
             ),
             "slice_point_2d": types.Schema(
-                type="ARRAY",
+                type=types.Type.ARRAY,
                 description="[y, x] global coordinates in 0-1000 range",
-                items=types.Schema(type="INTEGER"),
+                items=types.Schema(type=types.Type.INTEGER),
             ),
             "atlas_point_2d_local": types.Schema(
-                type="ARRAY",
+                type=types.Type.ARRAY,
                 description="[y, x] local coordinates relative to last zoom view",
-                items=types.Schema(type="INTEGER"),
+                items=types.Schema(type=types.Type.INTEGER),
             ),
             "slice_point_2d_local": types.Schema(
-                type="ARRAY",
+                type=types.Type.ARRAY,
                 description="[y, x] local coordinates relative to last zoom view",
-                items=types.Schema(type="INTEGER"),
+                items=types.Schema(type=types.Type.INTEGER),
             ),
             "artifact_note": types.Schema(
-                type="STRING",
+                type=types.Type.STRING,
                 description="Note about damage/artifacts at this location",
             ),
         },
@@ -167,7 +169,7 @@ _FINISH_DECL = types.FunctionDeclaration(
         "Complete landmark placement. Rejected if border and interior quotas are not met."
     ),
     parameters=types.Schema(
-        type="OBJECT",
+        type=types.Type.OBJECT,
         properties={},
     ),
 )
@@ -492,7 +494,8 @@ def _image_to_part(
 ) -> types.Part:
     """Convert a PIL image to a ``types.Part``."""
     mime = "image/jpeg" if fmt.upper() == "JPEG" else "image/png"
-    return types.Part.from_bytes(data=_image_to_bytes(img, fmt=fmt, quality=quality), mime_type=mime)
+    img_bytes = _image_to_bytes(img, fmt=fmt, quality=quality)
+    return types.Part.from_bytes(data=img_bytes, mime_type=mime)
 
 
 def _prepare_base_images(
@@ -632,8 +635,14 @@ def _handle_view_overview(
 ) -> tuple[dict[str, Any], list[types.Part], bool]:
     session.metadata.pop("last_zoom_pair", None)
     ref_size = max(slice_image.size)
-    atlas_annotated = render_landmark_annotations(atlas_image, session.atlas_annotations, reference_size=ref_size)
-    slice_annotated = render_landmark_annotations(slice_image, session.slice_annotations, reference_size=ref_size)
+    atlas_annotated = render_landmark_annotations(
+        atlas_image, session.atlas_annotations,
+        reference_size=ref_size,
+    )
+    slice_annotated = render_landmark_annotations(
+        slice_image, session.slice_annotations,
+        reference_size=ref_size,
+    )
     result_dict = {"status": "ok"}
     image_parts: list[types.Part] = [
         types.Part.from_text(text="ATLAS overview (with current annotations):"),
@@ -675,13 +684,21 @@ def _handle_view_zoom_pair(
         tool_args.get("slice_center_2d"), field_name="slice_center_2d"
     )
     ref_size = max(slice_image.size)
+    atlas_annotated_zoom = render_landmark_annotations(
+        atlas_image, session.atlas_annotations,
+        reference_size=ref_size,
+    )
     atlas_zoom, atlas_window_px = _crop_zoom_view(
-        render_landmark_annotations(atlas_image, session.atlas_annotations, reference_size=ref_size),
+        atlas_annotated_zoom,
         center_yx=atlas_center,
         zoom=zoom,
     )
+    slice_annotated_zoom = render_landmark_annotations(
+        slice_image, session.slice_annotations,
+        reference_size=ref_size,
+    )
     slice_zoom, slice_window_px = _crop_zoom_view(
-        render_landmark_annotations(slice_image, session.slice_annotations, reference_size=ref_size),
+        slice_annotated_zoom,
         center_yx=slice_center,
         zoom=zoom,
     )
@@ -803,8 +820,14 @@ def _handle_place_point_pair(
     session.metadata.pop("finish_reviewed", None)
 
     ref_size = max(slice_image.size)
-    atlas_annotated = render_landmark_annotations(atlas_image, session.atlas_annotations, reference_size=ref_size)
-    slice_annotated = render_landmark_annotations(slice_image, session.slice_annotations, reference_size=ref_size)
+    atlas_annotated = render_landmark_annotations(
+        atlas_image, session.atlas_annotations,
+        reference_size=ref_size,
+    )
+    slice_annotated = render_landmark_annotations(
+        slice_image, session.slice_annotations,
+        reference_size=ref_size,
+    )
 
     # If there's an active zoom, return the zoomed view with the new point
     # rendered so the model can verify placement at high resolution and
@@ -835,7 +858,10 @@ def _handle_place_point_pair(
             "status": "ok",
             "label": label,
             "category": category,
-            "message": f"Point {label} placed ({category}). Showing current zoom view with annotation.",
+            "message": (
+                f"Point {label} placed ({category}). "
+                "Showing current zoom view with annotation."
+            ),
         }
         image_parts: list[types.Part] = [
             types.Part.from_text(
@@ -861,7 +887,7 @@ def _handle_place_point_pair(
                 text=f"Saved point pair {label} ({category}). ATLAS overview:"
             ),
             _image_to_part(atlas_annotated, fmt="JPEG"),
-            types.Part.from_text(text=f"SLICE overview:"),
+            types.Part.from_text(text="SLICE overview:"),
             _image_to_part(slice_annotated, fmt="JPEG"),
             types.Part.from_text(text=json.dumps(_session_summary(session), indent=2)),
         ]
@@ -952,9 +978,6 @@ def _handle_finish(
 # ---------------------------------------------------------------------------
 # Interactions API helpers
 # ---------------------------------------------------------------------------
-
-import base64
-
 
 def _pil_to_image_content(
     img: Image.Image, *, fmt: str = "JPEG", resolution: str = "high"
@@ -1147,6 +1170,8 @@ def _estimate_correspondences_tool_loop(
     elif interior_count is None:
         interior_count = max(0, prepared.target_count - border_count)
 
+    assert border_count is not None and interior_count is not None
+
     session = RegistrationAnnotationSession(
         workflow="multimodal_tool_loop",
         target_count=prepared.target_count,
@@ -1258,7 +1283,11 @@ def _estimate_correspondences_tool_loop(
                 interaction = client.interactions.create(**create_kwargs)
                 _elapsed = _time.monotonic() - _t0
                 if on_progress:
-                    on_progress(f"  step {iteration} (attempt {attempt}/4): response in {_elapsed:.1f}s")
+                    on_progress(
+                        f"  step {iteration} "
+                        f"(attempt {attempt}/4): "
+                        f"response in {_elapsed:.1f}s"
+                    )
                 break
             except Exception as exc:
                 last_err = exc
@@ -1272,14 +1301,23 @@ def _estimate_correspondences_tool_loop(
                                 itype = item.get("type", "?")
                                 if itype == "function_result":
                                     result = item.get("result", {})
-                                    ritems = result.get("items", []) if isinstance(result, dict) else []
+                                    ritems = (
+                                        result.get("items", [])
+                                        if isinstance(result, dict)
+                                        else []
+                                    )
                                     sizes = []
                                     for ri in ritems:
                                         if isinstance(ri, dict) and ri.get("type") == "image":
                                             sizes.append(f"img:{len(ri.get('data',''))//1024}KB")
                                         elif isinstance(ri, dict) and ri.get("type") == "text":
                                             sizes.append(f"txt:{len(ri.get('text',''))}ch")
-                                    on_progress(f"    input[{ii}]: {itype} name={item.get('name')} items=[{', '.join(sizes)}]")
+                                    on_progress(
+                                        f"    input[{ii}]: "
+                                        f"{itype} "
+                                        f"name={item.get('name')} "
+                                        f"items=[{', '.join(sizes)}]"
+                                    )
                 if attempt < 4:
                     import time as _time
                     _time.sleep(min(2 ** attempt, 8))
@@ -1301,7 +1339,7 @@ def _estimate_correspondences_tool_loop(
         if not fc_outputs:
             placed_count = len(session.atlas_annotations)
             total_needed = (border_count or 0) + (interior_count or 0)
-            current_input: Any = [
+            current_input: Any = [  # noqa: F841 — consumed on next iteration
                 {
                     "type": "text",
                     "text": (
@@ -1393,7 +1431,7 @@ def _estimate_correspondences_tool_loop(
                 finished = True
 
         # Set the input for the next turn
-        current_input = result_contents
+        current_input = result_contents  # noqa: F841 — consumed on next iteration (line ~1266)
 
         if finished:
             entries = _placed_tool_loop_entries(session)

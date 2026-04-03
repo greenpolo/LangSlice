@@ -36,7 +36,7 @@ Current backends:
 It also exposes:
 
 - `AVAILABLE_MODELS`
-- `AVAILABLE_THINKING_LEVELS` (OFF / LOW / MEDIUM / HIGH)
+- `AVAILABLE_THINKING_LEVELS` (MINIMAL / LOW / MEDIUM / HIGH)
 - `CODE_EXECUTION_ENABLED` and `supports_code_execution()`
 - Registration workflow constants and `default_registration_workflow()`
 - AP rollout flags for token counting, File API, context cache, and Interactions API
@@ -45,8 +45,7 @@ It also exposes:
 `langslice.ai.estimator` implements AP estimation.
 `estimate_position(...)` runs a multi-turn tool loop with these tool names:
 
-- `fetch_atlas_slice`
-- `fetch_multiple_atlas_slices`
+- `fetch_atlas`
 - `get_atlas_info`
 - `get_region_names`
 - `submit_estimate`

@@ -4,20 +4,22 @@ import io
 import logging
 import threading
 import time
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Callable, Mapping, Sequence, cast
+from typing import Any, cast
 
-from PIL import Image
 from google.genai import types
+from PIL import Image
+
 from langslice.agent_trace import (
     image_part_from_pil,
     json_part,
     model_event,
     runtime_event,
 )
-from langslice.image_prep import normalize_image, prepare_image_for_vlm
 from langslice.ai import config as vlm_config
 from langslice.ai.config import get_client
+from langslice.image_prep import normalize_image, prepare_image_for_vlm
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +27,7 @@ logger = logging.getLogger(__name__)
 _RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 _MAX_RETRIES = 3
 _INITIAL_BACKOFF_S = 1.0
-_RESAMPLE_LANCZOS = getattr(getattr(Image, "Resampling", Image), "LANCZOS")
+_RESAMPLE_LANCZOS = Image.Resampling.LANCZOS
 _HEARTBEAT_INTERVAL_S = 10.0
 
 
@@ -56,7 +58,8 @@ def _run_with_progress_heartbeat(
                 while not stop_event.wait(heartbeat_interval_s):
                     elapsed_s = time.perf_counter() - started_at
                     on_progress(
-                        f"{request_label}: still waiting for Gemini after {_format_elapsed_seconds(elapsed_s)}"
+                        f"{request_label}: still waiting for Gemini "
+                        f"after {_format_elapsed_seconds(elapsed_s)}"
                     )
 
             heartbeat_thread = threading.Thread(target=_heartbeat_loop, daemon=True)
@@ -106,7 +109,11 @@ def _retry_interaction(
             if isinstance(status, int) and status in _RETRYABLE_STATUS_CODES:
                 if attempt < _MAX_RETRIES:
                     delay = _INITIAL_BACKOFF_S * (2**attempt)
-                    msg = f"Gemini API error (status {status}), retrying in {delay:.1f}s (attempt {attempt + 1}/{_MAX_RETRIES})"
+                    msg = (
+                        f"Gemini API error (status {status}), "
+                        f"retrying in {delay:.1f}s "
+                        f"(attempt {attempt + 1}/{_MAX_RETRIES})"
+                    )
                     logger.warning(msg)
                     if on_progress:
                         on_progress(msg)
@@ -117,7 +124,11 @@ def _retry_interaction(
             if any(kw in exc_name for kw in ("timeout", "connection", "transport")):
                 if attempt < _MAX_RETRIES:
                     delay = _INITIAL_BACKOFF_S * (2**attempt)
-                    msg = f"Transient error ({type(exc).__name__}), retrying in {delay:.1f}s (attempt {attempt + 1}/{_MAX_RETRIES})"
+                    msg = (
+                        f"Transient error ({type(exc).__name__}), "
+                        f"retrying in {delay:.1f}s "
+                        f"(attempt {attempt + 1}/{_MAX_RETRIES})"
+                    )
                     logger.warning(msg)
                     if on_progress:
                         on_progress(msg)
@@ -392,20 +403,14 @@ def _interaction_input_metrics(input_parts: Sequence[Mapping[str, object]]) -> d
 # ---------------------------------------------------------------------------
 # Tool handler functions — extracted to estimator_tools.py
 # ---------------------------------------------------------------------------
+# Debug artifact writing — extracted to estimator_debug.py
+from langslice.ai.estimator_debug import write_debug_artifacts  # noqa: E402
 from langslice.ai.estimator_tools import (  # noqa: E402
     _build_nudge_text,
     _extract_function_calls,
-    _get_regions_at_position,
-    _has_neighbor_bracket,
-    _is_broad_multi_sweep,
-    _is_narrow_multi_sweep,
     _process_ap_function_calls,
-    _sorted_unique_positions,
     _tool_dicts,
 )
-
-# Debug artifact writing — extracted to estimator_debug.py
-from langslice.ai.estimator_debug import write_debug_artifacts  # noqa: E402
 
 
 def estimate_position(
@@ -488,7 +493,9 @@ def estimate_position(
             stage="ap",
             title="Prepared AP estimation inputs",
             summary=(
-                f"Target image {target_prepared.width}x{target_prepared.height}px prepared for Gemini"
+                f"Target image "
+                f"{target_prepared.width}x{target_prepared.height}px "
+                f"prepared for Gemini"
             ),
             parts=[
                 image_part_from_pil(
@@ -514,7 +521,7 @@ def estimate_position(
         "while larger mm values move posterior toward the cerebellum and brainstem. "
         "You have tools to fetch atlas reference images at any AP coordinate, query which "
         "brain regions exist at a given position, and get atlas metadata.\n\n"
-        "{anatomy_hints}"
+        f"{anatomy_hints}"
         "RECOMMENDED STRATEGY:\n"
         "1. Call `fetch_atlas` with broadly spaced positions (e.g., [2, 4, 6, 8, 10]) "
         "   to find the general region.\n"
@@ -528,7 +535,7 @@ def estimate_position(
         "completely different region. It is better to restart your search than to "
         "commit to a wrong neighborhood.\n\n"
         "Think carefully before each tool call, but always follow up with an action."
-    ).format(anatomy_hints=anatomy_hints)
+    )
 
     feature_flags = vlm_config.feature_flags()
     temperature = vlm_config.TEMPERATURE
@@ -633,9 +640,13 @@ def estimate_position(
             }
 
             if on_progress:
+                part_count = request_metrics['part_count']
+                img_count = request_metrics['image_parts']
+                img_bytes = request_metrics['image_bytes']
                 _progress(
-                    f"Interactions turn {iteration + 1}: sending {request_metrics['part_count']} parts, "
-                    f"{request_metrics['image_parts']} images ({request_metrics['image_bytes']} bytes)"
+                    f"Interactions turn {iteration + 1}: "
+                    f"sending {part_count} parts, "
+                    f"{img_count} images ({img_bytes} bytes)"
                 )
 
             # Build interaction request kwargs
@@ -699,7 +710,13 @@ def estimate_position(
                         json_part(thought_outputs, label="Reasoning summary", collapsible=True)
                     )
                 if text_outputs:
-                    trace_parts.append(json_part(text_outputs, label="Model text", collapsible=True))
+                    trace_parts.append(
+                        json_part(
+                            text_outputs,
+                            label="Model text",
+                            collapsible=True,
+                        )
+                    )
                 _emit_trace(
                     on_trace,
                     model_event(
@@ -752,7 +769,8 @@ def estimate_position(
             _progress(f"Warning: Agent did not submit. Falling back to midpoint: {final_pos:.2f}mm")
 
         _progress(
-            f"Final position estimated: {final_pos:.2f} mm ({state.images_fetched} atlas images fetched)"
+            f"Final position estimated: {final_pos:.2f} mm "
+            f"({state.images_fetched} atlas images fetched)"
         )
         _emit_trace(
             on_trace,

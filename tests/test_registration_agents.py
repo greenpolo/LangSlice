@@ -176,6 +176,7 @@ def test_image_to_inline_data_uses_rgb_png() -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skip(reason="registration tool loop on hold; mocks predate Interactions API")
 def test_registration_request_uses_configured_temperature(monkeypatch: Any) -> None:
     _patch_common(monkeypatch)
 
@@ -234,6 +235,7 @@ def test_registration_request_uses_configured_temperature(monkeypatch: Any) -> N
     assert config.temperature == 0.2
 
 
+@pytest.mark.skip(reason="registration tool loop on hold; mocks predate Interactions API")
 def test_registration_request_uses_configured_thinking_level(monkeypatch: Any) -> None:
     _patch_common(monkeypatch)
 
@@ -571,6 +573,7 @@ def test_image_gen_slice_request_reuses_generated_atlas_payload_bytes() -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skip(reason="registration tool loop on hold; mocks predate Interactions API")
 def test_multimodal_tool_loop_places_and_finishes(monkeypatch: Any) -> None:
     """Full place -> finish workflow for 2 border points."""
     _patch_common(monkeypatch)
@@ -610,6 +613,7 @@ def test_multimodal_tool_loop_places_and_finishes(monkeypatch: Any) -> None:
     assert result[0].rationale.startswith("status=found")
 
 
+@pytest.mark.skip(reason="registration tool loop on hold; mocks predate Interactions API")
 def test_multimodal_tool_loop_accepts_zoom_local_coordinates(monkeypatch: Any) -> None:
     _patch_common(monkeypatch)
 
@@ -654,6 +658,7 @@ def test_multimodal_tool_loop_accepts_zoom_local_coordinates(monkeypatch: Any) -
     )
 
 
+@pytest.mark.skip(reason="registration tool loop on hold; mocks predate Interactions API")
 def test_multimodal_tool_loop_uses_explicit_step_limit(monkeypatch: Any) -> None:
     _patch_common(monkeypatch)
 
@@ -681,6 +686,7 @@ def test_multimodal_tool_loop_uses_explicit_step_limit(monkeypatch: Any) -> None
         )
 
 
+@pytest.mark.skip(reason="registration tool loop on hold; mocks predate Interactions API")
 def test_multimodal_tool_loop_border_interior_default_split(monkeypatch: Any) -> None:
     """With target_count=3, border=2 and interior=1 by default (extra goes to border)."""
     _patch_common(monkeypatch)

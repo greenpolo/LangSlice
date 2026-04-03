@@ -106,8 +106,8 @@ def _parse_model_choice(
     lo = min(positions)
     hi = max(positions)
 
-    # Primary: look for an explicit mm estimate within the atlas range.
-    # Try "N mm" first, then bare floats as fallback.
+    # Primary: look for an explicit mm estimate within the atlas
+    # range. Try "N mm" first, then bare floats as fallback.
     mm_candidates: list[float] = []
     for match in re.finditer(r"(\d+\.?\d*)\s*mm", text):
         value = float(match.group(1))
@@ -179,7 +179,8 @@ def _retry_generate_content(
                     time.sleep(delay)
                     continue
             exc_name = type(exc).__name__.lower()
-            if any(kw in exc_name for kw in ("timeout", "connection", "transport")):
+            retryable = ("timeout", "connection", "transport")
+            if any(kw in exc_name for kw in retryable):
                 if attempt < _MAX_RETRIES:
                     delay = _INITIAL_BACKOFF_S * (2**attempt)
                     if on_progress:
@@ -320,10 +321,13 @@ def estimate_position_image_gen(
         "workflow": "image_gen_ap",
     }
     if target_prep.downsampled:
+        orig_w = target_prep.original_size[0]
+        orig_h = target_prep.original_size[1]
+        new_w = target_prepared.width
+        new_h = target_prepared.height
         _progress(
-            f"Target resized: "
-            f"{target_prep.original_size[0]}x{target_prep.original_size[1]} -> "
-            f"{target_prepared.width}x{target_prepared.height}px"
+            f"Target resized: {orig_w}x{orig_h} -> "
+            f"{new_w}x{new_h}px"
         )
 
     # --- Debug directory --------------------------------------------------------

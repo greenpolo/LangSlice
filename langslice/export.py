@@ -26,8 +26,9 @@ from __future__ import annotations
 import json
 import logging
 import os
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Sequence
+from typing import Any
 
 import numpy as np
 
@@ -118,11 +119,13 @@ class CoronalFrameGeometry:
 
     def frame_to_atlas(self, px: float, py: float, ap_voxel: float) -> np.ndarray:
         """Map a frame pixel position to atlas voxel coordinates."""
+        u_frac = px / self.frame_width
+        v_frac = py / self.frame_height
         return np.array(
             [
-                self.origin_x + (self.u_x * (px / self.frame_width)) + (self.v_x * (py / self.frame_height)),
+                self.origin_x + self.u_x * u_frac + self.v_x * v_frac,
                 ap_voxel,
-                self.origin_z + (self.u_z * (px / self.frame_width)) + (self.v_z * (py / self.frame_height)),
+                self.origin_z + self.u_z * u_frac + self.v_z * v_frac,
             ],
             dtype=np.float64,
         )

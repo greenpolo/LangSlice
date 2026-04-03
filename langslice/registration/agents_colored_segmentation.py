@@ -59,6 +59,19 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
+# Ventricles and fluid-filled spaces should be black (matching histology holes).
+_VENTRICLE_KEYWORDS = {"ventricle", "aqueduct", "central canal"}
+
+
+def _is_ventricle(structures: Any, uid: int) -> bool:
+    """Return True if the structure is a ventricle or fluid-filled space."""
+    try:
+        name = str(structures[uid]["name"]).lower()
+        return any(kw in name for kw in _VENTRICLE_KEYWORDS)
+    except Exception:
+        return False
+
+
 def _generate_colored_region_slice(
     atlas: Any,
     position_mm: float,
@@ -67,8 +80,9 @@ def _generate_colored_region_slice(
     """Render the annotation slice as an RGB image with atlas-defined colors.
 
     Each region ID is filled with its ``rgb_triplet`` from the atlas
-    structures table.  When *target_size* is given the result is resized
-    using NEAREST interpolation to preserve exact colors.
+    structures table.  Ventricles and fluid-filled spaces are rendered
+    as black to match histology holes.  When *target_size* is given the
+    result is resized using NEAREST interpolation to preserve exact colors.
     """
     idx = position_mm_to_index(atlas, position_mm)
     annotation_slice = np.asarray(atlas.annotation[idx, :, :])
@@ -81,6 +95,9 @@ def _generate_colored_region_slice(
     for uid in unique_ids:
         uid_int = int(uid)
         if uid_int == 0:
+            continue
+        # Ventricles stay black (0, 0, 0) to match histology holes
+        if structures is not None and _is_ventricle(structures, uid_int):
             continue
         color = (128, 128, 128)  # fallback gray
         if structures is not None:

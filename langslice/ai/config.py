@@ -4,7 +4,8 @@ import atexit
 import importlib
 import logging
 import os
-from typing import Any, Callable, Protocol, cast
+from collections.abc import Callable
+from typing import Any, Protocol, cast
 
 logger = logging.getLogger(__name__)
 
@@ -199,7 +200,7 @@ _client_instance: GenAIClientProtocol | None = None
 def _load_dotenv() -> None:
     try:
         dotenv_module = importlib.import_module("dotenv")
-        load_dotenv = cast(Callable[[], bool], getattr(dotenv_module, "load_dotenv"))
+        load_dotenv = cast(Callable[[], bool], dotenv_module.load_dotenv)
         _ = load_dotenv()
     except ImportError:
         pass
@@ -371,7 +372,7 @@ def get_client() -> GenAIClientProtocol:
         return _client_instance
 
     genai_module = importlib.import_module("google.genai")
-    client_cls = cast(Callable[..., GenAIClientProtocol], getattr(genai_module, "Client"))
+    client_cls = cast(Callable[..., GenAIClientProtocol], genai_module.Client)
     backend = get_backend()
 
     if backend == _BACKEND_AI_STUDIO:
@@ -402,8 +403,8 @@ def create_batch_client() -> GenAIClientProtocol:
 
     genai_module = importlib.import_module("google.genai")
     types_module = importlib.import_module("google.genai.types")
-    client_cls = cast(Callable[..., GenAIClientProtocol], getattr(genai_module, "Client"))
-    http_options_cls = cast(Callable[..., object], getattr(types_module, "HttpOptions"))
+    client_cls = cast(Callable[..., GenAIClientProtocol], genai_module.Client)
+    http_options_cls = cast(Callable[..., object], types_module.HttpOptions)
     http_options = http_options_cls(api_version="v1")
     backend = get_backend()
 
