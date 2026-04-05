@@ -8,6 +8,7 @@ import os
 import statistics
 
 from langslice.atlas.core import get_position_range_mm, load_atlas
+from langslice.ai.estimator import APResult
 from langslice.brain.agents import run_anchor_estimation, run_refinement
 from langslice.brain.anchor_selection import select_anchor_indices
 from langslice.brain.checkpoint import load_checkpoint, save_checkpoint
@@ -108,7 +109,7 @@ async def run_brain_estimation(
         _progress(f"Phase 1: estimating {len(anchors_to_run)} anchors")
         sem = asyncio.Semaphore(config.max_parallel)
 
-        async def _run_anchor(idx: int) -> tuple[int, object]:
+        async def _run_anchor(idx: int) -> tuple[int, APResult]:
             async with sem:
                 _progress(f"  Anchor slice {idx} ({os.path.basename(image_paths[idx])})")
                 result = await run_anchor_estimation(
@@ -121,7 +122,7 @@ async def run_brain_estimation(
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         for r in results:
-            if isinstance(r, Exception):
+            if isinstance(r, BaseException):
                 raise RuntimeError(f"Anchor estimation failed: {r}") from r
             idx, ap_result = r
             slices[idx] = SlicePosition(
@@ -160,7 +161,7 @@ async def run_brain_estimation(
         for wave_num, wave in enumerate(waves):
             _progress(f"  Wave {wave_num + 1}/{len(waves)}: {len(wave)} slices")
 
-            async def _run_refine(idx: int) -> tuple[int, object | None]:
+            async def _run_refine(idx: int) -> tuple[int, APResult | None]:
                 async with sem:
                     left_locked = _find_locked_neighbor(slices, idx, direction=-1)
                     right_locked = _find_locked_neighbor(slices, idx, direction=1)
@@ -186,7 +187,7 @@ async def run_brain_estimation(
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
             for r in results:
-                if isinstance(r, Exception):
+                if isinstance(r, BaseException):
                     logger.warning("Refinement failed for a slice: %s", r)
                     continue
                 idx, ap_result = r
