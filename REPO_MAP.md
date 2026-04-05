@@ -4,7 +4,7 @@ This map is intentionally short and stable so humans and agents can find the act
 
 ## Active Code Paths
 
-- `langslice/cli.py` -- CLI entry point for `langslice version`, `langslice register`, and `langslice estimate`
+- `langslice/cli.py` -- CLI entry point for `langslice version`, `langslice register`, `langslice estimate`, and `langslice estimate-brain`
 - `langslice/atlas/` -- BrainGlobe atlas loading, AP/index conversion, coronal slice extraction, colored region and smoothed boundary helpers
 - `langslice/ai/` -- Gemini configuration, AP estimator (split across `estimator.py`, `estimator_tools.py`, `estimator_debug.py`), offline batch helpers
 - `langslice/registration/` -- registration workflows, runtime wrapper, affine/TPS solving, result types
@@ -12,6 +12,7 @@ This map is intentionally short and stable so humans and agents can find the act
   - `agents_colored_segmentation.py` -- colored-segmentation workflow (default for image-gen models): model produces atlas-colored tissue segmentation, Elastix B-spline extracts deformation
   - `agents_image_gen.py` -- legacy two-shot landmark workflow for image-gen models (superseded by colored segmentation)
   - `agents_tool_loop.py` -- iterative tool-loop workflow for text-centric models (experimental, on hold)
+- `langslice/brain/` -- whole-brain multi-slice AP estimation: anchor selection, interval interpolation, wave-based nano-banana refinement, constraint enforcement, checkpoint I/O, and async pipeline orchestration
 - `langslice/image_prep.py` -- image normalization, metadata-driven pixel size detection, VLM downsampling
 - `langslice/agent_trace.py` -- structured trace-event helpers shared by AP and registration flows
 - `langslice/export.py` -- coronal anchoring math, VisuAlign markers, and QUINT/ABBA-compatible JSON export
@@ -24,6 +25,7 @@ This map is intentionally short and stable so humans and agents can find the act
 - `tests/test_image_prep.py` -- image ingest, metadata detection, VLM resize behavior
 - `tests/test_quicknii_math.py` -- anchoring and coronal-frame export math
 - `tests/test_registration_*.py` -- registration runtime, solver, agent prompt behavior, and backends
+- `tests/test_brain_*.py` -- brain module: types, discovery, anchor selection, interpolation, window, constraints, checkpoint, agents, pipeline
 
 ## Documentation
 
@@ -49,4 +51,5 @@ This map is intentionally short and stable so humans and agents can find the act
 - `langslice version`
 - `langslice register <image> --position <mm> [--workflow ...] [--model ...] [--out ...]`
 - `langslice estimate <image> [--atlas ...] [--model ...] [--workflow ...]`
+- `langslice estimate-brain <image_folder> [--atlas ...] [--anchors ...] [--ordering ...]`
 - `cd tauri-gui && pnpm tauri dev`

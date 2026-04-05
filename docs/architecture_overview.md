@@ -98,6 +98,29 @@ Current runtime behavior for the colored segmentation workflow:
 7. Extract VisuAlign markers from B-spline control points.
 8. Return results and optionally save debug artifacts.
 
+### `langslice.brain`
+
+Whole-brain multi-slice AP estimation. Scales the single-slice estimator to 20-60 slices with a four-phase pipeline:
+
+1. **Phase 1 — Anchor estimation:** Select anchor slices via center-out placement, run full AP estimation + nano-banana on each in parallel.
+2. **Phase 2 — Interpolation:** Deterministic interval-based interpolation between anchors, extrapolation beyond outermost anchors, clamped to atlas bounds.
+3. **Phase 3 — Wave-based refinement:** Nano-banana passes radiate outward from anchors in waves. Each slice's search window is bounded by locked neighbors. Slices within the same wave run in parallel.
+4. **Phase 4 — Constraint enforcement:** Validate ordering (strict/loose/none modes) and enforce minimum spacing equal to slice thickness.
+
+The module is split into focused files:
+
+- `types.py` — `BrainEstimationConfig`, `SlicePosition`, `BrainEstimationSummary`, `BrainEstimationResult`
+- `discovery.py` — image folder discovery with natural sort
+- `anchor_selection.py` — center-out anchor index selection
+- `interpolation.py` — interval-based interpolation and extrapolation
+- `window.py` — nano-banana search window bounds and dynamic image count
+- `constraints.py` — ordering enforcement and minimum spacing
+- `checkpoint.py` — incremental JSON checkpoint for resumability
+- `agents.py` — async wrappers around existing estimators via `asyncio.to_thread()`
+- `pipeline.py` — wave computation and main `run_brain_estimation()` async entry point
+
+Concurrency uses plain asyncio (`asyncio.gather()` + `asyncio.Semaphore`), not an agent framework. The existing `estimate_position()` and `estimate_position_image_gen()` are called unmodified.
+
 ### `langslice.image_prep`
 
 This module handles image ingest and the image that is actually shown to Gemini.
@@ -143,6 +166,16 @@ Launched via `cd tauri-gui && pnpm tauri dev`.
 2. Call `estimate_registration_runtime(...)` at the specified AP position with the selected workflow.
 3. Print registration summary (correspondences, rotation, translation, scale, residuals).
 4. Write debug artifacts to output directory.
+
+### CLI: `langslice estimate-brain`
+
+1. Discover and naturally sort all slice images in the folder.
+2. Select anchor slices via center-out placement.
+3. Run anchor estimation in parallel (coarse tool-use + nano-banana fine pass per anchor).
+4. Interpolate positions for all non-anchor slices.
+5. Run wave-based nano-banana refinement radiating from anchors (optional).
+6. Enforce ordering constraints and minimum spacing.
+7. Write final positions to JSON. Checkpoint after each phase for resumability.
 
 ### Tauri GUI
 
