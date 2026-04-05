@@ -9,7 +9,6 @@ description = "VLM-based brain slice registration using Gemini and BrainGlobe at
 requires-python = ">=3.10"
 dependencies = [
     "google-genai",
-    "google-adk",
     "brainglobe-atlasapi",
     "brainglobe-space",
     "numpy",
