@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useAppStore } from "../stores/appStore";
 import { SettingsDialog } from "./SettingsDialog";
+import logoSvg from "../assets/logo.svg";
 
 export function Header() {
   const currentView = useAppStore((s) => s.currentView);
@@ -15,7 +16,7 @@ export function Header() {
     <>
       <header className="app-header">
         <div className="header-brand">
-          <div className="header-logo">LS</div>
+          <img className="header-logo" src={logoSvg} alt="LangSlice" />
           <span className="header-title">LangSlice</span>
         </div>
 

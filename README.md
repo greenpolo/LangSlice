@@ -1,4 +1,6 @@
-# LangSlice
+<p align="center">
+  <img src="assets/banner.svg" alt="LangSlice" width="600">
+</p>
 
 LangSlice registers histology slice images to BrainGlobe atlases using Gemini vision-language models for estimation and itk-elastix for dense deformation recovery. The desktop GUI is a Tauri app (Rust + React + Three.js); the Python backend also runs headless via CLI.
 
