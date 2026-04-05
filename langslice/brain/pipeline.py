@@ -7,8 +7,8 @@ import logging
 import os
 import statistics
 
-from langslice.atlas.core import get_position_range_mm, load_atlas
 from langslice.ai.estimator import APResult
+from langslice.atlas.core import get_position_range_mm, load_atlas
 from langslice.brain.agents import run_anchor_estimation, run_refinement
 from langslice.brain.anchor_selection import select_anchor_indices
 from langslice.brain.checkpoint import load_checkpoint, save_checkpoint
