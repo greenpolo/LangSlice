@@ -18,6 +18,7 @@ langslice estimate-brain <image_folder> \
   --ordering strict     # strict | loose | none \
   --refinement on       # on | off (nano-banana pass) \
   --parallel 4          # max concurrent Gemini calls
+  --z-axis AP             # AP (anterior-to-posterior) | PA (posterior-to-anterior)
 ```
 
 - `--thickness`: Slice thickness in microns. Hard minimum spacing between any two slices (physical law).
@@ -25,7 +26,8 @@ langslice estimate-brain <image_folder> \
 - `--anchors`: Number of slices that get full multi-turn tool-use AP estimation. User scales this based on how "choppy" their slicing was (more gaps = more anchors).
 - `--ordering`: Sequence constraint mode (see Phase 4).
 - `--refinement`: Whether to run nano-banana fine passes on non-anchor slices.
-- `--parallel`: Max concurrent Gemini API calls (applies to both anchor and refinement waves).
+- `--parallel`: Max concurrent Gemini API calls (applies to both anchor and refinement waves). In the future, this will be replaced by an adaptive throttle that automatically adjusts parallelism based on token consumption and rate-limit headers.
+- `--z-axis`: Orientation of the Z axis in the image series. `AP` means slice 1 is most anterior (increasing index = increasing AP mm). `PA` means slice 1 is most posterior (increasing index = decreasing AP mm). Interpolation and ordering enforcement follow this direction.
 
 **Image discovery:** Glob the folder for `.png`, `.jpg`, `.jpeg`, `.tif`, `.tiff`. Natural sort by filename. Filename order = assumed slice order (for strict/loose modes).
 
@@ -84,7 +86,9 @@ After all anchors complete, before interpolation, validate:
 - Anchors are in monotonic AP order matching slice order (for strict/loose mode)
 - No anchor outside atlas bounds
 
-If an anchor is out of order, re-run that single anchor. Distance checks between anchors are intentionally loose — gaps in slicing make distance unreliable.
+If an anchor is out of order, re-run that single anchor once. If it fails again, fail the entire run with a clear error message. Anchors are load-bearing — skipping one silently would undermine the user's intent.
+
+**Anchor failure handling:** If an anchor agent fails outright (timeout, rate limit, model doesn't submit), retry once. If the retry also fails, abort the run. The user chose that number of anchors deliberately; running with fewer would compromise the result.
 
 ## Phase 2: Interpolation Step
 
@@ -179,6 +183,10 @@ Window 0.20mm wide -> 8 images
 Window 0.12mm wide -> 5 images (minimum)
 ```
 
+### Minimum window threshold
+
+If the window is smaller than the slice thickness, nano-banana has too little to work with — the locked neighbors have already constrained the position to within one physical slice. Below this threshold, accept the interpolated position as-is. Skip the API call entirely.
+
 ### Locking
 
 Once nano-banana returns a position for a slice, that slice is locked. Its position becomes a hard bound for neighboring slices in subsequent waves. Locked positions are written to disk immediately (see Checkpointing).
@@ -189,7 +197,7 @@ Lightweight validation pass. Most violations are prevented by the windowed refin
 
 ### Ordering modes
 
-**Strict:** AP positions must be monotonically increasing with slice index. If nano-banana produced a violation (rare given windowing): clamp the offending slice to midpoint between its locked neighbors. Minimum spacing = slice thickness, always enforced.
+**Strict:** AP positions must be monotonic with slice index (increasing for AP z-axis, decreasing for PA z-axis). If nano-banana produced a violation (rare given windowing): clamp the offending slice to midpoint between its locked neighbors. Minimum spacing = slice thickness, always enforced.
 
 **Loose:** Same as strict, plus allows single adjacent swaps. After all positions are finalized, scan for cases where swapping two adjacent slices reduces total deviation from expected interval. Only swap if both slices have nano-banana confirmation. Maximum one swap per pair, no cascading.
 
@@ -271,5 +279,11 @@ The `source` field tracks provenance: `anchor`, `interpolated`, `extrapolated`, 
 - **Orchestration:** Google ADK (`google-adk` package, stable v1.x)
 - **Agent primitives:** `SequentialAgent`, `ParallelAgent`, `BaseAgent`
 - **Model calls:** Existing `estimate_position()` and nano-banana logic wrapped in `BaseAgent` subclasses via `asyncio.to_thread()`
-- **Concurrency:** asyncio + `Semaphore` for throttling
+- **Concurrency:** asyncio + `Semaphore` for throttling (static for now; adaptive throttle planned as a future feature)
 - **Model backend:** Gemini via AI Studio (current). ADK's `LiteLlm` wrapper enables future support for Ollama, OpenAI-compatible endpoints, and other providers.
+
+## Design Assumptions
+
+- **Coronal slicing only** for this version. Sagittal and horizontal support is planned but not in scope.
+- **Static concurrency** via `--parallel` semaphore. An adaptive rate-limit throttle will replace this in a future iteration.
+- **AI Studio backend only.** Vertex AI code remains in the codebase but is not used.

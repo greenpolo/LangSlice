@@ -265,6 +265,96 @@ def _add_estimate_parser(subparsers: argparse._SubParsersAction) -> None:
     )
 
 
+def _add_estimate_brain_parser(subparsers: argparse._SubParsersAction) -> None:
+    p = subparsers.add_parser(
+        "estimate-brain",
+        help="Estimate AP positions for a folder of brain slices",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    p.add_argument("image_folder", help="Folder containing slice images")
+    p.add_argument("--atlas", default="allen_mouse_25um", help="BrainGlobe atlas name")
+    p.add_argument("--thickness", type=int, default=50, help="Slice thickness in microns")
+    p.add_argument("--interval", type=int, default=200, help="Average slice interval in microns")
+    p.add_argument("--anchors", type=int, default=4, help="Number of anchor agents")
+    p.add_argument(
+        "--ordering",
+        choices=["strict", "loose", "none"],
+        default="strict",
+        help="Ordering enforcement mode",
+    )
+    p.add_argument(
+        "--refinement",
+        choices=["on", "off"],
+        default="on",
+        help="Enable nano-banana refinement",
+    )
+    p.add_argument("--parallel", type=int, default=4, help="Max concurrent Gemini calls")
+    p.add_argument(
+        "--z-axis",
+        choices=["AP", "PA"],
+        default="AP",
+        help="Z-axis orientation of the slice series",
+    )
+    p.add_argument("--out", help="Output JSON path (default: <folder>/brain_estimate.json)")
+
+
+def _run_estimate_brain(args: argparse.Namespace) -> None:
+    import asyncio
+    import json
+
+    from langslice.brain.discovery import discover_slices
+    from langslice.brain.pipeline import run_brain_estimation
+    from langslice.brain.types import BrainEstimationConfig
+
+    config = BrainEstimationConfig(
+        image_folder=args.image_folder,
+        atlas_name=args.atlas,
+        thickness_um=args.thickness,
+        interval_um=args.interval,
+        n_anchors=args.anchors,
+        ordering=args.ordering,
+        refinement=args.refinement == "on",
+        max_parallel=args.parallel,
+        z_axis=args.z_axis,
+    )
+
+    # Cost estimate
+    n_images = len(discover_slices(config.image_folder))
+    n_refinements = n_images - config.n_anchors if config.refinement else 0
+    print("\nBrain estimation plan:")
+    print(f"  {n_images} slices, {config.n_anchors} anchors, {config.ordering} ordering")
+    print(f"  Refinement: {'ON' if config.refinement else 'OFF'}")
+    print()
+    cost = config.n_anchors * 0.05
+    print(f"  Phase 1:  {config.n_anchors} anchor estimations          ~${cost:.2f}")
+    print(f"  Phase 1b: {config.n_anchors} anchor nano-banana passes   cost TBD")
+    if config.refinement:
+        print(f"  Phase 3:  {n_refinements} nano-banana refinements    cost TBD")
+    print(f"  --parallel {config.max_parallel}")
+    print()
+
+    def on_progress(msg: str) -> None:
+        print(msg)
+
+    result = asyncio.run(
+        run_brain_estimation(
+            config,
+            checkpoint_path=args.out,
+            on_progress=on_progress,
+        )
+    )
+
+    import os
+    out_path = args.out or os.path.join(args.image_folder, "brain_estimate.json")
+    with open(out_path, "w") as f:
+        json.dump(result.to_dict(), f, indent=2)
+
+    print(f"\nResults saved to {out_path}")
+    print(f"  {result.summary.n_slices} slices, {result.summary.n_anchors} anchors")
+    print(f"  Mean interval: {result.summary.mean_interval_mm:.3f}mm")
+    print(f"  Std interval:  {result.summary.std_interval_mm:.3f}mm")
+
+
 def _run_estimate(args: argparse.Namespace) -> None:
     import json
     import os
@@ -391,6 +481,9 @@ def main():
     # langslice estimate
     _add_estimate_parser(subparsers)
 
+    # langslice estimate-brain
+    _add_estimate_brain_parser(subparsers)
+
     args = parser.parse_args()
 
     if args.command == "gui":
@@ -407,6 +500,8 @@ def main():
         _run_register(args)
     elif args.command == "estimate":
         _run_estimate(args)
+    elif args.command == "estimate-brain":
+        _run_estimate_brain(args)
     else:
         parser.print_help()
         sys.exit(1)
