@@ -15,9 +15,20 @@ from PIL import Image
 
 from langslice.ai.estimator import APResult, estimate_position
 from langslice.ai.estimator_image_gen import estimate_position_image_gen
-from langslice.image_prep import normalize_image
+from langslice.image_prep import adaptive_preprocess, normalize_image, prepare_image_for_vlm
+
+# Match the single-slice CLI: normalize → downscale → CLAHE.
+_VLM_MAX_LONG_EDGE = 2048
 
 logger = logging.getLogger(__name__)
+
+
+def _prepare_slice(image_path: str) -> Image.Image:
+    """Load and preprocess a slice image, matching the single-slice CLI path."""
+    raw = Image.open(image_path).convert("RGB")
+    canonical = normalize_image(raw)
+    downscaled = prepare_image_for_vlm(canonical, max_long_edge=_VLM_MAX_LONG_EDGE).image
+    return adaptive_preprocess(downscaled)
 
 
 async def run_anchor_estimation(
@@ -32,8 +43,7 @@ async def run_anchor_estimation(
     Stage A: multi-turn tool-use estimation (coarse).
     Stage B: nano-banana fine pass centered on Stage A result.
     """
-    image = Image.open(image_path).convert("RGB")
-    image = normalize_image(image)
+    image = _prepare_slice(image_path)
 
     # Stage A: coarse estimation
     coarse = await asyncio.to_thread(
@@ -54,6 +64,7 @@ async def run_anchor_estimation(
         debug_dir=debug_dir,
         send_individually=True,
         atlas_resolution=1024,
+        center_mm=coarse.position_mm,
     )
     logger.info("Anchor fine: %.3fmm (%s)", fine.position_mm, image_path)
 
@@ -78,13 +89,8 @@ async def run_refinement(
     if n_images == 0:
         return None
 
-    image = Image.open(image_path).convert("RGB")
-    image = normalize_image(image)
+    image = _prepare_slice(image_path)
 
-    # TODO: pass window bounds to nano-banana to constrain atlas image range.
-    # For now, use the standard nano-banana call.  The window parameters will
-    # be wired into estimate_position_image_gen once the API is extended to
-    # accept explicit position bounds.
     result = await asyncio.to_thread(
         estimate_position_image_gen,
         image,
@@ -93,6 +99,8 @@ async def run_refinement(
         debug_dir=debug_dir,
         send_individually=True,
         atlas_resolution=1024,
+        center_mm=window_center,
+        bounds=(window_lo, window_hi),
     )
 
     # Clamp result to window bounds

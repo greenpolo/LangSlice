@@ -3,8 +3,12 @@
 import asyncio
 from unittest.mock import patch
 
+from PIL import Image
+
 from langslice.ai.estimator import APResult
 from langslice.brain.agents import run_anchor_estimation, run_refinement
+
+_FAKE_IMAGE = Image.new("RGB", (64, 64), (128, 128, 128))
 
 
 def test_run_anchor_estimation():
@@ -25,10 +29,8 @@ def test_run_anchor_estimation():
     with (
         patch("langslice.brain.agents.estimate_position", fake_estimate),
         patch("langslice.brain.agents.estimate_position_image_gen", fake_image_gen),
-        patch("langslice.brain.agents.Image") as mock_pil,
+        patch("langslice.brain.agents._prepare_slice", return_value=_FAKE_IMAGE),
     ):
-        mock_pil.open.return_value = mock_pil
-        mock_pil.convert.return_value = mock_pil
         result = asyncio.run(
             run_anchor_estimation(
                 image_path="/fake/slice.tif",
@@ -49,10 +51,8 @@ def test_run_refinement():
 
     with (
         patch("langslice.brain.agents.estimate_position_image_gen", fake_image_gen),
-        patch("langslice.brain.agents.Image") as mock_pil,
+        patch("langslice.brain.agents._prepare_slice", return_value=_FAKE_IMAGE),
     ):
-        mock_pil.open.return_value = mock_pil
-        mock_pil.convert.return_value = mock_pil
         result = asyncio.run(
             run_refinement(
                 image_path="/fake/slice.tif",
