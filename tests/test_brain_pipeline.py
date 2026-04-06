@@ -1,48 +1,55 @@
-"""Tests for wave computation and pipeline orchestration."""
+"""Tests for isotonic fitting in the brain pipeline."""
 
-from langslice.brain.pipeline import compute_waves
-
-
-def test_compute_waves_simple():
-    """4 anchors among 12 slices, indices 0-11."""
-    anchor_indices = {2, 5, 8, 11}
-    n_slices = 12
-    waves = compute_waves(n_slices, anchor_indices)
-    # Wave 1: distance 1 from any anchor -> {1,3, 4,6, 7,9, 10}
-    assert 1 in waves[0]
-    assert 3 in waves[0]
-    # All non-anchor indices should appear exactly once across all waves
-    all_assigned = set()
-    for wave in waves:
-        for idx in wave:
-            assert idx not in all_assigned, f"index {idx} in multiple waves"
-            assert idx not in anchor_indices, f"anchor {idx} in wave"
-            all_assigned.add(idx)
-    expected = set(range(n_slices)) - anchor_indices
-    assert all_assigned == expected
+from langslice.brain.pipeline import _fit_isotonic
+from langslice.brain.types import SlicePosition
 
 
-def test_compute_waves_all_anchors():
-    """When every slice is an anchor, no waves needed."""
-    waves = compute_waves(4, {0, 1, 2, 3})
-    assert waves == []
+def _make_slices(positions: list[float]) -> list[SlicePosition]:
+    return [
+        SlicePosition(f"slice_{i:03d}.tif", i, p, "test", locked=False)
+        for i, p in enumerate(positions)
+    ]
 
 
-def test_compute_waves_single_anchor():
-    """Single anchor at midpoint, waves radiate outward."""
-    waves = compute_waves(7, {3})
-    # Wave 1: {2, 4}
-    assert set(waves[0]) == {2, 4}
-    # Wave 2: {1, 5}
-    assert set(waves[1]) == {1, 5}
-    # Wave 3: {0, 6}
-    assert set(waves[2]) == {0, 6}
+def test_fit_isotonic_already_monotonic():
+    """Monotonic input should stay close to original values."""
+    slices = _make_slices([2.0, 3.0, 4.0, 5.0, 6.0])
+    result = _fit_isotonic(slices, interval_mm=1.0, thickness_mm=0.05)
+    positions = [s.position_mm for s in result]
+    # Should be monotonically increasing
+    for i in range(len(positions) - 1):
+        assert positions[i] < positions[i + 1]
+    # Should stay close to input
+    for orig, fitted in zip([2.0, 3.0, 4.0, 5.0, 6.0], positions, strict=True):
+        assert abs(orig - fitted) < 0.5
 
 
-def test_compute_waves_adjacent_anchors():
-    """Two adjacent anchors: only outer slices need waves."""
-    waves = compute_waves(5, {2, 3})
-    all_in_waves = set()
-    for w in waves:
-        all_in_waves.update(w)
-    assert all_in_waves == {0, 1, 4}
+def test_fit_isotonic_corrects_outlier():
+    """A single outlier should be pulled toward the trend."""
+    slices = _make_slices([2.0, 3.0, 8.0, 5.0, 6.0])  # 8.0 is an outlier
+    result = _fit_isotonic(slices, interval_mm=1.0, thickness_mm=0.05)
+    positions = [s.position_mm for s in result]
+    # Must be monotonic
+    for i in range(len(positions) - 1):
+        assert positions[i] < positions[i + 1]
+    # The outlier at index 2 should be pulled down from 8.0
+    assert positions[2] < 7.0
+
+
+def test_fit_isotonic_enforces_minimum_spacing():
+    """Adjacent slices must be at least thickness_mm apart."""
+    slices = _make_slices([1.0, 1.01, 1.02, 1.03, 2.0])
+    result = _fit_isotonic(slices, interval_mm=0.2, thickness_mm=0.05)
+    positions = [s.position_mm for s in result]
+    for i in range(len(positions) - 1):
+        spacing = positions[i + 1] - positions[i]
+        assert spacing >= 0.05 - 1e-9, f"spacing {spacing} < thickness 0.05"
+
+
+def test_fit_isotonic_non_monotonic_input():
+    """Non-monotonic input should be corrected to monotonic."""
+    slices = _make_slices([5.0, 3.0, 4.0, 2.0, 6.0])
+    result = _fit_isotonic(slices, interval_mm=1.0, thickness_mm=0.05)
+    positions = [s.position_mm for s in result]
+    for i in range(len(positions) - 1):
+        assert positions[i] < positions[i + 1]

@@ -1,4 +1,4 @@
-"""Wave computation and pipeline orchestration for whole-brain estimation."""
+"""Pipeline orchestration for whole-brain AP estimation."""
 
 from __future__ import annotations
 
@@ -9,10 +9,9 @@ import statistics
 
 from langslice.ai.estimator import APResult
 from langslice.atlas.core import get_position_range_mm, load_atlas
-from langslice.brain.agents import run_anchor_estimation, run_refinement
+from langslice.brain.agents import run_anchor_estimation, run_slice_estimation
 from langslice.brain.anchor_selection import select_anchor_indices
 from langslice.brain.checkpoint import load_checkpoint, save_checkpoint
-from langslice.brain.constraints import enforce_constraints
 from langslice.brain.discovery import discover_slices
 from langslice.brain.interpolation import interpolate_positions
 from langslice.brain.types import (
@@ -21,36 +20,8 @@ from langslice.brain.types import (
     BrainEstimationSummary,
     SlicePosition,
 )
-from langslice.brain.window import compute_refinement_window
 
 logger = logging.getLogger(__name__)
-
-
-def compute_waves(n_slices: int, anchor_indices: set[int]) -> list[list[int]]:
-    """Compute refinement waves radiating outward from anchors.
-
-    Returns a list of waves, where each wave is a list of slice indices that
-    can be processed in parallel.  Slices at distance 1 from any locked index
-    are in wave 0, distance 2 in wave 1, etc.
-    """
-    remaining = set(range(n_slices)) - anchor_indices
-    locked = set(anchor_indices)
-    waves: list[list[int]] = []
-
-    while remaining:
-        wave: list[int] = []
-        for idx in sorted(remaining):
-            if (idx - 1) in locked or (idx + 1) in locked:
-                wave.append(idx)
-        if not wave:
-            # Unreachable if anchors exist, but safety fallback
-            wave = sorted(remaining)
-        for idx in wave:
-            remaining.discard(idx)
-        locked.update(wave)
-        waves.append(wave)
-
-    return waves
 
 
 async def run_brain_estimation(
@@ -62,10 +33,10 @@ async def run_brain_estimation(
     """Main entry point: run the full whole-brain AP estimation pipeline.
 
     Phases:
-      1. Parallel anchor estimation (coarse + nano-banana).
-      2. Deterministic interpolation.
-      3. Wave-based nano-banana refinement (optional).
-      4. Constraint enforcement.
+      1. Anchor estimation (3-pass nano-banana, full atlas range).
+      2. Interpolation to derive center positions for remaining slices.
+      3. Parallel estimation of all non-anchor slices (2-pass nano-banana).
+      4. Isotonic regression across all estimates with spacing priors.
     """
 
     def _progress(msg: str) -> None:
@@ -87,11 +58,11 @@ async def run_brain_estimation(
     # --- Check for checkpoint ---
     cp_path = checkpoint_path or os.path.join(config.image_folder, "brain_estimate.json")
     existing = load_checkpoint(cp_path)
-    existing_locked = {s.filename: s for s in existing if s.locked}
+    existing_map = {s.filename: s for s in existing if s.locked}
 
     # --- Build initial slice list ---
     slices = [
-        existing_locked.get(
+        existing_map.get(
             os.path.basename(p),
             SlicePosition(os.path.basename(p), i, 0.0, "", locked=False),
         )
@@ -102,7 +73,7 @@ async def run_brain_estimation(
     anchor_indices = select_anchor_indices(n_slices, config.n_anchors)
     anchor_set = set(anchor_indices)
 
-    # Skip anchors that are already locked from a checkpoint
+    # Skip anchors that are already estimated from a checkpoint
     anchors_to_run = [i for i in anchor_indices if not slices[i].locked]
 
     if anchors_to_run:
@@ -115,6 +86,7 @@ async def run_brain_estimation(
                 result = await run_anchor_estimation(
                     image_path=image_paths[idx],
                     atlas_name=config.atlas_name,
+                    model_name=config.coarse_model,
                 )
                 return idx, result
 
@@ -131,16 +103,13 @@ async def run_brain_estimation(
                 ap_result.position_mm,
                 "anchor",
                 locked=True,
+                raw_position_mm=ap_result.position_mm,
             )
-
-        # Sanity check: monotonic order
-        anchor_positions = [(i, slices[i].position_mm) for i in anchor_indices]
-        _validate_anchor_order(anchor_positions, config.z_axis)
 
         save_checkpoint(cp_path, config, slices)
         _progress("Phase 1 complete, checkpoint saved")
 
-    # --- Phase 2: Interpolation ---
+    # --- Phase 2: Interpolation (derive center positions) ---
     _progress("Phase 2: interpolating positions")
     slices = interpolate_positions(
         slices,
@@ -150,80 +119,51 @@ async def run_brain_estimation(
     )
     save_checkpoint(cp_path, config, slices)
 
-    # --- Phase 3: Nano-banana refinement ---
-    if config.refinement:
-        waves = compute_waves(n_slices, anchor_set)
-        _progress(f"Phase 3: {len(waves)} refinement waves")
+    # --- Phase 3: Estimate all non-anchor slices ---
+    non_anchor_indices = [i for i in range(n_slices) if i not in anchor_set]
+    n_estimated = 0
+
+    if non_anchor_indices:
+        _progress(f"Phase 3: estimating {len(non_anchor_indices)} slices")
         sem = asyncio.Semaphore(config.max_parallel)
-        n_refined = 0
-        n_skipped = 0
 
-        for wave_num, wave in enumerate(waves):
-            _progress(f"  Wave {wave_num + 1}/{len(waves)}: {len(wave)} slices")
+        async def _run_estimate(idx: int) -> tuple[int, APResult]:
+            async with sem:
+                result = await run_slice_estimation(
+                    image_path=image_paths[idx],
+                    atlas_name=config.atlas_name,
+                    center_mm=slices[idx].position_mm,
+                    model_name=config.fine_model,
+                )
+                return idx, result
 
-            async def _run_refine(idx: int) -> tuple[int, APResult | None]:
-                async with sem:
-                    left_locked = _find_locked_neighbor(slices, idx, direction=-1)
-                    right_locked = _find_locked_neighbor(slices, idx, direction=1)
-                    win = compute_refinement_window(
-                        position_mm=slices[idx].position_mm,
-                        left_locked_mm=left_locked,
-                        right_locked_mm=right_locked,
-                        thickness_mm=config.thickness_mm,
-                        interval_mm=config.interval_mm,
-                    )
-                    if win.skip:
-                        return idx, None
-                    return idx, await run_refinement(
-                        image_path=image_paths[idx],
-                        atlas_name=config.atlas_name,
-                        window_lo=win.lo,
-                        window_hi=win.hi,
-                        window_center=win.center,
-                        n_images=win.n_images,
-                    )
+        tasks = [_run_estimate(i) for i in non_anchor_indices]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
 
-            tasks = [_run_refine(i) for i in wave]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
+        for r in results:
+            if isinstance(r, BaseException):
+                logger.warning("Slice estimation failed: %s", r)
+                continue
+            idx, ap_result = r
+            slices[idx] = SlicePosition(
+                slices[idx].filename,
+                idx,
+                ap_result.position_mm,
+                slices[idx].source + "+estimated",
+                locked=True,
+                raw_position_mm=ap_result.position_mm,
+            )
+            n_estimated += 1
 
-            for r in results:
-                if isinstance(r, BaseException):
-                    logger.warning("Refinement failed for a slice: %s", r)
-                    continue
-                idx, ap_result = r
-                if ap_result is None:
-                    slices[idx] = SlicePosition(
-                        slices[idx].filename,
-                        idx,
-                        slices[idx].position_mm,
-                        slices[idx].source,
-                        locked=True,
-                    )
-                    n_skipped += 1
-                else:
-                    slices[idx] = SlicePosition(
-                        slices[idx].filename,
-                        idx,
-                        ap_result.position_mm,
-                        slices[idx].source + "+refined",
-                        locked=True,
-                    )
-                    n_refined += 1
+        save_checkpoint(cp_path, config, slices)
+        _progress(f"Phase 3 complete: {n_estimated} estimated")
 
-            save_checkpoint(cp_path, config, slices)
-
-        _progress(f"Phase 3 complete: {n_refined} refined, {n_skipped} skipped")
-    else:
-        n_refined = 0
-        n_skipped = n_slices - len(anchor_indices)
-
-    # --- Phase 4: Constraint enforcement ---
-    _progress("Phase 4: enforcing constraints")
-    slices = enforce_constraints(
+    # --- Phase 4: Isotonic regression with spacing priors ---
+    _progress("Phase 4: fitting isotonic regression")
+    slices = _fit_isotonic(
         slices,
-        ordering=config.ordering,
+        interval_mm=config.interval_mm,
         thickness_mm=config.thickness_mm,
-        z_axis=config.z_axis,
     )
     save_checkpoint(cp_path, config, slices)
 
@@ -236,41 +176,70 @@ async def run_brain_estimation(
         std_interval_mm=statistics.stdev(intervals) if len(intervals) > 1 else 0.0,
         n_slices=n_slices,
         n_anchors=len(anchor_indices),
-        n_refined=n_refined,
-        n_skipped=n_skipped,
+        n_refined=n_estimated,
+        n_skipped=len(non_anchor_indices) - n_estimated,
     )
 
     return BrainEstimationResult(config=config, slices=slices, summary=summary)
 
 
-def _validate_anchor_order(
-    anchors: list[tuple[int, float]], z_axis: str
-) -> None:
-    """Raise if anchors are not in expected monotonic order."""
-    if len(anchors) < 2:
-        return
-    for i in range(len(anchors) - 1):
-        idx_a, pos_a = anchors[i]
-        idx_b, pos_b = anchors[i + 1]
-        if z_axis == "AP" and pos_b <= pos_a:
-            raise ValueError(
-                f"Anchor at slice {idx_b} ({pos_b:.3f}mm) is not posterior to "
-                f"slice {idx_a} ({pos_a:.3f}mm). Check images or re-run."
-            )
-        if z_axis == "PA" and pos_b >= pos_a:
-            raise ValueError(
-                f"Anchor at slice {idx_b} ({pos_b:.3f}mm) is not anterior to "
-                f"slice {idx_a} ({pos_a:.3f}mm). Check images or re-run."
-            )
+def _fit_isotonic(
+    slices: list[SlicePosition],
+    *,
+    interval_mm: float,
+    thickness_mm: float,
+) -> list[SlicePosition]:
+    """Fit a monotone-increasing curve through all slice estimates.
 
+    Uses scipy's isotonic regression to find positions that minimize squared
+    error to the raw estimates while enforcing monotonicity.  A spacing
+    regularization term penalizes deviations from the expected *interval_mm*.
+    Minimum spacing of *thickness_mm* is enforced as a hard constraint.
+    """
+    import numpy as np
+    from scipy.optimize import isotonic_regression
 
-def _find_locked_neighbor(
-    slices: list[SlicePosition], idx: int, direction: int
-) -> float | None:
-    """Walk in *direction* (-1 or +1) from *idx* to find nearest locked slice."""
-    i = idx + direction
-    while 0 <= i < len(slices):
-        if slices[i].locked:
-            return slices[i].position_mm
-        i += direction
-    return None
+    raw = np.array([s.position_mm for s in slices])
+    n = len(raw)
+
+    # Isotonic regression: find monotone-increasing values closest to raw
+    result = isotonic_regression(raw)
+    fitted = result.x if hasattr(result, "x") else np.asarray(result)
+
+    # Enforce minimum spacing (thickness_mm)
+    for i in range(1, n):
+        if fitted[i] < fitted[i - 1] + thickness_mm:
+            fitted[i] = fitted[i - 1] + thickness_mm
+
+    # Blend toward expected spacing to regularize
+    # Build an "expected" series anchored at the mean of fitted
+    mean_pos = float(fitted.mean())
+    center_idx = (n - 1) / 2.0
+    expected = np.array([
+        mean_pos + (i - center_idx) * interval_mm for i in range(n)
+    ])
+
+    # Light regularization: 80% VLM estimate, 20% expected spacing
+    alpha = 0.2
+    blended = (1 - alpha) * fitted + alpha * expected
+
+    # Re-run isotonic regression on blended to ensure monotonicity
+    result2 = isotonic_regression(blended)
+    final = result2.x if hasattr(result2, "x") else np.asarray(result2)
+
+    # Final minimum spacing enforcement
+    for i in range(1, n):
+        if final[i] < final[i - 1] + thickness_mm:
+            final[i] = final[i - 1] + thickness_mm
+
+    return [
+        SlicePosition(
+            s.filename,
+            s.index,
+            round(float(final[i]), 4),
+            s.source,
+            locked=s.locked,
+            raw_position_mm=s.raw_position_mm,
+        )
+        for i, s in enumerate(slices)
+    ]

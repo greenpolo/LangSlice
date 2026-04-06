@@ -18,6 +18,8 @@ class BrainEstimationConfig:
     refinement: bool
     max_parallel: int
     z_axis: str  # "AP" | "PA"
+    coarse_model: str | None = None  # Model for anchor estimation (full range)
+    fine_model: str | None = None  # Model for non-anchor estimation (windowed)
 
     @property
     def thickness_mm(self) -> float:
@@ -35,8 +37,9 @@ class SlicePosition:
     filename: str
     index: int
     position_mm: float
-    source: str  # "anchor", "interpolated", "extrapolated", "*+refined"
+    source: str  # "anchor", "interpolated", "extrapolated", "*+estimated"
     locked: bool
+    raw_position_mm: float | None = None
 
 
 @dataclass
@@ -71,6 +74,9 @@ class BrainEstimationResult:
                 {
                     "filename": s.filename,
                     "position_mm": round(s.position_mm, 4),
+                    "raw_position_mm": round(s.raw_position_mm, 4)
+                    if s.raw_position_mm is not None
+                    else None,
                     "source": s.source,
                 }
                 for s in self.slices

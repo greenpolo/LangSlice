@@ -13,7 +13,7 @@ from collections.abc import Callable
 
 from PIL import Image
 
-from langslice.ai.estimator import APResult, estimate_position
+from langslice.ai.estimator import APResult
 from langslice.ai.estimator_image_gen import estimate_position_image_gen
 from langslice.image_prep import adaptive_preprocess, normalize_image, prepare_image_for_vlm
 
@@ -35,60 +35,16 @@ async def run_anchor_estimation(
     *,
     image_path: str,
     atlas_name: str,
+    model_name: str | None = None,
     on_progress: Callable[[str], None] | None = None,
     debug_dir: str | None = None,
 ) -> APResult:
-    """Run full AP estimation + nano-banana refinement for an anchor slice.
+    """Run 3-pass nano-banana estimation for an anchor slice.
 
-    Stage A: multi-turn tool-use estimation (coarse).
-    Stage B: nano-banana fine pass centered on Stage A result.
+    Anchors use the full atlas range (no center_mm) so the broad scan
+    establishes the general region.  Their results are NOT locked — they
+    feed into interpolation and the final isotonic fit like every other slice.
     """
-    image = _prepare_slice(image_path)
-
-    # Stage A: coarse estimation
-    coarse = await asyncio.to_thread(
-        estimate_position,
-        image,
-        atlas_name,
-        on_progress=on_progress,
-        debug_dir=debug_dir,
-    )
-    logger.info("Anchor coarse: %.3fmm (%s)", coarse.position_mm, image_path)
-
-    # Stage B: nano-banana fine pass centered on coarse result
-    fine = await asyncio.to_thread(
-        estimate_position_image_gen,
-        image,
-        atlas_name,
-        on_progress=on_progress,
-        debug_dir=debug_dir,
-        send_individually=True,
-        atlas_resolution=1024,
-        center_mm=coarse.position_mm,
-    )
-    logger.info("Anchor fine: %.3fmm (%s)", fine.position_mm, image_path)
-
-    return fine
-
-
-async def run_refinement(
-    *,
-    image_path: str,
-    atlas_name: str,
-    window_lo: float,
-    window_hi: float,
-    window_center: float,
-    n_images: int,
-    on_progress: Callable[[str], None] | None = None,
-    debug_dir: str | None = None,
-) -> APResult | None:
-    """Run nano-banana refinement for a single slice within a bounded window.
-
-    Returns ``None`` if *n_images* is 0 (window too narrow, skip).
-    """
-    if n_images == 0:
-        return None
-
     image = _prepare_slice(image_path)
 
     result = await asyncio.to_thread(
@@ -97,16 +53,47 @@ async def run_refinement(
         atlas_name,
         on_progress=on_progress,
         debug_dir=debug_dir,
+        model_name=model_name,
         send_individually=True,
         atlas_resolution=1024,
-        center_mm=window_center,
-        bounds=(window_lo, window_hi),
+    )
+    logger.info("Anchor estimate: %.3fmm (%s)", result.position_mm, image_path)
+
+    return result
+
+
+async def run_slice_estimation(
+    *,
+    image_path: str,
+    atlas_name: str,
+    center_mm: float,
+    window_half_mm: float = 2.0,
+    model_name: str | None = None,
+    on_progress: Callable[[str], None] | None = None,
+    debug_dir: str | None = None,
+) -> APResult:
+    """Run 2-pass nano-banana estimation for a non-anchor slice.
+
+    The broad scan is skipped; the search starts in a neighborhood around
+    *center_mm* (derived from anchor interpolation).  The window is wide
+    enough (~±2 mm) for the model to correct a bad interpolation.
+    """
+    image = _prepare_slice(image_path)
+
+    lo = center_mm - window_half_mm
+    hi = center_mm + window_half_mm
+
+    result = await asyncio.to_thread(
+        estimate_position_image_gen,
+        image,
+        atlas_name,
+        on_progress=on_progress,
+        debug_dir=debug_dir,
+        model_name=model_name,
+        send_individually=True,
+        atlas_resolution=1024,
+        center_mm=center_mm,
+        bounds=(lo, hi),
     )
 
-    # Clamp result to window bounds
-    clamped_mm = max(window_lo, min(window_hi, result.position_mm))
-    return APResult(
-        position_mm=clamped_mm,
-        reasoning=result.reasoning,
-        debug_dir=result.debug_dir,
-    )
+    return result
