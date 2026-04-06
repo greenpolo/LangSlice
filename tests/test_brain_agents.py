@@ -12,15 +12,24 @@ _FAKE_IMAGE = Image.new("RGB", (64, 64), (128, 128, 128))
 
 
 def test_run_anchor_estimation():
-    """Anchor estimation runs 3-pass nano-banana (no coarse stage)."""
-    result_obj = APResult(position_mm=3.42, reasoning="nano-banana", debug_dir=None)
+    """Anchor estimation runs coarse tool-use then nano-banana fine pass."""
+    coarse_result = APResult(position_mm=3.45, reasoning="coarse", debug_dir=None)
+    fine_result = APResult(position_mm=3.42, reasoning="fine", debug_dir=None)
+
+    call_log = []
+    captured_kwargs: dict = {}
+
+    def fake_estimate(image, atlas_name, **kwargs):
+        call_log.append("coarse")
+        return coarse_result
 
     def fake_image_gen(image, atlas_name, **kwargs):
-        # Should NOT receive center_mm (full atlas range)
-        assert "center_mm" not in kwargs or kwargs["center_mm"] is None
-        return result_obj
+        call_log.append("fine")
+        captured_kwargs.update(kwargs)
+        return fine_result
 
     with (
+        patch("langslice.brain.agents.estimate_position", fake_estimate),
         patch("langslice.brain.agents.estimate_position_image_gen", fake_image_gen),
         patch("langslice.brain.agents._prepare_slice", return_value=_FAKE_IMAGE),
     ):
@@ -32,6 +41,8 @@ def test_run_anchor_estimation():
         )
 
     assert result.position_mm == 3.42
+    assert call_log == ["coarse", "fine"]
+    assert captured_kwargs["center_mm"] == 3.45
 
 
 def test_run_slice_estimation():

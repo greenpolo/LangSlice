@@ -102,7 +102,7 @@ Current runtime behavior for the colored segmentation workflow:
 
 Whole-brain multi-slice AP estimation. Scales the single-slice estimator to 20-60 slices with a four-phase pipeline:
 
-1. **Phase 1 — Anchor estimation:** Select anchor slices via center-out placement, run 3-pass nano-banana estimation on each in parallel. Anchor results are soft estimates, not locked truth.
+1. **Phase 1 — Anchor estimation:** Select anchor slices via center-out placement, run two-stage estimation on each in parallel: coarse tool-use agent (adaptive multi-turn exploration) then nano-banana fine pass centered on the coarse result. Anchor results are soft estimates, not locked truth.
 2. **Phase 2 — Interpolation:** Deterministic interval-based interpolation between anchors, extrapolation beyond outermost anchors, clamped to atlas bounds. Produces center positions for Phase 3.
 3. **Phase 3 — Parallel slice estimation:** Estimate all non-anchor slices in parallel using 2-pass nano-banana within ±2mm windows centered on interpolated positions.
 4. **Phase 4 — Isotonic fitting:** Fit a monotone-increasing curve through all estimates (anchors and non-anchors alike) using Huber-loss constrained optimization with local-interval spacing priors and hard minimum-thickness constraints.
@@ -116,7 +116,7 @@ The module is split into focused files:
 - `window.py` — nano-banana search window bounds and dynamic image count
 - `constraints.py` — legacy ordering enforcement and minimum spacing (retained for reference)
 - `checkpoint.py` — incremental JSON checkpoint for resumability
-- `agents.py` — async wrappers: `run_anchor_estimation()` (3-pass) and `run_slice_estimation()` (2-pass windowed), with CLAHE adaptive preprocessing
+- `agents.py` — async wrappers: `run_anchor_estimation()` (coarse tool-use + nano-banana fine) and `run_slice_estimation()` (2-pass windowed), with CLAHE adaptive preprocessing
 - `pipeline.py` — Huber-loss isotonic fitting and main `run_brain_estimation()` async entry point
 
 Concurrency uses plain asyncio (`asyncio.gather()` + `asyncio.Semaphore`), not an agent framework. The existing `estimate_position()` and `estimate_position_image_gen()` are called unmodified.
@@ -171,7 +171,7 @@ Launched via `cd tauri-gui && pnpm tauri dev`.
 
 1. Discover and naturally sort all slice images in the folder.
 2. Select anchor slices via center-out placement.
-3. Run 3-pass nano-banana estimation on anchors in parallel (full atlas range).
+3. Run two-stage anchor estimation in parallel (coarse tool-use + nano-banana fine pass).
 4. Interpolate center positions for all non-anchor slices.
 5. Estimate all non-anchor slices in parallel with 2-pass nano-banana (±2mm windows).
 6. Fit Huber-loss constrained monotonic curve through all estimates.

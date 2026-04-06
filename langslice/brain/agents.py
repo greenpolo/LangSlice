@@ -13,7 +13,7 @@ from collections.abc import Callable
 
 from PIL import Image
 
-from langslice.ai.estimator import APResult
+from langslice.ai.estimator import APResult, estimate_position
 from langslice.ai.estimator_image_gen import estimate_position_image_gen
 from langslice.image_prep import adaptive_preprocess, normalize_image, prepare_image_for_vlm
 
@@ -39,15 +39,30 @@ async def run_anchor_estimation(
     on_progress: Callable[[str], None] | None = None,
     debug_dir: str | None = None,
 ) -> APResult:
-    """Run 3-pass nano-banana estimation for an anchor slice.
+    """Two-stage anchor estimation: coarse tool-use then nano-banana fine pass.
 
-    Anchors use the full atlas range (no center_mm) so the broad scan
-    establishes the general region.  Their results are NOT locked — they
-    feed into interpolation and the final isotonic fit like every other slice.
+    Stage A: Multi-turn tool-use agent explores the atlas adaptively to find
+    the general AP region.
+    Stage B: Nano-banana fine pass centered on the coarse result refines to
+    ~0.05mm precision.
+
+    Anchor results feed into interpolation and the final isotonic fit like
+    every other slice — they are not locked as truth.
     """
     image = _prepare_slice(image_path)
 
-    result = await asyncio.to_thread(
+    # Stage A: coarse tool-use exploration
+    coarse = await asyncio.to_thread(
+        estimate_position,
+        image,
+        atlas_name,
+        on_progress=on_progress,
+        debug_dir=debug_dir,
+    )
+    logger.info("Anchor coarse: %.3fmm (%s)", coarse.position_mm, image_path)
+
+    # Stage B: nano-banana fine pass centered on coarse result
+    fine = await asyncio.to_thread(
         estimate_position_image_gen,
         image,
         atlas_name,
@@ -56,10 +71,11 @@ async def run_anchor_estimation(
         model_name=model_name,
         send_individually=True,
         atlas_resolution=1024,
+        center_mm=coarse.position_mm,
     )
-    logger.info("Anchor estimate: %.3fmm (%s)", result.position_mm, image_path)
+    logger.info("Anchor fine: %.3fmm (%s)", fine.position_mm, image_path)
 
-    return result
+    return fine
 
 
 async def run_slice_estimation(

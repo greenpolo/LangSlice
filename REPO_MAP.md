@@ -12,7 +12,7 @@ This map is intentionally short and stable so humans and agents can find the act
   - `agents_colored_segmentation.py` -- colored-segmentation workflow (default for image-gen models): model produces atlas-colored tissue segmentation, Elastix B-spline extracts deformation
   - `agents_image_gen.py` -- legacy two-shot landmark workflow for image-gen models (superseded by colored segmentation)
   - `agents_tool_loop.py` -- iterative tool-loop workflow for text-centric models (experimental, on hold)
-- `langslice/brain/` -- whole-brain multi-slice AP estimation: anchor selection (3-pass nano-banana), interval interpolation, parallel 2-pass nano-banana for non-anchors, Huber-loss constrained monotonic fitting, checkpoint I/O, and async pipeline orchestration
+- `langslice/brain/` -- whole-brain multi-slice AP estimation: anchor selection (coarse tool-use + nano-banana fine), interval interpolation, parallel 2-pass nano-banana for non-anchors, Huber-loss constrained monotonic fitting, checkpoint I/O, and async pipeline orchestration
 - `langslice/image_prep.py` -- image normalization, metadata-driven pixel size detection, VLM downsampling
 - `langslice/agent_trace.py` -- structured trace-event helpers shared by AP and registration flows
 - `langslice/export.py` -- coronal anchoring math, VisuAlign markers, and QUINT/ABBA-compatible JSON export

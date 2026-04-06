@@ -324,7 +324,7 @@ def _run_estimate_brain(args: argparse.Namespace) -> None:
     print("\nBrain estimation plan:")
     print(f"  {n_images} slices, {config.n_anchors} anchors, {config.ordering} ordering")
     print()
-    print(f"  Phase 1:  {config.n_anchors} anchor estimations (3-pass nano-banana)")
+    print(f"  Phase 1:  {config.n_anchors} anchor estimations (coarse + nano-banana fine)")
     print("  Phase 2:  interpolation")
     print(f"  Phase 3:  {n_non_anchors} non-anchor estimations (2-pass nano-banana)")
     print("  Phase 4:  isotonic regression (Huber loss)")
