@@ -86,7 +86,8 @@ async def run_brain_estimation(
                 result = await run_anchor_estimation(
                     image_path=image_paths[idx],
                     atlas_name=config.atlas_name,
-                    model_name=config.coarse_model,
+                    coarse_model=config.coarse_model,
+                    fine_model=config.fine_model,
                 )
                 return idx, result
 

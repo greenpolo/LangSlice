@@ -423,6 +423,7 @@ def estimate_position(
     media_resolution: str = "high",
     show_borders: bool = False,
     anatomy_hints: str = "",
+    model_name: str | None = None,
 ) -> APResult:
     """Agentic AP estimation using tool-use with self-correction.
 
@@ -651,7 +652,7 @@ def estimate_position(
 
             # Build interaction request kwargs
             create_kwargs: dict[str, Any] = {
-                "model": vlm_config.MODEL_NAME,
+                "model": model_name or vlm_config.MODEL_NAME,
                 "input": next_input,
                 "tools": tools,
                 "system_instruction": system_instruction,

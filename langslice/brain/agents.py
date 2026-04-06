@@ -35,7 +35,8 @@ async def run_anchor_estimation(
     *,
     image_path: str,
     atlas_name: str,
-    model_name: str | None = None,
+    coarse_model: str | None = None,
+    fine_model: str | None = None,
     on_progress: Callable[[str], None] | None = None,
     debug_dir: str | None = None,
 ) -> APResult:
@@ -58,6 +59,7 @@ async def run_anchor_estimation(
         atlas_name,
         on_progress=on_progress,
         debug_dir=debug_dir,
+        model_name=coarse_model,
     )
     logger.info("Anchor coarse: %.3fmm (%s)", coarse.position_mm, image_path)
 
@@ -68,7 +70,7 @@ async def run_anchor_estimation(
         atlas_name,
         on_progress=on_progress,
         debug_dir=debug_dir,
-        model_name=model_name,
+        model_name=fine_model,
         send_individually=True,
         atlas_resolution=1024,
         center_mm=coarse.position_mm,
