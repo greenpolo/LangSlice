@@ -151,9 +151,22 @@ async def _run(args: argparse.Namespace) -> dict:
     def _progress(msg: str) -> None:
         print(f"[eval] {msg}", file=sys.stderr)
 
+    # Use a temp checkpoint path so we never load stale checkpoints from the
+    # golden data directory.  The file is cleaned up after the run.
+    import tempfile
+    cp_fd, cp_path = tempfile.mkstemp(suffix=".json", prefix="eval_brain_cp_")
+    os.close(cp_fd)
+    os.unlink(cp_path)  # pipeline creates it fresh; we just need a clean path
+
     t0 = time.time()
-    result = await run_brain_estimation(config, on_progress=_progress)
+    result = await run_brain_estimation(
+        config, checkpoint_path=cp_path, on_progress=_progress
+    )
     elapsed_s = time.time() - t0
+
+    # Clean up temp checkpoint
+    if os.path.exists(cp_path):
+        os.unlink(cp_path)
 
     metrics = _compute_metrics(ground_truth, result.slices, args.threshold)
     metrics["config"] = {
