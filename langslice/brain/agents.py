@@ -85,7 +85,8 @@ async def run_slice_estimation(
     image_path: str,
     atlas_name: str,
     center_mm: float,
-    window_half_mm: float = 2.0,
+    window_half_mm: float = 3.0,
+    slices_per_pass: int = 17,
     model_name: str | None = None,
     on_progress: Callable[[str], None] | None = None,
     debug_dir: str | None = None,
@@ -94,7 +95,11 @@ async def run_slice_estimation(
 
     The broad scan is skipped; the search starts in a neighborhood around
     *center_mm* (derived from anchor interpolation).  The window is wide
-    enough (~±2 mm) for the model to correct a bad interpolation.
+    enough (~±3 mm) for the model to correct a bad interpolation.
+
+    Using 17 slices per pass (vs the default 13) gives finer neighborhood
+    resolution and a wider fine-pass range (0.8 mm vs 0.6 mm), improving
+    precision for near-miss estimates.
     """
     image = _prepare_slice(image_path)
 
@@ -112,6 +117,7 @@ async def run_slice_estimation(
         atlas_resolution=1024,
         center_mm=center_mm,
         bounds=(lo, hi),
+        slices_per_pass=slices_per_pass,
     )
 
     return result
