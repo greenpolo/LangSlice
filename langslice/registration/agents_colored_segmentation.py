@@ -5,19 +5,16 @@ segmentation of histology tissue guided by atlas reference images, then
 extracts a dense deformation field via itk-elastix B-spline registration.
 
 Pipeline:
-    1. Generate four atlas input images at the target AP position: colored
-       region map, smoothed boundary lines, grayscale reference, and the
-       histology slice itself.
-    2. Send all four images with the v9 prompt to Gemini image-gen.  The
+    1. Generate three atlas input images at the target AP position: colored
+       region map, grayscale reference, and the histology slice itself.
+    2. Send all three images with the v13 prompt to Gemini image-gen.  The
        model warps the colored atlas regions to match the histology anatomy.
-    3. Classify pixels in the model output back to atlas region IDs using
-       nearest-color matching.
-    4. Extract smoothed borders from both the atlas and model-output
-       classified maps.
-    5. Run itk-elastix B-spline registration on the border images to
-       recover the dense deformation field.
-    6. Warp the atlas RGB through the recovered transform.
-    7. Extract VisuAlign-compatible markers from the B-spline control
+    3. Run itk-elastix B-spline registration on grayscale versions of the
+       atlas colored regions (moving) and model output (fixed) to recover
+       the dense deformation field.
+    4. Warp the atlas RGB through the recovered transform.
+    5. Classify warped atlas pixels and extract borders for visualization.
+    6. Extract VisuAlign-compatible markers from the B-spline control
        points.
 """
 
@@ -60,7 +57,7 @@ logger = logging.getLogger(__name__)
 
 
 # Ventricles and fluid-filled spaces should be black (matching histology holes).
-_VENTRICLE_KEYWORDS = {"ventricle", "aqueduct", "central canal"}
+_VENTRICLE_KEYWORDS = {"ventricle", "aqueduct", "central canal", "choroid", "subependymal"}
 
 
 def _is_ventricle(structures: Any, uid: int) -> bool:
@@ -116,52 +113,6 @@ def _generate_colored_region_slice(
     return img
 
 
-def _generate_smoothed_borders(
-    atlas: Any,
-    position_mm: float,
-    target_size: tuple[int, int],
-) -> Image.Image:
-    """Render smoothed region boundary contours as a grayscale image.
-
-    The annotation slice is resized to *target_size* with NEAREST
-    interpolation, then per-region contours are extracted via
-    ``cv2.findContours``, smoothed with a 1D Gaussian filter, and drawn
-    with anti-aliased lines.
-    """
-    idx = position_mm_to_index(atlas, position_mm)
-    annotation_slice = np.asarray(atlas.annotation[idx, :, :]).astype(np.int32)
-
-    # Resize annotation to target size with nearest interpolation
-    ann_img = Image.fromarray(annotation_slice, mode="I")
-    ann_resized = ann_img.resize(target_size, resample=Image.Resampling.NEAREST)
-    ann_array = np.asarray(ann_resized, dtype=np.int32)
-
-    tw, th = target_size
-    canvas = np.zeros((th, tw), dtype=np.uint8)
-
-    unique_ids = np.unique(ann_array)
-    for uid in unique_ids:
-        uid_int = int(uid)
-        if uid_int == 0:
-            continue
-        region_mask = (ann_array == uid_int).astype(np.uint8) * 255
-        contours, _ = cv2.findContours(region_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
-        smoothed_contours = []
-        for contour in contours:
-            if len(contour) < 5:
-                smoothed_contours.append(contour)
-                continue
-            # contour shape is (N, 1, 2) — squeeze to (N, 2) for smoothing
-            pts = contour.squeeze(axis=1).astype(np.float64)
-            pts[:, 0] = gaussian_filter1d(pts[:, 0], sigma=3.0, mode="wrap")
-            pts[:, 1] = gaussian_filter1d(pts[:, 1], sigma=3.0, mode="wrap")
-            smoothed = pts.astype(np.int32).reshape(-1, 1, 2)
-            smoothed_contours.append(smoothed)
-        cv2.drawContours(canvas, smoothed_contours, -1, 255, 1, lineType=cv2.LINE_AA)
-
-    return Image.fromarray(canvas, mode="L")
-
-
 # ---------------------------------------------------------------------------
 # Pixel classification
 # ---------------------------------------------------------------------------
@@ -195,12 +146,10 @@ def _classify_pixels_to_region_ids(
             continue
         if structures is not None:
             try:
-                record = structures[uid_int]
-                if isinstance(record, dict):
-                    triplet = record.get("rgb_triplet")
-                    if isinstance(triplet, (list, tuple)) and len(triplet) >= 3:
-                        color = (int(triplet[0]), int(triplet[1]), int(triplet[2]))
-                        color_to_id[color] = uid_int
+                triplet = structures[uid_int]["rgb_triplet"]
+                if isinstance(triplet, (list, tuple)) and len(triplet) >= 3:
+                    color = (int(triplet[0]), int(triplet[1]), int(triplet[2]))
+                    color_to_id[color] = uid_int
             except Exception:
                 pass
 
@@ -277,10 +226,16 @@ def _extract_borders_from_classified(classified_2d: np.ndarray) -> np.ndarray:
 
 
 def _run_elastix_registration(
-    atlas_colored_gray: np.ndarray,
-    model_colored_gray: np.ndarray,
+    fixed_gray: np.ndarray,
+    moving_gray: np.ndarray,
 ) -> tuple[Any, float]:
-    """Run itk-elastix B-spline registration between border images.
+    """Run itk-elastix B-spline registration.
+
+    *fixed_gray* is the target image (model output) and *moving_gray* is
+    the source image (atlas) to be warped.  The returned transform maps
+    from fixed (model) space to moving (atlas) space, so
+    ``transformix(atlas_image, transform)`` warps the atlas into the
+    model's deformed shape.
 
     Configuration:
         - FinalGridSpacingInPhysicalUnits: 64
@@ -294,8 +249,8 @@ def _run_elastix_registration(
 
     t0 = time.perf_counter()
 
-    fixed_image = itk.image_from_array(atlas_colored_gray.astype(np.float32))
-    moving_image = itk.image_from_array(model_colored_gray.astype(np.float32))
+    fixed_image = itk.image_from_array(fixed_gray.astype(np.float32))
+    moving_image = itk.image_from_array(moving_gray.astype(np.float32))
 
     parameter_object = itk.ParameterObject.New()  # type: ignore[attr-defined]
     parameter_map = parameter_object.GetDefaultParameterMap("bspline")
@@ -459,6 +414,90 @@ _SEGMENTATION_PROMPT = (
 
 
 # ---------------------------------------------------------------------------
+# Gemini image-gen request
+# ---------------------------------------------------------------------------
+
+
+def _request_warped_segmentation(
+    client: Any,
+    *,
+    model_name: str,
+    thinking_level: str,
+    colored_regions: Image.Image,
+    reference_slice: Image.Image,
+    slice_image: Image.Image,
+    on_progress: Callable[[str], None] | None = None,
+) -> Image.Image:
+    """Send three images to Gemini and return the model-generated colored segmentation.
+
+    Raises ``RuntimeError`` if the model does not return an image.
+    """
+    types_mod = importlib.import_module("google.genai.types")
+    content_cls = types_mod.Content
+    part_cls = types_mod.Part
+
+    contents = [
+        content_cls(
+            role="user",
+            parts=[
+                _image_to_typed_part(colored_regions),
+                _image_to_typed_part(reference_slice),
+                _image_to_typed_part(slice_image),
+                part_cls.from_text(text=_SEGMENTATION_PROMPT),
+            ],
+        )
+    ]
+
+    config = _build_image_gen_config(
+        model_name=model_name,
+        thinking_level=thinking_level,
+    )
+
+    response = _agents._retry_generate_stream(
+        client,
+        model=model_name,
+        contents=contents,
+        config=config,
+        request_label="Colored segmentation Gemini pass",
+        on_progress=on_progress,
+    )
+
+    model_output = _extract_generated_image(response)
+    if model_output is None:
+        raise RuntimeError(
+            "Colored segmentation pass did not return an image -- "
+            "this workflow requires the model to generate a warped region map"
+        )
+
+    logger.info("Received model output image: %dx%d", model_output.width, model_output.height)
+    return model_output
+
+
+# ---------------------------------------------------------------------------
+# Local registration: colored images → grayscale → Elastix
+# ---------------------------------------------------------------------------
+
+
+def _register_colored_images(
+    atlas_rgb: np.ndarray,
+    model_output_rgb: np.ndarray,
+) -> tuple[Any, float]:
+    """Register atlas to model output using grayscale of the colored images.
+
+    The model output is the fixed (target) image and the atlas is the
+    moving (source) image.  This means ``transformix(atlas, transform)``
+    warps the atlas into the model's deformed shape.
+
+    Returns ``(result_transform, elapsed)``.
+    """
+    atlas_gray = cv2.cvtColor(atlas_rgb, cv2.COLOR_RGB2GRAY)
+    model_gray = cv2.cvtColor(model_output_rgb, cv2.COLOR_RGB2GRAY)
+
+    # fixed=model (target), moving=atlas (source to warp)
+    return _run_elastix_registration(model_gray, atlas_gray)
+
+
+# ---------------------------------------------------------------------------
 # Main orchestration
 # ---------------------------------------------------------------------------
 
@@ -475,17 +514,13 @@ def _estimate_correspondences_colored_segmentation(
 ) -> list[dict[str, object]]:
     """Run the colored-segmentation registration workflow.
 
-    Sends four atlas/slice images to a Gemini image-gen model with the v9
-    prompt, then recovers a dense deformation field via itk-elastix B-spline
-    registration on the extracted border images.
+    Sends three atlas/slice images to a Gemini image-gen model with the
+    v13 prompt, then recovers a dense deformation field via itk-elastix
+    B-spline registration on grayscale versions of the colored images.
 
     Returns an empty correspondence list (the dense transform is attached
     to the annotation session metadata instead of sparse point pairs).
     """
-    types_mod = importlib.import_module("google.genai.types")
-    content_cls = types_mod.Content
-    part_cls = types_mod.Part
-
     species = _species_from_atlas_name(atlas_name)
     atlas = load_atlas(atlas_name)
 
@@ -511,7 +546,6 @@ def _estimate_correspondences_colored_segmentation(
     if on_progress:
         on_progress("Colored segmentation: generating atlas input images...")
 
-    # Atlas images keep their native aspect ratio (not stretched to slice dims)
     colored_regions = _upscale_to_min_long_edge(
         _generate_colored_region_slice(atlas, position_mm, None)
     )
@@ -519,7 +553,6 @@ def _estimate_correspondences_colored_segmentation(
         get_reference_slice(atlas, position_mm).convert("RGB")
     )
 
-    # Slice image capped at 2K long edge
     slice_image = prepared.slice_prep.image
     slice_w_prep, slice_h_prep = slice_image.size
     if max(slice_w_prep, slice_h_prep) > max_long_edge:
@@ -528,10 +561,6 @@ def _estimate_correspondences_colored_segmentation(
             (int(slice_w_prep * sf), int(slice_h_prep * sf)),
             resample=Image.Resampling.LANCZOS,
         )
-
-    colored_regions_up = colored_regions
-    reference_slice_up = reference_slice
-    slice_image_up = slice_image
 
     _agents._emit_trace(
         on_trace,
@@ -555,7 +584,6 @@ def _estimate_correspondences_colored_segmentation(
         ),
     )
 
-    # Save input images if debug directory exists
     if prepared.registration_dir:
         os.makedirs(prepared.registration_dir, exist_ok=True)
         colored_regions.save(
@@ -569,34 +597,17 @@ def _estimate_correspondences_colored_segmentation(
         )
 
     # ------------------------------------------------------------------
-    # 3. Build and send the v13 prompt to Gemini (3 images, no borders)
+    # 3. Send images to Gemini image-gen model
     # ------------------------------------------------------------------
     if on_progress:
         on_progress("Colored segmentation: sending images to Gemini image-gen model...")
-
-    contents = [
-        content_cls(
-            role="user",
-            parts=[
-                _image_to_typed_part(colored_regions_up),
-                _image_to_typed_part(reference_slice_up),
-                _image_to_typed_part(slice_image_up),
-                part_cls.from_text(text=_SEGMENTATION_PROMPT),
-            ],
-        )
-    ]
-
-    config = _build_image_gen_config(
-        model_name=prepared.model_name,
-        thinking_level=prepared.thinking_level,
-    )
 
     _agents._emit_trace(
         on_trace,
         runtime_event(
             stage="registration",
             title="Colored segmentation Gemini request",
-            summary="4 images + v9 prompt sent to Gemini image-gen model",
+            summary="3 images + v13 prompt sent to Gemini image-gen model",
             metadata={
                 "workflow": "colored_segmentation",
                 "model": prepared.model_name,
@@ -605,26 +616,15 @@ def _estimate_correspondences_colored_segmentation(
         ),
     )
 
-    response = _agents._retry_generate_stream(
+    model_output = _request_warped_segmentation(
         client,
-        model=prepared.model_name,
-        contents=contents,
-        config=config,
-        request_label="Colored segmentation Gemini pass",
+        model_name=prepared.model_name,
+        thinking_level=prepared.thinking_level,
+        colored_regions=colored_regions,
+        reference_slice=reference_slice,
+        slice_image=slice_image,
         on_progress=on_progress,
     )
-
-    # ------------------------------------------------------------------
-    # 4. Extract the generated image
-    # ------------------------------------------------------------------
-    model_output = _extract_generated_image(response)
-    if model_output is None:
-        raise RuntimeError(
-            "Colored segmentation pass did not return an image -- "
-            "this workflow requires the model to generate a warped region map"
-        )
-
-    logger.info("Received model output image: %dx%d", model_output.width, model_output.height)
 
     _agents._emit_trace(
         on_trace,
@@ -649,50 +649,19 @@ def _estimate_correspondences_colored_segmentation(
     model_output_rgb = np.asarray(model_output_resized, dtype=np.uint8)
 
     # ------------------------------------------------------------------
-    # 5. Classify model output pixels to region IDs
-    # ------------------------------------------------------------------
-    if on_progress:
-        on_progress("Colored segmentation: classifying pixels to atlas regions...")
-
-    model_classified = _classify_pixels_to_region_ids(model_output_rgb, atlas, position_mm)
-    logger.info(
-        "Pixel classification: %d unique regions found",
-        len(np.unique(model_classified)) - (1 if 0 in model_classified else 0),
-    )
-
-    # ------------------------------------------------------------------
-    # 6. Extract borders from atlas and model classified maps
-    # ------------------------------------------------------------------
-    if on_progress:
-        on_progress("Colored segmentation: extracting region borders...")
-
-    # Get atlas classified map at target size for border extraction
-    atlas_annotation_idx = position_mm_to_index(atlas, position_mm)
-    atlas_annotation = np.asarray(atlas.annotation[atlas_annotation_idx, :, :]).astype(np.int32)
-    atlas_ann_img = Image.fromarray(atlas_annotation, mode="I")
-    atlas_ann_resized = np.asarray(
-        atlas_ann_img.resize(target_size, resample=Image.Resampling.NEAREST), dtype=np.int32
-    )
-
-    atlas_borders = _extract_borders_from_classified(atlas_ann_resized)
-    model_borders = _extract_borders_from_classified(model_classified)
-
-    if prepared.registration_dir:
-        Image.fromarray(atlas_borders, mode="L").save(
-            os.path.join(prepared.registration_dir, "atlas_borders_extracted.png")
-        )
-        Image.fromarray(model_borders, mode="L").save(
-            os.path.join(prepared.registration_dir, "model_borders_extracted.png")
-        )
-
-    # ------------------------------------------------------------------
-    # 7. Run Elastix B-spline registration
+    # 4. Register colored images via Elastix B-spline
     # ------------------------------------------------------------------
     if on_progress:
         on_progress("Colored segmentation: running Elastix B-spline registration...")
 
-    result_transform, elastix_elapsed = _run_elastix_registration(
-        atlas_borders, model_borders
+    # Generate atlas colored regions at target size for registration
+    atlas_colored_at_target = _generate_colored_region_slice(
+        atlas, position_mm, target_size
+    )
+    atlas_target_rgb = np.asarray(atlas_colored_at_target, dtype=np.uint8)
+
+    result_transform, elastix_elapsed = _register_colored_images(
+        atlas_target_rgb, model_output_rgb
     )
 
     _agents._emit_trace(
@@ -712,13 +681,12 @@ def _estimate_correspondences_colored_segmentation(
         on_progress(f"Colored segmentation: Elastix completed in {elastix_elapsed:.1f}s")
 
     # ------------------------------------------------------------------
-    # 8. Warp atlas RGB through the Elastix transform
+    # 5. Warp atlas through transform and extract borders
     # ------------------------------------------------------------------
     if on_progress:
         on_progress("Colored segmentation: warping atlas through transform...")
 
-    atlas_colored_rgb = np.asarray(colored_regions, dtype=np.uint8)
-    warped_atlas_rgb = _warp_atlas_rgb(atlas_colored_rgb, result_transform)
+    warped_atlas_rgb = _warp_atlas_rgb(atlas_target_rgb, result_transform)
 
     warped_atlas_img = Image.fromarray(warped_atlas_rgb, mode="RGB")
     if prepared.registration_dir:
@@ -726,14 +694,7 @@ def _estimate_correspondences_colored_segmentation(
             os.path.join(prepared.registration_dir, "warped_atlas_rgb.png")
         )
 
-    # ------------------------------------------------------------------
-    # 9. Classify warped atlas pixels to region IDs
-    # ------------------------------------------------------------------
     warped_classified = _classify_pixels_to_region_ids(warped_atlas_rgb, atlas, position_mm)
-
-    # ------------------------------------------------------------------
-    # 10. Extract borders from warped classified map
-    # ------------------------------------------------------------------
     warped_borders = _extract_borders_from_classified(warped_classified)
     if prepared.registration_dir:
         Image.fromarray(warped_borders, mode="L").save(
@@ -741,12 +702,11 @@ def _estimate_correspondences_colored_segmentation(
         )
 
     # ------------------------------------------------------------------
-    # 11. Extract VisuAlign markers from B-spline control points
+    # 6. Extract VisuAlign markers from B-spline control points
     # ------------------------------------------------------------------
     if on_progress:
         on_progress("Colored segmentation: extracting VisuAlign markers...")
 
-    # Scale factor from registration image coordinates to original slice
     scale_to_slice = float(slice_w) / float(target_size[0])
 
     markers = _extract_visualign_markers(
@@ -791,7 +751,7 @@ def _estimate_correspondences_colored_segmentation(
     )
 
     # ------------------------------------------------------------------
-    # 12. Build annotation session with dense transform metadata
+    # 7. Build annotation session with dense transform metadata
     # ------------------------------------------------------------------
     session = RegistrationAnnotationSession(
         workflow="colored_segmentation",
