@@ -320,16 +320,14 @@ def _run_estimate_brain(args: argparse.Namespace) -> None:
 
     # Cost estimate
     n_images = len(discover_slices(config.image_folder))
-    n_refinements = n_images - config.n_anchors if config.refinement else 0
+    n_non_anchors = n_images - config.n_anchors
     print("\nBrain estimation plan:")
     print(f"  {n_images} slices, {config.n_anchors} anchors, {config.ordering} ordering")
-    print(f"  Refinement: {'ON' if config.refinement else 'OFF'}")
     print()
-    cost = config.n_anchors * 0.05
-    print(f"  Phase 1:  {config.n_anchors} anchor estimations          ~${cost:.2f}")
-    print(f"  Phase 1b: {config.n_anchors} anchor nano-banana passes   cost TBD")
-    if config.refinement:
-        print(f"  Phase 3:  {n_refinements} nano-banana refinements    cost TBD")
+    print(f"  Phase 1:  {config.n_anchors} anchor estimations (3-pass nano-banana)")
+    print("  Phase 2:  interpolation")
+    print(f"  Phase 3:  {n_non_anchors} non-anchor estimations (2-pass nano-banana)")
+    print("  Phase 4:  isotonic regression (Huber loss)")
     print(f"  --parallel {config.max_parallel}")
     print()
 
