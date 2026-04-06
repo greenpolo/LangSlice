@@ -148,6 +148,9 @@ async def _run(args: argparse.Namespace) -> dict:
         fine_model=args.fine_model,
     )
 
+    # Disable debug artifact dumps during eval runs to avoid filling disk.
+    os.environ.pop("LANGSLICE_VLM_DEBUG_DIR", None)
+
     def _progress(msg: str) -> None:
         print(f"[eval] {msg}", file=sys.stderr)
 
