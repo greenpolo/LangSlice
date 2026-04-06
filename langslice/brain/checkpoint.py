@@ -27,6 +27,9 @@ def save_checkpoint(
                 "position_mm": round(s.position_mm, 4),
                 "source": s.source,
                 "locked": s.locked,
+                "raw_position_mm": round(s.raw_position_mm, 4)
+                if s.raw_position_mm is not None
+                else None,
             }
             for s in slices
         ],
@@ -51,6 +54,7 @@ def load_checkpoint(path: str) -> list[SlicePosition]:
             position_mm=s["position_mm"],
             source=s["source"],
             locked=s["locked"],
+            raw_position_mm=s.get("raw_position_mm"),
         )
         for s in data["slices"]
     ]

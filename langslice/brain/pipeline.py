@@ -188,49 +188,80 @@ def _fit_isotonic(
     *,
     interval_mm: float,
     thickness_mm: float,
+    data_delta_mm: float = 0.3,
+    interval_delta_mm: float = 0.2,
+    spacing_weight: float = 0.1,
 ) -> list[SlicePosition]:
     """Fit a monotone-increasing curve through all slice estimates.
 
-    Uses scipy's isotonic regression to find positions that minimize squared
-    error to the raw estimates while enforcing monotonicity.  A spacing
-    regularization term penalizes deviations from the expected *interval_mm*.
-    Minimum spacing of *thickness_mm* is enforced as a hard constraint.
+    Uses constrained optimization with Huber-loss data fidelity and a
+    local-interval spacing prior.  Hard constraints enforce monotonicity
+    with minimum spacing of *thickness_mm*.
+
+    The Huber loss is quadratic for small residuals and linear for large
+    ones, so accurate estimates are preserved while outliers are tamed.
+    The spacing prior penalizes *local intervals* (x[i] - x[i-1])
+    deviating from *interval_mm*, which naturally tolerates wellplate
+    jumps without distorting the rest of the series.
+
+    Parameters
+    ----------
+    data_delta_mm : float
+        Huber threshold for data fidelity — residuals below this are
+        penalized quadratically, above linearly.
+    interval_delta_mm : float
+        Huber threshold for the spacing prior.
+    spacing_weight : float
+        Relative weight of the spacing prior vs data fidelity.
     """
     import numpy as np
-    from scipy.optimize import isotonic_regression
+    from scipy.optimize import minimize
 
-    raw = np.array([s.position_mm for s in slices])
+    raw = np.array([s.position_mm for s in slices], dtype=np.float64)
     n = len(raw)
 
-    # Isotonic regression: find monotone-increasing values closest to raw
-    result = isotonic_regression(raw)
-    fitted = result.x if hasattr(result, "x") else np.asarray(result)
+    if n <= 1:
+        return list(slices)
 
-    # Enforce minimum spacing (thickness_mm)
+    def _huber(residuals: np.ndarray, delta: float) -> np.ndarray:
+        """Pseudo-Huber loss: smooth approximation, differentiable everywhere."""
+        return delta**2 * (np.sqrt(1.0 + (residuals / delta) ** 2) - 1.0)
+
+    def objective(x: np.ndarray) -> float:
+        # Data fidelity: keep fitted positions close to VLM estimates
+        data_loss = float(np.sum(_huber(x - raw, data_delta_mm)))
+
+        # Spacing prior: penalize local intervals deviating from expected
+        intervals = np.diff(x)
+        spacing_loss = float(
+            np.sum(_huber(intervals - interval_mm, interval_delta_mm))
+        )
+
+        return data_loss + spacing_weight * spacing_loss
+
+    # Hard constraints: x[i] >= x[i-1] + thickness_mm
+    constraints = [
+        {
+            "type": "ineq",
+            "fun": lambda x, i=i: x[i] - x[i - 1] - thickness_mm,
+        }
+        for i in range(1, n)
+    ]
+
+    # Initial guess: sort raw estimates and enforce minimum spacing
+    x0 = np.sort(raw)
     for i in range(1, n):
-        if fitted[i] < fitted[i - 1] + thickness_mm:
-            fitted[i] = fitted[i - 1] + thickness_mm
+        if x0[i] < x0[i - 1] + thickness_mm:
+            x0[i] = x0[i - 1] + thickness_mm
 
-    # Blend toward expected spacing to regularize
-    # Build an "expected" series anchored at the mean of fitted
-    mean_pos = float(fitted.mean())
-    center_idx = (n - 1) / 2.0
-    expected = np.array([
-        mean_pos + (i - center_idx) * interval_mm for i in range(n)
-    ])
-
-    # Light regularization: 80% VLM estimate, 20% expected spacing
-    alpha = 0.2
-    blended = (1 - alpha) * fitted + alpha * expected
-
-    # Re-run isotonic regression on blended to ensure monotonicity
-    result2 = isotonic_regression(blended)
-    final = result2.x if hasattr(result2, "x") else np.asarray(result2)
-
-    # Final minimum spacing enforcement
-    for i in range(1, n):
-        if final[i] < final[i - 1] + thickness_mm:
-            final[i] = final[i - 1] + thickness_mm
+    result = minimize(
+        objective,
+        x0,
+        method="SLSQP",
+        constraints=constraints,
+        options={"maxiter": 1000, "ftol": 1e-10},
+    )
+    final = result.x
 
     return [
         SlicePosition(
