@@ -63,7 +63,16 @@ async def run_anchor_estimation(
     )
     logger.info("Anchor coarse: %.3fmm (%s)", coarse.position_mm, image_path)
 
-    # Stage B: nano-banana fine pass centered on coarse result
+    # Stage B: nano-banana fine pass centered on coarse result.
+    # Restrict the search window to ±0.5 mm around the coarse estimate so the
+    # fine pass can only *refine*, not *relocate*.  The tighter window also
+    # increases atlas reference density from ~0.25 mm to ~0.08 mm spacing,
+    # giving the VLM more precise comparison images.  Without these bounds the
+    # neighbourhood zoom covers ±1.5 mm and the model can drift >1 mm from a
+    # good coarse estimate (observed in prior experiments).
+    _ANCHOR_FINE_HALF_MM = 0.5
+    fine_lo = coarse.position_mm - _ANCHOR_FINE_HALF_MM
+    fine_hi = coarse.position_mm + _ANCHOR_FINE_HALF_MM
     fine = await asyncio.to_thread(
         estimate_position_image_gen,
         image,
@@ -74,8 +83,12 @@ async def run_anchor_estimation(
         send_individually=True,
         atlas_resolution=1024,
         center_mm=coarse.position_mm,
+        bounds=(fine_lo, fine_hi),
     )
-    logger.info("Anchor fine: %.3fmm (%s)", fine.position_mm, image_path)
+    logger.info("Anchor fine: %.3fmm (drift %.3fmm) (%s)",
+                fine.position_mm,
+                abs(fine.position_mm - coarse.position_mm),
+                image_path)
 
     return fine
 
