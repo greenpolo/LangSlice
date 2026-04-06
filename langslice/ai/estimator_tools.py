@@ -470,7 +470,7 @@ def _process_ap_function_calls(
                 state.saw_narrow_sweep = True
 
             grid_img = _build_atlas_grid(
-                atlas, positions, show_borders=show_borders,
+                atlas, positions, target_image=target_image, show_borders=show_borders,
             )
             grid_bytes = _image_to_bytes(grid_img)
             state.images_fetched += len(positions)

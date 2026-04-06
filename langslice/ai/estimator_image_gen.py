@@ -286,12 +286,20 @@ def estimate_position_image_gen(
     slices_per_pass: int = _SLICES_PER_PASS,
     send_individually: bool = False,
     atlas_resolution: int = 512,
+    center_mm: float | None = None,
+    bounds: tuple[float, float] | None = None,
 ) -> APResult:
     """Multi-pass zoom AP estimation using an image-generation model.
 
     Three passes narrow from the full atlas range down to ~0.05 mm resolution.
     Each pass is a stateless ``generate_content`` call so that the full token
     budget is available for the grid image on every pass.
+
+    When *center_mm* is provided the broad scan (pass 1) is skipped and the
+    neighborhood zoom starts directly around that position.
+
+    When *bounds* ``(lo, hi)`` is provided, the search range is hard-clamped
+    so no pass ever extends outside the given range.
     """
 
     def _progress(msg: str) -> None:
@@ -303,6 +311,9 @@ def estimate_position_image_gen(
     client = get_client()
     atlas = _load_atlas_lazy(atlas_name)
     pos_lo, pos_hi = _get_position_range_lazy(atlas)
+    if bounds is not None:
+        pos_lo = max(pos_lo, bounds[0])
+        pos_hi = min(pos_hi, bounds[1])
     species = _species_from_atlas_name(atlas_name)
 
     # --- Prepare target image ---------------------------------------------------
@@ -384,7 +395,33 @@ def estimate_position_image_gen(
     # Later passes are already centered on a valid pick so no margin needed.
     _BROAD_MARGIN_MM = 0.5
 
-    for pass_idx in range(3):
+    # When a center is provided, skip the broad scan and start at the
+    # neighborhood zoom (pass index 1) centered on the given position.
+    if center_mm is not None:
+        if bounds is not None:
+            # Explicit bounds: use them directly as the neighborhood range.
+            range_lo, range_hi = pos_lo, pos_hi
+            start_pass = 1
+        else:
+            # No explicit bounds: compute a neighborhood window from the
+            # full-atlas broad-scan spacing.
+            full_lo, full_hi = _get_position_range_lazy(atlas)
+            broad_spacing = (full_hi - full_lo - 2 * _BROAD_MARGIN_MM) / max(
+                slices_per_pass - 1, 1
+            )
+            half = broad_spacing * 1.5
+            range_lo = max(pos_lo, center_mm - half)
+            range_hi = min(pos_hi, center_mm + half)
+            start_pass = 1
+        final_pos = center_mm
+        _progress(
+            f"Skipping broad scan — centering on {center_mm:.2f} mm "
+            f"({range_lo:.2f}-{range_hi:.2f} mm)"
+        )
+    else:
+        start_pass = 0
+
+    for pass_idx in range(start_pass, 3):
         margin = _BROAD_MARGIN_MM if pass_idx == 0 else 0.0
         positions = _compute_positions(
             range_lo, range_hi, slices_per_pass, margin=margin,
