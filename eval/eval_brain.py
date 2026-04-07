@@ -128,7 +128,6 @@ def _compute_metrics(
             "n_failing": n_failing,
             "n_passing": n_passing,
             "failing_threshold_mm": threshold_mm,
-            "accuracy": round(pct_within_01, 4),
         },
         "per_slice": per_slice,
     }
