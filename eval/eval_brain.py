@@ -44,6 +44,7 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--fine-model", required=True, help="Model for non-anchor estimation")
     p.add_argument("--json", action="store_true", help="Output structured JSON to stdout")
     p.add_argument("--threshold", type=float, default=FAIL_THRESHOLD_MM, help="Failure threshold in mm")
+    p.add_argument("--n-anchors", type=int, default=4, help="Number of anchor slices")
     return p.parse_args()
 
 
@@ -59,6 +60,7 @@ def _build_config(
     atlas_name: str,
     coarse_model: str,
     fine_model: str,
+    n_anchors: int = 4,
 ) -> "BrainEstimationConfig":
     """Build a BrainEstimationConfig using the pipeline's current defaults.
 
@@ -72,7 +74,7 @@ def _build_config(
         atlas_name=atlas_name,
         thickness_um=50,
         interval_um=200,
-        n_anchors=4,
+        n_anchors=n_anchors,
         ordering="strict",
         refinement=True,
         max_parallel=10,
@@ -146,6 +148,7 @@ async def _run(args: argparse.Namespace) -> dict:
         atlas_name=atlas_name,
         coarse_model=args.coarse_model,
         fine_model=args.fine_model,
+        n_anchors=args.n_anchors,
     )
 
     # Disable debug artifact dumps during eval runs to avoid filling disk.
