@@ -63,7 +63,16 @@ async def run_anchor_estimation(
     )
     logger.info("Anchor coarse: %.3fmm (%s)", coarse.position_mm, image_path)
 
-    # Stage B: nano-banana fine pass centered on coarse result
+    # Stage B: nano-banana fine pass centered on coarse result.
+    # Restrict the search window to ±0.5 mm around the coarse estimate so the
+    # fine pass can only *refine*, not *relocate*.  The tighter window also
+    # increases atlas reference density from ~0.25 mm to ~0.08 mm spacing,
+    # giving the VLM more precise comparison images.  Without these bounds the
+    # neighbourhood zoom covers ±1.5 mm and the model can drift >1 mm from a
+    # good coarse estimate (observed in prior experiments).
+    _ANCHOR_FINE_HALF_MM = 0.5
+    fine_lo = coarse.position_mm - _ANCHOR_FINE_HALF_MM
+    fine_hi = coarse.position_mm + _ANCHOR_FINE_HALF_MM
     fine = await asyncio.to_thread(
         estimate_position_image_gen,
         image,
@@ -74,8 +83,12 @@ async def run_anchor_estimation(
         send_individually=True,
         atlas_resolution=1024,
         center_mm=coarse.position_mm,
+        bounds=(fine_lo, fine_hi),
     )
-    logger.info("Anchor fine: %.3fmm (%s)", fine.position_mm, image_path)
+    logger.info("Anchor fine: %.3fmm (drift %.3fmm) (%s)",
+                fine.position_mm,
+                abs(fine.position_mm - coarse.position_mm),
+                image_path)
 
     return fine
 
@@ -85,7 +98,8 @@ async def run_slice_estimation(
     image_path: str,
     atlas_name: str,
     center_mm: float,
-    window_half_mm: float = 2.0,
+    window_half_mm: float = 3.0,
+    slices_per_pass: int = 17,
     model_name: str | None = None,
     on_progress: Callable[[str], None] | None = None,
     debug_dir: str | None = None,
@@ -94,7 +108,11 @@ async def run_slice_estimation(
 
     The broad scan is skipped; the search starts in a neighborhood around
     *center_mm* (derived from anchor interpolation).  The window is wide
-    enough (~±2 mm) for the model to correct a bad interpolation.
+    enough (~±3 mm) for the model to correct a bad interpolation.
+
+    Using 17 slices per pass (vs the default 13) gives finer neighborhood
+    resolution and a wider fine-pass range (0.8 mm vs 0.6 mm), improving
+    precision for near-miss estimates.
     """
     image = _prepare_slice(image_path)
 
@@ -112,6 +130,7 @@ async def run_slice_estimation(
         atlas_resolution=1024,
         center_mm=center_mm,
         bounds=(lo, hi),
+        slices_per_pass=slices_per_pass,
     )
 
     return result

@@ -189,21 +189,22 @@ def _fit_isotonic(
     *,
     interval_mm: float,
     thickness_mm: float,
-    data_delta_mm: float = 0.3,
+    data_delta_mm: float = 1.0,
     interval_delta_mm: float = 0.2,
-    spacing_weight: float = 0.1,
+    spacing_weight: float = 0.0,
+    anchor_weight: float = 5.0,
 ) -> list[SlicePosition]:
     """Fit a monotone-increasing curve through all slice estimates.
 
-    Uses constrained optimization with Huber-loss data fidelity and a
-    local-interval spacing prior.  Hard constraints enforce monotonicity
-    with minimum spacing of *thickness_mm*.
+    Uses constrained optimization with Huber-loss data fidelity and hard
+    monotonicity constraints (minimum spacing of *thickness_mm*).
+
+    Anchor estimates receive *anchor_weight* times the data-fidelity
+    penalty of non-anchor slices, reflecting their higher reliability
+    from two-stage (coarse + fine) estimation.
 
     The Huber loss is quadratic for small residuals and linear for large
     ones, so accurate estimates are preserved while outliers are tamed.
-    The spacing prior penalizes *local intervals* (x[i] - x[i-1])
-    deviating from *interval_mm*, which naturally tolerates wellplate
-    jumps without distorting the rest of the series.
 
     Parameters
     ----------
@@ -214,6 +215,8 @@ def _fit_isotonic(
         Huber threshold for the spacing prior.
     spacing_weight : float
         Relative weight of the spacing prior vs data fidelity.
+    anchor_weight : float
+        Multiplier for anchor data-fidelity terms (default 5x).
     """
     import numpy as np
     from scipy.optimize import minimize
@@ -224,13 +227,20 @@ def _fit_isotonic(
     if n <= 1:
         return list(slices)
 
+    # Per-slice weights: anchors are more reliable (two-stage estimation)
+    weights = np.array(
+        [anchor_weight if s.source == "anchor" else 1.0 for s in slices],
+        dtype=np.float64,
+    )
+
     def _huber(residuals: np.ndarray, delta: float) -> np.ndarray:
         """Pseudo-Huber loss: smooth approximation, differentiable everywhere."""
         return delta**2 * (np.sqrt(1.0 + (residuals / delta) ** 2) - 1.0)
 
     def objective(x: np.ndarray) -> float:
         # Data fidelity: keep fitted positions close to VLM estimates
-        data_loss = float(np.sum(_huber(x - raw, data_delta_mm)))
+        # Anchors are weighted higher to anchor the fit at reliable points
+        data_loss = float(np.sum(weights * _huber(x - raw, data_delta_mm)))
 
         # Spacing prior: penalize local intervals deviating from expected
         intervals = np.diff(x)
