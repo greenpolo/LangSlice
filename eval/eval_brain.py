@@ -40,8 +40,8 @@ def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Evaluate brain AP estimation against ground truth")
     p.add_argument("--images", required=True, help="Directory containing slice images")
     p.add_argument("--ground-truth", required=True, help="Ground truth JSON file")
-    p.add_argument("--coarse-model", required=True, help="Model for anchor estimation")
-    p.add_argument("--fine-model", required=True, help="Model for non-anchor estimation")
+    p.add_argument("--coarse-model", default=None, help="Model for anchor estimation (default: from config.py)")
+    p.add_argument("--fine-model", default=None, help="Model for non-anchor estimation (default: from config.py)")
     p.add_argument("--json", action="store_true", help="Output structured JSON to stdout")
     p.add_argument("--threshold", type=float, default=FAIL_THRESHOLD_MM, help="Failure threshold in mm")
     p.add_argument("--n-anchors", type=int, default=4, help="Number of anchor slices")
@@ -58,14 +58,15 @@ def _load_ground_truth(path: str) -> dict[str, float]:
 def _build_config(
     image_folder: str,
     atlas_name: str,
-    coarse_model: str,
-    fine_model: str,
+    coarse_model: str | None,
+    fine_model: str | None,
     n_anchors: int = 4,
 ) -> "BrainEstimationConfig":
     """Build a BrainEstimationConfig using the pipeline's current defaults.
 
-    The agent may have changed defaults in the code (n_anchors, ordering, etc.).
-    We import the config class at call time so we pick up those changes.
+    Models default to None, which means the pipeline uses whatever is set
+    in langslice/ai/config.py (MODEL_NAME). The agent can change models
+    by modifying config.py.
     """
     from langslice.brain.types import BrainEstimationConfig
 
