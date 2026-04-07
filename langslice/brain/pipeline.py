@@ -192,7 +192,7 @@ def _fit_isotonic(
     data_delta_mm: float = 1.0,
     interval_delta_mm: float = 0.2,
     spacing_weight: float = 0.0,
-    anchor_weight: float = 10.0,
+    anchor_weight: float = 5.0,
 ) -> list[SlicePosition]:
     """Fit a monotone-increasing curve through all slice estimates.
 

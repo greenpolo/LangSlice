@@ -466,10 +466,15 @@ def estimate_position_image_gen(
         )
 
         if send_individually:
-            # Send target + each atlas slice as separate Parts
+            # Send atlas slices first, then target slice last.
+            # Placing the target image closest to the prompt leverages
+            # VLM recency bias — the model compares the freshly-seen
+            # target against atlas references it has already processed,
+            # improving visual matching precision.
             request_parts: list[Any] = [
-                types_mod.Part.from_text(text="Target histology slice:"),
-                _image_to_typed_part(target_bytes),
+                types_mod.Part.from_text(
+                    text="Reference atlas coronal sections:"
+                ),
             ]
             for i, pos in enumerate(positions):
                 try:
@@ -486,6 +491,10 @@ def estimate_position_image_gen(
                     )
                 except (ValueError, IndexError):
                     pass
+            request_parts.append(
+                types_mod.Part.from_text(text="Target histology slice:")
+            )
+            request_parts.append(_image_to_typed_part(target_bytes))
             request_parts.append(types_mod.Part.from_text(text=prompt))
             contents = [content_cls(role="user", parts=request_parts)]
         else:
