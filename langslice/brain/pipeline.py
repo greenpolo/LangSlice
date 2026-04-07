@@ -127,13 +127,27 @@ async def run_brain_estimation(
     if non_anchor_indices:
         _progress(f"Phase 3: estimating {len(non_anchor_indices)} slices")
         sem = asyncio.Semaphore(config.max_parallel)
+        first_anchor_idx = anchor_indices[0]
+        last_anchor_idx = anchor_indices[-1]
 
         async def _run_estimate(idx: int) -> tuple[int, APResult]:
             async with sem:
+                edge_anchor_mm: float | None = None
+                edge_side: str | None = None
+                if slices[idx].source == "extrapolated":
+                    if idx < first_anchor_idx:
+                        edge_anchor_mm = slices[first_anchor_idx].position_mm
+                        edge_side = "leading"
+                    elif idx > last_anchor_idx:
+                        edge_anchor_mm = slices[last_anchor_idx].position_mm
+                        edge_side = "trailing"
                 result = await run_slice_estimation(
                     image_path=image_paths[idx],
                     atlas_name=config.atlas_name,
                     center_mm=slices[idx].position_mm,
+                    atlas_range=atlas_range,
+                    edge_anchor_mm=edge_anchor_mm,
+                    edge_side=edge_side,
                     model_name=config.fine_model,
                 )
                 return idx, result

@@ -15,6 +15,7 @@ from PIL import Image
 
 from langslice.ai.estimator import APResult, estimate_position
 from langslice.ai.estimator_image_gen import estimate_position_image_gen
+from langslice.brain.window import compute_search_bounds
 from langslice.image_prep import adaptive_preprocess, normalize_image, prepare_image_for_vlm
 
 # Match the single-slice CLI: normalize → downscale → CLAHE.
@@ -98,8 +99,11 @@ async def run_slice_estimation(
     image_path: str,
     atlas_name: str,
     center_mm: float,
+    atlas_range: tuple[float, float] | None = None,
     window_half_mm: float = 3.0,
     slices_per_pass: int = 17,
+    edge_anchor_mm: float | None = None,
+    edge_side: str | None = None,
     model_name: str | None = None,
     on_progress: Callable[[str], None] | None = None,
     debug_dir: str | None = None,
@@ -116,8 +120,16 @@ async def run_slice_estimation(
     """
     image = _prepare_slice(image_path)
 
-    lo = center_mm - window_half_mm
-    hi = center_mm + window_half_mm
+    if atlas_range is None:
+        bounds = (center_mm - window_half_mm, center_mm + window_half_mm)
+    else:
+        bounds = compute_search_bounds(
+            center_mm=center_mm,
+            atlas_range=atlas_range,
+            window_half_mm=window_half_mm,
+            edge_anchor_mm=edge_anchor_mm,
+            edge_side=edge_side,
+        )
 
     result = await asyncio.to_thread(
         estimate_position_image_gen,
@@ -129,7 +141,7 @@ async def run_slice_estimation(
         send_individually=True,
         atlas_resolution=1024,
         center_mm=center_mm,
-        bounds=(lo, hi),
+        bounds=bounds,
         slices_per_pass=slices_per_pass,
     )
 

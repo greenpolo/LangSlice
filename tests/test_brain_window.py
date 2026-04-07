@@ -1,6 +1,6 @@
 import pytest
 
-from langslice.brain.window import compute_refinement_window
+from langslice.brain.window import compute_refinement_window, compute_search_bounds
 
 
 def test_window_locked_both_sides():
@@ -87,3 +87,37 @@ def test_window_max_images_capped():
         interval_mm=0.200,
     )
     assert win.n_images <= 13
+
+
+def test_compute_search_bounds_uses_default_window_for_interior_slice():
+    bounds = compute_search_bounds(
+        center_mm=5.0,
+        atlas_range=(0.0, 13.0),
+        window_half_mm=3.0,
+    )
+
+    assert bounds == pytest.approx((2.0, 8.0), abs=0.001)
+
+
+def test_compute_search_bounds_tightens_leading_edge_window():
+    bounds = compute_search_bounds(
+        center_mm=2.691,
+        atlas_range=(0.0, 13.0),
+        window_half_mm=3.0,
+        edge_anchor_mm=3.691,
+        edge_side="leading",
+    )
+
+    assert bounds == pytest.approx((1.691, 4.691), abs=0.001)
+
+
+def test_compute_search_bounds_tightens_trailing_edge_window():
+    bounds = compute_search_bounds(
+        center_mm=11.255,
+        atlas_range=(0.0, 13.0),
+        window_half_mm=3.0,
+        edge_anchor_mm=10.255,
+        edge_side="trailing",
+    )
+
+    assert bounds == pytest.approx((9.255, 12.255), abs=0.001)
