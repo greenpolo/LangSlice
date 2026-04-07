@@ -75,7 +75,7 @@ def _build_config(
         n_anchors=4,
         ordering="strict",
         refinement=True,
-        max_parallel=4,
+        max_parallel=10,
         z_axis="AP",
         coarse_model=coarse_model,
         fine_model=fine_model,
