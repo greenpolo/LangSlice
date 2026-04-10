@@ -13,7 +13,8 @@ from collections.abc import Callable
 
 from PIL import Image
 
-from langslice.estimation import APResult, estimate_position, estimate_position_image_gen
+from langslice.atlas.core import get_position_range_mm, load_atlas
+from langslice.estimation import APResult, estimate_position_image_gen
 from langslice.image_prep import adaptive_preprocess, normalize_image, prepare_image_for_vlm
 from langslice.whole_brain.window import compute_search_bounds
 
@@ -40,57 +41,76 @@ async def run_anchor_estimation(
     on_progress: Callable[[str], None] | None = None,
     debug_dir: str | None = None,
 ) -> APResult:
-    """Two-stage anchor estimation: coarse tool-use then nano-banana fine pass.
+    """Two-stage anchor estimation: image-gen 2-pass coarse then fine pass.
 
-    Stage A: Multi-turn tool-use agent explores the atlas adaptively to find
-    the general AP region.
+    Stage A: Image-gen broad→neighborhood scan (2 passes) to find the
+    general AP region.  More deterministic than tool-use for coarse
+    estimation (validated in hyp 018: anchor 3 coarse 0.298mm off GT
+    vs tool-use 0.6-1.6mm).
     Stage B: Nano-banana fine pass centered on the coarse result refines to
-    ~0.05mm precision.
+    ~0.05mm precision within ±0.5mm bounds.
 
-    Anchor results feed into interpolation and the final isotonic fit like
-    every other slice — they are not locked as truth.
+    Falls back to atlas midpoint if both stages fail (3-tier fallback).
     """
     image = _prepare_slice(image_path)
 
-    # Stage A: coarse tool-use exploration
-    coarse = await asyncio.to_thread(
-        estimate_position,
-        image,
-        atlas_name,
-        on_progress=on_progress,
-        debug_dir=debug_dir,
-        model_name=coarse_model,
-    )
-    logger.info("Anchor coarse: %.3fmm (%s)", coarse.position_mm, image_path)
+    # Stage A: image-gen 2-pass coarse (broad + neighborhood only)
+    coarse_mm: float
+    try:
+        coarse = await asyncio.to_thread(
+            estimate_position_image_gen,
+            image,
+            atlas_name,
+            on_progress=on_progress,
+            debug_dir=debug_dir,
+            model_name=coarse_model,
+            send_individually=True,
+            atlas_resolution=1024,
+            max_passes=2,
+        )
+        coarse_mm = coarse.position_mm
+        logger.info("Anchor coarse (image-gen 2-pass): %.3fmm (%s)", coarse_mm, image_path)
+    except Exception:
+        # Fallback: atlas midpoint (zero API cost)
+        atlas = load_atlas(atlas_name)
+        lo, hi = get_position_range_mm(atlas)
+        coarse_mm = (lo + hi) / 2.0
+        logger.warning(
+            "Anchor Stage A failed, using atlas midpoint %.3fmm (%s)",
+            coarse_mm, image_path,
+        )
 
     # Stage B: nano-banana fine pass centered on coarse result.
-    # Restrict the search window to ±0.5 mm around the coarse estimate so the
-    # fine pass can only *refine*, not *relocate*.  The tighter window also
-    # increases atlas reference density from ~0.25 mm to ~0.08 mm spacing,
-    # giving the VLM more precise comparison images.  Without these bounds the
-    # neighbourhood zoom covers ±1.5 mm and the model can drift >1 mm from a
-    # good coarse estimate (observed in prior experiments).
+    # ±0.5mm bounds keep the fine pass from drifting too far while still
+    # being wide enough for all coarse estimates observed with image-gen
+    # 2-pass (max coarse error ~0.4mm in hyp 018).
     _ANCHOR_FINE_HALF_MM = 0.5
-    fine_lo = coarse.position_mm - _ANCHOR_FINE_HALF_MM
-    fine_hi = coarse.position_mm + _ANCHOR_FINE_HALF_MM
-    fine = await asyncio.to_thread(
-        estimate_position_image_gen,
-        image,
-        atlas_name,
-        on_progress=on_progress,
-        debug_dir=debug_dir,
-        model_name=fine_model,
-        send_individually=True,
-        atlas_resolution=1024,
-        center_mm=coarse.position_mm,
-        bounds=(fine_lo, fine_hi),
-    )
-    logger.info("Anchor fine: %.3fmm (drift %.3fmm) (%s)",
-                fine.position_mm,
-                abs(fine.position_mm - coarse.position_mm),
-                image_path)
-
-    return fine
+    fine_lo = coarse_mm - _ANCHOR_FINE_HALF_MM
+    fine_hi = coarse_mm + _ANCHOR_FINE_HALF_MM
+    try:
+        fine = await asyncio.to_thread(
+            estimate_position_image_gen,
+            image,
+            atlas_name,
+            on_progress=on_progress,
+            debug_dir=debug_dir,
+            model_name=fine_model,
+            send_individually=True,
+            atlas_resolution=1024,
+            center_mm=coarse_mm,
+            bounds=(fine_lo, fine_hi),
+        )
+        logger.info("Anchor fine: %.3fmm (drift %.3fmm) (%s)",
+                    fine.position_mm,
+                    abs(fine.position_mm - coarse_mm),
+                    image_path)
+        return fine
+    except Exception:
+        logger.warning(
+            "Anchor Stage B failed, returning coarse %.3fmm (%s)",
+            coarse_mm, image_path,
+        )
+        return APResult(position_mm=coarse_mm, reasoning="Stage B failed, coarse only")
 
 
 async def run_slice_estimation(
@@ -142,6 +162,7 @@ async def run_slice_estimation(
         center_mm=center_mm,
         bounds=bounds,
         slices_per_pass=slices_per_pass,
+        fine_resolution_mm=0.10,
     )
 
     return result
