@@ -257,6 +257,8 @@ def estimate_position_image_gen(
     atlas_resolution: int = 512,
     center_mm: float | None = None,
     bounds: tuple[float, float] | None = None,
+    fine_resolution_mm: float = _FINE_RESOLUTION_MM,
+    max_passes: int | None = None,
 ) -> APResult:
     """Multi-pass zoom AP estimation using an image-generation model.
 
@@ -390,7 +392,8 @@ def estimate_position_image_gen(
     else:
         start_pass = 0
 
-    for pass_idx in range(start_pass, 3):
+    end_pass = 3 if max_passes is None else min(start_pass + max_passes, 3)
+    for pass_idx in range(start_pass, end_pass):
         margin = _BROAD_MARGIN_MM if pass_idx == 0 else 0.0
         positions = _compute_positions(
             range_lo, range_hi, slices_per_pass, margin=margin,
@@ -565,8 +568,8 @@ def estimate_position_image_gen(
                 range_lo = max(pos_lo, chosen_pos - half)
                 range_hi = min(pos_hi, chosen_pos + half)
             elif pass_idx == 1:
-                # Fine: ~0.05 mm spacing
-                fine_span = _FINE_RESOLUTION_MM * (slices_per_pass - 1)
+                # Fine: ~0.05 mm spacing (or overridden via fine_resolution_mm)
+                fine_span = fine_resolution_mm * (slices_per_pass - 1)
                 range_lo = max(pos_lo, chosen_pos - fine_span / 2)
                 range_hi = min(pos_hi, chosen_pos + fine_span / 2)
         else:

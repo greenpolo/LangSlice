@@ -79,7 +79,7 @@ async def run_brain_estimation(
 
     if anchors_to_run:
         _progress(f"Phase 1: estimating {len(anchors_to_run)} anchors")
-        sem = asyncio.Semaphore(config.max_parallel)
+        sem = asyncio.Semaphore(1)  # Sequential to avoid API rate limits
 
         async def _run_anchor(idx: int) -> tuple[int, APResult]:
             async with sem:
