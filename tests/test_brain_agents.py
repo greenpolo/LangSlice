@@ -111,14 +111,63 @@ def test_run_anchor_estimation_both_stages_fail():
 
 
 def test_run_slice_estimation():
-    """Non-anchor estimation uses center_mm, bounds, and fine_resolution_mm=0.10."""
-    result_obj = APResult(position_mm=5.5, reasoning="centered", debug_dir=None)
+    """Non-anchor estimation uses center_mm, bounds, fine_resolution_mm=0.10, and confirmation pass."""
+    main_result = APResult(position_mm=5.5, reasoning="main", debug_dir=None)
+    confirm_result = APResult(position_mm=5.48, reasoning="confirmed", debug_dir=None)
 
-    captured_kwargs: dict = {}
+    call_log: list[str] = []
+    captured_kwargs_list: list[dict] = []
 
     def fake_image_gen(image, atlas_name, **kwargs):
-        captured_kwargs.update(kwargs)
-        return result_obj
+        captured_kwargs_list.append(dict(kwargs))
+        if kwargs.get("max_passes") == 1:
+            call_log.append("confirm")
+            return confirm_result
+        call_log.append("main")
+        return main_result
+
+    with (
+        patch(
+            "langslice.whole_brain.estimation_agents.estimate_position_image_gen",
+            fake_image_gen,
+        ),
+        patch("langslice.whole_brain.estimation_agents._prepare_slice", return_value=_FAKE_IMAGE),
+    ):
+        result = asyncio.run(
+            run_slice_estimation(
+                image_path="/fake/slice.tif",
+                atlas_name="allen_mouse_25um",
+                center_mm=5.0,
+                window_half_mm=2.0,
+            )
+        )
+
+    # Final result comes from confirmation pass
+    assert result.position_mm == 5.48
+    assert call_log == ["main", "confirm"]
+    # Main pass: center_mm=5.0, bounds=(3.0, 7.0), fine_resolution_mm=0.10
+    assert captured_kwargs_list[0]["center_mm"] == 5.0
+    assert captured_kwargs_list[0]["bounds"] == (3.0, 7.0)
+    assert captured_kwargs_list[0]["fine_resolution_mm"] == 0.10
+    # Confirmation pass: center_mm=5.5 (main result), ±0.25mm bounds, 9 slices, max_passes=1
+    assert captured_kwargs_list[1]["center_mm"] == 5.5
+    assert captured_kwargs_list[1]["bounds"] == (5.25, 5.75)
+    assert captured_kwargs_list[1]["slices_per_pass"] == 9
+    assert captured_kwargs_list[1]["max_passes"] == 1
+
+
+def test_run_slice_estimation_confirm_fallback():
+    """If the confirmation pass fails, the main result is returned."""
+    main_result = APResult(position_mm=5.5, reasoning="main", debug_dir=None)
+
+    call_count = 0
+
+    def fake_image_gen(image, atlas_name, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if kwargs.get("max_passes") == 1:
+            raise RuntimeError("API error")
+        return main_result
 
     with (
         patch(
@@ -137,6 +186,4 @@ def test_run_slice_estimation():
         )
 
     assert result.position_mm == 5.5
-    assert captured_kwargs["center_mm"] == 5.0
-    assert captured_kwargs["bounds"] == (3.0, 7.0)
-    assert captured_kwargs["fine_resolution_mm"] == 0.10
+    assert call_count == 2

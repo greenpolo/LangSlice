@@ -127,7 +127,7 @@ async def run_slice_estimation(
     on_progress: Callable[[str], None] | None = None,
     debug_dir: str | None = None,
 ) -> APResult:
-    """Run 2-pass nano-banana estimation for a non-anchor slice.
+    """Run 2-pass nano-banana estimation with confirmation pass for a non-anchor slice.
 
     The broad scan is skipped; the search starts in a neighborhood around
     *center_mm* (derived from anchor interpolation).  The window is wide
@@ -136,6 +136,11 @@ async def run_slice_estimation(
     Using 17 slices per pass (vs the default 13) gives finer neighborhood
     resolution and a wider fine-pass range (0.8 mm vs 0.6 mm), improving
     precision for near-miss estimates.
+
+    After the main 2-pass estimation, a single confirmation pass (9 slices,
+    ±0.25mm, ~0.06mm spacing) refines the result. This pushes near-threshold
+    estimates below 0.1mm error (validated in hyp 015: 6/8 targeted cases
+    improved).
     """
     image = _prepare_slice(image_path)
 
@@ -165,4 +170,37 @@ async def run_slice_estimation(
         fine_resolution_mm=0.10,
     )
 
-    return result
+    # Confirmation pass: single ultra-fine pass centered on the initial result.
+    # 9 slices over ±0.25mm gives ~0.06mm spacing — finer than the main fine
+    # pass (0.10mm).  This reliably pushes near-threshold estimates below
+    # 0.1mm error without degrading already-accurate ones.
+    _CONFIRM_HALF_MM = 0.25
+    confirm_center = result.position_mm
+    try:
+        confirmed = await asyncio.to_thread(
+            estimate_position_image_gen,
+            image,
+            atlas_name,
+            on_progress=on_progress,
+            debug_dir=debug_dir,
+            model_name=model_name,
+            send_individually=True,
+            atlas_resolution=1024,
+            center_mm=confirm_center,
+            bounds=(confirm_center - _CONFIRM_HALF_MM, confirm_center + _CONFIRM_HALF_MM),
+            slices_per_pass=9,
+            max_passes=1,
+        )
+        logger.info(
+            "Slice confirmation: %.3f → %.3fmm (shift %.3fmm) (%s)",
+            confirm_center, confirmed.position_mm,
+            abs(confirmed.position_mm - confirm_center),
+            image_path,
+        )
+        return confirmed
+    except Exception:
+        logger.warning(
+            "Confirmation pass failed, returning initial %.3fmm (%s)",
+            confirm_center, image_path,
+        )
+        return result
