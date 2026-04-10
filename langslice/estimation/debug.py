@@ -13,10 +13,10 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, cast
 
-from langslice.ai import config as vlm_config
+import langslice.vlm_config as vlm_config
 
 if TYPE_CHECKING:
-    from langslice.ai.estimator import _APLoopState
+    from langslice.estimation.google.ap_tool_use import _APLoopState
 
 
 def write_debug_artifacts(
@@ -37,7 +37,7 @@ def write_debug_artifacts(
 ) -> None:
     """Write reasoning log and telemetry JSON to *run_dir*."""
     # Lazy imports to avoid circular dependency with estimator.py
-    from langslice.ai.estimator import (
+    from langslice.estimation.google.ap_tool_use import (
         _format_count_tokens,
         _format_usage_metadata,
         _has_file_data,

@@ -1,6 +1,6 @@
 import pytest
 
-from langslice.brain.window import compute_refinement_window, compute_search_bounds
+from langslice.whole_brain.window import compute_refinement_window, compute_search_bounds
 
 
 def test_window_locked_both_sides():

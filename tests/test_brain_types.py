@@ -1,4 +1,4 @@
-from langslice.brain.types import (
+from langslice.whole_brain.types import (
     BrainEstimationConfig,
     BrainEstimationResult,
     BrainEstimationSummary,
@@ -27,8 +27,6 @@ def test_config_interval_mm():
         thickness_um=50,
         interval_um=200,
         n_anchors=4,
-        ordering="strict",
-        refinement=True,
         max_parallel=4,
         z_axis="AP",
     )
@@ -56,8 +54,6 @@ def test_result_to_dict():
             thickness_um=50,
             interval_um=200,
             n_anchors=1,
-            ordering="strict",
-            refinement=True,
             max_parallel=4,
             z_axis="AP",
         ),

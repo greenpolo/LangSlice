@@ -16,7 +16,7 @@ def make_test_image(color: str = "red", size: tuple = (100, 100)) -> bytes:
 
 
 def main():
-    from langslice.ai.config import get_client
+    from langslice.vlm_config import get_client
     client = get_client()
 
     # Define a simple tool

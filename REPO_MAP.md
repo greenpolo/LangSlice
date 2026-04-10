@@ -5,16 +5,26 @@ This map is intentionally short and stable so humans and agents can find the act
 ## Active Code Paths
 
 - `langslice/cli.py` -- CLI entry point for `langslice version`, `langslice register`, `langslice estimate`, and `langslice estimate-brain`
+- `langslice/vlm_config.py` -- Gemini client configuration, backend selection, runtime settings (shared by estimation and registration)
 - `langslice/atlas/` -- BrainGlobe atlas loading, AP/index conversion, coronal slice extraction, colored region and smoothed boundary helpers
-- `langslice/ai/` -- Gemini configuration, AP estimator (split across `estimator.py`, `estimator_tools.py`, `estimator_debug.py`), offline batch helpers
+- `langslice/estimation/` -- Single-slice AP estimation
+  - `google/ap_tool_use.py` -- Gemini multi-turn tool-use AP estimator
+  - `google/ap_image_gen.py` -- Gemini image-gen nano-banana multi-pass zoom AP estimator
+  - `google/tool_definitions.py` -- Gemini tool definitions and tool-response construction helpers
+  - `google/batch_eval.py` -- Gemini offline Batch API helpers
+  - `openai/` -- OpenAI stubs (imports only, not yet implemented)
+  - `debug.py` -- shared debug-artifact writing helpers
 - `langslice/registration/` -- registration workflows, runtime wrapper, affine/TPS solving, result types
-  - `agents.py` -- shared utilities (retry, JSON extraction, coordinate conversion) and workflow router
-  - `agents_colored_segmentation.py` -- colored-segmentation workflow (default for image-gen models): model produces atlas-colored tissue segmentation, Elastix B-spline extracts deformation
-  - `agents_image_gen.py` -- legacy two-shot landmark workflow for image-gen models (superseded by colored segmentation)
-  - `agents_tool_loop.py` -- iterative tool-loop workflow for text-centric models (experimental, on hold)
-- `langslice/brain/` -- whole-brain multi-slice AP estimation: anchor selection (coarse tool-use + nano-banana fine), interval interpolation, parallel 2-pass nano-banana for non-anchors, Huber-loss constrained monotonic fitting, checkpoint I/O, and async pipeline orchestration
+  - `common.py` -- shared utilities (retry, JSON extraction, coordinate conversion) and workflow router
+  - `google/warping_image_gen.py` -- Gemini warping workflow via colored segmentation (default): Elastix B-spline deformation
+  - `google/landmarks_image_gen.py` -- Gemini legacy two-shot landmark workflow (superseded by warping)
+  - `google/landmarks_tool_use.py` -- Gemini iterative landmark tool-loop (experimental, on hold)
+  - `openai/` -- OpenAI stubs (imports only, not yet implemented)
+- `langslice/ml/` -- non-LLM machine learning tools (GPU-accelerated target selection, etc.)
+- `langslice/whole_brain/` -- whole-brain multi-slice AP estimation: anchor selection (coarse tool-use + nano-banana fine), interval interpolation, parallel 2-pass nano-banana for non-anchors, Huber-loss constrained monotonic fitting, checkpoint I/O, and async pipeline orchestration
 - `langslice/image_prep.py` -- image normalization, metadata-driven pixel size detection, VLM downsampling
 - `langslice/agent_trace.py` -- structured trace-event helpers shared by AP and registration flows
+- `langslice/retry.py` -- shared retry with backoff and progress heartbeat infrastructure
 - `langslice/export.py` -- coronal anchoring math, VisuAlign markers, and QUINT/ABBA-compatible JSON export
 - `tauri-gui/` -- Tauri desktop app (Rust backend, React + Three.js frontend)
 
@@ -25,7 +35,7 @@ This map is intentionally short and stable so humans and agents can find the act
 - `tests/test_image_prep.py` -- image ingest, metadata detection, VLM resize behavior
 - `tests/test_quicknii_math.py` -- anchoring and coronal-frame export math
 - `tests/test_registration_*.py` -- registration runtime, solver, agent prompt behavior, and backends
-- `tests/test_brain_*.py` -- brain module: types, discovery, anchor selection, interpolation, window, constraints, checkpoint, agents, pipeline
+- `tests/test_brain_*.py` -- whole-brain module: types, discovery, anchor selection, interpolation, window, checkpoint, agents, pipeline
 
 ## Documentation
 
@@ -51,5 +61,5 @@ This map is intentionally short and stable so humans and agents can find the act
 - `langslice version`
 - `langslice register <image> --position <mm> [--workflow ...] [--model ...] [--out ...]`
 - `langslice estimate <image> [--atlas ...] [--model ...] [--workflow ...]`
-- `langslice estimate-brain <image_folder> [--atlas ...] [--anchors ...] [--ordering ...]`
+- `langslice estimate-brain <image_folder> [--atlas ...] [--anchors ...]`
 - `cd tauri-gui && pnpm tauri dev`

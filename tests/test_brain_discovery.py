@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 
-from langslice.brain.discovery import discover_slices
+from langslice.whole_brain.discovery import discover_slices
 
 
 def test_discover_natural_sort(tmp_path: Path):

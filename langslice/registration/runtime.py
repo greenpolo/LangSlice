@@ -14,7 +14,7 @@ from PIL import Image
 
 from langslice.agent_trace import image_part_from_pil, json_part, runtime_event
 from langslice.atlas import get_composite_slice, get_reference_slice, load_atlas
-from langslice.registration.agents import estimate_registration_correspondences
+from langslice.registration.common import estimate_registration_correspondences
 from langslice.registration.solver import (
     fit_affine_from_correspondences,
     fit_tps_from_correspondences,

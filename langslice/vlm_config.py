@@ -5,14 +5,34 @@ import importlib
 import logging
 import os
 from collections.abc import Callable
-from typing import Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 logger = logging.getLogger(__name__)
 
-MODEL_NAME = "gemini-3-flash-preview"
-THINKING_LEVEL = "HIGH"
-CODE_EXECUTION_ENABLED = True
-TEMPERATURE: float = 1.0
+_DEFAULT_MODEL_NAME = "gemini-3-flash-preview"
+_DEFAULT_THINKING_LEVEL = "HIGH"
+_DEFAULT_CODE_EXECUTION_ENABLED = True
+_DEFAULT_TEMPERATURE: float = 1.0
+
+
+class _RuntimeConfig:
+    """Thread-aware mutable runtime config singleton.
+
+    All mutable settings live here instead of module globals so that
+    ``vlm_config.MODEL_NAME`` always reflects the latest value regardless
+    of import style.
+    """
+
+    __slots__ = ("model_name", "thinking_level", "code_execution_enabled", "temperature")
+
+    def __init__(self) -> None:
+        self.model_name: str = _DEFAULT_MODEL_NAME
+        self.thinking_level: str = _DEFAULT_THINKING_LEVEL
+        self.code_execution_enabled: bool = _DEFAULT_CODE_EXECUTION_ENABLED
+        self.temperature: float = _DEFAULT_TEMPERATURE
+
+
+_runtime = _RuntimeConfig()
 
 REGISTRATION_WORKFLOW_IMAGE_GEN_TWO_SHOT = "image_gen_two_shot"
 REGISTRATION_WORKFLOW_COLORED_SEGMENTATION = "colored_segmentation"
@@ -62,7 +82,7 @@ REGISTRATION_WORKFLOW_LABELS: dict[str, str] = {
 
 def set_model_name(name: str) -> None:
     """Set active model name at runtime for subsequent requests."""
-    globals()["MODEL_NAME"] = name
+    _runtime.model_name = name
     logger.info("Model changed to: %s", name)
 
 
@@ -73,20 +93,20 @@ def set_thinking_level(level: str) -> None:
     if normalized not in valid_levels:
         allowed = ", ".join(sorted(valid_levels))
         raise ValueError(f"Invalid thinking level {level!r}. Expected one of: {allowed}")
-    globals()["THINKING_LEVEL"] = normalized
+    _runtime.thinking_level = normalized
     logger.info("Thinking level changed to: %s", normalized)
 
 
 def set_temperature(value: float) -> None:
     """Set active generation temperature at runtime for subsequent requests."""
     clamped = max(0.0, min(2.0, float(value)))
-    globals()["TEMPERATURE"] = clamped
+    _runtime.temperature = clamped
     logger.info("Temperature changed to: %.2f", clamped)
 
 
 def set_code_execution_enabled(enabled: bool) -> None:
     """Set whether Gemini code execution should be enabled when supported."""
-    globals()["CODE_EXECUTION_ENABLED"] = bool(enabled)
+    _runtime.code_execution_enabled = bool(enabled)
     logger.info("Code execution enabled: %s", bool(enabled))
 
 
@@ -277,10 +297,11 @@ def file_poll_timeout_s() -> float:
 
 
 def configured_temperature() -> float:
-    return _env_float(_ENV_TEMPERATURE, TEMPERATURE)
+    return _env_float(_ENV_TEMPERATURE, _DEFAULT_TEMPERATURE)
 
 
-TEMPERATURE = configured_temperature()
+# Apply environment override to the runtime config at import time.
+_runtime.temperature = configured_temperature()
 
 
 def supports_file_api() -> bool:
@@ -420,3 +441,30 @@ def create_batch_client() -> GenAIClientProtocol:
 
 
 atexit.register(close_client)
+
+
+# ---------------------------------------------------------------------------
+# Module-level attribute forwarding for runtime config
+# ---------------------------------------------------------------------------
+# ``vlm_config.MODEL_NAME`` etc. always read the live value from _runtime.
+# TYPE_CHECKING block gives pyright the correct types; __getattr__ handles
+# runtime dispatch so the values are always live.
+if TYPE_CHECKING:
+    MODEL_NAME: str
+    THINKING_LEVEL: str
+    CODE_EXECUTION_ENABLED: bool
+    TEMPERATURE: float
+
+_RUNTIME_ATTRS = {
+    "MODEL_NAME": "model_name",
+    "THINKING_LEVEL": "thinking_level",
+    "CODE_EXECUTION_ENABLED": "code_execution_enabled",
+    "TEMPERATURE": "temperature",
+}
+
+
+def __getattr__(name: str) -> object:
+    attr = _RUNTIME_ATTRS.get(name)
+    if attr is not None:
+        return getattr(_runtime, attr)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

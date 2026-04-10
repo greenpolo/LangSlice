@@ -24,7 +24,7 @@ from langslice.agent_trace import (
 from langslice.image_prep import normalize_image
 
 if TYPE_CHECKING:
-    from langslice.ai.estimator import _APLoopState
+    from langslice.estimation.google.ap_tool_use import _APLoopState
 
 _RESAMPLE_LANCZOS = Image.Resampling.LANCZOS
 
@@ -392,7 +392,7 @@ def _process_ap_function_calls(
     separate ``{"type": "image", ...}`` content items alongside (NOT
     inside result.items -- that causes 400 errors after ~8 turns).
     """
-    from langslice.ai.estimator import _emit_trace, _image_to_bytes
+    from langslice.estimation.google.ap_tool_use import _emit_trace, _image_to_bytes
 
     atlas_obj = cast(Any, atlas)
     interaction_inputs: list[dict[str, object]] = []

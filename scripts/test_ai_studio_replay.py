@@ -8,7 +8,7 @@ import io
 
 
 def main():
-    from langslice.ai.config import get_client
+    from langslice.vlm_config import get_client
     client = get_client()
 
     # Load the exact images from the AI Studio session

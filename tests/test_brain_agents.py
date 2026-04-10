@@ -5,8 +5,8 @@ from unittest.mock import patch
 
 from PIL import Image
 
-from langslice.ai.estimator import APResult
-from langslice.brain.agents import run_anchor_estimation, run_slice_estimation
+from langslice.estimation import APResult
+from langslice.whole_brain.estimation_agents import run_anchor_estimation, run_slice_estimation
 
 _FAKE_IMAGE = Image.new("RGB", (64, 64), (128, 128, 128))
 
@@ -29,9 +29,12 @@ def test_run_anchor_estimation():
         return fine_result
 
     with (
-        patch("langslice.brain.agents.estimate_position", fake_estimate),
-        patch("langslice.brain.agents.estimate_position_image_gen", fake_image_gen),
-        patch("langslice.brain.agents._prepare_slice", return_value=_FAKE_IMAGE),
+        patch("langslice.whole_brain.estimation_agents.estimate_position", fake_estimate),
+        patch(
+            "langslice.whole_brain.estimation_agents.estimate_position_image_gen",
+            fake_image_gen,
+        ),
+        patch("langslice.whole_brain.estimation_agents._prepare_slice", return_value=_FAKE_IMAGE),
     ):
         result = asyncio.run(
             run_anchor_estimation(
@@ -56,8 +59,11 @@ def test_run_slice_estimation():
         return result_obj
 
     with (
-        patch("langslice.brain.agents.estimate_position_image_gen", fake_image_gen),
-        patch("langslice.brain.agents._prepare_slice", return_value=_FAKE_IMAGE),
+        patch(
+            "langslice.whole_brain.estimation_agents.estimate_position_image_gen",
+            fake_image_gen,
+        ),
+        patch("langslice.whole_brain.estimation_agents._prepare_slice", return_value=_FAKE_IMAGE),
     ):
         result = asyncio.run(
             run_slice_estimation(

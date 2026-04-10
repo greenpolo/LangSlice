@@ -52,7 +52,7 @@ from typing import Any
 from google.genai import types
 from PIL import Image
 
-import langslice.registration.agents as _agents
+import langslice.registration.common as _agents
 from langslice.agent_trace import (
     image_part_from_pil,
     tool_call_event,
@@ -510,7 +510,7 @@ def _prepare_base_images(
     Returns (atlas_part, slice_part, uploaded_files).
     *uploaded_files* is non-empty only when File API was used.
     """
-    _ai_config = importlib.import_module("langslice.ai.config")
+    _ai_config = importlib.import_module("langslice.vlm_config")
     atlas_image = atlas_override or prepared.atlas_prep.image
     slice_image = slice_override or prepared.slice_prep.image
 
@@ -1211,7 +1211,7 @@ def _estimate_correspondences_tool_loop(
 
     # Upload base images via Files API for maximum resolution, falling back
     # to inline base64 if the Files API is unavailable.
-    _ai_config = importlib.import_module("langslice.ai.config")
+    _ai_config = importlib.import_module("langslice.vlm_config")
     uploaded_files: list[Any] = []
     if _ai_config.supports_file_api():
         atlas_uri, atlas_mime, atlas_file = _upload_to_file_api(

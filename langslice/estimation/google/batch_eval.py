@@ -8,7 +8,7 @@ from typing import Any
 
 from google.genai import types
 
-import langslice.ai.config as vlm_config
+import langslice.vlm_config as vlm_config
 
 
 @dataclass(frozen=True)

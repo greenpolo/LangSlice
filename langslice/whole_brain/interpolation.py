@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from langslice.brain.types import SlicePosition
+from langslice.whole_brain.types import SlicePosition
 
 
 def interpolate_positions(

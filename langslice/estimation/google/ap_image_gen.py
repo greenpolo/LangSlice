@@ -28,33 +28,36 @@ from typing import Any
 
 from PIL import Image
 
+import langslice.vlm_config as vlm_config
 from langslice.agent_trace import (
     image_part_from_pil,
     json_part,
     model_event,
     runtime_event,
 )
-from langslice.ai import config as vlm_config
-from langslice.ai.config import get_client
-from langslice.ai.estimator import (
+from langslice.estimation.google.ap_tool_use import (
     APResult,
     _emit_trace,
     _extract_usage_metadata,
-    _format_elapsed_seconds,
     _format_usage_metadata,
+    _get_position_range_lazy,
     _image_to_bytes,
-    _run_with_progress_heartbeat,
+    _load_atlas_lazy,
 )
-from langslice.ai.estimator_tools import _build_atlas_grid
+from langslice.estimation.google.tool_definitions import _build_atlas_grid
 from langslice.image_prep import normalize_image, prepare_image_for_vlm
+from langslice.retry import (
+    format_elapsed_seconds as _format_elapsed_seconds,
+)
+from langslice.retry import (
+    retry_with_backoff,
+)
+from langslice.vlm_config import get_client
 
 logger = logging.getLogger(__name__)
 
 _SLICES_PER_PASS = 13
 _FINE_RESOLUTION_MM = 0.05
-_MAX_RETRIES = 3
-_INITIAL_BACKOFF_S = 1.0
-_RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 
 
 # ---------------------------------------------------------------------------
@@ -85,11 +88,8 @@ def _compute_positions(
 
 
 def _species_from_atlas_name(atlas_name: str) -> str:
-    lower = atlas_name.lower()
-    for species in ("mouse", "rat", "human", "zebrafish", "fish"):
-        if species in lower:
-            return species
-    return "animal"
+    from langslice.atlas.core import species_from_atlas_name
+    return species_from_atlas_name(atlas_name)
 
 
 def _parse_model_choice(
@@ -155,44 +155,13 @@ def _retry_generate_content(
     on_progress: Callable[[str], None] | None = None,
 ) -> Any:
     """Call ``client.models.generate_content`` with exponential backoff."""
-    last_exc: Exception | None = None
-    for attempt in range(_MAX_RETRIES + 1):
-        try:
-            return _run_with_progress_heartbeat(
-                lambda: client.models.generate_content(
-                    model=model, contents=contents, config=config,
-                ),
-                request_label=f"{request_label} (attempt {attempt + 1}/{_MAX_RETRIES + 1})",
-                on_progress=on_progress,
-            )
-        except Exception as exc:
-            last_exc = exc
-            status = getattr(exc, "status_code", None) or getattr(exc, "code", None)
-            if isinstance(status, int) and status in _RETRYABLE_STATUS_CODES:
-                if attempt < _MAX_RETRIES:
-                    delay = _INITIAL_BACKOFF_S * (2**attempt)
-                    if on_progress:
-                        on_progress(
-                            f"Gemini API error (status {status}), "
-                            f"retrying in {delay:.1f}s"
-                        )
-                    time.sleep(delay)
-                    continue
-            exc_name = type(exc).__name__.lower()
-            retryable = ("timeout", "connection", "transport")
-            if any(kw in exc_name for kw in retryable):
-                if attempt < _MAX_RETRIES:
-                    delay = _INITIAL_BACKOFF_S * (2**attempt)
-                    if on_progress:
-                        on_progress(
-                            f"Transient error ({type(exc).__name__}), "
-                            f"retrying in {delay:.1f}s"
-                        )
-                    time.sleep(delay)
-                    continue
-            raise
-    assert last_exc is not None
-    raise last_exc
+    return retry_with_backoff(
+        lambda: client.models.generate_content(
+            model=model, contents=contents, config=config,
+        ),
+        request_label=request_label,
+        on_progress=on_progress,
+    )
 
 
 def _extract_text_and_thoughts(response: object) -> tuple[list[str], list[str]]:
@@ -639,18 +608,3 @@ def estimate_position_image_gen(
     )
 
 
-# ---------------------------------------------------------------------------
-# Lazy atlas imports (avoid circular dependencies)
-# ---------------------------------------------------------------------------
-
-
-def _load_atlas_lazy(atlas_name: str) -> Any:
-    from langslice.atlas.core import load_atlas
-
-    return load_atlas(atlas_name)
-
-
-def _get_position_range_lazy(atlas: Any) -> tuple[float, float]:
-    from langslice.atlas.core import get_position_range_mm
-
-    return get_position_range_mm(atlas)

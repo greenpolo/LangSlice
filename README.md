@@ -49,7 +49,7 @@ The GUI provides a 3D atlas viewer, pipeline sidecar for running AP estimation a
 
 ## Authentication Backends
 
-`langslice/ai/config.py` supports three backend modes, configured via `.env`:
+`langslice/vlm_config.py` supports three backend modes, configured via `.env`:
 
 - `ai_studio` (recommended for image-gen workflows)
 - `vertex_api_key`

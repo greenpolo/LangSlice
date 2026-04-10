@@ -32,14 +32,14 @@ import numpy as np
 from PIL import Image
 from scipy.ndimage import gaussian_filter1d
 
-import langslice.registration.agents as _agents
+import langslice.registration.common as _agents
 from langslice.agent_trace import image_part_from_pil, json_part, runtime_event
 from langslice.atlas import (
     get_reference_slice,
     load_atlas,
     position_mm_to_index,
 )
-from langslice.registration.agents_image_gen import (
+from langslice.registration.google.landmarks_image_gen import (
     _build_image_gen_config,
     _extract_generated_image,
     _image_to_typed_part,

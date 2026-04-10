@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
-import langslice.registration.agents as agents
+import langslice.registration.common as agents
 
 
 class _DummyModels:
@@ -112,7 +112,7 @@ def _patch_common(monkeypatch: Any) -> None:
         agents.importlib,
         "import_module",
         lambda name, **kwargs: (
-            vlm_config if name == "langslice.ai.config" else real_import_module(name, **kwargs)
+            vlm_config if name == "langslice.vlm_config" else real_import_module(name, **kwargs)
         ),
     )
 
@@ -214,7 +214,7 @@ def test_registration_request_uses_configured_temperature(monkeypatch: Any) -> N
                 get_client=lambda: _DummyClient(),
                 supports_file_api=lambda: False,
             )
-            if name == "langslice.ai.config"
+            if name == "langslice.vlm_config"
             else current_import_module(name, **kwargs)
         ),
     )
@@ -272,7 +272,7 @@ def test_registration_request_uses_configured_thinking_level(monkeypatch: Any) -
                 get_client=lambda: _DummyClient(),
                 supports_file_api=lambda: False,
             )
-            if name == "langslice.ai.config"
+            if name == "langslice.vlm_config"
             else current_import_module(name, **kwargs)
         ),
     )
@@ -384,7 +384,7 @@ def test_image_gen_two_shot_runs_both_passes(monkeypatch: Any) -> None:
                 get_client=lambda: _DummyClient(),
                 supports_file_api=lambda: False,
             )
-            if name == "langslice.ai.config"
+            if name == "langslice.vlm_config"
             else current_import_module(name, **kwargs)
         ),
     )
@@ -429,7 +429,7 @@ def test_image_gen_two_shot_raises_on_no_atlas_image(monkeypatch: Any) -> None:
                 get_client=lambda: _DummyClient(),
                 supports_file_api=lambda: False,
             )
-            if name == "langslice.ai.config"
+            if name == "langslice.vlm_config"
             else current_import_module(name, **kwargs)
         ),
     )
@@ -449,7 +449,7 @@ def test_image_gen_two_shot_raises_on_no_atlas_image(monkeypatch: Any) -> None:
 
 
 def test_image_gen_config_requests_image_text_1k_and_high_thinking(monkeypatch: Any) -> None:
-    import langslice.registration.agents_image_gen as image_gen_agents
+    import langslice.registration.google.landmarks_image_gen as image_gen_agents
 
     real_import_module = image_gen_agents.importlib.import_module
     monkeypatch.setattr(
@@ -461,7 +461,7 @@ def test_image_gen_config_requests_image_text_1k_and_high_thinking(monkeypatch: 
                     model_name == "gemini-3.1-flash-image-preview"
                 )
             )
-            if name == "langslice.ai.config"
+            if name == "langslice.vlm_config"
             else real_import_module(name, **kwargs)
         ),
     )
@@ -477,7 +477,7 @@ def test_image_gen_config_requests_image_text_1k_and_high_thinking(monkeypatch: 
 
 
 def test_image_gen_config_skips_thinking_when_model_does_not_support_it(monkeypatch: Any) -> None:
-    import langslice.registration.agents_image_gen as image_gen_agents
+    import langslice.registration.google.landmarks_image_gen as image_gen_agents
 
     real_import_module = image_gen_agents.importlib.import_module
     monkeypatch.setattr(
@@ -485,7 +485,7 @@ def test_image_gen_config_skips_thinking_when_model_does_not_support_it(monkeypa
         "import_module",
         lambda name, **kwargs: (
             SimpleNamespace(supports_image_model_thinking=lambda _model_name: False)
-            if name == "langslice.ai.config"
+            if name == "langslice.vlm_config"
             else real_import_module(name, **kwargs)
         ),
     )
@@ -501,7 +501,7 @@ def test_image_gen_config_skips_thinking_when_model_does_not_support_it(monkeypa
 
 
 def test_extract_generated_image_prefers_last_image_part() -> None:
-    import langslice.registration.agents_image_gen as image_gen_agents
+    import langslice.registration.google.landmarks_image_gen as image_gen_agents
 
     first = Image.new("RGB", (8, 8), (255, 0, 0))
     last = Image.new("RGB", (8, 8), (0, 255, 0))
@@ -518,7 +518,7 @@ def test_extract_generated_image_prefers_last_image_part() -> None:
 
 
 def test_image_gen_slice_request_matches_ai_studio_part_order() -> None:
-    import langslice.registration.agents_image_gen as image_gen_agents
+    import langslice.registration.google.landmarks_image_gen as image_gen_agents
 
     annotated_atlas = Image.new("RGB", (11, 7), (10, 20, 30))
     slice_image = Image.new("RGB", (13, 9), (40, 50, 60))
@@ -546,7 +546,7 @@ def test_image_gen_slice_request_matches_ai_studio_part_order() -> None:
 def test_image_gen_slice_request_reuses_generated_atlas_payload_bytes() -> None:
     import io
 
-    import langslice.registration.agents_image_gen as image_gen_agents
+    import langslice.registration.google.landmarks_image_gen as image_gen_agents
 
     atlas_image = Image.new("RGB", (11, 7), (10, 20, 30))
     slice_image = Image.new("RGB", (13, 9), (40, 50, 60))
@@ -740,7 +740,9 @@ def test_multimodal_tool_loop_border_interior_default_split(monkeypatch: Any) ->
 def test_registration_progress_heartbeat_reports_wait_and_completion() -> None:
     messages: list[str] = []
 
-    result = agents._run_with_progress_heartbeat(
+    from langslice.retry import run_with_progress_heartbeat
+
+    result = run_with_progress_heartbeat(
         lambda: (time.sleep(0.03), "ok")[1],
         request_label="Registration test request",
         on_progress=messages.append,

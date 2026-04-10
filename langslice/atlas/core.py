@@ -20,6 +20,15 @@ _ATLAS_ALIASES: dict[str, str] = {
 }
 
 
+def species_from_atlas_name(atlas_name: str) -> str:
+    """Extract a readable species name from a BrainGlobe atlas identifier."""
+    lower = atlas_name.lower()
+    for species in ("mouse", "rat", "human", "zebrafish", "fish"):
+        if species in lower:
+            return species
+    return "animal"
+
+
 class _AtlasLike(Protocol):
     atlas_name: str
     orientation: str

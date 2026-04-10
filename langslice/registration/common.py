@@ -7,8 +7,6 @@ import io
 import json
 import logging
 import os
-import threading
-import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from types import SimpleNamespace
@@ -34,13 +32,11 @@ from langslice.registration.types import (
     RegistrationAnnotationSession,
     RegistrationCorrespondence,
 )
+from langslice.retry import (
+    retry_with_backoff,
+)
 
 logger = logging.getLogger(__name__)
-
-_RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
-_MAX_RETRIES = 3
-_INITIAL_BACKOFF_S = 1.0
-_HEARTBEAT_INTERVAL_S = 10.0
 
 _MAX_REGION_METADATA = 30
 _TOOL_LOOP_MAX_STEPS = 64
@@ -80,33 +76,13 @@ def _retry_generate(
     request_label: str,
     on_progress: Callable[[str], None] | None = None,
 ) -> Any:
-    last_exc: Exception | None = None
-    for attempt in range(_MAX_RETRIES + 1):
-        attempt_label = f"{request_label} (attempt {attempt + 1}/{_MAX_RETRIES + 1})"
-        try:
-            return _run_with_progress_heartbeat(
-                lambda: client.models.generate_content(
-                    model=model, contents=contents, config=config
-                ),
-                request_label=attempt_label,
-                on_progress=on_progress,
-            )
-        except Exception as exc:
-            last_exc = exc
-            status = getattr(exc, "status_code", None) or getattr(exc, "code", None)
-            if (
-                isinstance(status, int)
-                and status in _RETRYABLE_STATUS_CODES
-                and attempt < _MAX_RETRIES
-            ):
-                delay = _INITIAL_BACKOFF_S * (2**attempt)
-                if on_progress:
-                    on_progress(f"Gemini registration retry in {delay:.1f}s after status {status}")
-                time.sleep(delay)
-                continue
-            raise
-    assert last_exc is not None
-    raise last_exc
+    return retry_with_backoff(
+        lambda: client.models.generate_content(
+            model=model, contents=contents, config=config
+        ),
+        request_label=request_label,
+        on_progress=on_progress,
+    )
 
 
 def _retry_generate_stream(
@@ -137,7 +113,6 @@ def _retry_generate_stream(
                 continue
             for part in parts:
                 all_parts.append(part)
-                # Surface streamed text in the progress callback.
                 text = getattr(part, "text", None)
                 if text and on_progress:
                     snippet = str(text)[:120].replace("\n", " ")
@@ -146,86 +121,11 @@ def _retry_generate_stream(
             candidates=[SimpleNamespace(content=SimpleNamespace(parts=all_parts))]
         )
 
-    last_exc: Exception | None = None
-    for attempt in range(_MAX_RETRIES + 1):
-        attempt_label = f"{request_label} (attempt {attempt + 1}/{_MAX_RETRIES + 1})"
-        try:
-            return _run_with_progress_heartbeat(
-                _stream_and_collect,
-                request_label=attempt_label,
-                on_progress=on_progress,
-            )
-        except Exception as exc:
-            last_exc = exc
-            status = getattr(exc, "status_code", None) or getattr(exc, "code", None)
-            if (
-                isinstance(status, int)
-                and status in _RETRYABLE_STATUS_CODES
-                and attempt < _MAX_RETRIES
-            ):
-                delay = _INITIAL_BACKOFF_S * (2**attempt)
-                if on_progress:
-                    on_progress(f"Gemini registration retry in {delay:.1f}s after status {status}")
-                time.sleep(delay)
-                continue
-            raise
-    assert last_exc is not None
-    raise last_exc
-
-
-def _format_elapsed_seconds(elapsed_s: float) -> str:
-    if elapsed_s < 60.0:
-        return f"{elapsed_s:.1f}s"
-    minutes = int(elapsed_s // 60.0)
-    seconds = int(round(elapsed_s - (minutes * 60)))
-    return f"{minutes}m {seconds:02d}s"
-
-
-def _run_with_progress_heartbeat(
-    fn: Callable[[], Any],
-    *,
-    request_label: str,
-    on_progress: Callable[[str], None] | None = None,
-    heartbeat_interval_s: float = _HEARTBEAT_INTERVAL_S,
-) -> Any:
-    started_at = time.perf_counter()
-    stop_event = threading.Event()
-    heartbeat_thread: threading.Thread | None = None
-
-    if on_progress:
-        on_progress(f"{request_label}: request started")
-        if heartbeat_interval_s > 0:
-
-            def _heartbeat_loop() -> None:
-                while not stop_event.wait(heartbeat_interval_s):
-                    elapsed_s = time.perf_counter() - started_at
-                    on_progress(
-                        f"{request_label}: still waiting for Gemini after "
-                        f"{_format_elapsed_seconds(elapsed_s)}"
-                    )
-
-            heartbeat_thread = threading.Thread(target=_heartbeat_loop, daemon=True)
-            heartbeat_thread.start()
-
-    try:
-        result = fn()
-    except Exception as exc:
-        elapsed_s = time.perf_counter() - started_at
-        if on_progress:
-            on_progress(
-                f"{request_label}: request failed after {_format_elapsed_seconds(elapsed_s)} "
-                f"({type(exc).__name__}: {exc})"
-            )
-        raise
-    finally:
-        stop_event.set()
-        if heartbeat_thread is not None:
-            heartbeat_thread.join(timeout=0.05)
-
-    elapsed_s = time.perf_counter() - started_at
-    if on_progress:
-        on_progress(f"{request_label}: response received in {_format_elapsed_seconds(elapsed_s)}")
-    return result
+    return retry_with_backoff(
+        _stream_and_collect,
+        request_label=request_label,
+        on_progress=on_progress,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -682,14 +582,14 @@ def estimate_registration_correspondences(
     """Run the configured Gemini registration workflow to produce paired correspondences."""
     # Late imports to avoid circular dependencies and to keep workflow modules
     # patchable via monkeypatch on this module.
-    from langslice.registration.agents_image_gen import (
+    from langslice.registration.google.landmarks_image_gen import (
         _estimate_correspondences_image_gen_two_shot,
     )
-    from langslice.registration.agents_tool_loop import (
+    from langslice.registration.google.landmarks_tool_use import (
         _estimate_correspondences_tool_loop,
     )
 
-    vlm_config = importlib.import_module("langslice.ai.config")
+    vlm_config = importlib.import_module("langslice.vlm_config")
     get_client = cast(Callable[[], Any], vlm_config.get_client)
     prepared = _prepare_registration_inputs(
         image,
@@ -730,7 +630,7 @@ def estimate_registration_correspondences(
 
     if selected_workflow == "colored_segmentation":
         agents_colored_seg = importlib.import_module(
-            "langslice.registration.agents_colored_segmentation"
+            "langslice.registration.google.warping_image_gen"
         )
         _estimate_colored_seg = cast(
             Callable[..., list[dict[str, object]]],

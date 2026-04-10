@@ -35,12 +35,6 @@ def _add_register_parser(subparsers: argparse._SubParsersAction) -> None:
         choices=["MINIMAL", "LOW", "MEDIUM", "HIGH"],
         help="Gemini thinking level",
     )
-    reg.add_argument(
-        "--media-resolution",
-        default="high",
-        choices=["low", "medium", "high", "ultra_high"],
-        help="Gemini media resolution for input images",
-    )
     reg.add_argument("--no-borders", action="store_true", help="Disable atlas region borders")
     reg.add_argument(
         "--border-count",
@@ -69,7 +63,7 @@ def _run_register(args: argparse.Namespace) -> None:
 
     from PIL import Image
 
-    from langslice.ai import config as vlm_config
+    import langslice.vlm_config as vlm_config
     from langslice.image_prep import normalize_image, prepare_image_for_vlm
     from langslice.registration.core import estimate_registration_runtime
     from langslice.registration.types import (
@@ -276,18 +270,6 @@ def _add_estimate_brain_parser(subparsers: argparse._SubParsersAction) -> None:
     p.add_argument("--thickness", type=int, default=50, help="Slice thickness in microns")
     p.add_argument("--interval", type=int, default=200, help="Average slice interval in microns")
     p.add_argument("--anchors", type=int, default=4, help="Number of anchor agents")
-    p.add_argument(
-        "--ordering",
-        choices=["strict", "loose", "none"],
-        default="strict",
-        help="Ordering enforcement mode",
-    )
-    p.add_argument(
-        "--refinement",
-        choices=["on", "off"],
-        default="on",
-        help="Enable nano-banana refinement",
-    )
     p.add_argument("--parallel", type=int, default=4, help="Max concurrent Gemini calls")
     p.add_argument(
         "--z-axis",
@@ -302,9 +284,9 @@ def _run_estimate_brain(args: argparse.Namespace) -> None:
     import asyncio
     import json
 
-    from langslice.brain.discovery import discover_slices
-    from langslice.brain.pipeline import run_brain_estimation
-    from langslice.brain.types import BrainEstimationConfig
+    from langslice.whole_brain.discovery import discover_slices
+    from langslice.whole_brain.pipeline import run_brain_estimation
+    from langslice.whole_brain.types import BrainEstimationConfig
 
     config = BrainEstimationConfig(
         image_folder=args.image_folder,
@@ -312,8 +294,6 @@ def _run_estimate_brain(args: argparse.Namespace) -> None:
         thickness_um=args.thickness,
         interval_um=args.interval,
         n_anchors=args.anchors,
-        ordering=args.ordering,
-        refinement=args.refinement == "on",
         max_parallel=args.parallel,
         z_axis=args.z_axis,
     )
@@ -322,7 +302,7 @@ def _run_estimate_brain(args: argparse.Namespace) -> None:
     n_images = len(discover_slices(config.image_folder))
     n_non_anchors = n_images - config.n_anchors
     print("\nBrain estimation plan:")
-    print(f"  {n_images} slices, {config.n_anchors} anchors, {config.ordering} ordering")
+    print(f"  {n_images} slices, {config.n_anchors} anchors")
     print()
     print(f"  Phase 1:  {config.n_anchors} anchor estimations (coarse + nano-banana fine)")
     print("  Phase 2:  interpolation")
@@ -360,9 +340,8 @@ def _run_estimate(args: argparse.Namespace) -> None:
 
     from PIL import Image
 
-    from langslice.ai import config as vlm_config
-    from langslice.ai.estimator import estimate_position
-    from langslice.ai.estimator_image_gen import estimate_position_image_gen
+    import langslice.vlm_config as vlm_config
+    from langslice.estimation import estimate_position, estimate_position_image_gen
     from langslice.image_prep import normalize_image, prepare_image_for_vlm
 
     # Configure model before anything touches the client.

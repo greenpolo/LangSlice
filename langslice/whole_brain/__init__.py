@@ -1,7 +1,7 @@
 """Whole-brain multi-slice AP estimation."""
 
-from langslice.brain.pipeline import run_brain_estimation
-from langslice.brain.types import (
+from langslice.whole_brain.pipeline import run_brain_estimation
+from langslice.whole_brain.types import (
     BrainEstimationConfig,
     BrainEstimationResult,
     BrainEstimationSummary,

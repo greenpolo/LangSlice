@@ -34,23 +34,32 @@ LangSlice registers histology slice images to BrainGlobe atlases using Gemini vi
 
 **Pipeline:** `AP estimation → colored segmentation → Elastix B-spline registration → preview/export`
 
-The code is split into five modules with clear boundaries:
+The code is split into modules with clear boundaries:
 
 - **`langslice/atlas/`** — BrainGlobe atlas loading, AP/index conversion, coronal slice extraction, colored region and smoothed boundary helpers (`get_colored_region_slice()`, `get_smoothed_boundary_slice()`). Orientation assumptions are centralized in `space.py` and require coronal layout (AP/DV/ML on axes 0/1/2).
-- **`langslice/ai/`** — Gemini client configuration (`config.py`), multi-turn AP estimator split across `estimator.py`, `estimator_tools.py`, and `estimator_debug.py`, offline batch helper (`batch_eval.py`). Three auth backends: `ai_studio`, `vertex_api_key`, `vertex_adc`.
-- **`langslice/brain/`** — Whole-brain multi-slice AP estimation. Anchors use a two-stage flow: coarse tool-use agent (adaptive multi-turn exploration) then nano-banana fine pass centered on the coarse result. All remaining slices are estimated in parallel with 2-pass nano-banana (windowed). A Huber-loss constrained optimizer fits a monotone curve through all estimates, with local-interval spacing priors and hard minimum-thickness constraints. CLAHE adaptive preprocessing is applied to all slices. Public entry point: `run_brain_estimation(...)` in `pipeline.py`.
-- **`langslice/registration/`** — Shared utilities and workflow router (`agents.py`), colored segmentation workflow (`agents_colored_segmentation.py`, default for image-gen models), legacy two-shot workflow (`agents_image_gen.py`), experimental tool-loop workflow (`agents_tool_loop.py`, on hold), deterministic affine and TPS fitting (`solver.py`), orchestration and debug artifacts (`runtime.py`), data classes (`types.py`). Public entry point: `estimate_registration_runtime(...)` in `core.py`. The colored segmentation workflow uses itk-elastix for B-spline registration.
+- **`langslice/vlm_config.py`** — Gemini client configuration and backend selection. Three auth backends: `ai_studio`, `vertex_api_key`, `vertex_adc`. Shared by both estimation and registration modules.
+- **`langslice/estimation/`** — Single-slice AP estimation, split by provider:
+  - `google/` — Gemini implementations: `ap_tool_use.py`, `ap_image_gen.py`, `tool_definitions.py`, `batch_eval.py`
+  - `openai/` — OpenAI stubs (imports only, not yet implemented)
+  - `debug.py` — shared debug artifact writing
+- **`langslice/whole_brain/`** — Whole-brain multi-slice AP estimation. Anchors use a two-stage flow: coarse tool-use agent (adaptive multi-turn exploration) then nano-banana fine pass centered on the coarse result. All remaining slices are estimated in parallel with 2-pass nano-banana (windowed). A Huber-loss constrained optimizer fits a monotone curve through all estimates, with local-interval spacing priors and hard minimum-thickness constraints. CLAHE adaptive preprocessing is applied to all slices. Public entry point: `run_brain_estimation(...)` in `pipeline.py`.
+- **`langslice/registration/`** — Shared utilities and workflow router (`common.py`), provider-specific workflows:
+  - `google/` — Gemini implementations: `warping_image_gen.py` (default, Elastix B-spline), `landmarks_image_gen.py` (legacy two-shot), `landmarks_tool_use.py` (on hold)
+  - `openai/` — OpenAI stubs (imports only, not yet implemented)
+  - Shared: `solver.py`, `runtime.py`, `types.py`, `core.py`
+- **`langslice/ml/`** — Non-LLM machine learning tools (GPU-accelerated target selection, etc.).
 - **`tauri-gui/`** — Tauri desktop app. Rust backend (`src-tauri/`) for atlas loading, reslicing, mesh serving. React + Three.js frontend (`src/`) for 3D visualization, dashboard, split/overlay views. Launched via `cd tauri-gui && pnpm tauri dev`.
 - **`langslice/export.py`** — Coronal anchoring math and QUINT/ABBA-compatible single-slice JSON export. `SliceExport.markers` supports VisuAlign `[ox, oy, nx, ny]` pairs from Elastix B-spline control points.
 
-Supporting utilities: `image_prep.py` (normalization, pixel-size detection, VLM downsampling), `agent_trace.py` (structured trace events), `cli.py` (argparse entry point).
+Supporting utilities: `image_prep.py` (normalization, pixel-size detection, VLM downsampling), `agent_trace.py` (structured trace events), `retry.py` (shared retry/heartbeat infrastructure), `cli.py` (argparse entry point).
 
 ## Gemini API — ALWAYS Check Docs First
 
 The google-genai SDK is newer than your training data. **Before writing or modifying ANY code that uses the google-genai SDK**, you MUST look up the relevant API in context7 (`/googleapis/python-genai`). Never assume you know the API surface — check types, method signatures, and supported parameters before writing code. This applies to:
 
-- `langslice/ai/` (client config, estimator, batch)
-- `langslice/registration/` (agents, tool loop, image gen)
+- `langslice/vlm_config.py` (client config)
+- `langslice/estimation/google/` (Gemini AP estimators, batch)
+- `langslice/registration/google/` (Gemini registration workflows)
 - Any file importing `google.genai` or `google.genai.types`
 
 Common things to verify: `GenerateContentConfig` fields, `types.Part` constructors, Interactions API parameters, File API methods, thinking config, media resolution options.

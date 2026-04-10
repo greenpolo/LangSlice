@@ -13,10 +13,9 @@ from collections.abc import Callable
 
 from PIL import Image
 
-from langslice.ai.estimator import APResult, estimate_position
-from langslice.ai.estimator_image_gen import estimate_position_image_gen
-from langslice.brain.window import compute_search_bounds
+from langslice.estimation import APResult, estimate_position, estimate_position_image_gen
 from langslice.image_prep import adaptive_preprocess, normalize_image, prepare_image_for_vlm
+from langslice.whole_brain.window import compute_search_bounds
 
 # Match the single-slice CLI: normalize → downscale → CLAHE.
 _VLM_MAX_LONG_EDGE = 2048

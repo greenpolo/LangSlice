@@ -57,7 +57,7 @@ The Python pipeline runs as a sidecar process; the Rust backend handles atlas lo
 
 ### Colored segmentation workflow (default for image-gen models)
 
-The colored segmentation workflow in `agents_colored_segmentation.py`:
+The colored segmentation workflow in `warping_image_gen.py`:
 
 1. Generate four atlas input images at the target AP position: colored region map, smoothed boundary lines, grayscale reference, and the histology slice.
 2. Send all four images with prompt to Gemini image-gen. The model warps the colored atlas regions to match the histology anatomy.

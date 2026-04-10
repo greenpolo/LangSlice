@@ -17,8 +17,8 @@ from langslice.registration import (
 def test_public_module_imports() -> None:
     importlib.import_module("langslice")
     importlib.import_module("langslice.atlas")
-    importlib.import_module("langslice.ai.config")
-    importlib.import_module("langslice.ai.estimator")
+    importlib.import_module("langslice.vlm_config")
+    importlib.import_module("langslice.estimation")
     importlib.import_module("langslice.registration")
     importlib.import_module("langslice.export")
     importlib.import_module("langslice.image_prep")

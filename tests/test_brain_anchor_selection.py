@@ -1,4 +1,4 @@
-from langslice.brain.anchor_selection import select_anchor_indices
+from langslice.whole_brain.anchor_selection import select_anchor_indices
 
 
 def test_single_anchor_picks_midpoint():

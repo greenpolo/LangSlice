@@ -50,7 +50,7 @@ def _parse_args() -> argparse.Namespace:
 
 def _load_ground_truth(path: str) -> dict[str, float]:
     """Load ground truth JSON and return {filename: ap_mm} mapping."""
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         data = json.load(f)
     return {filename: entry["ap_mm"] for filename, entry in data.items()}
 
@@ -68,7 +68,7 @@ def _build_config(
     in langslice/ai/config.py (MODEL_NAME). The agent can change models
     by modifying config.py.
     """
-    from langslice.brain.types import BrainEstimationConfig
+    from langslice.whole_brain.types import BrainEstimationConfig
 
     return BrainEstimationConfig(
         image_folder=image_folder,
@@ -76,8 +76,6 @@ def _build_config(
         thickness_um=50,
         interval_um=200,
         n_anchors=n_anchors,
-        ordering="strict",
-        refinement=True,
         max_parallel=10,
         z_axis="AP",
         coarse_model=coarse_model,
@@ -135,12 +133,14 @@ def _compute_metrics(
 
 
 async def _run(args: argparse.Namespace) -> dict:
-    from langslice.brain.pipeline import run_brain_estimation
+    from langslice.whole_brain.pipeline import run_brain_estimation
 
     ground_truth = _load_ground_truth(args.ground_truth)
 
     # Derive atlas name from ground truth (all entries use the same atlas)
-    gt_entries = list(json.load(open(args.ground_truth)).values())
+    with open(args.ground_truth, encoding="utf-8") as f:
+        gt_raw = json.load(f)
+    gt_entries = list(gt_raw.values())
     atlas_name = gt_entries[0]["atlas"] if gt_entries else "allen_mouse_25um"
 
     config = _build_config(
@@ -179,8 +179,6 @@ async def _run(args: argparse.Namespace) -> dict:
         "coarse_model": args.coarse_model,
         "fine_model": args.fine_model,
         "n_anchors": config.n_anchors,
-        "ordering": config.ordering,
-        "refinement": config.refinement,
         "thickness_um": config.thickness_um,
         "interval_um": config.interval_um,
     }

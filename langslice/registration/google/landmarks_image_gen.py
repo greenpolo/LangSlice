@@ -32,7 +32,7 @@ from typing import Any
 
 from PIL import Image
 
-import langslice.registration.agents as _agents
+import langslice.registration.common as _agents
 from langslice.agent_trace import image_part_from_pil, runtime_event
 from langslice.registration.types import RegistrationAnnotationSession
 
@@ -46,11 +46,8 @@ logger = logging.getLogger(__name__)
 
 def _species_from_atlas_name(atlas_name: str) -> str:
     """Extract a readable species name from a BrainGlobe atlas identifier."""
-    lower = atlas_name.lower()
-    for species in ("mouse", "rat", "human", "zebrafish", "fish"):
-        if species in lower:
-            return species
-    return "animal"
+    from langslice.atlas.core import species_from_atlas_name
+    return species_from_atlas_name(atlas_name)
 
 
 @dataclass(frozen=True)
@@ -116,7 +113,7 @@ def _build_image_gen_config(
         "image_config": image_config_cls(image_size="1K"),
     }
 
-    vlm_config = importlib.import_module("langslice.ai.config")
+    vlm_config = importlib.import_module("langslice.vlm_config")
     supports_image_model_thinking = getattr(
         vlm_config,
         "supports_image_model_thinking",

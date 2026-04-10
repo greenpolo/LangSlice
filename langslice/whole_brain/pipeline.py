@@ -6,15 +6,16 @@ import asyncio
 import logging
 import os
 import statistics
+from collections.abc import Callable
 
-from langslice.ai.estimator import APResult
 from langslice.atlas.core import get_position_range_mm, load_atlas
-from langslice.brain.agents import run_anchor_estimation, run_slice_estimation
-from langslice.brain.anchor_selection import select_anchor_indices
-from langslice.brain.checkpoint import load_checkpoint, save_checkpoint
-from langslice.brain.discovery import discover_slices
-from langslice.brain.interpolation import interpolate_positions
-from langslice.brain.types import (
+from langslice.estimation import APResult
+from langslice.whole_brain.anchor_selection import select_anchor_indices
+from langslice.whole_brain.checkpoint import load_checkpoint, save_checkpoint
+from langslice.whole_brain.discovery import discover_slices
+from langslice.whole_brain.estimation_agents import run_anchor_estimation, run_slice_estimation
+from langslice.whole_brain.interpolation import interpolate_positions
+from langslice.whole_brain.types import (
     BrainEstimationConfig,
     BrainEstimationResult,
     BrainEstimationSummary,
@@ -28,7 +29,7 @@ async def run_brain_estimation(
     config: BrainEstimationConfig,
     *,
     checkpoint_path: str | None = None,
-    on_progress: object | None = None,
+    on_progress: Callable[[str], None] | None = None,
 ) -> BrainEstimationResult:
     """Main entry point: run the full whole-brain AP estimation pipeline.
 
@@ -121,7 +122,10 @@ async def run_brain_estimation(
     save_checkpoint(cp_path, config, slices)
 
     # --- Phase 3: Estimate all non-anchor slices ---
-    non_anchor_indices = [i for i in range(n_slices) if i not in anchor_set]
+    # Skip slices already locked from a previous checkpoint.
+    non_anchor_indices = [
+        i for i in range(n_slices) if i not in anchor_set and not slices[i].locked
+    ]
     n_estimated = 0
 
     if non_anchor_indices:
@@ -286,6 +290,13 @@ def _fit_isotonic(
         constraints=constraints,
         options={"maxiter": 1000, "ftol": 1e-10},
     )
+    if not result.success:
+        logger.warning(
+            "Isotonic optimizer did not converge: %s (nit=%d). "
+            "Using best iterate.",
+            result.message,
+            result.nit,
+        )
     final = result.x
 
     return [

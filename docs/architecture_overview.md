@@ -24,9 +24,9 @@ Current responsibilities:
 `langslice.atlas.space` is the only place that interprets atlas orientation metadata.
 It builds an `AtlasSpaceContext` from `brainglobe-space`, requires AP to increase from anterior to posterior, and then requires coronal layout with AP/DV/ML on axes `0/1/2`.
 
-### `langslice.ai`
+### `langslice.vlm_config`
 
-`langslice.ai.config` owns Gemini configuration and backend selection.
+`langslice.vlm_config` owns Gemini configuration and backend selection, shared by both estimation and registration.
 Current backends:
 
 - `ai_studio`
@@ -42,8 +42,9 @@ It also exposes:
 - AP rollout flags for token counting, File API, context cache, and Interactions API
 - a cached shared `google.genai.Client`
 
-`langslice.ai.estimator` implements AP estimation.
-`estimate_position(...)` runs a multi-turn tool loop with these tool names:
+### `langslice.estimation`
+
+Single-slice AP estimation. `estimate_position(...)` runs a multi-turn tool loop with these tool names:
 
 - `fetch_atlas`
 - `get_atlas_info`
@@ -52,21 +53,23 @@ It also exposes:
 
 The estimator is split across three files:
 
-- `estimator.py` -- the tool loop, retry/backoff, optional File API/cache/Interactions API, trace emission, debug-artifact writing, and `estimate_ap(...)` alias
-- `estimator_tools.py` -- tool definitions and tool-response construction helpers
-- `estimator_debug.py` -- debug-artifact writing helpers
+- `google/ap_tool_use.py` -- the tool loop, retry/backoff, optional File API/cache/Interactions API, trace emission, debug-artifact writing, and `estimate_ap(...)` alias
+- `google/tool_definitions.py` -- tool definitions and tool-response construction helpers
+- `debug.py` -- shared debug-artifact writing helpers
 
-`langslice.ai.batch_eval` is an offline helper for one-shot AP Batch API experiments. It is not part of the live pipeline.
+`google/ap_image_gen.py` implements nano-banana multi-pass zoom AP estimation using image-gen models.
+
+`google/batch_eval.py` is an offline helper for one-shot AP Batch API experiments. It is not part of the live pipeline.
 
 ### `langslice.registration`
 
 The registration subsystem is split across eight files:
 
 - `types.py` -- affine helpers plus `AffineResult`, `RegistrationCorrespondence`, `NonlinearResult`, `RegistrationResult`, `LandmarkAnnotation`, `RegistrationAnnotationSession`
-- `agents.py` -- shared utilities (retry, heartbeat, JSON extraction, coordinate conversion) and workflow router
-- `agents_colored_segmentation.py` -- colored segmentation workflow (default for image-gen models): model produces atlas-colored tissue segmentation, Elastix B-spline extracts deformation, VisuAlign markers from control points
-- `agents_image_gen.py` -- legacy two-shot landmark workflow for image-gen models (superseded by colored segmentation)
-- `agents_tool_loop.py` -- iterative tool-loop workflow for text-centric models (experimental, on hold)
+- `common.py` -- shared utilities (retry, heartbeat, JSON extraction, coordinate conversion) and workflow router
+- `google/warping_image_gen.py` -- warping workflow via colored segmentation (default for image-gen models): model produces atlas-colored tissue segmentation, Elastix B-spline extracts deformation, VisuAlign markers from control points
+- `google/landmarks_image_gen.py` -- legacy two-shot landmark workflow for image-gen models (superseded by warping workflow)
+- `google/landmarks_tool_use.py` -- iterative landmark tool-loop workflow for text-centric models (experimental, on hold)
 - `solver.py` -- deterministic affine least-squares fit and TPS fit
 - `runtime.py` -- registration orchestration and debug artifact writing
 - `core.py` -- public wrapper `estimate_registration_runtime(...)`
@@ -98,7 +101,7 @@ Current runtime behavior for the colored segmentation workflow:
 7. Extract VisuAlign markers from B-spline control points.
 8. Return results and optionally save debug artifacts.
 
-### `langslice.brain`
+### `langslice.whole_brain`
 
 Whole-brain multi-slice AP estimation. Scales the single-slice estimator to 20-60 slices with a four-phase pipeline:
 
@@ -114,9 +117,8 @@ The module is split into focused files:
 - `anchor_selection.py` — center-out anchor index selection
 - `interpolation.py` — interval-based interpolation and extrapolation
 - `window.py` — nano-banana search window bounds and dynamic image count
-- `constraints.py` — legacy ordering enforcement and minimum spacing (retained for reference)
 - `checkpoint.py` — incremental JSON checkpoint for resumability
-- `agents.py` — async wrappers: `run_anchor_estimation()` (coarse tool-use + nano-banana fine) and `run_slice_estimation()` (2-pass windowed), with CLAHE adaptive preprocessing
+- `estimation_agents.py` — async wrappers: `run_anchor_estimation()` (coarse tool-use + nano-banana fine) and `run_slice_estimation()` (2-pass windowed), with CLAHE adaptive preprocessing
 - `pipeline.py` — Huber-loss isotonic fitting and main `run_brain_estimation()` async entry point
 
 Concurrency uses plain asyncio (`asyncio.gather()` + `asyncio.Semaphore`), not an agent framework. The existing `estimate_position()` and `estimate_position_image_gen()` are called unmodified.

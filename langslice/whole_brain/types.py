@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass
@@ -14,8 +15,6 @@ class BrainEstimationConfig:
     thickness_um: int
     interval_um: int
     n_anchors: int
-    ordering: str  # "strict" | "loose" | "none"
-    refinement: bool
     max_parallel: int
     z_axis: str  # "AP" | "PA"
     coarse_model: str | None = None  # Model for anchor estimation (full range)
@@ -62,13 +61,12 @@ class BrainEstimationResult:
     slices: list[SlicePosition]
     summary: BrainEstimationSummary
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize to a JSON-compatible dict."""
         return {
             "atlas": self.config.atlas_name,
             "thickness_um": self.config.thickness_um,
             "interval_um": self.config.interval_um,
-            "ordering_mode": self.config.ordering,
             "z_axis": self.config.z_axis,
             "slices": [
                 {

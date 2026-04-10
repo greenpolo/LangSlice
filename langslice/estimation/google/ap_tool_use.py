@@ -2,7 +2,6 @@
 
 import io
 import logging
-import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -11,79 +10,28 @@ from typing import Any, cast
 from google.genai import types
 from PIL import Image
 
+import langslice.vlm_config as vlm_config
 from langslice.agent_trace import (
     image_part_from_pil,
     json_part,
     model_event,
     runtime_event,
 )
-from langslice.ai import config as vlm_config
-from langslice.ai.config import get_client
 from langslice.image_prep import normalize_image, prepare_image_for_vlm
+from langslice.retry import (
+    format_elapsed_seconds as _format_elapsed_seconds,  # noqa: F401 — re-exported
+)
+from langslice.retry import (
+    retry_with_backoff,
+)
+from langslice.retry import (
+    run_with_progress_heartbeat as _run_with_progress_heartbeat,  # noqa: F401 — re-exported
+)
+from langslice.vlm_config import get_client
 
 logger = logging.getLogger(__name__)
 
-# Retryable exception types (google-genai SDK error hierarchy)
-_RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
-_MAX_RETRIES = 3
-_INITIAL_BACKOFF_S = 1.0
 _RESAMPLE_LANCZOS = Image.Resampling.LANCZOS
-_HEARTBEAT_INTERVAL_S = 10.0
-
-
-def _format_elapsed_seconds(elapsed_s: float) -> str:
-    if elapsed_s < 60.0:
-        return f"{elapsed_s:.1f}s"
-    minutes = int(elapsed_s // 60.0)
-    seconds = int(round(elapsed_s - (minutes * 60)))
-    return f"{minutes}m {seconds:02d}s"
-
-
-def _run_with_progress_heartbeat(
-    fn: Callable[[], Any],
-    *,
-    request_label: str,
-    on_progress: Callable[[str], None] | None = None,
-    heartbeat_interval_s: float = _HEARTBEAT_INTERVAL_S,
-) -> Any:
-    started_at = time.perf_counter()
-    stop_event = threading.Event()
-    heartbeat_thread: threading.Thread | None = None
-
-    if on_progress:
-        on_progress(f"{request_label}: request started")
-        if heartbeat_interval_s > 0:
-
-            def _heartbeat_loop() -> None:
-                while not stop_event.wait(heartbeat_interval_s):
-                    elapsed_s = time.perf_counter() - started_at
-                    on_progress(
-                        f"{request_label}: still waiting for Gemini "
-                        f"after {_format_elapsed_seconds(elapsed_s)}"
-                    )
-
-            heartbeat_thread = threading.Thread(target=_heartbeat_loop, daemon=True)
-            heartbeat_thread.start()
-
-    try:
-        result = fn()
-    except Exception as exc:
-        elapsed_s = time.perf_counter() - started_at
-        if on_progress:
-            on_progress(
-                f"{request_label}: request failed after {_format_elapsed_seconds(elapsed_s)} "
-                f"({type(exc).__name__}: {exc})"
-            )
-        raise
-    finally:
-        stop_event.set()
-        if heartbeat_thread is not None:
-            heartbeat_thread.join(timeout=0.05)
-
-    elapsed_s = time.perf_counter() - started_at
-    if on_progress:
-        on_progress(f"{request_label}: response received in {_format_elapsed_seconds(elapsed_s)}")
-    return result
 
 
 def _retry_interaction(
@@ -94,51 +42,11 @@ def _retry_interaction(
     on_progress: Callable[[str], None] | None = None,
 ) -> Any:
     """Call client.interactions.create with exponential backoff retries."""
-    last_exc: Exception | None = None
-    for attempt in range(_MAX_RETRIES + 1):
-        try:
-            return _run_with_progress_heartbeat(
-                lambda: client.interactions.create(**create_kwargs),
-                request_label=f"{request_label} (attempt {attempt + 1}/{_MAX_RETRIES + 1})",
-                on_progress=on_progress,
-            )
-        except Exception as exc:
-            last_exc = exc
-            # Check if the error has a retryable HTTP status code
-            status = getattr(exc, "status_code", None) or getattr(exc, "code", None)
-            if isinstance(status, int) and status in _RETRYABLE_STATUS_CODES:
-                if attempt < _MAX_RETRIES:
-                    delay = _INITIAL_BACKOFF_S * (2**attempt)
-                    msg = (
-                        f"Gemini API error (status {status}), "
-                        f"retrying in {delay:.1f}s "
-                        f"(attempt {attempt + 1}/{_MAX_RETRIES})"
-                    )
-                    logger.warning(msg)
-                    if on_progress:
-                        on_progress(msg)
-                    time.sleep(delay)
-                    continue
-            # Also retry on generic connection / timeout errors
-            exc_name = type(exc).__name__.lower()
-            if any(kw in exc_name for kw in ("timeout", "connection", "transport")):
-                if attempt < _MAX_RETRIES:
-                    delay = _INITIAL_BACKOFF_S * (2**attempt)
-                    msg = (
-                        f"Transient error ({type(exc).__name__}), "
-                        f"retrying in {delay:.1f}s "
-                        f"(attempt {attempt + 1}/{_MAX_RETRIES})"
-                    )
-                    logger.warning(msg)
-                    if on_progress:
-                        on_progress(msg)
-                    time.sleep(delay)
-                    continue
-            # Non-retryable error - raise immediately
-            raise
-    # Exhausted retries
-    assert last_exc is not None
-    raise last_exc
+    return retry_with_backoff(
+        lambda: client.interactions.create(**create_kwargs),
+        request_label=request_label,
+        on_progress=on_progress,
+    )
 
 
 @dataclass
@@ -404,8 +312,8 @@ def _interaction_input_metrics(input_parts: Sequence[Mapping[str, object]]) -> d
 # Tool handler functions — extracted to estimator_tools.py
 # ---------------------------------------------------------------------------
 # Debug artifact writing — extracted to estimator_debug.py
-from langslice.ai.estimator_debug import write_debug_artifacts  # noqa: E402
-from langslice.ai.estimator_tools import (  # noqa: E402
+from langslice.estimation.debug import write_debug_artifacts  # noqa: E402
+from langslice.estimation.google.tool_definitions import (  # noqa: E402
     _build_nudge_text,
     _extract_function_calls,
     _process_ap_function_calls,

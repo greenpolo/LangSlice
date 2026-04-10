@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 
-from langslice.brain.types import BrainEstimationConfig, SlicePosition
+from langslice.whole_brain.types import BrainEstimationConfig, SlicePosition
 
 
 def save_checkpoint(
@@ -18,7 +18,6 @@ def save_checkpoint(
         "atlas": config.atlas_name,
         "thickness_um": config.thickness_um,
         "interval_um": config.interval_um,
-        "ordering_mode": config.ordering,
         "z_axis": config.z_axis,
         "slices": [
             {
@@ -34,7 +33,7 @@ def save_checkpoint(
             for s in slices
         ],
     }
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
 
 
@@ -45,7 +44,7 @@ def load_checkpoint(path: str) -> list[SlicePosition]:
     """
     if not os.path.exists(path):
         return []
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         data = json.load(f)
     return [
         SlicePosition(
