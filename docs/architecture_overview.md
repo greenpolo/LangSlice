@@ -105,9 +105,9 @@ Current runtime behavior for the colored segmentation workflow:
 
 Whole-brain multi-slice AP estimation. Scales the single-slice estimator to 20-60 slices with a four-phase pipeline:
 
-1. **Phase 1 — Anchor estimation:** Select anchor slices via center-out placement, run two-stage estimation on each in parallel: coarse tool-use agent (adaptive multi-turn exploration) then nano-banana fine pass centered on the coarse result. Anchor results are soft estimates, not locked truth.
+1. **Phase 1 — Anchor estimation:** Select anchor slices via center-out placement, run two-stage estimation on each sequentially (cap=1 semaphore): Stage A is image-gen 2-pass (broad + neighborhood) for coarse positioning, Stage B is nano-banana fine pass within ±0.5mm of the coarse result. 3-tier fallback: Stage A failure → atlas midpoint, Stage B failure → return coarse. Anchor results are soft estimates, not locked truth.
 2. **Phase 2 — Interpolation:** Deterministic interval-based interpolation between anchors, extrapolation beyond outermost anchors, clamped to atlas bounds. Produces center positions for Phase 3.
-3. **Phase 3 — Parallel slice estimation:** Estimate all non-anchor slices in parallel using 2-pass nano-banana within ±2mm windows centered on interpolated positions.
+3. **Phase 3 — Parallel slice estimation:** Estimate all non-anchor slices in parallel using 2-pass nano-banana (0.10mm fine resolution) within ±2mm windows centered on interpolated positions, followed by a confirmation pass (9 slices, ±0.25mm, ~0.06mm spacing) to push near-threshold estimates below 0.1mm error.
 4. **Phase 4 — Isotonic fitting:** Fit a monotone-increasing curve through all estimates (anchors and non-anchors alike) using Huber-loss constrained optimization with local-interval spacing priors and hard minimum-thickness constraints.
 
 The module is split into focused files:
@@ -118,10 +118,10 @@ The module is split into focused files:
 - `interpolation.py` — interval-based interpolation and extrapolation
 - `window.py` — nano-banana search window bounds and dynamic image count
 - `checkpoint.py` — incremental JSON checkpoint for resumability
-- `estimation_agents.py` — async wrappers: `run_anchor_estimation()` (coarse tool-use + nano-banana fine) and `run_slice_estimation()` (2-pass windowed), with CLAHE adaptive preprocessing
+- `estimation_agents.py` — async wrappers: `run_anchor_estimation()` (image-gen 2-pass coarse + nano-banana fine, 3-tier fallback) and `run_slice_estimation()` (2-pass windowed + confirmation pass), with CLAHE adaptive preprocessing
 - `pipeline.py` — Huber-loss isotonic fitting and main `run_brain_estimation()` async entry point
 
-Concurrency uses plain asyncio (`asyncio.gather()` + `asyncio.Semaphore`), not an agent framework. The existing `estimate_position()` and `estimate_position_image_gen()` are called unmodified.
+Concurrency uses plain asyncio (`asyncio.gather()` + `asyncio.Semaphore`), not an agent framework. Anchor estimation runs sequentially (semaphore cap=1) to avoid API rate limits. `estimate_position_image_gen()` is the sole VLM entry point; `estimate_position()` (tool-use) is no longer used by the brain pipeline.
 
 ### `langslice.image_prep`
 
@@ -173,7 +173,7 @@ Launched via `cd tauri-gui && pnpm tauri dev`.
 
 1. Discover and naturally sort all slice images in the folder.
 2. Select anchor slices via center-out placement.
-3. Run two-stage anchor estimation in parallel (coarse tool-use + nano-banana fine pass).
+3. Run two-stage anchor estimation sequentially (image-gen 2-pass coarse + nano-banana fine pass).
 4. Interpolate center positions for all non-anchor slices.
 5. Estimate all non-anchor slices in parallel with 2-pass nano-banana (±2mm windows).
 6. Fit Huber-loss constrained monotonic curve through all estimates.

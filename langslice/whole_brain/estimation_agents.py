@@ -21,6 +21,11 @@ from langslice.whole_brain.window import compute_search_bounds
 # Match the single-slice CLI: normalize → downscale → CLAHE.
 _VLM_MAX_LONG_EDGE = 2048
 
+# Pro model for anchor estimation — stronger visual reasoning improves the
+# critical anchor positions that the rest of the pipeline depends on.
+# Non-anchor estimation stays on the default (Flash) for speed.
+_ANCHOR_DEFAULT_MODEL = "gemini-3.1-pro-preview"
+
 logger = logging.getLogger(__name__)
 
 
@@ -51,8 +56,15 @@ async def run_anchor_estimation(
     ~0.05mm precision within ±0.5mm bounds.
 
     Falls back to atlas midpoint if both stages fail (3-tier fallback).
+
+    Uses gemini-3.1-pro-preview by default for stronger visual reasoning on
+    these critical anchor positions.
     """
     image = _prepare_slice(image_path)
+
+    # Use Pro model for anchors unless explicitly overridden
+    effective_coarse_model = coarse_model or _ANCHOR_DEFAULT_MODEL
+    effective_fine_model = fine_model or _ANCHOR_DEFAULT_MODEL
 
     # Stage A: image-gen 2-pass coarse (broad + neighborhood only)
     coarse_mm: float
@@ -63,13 +75,14 @@ async def run_anchor_estimation(
             atlas_name,
             on_progress=on_progress,
             debug_dir=debug_dir,
-            model_name=coarse_model,
+            model_name=effective_coarse_model,
             send_individually=True,
             atlas_resolution=1024,
             max_passes=2,
         )
         coarse_mm = coarse.position_mm
-        logger.info("Anchor coarse (image-gen 2-pass): %.3fmm (%s)", coarse_mm, image_path)
+        logger.info("Anchor coarse (image-gen 2-pass, %s): %.3fmm (%s)",
+                    effective_coarse_model, coarse_mm, image_path)
     except Exception:
         # Fallback: atlas midpoint (zero API cost)
         atlas = load_atlas(atlas_name)
@@ -94,13 +107,14 @@ async def run_anchor_estimation(
             atlas_name,
             on_progress=on_progress,
             debug_dir=debug_dir,
-            model_name=fine_model,
+            model_name=effective_fine_model,
             send_individually=True,
             atlas_resolution=1024,
             center_mm=coarse_mm,
             bounds=(fine_lo, fine_hi),
         )
-        logger.info("Anchor fine: %.3fmm (drift %.3fmm) (%s)",
+        logger.info("Anchor fine (%s): %.3fmm (drift %.3fmm) (%s)",
+                    effective_fine_model,
                     fine.position_mm,
                     abs(fine.position_mm - coarse_mm),
                     image_path)
