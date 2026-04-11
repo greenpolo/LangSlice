@@ -32,7 +32,7 @@ cd tauri-gui && pnpm tauri dev
 
 LangSlice registers histology slice images to BrainGlobe atlases using Gemini vision-language models for estimation and deterministic local solvers for geometry. The desktop GUI is a Tauri app (Rust + React + Three.js) in `tauri-gui/`.
 
-**Pipeline:** `AP estimation → colored segmentation → Elastix B-spline registration → preview/export`
+**Pipeline:** `AP estimation → colored segmentation → Elastix affine+B-spline registration → preview/export`
 
 The code is split into modules with clear boundaries:
 
@@ -67,7 +67,7 @@ Common things to verify: `GenerateContentConfig` fields, `types.Part` constructo
 ## Key Conventions
 
 - AP coordinates are atlas-native millimeters from the anterior edge of the volume.
-- The colored segmentation workflow (default for image-gen models) registers grayscale versions of the atlas colored regions (moving) and model output (fixed) via Elastix B-spline, then warps the atlas through the recovered transform. VisuAlign markers are extracted from B-spline control points. The legacy workflows compute affine and TPS results from landmark correspondences; export uses the affine result only.
+- The colored segmentation workflow (default for image-gen models) registers grayscale versions of the atlas colored regions (moving) and model output (fixed) via two-stage Elastix: affine for global alignment then B-spline for local deformations, both using AdvancedNormalizedCorrelation. The atlas is then warped through the recovered transform. VisuAlign markers are extracted from B-spline control points. The legacy workflows compute affine and TPS results from landmark correspondences; export uses the affine result only.
 - itk-elastix is a required dependency for the colored segmentation workflow.
 - Debug traces are written only when `LANGSLICE_VLM_DEBUG_DIR` is set.
 - Ruff and basedpyright are scoped to specific directories (see `pyproject.toml` `include` lists), not the full package.
