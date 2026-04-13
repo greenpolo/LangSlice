@@ -44,7 +44,7 @@ from langslice.estimation.google.ap_tool_use import (
 )
 from langslice.estimation.google.tool_definitions import (
     _build_atlas_grid,
-    _extract_function_calls_gc,
+    _extract_function_calls,
     _get_regions_at_position,
     _is_broad_multi_sweep,
     _is_narrow_multi_sweep,
@@ -1047,7 +1047,7 @@ def estimate_group(
                     )
 
                 # Extract function calls
-                function_calls, text_preview = _extract_function_calls_gc(
+                function_calls, text_preview = _extract_function_calls(
                     response
                 )
 

@@ -48,7 +48,6 @@ AVAILABLE_THINKING_LEVELS: list[tuple[str, str]] = [
 _ENV_COUNT_TOKENS = "LANGSLICE_GENAI_COUNT_TOKENS"
 _ENV_AP_USE_FILE_API = "LANGSLICE_GENAI_AP_USE_FILE_API"
 _ENV_AP_USE_CONTEXT_CACHE = "LANGSLICE_GENAI_AP_USE_CONTEXT_CACHE"
-_ENV_AP_USE_INTERACTIONS = "LANGSLICE_GENAI_AP_USE_INTERACTIONS"
 _ENV_AP_CACHE_TTL = "LANGSLICE_GENAI_AP_CACHE_TTL"
 _ENV_FILE_POLL_TIMEOUT_S = "LANGSLICE_GENAI_FILE_POLL_TIMEOUT_S"
 _ENV_TEMPERATURE = "LANGSLICE_GENAI_TEMPERATURE"
@@ -312,10 +311,6 @@ def ap_use_context_cache() -> bool:
     return _env_bool(_ENV_AP_USE_CONTEXT_CACHE)
 
 
-def ap_use_interactions() -> bool:
-    return _env_bool(_ENV_AP_USE_INTERACTIONS)
-
-
 def ap_cache_ttl() -> str:
     return _env(_ENV_AP_CACHE_TTL) or "3600s"
 
@@ -336,10 +331,6 @@ def supports_file_api() -> bool:
     return get_backend() == _BACKEND_AI_STUDIO
 
 
-def supports_interactions_api() -> bool:
-    return get_backend() == _BACKEND_AI_STUDIO
-
-
 def supports_batch_api() -> bool:
     return get_backend() == _BACKEND_VERTEX_ADC
 
@@ -349,9 +340,7 @@ def feature_flags() -> dict[str, Any]:
         "count_tokens_enabled": count_tokens_enabled(),
         "ap_use_file_api": ap_use_file_api(),
         "ap_use_context_cache": ap_use_context_cache(),
-        "ap_use_interactions": ap_use_interactions(),
         "supports_file_api": supports_file_api(),
-        "supports_interactions_api": supports_interactions_api(),
         "supports_batch_api": supports_batch_api(),
         "ap_cache_ttl": ap_cache_ttl(),
         "file_poll_timeout_s": file_poll_timeout_s(),

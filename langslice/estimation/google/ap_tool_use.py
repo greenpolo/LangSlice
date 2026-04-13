@@ -3,7 +3,7 @@
 import io
 import logging
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any, cast
 
@@ -32,21 +32,6 @@ from langslice.vlm_config import get_client
 logger = logging.getLogger(__name__)
 
 _RESAMPLE_LANCZOS = Image.Resampling.LANCZOS
-
-
-def _retry_interaction(
-    client: Any,
-    create_kwargs: dict[str, Any],
-    *,
-    request_label: str,
-    on_progress: Callable[[str], None] | None = None,
-) -> Any:
-    """Call client.interactions.create with exponential backoff retries."""
-    return retry_with_backoff(
-        lambda: client.interactions.create(**create_kwargs),
-        request_label=request_label,
-        on_progress=on_progress,
-    )
 
 
 @dataclass
@@ -210,26 +195,6 @@ def _extract_usage_metadata(response: object) -> dict[str, int | float | str | b
     return metadata
 
 
-def _extract_interaction_usage_metadata(interaction: object) -> dict[str, int | float | str | bool]:
-    usage = getattr(interaction, "usage", None)
-    field_map = {
-        "total_input_tokens": "prompt_token_count",
-        "total_output_tokens": "candidates_token_count",
-        "total_tokens": "total_token_count",
-        "total_thought_tokens": "thoughts_token_count",
-        "total_cached_tokens": "cached_content_token_count",
-        "total_tool_use_tokens": "tool_use_prompt_token_count",
-    }
-    metadata: dict[str, int | float | str | bool] = {}
-    if usage is None:
-        return metadata
-    for source_field, target_field in field_map.items():
-        value = getattr(usage, source_field, None)
-        if isinstance(value, (int, float, str, bool)):
-            metadata[target_field] = value
-    return metadata
-
-
 def _format_usage_metadata(metadata: dict[str, int | float | str | bool]) -> str:
     preferred_fields = (
         "prompt_token_count",
@@ -270,21 +235,6 @@ def _emit_trace(
         on_trace(event)
 
 
-def _extract_interaction_text_outputs(interaction: object) -> tuple[list[str], list[str]]:
-    text_outputs: list[str] = []
-    thought_outputs: list[str] = []
-    for output in getattr(interaction, "outputs", None) or []:
-        output_type = getattr(output, "type", None)
-        text = getattr(output, "text", None)
-        if output_type != "text" or not isinstance(text, str) or not text:
-            continue
-        if bool(getattr(output, "thought", False)):
-            thought_outputs.append(text)
-        else:
-            text_outputs.append(text)
-    return text_outputs, thought_outputs
-
-
 def _extract_text_and_thoughts(content: object) -> tuple[list[str], list[str]]:
     """Extract text and thought outputs from a Content object's parts."""
     parts = getattr(content, "parts", None) or []
@@ -301,29 +251,6 @@ def _extract_text_and_thoughts(content: object) -> tuple[list[str], list[str]]:
     return texts, thoughts
 
 
-def _interaction_input_metrics(input_parts: Sequence[Mapping[str, object]]) -> dict[str, int]:
-    metrics = {
-        "content_count": 1,
-        "part_count": len(input_parts),
-        "text_parts": 0,
-        "function_call_parts": 0,
-        "function_response_parts": 0,
-        "image_parts": 0,
-        "image_bytes": 0,
-    }
-    for item in input_parts:
-        item_type = item.get("type")
-        if item_type == "text":
-            metrics["text_parts"] += 1
-        elif item_type == "image":
-            metrics["image_parts"] += 1
-        elif item_type == "function_call":
-            metrics["function_call_parts"] += 1
-        elif item_type == "function_result":
-            metrics["function_response_parts"] += 1
-    return metrics
-
-
 # ---------------------------------------------------------------------------
 # Tool handler functions — extracted to estimator_tools.py
 # ---------------------------------------------------------------------------
@@ -331,12 +258,9 @@ def _interaction_input_metrics(input_parts: Sequence[Mapping[str, object]]) -> d
 from langslice.estimation.debug import write_debug_artifacts  # noqa: E402
 from langslice.estimation.google.tool_definitions import (  # noqa: E402
     _build_nudge_text,
-    _extract_function_calls,  # noqa: F401 — kept for Task 5 cleanup
-    _extract_function_calls_gc,
-    _process_ap_function_calls,  # noqa: F401 — kept for Task 5 cleanup
-    _process_ap_function_calls_gc,
+    _extract_function_calls,
+    _process_ap_function_calls,
     _tool_declarations,
-    _tool_dicts,  # noqa: F401 — kept for Task 5 cleanup
 )
 
 
@@ -636,7 +560,7 @@ def estimate_position(
                 )
 
             # Extract function calls
-            function_calls, text_preview = _extract_function_calls_gc(response)
+            function_calls, text_preview = _extract_function_calls(response)
 
             if not function_calls:
                 if text_preview and on_progress:
@@ -648,7 +572,7 @@ def estimate_position(
                 continue
 
             # Process tool calls — returns list[Part]
-            result_parts = _process_ap_function_calls_gc(
+            result_parts = _process_ap_function_calls(
                 function_calls,
                 iteration=iteration,
                 atlas=atlas,

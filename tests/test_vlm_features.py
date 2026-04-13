@@ -17,15 +17,12 @@ def test_feature_flags_for_ai_studio(monkeypatch) -> None:
     monkeypatch.setenv("LANGSLICE_GENAI_COUNT_TOKENS", "1")
     monkeypatch.setenv("LANGSLICE_GENAI_AP_USE_FILE_API", "1")
     monkeypatch.setenv("LANGSLICE_GENAI_AP_USE_CONTEXT_CACHE", "1")
-    monkeypatch.setenv("LANGSLICE_GENAI_AP_USE_INTERACTIONS", "1")
 
     flags = vlm_config.feature_flags()
     assert flags["count_tokens_enabled"] is True
     assert flags["ap_use_file_api"] is True
     assert flags["ap_use_context_cache"] is True
-    assert flags["ap_use_interactions"] is True
     assert flags["supports_file_api"] is True
-    assert flags["supports_interactions_api"] is True
     assert flags["supports_batch_api"] is False
 
 
