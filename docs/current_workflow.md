@@ -20,6 +20,38 @@ langslice estimate <image> [--atlas ...] [--model ...] [--workflow ...]
 
 Supported file types: `.png`, `.jpg`, `.jpeg`, `.tif`, `.tiff`.
 
+## CLI: `langslice estimate-group`
+
+Estimate AP positions for a group of consecutive slices:
+
+```
+langslice estimate-group <img1> <img2> ... [--interval 200] [--thickness 50] [--atlas ...] [--model ...]
+```
+
+1. Load and normalize each image (2-8 slices in anterior-to-posterior order).
+2. Optionally apply adaptive preprocessing (`--preprocess auto`).
+3. Downscale each to VLM resolution.
+4. Run multi-slice group tool-use estimation via `estimate_group(...)`.
+5. Print per-slice estimated positions and group reasoning.
+6. Optionally write debug artifacts (`--out`).
+
+## CLI: `langslice estimate-brain`
+
+Run whole-brain AP estimation on a folder of slices:
+
+```
+langslice estimate-brain <image_folder> [--atlas ...] [--anchors 4] [--interval 200] [--thickness 50]
+```
+
+1. Discover and naturally sort all slice images in the folder.
+2. Select anchor slices via center-out placement.
+3. Run two-stage anchor estimation sequentially (image-gen 2-pass coarse + nano-banana fine pass).
+4. Interpolate center positions for all non-anchor slices.
+5. Estimate all non-anchor slices in parallel with 2-pass nano-banana (±2mm windows).
+6. Run confirmation pass on near-threshold estimates.
+7. Fit Huber-loss constrained monotonic curve through all estimates.
+8. Write final positions to JSON. Checkpoint after each phase for resumability.
+
 ## CLI: `langslice register`
 
 Run registration at a known AP position:

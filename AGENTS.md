@@ -20,7 +20,7 @@ The current runtime is split into:
 
 ## Active Paths
 
-- `langslice/cli.py` -- CLI entry point for `version`, `register`, and `estimate`
+- `langslice/cli.py` -- CLI entry point for `version`, `register`, `estimate`, `estimate-group`, and `estimate-brain`
 - `langslice/vlm_config.py` -- Gemini client config, backend selection, runtime settings
 - `langslice/atlas/` -- BrainGlobe loading, AP coordinate helpers, slice extraction, colored region and boundary helpers
 - `langslice/estimation/` -- Single-slice AP estimation: `google/` (Gemini), `openai/` (stubs), `debug.py` (shared)
@@ -40,7 +40,9 @@ The current runtime is split into:
 
 - The main pipeline is `AP estimate -> colored segmentation -> Elastix B-spline -> VisuAlign markers -> export`.
 - The CLI `register` subcommand runs registration at a given AP position.
-- The CLI `estimate` subcommand runs AP estimation only.
+- The CLI `estimate` subcommand runs single-slice AP estimation.
+- The CLI `estimate-group` subcommand runs multi-slice group AP estimation (2-8 consecutive slices).
+- The CLI `estimate-brain` subcommand runs whole-brain AP estimation on a folder of slices.
 - AP coordinates are atlas-native millimeters from the anterior edge of the volume.
 - Atlas orientation assumptions are centralized in `langslice/atlas/space.py` and currently require coronal layout with AP/DV/ML on axes `0/1/2`.
 - The warping workflow (default for image-gen models) produces an Elastix B-spline transform and VisuAlign markers from B-spline control points.

@@ -70,7 +70,7 @@ The correspondence agent system is split across `common.py` (shared utilities an
 - Model iteratively proposes and refines landmarks across multiple turns using tool calls.
 - Configurable max steps via `REGISTRATION_TOOL_LOOP_MAX_STEPS`.
 
-### Shared utilities (agents.py)
+### Shared utilities (common.py)
 
 - Retry with exponential backoff and heartbeat progress reporting
 - JSON extraction from Gemini responses (structured output + text fallback)

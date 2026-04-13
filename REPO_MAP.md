@@ -4,7 +4,7 @@ This map is intentionally short and stable so humans and agents can find the act
 
 ## Active Code Paths
 
-- `langslice/cli.py` -- CLI entry point for `langslice version`, `langslice register`, `langslice estimate`, and `langslice estimate-brain`
+- `langslice/cli.py` -- CLI entry point for `langslice version`, `langslice register`, `langslice estimate`, `langslice estimate-group`, and `langslice estimate-brain`
 - `langslice/vlm_config.py` -- Gemini client configuration, backend selection, runtime settings (shared by estimation and registration)
 - `langslice/atlas/` -- BrainGlobe atlas loading, AP/index conversion, coronal slice extraction, colored region and smoothed boundary helpers
 - `langslice/estimation/` -- Single-slice AP estimation

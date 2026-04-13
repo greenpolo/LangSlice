@@ -39,7 +39,7 @@ It also exposes:
 - `AVAILABLE_THINKING_LEVELS` (MINIMAL / LOW / MEDIUM / HIGH)
 - `CODE_EXECUTION_ENABLED` and `supports_code_execution()`
 - Registration workflow constants and `default_registration_workflow()`
-- AP rollout flags for token counting, File API, context cache, and Interactions API
+- AP rollout flags for token counting, File API, and context cache
 - a cached shared `google.genai.Client`
 
 ### `langslice.estimation`
@@ -51,15 +51,18 @@ Single-slice AP estimation. `estimate_position(...)` runs a multi-turn tool loop
 - `get_region_names`
 - `submit_estimate`
 
-The estimator is split across three files:
+The estimator is split across four files:
 
-- `google/ap_tool_use.py` -- the tool loop, retry/backoff, optional File API/cache/Interactions API, trace emission, debug-artifact writing, and `estimate_ap(...)` alias
+- `google/ap_tool_use.py` -- the single-slice tool loop, retry/backoff, optional File API/cache, trace emission, debug-artifact writing, and `estimate_ap(...)` alias
+- `google/ap_multi_slice.py` -- multi-slice group tool-use AP estimation for 2-8 consecutive slices (`estimate_group(...)`)
 - `google/tool_definitions.py` -- tool definitions and tool-response construction helpers
 - `debug.py` -- shared debug-artifact writing helpers
 
 `google/ap_image_gen.py` implements nano-banana multi-pass zoom AP estimation using image-gen models.
 
 `google/batch_eval.py` is an offline helper for one-shot AP Batch API experiments. It is not part of the live pipeline.
+
+All estimation uses `generate_content`; the Interactions API was removed from the estimation module.
 
 ### `langslice.registration`
 
@@ -161,6 +164,14 @@ Launched via `cd tauri-gui && pnpm tauri dev`.
 3. Downscale to VLM resolution.
 4. Run `estimate_position(...)` or `estimate_position_image_gen(...)` depending on model type.
 5. Print position and reasoning; optionally write debug artifacts.
+
+### CLI: `langslice estimate-group`
+
+1. Load and normalize each image (2-8 slices in anterior-to-posterior order).
+2. Optionally apply adaptive preprocessing (CLAHE + brightness normalization).
+3. Downscale each to VLM resolution.
+4. Run `estimate_group(...)` with the configured slice interval and thickness.
+5. Print per-slice positions and group reasoning; optionally write debug artifacts.
 
 ### CLI: `langslice register`
 

@@ -7,7 +7,7 @@ All runtime behavior described by the maintained docs lives here.
 
 ## Package Surface
 
-- `cli.py` -- CLI parser for `version`, `register`, and `estimate`
+- `cli.py` -- CLI parser for `version`, `register`, `estimate`, `estimate-group`, and `estimate-brain`
 - `vlm_config.py` -- Gemini client configuration, backend selection, runtime settings
 - `atlas/` -- BrainGlobe atlas access, AP conversion, slice helpers, colored region and boundary helpers
 - `estimation/` -- Single-slice AP estimation: `google/` (Gemini), `openai/` (stubs), `debug.py` (shared)

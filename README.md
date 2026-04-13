@@ -27,8 +27,14 @@ LangSlice registers histology slice images to BrainGlobe atlases using Gemini vi
 ## CLI
 
 ```bash
-# AP estimation
+# Single-slice AP estimation
 langslice estimate <image> [--atlas ...] [--model ...] [--workflow ...]
+
+# Multi-slice group AP estimation (2-8 consecutive slices)
+langslice estimate-group <img1> <img2> ... [--interval 200] [--atlas ...]
+
+# Whole-brain AP estimation (folder of slices)
+langslice estimate-brain <image_folder> [--atlas ...] [--anchors ...]
 
 # Registration at a known AP position
 langslice register <image> --position <mm> [--workflow colored_segmentation] [--model ...] [--out ...]
