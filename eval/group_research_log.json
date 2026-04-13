@@ -1,0 +1,35 @@
+{
+  "experiment": "multi-slice-group-estimator-research",
+  "started": "2026-04-12",
+  "datasets": ["M01", "M09"],
+  "group_size": 4,
+  "results": [
+    {
+      "hypothesis": "baseline-pro",
+      "model": "gemini-3.1-pro-preview",
+      "M01": {"mae_mm": 0.1948, "median_error_mm": 0.185, "max_error_mm": 0.428, "pct_within_0.25mm": 0.6552, "pct_within_0.5mm": 1.0, "n_slices": 29, "n_failures": 0, "wall_time_s": 896.94},
+      "M09": {"mae_mm": 0.2275, "median_error_mm": 0.1895, "max_error_mm": 0.459, "pct_within_0.25mm": 0.7083, "pct_within_0.5mm": 1.0, "n_slices": 24, "n_failures": 3, "wall_time_s": 843.49},
+      "notes": "M09 had 3 failures from rate limiting. Pro rate limits too tight for research."
+    },
+    {
+      "hypothesis": "baseline-flash",
+      "model": "gemini-3-flash-preview",
+      "M01": {"mae_mm": 0.5623, "median_error_mm": 0.388, "max_error_mm": 1.467, "pct_within_0.25mm": 0.3793, "pct_within_0.5mm": 0.5517, "n_slices": 29, "n_failures": 0, "wall_time_s": 561.98},
+      "M09": {"mae_mm": 0.5532, "median_error_mm": 0.435, "max_error_mm": 1.415, "pct_within_0.25mm": 0.3448, "pct_within_0.5mm": 0.5862, "n_slices": 29, "n_failures": 2, "wall_time_s": 791.88},
+      "notes": "Research model. 3x worse than Pro but feasible for hypothesis sweeps."
+    },
+    {
+      "hypothesis": "baseline-flashlite",
+      "model": "gemini-3.1-flash-lite-preview",
+      "M01": {"mae_mm": 1.8288, "median_error_mm": 1.959, "max_error_mm": 2.934, "pct_within_0.25mm": 0.0, "pct_within_0.5mm": 0.0, "n_slices": 29, "n_failures": 0, "wall_time_s": 346.83},
+      "notes": "Unusable for this task. 0% within 1.0mm."
+    },
+    {
+      "hypothesis": "H1-per-slice-inspection",
+      "model": "gemini-3-flash-preview",
+      "status": "REJECTED",
+      "M01": {"mae_mm": 0.7708, "median_error_mm": 0.3135, "max_error_mm": 2.253, "pct_within_0.25mm": 0.2917, "pct_within_0.5mm": 0.5833, "n_slices": 24, "n_failures": 1, "wall_time_s": 842.90},
+      "notes": "37% worse MAE than Flash baseline. Catastrophic on some groups (2.25mm errors). Took 50% longer. Flash can't reliably follow complex per-slice verification. Codex review also flagged risk of hitting iteration limit escape hatch."
+    }
+  ]
+}
