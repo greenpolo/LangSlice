@@ -379,8 +379,10 @@ def _process_ap_function_calls(
     run_dir: str | None,
     state: _APLoopState,
     target_image: Image.Image | None = None,
-    media_resolution: str = "high",
+    media_resolution: str = "ultra_high",
     show_borders: bool = False,
+    send_individually: bool = True,
+    atlas_resolution: int = 1024,
     on_progress: Callable[[str], None] | None = None,
     on_trace: Callable[[dict[str, object]], None] | None = None,
 ) -> list[dict[str, object]]:
@@ -416,7 +418,7 @@ def _process_ap_function_calls(
             }
         )
 
-    def _append_image(image: Image.Image, ref_bytes: bytes) -> None:
+    def _append_image(image: Image.Image | None, ref_bytes: bytes) -> None:
         """Append an image as a separate content item with base64 encoding."""
         b64_data = base64.b64encode(ref_bytes).decode("utf-8")
         interaction_inputs.append(
@@ -469,41 +471,83 @@ def _process_ap_function_calls(
             if _is_narrow_multi_sweep(positions):
                 state.saw_narrow_sweep = True
 
-            grid_img = _build_atlas_grid(
-                atlas, positions, target_image=target_image, show_borders=show_borders,
-            )
-            grid_bytes = _image_to_bytes(grid_img)
+            pos_label = ", ".join(f"{p:.2f}" for p in positions)
             state.images_fetched += len(positions)
 
-            pos_label = ", ".join(f"{p:.2f}" for p in positions)
-            if run_dir:
-                grid_img.save(
-                    os.path.join(
-                        run_dir,
-                        f"tool_{iteration + 1:02d}_atlas_{len(positions)}x.jpg",
-                    ),
-                    quality=85,
+            if send_individually:
+                from langslice.estimation.google.ap_image_gen import (
+                    _fetch_atlas_slice_bytes,
                 )
 
-            _append_response(
-                call_id=call_id,
-                name=name,
-                response={
-                    "status": "ok",
-                    "positions_mm": positions,
-                    "description": (
-                        f"Grid of {len(positions)} atlas sections at: {pos_label} mm. "
-                        "Each cell is numbered and labeled with its AP position."
-                    ),
-                },
-            )
-            _append_image(grid_img, grid_bytes)
+                _append_response(
+                    call_id=call_id,
+                    name=name,
+                    response={
+                        "status": "ok",
+                        "positions_mm": positions,
+                        "description": (
+                            f"{len(positions)} atlas sections at: {pos_label} mm."
+                        ),
+                    },
+                )
+                for idx, pos in enumerate(positions):
+                    try:
+                        ref_bytes = _fetch_atlas_slice_bytes(
+                            atlas_obj, pos,
+                            max_long_edge=atlas_resolution,
+                            show_borders=show_borders,
+                        )
+                        interaction_inputs.append(
+                            {"type": "text", "text": f"[{idx + 1}] {pos:.2f} mm:"}
+                        )
+                        _append_image(None, ref_bytes)
+                    except (ValueError, IndexError):
+                        pass
+                if run_dir:
+                    # Save a grid for debug review even in individual mode
+                    grid_img = _build_atlas_grid(
+                        atlas, positions, show_borders=show_borders,
+                    )
+                    grid_img.save(
+                        os.path.join(
+                            run_dir,
+                            f"tool_{iteration + 1:02d}_atlas_{len(positions)}x.jpg",
+                        ),
+                        quality=85,
+                    )
+            else:
+                grid_img = _build_atlas_grid(
+                    atlas, positions, target_image=target_image, show_borders=show_borders,
+                )
+                grid_bytes = _image_to_bytes(grid_img)
+                if run_dir:
+                    grid_img.save(
+                        os.path.join(
+                            run_dir,
+                            f"tool_{iteration + 1:02d}_atlas_{len(positions)}x.jpg",
+                        ),
+                        quality=85,
+                    )
+                _append_response(
+                    call_id=call_id,
+                    name=name,
+                    response={
+                        "status": "ok",
+                        "positions_mm": positions,
+                        "description": (
+                            f"Grid of {len(positions)} atlas sections at: {pos_label} mm. "
+                            "Each cell is numbered and labeled with its AP position."
+                        ),
+                    },
+                )
+                _append_image(grid_img, grid_bytes)
+
             state.reasoning_log.append(
                 {
                     "iteration": iteration + 1,
                     "tool": name,
                     "args": args,
-                    "result": f"Grid: [{pos_label}] mm",
+                    "result": f"Atlas: [{pos_label}] mm",
                 }
             )
             _emit_trace(
@@ -511,10 +555,11 @@ def _process_ap_function_calls(
                 tool_result_event(
                     stage="ap",
                     tool_name=name,
-                    summary=f"Returned {len(positions)}-cell atlas grid",
+                    summary=f"Returned {len(positions)} atlas sections",
                     metadata={
                         "iteration": iteration + 1,
                         "positions": positions,
+                        "send_individually": send_individually,
                     },
                 ),
             )

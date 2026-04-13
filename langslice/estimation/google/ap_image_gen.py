@@ -253,7 +253,7 @@ def estimate_position_image_gen(
     show_borders: bool = False,
     anatomy_hints: str = "",
     slices_per_pass: int = _SLICES_PER_PASS,
-    send_individually: bool = False,
+    send_individually: bool = True,
     atlas_resolution: int = 512,
     center_mm: float | None = None,
     bounds: tuple[float, float] | None = None,
