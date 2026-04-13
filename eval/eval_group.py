@@ -96,9 +96,9 @@ def _parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         "--media-resolution",
-        default="ultra_high",
+        default=None,
         choices=["low", "medium", "high", "ultra_high"],
-        help="Gemini media resolution for input images (default: ultra_high)",
+        help="Gemini media resolution for input images (default: auto per model)",
     )
     p.add_argument(
         "--atlas-resolution",
@@ -122,6 +122,11 @@ def _parse_args() -> argparse.Namespace:
         "--json",
         action="store_true",
         help="Emit structured JSON to stdout",
+    )
+    p.add_argument(
+        "--parallel",
+        action="store_true",
+        help="Run all groups concurrently using threads",
     )
     return p.parse_args()
 
@@ -279,11 +284,13 @@ def _run_eval(args: argparse.Namespace) -> dict:
     n_fallbacks = 0
     total_wall_time_s = 0.0
 
-    for group_idx, group in enumerate(all_groups):
+    def _run_single_group(
+        group_idx: int, group: list[tuple[str, float]]
+    ) -> tuple[dict, dict[str, float]]:
+        """Run estimation for one group, return (record, estimates_dict)."""
         filenames = [fname for fname, _ in group]
         gt_positions = [ap_mm for _, ap_mm in group]
 
-        # Compute actual average interval from ground truth positions
         if len(gt_positions) >= 2:
             gaps = [
                 abs(gt_positions[i + 1] - gt_positions[i])
@@ -291,35 +298,27 @@ def _run_eval(args: argparse.Namespace) -> dict:
             ]
             avg_interval_mm = sum(gaps) / len(gaps)
         else:
-            avg_interval_mm = 0.200  # safe fallback for a lone slice
+            avg_interval_mm = 0.200
         interval_um = round(avg_interval_mm * 1000)
 
         def _progress(msg: str, gidx: int = group_idx) -> None:
             print(f"[eval] group {gidx + 1}: {msg}", file=sys.stderr)
 
-        _progress(
-            f"slices={filenames}, interval={interval_um}µm"
-        )
+        _progress(f"slices={filenames}, interval={interval_um}µm")
 
-        # Load images
         try:
             images = [_load_and_prep(args.images, fn) for fn in filenames]
         except Exception as exc:
             logger.error("Group %d: image load failed: %s", group_idx, exc)
-            n_failures += 1
-            group_records.append(
-                {
-                    "group_index": group_idx,
-                    "slices": filenames,
-                    "interval_um": interval_um,
-                    "wall_time_s": 0.0,
-                    "status": "image_load_failure",
-                    "error": str(exc),
-                }
-            )
-            continue
+            return {
+                "group_index": group_idx,
+                "slices": filenames,
+                "interval_um": interval_um,
+                "wall_time_s": 0.0,
+                "status": "image_load_failure",
+                "error": str(exc),
+            }, {}
 
-        # Call estimator
         t0 = time.time()
         try:
             result = estimate_group(
@@ -334,13 +333,10 @@ def _run_eval(args: argparse.Namespace) -> dict:
                 on_progress=_progress,
             )
             wall_time_s = round(time.time() - t0, 2)
-            total_wall_time_s += wall_time_s
 
-            # Detect fallback
             is_fallback = _FALLBACK_PHRASE in result.group_reasoning
 
             if is_fallback:
-                n_fallbacks += 1
                 _progress(f"fallback triggered after {wall_time_s:.1f}s")
             else:
                 _progress(
@@ -349,36 +345,59 @@ def _run_eval(args: argparse.Namespace) -> dict:
                     + " mm"
                 )
 
-            # Record estimates
+            group_estimates: dict[str, float] = {}
             for i, (fname, _) in enumerate(group):
                 if i < len(result.positions):
-                    estimates[fname] = result.positions[i].position_mm
+                    group_estimates[fname] = result.positions[i].position_mm
 
-            group_records.append(
-                {
-                    "group_index": group_idx,
-                    "slices": filenames,
-                    "interval_um": interval_um,
-                    "wall_time_s": wall_time_s,
-                    "fallback": is_fallback,
-                }
-            )
+            return {
+                "group_index": group_idx,
+                "slices": filenames,
+                "interval_um": interval_um,
+                "wall_time_s": wall_time_s,
+                "fallback": is_fallback,
+            }, group_estimates
 
         except Exception as exc:
             wall_time_s = round(time.time() - t0, 2)
-            total_wall_time_s += wall_time_s
             logger.error("Group %d: estimate_group() failed: %s", group_idx, exc)
-            n_failures += 1
-            group_records.append(
-                {
-                    "group_index": group_idx,
-                    "slices": filenames,
-                    "interval_um": interval_um,
-                    "wall_time_s": wall_time_s,
-                    "status": "estimation_failure",
-                    "error": str(exc),
-                }
-            )
+            return {
+                "group_index": group_idx,
+                "slices": filenames,
+                "interval_um": interval_um,
+                "wall_time_s": wall_time_s,
+                "status": "estimation_failure",
+                "error": str(exc),
+            }, {}
+
+    if args.parallel:
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        futures = {}
+        with ThreadPoolExecutor(max_workers=len(all_groups)) as executor:
+            for gidx, group in enumerate(all_groups):
+                fut = executor.submit(_run_single_group, gidx, group)
+                futures[fut] = gidx
+            for fut in as_completed(futures):
+                record, group_est = fut.result()
+                group_records.append(record)
+                estimates.update(group_est)
+                total_wall_time_s += record.get("wall_time_s", 0.0)
+                if record.get("status") in ("image_load_failure", "estimation_failure"):
+                    n_failures += 1
+                if record.get("fallback"):
+                    n_fallbacks += 1
+        group_records.sort(key=lambda r: r["group_index"])
+    else:
+        for group_idx, group in enumerate(all_groups):
+            record, group_est = _run_single_group(group_idx, group)
+            group_records.append(record)
+            estimates.update(group_est)
+            total_wall_time_s += record.get("wall_time_s", 0.0)
+            if record.get("status") in ("image_load_failure", "estimation_failure"):
+                n_failures += 1
+            if record.get("fallback"):
+                n_fallbacks += 1
 
     # ---- Metrics ----
     bench = compute_metrics(
