@@ -6,6 +6,10 @@ that switching providers only requires changing this file.
 """
 
 from langslice.estimation.google.ap_image_gen import estimate_position_image_gen
+from langslice.estimation.google.ap_multi_slice import (
+    MultiSliceResult,
+    estimate_group,
+)
 from langslice.estimation.google.ap_tool_use import (
     APResult,
     estimate_position,
@@ -21,7 +25,9 @@ estimate_ap = estimate_position
 
 __all__ = [
     "APResult",
+    "MultiSliceResult",
     "estimate_ap",
+    "estimate_group",
     "estimate_position",
     "estimate_position_image_gen",
     "APBatchCase",

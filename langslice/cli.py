@@ -212,7 +212,7 @@ def _add_estimate_parser(subparsers: argparse._SubParsersAction) -> None:
     est.add_argument("--temperature", type=float, default=None, help="Generation temperature")
     est.add_argument(
         "--media-resolution",
-        default="high",
+        default="ultra_high",
         choices=["low", "medium", "high", "ultra_high"],
         help="Gemini media resolution for input images",
     )
@@ -247,9 +247,9 @@ def _add_estimate_parser(subparsers: argparse._SubParsersAction) -> None:
     )
     est.add_argument("--json", action="store_true", help="Print result JSON to stdout")
     est.add_argument(
-        "--individual",
+        "--grid",
         action="store_true",
-        help="Send atlas slices as individual images instead of a grid",
+        help="Send atlas slices as a composite grid instead of individually (default: individual)",
     )
     est.add_argument(
         "--atlas-resolution",
@@ -257,6 +257,185 @@ def _add_estimate_parser(subparsers: argparse._SubParsersAction) -> None:
         default=512,
         help="Max long-edge pixels for atlas slices (individual mode)",
     )
+
+
+def _add_estimate_group_parser(subparsers: argparse._SubParsersAction) -> None:
+    p = subparsers.add_parser(
+        "estimate-group",
+        help="Estimate AP positions for a group of consecutive brain slices",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    p.add_argument(
+        "images",
+        nargs="+",
+        help="Slice images in anterior-to-posterior order (2-8 images)",
+    )
+    p.add_argument("--atlas", default="allen_mouse_25um", help="BrainGlobe atlas name")
+    p.add_argument(
+        "--interval", type=int, default=200, help="Section interval in microns (center-to-center)"
+    )
+    p.add_argument("--thickness", type=int, default=50, help="Slice thickness in microns")
+    p.add_argument("--model", default=None, help="Gemini model name")
+    p.add_argument(
+        "--thinking",
+        default=None,
+        choices=["MINIMAL", "LOW", "MEDIUM", "HIGH"],
+        help="Gemini thinking level",
+    )
+    p.add_argument("--temperature", type=float, default=None, help="Generation temperature")
+    p.add_argument(
+        "--media-resolution",
+        default="ultra_high",
+        choices=["low", "medium", "high", "ultra_high"],
+        help="Gemini media resolution for input images",
+    )
+    p.add_argument(
+        "--max-iterations",
+        type=int,
+        default=25,
+        help="Max tool-loop iterations",
+    )
+    p.add_argument(
+        "--preprocess",
+        default="auto",
+        choices=["auto", "none"],
+        help="Image preprocessing: 'auto' applies adaptive CLAHE + brightness normalization",
+    )
+    p.add_argument(
+        "--borders",
+        action="store_true",
+        help="Enable atlas region borders (off by default)",
+    )
+    p.add_argument(
+        "--grid",
+        action="store_true",
+        help="Send atlas slices as a composite grid instead of individually (default: individual)",
+    )
+    p.add_argument(
+        "--atlas-resolution",
+        type=int,
+        default=1024,
+        help="Max long-edge pixels for atlas slices (individual mode)",
+    )
+    p.add_argument(
+        "--vlm-resolution",
+        type=int,
+        default=2048,
+        help="Max long-edge pixels for VLM",
+    )
+    p.add_argument("--out", default=None, help="Output directory for debug artifacts")
+    p.add_argument("--json", action="store_true", help="Print result JSON to stdout")
+
+
+def _run_estimate_group(args: argparse.Namespace) -> None:
+    import json
+    from pathlib import Path
+
+    from PIL import Image
+
+    import langslice.vlm_config as vlm_config
+    from langslice.estimation import estimate_group
+    from langslice.image_prep import adaptive_preprocess, normalize_image, prepare_image_for_vlm
+
+    # Configure model.
+    if args.model:
+        vlm_config.set_model_name(args.model)
+    if args.temperature is not None:
+        vlm_config.set_temperature(args.temperature)
+    if args.thinking:
+        vlm_config.set_thinking_level(args.thinking)
+
+    # Load and preprocess images: normalize → downscale → CLAHE
+    # (same order as single-slice CLI for experimental consistency).
+    images: list[Image.Image] = []
+    for path in args.images:
+        raw = Image.open(path)
+        canonical = normalize_image(raw)
+        original_size = canonical.size
+        prep = prepare_image_for_vlm(canonical, max_long_edge=args.vlm_resolution)
+        img = prep.image
+        if args.preprocess == "auto":
+            img = adaptive_preprocess(img)
+        images.append(img)
+        print(
+            f"  Loaded {path}: {original_size[0]}x{original_size[1]} -> "
+            f"{img.size[0]}x{img.size[1]}px (scale={prep.scale_factor:.3f})"
+        )
+
+    n = len(images)
+    if not 2 <= n <= 8:
+        print(f"Error: expected 2-8 images, got {n}")
+        sys.exit(1)
+
+    interval_mm = args.interval / 1000.0
+    total_span = (n - 1) * interval_mm
+
+    print("\nGroup estimation:")
+    print(f"  {n} slices, interval {args.interval}\u00b5m ({interval_mm:.3f}mm)")
+    print(f"  Expected span: {total_span:.2f}mm")
+    print(f"  Atlas: {args.atlas}")
+    from langslice.estimation.google.ap_multi_slice import _DEFAULT_MODEL
+    effective_model = args.model or _DEFAULT_MODEL
+    print(f"  Model: {effective_model}")
+    print(f"  Max iterations: {args.max_iterations}")
+    print()
+
+    debug_dir = None
+    if args.out:
+        out_dir = Path(args.out)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        debug_dir = str(out_dir)
+
+    def on_progress(msg: str) -> None:
+        print(f"  {msg}")
+
+    result = estimate_group(
+        images=images,
+        atlas_name=args.atlas,
+        interval_um=args.interval,
+        thickness_um=args.thickness,
+        max_iterations=args.max_iterations,
+        media_resolution=args.media_resolution,
+        model_name=args.model,
+        show_borders=args.borders,
+        send_individually=not args.grid,
+        atlas_resolution=args.atlas_resolution,
+        on_progress=on_progress,
+        debug_dir=debug_dir,
+    )
+
+    # Summary.
+    print()
+    print("Group estimation complete:")
+    for i, ap in enumerate(result.positions):
+        print(f"  Slice {i + 1}: {ap.position_mm:.3f} mm")
+    if len(result.positions) > 1:
+        intervals = [
+            abs(result.positions[i + 1].position_mm - result.positions[i].position_mm)
+            for i in range(len(result.positions) - 1)
+        ]
+        mean_interval = sum(intervals) / len(intervals)
+        print(f"  Mean interval: {mean_interval:.3f} mm (expected: {interval_mm:.3f} mm)")
+    print(f"  Reasoning: {result.group_reasoning}")
+    if result.debug_dir:
+        print(f"  Artifacts: {result.debug_dir}")
+
+    if args.json:
+        payload = {
+            "slices": [
+                {
+                    "slice_index": i + 1,
+                    "image": args.images[i],
+                    "position_mm": ap.position_mm,
+                }
+                for i, ap in enumerate(result.positions)
+            ],
+            "group_reasoning": result.group_reasoning,
+            "interval_um": args.interval,
+            "thickness_um": args.thickness,
+        }
+        print()
+        print(json.dumps(payload, indent=2))
 
 
 def _add_estimate_brain_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -408,7 +587,7 @@ def _run_estimate(args: argparse.Namespace) -> None:
             atlas_name=args.atlas,
             on_progress=on_progress,
             show_borders=args.borders,
-            send_individually=args.individual,
+            send_individually=not args.grid,
             atlas_resolution=args.atlas_resolution,
         )
     else:
@@ -419,6 +598,8 @@ def _run_estimate(args: argparse.Namespace) -> None:
             max_iterations=args.max_iterations,
             media_resolution=args.media_resolution,
             show_borders=args.borders,
+            send_individually=not args.grid,
+            atlas_resolution=args.atlas_resolution,
         )
 
     # Summary.
@@ -458,6 +639,9 @@ def main():
     # langslice estimate
     _add_estimate_parser(subparsers)
 
+    # langslice estimate-group
+    _add_estimate_group_parser(subparsers)
+
     # langslice estimate-brain
     _add_estimate_brain_parser(subparsers)
 
@@ -477,6 +661,8 @@ def main():
         _run_register(args)
     elif args.command == "estimate":
         _run_estimate(args)
+    elif args.command == "estimate-group":
+        _run_estimate_group(args)
     elif args.command == "estimate-brain":
         _run_estimate_brain(args)
     else:
