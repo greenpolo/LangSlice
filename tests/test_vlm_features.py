@@ -148,6 +148,32 @@ def test_build_ap_batch_requests() -> None:
     assert getattr(file_data, "file_uri", None) == "gs://bucket/trace-1.jpg"
 
 
+def test_is_gemma_model_detects_gemma_4():
+    from langslice.vlm_config import is_gemma_model
+    assert is_gemma_model("gemma-4-31b-it") is True
+    assert is_gemma_model("gemma-4-26b-a4b-it") is True
+    assert is_gemma_model("gemini-3-flash-preview") is False
+    assert is_gemma_model(None) is False
+
+
+def test_build_thinking_config_gemma_maps_to_high_or_none():
+    from langslice.vlm_config import build_thinking_config
+    cfg = build_thinking_config("gemma-4-31b-it", "HIGH")
+    assert cfg is not None
+    cfg = build_thinking_config("gemma-4-31b-it", "MEDIUM")
+    assert cfg is not None
+    cfg = build_thinking_config("gemma-4-31b-it", "LOW")
+    assert cfg is None
+    cfg = build_thinking_config("gemma-4-31b-it", "MINIMAL")
+    assert cfg is None
+
+
+def test_build_thinking_config_gemini_passes_through():
+    from langslice.vlm_config import build_thinking_config
+    cfg = build_thinking_config("gemini-3-flash-preview", "LOW")
+    assert cfg is not None
+
+
 def test_create_ap_batch_job_uses_vertex_batch_client(monkeypatch) -> None:
     captured: dict[str, object] = {}
 

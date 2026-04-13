@@ -58,10 +58,17 @@ AVAILABLE_MODELS: list[str] = [
     "gemini-3.1-pro-preview",
     "gemini-3-pro-image-preview",
     "gemini-3.1-flash-image-preview",
+    "gemma-4-31b-it",
+    "gemma-4-26b-a4b-it",
 ]
 
 CODE_EXECUTION_MODELS: set[str] = {
     "gemini-3-flash-preview",
+}
+
+GEMMA_MODELS: set[str] = {
+    "gemma-4-31b-it",
+    "gemma-4-26b-a4b-it",
 }
 
 IMAGE_GENERATION_MODELS: set[str] = {
@@ -108,6 +115,27 @@ def set_code_execution_enabled(enabled: bool) -> None:
     """Set whether Gemini code execution should be enabled when supported."""
     _runtime.code_execution_enabled = bool(enabled)
     logger.info("Code execution enabled: %s", bool(enabled))
+
+
+def is_gemma_model(model_name: str | None) -> bool:
+    """Return True when *model_name* is a Gemma open model."""
+    if model_name is None:
+        return False
+    return str(model_name).strip() in GEMMA_MODELS
+
+
+def build_thinking_config(model_name: str, thinking_level: str) -> object | None:
+    """Build a ThinkingConfig appropriate for the model.
+
+    Gemma 4 only supports thinking on (HIGH) or off (None).
+    Gemini supports all graduated levels (MINIMAL, LOW, MEDIUM, HIGH).
+    """
+    types_mod = importlib.import_module("google.genai.types")
+    if is_gemma_model(model_name):
+        if thinking_level in ("HIGH", "MEDIUM"):
+            return types_mod.ThinkingConfig(thinking_level="HIGH")
+        return None
+    return types_mod.ThinkingConfig(thinking_level=thinking_level)
 
 
 def is_image_generation_model(model_name: str | None) -> bool:
