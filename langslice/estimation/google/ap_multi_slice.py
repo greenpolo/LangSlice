@@ -45,7 +45,6 @@ from langslice.estimation.google.ap_tool_use import (
 from langslice.estimation.google.tool_definitions import (
     _build_atlas_grid,
     _extract_function_calls,
-    _get_regions_at_position,
     _is_broad_multi_sweep,
     _is_narrow_multi_sweep,
 )
@@ -106,13 +105,7 @@ def _group_tool_declarations(n_slices: int) -> list[types.Tool]:
     return [types.Tool(function_declarations=[
         types.FunctionDeclaration(
             name="fetch_atlas",
-            description=(
-                "Fetch atlas coronal sections at specific AP positions. Returns "
-                "a single labeled grid image for direct visual comparison. You "
-                "choose exactly which positions to see (1 to 8). Use this to "
-                "compare multiple positions at once — you can space them however "
-                "you like (evenly, densely around a candidate, etc.)."
-            ),
+            description="Fetch 1-8 atlas coronal sections as a labeled grid.",
             parameters_json_schema={
                 "type": "object",
                 "properties": {
@@ -121,43 +114,16 @@ def _group_tool_declarations(n_slices: int) -> list[types.Tool]:
                         "items": {"type": "number"},
                         "minItems": 1,
                         "maxItems": 8,
-                        "description": "List of AP positions in mm to fetch (1-8 positions).",
+                        "description": "AP positions in mm (1-8).",
                     },
                 },
                 "required": ["positions_mm"],
             },
         ),
         types.FunctionDeclaration(
-            name="get_atlas_info",
-            description=(
-                "Get atlas metadata including the valid AP coordinate range, "
-                "resolution, species, and number of slices."
-            ),
-            parameters_json_schema={"type": "object", "properties": {}},
-        ),
-        types.FunctionDeclaration(
-            name="get_region_names",
-            description=(
-                "Get the names and acronyms of brain regions visible at a "
-                "specific AP position. Useful for confirming anatomical identity."
-            ),
-            parameters_json_schema={
-                "type": "object",
-                "properties": {
-                    "position_mm": {
-                        "type": "number",
-                        "description": "AP position in mm from the anterior edge",
-                    },
-                },
-                "required": ["position_mm"],
-            },
-        ),
-        types.FunctionDeclaration(
             name="submit_group_estimate",
             description=(
-                f"Submit your final AP position estimates for all {n_slices} "
-                "slices. Provide one position per slice, in order (Slice 1 "
-                "first). Only call this when you are confident."
+                f"Submit final AP estimates for all {n_slices} slices."
             ),
             parameters_json_schema={
                 "type": "object",
@@ -166,13 +132,13 @@ def _group_tool_declarations(n_slices: int) -> list[types.Tool]:
                         "type": "array",
                         "items": {"type": "number"},
                         "description": (
-                            f"Estimated AP positions in mm for all {n_slices} "
-                            "slices, in order (Slice 1 first)."
+                            f"AP positions in mm for all {n_slices} slices, "
+                            "in order."
                         ),
                     },
                     "reasoning": {
                         "type": "string",
-                        "description": "Reasoning for the group estimate",
+                        "description": "Brief reasoning.",
                     },
                 },
                 "required": ["positions_mm", "reasoning"],
@@ -392,74 +358,6 @@ def _process_group_function_calls_gc(
                 ),
             )
 
-        elif name == "get_atlas_info":
-            from langslice.atlas.core import get_atlas_info as _get_atlas_info_core
-
-            info = _get_atlas_info_core(atlas_obj)
-            info["coordinate_note"] = (
-                "0.0mm is extreme Anterior; higher mm is more Posterior."
-            )
-            _append_response(call_id=call_id, name=name, response=info)
-            state.reasoning_log.append(
-                {
-                    "iteration": iteration + 1,
-                    "tool": name,
-                    "args": {},
-                    "result": str(info),
-                }
-            )
-            _emit_trace(
-                on_trace,
-                tool_result_event(
-                    stage="ap_group",
-                    tool_name=name,
-                    summary="Atlas metadata returned",
-                    parts=[json_part(info, label="Atlas info")],
-                    metadata={"iteration": iteration + 1},
-                ),
-            )
-            if on_progress:
-                on_progress(f"  -> Atlas range: [{pos_lo:.2f}, {pos_hi:.2f}] mm")
-
-        elif name == "get_region_names":
-            pos = float(args.get("position_mm", (pos_lo + pos_hi) / 2))
-            regions = _get_regions_at_position(atlas, pos)
-            _append_response(
-                call_id=call_id,
-                name=name,
-                response={"position_mm": pos, "regions": regions},
-            )
-            state.reasoning_log.append(
-                {
-                    "iteration": iteration + 1,
-                    "tool": name,
-                    "args": args,
-                    "result": f"{len(regions)} regions",
-                }
-            )
-            _emit_trace(
-                on_trace,
-                tool_result_event(
-                    stage="ap_group",
-                    tool_name=name,
-                    summary=(
-                        f"Returned {len(regions)} regions at {pos:.2f} mm"
-                    ),
-                    parts=[
-                        json_part(
-                            {"position_mm": pos, "regions": regions},
-                            label="Regions",
-                        )
-                    ],
-                    metadata={
-                        "iteration": iteration + 1,
-                        "position_mm": round(pos, 3),
-                    },
-                ),
-            )
-            if on_progress:
-                on_progress(f"  -> {len(regions)} regions at {pos:.2f}mm")
-
         elif name == "submit_group_estimate":
             positions_list = args.get("positions_mm", [])
             if not isinstance(positions_list, list):
@@ -637,8 +535,7 @@ def _process_group_function_calls_gc(
                     response={
                         "status": "error",
                         "error": (
-                            "Run a narrowed `fetch_atlas` sweep around your "
-                            "best candidate before submitting."
+                            "Run a narrow `fetch_atlas` sweep before submitting."
                         ),
                     },
                     is_error=True,
@@ -715,7 +612,7 @@ def estimate_group(
     thickness_um: int = 50,
     *,
     max_iterations: int = 25,
-    media_resolution: str = "low",
+    media_resolution: str | None = None,
     model_name: str | None = None,
     show_borders: bool = False,
     send_individually: bool = False,
@@ -822,6 +719,8 @@ def estimate_group(
     )
 
     # --- System prompt ---
+    atlas_obj_meta = cast(Any, atlas)
+    species = atlas_obj_meta.metadata.get("species", "mouse")
     system_instruction = (
         "You are an expert neuroanatomist. You are given "
             f"{n_slices} consecutive histology brain slice images from the same "
@@ -831,12 +730,11 @@ def estimate_group(
             f"- Slice thickness: {thickness_um} µm\n"
             f"- Section interval: {interval_um} µm (center-to-center)\n"
             f"- Consecutive slices are approximately {interval_mm:.3f} mm apart\n\n"
+            f"Atlas: {atlas_name} ({species}). "
+            f"Valid AP range: {pos_lo:.2f}–{pos_hi:.2f} mm. "
+            "0.0 mm = anterior (olfactory bulb); higher = posterior.\n\n"
             "Your task: determine the AP position of EACH slice in the reference "
             "atlas.\n\n"
-            "Coordinate system: 0.0 mm = extreme anterior edge (olfactory bulb); "
-            "larger mm values = more posterior (toward cerebellum/brainstem).\n\n"
-            "You have tools to fetch atlas reference images at any AP coordinate, "
-            "query brain regions at a position, and get atlas metadata.\n\n"
             "STRATEGY:\n"
             "1. IN YOUR FIRST RESPONSE, do two things simultaneously:\n"
             "   a) Examine all slices and describe 2-3 prominent anatomical "
@@ -866,7 +764,11 @@ def estimate_group(
 
     # --- Loop setup ---
     temperature = vlm_config.TEMPERATURE
-    thinking_level = vlm_config.THINKING_LEVEL
+    effective_model = model_name or _DEFAULT_MODEL
+    _is_pro = "pro" in effective_model.lower()
+    thinking_level = "HIGH" if _is_pro else "MEDIUM"
+    if media_resolution is None:
+        media_resolution = "high" if _is_pro else "low"
     max_iterations = max(1, int(max_iterations))
 
     state = _GroupLoopState(
@@ -934,7 +836,6 @@ def estimate_group(
         tools = _group_tool_declarations(n_slices)
 
         # --- Config ---
-        effective_model = model_name or _DEFAULT_MODEL
         thinking_cfg = vlm_config.build_thinking_config(
             effective_model, thinking_level
         )
@@ -1068,8 +969,7 @@ def estimate_group(
                             "You wrote a long text response instead of "
                             "calling a tool. Do NOT repeat this. Use your "
                             "internal reasoning, then call a tool: "
-                            "`fetch_atlas`, `get_region_names`, or "
-                            "`submit_group_estimate`."
+                            "`fetch_atlas` or `submit_group_estimate`."
                         )
                     else:
                         if text_preview and on_progress:
