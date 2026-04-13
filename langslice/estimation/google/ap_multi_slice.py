@@ -1,19 +1,17 @@
-"""Multi-slice AP estimation using Gemini Interactions API.
+"""Multi-slice AP estimation using Gemini generate_content API.
 
 Given a group of 2-8 consecutive brain slice images with known section
 interval, estimates AP positions for all slices simultaneously.  The model
 sees all slices at once, which provides geometric constraints that
 single-slice estimation cannot leverage.
 
-Uses the same Interactions API tool-use loop as ``ap_tool_use.py`` but with
+Uses the same generate_content loop pattern as ``ap_tool_use.py`` but with
 a group-aware system prompt and a ``submit_group_estimate`` tool.
 """
 
 from __future__ import annotations
 
-import base64
 import io
-import json
 import logging
 import os
 import time
@@ -37,22 +35,22 @@ from langslice.agent_trace import (
 from langslice.estimation.google.ap_tool_use import (
     APResult,
     _emit_trace,
-    _extract_interaction_text_outputs,
-    _extract_interaction_usage_metadata,
+    _extract_text_and_thoughts,
+    _extract_usage_metadata,
     _format_usage_metadata,
+    _history_metrics,
     _image_to_bytes,
-    _interaction_input_metrics,
-    _retry_interaction,
     _wait_for_uploaded_file,
 )
 from langslice.estimation.google.tool_definitions import (
     _build_atlas_grid,
-    _extract_function_calls,
+    _extract_function_calls_gc,
     _get_regions_at_position,
     _is_broad_multi_sweep,
     _is_narrow_multi_sweep,
 )
 from langslice.image_prep import normalize_image, prepare_image_for_vlm
+from langslice.retry import retry_with_backoff
 from langslice.vlm_config import get_client
 
 logger = logging.getLogger(__name__)
@@ -103,48 +101,47 @@ class _GroupLoopState:
 # ---------------------------------------------------------------------------
 
 
-def _group_tool_dicts(n_slices: int) -> list[dict[str, Any]]:
-    """Tool declarations for multi-slice estimation."""
-    return [
-        {
-            "type": "function",
-            "name": "fetch_atlas",
-            "description": (
+def _group_tool_declarations(n_slices: int) -> list[types.Tool]:
+    """Tool declarations for multi-slice estimation (generate_content format)."""
+    return [types.Tool(function_declarations=[
+        types.FunctionDeclaration(
+            name="fetch_atlas",
+            description=(
                 "Fetch atlas coronal sections at specific AP positions. Returns "
                 "a single labeled grid image for direct visual comparison. You "
                 "choose exactly which positions to see (1 to 8). Use this to "
                 "compare multiple positions at once — you can space them however "
                 "you like (evenly, densely around a candidate, etc.)."
             ),
-            "parameters": {
+            parameters_json_schema={
                 "type": "object",
                 "properties": {
                     "positions_mm": {
                         "type": "array",
                         "items": {"type": "number"},
+                        "minItems": 1,
+                        "maxItems": 8,
                         "description": "List of AP positions in mm to fetch (1-8 positions).",
                     },
                 },
                 "required": ["positions_mm"],
             },
-        },
-        {
-            "type": "function",
-            "name": "get_atlas_info",
-            "description": (
+        ),
+        types.FunctionDeclaration(
+            name="get_atlas_info",
+            description=(
                 "Get atlas metadata including the valid AP coordinate range, "
                 "resolution, species, and number of slices."
             ),
-            "parameters": {"type": "object", "properties": {}},
-        },
-        {
-            "type": "function",
-            "name": "get_region_names",
-            "description": (
+            parameters_json_schema={"type": "object", "properties": {}},
+        ),
+        types.FunctionDeclaration(
+            name="get_region_names",
+            description=(
                 "Get the names and acronyms of brain regions visible at a "
                 "specific AP position. Useful for confirming anatomical identity."
             ),
-            "parameters": {
+            parameters_json_schema={
                 "type": "object",
                 "properties": {
                     "position_mm": {
@@ -154,16 +151,15 @@ def _group_tool_dicts(n_slices: int) -> list[dict[str, Any]]:
                 },
                 "required": ["position_mm"],
             },
-        },
-        {
-            "type": "function",
-            "name": "submit_group_estimate",
-            "description": (
+        ),
+        types.FunctionDeclaration(
+            name="submit_group_estimate",
+            description=(
                 f"Submit your final AP position estimates for all {n_slices} "
                 "slices. Provide one position per slice, in order (Slice 1 "
                 "first). Only call this when you are confident."
             ),
-            "parameters": {
+            parameters_json_schema={
                 "type": "object",
                 "properties": {
                     "positions_mm": {
@@ -181,8 +177,8 @@ def _group_tool_dicts(n_slices: int) -> list[dict[str, Any]]:
                 },
                 "required": ["positions_mm", "reasoning"],
             },
-        },
-    ]
+        ),
+    ])]
 
 
 # ---------------------------------------------------------------------------
@@ -213,7 +209,7 @@ def _build_group_nudge_text(state: _GroupLoopState) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _process_group_function_calls(
+def _process_group_function_calls_gc(
     function_calls: list[dict[str, object]],
     *,
     iteration: int,
@@ -222,45 +218,33 @@ def _process_group_function_calls(
     pos_hi: float,
     run_dir: str | None,
     state: _GroupLoopState,
-    media_resolution: str = "low",
     show_borders: bool = False,
     send_individually: bool = False,
     atlas_resolution: int = 1024,
     on_progress: Callable[[str], None] | None = None,
     on_trace: Callable[[dict[str, object]], None] | None = None,
-) -> list[dict[str, object]]:
-    """Process tool calls and return Interactions API content items."""
+) -> list[types.Part]:
+    """Process tool calls and return generate_content Parts.
+
+    Returns a flat list of Parts.  The caller splits them:
+    - Parts with ``.function_response`` -> ``Content(role='tool')``
+    - Other Parts (text labels, images) -> ``Content(role='user')``
+    """
     atlas_obj = cast(Any, atlas)
-    interaction_inputs: list[dict[str, object]] = []
+    result_parts: list[types.Part] = []
 
     def _append_response(
         *,
-        call_id: object,
+        call_id: object,  # noqa: ARG001 — kept for parity
         name: str,
         response: dict[str, object],
-        is_error: bool = False,
+        is_error: bool = False,  # noqa: ARG001 — kept for parity
     ) -> None:
-        interaction_inputs.append(
-            {
-                "type": "function_result",
-                "call_id": str(call_id)
-                if isinstance(call_id, str) and call_id
-                else f"{iteration + 1}:{name}",
-                "name": name,
-                "result": json.dumps(response),
-                "is_error": is_error,
-            }
-        )
-
-    def _append_image(ref_bytes: bytes) -> None:
-        b64_data = base64.b64encode(ref_bytes).decode("utf-8")
-        interaction_inputs.append(
-            {
-                "type": "image",
-                "data": b64_data,
-                "mime_type": "image/jpeg",
-                "resolution": media_resolution,
-            }
+        result_parts.append(
+            types.Part.from_function_response(
+                name=name,
+                response=response,
+            )
         )
 
     for call in function_calls:
@@ -331,18 +315,17 @@ def _process_group_function_calls(
                 for idx, pos in enumerate(positions):
                     try:
                         ref_bytes = _fetch_atlas_slice_bytes(
-                            cast(Any, atlas),
+                            atlas_obj,
                             pos,
                             max_long_edge=atlas_resolution,
                             show_borders=show_borders,
                         )
-                        interaction_inputs.append(
-                            {
-                                "type": "text",
-                                "text": f"[{idx + 1}] {pos:.2f} mm:",
-                            }
+                        result_parts.append(
+                            types.Part.from_text(text=f"[{idx + 1}] {pos:.2f} mm:")
                         )
-                        _append_image(ref_bytes)
+                        result_parts.append(
+                            types.Part.from_bytes(data=ref_bytes, mime_type="image/jpeg")
+                        )
                     except (ValueError, IndexError):
                         pass
                 if run_dir:
@@ -383,7 +366,9 @@ def _process_group_function_calls(
                         ),
                     },
                 )
-                _append_image(grid_bytes)
+                result_parts.append(
+                    types.Part.from_bytes(data=grid_bytes, mime_type="image/jpeg")
+                )
 
             state.reasoning_log.append(
                 {
@@ -715,7 +700,7 @@ def _process_group_function_calls(
                 is_error=True,
             )
 
-    return interaction_inputs
+    return result_parts
 
 
 # ---------------------------------------------------------------------------
@@ -755,9 +740,7 @@ def estimate_group(
     thickness_um
         Slice thickness in microns.
     max_iterations
-        Maximum Interactions API turns.
-    media_resolution
-        Gemini input image quality.
+        Maximum generate_content turns.
     model_name
         Override the default Gemini model.
     """
@@ -891,7 +874,6 @@ def estimate_group(
         max_iterations=max_iterations,
         interval_mm=interval_mm,
     )
-    interaction_trace: list[dict[str, object]] = []
     uploaded_files: list[Any] = []
 
     try:
@@ -927,47 +909,56 @@ def estimate_group(
 
         _progress(f"Uploaded {n_slices} slices to Gemini File API")
 
-        # --- Build initial input ---
-        initial_input: list[dict[str, object]] = [
-            {
-                "type": "text",
-                "text": (
+        # --- Build initial contents ---
+        initial_parts: list[types.Part] = [
+            types.Part.from_text(
+                text=(
                     f"Here are {n_slices} consecutive brain slices, ordered "
                     f"anterior to posterior. Section interval: {interval_um} "
                     f"\u00b5m ({interval_mm:.3f} mm). Slice thickness: "
                     f"{thickness_um} \u00b5m. Determine the AP position of "
                     "each slice in the atlas."
                 ),
-            },
+            ),
         ]
         for i, uri in enumerate(file_uris):
-            initial_input.append(
-                {"type": "text", "text": f"Slice {i + 1}:"}
+            initial_parts.append(
+                types.Part.from_text(text=f"Slice {i + 1}:")
             )
-            initial_input.append(
-                {
-                    "type": "image",
-                    "uri": uri,
-                    "mime_type": "image/jpeg",
-                    "resolution": media_resolution,
-                }
+            initial_parts.append(
+                types.Part.from_uri(file_uri=uri, mime_type="image/jpeg")
             )
+        initial_content = types.Content(role="user", parts=initial_parts)
 
         # --- Tool declarations ---
-        tools = _group_tool_dicts(n_slices)
+        tools = _group_tool_declarations(n_slices)
 
-        # --- Main Interactions API loop (with one retry on timeout/fallback) ---
+        # --- Config ---
+        effective_model = model_name or _DEFAULT_MODEL
+        thinking_cfg = vlm_config.build_thinking_config(
+            effective_model, thinking_level
+        )
+        config = types.GenerateContentConfig(
+            system_instruction=system_instruction,
+            temperature=temperature,
+            max_output_tokens=8000,
+            thinking_config=cast(Any, thinking_cfg),
+            tools=cast(Any, tools),
+        )
+
+        # --- Main generate_content loop (with one retry on failure) ---
         for attempt in range(2):
             if attempt == 1:
                 _progress(
-                    "Retrying group estimation (attempt 2/2, fresh interaction)..."
+                    "Retrying group estimation (attempt 2/2, fresh history)..."
                 )
                 state = _GroupLoopState(
                     n_slices=n_slices,
                     max_iterations=max_iterations,
                     interval_mm=interval_mm,
                 )
-                interaction_trace = []
+
+            contents: list[types.Content] = [initial_content]
 
             _progress(
                 f"Starting group estimation "
@@ -976,86 +967,52 @@ def estimate_group(
                 + ")..."
             )
 
-            previous_interaction_id: str | None = None
-            next_input: list[dict[str, object]] = initial_input
-
             for iteration in range(max_iterations):
-                request_metrics = _interaction_input_metrics(next_input)
+                request_metrics = _history_metrics(contents)
                 turn_metric: dict[str, object] = {
                     "iteration": iteration + 1,
                     "request": request_metrics,
-                    "mode": "interactions",
+                    "mode": "generate_content",
                 }
 
                 if on_progress:
                     part_count = request_metrics["part_count"]
                     img_count = request_metrics["image_parts"]
+                    img_bytes = request_metrics["image_bytes"]
                     _progress(
-                        f"Turn {iteration + 1}: "
-                        f"{part_count} parts, {img_count} images"
-                    )
-
-                create_kwargs: dict[str, Any] = {
-                    "model": model_name or _DEFAULT_MODEL,
-                    "input": next_input,
-                    "tools": tools,
-                    "system_instruction": system_instruction,
-                    "generation_config": {
-                        "temperature": temperature,
-                        "thinking_level": thinking_level,
-                        "max_output_tokens": 8000,
-                    },
-                }
-                if previous_interaction_id is not None:
-                    create_kwargs["previous_interaction_id"] = (
-                        previous_interaction_id
+                        f"generate_content turn {iteration + 1}: "
+                        f"sending {part_count} parts, "
+                        f"{img_count} images ({img_bytes} bytes)"
                     )
 
                 started_at = time.perf_counter()
-                interaction = _retry_interaction(
-                    client,
-                    create_kwargs,
+                response = retry_with_backoff(
+                    lambda _c=contents: client.models.generate_content(
+                        model=effective_model,
+                        contents=_c,
+                        config=config,
+                    ),
                     request_label=f"Group estimation turn {iteration + 1}",
                     on_progress=_progress,
                 )
                 elapsed = round(time.perf_counter() - started_at, 3)
                 turn_metric["wall_time_s"] = elapsed
-                usage_metadata = _extract_interaction_usage_metadata(interaction)
+                usage_metadata = _extract_usage_metadata(response)
                 turn_metric["usage_metadata"] = usage_metadata
                 state.turn_metrics.append(turn_metric)
-                previous_interaction_id = cast(
-                    str | None, getattr(interaction, "id", None)
-                )
 
                 _progress(
                     f"Turn {iteration + 1} in {elapsed}s; "
                     f"{_format_usage_metadata(usage_metadata)}"
                 )
 
-                # Record interaction trace
-                outputs = getattr(interaction, "outputs", None) or []
-                interaction_trace.append(
-                    {
-                        "iteration": iteration + 1,
-                        "input": next_input,
-                        "outputs": [
-                            (
-                                getattr(output, "model_dump", lambda: None)()
-                                if callable(getattr(output, "model_dump", None))
-                                else {
-                                    "type": getattr(output, "type", None),
-                                    "text": getattr(output, "text", None),
-                                    "name": getattr(output, "name", None),
-                                }
-                            )
-                            for output in outputs
-                        ],
-                    }
-                )
+                # Append model response to history
+                model_content = response.candidates[0].content
+                contents.append(model_content)
 
                 # Emit trace for text/thought outputs
                 text_outputs, thought_outputs = (
-                    _extract_interaction_text_outputs(interaction)
+                    _extract_text_and_thoughts(model_content)
                 )
                 if text_outputs or thought_outputs:
                     trace_parts: list[dict[str, object]] = []
@@ -1090,8 +1047,8 @@ def estimate_group(
                     )
 
                 # Extract function calls
-                function_calls, text_preview = _extract_function_calls(
-                    interaction
+                function_calls, text_preview = _extract_function_calls_gc(
+                    response
                 )
 
                 if not function_calls:
@@ -1120,13 +1077,13 @@ def estimate_group(
                                 f"Model text: {text_preview[:200]}..."
                             )
                         nudge = _build_group_nudge_text(state)
-                    next_input = [
-                        {"type": "text", "text": nudge}
-                    ]
+                    contents.append(types.Content(role="user", parts=[
+                        types.Part.from_text(text=nudge),
+                    ]))
                     continue
 
-                # Process tool calls
-                interaction_inputs = _process_group_function_calls(
+                # Process tool calls — returns list[Part]
+                result_parts = _process_group_function_calls_gc(
                     function_calls,
                     iteration=iteration,
                     atlas=atlas,
@@ -1134,7 +1091,6 @@ def estimate_group(
                     pos_hi=pos_hi,
                     run_dir=run_dir,
                     state=state,
-                    media_resolution=media_resolution,
                     show_borders=show_borders,
                     send_individually=send_individually,
                     atlas_resolution=atlas_resolution,
@@ -1143,7 +1099,15 @@ def estimate_group(
                 )
                 if state.estimate_result:
                     break
-                next_input = interaction_inputs
+
+                # Split parts: function_response Parts go in role='tool',
+                # text/image Parts go in role='user'
+                tool_parts = [p for p in result_parts if getattr(p, 'function_response', None)]
+                other_parts = [p for p in result_parts if not getattr(p, 'function_response', None)]
+                if tool_parts:
+                    contents.append(types.Content(role="tool", parts=tool_parts))
+                if other_parts:
+                    contents.append(types.Content(role="user", parts=other_parts))
 
             if state.estimate_result:
                 # Got a result — no need to retry
@@ -1151,7 +1115,7 @@ def estimate_group(
             if attempt == 0:
                 _progress(
                     "Warning: no estimate submitted in attempt 1. "
-                    "Retrying with a fresh interaction..."
+                    "Retrying with fresh history..."
                 )
 
         # --- Finalize result ---
