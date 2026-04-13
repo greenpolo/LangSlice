@@ -1,4 +1,4 @@
-"""VLM-based brain slice estimation using Gemini Interactions API."""
+"""VLM-based brain slice estimation using Gemini generate_content API."""
 
 import io
 import logging
@@ -143,7 +143,7 @@ def _has_file_data(part: object) -> bool:
     return isinstance(file_uri, str) and bool(file_uri)
 
 
-def _history_metrics(contents: list[object]) -> dict[str, int]:
+def _history_metrics(contents: Sequence[object]) -> dict[str, int]:
     metrics = {
         "content_count": len(contents),
         "part_count": 0,
@@ -285,6 +285,22 @@ def _extract_interaction_text_outputs(interaction: object) -> tuple[list[str], l
     return text_outputs, thought_outputs
 
 
+def _extract_text_and_thoughts(content: object) -> tuple[list[str], list[str]]:
+    """Extract text and thought outputs from a Content object's parts."""
+    parts = getattr(content, "parts", None) or []
+    texts: list[str] = []
+    thoughts: list[str] = []
+    for part in parts:
+        text = getattr(part, "text", None)
+        if not isinstance(text, str) or not text:
+            continue
+        if bool(getattr(part, "thought", False)):
+            thoughts.append(text)
+        else:
+            texts.append(text)
+    return texts, thoughts
+
+
 def _interaction_input_metrics(input_parts: Sequence[Mapping[str, object]]) -> dict[str, int]:
     metrics = {
         "content_count": 1,
@@ -315,9 +331,12 @@ def _interaction_input_metrics(input_parts: Sequence[Mapping[str, object]]) -> d
 from langslice.estimation.debug import write_debug_artifacts  # noqa: E402
 from langslice.estimation.google.tool_definitions import (  # noqa: E402
     _build_nudge_text,
-    _extract_function_calls,
-    _process_ap_function_calls,
-    _tool_dicts,
+    _extract_function_calls,  # noqa: F401 — kept for Task 5 cleanup
+    _extract_function_calls_gc,
+    _process_ap_function_calls,  # noqa: F401 — kept for Task 5 cleanup
+    _process_ap_function_calls_gc,
+    _tool_declarations,
+    _tool_dicts,  # noqa: F401 — kept for Task 5 cleanup
 )
 
 
@@ -343,8 +362,8 @@ def estimate_position(
     - get_region_names: see what brain regions exist at a position
     - submit_estimate: declare the final answer
 
-    Uses the Gemini Interactions API with server-side conversation state.
-    The model runs until it submits or hits max iterations.
+    Uses the Gemini generate_content API with manually-managed conversation
+    history. The model runs until it submits or hits max iterations.
 
     Set ``LANGSLICE_VLM_DEBUG_DIR`` to save all artifacts for review.
     """
@@ -454,7 +473,6 @@ def estimate_position(
 
     max_iterations = max(1, int(max_iterations))
     state = _APLoopState(max_iterations=max_iterations)
-    interaction_trace: list[dict[str, object]] = []
     uploaded_files: list[Any] = []
 
     try:
@@ -519,35 +537,41 @@ def estimate_position(
             ),
         )
 
-        # --- Build initial input ---
-        initial_input: list[dict[str, object]] = [
-            {
-                "type": "text",
-                "text": "Here is the target brain slice. Determine its AP position in the atlas.",
-            },
-            {
-                "type": "image",
-                "uri": target_uri,
-                "mime_type": "image/jpeg",
-                "resolution": media_resolution,
-            },
+        # --- Build initial contents ---
+        contents: list[types.Content] = [
+            types.Content(role="user", parts=[
+                types.Part.from_text(
+                    text="Here is the target brain slice. Determine its AP position in the atlas."
+                ),
+                types.Part.from_uri(file_uri=target_uri, mime_type="image/jpeg"),
+            ]),
         ]
 
         # --- Tool declarations ---
-        tools = _tool_dicts()
+        tools = _tool_declarations()
 
-        # --- Main Interactions API loop ---
+        # --- Config ---
+        effective_model = model_name or vlm_config.MODEL_NAME
+        thinking_cfg = vlm_config.build_thinking_config(
+            effective_model, thinking_level
+        )
+        config = types.GenerateContentConfig(
+            system_instruction=system_instruction,
+            temperature=temperature,
+            max_output_tokens=4000,
+            thinking_config=cast(Any, thinking_cfg),
+            tools=cast(Any, tools),
+        )
+
+        # --- Main generate_content loop ---
         _progress(f"Starting agentic estimation (max {max_iterations} tool calls)...")
 
-        previous_interaction_id: str | None = None
-        next_input: list[dict[str, object]] = initial_input
-
         for iteration in range(max_iterations):
-            request_metrics = _interaction_input_metrics(next_input)
+            request_metrics = _history_metrics(contents)
             turn_metric: dict[str, object] = {
                 "iteration": iteration + 1,
                 "request": request_metrics,
-                "mode": "interactions",
+                "mode": "generate_content",
             }
 
             if on_progress:
@@ -555,65 +579,37 @@ def estimate_position(
                 img_count = request_metrics['image_parts']
                 img_bytes = request_metrics['image_bytes']
                 _progress(
-                    f"Interactions turn {iteration + 1}: "
+                    f"generate_content turn {iteration + 1}: "
                     f"sending {part_count} parts, "
                     f"{img_count} images ({img_bytes} bytes)"
                 )
 
-            # Build interaction request kwargs
-            create_kwargs: dict[str, Any] = {
-                "model": model_name or vlm_config.MODEL_NAME,
-                "input": next_input,
-                "tools": tools,
-                "system_instruction": system_instruction,
-                "generation_config": {
-                    "temperature": temperature,
-                    "thinking_level": thinking_level,
-                    "max_output_tokens": 4000,
-                },
-            }
-            if previous_interaction_id is not None:
-                create_kwargs["previous_interaction_id"] = previous_interaction_id
-
             started_at = time.perf_counter()
-            interaction = _retry_interaction(
-                client,
-                create_kwargs,
-                request_label=f"AP interactions turn {iteration + 1}",
+            response = retry_with_backoff(
+                lambda: client.models.generate_content(
+                    model=effective_model,
+                    contents=contents,
+                    config=config,
+                ),
+                request_label=f"AP turn {iteration + 1}",
                 on_progress=_progress,
             )
             turn_metric["wall_time_s"] = round(time.perf_counter() - started_at, 3)
-            usage_metadata = _extract_interaction_usage_metadata(interaction)
+            usage_metadata = _extract_usage_metadata(response)
             turn_metric["usage_metadata"] = usage_metadata
             state.turn_metrics.append(turn_metric)
-            previous_interaction_id = cast(str | None, getattr(interaction, "id", None))
 
             _progress(
                 f"Turn {iteration + 1} completed in {turn_metric['wall_time_s']}s; "
                 f"{_format_usage_metadata(usage_metadata)}"
             )
 
-            # Record interaction trace for debug artifacts
-            outputs = getattr(interaction, "outputs", None) or []
-            interaction_trace.append(
-                {
-                    "iteration": iteration + 1,
-                    "input": next_input,
-                    "outputs": [
-                        getattr(output, "model_dump", lambda: None)()
-                        if callable(getattr(output, "model_dump", None))
-                        else {
-                            "type": getattr(output, "type", None),
-                            "text": getattr(output, "text", None),
-                            "name": getattr(output, "name", None),
-                        }
-                        for output in outputs
-                    ],
-                }
-            )
+            # Append model response to history
+            model_content = response.candidates[0].content
+            contents.append(model_content)
 
             # Emit trace for model text/thought outputs
-            text_outputs, thought_outputs = _extract_interaction_text_outputs(interaction)
+            text_outputs, thought_outputs = _extract_text_and_thoughts(model_content)
             if text_outputs or thought_outputs:
                 trace_parts: list[dict[str, object]] = []
                 if thought_outputs:
@@ -640,16 +636,19 @@ def estimate_position(
                 )
 
             # Extract function calls
-            function_calls, text_preview = _extract_function_calls(interaction)
+            function_calls, text_preview = _extract_function_calls_gc(response)
 
             if not function_calls:
                 if text_preview and on_progress:
                     _progress(f"Agent reasoning/text: {text_preview[:200]}...")
-                next_input = [{"type": "text", "text": _build_nudge_text(state)}]
+                nudge = _build_nudge_text(state)
+                contents.append(types.Content(role="user", parts=[
+                    types.Part.from_text(text=nudge),
+                ]))
                 continue
 
-            # Process tool calls
-            interaction_inputs = _process_ap_function_calls(
+            # Process tool calls — returns list[Part]
+            result_parts = _process_ap_function_calls_gc(
                 function_calls,
                 iteration=iteration,
                 atlas=atlas,
@@ -659,7 +658,6 @@ def estimate_position(
                 run_dir=run_dir,
                 state=state,
                 target_image=target_prepared,
-                media_resolution=media_resolution,
                 show_borders=show_borders,
                 send_individually=send_individually,
                 atlas_resolution=atlas_resolution,
@@ -668,7 +666,15 @@ def estimate_position(
             )
             if state.estimate_result:
                 break
-            next_input = interaction_inputs
+
+            # Split parts: function_response Parts go in role='tool',
+            # text/image Parts go in role='user'
+            tool_parts = [p for p in result_parts if getattr(p, 'function_response', None)]
+            other_parts = [p for p in result_parts if not getattr(p, 'function_response', None)]
+            if tool_parts:
+                contents.append(types.Content(role="tool", parts=tool_parts))
+            if other_parts:
+                contents.append(types.Content(role="user", parts=other_parts))
 
         # --- Finalize result ---
         final_pos: float
@@ -706,14 +712,12 @@ def estimate_position(
         )
 
         feature_flags["effective_ap_use_file_api"] = True
-        feature_flags["effective_ap_use_context_cache"] = False
-        feature_flags["effective_ap_use_interactions"] = True
 
         if run_dir:
             write_debug_artifacts(
                 run_dir=run_dir,
                 atlas_name=atlas_name,
-                mode_used="interactions",
+                mode_used="generate_content",
                 target_info=target_info,
                 feature_flags=feature_flags,
                 max_iterations=max_iterations,
@@ -721,8 +725,8 @@ def estimate_position(
                 final_pos=final_pos,
                 final_reasoning=final_reasoning,
                 cache_name=None,
-                interaction_trace=interaction_trace,
-                history=[],
+                interaction_trace=[],
+                history=contents,
                 on_progress=_progress,
             )
 
