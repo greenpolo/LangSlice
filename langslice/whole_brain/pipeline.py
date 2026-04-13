@@ -121,6 +121,14 @@ async def run_brain_estimation(
     )
     save_checkpoint(cp_path, config, slices)
 
+    # Save interpolated positions for outlier detection in Phase 3.5.
+    # Phase 3 overwrites these with VLM estimates, so we capture them now.
+    interpolated_map: dict[int, float] = {
+        i: slices[i].position_mm
+        for i in range(n_slices)
+        if not slices[i].locked
+    }
+
     # --- Phase 3: Estimate all non-anchor slices ---
     # Skip slices already locked from a previous checkpoint.
     non_anchor_indices = [
@@ -176,6 +184,71 @@ async def run_brain_estimation(
 
         save_checkpoint(cp_path, config, slices)
         _progress(f"Phase 3 complete: {n_estimated} estimated")
+
+    # --- Phase 3.5: Re-estimate outlier slices with anchor pipeline ---
+    # Identify non-anchor slices whose Phase 3 VLM estimate deviates
+    # significantly from the Phase 2 interpolated position.  Large deviations
+    # indicate the Flash model misjudged the slice — re-estimating with the
+    # anchor pipeline (Pro model, full atlas range, 2-stage coarse+fine)
+    # produces anchor-quality accuracy for these problem slices.
+    #
+    # Unlike hyp 002 (Pro with constrained windows → mixed), this uses the
+    # FULL atlas range, which is the key factor in Pro's 4-14x anchor
+    # accuracy advantage.
+    _OUTLIER_DEVIATION_MM = 0.4
+    outlier_indices: list[int] = []
+    for i in non_anchor_indices:
+        raw = slices[i].raw_position_mm
+        interp = interpolated_map.get(i)
+        if raw is not None and interp is not None:
+            deviation = abs(raw - interp)
+            if deviation > _OUTLIER_DEVIATION_MM:
+                outlier_indices.append(i)
+                logger.info(
+                    "  Outlier slice %d: raw=%.3f interp=%.3f dev=%.3f",
+                    i, raw, interp, deviation,
+                )
+
+    if outlier_indices:
+        _progress(
+            f"Phase 3.5: re-estimating {len(outlier_indices)} outlier slices "
+            f"with anchor pipeline (Pro model, full atlas range)"
+        )
+        n_reestimated = 0
+        for idx in outlier_indices:
+            try:
+                old_raw = slices[idx].raw_position_mm
+                interp_pos = interpolated_map.get(idx, 0.0)
+                _progress(
+                    f"  Re-estimating slice {idx} "
+                    f"({os.path.basename(image_paths[idx])}): "
+                    f"raw={old_raw:.3f} interp={interp_pos:.3f}"
+                )
+                reest = await run_anchor_estimation(
+                    image_path=image_paths[idx],
+                    atlas_name=config.atlas_name,
+                    coarse_model=config.coarse_model,
+                    fine_model=config.fine_model,
+                )
+                slices[idx] = SlicePosition(
+                    slices[idx].filename,
+                    idx,
+                    reest.position_mm,
+                    slices[idx].source + "+reestimated",
+                    locked=True,
+                    raw_position_mm=reest.position_mm,
+                )
+                _progress(
+                    f"  Slice {idx}: {reest.position_mm:.3f}mm "
+                    f"(was {old_raw:.3f}mm)"
+                )
+                n_reestimated += 1
+            except Exception as exc:
+                logger.warning(
+                    "Outlier re-estimation failed for slice %d: %s", idx, exc,
+                )
+        save_checkpoint(cp_path, config, slices)
+        _progress(f"Phase 3.5 complete: {n_reestimated} re-estimated")
 
     # --- Phase 4: Isotonic regression with spacing priors ---
     _progress("Phase 4: fitting isotonic regression")
