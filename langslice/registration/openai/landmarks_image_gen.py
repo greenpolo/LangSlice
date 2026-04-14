@@ -29,7 +29,7 @@ import io
 import logging
 import os
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 from PIL import Image
 
@@ -133,7 +133,7 @@ def _request_annotated_atlas(
 
     reasoning_response = client.responses.create(
         model=model,
-        input=messages,
+        input=cast(Any, messages),
     )
 
     description = _extract_text(reasoning_response)
@@ -264,7 +264,7 @@ def _request_annotated_slice(
 
     reasoning_response = client.responses.create(
         model=model,
-        input=messages,
+        input=cast(Any, messages),
     )
 
     description = _extract_text(reasoning_response)

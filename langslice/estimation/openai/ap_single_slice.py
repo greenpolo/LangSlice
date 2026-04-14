@@ -274,8 +274,8 @@ def estimate_position(
                 lambda _inp=input_list: client.responses.create(
                     model=effective_model,
                     instructions=system_instruction,
-                    input=_inp,
-                    tools=tools,
+                    input=cast(Any, _inp),
+                    tools=cast(Any, tools),
                 ),
                 request_label=f"AP turn {iteration + 1}",
                 on_progress=_progress,

@@ -26,7 +26,7 @@ import io
 import logging
 import os
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 from PIL import Image
@@ -145,7 +145,7 @@ def _request_warped_segmentation(
 
     reasoning_response = client.responses.create(
         model=model,
-        input=input_list,
+        input=cast(Any, input_list),
     )
 
     description = _extract_text(reasoning_response)
