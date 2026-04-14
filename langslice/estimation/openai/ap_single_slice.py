@@ -1,4 +1,4 @@
-"""OpenAI tool-use AP estimation — not yet implemented.
+"""Single-slice AP estimation via OpenAI-compatible Chat Completions — not yet implemented.
 
 Imports below mirror the Google implementation's dependencies to establish
 the expected interface. Suppress F401 since these are intentional placeholders.
