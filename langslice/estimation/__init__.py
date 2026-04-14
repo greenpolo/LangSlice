@@ -14,6 +14,15 @@ from langslice.estimation.google.batch_eval import (
     build_ap_batch_requests,
     create_ap_batch_job,
 )
+from langslice.estimation.openai.ap_image_gen import (
+    estimate_position_image_gen as estimate_position_image_gen_openai,
+)
+from langslice.estimation.openai.ap_multi_slice import (
+    estimate_group as estimate_group_openai,
+)
+from langslice.estimation.openai.ap_single_slice import (
+    estimate_position as estimate_position_openai,
+)
 
 __all__ = [
     "APResult",
@@ -24,4 +33,7 @@ __all__ = [
     "APBatchCase",
     "build_ap_batch_requests",
     "create_ap_batch_job",
+    "estimate_group_openai",
+    "estimate_position_openai",
+    "estimate_position_image_gen_openai",
 ]
