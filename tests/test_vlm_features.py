@@ -6,7 +6,7 @@ import time
 from types import SimpleNamespace
 from typing import cast
 
-import langslice.estimation.google.ap_tool_use as estimator
+import langslice.estimation.google.ap_single_slice as estimator
 import langslice.estimation.google.batch_eval as batch_eval
 import langslice.vlm_config as vlm_config
 
