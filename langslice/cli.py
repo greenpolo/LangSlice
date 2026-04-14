@@ -63,17 +63,12 @@ def _add_register_parser(subparsers: argparse._SubParsersAction) -> None:
 
 
 def _run_register(args: argparse.Namespace) -> None:
-    if args.provider == "openai":
-        print("Error: OpenAI provider for registration is not yet implemented.")
-        sys.exit(1)
-
     import json
     from datetime import datetime
     from pathlib import Path
 
     from PIL import Image
 
-    import langslice.vlm_config as vlm_config
     from langslice.image_prep import normalize_image, prepare_image_for_vlm
     from langslice.registration.core import estimate_registration_runtime
     from langslice.registration.types import (
@@ -81,17 +76,28 @@ def _run_register(args: argparse.Namespace) -> None:
         build_annotation_session_from_correspondences,
     )
 
-    # Configure model before anything touches the client.
-    if args.model:
-        vlm_config.set_model_name(args.model)
-    if args.temperature is not None:
-        vlm_config.set_temperature(args.temperature)
-    if args.thinking:
-        vlm_config.set_thinking_level(args.thinking)
-
     workflow = args.workflow
-    if workflow is None:
-        workflow = vlm_config.default_registration_workflow(vlm_config.MODEL_NAME)
+
+    if args.provider == "openai":
+        import langslice.openai_config as openai_config
+
+        effective_model = args.model or openai_config.get_openai_model()
+        if workflow is None:
+            workflow = "colored_segmentation"
+    else:
+        import langslice.vlm_config as vlm_config
+
+        # Configure model before anything touches the client.
+        if args.model:
+            vlm_config.set_model_name(args.model)
+        if args.temperature is not None:
+            vlm_config.set_temperature(args.temperature)
+        if args.thinking:
+            vlm_config.set_thinking_level(args.thinking)
+
+        effective_model = vlm_config.MODEL_NAME
+        if workflow is None:
+            workflow = vlm_config.default_registration_workflow(vlm_config.MODEL_NAME)
 
     # Load and downscale image.
     print(f"Loading {args.image} ...")
@@ -116,7 +122,7 @@ def _run_register(args: argparse.Namespace) -> None:
     debug_dir = str(out_dir)
 
     print(f"Atlas: {args.atlas}  Position: {args.position:.2f} mm")
-    print(f"Workflow: {workflow}  Model: {vlm_config.MODEL_NAME}")
+    print(f"Workflow: {workflow}  Model: {effective_model}  Provider: {args.provider}")
     border_label = (
         f"border={args.border_count}"
         if args.border_count is not None
@@ -150,6 +156,7 @@ def _run_register(args: argparse.Namespace) -> None:
         debug_dir=debug_dir,
         border_count=args.border_count,
         interior_count=args.interior_count,
+        provider=args.provider,
     )
 
     # Summary.
