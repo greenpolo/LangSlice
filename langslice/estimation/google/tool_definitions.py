@@ -9,9 +9,8 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
-import numpy as np
 from google.genai import types as genai_types
 from PIL import Image
 
@@ -24,6 +23,15 @@ from langslice.image_prep import normalize_image
 
 if TYPE_CHECKING:
     from langslice.estimation.google.common import _APLoopState
+
+
+class _NudgeState(Protocol):
+    """Minimal interface for _build_nudge_text — satisfied by both
+    _APLoopState and _GroupLoopState."""
+
+    saw_broad_sweep: bool
+    saw_narrow_sweep: bool
+
 
 _RESAMPLE_LANCZOS = Image.Resampling.LANCZOS
 
@@ -61,31 +69,6 @@ def _tool_declarations() -> list[genai_types.Tool]:
                     },
                 },
                 "required": ["positions_mm"],
-            },
-        ),
-        genai_types.FunctionDeclaration(
-            name="get_atlas_info",
-            description=(
-                "Get atlas metadata including the valid AP coordinate range, "
-                "resolution, species, and number of slices."
-            ),
-            parameters_json_schema={"type": "object", "properties": {}},
-        ),
-        genai_types.FunctionDeclaration(
-            name="get_region_names",
-            description=(
-                "Get the names and acronyms of brain regions visible at a "
-                "specific AP position. Useful for confirming anatomical identity."
-            ),
-            parameters_json_schema={
-                "type": "object",
-                "properties": {
-                    "position_mm": {
-                        "type": "number",
-                        "description": "AP position in mm from the anterior edge",
-                    },
-                },
-                "required": ["position_mm"],
             },
         ),
         genai_types.FunctionDeclaration(
@@ -276,30 +259,6 @@ def _has_neighbor_bracket(
     return (has_lower or not needs_lower) and (has_upper or not needs_upper)
 
 
-def _get_regions_at_position(atlas: object, position_mm: float) -> list[str]:
-    """Return brain region names visible at a given AP position."""
-    from langslice.atlas.core import position_mm_to_index
-
-    try:
-        idx = position_mm_to_index(cast(Any, atlas), position_mm)
-    except ValueError:
-        return []
-
-    atlas_obj = cast(Any, atlas)
-    annotation_slice = np.asarray(atlas_obj.annotation[idx, :, :])
-    unique_ids = np.unique(annotation_slice)
-    unique_ids = unique_ids[unique_ids > 0]
-
-    structures = atlas_obj.structures
-    names: list[str] = []
-    for uid in unique_ids[:30]:  # Cap at 30 to avoid huge lists
-        uid_int = int(uid)
-        if uid_int in structures:
-            entry = structures[uid_int]
-            names.append(f"{entry['acronym']} ({entry['name']})")
-    return names
-
-
 # ---------------------------------------------------------------------------
 # Function call extraction (generate_content API)
 # ---------------------------------------------------------------------------
@@ -340,7 +299,7 @@ def _extract_function_calls(
 # ---------------------------------------------------------------------------
 
 
-def _build_nudge_text(state: _APLoopState) -> str:
+def _build_nudge_text(state: _NudgeState, submit_tool: str = "submit_estimate") -> str:
     if not state.saw_broad_sweep:
         return (
             "Please continue. Call `fetch_atlas` with widely spaced positions "
@@ -353,7 +312,7 @@ def _build_nudge_text(state: _APLoopState) -> str:
         )
     return (
         "Please continue. Verify your candidate by checking nearby positions "
-        "with `fetch_atlas`, or call `submit_estimate` if confident."
+        f"with `fetch_atlas`, or call `{submit_tool}` if confident."
     )
 
 
@@ -540,57 +499,6 @@ def _process_ap_function_calls(
                     },
                 ),
             )
-
-        elif name == "get_atlas_info":
-            from langslice.atlas.core import get_atlas_info as _get_atlas_info_core
-
-            info = _get_atlas_info_core(atlas_obj)
-            info["coordinate_note"] = "0.0mm is extreme Anterior; higher mm is more Posterior."
-            _append_response(call_id=call_id, name=name, response=info)
-            state.reasoning_log.append(
-                {"iteration": iteration + 1, "tool": name, "args": {}, "result": str(info)}
-            )
-            _emit_trace(
-                on_trace,
-                tool_result_event(
-                    stage="ap",
-                    tool_name=name,
-                    summary="Atlas metadata returned",
-                    parts=[json_part(info, label="Atlas info")],
-                    metadata={"iteration": iteration + 1},
-                ),
-            )
-            if on_progress:
-                on_progress(f"  -> Atlas range: [{pos_lo:.2f}, {pos_hi:.2f}] mm")
-
-        elif name == "get_region_names":
-            pos = float(args.get("position_mm", (pos_lo + pos_hi) / 2))
-            regions = _get_regions_at_position(atlas, pos)
-            _append_response(
-                call_id=call_id,
-                name=name,
-                response={"position_mm": pos, "regions": regions},
-            )
-            state.reasoning_log.append(
-                {
-                    "iteration": iteration + 1,
-                    "tool": name,
-                    "args": args,
-                    "result": f"{len(regions)} regions",
-                }
-            )
-            _emit_trace(
-                on_trace,
-                tool_result_event(
-                    stage="ap",
-                    tool_name=name,
-                    summary=f"Returned {len(regions)} visible regions at {pos:.2f} mm",
-                    parts=[json_part({"position_mm": pos, "regions": regions}, label="Regions")],
-                    metadata={"iteration": iteration + 1, "position_mm": round(pos, 3)},
-                ),
-            )
-            if on_progress:
-                on_progress(f"  -> {len(regions)} regions at {pos:.2f}mm")
 
         elif name == "submit_estimate":
             est_pos = float(args.get("position_mm", 0.0))

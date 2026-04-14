@@ -46,6 +46,7 @@ from langslice.estimation.google.common import (
 )
 from langslice.estimation.google.tool_definitions import (
     _build_atlas_grid,
+    _build_nudge_text,
     _extract_function_calls,
     _is_broad_multi_sweep,
     _is_narrow_multi_sweep,
@@ -133,29 +134,6 @@ def _group_tool_declarations(n_slices: int) -> list[types.Tool]:
             },
         ),
     ])]
-
-
-# ---------------------------------------------------------------------------
-# Nudge text
-# ---------------------------------------------------------------------------
-
-
-def _build_group_nudge_text(state: _GroupLoopState) -> str:
-    """Build a nudge when the model doesn't make a tool call."""
-    if not state.saw_broad_sweep:
-        return (
-            "Please continue. Call `fetch_atlas` with widely spaced positions "
-            "(e.g., [2, 4, 6, 8, 10]) to find the correct neighborhood."
-        )
-    if not state.saw_narrow_sweep:
-        return (
-            "Please narrow down. Call `fetch_atlas` with tightly spaced positions "
-            "around your best candidate (e.g., [4.0, 4.2, 4.4, 4.6, 4.8])."
-        )
-    return (
-        "Please continue. Verify your candidate by checking nearby positions "
-        "with `fetch_atlas`, or call `submit_group_estimate` if confident."
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -964,7 +942,7 @@ def estimate_group(
                             _progress(
                                 f"Model text: {text_preview[:200]}..."
                             )
-                        nudge = _build_group_nudge_text(state)
+                        nudge = _build_nudge_text(state, submit_tool="submit_group_estimate")
                     contents.append(types.Content(role="user", parts=[
                         types.Part.from_text(text=nudge),
                     ]))

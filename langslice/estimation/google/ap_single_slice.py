@@ -77,9 +77,7 @@ def estimate_position(
     """Agentic AP estimation using tool-use with self-correction.
 
     The model receives tools to explore the atlas freely:
-    - fetch_atlas_slice: view any coronal section
-    - get_atlas_info: get coordinate range and metadata
-    - get_region_names: see what brain regions exist at a position
+    - fetch_atlas: view coronal sections at specific AP positions
     - submit_estimate: declare the final answer
 
     Uses the Gemini generate_content API with manually-managed conversation
@@ -98,6 +96,9 @@ def estimate_position(
     client = get_client()
     atlas = _load_atlas_lazy(atlas_name)
     pos_lo, pos_hi = _get_position_range_lazy(atlas)
+
+    atlas_obj_meta = cast(Any, atlas)
+    species = atlas_obj_meta.metadata.get("species", "mouse")
 
     target_normalized = normalize_image(image)
     target_prep = prepare_image_for_vlm(target_normalized)
@@ -169,8 +170,11 @@ def estimate_position(
         "and must determine its Anterior-Posterior (AP) position within a reference atlas. "
         "The coordinate system is: 0.0 mm is the extreme anterior edge (e.g. olfactory bulb), "
         "while larger mm values move posterior toward the cerebellum and brainstem. "
-        "You have tools to fetch atlas reference images at any AP coordinate, query which "
-        "brain regions exist at a given position, and get atlas metadata.\n\n"
+        f"Atlas: {atlas_name} ({species}). "
+        f"Valid AP range: {pos_lo:.2f}\u2013{pos_hi:.2f} mm. "
+        "0.0 mm = anterior (olfactory bulb); higher mm = posterior.\n\n"
+        "You have tools to fetch atlas reference images at any AP coordinate "
+        "and submit your estimate.\n\n"
         f"{anatomy_hints}"
         "RECOMMENDED STRATEGY:\n"
         "1. Call `fetch_atlas` with broadly spaced positions (e.g., [2, 4, 6, 8, 10]) "
