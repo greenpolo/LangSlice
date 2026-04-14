@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, Protocol, cast
+from typing import Any, Protocol, cast
 
 from google.genai import types as genai_types
 from PIL import Image
@@ -19,10 +19,13 @@ from langslice.agent_trace import (
     tool_call_event,
     tool_result_event,
 )
+from langslice.estimation.google.common import (
+    _APLoopState,
+    _emit_trace,
+    _fetch_atlas_slice_bytes,
+    _image_to_bytes,
+)
 from langslice.image_prep import normalize_image
-
-if TYPE_CHECKING:
-    from langslice.estimation.google.common import _APLoopState
 
 
 class _NudgeState(Protocol):
@@ -317,6 +320,163 @@ def _build_nudge_text(state: _NudgeState, submit_tool: str = "submit_estimate") 
 
 
 # ---------------------------------------------------------------------------
+# Shared fetch_atlas handler
+# ---------------------------------------------------------------------------
+
+
+def _handle_fetch_atlas(
+    *,
+    args: dict[str, object],
+    pos_lo: float,
+    pos_hi: float,
+    atlas: object,
+    state: _APLoopState,
+    iteration: int,
+    run_dir: str | None,
+    show_borders: bool,
+    send_individually: bool,
+    atlas_resolution: int,
+    target_image: Image.Image | None,
+    stage: str,
+    on_progress: Callable[[str], None] | None,
+    on_trace: Callable[[dict[str, object]], None] | None,
+) -> tuple[list[genai_types.Part], str]:
+    """Handle a ``fetch_atlas`` tool call shared by single- and multi-slice.
+
+    Returns ``(result_parts, function_name)`` where *result_parts* is a flat
+    list of ``Part`` objects (function_response + any image/text parts) and
+    *function_name* is always ``"fetch_atlas"``.
+
+    The caller is responsible for splitting the parts into ``role='tool'``
+    (function_response) and ``role='user'`` (image/text) contents.
+    """
+    atlas_obj = cast(Any, atlas)
+    result_parts: list[genai_types.Part] = []
+    fn_name = "fetch_atlas"
+
+    positions_list = args.get("positions_mm", [])
+    if not isinstance(positions_list, list):
+        positions_list = []
+
+    positions = [max(pos_lo, min(pos_hi, float(p))) for p in positions_list[:8]]
+
+    if not positions:
+        result_parts.append(
+            genai_types.Part.from_function_response(
+                name=fn_name,
+                response={"status": "error", "error": "No valid positions provided"},
+            )
+        )
+        return result_parts, fn_name
+
+    state.fetched_positions.extend(positions)
+    if _is_broad_multi_sweep(positions):
+        state.saw_broad_sweep = True
+    if _is_narrow_multi_sweep(positions):
+        state.saw_narrow_sweep = True
+
+    pos_label = ", ".join(f"{p:.2f}" for p in positions)
+    state.images_fetched += len(positions)
+
+    if send_individually:
+        result_parts.append(
+            genai_types.Part.from_function_response(
+                name=fn_name,
+                response={
+                    "status": "ok",
+                    "positions_mm": positions,
+                    "description": (
+                        f"{len(positions)} atlas sections at: {pos_label} mm."
+                    ),
+                },
+            )
+        )
+        for idx, pos in enumerate(positions):
+            try:
+                ref_bytes = _fetch_atlas_slice_bytes(
+                    atlas_obj,
+                    pos,
+                    max_long_edge=atlas_resolution,
+                    show_borders=show_borders,
+                )
+                result_parts.append(
+                    genai_types.Part.from_text(text=f"[{idx + 1}] {pos:.2f} mm:")
+                )
+                result_parts.append(
+                    genai_types.Part.from_bytes(data=ref_bytes, mime_type="image/jpeg")
+                )
+            except (ValueError, IndexError):
+                pass
+        if run_dir:
+            grid_img = _build_atlas_grid(
+                atlas, positions, show_borders=show_borders,
+            )
+            grid_img.save(
+                os.path.join(
+                    run_dir,
+                    f"tool_{iteration + 1:02d}_atlas_{len(positions)}x.jpg",
+                ),
+                quality=85,
+            )
+    else:
+        grid_img = _build_atlas_grid(
+            atlas,
+            positions,
+            target_image=target_image,
+            show_borders=show_borders,
+        )
+        grid_bytes = _image_to_bytes(grid_img)
+        if run_dir:
+            grid_img.save(
+                os.path.join(
+                    run_dir,
+                    f"tool_{iteration + 1:02d}_atlas_{len(positions)}x.jpg",
+                ),
+                quality=85,
+            )
+        result_parts.append(
+            genai_types.Part.from_function_response(
+                name=fn_name,
+                response={
+                    "status": "ok",
+                    "positions_mm": positions,
+                    "description": (
+                        f"Grid of {len(positions)} atlas sections at: {pos_label} mm. "
+                        "Each cell is numbered and labeled with its AP position."
+                    ),
+                },
+            )
+        )
+        result_parts.append(
+            genai_types.Part.from_bytes(data=grid_bytes, mime_type="image/jpeg")
+        )
+
+    state.reasoning_log.append(
+        {
+            "iteration": iteration + 1,
+            "tool": fn_name,
+            "args": args,
+            "result": f"Atlas: [{pos_label}] mm",
+        }
+    )
+    _emit_trace(
+        on_trace,
+        tool_result_event(
+            stage=stage,
+            tool_name=fn_name,
+            summary=f"Returned {len(positions)} atlas sections",
+            metadata={
+                "iteration": iteration + 1,
+                "positions": positions,
+                "send_individually": send_individually,
+            },
+        ),
+    )
+
+    return result_parts, fn_name
+
+
+# ---------------------------------------------------------------------------
 # Main tool dispatch (generate_content API format)
 # ---------------------------------------------------------------------------
 
@@ -344,14 +504,11 @@ def _process_ap_function_calls(
     - Parts with ``.function_response`` -> ``Content(role='tool')``
     - Other Parts (text labels, images) -> ``Content(role='user')``
     """
-    from langslice.estimation.google.common import _emit_trace, _image_to_bytes
-
-    atlas_obj = cast(Any, atlas)
     result_parts: list[genai_types.Part] = []
 
     def _append_response(
         *,
-        call_id: object,
+        call_id: object,  # noqa: ARG001 — kept for parity
         name: str,
         response: dict[str, object],
         is_error: bool = False,  # noqa: ARG001 — kept for parity
@@ -383,122 +540,23 @@ def _process_ap_function_calls(
             on_progress(f"Tool call [{iteration + 1}]: {name}({args})")
 
         if name == "fetch_atlas":
-            positions_list = args.get("positions_mm", [])
-            if not isinstance(positions_list, list):
-                positions_list = []
-
-            positions = [max(pos_lo, min(pos_hi, float(p))) for p in positions_list[:8]]
-
-            if not positions:
-                _append_response(
-                    call_id=call_id,
-                    name=name,
-                    response={"status": "error", "error": "No valid positions provided"},
-                    is_error=True,
-                )
-                continue
-
-            state.fetched_positions.extend(positions)
-            if _is_broad_multi_sweep(positions):
-                state.saw_broad_sweep = True
-            if _is_narrow_multi_sweep(positions):
-                state.saw_narrow_sweep = True
-
-            pos_label = ", ".join(f"{p:.2f}" for p in positions)
-            state.images_fetched += len(positions)
-
-            if send_individually:
-                from langslice.estimation.google.common import (
-                    _fetch_atlas_slice_bytes,
-                )
-
-                _append_response(
-                    call_id=call_id,
-                    name=name,
-                    response={
-                        "status": "ok",
-                        "positions_mm": positions,
-                        "description": (
-                            f"{len(positions)} atlas sections at: {pos_label} mm."
-                        ),
-                    },
-                )
-                for idx, pos in enumerate(positions):
-                    try:
-                        ref_bytes = _fetch_atlas_slice_bytes(
-                            atlas_obj, pos,
-                            max_long_edge=atlas_resolution,
-                            show_borders=show_borders,
-                        )
-                        result_parts.append(
-                            genai_types.Part.from_text(text=f"[{idx + 1}] {pos:.2f} mm:")
-                        )
-                        result_parts.append(
-                            genai_types.Part.from_bytes(data=ref_bytes, mime_type="image/jpeg")
-                        )
-                    except (ValueError, IndexError):
-                        pass
-                if run_dir:
-                    grid_img = _build_atlas_grid(
-                        atlas, positions, show_borders=show_borders,
-                    )
-                    grid_img.save(
-                        os.path.join(
-                            run_dir,
-                            f"tool_{iteration + 1:02d}_atlas_{len(positions)}x.jpg",
-                        ),
-                        quality=85,
-                    )
-            else:
-                grid_img = _build_atlas_grid(
-                    atlas, positions, target_image=target_image, show_borders=show_borders,
-                )
-                grid_bytes = _image_to_bytes(grid_img)
-                if run_dir:
-                    grid_img.save(
-                        os.path.join(
-                            run_dir,
-                            f"tool_{iteration + 1:02d}_atlas_{len(positions)}x.jpg",
-                        ),
-                        quality=85,
-                    )
-                _append_response(
-                    call_id=call_id,
-                    name=name,
-                    response={
-                        "status": "ok",
-                        "positions_mm": positions,
-                        "description": (
-                            f"Grid of {len(positions)} atlas sections at: {pos_label} mm. "
-                            "Each cell is numbered and labeled with its AP position."
-                        ),
-                    },
-                )
-                result_parts.append(
-                    genai_types.Part.from_bytes(data=grid_bytes, mime_type="image/jpeg")
-                )
-
-            state.reasoning_log.append(
-                {
-                    "iteration": iteration + 1,
-                    "tool": name,
-                    "args": args,
-                    "result": f"Atlas: [{pos_label}] mm",
-                }
+            fetch_parts, _fn = _handle_fetch_atlas(
+                args=args,
+                pos_lo=pos_lo,
+                pos_hi=pos_hi,
+                atlas=atlas,
+                state=state,
+                iteration=iteration,
+                run_dir=run_dir,
+                show_borders=show_borders,
+                send_individually=send_individually,
+                atlas_resolution=atlas_resolution,
+                target_image=target_image,
+                stage="ap",
+                on_progress=on_progress,
+                on_trace=on_trace,
             )
-            _emit_trace(
-                on_trace,
-                tool_result_event(
-                    stage="ap",
-                    tool_name=name,
-                    summary=f"Returned {len(positions)} atlas sections",
-                    metadata={
-                        "iteration": iteration + 1,
-                        "positions": positions,
-                        "send_individually": send_individually,
-                    },
-                ),
-            )
+            result_parts.extend(fetch_parts)
 
         elif name == "submit_estimate":
             est_pos = float(args.get("position_mm", 0.0))

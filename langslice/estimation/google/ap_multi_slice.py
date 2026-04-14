@@ -16,7 +16,6 @@ import logging
 import os
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, cast
 
@@ -39,17 +38,16 @@ from langslice.estimation.google.common import (
     _extract_usage_metadata,
     _format_usage_metadata,
     _get_position_range_lazy,
+    _GroupLoopState,
     _history_metrics,
     _image_to_bytes,
     _load_atlas_lazy,
     _wait_for_uploaded_file,
 )
 from langslice.estimation.google.tool_definitions import (
-    _build_atlas_grid,
     _build_nudge_text,
     _extract_function_calls,
-    _is_broad_multi_sweep,
-    _is_narrow_multi_sweep,
+    _handle_fetch_atlas,
 )
 from langslice.image_prep import normalize_image, prepare_image_for_vlm
 from langslice.retry import retry_with_backoff
@@ -61,27 +59,6 @@ logger = logging.getLogger(__name__)
 # comparing N slices against atlas sections simultaneously is more demanding
 # than single-slice estimation.
 _DEFAULT_MODEL = "gemini-3.1-pro-preview"
-
-
-# ---------------------------------------------------------------------------
-# Loop state
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class _GroupLoopState:
-    """Mutable state for the multi-slice estimation loop."""
-
-    n_slices: int
-    max_iterations: int
-    interval_mm: float
-    estimate_result: dict[str, object] | None = None
-    reasoning_log: list[dict[str, object]] = field(default_factory=list)
-    turn_metrics: list[dict[str, object]] = field(default_factory=list)
-    images_fetched: int = 0
-    fetched_positions: list[float] = field(default_factory=list)
-    saw_broad_sweep: bool = False
-    saw_narrow_sweep: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -162,7 +139,6 @@ def _process_group_function_calls_gc(
     - Parts with ``.function_response`` -> ``Content(role='tool')``
     - Other Parts (text labels, images) -> ``Content(role='user')``
     """
-    atlas_obj = cast(Any, atlas)
     result_parts: list[types.Part] = []
 
     def _append_response(
@@ -199,130 +175,23 @@ def _process_group_function_calls_gc(
             on_progress(f"Tool call [{iteration + 1}]: {name}({args})")
 
         if name == "fetch_atlas":
-            positions_list = args.get("positions_mm", [])
-            if not isinstance(positions_list, list):
-                positions_list = []
-            positions = [
-                max(pos_lo, min(pos_hi, float(p))) for p in positions_list[:8]
-            ]
-
-            if not positions:
-                _append_response(
-                    call_id=call_id,
-                    name=name,
-                    response={
-                        "status": "error",
-                        "error": "No valid positions provided",
-                    },
-                    is_error=True,
-                )
-                continue
-
-            state.fetched_positions.extend(positions)
-            if _is_broad_multi_sweep(positions):
-                state.saw_broad_sweep = True
-            if _is_narrow_multi_sweep(positions):
-                state.saw_narrow_sweep = True
-
-            pos_label = ", ".join(f"{p:.2f}" for p in positions)
-            state.images_fetched += len(positions)
-
-            if send_individually:
-                from langslice.estimation.google.ap_image_gen import (
-                    _fetch_atlas_slice_bytes,
-                )
-
-                _append_response(
-                    call_id=call_id,
-                    name=name,
-                    response={
-                        "status": "ok",
-                        "positions_mm": positions,
-                        "description": (
-                            f"{len(positions)} atlas sections at: "
-                            f"{pos_label} mm."
-                        ),
-                    },
-                )
-                for idx, pos in enumerate(positions):
-                    try:
-                        ref_bytes = _fetch_atlas_slice_bytes(
-                            atlas_obj,
-                            pos,
-                            max_long_edge=atlas_resolution,
-                            show_borders=show_borders,
-                        )
-                        result_parts.append(
-                            types.Part.from_text(text=f"[{idx + 1}] {pos:.2f} mm:")
-                        )
-                        result_parts.append(
-                            types.Part.from_bytes(data=ref_bytes, mime_type="image/jpeg")
-                        )
-                    except (ValueError, IndexError):
-                        pass
-                if run_dir:
-                    grid_img = _build_atlas_grid(
-                        atlas, positions, show_borders=show_borders,
-                    )
-                    grid_img.save(
-                        os.path.join(
-                            run_dir,
-                            f"tool_{iteration + 1:02d}_atlas_{len(positions)}x.jpg",
-                        ),
-                        quality=85,
-                    )
-            else:
-                grid_img = _build_atlas_grid(
-                    atlas,
-                    positions,
-                    show_borders=show_borders,
-                )
-                grid_bytes = _image_to_bytes(grid_img)
-                if run_dir:
-                    grid_img.save(
-                        os.path.join(
-                            run_dir,
-                            f"tool_{iteration + 1:02d}_atlas_{len(positions)}x.jpg",
-                        ),
-                        quality=85,
-                    )
-                _append_response(
-                    call_id=call_id,
-                    name=name,
-                    response={
-                        "status": "ok",
-                        "positions_mm": positions,
-                        "description": (
-                            f"Grid of {len(positions)} atlas sections at: "
-                            f"{pos_label} mm. Each cell is numbered and labeled."
-                        ),
-                    },
-                )
-                result_parts.append(
-                    types.Part.from_bytes(data=grid_bytes, mime_type="image/jpeg")
-                )
-
-            state.reasoning_log.append(
-                {
-                    "iteration": iteration + 1,
-                    "tool": name,
-                    "args": args,
-                    "result": f"Atlas: [{pos_label}] mm",
-                }
+            fetch_parts, _fn = _handle_fetch_atlas(
+                args=args,
+                pos_lo=pos_lo,
+                pos_hi=pos_hi,
+                atlas=atlas,
+                state=state,
+                iteration=iteration,
+                run_dir=run_dir,
+                show_borders=show_borders,
+                send_individually=send_individually,
+                atlas_resolution=atlas_resolution,
+                target_image=None,
+                stage="ap_group",
+                on_progress=on_progress,
+                on_trace=on_trace,
             )
-            _emit_trace(
-                on_trace,
-                tool_result_event(
-                    stage="ap_group",
-                    tool_name=name,
-                    summary=f"Returned {len(positions)} atlas sections",
-                    metadata={
-                        "iteration": iteration + 1,
-                        "positions": positions,
-                        "send_individually": send_individually,
-                    },
-                ),
-            )
+            result_parts.extend(fetch_parts)
 
         elif name == "submit_group_estimate":
             positions_list = args.get("positions_mm", [])

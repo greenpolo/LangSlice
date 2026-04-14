@@ -28,6 +28,14 @@ class _APLoopState:
     saw_narrow_sweep: bool = False
 
 
+@dataclass
+class _GroupLoopState(_APLoopState):
+    """Mutable state for the multi-slice estimation loop."""
+
+    n_slices: int = 0
+    interval_mm: float = 0.0
+
+
 def _to_float(value: object, default: float = 0.0) -> float:
     if isinstance(value, (int, float)):
         return float(value)

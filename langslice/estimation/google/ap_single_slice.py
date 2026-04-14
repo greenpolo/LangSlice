@@ -319,9 +319,9 @@ def estimate_position(
 
                 started_at = time.perf_counter()
                 response = retry_with_backoff(
-                    lambda: client.models.generate_content(
+                    lambda _c=contents: client.models.generate_content(
                         model=effective_model,
-                        contents=contents,
+                        contents=_c,
                         config=config,
                     ),
                     request_label=f"AP turn {iteration + 1}",
