@@ -578,8 +578,9 @@ def estimate_registration_correspondences(
     tool_loop_max_steps: int | None = None,
     border_count: int | None = None,
     interior_count: int | None = None,
+    provider: str = "google",
 ) -> list[RegistrationCorrespondence]:
-    """Run the configured Gemini registration workflow to produce paired correspondences."""
+    """Run the configured registration workflow to produce paired correspondences."""
     # Late imports to avoid circular dependencies and to keep workflow modules
     # patchable via monkeypatch on this module.
     from langslice.registration.google.landmarks_image_gen import (
@@ -625,6 +626,36 @@ def estimate_registration_correspondences(
         show_atlas_borders=show_atlas_borders,
         on_trace=on_trace,
     )
+
+    if provider == "openai":
+        if selected_workflow == "colored_segmentation":
+            from langslice.registration.openai.warping_image_gen import (
+                _estimate_correspondences_colored_segmentation,
+            )
+            _openai_raw = _estimate_correspondences_colored_segmentation(
+                prepared=prepared,
+                atlas_name=atlas_name,
+                position_mm=position_mm,
+                on_progress=on_progress,
+                on_trace=on_trace,
+                on_annotation_session=on_annotation_session,
+            )
+            return cast(list[RegistrationCorrespondence], _openai_raw)
+        elif selected_workflow == "image_gen_two_shot":
+            from langslice.registration.openai.landmarks_image_gen import (
+                _estimate_correspondences_image_gen_two_shot as _openai_two_shot,
+            )
+            _openai_raw = _openai_two_shot(
+                prepared=prepared,
+                atlas_name=atlas_name,
+                position_mm=position_mm,
+                on_progress=on_progress,
+                on_trace=on_trace,
+                on_annotation_session=on_annotation_session,
+            )
+            return cast(list[RegistrationCorrespondence], _openai_raw)
+        else:
+            raise ValueError(f"Unsupported OpenAI registration workflow: {selected_workflow!r}")
 
     client = get_client()
 

@@ -34,6 +34,7 @@ def estimate_registration_runtime(
     tool_loop_max_steps: int | None = None,
     border_count: int | None = None,
     interior_count: int | None = None,
+    provider: str = "google",
 ) -> RegistrationResult:
     """Run the separate registration runtime and return full results."""
 
@@ -61,6 +62,7 @@ def estimate_registration_runtime(
         tool_loop_max_steps=tool_loop_max_steps,
         border_count=border_count,
         interior_count=interior_count,
+        provider=provider,
     )
     _progress(
         "Registration outputs derived: "

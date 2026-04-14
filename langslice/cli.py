@@ -53,6 +53,12 @@ def _add_register_parser(subparsers: argparse._SubParsersAction) -> None:
         default=None,
         help="Output directory for results. Default: ./langslice_output/<timestamp>",
     )
+    reg.add_argument(
+        "--provider",
+        default="google",
+        choices=["google", "openai"],
+        help="Model provider: 'google' for Gemini, 'openai' for OpenAI-compatible (Ollama, etc.)",
+    )
     reg.add_argument("--json", action="store_true", help="Print result JSON to stdout")
 
 
@@ -63,7 +69,6 @@ def _run_register(args: argparse.Namespace) -> None:
 
     from PIL import Image
 
-    import langslice.vlm_config as vlm_config
     from langslice.image_prep import normalize_image, prepare_image_for_vlm
     from langslice.registration.core import estimate_registration_runtime
     from langslice.registration.types import (
@@ -71,17 +76,28 @@ def _run_register(args: argparse.Namespace) -> None:
         build_annotation_session_from_correspondences,
     )
 
-    # Configure model before anything touches the client.
-    if args.model:
-        vlm_config.set_model_name(args.model)
-    if args.temperature is not None:
-        vlm_config.set_temperature(args.temperature)
-    if args.thinking:
-        vlm_config.set_thinking_level(args.thinking)
-
     workflow = args.workflow
-    if workflow is None:
-        workflow = vlm_config.default_registration_workflow(vlm_config.MODEL_NAME)
+
+    if args.provider == "openai":
+        import langslice.openai_config as openai_config
+
+        effective_model = args.model or openai_config.get_openai_model()
+        if workflow is None:
+            workflow = "colored_segmentation"
+    else:
+        import langslice.vlm_config as vlm_config
+
+        # Configure model before anything touches the client.
+        if args.model:
+            vlm_config.set_model_name(args.model)
+        if args.temperature is not None:
+            vlm_config.set_temperature(args.temperature)
+        if args.thinking:
+            vlm_config.set_thinking_level(args.thinking)
+
+        effective_model = vlm_config.MODEL_NAME
+        if workflow is None:
+            workflow = vlm_config.default_registration_workflow(vlm_config.MODEL_NAME)
 
     # Load and downscale image.
     print(f"Loading {args.image} ...")
@@ -106,7 +122,7 @@ def _run_register(args: argparse.Namespace) -> None:
     debug_dir = str(out_dir)
 
     print(f"Atlas: {args.atlas}  Position: {args.position:.2f} mm")
-    print(f"Workflow: {workflow}  Model: {vlm_config.MODEL_NAME}")
+    print(f"Workflow: {workflow}  Model: {effective_model}  Provider: {args.provider}")
     border_label = (
         f"border={args.border_count}"
         if args.border_count is not None
@@ -140,6 +156,7 @@ def _run_register(args: argparse.Namespace) -> None:
         debug_dir=debug_dir,
         border_count=args.border_count,
         interior_count=args.interior_count,
+        provider=args.provider,
     )
 
     # Summary.
@@ -257,6 +274,12 @@ def _add_estimate_parser(subparsers: argparse._SubParsersAction) -> None:
         default=512,
         help="Max long-edge pixels for atlas slices (individual mode)",
     )
+    est.add_argument(
+        "--provider",
+        default="google",
+        choices=["google", "openai"],
+        help="Model provider: 'google' for Gemini, 'openai' for OpenAI-compatible (Ollama, etc.)",
+    )
 
 
 def _add_estimate_group_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -325,6 +348,12 @@ def _add_estimate_group_parser(subparsers: argparse._SubParsersAction) -> None:
     )
     p.add_argument("--out", default=None, help="Output directory for debug artifacts")
     p.add_argument("--json", action="store_true", help="Print result JSON to stdout")
+    p.add_argument(
+        "--provider",
+        default="google",
+        choices=["google", "openai"],
+        help="Model provider: 'google' for Gemini, 'openai' for OpenAI-compatible (Ollama, etc.)",
+    )
 
 
 def _run_estimate_group(args: argparse.Namespace) -> None:
@@ -333,17 +362,7 @@ def _run_estimate_group(args: argparse.Namespace) -> None:
 
     from PIL import Image
 
-    import langslice.vlm_config as vlm_config
-    from langslice.estimation import estimate_group
     from langslice.image_prep import adaptive_preprocess, normalize_image, prepare_image_for_vlm
-
-    # Configure model.
-    if args.model:
-        vlm_config.set_model_name(args.model)
-    if args.temperature is not None:
-        vlm_config.set_temperature(args.temperature)
-    if args.thinking:
-        vlm_config.set_thinking_level(args.thinking)
 
     # Load and preprocess images: normalize → downscale → CLAHE
     # (same order as single-slice CLI for experimental consistency).
@@ -374,11 +393,7 @@ def _run_estimate_group(args: argparse.Namespace) -> None:
     print(f"  {n} slices, interval {args.interval}\u00b5m ({interval_mm:.3f}mm)")
     print(f"  Expected span: {total_span:.2f}mm")
     print(f"  Atlas: {args.atlas}")
-    from langslice.estimation.google.ap_multi_slice import _DEFAULT_MODEL
-    effective_model = args.model or _DEFAULT_MODEL
-    print(f"  Model: {effective_model}")
     print(f"  Max iterations: {args.max_iterations}")
-    print()
 
     debug_dir = None
     if args.out:
@@ -389,20 +404,59 @@ def _run_estimate_group(args: argparse.Namespace) -> None:
     def on_progress(msg: str) -> None:
         print(f"  {msg}")
 
-    result = estimate_group(
-        images=images,
-        atlas_name=args.atlas,
-        interval_um=args.interval,
-        thickness_um=args.thickness,
-        max_iterations=args.max_iterations,
-        media_resolution=args.media_resolution,
-        model_name=args.model,
-        show_borders=args.borders,
-        send_individually=not args.grid,
-        atlas_resolution=args.atlas_resolution,
-        on_progress=on_progress,
-        debug_dir=debug_dir,
-    )
+    if args.provider == "openai":
+        import langslice.openai_config as openai_config
+        from langslice.estimation.openai.ap_multi_slice import (
+            estimate_group as _estimate_group,
+        )
+
+        effective_model = args.model or openai_config.get_openai_model()
+        print(f"  Model: {effective_model}  Provider: openai")
+        print()
+
+        result = _estimate_group(
+            images=images,
+            atlas_name=args.atlas,
+            interval_um=args.interval,
+            thickness_um=args.thickness,
+            max_iterations=args.max_iterations,
+            model_name=args.model,
+            show_borders=args.borders,
+            send_individually=not args.grid,
+            atlas_resolution=args.atlas_resolution,
+            on_progress=on_progress,
+            debug_dir=debug_dir,
+        )
+    else:
+        import langslice.vlm_config as vlm_config
+        from langslice.estimation import estimate_group
+
+        if args.model:
+            vlm_config.set_model_name(args.model)
+        if args.temperature is not None:
+            vlm_config.set_temperature(args.temperature)
+        if args.thinking:
+            vlm_config.set_thinking_level(args.thinking)
+
+        from langslice.estimation.google.ap_multi_slice import _DEFAULT_MODEL
+        effective_model = args.model or _DEFAULT_MODEL
+        print(f"  Model: {effective_model}")
+        print()
+
+        result = estimate_group(
+            images=images,
+            atlas_name=args.atlas,
+            interval_um=args.interval,
+            thickness_um=args.thickness,
+            max_iterations=args.max_iterations,
+            media_resolution=args.media_resolution,
+            model_name=args.model,
+            show_borders=args.borders,
+            send_individually=not args.grid,
+            atlas_resolution=args.atlas_resolution,
+            on_progress=on_progress,
+            debug_dir=debug_dir,
+        )
 
     # Summary.
     print()
@@ -519,17 +573,7 @@ def _run_estimate(args: argparse.Namespace) -> None:
 
     from PIL import Image
 
-    import langslice.vlm_config as vlm_config
-    from langslice.estimation import estimate_position, estimate_position_image_gen
     from langslice.image_prep import normalize_image, prepare_image_for_vlm
-
-    # Configure model before anything touches the client.
-    if args.model:
-        vlm_config.set_model_name(args.model)
-    if args.temperature is not None:
-        vlm_config.set_temperature(args.temperature)
-    if args.thinking:
-        vlm_config.set_thinking_level(args.thinking)
 
     # Load and downscale image.
     print(f"Loading {args.image} ...")
@@ -559,48 +603,104 @@ def _run_estimate(args: argparse.Namespace) -> None:
         debug_dir = str(out_dir)
         os.environ["LANGSLICE_VLM_DEBUG_DIR"] = debug_dir
 
-    print(f"Atlas: {args.atlas}")
-    print(
-        f"Model: {vlm_config.MODEL_NAME}  "
-        f"Thinking: {vlm_config.THINKING_LEVEL}  "
-        f"Temp: {vlm_config.TEMPERATURE}"
-    )
-    print(f"Max iterations: {args.max_iterations}")
-    if debug_dir:
-        print(f"Output: {debug_dir}")
-    print()
-
     def on_progress(msg: str) -> None:
         print(f"  {msg}")
 
-    # Resolve workflow: explicit flag > auto-detect from model.
-    workflow = args.workflow
-    if workflow is None:
-        is_img_model = vlm_config.is_image_generation_model(vlm_config.MODEL_NAME)
-        workflow = "image_gen" if is_img_model else "tool_use"
-    print(f"Workflow: {workflow}")
+    if args.provider == "openai":
+        import langslice.openai_config as openai_config
+        from langslice.estimation.openai.ap_image_gen import (
+            estimate_position_image_gen as _estimate_position_image_gen,
+        )
+        from langslice.estimation.openai.ap_single_slice import (
+            estimate_position as _estimate_position,
+        )
 
-    # Run AP estimation.
-    if workflow == "image_gen":
-        result = estimate_position_image_gen(
-            image=image,
-            atlas_name=args.atlas,
-            on_progress=on_progress,
-            show_borders=args.borders,
-            send_individually=not args.grid,
-            atlas_resolution=args.atlas_resolution,
-        )
+        effective_model = args.model or openai_config.get_openai_model()
+        print(f"Atlas: {args.atlas}")
+        print(f"Model: {effective_model}  Provider: openai")
+        print(f"Max iterations: {args.max_iterations}")
+        if debug_dir:
+            print(f"Output: {debug_dir}")
+        print()
+
+        # Workflow: explicit flag > default to tool_use for OpenAI
+        workflow = args.workflow if args.workflow is not None else "tool_use"
+        print(f"Workflow: {workflow}")
+
+        if workflow == "image_gen":
+            result = _estimate_position_image_gen(
+                image=image,
+                atlas_name=args.atlas,
+                on_progress=on_progress,
+                model_name=args.model,
+                show_borders=args.borders,
+                send_individually=not args.grid,
+                atlas_resolution=args.atlas_resolution,
+                debug_dir=debug_dir,
+            )
+        else:
+            result = _estimate_position(
+                image=image,
+                atlas_name=args.atlas,
+                on_progress=on_progress,
+                max_iterations=args.max_iterations,
+                model_name=args.model,
+                show_borders=args.borders,
+                send_individually=not args.grid,
+                atlas_resolution=args.atlas_resolution,
+                debug_dir=debug_dir,
+            )
     else:
-        result = estimate_position(
-            image=image,
-            atlas_name=args.atlas,
-            on_progress=on_progress,
-            max_iterations=args.max_iterations,
-            media_resolution=args.media_resolution,
-            show_borders=args.borders,
-            send_individually=not args.grid,
-            atlas_resolution=args.atlas_resolution,
+        import langslice.vlm_config as vlm_config
+        from langslice.estimation import estimate_position, estimate_position_image_gen
+
+        # Configure model before anything touches the client.
+        if args.model:
+            vlm_config.set_model_name(args.model)
+        if args.temperature is not None:
+            vlm_config.set_temperature(args.temperature)
+        if args.thinking:
+            vlm_config.set_thinking_level(args.thinking)
+
+        print(f"Atlas: {args.atlas}")
+        print(
+            f"Model: {vlm_config.MODEL_NAME}  "
+            f"Thinking: {vlm_config.THINKING_LEVEL}  "
+            f"Temp: {vlm_config.TEMPERATURE}"
         )
+        print(f"Max iterations: {args.max_iterations}")
+        if debug_dir:
+            print(f"Output: {debug_dir}")
+        print()
+
+        # Resolve workflow: explicit flag > auto-detect from model.
+        workflow = args.workflow
+        if workflow is None:
+            is_img_model = vlm_config.is_image_generation_model(vlm_config.MODEL_NAME)
+            workflow = "image_gen" if is_img_model else "tool_use"
+        print(f"Workflow: {workflow}")
+
+        # Run AP estimation.
+        if workflow == "image_gen":
+            result = estimate_position_image_gen(
+                image=image,
+                atlas_name=args.atlas,
+                on_progress=on_progress,
+                show_borders=args.borders,
+                send_individually=not args.grid,
+                atlas_resolution=args.atlas_resolution,
+            )
+        else:
+            result = estimate_position(
+                image=image,
+                atlas_name=args.atlas,
+                on_progress=on_progress,
+                max_iterations=args.max_iterations,
+                media_resolution=args.media_resolution,
+                show_borders=args.borders,
+                send_individually=not args.grid,
+                atlas_resolution=args.atlas_resolution,
+            )
 
     # Summary.
     print()
