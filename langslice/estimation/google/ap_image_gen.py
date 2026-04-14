@@ -35,17 +35,15 @@ from langslice.agent_trace import (
     model_event,
     runtime_event,
 )
-from langslice.estimation.google.ap_tool_use import (
-    APResult,
+from langslice.estimation._types import APResult
+from langslice.estimation.google.common import (
     _emit_trace,
     _extract_usage_metadata,
+    _fetch_atlas_slice_bytes,
     _format_usage_metadata,
     _get_position_range_lazy,
     _image_to_bytes,
     _load_atlas_lazy,
-)
-from langslice.estimation.google.common import (
-    _fetch_atlas_slice_bytes,  # noqa: F401 — re-exported
 )
 from langslice.estimation.google.tool_definitions import _build_atlas_grid
 from langslice.image_prep import normalize_image, prepare_image_for_vlm

@@ -23,7 +23,7 @@ from langslice.agent_trace import (
 from langslice.image_prep import normalize_image
 
 if TYPE_CHECKING:
-    from langslice.estimation.google.ap_tool_use import _APLoopState
+    from langslice.estimation.google.common import _APLoopState
 
 _RESAMPLE_LANCZOS = Image.Resampling.LANCZOS
 
@@ -385,7 +385,7 @@ def _process_ap_function_calls(
     - Parts with ``.function_response`` -> ``Content(role='tool')``
     - Other Parts (text labels, images) -> ``Content(role='user')``
     """
-    from langslice.estimation.google.ap_tool_use import _emit_trace, _image_to_bytes
+    from langslice.estimation.google.common import _emit_trace, _image_to_bytes
 
     atlas_obj = cast(Any, atlas)
     result_parts: list[genai_types.Part] = []
@@ -449,7 +449,7 @@ def _process_ap_function_calls(
             state.images_fetched += len(positions)
 
             if send_individually:
-                from langslice.estimation.google.ap_image_gen import (
+                from langslice.estimation.google.common import (
                     _fetch_atlas_slice_bytes,
                 )
 
