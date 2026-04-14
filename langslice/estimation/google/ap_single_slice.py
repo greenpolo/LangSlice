@@ -261,15 +261,13 @@ def estimate_position(
             ),
         )
 
-        # --- Build initial contents ---
-        contents: list[types.Content] = [
-            types.Content(role="user", parts=[
-                types.Part.from_text(
-                    text="Here is the target brain slice. Determine its AP position in the atlas."
-                ),
-                types.Part.from_uri(file_uri=target_uri, mime_type="image/jpeg"),
-            ]),
-        ]
+        # --- Build initial content (reused across retry attempts) ---
+        initial_content = types.Content(role="user", parts=[
+            types.Part.from_text(
+                text="Here is the target brain slice. Determine its AP position in the atlas."
+            ),
+            types.Part.from_uri(file_uri=target_uri, mime_type="image/jpeg"),
+        ])
 
         # --- Tool declarations ---
         tools = _tool_declarations()
@@ -287,118 +285,152 @@ def estimate_position(
             tools=cast(Any, tools),
         )
 
-        # --- Main generate_content loop ---
-        _progress(f"Starting agentic estimation (max {max_iterations} tool calls)...")
+        # --- Main generate_content loop (with one retry on failure) ---
+        for attempt in range(2):
+            if attempt == 1:
+                _progress("Retrying AP estimation (attempt 2/2, fresh history)...")
+                state = _APLoopState(max_iterations=max_iterations)
 
-        for iteration in range(max_iterations):
-            request_metrics = _history_metrics(contents)
-            turn_metric: dict[str, object] = {
-                "iteration": iteration + 1,
-                "request": request_metrics,
-                "mode": "generate_content",
-            }
-
-            if on_progress:
-                part_count = request_metrics['part_count']
-                img_count = request_metrics['image_parts']
-                img_bytes = request_metrics['image_bytes']
-                _progress(
-                    f"generate_content turn {iteration + 1}: "
-                    f"sending {part_count} parts, "
-                    f"{img_count} images ({img_bytes} bytes)"
-                )
-
-            started_at = time.perf_counter()
-            response = retry_with_backoff(
-                lambda: client.models.generate_content(
-                    model=effective_model,
-                    contents=contents,
-                    config=config,
-                ),
-                request_label=f"AP turn {iteration + 1}",
-                on_progress=_progress,
-            )
-            turn_metric["wall_time_s"] = round(time.perf_counter() - started_at, 3)
-            usage_metadata = _extract_usage_metadata(response)
-            turn_metric["usage_metadata"] = usage_metadata
-            state.turn_metrics.append(turn_metric)
+            contents: list[types.Content] = [initial_content]
 
             _progress(
-                f"Turn {iteration + 1} completed in {turn_metric['wall_time_s']}s; "
-                f"{_format_usage_metadata(usage_metadata)}"
+                f"Starting agentic estimation (max {max_iterations} tool calls"
+                + (f", attempt {attempt + 1}/2" if attempt > 0 else "")
+                + ")..."
             )
 
-            # Append model response to history
-            model_content = response.candidates[0].content
-            contents.append(model_content)
+            for iteration in range(max_iterations):
+                request_metrics = _history_metrics(contents)
+                turn_metric: dict[str, object] = {
+                    "iteration": iteration + 1,
+                    "request": request_metrics,
+                    "mode": "generate_content",
+                }
 
-            # Emit trace for model text/thought outputs
-            text_outputs, thought_outputs = _extract_text_and_thoughts(model_content)
-            if text_outputs or thought_outputs:
-                trace_parts: list[dict[str, object]] = []
-                if thought_outputs:
-                    trace_parts.append(
-                        json_part(thought_outputs, label="Reasoning summary", collapsible=True)
+                if on_progress:
+                    part_count = request_metrics['part_count']
+                    img_count = request_metrics['image_parts']
+                    img_bytes = request_metrics['image_bytes']
+                    _progress(
+                        f"generate_content turn {iteration + 1}: "
+                        f"sending {part_count} parts, "
+                        f"{img_count} images ({img_bytes} bytes)"
                     )
-                if text_outputs:
-                    trace_parts.append(
-                        json_part(
-                            text_outputs,
-                            label="Model text",
-                            collapsible=True,
-                        )
-                    )
-                _emit_trace(
-                    on_trace,
-                    model_event(
-                        stage="ap",
-                        title=f"Model turn {iteration + 1}",
-                        summary="Model returned text before the next tool step",
-                        parts=trace_parts,
-                        metadata={"iteration": iteration + 1, **usage_metadata},
+
+                started_at = time.perf_counter()
+                response = retry_with_backoff(
+                    lambda: client.models.generate_content(
+                        model=effective_model,
+                        contents=contents,
+                        config=config,
                     ),
+                    request_label=f"AP turn {iteration + 1}",
+                    on_progress=_progress,
+                )
+                turn_metric["wall_time_s"] = round(time.perf_counter() - started_at, 3)
+                usage_metadata = _extract_usage_metadata(response)
+                turn_metric["usage_metadata"] = usage_metadata
+                state.turn_metrics.append(turn_metric)
+
+                _progress(
+                    f"Turn {iteration + 1} completed in {turn_metric['wall_time_s']}s; "
+                    f"{_format_usage_metadata(usage_metadata)}"
                 )
 
-            # Extract function calls
-            function_calls, text_preview = _extract_function_calls(response)
+                # Append model response to history
+                model_content = response.candidates[0].content
+                contents.append(model_content)
 
-            if not function_calls:
-                if text_preview and on_progress:
-                    _progress(f"Agent reasoning/text: {text_preview[:200]}...")
-                nudge = _build_nudge_text(state)
-                contents.append(types.Content(role="user", parts=[
-                    types.Part.from_text(text=nudge),
-                ]))
-                continue
+                # Emit trace for model text/thought outputs
+                text_outputs, thought_outputs = _extract_text_and_thoughts(model_content)
+                if text_outputs or thought_outputs:
+                    trace_parts: list[dict[str, object]] = []
+                    if thought_outputs:
+                        trace_parts.append(
+                            json_part(thought_outputs, label="Reasoning summary", collapsible=True)
+                        )
+                    if text_outputs:
+                        trace_parts.append(
+                            json_part(
+                                text_outputs,
+                                label="Model text",
+                                collapsible=True,
+                            )
+                        )
+                    _emit_trace(
+                        on_trace,
+                        model_event(
+                            stage="ap",
+                            title=f"Model turn {iteration + 1}",
+                            summary="Model returned text before the next tool step",
+                            parts=trace_parts,
+                            metadata={"iteration": iteration + 1, **usage_metadata},
+                        ),
+                    )
 
-            # Process tool calls — returns list[Part]
-            result_parts = _process_ap_function_calls(
-                function_calls,
-                iteration=iteration,
-                atlas=atlas,
-                pos_lo=pos_lo,
-                pos_hi=pos_hi,
-                target_h=target_h,
-                run_dir=run_dir,
-                state=state,
-                target_image=target_prepared,
-                show_borders=show_borders,
-                send_individually=send_individually,
-                atlas_resolution=atlas_resolution,
-                on_progress=_progress,
-                on_trace=on_trace,
-            )
+                # Extract function calls
+                function_calls, text_preview = _extract_function_calls(response)
+
+                if not function_calls:
+                    # Detect thought leaks: high candidate tokens with no
+                    # tool call means the model is writing verbose text
+                    # instead of reasoning internally.
+                    candidate_tokens = int(
+                        usage_metadata.get("candidates_token_count", 0)
+                    )
+                    is_thought_leak = candidate_tokens > 1000
+                    if is_thought_leak:
+                        _progress(
+                            f"Thought leak detected ({candidate_tokens} "
+                            f"candidate tokens). Nudging."
+                        )
+                        nudge = (
+                            "You wrote a long text response instead of calling a tool. "
+                            "Do NOT repeat this. Use your internal reasoning, then call "
+                            "a tool: `fetch_atlas` or `submit_estimate`."
+                        )
+                    else:
+                        if text_preview and on_progress:
+                            _progress(f"Agent reasoning/text: {text_preview[:200]}...")
+                        nudge = _build_nudge_text(state)
+                    contents.append(types.Content(role="user", parts=[
+                        types.Part.from_text(text=nudge),
+                    ]))
+                    continue
+
+                # Process tool calls — returns list[Part]
+                result_parts = _process_ap_function_calls(
+                    function_calls,
+                    iteration=iteration,
+                    atlas=atlas,
+                    pos_lo=pos_lo,
+                    pos_hi=pos_hi,
+                    target_h=target_h,
+                    run_dir=run_dir,
+                    state=state,
+                    target_image=target_prepared,
+                    show_borders=show_borders,
+                    send_individually=send_individually,
+                    atlas_resolution=atlas_resolution,
+                    on_progress=_progress,
+                    on_trace=on_trace,
+                )
+                if state.estimate_result:
+                    break
+
+                # Split parts: function_response Parts go in role='tool',
+                # text/image Parts go in role='user'
+                tool_parts = [p for p in result_parts if getattr(p, 'function_response', None)]
+                other_parts = [p for p in result_parts if not getattr(p, 'function_response', None)]
+                if tool_parts:
+                    contents.append(types.Content(role="tool", parts=tool_parts))
+                if other_parts:
+                    contents.append(types.Content(role="user", parts=other_parts))
+
             if state.estimate_result:
                 break
-
-            # Split parts: function_response Parts go in role='tool',
-            # text/image Parts go in role='user'
-            tool_parts = [p for p in result_parts if getattr(p, 'function_response', None)]
-            other_parts = [p for p in result_parts if not getattr(p, 'function_response', None)]
-            if tool_parts:
-                contents.append(types.Content(role="tool", parts=tool_parts))
-            if other_parts:
-                contents.append(types.Content(role="user", parts=other_parts))
+            if attempt == 0:
+                _progress("Warning: no estimate in attempt 1. Retrying with fresh history...")
 
         # --- Finalize result ---
         final_pos: float
