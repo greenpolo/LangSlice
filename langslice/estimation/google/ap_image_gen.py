@@ -44,6 +44,9 @@ from langslice.estimation.google.ap_tool_use import (
     _image_to_bytes,
     _load_atlas_lazy,
 )
+from langslice.estimation.google.common import (
+    _fetch_atlas_slice_bytes,  # noqa: F401 — re-exported
+)
 from langslice.estimation.google.tool_definitions import _build_atlas_grid
 from langslice.image_prep import normalize_image, prepare_image_for_vlm
 from langslice.retry import (
@@ -212,34 +215,6 @@ def _image_to_typed_part(img_bytes: bytes, mime_type: str = "image/jpeg") -> Any
 # ---------------------------------------------------------------------------
 # Main estimator
 # ---------------------------------------------------------------------------
-
-
-def _fetch_atlas_slice_bytes(
-    atlas: Any,
-    position_mm: float,
-    *,
-    max_long_edge: int = 512,
-    show_borders: bool = False,
-) -> bytes:
-    """Fetch a single atlas slice, normalize, scale, and return JPEG bytes."""
-    if show_borders:
-        from langslice.atlas.core import get_composite_slice
-
-        img = get_composite_slice(atlas, position_mm)
-    else:
-        from langslice.atlas.core import get_reference_slice
-
-        img = get_reference_slice(atlas, position_mm)
-    img = normalize_image(img)
-    w, h = img.size
-    long_edge = max(w, h)
-    if long_edge > max_long_edge:
-        scale = max_long_edge / long_edge
-        img = img.resize(
-            (round(w * scale), round(h * scale)),
-            Image.Resampling.LANCZOS,
-        )
-    return _image_to_bytes(img)
 
 
 def estimate_position_image_gen(
