@@ -1,7 +1,7 @@
 """Shared helpers for OpenAI-compatible AP estimation workflows.
 
 Mirrors ``langslice.estimation.google.common`` but adapted for the
-Chat Completions API message format.  Provider-agnostic helpers are
+Responses API message format.  Provider-agnostic helpers are
 re-exported from the Google module so downstream code can import
 everything from ``langslice.estimation.openai.common``.
 """
@@ -56,23 +56,23 @@ def _bytes_to_base64(data: bytes, mime_type: str = "image/jpeg") -> str:
 
 
 def _build_image_content(b64_uri: str) -> dict[str, Any]:
-    """Wrap a base64 data URI as a Chat Completions image content part.
+    """Wrap a base64 data URI as a Responses API image content part.
 
     Returns::
 
-        {"type": "image_url", "image_url": {"url": "<b64_uri>"}}
+        {"type": "input_image", "image_url": "<b64_uri>"}
     """
-    return {"type": "image_url", "image_url": {"url": b64_uri}}
+    return {"type": "input_image", "image_url": b64_uri}
 
 
 def _build_text_content(text: str) -> dict[str, str]:
-    """Wrap text as a Chat Completions text content part.
+    """Wrap text as a Responses API text content part.
 
     Returns::
 
-        {"type": "text", "text": "<text>"}
+        {"type": "input_text", "text": "<text>"}
     """
-    return {"type": "text", "text": text}
+    return {"type": "input_text", "text": text}
 
 
 # ---------------------------------------------------------------------------
@@ -81,25 +81,19 @@ def _build_text_content(text: str) -> dict[str, str]:
 
 
 def _extract_text(response: Any) -> str | None:
-    """Extract the assistant's text from a Chat Completions response.
+    """Extract the assistant's text from a Responses API response.
 
-    Reads ``response.choices[0].message.content``.  Returns ``None`` when no
-    text content is available.
+    Reads ``response.output_text``.  Returns ``None`` when no text content
+    is available.
     """
-    choices = getattr(response, "choices", None)
-    if not choices:
-        return None
-    message = getattr(choices[0], "message", None)
-    if message is None:
-        return None
-    content = getattr(message, "content", None)
-    if isinstance(content, str) and content:
-        return content
+    text = getattr(response, "output_text", None)
+    if isinstance(text, str) and text:
+        return text
     return None
 
 
 def _extract_usage(response: Any) -> dict[str, int]:
-    """Extract token usage from a Chat Completions response.
+    """Extract token usage from a Responses API response.
 
     Returns a dict with ``prompt_tokens``, ``completion_tokens``, and
     ``total_tokens``.  Missing fields default to ``0``.
@@ -163,7 +157,7 @@ def _history_message_count(messages: list[dict[str, Any]]) -> dict[str, int]:
         content = msg.get("content")
         if isinstance(content, list):
             for part in content:
-                if isinstance(part, dict) and part.get("type") == "image_url":
+                if isinstance(part, dict) and part.get("type") == "input_image":
                     counts["image_parts"] += 1
 
     return counts

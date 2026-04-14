@@ -1,7 +1,7 @@
-"""Single-slice AP estimation via OpenAI-compatible Chat Completions.
+"""Single-slice AP estimation via OpenAI-compatible Responses API.
 
 Port of ``langslice.estimation.google.ap_single_slice`` adapted for the
-Chat Completions API.  Uses ``get_openai_client()`` / ``get_openai_model()``
+Responses API.  Uses ``get_openai_client()`` / ``get_openai_model()``
 from :mod:`langslice.openai_config` and sends images inline as base64
 data URIs instead of the Gemini File API.
 """
@@ -71,8 +71,8 @@ def estimate_position(
     - fetch_atlas: view coronal sections at specific AP positions
     - submit_estimate: declare the final answer
 
-    Uses the OpenAI Chat Completions API with manually-managed conversation
-    history.  Images are sent inline as base64 data URIs.  The model runs
+    Uses the OpenAI Responses API with manually-managed conversation
+    input.  Images are sent inline as base64 data URIs.  The model runs
     until it submits or hits *max_iterations*.
 
     Set ``LANGSLICE_VLM_DEBUG_DIR`` to save all artifacts for review.
@@ -233,18 +233,15 @@ def estimate_position(
         ],
     }
 
-    # --- Main Chat Completions loop (with one retry on failure) ---
+    # --- Main Responses API loop (with one retry on failure) ---
     state = _APLoopState(max_iterations=max_iterations)
 
     for attempt in range(2):
         if attempt == 1:
-            _progress("Retrying AP estimation (attempt 2/2, fresh history)...")
+            _progress("Retrying AP estimation (attempt 2/2, fresh input)...")
             state = _APLoopState(max_iterations=max_iterations)
 
-        messages: list[Any] = [
-            {"role": "system", "content": system_instruction},
-            initial_user_message,
-        ]
+        input_list: list[Any] = [initial_user_message]
 
         _progress(
             f"Starting agentic estimation (max {max_iterations} tool calls"
@@ -253,11 +250,11 @@ def estimate_position(
         )
 
         for iteration in range(max_iterations):
-            request_metrics = _history_message_count(messages)
+            request_metrics = _history_message_count(input_list)
             turn_metric: dict[str, object] = {
                 "iteration": iteration + 1,
                 "request": request_metrics,
-                "mode": "chat_completions",
+                "mode": "responses_api",
             }
 
             if on_progress:
@@ -267,18 +264,18 @@ def estimate_position(
                 )
                 img_count = request_metrics.get("image_parts", 0)
                 _progress(
-                    f"chat.completions turn {iteration + 1}: "
-                    f"sending {msg_count} messages, "
+                    f"responses.create turn {iteration + 1}: "
+                    f"sending {msg_count} items, "
                     f"{img_count} images"
                 )
 
             started_at = time.perf_counter()
             response = retry_with_backoff(
-                lambda _m=messages: client.chat.completions.create(
+                lambda _inp=input_list: client.responses.create(
                     model=effective_model,
-                    messages=_m,
+                    instructions=system_instruction,
+                    input=_inp,
                     tools=tools,
-                    max_tokens=4000,
                 ),
                 request_label=f"AP turn {iteration + 1}",
                 on_progress=_progress,
@@ -317,8 +314,8 @@ def estimate_position(
             function_calls, text_preview = _extract_function_calls(response)
 
             if not function_calls:
-                # Append assistant message to history
-                messages.append(response.choices[0].message)
+                # Append model output to input for next turn
+                input_list += response.output
 
                 # Detect thought leaks: high completion tokens with no
                 # tool call means the model is writing verbose text
@@ -339,14 +336,14 @@ def estimate_position(
                     if text_preview and on_progress:
                         _progress(f"Agent reasoning/text: {text_preview[:200]}...")
                     nudge = _build_nudge_text(state)
-                messages.append({"role": "user", "content": nudge})
+                input_list.append({"role": "user", "content": nudge})
                 continue
 
-            # Append assistant message (with tool_calls) to history
-            messages.append(response.choices[0].message)
+            # Append model output (including function_call items) to input
+            input_list += response.output
 
-            # Process tool calls — returns (messages_to_add, estimate_submitted)
-            result_messages, estimate_submitted = _process_ap_function_calls(
+            # Process tool calls — returns (items_to_add, estimate_submitted)
+            result_items, estimate_submitted = _process_ap_function_calls(
                 function_calls,
                 iteration=iteration,
                 atlas=atlas,
@@ -362,7 +359,7 @@ def estimate_position(
                 on_progress=_progress,
                 on_trace=on_trace,
             )
-            messages.extend(result_messages)
+            input_list.extend(result_items)
 
             if estimate_submitted:
                 break
@@ -411,7 +408,7 @@ def estimate_position(
         write_debug_artifacts(
             run_dir=run_dir,
             atlas_name=atlas_name,
-            mode_used="chat_completions",
+            mode_used="responses_api",
             target_info=target_info,
             feature_flags={},
             max_iterations=max_iterations,

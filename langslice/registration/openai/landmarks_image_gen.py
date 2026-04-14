@@ -131,10 +131,9 @@ def _request_annotated_atlas(
         },
     ]
 
-    reasoning_response = client.chat.completions.create(
+    reasoning_response = client.responses.create(
         model=model,
-        messages=messages,
-        max_tokens=2000,
+        input=messages,
     )
 
     description = _extract_text(reasoning_response)
@@ -263,10 +262,9 @@ def _request_annotated_slice(
         },
     ]
 
-    reasoning_response = client.chat.completions.create(
+    reasoning_response = client.responses.create(
         model=model,
-        messages=messages,
-        max_tokens=2000,
+        input=messages,
     )
 
     description = _extract_text(reasoning_response)

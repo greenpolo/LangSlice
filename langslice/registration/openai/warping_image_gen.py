@@ -120,7 +120,7 @@ def _request_warped_segmentation(
     Raises ``RuntimeError`` if the image model does not return an image.
     """
     # ------------------------------------------------------------------
-    # Step 1: Reason about deformations via Chat Completions
+    # Step 1: Reason about deformations via Responses API
     # ------------------------------------------------------------------
     if on_progress:
         on_progress("Colored segmentation: reasoning about deformations...")
@@ -128,7 +128,7 @@ def _request_warped_segmentation(
     client = get_openai_client()
     model = get_openai_model()
 
-    messages: list[dict[str, Any]] = [
+    input_list: list[dict[str, Any]] = [
         {
             "role": "user",
             "content": [
@@ -143,10 +143,9 @@ def _request_warped_segmentation(
         },
     ]
 
-    reasoning_response = client.chat.completions.create(
+    reasoning_response = client.responses.create(
         model=model,
-        messages=messages,
-        max_tokens=4000,
+        input=input_list,
     )
 
     description = _extract_text(reasoning_response)

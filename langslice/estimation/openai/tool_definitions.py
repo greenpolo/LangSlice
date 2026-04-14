@@ -1,7 +1,7 @@
-"""OpenAI Chat Completions tool definitions for AP estimation.
+"""OpenAI Responses API tool definitions for AP estimation.
 
 Port of ``langslice.estimation.google.tool_definitions`` adapted for the
-Chat Completions function-calling format.  Provider-agnostic helpers
+Responses API function-calling format.  Provider-agnostic helpers
 (grid building, position math, nudge text) are imported from the Google
 module.
 """
@@ -56,65 +56,61 @@ from langslice.estimation.openai.common import (
 def _tool_declarations() -> list[dict[str, Any]]:
     """Return tool declarations for single-slice AP estimation.
 
-    Format follows the OpenAI Chat Completions ``tools`` parameter::
+    Format follows the OpenAI Responses API ``tools`` parameter::
 
-        [{"type": "function", "function": {"name": ..., "parameters": ...}}]
+        [{"type": "function", "name": ..., "parameters": ...}]
     """
     return [
         {
             "type": "function",
-            "function": {
-                "name": "fetch_atlas",
-                "description": (
-                    "Fetch atlas coronal sections at specific AP positions. Returns "
-                    "a single labeled grid image for direct visual comparison. You "
-                    "choose exactly which positions to see (1 to 8). Use this to "
-                    "compare multiple positions at once — you can space them however "
-                    "you like (evenly, densely around a candidate, etc.)."
-                ),
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "positions_mm": {
-                            "type": "array",
-                            "items": {"type": "number"},
-                            "minItems": 1,
-                            "maxItems": 8,
-                            "description": (
-                                "List of AP positions in mm to fetch. Choose any "
-                                "positions you want — you can cluster them densely "
-                                "around a candidate or spread them widely."
-                            ),
-                        },
+            "name": "fetch_atlas",
+            "description": (
+                "Fetch atlas coronal sections at specific AP positions. Returns "
+                "a single labeled grid image for direct visual comparison. You "
+                "choose exactly which positions to see (1 to 8). Use this to "
+                "compare multiple positions at once — you can space them however "
+                "you like (evenly, densely around a candidate, etc.)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "positions_mm": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "minItems": 1,
+                        "maxItems": 8,
+                        "description": (
+                            "List of AP positions in mm to fetch. Choose any "
+                            "positions you want — you can cluster them densely "
+                            "around a candidate or spread them widely."
+                        ),
                     },
-                    "required": ["positions_mm"],
                 },
+                "required": ["positions_mm"],
             },
         },
         {
             "type": "function",
-            "function": {
-                "name": "submit_estimate",
-                "description": (
-                    "Submit your final AP position estimate. Only call this when "
-                    "you are confident in your answer."
-                ),
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "position_mm": {
-                            "type": "number",
-                            "description": (
-                                "Final estimated AP position in mm from the anterior edge"
-                            ),
-                        },
-                        "reasoning": {
-                            "type": "string",
-                            "description": "Detailed reasoning for the estimate",
-                        },
+            "name": "submit_estimate",
+            "description": (
+                "Submit your final AP position estimate. Only call this when "
+                "you are confident in your answer."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "position_mm": {
+                        "type": "number",
+                        "description": (
+                            "Final estimated AP position in mm from the anterior edge"
+                        ),
                     },
-                    "required": ["position_mm", "reasoning"],
+                    "reasoning": {
+                        "type": "string",
+                        "description": "Detailed reasoning for the estimate",
+                    },
                 },
+                "required": ["position_mm", "reasoning"],
             },
         },
     ]
@@ -124,54 +120,50 @@ def _group_tool_declarations(n_slices: int) -> list[dict[str, Any]]:
     """Return tool declarations for multi-slice group AP estimation.
 
     Same two tools as the Gemini variant (``fetch_atlas`` +
-    ``submit_group_estimate``) but in Chat Completions format.
+    ``submit_group_estimate``) but in Responses API format.
     """
     return [
         {
             "type": "function",
-            "function": {
-                "name": "fetch_atlas",
-                "description": "Fetch 1-8 atlas coronal sections as a labeled grid.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "positions_mm": {
-                            "type": "array",
-                            "items": {"type": "number"},
-                            "minItems": 1,
-                            "maxItems": 8,
-                            "description": "AP positions in mm (1-8).",
-                        },
+            "name": "fetch_atlas",
+            "description": "Fetch 1-8 atlas coronal sections as a labeled grid.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "positions_mm": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "minItems": 1,
+                        "maxItems": 8,
+                        "description": "AP positions in mm (1-8).",
                     },
-                    "required": ["positions_mm"],
                 },
+                "required": ["positions_mm"],
             },
         },
         {
             "type": "function",
-            "function": {
-                "name": "submit_group_estimate",
-                "description": (
-                    f"Submit final AP estimates for all {n_slices} slices."
-                ),
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "positions_mm": {
-                            "type": "array",
-                            "items": {"type": "number"},
-                            "description": (
-                                f"AP positions in mm for all {n_slices} slices, "
-                                "in order."
-                            ),
-                        },
-                        "reasoning": {
-                            "type": "string",
-                            "description": "Brief reasoning.",
-                        },
+            "name": "submit_group_estimate",
+            "description": (
+                f"Submit final AP estimates for all {n_slices} slices."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "positions_mm": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "description": (
+                            f"AP positions in mm for all {n_slices} slices, "
+                            "in order."
+                        ),
                     },
-                    "required": ["positions_mm", "reasoning"],
+                    "reasoning": {
+                        "type": "string",
+                        "description": "Brief reasoning.",
+                    },
                 },
+                "required": ["positions_mm", "reasoning"],
             },
         },
     ]
@@ -185,37 +177,29 @@ def _group_tool_declarations(n_slices: int) -> list[dict[str, Any]]:
 def _extract_function_calls(
     response: object,
 ) -> tuple[list[dict[str, object]], str | None]:
-    """Extract function calls from a Chat Completions response.
+    """Extract function calls from a Responses API response.
 
-    Reads ``response.choices[0].message.tool_calls`` and parses each
-    tool call's ``function.arguments`` JSON string.
+    Iterates ``response.output`` for items with ``type == "function_call"``.
+    Each such item has ``name``, ``arguments`` (JSON string), and ``call_id``.
 
     Returns ``(function_calls, text_preview)`` where each function call is
     ``{"call_id": str, "name": str, "args": dict}``.  ``text_preview`` is
-    ``response.choices[0].message.content`` if any text was returned.
+    ``response.output_text`` if any text was returned.
     """
-    choices = getattr(response, "choices", None) or []
-    if not choices:
-        return [], None
-
-    message = getattr(choices[0], "message", None)
-    if message is None:
-        return [], None
+    output_items = getattr(response, "output", None) or []
 
     text_preview: str | None = None
-    content = getattr(message, "content", None)
-    if isinstance(content, str) and content:
-        text_preview = content
+    output_text = getattr(response, "output_text", None)
+    if isinstance(output_text, str) and output_text:
+        text_preview = output_text
 
-    tool_calls_attr = getattr(message, "tool_calls", None) or []
     function_calls: list[dict[str, object]] = []
-    for tc in tool_calls_attr:
-        tc_id = getattr(tc, "id", None) or ""
-        func = getattr(tc, "function", None)
-        if func is None:
+    for item in output_items:
+        if getattr(item, "type", None) != "function_call":
             continue
-        name = getattr(func, "name", "") or ""
-        arguments_str = getattr(func, "arguments", "{}") or "{}"
+        call_id = getattr(item, "call_id", None) or ""
+        name = getattr(item, "name", "") or ""
+        arguments_str = getattr(item, "arguments", "{}") or "{}"
         try:
             args = json.loads(arguments_str)
         except (json.JSONDecodeError, TypeError):
@@ -223,7 +207,7 @@ def _extract_function_calls(
         if not isinstance(args, dict):
             args = {}
         function_calls.append({
-            "call_id": str(tc_id),
+            "call_id": str(call_id),
             "name": str(name),
             "args": args,
         })
@@ -254,15 +238,15 @@ def _handle_fetch_atlas(
     on_progress: Callable[[str], None] | None,
     on_trace: Callable[[dict[str, object]], None] | None,
 ) -> tuple[list[dict[str, Any]], str]:
-    """Handle a ``fetch_atlas`` tool call for Chat Completions.
+    """Handle a ``fetch_atlas`` tool call for the Responses API.
 
     Returns ``(response_items, function_name)`` where *response_items* is
-    a list of message dicts to append to the conversation history:
+    a list of dicts to append to the conversation input:
 
-    - ``{"role": "tool", "tool_call_id": ..., "content": json_string}``
-    - ``{"role": "user", "content": [text_parts, image_parts]}``
+    - ``{"type": "function_call_output", "call_id": ..., "output": json_string}``
+    - ``{"role": "user", "content": [input_text/input_image parts]}``
 
-    The caller appends all items directly to the messages list.
+    The caller appends all items directly to the input list.
     """
     atlas_obj = cast(Any, atlas)
     response_items: list[dict[str, Any]] = []
@@ -276,9 +260,9 @@ def _handle_fetch_atlas(
 
     if not positions:
         response_items.append({
-            "role": "tool",
-            "tool_call_id": tool_call_id,
-            "content": json.dumps({"status": "error", "error": "No valid positions provided"}),
+            "type": "function_call_output",
+            "call_id": tool_call_id,
+            "output": json.dumps({"status": "error", "error": "No valid positions provided"}),
         })
         return response_items, fn_name
 
@@ -294,9 +278,9 @@ def _handle_fetch_atlas(
     if send_individually:
         # Tool result acknowledging the fetch
         response_items.append({
-            "role": "tool",
-            "tool_call_id": tool_call_id,
-            "content": json.dumps({
+            "type": "function_call_output",
+            "call_id": tool_call_id,
+            "output": json.dumps({
                 "status": "ok",
                 "positions_mm": positions,
                 "description": (
@@ -356,9 +340,9 @@ def _handle_fetch_atlas(
                 quality=85,
             )
         response_items.append({
-            "role": "tool",
-            "tool_call_id": tool_call_id,
-            "content": json.dumps({
+            "type": "function_call_output",
+            "call_id": tool_call_id,
+            "output": json.dumps({
                 "status": "ok",
                 "positions_mm": positions,
                 "description": (
@@ -419,14 +403,14 @@ def _process_ap_function_calls(
     on_progress: Callable[[str], None] | None = None,
     on_trace: Callable[[dict[str, object]], None] | None = None,
 ) -> tuple[list[dict[str, Any]], bool]:
-    """Process function calls and return Chat Completions messages.
+    """Process function calls and return Responses API input items.
 
-    Returns ``(messages, estimate_submitted)`` where *messages* is a list
-    of message dicts (``role='tool'`` results and optional ``role='user'``
-    image messages) to append to the conversation history.
+    Returns ``(items, estimate_submitted)`` where *items* is a list
+    of dicts (``function_call_output`` results and optional ``role='user'``
+    image messages) to append to the conversation input.
 
-    Each tool result includes a ``tool_call_id`` matching the original
-    call's ID, as required by the Chat Completions API.
+    Each tool result includes a ``call_id`` matching the original
+    call's ID, as required by the Responses API.
     """
     result_messages: list[dict[str, Any]] = []
     estimate_submitted = False
@@ -437,9 +421,9 @@ def _process_ap_function_calls(
         response: dict[str, object],
     ) -> None:
         result_messages.append({
-            "role": "tool",
-            "tool_call_id": call_id,
-            "content": json.dumps(response),
+            "type": "function_call_output",
+            "call_id": call_id,
+            "output": json.dumps(response),
         })
 
     for call in function_calls:

@@ -1,9 +1,9 @@
-"""Image-gen AP estimation via OpenAI-compatible Chat Completions.
+"""Image-gen AP estimation via OpenAI-compatible Responses API.
 
 Port of ``langslice.estimation.google.ap_image_gen`` adapted for the
-Chat Completions API.  Uses stateless, single-call passes (no conversation
-history) — each pass sends a fresh ``chat.completions.create`` with a system
-message and one user message containing labeled atlas images plus the target.
+Responses API.  Uses stateless, single-call passes (no conversation
+history) — each pass sends a fresh ``responses.create`` with instructions
+and one user message containing labeled atlas images plus the target.
 
 Three-pass zoom workflow:
 1. **Broad scan** -- evenly-spaced slices spanning the full AP range.
@@ -173,7 +173,7 @@ def estimate_position_image_gen(
     """Multi-pass zoom AP estimation using OpenAI-compatible Chat Completions.
 
     Three passes narrow from the full atlas range down to ~0.05 mm resolution.
-    Each pass is a stateless ``chat.completions.create`` call so that the full
+    Each pass is a stateless ``responses.create`` call so that the full
     token budget is available on every pass.
 
     When *center_mm* is provided the broad scan (pass 1) is skipped and the
@@ -400,17 +400,16 @@ def estimate_position_image_gen(
                 _build_text_content(prompt),
             ]
 
-        messages: list[dict[str, Any]] = [
-            {"role": "system", "content": system_instruction},
+        input_list: list[dict[str, Any]] = [
             {"role": "user", "content": user_content},
         ]
 
         started_at = time.perf_counter()
         response = retry_with_backoff(
-            lambda _m=messages: client.chat.completions.create(
+            lambda _inp=input_list: client.responses.create(
                 model=effective_model,
-                messages=_m,
-                max_tokens=2000,
+                instructions=system_instruction,
+                input=_inp,
             ),
             request_label=f"Image-gen AP pass {pass_idx + 1}",
             on_progress=_progress,

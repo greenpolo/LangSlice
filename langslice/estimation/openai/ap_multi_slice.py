@@ -1,7 +1,7 @@
-"""Multi-slice group AP estimation via OpenAI-compatible Chat Completions.
+"""Multi-slice group AP estimation via OpenAI-compatible Responses API.
 
 Port of ``langslice.estimation.google.ap_multi_slice`` adapted for the
-Chat Completions API.  Uses ``get_openai_client()`` / ``get_openai_model()``
+Responses API.  Uses ``get_openai_client()`` / ``get_openai_model()``
 from :mod:`langslice.openai_config` and sends images inline as base64
 data URIs instead of the Gemini File API.
 """
@@ -77,8 +77,8 @@ def _process_group_function_calls(
     """Process group tool calls and return Chat Completions messages.
 
     Returns ``(messages, estimate_submitted)`` where *messages* is a list of
-    message dicts (``role='tool'`` results and optional ``role='user'`` image
-    messages) to append to the conversation history.
+    input items (``function_call_output`` results and optional ``role='user'``
+    image messages) to append to the conversation input.
 
     Handles ``fetch_atlas`` (delegated to ``_handle_fetch_atlas``) and
     ``submit_group_estimate`` (with full validation: count, range,
@@ -93,9 +93,9 @@ def _process_group_function_calls(
         response: dict[str, object],
     ) -> None:
         result_messages.append({
-            "role": "tool",
-            "tool_call_id": call_id,
-            "content": json.dumps(response),
+            "type": "function_call_output",
+            "call_id": call_id,
+            "output": json.dumps(response),
         })
 
     for call in function_calls:
@@ -613,7 +613,7 @@ def estimate_group(
     for attempt in range(2):
         if attempt == 1:
             _progress(
-                "Retrying group estimation (attempt 2/2, fresh history)..."
+                "Retrying group estimation (attempt 2/2, fresh input)..."
             )
             state = _GroupLoopState(
                 n_slices=n_slices,
@@ -621,10 +621,7 @@ def estimate_group(
                 interval_mm=interval_mm,
             )
 
-        messages: list[Any] = [
-            {"role": "system", "content": system_instruction},
-            initial_user_message,
-        ]
+        input_list: list[Any] = [initial_user_message]
 
         _progress(
             f"Starting group estimation "
@@ -634,11 +631,11 @@ def estimate_group(
         )
 
         for iteration in range(max_iterations):
-            request_metrics = _history_message_count(messages)
+            request_metrics = _history_message_count(input_list)
             turn_metric: dict[str, object] = {
                 "iteration": iteration + 1,
                 "request": request_metrics,
-                "mode": "chat_completions",
+                "mode": "responses_api",
             }
 
             if on_progress:
@@ -648,18 +645,18 @@ def estimate_group(
                 )
                 img_count = request_metrics.get("image_parts", 0)
                 _progress(
-                    f"chat.completions turn {iteration + 1}: "
-                    f"sending {msg_count} messages, "
+                    f"responses.create turn {iteration + 1}: "
+                    f"sending {msg_count} items, "
                     f"{img_count} images"
                 )
 
             started_at = time.perf_counter()
             response = retry_with_backoff(
-                lambda _m=messages: client.chat.completions.create(
+                lambda _inp=input_list: client.responses.create(
                     model=effective_model,
-                    messages=_m,
+                    instructions=system_instruction,
+                    input=_inp,
                     tools=tools,
-                    max_tokens=8000,
                 ),
                 request_label=f"Group estimation turn {iteration + 1}",
                 on_progress=_progress,
@@ -701,8 +698,8 @@ def estimate_group(
             function_calls, text_preview = _extract_function_calls(response)
 
             if not function_calls:
-                # Append assistant message to history
-                messages.append(response.choices[0].message)
+                # Append model output to input for next turn
+                input_list += response.output
 
                 # Detect thought leaks: high completion tokens with no
                 # tool call means the model is writing verbose text
@@ -728,14 +725,14 @@ def estimate_group(
                     nudge = _build_nudge_text(
                         state, submit_tool="submit_group_estimate"
                     )
-                messages.append({"role": "user", "content": nudge})
+                input_list.append({"role": "user", "content": nudge})
                 continue
 
-            # Append assistant message (with tool_calls) to history
-            messages.append(response.choices[0].message)
+            # Append model output (including function_call items) to input
+            input_list += response.output
 
-            # Process tool calls — returns (messages_to_add, estimate_submitted)
-            result_messages, estimate_submitted = _process_group_function_calls(
+            # Process tool calls — returns (items_to_add, estimate_submitted)
+            result_items, estimate_submitted = _process_group_function_calls(
                 function_calls,
                 iteration=iteration,
                 atlas=atlas,
@@ -749,7 +746,7 @@ def estimate_group(
                 on_progress=_progress,
                 on_trace=on_trace,
             )
-            messages.extend(result_messages)
+            input_list.extend(result_items)
 
             if estimate_submitted:
                 break
