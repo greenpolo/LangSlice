@@ -7,11 +7,15 @@ This map is intentionally short and stable so humans and agents can find the act
 - `langslice/cli.py` -- CLI entry point for `langslice version`, `langslice register`, `langslice estimate`, `langslice estimate-group`, and `langslice estimate-brain`
 - `langslice/vlm_config.py` -- Gemini client configuration, backend selection, runtime settings (shared by estimation and registration)
 - `langslice/atlas/` -- BrainGlobe atlas loading, AP/index conversion, coronal slice extraction, colored region and smoothed boundary helpers
-- `langslice/estimation/` -- Single-slice AP estimation
-  - `google/ap_tool_use.py` -- Gemini multi-turn tool-use AP estimator
+- `langslice/estimation/` -- Single-slice and group AP estimation
+  - `_types.py` -- provider-agnostic result types (`APResult`, `MultiSliceResult`)
+  - `google/ap_single_slice.py` -- Gemini single-slice tool-use AP estimator (renamed from `ap_tool_use.py`)
+  - `google/ap_multi_slice.py` -- Gemini multi-slice group tool-use AP estimation (2-8 consecutive slices)
   - `google/ap_image_gen.py` -- Gemini image-gen nano-banana multi-pass zoom AP estimator
+  - `google/common.py` -- shared helpers: `_APLoopState`, `_GroupLoopState`, image/trace utilities, `fetch_atlas` handler
   - `google/tool_definitions.py` -- Gemini tool definitions and tool-response construction helpers
   - `google/batch_eval.py` -- Gemini offline Batch API helpers
+  - `google/ap_tool_use.py` -- backward-compatibility shim (re-exports from `common.py`)
   - `openai/` -- OpenAI stubs (imports only, not yet implemented)
   - `debug.py` -- shared debug-artifact writing helpers
 - `langslice/registration/` -- registration workflows, runtime wrapper, affine/TPS solving, result types

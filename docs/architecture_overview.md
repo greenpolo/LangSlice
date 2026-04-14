@@ -44,18 +44,19 @@ It also exposes:
 
 ### `langslice.estimation`
 
-Single-slice AP estimation. `estimate_position(...)` runs a multi-turn tool loop with these tool names:
+Single-slice and group AP estimation. `estimate_position(...)` runs a multi-turn tool loop with these tool names:
 
 - `fetch_atlas`
-- `get_atlas_info`
-- `get_region_names`
 - `submit_estimate`
 
-The estimator is split across four files:
+The estimator is split across these files:
 
-- `google/ap_tool_use.py` -- the single-slice tool loop, retry/backoff, optional File API/cache, trace emission, debug-artifact writing, and `estimate_ap(...)` alias
+- `_types.py` -- provider-agnostic result types (`APResult`, `MultiSliceResult`)
+- `google/ap_single_slice.py` -- the single-slice tool loop, retry/backoff, optional File API/cache, trace emission, debug-artifact writing, and `estimate_ap(...)` alias
 - `google/ap_multi_slice.py` -- multi-slice group tool-use AP estimation for 2-8 consecutive slices (`estimate_group(...)`)
+- `google/common.py` -- shared helpers: `_APLoopState` (base loop state), `_GroupLoopState` (extends `_APLoopState`), image/trace utilities, shared `fetch_atlas` handler
 - `google/tool_definitions.py` -- tool definitions and tool-response construction helpers
+- `google/ap_tool_use.py` -- backward-compatibility shim (re-exports from `common.py`)
 - `debug.py` -- shared debug-artifact writing helpers
 
 `google/ap_image_gen.py` implements nano-banana multi-pass zoom AP estimation using image-gen models.

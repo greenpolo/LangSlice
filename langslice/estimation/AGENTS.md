@@ -2,17 +2,21 @@
 
 ## Overview
 
-`langslice/estimation/` is responsible for single-slice AP estimation.
+`langslice/estimation/` is responsible for single-slice and group AP estimation.
 Provider-specific implementations live in `google/` and `openai/` subdirectories.
-Shared code (`debug.py`) lives at the estimation root.
+Shared types (`_types.py`) and debug helpers (`debug.py`) live at the estimation root.
+Shared Gemini helpers live in `google/common.py`.
 
 ## Files
 
-- `google/ap_tool_use.py` - Gemini AP tool loop, retries, File API/cache support, trace emission
+- `_types.py` - provider-agnostic result types (`APResult`, `MultiSliceResult`)
+- `google/ap_single_slice.py` - Gemini single-slice AP tool loop, retries, File API/cache support, trace emission
 - `google/ap_image_gen.py` - Gemini image-gen nano-banana multi-pass zoom AP estimation
 - `google/ap_multi_slice.py` - Gemini multi-slice group tool-use AP estimation (2-8 consecutive slices)
+- `google/common.py` - shared helpers: `_APLoopState`, `_GroupLoopState`, image/trace utilities, shared `fetch_atlas` handler
 - `google/tool_definitions.py` - Gemini tool definitions and tool-response construction helpers
 - `google/batch_eval.py` - Gemini offline Batch API helpers for one-shot AP evaluation
+- `google/ap_tool_use.py` - backward-compatibility shim (re-exports from `common.py`)
 - `openai/ap_tool_use.py` - OpenAI tool-use AP estimation (stub, not yet implemented)
 - `openai/ap_image_gen.py` - OpenAI image-gen AP estimation (stub, not yet implemented)
 - `openai/tool_definitions.py` - OpenAI tool definitions (stub, not yet implemented)
@@ -26,7 +30,7 @@ Shared code (`debug.py`) lives at the estimation root.
 - `estimate_group(...)` is the Gemini tool-use multi-slice group estimator (2-8 consecutive slices).
 - `estimate_ap(...)` is just a thin alias to `estimate_position(...)`.
 - The tool-use estimators use manual function calling and inject atlas images into tool responses.
-- The tool names are `fetch_atlas`, `get_atlas_info`, `get_region_names`, and `submit_estimate`.
+- The tool names are `fetch_atlas` and `submit_estimate`.
 - The single-slice estimator can optionally use Gemini File API transport and cached content.
 - All estimation uses `generate_content` (the Interactions API was removed from estimation).
 - Debug traces are written only when a debug directory is available.

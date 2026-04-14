@@ -10,7 +10,7 @@ All runtime behavior described by the maintained docs lives here.
 - `cli.py` -- CLI parser for `version`, `register`, `estimate`, `estimate-group`, and `estimate-brain`
 - `vlm_config.py` -- Gemini client configuration, backend selection, runtime settings
 - `atlas/` -- BrainGlobe atlas access, AP conversion, slice helpers, colored region and boundary helpers
-- `estimation/` -- Single-slice AP estimation: `google/` (Gemini), `openai/` (stubs), `debug.py` (shared)
+- `estimation/` -- Single-slice and group AP estimation: `_types.py` (result types), `google/` (Gemini), `openai/` (stubs), `debug.py` (shared)
 - `whole_brain/` -- Multi-slice whole-brain AP estimation pipeline
 - `registration/` -- registration workflows: `google/` (Gemini), `openai/` (stubs), shared router/solver/types
 - `ml/` -- Non-LLM machine learning tools (GPU-accelerated target selection, etc.)
