@@ -33,6 +33,7 @@ from langslice.agent_trace import (
     model_event,
     runtime_event,
 )
+from langslice.atlas.core import get_coronal_long_edge
 from langslice.estimation._types import APResult
 from langslice.estimation.google.tool_definitions import _build_atlas_grid
 from langslice.estimation.openai.common import (
@@ -191,6 +192,7 @@ def estimate_position_image_gen(
     client = get_openai_client()
     atlas = _load_atlas_lazy(atlas_name)
     pos_lo, pos_hi = _get_position_range_lazy(atlas)
+    atlas_long_edge = get_coronal_long_edge(atlas)
     if bounds is not None:
         pos_lo = max(pos_lo, bounds[0])
         pos_hi = min(pos_hi, bounds[1])
@@ -198,7 +200,7 @@ def estimate_position_image_gen(
 
     # --- Prepare target image ---------------------------------------------------
     target_normalized = normalize_image(image)
-    target_prep = prepare_image_for_vlm(target_normalized)
+    target_prep = prepare_image_for_vlm(target_normalized, max_long_edge=atlas_long_edge)
     target_prepared = target_prep.image
     target_bytes = _image_to_bytes(target_prepared)
 

@@ -71,6 +71,7 @@ def test_run_anchor_estimation_midpoint_fallback():
         ),
         patch("langslice.whole_brain.estimation_agents._prepare_slice", return_value=_FAKE_IMAGE),
         patch("langslice.whole_brain.estimation_agents.load_atlas") as mock_atlas,
+        patch("langslice.whole_brain.estimation_agents.get_coronal_long_edge", return_value=528),
         patch("langslice.whole_brain.estimation_agents.get_position_range_mm", return_value=(0.0, 13.175)),
     ):
         result = asyncio.run(
@@ -97,6 +98,7 @@ def test_run_anchor_estimation_both_stages_fail():
         ),
         patch("langslice.whole_brain.estimation_agents._prepare_slice", return_value=_FAKE_IMAGE),
         patch("langslice.whole_brain.estimation_agents.load_atlas"),
+        patch("langslice.whole_brain.estimation_agents.get_coronal_long_edge", return_value=528),
         patch("langslice.whole_brain.estimation_agents.get_position_range_mm", return_value=(0.0, 13.175)),
     ):
         result = asyncio.run(
