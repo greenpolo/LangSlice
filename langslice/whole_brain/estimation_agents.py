@@ -77,7 +77,6 @@ async def run_anchor_estimation(
             debug_dir=debug_dir,
             model_name=effective_coarse_model,
             send_individually=True,
-            atlas_resolution=1024,
             max_passes=2,
         )
         coarse_mm = coarse.position_mm
@@ -109,7 +108,6 @@ async def run_anchor_estimation(
             debug_dir=debug_dir,
             model_name=effective_fine_model,
             send_individually=True,
-            atlas_resolution=1024,
             center_mm=coarse_mm,
             bounds=(fine_lo, fine_hi),
         )
@@ -177,7 +175,6 @@ async def run_slice_estimation(
         debug_dir=debug_dir,
         model_name=model_name,
         send_individually=True,
-        atlas_resolution=1024,
         center_mm=center_mm,
         bounds=bounds,
         slices_per_pass=slices_per_pass,
@@ -199,7 +196,6 @@ async def run_slice_estimation(
             debug_dir=debug_dir,
             model_name=model_name,
             send_individually=True,
-            atlas_resolution=1024,
             center_mm=confirm_center,
             bounds=(confirm_center - _CONFIRM_HALF_MM, confirm_center + _CONFIRM_HALF_MM),
             slices_per_pass=9,
