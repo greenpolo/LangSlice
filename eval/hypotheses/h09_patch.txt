@@ -1,0 +1,86 @@
+H9: Auto-region-names in fetch_atlas response
+
+File: langslice/estimation/google/ap_multi_slice.py
+
+This change applies to BOTH fetch_atlas response sites (send_individually branch and
+grid branch). In each case the region_info dict is computed from the already-resolved
+`positions` list and added to the response dict.
+
+--- CHANGE 1: send_individually branch _append_response (lines 319-330) ---
+
+OLD:
+                _append_response(
+                    call_id=call_id,
+                    name=name,
+                    response={
+                        "status": "ok",
+                        "positions_mm": positions,
+                        "description": (
+                            f"{len(positions)} atlas sections at: "
+                            f"{pos_label} mm."
+                        ),
+                    },
+                )
+
+NEW:
+                region_info = {
+                    f"{pos:.2f}mm": _get_regions_at_position(atlas, pos)[:5]
+                    for pos in positions
+                }
+                _append_response(
+                    call_id=call_id,
+                    name=name,
+                    response={
+                        "status": "ok",
+                        "positions_mm": positions,
+                        "description": (
+                            f"{len(positions)} atlas sections at: "
+                            f"{pos_label} mm."
+                        ),
+                        "regions": region_info,
+                    },
+                )
+
+--- CHANGE 2: grid branch _append_response (lines 374-385) ---
+
+OLD:
+                _append_response(
+                    call_id=call_id,
+                    name=name,
+                    response={
+                        "status": "ok",
+                        "positions_mm": positions,
+                        "description": (
+                            f"Grid of {len(positions)} atlas sections at: "
+                            f"{pos_label} mm. Each cell is numbered and labeled."
+                        ),
+                    },
+                )
+
+NEW:
+                region_info = {
+                    f"{pos:.2f}mm": _get_regions_at_position(atlas, pos)[:5]
+                    for pos in positions
+                }
+                _append_response(
+                    call_id=call_id,
+                    name=name,
+                    response={
+                        "status": "ok",
+                        "positions_mm": positions,
+                        "description": (
+                            f"Grid of {len(positions)} atlas sections at: "
+                            f"{pos_label} mm. Each cell is numbered and labeled."
+                        ),
+                        "regions": region_info,
+                    },
+                )
+
+--- NOTE ---
+`_get_regions_at_position` is already imported at the top of the file (line 51):
+    from langslice.estimation.google.tool_definitions import (
+        ...
+        _get_regions_at_position,
+        ...
+    )
+No additional import is needed.

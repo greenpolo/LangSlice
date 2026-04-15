@@ -1,0 +1,395 @@
+{
+  "summary": {
+    "mae_mm": 0.395,
+    "median_error_mm": 0.3765,
+    "max_error_mm": 0.823,
+    "pct_within_0.25mm": 0.5,
+    "pct_within_0.5mm": 0.5,
+    "pct_within_1.0mm": 1.0,
+    "n_slices": 34,
+    "n_groups": 9,
+    "n_failures": 1,
+    "n_fallbacks": 0,
+    "total_wall_time_s": 555.86,
+    "mean_wall_time_per_group_s": 61.76
+  },
+  "groups": [
+    {
+      "group_index": 0,
+      "slices": [
+        "M09_001_001.tif",
+        "M09_001_002.tif",
+        "M09_001_003.tif",
+        "M09_001_004.tif"
+      ],
+      "interval_um": 200,
+      "wall_time_s": 52.6,
+      "fallback": false
+    },
+    {
+      "group_index": 1,
+      "slices": [
+        "M09_001_005.tif",
+        "M09_001_006.tif",
+        "M09_001_007.tif",
+        "M09_001_008.tif"
+      ],
+      "interval_um": 200,
+      "wall_time_s": 38.94,
+      "fallback": false
+    },
+    {
+      "group_index": 2,
+      "slices": [
+        "M09_001_009.tif",
+        "M09_001_010.tif",
+        "M09_002_001.tif",
+        "M09_002_002.tif"
+      ],
+      "interval_um": 200,
+      "wall_time_s": 51.52,
+      "fallback": false
+    },
+    {
+      "group_index": 3,
+      "slices": [
+        "M09_002_003.tif",
+        "M09_002_004.tif",
+        "M09_002_005.tif"
+      ],
+      "interval_um": 197,
+      "wall_time_s": 58.56,
+      "status": "estimation_failure",
+      "error": "Error code: 400 - {'error': {'message': 'Model generated invalid JSON syntax and the output could not be parsed. Please retry the request. If the issue persists, include this error message in the retry prompt to instruct the model to produce valid JSON.', 'code': 'malformed_tool_call'}}"
+    },
+    {
+      "group_index": 4,
+      "slices": [
+        "M09_002_006.tif",
+        "M09_002_007.tif",
+        "M09_002_008.tif",
+        "M09_002_009.tif",
+        "M09_003_001.tif"
+      ],
+      "interval_um": 200,
+      "wall_time_s": 64.16,
+      "fallback": false
+    },
+    {
+      "group_index": 5,
+      "slices": [
+        "M09_003_002.tif",
+        "M09_003_003.tif",
+        "M09_003_004.tif",
+        "M09_003_005.tif"
+      ],
+      "interval_um": 199,
+      "wall_time_s": 65.62,
+      "fallback": false
+    },
+    {
+      "group_index": 6,
+      "slices": [
+        "M09_003_006.tif",
+        "M09_003_007.tif",
+        "M09_003_008.tif",
+        "M09_003_009.tif"
+      ],
+      "interval_um": 201,
+      "wall_time_s": 44.34,
+      "fallback": false
+    },
+    {
+      "group_index": 7,
+      "slices": [
+        "M09_004_001.tif",
+        "M09_004_002.tif",
+        "M09_004_003.tif",
+        "M09_004_004.tif"
+      ],
+      "interval_um": 199,
+      "wall_time_s": 125.18,
+      "fallback": false
+    },
+    {
+      "group_index": 8,
+      "slices": [
+        "M09_004_006.tif",
+        "M09_004_005.tif",
+        "M09_004_007.tif",
+        "M09_004_008.tif",
+        "M09_004_009.tif"
+      ],
+      "interval_um": 237,
+      "wall_time_s": 54.94,
+      "fallback": false
+    }
+  ],
+  "per_slice": [
+    {
+      "filename": "M09_001_001.tif",
+      "estimated_mm": 3.0,
+      "ground_truth_mm": 3.011,
+      "error_mm": 0.011,
+      "group_index": 0
+    },
+    {
+      "filename": "M09_001_002.tif",
+      "estimated_mm": 3.2,
+      "ground_truth_mm": 3.211,
+      "error_mm": 0.011,
+      "group_index": 0
+    },
+    {
+      "filename": "M09_001_003.tif",
+      "estimated_mm": 3.4,
+      "ground_truth_mm": 3.41,
+      "error_mm": 0.01,
+      "group_index": 0
+    },
+    {
+      "filename": "M09_001_004.tif",
+      "estimated_mm": 3.6,
+      "ground_truth_mm": 3.611,
+      "error_mm": 0.011,
+      "group_index": 0
+    },
+    {
+      "filename": "M09_001_005.tif",
+      "estimated_mm": 4.0,
+      "ground_truth_mm": 3.965,
+      "error_mm": 0.035,
+      "group_index": 1
+    },
+    {
+      "filename": "M09_001_006.tif",
+      "estimated_mm": 4.2,
+      "ground_truth_mm": 4.17,
+      "error_mm": 0.03,
+      "group_index": 1
+    },
+    {
+      "filename": "M09_001_007.tif",
+      "estimated_mm": 4.4,
+      "ground_truth_mm": 4.363,
+      "error_mm": 0.037,
+      "group_index": 1
+    },
+    {
+      "filename": "M09_001_008.tif",
+      "estimated_mm": 4.6,
+      "ground_truth_mm": 4.564,
+      "error_mm": 0.036,
+      "group_index": 1
+    },
+    {
+      "filename": "M09_001_009.tif",
+      "estimated_mm": 4.1,
+      "ground_truth_mm": 4.765,
+      "error_mm": 0.665,
+      "group_index": 2
+    },
+    {
+      "filename": "M09_001_010.tif",
+      "estimated_mm": 4.3,
+      "ground_truth_mm": 4.969,
+      "error_mm": 0.669,
+      "group_index": 2
+    },
+    {
+      "filename": "M09_002_001.tif",
+      "estimated_mm": 4.5,
+      "ground_truth_mm": 5.164,
+      "error_mm": 0.664,
+      "group_index": 2
+    },
+    {
+      "filename": "M09_002_002.tif",
+      "estimated_mm": 4.7,
+      "ground_truth_mm": 5.366,
+      "error_mm": 0.666,
+      "group_index": 2
+    },
+    {
+      "filename": "M09_002_003.tif",
+      "ground_truth_mm": 5.569,
+      "error_mm": null,
+      "group_index": 3
+    },
+    {
+      "filename": "M09_002_004.tif",
+      "ground_truth_mm": 5.766,
+      "error_mm": null,
+      "group_index": 3
+    },
+    {
+      "filename": "M09_002_005.tif",
+      "ground_truth_mm": 5.963,
+      "error_mm": null,
+      "group_index": 3
+    },
+    {
+      "filename": "M09_002_006.tif",
+      "estimated_mm": 7.6,
+      "ground_truth_mm": 6.81,
+      "error_mm": 0.79,
+      "group_index": 4
+    },
+    {
+      "filename": "M09_002_007.tif",
+      "estimated_mm": 7.8,
+      "ground_truth_mm": 7.012,
+      "error_mm": 0.788,
+      "group_index": 4
+    },
+    {
+      "filename": "M09_002_008.tif",
+      "estimated_mm": 8.0,
+      "ground_truth_mm": 7.212,
+      "error_mm": 0.788,
+      "group_index": 4
+    },
+    {
+      "filename": "M09_002_009.tif",
+      "estimated_mm": 8.2,
+      "ground_truth_mm": 7.414,
+      "error_mm": 0.786,
+      "group_index": 4
+    },
+    {
+      "filename": "M09_003_001.tif",
+      "estimated_mm": 8.4,
+      "ground_truth_mm": 7.611,
+      "error_mm": 0.789,
+      "group_index": 4
+    },
+    {
+      "filename": "M09_003_002.tif",
+      "estimated_mm": 7.4,
+      "ground_truth_mm": 8.113,
+      "error_mm": 0.713,
+      "group_index": 5
+    },
+    {
+      "filename": "M09_003_003.tif",
+      "estimated_mm": 7.599,
+      "ground_truth_mm": 8.313,
+      "error_mm": 0.714,
+      "group_index": 5
+    },
+    {
+      "filename": "M09_003_004.tif",
+      "estimated_mm": 7.798,
+      "ground_truth_mm": 8.514,
+      "error_mm": 0.716,
+      "group_index": 5
+    },
+    {
+      "filename": "M09_003_005.tif",
+      "estimated_mm": 7.997,
+      "ground_truth_mm": 8.71,
+      "error_mm": 0.713,
+      "group_index": 5
+    },
+    {
+      "filename": "M09_003_006.tif",
+      "estimated_mm": 8.09,
+      "ground_truth_mm": 8.91,
+      "error_mm": 0.82,
+      "group_index": 6
+    },
+    {
+      "filename": "M09_003_007.tif",
+      "estimated_mm": 8.291,
+      "ground_truth_mm": 9.113,
+      "error_mm": 0.822,
+      "group_index": 6
+    },
+    {
+      "filename": "M09_003_008.tif",
+      "estimated_mm": 8.492,
+      "ground_truth_mm": 9.315,
+      "error_mm": 0.823,
+      "group_index": 6
+    },
+    {
+      "filename": "M09_003_009.tif",
+      "estimated_mm": 8.693,
+      "ground_truth_mm": 9.514,
+      "error_mm": 0.821,
+      "group_index": 6
+    },
+    {
+      "filename": "M09_004_001.tif",
+      "estimated_mm": 9.8,
+      "ground_truth_mm": 9.714,
+      "error_mm": 0.086,
+      "group_index": 7
+    },
+    {
+      "filename": "M09_004_002.tif",
+      "estimated_mm": 10.0,
+      "ground_truth_mm": 9.918,
+      "error_mm": 0.082,
+      "group_index": 7
+    },
+    {
+      "filename": "M09_004_003.tif",
+      "estimated_mm": 10.2,
+      "ground_truth_mm": 10.111,
+      "error_mm": 0.089,
+      "group_index": 7
+    },
+    {
+      "filename": "M09_004_004.tif",
+      "estimated_mm": 10.4,
+      "ground_truth_mm": 10.311,
+      "error_mm": 0.089,
+      "group_index": 7
+    },
+    {
+      "filename": "M09_004_006.tif",
+      "estimated_mm": 10.55,
+      "ground_truth_mm": 10.516,
+      "error_mm": 0.034,
+      "group_index": 8
+    },
+    {
+      "filename": "M09_004_005.tif",
+      "estimated_mm": 10.787,
+      "ground_truth_mm": 10.715,
+      "error_mm": 0.072,
+      "group_index": 8
+    },
+    {
+      "filename": "M09_004_007.tif",
+      "estimated_mm": 11.024,
+      "ground_truth_mm": 11.013,
+      "error_mm": 0.011,
+      "group_index": 8
+    },
+    {
+      "filename": "M09_004_008.tif",
+      "estimated_mm": 11.261,
+      "ground_truth_mm": 11.267,
+      "error_mm": 0.006,
+      "group_index": 8
+    },
+    {
+      "filename": "M09_004_009.tif",
+      "estimated_mm": 11.498,
+      "ground_truth_mm": 11.466,
+      "error_mm": 0.032,
+      "group_index": 8
+    }
+  ],
+  "config": {
+    "model": "gemini-3-flash-preview",
+    "group_size": 4,
+    "gap_threshold": 0.5,
+    "media_resolution": "low",
+    "atlas_resolution": 1024,
+    "thinking": null,
+    "max_iterations": 25
+  }
+}

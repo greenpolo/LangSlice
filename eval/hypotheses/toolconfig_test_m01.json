@@ -1,0 +1,301 @@
+{
+  "summary": {
+    "mae_mm": Infinity,
+    "median_error_mm": Infinity,
+    "max_error_mm": Infinity,
+    "pct_within_0.25mm": 0.0,
+    "pct_within_0.5mm": 0.0,
+    "pct_within_1.0mm": 0.0,
+    "n_slices": 0,
+    "n_groups": 7,
+    "n_failures": 7,
+    "n_fallbacks": 0,
+    "total_wall_time_s": 64.0,
+    "mean_wall_time_per_group_s": 9.14
+  },
+  "groups": [
+    {
+      "group_index": 0,
+      "slices": [
+        "M01_001_001.tif",
+        "M01_001_002.tif"
+      ],
+      "interval_um": 124,
+      "wall_time_s": 6.84,
+      "status": "estimation_failure",
+      "error": "InteractionsResource.create() got an unexpected keyword argument 'tool_config'"
+    },
+    {
+      "group_index": 1,
+      "slices": [
+        "M01_001_003.tif",
+        "M01_001_004.tif",
+        "M01_001_005.tif",
+        "M01_001_006.tif"
+      ],
+      "interval_um": 146,
+      "wall_time_s": 8.82,
+      "status": "estimation_failure",
+      "error": "InteractionsResource.create() got an unexpected keyword argument 'tool_config'"
+    },
+    {
+      "group_index": 2,
+      "slices": [
+        "M01_001_007.tif",
+        "M01_001_008.tif",
+        "M01_001_009.tif",
+        "M01_001_010.tif",
+        "M01_001_011.tif"
+      ],
+      "interval_um": 160,
+      "wall_time_s": 9.1,
+      "status": "estimation_failure",
+      "error": "InteractionsResource.create() got an unexpected keyword argument 'tool_config'"
+    },
+    {
+      "group_index": 3,
+      "slices": [
+        "M01_002_003.tif",
+        "M01_002_004.tif",
+        "M01_002_005.tif",
+        "M01_002_006.tif"
+      ],
+      "interval_um": 174,
+      "wall_time_s": 12.03,
+      "status": "estimation_failure",
+      "error": "InteractionsResource.create() got an unexpected keyword argument 'tool_config'"
+    },
+    {
+      "group_index": 4,
+      "slices": [
+        "M01_002_007.tif",
+        "M01_002_008.tif",
+        "M01_002_009.tif",
+        "M01_002_010.tif",
+        "M01_003_001.tif"
+      ],
+      "interval_um": 171,
+      "wall_time_s": 9.99,
+      "status": "estimation_failure",
+      "error": "InteractionsResource.create() got an unexpected keyword argument 'tool_config'"
+    },
+    {
+      "group_index": 5,
+      "slices": [
+        "M01_003_003.tif",
+        "M01_003_004.tif",
+        "M01_003_005.tif",
+        "M01_003_006.tif"
+      ],
+      "interval_um": 119,
+      "wall_time_s": 7.6,
+      "status": "estimation_failure",
+      "error": "InteractionsResource.create() got an unexpected keyword argument 'tool_config'"
+    },
+    {
+      "group_index": 6,
+      "slices": [
+        "M01_003_007.tif",
+        "M01_003_008.tif",
+        "M01_003_009.tif",
+        "M01_004_001.tif",
+        "M01_004_002.tif"
+      ],
+      "interval_um": 220,
+      "wall_time_s": 9.62,
+      "status": "estimation_failure",
+      "error": "InteractionsResource.create() got an unexpected keyword argument 'tool_config'"
+    }
+  ],
+  "per_slice": [
+    {
+      "filename": "M01_001_001.tif",
+      "ground_truth_mm": 2.613,
+      "error_mm": null,
+      "group_index": 0
+    },
+    {
+      "filename": "M01_001_002.tif",
+      "ground_truth_mm": 2.737,
+      "error_mm": null,
+      "group_index": 0
+    },
+    {
+      "filename": "M01_001_003.tif",
+      "ground_truth_mm": 3.252,
+      "error_mm": null,
+      "group_index": 1
+    },
+    {
+      "filename": "M01_001_004.tif",
+      "ground_truth_mm": 3.371,
+      "error_mm": null,
+      "group_index": 1
+    },
+    {
+      "filename": "M01_001_005.tif",
+      "ground_truth_mm": 3.498,
+      "error_mm": null,
+      "group_index": 1
+    },
+    {
+      "filename": "M01_001_006.tif",
+      "ground_truth_mm": 3.691,
+      "error_mm": null,
+      "group_index": 1
+    },
+    {
+      "filename": "M01_001_007.tif",
+      "ground_truth_mm": 3.893,
+      "error_mm": null,
+      "group_index": 2
+    },
+    {
+      "filename": "M01_001_008.tif",
+      "ground_truth_mm": 4.052,
+      "error_mm": null,
+      "group_index": 2
+    },
+    {
+      "filename": "M01_001_009.tif",
+      "ground_truth_mm": 4.295,
+      "error_mm": null,
+      "group_index": 2
+    },
+    {
+      "filename": "M01_001_010.tif",
+      "ground_truth_mm": 4.414,
+      "error_mm": null,
+      "group_index": 2
+    },
+    {
+      "filename": "M01_001_011.tif",
+      "ground_truth_mm": 4.532,
+      "error_mm": null,
+      "group_index": 2
+    },
+    {
+      "filename": "M01_002_003.tif",
+      "ground_truth_mm": 5.213,
+      "error_mm": null,
+      "group_index": 3
+    },
+    {
+      "filename": "M01_002_004.tif",
+      "ground_truth_mm": 5.335,
+      "error_mm": null,
+      "group_index": 3
+    },
+    {
+      "filename": "M01_002_005.tif",
+      "ground_truth_mm": 5.62,
+      "error_mm": null,
+      "group_index": 3
+    },
+    {
+      "filename": "M01_002_006.tif",
+      "ground_truth_mm": 5.734,
+      "error_mm": null,
+      "group_index": 3
+    },
+    {
+      "filename": "M01_002_007.tif",
+      "ground_truth_mm": 5.931,
+      "error_mm": null,
+      "group_index": 4
+    },
+    {
+      "filename": "M01_002_008.tif",
+      "ground_truth_mm": 6.133,
+      "error_mm": null,
+      "group_index": 4
+    },
+    {
+      "filename": "M01_002_009.tif",
+      "ground_truth_mm": 6.292,
+      "error_mm": null,
+      "group_index": 4
+    },
+    {
+      "filename": "M01_002_010.tif",
+      "ground_truth_mm": 6.454,
+      "error_mm": null,
+      "group_index": 4
+    },
+    {
+      "filename": "M01_003_001.tif",
+      "ground_truth_mm": 6.616,
+      "error_mm": null,
+      "group_index": 4
+    },
+    {
+      "filename": "M01_003_002.tif",
+      "ground_truth_mm": 8.213,
+      "error_mm": null,
+      "group_index": -1
+    },
+    {
+      "filename": "M01_003_003.tif",
+      "ground_truth_mm": 9.977,
+      "error_mm": null,
+      "group_index": 5
+    },
+    {
+      "filename": "M01_003_004.tif",
+      "ground_truth_mm": 10.135,
+      "error_mm": null,
+      "group_index": 5
+    },
+    {
+      "filename": "M01_003_005.tif",
+      "ground_truth_mm": 10.255,
+      "error_mm": null,
+      "group_index": 5
+    },
+    {
+      "filename": "M01_003_006.tif",
+      "ground_truth_mm": 10.335,
+      "error_mm": null,
+      "group_index": 5
+    },
+    {
+      "filename": "M01_003_007.tif",
+      "ground_truth_mm": 10.535,
+      "error_mm": null,
+      "group_index": 6
+    },
+    {
+      "filename": "M01_003_008.tif",
+      "ground_truth_mm": 10.815,
+      "error_mm": null,
+      "group_index": 6
+    },
+    {
+      "filename": "M01_003_009.tif",
+      "ground_truth_mm": 11.134,
+      "error_mm": null,
+      "group_index": 6
+    },
+    {
+      "filename": "M01_004_001.tif",
+      "ground_truth_mm": 11.293,
+      "error_mm": null,
+      "group_index": 6
+    },
+    {
+      "filename": "M01_004_002.tif",
+      "ground_truth_mm": 11.413,
+      "error_mm": null,
+      "group_index": 6
+    }
+  ],
+  "config": {
+    "model": "gemini-3-flash-preview",
+    "group_size": 4,
+    "gap_threshold": 0.5,
+    "media_resolution": "ultra_high",
+    "atlas_resolution": 1024,
+    "thinking": null,
+    "max_iterations": 25
+  }
+}
