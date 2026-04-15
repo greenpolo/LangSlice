@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any, cast
 import langslice.vlm_config as vlm_config
 
 if TYPE_CHECKING:
-    from langslice.estimation.google.common import _APLoopState
+    from langslice.estimation._shared_common import _APLoopState
 
 
 def write_debug_artifacts(

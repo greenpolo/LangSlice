@@ -1,57 +1,26 @@
-"""Shared helpers for Gemini-based AP estimation."""
+"""Gemini-specific helpers for AP estimation workflows."""
 
 from __future__ import annotations
 
-import io
 import logging
 import time
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
 from typing import Any, cast
 
-from PIL import Image
-
-from langslice.image_prep import normalize_image
+from langslice.estimation._shared_common import _APLoopState as _APLoopState
+from langslice.estimation._shared_common import _emit_trace as _emit_trace
+from langslice.estimation._shared_common import (
+    _fetch_atlas_slice_bytes as _fetch_atlas_slice_bytes,
+)
+from langslice.estimation._shared_common import (
+    _get_position_range_lazy as _get_position_range_lazy,
+)
+from langslice.estimation._shared_common import _GroupLoopState as _GroupLoopState
+from langslice.estimation._shared_common import _image_to_bytes as _image_to_bytes
+from langslice.estimation._shared_common import _load_atlas_lazy as _load_atlas_lazy
+from langslice.estimation._shared_common import _to_float as _to_float
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class _APLoopState:
-    max_iterations: int
-    estimate_result: dict[str, object] | None = None
-    reasoning_log: list[dict[str, object]] = field(default_factory=list)
-    turn_metrics: list[dict[str, object]] = field(default_factory=list)
-    images_fetched: int = 0
-    fetched_positions: list[float] = field(default_factory=list)
-    saw_broad_sweep: bool = False
-    saw_narrow_sweep: bool = False
-
-
-@dataclass
-class _GroupLoopState(_APLoopState):
-    """Mutable state for the multi-slice estimation loop."""
-
-    n_slices: int = 0
-    interval_mm: float = 0.0
-
-
-def _to_float(value: object, default: float = 0.0) -> float:
-    if isinstance(value, (int, float)):
-        return float(value)
-    return default
-
-
-def _image_to_bytes(img: Image.Image, fmt: str = "JPEG") -> bytes:
-    """Convert PIL Image to raw bytes."""
-    buf = io.BytesIO()
-    if img.mode != "RGB":
-        img = img.convert("RGB")
-    if fmt.upper() == "JPEG":
-        img.save(buf, format=fmt, quality=85)
-    else:
-        img.save(buf, format=fmt)
-    return buf.getvalue()
 
 
 def _file_state_name(file_obj: object) -> str | None:
@@ -210,14 +179,6 @@ def _format_count_tokens(metadata: dict[str, int | float | str | bool]) -> str:
     return ", ".join(parts) if parts else "count_tokens unavailable"
 
 
-def _emit_trace(
-    on_trace: Callable[[dict[str, object]], None] | None,
-    event: dict[str, object],
-) -> None:
-    if on_trace:
-        on_trace(event)
-
-
 def _extract_text_and_thoughts(content: object) -> tuple[list[str], list[str]]:
     """Extract text and thought outputs from a Content object's parts."""
     parts = getattr(content, "parts", None) or []
@@ -232,46 +193,3 @@ def _extract_text_and_thoughts(content: object) -> tuple[list[str], list[str]]:
         else:
             texts.append(text)
     return texts, thoughts
-
-
-# ---------------------------------------------------------------------------
-# Lazy atlas imports to avoid circular dependencies
-# ---------------------------------------------------------------------------
-
-
-def _load_atlas_lazy(atlas_name: str) -> Any:
-    from langslice.atlas.core import load_atlas
-    return load_atlas(atlas_name)
-
-
-def _get_position_range_lazy(atlas: Any) -> tuple[float, float]:
-    from langslice.atlas.core import get_position_range_mm
-    return get_position_range_mm(atlas)
-
-
-def _fetch_atlas_slice_bytes(
-    atlas: Any,
-    position_mm: float,
-    *,
-    max_long_edge: int = 512,
-    show_borders: bool = False,
-) -> bytes:
-    """Fetch a single atlas slice, normalize, scale, and return JPEG bytes."""
-    if show_borders:
-        from langslice.atlas.core import get_composite_slice
-
-        img = get_composite_slice(atlas, position_mm)
-    else:
-        from langslice.atlas.core import get_reference_slice
-
-        img = get_reference_slice(atlas, position_mm)
-    img = normalize_image(img)
-    w, h = img.size
-    long_edge = max(w, h)
-    if long_edge > max_long_edge:
-        scale = max_long_edge / long_edge
-        img = img.resize(
-            (round(w * scale), round(h * scale)),
-            Image.Resampling.LANCZOS,
-        )
-    return _image_to_bytes(img)

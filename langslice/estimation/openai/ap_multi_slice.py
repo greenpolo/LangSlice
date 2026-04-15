@@ -26,6 +26,7 @@ from langslice.agent_trace import (
     tool_call_event,
     tool_result_event,
 )
+from langslice.atlas.core import get_coronal_long_edge
 from langslice.estimation._tool_logic import _validate_submit_group_estimate
 from langslice.estimation._types import APResult, MultiSliceResult
 from langslice.estimation.openai.common import (
@@ -291,6 +292,7 @@ def estimate_group(
     client = get_openai_client()
     atlas = _load_atlas_lazy(atlas_name)
     pos_lo, pos_hi = _get_position_range_lazy(atlas)
+    atlas_long_edge = get_coronal_long_edge(atlas)
 
     atlas_obj_meta = cast(Any, atlas)
     species = atlas_obj_meta.metadata.get("species", "mouse")
@@ -300,7 +302,7 @@ def estimate_group(
     image_bytes_list: list[bytes] = []
     for i, img in enumerate(images):
         normalized = normalize_image(img)
-        prep = prepare_image_for_vlm(normalized)
+        prep = prepare_image_for_vlm(normalized, max_long_edge=atlas_long_edge)
         prepared = prep.image
         img_bytes = _image_to_bytes(prepared)
         prepared_images.append(prepared)

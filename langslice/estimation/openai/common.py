@@ -1,10 +1,4 @@
-"""Shared helpers for OpenAI-compatible AP estimation workflows.
-
-Mirrors ``langslice.estimation.google.common`` but adapted for the
-Responses API message format.  Provider-agnostic helpers are
-re-exported from the Google module so downstream code can import
-everything from ``langslice.estimation.openai.common``.
-"""
+"""Shared helpers for OpenAI-compatible AP estimation workflows."""
 
 from __future__ import annotations
 
@@ -14,18 +8,18 @@ from typing import Any
 
 from PIL import Image
 
-from langslice.estimation.google.common import _APLoopState as _APLoopState
-from langslice.estimation.google.common import _emit_trace as _emit_trace
-from langslice.estimation.google.common import (
+from langslice.estimation._shared_common import _APLoopState as _APLoopState
+from langslice.estimation._shared_common import _emit_trace as _emit_trace
+from langslice.estimation._shared_common import (
     _fetch_atlas_slice_bytes as _fetch_atlas_slice_bytes,
 )
-from langslice.estimation.google.common import (
+from langslice.estimation._shared_common import (
     _get_position_range_lazy as _get_position_range_lazy,
 )
-from langslice.estimation.google.common import _GroupLoopState as _GroupLoopState
-from langslice.estimation.google.common import _image_to_bytes as _image_to_bytes
-from langslice.estimation.google.common import _load_atlas_lazy as _load_atlas_lazy
-from langslice.estimation.google.common import _to_float as _to_float
+from langslice.estimation._shared_common import _GroupLoopState as _GroupLoopState
+from langslice.estimation._shared_common import _image_to_bytes as _image_to_bytes
+from langslice.estimation._shared_common import _load_atlas_lazy as _load_atlas_lazy
+from langslice.estimation._shared_common import _to_float as _to_float
 
 logger = logging.getLogger(__name__)
 
@@ -135,8 +129,13 @@ def _format_usage(usage: dict[str, int]) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _history_message_count(messages: list[dict[str, Any]]) -> dict[str, int]:
+def _history_message_count(messages: list[Any]) -> dict[str, int]:
     """Count messages by role and total image content parts.
+
+    The input list may contain plain dicts (user messages, tool results)
+    **and** pydantic response objects returned by the Responses API
+    (``ResponseReasoningItem``, ``ResponseOutputMessage``, etc.).
+    Non-dict items are counted under ``"assistant"``.
 
     Returns a dict with counts for ``system``, ``user``, ``assistant``,
     ``tool``, and ``image_parts``.
@@ -150,6 +149,11 @@ def _history_message_count(messages: list[dict[str, Any]]) -> dict[str, int]:
     }
 
     for msg in messages:
+        if not isinstance(msg, dict):
+            # Pydantic response objects (ResponseReasoningItem, etc.)
+            counts["assistant"] += 1
+            continue
+
         role = msg.get("role", "")
         if role in counts:
             counts[role] += 1

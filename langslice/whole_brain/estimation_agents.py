@@ -13,13 +13,10 @@ from collections.abc import Callable
 
 from PIL import Image
 
-from langslice.atlas.core import get_position_range_mm, load_atlas
+from langslice.atlas.core import get_coronal_long_edge, get_position_range_mm, load_atlas
 from langslice.estimation import APResult, estimate_position_image_gen
 from langslice.image_prep import adaptive_preprocess, normalize_image, prepare_image_for_vlm
 from langslice.whole_brain.window import compute_search_bounds
-
-# Match the single-slice CLI: normalize → downscale → CLAHE.
-_VLM_MAX_LONG_EDGE = 2048
 
 # Pro model for anchor estimation — stronger visual reasoning improves the
 # critical anchor positions that the rest of the pipeline depends on.
@@ -29,11 +26,11 @@ _ANCHOR_DEFAULT_MODEL = "gemini-3.1-pro-preview"
 logger = logging.getLogger(__name__)
 
 
-def _prepare_slice(image_path: str) -> Image.Image:
-    """Load and preprocess a slice image, matching the single-slice CLI path."""
+def _prepare_slice(image_path: str, *, max_long_edge: int = 2048) -> Image.Image:
+    """Load and preprocess a slice image, matching the estimation pipeline."""
     raw = Image.open(image_path).convert("RGB")
     canonical = normalize_image(raw)
-    downscaled = prepare_image_for_vlm(canonical, max_long_edge=_VLM_MAX_LONG_EDGE).image
+    downscaled = prepare_image_for_vlm(canonical, max_long_edge=max_long_edge).image
     return adaptive_preprocess(downscaled)
 
 
@@ -60,7 +57,9 @@ async def run_anchor_estimation(
     Uses gemini-3.1-pro-preview by default for stronger visual reasoning on
     these critical anchor positions.
     """
-    image = _prepare_slice(image_path)
+    atlas = load_atlas(atlas_name)
+    atlas_long_edge = get_coronal_long_edge(atlas)
+    image = _prepare_slice(image_path, max_long_edge=atlas_long_edge)
 
     # Use Pro model for anchors unless explicitly overridden
     effective_coarse_model = coarse_model or _ANCHOR_DEFAULT_MODEL
@@ -84,7 +83,6 @@ async def run_anchor_estimation(
                     effective_coarse_model, coarse_mm, image_path)
     except Exception:
         # Fallback: atlas midpoint (zero API cost)
-        atlas = load_atlas(atlas_name)
         lo, hi = get_position_range_mm(atlas)
         coarse_mm = (lo + hi) / 2.0
         logger.warning(
@@ -154,7 +152,9 @@ async def run_slice_estimation(
     estimates below 0.1mm error (validated in hyp 015: 6/8 targeted cases
     improved).
     """
-    image = _prepare_slice(image_path)
+    atlas = load_atlas(atlas_name)
+    atlas_long_edge = get_coronal_long_edge(atlas)
+    image = _prepare_slice(image_path, max_long_edge=atlas_long_edge)
 
     if atlas_range is None:
         bounds = (center_mm - window_half_mm, center_mm + window_half_mm)
