@@ -542,6 +542,16 @@ def get_atlas_info(atlas: _AtlasLike) -> dict[str, object]:
     }
 
 
+def get_coronal_long_edge(atlas: _AtlasLike) -> int:
+    """Return the long-edge pixel count of a native coronal slice.
+
+    For a coronal layout (AP/DV/ML on axes 0/1/2), this is
+    ``max(shape[1], shape[2])`` — the larger of the DV and ML dimensions.
+    """
+    _, dv, ml = _shape3d(atlas.reference)
+    return max(dv, ml)
+
+
 def list_downloaded_atlases() -> list[str]:
     """Return names of locally available BrainGlobe atlases."""
     try:
