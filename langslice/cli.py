@@ -269,12 +269,6 @@ def _add_estimate_parser(subparsers: argparse._SubParsersAction) -> None:
         help="Send atlas slices as a composite grid instead of individually (default: individual)",
     )
     est.add_argument(
-        "--atlas-resolution",
-        type=int,
-        default=512,
-        help="Max long-edge pixels for atlas slices (individual mode)",
-    )
-    est.add_argument(
         "--provider",
         default="google",
         choices=["google", "openai"],
@@ -334,18 +328,6 @@ def _add_estimate_group_parser(subparsers: argparse._SubParsersAction) -> None:
         action="store_true",
         help="Send atlas slices as a composite grid instead of individually (default: individual)",
     )
-    p.add_argument(
-        "--atlas-resolution",
-        type=int,
-        default=1024,
-        help="Max long-edge pixels for atlas slices (individual mode)",
-    )
-    p.add_argument(
-        "--vlm-resolution",
-        type=int,
-        default=2048,
-        help="Max long-edge pixels for VLM",
-    )
     p.add_argument("--out", default=None, help="Output directory for debug artifacts")
     p.add_argument("--json", action="store_true", help="Print result JSON to stdout")
     p.add_argument(
@@ -371,7 +353,7 @@ def _run_estimate_group(args: argparse.Namespace) -> None:
         raw = Image.open(path)
         canonical = normalize_image(raw)
         original_size = canonical.size
-        prep = prepare_image_for_vlm(canonical, max_long_edge=args.vlm_resolution)
+        prep = prepare_image_for_vlm(canonical)
         img = prep.image
         if args.preprocess == "auto":
             img = adaptive_preprocess(img)
@@ -423,7 +405,6 @@ def _run_estimate_group(args: argparse.Namespace) -> None:
             model_name=args.model,
             show_borders=args.borders,
             send_individually=not args.grid,
-            atlas_resolution=args.atlas_resolution,
             on_progress=on_progress,
             debug_dir=debug_dir,
         )
@@ -453,7 +434,6 @@ def _run_estimate_group(args: argparse.Namespace) -> None:
             model_name=args.model,
             show_borders=args.borders,
             send_individually=not args.grid,
-            atlas_resolution=args.atlas_resolution,
             on_progress=on_progress,
             debug_dir=debug_dir,
         )
@@ -580,7 +560,7 @@ def _run_estimate(args: argparse.Namespace) -> None:
     raw_image = Image.open(args.image)
     canonical = normalize_image(raw_image)
     original_size = canonical.size
-    prep = prepare_image_for_vlm(canonical, max_long_edge=args.vlm_resolution)
+    prep = prepare_image_for_vlm(canonical)
     image = prep.image
     if args.preprocess == "auto":
         from langslice.image_prep import adaptive_preprocess
@@ -591,8 +571,7 @@ def _run_estimate(args: argparse.Namespace) -> None:
     print(
         f"  Original: {original_size[0]}x{original_size[1]} -> "
         f"VLM input: {image.size[0]}x{image.size[1]}  "
-        f"(scale={prep.scale_factor:.3f}, max_edge={args.vlm_resolution}, "
-        f"preprocess={preprocess_label})"
+        f"(scale={prep.scale_factor:.3f}, preprocess={preprocess_label})"
     )
 
     # Set up output directory.
@@ -635,7 +614,6 @@ def _run_estimate(args: argparse.Namespace) -> None:
                 model_name=args.model,
                 show_borders=args.borders,
                 send_individually=not args.grid,
-                atlas_resolution=args.atlas_resolution,
                 debug_dir=debug_dir,
             )
         else:
@@ -647,7 +625,6 @@ def _run_estimate(args: argparse.Namespace) -> None:
                 model_name=args.model,
                 show_borders=args.borders,
                 send_individually=not args.grid,
-                atlas_resolution=args.atlas_resolution,
                 debug_dir=debug_dir,
             )
     else:
@@ -688,7 +665,6 @@ def _run_estimate(args: argparse.Namespace) -> None:
                 on_progress=on_progress,
                 show_borders=args.borders,
                 send_individually=not args.grid,
-                atlas_resolution=args.atlas_resolution,
             )
         else:
             result = estimate_position(
@@ -699,7 +675,6 @@ def _run_estimate(args: argparse.Namespace) -> None:
                 media_resolution=args.media_resolution,
                 show_borders=args.borders,
                 send_individually=not args.grid,
-                atlas_resolution=args.atlas_resolution,
             )
 
     # Summary.
@@ -718,6 +693,48 @@ def _run_estimate(args: argparse.Namespace) -> None:
         }
         print()
         print(json.dumps(payload, indent=2))
+
+
+def _add_ollama_parser(subparsers: argparse._SubParsersAction) -> None:
+    oll = subparsers.add_parser(
+        "ollama",
+        help="Manage local Ollama models",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    oll.add_argument(
+        "--host",
+        default="http://localhost:11434",
+        help="Ollama server URL",
+    )
+    oll_sub = oll.add_subparsers(dest="ollama_command")
+
+    oll_sub.add_parser("status", help="Check if Ollama is running")
+    oll_sub.add_parser("list", help="List installed models")
+
+    pull_p = oll_sub.add_parser("pull", help="Download a model")
+    pull_p.add_argument("model", help="Model name (e.g. gemma4:31b)")
+
+    rm_p = oll_sub.add_parser("remove", help="Delete a model")
+    rm_p.add_argument("model", help="Model name to delete")
+
+
+def _run_ollama(args: argparse.Namespace) -> None:
+    from langslice.ollama import cli_list, cli_pull, cli_remove, cli_status
+
+    host = args.host
+    cmd = args.ollama_command
+
+    if cmd == "status":
+        cli_status(host)
+    elif cmd == "list":
+        cli_list(host)
+    elif cmd == "pull":
+        cli_pull(host, args.model)
+    elif cmd == "remove":
+        cli_remove(host, args.model)
+    else:
+        print("Usage: langslice ollama {status,list,pull,remove}")
+        sys.exit(1)
 
 
 def main():
@@ -745,6 +762,9 @@ def main():
     # langslice estimate-brain
     _add_estimate_brain_parser(subparsers)
 
+    # langslice ollama
+    _add_ollama_parser(subparsers)
+
     args = parser.parse_args()
 
     if args.command == "gui":
@@ -765,6 +785,8 @@ def main():
         _run_estimate_group(args)
     elif args.command == "estimate-brain":
         _run_estimate_brain(args)
+    elif args.command == "ollama":
+        _run_ollama(args)
     else:
         parser.print_help()
         sys.exit(1)
