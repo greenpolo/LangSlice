@@ -123,6 +123,11 @@ def _parse_args() -> argparse.Namespace:
         help="Run all groups concurrently using threads",
     )
     p.add_argument(
+        "--grid",
+        action="store_true",
+        help="Send atlas slices as a composite grid instead of individually",
+    )
+    p.add_argument(
         "--provider",
         default="google",
         choices=["google", "openai"],
@@ -331,6 +336,7 @@ def _run_eval(args: argparse.Namespace) -> dict:
                 thickness_um=_THICKNESS_UM,
                 model_name=args.model,
                 max_iterations=args.max_iterations,
+                send_individually=not args.grid,
                 on_progress=_progress,
             )
             if args.provider != "openai":
@@ -452,6 +458,7 @@ def _run_eval(args: argparse.Namespace) -> dict:
             "group_size": args.group_size,
             "gap_threshold": args.gap_threshold,
             "media_resolution": args.media_resolution,
+            "send_individually": not args.grid,
             "thinking": args.thinking,
             "max_iterations": args.max_iterations,
         },

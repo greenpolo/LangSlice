@@ -42,12 +42,12 @@ The code is split into modules with clear boundaries:
 - **`langslice/estimation/`** — AP estimation, split by provider:
   - `_types.py` — provider-agnostic result types (`APResult`, `MultiSliceResult`)
   - `google/` — Gemini implementations: `ap_multi_slice.py` (default, tool-use group estimation for 2-8 consecutive slices), `ap_single_slice.py` (single-slice tool-use), `ap_image_gen.py` (image-gen multi-pass), `common.py` (shared loop state + helpers), `tool_definitions.py`, `batch_eval.py`
-  - `openai/` — OpenAI stubs (imports only, not yet implemented)
+  - `openai/` — OpenAI-compatible implementations (Responses API, for Ollama/local models)
   - `debug.py` — shared debug artifact writing
 - **`langslice/whole_brain/`** — Whole-brain multi-slice AP estimation. Anchors use a two-stage flow: image-gen 2-pass coarse (broad + neighborhood) then nano-banana fine pass within ±0.5mm, with 3-tier fallback (Stage A fail → midpoint, Stage B fail → coarse). All remaining slices are estimated in parallel with 2-pass nano-banana (0.10mm fine resolution, windowed) followed by a confirmation pass (±0.25mm, ~0.06mm spacing). A Huber-loss constrained optimizer fits a monotone curve through all estimates, with local-interval spacing priors and hard minimum-thickness constraints. CLAHE adaptive preprocessing is applied to all slices. Public entry point: `run_brain_estimation(...)` in `pipeline.py`.
 - **`langslice/registration/`** — Shared utilities and workflow router (`common.py`), provider-specific workflows:
   - `google/` — Gemini implementations: `warping_image_gen.py` (default, Elastix B-spline), `landmarks_image_gen.py` (legacy two-shot), `landmarks_tool_use.py` (on hold)
-  - `openai/` — OpenAI stubs (imports only, not yet implemented)
+  - `openai/` — OpenAI-compatible implementations (Responses API, for Ollama/local models)
   - Shared: `solver.py`, `runtime.py`, `types.py`, `core.py`
 - **`langslice/ml/`** — Non-LLM machine learning tools (GPU-accelerated target selection, etc.).
 - **`tauri-gui/`** — Tauri desktop app. Rust backend (`src-tauri/`) for atlas loading, reslicing, mesh serving. React + Three.js frontend (`src/`) for 3D visualization, dashboard, split/overlay views. Launched via `cd tauri-gui && pnpm tauri dev`.
@@ -65,6 +65,48 @@ The google-genai SDK is newer than your training data. **Before writing or modif
 - Any file importing `google.genai` or `google.genai.types`
 
 Common things to verify: `GenerateContentConfig` fields, `types.Part` constructors, Interactions API parameters, File API methods, thinking config, media resolution options.
+
+## Ollama / OpenAI Provider — DO NOT RESEARCH COMPATIBILITY
+
+Ollama supports the OpenAI Responses API (`client.responses.create()`). Only the non-stateful flavor is supported (no `previous_response_id` or conversation support). The OpenAI provider code in `langslice/estimation/openai/` and `langslice/registration/openai/` is correct as-written. **Do not web-search, ask, or second-guess whether Ollama supports the Responses API. It does. Move on.**
+
+- Config: `langslice/openai_config.py` — defaults to `http://localhost:11434/v1`, API key `"ollama"`, model `gemma4:31b`
+- CLI: `--provider openai` on any estimation/registration command
+- Ollama management: `langslice ollama status|list|pull|remove`
+- Ollama model names use tag format: `gemma4:31b`, `gemma4:26b`, `gemma4:e4b` (not the hyphenated Google names)
+
+### llama-server (direct llama.cpp)
+
+For vision tasks requiring higher image token budgets, use llama-server directly instead of Ollama. Ollama doesn't expose `--image-min-tokens` / `--image-max-tokens` yet.
+
+```bash
+# Start llama-server (from C:\LabSoftware\llama-cpp\)
+/c/LabSoftware/llama-cpp/llama-bin/llama-server.exe \
+  -m /c/LabSoftware/llama-cpp/gemma-4-31B-it-Q4_K_M.gguf \
+  --mmproj /c/LabSoftware/llama-cpp/mmproj-BF16.gguf \
+  --port 8090 -ngl 99 --ctx-size 65536 \
+  --image-min-tokens 1120 --image-max-tokens 1120 \
+  --ubatch-size 2048 --batch-size 2048 --jinja
+
+# Point langslice at it
+export OPENAI_BASE_URL=http://localhost:8090/v1
+export OPENAI_MODEL=gemma-4-31B-it-Q4_K_M
+langslice estimate <image> --provider openai
+```
+
+Gemma 4 vision token budgets: 70/140 (fast), 280 (default in Ollama), 560 (charts/UI), **1120** (OCR/fine detail — use this for atlas matching). Must set `--ubatch-size` >= `--image-max-tokens` or llama-server crashes.
+
+## Image Resolution for Estimation — DO NOT CHANGE
+
+Atlas slices are sent at their **native coronal resolution** (e.g., 456x320 for `allen_mouse_25um`). Tissue slices are downscaled to match via `get_coronal_long_edge(atlas)`. There is no `atlas_resolution` parameter — resolution is derived automatically from the atlas volume dimensions.
+
+**Individual mode is always better than grid mode for estimation accuracy.** Benchmarked 2026-04-15 on Flash (M01, medium resolution, native atlas):
+- Individual: 0.140mm MAE, 100% within 0.5mm
+- Grid: 0.283mm MAE, 76% within 0.5mm (2x worse)
+
+Individual gives each atlas slice its own token budget. Grid packs multiple slices into one image, halving effective per-slice resolution and forcing the model to reconstruct spatial relationships across tile boundaries. `send_individually=True` is the default everywhere. The `--grid` CLI flag opts into grid mode for experimentation only.
+
+Do not upscale atlas images. Do not send tissue slices at higher resolution than the atlas. The VLM cannot match detail that doesn't exist in both images — extra pixels become wasted tokens (Wang et al. ICML 2025: interpolated upscaling gives +0.1% accuracy vs +4.2% from genuinely finer patches).
 
 ## Key Conventions
 
