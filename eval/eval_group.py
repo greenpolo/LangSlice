@@ -101,12 +101,6 @@ def _parse_args() -> argparse.Namespace:
         help="Gemini media resolution for input images (default: auto per model)",
     )
     p.add_argument(
-        "--atlas-resolution",
-        type=int,
-        default=1024,
-        help="Max long-edge pixels for atlas slices (default: 1024)",
-    )
-    p.add_argument(
         "--thinking",
         default=None,
         choices=["MINIMAL", "LOW", "MEDIUM", "HIGH"],
@@ -127,6 +121,12 @@ def _parse_args() -> argparse.Namespace:
         "--parallel",
         action="store_true",
         help="Run all groups concurrently using threads",
+    )
+    p.add_argument(
+        "--provider",
+        default="google",
+        choices=["google", "openai"],
+        help="VLM provider to use (default: google)",
     )
     return p.parse_args()
 
@@ -232,7 +232,7 @@ def _load_and_prep(image_dir: str, filename: str):
     path = os.path.join(image_dir, filename)
     raw = Image.open(path)
     canonical = normalize_image(raw)
-    prep = prepare_image_for_vlm(canonical, max_long_edge=2048)
+    prep = prepare_image_for_vlm(canonical)
     img = adaptive_preprocess(prep.image)
     return img
 
@@ -245,12 +245,15 @@ def _load_and_prep(image_dir: str, filename: str):
 def _run_eval(args: argparse.Namespace) -> dict:
     from slice_bench.metrics import compute_metrics
 
-    import langslice.vlm_config as vlm_config
-    from langslice.estimation import estimate_group
+    if args.provider == "openai":
+        from langslice.estimation.openai.ap_multi_slice import estimate_group
+    else:
+        import langslice.vlm_config as vlm_config
+        from langslice.estimation import estimate_group
 
-    # Apply thinking level override before any API calls
-    if args.thinking:
-        vlm_config.set_thinking_level(args.thinking)
+        # Apply thinking level override before any API calls
+        if args.thinking:
+            vlm_config.set_thinking_level(args.thinking)
 
     gt_raw = _load_ground_truth(args.ground_truth)
     ordered = _ordered_slices(gt_raw)
@@ -321,17 +324,18 @@ def _run_eval(args: argparse.Namespace) -> dict:
 
         t0 = time.time()
         try:
-            result = estimate_group(
+            estimate_kwargs: dict = dict(
                 images=images,
                 atlas_name=atlas_name,
                 interval_um=interval_um,
                 thickness_um=_THICKNESS_UM,
                 model_name=args.model,
-                media_resolution=args.media_resolution,
-                atlas_resolution=args.atlas_resolution,
                 max_iterations=args.max_iterations,
                 on_progress=_progress,
             )
+            if args.provider != "openai":
+                estimate_kwargs["media_resolution"] = args.media_resolution
+            result = estimate_group(**estimate_kwargs)
             wall_time_s = round(time.time() - t0, 2)
 
             is_fallback = _FALLBACK_PHRASE in result.group_reasoning
@@ -443,11 +447,11 @@ def _run_eval(args: argparse.Namespace) -> dict:
         "groups": group_records,
         "per_slice": per_slice_records,
         "config": {
+            "provider": args.provider,
             "model": args.model,
             "group_size": args.group_size,
             "gap_threshold": args.gap_threshold,
             "media_resolution": args.media_resolution,
-            "atlas_resolution": args.atlas_resolution,
             "thinking": args.thinking,
             "max_iterations": args.max_iterations,
         },
