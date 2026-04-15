@@ -31,6 +31,7 @@ from langslice.agent_trace import (
     tool_call_event,
     tool_result_event,
 )
+from langslice.atlas.core import get_coronal_long_edge
 from langslice.estimation._tool_logic import (
     _validate_submit_group_estimate,
     submit_group_estimate_schema,
@@ -63,6 +64,13 @@ logger = logging.getLogger(__name__)
 # comparing N slices against atlas sections simultaneously is more demanding
 # than single-slice estimation.
 _DEFAULT_MODEL = "gemini-3.1-pro-preview"
+
+_MEDIA_RES_MAP: dict[str, str] = {
+    "low": "MEDIA_RESOLUTION_LOW",
+    "medium": "MEDIA_RESOLUTION_MEDIUM",
+    "high": "MEDIA_RESOLUTION_HIGH",
+    "ultra_high": "MEDIA_RESOLUTION_ULTRA_HIGH",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -312,13 +320,14 @@ def estimate_group(
     client = get_client()
     atlas = _load_atlas_lazy(atlas_name)
     pos_lo, pos_hi = _get_position_range_lazy(atlas)
+    atlas_long_edge = get_coronal_long_edge(atlas)
 
     # --- Prepare all slice images ---
     prepared_images: list[Image.Image] = []
     image_bytes_list: list[bytes] = []
     for i, img in enumerate(images):
         normalized = normalize_image(img)
-        prep = prepare_image_for_vlm(normalized)
+        prep = prepare_image_for_vlm(normalized, max_long_edge=atlas_long_edge)
         prepared = prep.image
         img_bytes = _image_to_bytes(prepared)
         prepared_images.append(prepared)
@@ -502,6 +511,7 @@ def estimate_group(
             max_output_tokens=8000,
             thinking_config=cast(Any, thinking_cfg),
             tools=cast(Any, tools),
+            media_resolution=_MEDIA_RES_MAP.get(media_resolution, "MEDIA_RESOLUTION_HIGH"),
         )
 
         # --- Main generate_content loop (with one retry on failure) ---
