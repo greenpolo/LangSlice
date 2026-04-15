@@ -511,7 +511,9 @@ def estimate_group(
             max_output_tokens=8000,
             thinking_config=cast(Any, thinking_cfg),
             tools=cast(Any, tools),
-            media_resolution=_MEDIA_RES_MAP.get(media_resolution, "MEDIA_RESOLUTION_HIGH"),
+            media_resolution=cast(
+                Any, _MEDIA_RES_MAP.get(media_resolution, "MEDIA_RESOLUTION_HIGH")
+            ),
         )
 
         # --- Main generate_content loop (with one retry on failure) ---

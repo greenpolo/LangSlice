@@ -45,7 +45,7 @@ def test_run_anchor_estimation():
     assert call_log == ["coarse", "fine"]
     # Stage A (coarse): image-gen 2-pass, no center_mm, no bounds
     assert captured_kwargs_list[0]["max_passes"] == 2
-    assert "center_mm" not in captured_kwargs_list[0] or captured_kwargs_list[0].get("center_mm") is None
+    assert captured_kwargs_list[0].get("center_mm") is None
     # Stage B (fine): centered on coarse, ±0.5mm bounds
     assert captured_kwargs_list[1]["center_mm"] == 3.45
     assert captured_kwargs_list[1]["bounds"] == (2.95, 3.95)
@@ -70,9 +70,12 @@ def test_run_anchor_estimation_midpoint_fallback():
             fake_image_gen_fail_first,
         ),
         patch("langslice.whole_brain.estimation_agents._prepare_slice", return_value=_FAKE_IMAGE),
-        patch("langslice.whole_brain.estimation_agents.load_atlas") as mock_atlas,
+        patch("langslice.whole_brain.estimation_agents.load_atlas"),
         patch("langslice.whole_brain.estimation_agents.get_coronal_long_edge", return_value=528),
-        patch("langslice.whole_brain.estimation_agents.get_position_range_mm", return_value=(0.0, 13.175)),
+        patch(
+            "langslice.whole_brain.estimation_agents.get_position_range_mm",
+            return_value=(0.0, 13.175),
+        ),
     ):
         result = asyncio.run(
             run_anchor_estimation(
@@ -99,7 +102,10 @@ def test_run_anchor_estimation_both_stages_fail():
         patch("langslice.whole_brain.estimation_agents._prepare_slice", return_value=_FAKE_IMAGE),
         patch("langslice.whole_brain.estimation_agents.load_atlas"),
         patch("langslice.whole_brain.estimation_agents.get_coronal_long_edge", return_value=528),
-        patch("langslice.whole_brain.estimation_agents.get_position_range_mm", return_value=(0.0, 13.175)),
+        patch(
+            "langslice.whole_brain.estimation_agents.get_position_range_mm",
+            return_value=(0.0, 13.175),
+        ),
     ):
         result = asyncio.run(
             run_anchor_estimation(
@@ -113,7 +119,7 @@ def test_run_anchor_estimation_both_stages_fail():
 
 
 def test_run_slice_estimation():
-    """Non-anchor estimation uses center_mm, bounds, fine_resolution_mm=0.10, and confirmation pass."""
+    """Non-anchor estimation uses center_mm, bounds, confirmation pass."""
     main_result = APResult(position_mm=5.5, reasoning="main", debug_dir=None)
     confirm_result = APResult(position_mm=5.48, reasoning="confirmed", debug_dir=None)
 
