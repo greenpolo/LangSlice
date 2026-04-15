@@ -133,3 +133,66 @@ export interface ImageFileInfo {
 export async function scanImageFolder(folder: string): Promise<ImageFileInfo[]> {
   return invoke<ImageFileInfo[]>("scan_image_folder", { folder });
 }
+
+// --- Ollama management ---
+
+export interface OllamaStatus {
+  status: "ready" | "starting" | "not_installed" | "error";
+  version?: string;
+  port?: number;
+  models_dir?: string;
+  error?: string;
+}
+
+export interface OllamaModel {
+  name: string;
+  size: number; // bytes
+  modified_at: string;
+  digest: string;
+}
+
+export interface CuratedModel {
+  name: string;
+  display_name: string;
+  description: string;
+  size_gb: number;
+  min_vram_gb: number;
+  capabilities: string[];
+  recommended: boolean;
+  installed: boolean; // merged from local models
+  local_size?: number; // actual size in bytes if installed
+}
+
+export async function ollamaStatus(): Promise<OllamaStatus> {
+  return invoke<OllamaStatus>("ollama_status");
+}
+
+export async function ollamaStart(): Promise<void> {
+  return invoke<void>("ollama_start");
+}
+
+export async function ollamaStop(): Promise<void> {
+  return invoke<void>("ollama_stop");
+}
+
+export async function ollamaListModels(): Promise<{ models: OllamaModel[] }> {
+  return invoke<{ models: OllamaModel[] }>("ollama_list_models");
+}
+
+export async function ollamaModelInfo(
+  name: string,
+): Promise<Record<string, unknown>> {
+  return invoke<Record<string, unknown>>("ollama_model_info", { name });
+}
+
+export async function ollamaPullModel(name: string): Promise<void> {
+  return invoke<void>("ollama_pull_model", { name });
+}
+
+export async function ollamaDeleteModel(name: string): Promise<void> {
+  return invoke<void>("ollama_delete_model", { name });
+}
+
+export async function ollamaAvailableModels(): Promise<CuratedModel[]> {
+  return invoke<CuratedModel[]>("ollama_available_models");
+}
