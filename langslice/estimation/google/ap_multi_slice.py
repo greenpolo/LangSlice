@@ -124,7 +124,7 @@ def _process_group_function_calls_gc(
     run_dir: str | None,
     state: _GroupLoopState,
     show_borders: bool = False,
-    send_individually: bool = False,
+    send_individually: bool = True,
     on_progress: Callable[[str], None] | None = None,
     on_trace: Callable[[dict[str, object]], None] | None = None,
 ) -> list[types.Part]:
@@ -281,7 +281,7 @@ def estimate_group(
     media_resolution: str | None = None,
     model_name: str | None = None,
     show_borders: bool = False,
-    send_individually: bool = False,
+    send_individually: bool = True,
     on_progress: Callable[[str], None] | None = None,
     on_trace: Callable[[dict[str, object]], None] | None = None,
     debug_dir: str | None = None,
