@@ -63,7 +63,6 @@ def estimate_position(
     anatomy_hints: str = "",
     model_name: str | None = None,
     send_individually: bool = True,
-    atlas_resolution: int = 1024,
 ) -> APResult:
     """Agentic AP estimation using tool-use with self-correction.
 
@@ -355,7 +354,6 @@ def estimate_position(
                 target_image=target_prepared,
                 show_borders=show_borders,
                 send_individually=send_individually,
-                atlas_resolution=atlas_resolution,
                 on_progress=_progress,
                 on_trace=on_trace,
             )
