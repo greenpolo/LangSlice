@@ -16,6 +16,7 @@ from langslice.agent_trace import (
     model_event,
     runtime_event,
 )
+from langslice.atlas.core import get_coronal_long_edge
 from langslice.estimation._types import APResult
 from langslice.estimation.google.common import (
     _APLoopState,
@@ -45,6 +46,13 @@ from langslice.vlm_config import get_client
 logger = logging.getLogger(__name__)
 
 _RESAMPLE_LANCZOS = Image.Resampling.LANCZOS
+
+_MEDIA_RES_MAP: dict[str, str] = {
+    "low": "MEDIA_RESOLUTION_LOW",
+    "medium": "MEDIA_RESOLUTION_MEDIUM",
+    "high": "MEDIA_RESOLUTION_HIGH",
+    "ultra_high": "MEDIA_RESOLUTION_ULTRA_HIGH",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -95,12 +103,13 @@ def estimate_position(
     client = get_client()
     atlas = _load_atlas_lazy(atlas_name)
     pos_lo, pos_hi = _get_position_range_lazy(atlas)
+    atlas_long_edge = get_coronal_long_edge(atlas)
 
     atlas_obj_meta = cast(Any, atlas)
     species = atlas_obj_meta.metadata.get("species", "mouse")
 
     target_normalized = normalize_image(image)
-    target_prep = prepare_image_for_vlm(target_normalized)
+    target_prep = prepare_image_for_vlm(target_normalized, max_long_edge=atlas_long_edge)
     target_prepared = target_prep.image
     target_bytes = _image_to_bytes(target_prepared)
     target_h = target_prepared.height
@@ -282,6 +291,7 @@ def estimate_position(
             max_output_tokens=4000,
             thinking_config=cast(Any, thinking_cfg),
             tools=cast(Any, tools),
+            media_resolution=_MEDIA_RES_MAP.get(media_resolution, "MEDIA_RESOLUTION_ULTRA_HIGH"),
         )
 
         # --- Main generate_content loop (with one retry on failure) ---
