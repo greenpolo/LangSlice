@@ -164,7 +164,6 @@ def estimate_position_image_gen(
     anatomy_hints: str = "",
     slices_per_pass: int = _SLICES_PER_PASS,
     send_individually: bool = True,
-    atlas_resolution: int = 512,
     center_mm: float | None = None,
     bounds: tuple[float, float] | None = None,
     fine_resolution_mm: float = _FINE_RESOLUTION_MM,
@@ -366,7 +365,6 @@ def estimate_position_image_gen(
                 try:
                     atlas_bytes = _fetch_atlas_slice_bytes(
                         atlas, pos,
-                        max_long_edge=atlas_resolution,
                         show_borders=show_borders,
                     )
                     atlas_b64 = _bytes_to_base64(atlas_bytes)

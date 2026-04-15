@@ -26,6 +26,7 @@ from langslice.agent_trace import (
     tool_call_event,
     tool_result_event,
 )
+from langslice.estimation._tool_logic import _validate_submit_group_estimate
 from langslice.estimation._types import APResult, MultiSliceResult
 from langslice.estimation.openai.common import (
     _build_image_content,
@@ -70,7 +71,6 @@ def _process_group_function_calls(
     state: _GroupLoopState,
     show_borders: bool = False,
     send_individually: bool = False,
-    atlas_resolution: int = 1024,
     on_progress: Callable[[str], None] | None = None,
     on_trace: Callable[[dict[str, object]], None] | None = None,
 ) -> tuple[list[dict[str, Any]], bool]:
@@ -129,7 +129,6 @@ def _process_group_function_calls(
                 run_dir=run_dir,
                 show_borders=show_borders,
                 send_individually=send_individually,
-                atlas_resolution=atlas_resolution,
                 target_image=None,
                 stage="ap_group",
                 on_progress=on_progress,
@@ -142,224 +141,49 @@ def _process_group_function_calls(
             if not isinstance(positions_list, list):
                 positions_list = []
             est_reasoning = str(args.get("reasoning", ""))
-
-            near_iteration_limit = iteration >= state.max_iterations - 2
-
-            # Validate count
-            if len(positions_list) != state.n_slices:
+            error_response, est_positions, log_reason = _validate_submit_group_estimate(
+                state=state,
+                positions_list=positions_list,
+                pos_lo=pos_lo,
+                pos_hi=pos_hi,
+                iteration=iteration,
+            )
+            if error_response is not None and log_reason is not None:
                 _append_tool_response(
                     call_id=call_id,
-                    response={
-                        "status": "error",
-                        "error": (
-                            f"Expected {state.n_slices} positions, "
-                            f"got {len(positions_list)}."
-                        ),
-                    },
+                    response=error_response,
                 )
                 state.reasoning_log.append({
                     "iteration": iteration + 1,
                     "tool": name,
                     "args": args,
-                    "result": (
-                        f"Rejected: wrong count "
-                        f"({len(positions_list)} vs {state.n_slices})"
-                    ),
+                    "result": log_reason,
                 })
+                if log_reason.startswith("Rejected: wrong count"):
+                    summary = "Submit rejected: wrong count"
+                elif log_reason.startswith("Rejected: out of range"):
+                    summary = "Submit rejected: positions out of atlas range"
+                elif log_reason == "Rejected: positions not strictly increasing":
+                    summary = "Submit rejected: positions not monotonic"
+                elif log_reason.startswith("Rejected: bad intervals"):
+                    summary = "Submit rejected: interval plausibility failed"
+                elif log_reason == "Rejected: no broad sweep yet":
+                    summary = "Submit rejected: broad sweep required"
+                else:
+                    summary = "Submit rejected: narrow sweep required"
                 _emit_trace(
                     on_trace,
                     tool_result_event(
                         stage="ap_group",
                         tool_name=name,
-                        summary="Submit rejected: wrong count",
+                        summary=summary,
                         parts=[json_part(args, label="Rejected submit")],
                         metadata={"iteration": iteration + 1, "status": "rejected"},
                     ),
                 )
                 continue
 
-            # Clamp positions to valid atlas range
-            clamped_positions = [
-                max(pos_lo, min(pos_hi, float(p)))
-                for p in positions_list
-            ]
-            out_of_range = [
-                (i, float(p))
-                for i, p in enumerate(positions_list)
-                if float(p) < pos_lo or float(p) > pos_hi
-            ]
-            if out_of_range and not near_iteration_limit:
-                detail = "; ".join(
-                    f"Slice {i + 1}: {p:.2f}mm"
-                    for i, p in out_of_range
-                )
-                _append_tool_response(
-                    call_id=call_id,
-                    response={
-                        "status": "error",
-                        "error": (
-                            f"Some positions are outside the atlas range "
-                            f"[{pos_lo:.2f}, {pos_hi:.2f}]mm: {detail}. "
-                            f"Please correct and resubmit."
-                        ),
-                    },
-                )
-                state.reasoning_log.append({
-                    "iteration": iteration + 1,
-                    "tool": name,
-                    "args": args,
-                    "result": f"Rejected: out of range ({detail})",
-                })
-                _emit_trace(
-                    on_trace,
-                    tool_result_event(
-                        stage="ap_group",
-                        tool_name=name,
-                        summary="Submit rejected: positions out of atlas range",
-                        parts=[json_part(args, label="Rejected submit")],
-                        metadata={"iteration": iteration + 1, "status": "rejected"},
-                    ),
-                )
-                continue
-            # Use clamped positions from here on
-            positions_list = clamped_positions
-
-            # Check monotonicity (slices are anterior-to-posterior)
-            if not near_iteration_limit:
-                is_monotonic = all(
-                    positions_list[i] <= positions_list[i + 1]
-                    for i in range(len(positions_list) - 1)
-                )
-                if not is_monotonic:
-                    _append_tool_response(
-                        call_id=call_id,
-                        response={
-                            "status": "error",
-                            "error": (
-                                "Positions must be strictly increasing "
-                                "(anterior-to-posterior order). Please fix "
-                                "the ordering and resubmit."
-                            ),
-                        },
-                    )
-                    state.reasoning_log.append({
-                        "iteration": iteration + 1,
-                        "tool": name,
-                        "args": args,
-                        "result": "Rejected: positions not strictly increasing",
-                    })
-                    _emit_trace(
-                        on_trace,
-                        tool_result_event(
-                            stage="ap_group",
-                            tool_name=name,
-                            summary="Submit rejected: positions not monotonic",
-                            parts=[json_part(args, label="Rejected submit")],
-                            metadata={"iteration": iteration + 1, "status": "rejected"},
-                        ),
-                    )
-                    continue
-
-            # Check interval plausibility
-            if not near_iteration_limit:
-                intervals = [
-                    positions_list[i + 1] - positions_list[i]
-                    for i in range(len(positions_list) - 1)
-                ]
-                bad_intervals = [
-                    (i, iv)
-                    for i, iv in enumerate(intervals)
-                    if abs(iv - state.interval_mm) > max(
-                        0.5 * state.interval_mm, 0.25
-                    )
-                ]
-                if bad_intervals:
-                    detail = "; ".join(
-                        f"Slice {i + 1}->{i + 2}: {iv:.3f}mm"
-                        for i, iv in bad_intervals
-                    )
-                    _append_tool_response(
-                        call_id=call_id,
-                        response={
-                            "status": "error",
-                            "error": (
-                                f"Some intervals deviate >50% from the expected "
-                                f"{state.interval_mm:.3f}mm: {detail}. "
-                                f"Please reconsider and resubmit."
-                            ),
-                        },
-                    )
-                    state.reasoning_log.append({
-                        "iteration": iteration + 1,
-                        "tool": name,
-                        "args": args,
-                        "result": f"Rejected: bad intervals ({detail})",
-                    })
-                    _emit_trace(
-                        on_trace,
-                        tool_result_event(
-                            stage="ap_group",
-                            tool_name=name,
-                            summary="Submit rejected: interval plausibility failed",
-                            parts=[json_part(args, label="Rejected submit")],
-                            metadata={"iteration": iteration + 1, "status": "rejected"},
-                        ),
-                    )
-                    continue
-
-            if not state.saw_broad_sweep and not near_iteration_limit:
-                _append_tool_response(
-                    call_id=call_id,
-                    response={
-                        "status": "error",
-                        "error": "Run a broad `fetch_atlas` sweep before submitting.",
-                    },
-                )
-                state.reasoning_log.append({
-                    "iteration": iteration + 1,
-                    "tool": name,
-                    "args": args,
-                    "result": "Rejected: no broad sweep yet",
-                })
-                _emit_trace(
-                    on_trace,
-                    tool_result_event(
-                        stage="ap_group",
-                        tool_name=name,
-                        summary="Submit rejected: broad sweep required",
-                        parts=[json_part(args, label="Rejected submit")],
-                        metadata={"iteration": iteration + 1, "status": "rejected"},
-                    ),
-                )
-                continue
-
-            if not state.saw_narrow_sweep and not near_iteration_limit:
-                _append_tool_response(
-                    call_id=call_id,
-                    response={
-                        "status": "error",
-                        "error": "Run a narrow `fetch_atlas` sweep before submitting.",
-                    },
-                )
-                state.reasoning_log.append({
-                    "iteration": iteration + 1,
-                    "tool": name,
-                    "args": args,
-                    "result": "Rejected: no narrow sweep yet",
-                })
-                _emit_trace(
-                    on_trace,
-                    tool_result_event(
-                        stage="ap_group",
-                        tool_name=name,
-                        summary="Submit rejected: narrow sweep required",
-                        parts=[json_part(args, label="Rejected submit")],
-                        metadata={"iteration": iteration + 1, "status": "rejected"},
-                    ),
-                )
-                continue
-
-            est_positions = [float(p) for p in positions_list]
+            est_positions = cast(list[float], est_positions)
             state.estimate_result = {
                 "positions_mm": est_positions,
                 "reasoning": est_reasoning,
@@ -424,7 +248,6 @@ def estimate_group(
     model_name: str | None = None,
     show_borders: bool = False,
     send_individually: bool = False,
-    atlas_resolution: int = 1024,
     on_progress: Callable[[str], None] | None = None,
     on_trace: Callable[[dict[str, object]], None] | None = None,
     debug_dir: str | None = None,
@@ -742,7 +565,6 @@ def estimate_group(
                 state=state,
                 show_borders=show_borders,
                 send_individually=send_individually,
-                atlas_resolution=atlas_resolution,
                 on_progress=_progress,
                 on_trace=on_trace,
             )
