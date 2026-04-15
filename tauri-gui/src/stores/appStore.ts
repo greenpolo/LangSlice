@@ -109,6 +109,9 @@ interface AppState {
   pipelineRunning: boolean;
   logs: string[];
 
+  // Ollama
+  ollamaStatus: "ready" | "starting" | "not_installed" | "error";
+
   // View
   viewMode: ViewMode;
 
@@ -193,6 +196,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   agentLandmarks: 14,
   agentVlmResolution: 2048,
   agentMaxIterations: 20,
+
+  ollamaStatus: "not_installed",
 
   pipelineStatus: "idle",
   pipelineError: null,
