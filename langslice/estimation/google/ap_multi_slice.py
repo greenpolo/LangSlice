@@ -31,6 +31,10 @@ from langslice.agent_trace import (
     tool_call_event,
     tool_result_event,
 )
+from langslice.estimation._tool_logic import (
+    _validate_submit_group_estimate,
+    submit_group_estimate_schema,
+)
 from langslice.estimation._types import APResult, MultiSliceResult
 from langslice.estimation.google.common import (
     _emit_trace,
@@ -68,6 +72,7 @@ _DEFAULT_MODEL = "gemini-3.1-pro-preview"
 
 def _group_tool_declarations(n_slices: int) -> list[types.Tool]:
     """Tool declarations for multi-slice estimation (generate_content format)."""
+    group_schema = submit_group_estimate_schema(n_slices)
     return [types.Tool(function_declarations=[
         types.FunctionDeclaration(
             name="fetch_atlas",
@@ -87,28 +92,11 @@ def _group_tool_declarations(n_slices: int) -> list[types.Tool]:
             },
         ),
         types.FunctionDeclaration(
-            name="submit_group_estimate",
-            description=(
-                f"Submit final AP estimates for all {n_slices} slices."
+            name=cast(str, group_schema["name"]),
+            description=cast(str, group_schema["description"]),
+            parameters_json_schema=cast(
+                dict[str, object], group_schema["parameters"]
             ),
-            parameters_json_schema={
-                "type": "object",
-                "properties": {
-                    "positions_mm": {
-                        "type": "array",
-                        "items": {"type": "number"},
-                        "description": (
-                            f"AP positions in mm for all {n_slices} slices, "
-                            "in order."
-                        ),
-                    },
-                    "reasoning": {
-                        "type": "string",
-                        "description": "Brief reasoning.",
-                    },
-                },
-                "required": ["positions_mm", "reasoning"],
-            },
         ),
     ])]
 
@@ -129,7 +117,6 @@ def _process_group_function_calls_gc(
     state: _GroupLoopState,
     show_borders: bool = False,
     send_individually: bool = False,
-    atlas_resolution: int = 1024,
     on_progress: Callable[[str], None] | None = None,
     on_trace: Callable[[dict[str, object]], None] | None = None,
 ) -> list[types.Part]:
@@ -185,7 +172,6 @@ def _process_group_function_calls_gc(
                 run_dir=run_dir,
                 show_borders=show_borders,
                 send_individually=send_individually,
-                atlas_resolution=atlas_resolution,
                 target_image=None,
                 stage="ap_group",
                 on_progress=on_progress,
@@ -198,19 +184,18 @@ def _process_group_function_calls_gc(
             if not isinstance(positions_list, list):
                 positions_list = []
             est_reasoning = str(args.get("reasoning", ""))
-
-            # Validate count
-            if len(positions_list) != state.n_slices:
+            error_response, est_positions, log_reason = _validate_submit_group_estimate(
+                state=state,
+                positions_list=positions_list,
+                pos_lo=pos_lo,
+                pos_hi=pos_hi,
+                iteration=iteration,
+            )
+            if error_response is not None and log_reason is not None:
                 _append_response(
                     call_id=call_id,
                     name=name,
-                    response={
-                        "status": "error",
-                        "error": (
-                            f"Expected {state.n_slices} positions, "
-                            f"got {len(positions_list)}."
-                        ),
-                    },
+                    response=error_response,
                     is_error=True,
                 )
                 state.reasoning_log.append(
@@ -218,174 +203,12 @@ def _process_group_function_calls_gc(
                         "iteration": iteration + 1,
                         "tool": name,
                         "args": args,
-                        "result": (
-                            f"Rejected: wrong count "
-                            f"({len(positions_list)} vs {state.n_slices})"
-                        ),
+                        "result": log_reason,
                     }
                 )
                 continue
 
-            near_iteration_limit = iteration >= state.max_iterations - 2
-
-            # Clamp positions to valid atlas range
-            est_positions = [
-                max(pos_lo, min(pos_hi, float(p)))
-                for p in positions_list
-            ]
-            out_of_range = [
-                (i, float(p))
-                for i, p in enumerate(positions_list)
-                if float(p) < pos_lo or float(p) > pos_hi
-            ]
-            if out_of_range and not near_iteration_limit:
-                detail = "; ".join(
-                    f"Slice {i + 1}: {p:.2f}mm"
-                    for i, p in out_of_range
-                )
-                _append_response(
-                    call_id=call_id,
-                    name=name,
-                    response={
-                        "status": "error",
-                        "error": (
-                            f"Some positions are outside the atlas range "
-                            f"[{pos_lo:.2f}, {pos_hi:.2f}]mm: {detail}. "
-                            f"Please correct and resubmit."
-                        ),
-                    },
-                    is_error=True,
-                )
-                state.reasoning_log.append(
-                    {
-                        "iteration": iteration + 1,
-                        "tool": name,
-                        "args": args,
-                        "result": f"Rejected: out of range ({detail})",
-                    }
-                )
-                continue
-            # Use clamped positions from here on
-            positions_list = est_positions
-
-            # Check monotonicity (slices are anterior-to-posterior)
-            if not near_iteration_limit:
-                is_monotonic = all(
-                    positions_list[i] <= positions_list[i + 1]
-                    for i in range(len(positions_list) - 1)
-                )
-                if not is_monotonic:
-                    _append_response(
-                        call_id=call_id,
-                        name=name,
-                        response={
-                            "status": "error",
-                            "error": (
-                                "Positions must be strictly increasing "
-                                "(anterior-to-posterior order). Please fix "
-                                "the ordering and resubmit."
-                            ),
-                        },
-                        is_error=True,
-                    )
-                    state.reasoning_log.append(
-                        {
-                            "iteration": iteration + 1,
-                            "tool": name,
-                            "args": args,
-                            "result": "Rejected: positions not strictly increasing",
-                        }
-                    )
-                    continue
-
-            # Check interval plausibility
-            if not near_iteration_limit:
-                intervals = [
-                    positions_list[i + 1] - positions_list[i]
-                    for i in range(len(positions_list) - 1)
-                ]
-                bad_intervals = [
-                    (i, iv)
-                    for i, iv in enumerate(intervals)
-                    if abs(iv - state.interval_mm) > max(
-                        0.5 * state.interval_mm, 0.25
-                    )
-                ]
-                if bad_intervals:
-                    detail = "; ".join(
-                        f"Slice {i + 1}->{i + 2}: {iv:.3f}mm"
-                        for i, iv in bad_intervals
-                    )
-                    _append_response(
-                        call_id=call_id,
-                        name=name,
-                        response={
-                            "status": "error",
-                            "error": (
-                                f"Some intervals deviate >50% from the expected "
-                                f"{state.interval_mm:.3f}mm: {detail}. "
-                                f"Please reconsider and resubmit."
-                            ),
-                        },
-                        is_error=True,
-                    )
-                    state.reasoning_log.append(
-                        {
-                            "iteration": iteration + 1,
-                            "tool": name,
-                            "args": args,
-                            "result": (
-                                f"Rejected: bad intervals ({detail})"
-                            ),
-                        }
-                    )
-                    continue
-
-            if not state.saw_broad_sweep and not near_iteration_limit:
-                _append_response(
-                    call_id=call_id,
-                    name=name,
-                    response={
-                        "status": "error",
-                        "error": (
-                            "Run a broad `fetch_atlas` sweep before submitting."
-                        ),
-                    },
-                    is_error=True,
-                )
-                state.reasoning_log.append(
-                    {
-                        "iteration": iteration + 1,
-                        "tool": name,
-                        "args": args,
-                        "result": "Rejected: no broad sweep yet",
-                    }
-                )
-                continue
-
-            if not state.saw_narrow_sweep and not near_iteration_limit:
-                _append_response(
-                    call_id=call_id,
-                    name=name,
-                    response={
-                        "status": "error",
-                        "error": (
-                            "Run a narrow `fetch_atlas` sweep before submitting."
-                        ),
-                    },
-                    is_error=True,
-                )
-                state.reasoning_log.append(
-                    {
-                        "iteration": iteration + 1,
-                        "tool": name,
-                        "args": args,
-                        "result": "Rejected: no narrow sweep yet",
-                    }
-                )
-                continue
-
-            est_positions = [float(p) for p in positions_list]
+            est_positions = cast(list[float], est_positions)
             state.estimate_result = {
                 "positions_mm": est_positions,
                 "reasoning": est_reasoning,
@@ -451,7 +274,6 @@ def estimate_group(
     model_name: str | None = None,
     show_borders: bool = False,
     send_individually: bool = False,
-    atlas_resolution: int = 1024,
     on_progress: Callable[[str], None] | None = None,
     on_trace: Callable[[dict[str, object]], None] | None = None,
     debug_dir: str | None = None,
@@ -828,7 +650,6 @@ def estimate_group(
                     state=state,
                     show_borders=show_borders,
                     send_individually=send_individually,
-                    atlas_resolution=atlas_resolution,
                     on_progress=_progress,
                     on_trace=on_trace,
                 )
