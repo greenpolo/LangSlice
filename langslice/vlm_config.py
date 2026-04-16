@@ -23,13 +23,17 @@ class _RuntimeConfig:
     of import style.
     """
 
-    __slots__ = ("model_name", "thinking_level", "code_execution_enabled", "temperature")
+    __slots__ = (
+        "model_name", "thinking_level", "code_execution_enabled",
+        "temperature", "_thinking_overridden",
+    )
 
     def __init__(self) -> None:
         self.model_name: str = _DEFAULT_MODEL_NAME
         self.thinking_level: str = _DEFAULT_THINKING_LEVEL
         self.code_execution_enabled: bool = _DEFAULT_CODE_EXECUTION_ENABLED
         self.temperature: float = _DEFAULT_TEMPERATURE
+        self._thinking_overridden: bool = False
 
 
 _runtime = _RuntimeConfig()
@@ -100,7 +104,15 @@ def set_thinking_level(level: str) -> None:
         allowed = ", ".join(sorted(valid_levels))
         raise ValueError(f"Invalid thinking level {level!r}. Expected one of: {allowed}")
     _runtime.thinking_level = normalized
+    _runtime._thinking_overridden = True
     logger.info("Thinking level changed to: %s", normalized)
+
+
+def get_thinking_level_or(default: str) -> str:
+    """Return the user-overridden thinking level, or *default* if not set."""
+    if _runtime._thinking_overridden:
+        return _runtime.thinking_level
+    return default
 
 
 def set_temperature(value: float) -> None:
@@ -123,17 +135,35 @@ def is_gemma_model(model_name: str | None) -> bool:
     return str(model_name).strip() in GEMMA_MODELS
 
 
+_THINKING_BUDGET_MAP: dict[str, int] = {
+    "MINIMAL": 128,
+    "LOW": 512,
+    "MEDIUM": 2048,
+    "HIGH": 8192,
+}
+
+
+def _is_budget_model(model_name: str) -> bool:
+    """Return True for models that use thinking_budget instead of thinking_level."""
+    lower = model_name.lower()
+    return "2.5" in lower or "2.0" in lower
+
+
 def build_thinking_config(model_name: str, thinking_level: str) -> object | None:
     """Build a ThinkingConfig appropriate for the model.
 
     Gemma 4 only supports thinking on (HIGH) or off (None).
-    Gemini supports all graduated levels (MINIMAL, LOW, MEDIUM, HIGH).
+    Gemini 2.5 uses thinking_budget (tokens), not thinking_level.
+    Gemini 3.x supports graduated levels (MINIMAL, LOW, MEDIUM, HIGH).
     """
     types_mod = importlib.import_module("google.genai.types")
     if is_gemma_model(model_name):
         if thinking_level in ("HIGH", "MEDIUM"):
             return types_mod.ThinkingConfig(thinking_level="HIGH")
         return None
+    if _is_budget_model(model_name):
+        budget = _THINKING_BUDGET_MAP.get(thinking_level, 2048)
+        return types_mod.ThinkingConfig(thinking_budget=budget)
     return types_mod.ThinkingConfig(thinking_level=thinking_level)
 
 

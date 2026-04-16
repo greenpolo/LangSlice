@@ -1,5 +1,7 @@
 mod atlas;
 mod commands;
+mod ollama;
+mod ollama_models;
 
 use std::sync::Mutex;
 
@@ -7,6 +9,7 @@ use std::sync::Mutex;
 pub fn run() {
     tauri::Builder::default()
         .manage(Mutex::new(commands::AppState::new()))
+        .manage(Mutex::new(ollama::OllamaState::default()))
         .plugin(
             tauri_plugin_log::Builder::default()
                 .level(log::LevelFilter::Info)
@@ -29,6 +32,15 @@ pub fn run() {
             commands::load_slice_image,
             commands::precache_images,
             commands::scan_image_folder,
+            ollama::ollama_status,
+            ollama::ollama_start,
+            ollama::ollama_stop,
+            ollama_models::ollama_list_models,
+            ollama_models::ollama_model_info,
+            ollama_models::ollama_pull_model,
+            ollama_models::ollama_delete_model,
+            ollama_models::ollama_running_models,
+            ollama_models::ollama_available_models,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

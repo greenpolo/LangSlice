@@ -61,16 +61,11 @@ pub fn load_atlas(
 
 /// Get atlas metadata and AP range for the currently loaded atlas.
 #[tauri::command]
-pub fn get_atlas_info(
-    state: State<'_, Mutex<AppState>>,
-) -> Result<serde_json::Value, String> {
+pub fn get_atlas_info(state: State<'_, Mutex<AppState>>) -> Result<serde_json::Value, String> {
     let app_state = state
         .lock()
         .map_err(|e| format!("State lock error: {}", e))?;
-    let atlas = app_state
-        .atlas
-        .as_ref()
-        .ok_or("No atlas loaded")?;
+    let atlas = app_state.atlas.as_ref().ok_or("No atlas loaded")?;
 
     let (min_mm, max_mm) = atlas.ap_range_mm();
     Ok(serde_json::json!({
@@ -87,16 +82,11 @@ pub fn get_atlas_info(
 /// Return the entire pre-computed border volume as bit-packed base64.
 /// Each bit = 1 border pixel. Frontend unpacks per slider position — zero IPC per tick.
 #[tauri::command]
-pub fn get_border_volume(
-    state: State<'_, Mutex<AppState>>,
-) -> Result<serde_json::Value, String> {
+pub fn get_border_volume(state: State<'_, Mutex<AppState>>) -> Result<serde_json::Value, String> {
     let app_state = state
         .lock()
         .map_err(|e| format!("State lock error: {}", e))?;
-    let atlas = app_state
-        .atlas
-        .as_ref()
-        .ok_or("No atlas loaded")?;
+    let atlas = app_state.atlas.as_ref().ok_or("No atlas loaded")?;
 
     let volume = &atlas.border_volume;
     let depth = volume.shape()[0] as u32;
@@ -138,10 +128,7 @@ pub fn get_coronal_slice(
     let app_state = state
         .lock()
         .map_err(|e| format!("State lock error: {}", e))?;
-    let atlas = app_state
-        .atlas
-        .as_ref()
-        .ok_or("No atlas loaded")?;
+    let atlas = app_state.atlas.as_ref().ok_or("No atlas loaded")?;
 
     let idx = atlas.ap_mm_to_index(ap_mm);
     slicer::extract_coronal_slice(&atlas.reference_volume, &atlas.annotation_volume, idx)
@@ -149,16 +136,11 @@ pub fn get_coronal_slice(
 
 /// Load the whole-brain outline mesh (structure 997).
 #[tauri::command]
-pub fn get_brain_mesh(
-    state: State<'_, Mutex<AppState>>,
-) -> Result<MeshData, String> {
+pub fn get_brain_mesh(state: State<'_, Mutex<AppState>>) -> Result<MeshData, String> {
     let app_state = state
         .lock()
         .map_err(|e| format!("State lock error: {}", e))?;
-    let atlas = app_state
-        .atlas
-        .as_ref()
-        .ok_or("No atlas loaded")?;
+    let atlas = app_state.atlas.as_ref().ok_or("No atlas loaded")?;
 
     let mesh_path = atlas.atlas_dir.join("meshes").join("997.obj");
     if !mesh_path.exists() {
@@ -180,12 +162,17 @@ fn normalize_volume_to_u8(vol: &ndarray::Array3<u16>) -> Vec<u8> {
         for y in 0..height {
             for x in 0..width {
                 let v = vol[[z, y, x]];
-                if v > max_val { max_val = v; }
+                if v > max_val {
+                    max_val = v;
+                }
             }
         }
         if max_val > 0 {
             let scale = 255.0 / max_val as f64;
-            for (i, byte) in normalized[slice_start..slice_start + pixels_per_slice].iter_mut().enumerate() {
+            for (i, byte) in normalized[slice_start..slice_start + pixels_per_slice]
+                .iter_mut()
+                .enumerate()
+            {
                 let y = i / width;
                 let x = i % width;
                 *byte = (vol[[z, y, x]] as f64 * scale).min(255.0) as u8;
@@ -198,16 +185,11 @@ fn normalize_volume_to_u8(vol: &ndarray::Array3<u16>) -> Vec<u8> {
 /// Return all atlas volumes normalized to u8 as base64.
 /// Includes reference + any additional volumes (e.g. Nissl).
 #[tauri::command]
-pub fn get_all_volumes(
-    state: State<'_, Mutex<AppState>>,
-) -> Result<serde_json::Value, String> {
+pub fn get_all_volumes(state: State<'_, Mutex<AppState>>) -> Result<serde_json::Value, String> {
     let app_state = state
         .lock()
         .map_err(|e| format!("State lock error: {}", e))?;
-    let atlas = app_state
-        .atlas
-        .as_ref()
-        .ok_or("No atlas loaded")?;
+    let atlas = app_state.atlas.as_ref().ok_or("No atlas loaded")?;
 
     let depth = atlas.reference_volume.shape()[0] as u32;
     let height = atlas.reference_volume.shape()[1] as u32;
@@ -227,7 +209,10 @@ pub fn get_all_volumes(
         additional.insert(name.clone(), serde_json::json!(b64));
     }
 
-    log::info!("All volumes normalized: reference + {} additional", additional.len());
+    log::info!(
+        "All volumes normalized: reference + {} additional",
+        additional.len()
+    );
 
     Ok(serde_json::json!({
         "reference": ref_b64,
@@ -262,8 +247,7 @@ pub fn load_slice_image(
     }
 
     // Cache miss — load from disk
-    let img = image::open(&path)
-        .map_err(|e| format!("Cannot open image {}: {}", path, e))?;
+    let img = image::open(&path).map_err(|e| format!("Cannot open image {}: {}", path, e))?;
 
     let max = max_edge.unwrap_or(1024);
     let (w, h) = (img.width(), img.height());
@@ -281,10 +265,8 @@ pub fn load_slice_image(
     let (out_w, out_h) = (rgb.width(), rgb.height());
 
     let mut buf: Vec<u8> = Vec::new();
-    let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(
-        std::io::Cursor::new(&mut buf),
-        85,
-    );
+    let mut encoder =
+        image::codecs::jpeg::JpegEncoder::new_with_quality(std::io::Cursor::new(&mut buf), 85);
     encoder
         .encode(rgb.as_raw(), out_w, out_h, image::ColorType::Rgb8.into())
         .map_err(|e| format!("JPEG encode error: {}", e))?;
@@ -333,14 +315,22 @@ pub async fn run_estimate(
     use tokio::process::Command;
 
     let mut args = vec![
-        "-m".to_string(), "langslice".to_string(), "estimate".to_string(),
+        "-m".to_string(),
+        "langslice".to_string(),
+        "estimate".to_string(),
         image_path,
-        "--atlas".to_string(), atlas,
-        "--model".to_string(), model,
-        "--thinking".to_string(), thinking,
-        "--temperature".to_string(), temperature.to_string(),
-        "--vlm-resolution".to_string(), vlm_resolution.to_string(),
-        "--max-iterations".to_string(), max_iterations.to_string(),
+        "--atlas".to_string(),
+        atlas,
+        "--model".to_string(),
+        model,
+        "--thinking".to_string(),
+        thinking,
+        "--temperature".to_string(),
+        temperature.to_string(),
+        "--vlm-resolution".to_string(),
+        vlm_resolution.to_string(),
+        "--max-iterations".to_string(),
+        max_iterations.to_string(),
         "--json".to_string(),
     ];
     if workflow != "auto" {
@@ -380,7 +370,10 @@ pub async fn run_estimate(
 
     stderr_handle.await.ok();
 
-    let status = child.wait().await.map_err(|e| format!("Process error: {}", e))?;
+    let status = child
+        .wait()
+        .await
+        .map_err(|e| format!("Process error: {}", e))?;
     if !status.success() {
         return Err(format!("Estimation failed (exit code {:?})", status.code()));
     }
@@ -409,15 +402,24 @@ pub async fn run_register(
     use tokio::process::Command;
 
     let mut args = vec![
-        "-m".to_string(), "langslice".to_string(), "register".to_string(),
+        "-m".to_string(),
+        "langslice".to_string(),
+        "register".to_string(),
         image_path,
-        "--atlas".to_string(), atlas,
-        "--position".to_string(), position_mm.to_string(),
-        "--model".to_string(), model,
-        "--thinking".to_string(), thinking,
-        "--temperature".to_string(), temperature.to_string(),
-        "--landmarks".to_string(), landmarks.to_string(),
-        "--vlm-resolution".to_string(), vlm_resolution.to_string(),
+        "--atlas".to_string(),
+        atlas,
+        "--position".to_string(),
+        position_mm.to_string(),
+        "--model".to_string(),
+        model,
+        "--thinking".to_string(),
+        thinking,
+        "--temperature".to_string(),
+        temperature.to_string(),
+        "--landmarks".to_string(),
+        landmarks.to_string(),
+        "--vlm-resolution".to_string(),
+        vlm_resolution.to_string(),
         "--json".to_string(),
     ];
     if workflow != "auto" {
@@ -455,9 +457,15 @@ pub async fn run_register(
 
     stderr_handle.await.ok();
 
-    let status = child.wait().await.map_err(|e| format!("Process error: {}", e))?;
+    let status = child
+        .wait()
+        .await
+        .map_err(|e| format!("Process error: {}", e))?;
     if !status.success() {
-        return Err(format!("Registration failed (exit code {:?})", status.code()));
+        return Err(format!(
+            "Registration failed (exit code {:?})",
+            status.code()
+        ));
     }
 
     let stdout_text = all_stdout.join("\n");
@@ -475,8 +483,12 @@ fn extract_json(stdout: &str) -> Result<serde_json::Value, String> {
             json_end = Some(i + 1);
             depth = 1;
         } else if json_end.is_some() {
-            if ch == '}' { depth += 1; }
-            if ch == '{' { depth -= 1; }
+            if ch == '}' {
+                depth += 1;
+            }
+            if ch == '{' {
+                depth -= 1;
+            }
             if depth == 0 {
                 json_start = Some(i);
                 break;
@@ -485,10 +497,8 @@ fn extract_json(stdout: &str) -> Result<serde_json::Value, String> {
     }
 
     match (json_start, json_end) {
-        (Some(start), Some(end)) => {
-            serde_json::from_str(&stdout[start..end])
-                .map_err(|e| format!("JSON parse error: {}", e))
-        }
+        (Some(start), Some(end)) => serde_json::from_str(&stdout[start..end])
+            .map_err(|e| format!("JSON parse error: {}", e)),
         _ => Err("No JSON object found in output".into()),
     }
 }
@@ -505,11 +515,16 @@ pub async fn run_export(
 
     let output = Command::new("python")
         .args([
-            "-m", "langslice", "register",
+            "-m",
+            "langslice",
+            "register",
             &image_path,
-            "--atlas", &atlas,
-            "--position", &position_mm.to_string(),
-            "--out", &output_dir,
+            "--atlas",
+            &atlas,
+            "--position",
+            &position_mm.to_string(),
+            "--out",
+            &output_dir,
             "--json",
         ])
         .output()
@@ -531,8 +546,8 @@ pub fn read_env_file() -> Result<serde_json::Value, String> {
     let mut vars: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
 
     if env_path.exists() {
-        let content = std::fs::read_to_string(&env_path)
-            .map_err(|e| format!("Cannot read .env: {}", e))?;
+        let content =
+            std::fs::read_to_string(&env_path).map_err(|e| format!("Cannot read .env: {}", e))?;
         for line in content.lines() {
             let trimmed = line.trim();
             if trimmed.is_empty() || trimmed.starts_with('#') {
@@ -562,8 +577,8 @@ pub fn write_env_file(vars: serde_json::Value) -> Result<(), String> {
     let mut existing_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     if env_path.exists() {
-        let content = std::fs::read_to_string(&env_path)
-            .map_err(|e| format!("Cannot read .env: {}", e))?;
+        let content =
+            std::fs::read_to_string(&env_path).map_err(|e| format!("Cannot read .env: {}", e))?;
         for line in content.lines() {
             let trimmed = line.trim();
             if let Some((key, _)) = trimmed.split_once('=') {
@@ -643,10 +658,13 @@ pub async fn precache_images(
         return Ok(total as u32);
     }
 
-    let _ = app.emit("cache-progress", serde_json::json!({
-        "done": total - uncached.len(),
-        "total": total,
-    }));
+    let _ = app.emit(
+        "cache-progress",
+        serde_json::json!({
+            "done": total - uncached.len(),
+            "total": total,
+        }),
+    );
 
     // Process all images in parallel using rayon
     let results: Vec<(String, Option<CachedThumb>)> = uncached
@@ -669,10 +687,13 @@ pub async fn precache_images(
         }
     }
 
-    let _ = app.emit("cache-progress", serde_json::json!({
-        "done": total,
-        "total": total,
-    }));
+    let _ = app.emit(
+        "cache-progress",
+        serde_json::json!({
+            "done": total,
+            "total": total,
+        }),
+    );
 
     log::info!("Pre-cached {}/{} images", cached_count, total);
     Ok(cached_count)
@@ -696,10 +717,8 @@ fn encode_thumbnail(path: &str, max_edge: u32) -> Option<CachedThumb> {
     let (out_w, out_h) = (rgb.width(), rgb.height());
 
     let mut buf: Vec<u8> = Vec::new();
-    let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(
-        std::io::Cursor::new(&mut buf),
-        85,
-    );
+    let mut encoder =
+        image::codecs::jpeg::JpegEncoder::new_with_quality(std::io::Cursor::new(&mut buf), 85);
     encoder
         .encode(rgb.as_raw(), out_w, out_h, image::ColorType::Rgb8.into())
         .ok()?;
@@ -726,8 +745,7 @@ pub fn scan_image_folder(folder: String) -> Result<Vec<serde_json::Value>, Strin
     }
 
     let mut images: Vec<serde_json::Value> = Vec::new();
-    let entries = std::fs::read_dir(dir)
-        .map_err(|e| format!("Cannot read directory: {}", e))?;
+    let entries = std::fs::read_dir(dir).map_err(|e| format!("Cannot read directory: {}", e))?;
 
     for entry in entries.flatten() {
         let path = entry.path();
@@ -749,7 +767,10 @@ pub fn scan_image_folder(folder: String) -> Result<Vec<serde_json::Value>, Strin
     }
 
     images.sort_by(|a, b| {
-        a["name"].as_str().unwrap_or("").cmp(b["name"].as_str().unwrap_or(""))
+        a["name"]
+            .as_str()
+            .unwrap_or("")
+            .cmp(b["name"].as_str().unwrap_or(""))
     });
 
     Ok(images)

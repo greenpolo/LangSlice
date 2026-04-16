@@ -432,7 +432,9 @@ def estimate_group(
     temperature = vlm_config.TEMPERATURE
     effective_model = model_name or _DEFAULT_MODEL
     _is_pro = "pro" in effective_model.lower()
-    thinking_level = "HIGH" if _is_pro else "MEDIUM"
+    thinking_level = vlm_config.get_thinking_level_or(
+        "HIGH" if _is_pro else "MEDIUM"
+    )
     if media_resolution is None:
         media_resolution = "high" if _is_pro else "low"
     max_iterations = max(1, int(max_iterations))
