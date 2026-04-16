@@ -100,11 +100,30 @@ Gemma 4 vision token budgets: 70/140 (fast), 280 (default in Ollama), 560 (chart
 
 Atlas slices are sent at their **native coronal resolution** (e.g., 456x320 for `allen_mouse_25um`). Tissue slices are downscaled to match via `get_coronal_long_edge(atlas)`. There is no `atlas_resolution` parameter — resolution is derived automatically from the atlas volume dimensions.
 
-**Individual mode is always better than grid mode for estimation accuracy.** Benchmarked 2026-04-15 on Flash (M01, medium resolution, native atlas):
+**Individual mode is always better than grid mode for estimation accuracy.** Benchmarked 2026-04-15 on Flash (M01, medium media_resolution, native atlas):
 - Individual: 0.140mm MAE, 100% within 0.5mm
 - Grid: 0.283mm MAE, 76% within 0.5mm (2x worse)
 
-Individual gives each atlas slice its own token budget. Grid packs multiple slices into one image, halving effective per-slice resolution and forcing the model to reconstruct spatial relationships across tile boundaries. `send_individually=True` is the default everywhere. The `--grid` CLI flag opts into grid mode for experimentation only.
+`send_individually=True` is the default everywhere. The `--grid` CLI flag opts into grid mode for experimentation only.
+
+**Optimal media_resolution depends on atlas pixel size.** Token budget must match image information density:
+- `allen_mouse_25um` (456px): **MEDIUM (560 tokens)** — 0.140mm MAE, 100% <=0.5mm
+- `allen_mouse_50um` (228px): MEDIUM (560 tokens) — 0.197mm MAE
+- `allen_mouse_10um` (1140px): LOW (280 tokens) — 0.333mm MAE
+- HIGH (1120 tokens) is **consistently worst** regardless of atlas — the model drowns in redundant patches
+
+**25um atlas is the sweet spot** for AP estimation. 50um loses boundary definition; 10um adds sub-structural noise that confuses macro matching. Higher resolution atlases do NOT improve accuracy.
+
+**Flash is the best model for tool-use estimation.** Full 4-model sweep (M01, 2026-04-15):
+
+| Model | Best config | MAE | <=0.5mm |
+|---|---|---|---|
+| Flash | 25um/medium/MEDIUM | 0.140mm | 100% |
+| 3.1 Pro (partial) | 25um/low/LOW | 0.334mm | 69% |
+| Flash Lite | 25um/medium/HIGH | 0.348mm | 67% |
+| 2.5 Pro | 25um/low/LOW | 0.545mm | 45% |
+
+MEDIUM thinking is optimal for Flash. HIGH thinking hurts Flash Lite (overthinks). 2.5 Pro is poor at this task regardless of thinking budget.
 
 Do not upscale atlas images. Do not send tissue slices at higher resolution than the atlas. The VLM cannot match detail that doesn't exist in both images — extra pixels become wasted tokens (Wang et al. ICML 2025: interpolated upscaling gives +0.1% accuracy vs +4.2% from genuinely finer patches).
 
