@@ -47,6 +47,10 @@ test_runs/
 slice-bench/results/
 !slice-bench/results/.gitkeep
 
+# Downloaded training/eval datasets
+data/
+debug_output/
+
 # langslice-gemma-4-31b generated data and checkpoints
 langslice-gemma-4-31b/data/atlas_slices/
 !langslice-gemma-4-31b/data/atlas_slices/.gitkeep
