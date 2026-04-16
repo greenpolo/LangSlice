@@ -103,8 +103,7 @@ pub fn load_structures(atlas_dir: &Path) -> Result<Vec<AtlasStructure>, String> 
 
 /// Load a multi-page TIFF as a 3D u16 volume (shape: [depth, height, width]).
 pub fn load_tiff_u16(path: &Path) -> Result<Array3<u16>, String> {
-    let file =
-        File::open(path).map_err(|e| format!("Cannot open {}: {}", path.display(), e))?;
+    let file = File::open(path).map_err(|e| format!("Cannot open {}: {}", path.display(), e))?;
     let mut decoder =
         Decoder::new(BufReader::new(file)).map_err(|e| format!("TIFF decode error: {}", e))?;
 
@@ -140,8 +139,7 @@ pub fn load_tiff_u16(path: &Path) -> Result<Array3<u16>, String> {
 
 /// Load a multi-page TIFF as a 3D u32 volume (for annotation/label volumes).
 pub fn load_tiff_u32(path: &Path) -> Result<Array3<u32>, String> {
-    let file =
-        File::open(path).map_err(|e| format!("Cannot open {}: {}", path.display(), e))?;
+    let file = File::open(path).map_err(|e| format!("Cannot open {}: {}", path.display(), e))?;
     let mut decoder =
         Decoder::new(BufReader::new(file)).map_err(|e| format!("TIFF decode error: {}", e))?;
 
@@ -196,11 +194,17 @@ pub fn load_atlas(name: &str) -> Result<AtlasState, String> {
 
     log::info!("Loading reference.tiff...");
     let reference_volume = load_tiff_u16(&atlas_dir.join("reference.tiff"))?;
-    log::info!("Reference volume loaded: shape={:?}", reference_volume.shape());
+    log::info!(
+        "Reference volume loaded: shape={:?}",
+        reference_volume.shape()
+    );
 
     log::info!("Loading annotation.tiff...");
     let annotation_volume = load_tiff_u32(&atlas_dir.join("annotation.tiff"))?;
-    log::info!("Annotation volume loaded: shape={:?}", annotation_volume.shape());
+    log::info!(
+        "Annotation volume loaded: shape={:?}",
+        annotation_volume.shape()
+    );
 
     log::info!("Pre-computing border volume (parallel)...");
     let border_volume = super::slicer::precompute_border_volume_parallel(&annotation_volume);
@@ -212,12 +216,18 @@ pub fn load_atlas(name: &str) -> Result<AtlasState, String> {
     let mut additional_volumes: HashMap<String, Array3<u16>> = HashMap::new();
     for name in &metadata.additional_references {
         let candidates = [
-            atlas_dir.join("additional_references").join(format!("{}.tiff", name)),
+            atlas_dir
+                .join("additional_references")
+                .join(format!("{}.tiff", name)),
             atlas_dir.join(format!("{}.tiff", name)),
         ];
         let found = candidates.iter().find(|p| p.exists());
         if let Some(tiff_path) = found {
-            log::info!("Loading additional reference: {} from {}", name, tiff_path.display());
+            log::info!(
+                "Loading additional reference: {} from {}",
+                name,
+                tiff_path.display()
+            );
             match load_tiff_u16(tiff_path) {
                 Ok(vol) => {
                     log::info!("  {} loaded: shape={:?}", name, vol.shape());
@@ -232,7 +242,10 @@ pub fn load_atlas(name: &str) -> Result<AtlasState, String> {
         }
     }
     if !additional_volumes.is_empty() {
-        log::info!("Loaded {} additional reference(s)", additional_volumes.len());
+        log::info!(
+            "Loaded {} additional reference(s)",
+            additional_volumes.len()
+        );
     }
 
     // For Allen CCFv3 atlases without Nissl: try to borrow it from
@@ -291,7 +304,9 @@ fn try_load_augmented_nissl(
 
     // Load the Nissl TIFF from the augmented atlas
     let nissl_candidates = [
-        aug_dir.join("additional_references").join("single_animal_nissl.tiff"),
+        aug_dir
+            .join("additional_references")
+            .join("single_animal_nissl.tiff"),
         aug_dir.join("single_animal_nissl.tiff"),
     ];
     let nissl_path = nissl_candidates.iter().find(|p| p.exists())?;

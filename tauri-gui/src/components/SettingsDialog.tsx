@@ -8,8 +8,8 @@ interface Props {
   onClose: () => void;
 }
 
-type Provider = "ai_studio" | "vertex_adc" | "vertex_api_key" | "ollama";
-type SettingsTab = "google" | "vertex" | "local";
+type Provider = "ai_studio" | "vertex_adc" | "vertex_api_key" | "ollama" | "openrouter";
+type SettingsTab = "google" | "vertex" | "local" | "openrouter";
 type OllamaStatusState = "ready" | "starting" | "not_installed" | "error";
 
 interface PullProgress {
@@ -36,6 +36,10 @@ export function SettingsDialog({ open, onClose }: Props) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
+  // OpenRouter state
+  const [openRouterKey, setOpenRouterKey] = useState("");
+  const [openRouterModel, setOpenRouterModel] = useState("google/gemma-4-31b-it");
+
   // Tab state
   const [activeTab, setActiveTab] = useState<SettingsTab>("google");
 
@@ -57,7 +61,12 @@ export function SettingsDialog({ open, onClose }: Props) {
       const v = result.vars;
       const backend = (v.LANGSLICE_GENAI_BACKEND || "ai_studio").toLowerCase();
 
-      if (backend === "ollama" || v.OPENAI_BASE_URL?.includes("localhost")) {
+      if (backend === "openrouter" || v.OPENAI_BASE_URL?.includes("openrouter.ai")) {
+        setProvider("openrouter");
+        setActiveTab("openrouter");
+        setOpenRouterKey(v.OPENAI_API_KEY || "");
+        setOpenRouterModel(v.OPENAI_MODEL || "google/gemma-4-31b-it");
+      } else if (backend === "ollama" || v.OPENAI_BASE_URL?.includes("localhost")) {
         setProvider("ollama");
         setActiveTab("local");
         setSelectedOllamaModel(v.OPENAI_MODEL || "");
@@ -216,7 +225,12 @@ export function SettingsDialog({ open, onClose }: Props) {
     setSaving(true);
     const vars: Record<string, string> = {};
 
-    if (activeTab === "local" || provider === "ollama") {
+    if (activeTab === "openrouter" || provider === "openrouter") {
+      vars.LANGSLICE_GENAI_BACKEND = "openrouter";
+      vars.OPENAI_BASE_URL = "https://openrouter.ai/api/v1";
+      vars.OPENAI_API_KEY = openRouterKey;
+      vars.OPENAI_MODEL = openRouterModel;
+    } else if (activeTab === "local" || provider === "ollama") {
       vars.LANGSLICE_GENAI_BACKEND = "ollama";
       vars.OPENAI_BASE_URL = `http://localhost:${ollamaPort || 11434}/v1`;
       vars.OPENAI_API_KEY = "ollama";
@@ -718,6 +732,40 @@ export function SettingsDialog({ open, onClose }: Props) {
     </>
   );
 
+  const renderOpenRouterTab = () => (
+    <>
+      <div className="settings-row">
+        <label className="settings-label">API Key</label>
+        <input
+          type="password"
+          className="control-select"
+          placeholder="sk-or-..."
+          value={openRouterKey}
+          onChange={(e) => setOpenRouterKey(e.target.value)}
+        />
+      </div>
+      <div className="settings-row">
+        <label className="settings-label">Model</label>
+        <select
+          className="control-select"
+          value={openRouterModel}
+          onChange={(e) => setOpenRouterModel(e.target.value)}
+        >
+          <option value="google/gemma-4-31b-it">Gemma 4 31B ($0.13/M)</option>
+          <option value="google/gemma-4-26b-a4b-it">Gemma 4 26B MoE (free)</option>
+          <option value="openai/gpt-4.1">GPT-4.1</option>
+          <option value="openai/gpt-4.1-mini">GPT-4.1 Mini</option>
+          <option value="openai/gpt-4.1-nano">GPT-4.1 Nano</option>
+        </select>
+      </div>
+      <div className="dialog-info">
+        Routes to many model providers via{" "}
+        <span style={{ color: "var(--accent)" }}>openrouter.ai</span>.
+        Uses the OpenAI-compatible Responses API. Get a key at openrouter.ai/keys.
+      </div>
+    </>
+  );
+
   const renderLocalTab = () => (
     <>
       {renderOllamaStatusBar()}
@@ -789,6 +837,15 @@ export function SettingsDialog({ open, onClose }: Props) {
               Vertex AI
             </button>
             <button
+              style={activeTab === "openrouter" ? tabBtnActive : tabBtnInactive}
+              onClick={() => {
+                setActiveTab("openrouter");
+                setProvider("openrouter");
+              }}
+            >
+              OpenRouter
+            </button>
+            <button
               style={activeTab === "local" ? tabBtnActive : tabBtnInactive}
               onClick={() => {
                 setActiveTab("local");
@@ -802,6 +859,7 @@ export function SettingsDialog({ open, onClose }: Props) {
           {/* Tab content */}
           {activeTab === "google" && renderGoogleTab()}
           {activeTab === "vertex" && renderVertexTab()}
+          {activeTab === "openrouter" && renderOpenRouterTab()}
           {activeTab === "local" && renderLocalTab()}
 
           <div className="dialog-env-path">{envPath}</div>
@@ -825,7 +883,7 @@ export function SettingsDialog({ open, onClose }: Props) {
             className="btn-primary"
             style={{ width: "auto", padding: "8px 24px" }}
             onClick={handleSave}
-            disabled={saving || (activeTab === "local" && !selectedOllamaModel)}
+            disabled={saving || (activeTab === "local" && !selectedOllamaModel) || (activeTab === "openrouter" && !openRouterKey)}
           >
             {saved ? "Saved" : saving ? "Saving..." : "Save"}
           </button>

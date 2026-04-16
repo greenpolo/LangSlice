@@ -33,8 +33,8 @@ fn encode_gray_png_base64(pixels: &[u8], width: u32, height: u32) -> Result<Stri
 
 /// Encode RGB pixels as a base64 PNG string.
 fn encode_rgb_png_base64(pixels: &[u8], width: u32, height: u32) -> Result<String, String> {
-    let img = RgbImage::from_raw(width, height, pixels.to_vec())
-        .ok_or("Failed to create RGB image")?;
+    let img =
+        RgbImage::from_raw(width, height, pixels.to_vec()).ok_or("Failed to create RGB image")?;
     let mut buf: Vec<u8> = Vec::new();
     let cursor = Cursor::new(&mut buf);
     let encoder = image::codecs::png::PngEncoder::new(cursor);
@@ -77,8 +77,7 @@ pub fn precompute_border_volume_parallel(annotation: &Array3<u32>) -> Array3<u8>
         .collect();
 
     let flat: Vec<u8> = slices.into_iter().flatten().collect();
-    Array3::from_shape_vec((depth, height, width), flat)
-        .expect("Border volume reshape failed")
+    Array3::from_shape_vec((depth, height, width), flat).expect("Border volume reshape failed")
 }
 
 /// Fast path: return raw border bytes for a single coronal slice from the
@@ -123,7 +122,12 @@ fn compute_borders(annotation_slice: &ndarray::ArrayView2<u32>) -> Vec<u8> {
 }
 
 /// Blend reference (grayscale) with borders (green #00ff64 at 40% opacity).
-fn composite_reference_borders(reference: &[u8], borders: &[u8], width: u32, height: u32) -> Vec<u8> {
+fn composite_reference_borders(
+    reference: &[u8],
+    borders: &[u8],
+    width: u32,
+    height: u32,
+) -> Vec<u8> {
     let n_pixels = (width * height) as usize;
     let mut rgb = vec![0u8; n_pixels * 3];
     let opacity = 0.4f64;
@@ -136,7 +140,8 @@ fn composite_reference_borders(reference: &[u8], borders: &[u8], width: u32, hei
             // Green #00ff64 blended at 40% over the reference grayscale
             rgb[i * 3] = ((1.0 - opacity) * ref_val + opacity * 0.0) as u8; // R
             rgb[i * 3 + 1] = ((1.0 - opacity) * ref_val + opacity * 255.0) as u8; // G
-            rgb[i * 3 + 2] = ((1.0 - opacity) * ref_val + opacity * 100.0) as u8; // B
+            rgb[i * 3 + 2] = ((1.0 - opacity) * ref_val + opacity * 100.0) as u8;
+        // B
         } else {
             rgb[i * 3] = reference[i];
             rgb[i * 3 + 1] = reference[i];
