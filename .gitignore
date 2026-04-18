@@ -36,8 +36,13 @@ archive/*.md
 .sisyphus/
 .claude/
 .superpowers/
+.playwright-mcp/
 debug_runs/
 test_runs/
+eval_outputs/
+
+# Auth tokens / device codes
+eval/.device_auth.json
 
 # Large binary data
 *.nii

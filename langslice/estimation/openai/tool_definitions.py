@@ -133,6 +133,7 @@ def _handle_fetch_atlas(
     stage: str,
     on_progress: Callable[[str], None] | None,
     on_trace: Callable[[dict[str, object]], None] | None,
+    image_detail: str | None = None,
 ) -> tuple[list[dict[str, Any]], str]:
     """Handle a ``fetch_atlas`` tool call for the Responses API."""
     _ = on_progress
@@ -163,7 +164,7 @@ def _handle_fetch_atlas(
         for label, image_bytes in fetch_result.labeled_images:
             image_content_parts.append(_build_text_content(label))
             image_content_parts.append(
-                _build_image_content(_bytes_to_base64(image_bytes))
+                _build_image_content(_bytes_to_base64(image_bytes), detail=image_detail)
             )
         response_items.append({
             "role": "user",
@@ -173,7 +174,10 @@ def _handle_fetch_atlas(
         response_items.append({
             "role": "user",
             "content": [
-                _build_image_content(_bytes_to_base64(fetch_result.grid_image_bytes)),
+                _build_image_content(
+                    _bytes_to_base64(fetch_result.grid_image_bytes),
+                    detail=image_detail,
+                ),
             ],
         })
     return response_items, fetch_result.function_name
@@ -194,6 +198,7 @@ def _process_ap_function_calls(
     send_individually: bool = True,
     on_progress: Callable[[str], None] | None = None,
     on_trace: Callable[[dict[str, object]], None] | None = None,
+    image_detail: str | None = None,
 ) -> tuple[list[dict[str, Any]], bool]:
     """Process function calls and return Responses API input items."""
     _ = target_h
@@ -246,6 +251,7 @@ def _process_ap_function_calls(
                 stage="ap",
                 on_progress=on_progress,
                 on_trace=on_trace,
+                image_detail=image_detail,
             )
             result_messages.extend(fetch_items)
 

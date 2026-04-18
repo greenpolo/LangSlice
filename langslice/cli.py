@@ -229,7 +229,7 @@ def _add_estimate_parser(subparsers: argparse._SubParsersAction) -> None:
     est.add_argument("--temperature", type=float, default=None, help="Generation temperature")
     est.add_argument(
         "--media-resolution",
-        default="ultra_high",
+        default="medium",
         choices=["low", "medium", "high", "ultra_high"],
         help="Gemini media resolution for input images",
     )
@@ -302,7 +302,7 @@ def _add_estimate_group_parser(subparsers: argparse._SubParsersAction) -> None:
     p.add_argument("--temperature", type=float, default=None, help="Generation temperature")
     p.add_argument(
         "--media-resolution",
-        default="ultra_high",
+        default="medium",
         choices=["low", "medium", "high", "ultra_high"],
         help="Gemini media resolution for input images",
     )
@@ -407,6 +407,8 @@ def _run_estimate_group(args: argparse.Namespace) -> None:
             send_individually=not args.grid,
             on_progress=on_progress,
             debug_dir=debug_dir,
+            media_resolution=args.media_resolution,
+            thinking=args.thinking,
         )
     else:
         import langslice.vlm_config as vlm_config
@@ -626,6 +628,8 @@ def _run_estimate(args: argparse.Namespace) -> None:
                 show_borders=args.borders,
                 send_individually=not args.grid,
                 debug_dir=debug_dir,
+                media_resolution=args.media_resolution,
+                thinking=args.thinking,
             )
     else:
         import langslice.vlm_config as vlm_config

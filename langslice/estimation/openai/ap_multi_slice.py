@@ -42,6 +42,7 @@ from langslice.estimation.openai.common import (
     _image_to_base64,
     _image_to_bytes,
     _load_atlas_lazy,
+    media_resolution_to_detail,
 )
 from langslice.estimation.openai.tool_definitions import (
     _build_nudge_text,
@@ -74,6 +75,7 @@ def _process_group_function_calls(
     send_individually: bool = True,
     on_progress: Callable[[str], None] | None = None,
     on_trace: Callable[[dict[str, object]], None] | None = None,
+    image_detail: str | None = None,
 ) -> tuple[list[dict[str, Any]], bool]:
     """Process group tool calls and return Chat Completions messages.
 
@@ -134,6 +136,7 @@ def _process_group_function_calls(
                 stage="ap_group",
                 on_progress=on_progress,
                 on_trace=on_trace,
+                image_detail=image_detail,
             )
             result_messages.extend(fetch_items)
 
@@ -252,6 +255,8 @@ def estimate_group(
     on_progress: Callable[[str], None] | None = None,
     on_trace: Callable[[dict[str, object]], None] | None = None,
     debug_dir: str | None = None,
+    media_resolution: str | None = None,
+    thinking: str | None = None,
 ) -> MultiSliceResult:
     """Estimate AP positions for a group of consecutive brain slices.
 
@@ -406,6 +411,18 @@ def estimate_group(
     max_iterations = max(1, int(max_iterations))
     effective_model = model_name or get_openai_model()
     tools = _group_tool_declarations(n_slices)
+    image_detail = media_resolution_to_detail(media_resolution)
+    reasoning_param: dict[str, str] | None = None
+    if thinking:
+        level = thinking.lower()
+        if level not in ("minimal", "low", "medium", "high"):
+            level = "medium"
+        reasoning_param = {"effort": level}
+    if image_detail or reasoning_param:
+        _progress(
+            f"OpenRouter knobs: detail={image_detail or 'default'}, "
+            f"reasoning={reasoning_param['effort'] if reasoning_param else 'default'}"
+        )
 
     # --- Build initial user message with all slice images ---
     initial_content_parts: list[dict[str, Any]] = [
@@ -420,7 +437,7 @@ def estimate_group(
     for i, img in enumerate(prepared_images):
         initial_content_parts.append(_build_text_content(f"Slice {i + 1}:"))
         initial_content_parts.append(
-            _build_image_content(_image_to_base64(img))
+            _build_image_content(_image_to_base64(img), detail=image_detail)
         )
 
     initial_user_message: dict[str, Any] = {
@@ -476,13 +493,16 @@ def estimate_group(
                 )
 
             started_at = time.perf_counter()
+            request_kwargs: dict[str, Any] = {
+                "model": effective_model,
+                "instructions": system_instruction,
+                "input": cast(Any, input_list),
+                "tools": cast(Any, tools),
+            }
+            if reasoning_param is not None:
+                request_kwargs["reasoning"] = reasoning_param
             response = retry_with_backoff(
-                lambda _inp=input_list: client.responses.create(
-                    model=effective_model,
-                    instructions=system_instruction,
-                    input=cast(Any, _inp),
-                    tools=cast(Any, tools),
-                ),
+                lambda _kw=request_kwargs: client.responses.create(**_kw),
                 request_label=f"Group estimation turn {iteration + 1}",
                 on_progress=_progress,
             )
@@ -569,6 +589,7 @@ def estimate_group(
                 send_individually=send_individually,
                 on_progress=_progress,
                 on_trace=on_trace,
+                image_detail=image_detail,
             )
             input_list.extend(result_items)
 

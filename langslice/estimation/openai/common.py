@@ -49,14 +49,43 @@ def _bytes_to_base64(data: bytes, mime_type: str = "image/jpeg") -> str:
 # ---------------------------------------------------------------------------
 
 
-def _build_image_content(b64_uri: str) -> dict[str, Any]:
+# Map the Gemini ``--media-resolution`` levels onto the OpenAI Responses API
+# ``detail`` field.  The API only exposes three levels (low/auto/high), so the
+# "medium" sweet spot we use on Gemini maps onto "auto".
+_MEDIA_RES_TO_DETAIL: dict[str, str] = {
+    "low": "low",
+    "medium": "auto",
+    "high": "high",
+    "ultra_high": "high",
+}
+
+
+def media_resolution_to_detail(media_resolution: str | None) -> str | None:
+    """Map a ``--media-resolution`` level onto ``image_url.detail``.
+
+    Returns ``None`` when *media_resolution* is falsy or unrecognized, so
+    the caller omits the ``detail`` field entirely.
+    """
+    if not media_resolution:
+        return None
+    return _MEDIA_RES_TO_DETAIL.get(media_resolution.lower())
+
+
+def _build_image_content(b64_uri: str, detail: str | None = None) -> dict[str, Any]:
     """Wrap a base64 data URI as a Responses API image content part.
 
     Returns::
 
         {"type": "input_image", "image_url": "<b64_uri>"}
+
+    When *detail* is provided, include ``detail: "low"|"auto"|"high"`` so
+    providers that honor the OpenAI image-token-budget hint can scale the
+    per-image token allocation.
     """
-    return {"type": "input_image", "image_url": b64_uri}
+    part: dict[str, Any] = {"type": "input_image", "image_url": b64_uri}
+    if detail:
+        part["detail"] = detail
+    return part
 
 
 def _build_text_content(text: str) -> dict[str, str]:

@@ -75,7 +75,7 @@ def estimate_position(
     on_trace: Callable[[dict[str, object]], None] | None = None,
     debug_dir: str | None = None,
     max_iterations: int = 20,
-    media_resolution: str = "ultra_high",
+    media_resolution: str = "medium",
     show_borders: bool = False,
     anatomy_hints: str = "",
     model_name: str | None = None,

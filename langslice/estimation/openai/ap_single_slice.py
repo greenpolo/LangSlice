@@ -39,6 +39,7 @@ from langslice.estimation.openai.common import (
     _image_to_bytes,
     _load_atlas_lazy,
     _to_float,
+    media_resolution_to_detail,
 )
 from langslice.estimation.openai.tool_definitions import (
     _build_nudge_text,
@@ -64,6 +65,8 @@ def estimate_position(
     anatomy_hints: str = "",
     model_name: str | None = None,
     send_individually: bool = True,
+    media_resolution: str | None = None,
+    thinking: str | None = None,
 ) -> APResult:
     """Agentic AP estimation using tool-use with self-correction.
 
@@ -189,6 +192,18 @@ def estimate_position(
     max_iterations = max(1, int(max_iterations))
     effective_model = model_name or get_openai_model()
     tools = _tool_declarations()
+    image_detail = media_resolution_to_detail(media_resolution)
+    reasoning_param: dict[str, str] | None = None
+    if thinking:
+        level = thinking.lower()
+        if level not in ("minimal", "low", "medium", "high"):
+            level = "medium"
+        reasoning_param = {"effort": level}
+    if image_detail or reasoning_param:
+        _progress(
+            f"OpenRouter knobs: detail={image_detail or 'default'}, "
+            f"reasoning={reasoning_param['effort'] if reasoning_param else 'default'}"
+        )
 
     target_info["input_transport"] = "base64_inline"
     _emit_trace(
@@ -230,7 +245,7 @@ def estimate_position(
             _build_text_content(
                 "Here is the target brain slice. Determine its AP position in the atlas."
             ),
-            _build_image_content(target_b64),
+            _build_image_content(target_b64, detail=image_detail),
         ],
     }
 
@@ -271,13 +286,16 @@ def estimate_position(
                 )
 
             started_at = time.perf_counter()
+            request_kwargs: dict[str, Any] = {
+                "model": effective_model,
+                "instructions": system_instruction,
+                "input": cast(Any, input_list),
+                "tools": cast(Any, tools),
+            }
+            if reasoning_param is not None:
+                request_kwargs["reasoning"] = reasoning_param
             response = retry_with_backoff(
-                lambda _inp=input_list: client.responses.create(
-                    model=effective_model,
-                    instructions=system_instruction,
-                    input=cast(Any, _inp),
-                    tools=cast(Any, tools),
-                ),
+                lambda _kw=request_kwargs: client.responses.create(**_kw),
                 request_label=f"AP turn {iteration + 1}",
                 on_progress=_progress,
             )
@@ -358,6 +376,7 @@ def estimate_position(
                 send_individually=send_individually,
                 on_progress=_progress,
                 on_trace=on_trace,
+                image_detail=image_detail,
             )
             input_list.extend(result_items)
 
