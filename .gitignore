@@ -56,6 +56,9 @@ slice-bench/results/
 data/
 debug_output/
 
+# Local-only mirror of dataset-specific files kept off the public repo
+_local/
+
 # langslice-gemma-4-31b generated data and checkpoints
 langslice-gemma-4-31b/data/atlas_slices/
 !langslice-gemma-4-31b/data/atlas_slices/.gitkeep
