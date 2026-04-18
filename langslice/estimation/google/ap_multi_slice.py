@@ -436,7 +436,7 @@ def estimate_group(
         "HIGH" if _is_pro else "MEDIUM"
     )
     if media_resolution is None:
-        media_resolution = "high" if _is_pro else "low"
+        media_resolution = "high" if _is_pro else "medium"
     max_iterations = max(1, int(max_iterations))
 
     state = _GroupLoopState(

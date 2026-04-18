@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any, Protocol, cast
 logger = logging.getLogger(__name__)
 
 _DEFAULT_MODEL_NAME = "gemini-3-flash-preview"
-_DEFAULT_THINKING_LEVEL = "HIGH"
+_DEFAULT_THINKING_LEVEL = "MEDIUM"
 _DEFAULT_CODE_EXECUTION_ENABLED = True
 _DEFAULT_TEMPERATURE: float = 1.0
 
