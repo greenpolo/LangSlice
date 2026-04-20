@@ -33,6 +33,8 @@ Task is **position estimation along the slice-normal axis** — AP for coronal, 
 | Multi-slice group | Pro, 25um, medium media, M03 | 0.186 mm MAE |
 | Whole-brain | Pro anchors + Flash non-anchors, M01 | 0.173 mm MAE (NOT touched by this refactor) |
 
+**Captured pre-ADK smoke baseline (2026-04-19, Task 0.2):** Gemini 3 Flash multi-slice-group on full M01 (29 slices across 7 groups), MAE 0.499 mm, 0 failures, 0 fallbacks, 309s wall. JSON saved locally at `eval_outputs/baseline_pre_adk_M01.json` (path is gitignored so the file itself is not tracked in the repo).
+
 Post-refactor eval gates are **smoke tests, not accuracy gates**: the refactor is complete when runs finish without errors, the agents emit plausible mid-brain positions (within ~2 mm of ground truth), and there is no runaway iteration. Statistical MAE parity vs the hand-rolled loop is not required this round — if needed, a larger eval follows post-hackathon.
 
 ---
