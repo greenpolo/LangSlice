@@ -159,3 +159,15 @@ def submit_group_estimate(
     }
     tool_context.actions.escalate = True
     return {"status": "ok", "positions_mm": [float(p) for p in positions_mm]}
+
+
+def zoom(source: str, bbox: list[int], tool_context: Any) -> dict[str, Any]:
+    """STUB - full implementation in Phase 5. Returns a NOT_IMPLEMENTED error."""
+    del source, bbox, tool_context
+    return {"status": "error", "error": "NOT_IMPLEMENTED"}
+
+
+def side_by_side(left: str, right: str, tool_context: Any) -> dict[str, Any]:
+    """STUB - full implementation in Phase 6. Returns a NOT_IMPLEMENTED error."""
+    del left, right, tool_context
+    return {"status": "error", "error": "NOT_IMPLEMENTED"}

@@ -2,6 +2,7 @@ from langslice.harness.estimation.session import (
     ARTIFACT_TARGET,
     build_initial_state,
 )
+from langslice.harness.estimation.single_slice import build_single_slice_agent
 
 
 def test_initial_state_single_slice():
@@ -25,3 +26,17 @@ def test_initial_state_single_slice():
 
 def test_artifact_target_constant():
     assert ARTIFACT_TARGET == "target"
+
+
+def test_build_single_slice_agent_registers_four_tools():
+    agent = build_single_slice_agent(
+        atlas_name="allen_mouse_25um", plane="coronal",
+        species="mouse", pos_lo=0.0, pos_hi=13.2,
+        model="gemini-3-flash-preview",
+    )
+    tool_names = {getattr(t, "__name__", None) or getattr(t, "name", None) for t in agent.tools}
+    assert "fetch_atlas" in tool_names
+    assert "zoom" in tool_names
+    assert "side_by_side" in tool_names
+    assert "submit_estimate" in tool_names
+    assert agent.instruction  # non-empty prompt
