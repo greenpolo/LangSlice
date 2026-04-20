@@ -22,7 +22,11 @@ from langslice.harness.estimation.session import (
     build_initial_state,
 )
 from langslice.harness.estimation.single_slice import build_single_slice_agent
-from langslice.image_prep import normalize_image, prepare_image_for_vlm
+from langslice.image_prep import (
+    adaptive_preprocess,
+    normalize_image,
+    prepare_image_for_vlm,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -54,10 +58,19 @@ def _pick_nudge(state: dict[str, Any]) -> str:
     return _NUDGE_VERIFY
 
 
-def _encode_target_part(image: Image.Image, atlas_long_edge: int) -> types.Part:
-    """Normalize, downscale, and encode a target image as a JPEG ``types.Part``."""
+def _encode_target_part(
+    image: Image.Image, atlas_long_edge: int, *, apply_clahe: bool = True,
+) -> types.Part:
+    """Normalize, downscale, optionally CLAHE, and encode as a JPEG ``types.Part``.
+
+    Order matches ``eval_group.py`` and ``whole_brain.estimation_agents``:
+    normalize → downscale-to-atlas-long-edge → CLAHE. CLAHE is on by default;
+    the pre-ADK Flash baseline (0.14-0.25mm MAE on M01) was measured with it.
+    """
     normalized = normalize_image(image)
     prepped = prepare_image_for_vlm(normalized, max_long_edge=atlas_long_edge).image
+    if apply_clahe:
+        prepped = adaptive_preprocess(prepped)
     buf = io.BytesIO()
     prepped.convert("RGB").save(buf, format="JPEG", quality=85)
     return types.Part.from_bytes(mime_type="image/jpeg", data=buf.getvalue())
@@ -74,6 +87,7 @@ async def run_single_slice_session(
     max_retries: int = _DEFAULT_MAX_RETRIES,
     temperature: float = 1.0,
     thinking_level: str = "MEDIUM",
+    apply_clahe: bool = True,
 ) -> PositionResult:
     """Drive a single-slice position-estimation session to completion.
 
@@ -124,7 +138,7 @@ async def run_single_slice_session(
     )
 
     # Encode target image once as a Part for reuse across retries.
-    target_part = _encode_target_part(image, atlas_long_edge)
+    target_part = _encode_target_part(image, atlas_long_edge, apply_clahe=apply_clahe)
 
     for attempt in range(max_retries):
         session_id = f"single_slice_attempt_{attempt}"
