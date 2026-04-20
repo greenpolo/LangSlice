@@ -1,5 +1,6 @@
 from langslice.atlas.core import (
     get_position_range_mm,
+    get_reference_slice,
     index_to_position_mm,
     load_atlas,
     position_mm_to_index,
@@ -46,3 +47,14 @@ def test_position_roundtrip_coronal():
         idx = position_mm_to_index(atlas, mm)
         back = index_to_position_mm(atlas, idx)
         assert abs(back - mm) < 0.025  # within one voxel
+
+
+def test_reference_slice_shape_differs_by_plane():
+    atlas = load_atlas("allen_mouse_25um")
+    coronal = get_reference_slice(atlas, 5.0)
+    sagittal = get_reference_slice(atlas, 5.0, plane="sagittal")
+    horizontal = get_reference_slice(atlas, 5.0, plane="horizontal")
+    # All three should be PIL Images with distinct (W, H) tuples.
+    # Coronal is (ML, DV); sagittal is (AP, DV); horizontal is (ML, AP).
+    assert coronal.size != sagittal.size
+    assert coronal.size != horizontal.size

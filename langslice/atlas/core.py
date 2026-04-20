@@ -12,7 +12,6 @@ from scipy.ndimage import gaussian_filter1d
 from langslice.atlas.space import (
     Plane,
     atlas_space_context,
-    require_coronal_layout,
     slice_axis_index,
 )
 
@@ -199,10 +198,13 @@ def _normalize_to_uint8(arr: np.ndarray) -> np.ndarray:
     return np.clip((arr_float / max_val) * 255.0, 0, 255).astype(np.uint8)
 
 
-def get_reference_slice(atlas: _AtlasLike, position_mm: float) -> Image.Image:
-    """Get coronal reference slice as grayscale PIL image."""
-    idx = position_mm_to_index(atlas, position_mm)
-    reference_slice = np.asarray(atlas.reference[idx, :, :])
+def get_reference_slice(
+    atlas: _AtlasLike, position_mm: float, *, plane: Plane = "coronal"
+) -> Image.Image:
+    """Get a reference slice along the chosen plane as grayscale PIL image."""
+    idx = position_mm_to_index(atlas, position_mm, plane=plane)
+    axis = slice_axis_index(atlas_space_context(atlas), plane)
+    reference_slice = np.take(np.asarray(atlas.reference), idx, axis=axis)
     normalized = _normalize_to_uint8(reference_slice)
     return Image.fromarray(normalized, mode="L")
 
@@ -226,25 +228,35 @@ def _annotation_to_boundaries(annotation_slice: np.ndarray) -> np.ndarray:
     return edges
 
 
-def get_boundary_slice(atlas: _AtlasLike, position_mm: float) -> Image.Image:
-    """Get coronal annotation boundaries as grayscale PIL image."""
-    idx = position_mm_to_index(atlas, position_mm)
-    annotation_slice = np.asarray(atlas.annotation[idx, :, :])
+def get_boundary_slice(
+    atlas: _AtlasLike, position_mm: float, *, plane: Plane = "coronal"
+) -> Image.Image:
+    """Get annotation boundaries along the chosen plane as grayscale PIL image."""
+    idx = position_mm_to_index(atlas, position_mm, plane=plane)
+    axis = slice_axis_index(atlas_space_context(atlas), plane)
+    annotation_slice = np.take(np.asarray(atlas.annotation), idx, axis=axis)
     edges = _annotation_to_boundaries(annotation_slice)
     return Image.fromarray(edges, mode="L")
 
 
-def get_composite_slice(atlas: _AtlasLike, position_mm: float, opacity: float = 0.4) -> Image.Image:
+def get_composite_slice(
+    atlas: _AtlasLike,
+    position_mm: float,
+    opacity: float = 0.4,
+    *,
+    plane: Plane = "coronal",
+) -> Image.Image:
     """Overlay annotation boundaries on reference image and return RGB PIL image."""
     if not 0.0 <= opacity <= 1.0:
         raise ValueError(f"opacity must be in [0, 1], got {opacity}")
 
-    idx = position_mm_to_index(atlas, position_mm)
-    ref_slice = np.asarray(atlas.reference[idx, :, :])
+    idx = position_mm_to_index(atlas, position_mm, plane=plane)
+    axis = slice_axis_index(atlas_space_context(atlas), plane)
+    ref_slice = np.take(np.asarray(atlas.reference), idx, axis=axis)
     ref_norm = _normalize_to_uint8(ref_slice)
     ref_rgb = np.stack([ref_norm, ref_norm, ref_norm], axis=-1).astype(np.float32)
 
-    ann_slice = np.asarray(atlas.annotation[idx, :, :])
+    ann_slice = np.take(np.asarray(atlas.annotation), idx, axis=axis)
     edges = _annotation_to_boundaries(ann_slice)
 
     result = ref_rgb.copy()
@@ -255,10 +267,16 @@ def get_composite_slice(atlas: _AtlasLike, position_mm: float, opacity: float = 
     return Image.fromarray(result.astype(np.uint8), mode="RGB")
 
 
-def get_colored_region_slice(atlas: _AtlasLike, position_mm: float) -> Image.Image:
-    """Get coronal annotation slice as RGB PIL image with official atlas region colors."""
-    idx = position_mm_to_index(atlas, position_mm)
-    annotation_slice = np.asarray(atlas.annotation[idx, :, :])
+def get_colored_region_slice(
+    atlas: _AtlasLike, position_mm: float, *, plane: Plane = "coronal"
+) -> Image.Image:
+    """Get an annotation slice along the chosen plane as RGB PIL image.
+
+    Uses the official BrainGlobe atlas region colors.
+    """
+    idx = position_mm_to_index(atlas, position_mm, plane=plane)
+    axis = slice_axis_index(atlas_space_context(atlas), plane)
+    annotation_slice = np.take(np.asarray(atlas.annotation), idx, axis=axis)
     h, w = cast(tuple[int, int], annotation_slice.shape)
 
     rgb = np.zeros((h, w, 3), dtype=np.uint8)
@@ -280,11 +298,19 @@ def get_colored_region_slice(atlas: _AtlasLike, position_mm: float) -> Image.Ima
 
 
 def get_smoothed_boundary_slice(
-    atlas: _AtlasLike, position_mm: float, *, target_size: tuple[int, int] | None = None
+    atlas: _AtlasLike,
+    position_mm: float,
+    *,
+    target_size: tuple[int, int] | None = None,
+    plane: Plane = "coronal",
 ) -> Image.Image:
-    """Get coronal annotation boundaries with smoothed vector contours as grayscale PIL image."""
-    idx = position_mm_to_index(atlas, position_mm)
-    annotation_slice = np.asarray(atlas.annotation[idx, :, :])
+    """Get annotation boundaries along the chosen plane as grayscale PIL image.
+
+    Vector contours are smoothed before rasterization.
+    """
+    idx = position_mm_to_index(atlas, position_mm, plane=plane)
+    axis = slice_axis_index(atlas_space_context(atlas), plane)
+    annotation_slice = np.take(np.asarray(atlas.annotation), idx, axis=axis)
 
     if target_size is not None:
         tw, th = target_size
@@ -327,9 +353,13 @@ def list_additional_references(atlas: _AtlasLike) -> list[str]:
 
 
 def get_additional_reference_slice(
-    atlas: _AtlasLike, reference_name: str, position_mm: float
+    atlas: _AtlasLike,
+    reference_name: str,
+    position_mm: float,
+    *,
+    plane: Plane = "coronal",
 ) -> Image.Image:
-    """Get a coronal slice from an atlas additional reference volume."""
+    """Get a slice from an atlas additional reference volume along the chosen plane."""
     refs = getattr(atlas, "additional_references", None)
     if refs is None:
         raise ValueError(f"Atlas '{atlas.atlas_name}' has no additional references")
@@ -343,14 +373,15 @@ def get_additional_reference_slice(
         ) from exc
 
     _, _, _ = _shape3d(ref_volume)
-    idx = position_mm_to_index(atlas, position_mm)
-    if idx >= ref_volume.shape[0]:
+    idx = position_mm_to_index(atlas, position_mm, plane=plane)
+    axis = slice_axis_index(atlas_space_context(atlas), plane)
+    if idx >= ref_volume.shape[axis]:
         raise ValueError(
-            f"Reference '{reference_name}' only has {ref_volume.shape[0]} AP slices, "
-            + f"requested index {idx}"
+            f"Reference '{reference_name}' only has {ref_volume.shape[axis]} slices "
+            + f"along plane '{plane}' (axis {axis}), requested index {idx}"
         )
 
-    slice_2d = np.asarray(ref_volume[idx, :, :])
+    slice_2d = np.take(ref_volume, idx, axis=axis)
     normalized = _normalize_to_uint8(slice_2d)
     return Image.fromarray(normalized, mode="L")
 
@@ -389,9 +420,13 @@ def get_structure_hierarchy(atlas: _AtlasLike, structure: int | str) -> dict[str
 
 
 def get_structure_mask_slice(
-    atlas: _AtlasLike, structure: int | str, position_mm: float
+    atlas: _AtlasLike,
+    structure: int | str,
+    position_mm: float,
+    *,
+    plane: Plane = "coronal",
 ) -> Image.Image:
-    """Get a binary coronal mask slice for one structure (including descendants)."""
+    """Get a binary mask slice along the chosen plane for one structure (including descendants)."""
     get_mask_fn = getattr(atlas, "get_structure_mask", None)
     if not callable(get_mask_fn):
         raise ValueError(
@@ -402,27 +437,32 @@ def get_structure_mask_slice(
     mask_volume = np.asarray(get_mask_fn(structure))
     _, _, _ = _shape3d(mask_volume)
 
-    idx = position_mm_to_index(atlas, position_mm)
-    if idx >= mask_volume.shape[0]:
+    idx = position_mm_to_index(atlas, position_mm, plane=plane)
+    axis = slice_axis_index(atlas_space_context(atlas), plane)
+    if idx >= mask_volume.shape[axis]:
         raise ValueError(
-            f"Structure mask has {mask_volume.shape[0]} AP slices, requested index {idx}"
+            f"Structure mask has {mask_volume.shape[axis]} slices along plane "
+            + f"'{plane}' (axis {axis}), requested index {idx}"
         )
 
-    slice_mask = np.asarray(mask_volume[idx, :, :])
+    slice_mask = np.take(mask_volume, idx, axis=axis)
     binary = np.where(slice_mask > 0, 255, 0).astype(np.uint8)
     return Image.fromarray(binary, mode="L")
 
 
-def get_slice_region_metadata(atlas: _AtlasLike, position_mm: float) -> list[dict[str, object]]:
-    """Enumerate regions visible on a coronal slice with metadata for VLM prompts.
+def get_slice_region_metadata(
+    atlas: _AtlasLike, position_mm: float, *, plane: Plane = "coronal"
+) -> list[dict[str, object]]:
+    """Enumerate regions visible on a slice with metadata for VLM prompts.
 
     Returns a list of region dicts sorted by area (largest first), each containing:
     ``id``, ``acronym``, ``name``, ``centroid`` (row, col pixels),
     ``area_fraction``, and ``centroid_normalized`` ([y, x] in 0–1000 range).
     Background (structure ID 0) is excluded.
     """
-    idx = position_mm_to_index(atlas, position_mm)
-    ann = np.asarray(atlas.annotation[idx, :, :])
+    idx = position_mm_to_index(atlas, position_mm, plane=plane)
+    axis = slice_axis_index(atlas_space_context(atlas), plane)
+    ann = np.take(np.asarray(atlas.annotation), idx, axis=axis)
     h, w = cast(tuple[int, int], ann.shape)
 
     unique_ids = np.unique(ann)
@@ -462,14 +502,39 @@ def get_region_at_position(
     dv_index: int | None = None,
     ml_index: int | None = None,
     include_hierarchy: bool = False,
+    plane: Plane = "coronal",
 ) -> dict[str, Any]:
-    """Resolve structure and hemisphere at a specific AP position and in-slice index."""
-    ap_idx = position_mm_to_index(atlas, position_mm)
-    _, n_dv, n_ml = _shape3d(atlas.reference)
+    """Resolve structure and hemisphere at a specific position and in-slice index.
+
+    The ``position_mm`` is interpreted along the slice-normal axis chosen by
+    ``plane`` (AP for coronal, ML for sagittal, DV for horizontal). The
+    ``dv_index``/``ml_index`` kwargs always refer to the DV and ML anatomical
+    axes respectively, regardless of plane.
+    """
+    context = atlas_space_context(atlas)
+    slice_axis = slice_axis_index(context, plane)
+    pos_idx = position_mm_to_index(atlas, position_mm, plane=plane)
+    n_ap = context.shape[context.ap_axis_index]
+    n_dv = context.shape[context.dv_axis_index]
+    n_ml = context.shape[context.ml_axis_index]
 
     dv_idx = n_dv // 2 if dv_index is None else _safe_index("DV", dv_index, n_dv)
     ml_idx = n_ml // 2 if ml_index is None else _safe_index("ML", ml_index, n_ml)
-    coords = (ap_idx, dv_idx, ml_idx)
+    ap_idx = n_ap // 2
+
+    # Place anatomical indices at their corresponding axes, then let the
+    # slice-normal axis carry the position_mm index (overrides the default
+    # midpoint or user-supplied value for that axis).
+    coord_list: list[int] = [0, 0, 0]
+    coord_list[context.ap_axis_index] = ap_idx
+    coord_list[context.dv_axis_index] = dv_idx
+    coord_list[context.ml_axis_index] = ml_idx
+    coord_list[slice_axis] = pos_idx
+    # Sync the reported per-axis indices with what we actually queried.
+    ap_idx = coord_list[context.ap_axis_index]
+    dv_idx = coord_list[context.dv_axis_index]
+    ml_idx = coord_list[context.ml_axis_index]
+    coords = (coord_list[0], coord_list[1], coord_list[2])
 
     structure_id = _as_scalar_int(atlas.annotation[coords])
     if structure_id is None:
