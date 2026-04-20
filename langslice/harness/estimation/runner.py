@@ -73,6 +73,7 @@ async def run_single_slice_session(
     max_iterations: int = _DEFAULT_MAX_ITERATIONS_SINGLE,
     max_retries: int = _DEFAULT_MAX_RETRIES,
     temperature: float = 1.0,
+    thinking_level: str = "MEDIUM",
 ) -> PositionResult:
     """Drive a single-slice position-estimation session to completion.
 
@@ -85,6 +86,14 @@ async def run_single_slice_session(
     pos_lo, pos_hi = get_position_range_mm(atlas, plane=plane)
     atlas_long_edge = get_in_plane_long_edge(atlas, plane=plane)
 
+    # MEDIUM thinking is the validated sweet spot for Flash (0.14mm MAE on M01).
+    # Only wire a thinking_config for string-named Gemini models; LiteLlm
+    # wrappers drive their own thinking knobs.
+    thinking_cfg: object | None = None
+    if isinstance(model, str):
+        from langslice import vlm_config
+        thinking_cfg = vlm_config.build_thinking_config(model, thinking_level)
+
     species_val = species or str(atlas.metadata.get("species", "mouse"))
     agent = build_single_slice_agent(
         atlas_name=atlas_name,
@@ -94,6 +103,7 @@ async def run_single_slice_session(
         pos_hi=pos_hi,
         model=model,
         temperature=temperature,
+        thinking_config=thinking_cfg,
     )
 
     runner = InMemoryRunner(agent=agent, app_name=_APP_NAME)
