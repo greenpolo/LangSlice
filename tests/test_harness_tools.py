@@ -3,9 +3,10 @@ import io
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from google.genai import types
 from PIL import Image
 
-from langslice.harness.estimation.session import build_initial_state
+from langslice.harness.estimation.session import atlas_key, build_initial_state
 from langslice.harness.estimation.tools import (
     _SBS_GAP_PX,
     _SBS_LABEL_BAND_H,
@@ -22,6 +23,27 @@ from langslice.harness.estimation.tools import (
     submit_group_estimate,
     zoom,
 )
+
+
+def _image_part_bytes(part: types.Part) -> bytes:
+    assert part.inline_data is not None and part.inline_data.data is not None
+    return part.inline_data.data
+
+
+def _is_image_part(part: object) -> bool:
+    inline = getattr(part, "inline_data", None)
+    return inline is not None and getattr(inline, "data", None) is not None
+
+
+def _is_text_part(part: object) -> bool:
+    text = getattr(part, "text", None)
+    return isinstance(text, str) and text != ""
+
+
+def _text_of(part: types.Part) -> str:
+    """Narrow ``Part.text`` to ``str`` for assertions — basedpyright treats it as ``str | None``."""
+    assert part.text is not None
+    return part.text
 
 
 def test_parse_atlas_key():
@@ -70,16 +92,25 @@ def _fake_tool_context(state: dict) -> MagicMock:
     return ctx
 
 
-def test_fetch_atlas_returns_ok_and_updates_state():
+def test_fetch_atlas_returns_labeled_parts_and_updates_state():
     state = build_initial_state(
         atlas_name="allen_mouse_25um", plane="coronal",
         pos_lo=0.0, pos_hi=13.2, n_slices=1,
         interval_mm=0.0, thickness_um=50, max_iterations=20,
     )
     ctx = _fake_tool_context(state)
-    result = asyncio.run(fetch_atlas(positions_mm=[2.0, 5.0, 8.0], tool_context=ctx))
-    assert result["status"] == "ok"
-    assert len(result["images"]) == 3
+    parts = asyncio.run(fetch_atlas(positions_mm=[2.0, 5.0, 8.0], tool_context=ctx))
+    # Success return is list[Part]: header text + 3x (label_text, image_part).
+    assert isinstance(parts, list)
+    assert len(parts) == 1 + 2 * 3
+    assert _is_text_part(parts[0])
+    assert "3 atlas sections" in _text_of(parts[0])
+    for i in range(3):
+        assert _is_text_part(parts[1 + 2 * i])
+        assert _is_image_part(parts[2 + 2 * i])
+    joined = " ".join(_text_of(p) for p in parts if _is_text_part(p))
+    for pos in (2.0, 5.0, 8.0):
+        assert f"{pos:.2f} mm" in joined
     assert state["saw_broad_sweep"] is True
     assert state["images_fetched"] == 3
     assert ctx.save_artifact.call_count == 3
@@ -93,6 +124,7 @@ def test_fetch_atlas_rejects_empty_positions():
     )
     ctx = _fake_tool_context(state)
     result = asyncio.run(fetch_atlas(positions_mm=[], tool_context=ctx))
+    assert isinstance(result, dict)
     assert result["status"] == "error"
     assert result["error"] == "BAD_ARGS"
 
@@ -172,24 +204,20 @@ def test_zoom_happy_path_resizes_and_saves_artifact():
     state = _state_for_zoom()
     ctx = _zoom_ctx(state, store)
 
-    result = asyncio.run(
+    parts = asyncio.run(
         zoom(source="target", bbox=[100, 200, 900, 800], tool_context=ctx)
     )
 
-    assert result["status"] == "ok"
-    # bbox covers (px_x1=80, px_y1=30, px_x2=320, px_y2=270) → 240x240
-    # atlas long edge is 456 (allen_mouse_25um coronal), so 240→456.
-    assert result["key"].startswith("zoom:target:")
-    assert len(result["images"]) == 1
-    part = result["images"][0]
-    assert part.inline_data is not None
-    decoded = Image.open(io.BytesIO(part.inline_data.data))
+    assert isinstance(parts, list)
+    assert len(parts) == 2
+    assert _is_text_part(parts[0])
+    assert _is_image_part(parts[1])
+    expected_key = f"zoom:target:{_short_hash([100, 200, 900, 800])}"
+    assert expected_key in _text_of(parts[0])
+    decoded = Image.open(io.BytesIO(_image_part_bytes(parts[1])))
     w, h = decoded.size
-    assert max(w, h) == 456
-    # Saved under the same key returned.
-    assert result["key"] in store._store
-    # Hash is reproducible from the bbox.
-    assert result["key"].endswith(_short_hash([100, 200, 900, 800]))
+    assert max(w, h) == 456  # atlas long edge for allen_mouse_25um coronal
+    assert expected_key in store._store
 
 
 def test_zoom_bad_bbox_out_of_range():
@@ -249,12 +277,11 @@ def test_zoom_tiny_bbox_yields_single_pixel_crop():
     store = _ArtifactStore()
     _seed_target(store, Image.new("RGB", (2, 2), (255, 0, 0)))
     ctx = _zoom_ctx(_state_for_zoom(), store)
-    result = asyncio.run(
+    parts = asyncio.run(
         zoom(source="target", bbox=[0, 0, 1, 1], tool_context=ctx)
     )
-    assert result["status"] == "ok"
-    part = result["images"][0]
-    decoded = Image.open(io.BytesIO(part.inline_data.data))
+    assert isinstance(parts, list) and len(parts) == 2
+    decoded = Image.open(io.BytesIO(_image_part_bytes(parts[1])))
     assert max(decoded.size) == 456  # upscaled to atlas long edge
 
 
@@ -267,15 +294,18 @@ def test_zoom_of_zoom_works():
     first = asyncio.run(
         zoom(source="target", bbox=[100, 100, 900, 900], tool_context=ctx)
     )
-    assert first["status"] == "ok"
-    first_key = first["key"]
+    assert isinstance(first, list) and len(first) == 2
+    first_key = f"zoom:target:{_short_hash([100, 100, 900, 900])}"
+    assert first_key in _text_of(first[0])
+    assert first_key in store._store
 
     second = asyncio.run(
         zoom(source=first_key, bbox=[250, 250, 750, 750], tool_context=ctx)
     )
-    assert second["status"] == "ok"
-    assert second["key"].startswith(f"zoom:{first_key}:")
-    assert second["key"] in store._store
+    assert isinstance(second, list) and len(second) == 2
+    second_key = f"zoom:{first_key}:{_short_hash([250, 250, 750, 750])}"
+    assert second_key in _text_of(second[0])
+    assert second_key in store._store
 
 
 # --- Phase 6 Task 6.1: side_by_side tool ------------------------------------
@@ -291,23 +321,21 @@ def test_side_by_side_happy_path_equal_dimensions():
     _seed_keyed(store, "atlas:3.50", Image.new("RGB", (400, 300), (50, 100, 200)))
     ctx = _zoom_ctx(_state_for_zoom(), store)
 
-    result = asyncio.run(
+    parts = asyncio.run(
         side_by_side(left="target", right="atlas:3.50", tool_context=ctx)
     )
 
-    assert result["status"] == "ok"
-    assert result["key"] == "side_by_side:target:atlas:3.50"
-    assert len(result["images"]) == 1
-
-    part = result["images"][0]
-    assert part.inline_data is not None
-    decoded = Image.open(io.BytesIO(part.inline_data.data))
+    assert isinstance(parts, list) and len(parts) == 2
+    assert _is_text_part(parts[0])
+    assert _is_image_part(parts[1])
+    expected_key = "side_by_side:target:atlas:3.50"
+    assert expected_key in _text_of(parts[0])
+    decoded = Image.open(io.BytesIO(_image_part_bytes(parts[1])))
     w, h = decoded.size
     # Both panels same size → width is 2*400 + gap, height is 300 + label band.
     assert w == 400 + _SBS_GAP_PX + 400
     assert h == 300 + _SBS_LABEL_BAND_H
-    # Artifact saved under the returned key.
-    assert result["key"] in store._store
+    assert expected_key in store._store
 
 
 def test_side_by_side_different_heights_rescales_to_common_height():
@@ -318,13 +346,12 @@ def test_side_by_side_different_heights_rescales_to_common_height():
     _seed_keyed(store, "atlas:5.00", Image.new("RGB", (600, 200), (40, 50, 60)))
     ctx = _zoom_ctx(_state_for_zoom(), store)
 
-    result = asyncio.run(
+    parts = asyncio.run(
         side_by_side(left="target", right="atlas:5.00", tool_context=ctx)
     )
 
-    assert result["status"] == "ok"
-    part = result["images"][0]
-    decoded = Image.open(io.BytesIO(part.inline_data.data))
+    assert isinstance(parts, list) and len(parts) == 2
+    decoded = Image.open(io.BytesIO(_image_part_bytes(parts[1])))
     w, h = decoded.size
     assert h == 300 + _SBS_LABEL_BAND_H
     assert w == 400 + _SBS_GAP_PX + 900
@@ -372,12 +399,27 @@ def test_side_by_side_of_side_by_side_works():
     first = asyncio.run(
         side_by_side(left="target", right="atlas:3.50", tool_context=ctx)
     )
-    assert first["status"] == "ok"
-    first_key = first["key"]
+    assert isinstance(first, list) and len(first) == 2
+    first_key = "side_by_side:target:atlas:3.50"
+    assert first_key in _text_of(first[0])
+    assert first_key in store._store
 
     second = asyncio.run(
         side_by_side(left=first_key, right="atlas:4.00", tool_context=ctx)
     )
-    assert second["status"] == "ok"
-    assert second["key"] == f"side_by_side:{first_key}:atlas:4.00"
-    assert second["key"] in store._store
+    assert isinstance(second, list) and len(second) == 2
+    second_key = f"side_by_side:{first_key}:atlas:4.00"
+    assert second_key in _text_of(second[0])
+    assert second_key in store._store
+
+
+def test_fetch_atlas_save_artifact_uses_canonical_keys():
+    state = build_initial_state(
+        atlas_name="allen_mouse_25um", plane="coronal",
+        pos_lo=0.0, pos_hi=13.2, n_slices=1,
+        interval_mm=0.0, thickness_um=50, max_iterations=20,
+    )
+    ctx = _fake_tool_context(state)
+    asyncio.run(fetch_atlas(positions_mm=[3.5, 7.25], tool_context=ctx))
+    saved_keys = {call.kwargs["filename"] for call in ctx.save_artifact.call_args_list}
+    assert saved_keys == {atlas_key(3.5), atlas_key(7.25)}

@@ -1,9 +1,21 @@
 """The four position-estimation tools, wired as plain Python functions for ADK auto-wrapping.
 
-Tools return dicts. Image outputs are placed under the key "images" as a list
-of google.genai.types.Part objects — ADK surfaces these to the next model turn.
-Tools also save images as artifacts via tool_context.save_artifact so later
-tools (zoom, side_by_side) can retrieve them by key.
+On success, image-returning tools (`fetch_atlas`, `zoom`, `side_by_side`)
+return ``list[types.Part]`` with interleaved text labels and image payloads.
+ADK's stock ``MultimodalToolResultsPlugin`` intercepts this shape, stashes the
+parts, and injects them into the next model turn as real inline-data images.
+Without the plugin (or without the list-of-Parts shape), ADK would serialize
+the dict — including any embedded ``types.Part`` — into JSON-compatible
+Struct text, and the model would never see the actual pixels. That path was
+the root cause of the pre-fix 1.3-1.7 mm MAE regression.
+
+Error paths still return dicts (``{"status": "error", "error": ...}``); the
+plugin passes non-Part returns through unchanged, so dict errors reach the
+model as ordinary function responses.
+
+Tools also save images as artifacts via ``tool_context.save_artifact`` so
+later tools (``zoom``, ``side_by_side``) and the retry loop can retrieve them
+by key regardless of which model turn they were fetched on.
 """
 
 from __future__ import annotations
@@ -87,18 +99,20 @@ def _short_hash(bbox: list[int]) -> str:
 
 async def fetch_atlas(
     positions_mm: list[float], tool_context: Any
-) -> dict[str, Any]:
+) -> list[types.Part] | dict[str, Any]:
     """Fetch 1-8 atlas sections along the session's slicing plane.
 
     Positions outside the valid range are clamped. Duplicate positions within
     0.02 mm of an already-requested one are coalesced. Each returned slice is
-    saved as an artifact keyed 'atlas:<mm:.2f>' and returned as a types.Part
-    image in the "images" field of the response so the next model turn can
-    see it.
+    saved as an artifact keyed 'atlas:<mm:.2f>' so later `zoom` /
+    `side_by_side` calls can reference it.
 
     Returns:
-        {"status": "ok", "positions_mm": [...], "images": [Part, ...]} or
-        {"status": "error", "error": "BAD_ARGS" | "EMPTY_RESULT"}.
+        On success, ``list[types.Part]`` interleaving a header text, then
+        ``[text("Atlas at {mm} mm (key='atlas:{mm}'):"), image_part]`` for each
+        position. `MultimodalToolResultsPlugin` surfaces these as real inline
+        images on the next model turn.
+        On failure, ``{"status": "error", "error": "BAD_ARGS" | "EMPTY_RESULT"}``.
     """
     state = tool_context.state
     if not positions_mm:
@@ -115,17 +129,15 @@ async def fetch_atlas(
         return {"status": "error", "error": "EMPTY_RESULT"}
 
     atlas = load_atlas(atlas_name)
-    parts: list[types.Part] = []
+    image_parts: list[types.Part] = []
     descriptions: list[str] = []
     for pos in positions:
         img = get_reference_slice(atlas, pos, plane=plane)
         part = _image_to_part(img)
-        parts.append(part)
-        key = atlas_key(pos)
-        await tool_context.save_artifact(key, part)
+        image_parts.append(part)
+        await tool_context.save_artifact(filename=atlas_key(pos), artifact=part)
         descriptions.append(f"{pos:.2f} mm")
 
-    # Update session state
     state.setdefault("fetched_positions", []).extend(positions)
     state["images_fetched"] = int(state.get("images_fetched", 0)) + len(positions)
     if _is_broad_sweep(positions):
@@ -133,12 +145,24 @@ async def fetch_atlas(
     if _is_narrow_sweep(positions):
         state["saw_narrow_sweep"] = True
 
-    return {
-        "status": "ok",
-        "positions_mm": positions,
-        "description": f"{len(positions)} atlas sections at: " + ", ".join(descriptions),
-        "images": parts,
-    }
+    out_parts: list[types.Part] = [
+        types.Part.from_text(
+            text=(
+                f"Fetched {len(positions)} atlas section"
+                f"{'s' if len(positions) != 1 else ''} at: "
+                + ", ".join(descriptions)
+                + "."
+            )
+        )
+    ]
+    for pos, img_part in zip(positions, image_parts, strict=True):
+        out_parts.append(
+            types.Part.from_text(
+                text=f"Atlas at {pos:.2f} mm (key='{atlas_key(pos)}'):"
+            )
+        )
+        out_parts.append(img_part)
+    return out_parts
 
 
 def submit_estimate(
@@ -168,7 +192,7 @@ def submit_group_estimate(
 
 async def zoom(
     source: str, bbox: list[int], tool_context: Any,
-) -> dict[str, Any]:
+) -> list[types.Part] | dict[str, Any]:
     """Return a zoomed crop of a previously-fetched image.
 
     Args:
@@ -177,9 +201,11 @@ async def zoom(
         bbox: [y1, x1, y2, x2] integers in [0, 1000] (Gemini/Gemma normalized coords).
 
     Returns:
-        On success, {"status": "ok", "key": "zoom:...", "description": "...",
-        "images": [Part]}. On failure, {"status": "error", "error": ...} with
-        error in {"BAD_SOURCE", "BAD_BBOX", "EMPTY_CROP"}.
+        On success, a two-element ``list[types.Part]``: ``[text_label,
+        image_part]`` where the label encodes the output key and source bbox.
+        The crop is also saved as an artifact under that key.
+        On failure, ``{"status": "error", "error": ...}`` with error in
+        {"BAD_SOURCE", "BAD_BBOX", "EMPTY_CROP"}.
     """
     # 1. Validate bbox shape and ranges.
     if (
@@ -243,12 +269,15 @@ async def zoom(
     zoom_part = _image_to_part(resized)
     await tool_context.save_artifact(filename=key, artifact=zoom_part)
 
-    return {
-        "status": "ok",
-        "key": key,
-        "description": f"Zoom of {source} at bbox {bbox}; scaled to {new_size}.",
-        "images": [zoom_part],
-    }
+    return [
+        types.Part.from_text(
+            text=(
+                f"Zoom of '{source}' at bbox {bbox}; scaled to "
+                f"{new_size[0]}x{new_size[1]} (key='{key}'):"
+            )
+        ),
+        zoom_part,
+    ]
 
 
 def _load_image_from_part(part: Any) -> Image.Image | None:
@@ -279,7 +308,7 @@ def _rescale_to_height(img: Image.Image, target_h: int) -> Image.Image:
 
 async def side_by_side(
     left: str, right: str, tool_context: Any,
-) -> dict[str, Any]:
+) -> list[types.Part] | dict[str, Any]:
     """Build an aspect-ratio-matched horizontal composite of two images.
 
     Both source images are rescaled to a common height (aspect-ratio preserved
@@ -293,9 +322,10 @@ async def side_by_side(
         right: Same as `left` but for the right panel.
 
     Returns:
-        On success: {"status": "ok", "key": "side_by_side:<left>:<right>",
-        "description": "...", "images": [Part]}. On failure:
-        {"status": "error", "error": "BAD_SOURCE"}.
+        On success: a two-element ``list[types.Part]``: ``[text_label,
+        image_part]`` where the label encodes the output key and both source
+        keys. The composite is also saved as an artifact under that key.
+        On failure: ``{"status": "error", "error": "BAD_SOURCE"}``.
     """
     # 1. Load both artifacts. A missing or unreadable artifact on either side
     #    is reported as BAD_SOURCE.
@@ -354,9 +384,12 @@ async def side_by_side(
     sbs_part = _image_to_part(composite)
     await tool_context.save_artifact(filename=key, artifact=sbs_part)
 
-    return {
-        "status": "ok",
-        "key": key,
-        "description": f"Side-by-side of {left} (left) vs {right} (right).",
-        "images": [sbs_part],
-    }
+    return [
+        types.Part.from_text(
+            text=(
+                f"Side-by-side composite (key='{key}'). "
+                f"Left: '{left}'. Right: '{right}'."
+            )
+        ),
+        sbs_part,
+    ]
