@@ -10,10 +10,11 @@ from __future__ import annotations
 
 import hashlib
 import io
+import math
 from typing import Any
 
 from google.genai import types
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 
 from langslice.atlas.core import (
     get_in_plane_long_edge,
@@ -77,7 +78,7 @@ def _image_to_part(img: Image.Image) -> types.Part:
 
 
 def _short_hash(bbox: list[int]) -> str:
-    return hashlib.sha1(str(bbox).encode("utf-8")).hexdigest()[:8]
+    return hashlib.sha1(str(bbox).encode("utf-8")).hexdigest()[:12]
 
 
 async def fetch_atlas(
@@ -203,16 +204,19 @@ async def zoom(
         return {"status": "error", "error": "BAD_SOURCE"}
     try:
         img = Image.open(io.BytesIO(data))
-        img.load()
-    except Exception:
+        img.load()  # force decode now so truncated files fail here
+    except (UnidentifiedImageError, OSError, ValueError):
         return {"status": "error", "error": "BAD_SOURCE"}
 
     # 4. Convert normalized (0-1000) bbox to pixel coords.
+    #    Use floor for lower bounds and ceil for upper bounds so any non-empty
+    #    normalized bbox yields a non-empty pixel bbox. round()'s banker's
+    #    rounding could non-deterministically collapse thin bboxes to zero.
     w, h = img.size
-    px_x1 = round(x1 * w / 1000)
-    px_x2 = round(x2 * w / 1000)
-    px_y1 = round(y1 * h / 1000)
-    px_y2 = round(y2 * h / 1000)
+    px_x1 = max(0, math.floor(x1 * w / 1000))
+    px_y1 = max(0, math.floor(y1 * h / 1000))
+    px_x2 = min(w, math.ceil(x2 * w / 1000))
+    px_y2 = min(h, math.ceil(y2 * h / 1000))
     if px_x2 <= px_x1 or px_y2 <= px_y1:
         return {"status": "error", "error": "EMPTY_CROP"}
 
@@ -220,6 +224,7 @@ async def zoom(
     cropped = img.crop((px_x1, px_y1, px_x2, px_y2))
 
     # 6. Resize so the long edge matches the atlas in-plane long edge.
+    #    Upscale is intentional — tiny crops need to be visible to the model.
     state = tool_context.state
     atlas = load_atlas(state["atlas"])
     long_edge = get_in_plane_long_edge(atlas, plane=state["plane"])
