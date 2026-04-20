@@ -57,7 +57,7 @@ INTER_SLICE_DELAY_S = 20  # pace to stay under 2M input-tokens-per-minute quota
 def main() -> int:
     gt = json.loads(GT_PATH.read_text())
     results: list[dict] = []
-    fallback_phrase = "Agent did not submit within iteration+retry budget"
+    fallback_phrase = "Model did not submit within iteration+retry budget"
 
     for i, name in enumerate(SLICES):
         if i > 0:

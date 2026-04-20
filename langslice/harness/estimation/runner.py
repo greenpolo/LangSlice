@@ -233,7 +233,7 @@ async def run_single_slice_session(
     return PositionResult(
         position_mm=mid,
         reasoning=(
-            "Agent did not submit within iteration+retry budget; "
+            "Model did not submit within iteration+retry budget; "
             "fell back to atlas midpoint."
         ),
     )
@@ -413,7 +413,7 @@ async def run_group_session(
         mid,
     )
     fallback_reasoning = (
-        "Agent did not submit within iteration+retry budget; "
+        "Model did not submit within iteration+retry budget; "
         "fell back to atlas midpoint."
     )
     return MultiSliceResult(
