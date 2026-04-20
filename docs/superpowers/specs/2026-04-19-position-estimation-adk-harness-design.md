@@ -33,7 +33,7 @@ Task is **position estimation along the slice-normal axis** — AP for coronal, 
 | Multi-slice group | Pro, 25um, medium media, M03 | 0.186 mm MAE |
 | Whole-brain | Pro anchors + Flash non-anchors, M01 | 0.173 mm MAE (NOT touched by this refactor) |
 
-Post-refactor Flash single-slice and Flash multi-slice group performance on mid-brain M01 slices must not regress by more than 0.05 mm MAE vs a fresh pre-refactor baseline on the same slices.
+Post-refactor eval gates are **smoke tests, not accuracy gates**: the refactor is complete when runs finish without errors, the agents emit plausible mid-brain positions (within ~2 mm of ground truth), and there is no runaway iteration. Statistical MAE parity vs the hand-rolled loop is not required this round — if needed, a larger eval follows post-hackathon.
 
 ---
 
@@ -154,7 +154,7 @@ def fetch_atlas(positions_mm: list[float], tool_context: ToolContext) -> dict:
 - Sets `tool_context.state["saw_broad_sweep"] = True` if ≥3 positions are provided.
 - Sets `tool_context.state["saw_narrow_sweep"] = True` if ≥3 positions span ≤1.0 mm.
 - Errors: `BAD_ARGS` (no positions), `EMPTY_RESULT` (all positions clamped outside atlas).
-- Returns structured dict `{"status": "ok", "positions_mm": [...], "description": "..."}`; attaches `types.Part` images for the new-turn turn's content.
+- **Returns a dict that includes `types.Part` image objects for every fetched slice, placed under an `"images"` key that ADK will surface to the next model turn.** Verified via ADK docs: `save_artifact` alone does NOT auto-surface images; tools must return `Part`s directly to make them visible on the next turn. `save_artifact` is also called — artifacts are the back-channel store that `zoom` and `side_by_side` read from later.
 
 #### `zoom`
 
@@ -174,6 +174,7 @@ def zoom(source: str, bbox: list[int], tool_context: ToolContext) -> dict:
 
 - Errors: `BAD_SOURCE` (no matching artifact), `BAD_BBOX` (y1≥y2 or x1≥x2, or outside 0–1000), `EMPTY_CROP` (zero-area).
 - Bbox is interpreted against the source artifact's own pixel dimensions.
+- **Returns the zoomed crop as a `types.Part` in its result dict, AND saves it as an artifact** (both are required — `save_artifact` alone doesn't route to the next turn).
 
 #### `side_by_side`
 
@@ -189,6 +190,7 @@ def side_by_side(left: str, right: str, tool_context: ToolContext) -> dict:
 
 - `left` and `right` each accept `"target"`, `"target:N"`, `"atlas:<mm>"`, `"zoom:..."`.
 - Errors: `BAD_SOURCE`.
+- **Returns the composite as a `types.Part` in its result dict, AND saves it as an artifact.**
 
 #### `submit_estimate` (single-slice)
 
@@ -211,29 +213,34 @@ def submit_group_estimate(positions_mm: list[float], reasoning: str, tool_contex
 
 ### Validator callbacks
 
-`before_tool_callback` intercepts `submit_estimate` / `submit_group_estimate` calls:
+`before_tool_callback` intercepts `submit_estimate` / `submit_group_estimate` calls. **Verified supported by ADK**: the type signature `Callable[[BaseTool, dict, ToolContext], Optional[dict]]` accepts a return dict that skips the actual tool execution and surfaces the returned dict to the LLM as the tool's output (`src/google/adk/agents/llm_agent.py` and `callbacks/design-patterns-and-best-practices/` both document this as the canonical "Guardrails & Policy Enforcement" pattern).
 
 - **Single-slice**:
-  - Reject if `not state["saw_broad_sweep"]` (unless iteration ≥ `max_iterations - 2`).
+  - Reject if `not state["saw_broad_sweep"]` (unless `state["submit_attempts"] ≥ 2`).
   - Reject if `not state["saw_narrow_sweep"]` (same unless clause).
-  - Reject if no neighbor bracket: at least one `fetched_position` below and one above `position_mm` within 0.25 mm (unless at atlas edge or near iteration limit).
+  - Reject if no neighbor bracket: at least one `fetched_position` below and one above `position_mm` within 0.25 mm (unless at atlas edge or relaxation trigger).
 - **Multi-slice group**:
   - Reject if `len(positions_mm) != state["n_slices"]`.
   - Reject if positions not monotonically increasing.
   - Reject if any interval deviates >50% from `state["interval_mm"]`.
   - Reject if no broad sweep, no narrow sweep.
 
-Rejections return a dict response to the model: `{"status": "error", "error": "<actionable text>"}`. ADK feeds this back to the LLM as a tool output.
+**Relaxation counter.** Validators relax their gating after `state["submit_attempts"] >= 2` rejections. The callback increments `state["submit_attempts"]` each time it rejects a submit tool, so the counter is self-tracking — no external iteration-count injection needed.
+
+Rejections return `{"status": "error", "error": "<actionable text>"}`. ADK surfaces this to the LLM exactly as it would a real tool output.
 
 Non-submit tools (`fetch_atlas`, `zoom`, `side_by_side`) are never gated.
 
 ### Loop semantics
 
-- `LlmAgent(..., include_contents="default")` preserves conversation history.
-- No tool call on a turn → `after_model_callback` detects, injects a nudge prompt as a synthetic user turn, loop continues. Nudge text matches current `_build_nudge_text`.
-- `submit_*` setting `escalate = True` terminates.
-- `max_iterations` enforced externally: the runner caps iterations by counting events; on cap hit, extract the best result if any, else fall back to midpoint (matches current behavior).
-- One retry with fresh history on first-attempt failure (matches current `for attempt in range(2)` in both loops).
+Verified from ADK docs/source: `Runner.run_async(...)` processes **one invocation** — it does NOT loop automatically. A single invocation of an `LlmAgent` internally loops tool calls until the model either (a) produces a final text response with no tool call, or (b) a tool sets `tool_context.actions.escalate = True`. Our `runner.py` wraps invocations with the higher-level retry / nudge / fallback logic.
+
+- `LlmAgent(..., include_contents="default")` preserves conversation history within a single invocation.
+- **Normal exit**: `submit_*` tool sets `escalate = True`. The invocation ends; our `runner.py` reads `state["result"]` and returns.
+- **No-tool-call exit**: the model produced final text without calling a tool. The invocation ends with `state["result"] == None`. Our `runner.py` detects this, crafts a nudge message (identical text to the current hand-rolled `_build_nudge_text`), and re-invokes the agent with the nudge appended as the next user turn. **Not an `after_model_callback` — a runner-level loop.**
+- **Retry with fresh history**: after all nudges are exhausted (max_retries=2) or if an invocation raises, `runner.py` creates a fresh `Session` and re-invokes from the top. Same agent instance; clean conversation history.
+- **Max-iteration cap**: enforced at the `runner.py` level by counting tool-call events across the session. If count exceeds `max_iterations`, the runner forcibly ends the run and falls back to the midpoint result (matches current behavior).
+- All three pieces (nudge, retry, cap) are in `runner.py` — ADK's Runner only drives single invocations.
 
 ### Session state shape
 
@@ -253,6 +260,7 @@ Stored in `tool_context.state`:
     "saw_broad_sweep": False,
     "saw_narrow_sweep": False,
     "images_fetched": 0,
+    "submit_attempts": 0,         # incremented by before_tool_callback on each rejection; relaxation trigger at >=2
     "result": None,               # set by submit_*
     "max_iterations": 20 | 25,
 }
@@ -293,12 +301,12 @@ agent = LlmAgent(
         media_resolution=types.MediaResolution.MEDIA_RESOLUTION_MEDIUM,
     ),
     before_tool_callback=gate_submit_tool,
-    after_model_callback=nudge_on_no_tool_call,
 )
 ```
 
 - `thinking_cfg` derived from model via existing `vlm_config.build_thinking_config(...)` logic, lifted to `harness/estimation/prompts.py` or a new `harness/estimation/model_config.py`.
-- Temperature stays at 1.0 (Gemini low-temp policy).
+- Temperature stays at 1.0 (Gemini low-temp policy). `zoom` adds novel coordinate emission; if variance looks high post-integration, run a targeted temperature ablation on zoom-using runs only — default stays at 1.0.
+- **No `after_model_callback`** — nudge-on-no-tool-call is handled at the runner level (see Loop semantics above).
 
 ### Future multi-agent hook
 
@@ -337,9 +345,9 @@ python eval/eval_group.py \
   --json > eval_outputs/baseline_pre_adk_M01.json
 ```
 
-Filter to mid-brain slices only (AP 4.0–7.0 mm range) either by pre-selecting those images or post-filtering the JSON. Target: 5–10 slices, ~2 groups.
+Filter to mid-brain slices (AP 4.0–7.0 mm range) either by pre-selecting those images or post-filtering the JSON. Target: ~15 slices, ~4 groups — enough coverage that a smoke-test "positions are in the right ballpark" judgment is meaningful.
 
-This is the MAE to beat on the final check.
+This is the sanity baseline. We are NOT gating on tight MAE parity — just "runs work, positions are reasonable."
 
 ### 1. Plane generalization of `langslice/atlas/`
 
@@ -366,7 +374,7 @@ No API eval gate — pure refactor.
 - Implement `runner.py` with event-stream tap writing the existing `agent_trace` JSON.
 - Wire the compat shim so `estimate_position(...)` calls the new agent.
 
-**Eval gate (1 API run, Flash):**
+**Smoke gate (1 API run, Flash):**
 
 ```bash
 python eval/eval_group.py \
@@ -379,7 +387,7 @@ python eval/eval_group.py \
 
 (Single-slice evaluation via group eval with group-size=1, or a dedicated flag path — decide during implementation.)
 
-Gate: MAE within **0.05 mm** of baseline, on the same mid-brain slices.
+Gate: runs complete without errors, all positions within 2 mm of ground truth, no fallbacks (no `fallback: true` in group records). Tight MAE parity not required.
 
 ### 4. Multi-slice group ADK port
 
@@ -387,29 +395,29 @@ Gate: MAE within **0.05 mm** of baseline, on the same mid-brain slices.
 - Implement `build_group_agent()` in `group.py`.
 - Wire the compat shim so `estimate_group(...)` calls the new agent.
 
-**Eval gate (1 API run, Flash, mid-brain):** same `eval_group.py` command, default group size. Same 0.05 mm gate.
+**Smoke gate (1 API run, Flash, mid-brain):** same `eval_group.py` command, default group size. Runs complete, no fallbacks, positions within 2 mm of ground truth.
 
 ### 5. Add `zoom` tool
 
 - Implement in `tools.py`; no gating callback.
 - Update both system prompts to mention the tool and when it might help.
 
-**Eval gate (1 API run, Flash, mid-brain):** same command. MAE must not regress past baseline + 0.05 mm; improvement is welcome but not required.
+**Smoke gate (1 API run, Flash, mid-brain):** same command. Must not introduce new errors; any trace file should show the model actually invoking `zoom` at least once. Accuracy not gated.
 
 ### 6. Add `side_by_side` tool
 
 - Implement in `tools.py`; no gating callback.
 - Update both system prompts to mention the tool.
 
-**Eval gate (1 API run, Flash, mid-brain):** same command. Same gate.
+**Smoke gate (1 API run, Flash, mid-brain):** same command. No new errors; at least one `side_by_side` invocation somewhere in the trace.
 
 ### 7. Final acceptance run
 
-- One consolidated run with all tools enabled on mid-brain M01. Archive JSON. Done.
+- One consolidated run with all tools enabled on mid-brain M01. Archive JSON. Final smoke check: all 4 tools were used at least once across the run, no errors, positions within 2 mm of ground truth.
 
 ### Total API budget
 
-5 Flash multi-slice runs on mid-brain M01 (~5–10 slices, 2 groups per run). Rough cost with current Flash pricing: under $5 total.
+5 Flash multi-slice runs on mid-brain M01 (~15 slices, ~4 groups per run). Rough cost with current Flash pricing: well under $5 total.
 
 Zero Pro runs for this refactor.
 
@@ -454,27 +462,32 @@ If ADK doesn't provide a mock-model hook, inject a fake `LlmAgent.model` that is
 
 | Risk | Mitigation |
 |---|---|
-| ADK's default retry/nudge/history semantics differ subtly from hand-rolled and regress MAE | Incremental eval gates (steps 3–6); revert any step that crosses the 0.05 mm threshold. |
-| `before_tool_callback` can't return a synthetic tool response the way the current `_validate_submit_*` does | Verify during step 3 implementation; if unsupported, move validators inside the tool functions themselves (trivial port). |
-| `save_artifact` → next-turn image visibility isn't automatic in ADK | Verify during step 3 implementation; if not automatic, tools return `types.Part` image objects directly in their result dict. |
+| **LiteLlm multimodal via OpenRouter/non-Google providers is genuinely brittle** — confirmed by three recent `google/adk-python` issues: #5022 (cryptic ValueError on unknown MIME types), #4112 (direct image URL support had to be added), #4367 (LiteLLM v1.81.3+ incompatibility with Gemini 2.0+ models via the wrapper). | Plan a dedicated smoke-test when adding OpenRouter/Gemma paths; don't claim production-ready multi-provider until multi-image payloads round-trip cleanly. If vision fails, write a thin image-marshaling shim that pre-encodes `types.Part` into whatever format the downstream provider accepts (base64 data URL, raw bytes, etc.). |
+| Bbox emission at T=1.0 may show high variance since it's novel behavior | Targeted temperature ablation on zoom-using runs post-integration. Default stays at 1.0 per the project's Gemini low-temp policy. |
 | Dev-loop smoke-test script relies on CLI-not-yet-updated compat shim | Keep compat shim working through all steps; only remove at the very end. |
 | `AgentTool` orchestration imposes shape constraints we haven't accounted for (future registration hook) | Not blocking for this round; flag as a spike during registration design. |
+| `APResult` → `PositionResult` rename could break any pickle-serialized cache of old results | Grep the repo for `pickle` near estimation result types (verified negative on initial review — `eval_*` outputs are JSON); re-verify during step 2. |
 
 ## Success criteria
 
 - **Functional:** single-slice and multi-slice group both produce `PositionResult` / `MultiSliceResult` identical in shape to today's `APResult` / `MultiSliceResult`.
-- **Performance:** Flash mid-brain M01 MAE within 0.05 mm of pre-refactor baseline.
+- **Smoke-test:** final acceptance run on mid-brain M01 completes without errors, positions are within 2 mm of ground truth, all four tools invoked at least once across the run, no fallbacks triggered.
 - **Tool availability:** all four tools (`fetch_atlas`, `zoom`, `side_by_side`, `submit_*`) callable from both agents and visible in `eval_outputs/` trace files.
 - **Cleanup:** `langslice/estimation/` either deleted outright or reduced to a back-compat shim.
-- **Multi-provider:** swapping to `LiteLlm(model="openrouter/...")` is a one-line change in the CLI; verified with one Flash-equivalent via OpenRouter smoke test.
-- **Training-data readiness:** `build_triplets.py` / `distill_cot.py` can introspect `tools.py` to emit the canonical tool declaration block.
+- **Multi-provider:** swapping to `LiteLlm(model="openrouter/...")` is ideally a one-line change in the CLI, but — per the documented LiteLlm multimodal issues — "works in principle" is the gate here, not "production-ready." One end-to-end smoke test via OpenRouter on Gemma-4 or similar; if vision payloads fail, note the gap and plan a follow-up.
+- **Training-data readiness:** ADK's own tool registry (`LlmAgent.tools` → list of wrapped `FunctionTool` instances) is the canonical source for training-data generation. `build_triplets.py` / `distill_cot.py` consume the registry directly via ADK's introspection APIs — no parallel Python-inspect scaffolding needed. This keeps us aligned with ADK features instead of building a parallel system.
+
+## Resolved before implementation
+
+- ✓ `save_artifact` does NOT auto-surface images. Tools must return `types.Part` in their result dict AND optionally save as artifact for back-channel retrieval by later tools.
+- ✓ `before_tool_callback` supports returning a dict to short-circuit tool execution (verified from `src/google/adk/agents/llm_agent.py` type signature and `callbacks/design-patterns-and-best-practices/`). This is the idiomatic "Guardrails & Policy Enforcement" pattern.
+- ✓ LiteLlm multimodal has active brittleness issues (three recent GitHub issues in adk-python). Not a blocker, but the "one-line provider swap" claim is tempered in Success Criteria and Risks.
+- ✓ `Runner.run_async` drives a single invocation only; multi-turn nudge / retry / cap logic belongs in `runner.py`, not in ADK callbacks.
 
 ## Open questions (to resolve during implementation)
 
-1. Does `tool_context.save_artifact` auto-surface the saved image as multimodal content to the next turn, or must tools return `types.Part` objects directly? → verify against ADK docs / source during step 3.
-2. Does `before_tool_callback` support returning a synthetic tool-response dict, or does rejection require raising? → verify against ADK source.
-3. Does ADK ship a first-class fake-model harness for integration tests? → verify during step 3; if not, roll a minimal one.
-4. How does `LiteLlm(model="openrouter/...")` handle multi-image message parts? → smoke test during the multi-provider verification step.
-5. Final rename decision: should `langslice/estimation/` be a back-compat shim or deleted outright? → depends on import-grep count; decide after step 2.
+1. Does ADK ship a first-class fake-model harness for integration tests? → verify during step 3; if not, roll a minimal one that returns canned `LlmResponse` objects.
+2. Final rename decision: should `langslice/estimation/` be a back-compat shim or deleted outright? → depends on import-grep count; decide after step 2.
+3. Exact format of ADK's tool-registry introspection for downstream training-data generation — what does `LlmAgent.tools` yield and what's the canonical way to extract each tool's name, description, and schema? → verify during step 3 by inspecting the agent's `.canonical_tools` or equivalent.
 
 ---
