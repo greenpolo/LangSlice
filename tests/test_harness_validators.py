@@ -91,3 +91,80 @@ def test_gate_ignores_non_submit_tools():
     ctx = _fake_ctx(state)
     out = gate_submit_tool(_Tool("fetch_atlas"), {"positions_mm": [1.0]}, ctx)
     assert out is None
+
+
+# --- Phase 4 Task 4.1: gate ordering + submit_attempts fixes ---
+
+
+def test_gate_group_broad_sweep_error_precedes_monotonicity():
+    """When broad sweep hasn't happened AND positions are non-monotonic,
+    the agent should see the broad-sweep nudge first (keep exploring) rather
+    than a monotonicity complaint about positions it hasn't yet verified.
+    """
+    state = _make_state(
+        n_slices=3, interval_mm=0.200,
+        saw_broad_sweep=False, saw_narrow_sweep=True,
+    )
+    ctx = _fake_ctx(state)
+    out = gate_submit_tool(
+        _Tool("submit_group_estimate"),
+        {"positions_mm": [5.0, 4.8, 5.4], "reasoning": "x"},  # non-monotonic
+        ctx,
+    )
+    assert out is not None
+    assert "broad" in out["error"].lower()
+    assert "monotonic" not in out["error"].lower()
+
+
+def test_gate_group_narrow_sweep_error_precedes_interval():
+    """Narrow sweep nudge should precede interval complaint for the same reason."""
+    state = _make_state(
+        n_slices=3, interval_mm=0.200,
+        saw_broad_sweep=True, saw_narrow_sweep=False,
+    )
+    ctx = _fake_ctx(state)
+    out = gate_submit_tool(
+        _Tool("submit_group_estimate"),
+        {"positions_mm": [4.0, 4.2, 5.5], "reasoning": "x"},  # 1.3mm gap
+        ctx,
+    )
+    assert out is not None
+    assert "narrow" in out["error"].lower()
+    assert "interval" not in out["error"].lower()
+
+
+def test_gate_group_length_mismatch_does_not_count_toward_submit_attempts():
+    """Length mismatch is a HARD rejection - the agent cannot fix it by
+    exploring more, so it should not burn the relaxation budget.
+    """
+    state = _make_state(
+        n_slices=4, interval_mm=0.200,
+        saw_broad_sweep=True, saw_narrow_sweep=True,
+    )
+    ctx = _fake_ctx(state)
+    out = gate_submit_tool(
+        _Tool("submit_group_estimate"),
+        {"positions_mm": [5.0, 5.2, 5.4, 5.6, 5.8], "reasoning": "x"},  # 5 != 4
+        ctx,
+    )
+    assert out is not None
+    assert "expected" in out["error"].lower() and "got" in out["error"].lower()
+    assert state["submit_attempts"] == 0
+
+
+def test_gate_group_soft_rejection_counts_toward_submit_attempts():
+    """A relaxable rejection (e.g. missing broad sweep) DOES count toward
+    the retry budget so the agent can eventually submit after enough nudges.
+    """
+    state = _make_state(
+        n_slices=3, interval_mm=0.200,
+        saw_broad_sweep=False, saw_narrow_sweep=True,
+    )
+    ctx = _fake_ctx(state)
+    out = gate_submit_tool(
+        _Tool("submit_group_estimate"),
+        {"positions_mm": [5.0, 5.2, 5.4], "reasoning": "x"},
+        ctx,
+    )
+    assert out is not None
+    assert state["submit_attempts"] == 1
