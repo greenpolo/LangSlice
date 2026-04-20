@@ -1,39 +1,9 @@
-"""LangSlice estimation module - single-slice AP estimation.
-
-Provider-agnostic entry point. Consumers should import from here rather
-than from ``estimation.google.*`` or ``estimation.openai.*`` directly, so
-that switching providers only requires changing this file.
-"""
-
-from langslice.estimation._types import APResult, MultiSliceResult
-from langslice.estimation.google.ap_image_gen import estimate_position_image_gen
-from langslice.estimation.google.ap_multi_slice import estimate_group
-from langslice.estimation.google.ap_single_slice import estimate_position
-from langslice.estimation.google.batch_eval import (
-    APBatchCase,
-    build_ap_batch_requests,
-    create_ap_batch_job,
-)
-from langslice.estimation.openai.ap_image_gen import (
-    estimate_position_image_gen as estimate_position_image_gen_openai,
-)
-from langslice.estimation.openai.ap_multi_slice import (
-    estimate_group as estimate_group_openai,
-)
-from langslice.estimation.openai.ap_single_slice import (
-    estimate_position as estimate_position_openai,
+"""Deprecated re-export shim. Import from langslice.harness.estimation instead."""
+from langslice.harness.estimation import (  # noqa: F401
+    APResult,
+    MultiSliceResult,
+    PositionResult,
+    estimate_position,
 )
 
-__all__ = [
-    "APResult",
-    "MultiSliceResult",
-    "estimate_group",
-    "estimate_position",
-    "estimate_position_image_gen",
-    "APBatchCase",
-    "build_ap_batch_requests",
-    "create_ap_batch_job",
-    "estimate_group_openai",
-    "estimate_position_openai",
-    "estimate_position_image_gen_openai",
-]
+# estimate_group is added in Phase 4.
