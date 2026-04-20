@@ -239,15 +239,20 @@ def test_zoom_bad_source_missing_artifact():
     assert result == {"status": "error", "error": "BAD_SOURCE"}
 
 
-def test_zoom_empty_crop_rounds_to_zero_pixels():
+def test_zoom_tiny_bbox_yields_single_pixel_crop():
+    # Under floor/ceil semantics, any non-empty normalized bbox maps to a
+    # non-empty pixel bbox — even on a 2x2 image. The tiny crop then upscales
+    # to the atlas long edge so the model can still see it.
     store = _ArtifactStore()
-    # 2x2 image; bbox [0, 0, 1, 1] → px (0, 0, 0, 0) once rounded.
-    _seed_target(store, Image.new("RGB", (2, 2)))
+    _seed_target(store, Image.new("RGB", (2, 2), (255, 0, 0)))
     ctx = _zoom_ctx(_state_for_zoom(), store)
     result = asyncio.run(
         zoom(source="target", bbox=[0, 0, 1, 1], tool_context=ctx)
     )
-    assert result == {"status": "error", "error": "EMPTY_CROP"}
+    assert result["status"] == "ok"
+    part = result["images"][0]
+    decoded = Image.open(io.BytesIO(part.inline_data.data))
+    assert max(decoded.size) == 456  # upscaled to atlas long edge
 
 
 def test_zoom_of_zoom_works():
