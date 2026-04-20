@@ -134,3 +134,28 @@ def fetch_atlas(
         "description": f"{len(positions)} atlas sections at: " + ", ".join(descriptions),
         "images": parts,
     }
+
+
+def submit_estimate(
+    position_mm: float, reasoning: str, tool_context: Any
+) -> dict[str, Any]:
+    """Submit the final position estimate for the target slice.
+
+    Only call this when you have completed broad + narrow atlas sweeps and
+    verified at least one neighbor on each side of your candidate position.
+    """
+    tool_context.state["result"] = {"position_mm": float(position_mm), "reasoning": str(reasoning)}
+    tool_context.actions.escalate = True
+    return {"status": "ok", "position_mm": float(position_mm)}
+
+
+def submit_group_estimate(
+    positions_mm: list[float], reasoning: str, tool_context: Any
+) -> dict[str, Any]:
+    """Submit the final position estimates for all slices in the group, in order."""
+    tool_context.state["result"] = {
+        "positions_mm": [float(p) for p in positions_mm],
+        "reasoning": str(reasoning),
+    }
+    tool_context.actions.escalate = True
+    return {"status": "ok", "positions_mm": [float(p) for p in positions_mm]}
