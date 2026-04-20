@@ -23,8 +23,13 @@ def _gate_single(
 ) -> tuple[dict[str, Any] | None, bool]:
     """Gate a single-slice submit.
 
-    Returns (error_or_None, counts_toward_submit_attempts). Every soft gate here
-    is relaxable, so any rejection counts toward the retry budget.
+    Returns (error_or_None, counts_toward_submit_attempts). Every gate below
+    (broad_sweep, narrow_sweep, neighbor_bracket) is soft/relaxable — the
+    agent can fix any of them by making more ``fetch_atlas`` calls — so every
+    rejection counts toward ``submit_attempts`` and auto-relaxes after
+    ``_RELAXATION_AFTER_ATTEMPTS``. Contrast with ``_gate_group``, which has
+    a hard length-mismatch gate that does NOT count (the agent can't fix the
+    wrong number of positions by fetching more atlas slices).
     """
     relaxed = state.get("submit_attempts", 0) >= _RELAXATION_AFTER_ATTEMPTS
     if not state.get("saw_broad_sweep") and not relaxed:
