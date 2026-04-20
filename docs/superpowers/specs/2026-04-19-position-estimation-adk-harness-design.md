@@ -589,3 +589,47 @@ All 4 tasks (4.1 through 4.4) landed on `feat/harness-adk`. Test count: 129 pass
 5. `eval/eval_group.py` still imports through the legacy shim; Phase 7 migrates it and deletes the shim.
 
 ---
+
+## Phase 5+6 completion summary (2026-04-20)
+
+Both Phase 5 (`zoom`) and Phase 6 (`side_by_side`) landed on `feat/harness-adk`. Test count: 143 passing + 6 pre-existing skips (+14 new tool tests).
+
+**Commits (5):**
+- `da920e6` Task 5.1 — real `zoom` tool + 8 unit tests
+- `30fcabc` Task 5.1 polish — narrowed decode `except`; `floor`/`ceil` bbox math; 12-char hash
+- `7adf610` Task 5.2 — zoom smoke (`eval/smoke_zoom.py`)
+- `f9d0cf9` Task 6.1 — real `side_by_side` tool + 6 unit tests
+- `d2d4cca` Task 6.2 — side_by_side smoke (`eval/smoke_sbs.py`)
+
+**Task 5.2 smoke (Flash, 4 mid-brain M01 slices):**
+- Hard gate PASS: no exceptions, no fallback.
+- Soft gate PASS: `zoom` invoked 1 time.
+- Tool counts: fetch_atlas=2, zoom=1, submit_group_estimate=1.
+- MAE 1.498mm (informational; accuracy not gated).
+
+**Task 6.2 smoke (same slice set):**
+- Hard gate PASS: no exceptions, no fallback (on retry — first run was Flash stochastic non-submit → fallback; second run converged cleanly).
+- Soft gate PASS: `side_by_side` invoked 2 times.
+- Tool counts: fetch_atlas=2, side_by_side=2, submit_group_estimate=1.
+- MAE 1.740mm (informational).
+
+**Harness-level assessment: PASS.** Both tools reachable from the agent, invoked naturally by Flash during realistic group estimation, returned Parts are visible to the next turn, back-channel artifacts round-trip through ADK's artifact service. No harness-caused errors across either smoke.
+
+**Key implementation notes:**
+- Both tools are async (`load_artifact` is async in ADK).
+- Both return a `types.Part` in `"images"` AND save as artifact — the dual pattern the spec required.
+- Zoom validates bbox format 0-1000 normalized coords, converts to pixel bbox via `floor`/`ceil` (deterministic, prevents banker's-rounding-induced EMPTY_CROP), resizes cropped region to atlas in-plane long edge.
+- Side_by_side rescales both panels to `max(h_left, h_right)` preserving aspect ratio, composites with 8px gap and 28px label band (black background, white labels with raw source-key text), saves under key `side_by_side:<left>:<right>`.
+- Helpers `_load_image_from_part` + `_rescale_to_height` extracted once; zoom and side_by_side share them. Layout constants (`_SBS_GAP_PX`, `_SBS_LABEL_BAND_H`, `_SBS_BG`, `_SBS_LABEL_FG`) are module-level and reused in tests.
+
+**Interesting model observation:** Across the two smoke runs, Flash picked ONE of `zoom` or `side_by_side` per session, not both — 1 zoom call in smoke_zoom, 0 zoom calls + 2 sbs calls in smoke_sbs. Not a defect; consistent with Flash's tendency to settle on a single visual-inspection strategy per run. Worth tracking if future evals show similar asymmetry.
+
+**Open items deferred to Phase 7 or post-hackathon:**
+1. **Smoke-script duplication.** `eval/smoke_zoom.py` and `eval/smoke_sbs.py` are ~300 lines each and differ only in the tool name being counted + output filenames. Candidate for `eval/_smoke_tool_observer.py` extraction in a cleanup pass.
+2. **File API decode.** `_load_image_from_part` accesses `part.inline_data.data` only. If future tools emit URI Parts (File API), decode falls through to BAD_SOURCE. Add a 1-line module comment + TODO. Not blocking.
+3. **Label overflow on long nested keys.** `side_by_side` draws raw source keys as labels without truncation. Deeply nested composites (`side_by_side:zoom:target:1:abc...:atlas:3.20`) can overrun the 28px label band into the image area. Ignore for now; add ellipsis truncation in Phase 7.
+4. **Hash-collision concern on bboxes across sources.** `_short_hash(bbox)` hashes only the bbox, not `(source, bbox)`. Currently safe because the full key includes `<source>`, but if the bare hash is ever surfaced in telemetry it would conflate same-bbox-different-source calls. Consider `_short_hash(source, bbox)` in Phase 7.
+5. **`save_artifact` call-style inconsistency.** `fetch_atlas` uses positional `(key, part)`; `zoom`/`side_by_side` use keyword `(filename=..., artifact=...)`. Prefer keyword everywhere in Phase 7.
+6. **Tool-use telemetry in session state.** `fetch_atlas` mutates sweep-tracking state; `zoom`/`side_by_side` don't. A `state["zoom_count"]` / `state["sbs_count"]` would give the nudge path a hook and cheapen smoke observation. Low priority.
+
+---
