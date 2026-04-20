@@ -14,7 +14,7 @@ import math
 from typing import Any
 
 from google.genai import types
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageDraw, ImageFont, UnidentifiedImageError
 
 from langslice.atlas.core import (
     get_in_plane_long_edge,
@@ -23,12 +23,16 @@ from langslice.atlas.core import (
 )
 from langslice.harness.estimation.session import (
     ARTIFACT_ATLAS_PREFIX,
-    ARTIFACT_SIDE_BY_SIDE_PREFIX,  # noqa: F401 -- used by later tasks (side_by_side)
-    ARTIFACT_TARGET,  # noqa: F401 -- used by later tasks (side_by_side)
-    ARTIFACT_TARGET_PREFIX,  # noqa: F401 -- used by later tasks (side_by_side)
+    ARTIFACT_SIDE_BY_SIDE_PREFIX,
     ARTIFACT_ZOOM_PREFIX,
     atlas_key,
 )
+
+# Composite layout constants for side_by_side.
+_SBS_GAP_PX = 8
+_SBS_LABEL_BAND_H = 28
+_SBS_BG = (0, 0, 0)
+_SBS_LABEL_FG = (255, 255, 255)
 
 # ---- Pure helpers -------------------------------------------------------
 
@@ -247,7 +251,112 @@ async def zoom(
     }
 
 
-def side_by_side(left: str, right: str, tool_context: Any) -> dict[str, Any]:
-    """STUB - full implementation in Phase 6. Returns a NOT_IMPLEMENTED error."""
-    del left, right, tool_context
-    return {"status": "error", "error": "NOT_IMPLEMENTED"}
+def _load_image_from_part(part: Any) -> Image.Image | None:
+    """Decode a google.genai.types.Part's inline_data into a PIL image.
+
+    Returns None if the part has no usable inline payload or the bytes cannot
+    be decoded.
+    """
+    inline = getattr(part, "inline_data", None)
+    data = getattr(inline, "data", None) if inline is not None else None
+    if not data:
+        return None
+    try:
+        img = Image.open(io.BytesIO(data))
+        img.load()  # force decode now so truncated files fail here
+    except (UnidentifiedImageError, OSError, ValueError):
+        return None
+    return img
+
+
+def _rescale_to_height(img: Image.Image, target_h: int) -> Image.Image:
+    if img.height == target_h:
+        return img
+    scale = target_h / float(img.height)
+    new_w = max(1, round(img.width * scale))
+    return img.resize((new_w, target_h), Image.Resampling.LANCZOS)
+
+
+async def side_by_side(
+    left: str, right: str, tool_context: Any,
+) -> dict[str, Any]:
+    """Build an aspect-ratio-matched horizontal composite of two images.
+
+    Both source images are rescaled to a common height (aspect-ratio preserved
+    per panel), placed side-by-side with a thin gap, and stamped with short
+    labels derived from the source keys.
+
+    Args:
+        left: Existing artifact key for the left panel. Accepts "target",
+            "target:N", "atlas:<mm>", "zoom:...", or any previously-saved
+            "side_by_side:..." key.
+        right: Same as `left` but for the right panel.
+
+    Returns:
+        On success: {"status": "ok", "key": "side_by_side:<left>:<right>",
+        "description": "...", "images": [Part]}. On failure:
+        {"status": "error", "error": "BAD_SOURCE"}.
+    """
+    # 1. Load both artifacts. A missing or unreadable artifact on either side
+    #    is reported as BAD_SOURCE.
+    try:
+        left_part = await tool_context.load_artifact(filename=left)
+        right_part = await tool_context.load_artifact(filename=right)
+    except Exception:
+        return {"status": "error", "error": "BAD_SOURCE"}
+    if left_part is None or right_part is None:
+        return {"status": "error", "error": "BAD_SOURCE"}
+
+    # 2. Decode both payloads to PIL images.
+    left_img = _load_image_from_part(left_part)
+    right_img = _load_image_from_part(right_part)
+    if left_img is None or right_img is None:
+        return {"status": "error", "error": "BAD_SOURCE"}
+
+    # 3. Rescale both panels to a common height. Use the max of the two so
+    #    neither panel is upscaled unnecessarily — detail in the taller image
+    #    is preserved.
+    target_h = max(left_img.height, right_img.height)
+    left_scaled = _rescale_to_height(left_img, target_h)
+    right_scaled = _rescale_to_height(right_img, target_h)
+
+    # 4. Build the RGB composite canvas: [left_panel][gap][right_panel] with a
+    #    label band across the top.
+    left_rgb = left_scaled if left_scaled.mode == "RGB" else left_scaled.convert("RGB")
+    right_rgb = (
+        right_scaled if right_scaled.mode == "RGB" else right_scaled.convert("RGB")
+    )
+
+    total_w = left_rgb.width + _SBS_GAP_PX + right_rgb.width
+    total_h = target_h + _SBS_LABEL_BAND_H
+    composite = Image.new("RGB", (total_w, total_h), color=_SBS_BG)
+    composite.paste(left_rgb, (0, _SBS_LABEL_BAND_H))
+    composite.paste(right_rgb, (left_rgb.width + _SBS_GAP_PX, _SBS_LABEL_BAND_H))
+
+    # 5. Draw labels in the top band. load_default() is always available and
+    #    returns a usable font on every supported Pillow version; guard anyway.
+    draw = ImageDraw.Draw(composite)
+    try:
+        font = ImageFont.load_default()
+    except Exception:
+        font = None
+    draw.text((4, 4), left, fill=_SBS_LABEL_FG, font=font)
+    draw.text(
+        (left_rgb.width + _SBS_GAP_PX + 4, 4),
+        right,
+        fill=_SBS_LABEL_FG,
+        font=font,
+    )
+
+    # 6. Save and return. The key encodes both source keys so repeat calls
+    #    with identical arguments deduplicate through the artifact store.
+    key = f"{ARTIFACT_SIDE_BY_SIDE_PREFIX}{left}:{right}"
+    sbs_part = _image_to_part(composite)
+    await tool_context.save_artifact(filename=key, artifact=sbs_part)
+
+    return {
+        "status": "ok",
+        "key": key,
+        "description": f"Side-by-side of {left} (left) vs {right} (right).",
+        "images": [sbs_part],
+    }
