@@ -64,15 +64,6 @@ def atlas_space_context(atlas: object) -> AtlasSpaceContext:
     )
 
 
-def require_coronal_layout(context: AtlasSpaceContext) -> AtlasSpaceContext:
-    if context.ap_axis_index != 0 or context.dv_axis_index != 1 or context.ml_axis_index != 2:
-        raise ValueError(
-            f"Atlas '{context.atlas_name}' orientation '{context.orientation}' is not supported. "
-            + "LangSlice currently requires coronal layout with AP/DV/ML mapped to axes 0/1/2."
-        )
-    return context
-
-
 def slice_axis_index(context: AtlasSpaceContext, plane: Plane) -> int:
     """Return the axis index normal to the given slicing plane."""
     if plane == "coronal":
