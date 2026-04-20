@@ -628,14 +628,22 @@ def get_atlas_info(atlas: _AtlasLike) -> dict[str, object]:
     }
 
 
-def get_coronal_long_edge(atlas: _AtlasLike) -> int:
-    """Return the long-edge pixel count of a native coronal slice.
+def get_in_plane_long_edge(atlas: _AtlasLike, *, plane: Plane = "coronal") -> int:
+    """Return the long-edge pixel count of an in-plane slice.
 
-    For a coronal layout (AP/DV/ML on axes 0/1/2), this is
-    ``max(shape[1], shape[2])`` — the larger of the DV and ML dimensions.
+    ``plane`` picks the slice-normal axis; the long edge is the larger of
+    the remaining two dimensions.
     """
-    _, dv, ml = _shape3d(atlas.reference)
-    return max(dv, ml)
+    context = atlas_space_context(atlas)
+    normal_axis = slice_axis_index(context, plane)
+    in_plane_axes = [a for a in range(3) if a != normal_axis]
+    shape = context.shape
+    return max(shape[in_plane_axes[0]], shape[in_plane_axes[1]])
+
+
+def get_coronal_long_edge(atlas: _AtlasLike) -> int:
+    """Backwards-compatible alias for ``get_in_plane_long_edge(atlas, plane='coronal')``."""
+    return get_in_plane_long_edge(atlas, plane="coronal")
 
 
 def list_downloaded_atlases() -> list[str]:
