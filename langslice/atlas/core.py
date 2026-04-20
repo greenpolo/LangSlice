@@ -9,7 +9,12 @@ import numpy as np
 from PIL import Image
 from scipy.ndimage import gaussian_filter1d
 
-from langslice.atlas.space import atlas_space_context, require_coronal_layout
+from langslice.atlas.space import (
+    Plane,
+    atlas_space_context,
+    require_coronal_layout,
+    slice_axis_index,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -137,33 +142,49 @@ def load_atlas(name: str) -> BrainGlobeAtlas:
     return atlas
 
 
-def position_mm_to_index(atlas: _AtlasLike, position_mm: float) -> int:
-    """Convert a physical position (mm from anterior edge) to an array index."""
-    context = require_coronal_layout(atlas_space_context(atlas))
-    res_mm = context.ap_resolution_mm
-    n_slices = context.shape[context.ap_axis_index]
+def _resolution_mm_for_plane(atlas: _AtlasLike, plane: Plane) -> float:
+    context = atlas_space_context(atlas)
+    axis = slice_axis_index(context, plane)
+    return context.resolution_um[axis] / 1000.0
 
+
+def _n_slices_for_plane(atlas: _AtlasLike, plane: Plane) -> int:
+    context = atlas_space_context(atlas)
+    axis = slice_axis_index(context, plane)
+    return context.shape[axis]
+
+
+def position_mm_to_index(
+    atlas: _AtlasLike, position_mm: float, *, plane: Plane = "coronal"
+) -> int:
+    """Convert a physical position (mm) to an array index along the slice-normal axis."""
+    res_mm = _resolution_mm_for_plane(atlas, plane)
+    n_slices = _n_slices_for_plane(atlas, plane)
     idx = int(round(position_mm / res_mm))
     if idx < 0 or idx >= n_slices:
-        _, max_pos = get_position_range_mm(atlas)
+        _, max_pos = get_position_range_mm(atlas, plane=plane)
         raise ValueError(
-            f"Position {position_mm:.3f}mm maps to index {idx}, out of range [0, {n_slices - 1}]. "
-            + f"Valid range for '{atlas.atlas_name}': 0.0mm to {max_pos:.3f}mm"
+            f"Position {position_mm:.3f}mm (plane={plane}) maps to index {idx}, "
+            f"out of range [0, {n_slices - 1}]. "
+            f"Valid range for '{atlas.atlas_name}': 0.0mm to {max_pos:.3f}mm"
         )
     return idx
 
 
-def index_to_position_mm(atlas: _AtlasLike, idx: int) -> float:
-    """Convert an array index along axis 0 to a physical position in mm."""
-    context = require_coronal_layout(atlas_space_context(atlas))
-    return idx * context.ap_resolution_mm
+def index_to_position_mm(
+    atlas: _AtlasLike, idx: int, *, plane: Plane = "coronal"
+) -> float:
+    """Convert an array index along the slice-normal axis to a physical position (mm)."""
+    return idx * _resolution_mm_for_plane(atlas, plane)
 
 
-def get_position_range_mm(atlas: _AtlasLike) -> tuple[float, float]:
-    """Return physical position range as (0.0, max_mm)."""
-    context = require_coronal_layout(atlas_space_context(atlas))
-    n_slices = context.shape[context.ap_axis_index]
-    return 0.0, (n_slices - 1) * context.ap_resolution_mm
+def get_position_range_mm(
+    atlas: _AtlasLike, *, plane: Plane = "coronal"
+) -> tuple[float, float]:
+    """Return (min_mm, max_mm) along the given slicing plane's normal axis."""
+    res_mm = _resolution_mm_for_plane(atlas, plane)
+    n_slices = _n_slices_for_plane(atlas, plane)
+    return 0.0, (n_slices - 1) * res_mm
 
 
 def _normalize_to_uint8(arr: np.ndarray) -> np.ndarray:
