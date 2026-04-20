@@ -7,6 +7,8 @@ from PIL import Image
 
 from langslice.harness.estimation.session import build_initial_state
 from langslice.harness.estimation.tools import (
+    _SBS_GAP_PX,
+    _SBS_LABEL_BAND_H,
     _clamp_and_dedupe_positions,
     _image_to_jpeg_bytes,
     _image_to_part,
@@ -15,6 +17,7 @@ from langslice.harness.estimation.tools import (
     _parse_atlas_key,
     _short_hash,
     fetch_atlas,
+    side_by_side,
     submit_estimate,
     submit_group_estimate,
     zoom,
@@ -272,4 +275,109 @@ def test_zoom_of_zoom_works():
     )
     assert second["status"] == "ok"
     assert second["key"].startswith(f"zoom:{first_key}:")
+    assert second["key"] in store._store
+
+
+# --- Phase 6 Task 6.1: side_by_side tool ------------------------------------
+
+
+def _seed_keyed(store: _ArtifactStore, key: str, img: Image.Image) -> None:
+    store._store[key] = _image_to_part(img)
+
+
+def test_side_by_side_happy_path_equal_dimensions():
+    store = _ArtifactStore()
+    _seed_keyed(store, "target", Image.new("RGB", (400, 300), (200, 100, 50)))
+    _seed_keyed(store, "atlas:3.50", Image.new("RGB", (400, 300), (50, 100, 200)))
+    ctx = _zoom_ctx(_state_for_zoom(), store)
+
+    result = asyncio.run(
+        side_by_side(left="target", right="atlas:3.50", tool_context=ctx)
+    )
+
+    assert result["status"] == "ok"
+    assert result["key"] == "side_by_side:target:atlas:3.50"
+    assert len(result["images"]) == 1
+
+    part = result["images"][0]
+    assert part.inline_data is not None
+    decoded = Image.open(io.BytesIO(part.inline_data.data))
+    w, h = decoded.size
+    # Both panels same size → width is 2*400 + gap, height is 300 + label band.
+    assert w == 400 + _SBS_GAP_PX + 400
+    assert h == 300 + _SBS_LABEL_BAND_H
+    # Artifact saved under the returned key.
+    assert result["key"] in store._store
+
+
+def test_side_by_side_different_heights_rescales_to_common_height():
+    # Left is 400x300, right is 600x200. Common height = max(300, 200) = 300.
+    # Right rescales to round(600 * 300/200) = 900 wide.
+    store = _ArtifactStore()
+    _seed_keyed(store, "target", Image.new("RGB", (400, 300), (10, 20, 30)))
+    _seed_keyed(store, "atlas:5.00", Image.new("RGB", (600, 200), (40, 50, 60)))
+    ctx = _zoom_ctx(_state_for_zoom(), store)
+
+    result = asyncio.run(
+        side_by_side(left="target", right="atlas:5.00", tool_context=ctx)
+    )
+
+    assert result["status"] == "ok"
+    part = result["images"][0]
+    decoded = Image.open(io.BytesIO(part.inline_data.data))
+    w, h = decoded.size
+    assert h == 300 + _SBS_LABEL_BAND_H
+    assert w == 400 + _SBS_GAP_PX + 900
+
+
+def test_side_by_side_bad_source_left_missing():
+    store = _ArtifactStore()
+    _seed_keyed(store, "target", Image.new("RGB", (100, 100)))
+    ctx = _zoom_ctx(_state_for_zoom(), store)
+    result = asyncio.run(
+        side_by_side(left="nonexistent", right="target", tool_context=ctx)
+    )
+    assert result == {"status": "error", "error": "BAD_SOURCE"}
+
+
+def test_side_by_side_bad_source_right_missing():
+    store = _ArtifactStore()
+    _seed_keyed(store, "target", Image.new("RGB", (100, 100)))
+    ctx = _zoom_ctx(_state_for_zoom(), store)
+    result = asyncio.run(
+        side_by_side(left="target", right="nope", tool_context=ctx)
+    )
+    assert result == {"status": "error", "error": "BAD_SOURCE"}
+
+
+def test_side_by_side_bad_source_both_missing():
+    store = _ArtifactStore()
+    ctx = _zoom_ctx(_state_for_zoom(), store)
+    result = asyncio.run(
+        side_by_side(left="ghost_a", right="ghost_b", tool_context=ctx)
+    )
+    assert result == {"status": "error", "error": "BAD_SOURCE"}
+
+
+def test_side_by_side_of_side_by_side_works():
+    # Compose once, then feed the composite back in as one panel of a second
+    # composition. The tool treats the source opaquely — the key is just a
+    # string that points into the artifact store.
+    store = _ArtifactStore()
+    _seed_keyed(store, "target", Image.new("RGB", (400, 300), (10, 20, 30)))
+    _seed_keyed(store, "atlas:3.50", Image.new("RGB", (400, 300), (40, 50, 60)))
+    _seed_keyed(store, "atlas:4.00", Image.new("RGB", (400, 300), (70, 80, 90)))
+    ctx = _zoom_ctx(_state_for_zoom(), store)
+
+    first = asyncio.run(
+        side_by_side(left="target", right="atlas:3.50", tool_context=ctx)
+    )
+    assert first["status"] == "ok"
+    first_key = first["key"]
+
+    second = asyncio.run(
+        side_by_side(left=first_key, right="atlas:4.00", tool_context=ctx)
+    )
+    assert second["status"] == "ok"
+    assert second["key"] == f"side_by_side:{first_key}:atlas:4.00"
     assert second["key"] in store._store
