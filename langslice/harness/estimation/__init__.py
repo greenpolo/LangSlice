@@ -24,7 +24,12 @@ def estimate_position(
     max_iterations: int = 20,
     **_ignored,
 ) -> "PositionResult":
-    """Synchronous wrapper over the async runner. Sync API for CLI / eval consumers."""
+    """Synchronous wrapper over the async runner. Sync API for CLI / eval consumers.
+
+    Synchronous API; not safe to call from within a running asyncio event loop
+    (e.g. Jupyter, async CLI) — :func:`asyncio.run` raises ``RuntimeError`` in
+    that case.
+    """
     import asyncio
 
     from langslice.harness.estimation.runner import run_single_slice_session
@@ -64,9 +69,12 @@ def estimate_group(
     millimetre-native.  ``model_name=None`` falls through to the runner default
     rather than being pinned here — the runner owns that default.
 
-    Ignored kwargs (``send_individually``, ``on_progress``, ``media_resolution``,
-    ``show_borders``, ``debug_dir``) are accepted so legacy call sites don't blow up;
-    they are listed by name purely as documentation of what callers currently pass.
+    Accepts and ignores legacy kwargs (``send_individually``, ``on_progress``, etc.)
+    for compat with the pre-ADK call sites; they have no new-runner equivalent.
+
+    Synchronous API; not safe to call from within a running asyncio event loop
+    (e.g. Jupyter, async CLI) — :func:`asyncio.run` raises ``RuntimeError`` in
+    that case.
     """
     import asyncio
 
