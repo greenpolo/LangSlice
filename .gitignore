@@ -37,6 +37,7 @@ archive/*.md
 .claude/
 .superpowers/
 .playwright-mcp/
+.worktrees/
 debug_runs/
 test_runs/
 eval_outputs/
