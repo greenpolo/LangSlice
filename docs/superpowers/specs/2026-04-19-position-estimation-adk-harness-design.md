@@ -545,3 +545,47 @@ All 4 completions within the 2mm gate; 2 essentially perfect (<0.1mm). Still hig
 4. LiteLlm multimodal path not exercised — Task 4+ smoke via OpenRouter deferred.
 
 ---
+
+## Phase 4 completion summary (2026-04-20)
+
+All 4 tasks (4.1 through 4.4) landed on `feat/harness-adk`. Test count: 129 passing + 6 pre-existing skips. Both Phase 3 deferred validator issues resolved.
+
+**Commits:**
+- `bfb05bf` Task 4.1 — `build_group_agent` + validator ordering/counter fixes
+- `17d2885` Task 4.2 — `run_group_session` + scripted group fake + integration test
+- `8499f2a` Task 4.2 fix — align fallback reasoning phrase with eval-script grep (Codex-caught)
+- `bdd0d53` Task 4.2 polish — symmetric fallback-phrase comment on single-slice runner
+- `f55a018` Task 4.3 — `estimate_group` sync shim wiring `run_group_session`
+- `d2a530f` Task 4.3 polish — de-dupe shim docs; drop redundant import test
+- `d358c82` Task 4.4 — multi-slice group smoke script
+- `467dc40` Phase 4 polish — document `_gate_single` relaxability; symmetrize group-runner nudge log
+
+**Task 4.4 smoke results (Flash, 4 consecutive mid-brain M01 slices, new ADK path):**
+
+| Slice | GT (mm) | Predicted (mm) | Error (mm) |
+|---|---|---|---|
+| M01_002_005 | 5.620 | 4.270 | 1.350 |
+| M01_002_006 | 5.734 | 4.440 | 1.294 |
+| M01_002_007 | 5.931 | 4.610 | 1.321 |
+| M01_002_008 | 6.133 | 4.780 | 1.353 |
+
+- Gate: **PASS** (max 1.353mm < 2mm, no fallback, no exception).
+- MAE 1.329mm, wall time 62.9s, interval 171µm.
+- Flash misidentified anterior commissure decussation (~4.3-4.8mm) as the anchor; spacing internally coherent at exactly 0.171mm across all four slices. Model behavior, not a harness defect — the agent path executed end-to-end, seeded artifacts correctly, converged on a submit, and respected the interval constraint.
+
+**Harness-level assessment: PASS.** Zero harness-caused errors. Zero fallbacks. No runaway iteration. The `fetch_atlas → submit_group_estimate` → `escalate=True` → result extraction path works end-to-end through ADK's InMemoryRunner + session service + artifact service for the multi-slice case.
+
+**Key resolved issues:**
+- Fallback phrase is load-bearing across `eval/eval_group.py:55` (`_FALLBACK_PHRASE = "Model did not submit"`), `eval/smoke_single_slice.py`, and `eval/smoke_group.py`. Runner emits `"Model did not submit within iteration+retry budget; fell back to atlas midpoint."` — compatible with all three greps. Both runner sites have adjacent "don't reword" comments.
+- `_gate_group` check ordering flipped to `length → broad_sweep → narrow_sweep → monotonicity → interval`. Sweep nudges now fire before position-correctness complaints so the agent keeps exploring.
+- `submit_attempts` counter: validators return `(err, should_count)` tuples; `gate_submit_tool` increments only on soft rejections. Length mismatch (hard) returns `should_count=False` — the agent cannot fix length by fetching more atlas, so burning relaxation budget on it is wrong.
+- `estimate_group` compat shim accepts the legacy call shape (`interval_um`, `model_name`, etc.); translates to the runner's `interval_mm` / `model` signature. `eval/eval_group.py` keeps working without modification (Phase 7 will migrate it to the harness path directly).
+
+**Open items for Phase 5+ or post-hackathon:**
+1. `zoom` tool still stubs `NOT_IMPLEMENTED` (Phase 5).
+2. `side_by_side` tool still stubs `NOT_IMPLEMENTED` (Phase 6).
+3. `media_resolution`, `on_progress`, `debug_dir` kwargs in `estimate_group` shim are silently dropped. For Phase 4 smoke this is acceptable (defaults match CLAUDE.md policy for the 25um atlas); post-hackathon, plumb through if needed.
+4. Runner duplication (~120 lines each for `run_single_slice_session` and `run_group_session`) is at the threshold where a helper starts paying off. Watch item for Phase 5: if adding `zoom` requires touching both runners, extract `_run_invocation_loop(agent, session_id, new_message, max_iterations)` at that point. Not before.
+5. `eval/eval_group.py` still imports through the legacy shim; Phase 7 migrates it and deletes the shim.
+
+---
