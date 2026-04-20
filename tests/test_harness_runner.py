@@ -1,3 +1,9 @@
+import asyncio
+
+import pytest
+from PIL import Image
+
+from langslice.harness.estimation.runner import run_single_slice_session
 from langslice.harness.estimation.session import (
     ARTIFACT_TARGET,
     build_initial_state,
@@ -40,3 +46,29 @@ def test_build_single_slice_agent_registers_four_tools():
     assert "side_by_side" in tool_names
     assert "submit_estimate" in tool_names
     assert agent.instruction  # non-empty prompt
+
+
+def test_run_single_slice_session_happy_path(monkeypatch):
+    """Runner completes when the model follows broad -> narrow -> submit."""
+    try:
+        from tests.fakes import install_fake_adk_model_scripted_submit
+    except NotImplementedError as exc:
+        pytest.skip(f"ADK fake-model seam unavailable: {exc}")
+    try:
+        install_fake_adk_model_scripted_submit(monkeypatch)
+    except NotImplementedError as exc:
+        pytest.skip(f"ADK fake-model seam unavailable: {exc}")
+
+    img = Image.new("RGB", (456, 320), 128)
+    result = asyncio.run(
+        run_single_slice_session(
+            image=img,
+            atlas_name="allen_mouse_25um",
+            plane="coronal",
+            model="gemini-3-flash-preview",
+            max_iterations=8,
+            max_retries=1,
+        )
+    )
+    assert result.position_mm is not None
+    assert 0.0 <= result.position_mm <= 13.2
