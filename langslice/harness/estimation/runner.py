@@ -393,10 +393,17 @@ async def run_group_session(
                 group_reasoning=reasoning,
             )
 
+        # Mirror run_single_slice_session: log the nudge that would fire
+        # next so group-session failures are debuggable in production.
+        # _pick_nudge only reads saw_broad_sweep/saw_narrow_sweep, which
+        # both single- and group-sessions set identically.
+        final_state = final.state if final is not None else initial_state_template
+        nudge = _pick_nudge(final_state)
         logger.info(
-            "Group attempt %d did not submit (capped=%s); retrying with fresh session.",
+            "Group attempt %d did not submit (capped=%s); nudge=%r; retrying with fresh session.",
             attempt + 1,
             capped,
+            nudge,
         )
 
     # Fallback: center the group around the atlas midpoint with requested
