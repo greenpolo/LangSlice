@@ -224,6 +224,9 @@ async def run_single_slice_session(
             nudge,
         )
 
+    # Fallback: atlas midpoint. Match the reasoning phrase used by
+    # run_group_session — smoke_single_slice.py greps for it to count
+    # fallbacks, so don't reword without updating that script.
     mid = (pos_lo + pos_hi) / 2.0
     logger.warning(
         "All %d retries exhausted; falling back to %.2f mm midpoint.",
@@ -399,7 +402,7 @@ async def run_group_session(
     # Fallback: center the group around the atlas midpoint with requested
     # interval spacing, clamped to the atlas range. Match the reasoning
     # phrase used by run_single_slice_session — eval_group.py greps for
-    # it to count fallbacks.
+    # it to count fallbacks, so don't reword without updating that script.
     mid = (pos_lo + pos_hi) / 2.0
     span = (n_slices - 1) * interval_mm
     start = mid - span / 2.0
