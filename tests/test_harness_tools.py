@@ -1,4 +1,5 @@
-from unittest.mock import MagicMock
+import asyncio
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from PIL import Image
@@ -58,7 +59,7 @@ def test_image_to_jpeg_bytes_roundtrip():
 def _fake_tool_context(state: dict) -> MagicMock:
     ctx = MagicMock()
     ctx.state = state
-    ctx.save_artifact = MagicMock(return_value=1)
+    ctx.save_artifact = AsyncMock(return_value=1)
     return ctx
 
 
@@ -69,7 +70,7 @@ def test_fetch_atlas_returns_ok_and_updates_state():
         interval_mm=0.0, thickness_um=50, max_iterations=20,
     )
     ctx = _fake_tool_context(state)
-    result = fetch_atlas(positions_mm=[2.0, 5.0, 8.0], tool_context=ctx)
+    result = asyncio.run(fetch_atlas(positions_mm=[2.0, 5.0, 8.0], tool_context=ctx))
     assert result["status"] == "ok"
     assert len(result["images"]) == 3
     assert state["saw_broad_sweep"] is True
@@ -84,7 +85,7 @@ def test_fetch_atlas_rejects_empty_positions():
         interval_mm=0.0, thickness_um=50, max_iterations=20,
     )
     ctx = _fake_tool_context(state)
-    result = fetch_atlas(positions_mm=[], tool_context=ctx)
+    result = asyncio.run(fetch_atlas(positions_mm=[], tool_context=ctx))
     assert result["status"] == "error"
     assert result["error"] == "BAD_ARGS"
 
