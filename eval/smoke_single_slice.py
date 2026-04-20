@@ -51,12 +51,18 @@ SLICES = [
 ]
 
 
+INTER_SLICE_DELAY_S = 20  # pace to stay under 2M input-tokens-per-minute quota
+
+
 def main() -> int:
     gt = json.loads(GT_PATH.read_text())
     results: list[dict] = []
     fallback_phrase = "Agent did not submit within iteration+retry budget"
 
-    for name in SLICES:
+    for i, name in enumerate(SLICES):
+        if i > 0:
+            print(f"(pacing: sleeping {INTER_SLICE_DELAY_S}s)", flush=True)
+            time.sleep(INTER_SLICE_DELAY_S)
         gt_ap = float(gt[name]["ap_mm"])
         img_path = TEST_IMAGES_DIR / name
         print(f"\n=== {name} (GT={gt_ap:.3f}mm) ===", flush=True)

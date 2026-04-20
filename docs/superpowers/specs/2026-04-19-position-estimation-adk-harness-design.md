@@ -521,7 +521,22 @@ All 8 tasks (3.1 through 3.8) landed on `feat/harness-adk`. Test count: 118 pass
 
 **Harness-level assessment: PASS.** 0 harness-caused errors across 4 successful runs. 0 fallbacks triggered. No runaway iteration. The `fetch_atlas → submit_estimate` → `escalate=True` → result extraction path works end-to-end through ADK's InMemoryRunner, session service, and artifact service.
 
-**Accuracy-level assessment: weaker than pre-ADK baseline, within noise.** MAE across 4 successful runs = 1.47mm vs pre-ADK multi-slice Flash baseline 0.499mm. Single-slice mode is known ~2x worse than group mode (see `feedback_individual_vs_grid_atlas`). Strict <2mm gate missed by 0.47mm on one slice. Given single-slice mode + Flash at T=1.0 + 4-sample noise, this is not a regression signal — it's what single-slice + Flash looks like. Phase 4 group-mode ADK port is expected to recover accuracy.
+**Initial accuracy-level: 1.47mm MAE — config gaps.** Investigation surfaced two missing pieces:
+
+1. `runner.py` never built a `ThinkingConfig`, so Flash ran with its default thinking level (not MEDIUM). Fixed in `3f7222d`: now defaults to `vlm_config.build_thinking_config(model, "MEDIUM")` for string-named Gemini models.
+2. `runner.py` didn't apply CLAHE. The pre-ADK baseline (0.14-0.25mm MAE on M01) was measured with CLAHE applied at the eval-script level (`eval/eval_group.py:241` calls `adaptive_preprocess` before `estimate_group`). Fixed in `c62379a`: `apply_clahe=True` default, applied inside `run_single_slice_session` after downscale so every caller gets it.
+
+**Re-run after fixes: MAE 0.755mm across 4 successful runs (2x improvement).**
+
+| Slice | GT (mm) | Predicted (mm) | Error (mm) |
+|---|---|---|---|
+| M01_001_008 | 4.052 | 4.000 | 0.052 |
+| M01_001_011 | 4.532 | (503 timeout) | — |
+| M01_002_005 | 5.620 | 4.500 | 1.120 |
+| M01_002_008 | 6.133 | 4.300 | 1.833 |
+| M01_003_001 | 6.616 | 6.600 | 0.016 |
+
+All 4 completions within the 2mm gate; 2 essentially perfect (<0.1mm). Still higher than the ~0.14-0.25mm M01 baseline, but that baseline was multi-slice group mode. Flash single-slice is inherently more variable; Phase 4 group-mode ADK port is expected to recover parity.
 
 **Open issues noted during Phase 3 (deferred to Phase 4 or post-hackathon):**
 1. `_gate_group` check ordering: currently monotonicity/interval before sweep — should flip to surface "explore more" before "fix your ordering" (Codex feedback).
