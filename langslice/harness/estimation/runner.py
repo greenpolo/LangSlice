@@ -16,10 +16,12 @@ from langslice.atlas.core import (
     load_atlas,
 )
 from langslice.atlas.space import Plane
-from langslice.harness.estimation._types import PositionResult
+from langslice.harness.estimation._types import MultiSliceResult, PositionResult
+from langslice.harness.estimation.group import build_group_agent
 from langslice.harness.estimation.session import (
     ARTIFACT_TARGET,
     build_initial_state,
+    target_key,
 )
 from langslice.harness.estimation.single_slice import build_single_slice_agent
 from langslice.image_prep import (
@@ -34,6 +36,7 @@ _APP_NAME = "langslice"
 _USER_ID = "langslice-user"
 
 _DEFAULT_MAX_ITERATIONS_SINGLE = 20
+_DEFAULT_MAX_ITERATIONS_GROUP = 25
 _DEFAULT_MAX_RETRIES = 2
 
 _NUDGE_BROAD = (
@@ -233,4 +236,190 @@ async def run_single_slice_session(
             "Agent did not submit within iteration+retry budget; "
             "fell back to atlas midpoint."
         ),
+    )
+
+
+async def run_group_session(
+    *,
+    images: list[Image.Image],
+    atlas_name: str,
+    interval_mm: float,
+    thickness_um: int = 50,
+    plane: Plane = "coronal",
+    model: str | object = "gemini-3-flash-preview",
+    species: str | None = None,
+    max_iterations: int = _DEFAULT_MAX_ITERATIONS_GROUP,
+    max_retries: int = _DEFAULT_MAX_RETRIES,
+    temperature: float = 1.0,
+    thinking_level: str = "MEDIUM",
+    apply_clahe: bool = True,
+) -> MultiSliceResult:
+    """Drive a multi-slice group position-estimation session to completion.
+
+    Seeds each target image as a distinct ``target:<N>`` artifact, runs the
+    ADK group agent, counts function-call events against ``max_iterations``,
+    and retries with a fresh session up to ``max_retries`` times if the agent
+    does not submit. Falls back to ``n_slices`` positions centered on the
+    atlas midpoint with the requested ``interval_mm`` spacing if all retries
+    are exhausted.
+    """
+    n_slices = len(images)
+    if not 2 <= n_slices <= 8:
+        raise ValueError(f"Expected 2-8 slices, got {n_slices}")
+
+    atlas = load_atlas(atlas_name)
+    pos_lo, pos_hi = get_position_range_mm(atlas, plane=plane)
+    atlas_long_edge = get_in_plane_long_edge(atlas, plane=plane)
+
+    # MEDIUM thinking is the validated sweet spot for Flash (0.14mm MAE on M01).
+    # Only wire a thinking_config for string-named Gemini models; LiteLlm
+    # wrappers drive their own thinking knobs.
+    thinking_cfg: object | None = None
+    if isinstance(model, str):
+        from langslice import vlm_config
+        thinking_cfg = vlm_config.build_thinking_config(model, thinking_level)
+
+    species_val = species or str(atlas.metadata.get("species", "mouse"))
+    agent = build_group_agent(
+        atlas_name=atlas_name,
+        plane=plane,
+        species=species_val,
+        pos_lo=pos_lo,
+        pos_hi=pos_hi,
+        n_slices=n_slices,
+        interval_mm=interval_mm,
+        thickness_um=thickness_um,
+        model=model,
+        temperature=temperature,
+        thinking_config=thinking_cfg,
+    )
+
+    runner = InMemoryRunner(agent=agent, app_name=_APP_NAME)
+    assert runner.artifact_service is not None
+    assert runner.session_service is not None
+
+    initial_state_template = build_initial_state(
+        atlas_name=atlas_name,
+        plane=plane,
+        pos_lo=pos_lo,
+        pos_hi=pos_hi,
+        n_slices=n_slices,
+        interval_mm=interval_mm,
+        thickness_um=thickness_um,
+        max_iterations=max_iterations,
+    )
+
+    # Encode target images once as Parts for reuse across retries.
+    target_parts: list[types.Part] = [
+        _encode_target_part(img, atlas_long_edge, apply_clahe=apply_clahe)
+        for img in images
+    ]
+
+    for attempt in range(max_retries):
+        session_id = f"group_attempt_{attempt}"
+        await runner.session_service.create_session(
+            app_name=_APP_NAME,
+            user_id=_USER_ID,
+            session_id=session_id,
+            state=dict(initial_state_template),
+        )
+
+        # Seed each target image as a distinct artifact keyed 'target:N'
+        # so the zoom/side_by_side tools can reference them by slice number.
+        for i, part in enumerate(target_parts):
+            await runner.artifact_service.save_artifact(
+                app_name=_APP_NAME,
+                user_id=_USER_ID,
+                session_id=session_id,
+                filename=target_key(i + 1),
+                artifact=part,
+            )
+
+        parts: list[types.Part] = []
+        for i, part in enumerate(target_parts):
+            parts.append(
+                types.Part.from_text(
+                    text=f"Slice {i + 1} (artifact: '{target_key(i + 1)}'):"
+                )
+            )
+            parts.append(part)
+        parts.append(types.Part.from_text(text="Determine the position of each slice."))
+        new_message = types.Content(role="user", parts=parts)
+
+        tool_call_count = 0
+        capped = False
+        async for event in runner.run_async(
+            user_id=_USER_ID,
+            session_id=session_id,
+            new_message=new_message,
+        ):
+            fcs = event.get_function_calls() or []
+            tool_call_count += len(fcs)
+            if tool_call_count > max_iterations:
+                logger.warning(
+                    "Hit max_iterations=%d on attempt %d; forcing end.",
+                    max_iterations,
+                    attempt + 1,
+                )
+                capped = True
+                break
+
+            # Re-read session state after each event (mutated by tools).
+            current = await runner.session_service.get_session(
+                app_name=_APP_NAME,
+                user_id=_USER_ID,
+                session_id=session_id,
+            )
+            if current is not None and current.state.get("result") is not None:
+                break
+
+        final = await runner.session_service.get_session(
+            app_name=_APP_NAME,
+            user_id=_USER_ID,
+            session_id=session_id,
+        )
+        if final is not None and final.state.get("result") is not None:
+            result = final.state["result"]
+            reasoning = str(result["reasoning"])
+            positions = [
+                PositionResult(position_mm=float(p), reasoning=reasoning)
+                for p in result["positions_mm"]
+            ]
+            return MultiSliceResult(
+                positions=positions,
+                group_reasoning=reasoning,
+            )
+
+        logger.info(
+            "Group attempt %d did not submit (capped=%s); retrying with fresh session.",
+            attempt + 1,
+            capped,
+        )
+
+    # Fallback: center the group around the atlas midpoint with requested
+    # interval spacing, clamped to the atlas range. Match the reasoning
+    # phrase used by run_single_slice_session — eval_group.py greps for
+    # it to count fallbacks.
+    mid = (pos_lo + pos_hi) / 2.0
+    span = (n_slices - 1) * interval_mm
+    start = mid - span / 2.0
+    fallback_positions = [
+        max(pos_lo, min(pos_hi, start + i * interval_mm)) for i in range(n_slices)
+    ]
+    logger.warning(
+        "All %d retries exhausted; falling back to %d positions centered at %.2f mm.",
+        max_retries,
+        n_slices,
+        mid,
+    )
+    fallback_reasoning = (
+        "Agent did not submit within iteration+retry budget; "
+        "fell back to atlas midpoint."
+    )
+    return MultiSliceResult(
+        positions=[
+            PositionResult(position_mm=p, reasoning=fallback_reasoning)
+            for p in fallback_positions
+        ],
+        group_reasoning=fallback_reasoning,
     )

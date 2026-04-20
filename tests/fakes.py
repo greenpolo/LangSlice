@@ -95,3 +95,91 @@ def install_fake_adk_model_scripted_submit(monkeypatch: Any) -> None:
         return _ScriptedSubmitLlm(model=model)
 
     monkeypatch.setattr(LLMRegistry, "new_llm", staticmethod(_fake_new_llm))
+
+
+class _ScriptedGroupSubmitLlm(BaseLlm):
+    """A fake BaseLlm that scripts broad sweep -> narrow sweep -> submit_group_estimate.
+
+    The step is inferred from how many function-response parts are already
+    present in the request (same trick as ``_ScriptedSubmitLlm``). The fake
+    is parameterised by ``n_slices`` and ``interval_mm`` (declared as pydantic
+    fields on ``BaseLlm``) so it can emit the right number of monotonically
+    increasing positions that will pass ``_gate_group``.
+    """
+
+    n_slices: int
+    interval_mm: float
+
+    async def generate_content_async(
+        self, llm_request: LlmRequest, stream: bool = False
+    ) -> AsyncGenerator[LlmResponse, None]:
+        del stream  # unused; we always emit one response
+        n_responses = _count_function_responses(llm_request)
+        n_slices = self.n_slices
+        interval_mm = self.interval_mm
+
+        if n_responses == 0:
+            # Turn 1: broad sweep
+            call = types.Part.from_function_call(
+                name="fetch_atlas",
+                args={"positions_mm": [2.0, 4.0, 6.0, 8.0, 10.0]},
+            )
+        elif n_responses == 1:
+            # Turn 2: narrow sweep around the same plausible centre used by the
+            # single-slice fake so reviewers can read both together.
+            call = types.Part.from_function_call(
+                name="fetch_atlas",
+                args={"positions_mm": [5.6, 5.8, 6.0, 6.2, 6.4]},
+            )
+        else:
+            # Turn 3+: submit N monotonic positions spaced exactly interval_mm
+            # apart, centred on 6.0 mm. Passes length, sweep, monotonicity,
+            # and interval gates.
+            centre = 6.0
+            start = centre - (n_slices - 1) * interval_mm / 2.0
+            positions = [
+                round(start + i * interval_mm, 4) for i in range(n_slices)
+            ]
+            call = types.Part.from_function_call(
+                name="submit_group_estimate",
+                args={
+                    "positions_mm": positions,
+                    "reasoning": (
+                        "Broad sweep placed group near 6mm; narrow sweep confirmed; "
+                        f"intervals {interval_mm:.3f}mm."
+                    ),
+                },
+            )
+
+        yield LlmResponse(
+            content=types.Content(role="model", parts=[call]),
+            partial=False,
+            turn_complete=True,
+        )
+
+
+def install_fake_adk_group_model_scripted_submit(
+    monkeypatch: Any, *, n_slices: int, interval_mm: float = 0.2,
+) -> None:
+    """Patch LLMRegistry.new_llm so any ``model=<string>`` resolves to the group fake.
+
+    The fake needs to know ``n_slices`` (to emit the right number of positions)
+    and ``interval_mm`` (so emitted positions pass the interval gate). The
+    resulting agent will, over the course of a session:
+      1. call fetch_atlas with a broad sweep
+      2. call fetch_atlas with a narrow sweep
+      3. call submit_group_estimate with N monotonic positions centred on 6.0 mm
+    """
+    from google.adk.models.registry import LLMRegistry
+
+    # n_slices/interval_mm are closed-over pydantic field values; capture in
+    # locals so the staticmethod-bound closure below references them explicitly.
+    _n = n_slices
+    _iv = interval_mm
+
+    def _fake_new_llm(model: str) -> BaseLlm:
+        return _ScriptedGroupSubmitLlm(
+            model=model, n_slices=_n, interval_mm=_iv,
+        )
+
+    monkeypatch.setattr(LLMRegistry, "new_llm", staticmethod(_fake_new_llm))
