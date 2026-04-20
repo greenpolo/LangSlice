@@ -11,6 +11,8 @@ from langslice.harness.estimation.tools import (
     _is_narrow_sweep,
     _parse_atlas_key,
     fetch_atlas,
+    submit_estimate,
+    submit_group_estimate,
 )
 
 
@@ -85,3 +87,33 @@ def test_fetch_atlas_rejects_empty_positions():
     result = fetch_atlas(positions_mm=[], tool_context=ctx)
     assert result["status"] == "error"
     assert result["error"] == "BAD_ARGS"
+
+
+def test_submit_estimate_sets_state_and_escalates():
+    state = build_initial_state(
+        atlas_name="allen_mouse_25um", plane="coronal",
+        pos_lo=0.0, pos_hi=13.2, n_slices=1,
+        interval_mm=0.0, thickness_um=50, max_iterations=20,
+    )
+    ctx = _fake_tool_context(state)
+    ctx.actions = MagicMock()
+    out = submit_estimate(position_mm=5.0, reasoning="hippocampus visible", tool_context=ctx)
+    assert out["status"] == "ok"
+    assert state["result"] == {"position_mm": 5.0, "reasoning": "hippocampus visible"}
+    assert ctx.actions.escalate is True
+
+
+def test_submit_group_estimate_sets_state_and_escalates():
+    state = build_initial_state(
+        atlas_name="allen_mouse_25um", plane="coronal",
+        pos_lo=0.0, pos_hi=13.2, n_slices=3,
+        interval_mm=0.200, thickness_um=50, max_iterations=25,
+    )
+    ctx = _fake_tool_context(state)
+    ctx.actions = MagicMock()
+    out = submit_group_estimate(
+        positions_mm=[5.0, 5.2, 5.4], reasoning="ok", tool_context=ctx,
+    )
+    assert out["status"] == "ok"
+    assert state["result"]["positions_mm"] == [5.0, 5.2, 5.4]
+    assert ctx.actions.escalate is True
