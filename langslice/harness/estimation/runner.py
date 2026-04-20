@@ -6,6 +6,10 @@ import io
 import logging
 from typing import Any
 
+from google.adk.apps.app import App
+from google.adk.plugins.multimodal_tool_results_plugin import (
+    MultimodalToolResultsPlugin,
+)
 from google.adk.runners import InMemoryRunner
 from google.genai import types
 from PIL import Image
@@ -123,7 +127,16 @@ async def run_single_slice_session(
         thinking_config=thinking_cfg,
     )
 
-    runner = InMemoryRunner(agent=agent, app_name=_APP_NAME)
+    # MultimodalToolResultsPlugin is REQUIRED — without it, list[types.Part]
+    # returns from fetch_atlas / zoom / side_by_side get pydantic-serialized
+    # into JSON blobs that the model cannot decode as images, and accuracy
+    # collapses (measured: 1.33 mm MAE vs 0.19 mm pre-ADK baseline).
+    app = App(
+        name=_APP_NAME,
+        root_agent=agent,
+        plugins=[MultimodalToolResultsPlugin()],
+    )
+    runner = InMemoryRunner(app=app)
     # InMemoryRunner always wires in-memory services, but the base class types
     # them Optional; assert for the type checker.
     assert runner.artifact_service is not None
@@ -297,7 +310,16 @@ async def run_group_session(
         thinking_config=thinking_cfg,
     )
 
-    runner = InMemoryRunner(agent=agent, app_name=_APP_NAME)
+    # MultimodalToolResultsPlugin is REQUIRED — without it, list[types.Part]
+    # returns from fetch_atlas / zoom / side_by_side get pydantic-serialized
+    # into JSON blobs that the model cannot decode as images, and accuracy
+    # collapses (measured: 1.33 mm MAE vs 0.19 mm pre-ADK baseline).
+    app = App(
+        name=_APP_NAME,
+        root_agent=agent,
+        plugins=[MultimodalToolResultsPlugin()],
+    )
+    runner = InMemoryRunner(app=app)
     assert runner.artifact_service is not None
     assert runner.session_service is not None
 
