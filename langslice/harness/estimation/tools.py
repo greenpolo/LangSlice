@@ -80,7 +80,7 @@ def _short_hash(bbox: list[int]) -> str:
     return hashlib.sha1(str(bbox).encode("utf-8")).hexdigest()[:8]
 
 
-def fetch_atlas(
+async def fetch_atlas(
     positions_mm: list[float], tool_context: Any
 ) -> dict[str, Any]:
     """Fetch 1-8 atlas sections along the session's slicing plane.
@@ -117,7 +117,7 @@ def fetch_atlas(
         part = _image_to_part(img)
         parts.append(part)
         key = atlas_key(pos)
-        tool_context.save_artifact(key, part)
+        await tool_context.save_artifact(key, part)
         descriptions.append(f"{pos:.2f} mm")
 
     # Update session state
