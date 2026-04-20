@@ -373,30 +373,44 @@ async def run_group_session(
 
         tool_call_count = 0
         capped = False
-        async for event in runner.run_async(
-            user_id=_USER_ID,
-            session_id=session_id,
-            new_message=new_message,
-        ):
-            fcs = event.get_function_calls() or []
-            tool_call_count += len(fcs)
-            if tool_call_count > max_iterations:
-                logger.warning(
-                    "Hit max_iterations=%d on attempt %d; forcing end.",
-                    max_iterations,
-                    attempt + 1,
-                )
-                capped = True
-                break
-
-            # Re-read session state after each event (mutated by tools).
-            current = await runner.session_service.get_session(
-                app_name=_APP_NAME,
+        try:
+            async for event in runner.run_async(
                 user_id=_USER_ID,
                 session_id=session_id,
+                new_message=new_message,
+            ):
+                fcs = event.get_function_calls() or []
+                tool_call_count += len(fcs)
+                if fcs:
+                    names = [getattr(fc, "name", "?") for fc in fcs]
+                    logger.info(
+                        "Group attempt %d: tool call #%d -> %s (total=%d)",
+                        attempt + 1,
+                        tool_call_count,
+                        names,
+                        tool_call_count,
+                    )
+                if tool_call_count > max_iterations:
+                    logger.warning(
+                        "Hit max_iterations=%d on attempt %d; forcing end.",
+                        max_iterations,
+                        attempt + 1,
+                    )
+                    capped = True
+                    break
+
+                current = await runner.session_service.get_session(
+                    app_name=_APP_NAME,
+                    user_id=_USER_ID,
+                    session_id=session_id,
+                )
+                if current is not None and current.state.get("result") is not None:
+                    break
+        except Exception:
+            logger.exception(
+                "Group attempt %d raised inside runner.run_async", attempt + 1
             )
-            if current is not None and current.state.get("result") is not None:
-                break
+            raise
 
         final = await runner.session_service.get_session(
             app_name=_APP_NAME,

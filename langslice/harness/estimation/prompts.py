@@ -31,6 +31,14 @@ def build_single_slice_prompt(
     pos_hi: float,
     species: str,
 ) -> str:
+    """Single-slice system instruction.
+
+    Closely mirrors the legacy ``ap_single_slice.py`` / ``ap_tool_use.py`` prompt
+    that drove the 0.14 mm M01 baseline: explicit first-response contract
+    (landmarks + broad sweep simultaneously), explicit VERIFY step after the
+    broad sweep, and a hard "restart rather than narrow in the wrong place"
+    rule. Dropping any of these moves MAE by 0.5-1 mm on Flash.
+    """
     axis = _PLANE_AXIS_LABEL[plane]
     boilerplate = _PLANE_BOILERPLATE[plane]
     return (
@@ -39,21 +47,33 @@ def build_single_slice_prompt(
         f"reference atlas. {boilerplate}\n\n"
         f"Atlas: {atlas_name} ({species}). "
         f"Valid {axis} range: {pos_lo:.2f}-{pos_hi:.2f} mm.\n\n"
-        f"You have tools to fetch atlas reference images, zoom into regions "
-        f"of interest, view side-by-side comparisons, and submit your final "
+        f"You have tools to fetch atlas reference images, zoom into regions of "
+        f"interest, view side-by-side comparisons, and submit your final "
         f"estimate.\n\n"
-        f"RECOMMENDED STRATEGY:\n"
-        f"1. Call `fetch_atlas` with broadly spaced positions "
-        f"(e.g., [2, 4, 6, 8, 10]) to find the general region.\n"
-        f"2. Call `fetch_atlas` with tighter positions around your best match.\n"
-        f"3. Call `fetch_atlas` with very fine positions (~0.1-0.2mm apart) to pinpoint.\n"
-        f"4. When a specific landmark is unclear, call `zoom` with a bounding box "
-        f"[y1, x1, y2, x2] (0-1000) on 'target' or 'atlas:<mm>'.\n"
-        f"5. To directly compare two sections, call `side_by_side` with two sources.\n"
-        f"6. Verify neighbors, then call `submit_estimate`.\n\n"
-        f"If atlas images don't look similar to the target, DO NOT keep narrowing "
-        f"in the same area. Go back and try a different region.\n\n"
-        f"Think carefully before each tool call, but always follow up with an action."
+        f"STRATEGY:\n"
+        f"1. IN YOUR FIRST RESPONSE, do two things simultaneously:\n"
+        f"   a) Describe 2-3 prominent anatomical landmarks in the target "
+        f"slice (e.g., 'anterior commissure visible', 'hippocampus forming', "
+        f"'corpus callosum is thick', 'ventricles are large').\n"
+        f"   b) Based on those landmarks, call `fetch_atlas` with broadly "
+        f"spaced positions (e.g., [2, 4, 6, 8, 10]) to find the general "
+        f"{axis} neighborhood.\n"
+        f"2. VERIFY: compare the atlas sections from your broad sweep against "
+        f"the landmarks you described. Do they match? If NOT, fetch_atlas "
+        f"with a completely different {axis} range rather than narrowing in "
+        f"the wrong neighborhood.\n"
+        f"3. NARROW: once the neighborhood matches, call `fetch_atlas` with "
+        f"tighter positions around your best candidate.\n"
+        f"4. FINE-TUNE: call `fetch_atlas` with very fine positions "
+        f"(~0.1-0.2 mm apart) to pinpoint.\n"
+        f"5. When a specific landmark is unclear, call `zoom` with a bounding "
+        f"box [y1, x1, y2, x2] (0-1000 normalized) on 'target' or "
+        f"'atlas:<mm>'. To directly compare two sections, call `side_by_side` "
+        f"with two source keys.\n"
+        f"6. Verify neighbors (at least one lower and one higher atlas "
+        f"section bracketing your candidate), then call `submit_estimate`.\n\n"
+        f"If atlas images don't match the target, DO NOT keep narrowing in "
+        f"the same area — try a completely different {axis} range."
     )
 
 
@@ -68,12 +88,21 @@ def build_group_prompt(
     interval_mm: float,
     thickness_um: int,
 ) -> str:
+    """Multi-slice group system instruction.
+
+    Restores the legacy ``ap_multi_slice.py`` prompt structure that drove the
+    pre-ADK 0.19 mm M01 baseline: explicit first-response contract (landmarks
+    on Slice 1 AND Slice N + broad sweep simultaneously), VERIFY step after
+    the broad sweep, and an "interval is approximate" caveat so the model
+    does not over-constrain on the nominal spacing.
+    """
     axis = _PLANE_AXIS_LABEL[plane]
     boilerplate = _PLANE_BOILERPLATE[plane]
     return (
-        f"You are an expert neuroanatomist. You are given {n_slices} consecutive "
-        f"histology brain slice images from the same brain, ordered along the "
-        f"{axis} axis (Slice 1 = lowest {axis}, Slice {n_slices} = highest).\n\n"
+        f"You are an expert neuroanatomist. You are given {n_slices} "
+        f"consecutive histology brain slice images from the same brain, "
+        f"ordered along the {axis} axis (Slice 1 = lowest {axis}, "
+        f"Slice {n_slices} = highest).\n\n"
         f"Section parameters:\n"
         f"- Slice thickness: {thickness_um} um\n"
         f"- Section interval: {interval_mm:.3f} mm (center-to-center)\n\n"
@@ -82,17 +111,29 @@ def build_group_prompt(
         f"Valid {axis} range: {pos_lo:.2f}-{pos_hi:.2f} mm.\n\n"
         f"Your task: determine the {axis} position of EACH slice.\n\n"
         f"STRATEGY:\n"
-        f"1. Examine all slices; describe 2-3 prominent landmarks visible in "
-        f"Slice 1 and Slice {n_slices}.\n"
-        f"2. Call `fetch_atlas` with broadly spaced positions to find the "
-        f"general area.\n"
-        f"3. Narrow down by comparing atlas slices with your input slices.\n"
-        f"4. Use the known {interval_mm:.3f} mm interval as a constraint - once "
-        f"you confidently match ANY slice, derive approximate positions for "
-        f"the others.\n"
-        f"5. Use `zoom` to examine specific features and `side_by_side` to "
-        f"compare any two sources directly.\n"
-        f"6. Submit all {n_slices} positions via `submit_group_estimate`.\n\n"
-        f"If atlas images don't match your slices, try a different region - "
-        f"restart rather than commit to the wrong neighborhood."
+        f"1. IN YOUR FIRST RESPONSE, do two things simultaneously:\n"
+        f"   a) Describe 2-3 prominent anatomical landmarks in Slice 1 AND "
+        f"Slice {n_slices} (e.g., 'anterior commissure visible', "
+        f"'hippocampus forming', 'corpus callosum is thick', "
+        f"'ventricles are large').\n"
+        f"   b) Based on those landmarks, call `fetch_atlas` with broadly "
+        f"spaced positions (e.g., [2, 4, 6, 8, 10]) to find the general "
+        f"{axis} area spanned by the group.\n"
+        f"2. VERIFY: compare the atlas sections from your broad sweep against "
+        f"the landmarks you described. Do they match? If NOT, fetch_atlas "
+        f"with a completely different {axis} range rather than narrowing in "
+        f"the wrong neighborhood.\n"
+        f"3. NARROW: once the neighborhood matches, fetch finer positions "
+        f"around your best candidate. Use the known {interval_mm:.3f} mm "
+        f"interval as a guide — once you confidently match ANY slice you can "
+        f"derive approximate positions for the others.\n"
+        f"4. FINE-TUNE each position by comparing individual slices to "
+        f"nearby atlas sections. Use `zoom` for specific landmarks and "
+        f"`side_by_side` for direct comparisons.\n"
+        f"5. Submit all {n_slices} positions via `submit_group_estimate`.\n\n"
+        f"IMPORTANT: The interval is approximate — actual spacing may vary "
+        f"slightly due to tissue preparation. Use it as a guide, not an "
+        f"absolute constraint.\n\n"
+        f"If atlas images don't match your slices, DO NOT keep narrowing in "
+        f"the same area — try a completely different {axis} range."
     )
