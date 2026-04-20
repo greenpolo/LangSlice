@@ -16,16 +16,16 @@ from google.genai import types
 from PIL import Image
 
 from langslice.atlas.core import (
-    get_in_plane_long_edge,  # noqa: F401 -- used by later tasks (zoom)
+    get_in_plane_long_edge,
     get_reference_slice,
     load_atlas,
 )
 from langslice.harness.estimation.session import (
     ARTIFACT_ATLAS_PREFIX,
     ARTIFACT_SIDE_BY_SIDE_PREFIX,  # noqa: F401 -- used by later tasks (side_by_side)
-    ARTIFACT_TARGET,  # noqa: F401 -- used by later tasks (zoom/side_by_side)
+    ARTIFACT_TARGET,  # noqa: F401 -- used by later tasks (side_by_side)
     ARTIFACT_TARGET_PREFIX,  # noqa: F401 -- used by later tasks (side_by_side)
-    ARTIFACT_ZOOM_PREFIX,  # noqa: F401 -- used by later tasks (zoom)
+    ARTIFACT_ZOOM_PREFIX,
     atlas_key,
 )
 
@@ -161,10 +161,85 @@ def submit_group_estimate(
     return {"status": "ok", "positions_mm": [float(p) for p in positions_mm]}
 
 
-def zoom(source: str, bbox: list[int], tool_context: Any) -> dict[str, Any]:
-    """STUB - full implementation in Phase 5. Returns a NOT_IMPLEMENTED error."""
-    del source, bbox, tool_context
-    return {"status": "error", "error": "NOT_IMPLEMENTED"}
+async def zoom(
+    source: str, bbox: list[int], tool_context: Any,
+) -> dict[str, Any]:
+    """Return a zoomed crop of a previously-fetched image.
+
+    Args:
+        source: Must match an existing artifact key. Accepts "target",
+            "target:N", "atlas:<mm>", or a previous "zoom:...".
+        bbox: [y1, x1, y2, x2] integers in [0, 1000] (Gemini/Gemma normalized coords).
+
+    Returns:
+        On success, {"status": "ok", "key": "zoom:...", "description": "...",
+        "images": [Part]}. On failure, {"status": "error", "error": ...} with
+        error in {"BAD_SOURCE", "BAD_BBOX", "EMPTY_CROP"}.
+    """
+    # 1. Validate bbox shape and ranges.
+    if (
+        not isinstance(bbox, list)
+        or len(bbox) != 4
+        or any(not isinstance(v, int) or isinstance(v, bool) for v in bbox)
+        or any(v < 0 or v > 1000 for v in bbox)
+    ):
+        return {"status": "error", "error": "BAD_BBOX"}
+    y1, x1, y2, x2 = bbox
+    if y1 >= y2 or x1 >= x2:
+        return {"status": "error", "error": "BAD_BBOX"}
+
+    # 2. Load source artifact (any existing key is acceptable).
+    try:
+        part = await tool_context.load_artifact(filename=source)
+    except Exception:
+        return {"status": "error", "error": "BAD_SOURCE"}
+    if part is None:
+        return {"status": "error", "error": "BAD_SOURCE"}
+
+    # 3. Decode Part bytes to a PIL image.
+    inline = getattr(part, "inline_data", None)
+    data = getattr(inline, "data", None) if inline is not None else None
+    if not data:
+        return {"status": "error", "error": "BAD_SOURCE"}
+    try:
+        img = Image.open(io.BytesIO(data))
+        img.load()
+    except Exception:
+        return {"status": "error", "error": "BAD_SOURCE"}
+
+    # 4. Convert normalized (0-1000) bbox to pixel coords.
+    w, h = img.size
+    px_x1 = round(x1 * w / 1000)
+    px_x2 = round(x2 * w / 1000)
+    px_y1 = round(y1 * h / 1000)
+    px_y2 = round(y2 * h / 1000)
+    if px_x2 <= px_x1 or px_y2 <= px_y1:
+        return {"status": "error", "error": "EMPTY_CROP"}
+
+    # 5. Crop.
+    cropped = img.crop((px_x1, px_y1, px_x2, px_y2))
+
+    # 6. Resize so the long edge matches the atlas in-plane long edge.
+    state = tool_context.state
+    atlas = load_atlas(state["atlas"])
+    long_edge = get_in_plane_long_edge(atlas, plane=state["plane"])
+    cw, ch = cropped.size
+    scale = long_edge / float(max(cw, ch))
+    new_size = (max(1, round(cw * scale)), max(1, round(ch * scale)))
+    resized = cropped.resize(new_size, Image.Resampling.LANCZOS)
+
+    # 7. Save as artifact and return as Part for the next model turn.
+    bbox_hash = _short_hash(bbox)
+    key = f"{ARTIFACT_ZOOM_PREFIX}{source}:{bbox_hash}"
+    zoom_part = _image_to_part(resized)
+    await tool_context.save_artifact(filename=key, artifact=zoom_part)
+
+    return {
+        "status": "ok",
+        "key": key,
+        "description": f"Zoom of {source} at bbox {bbox}; scaled to {new_size}.",
+        "images": [zoom_part],
+    }
 
 
 def side_by_side(left: str, right: str, tool_context: Any) -> dict[str, Any]:
