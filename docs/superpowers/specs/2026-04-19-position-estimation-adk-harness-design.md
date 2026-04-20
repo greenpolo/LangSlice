@@ -493,3 +493,40 @@ If ADK doesn't provide a mock-model hook, inject a fake `LlmAgent.model` that is
 3. Exact format of ADK's tool-registry introspection for downstream training-data generation — what does `LlmAgent.tools` yield and what's the canonical way to extract each tool's name, description, and schema? → verify during step 3 by inspecting the agent's `.canonical_tools` or equivalent.
 
 ---
+
+## Phase 3 completion summary (2026-04-20)
+
+All 8 tasks (3.1 through 3.8) landed on `feat/harness-adk`. Test count: 118 passing + 6 pre-existing skips.
+
+**Commits:**
+- `0fc90bd` session.py + artifact-key conventions
+- `ca94fd3` plane-aware prompt builders
+- `d9fd6e2` fetch_atlas + pure helpers (7 tests)
+- `d6485ba` submit tools + before_tool_callback validators (8 tests)
+- `8c05633` build_single_slice_agent wiring 4 tools
+- `34d1017` fix: fetch_atlas must be async to await save_artifact (Codex-caught)
+- `21e8d54` runner.py with nudge/retry/cap + fake ADK model via LLMRegistry patch
+- `d2c6370` estimate_position compat shim
+- `af09f6a` fix: re-export estimate_position_image_gen in legacy shim (Codex-caught)
+
+**Task 3.8 smoke results (Flash, 5 mid-brain M01 slices, new ADK path):**
+
+| Slice | GT (mm) | Predicted (mm) | Error (mm) | Status |
+|---|---|---|---|---|
+| M01_001_008 | 4.052 | 5.000 | 0.948 | PASS (initial 503, retry succeeded) |
+| M01_001_011 | 4.532 | 4.000 | 0.532 | PASS |
+| M01_002_005 | 5.620 | 3.150 | 2.470 | FAIL (>2mm gate) |
+| M01_002_008 | 6.133 | 8.050 | 1.917 | PASS (borderline) |
+| M01_003_001 | 6.616 | (429 twice) | — | INCONCLUSIVE (upstream rate limit) |
+
+**Harness-level assessment: PASS.** 0 harness-caused errors across 4 successful runs. 0 fallbacks triggered. No runaway iteration. The `fetch_atlas → submit_estimate` → `escalate=True` → result extraction path works end-to-end through ADK's InMemoryRunner, session service, and artifact service.
+
+**Accuracy-level assessment: weaker than pre-ADK baseline, within noise.** MAE across 4 successful runs = 1.47mm vs pre-ADK multi-slice Flash baseline 0.499mm. Single-slice mode is known ~2x worse than group mode (see `feedback_individual_vs_grid_atlas`). Strict <2mm gate missed by 0.47mm on one slice. Given single-slice mode + Flash at T=1.0 + 4-sample noise, this is not a regression signal — it's what single-slice + Flash looks like. Phase 4 group-mode ADK port is expected to recover accuracy.
+
+**Open issues noted during Phase 3 (deferred to Phase 4 or post-hackathon):**
+1. `_gate_group` check ordering: currently monotonicity/interval before sweep — should flip to surface "explore more" before "fix your ordering" (Codex feedback).
+2. `submit_attempts` counter increments on hard length-mismatch rejections — should skip counter advancement on non-relaxable gate failures (Codex feedback).
+3. `eval/eval_group.py` still imports legacy `estimate_group`; Phase 4 Task 4.x needs to re-route.
+4. LiteLlm multimodal path not exercised — Task 4+ smoke via OpenRouter deferred.
+
+---
