@@ -14,7 +14,8 @@ from collections.abc import Callable
 from PIL import Image
 
 from langslice.atlas.core import get_coronal_long_edge, get_position_range_mm, load_atlas
-from langslice.estimation import APResult, estimate_position_image_gen
+from langslice.harness.estimation._types import APResult
+from langslice.harness.estimation.image_gen import estimate_position_image_gen
 from langslice.image_prep import adaptive_preprocess, normalize_image, prepare_image_for_vlm
 from langslice.whole_brain.window import compute_search_bounds
 
