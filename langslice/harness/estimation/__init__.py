@@ -6,7 +6,13 @@ from langslice.harness.estimation._types import (  # noqa: F401
     PositionResult,
 )
 
-__all__ = ["APResult", "MultiSliceResult", "PositionResult", "estimate_position"]
+__all__ = [
+    "APResult",
+    "MultiSliceResult",
+    "PositionResult",
+    "estimate_group",
+    "estimate_position",
+]
 
 
 def estimate_position(
@@ -29,3 +35,56 @@ def estimate_position(
             model=model, max_iterations=max_iterations,
         )
     )
+
+
+def estimate_group(
+    images,
+    atlas_name: str,
+    interval_um: int,
+    thickness_um: int = 50,
+    *,
+    model_name: str | object | None = None,
+    max_iterations: int = 25,
+    plane: str = "coronal",
+    # Legacy kwargs — accepted and ignored for call-site compat. See notes below.
+    send_individually: bool = True,  # ADK always uses individual atlas images
+    on_progress=None,  # ADK has its own event stream; legacy progress hook not plumbed
+    media_resolution: str | None = None,  # set by the agent builder (MEDIUM for 25um)
+    show_borders: bool = False,  # ADK agent does not expose border toggling
+    debug_dir: str | None = None,  # ADK runner writes traces via its own channels
+    **_ignored,
+) -> "MultiSliceResult":
+    """Synchronous wrapper over :func:`run_group_session`.
+
+    Mirrors the legacy :func:`langslice.estimation.google.ap_multi_slice.estimate_group`
+    signature so existing callers (``eval/eval_group.py``, ``langslice/cli.py``) keep
+    working through the ADK migration.
+
+    The ``interval_um`` → ``interval_mm`` conversion happens here; the runner is
+    millimetre-native.  ``model_name=None`` falls through to the runner default
+    rather than being pinned here — the runner owns that default.
+
+    Ignored kwargs (``send_individually``, ``on_progress``, ``media_resolution``,
+    ``show_borders``, ``debug_dir``) are accepted so legacy call sites don't blow up;
+    they are listed by name purely as documentation of what callers currently pass.
+    """
+    import asyncio
+
+    from langslice.harness.estimation.runner import run_group_session
+
+    interval_mm = interval_um / 1000.0
+
+    # Route through run_group_session, letting it apply its own default model
+    # when ``model_name`` is None.
+    kwargs: dict[str, object] = {
+        "images": images,
+        "atlas_name": atlas_name,
+        "interval_mm": interval_mm,
+        "thickness_um": thickness_um,
+        "plane": plane,
+        "max_iterations": max_iterations,
+    }
+    if model_name is not None:
+        kwargs["model"] = model_name
+
+    return asyncio.run(run_group_session(**kwargs))  # type: ignore[arg-type]
