@@ -36,13 +36,6 @@ def _fake_run_group_session_factory(captured: dict[str, Any]):
     return _fake
 
 
-def test_estimate_group_exposed_on_harness():
-    """The sync shim is importable from the harness public API."""
-    from langslice.harness.estimation import estimate_group
-
-    assert callable(estimate_group)
-
-
 def test_estimate_group_exposed_on_legacy_shim():
     """The legacy ``langslice.estimation`` re-exports the harness shim."""
     from langslice.estimation import estimate_group as legacy
