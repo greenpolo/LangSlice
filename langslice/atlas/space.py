@@ -1,6 +1,9 @@
 from dataclasses import dataclass
+from typing import Literal
 
 from brainglobe_space import AnatomicalSpace
+
+Plane = Literal["coronal", "sagittal", "horizontal"]
 
 
 @dataclass(frozen=True)
@@ -68,3 +71,14 @@ def require_coronal_layout(context: AtlasSpaceContext) -> AtlasSpaceContext:
             + "LangSlice currently requires coronal layout with AP/DV/ML mapped to axes 0/1/2."
         )
     return context
+
+
+def slice_axis_index(context: AtlasSpaceContext, plane: Plane) -> int:
+    """Return the axis index normal to the given slicing plane."""
+    if plane == "coronal":
+        return context.ap_axis_index
+    if plane == "sagittal":
+        return context.ml_axis_index
+    if plane == "horizontal":
+        return context.dv_axis_index
+    raise ValueError(f"Unknown plane: {plane!r}")
