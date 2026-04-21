@@ -132,7 +132,10 @@ def is_gemma_model(model_name: str | None) -> bool:
     """Return True when *model_name* is a Gemma open model."""
     if model_name is None:
         return False
-    return str(model_name).strip() in GEMMA_MODELS
+    normalized = str(model_name).strip()
+    if normalized.startswith("models/"):
+        normalized = normalized[len("models/"):]
+    return normalized in GEMMA_MODELS
 
 
 _THINKING_BUDGET_MAP: dict[str, int] = {

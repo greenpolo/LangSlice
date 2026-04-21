@@ -229,7 +229,7 @@ def _form_groups(
 
 
 def _load_and_prep(image_dir: str, filename: str):
-    """Load a slice image and apply standard VLM preprocessing."""
+    """Load a slice image and apply legacy eval-side VLM preprocessing."""
     from PIL import Image
 
     from langslice.image_prep import adaptive_preprocess, normalize_image, prepare_image_for_vlm
@@ -240,6 +240,15 @@ def _load_and_prep(image_dir: str, filename: str):
     prep = prepare_image_for_vlm(canonical)
     img = adaptive_preprocess(prep.image)
     return img
+
+
+def _load_raw_image(image_dir: str, filename: str):
+    """Load a slice image; Google/ADK preprocessing happens inside the runner."""
+    from PIL import Image
+
+    path = os.path.join(image_dir, filename)
+    with Image.open(path) as raw:
+        return raw.copy()
 
 
 # ---------------------------------------------------------------------------
@@ -315,7 +324,10 @@ def _run_eval(args: argparse.Namespace) -> dict:
         _progress(f"slices={filenames}, interval={interval_um}µm")
 
         try:
-            images = [_load_and_prep(args.images, fn) for fn in filenames]
+            if args.provider == "openai":
+                images = [_load_and_prep(args.images, fn) for fn in filenames]
+            else:
+                images = [_load_raw_image(args.images, fn) for fn in filenames]
         except Exception as exc:
             logger.error("Group %d: image load failed: %s", group_idx, exc)
             return {

@@ -22,6 +22,7 @@ def estimate_position(
     plane: str = "coronal",
     model: str | object = "gemini-3-flash-preview",
     max_iterations: int = 20,
+    media_resolution: str | None = None,
     **_ignored,
 ) -> "PositionResult":
     """Synchronous wrapper over the async runner. Sync API for CLI / eval consumers.
@@ -38,6 +39,7 @@ def estimate_position(
         run_single_slice_session(
             image=image, atlas_name=atlas_name, plane=plane,  # type: ignore[arg-type]
             model=model, max_iterations=max_iterations,
+            media_resolution=media_resolution,
         )
     )
 
@@ -51,10 +53,10 @@ def estimate_group(
     model_name: str | object | None = None,
     max_iterations: int = 25,
     plane: str = "coronal",
-    # Legacy kwargs — accepted and ignored for call-site compat. See notes below.
+    # Legacy kwargs — accepted for call-site compat. Supported ones are forwarded.
     send_individually: bool = True,  # ADK always uses individual atlas images
     on_progress=None,  # ADK has its own event stream; legacy progress hook not plumbed
-    media_resolution: str | None = None,  # set by the agent builder (MEDIUM for 25um)
+    media_resolution: str | None = None,
     show_borders: bool = False,  # ADK agent does not expose border toggling
     debug_dir: str | None = None,  # ADK runner writes traces via its own channels
     **_ignored,
@@ -69,8 +71,8 @@ def estimate_group(
     millimetre-native.  ``model_name=None`` falls through to the runner default
     rather than being pinned here — the runner owns that default.
 
-    Accepts and ignores legacy kwargs (``send_individually``, ``on_progress``, etc.)
-    for compat with the pre-ADK call sites; they have no new-runner equivalent.
+    Accepts legacy kwargs for compat with the pre-ADK call sites; unsupported
+    kwargs are ignored, while ``media_resolution`` is forwarded to the runner.
 
     Synchronous API; not safe to call from within a running asyncio event loop
     (e.g. Jupyter, async CLI) — :func:`asyncio.run` raises ``RuntimeError`` in
@@ -92,6 +94,8 @@ def estimate_group(
         "plane": plane,
         "max_iterations": max_iterations,
     }
+    if media_resolution is not None:
+        kwargs["media_resolution"] = media_resolution
     if model_name is not None:
         kwargs["model"] = model_name
 

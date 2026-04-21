@@ -1,0 +1,20 @@
+model_list:
+  - model_name: langslice-qwen36-plus
+    litellm_params:
+      model: openrouter/qwen/qwen3.6-plus
+      api_key: os.environ/OPENROUTER_API_KEY
+    model_info:
+      supports_vision: true
+  - model_name: langslice-gemini3-flash-openrouter
+    litellm_params:
+      model: openrouter/google/gemini-3-flash-preview
+      api_key: os.environ/OPENROUTER_API_KEY
+    model_info:
+      supports_vision: true
+
+general_settings:
+  master_key: os.environ/LANGSLICE_LITELLM_PROXY_KEY
+
+litellm_settings:
+  drop_params: true
+  set_verbose: false

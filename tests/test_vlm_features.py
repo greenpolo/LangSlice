@@ -149,6 +149,7 @@ def test_is_gemma_model_detects_gemma_4():
     from langslice.vlm_config import is_gemma_model
     assert is_gemma_model("gemma-4-31b-it") is True
     assert is_gemma_model("gemma-4-26b-a4b-it") is True
+    assert is_gemma_model("models/gemma-4-26b-a4b-it") is True
     assert is_gemma_model("gemini-3-flash-preview") is False
     assert is_gemma_model(None) is False
 
@@ -203,5 +204,4 @@ def test_create_ap_batch_job_uses_vertex_batch_client(monkeypatch) -> None:
     config = captured["config"]
     assert getattr(config, "dest", None) == "gs://bucket/out/"
     assert getattr(config, "display_name", None) == "langslice-ap-eval"
-
 
