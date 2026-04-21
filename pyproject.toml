@@ -10,6 +10,8 @@ requires-python = ">=3.10"
 dependencies = [
     "google-genai",
     "google-adk",
+    "litellm>=1.83.3",
+    "backoff>=2.2.1",
     "openai",
     "brainglobe-atlasapi",
     "brainglobe-space",

@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import io
 import logging
+import os
+from dataclasses import dataclass
 from typing import Any
 
 from google.adk.apps.app import App
+from google.adk.plugins.base_plugin import BasePlugin
 from google.adk.plugins.multimodal_tool_results_plugin import (
     MultimodalToolResultsPlugin,
 )
@@ -21,7 +24,12 @@ from langslice.atlas.core import (
 )
 from langslice.atlas.space import Plane
 from langslice.harness.estimation._types import MultiSliceResult, PositionResult
+from langslice.harness.estimation.adk_plugins import (
+    PersistentMultimodalToolResultsPlugin,
+    RequestCapturePlugin,
+)
 from langslice.harness.estimation.group import build_group_agent
+from langslice.harness.estimation.model_resolver import resolve_adk_model
 from langslice.harness.estimation.session import (
     ARTIFACT_TARGET,
     build_initial_state,
@@ -42,6 +50,16 @@ _USER_ID = "langslice-user"
 _DEFAULT_MAX_ITERATIONS_SINGLE = 20
 _DEFAULT_MAX_ITERATIONS_GROUP = 25
 _DEFAULT_MAX_RETRIES = 2
+
+_MEDIA_RES_MAP: dict[str, str] = {
+    "low": "MEDIA_RESOLUTION_LOW",
+    "medium": "MEDIA_RESOLUTION_MEDIUM",
+    "high": "MEDIA_RESOLUTION_HIGH",
+    "ultra_high": "MEDIA_RESOLUTION_ULTRA_HIGH",
+}
+
+_TARGET_TRANSPORTS = {"auto", "inline", "file_api"}
+_MULTIMODAL_HISTORY_MODES = {"persistent", "one_turn"}
 
 _NUDGE_BROAD = (
     "Please continue. Call `fetch_atlas` with widely spaced positions "
@@ -65,10 +83,48 @@ def _pick_nudge(state: dict[str, Any]) -> str:
     return _NUDGE_VERIFY
 
 
-def _encode_target_part(
+def _normalize_media_resolution(media_resolution: str | None) -> str:
+    if media_resolution is None:
+        return "MEDIA_RESOLUTION_MEDIUM"
+    normalized = media_resolution.strip()
+    if normalized.startswith("MEDIA_RESOLUTION_"):
+        return normalized
+    return _MEDIA_RES_MAP.get(normalized.lower(), "MEDIA_RESOLUTION_MEDIUM")
+
+
+@dataclass(frozen=True)
+class _TargetPayload:
+    artifact_part: types.Part
+    request_part: types.Part
+
+
+def _env(name: str) -> str | None:
+    value = os.environ.get(name)
+    if value is None:
+        return None
+    cleaned = value.strip()
+    return cleaned or None
+
+
+def _build_plugins(run_label: str, multimodal_history: str) -> list[BasePlugin]:
+    mode = multimodal_history.strip().lower()
+    if mode not in _MULTIMODAL_HISTORY_MODES:
+        allowed = ", ".join(sorted(_MULTIMODAL_HISTORY_MODES))
+        raise ValueError(f"multimodal_history must be one of: {allowed}")
+    if mode == "one_turn":
+        plugins: list[BasePlugin] = [MultimodalToolResultsPlugin()]
+    else:
+        plugins = [PersistentMultimodalToolResultsPlugin()]
+    capture_dir = _env("LANGSLICE_ADK_CAPTURE_REQUESTS_DIR")
+    if capture_dir is not None:
+        plugins.append(RequestCapturePlugin(capture_dir, run_label=run_label))
+    return plugins
+
+
+def _encode_target_jpeg_bytes(
     image: Image.Image, atlas_long_edge: int, *, apply_clahe: bool = True,
-) -> types.Part:
-    """Normalize, downscale, optionally CLAHE, and encode as a JPEG ``types.Part``.
+) -> bytes:
+    """Normalize, downscale, optionally CLAHE, and encode as JPEG bytes.
 
     Order matches ``eval_group.py`` and ``whole_brain.estimation_agents``:
     normalize → downscale-to-atlas-long-edge → CLAHE. CLAHE is on by default;
@@ -80,7 +136,120 @@ def _encode_target_part(
         prepped = adaptive_preprocess(prepped)
     buf = io.BytesIO()
     prepped.convert("RGB").save(buf, format="JPEG", quality=85)
-    return types.Part.from_bytes(mime_type="image/jpeg", data=buf.getvalue())
+    return buf.getvalue()
+
+
+def _image_bytes_to_part(jpeg_bytes: bytes) -> types.Part:
+    return types.Part.from_bytes(mime_type="image/jpeg", data=jpeg_bytes)
+
+
+def _is_native_google_genai_model(model: str | object) -> bool:
+    if not isinstance(model, str):
+        return False
+    normalized = model.strip().lower()
+    return normalized.startswith(("gemini-", "gemma-")) or normalized.startswith((
+        "models/gemini-",
+        "models/gemma-",
+    ))
+
+
+def _resolve_target_transport(model: str | object, target_transport: str) -> str:
+    normalized = target_transport.strip().lower()
+    if normalized not in _TARGET_TRANSPORTS:
+        allowed = ", ".join(sorted(_TARGET_TRANSPORTS))
+        raise ValueError(f"target_transport must be one of: {allowed}")
+    if normalized == "inline":
+        return "inline"
+
+    from langslice import vlm_config
+
+    can_use_file_api = _is_native_google_genai_model(model) and vlm_config.supports_file_api()
+    if normalized == "file_api":
+        if not can_use_file_api:
+            raise ValueError(
+                "target_transport='file_api' requires a native Gemini API model "
+                "and a backend with File API support"
+            )
+        return "file_api"
+    return "file_api" if can_use_file_api else "inline"
+
+
+def _upload_target_image(
+    *,
+    jpeg_bytes: bytes,
+    display_name: str,
+) -> tuple[Any, Any, types.Part]:
+    from langslice import vlm_config
+    from langslice.estimation.google.common import _wait_for_uploaded_file
+
+    client = vlm_config.get_client()
+    uploaded = client.files.upload(
+        file=io.BytesIO(jpeg_bytes),
+        config=types.UploadFileConfig(
+            mime_type="image/jpeg",
+            display_name=display_name,
+        ),
+    )
+    file_name = getattr(uploaded, "name", None)
+    if not isinstance(file_name, str) or not file_name:
+        raise RuntimeError("Gemini File API upload for target image returned no file name")
+
+    active = _wait_for_uploaded_file(
+        client,
+        file_name=file_name,
+        timeout_s=vlm_config.file_poll_timeout_s(),
+    )
+    file_uri = getattr(active, "uri", None) or getattr(uploaded, "uri", None)
+    if not isinstance(file_uri, str) or not file_uri:
+        raise RuntimeError("Gemini File API upload for target image returned no URI")
+
+    return client, uploaded, types.Part.from_uri(
+        file_uri=file_uri,
+        mime_type="image/jpeg",
+    )
+
+
+def _prepare_target_payloads(
+    images: list[Image.Image],
+    *,
+    atlas_long_edge: int,
+    apply_clahe: bool,
+    model: str | object,
+    target_transport: str,
+) -> tuple[list[_TargetPayload], list[tuple[Any, Any]]]:
+    resolved_transport = _resolve_target_transport(model, target_transport)
+    payloads: list[_TargetPayload] = []
+    uploaded_files: list[tuple[Any, Any]] = []
+    for idx, image in enumerate(images, start=1):
+        jpeg_bytes = _encode_target_jpeg_bytes(
+            image,
+            atlas_long_edge,
+            apply_clahe=apply_clahe,
+        )
+        artifact_part = _image_bytes_to_part(jpeg_bytes)
+        request_part = artifact_part
+        if resolved_transport == "file_api":
+            client, uploaded, request_part = _upload_target_image(
+                jpeg_bytes=jpeg_bytes,
+                display_name=f"target_slice_{idx}",
+            )
+            uploaded_files.append((client, uploaded))
+        payloads.append(_TargetPayload(
+            artifact_part=artifact_part,
+            request_part=request_part,
+        ))
+    return payloads, uploaded_files
+
+
+def _delete_uploaded_files(uploaded_files: list[tuple[Any, Any]]) -> None:
+    for client, uploaded in uploaded_files:
+        file_name = getattr(uploaded, "name", None)
+        if not isinstance(file_name, str) or not file_name:
+            continue
+        try:
+            client.files.delete(name=file_name)
+        except Exception as exc:
+            logger.warning("Failed to delete Gemini file %s: %s", file_name, exc)
 
 
 async def run_single_slice_session(
@@ -94,7 +263,10 @@ async def run_single_slice_session(
     max_retries: int = _DEFAULT_MAX_RETRIES,
     temperature: float = 1.0,
     thinking_level: str = "MEDIUM",
+    media_resolution: str | None = "medium",
     apply_clahe: bool = True,
+    target_transport: str = "auto",
+    multimodal_history: str = "persistent",
 ) -> PositionResult:
     """Drive a single-slice position-estimation session to completion.
 
@@ -111,10 +283,11 @@ async def run_single_slice_session(
     # Only wire a thinking_config for string-named Gemini models; LiteLlm
     # wrappers drive their own thinking knobs.
     thinking_cfg: object | None = None
-    if isinstance(model, str):
+    if isinstance(model, str) and _is_native_google_genai_model(model):
         from langslice import vlm_config
         thinking_cfg = vlm_config.build_thinking_config(model, thinking_level)
 
+    agent_model = resolve_adk_model(model)
     species_val = species or str(atlas.metadata.get("species", "mouse"))
     agent = build_single_slice_agent(
         atlas_name=atlas_name,
@@ -122,19 +295,20 @@ async def run_single_slice_session(
         species=species_val,
         pos_lo=pos_lo,
         pos_hi=pos_hi,
-        model=model,
+        model=agent_model,
         temperature=temperature,
+        media_resolution=_normalize_media_resolution(media_resolution),
         thinking_config=thinking_cfg,
     )
 
-    # MultimodalToolResultsPlugin is REQUIRED — without it, list[types.Part]
-    # returns from fetch_atlas / zoom / side_by_side get pydantic-serialized
-    # into JSON blobs that the model cannot decode as images, and accuracy
-    # collapses (measured: 1.33 mm MAE vs 0.19 mm pre-ADK baseline).
+    # PersistentMultimodalToolResultsPlugin is REQUIRED — without it,
+    # list[types.Part] returns from fetch_atlas / zoom / side_by_side get
+    # pydantic-serialized into JSON blobs, or survive for only one model turn.
+    # LangSlice's legacy loop resent the full multimodal history every turn.
     app = App(
         name=_APP_NAME,
         root_agent=agent,
-        plugins=[MultimodalToolResultsPlugin()],
+        plugins=_build_plugins("single_slice", multimodal_history),
     )
     runner = InMemoryRunner(app=app)
     # InMemoryRunner always wires in-memory services, but the base class types
@@ -153,89 +327,119 @@ async def run_single_slice_session(
         max_iterations=max_iterations,
     )
 
-    # Encode target image once as a Part for reuse across retries.
-    target_part = _encode_target_part(image, atlas_long_edge, apply_clahe=apply_clahe)
+    # Prepare one inline artifact copy for tools, and optionally a Gemini File
+    # API request part for native Gemini parity with the legacy implementation.
+    target_payloads, uploaded_files = _prepare_target_payloads(
+        [image],
+        atlas_long_edge=atlas_long_edge,
+        apply_clahe=apply_clahe,
+        model=model,
+        target_transport=target_transport,
+    )
+    target_payload = target_payloads[0]
 
-    for attempt in range(max_retries):
-        session_id = f"single_slice_attempt_{attempt}"
-        await runner.session_service.create_session(
-            app_name=_APP_NAME,
-            user_id=_USER_ID,
-            session_id=session_id,
-            state=dict(initial_state_template),
-        )
-
-        # Seed the target image as an artifact so tools that reference
-        # "target" can load it (e.g., zoom, side_by_side in later phases).
-        await runner.artifact_service.save_artifact(
-            app_name=_APP_NAME,
-            user_id=_USER_ID,
-            session_id=session_id,
-            filename=ARTIFACT_TARGET,
-            artifact=target_part,
-        )
-
-        new_message = types.Content(
-            role="user",
-            parts=[
-                types.Part.from_text(
-                    text=f"Target slice (artifact key: '{ARTIFACT_TARGET}'):"
-                ),
-                target_part,
-                types.Part.from_text(text="Determine its position in the atlas."),
-            ],
-        )
-
-        tool_call_count = 0
-        capped = False
-        async for event in runner.run_async(
-            user_id=_USER_ID,
-            session_id=session_id,
-            new_message=new_message,
-        ):
-            fcs = event.get_function_calls() or []
-            tool_call_count += len(fcs)
-            if tool_call_count > max_iterations:
-                logger.warning(
-                    "Hit max_iterations=%d on attempt %d; forcing end.",
-                    max_iterations,
-                    attempt + 1,
-                )
-                capped = True
-                break
-
-            # Re-read session state after each event (mutated by tools).
-            current = await runner.session_service.get_session(
+    try:
+        for attempt in range(max_retries):
+            session_id = f"single_slice_attempt_{attempt}"
+            await runner.session_service.create_session(
                 app_name=_APP_NAME,
                 user_id=_USER_ID,
                 session_id=session_id,
-            )
-            if current is not None and current.state.get("result") is not None:
-                break
-
-        final = await runner.session_service.get_session(
-            app_name=_APP_NAME,
-            user_id=_USER_ID,
-            session_id=session_id,
-        )
-        if final is not None and final.state.get("result") is not None:
-            result = final.state["result"]
-            return PositionResult(
-                position_mm=float(result["position_mm"]),
-                reasoning=str(result["reasoning"]),
+                state=dict(initial_state_template),
             )
 
-        # Nudge text is captured for possible future reuse (e.g., continuing
-        # the same session rather than restarting). The plan specifies a
-        # fresh-session retry, so we just log the choice and loop.
-        final_state = final.state if final is not None else initial_state_template
-        nudge = _pick_nudge(final_state)
-        logger.info(
-            "Attempt %d did not submit (capped=%s); nudge=%r; retrying with fresh session.",
-            attempt + 1,
-            capped,
-            nudge,
-        )
+            # Seed the target image as an artifact so tools that reference
+            # "target" can load it (e.g., zoom, side_by_side in later phases).
+            await runner.artifact_service.save_artifact(
+                app_name=_APP_NAME,
+                user_id=_USER_ID,
+                session_id=session_id,
+                filename=ARTIFACT_TARGET,
+                artifact=target_payload.artifact_part,
+            )
+
+            new_message = types.Content(
+                role="user",
+                parts=[
+                    types.Part.from_text(
+                        text=f"Target slice (artifact key: '{ARTIFACT_TARGET}'):"
+                    ),
+                    target_payload.request_part,
+                    types.Part.from_text(text="Determine its position in the atlas."),
+                ],
+            )
+
+            tool_call_count = 0
+            capped = False
+            turn_count = 0
+            final = None
+            while turn_count < max_iterations and not capped:
+                turn_count += 1
+                async for event in runner.run_async(
+                    user_id=_USER_ID,
+                    session_id=session_id,
+                    new_message=new_message,
+                ):
+                    fcs = event.get_function_calls() or []
+                    tool_call_count += len(fcs)
+                    if tool_call_count > max_iterations:
+                        logger.warning(
+                            "Hit max_iterations=%d on attempt %d; forcing end.",
+                            max_iterations,
+                            attempt + 1,
+                        )
+                        capped = True
+                        break
+
+                    # Re-read session state after each event (mutated by tools).
+                    current = await runner.session_service.get_session(
+                        app_name=_APP_NAME,
+                        user_id=_USER_ID,
+                        session_id=session_id,
+                    )
+                    if current is not None and current.state.get("result") is not None:
+                        break
+
+                final = await runner.session_service.get_session(
+                    app_name=_APP_NAME,
+                    user_id=_USER_ID,
+                    session_id=session_id,
+                )
+                if final is not None and final.state.get("result") is not None:
+                    break
+
+                # Match the legacy loop: if the model stopped without a
+                # result, continue the same conversation with a nudge.
+                final_state = final.state if final is not None else initial_state_template
+                nudge = _pick_nudge(final_state)
+                logger.info(
+                    "Attempt %d stopped without a result; continuing same "
+                    "session with nudge=%r.",
+                    attempt + 1,
+                    nudge,
+                )
+                new_message = types.Content(
+                    role="user",
+                    parts=[types.Part.from_text(text=nudge)],
+                )
+
+            if final is not None and final.state.get("result") is not None:
+                result = final.state["result"]
+                return PositionResult(
+                    position_mm=float(result["position_mm"]),
+                    reasoning=str(result["reasoning"]),
+                )
+
+            final_state = final.state if final is not None else initial_state_template
+            nudge = _pick_nudge(final_state)
+            logger.info(
+                "Attempt %d did not submit (capped=%s); nudge=%r; retrying with fresh session.",
+                attempt + 1,
+                capped,
+                nudge,
+            )
+    finally:
+        _delete_uploaded_files(uploaded_files)
 
     # Fallback: atlas midpoint. Match the reasoning phrase used by
     # run_group_session — smoke_single_slice.py greps for it to count
@@ -251,7 +455,7 @@ async def run_single_slice_session(
         reasoning=(
             "Model did not submit within iteration+retry budget; "
             "fell back to atlas midpoint."
-        ),
+        )
     )
 
 
@@ -268,7 +472,10 @@ async def run_group_session(
     max_retries: int = _DEFAULT_MAX_RETRIES,
     temperature: float = 1.0,
     thinking_level: str = "MEDIUM",
+    media_resolution: str | None = "medium",
     apply_clahe: bool = True,
+    target_transport: str = "auto",
+    multimodal_history: str = "persistent",
 ) -> MultiSliceResult:
     """Drive a multi-slice group position-estimation session to completion.
 
@@ -291,10 +498,11 @@ async def run_group_session(
     # Only wire a thinking_config for string-named Gemini models; LiteLlm
     # wrappers drive their own thinking knobs.
     thinking_cfg: object | None = None
-    if isinstance(model, str):
+    if isinstance(model, str) and _is_native_google_genai_model(model):
         from langslice import vlm_config
         thinking_cfg = vlm_config.build_thinking_config(model, thinking_level)
 
+    agent_model = resolve_adk_model(model)
     species_val = species or str(atlas.metadata.get("species", "mouse"))
     agent = build_group_agent(
         atlas_name=atlas_name,
@@ -305,19 +513,20 @@ async def run_group_session(
         n_slices=n_slices,
         interval_mm=interval_mm,
         thickness_um=thickness_um,
-        model=model,
+        model=agent_model,
         temperature=temperature,
+        media_resolution=_normalize_media_resolution(media_resolution),
         thinking_config=thinking_cfg,
     )
 
-    # MultimodalToolResultsPlugin is REQUIRED — without it, list[types.Part]
-    # returns from fetch_atlas / zoom / side_by_side get pydantic-serialized
-    # into JSON blobs that the model cannot decode as images, and accuracy
-    # collapses (measured: 1.33 mm MAE vs 0.19 mm pre-ADK baseline).
+    # PersistentMultimodalToolResultsPlugin is REQUIRED — without it,
+    # list[types.Part] returns from fetch_atlas / zoom / side_by_side get
+    # pydantic-serialized into JSON blobs, or survive for only one model turn.
+    # LangSlice's legacy loop resent the full multimodal history every turn.
     app = App(
         name=_APP_NAME,
         root_agent=agent,
-        plugins=[MultimodalToolResultsPlugin()],
+        plugins=_build_plugins("group", multimodal_history),
     )
     runner = InMemoryRunner(app=app)
     assert runner.artifact_service is not None
@@ -334,113 +543,141 @@ async def run_group_session(
         max_iterations=max_iterations,
     )
 
-    # Encode target images once as Parts for reuse across retries.
-    target_parts: list[types.Part] = [
-        _encode_target_part(img, atlas_long_edge, apply_clahe=apply_clahe)
-        for img in images
-    ]
+    # Prepare inline artifact copies for tools, and optionally Gemini File API
+    # request parts for native Gemini parity with the legacy implementation.
+    target_payloads, uploaded_files = _prepare_target_payloads(
+        images,
+        atlas_long_edge=atlas_long_edge,
+        apply_clahe=apply_clahe,
+        model=model,
+        target_transport=target_transport,
+    )
 
-    for attempt in range(max_retries):
-        session_id = f"group_attempt_{attempt}"
-        await runner.session_service.create_session(
-            app_name=_APP_NAME,
-            user_id=_USER_ID,
-            session_id=session_id,
-            state=dict(initial_state_template),
-        )
-
-        # Seed each target image as a distinct artifact keyed 'target:N'
-        # so the zoom/side_by_side tools can reference them by slice number.
-        for i, part in enumerate(target_parts):
-            await runner.artifact_service.save_artifact(
+    try:
+        for attempt in range(max_retries):
+            session_id = f"group_attempt_{attempt}"
+            await runner.session_service.create_session(
                 app_name=_APP_NAME,
                 user_id=_USER_ID,
                 session_id=session_id,
-                filename=target_key(i + 1),
-                artifact=part,
+                state=dict(initial_state_template),
             )
 
-        parts: list[types.Part] = []
-        for i, part in enumerate(target_parts):
-            parts.append(
-                types.Part.from_text(
-                    text=f"Slice {i + 1} (artifact: '{target_key(i + 1)}'):"
+            # Seed each target image as a distinct artifact keyed 'target:N'
+            # so the zoom/side_by_side tools can reference them by slice number.
+            for i, payload in enumerate(target_payloads):
+                await runner.artifact_service.save_artifact(
+                    app_name=_APP_NAME,
+                    user_id=_USER_ID,
+                    session_id=session_id,
+                    filename=target_key(i + 1),
+                    artifact=payload.artifact_part,
                 )
-            )
-            parts.append(part)
-        parts.append(types.Part.from_text(text="Determine the position of each slice."))
-        new_message = types.Content(role="user", parts=parts)
 
-        tool_call_count = 0
-        capped = False
-        try:
-            async for event in runner.run_async(
-                user_id=_USER_ID,
-                session_id=session_id,
-                new_message=new_message,
-            ):
-                fcs = event.get_function_calls() or []
-                tool_call_count += len(fcs)
-                if fcs:
-                    names = [getattr(fc, "name", "?") for fc in fcs]
-                    logger.info(
-                        "Group attempt %d: tool call #%d -> %s (total=%d)",
-                        attempt + 1,
-                        tool_call_count,
-                        names,
-                        tool_call_count,
+            parts: list[types.Part] = []
+            for i, payload in enumerate(target_payloads):
+                parts.append(
+                    types.Part.from_text(
+                        text=f"Slice {i + 1} (artifact: '{target_key(i + 1)}'):"
                     )
-                if tool_call_count > max_iterations:
-                    logger.warning(
-                        "Hit max_iterations=%d on attempt %d; forcing end.",
-                        max_iterations,
-                        attempt + 1,
-                    )
-                    capped = True
-                    break
+                )
+                parts.append(payload.request_part)
+            parts.append(types.Part.from_text(text="Determine the position of each slice."))
+            new_message = types.Content(role="user", parts=parts)
 
-                current = await runner.session_service.get_session(
+            tool_call_count = 0
+            capped = False
+            turn_count = 0
+            final = None
+            while turn_count < max_iterations and not capped:
+                turn_count += 1
+                try:
+                    async for event in runner.run_async(
+                        user_id=_USER_ID,
+                        session_id=session_id,
+                        new_message=new_message,
+                    ):
+                        fcs = event.get_function_calls() or []
+                        tool_call_count += len(fcs)
+                        if fcs:
+                            names = [getattr(fc, "name", "?") for fc in fcs]
+                            logger.info(
+                                "Group attempt %d: tool call #%d -> %s (total=%d)",
+                                attempt + 1,
+                                tool_call_count,
+                                names,
+                                tool_call_count,
+                            )
+                        if tool_call_count > max_iterations:
+                            logger.warning(
+                                "Hit max_iterations=%d on attempt %d; forcing end.",
+                                max_iterations,
+                                attempt + 1,
+                            )
+                            capped = True
+                            break
+
+                        current = await runner.session_service.get_session(
+                            app_name=_APP_NAME,
+                            user_id=_USER_ID,
+                            session_id=session_id,
+                        )
+                        if current is not None and current.state.get("result") is not None:
+                            break
+                except Exception:
+                    logger.exception(
+                        "Group attempt %d raised inside runner.run_async", attempt + 1
+                    )
+                    raise
+
+                final = await runner.session_service.get_session(
                     app_name=_APP_NAME,
                     user_id=_USER_ID,
                     session_id=session_id,
                 )
-                if current is not None and current.state.get("result") is not None:
+                if final is not None and final.state.get("result") is not None:
                     break
-        except Exception:
-            logger.exception(
-                "Group attempt %d raised inside runner.run_async", attempt + 1
-            )
-            raise
 
-        final = await runner.session_service.get_session(
-            app_name=_APP_NAME,
-            user_id=_USER_ID,
-            session_id=session_id,
-        )
-        if final is not None and final.state.get("result") is not None:
-            result = final.state["result"]
-            reasoning = str(result["reasoning"])
-            positions = [
-                PositionResult(position_mm=float(p), reasoning=reasoning)
-                for p in result["positions_mm"]
-            ]
-            return MultiSliceResult(
-                positions=positions,
-                group_reasoning=reasoning,
-            )
+                final_state = final.state if final is not None else initial_state_template
+                nudge = _pick_nudge(final_state)
+                logger.info(
+                    "Group attempt %d stopped without a result; continuing "
+                    "same session with nudge=%r.",
+                    attempt + 1,
+                    nudge,
+                )
+                new_message = types.Content(
+                    role="user",
+                    parts=[types.Part.from_text(text=nudge)],
+                )
 
-        # Mirror run_single_slice_session: log the nudge that would fire
-        # next so group-session failures are debuggable in production.
-        # _pick_nudge only reads saw_broad_sweep/saw_narrow_sweep, which
-        # both single- and group-sessions set identically.
-        final_state = final.state if final is not None else initial_state_template
-        nudge = _pick_nudge(final_state)
-        logger.info(
-            "Group attempt %d did not submit (capped=%s); nudge=%r; retrying with fresh session.",
-            attempt + 1,
-            capped,
-            nudge,
-        )
+            if final is not None and final.state.get("result") is not None:
+                result = final.state["result"]
+                reasoning = str(result["reasoning"])
+                positions = [
+                    PositionResult(position_mm=float(p), reasoning=reasoning)
+                    for p in result["positions_mm"]
+                ]
+                return MultiSliceResult(
+                    positions=positions,
+                    group_reasoning=reasoning,
+                )
+
+            # Mirror run_single_slice_session: log the nudge that would fire
+            # next so group-session failures are debuggable in production.
+            # _pick_nudge only reads saw_broad_sweep/saw_narrow_sweep, which
+            # both single- and group-sessions set identically.
+            final_state = final.state if final is not None else initial_state_template
+            nudge = _pick_nudge(final_state)
+            logger.info(
+                "Group attempt %d did not submit (capped=%s); "
+                "nudge=%r; retrying with fresh session.",
+                attempt + 1,
+                capped,
+                nudge,
+            )
+    finally:
+        _delete_uploaded_files(uploaded_files)
 
     # Fallback: center the group around the atlas midpoint with requested
     # interval spacing, clamped to the atlas range. Match the reasoning

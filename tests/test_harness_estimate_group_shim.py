@@ -5,9 +5,8 @@ These tests confirm the shim:
   2. Translates ``interval_um`` to ``interval_mm``.
   3. Forwards ``model_name`` as ``model``, falling through to the runner default
      when ``model_name`` is ``None``.
-  4. Accepts (and silently drops) the legacy kwargs that current callers pass
-     — ``send_individually``, ``on_progress``, ``media_resolution``,
-     ``show_borders``, ``debug_dir``, and any unknown extras.
+  4. Accepts the legacy kwargs that current callers pass, forwarding the ones
+     the ADK runner understands and swallowing the rest.
 
 The runner is monkeypatched; this is pure wiring.  The end-to-end paths live in
 ``tests/test_harness_runner.py``.
@@ -97,8 +96,8 @@ def test_estimate_group_forwards_model_name_as_model(monkeypatch):
     assert captured["interval_mm"] == 0.150
 
 
-def test_estimate_group_swallows_legacy_kwargs(monkeypatch):
-    """Legacy kwargs that the ADK runner doesn't know about must not explode."""
+def test_estimate_group_forwards_supported_legacy_kwargs(monkeypatch):
+    """Legacy kwargs that the ADK runner understands are preserved."""
     from langslice.harness.estimation import estimate_group
 
     captured: dict[str, Any] = {}
@@ -129,11 +128,12 @@ def test_estimate_group_swallows_legacy_kwargs(monkeypatch):
         some_future_kwarg="whatever",
     )
     assert isinstance(result, MultiSliceResult)
-    # None of the ignored kwargs leaked to the runner.
+    assert captured["media_resolution"] == "medium"
+
+    # Unsupported compat kwargs still do not leak to the runner.
     for key in (
         "send_individually",
         "on_progress",
-        "media_resolution",
         "show_borders",
         "debug_dir",
         "some_future_kwarg",

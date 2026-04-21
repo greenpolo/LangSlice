@@ -39,6 +39,7 @@ if not os.getenv("GEMINI_API_KEY") and not os.getenv("GOOGLE_API_KEY"):
 if os.getenv("GEMINI_API_KEY") and not os.getenv("GOOGLE_API_KEY"):
     os.environ["GOOGLE_API_KEY"] = os.environ["GEMINI_API_KEY"]
 
+from google.adk.apps.app import App  # noqa: E402
 from google.adk.runners import InMemoryRunner  # noqa: E402
 from google.genai import types  # noqa: E402
 from PIL import Image  # noqa: E402
@@ -48,6 +49,9 @@ from langslice.atlas.core import (  # noqa: E402
     get_in_plane_long_edge,
     get_position_range_mm,
     load_atlas,
+)
+from langslice.harness.estimation.adk_plugins import (  # noqa: E402
+    PersistentMultimodalToolResultsPlugin,
 )
 from langslice.harness.estimation.group import build_group_agent  # noqa: E402
 from langslice.harness.estimation.runner import _encode_target_part  # noqa: E402
@@ -99,7 +103,12 @@ async def run_smoke() -> dict:
         thinking_config=thinking_cfg,
     )
 
-    runner = InMemoryRunner(agent=agent, app_name=APP_NAME)
+    app = App(
+        name=APP_NAME,
+        root_agent=agent,
+        plugins=[PersistentMultimodalToolResultsPlugin()],
+    )
+    runner = InMemoryRunner(app=app)
     assert runner.artifact_service is not None
     assert runner.session_service is not None
 
