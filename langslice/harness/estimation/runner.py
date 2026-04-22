@@ -10,9 +10,6 @@ from typing import Any
 
 from google.adk.apps.app import App
 from google.adk.plugins.base_plugin import BasePlugin
-from google.adk.plugins.multimodal_tool_results_plugin import (
-    MultimodalToolResultsPlugin,
-)
 from google.adk.runners import InMemoryRunner
 from google.genai import types
 from PIL import Image
@@ -25,6 +22,7 @@ from langslice.atlas.core import (
 from langslice.atlas.space import Plane
 from langslice.harness.estimation._types import MultiSliceResult, PositionResult
 from langslice.harness.estimation.adk_plugins import (
+    ModelCallPacingPlugin,
     PersistentMultimodalToolResultsPlugin,
     RequestCapturePlugin,
 )
@@ -106,15 +104,24 @@ def _env(name: str) -> str | None:
     return cleaned or None
 
 
+def _env_float(name: str) -> float | None:
+    value = _env(name)
+    if value is None:
+        return None
+    return float(value)
+
+
 def _build_plugins(run_label: str, multimodal_history: str) -> list[BasePlugin]:
     mode = multimodal_history.strip().lower()
     if mode not in _MULTIMODAL_HISTORY_MODES:
         allowed = ", ".join(sorted(_MULTIMODAL_HISTORY_MODES))
         raise ValueError(f"multimodal_history must be one of: {allowed}")
-    if mode == "one_turn":
-        plugins: list[BasePlugin] = [MultimodalToolResultsPlugin()]
-    else:
-        plugins = [PersistentMultimodalToolResultsPlugin()]
+    plugins: list[BasePlugin] = [
+        PersistentMultimodalToolResultsPlugin(persistent=(mode == "persistent"))
+    ]
+    model_call_delay_s = _env_float("LANGSLICE_ADK_MODEL_CALL_DELAY_S")
+    if model_call_delay_s is not None and model_call_delay_s > 0:
+        plugins.append(ModelCallPacingPlugin(model_call_delay_s))
     capture_dir = _env("LANGSLICE_ADK_CAPTURE_REQUESTS_DIR")
     if capture_dir is not None:
         plugins.append(RequestCapturePlugin(capture_dir, run_label=run_label))
@@ -301,10 +308,9 @@ async def run_single_slice_session(
         thinking_config=thinking_cfg,
     )
 
-    # PersistentMultimodalToolResultsPlugin is REQUIRED — without it,
-    # list[types.Part] returns from fetch_atlas / zoom / side_by_side get
-    # pydantic-serialized into JSON blobs, or survive for only one model turn.
-    # LangSlice's legacy loop resent the full multimodal history every turn.
+    # The plugin keeps structured tool responses intact while injecting the
+    # returned image artifacts into the request, matching the legacy loop's
+    # persistent multimodal history.
     app = App(
         name=_APP_NAME,
         root_agent=agent,
@@ -348,8 +354,8 @@ async def run_single_slice_session(
                 state=dict(initial_state_template),
             )
 
-            # Seed the target image as an artifact so tools that reference
-            # "target" can load it (e.g., zoom, side_by_side in later phases).
+            # Seed the target image as an artifact so the session can retain
+            # a debuggable copy of exactly what the model was shown.
             await runner.artifact_service.save_artifact(
                 app_name=_APP_NAME,
                 user_id=_USER_ID,
@@ -519,10 +525,9 @@ async def run_group_session(
         thinking_config=thinking_cfg,
     )
 
-    # PersistentMultimodalToolResultsPlugin is REQUIRED — without it,
-    # list[types.Part] returns from fetch_atlas / zoom / side_by_side get
-    # pydantic-serialized into JSON blobs, or survive for only one model turn.
-    # LangSlice's legacy loop resent the full multimodal history every turn.
+    # The plugin keeps structured tool responses intact while injecting the
+    # returned image artifacts into the request, matching the legacy loop's
+    # persistent multimodal history.
     app = App(
         name=_APP_NAME,
         root_agent=agent,
@@ -564,7 +569,7 @@ async def run_group_session(
             )
 
             # Seed each target image as a distinct artifact keyed 'target:N'
-            # so the zoom/side_by_side tools can reference them by slice number.
+            # so the session retains debuggable copies of the shown images.
             for i, payload in enumerate(target_payloads):
                 await runner.artifact_service.save_artifact(
                     app_name=_APP_NAME,

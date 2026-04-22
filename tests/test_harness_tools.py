@@ -1,27 +1,21 @@
 import asyncio
-import io
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from google.genai import types
 from PIL import Image
 
+from langslice.harness.estimation.adk_plugins import MULTIMODAL_PARTS_RESULT_KEY
 from langslice.harness.estimation.session import atlas_key, build_initial_state
 from langslice.harness.estimation.tools import (
-    _SBS_GAP_PX,
-    _SBS_LABEL_BAND_H,
     _clamp_and_dedupe_positions,
     _image_to_jpeg_bytes,
-    _image_to_part,
     _is_broad_sweep,
     _is_narrow_sweep,
     _parse_atlas_key,
-    _short_hash,
     fetch_atlas,
-    side_by_side,
     submit_estimate,
     submit_group_estimate,
-    zoom,
 )
 
 
@@ -44,6 +38,14 @@ def _text_of(part: types.Part) -> str:
     """Narrow ``Part.text`` to ``str`` for assertions — basedpyright treats it as ``str | None``."""
     assert part.text is not None
     return part.text
+
+
+def _multimodal_parts(result: object) -> list[types.Part]:
+    assert isinstance(result, dict)
+    parts = result[MULTIMODAL_PARTS_RESULT_KEY]
+    assert isinstance(parts, list)
+    assert all(isinstance(part, types.Part) for part in parts)
+    return parts
 
 
 def test_parse_atlas_key():
@@ -99,9 +101,13 @@ def test_fetch_atlas_returns_labeled_parts_and_updates_state():
         interval_mm=0.0, thickness_um=50, max_iterations=20,
     )
     ctx = _fake_tool_context(state)
-    parts = asyncio.run(fetch_atlas(positions_mm=[2.0, 5.0, 8.0], tool_context=ctx))
-    # Success return is list[Part]: header text + 3x (label_text, image_part).
-    assert isinstance(parts, list)
+    result = asyncio.run(fetch_atlas(positions_mm=[2.0, 5.0, 8.0], tool_context=ctx))
+    assert isinstance(result, dict)
+    assert result["status"] == "ok"
+    assert result["positions_mm"] == [2.0, 5.0, 8.0]
+    assert "3 atlas sections" in str(result["description"])
+    parts = _multimodal_parts(result)
+    # Multimodal payload is header text + 3x (label_text, image_part).
     assert len(parts) == 1 + 2 * 3
     assert _is_text_part(parts[0])
     assert "3 atlas sections" in _text_of(parts[0])
@@ -157,260 +163,6 @@ def test_submit_group_estimate_sets_state_and_escalates():
     assert out["status"] == "ok"
     assert state["result"]["positions_mm"] == [5.0, 5.2, 5.4]
     assert ctx.actions.escalate is True
-
-
-# --- Phase 5 Task 5.1: zoom tool --------------------------------------------
-
-
-class _ArtifactStore:
-    """In-memory stand-in for the ADK artifact service used in zoom tests."""
-
-    def __init__(self) -> None:
-        self._store: dict[str, object] = {}
-
-    async def load(self, *, filename: str, version: int | None = None):
-        del version
-        return self._store.get(filename)
-
-    async def save(self, *, filename: str, artifact, custom_metadata=None) -> int:
-        del custom_metadata
-        self._store[filename] = artifact
-        return 1
-
-
-def _zoom_ctx(state: dict, store: _ArtifactStore) -> MagicMock:
-    ctx = MagicMock()
-    ctx.state = state
-    ctx.load_artifact = AsyncMock(side_effect=store.load)
-    ctx.save_artifact = AsyncMock(side_effect=store.save)
-    return ctx
-
-
-def _seed_target(store: _ArtifactStore, img: Image.Image) -> None:
-    store._store["target"] = _image_to_part(img)
-
-
-def _state_for_zoom() -> dict:
-    return build_initial_state(
-        atlas_name="allen_mouse_25um", plane="coronal",
-        pos_lo=0.0, pos_hi=13.2, n_slices=1,
-        interval_mm=0.0, thickness_um=50, max_iterations=20,
-    )
-
-
-def test_zoom_happy_path_resizes_and_saves_artifact():
-    store = _ArtifactStore()
-    _seed_target(store, Image.new("RGB", (400, 300), (200, 100, 50)))
-    state = _state_for_zoom()
-    ctx = _zoom_ctx(state, store)
-
-    parts = asyncio.run(
-        zoom(source="target", bbox=[100, 200, 900, 800], tool_context=ctx)
-    )
-
-    assert isinstance(parts, list)
-    assert len(parts) == 2
-    assert _is_text_part(parts[0])
-    assert _is_image_part(parts[1])
-    expected_key = f"zoom:target:{_short_hash([100, 200, 900, 800])}"
-    assert expected_key in _text_of(parts[0])
-    decoded = Image.open(io.BytesIO(_image_part_bytes(parts[1])))
-    w, h = decoded.size
-    assert max(w, h) == 456  # atlas long edge for allen_mouse_25um coronal
-    assert expected_key in store._store
-
-
-def test_zoom_bad_bbox_out_of_range():
-    store = _ArtifactStore()
-    _seed_target(store, Image.new("RGB", (100, 100)))
-    ctx = _zoom_ctx(_state_for_zoom(), store)
-    result = asyncio.run(
-        zoom(source="target", bbox=[-1, 0, 1000, 1000], tool_context=ctx)
-    )
-    assert result == {"status": "error", "error": "BAD_BBOX"}
-
-
-def test_zoom_bad_bbox_wrong_length():
-    store = _ArtifactStore()
-    _seed_target(store, Image.new("RGB", (100, 100)))
-    ctx = _zoom_ctx(_state_for_zoom(), store)
-    result = asyncio.run(
-        zoom(source="target", bbox=[0, 0, 1000, 1000, 1000], tool_context=ctx)
-    )
-    assert result == {"status": "error", "error": "BAD_BBOX"}
-
-
-def test_zoom_bad_bbox_zero_area():
-    store = _ArtifactStore()
-    _seed_target(store, Image.new("RGB", (100, 100)))
-    ctx = _zoom_ctx(_state_for_zoom(), store)
-    result = asyncio.run(
-        zoom(source="target", bbox=[500, 500, 500, 500], tool_context=ctx)
-    )
-    assert result == {"status": "error", "error": "BAD_BBOX"}
-
-
-def test_zoom_bad_bbox_upper_bound_exceeded():
-    store = _ArtifactStore()
-    _seed_target(store, Image.new("RGB", (100, 100)))
-    ctx = _zoom_ctx(_state_for_zoom(), store)
-    result = asyncio.run(
-        zoom(source="target", bbox=[1001, 0, 1000, 1000], tool_context=ctx)
-    )
-    assert result == {"status": "error", "error": "BAD_BBOX"}
-
-
-def test_zoom_bad_source_missing_artifact():
-    store = _ArtifactStore()
-    # No seeded artifact.
-    ctx = _zoom_ctx(_state_for_zoom(), store)
-    result = asyncio.run(
-        zoom(source="nonexistent", bbox=[100, 100, 900, 900], tool_context=ctx)
-    )
-    assert result == {"status": "error", "error": "BAD_SOURCE"}
-
-
-def test_zoom_tiny_bbox_yields_single_pixel_crop():
-    # Under floor/ceil semantics, any non-empty normalized bbox maps to a
-    # non-empty pixel bbox — even on a 2x2 image. The tiny crop then upscales
-    # to the atlas long edge so the model can still see it.
-    store = _ArtifactStore()
-    _seed_target(store, Image.new("RGB", (2, 2), (255, 0, 0)))
-    ctx = _zoom_ctx(_state_for_zoom(), store)
-    parts = asyncio.run(
-        zoom(source="target", bbox=[0, 0, 1, 1], tool_context=ctx)
-    )
-    assert isinstance(parts, list) and len(parts) == 2
-    decoded = Image.open(io.BytesIO(_image_part_bytes(parts[1])))
-    assert max(decoded.size) == 456  # upscaled to atlas long edge
-
-
-def test_zoom_of_zoom_works():
-    store = _ArtifactStore()
-    _seed_target(store, Image.new("RGB", (400, 300), (123, 45, 67)))
-    state = _state_for_zoom()
-    ctx = _zoom_ctx(state, store)
-
-    first = asyncio.run(
-        zoom(source="target", bbox=[100, 100, 900, 900], tool_context=ctx)
-    )
-    assert isinstance(first, list) and len(first) == 2
-    first_key = f"zoom:target:{_short_hash([100, 100, 900, 900])}"
-    assert first_key in _text_of(first[0])
-    assert first_key in store._store
-
-    second = asyncio.run(
-        zoom(source=first_key, bbox=[250, 250, 750, 750], tool_context=ctx)
-    )
-    assert isinstance(second, list) and len(second) == 2
-    second_key = f"zoom:{first_key}:{_short_hash([250, 250, 750, 750])}"
-    assert second_key in _text_of(second[0])
-    assert second_key in store._store
-
-
-# --- Phase 6 Task 6.1: side_by_side tool ------------------------------------
-
-
-def _seed_keyed(store: _ArtifactStore, key: str, img: Image.Image) -> None:
-    store._store[key] = _image_to_part(img)
-
-
-def test_side_by_side_happy_path_equal_dimensions():
-    store = _ArtifactStore()
-    _seed_keyed(store, "target", Image.new("RGB", (400, 300), (200, 100, 50)))
-    _seed_keyed(store, "atlas:3.50", Image.new("RGB", (400, 300), (50, 100, 200)))
-    ctx = _zoom_ctx(_state_for_zoom(), store)
-
-    parts = asyncio.run(
-        side_by_side(left="target", right="atlas:3.50", tool_context=ctx)
-    )
-
-    assert isinstance(parts, list) and len(parts) == 2
-    assert _is_text_part(parts[0])
-    assert _is_image_part(parts[1])
-    expected_key = "side_by_side:target:atlas:3.50"
-    assert expected_key in _text_of(parts[0])
-    decoded = Image.open(io.BytesIO(_image_part_bytes(parts[1])))
-    w, h = decoded.size
-    # Both panels same size → width is 2*400 + gap, height is 300 + label band.
-    assert w == 400 + _SBS_GAP_PX + 400
-    assert h == 300 + _SBS_LABEL_BAND_H
-    assert expected_key in store._store
-
-
-def test_side_by_side_different_heights_rescales_to_common_height():
-    # Left is 400x300, right is 600x200. Common height = max(300, 200) = 300.
-    # Right rescales to round(600 * 300/200) = 900 wide.
-    store = _ArtifactStore()
-    _seed_keyed(store, "target", Image.new("RGB", (400, 300), (10, 20, 30)))
-    _seed_keyed(store, "atlas:5.00", Image.new("RGB", (600, 200), (40, 50, 60)))
-    ctx = _zoom_ctx(_state_for_zoom(), store)
-
-    parts = asyncio.run(
-        side_by_side(left="target", right="atlas:5.00", tool_context=ctx)
-    )
-
-    assert isinstance(parts, list) and len(parts) == 2
-    decoded = Image.open(io.BytesIO(_image_part_bytes(parts[1])))
-    w, h = decoded.size
-    assert h == 300 + _SBS_LABEL_BAND_H
-    assert w == 400 + _SBS_GAP_PX + 900
-
-
-def test_side_by_side_bad_source_left_missing():
-    store = _ArtifactStore()
-    _seed_keyed(store, "target", Image.new("RGB", (100, 100)))
-    ctx = _zoom_ctx(_state_for_zoom(), store)
-    result = asyncio.run(
-        side_by_side(left="nonexistent", right="target", tool_context=ctx)
-    )
-    assert result == {"status": "error", "error": "BAD_SOURCE"}
-
-
-def test_side_by_side_bad_source_right_missing():
-    store = _ArtifactStore()
-    _seed_keyed(store, "target", Image.new("RGB", (100, 100)))
-    ctx = _zoom_ctx(_state_for_zoom(), store)
-    result = asyncio.run(
-        side_by_side(left="target", right="nope", tool_context=ctx)
-    )
-    assert result == {"status": "error", "error": "BAD_SOURCE"}
-
-
-def test_side_by_side_bad_source_both_missing():
-    store = _ArtifactStore()
-    ctx = _zoom_ctx(_state_for_zoom(), store)
-    result = asyncio.run(
-        side_by_side(left="ghost_a", right="ghost_b", tool_context=ctx)
-    )
-    assert result == {"status": "error", "error": "BAD_SOURCE"}
-
-
-def test_side_by_side_of_side_by_side_works():
-    # Compose once, then feed the composite back in as one panel of a second
-    # composition. The tool treats the source opaquely — the key is just a
-    # string that points into the artifact store.
-    store = _ArtifactStore()
-    _seed_keyed(store, "target", Image.new("RGB", (400, 300), (10, 20, 30)))
-    _seed_keyed(store, "atlas:3.50", Image.new("RGB", (400, 300), (40, 50, 60)))
-    _seed_keyed(store, "atlas:4.00", Image.new("RGB", (400, 300), (70, 80, 90)))
-    ctx = _zoom_ctx(_state_for_zoom(), store)
-
-    first = asyncio.run(
-        side_by_side(left="target", right="atlas:3.50", tool_context=ctx)
-    )
-    assert isinstance(first, list) and len(first) == 2
-    first_key = "side_by_side:target:atlas:3.50"
-    assert first_key in _text_of(first[0])
-    assert first_key in store._store
-
-    second = asyncio.run(
-        side_by_side(left=first_key, right="atlas:4.00", tool_context=ctx)
-    )
-    assert isinstance(second, list) and len(second) == 2
-    second_key = f"side_by_side:{first_key}:atlas:4.00"
-    assert second_key in _text_of(second[0])
-    assert second_key in store._store
 
 
 def test_fetch_atlas_save_artifact_uses_canonical_keys():

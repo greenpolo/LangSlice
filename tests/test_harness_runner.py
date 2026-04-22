@@ -11,6 +11,7 @@ from PIL import Image
 from langslice.harness.estimation._types import MultiSliceResult, PositionResult
 from langslice.harness.estimation.group import build_group_agent
 from langslice.harness.estimation.runner import (
+    _prepare_target_payloads,
     run_group_session,
     run_single_slice_session,
 )
@@ -43,6 +44,14 @@ def _count_file_images(contents: list[types.Content]) -> int:
             if file_uri:
                 count += 1
     return count
+
+
+def _part_image_size(part: types.Part) -> tuple[int, int]:
+    inline = part.inline_data
+    assert inline is not None and inline.data is not None
+    img = Image.open(io.BytesIO(inline.data))
+    img.load()
+    return img.size
 
 
 class _FakeGeminiFile:
@@ -99,21 +108,56 @@ def test_artifact_target_constant():
     assert ARTIFACT_TARGET == "target"
 
 
-def test_build_single_slice_agent_registers_four_tools():
+def test_prepare_target_payloads_keeps_display_payload_only(monkeypatch):
+    """Target preparation should only create the image shown to the model."""
+
+    def _raise_if_called():
+        raise AssertionError("inline target preparation should not create a Gemini client")
+
+    monkeypatch.setattr("langslice.vlm_config.get_client", _raise_if_called)
+
+    payloads, uploaded_files = _prepare_target_payloads(
+        [Image.new("RGB", (1200, 800), color=128)],
+        atlas_long_edge=456,
+        apply_clahe=False,
+        model="local-gemma",
+        target_transport="inline",
+    )
+
+    assert uploaded_files == []
+    assert len(payloads) == 1
+    payload = payloads[0]
+    assert max(_part_image_size(payload.artifact_part)) == 456
+    assert _part_image_size(payload.request_part) == _part_image_size(payload.artifact_part)
+
+
+def test_build_single_slice_agent_registers_estimation_tools_only():
     agent = build_single_slice_agent(
         atlas_name="allen_mouse_25um", plane="coronal",
         species="mouse", pos_lo=0.0, pos_hi=13.2,
         model="gemini-3-flash-preview",
     )
     tool_names = {getattr(t, "__name__", None) or getattr(t, "name", None) for t in agent.tools}
-    assert "fetch_atlas" in tool_names
-    assert "zoom" in tool_names
-    assert "side_by_side" in tool_names
-    assert "submit_estimate" in tool_names
+    assert tool_names == {"fetch_atlas", "submit_estimate"}
     assert agent.instruction  # non-empty prompt
 
 
-def test_build_group_agent_registers_four_tools_and_callback():
+def test_build_single_slice_agent_sets_native_gemini_retry_options():
+    agent = build_single_slice_agent(
+        atlas_name="allen_mouse_25um", plane="coronal",
+        species="mouse", pos_lo=0.0, pos_hi=13.2,
+        model="gemini-3-flash-preview",
+    )
+
+    config = agent.generate_content_config
+    assert config is not None
+    assert config.http_options is not None
+    assert config.http_options.retry_options is not None
+    assert config.http_options.retry_options.initial_delay == 1
+    assert config.http_options.retry_options.attempts == 5
+
+
+def test_build_group_agent_registers_estimation_tools_only_and_callback():
     agent = build_group_agent(
         atlas_name="allen_mouse_25um", plane="coronal",
         species="mouse", pos_lo=0.0, pos_hi=13.2,
@@ -121,9 +165,9 @@ def test_build_group_agent_registers_four_tools_and_callback():
         model="gemini-3-flash-preview",
     )
     assert agent.name == "group_position_estimator"
-    assert len(agent.tools) == 4
+    assert len(agent.tools) == 2
     tool_names = {getattr(t, "__name__", None) or getattr(t, "name", None) for t in agent.tools}
-    assert tool_names == {"fetch_atlas", "zoom", "side_by_side", "submit_group_estimate"}
+    assert tool_names == {"fetch_atlas", "submit_group_estimate"}
     assert agent.before_tool_callback is gate_submit_tool
     assert agent.instruction  # non-empty prompt
 
@@ -341,6 +385,79 @@ def test_group_runner_can_use_one_turn_multimodal_history(monkeypatch):
 
     assert [p.position_mm for p in result.positions] == [5.7, 5.871]
     assert captured_image_counts == [2, 5, 5]
+
+
+def test_single_runner_keeps_fetch_tool_response_structured(monkeypatch):
+    """Successful fetch_atlas should not degrade into {'result': ...}."""
+
+    captured_response_keys: list[list[str]] = []
+    captured_image_counts: list[int] = []
+
+    class CaptureStructuredToolResponseLlm(BaseLlm):
+        async def generate_content_async(
+            self, llm_request, stream: bool = False
+        ) -> AsyncGenerator[LlmResponse, None]:
+            del stream
+            contents = list(llm_request.contents or [])
+            keys: list[list[str]] = []
+            for content in contents:
+                for part in content.parts or []:
+                    function_response = part.function_response
+                    if function_response is None:
+                        continue
+                    response = function_response.response
+                    assert isinstance(response, dict)
+                    keys.append(sorted(response.keys()))
+            captured_response_keys.extend(keys)
+            captured_image_counts.append(_count_inline_images(contents))
+
+            if not keys:
+                call = types.Part.from_function_call(
+                    name="fetch_atlas",
+                    args={"positions_mm": [4.0, 5.0, 6.0]},
+                )
+            elif len(keys) == 1:
+                call = types.Part.from_function_call(
+                    name="fetch_atlas",
+                    args={"positions_mm": [5.8, 6.0, 6.2]},
+                )
+            else:
+                call = types.Part.from_function_call(
+                    name="submit_estimate",
+                    args={"position_mm": 6.0, "reasoning": "structured"},
+                )
+
+            yield LlmResponse(
+                content=types.Content(role="model", parts=[call]),
+                partial=False,
+                turn_complete=True,
+            )
+
+    from google.adk.models.registry import LLMRegistry
+
+    monkeypatch.setattr(
+        LLMRegistry,
+        "new_llm",
+        staticmethod(lambda model: CaptureStructuredToolResponseLlm(model=model)),
+    )
+
+    result = asyncio.run(
+        run_single_slice_session(
+            image=Image.new("RGB", (256, 256), color=128),
+            atlas_name="allen_mouse_25um",
+            plane="coronal",
+            model="gemini-3-flash-preview",
+            max_iterations=8,
+            max_retries=1,
+            apply_clahe=False,
+            target_transport="inline",
+        )
+    )
+
+    assert result.position_mm == 6.0
+    assert ["description", "positions_mm", "status"] in captured_response_keys
+    assert ["result"] not in captured_response_keys
+    assert captured_image_counts == [1, 4, 7]
 
 
 def test_single_runner_uses_file_api_target_for_native_gemini(monkeypatch):

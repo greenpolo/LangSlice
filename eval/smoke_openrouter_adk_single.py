@@ -55,6 +55,12 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--offset", type=int, default=0)
     parser.add_argument("--sleep", type=float, default=0.0)
     parser.add_argument(
+        "--model-call-sleep",
+        type=float,
+        default=0.0,
+        help="Seconds to sleep before each ADK model request inside a slice",
+    )
+    parser.add_argument(
         "--capture-root",
         default=str(REPO_ROOT / "eval_outputs" / "adk_single_request_captures"),
     )
@@ -129,6 +135,8 @@ async def _main_async(args: argparse.Namespace) -> dict:
 
     capture_root = Path(args.capture_root)
     capture_root.mkdir(parents=True, exist_ok=True)
+    if args.model_call_sleep > 0:
+        os.environ["LANGSLICE_ADK_MODEL_CALL_DELAY_S"] = str(args.model_call_sleep)
 
     for idx, (filename, gt_mm) in enumerate(cases, start=1):
         if idx > 1 and args.sleep > 0:
@@ -169,8 +177,10 @@ async def _main_async(args: argparse.Namespace) -> dict:
         "model": args.model,
         "atlas": args.atlas,
         "media_resolution": args.media_resolution,
+        "thinking_level": "MEDIUM",
         "target_transport": "auto",
         "multimodal_history": args.multimodal_history,
+        "tools": ["fetch_atlas", "submit_estimate"],
         "preprocessing": "runner normalize -> downscale -> CLAHE",
         "limit": args.limit,
         "slices": records,

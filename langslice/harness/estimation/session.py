@@ -9,8 +9,6 @@ from langslice.atlas.space import Plane
 ARTIFACT_TARGET = "target"  # single-slice target image key
 ARTIFACT_TARGET_PREFIX = "target:"  # multi-slice: target:1, target:2, ...
 ARTIFACT_ATLAS_PREFIX = "atlas:"  # cached atlas slices: atlas:3.20
-ARTIFACT_ZOOM_PREFIX = "zoom:"
-ARTIFACT_SIDE_BY_SIDE_PREFIX = "side_by_side:"
 
 
 _PLANE_TO_AXIS_LABEL: dict[str, str] = {
