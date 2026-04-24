@@ -1,8 +1,8 @@
 import json
 from pathlib import Path
 
-from langslice.whole_brain.checkpoint import load_checkpoint, save_checkpoint
-from langslice.whole_brain.types import BrainEstimationConfig, SlicePosition
+from langslice_harness.whole_brain.checkpoint import load_checkpoint, save_checkpoint
+from langslice_harness.whole_brain.types import BrainEstimationConfig, SlicePosition
 
 
 def _cfg() -> BrainEstimationConfig:

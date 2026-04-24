@@ -2,62 +2,67 @@
 
 ## Overview
 
-LangSlice is a Python package and Tauri desktop application for registering histology slice images to BrainGlobe atlases.
-The current runtime is split into:
+LangSlice is an ADK-based Python harness and Tauri desktop application for
+registering histology slice images to BrainGlobe atlases.
 
-- VLM configuration in `langslice/vlm_config.py` (shared by estimation and registration)
-- AP estimation in `langslice/estimation/google/` (Gemini) with OpenAI stubs in `langslice/estimation/openai/`
-- registration workflows in `langslice/registration/common.py` (shared utilities and router), with provider-specific code in:
-  - `google/warping_image_gen.py` -- warping workflow via colored segmentation (default): Elastix B-spline deformation
-  - `google/landmarks_image_gen.py` -- legacy two-shot landmark workflow (superseded by warping)
-  - `google/landmarks_tool_use.py` -- iterative landmark tool-loop (experimental, on hold)
-  - `openai/` -- OpenAI stubs (not yet implemented)
-- deterministic affine and TPS solving in `langslice/registration/solver.py`
-- whole-brain multi-slice estimation in `langslice/whole_brain/pipeline.py`
-- CLI workflow orchestration in `langslice/cli.py`
-- Tauri desktop app in `tauri-gui/`
-- QUINT/ABBA-compatible JSON export with VisuAlign markers in `langslice/export.py`
+The active runtime lives in `src/langslice_harness/`. The public CLI command is
+still `langslice`, but Python imports should use `langslice_harness.*`.
 
 ## Active Paths
 
-- `langslice/cli.py` -- CLI entry point for `version`, `register`, `estimate`, `estimate-group`, and `estimate-brain`
-- `langslice/vlm_config.py` -- Gemini client config, backend selection, runtime settings
-- `langslice/atlas/` -- BrainGlobe loading, AP coordinate helpers, slice extraction, colored region and boundary helpers
-- `langslice/estimation/` -- Single-slice AP estimation: `google/` (Gemini), `openai/` (stubs), `debug.py` (shared)
-- `langslice/whole_brain/` -- Multi-slice whole-brain AP estimation pipeline
-- `langslice/ml/` -- Non-LLM machine learning tools
-- `langslice/registration/` -- registration workflows, runtime wrapper, affine/TPS solving, result types
-- `langslice/image_prep.py` -- image normalization, pixel-size detection, VLM downsampling
-- `langslice/agent_trace.py` -- structured trace-event helpers used by AP and registration flows
-- `langslice/retry.py` -- shared retry with backoff and progress heartbeat infrastructure
-- `langslice/export.py` -- coronal anchoring math, VisuAlign markers, and JSON serialization
-- `tauri-gui/` -- Tauri desktop app (Rust + React + Three.js)
-- `tests/` -- pytest coverage for atlas, export, image prep, and registration behavior
-- `docs/` -- maintained project documentation
-- `README.md` and `REPO_MAP.md` -- top-level user and navigation docs
+- `src/langslice_harness/cli.py` -- CLI entry point for `version`, `register`,
+  `estimate`, `estimate-group`, `estimate-brain`, and `ollama`
+- `src/langslice_harness/vlm_config.py` -- Gemini backend selection and runtime
+  settings
+- `src/langslice_harness/openai_config.py` -- OpenAI-compatible model settings
+- `src/langslice_harness/atlas/` -- BrainGlobe loading, AP coordinate helpers,
+  slice extraction, colored region maps, and borders
+- `src/langslice_harness/harness/estimation/` -- ADK AP-estimation agents,
+  prompts, tools, validators, and runners
+- `src/langslice_harness/estimation/` -- public AP-estimation exports and shared
+  helper code
+- `src/langslice_harness/harness/registration/` -- image-gen registration
+  candidate generation, provider adapters, and optional ADK review loop
+- `src/langslice_harness/registration/` -- public registration wrapper, runtime,
+  solver helpers, and result types
+- `src/langslice_harness/whole_brain/` -- multi-slice whole-brain AP estimation
+- `src/langslice_harness/image_prep.py` -- image normalization, pixel-size
+  detection, and VLM downsampling
+- `src/langslice_harness/export.py` -- QUINT/ABBA-compatible JSON export
+- `models/langslice-gemma-4/` -- fine-tuned model project
+- `tauri-gui/` -- Tauri desktop app
+- `tests/` -- pytest coverage
+- `docs/`, `README.md`, and `REPO_MAP.md` -- maintained documentation
 
 ## Runtime Facts
 
-- The main pipeline is `AP estimate -> colored segmentation -> Elastix B-spline -> VisuAlign markers -> export`.
-- The CLI `register` subcommand runs registration at a given AP position.
-- The CLI `estimate` subcommand runs single-slice AP estimation.
-- The CLI `estimate-group` subcommand runs multi-slice group AP estimation (2-8 consecutive slices).
-- The CLI `estimate-brain` subcommand runs whole-brain AP estimation on a folder of slices.
-- AP coordinates are atlas-native millimeters from the anterior edge of the volume.
-- Atlas orientation assumptions are centralized in `langslice/atlas/space.py` and currently require coronal layout with AP/DV/ML on axes `0/1/2`.
-- The warping workflow (default for image-gen models) produces an Elastix B-spline transform and VisuAlign markers from B-spline control points.
-- The legacy workflows compute affine and TPS results from landmark correspondences; export uses the affine result only.
+- The main pipeline is `AP estimate -> image-gen registration -> Elastix
+  B-spline -> VisuAlign markers -> export`.
+- Registration has one active path: image-gen registration.
+- Registration can run directly or with an optional ADK review loop.
+- The ADK review loop receives the generated atlas target, the Elastix-warped
+  atlas, and the warped-atlas border overlay.
+- AP coordinates are atlas-native millimeters from the anterior edge of the
+  volume.
+- Atlas orientation assumptions are centralized in
+  `src/langslice_harness/atlas/space.py` and currently require coronal layout
+  with AP/DV/ML on axes `0/1/2`.
 - Optional debug traces are written only when `LANGSLICE_VLM_DEBUG_DIR` is set.
 
 ## Boundaries
 
-- Treat `langslice/`, `tauri-gui/`, `tests/`, `docs/`, `README.md`, and `REPO_MAP.md` as the active project.
-- Treat `archive/` and `references/` as read-only unless the task explicitly targets them.
-- Keep documentation literal to the current code. If behavior changes, update the relevant markdown files in the same pass.
+- Treat `src/langslice_harness/`, `models/`, `tauri-gui/`, `tests/`, `docs/`,
+  `README.md`, and `REPO_MAP.md` as the active project.
+- Treat `_local/`, `references/`, and generated outputs as local-only material.
+- Keep documentation literal to the current code. If behavior changes, update
+  the relevant markdown files in the same pass.
 
 ## Verify After Edits
 
 - `python -m pytest`
 - `python -m ruff check .`
 - `python -m basedpyright`
-- `python -m langslice version`
+- `python -m langslice_harness version`
+- `langslice version`
+- `pnpm build` from `tauri-gui/` when GUI TypeScript changes
+- `cargo check` from `tauri-gui/src-tauri/` when Rust/Tauri changes

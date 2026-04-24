@@ -4,12 +4,12 @@ from typing import Protocol, cast
 
 import numpy as np
 
-from langslice.export import (
+from langslice_harness.export import (
     CORONAL_FRAME_PADDING_FACTOR,
     compute_anchoring,
     compute_coronal_frame_geometry,
 )
-from langslice.registration import AffineResult, affine_matrix_from_legacy_params
+from langslice_harness.registration import AffineResult, affine_matrix_from_legacy_params
 
 ATLAS_SHAPE = (528, 320, 456)
 ATLAS_RESOLUTION = (25.0, 25.0, 25.0)

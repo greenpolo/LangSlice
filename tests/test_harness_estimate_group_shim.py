@@ -17,7 +17,7 @@ from typing import Any
 
 from PIL import Image
 
-from langslice.harness.estimation._types import MultiSliceResult, PositionResult
+from langslice_harness.harness.estimation._types import MultiSliceResult, PositionResult
 
 
 def _fake_run_group_session_factory(captured: dict[str, Any]):
@@ -36,9 +36,9 @@ def _fake_run_group_session_factory(captured: dict[str, Any]):
 
 
 def test_estimate_group_exposed_on_legacy_shim():
-    """The legacy ``langslice.estimation`` re-exports the harness shim."""
-    from langslice.estimation import estimate_group as legacy
-    from langslice.harness.estimation import estimate_group as harness
+    """The legacy ``langslice_harness.estimation`` re-exports the harness shim."""
+    from langslice_harness.estimation import estimate_group as legacy
+    from langslice_harness.harness.estimation import estimate_group as harness
 
     # Same underlying function object — re-export, not a wrapper.
     assert legacy is harness
@@ -46,11 +46,11 @@ def test_estimate_group_exposed_on_legacy_shim():
 
 def test_estimate_group_converts_interval_um_to_mm(monkeypatch):
     """Legacy micron interval → runner millimetre interval."""
-    from langslice.harness.estimation import estimate_group
+    from langslice_harness.harness.estimation import estimate_group
 
     captured: dict[str, Any] = {}
     monkeypatch.setattr(
-        "langslice.harness.estimation.runner.run_group_session",
+        "langslice_harness.harness.estimation.runner.run_group_session",
         _fake_run_group_session_factory(captured),
     )
     # The shim imports run_group_session inside the function body, so the
@@ -74,11 +74,11 @@ def test_estimate_group_converts_interval_um_to_mm(monkeypatch):
 
 def test_estimate_group_forwards_model_name_as_model(monkeypatch):
     """Legacy ``model_name`` kwarg → runner ``model`` kwarg."""
-    from langslice.harness.estimation import estimate_group
+    from langslice_harness.harness.estimation import estimate_group
 
     captured: dict[str, Any] = {}
     monkeypatch.setattr(
-        "langslice.harness.estimation.runner.run_group_session",
+        "langslice_harness.harness.estimation.runner.run_group_session",
         _fake_run_group_session_factory(captured),
     )
 
@@ -98,11 +98,11 @@ def test_estimate_group_forwards_model_name_as_model(monkeypatch):
 
 def test_estimate_group_forwards_supported_legacy_kwargs(monkeypatch):
     """Legacy kwargs that the ADK runner understands are preserved."""
-    from langslice.harness.estimation import estimate_group
+    from langslice_harness.harness.estimation import estimate_group
 
     captured: dict[str, Any] = {}
     monkeypatch.setattr(
-        "langslice.harness.estimation.runner.run_group_session",
+        "langslice_harness.harness.estimation.runner.run_group_session",
         _fake_run_group_session_factory(captured),
     )
 
@@ -111,7 +111,7 @@ def test_estimate_group_forwards_supported_legacy_kwargs(monkeypatch):
     def dummy_progress(msg: str) -> None:
         pass
 
-    # All of these are passed by eval_group.py and/or cli.py today.
+    # These cover the public CLI and helper API surface.
     result = estimate_group(
         images=images,
         atlas_name="allen_mouse_25um",
@@ -144,11 +144,11 @@ def test_estimate_group_forwards_supported_legacy_kwargs(monkeypatch):
 
 def test_estimate_group_positional_interval_um(monkeypatch):
     """Legacy positional call shape still works: images, atlas_name, interval_um."""
-    from langslice.harness.estimation import estimate_group
+    from langslice_harness.harness.estimation import estimate_group
 
     captured: dict[str, Any] = {}
     monkeypatch.setattr(
-        "langslice.harness.estimation.runner.run_group_session",
+        "langslice_harness.harness.estimation.runner.run_group_session",
         _fake_run_group_session_factory(captured),
     )
 

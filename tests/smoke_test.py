@@ -6,8 +6,8 @@ import importlib
 
 import numpy as np
 
-from langslice.export import build_quint_export, export_to_dict
-from langslice.registration import (
+from langslice_harness.export import build_quint_export, export_to_dict
+from langslice_harness.registration import (
     AffineResult,
     affine_matrix_from_legacy_params,
     identity_affine_matrix,
@@ -15,14 +15,14 @@ from langslice.registration import (
 
 
 def test_public_module_imports() -> None:
-    importlib.import_module("langslice")
-    importlib.import_module("langslice.atlas")
-    importlib.import_module("langslice.vlm_config")
-    importlib.import_module("langslice.estimation")
-    importlib.import_module("langslice.registration")
-    importlib.import_module("langslice.export")
-    importlib.import_module("langslice.image_prep")
-    importlib.import_module("langslice.cli")
+    importlib.import_module("langslice_harness")
+    importlib.import_module("langslice_harness.atlas")
+    importlib.import_module("langslice_harness.vlm_config")
+    importlib.import_module("langslice_harness.estimation")
+    importlib.import_module("langslice_harness.registration")
+    importlib.import_module("langslice_harness.export")
+    importlib.import_module("langslice_harness.image_prep")
+    importlib.import_module("langslice_harness.cli")
 
 
 def test_quint_export_smoke_payload() -> None:

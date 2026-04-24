@@ -1,4 +1,4 @@
-from langslice.whole_brain.types import (
+from langslice_harness.whole_brain.types import (
     BrainEstimationConfig,
     BrainEstimationResult,
     BrainEstimationSummary,

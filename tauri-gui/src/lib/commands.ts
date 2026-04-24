@@ -71,9 +71,7 @@ export async function runRegister(params: {
   model: string;
   thinking: string;
   temperature: number;
-  landmarks: number;
   vlmResolution: number;
-  workflow: string;
 }): Promise<Record<string, unknown>> {
   return invoke<Record<string, unknown>>("run_register", params);
 }

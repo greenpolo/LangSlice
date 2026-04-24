@@ -5,14 +5,10 @@ import type {
   MeshData,
   NavigationView,
   SliceInfo,
-  SliceResult,
   ViewMode,
   PipelineStatus,
 } from "../lib/types";
 import * as commands from "../lib/commands";
-
-let sliceDebounceTimer: ReturnType<typeof setTimeout> | null = null;
-let sliceRequestId = 0;
 
 /** Decode base64 to Uint8Array */
 function b64ToBytes(b64: string): Uint8Array {
@@ -99,7 +95,6 @@ interface AppState {
   agentWorkflow: string;
   agentThinking: string;
   agentTemperature: number;
-  agentLandmarks: number;
   agentVlmResolution: number;
   agentMaxIterations: number;
 
@@ -193,7 +188,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   agentWorkflow: "auto",
   agentThinking: "HIGH",
   agentTemperature: 1.0,
-  agentLandmarks: 14,
   agentVlmResolution: 2048,
   agentMaxIterations: 20,
 
@@ -311,7 +305,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   runPipeline: async () => {
     const { selectedBrainId, selectedSliceIndex, brains, atlasName,
             agentModel, agentWorkflow, agentThinking, agentTemperature,
-            agentLandmarks, agentVlmResolution, agentMaxIterations } = get();
+            agentVlmResolution, agentMaxIterations } = get();
 
     const brain = brains.find((b) => b.id === selectedBrainId);
     if (!brain || selectedSliceIndex === null) {
@@ -353,19 +347,17 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       // Step 2: Registration
       get().addLog("Running registration...");
-      const regResult = await commands.runRegister({
+      await commands.runRegister({
         imagePath: slice.path,
         positionMm,
         atlas: atlasName,
         model: agentModel,
         thinking: agentThinking,
         temperature: agentTemperature,
-        landmarks: agentLandmarks,
         vlmResolution: agentVlmResolution,
-        workflow: agentWorkflow === "auto" ? "auto" : agentWorkflow,
       });
 
-      get().addLog(`Registration complete: ${(regResult.accepted_correspondences as unknown[])?.length ?? 0} correspondences`);
+      get().addLog("Image-gen registration complete");
 
       // Update slice status to done with AP position
       set((s) => ({
@@ -401,7 +393,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   exportResults: async () => {
-    const { selectedBrainId, selectedSliceIndex, brains, atlasName, currentApMm } = get();
+    const { selectedBrainId, selectedSliceIndex, brains, atlasName } = get();
     const brain = brains.find((b) => b.id === selectedBrainId);
     if (!brain || selectedSliceIndex === null) return;
 
@@ -451,9 +443,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     // Also fetch composite for 2D views
-    const { viewMode, currentApMm } = get();
+    const { viewMode } = get();
     if (viewMode === "split" || viewMode === "overlay") {
-      get().fetchComposite(currentApMm);
+      get().buildComposite();
     }
   },
 

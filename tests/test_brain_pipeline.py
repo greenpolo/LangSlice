@@ -1,7 +1,7 @@
 """Tests for isotonic fitting in the brain pipeline."""
 
-from langslice.whole_brain.pipeline import _fit_isotonic
-from langslice.whole_brain.types import SlicePosition
+from langslice_harness.whole_brain.pipeline import _fit_isotonic
+from langslice_harness.whole_brain.types import SlicePosition
 
 
 def _make_slices(positions: list[float]) -> list[SlicePosition]:

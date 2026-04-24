@@ -18,7 +18,6 @@ export function SettingsPanel() {
   const agentWorkflow = useAppStore((s) => s.agentWorkflow);
   const agentThinking = useAppStore((s) => s.agentThinking);
   const agentTemperature = useAppStore((s) => s.agentTemperature);
-  const agentLandmarks = useAppStore((s) => s.agentLandmarks);
   const agentVlmResolution = useAppStore((s) => s.agentVlmResolution);
   const agentMaxIterations = useAppStore((s) => s.agentMaxIterations);
   const setSetting = useAppStore((s) => s.setAgentSetting);
@@ -136,18 +135,6 @@ export function SettingsPanel() {
             min={0} max={2} step={0.05}
             value={agentTemperature}
             onChange={(e) => setSetting("agentTemperature", parseFloat(e.target.value))}
-          />
-        </div>
-
-        <div className="settings-row">
-          <label className="settings-label">Landmarks</label>
-          <input
-            type="number"
-            className="control-select"
-            style={{ width: 60 }}
-            min={6} max={24}
-            value={agentLandmarks}
-            onChange={(e) => setSetting("agentLandmarks", parseInt(e.target.value))}
           />
         </div>
 

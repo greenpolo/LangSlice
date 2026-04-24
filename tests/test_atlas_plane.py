@@ -1,11 +1,11 @@
-from langslice.atlas.core import (
+from langslice_harness.atlas.core import (
     get_position_range_mm,
     get_reference_slice,
     index_to_position_mm,
     load_atlas,
     position_mm_to_index,
 )
-from langslice.atlas.space import atlas_space_context, slice_axis_index
+from langslice_harness.atlas.space import atlas_space_context, slice_axis_index
 
 
 def test_coronal_axis_is_ap():

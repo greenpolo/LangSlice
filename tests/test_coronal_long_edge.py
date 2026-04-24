@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 
 import numpy as np
 
-from langslice.atlas.core import get_coronal_long_edge, get_in_plane_long_edge
+from langslice_harness.atlas.core import get_coronal_long_edge, get_in_plane_long_edge
 
 
 def _mock_atlas(shape: tuple[int, int, int]) -> MagicMock:

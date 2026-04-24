@@ -3,8 +3,9 @@
 import numpy as np
 from PIL import Image
 
-import langslice.registration.core as registration_core
-from langslice.registration import (
+import langslice_harness.cli as cli
+import langslice_harness.registration.core as registration_core
+from langslice_harness.registration import (
     AffineResult,
     NonlinearResult,
     RegistrationCorrespondence,
@@ -16,8 +17,6 @@ from langslice.registration import (
 def fake_runtime(**kwargs: object) -> RegistrationResult:
     image_obj = kwargs["image"]
     assert isinstance(image_obj, Image.Image)
-    assert kwargs["target_landmark_count"] == 12
-    assert kwargs["workflow"] == "multimodal_tool_loop"
     assert kwargs.get("on_correspondences") is None
     assert kwargs.get("on_trace") is None
     assert kwargs.get("debug_dir") is None
@@ -64,3 +63,25 @@ def test_registration_runtime_orchestration(monkeypatch) -> None:
     )
     assert full_result.affine_result.backend == "landmark_affine"
     assert full_result.nonlinear_result.backend == "tps"
+
+
+def test_resolve_register_models_defaults_review_to_effective_model() -> None:
+    image_model, review_model = cli._resolve_register_models(
+        default_image_model="gpt-image-2",
+        default_review_model="gpt-4.1",
+        image_model=None,
+        review_model=None,
+    )
+    assert image_model == "gpt-image-2"
+    assert review_model == "gpt-4.1"
+
+
+def test_resolve_register_models_keeps_explicit_review_model() -> None:
+    image_model, review_model = cli._resolve_register_models(
+        default_image_model="gpt-image-1.5",
+        default_review_model="gpt-4.1",
+        image_model="gpt-image-2",
+        review_model="gpt-4.1-mini",
+    )
+    assert image_model == "gpt-image-2"
+    assert review_model == "gpt-4.1-mini"

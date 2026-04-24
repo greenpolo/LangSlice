@@ -3,9 +3,9 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "langslice"
+name = "langslice-harness"
 version = "0.1.0"
-description = "VLM-based brain slice registration using Gemini and BrainGlobe atlases"
+description = "ADK harness for brain slice registration using image generation and BrainGlobe atlases"
 requires-python = ">=3.10"
 dependencies = [
     "google-genai",
@@ -24,7 +24,7 @@ dependencies = [
 ]
 
 [project.scripts]
-langslice = "langslice.cli:main"
+langslice = "langslice_harness.cli:main"
 
 [project.optional-dependencies]
 dev = [
@@ -34,18 +34,20 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["langslice*"]
+where = ["src"]
+include = ["langslice_harness*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
 addopts = "-ra"
+pythonpath = ["src"]
 
 [tool.ruff]
 target-version = "py310"
 line-length = 100
 include = [
-    "langslice/**/*.py",
+    "src/langslice_harness/**/*.py",
     "tests/test_*.py",
     "tests/*_test.py",
 ]
@@ -54,6 +56,7 @@ include = [
 select = ["E", "F", "I", "B", "UP"]
 
 [tool.pyright]
-include = ["langslice", "tests"]
+include = ["src/langslice_harness", "tests"]
+extraPaths = ["src"]
 pythonVersion = "3.10"
 typeCheckingMode = "basic"

@@ -16,11 +16,11 @@ For a BrainGlobe atlas with AP resolution `res_ap_um`:
 
 The active helper functions are:
 
-- `position_mm_to_index(...)` in `langslice.atlas.core`
-- `index_to_position_mm(...)` in `langslice.atlas.core`
-- `get_position_range_mm(...)` in `langslice.atlas.core`
+- `position_mm_to_index(...)` in `langslice_harness.atlas.core`
+- `index_to_position_mm(...)` in `langslice_harness.atlas.core`
+- `get_position_range_mm(...)` in `langslice_harness.atlas.core`
 
-These helpers are now backed by `langslice.atlas.space`, which builds a `brainglobe-space` `AnatomicalSpace` context from atlas orientation/shape/resolution.
+These helpers are now backed by `langslice_harness.atlas.space`, which builds a `brainglobe-space` `AnatomicalSpace` context from atlas orientation/shape/resolution.
 
 These functions treat:
 
@@ -34,10 +34,10 @@ Current guardrails intentionally require coronal-layout atlases (`AP/DV/ML -> ax
 
 LangSlice uses `position_mm` consistently in the current implementation:
 
-- atlas slice loading in `langslice.atlas.core`
-- AP estimation prompts and tool calls in `langslice.estimation.ap_tool_use`
+- atlas slice loading in `langslice_harness.atlas.core`
+- AP estimation prompts and tool calls in `langslice_harness.estimation.ap_tool_use`
 - CLI and Tauri GUI state management
-- QUINT export anchoring in `langslice.export`
+- QUINT export anchoring in `langslice_harness.export`
 
 The AP estimator asks Gemini to search the atlas in millimeters from the anterior edge, not in Bregma-relative units.
 
@@ -51,7 +51,7 @@ For LangSlice's current coronal export path:
 - the full in-plane affine matrix maps source-image pixels into a coronal output frame
 - the anchoring vector is derived from transformed source-image corners in that frame
 
-This is the expectation implemented by `compute_anchoring(...)` in `langslice.export`.
+This is the expectation implemented by `compute_anchoring(...)` in `langslice_harness.export`.
 
 ## BrainGlobe Fields LangSlice Depends On
 

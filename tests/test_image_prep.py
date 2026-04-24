@@ -5,7 +5,7 @@ from typing import cast
 
 from PIL import Image
 
-from langslice.image_prep import (
+from langslice_harness.image_prep import (
     detect_pixel_size_um,
     load_image_state,
     prepare_image_for_vlm,

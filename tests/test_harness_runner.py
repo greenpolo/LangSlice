@@ -8,19 +8,19 @@ from google.adk.models.llm_response import LlmResponse
 from google.genai import types
 from PIL import Image
 
-from langslice.harness.estimation._types import MultiSliceResult, PositionResult
-from langslice.harness.estimation.group import build_group_agent
-from langslice.harness.estimation.runner import (
+from langslice_harness.harness.estimation._types import MultiSliceResult, PositionResult
+from langslice_harness.harness.estimation.group import build_group_agent
+from langslice_harness.harness.estimation.runner import (
     _prepare_target_payloads,
     run_group_session,
     run_single_slice_session,
 )
-from langslice.harness.estimation.session import (
+from langslice_harness.harness.estimation.session import (
     ARTIFACT_TARGET,
     build_initial_state,
 )
-from langslice.harness.estimation.single_slice import build_single_slice_agent
-from langslice.harness.estimation.validators import gate_submit_tool
+from langslice_harness.harness.estimation.single_slice import build_single_slice_agent
+from langslice_harness.harness.estimation.validators import gate_submit_tool
 
 
 def _count_inline_images(contents: list[types.Content]) -> int:
@@ -114,7 +114,7 @@ def test_prepare_target_payloads_keeps_display_payload_only(monkeypatch):
     def _raise_if_called():
         raise AssertionError("inline target preparation should not create a Gemini client")
 
-    monkeypatch.setattr("langslice.vlm_config.get_client", _raise_if_called)
+    monkeypatch.setattr("langslice_harness.vlm_config.get_client", _raise_if_called)
 
     payloads, uploaded_files = _prepare_target_payloads(
         [Image.new("RGB", (1200, 800), color=128)],
@@ -508,9 +508,9 @@ def test_single_runner_uses_file_api_target_for_native_gemini(monkeypatch):
         "new_llm",
         staticmethod(lambda model: CaptureInitialTransportLlm(model=model)),
     )
-    monkeypatch.setattr("langslice.vlm_config.supports_file_api", lambda: True)
-    monkeypatch.setattr("langslice.vlm_config.file_poll_timeout_s", lambda: 0.01)
-    monkeypatch.setattr("langslice.vlm_config.get_client", lambda: fake_client)
+    monkeypatch.setattr("langslice_harness.vlm_config.supports_file_api", lambda: True)
+    monkeypatch.setattr("langslice_harness.vlm_config.file_poll_timeout_s", lambda: 0.01)
+    monkeypatch.setattr("langslice_harness.vlm_config.get_client", lambda: fake_client)
 
     result = asyncio.run(
         run_single_slice_session(
@@ -556,12 +556,12 @@ def test_single_runner_uses_file_api_target_for_native_gemma(monkeypatch):
             )
 
     monkeypatch.setattr(
-        "langslice.harness.estimation.model_resolver._load_adk_gemma_class",
+        "langslice_harness.harness.estimation.model_resolver._load_adk_gemma_class",
         lambda: CaptureInitialTransportLlm,
     )
-    monkeypatch.setattr("langslice.vlm_config.supports_file_api", lambda: True)
-    monkeypatch.setattr("langslice.vlm_config.file_poll_timeout_s", lambda: 0.01)
-    monkeypatch.setattr("langslice.vlm_config.get_client", lambda: fake_client)
+    monkeypatch.setattr("langslice_harness.vlm_config.supports_file_api", lambda: True)
+    monkeypatch.setattr("langslice_harness.vlm_config.file_poll_timeout_s", lambda: 0.01)
+    monkeypatch.setattr("langslice_harness.vlm_config.get_client", lambda: fake_client)
 
     result = asyncio.run(
         run_single_slice_session(
@@ -667,6 +667,96 @@ def test_single_runner_continues_same_session_with_nudge(monkeypatch):
     assert result.reasoning == "nudge worked"
 
 
+def test_single_runner_long_no_tool_turn_gets_main_style_nudge(monkeypatch):
+    """A long no-tool response should receive /main's explicit tool-call reminder."""
+
+    requests_seen = 0
+    saw_thought_nudge = False
+
+    class ThoughtLeakThenSubmitLlm(BaseLlm):
+        async def generate_content_async(
+            self, llm_request, stream: bool = False
+        ) -> AsyncGenerator[LlmResponse, None]:
+            nonlocal requests_seen, saw_thought_nudge
+            del stream
+            requests_seen += 1
+            contents = list(llm_request.contents or [])
+            latest_text = " ".join(
+                part.text or ""
+                for part in (contents[-1].parts or [])
+                if getattr(part, "text", None)
+            )
+            if "You wrote a long text response instead of calling a tool" in latest_text:
+                saw_thought_nudge = True
+
+            if requests_seen == 1:
+                yield LlmResponse(
+                    content=types.Content(
+                        role="model",
+                        parts=[types.Part.from_text(text="analysis " * 1200)],
+                    ),
+                    partial=False,
+                    turn_complete=True,
+                    usage_metadata=types.GenerateContentResponseUsageMetadata(
+                        candidates_token_count=1201,
+                    ),
+                )
+                return
+
+            n_function_responses = sum(
+                1
+                for content in contents
+                for part in (content.parts or [])
+                if getattr(part, "function_response", None) is not None
+            )
+            if n_function_responses == 0:
+                call = types.Part.from_function_call(
+                    name="fetch_atlas",
+                    args={"positions_mm": [4.0, 5.0, 6.0]},
+                )
+            elif n_function_responses == 1:
+                call = types.Part.from_function_call(
+                    name="fetch_atlas",
+                    args={"positions_mm": [5.8, 6.0, 6.2]},
+                )
+            else:
+                call = types.Part.from_function_call(
+                    name="submit_estimate",
+                    args={"position_mm": 6.0, "reasoning": "thought nudge worked"},
+                )
+
+            yield LlmResponse(
+                content=types.Content(role="model", parts=[call]),
+                partial=False,
+                turn_complete=True,
+            )
+
+    from google.adk.models.registry import LLMRegistry
+
+    monkeypatch.setattr(
+        LLMRegistry,
+        "new_llm",
+        staticmethod(lambda model: ThoughtLeakThenSubmitLlm(model=model)),
+    )
+
+    result = asyncio.run(
+        run_single_slice_session(
+            image=Image.new("RGB", (256, 256), color=128),
+            atlas_name="allen_mouse_25um",
+            plane="coronal",
+            model="gemini-3-flash-preview",
+            max_iterations=8,
+            max_retries=1,
+            apply_clahe=False,
+            target_transport="inline",
+        )
+    )
+
+    assert saw_thought_nudge is True
+    assert result.position_mm == 6.0
+    assert result.reasoning == "thought nudge worked"
+
+
 def test_group_runner_uses_file_api_targets_for_native_gemini(monkeypatch):
     """Native Gemini group sessions should upload each target once."""
 
@@ -715,9 +805,9 @@ def test_group_runner_uses_file_api_targets_for_native_gemini(monkeypatch):
         "new_llm",
         staticmethod(lambda model: CaptureInitialGroupTransportLlm(model=model)),
     )
-    monkeypatch.setattr("langslice.vlm_config.supports_file_api", lambda: True)
-    monkeypatch.setattr("langslice.vlm_config.file_poll_timeout_s", lambda: 0.01)
-    monkeypatch.setattr("langslice.vlm_config.get_client", lambda: fake_client)
+    monkeypatch.setattr("langslice_harness.vlm_config.supports_file_api", lambda: True)
+    monkeypatch.setattr("langslice_harness.vlm_config.file_poll_timeout_s", lambda: 0.01)
+    monkeypatch.setattr("langslice_harness.vlm_config.get_client", lambda: fake_client)
 
     result = asyncio.run(
         run_group_session(
@@ -769,7 +859,7 @@ def test_model_object_target_transport_stays_inline(monkeypatch):
     def _raise_if_called():
         raise AssertionError("local/model-object path should not create a Gemini client")
 
-    monkeypatch.setattr("langslice.vlm_config.get_client", _raise_if_called)
+    monkeypatch.setattr("langslice_harness.vlm_config.get_client", _raise_if_called)
 
     result = asyncio.run(
         run_single_slice_session(
@@ -833,14 +923,14 @@ def test_litellm_proxy_model_string_resolves_to_inline_model_object(monkeypatch)
             )
 
     monkeypatch.setattr(
-        "langslice.harness.estimation.model_resolver._load_litellm_class",
+        "langslice_harness.harness.estimation.model_resolver._load_litellm_class",
         lambda: FakeLiteLlm,
     )
 
     def _raise_if_called():
         raise AssertionError("LiteLLM proxy path should not create a Gemini client")
 
-    monkeypatch.setattr("langslice.vlm_config.get_client", _raise_if_called)
+    monkeypatch.setattr("langslice_harness.vlm_config.get_client", _raise_if_called)
 
     result = asyncio.run(
         run_single_slice_session(
@@ -905,7 +995,7 @@ def test_ollama_model_string_resolves_to_inline_model_object(monkeypatch):
             )
 
     monkeypatch.setattr(
-        "langslice.harness.estimation.model_resolver._load_litellm_class",
+        "langslice_harness.harness.estimation.model_resolver._load_litellm_class",
         lambda: FakeLiteLlm,
     )
     monkeypatch.setenv("LANGSLICE_OLLAMA_BASE", "http://localhost:11434")
@@ -913,7 +1003,7 @@ def test_ollama_model_string_resolves_to_inline_model_object(monkeypatch):
     def _raise_if_called():
         raise AssertionError("Ollama path should not create a Gemini client")
 
-    monkeypatch.setattr("langslice.vlm_config.get_client", _raise_if_called)
+    monkeypatch.setattr("langslice_harness.vlm_config.get_client", _raise_if_called)
 
     result = asyncio.run(
         run_single_slice_session(

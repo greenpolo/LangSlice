@@ -5,10 +5,14 @@ from unittest.mock import patch
 
 from PIL import Image
 
-from langslice.estimation import APResult
-from langslice.whole_brain.estimation_agents import run_anchor_estimation, run_slice_estimation
+from langslice_harness.estimation import APResult
+from langslice_harness.whole_brain.estimation_agents import (
+    run_anchor_estimation,
+    run_slice_estimation,
+)
 
 _FAKE_IMAGE = Image.new("RGB", (64, 64), (128, 128, 128))
+_ESTIMATION_AGENTS = "langslice_harness.whole_brain.estimation_agents"
 
 
 def test_run_anchor_estimation():
@@ -29,10 +33,10 @@ def test_run_anchor_estimation():
 
     with (
         patch(
-            "langslice.whole_brain.estimation_agents.estimate_position_image_gen",
+            f"{_ESTIMATION_AGENTS}.estimate_position_image_gen",
             fake_image_gen,
         ),
-        patch("langslice.whole_brain.estimation_agents._prepare_slice", return_value=_FAKE_IMAGE),
+        patch(f"{_ESTIMATION_AGENTS}._prepare_slice", return_value=_FAKE_IMAGE),
     ):
         result = asyncio.run(
             run_anchor_estimation(
@@ -66,14 +70,14 @@ def test_run_anchor_estimation_midpoint_fallback():
 
     with (
         patch(
-            "langslice.whole_brain.estimation_agents.estimate_position_image_gen",
+            f"{_ESTIMATION_AGENTS}.estimate_position_image_gen",
             fake_image_gen_fail_first,
         ),
-        patch("langslice.whole_brain.estimation_agents._prepare_slice", return_value=_FAKE_IMAGE),
-        patch("langslice.whole_brain.estimation_agents.load_atlas"),
-        patch("langslice.whole_brain.estimation_agents.get_coronal_long_edge", return_value=528),
+        patch(f"{_ESTIMATION_AGENTS}._prepare_slice", return_value=_FAKE_IMAGE),
+        patch(f"{_ESTIMATION_AGENTS}.load_atlas"),
+        patch(f"{_ESTIMATION_AGENTS}.get_coronal_long_edge", return_value=528),
         patch(
-            "langslice.whole_brain.estimation_agents.get_position_range_mm",
+            f"{_ESTIMATION_AGENTS}.get_position_range_mm",
             return_value=(0.0, 13.175),
         ),
     ):
@@ -96,14 +100,14 @@ def test_run_anchor_estimation_both_stages_fail():
 
     with (
         patch(
-            "langslice.whole_brain.estimation_agents.estimate_position_image_gen",
+            f"{_ESTIMATION_AGENTS}.estimate_position_image_gen",
             fake_image_gen_always_fail,
         ),
-        patch("langslice.whole_brain.estimation_agents._prepare_slice", return_value=_FAKE_IMAGE),
-        patch("langslice.whole_brain.estimation_agents.load_atlas"),
-        patch("langslice.whole_brain.estimation_agents.get_coronal_long_edge", return_value=528),
+        patch(f"{_ESTIMATION_AGENTS}._prepare_slice", return_value=_FAKE_IMAGE),
+        patch(f"{_ESTIMATION_AGENTS}.load_atlas"),
+        patch(f"{_ESTIMATION_AGENTS}.get_coronal_long_edge", return_value=528),
         patch(
-            "langslice.whole_brain.estimation_agents.get_position_range_mm",
+            f"{_ESTIMATION_AGENTS}.get_position_range_mm",
             return_value=(0.0, 13.175),
         ),
     ):
@@ -136,10 +140,10 @@ def test_run_slice_estimation():
 
     with (
         patch(
-            "langslice.whole_brain.estimation_agents.estimate_position_image_gen",
+            f"{_ESTIMATION_AGENTS}.estimate_position_image_gen",
             fake_image_gen,
         ),
-        patch("langslice.whole_brain.estimation_agents._prepare_slice", return_value=_FAKE_IMAGE),
+        patch(f"{_ESTIMATION_AGENTS}._prepare_slice", return_value=_FAKE_IMAGE),
     ):
         result = asyncio.run(
             run_slice_estimation(
@@ -179,10 +183,10 @@ def test_run_slice_estimation_confirm_fallback():
 
     with (
         patch(
-            "langslice.whole_brain.estimation_agents.estimate_position_image_gen",
+            f"{_ESTIMATION_AGENTS}.estimate_position_image_gen",
             fake_image_gen,
         ),
-        patch("langslice.whole_brain.estimation_agents._prepare_slice", return_value=_FAKE_IMAGE),
+        patch(f"{_ESTIMATION_AGENTS}._prepare_slice", return_value=_FAKE_IMAGE),
     ):
         result = asyncio.run(
             run_slice_estimation(

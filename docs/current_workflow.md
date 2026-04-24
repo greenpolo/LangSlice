@@ -1,120 +1,57 @@
 # Current Workflow
 
-This file describes the CLI and Tauri GUI workflows as currently implemented.
+This file describes the active CLI and Tauri GUI workflows.
 
-## CLI: `langslice estimate`
+## AP Estimation
 
-Run AP estimation from the command line:
-
-```
+```bash
 langslice estimate <image> [--atlas ...] [--model ...] [--workflow ...]
+langslice estimate-group <img1> <img2> ... [--interval 200] [--atlas ...]
+langslice estimate-brain <image_folder> [--atlas ...] [--anchors ...]
 ```
 
-1. Load and normalize the image to 8-bit RGB.
-2. Detect pixel size from TIFF or OME metadata when available.
-3. Downscale to VLM resolution (default 2048px long edge).
-4. Optionally apply adaptive preprocessing (`--preprocess auto`): CLAHE + brightness normalization.
-5. Run AP estimation via Gemini tool-use or image-gen workflow.
-6. Print the estimated AP position and reasoning.
-7. Optionally write debug artifacts (`--out`).
+Single-slice and group AP estimation run through the ADK harness. The agent
+surface is intentionally small: `fetch_atlas`, `submit_estimate`, and
+`submit_group_estimate`.
 
-Supported file types: `.png`, `.jpg`, `.jpeg`, `.tif`, `.tiff`.
+Whole-brain estimation discovers a folder of slices, estimates anchor slices,
+interpolates center positions, runs windowed image-gen estimation for the
+remaining slices, and fits a constrained monotonic AP curve.
 
-## CLI: `langslice estimate-group`
+## Image-Gen Registration
 
-Estimate AP positions for a group of consecutive slices:
-
-```
-langslice estimate-group <img1> <img2> ... [--interval 200] [--thickness 50] [--atlas ...] [--model ...]
+```bash
+langslice register <image> --position <mm> [--registration-mode direct|agentic] [--image-model ...] [--review-model ...] [--max-candidates 3] [--out ...]
 ```
 
-1. Load and normalize each image (2-8 slices in anterior-to-posterior order).
-2. Optionally apply adaptive preprocessing (`--preprocess auto`).
-3. Downscale each to VLM resolution.
-4. Run multi-slice group tool-use estimation via `estimate_group(...)`.
-5. Print per-slice estimated positions and group reasoning.
-6. Optionally write debug artifacts (`--out`).
+Registration has one active method: image-gen registration.
 
-## CLI: `langslice estimate-brain`
+1. Load, normalize, and downsample the histology slice.
+2. Generate atlas inputs at the requested AP position.
+3. Ask the image model to generate an atlas-colored target aligned to the histology.
+4. Register the generated target to the atlas color map with itk-elastix.
+5. Warp the atlas through the recovered transform.
+6. Return the model-generated atlas target, Elastix-warped atlas, warped-border overlay, and VisuAlign markers.
 
-Run whole-brain AP estimation on a folder of slices:
+Modes:
 
-```
-langslice estimate-brain <image_folder> [--atlas ...] [--anchors 4] [--interval 200] [--thickness 50]
-```
+- `direct` generates one candidate and returns it.
+- `agentic` lets an ADK review agent inspect up to three candidates before confirming one.
 
-1. Discover and naturally sort all slice images in the folder.
-2. Select anchor slices via center-out placement.
-3. Run two-stage anchor estimation sequentially (image-gen 2-pass coarse + nano-banana fine pass).
-4. Interpolate center positions for all non-anchor slices.
-5. Estimate all non-anchor slices in parallel with 2-pass nano-banana (±2mm windows).
-6. Run confirmation pass on near-threshold estimates.
-7. Fit Huber-loss constrained monotonic curve through all estimates.
-8. Write final positions to JSON. Checkpoint after each phase for resumability.
+Provider routing:
 
-## CLI: `langslice register`
-
-Run registration at a known AP position:
-
-```
-langslice register <image> --position <mm> [--workflow colored_segmentation] [--model ...] [--out ...]
-```
-
-1. Load, normalize, and downscale the image.
-2. Call `estimate_registration_runtime(...)` at the specified position with the selected workflow.
-3. Print registration summary: accepted pairs, rotation, translation, scale, shear, residuals.
-4. Write debug artifacts to the output directory.
-
-Workflow selection (`--workflow`):
-- `colored_segmentation` (default for image-gen models)
-- `image_gen_two_shot` (legacy)
-- `multimodal_tool_loop` (experimental, on hold)
-
-If `--workflow` is not specified, the default is auto-selected based on the model via `default_registration_workflow()`.
+- Google image models use the Google provider adapter.
+- `gpt-image-2` uses the OpenAI Images API by default.
+- Flux models use the OpenAI-compatible Images API path.
 
 ## Tauri GUI
 
-The desktop application lives in `tauri-gui/` and is launched via `cd tauri-gui && pnpm tauri dev`.
+The desktop app lives in `tauri-gui/` and runs the Python harness as a sidecar.
+The Rust backend handles atlas loading, reslicing, and mesh serving. The React
+frontend provides the 3D atlas view, settings, dashboard, and registration review
+views.
 
-The GUI provides:
-- 3D atlas viewer with region mesh rendering
-- Pipeline sidecar for running AP estimation and registration
-- Settings management (auth backends, model selection)
-- Split and overlay views for reviewing registration results
-- Dashboard for managing runs
+## Debug And Request Capture
 
-The Python pipeline runs as a sidecar process; the Rust backend handles atlas loading, reslicing, and mesh serving.
-
-## Registration Runtime Behavior
-
-### Colored segmentation workflow (default for image-gen models)
-
-The colored segmentation workflow in `warping_image_gen.py`:
-
-1. Generate four atlas input images at the target AP position: colored region map, smoothed boundary lines, grayscale reference, and the histology slice.
-2. Send all four images with prompt to Gemini image-gen. The model warps the colored atlas regions to match the histology anatomy.
-3. Classify pixels in the model output back to atlas region IDs using nearest-color matching.
-4. Extract smoothed borders from both the atlas and model-output classified maps.
-5. Run itk-elastix B-spline registration on the border images to recover the dense deformation field.
-6. Warp the atlas RGB through the recovered transform.
-7. Extract VisuAlign-compatible `[ox, oy, nx, ny]` markers from B-spline control points.
-8. Return results including the warped atlas, border images, and markers.
-
-### Legacy workflows
-
-The legacy workflows (`image_gen_two_shot`, `multimodal_tool_loop`) follow the correspondence-based pipeline:
-
-1. Load the atlas and build an atlas slice.
-2. Ask Gemini for correspondence pairs via the selected workflow.
-3. Require at least 3 pairs.
-4. Fit one affine transform from atlas coordinates to slice coordinates.
-5. Fit one TPS result from the same pairs.
-6. Return both results.
-
-## Export Behavior
-
-The export path uses `build_quint_export(...)` plus `save_quint_json(...)`.
-
-- Loads atlas shape and resolution from BrainGlobe.
-- `SliceExport.markers` can be populated with VisuAlign `[ox, oy, nx, ny]` pairs from Elastix B-spline control points (colored segmentation workflow).
-- The legacy workflows use the affine result only; the nonlinear TPS result is not exported.
+Set `LANGSLICE_VLM_DEBUG_DIR` to save run artifacts. For ADK AP request auditing,
+set `LANGSLICE_ADK_CAPTURE_REQUESTS_DIR` to write redacted JSONL request captures.
