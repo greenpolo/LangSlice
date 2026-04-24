@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import math
 
-from langslice.registration.solver import (
+from langslice_harness.registration.solver import (
     fit_affine_from_correspondences,
     fit_tps_from_correspondences,
 )
-from langslice.registration.types import RegistrationCorrespondence
+from langslice_harness.registration.types import RegistrationCorrespondence
 
 
 def _sample_correspondences() -> list[RegistrationCorrespondence]:

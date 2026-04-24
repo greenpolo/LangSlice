@@ -5,9 +5,9 @@ import pytest
 from google.genai import types
 from PIL import Image
 
-from langslice.harness.estimation.adk_plugins import MULTIMODAL_PARTS_RESULT_KEY
-from langslice.harness.estimation.session import atlas_key, build_initial_state
-from langslice.harness.estimation.tools import (
+from langslice_harness.harness.estimation.adk_plugins import MULTIMODAL_PARTS_RESULT_KEY
+from langslice_harness.harness.estimation.session import atlas_key, build_initial_state
+from langslice_harness.harness.estimation.tools import (
     _clamp_and_dedupe_positions,
     _image_to_jpeg_bytes,
     _is_broad_sweep,

@@ -42,26 +42,19 @@ debug_runs/
 test_runs/
 eval_outputs/
 
-# Auth tokens / device codes
-eval/.device_auth.json
-
 # Large binary data
 *.nii
 *.nii.gz
 
-# slice-bench outputs
-slice-bench/results/
-!slice-bench/results/.gitkeep
-
 # Downloaded training/eval datasets
-data/
+/data/
 debug_output/
 
 # Local-only mirror of dataset-specific files kept off the public repo
 _local/
 
-# langslice-gemma-4-31b generated data and checkpoints
-langslice-gemma-4-31b/data/atlas_slices/
-!langslice-gemma-4-31b/data/atlas_slices/.gitkeep
-langslice-gemma-4-31b/checkpoints/
-!langslice-gemma-4-31b/checkpoints/.gitkeep
+# Fine-tuned model generated data and checkpoints
+models/langslice-gemma-4/data/atlas_slices/
+!models/langslice-gemma-4/data/atlas_slices/.gitkeep
+models/langslice-gemma-4/checkpoints/
+!models/langslice-gemma-4/checkpoints/.gitkeep

@@ -1,4 +1,4 @@
-/** Color constants ported from langslice/gui/theme.py */
+/** LangSlice UI color constants. */
 export const colors = {
   bgPrimary: "#0a0a0a",
   bgPanel: "rgba(20, 20, 20, 0.6)",

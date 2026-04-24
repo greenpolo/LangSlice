@@ -1,7 +1,7 @@
 from unittest.mock import MagicMock
 
-from langslice.harness.estimation.session import build_initial_state
-from langslice.harness.estimation.validators import gate_submit_tool
+from langslice_harness.harness.estimation.session import build_initial_state
+from langslice_harness.harness.estimation.validators import gate_submit_tool
 
 
 def _make_state(**overrides):

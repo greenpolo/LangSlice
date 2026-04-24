@@ -5,7 +5,7 @@ from typing import cast
 
 import numpy as np
 
-from langslice.atlas.core import (
+from langslice_harness.atlas.core import (
     get_additional_reference_slice,
     get_atlas_info,
     get_region_at_position,

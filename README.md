@@ -2,17 +2,19 @@
   <img src="assets/banner.svg" alt="LangSlice" width="600">
 </p>
 
-LangSlice registers histology slice images to BrainGlobe atlases using Gemini vision-language models for estimation and itk-elastix for dense deformation recovery. The desktop GUI is a Tauri app (Rust + React + Three.js); the Python backend also runs headless via CLI.
+LangSlice registers histology slice images to BrainGlobe atlases. The active
+runtime is the ADK-based harness in `src/langslice_harness/`, with a Tauri
+desktop GUI in `tauri-gui/` and headless CLI support.
 
 ## Pipeline
 
-`AP estimation -> colored segmentation -> Elastix B-spline registration -> QUINT/ABBA export`
+`AP estimation -> image-gen registration -> Elastix B-spline -> QUINT/ABBA export`
 
-1. Estimate the anterior-posterior position of the tissue slice using Gemini tool-use or image-gen AP estimation.
-2. Generate a colored segmentation of the tissue guided by atlas reference images (Gemini image-gen).
-3. Extract a dense deformation field via itk-elastix B-spline registration on border images.
-4. Warp the atlas through the recovered transform and extract VisuAlign-compatible markers from B-spline control points.
-5. Export a single-slice QUINT/ABBA-compatible JSON file with anchoring vector and markers.
+1. Estimate the anterior-posterior position of the tissue slice.
+2. Generate an atlas-colored registration target from the histology and atlas references.
+3. Recover a dense deformation field with itk-elastix B-spline registration.
+4. Warp the atlas and extract VisuAlign-compatible markers.
+5. Export a QUINT/ABBA-compatible JSON file.
 
 ## Setup
 
@@ -20,7 +22,7 @@ LangSlice registers histology slice images to BrainGlobe atlases using Gemini vi
    `conda env create -f environment.yml`
 2. Activate it:
    `conda activate langslice`
-3. Install the package in editable mode:
+3. Install the harness in editable mode:
    `pip install -e .`
 4. Configure authentication in `.env` using `.env.example`.
 
@@ -30,59 +32,50 @@ LangSlice registers histology slice images to BrainGlobe atlases using Gemini vi
 # Single-slice AP estimation
 langslice estimate <image> [--atlas ...] [--model ...] [--workflow ...]
 
-# Multi-slice group AP estimation (2-8 consecutive slices)
+# Multi-slice group AP estimation
 langslice estimate-group <img1> <img2> ... [--interval 200] [--atlas ...]
 
-# Whole-brain AP estimation (folder of slices)
+# Whole-brain AP estimation
 langslice estimate-brain <image_folder> [--atlas ...] [--anchors ...]
 
-# Registration at a known AP position
-langslice register <image> --position <mm> [--workflow colored_segmentation] [--model ...] [--out ...]
+# Image-gen registration at a known AP position
+langslice register <image> --position <mm> [--registration-mode direct|agentic] [--image-model ...] [--openai-image-route images|responses] [--review-model ...] [--max-candidates 3] [--out ...]
 
 # Print package version
 langslice version
 ```
 
-## Tauri GUI
+## Registration
 
-The desktop application lives in `tauri-gui/` (Rust + React + Three.js). To launch:
+Registration is one pipeline now: image-gen registration. Direct mode generates
+one candidate and returns it. Agentic mode wraps the same candidate generator in
+an ADK review loop that can inspect up to three candidates before confirmation.
 
-```bash
-cd tauri-gui && pnpm tauri dev
-```
+The registration result includes the model-generated atlas target, the
+Elastix-warped atlas, and the warped atlas borders overlaid on the histology
+slice for review.
 
-The GUI provides a 3D atlas viewer, pipeline sidecar for running AP estimation and registration, settings management, and split/overlay views.
+## Authentication
 
-## Authentication Backends
+`src/langslice_harness/vlm_config.py` supports:
 
-`langslice/vlm_config.py` supports three backend modes, configured via `.env`:
-
-- `ai_studio` (recommended for image-gen workflows)
+- `ai_studio`
 - `vertex_api_key`
 - `vertex_adc`
 
-## Registration Workflows
-
-Three registration workflows are available, selected by model capabilities or CLI `--workflow` flag:
-
-- **`colored_segmentation`** (default for image-gen models) -- The model produces a colored segmentation of tissue anatomy guided by atlas reference images. Elastix B-spline registration extracts the dense deformation field. VisuAlign markers are derived from B-spline control points.
-- **`image_gen_two_shot`** (legacy) -- Two-shot landmark workflow for image-gen models. Superseded by colored segmentation.
-- **`multimodal_tool_loop`** (experimental, on hold) -- Iterative landmark refinement via tool calls for text-centric models.
-
-## Debug Traces
-
-Set `LANGSLICE_VLM_DEBUG_DIR` to save per-run artifacts.
-
-- AP estimation writes the prepared target image, `reasoning.txt`, and `telemetry.json`.
-- Registration writes a `registration/` subdirectory with atlas images, model output, border images, warped atlas, and `registration.json`.
+Google image-generation models route through the Google provider adapter.
+OpenAI image generation defaults to the Images API path for `gpt-image-2`;
+the Responses `image_generation` route is opt-in. Flux models use the
+OpenAI-compatible Images API path.
 
 ## Repository Layout
 
-- `langslice/` -- installable package source
-- `tauri-gui/` -- Tauri desktop app (Rust + React + Three.js)
+- `src/langslice_harness/` -- installable ADK harness package
+- `models/` -- fine-tuned model projects and related assets
+- `tauri-gui/` -- desktop app
 - `tests/` -- pytest suite
 - `docs/` -- maintained project docs
-- `references/` -- external reference code
-- `archive/` -- preserved legacy material
+- `assets/` and `configs/` -- project assets and configuration
+- `_local/` -- ignored local scratch, archives, and experiments
 
-See `docs/index.md` for the maintained docs set and `REPO_MAP.md` for the short navigation map.
+See `docs/index.md` and `REPO_MAP.md` for navigation.

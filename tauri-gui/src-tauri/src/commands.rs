@@ -316,7 +316,7 @@ pub async fn run_estimate(
 
     let mut args = vec![
         "-m".to_string(),
-        "langslice".to_string(),
+        "langslice_harness".to_string(),
         "estimate".to_string(),
         image_path,
         "--atlas".to_string(),
@@ -392,18 +392,16 @@ pub async fn run_register(
     model: String,
     thinking: String,
     temperature: f64,
-    landmarks: u32,
     vlm_resolution: u32,
-    workflow: String,
     app: tauri::AppHandle,
 ) -> Result<serde_json::Value, String> {
     use tauri::Emitter;
     use tokio::io::{AsyncBufReadExt, BufReader};
     use tokio::process::Command;
 
-    let mut args = vec![
+    let args = vec![
         "-m".to_string(),
-        "langslice".to_string(),
+        "langslice_harness".to_string(),
         "register".to_string(),
         image_path,
         "--atlas".to_string(),
@@ -416,17 +414,10 @@ pub async fn run_register(
         thinking,
         "--temperature".to_string(),
         temperature.to_string(),
-        "--landmarks".to_string(),
-        landmarks.to_string(),
         "--vlm-resolution".to_string(),
         vlm_resolution.to_string(),
         "--json".to_string(),
     ];
-    if workflow != "auto" {
-        args.push("--workflow".to_string());
-        args.push(workflow);
-    }
-
     let mut child = Command::new("python")
         .args(&args)
         .stdout(std::process::Stdio::piped())

@@ -4,7 +4,7 @@ from typing import Any, cast
 from google.adk.models.llm_request import LlmRequest
 from google.genai import types
 
-from langslice.harness.estimation.adk_plugins import (
+from langslice_harness.harness.estimation.adk_plugins import (
     _MULTIMODAL_TOOL_PARTS_BY_CALL_KEY,
     MULTIMODAL_PARTS_RESULT_KEY,
     ModelCallPacingPlugin,

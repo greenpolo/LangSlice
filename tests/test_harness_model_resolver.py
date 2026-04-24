@@ -1,6 +1,6 @@
 import pytest
 
-from langslice.harness.estimation import model_resolver
+from langslice_harness.harness.estimation import model_resolver
 
 
 class _FakeLiteLlm:
@@ -33,6 +33,19 @@ def test_resolve_openrouter_model_uses_openrouter_key(monkeypatch):
     assert model.kwargs["api_key"] == "sk-or"
 
 
+def test_resolve_plain_openai_model_uses_litellm_openai(monkeypatch):
+    monkeypatch.setattr(model_resolver, "_load_litellm_class", lambda: _FakeLiteLlm)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+
+    model = model_resolver.resolve_adk_model("gpt-4.1")
+
+    assert isinstance(model, _FakeLiteLlm)
+    assert model.model == "openai/gpt-4.1"
+    assert model.kwargs["api_key"] == "sk-openai"
+    assert model.kwargs["api_base"] == "https://api.openai.com/v1"
+
+
 def test_resolve_ollama_model_uses_local_ollama_chat(monkeypatch):
     monkeypatch.setattr(model_resolver, "_load_litellm_class", lambda: _FakeLiteLlm)
     monkeypatch.setenv("LANGSLICE_OLLAMA_BASE", "http://localhost:11434")
@@ -41,6 +54,17 @@ def test_resolve_ollama_model_uses_local_ollama_chat(monkeypatch):
 
     assert isinstance(model, _FakeLiteLlm)
     assert model.model == "ollama_chat/gemma4:26b"
+    assert model.kwargs["api_base"] == "http://localhost:11434"
+
+
+def test_resolve_bare_local_model_tag_uses_ollama_chat(monkeypatch):
+    monkeypatch.setattr(model_resolver, "_load_litellm_class", lambda: _FakeLiteLlm)
+    monkeypatch.setenv("LANGSLICE_OLLAMA_BASE", "http://localhost:11434")
+
+    model = model_resolver.resolve_adk_model("gemma4:31b")
+
+    assert isinstance(model, _FakeLiteLlm)
+    assert model.model == "ollama_chat/gemma4:31b"
     assert model.kwargs["api_base"] == "http://localhost:11434"
 
 

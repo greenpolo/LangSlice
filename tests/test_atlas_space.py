@@ -4,7 +4,11 @@ from collections.abc import Sequence
 
 import numpy as np
 
-from langslice.atlas.core import get_position_range_mm, index_to_position_mm, position_mm_to_index
+from langslice_harness.atlas.core import (
+    get_position_range_mm,
+    index_to_position_mm,
+    position_mm_to_index,
+)
 
 
 class _FakeAtlas:

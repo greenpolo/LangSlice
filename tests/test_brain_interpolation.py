@@ -1,7 +1,7 @@
 import pytest
 
-from langslice.whole_brain.interpolation import interpolate_positions
-from langslice.whole_brain.types import SlicePosition
+from langslice_harness.whole_brain.interpolation import interpolate_positions
+from langslice_harness.whole_brain.types import SlicePosition
 
 
 def _locked(filename: str, index: int, position_mm: float) -> SlicePosition:
