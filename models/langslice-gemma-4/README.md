@@ -1,44 +1,33 @@
-# Gemma 4 31B Model Project
+# langslice-gemma-4
 
-Fine-tuned Gemma 4 for brain atlas AP position estimation. Domain-adapted via comparison-based SFT on BrainGlobe atlases with Gemini-distilled chain-of-thought reasoning.
+Fine-tuned **Gemma 4 E4B** for brain-section position estimation, deployed as a drop-in replacement for Gemini inside the LangSlice estimation agent loop (`fetch_atlas` + `submit_estimate`).
 
-## Pipeline
+## Authoritative design
 
-```
-1. Data Generation
-   ├── Extract coronal slices from all BrainGlobe atlases
-   ├── Build comparison triplets (query + 2 references)
-   └── Distill CoT reasoning from Gemini for each triplet
+The SFT data design is specified in `docs/superpowers/specs/2026-04-25-gemma4-sft-data-design.md`. Read it before changing anything in this directory. Earlier descriptions of "comparison-triplet SFT" with the 31B model are superseded by that spec.
 
-2. Fine-Tuning (QLoRA via Unsloth)
-   ├── Gemma 4 31B on RTX 5090 (32GB)
-   ├── Comparison-framed SFT with anatomical reasoning
-   └── Checkpoint evaluation against held-out slice benchmarks
+## Approach (summary)
 
-3. Evaluation
-   ├── Held-out slice sets with known AP ground truth
-   ├── Compare: Gemma base → fine-tuned → Gemini API
-   └── Publish weights + benchmark results
-```
+- **Base:** Gemma 4 E4B (efficient ~4B variant, multimodal, native function-calling per Unsloth).
+- **Training shape:** narrow-task tool-use SFT — the model learns to operate the existing LangSlice agent loop (broad sweep → verify → narrow → fine-tune → submit), not to do single-shot regression.
+- **Data scale:** 2K–15K SFT examples across five buckets (agent traces, landmark listing, bbox grounding, multi-slice morphology, programmatic skeletons). Spec §5 defines the buckets.
+- **Augmentation pipeline:** atlas-image transforms (DAPI/Nissl/brightfield mimicry, resolution-shift, jitter) reused for SFT and later RLVR. Spec §9. **This is Phase 1 / the active blocker** as of 2026-04-25.
+- **Validation:** SliceBench (in development) is the gate.
+- **RLVR:** separately scoped, larger phase, brainstormed later.
 
-## Structure
+## Hardware
 
-```
-models/langslice-gemma-4/
-├── data/
-│   ├── generate_atlas_slices.py    # Extract slices from BrainGlobe atlases
-│   ├── build_triplets.py           # Create comparison training examples
-│   ├── distill_cot.py              # Generate CoT reasoning via Gemini
-│   └── dataset.py                  # Dataset loader for training
-├── training/
-│   ├── finetune.py                 # QLoRA fine-tuning script (Unsloth)
-│   └── configs/                    # Training hyperparameter configs
-├── inference/
-│   └── predict.py                  # Run inference with fine-tuned model
-└── README.md
-```
+- Fine-tuning: RTX 5090 (32 GB VRAM) — E4B QLoRA fits comfortably.
+- Inference: same constraint envelope; quantized E4B runs locally on consumer GPUs.
 
-## Hardware Requirements
+## Directory layout
 
-- Fine-tuning: RTX 5090 (32GB VRAM) — Gemma 4 31B QLoRA ~22GB
-- Inference: RTX 3090+ (24GB) — Gemma 4 31B Q4_K_M ~11GB + overhead
+The current files in `data/`, `training/`, `inference/` are scaffolding from the earlier triplet-based plan and are being revised per the SFT spec. Do not treat their current contents as the implementation target.
+
+- `data/` — slice extraction, augmentation pipeline, bucket-specific generators (per spec §5)
+- `training/` — Unsloth QLoRA fine-tuning configs and runner
+- `inference/` — local agent-loop runner using the fine-tuned model
+
+## Status
+
+Pre-implementation. Spec finalized 2026-04-25. Implementation plan pending — write-plans phase begins after the augmentation pipeline is built.
