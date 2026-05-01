@@ -35,6 +35,20 @@ def test_single_slice_prompt_does_not_suggest_removed_tools():
     assert "`fetch_atlas`" in p
 
 
+def test_single_slice_prompt_uses_student_sized_policy():
+    p = build_single_slice_prompt(
+        atlas_name="allen_mouse_25um", plane="coronal",
+        pos_lo=0.0, pos_hi=13.2, species="mouse",
+    )
+    lowered = p.lower()
+    assert "broad" in lowered
+    assert "narrow" in lowered
+    assert "optional" in lowered
+    assert "bracket" not in lowered
+    assert "verify neighbors" not in lowered
+    assert "fine-tune" not in lowered
+
+
 def test_group_prompt_mentions_interval_and_n_slices():
     p = build_group_prompt(
         atlas_name="allen_mouse_25um", plane="coronal",
@@ -55,3 +69,18 @@ def test_group_prompt_does_not_suggest_removed_tools():
     assert "`zoom`" not in p
     assert "`side_by_side`" not in p
     assert "`fetch_atlas`" in p
+
+
+def test_group_prompt_uses_student_sized_policy():
+    p = build_group_prompt(
+        atlas_name="allen_mouse_25um", plane="coronal",
+        pos_lo=0.0, pos_hi=13.2, species="mouse",
+        n_slices=4, interval_mm=0.200, thickness_um=50,
+    )
+    lowered = p.lower()
+    assert "broad" in lowered
+    assert "narrow" in lowered
+    assert "optional" in lowered
+    assert "guide, not an absolute constraint" in lowered
+    assert "bracket" not in lowered
+    assert "fine-tune" not in lowered

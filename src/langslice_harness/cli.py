@@ -351,6 +351,83 @@ def _add_estimate_group_parser(subparsers: argparse._SubParsersAction) -> None:
     )
 
 
+def _add_collect_traces_parser(subparsers: argparse._SubParsersAction) -> None:
+    p = subparsers.add_parser(
+        "collect-traces",
+        help="Collect Gemini teacher traces for SFT training data",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    p.add_argument("--manifest", required=True, help="JSONL manifest of trace jobs")
+    p.add_argument("--out", required=True, help="Output directory for trace artifacts")
+    p.add_argument("--model", default="gemini-3.1-pro-preview", help="Teacher model")
+    p.add_argument(
+        "--thinking",
+        default="HIGH",
+        choices=["LOW", "MEDIUM", "HIGH"],
+        help="Gemini thinking level for trace collection",
+    )
+    p.add_argument(
+        "--media-resolution",
+        default="medium",
+        choices=["low", "medium", "high", "ultra_high"],
+        help="Gemini media resolution for input images",
+    )
+    p.add_argument("--max-iterations", type=int, default=20, help="Max tool-loop iterations")
+    p.add_argument("--limit", type=int, default=None, help="Limit manifest rows for a test run")
+    p.add_argument(
+        "--kind",
+        default="all",
+        choices=["all", "single", "group"],
+        help="Run only one manifest kind",
+    )
+    p.add_argument("--resume", action="store_true", help="Skip runs with existing raw traces")
+    p.add_argument(
+        "--include-thought-summaries",
+        dest="include_thought_summaries",
+        action="store_true",
+        default=True,
+        help="Request Gemini thought summaries and store them in raw traces",
+    )
+    p.add_argument(
+        "--no-include-thought-summaries",
+        dest="include_thought_summaries",
+        action="store_false",
+        help="Do not request Gemini thought summaries",
+    )
+
+
+def _run_collect_traces(args: argparse.Namespace) -> None:
+    from pathlib import Path
+
+    from langslice_harness.harness.estimation.trace_collection import (
+        collect_manifest_traces,
+    )
+
+    kind_filter = None if args.kind == "all" else args.kind
+    results = collect_manifest_traces(
+        manifest_path=Path(args.manifest),
+        out_dir=Path(args.out),
+        model=args.model,
+        thinking_level=args.thinking,
+        media_resolution=args.media_resolution,
+        max_iterations=args.max_iterations,
+        include_thought_summaries=args.include_thought_summaries,
+        limit=args.limit,
+        kind_filter=kind_filter,
+        resume=args.resume,
+    )
+    accepted = sum(
+        1
+        for result in results
+        if isinstance(result.get("category"), dict)
+        and result["category"].get("accepted") is True
+    )
+    print("Trace collection complete")
+    print(f"  Runs: {len(results)}")
+    print(f"  Accepted: {accepted}")
+    print(f"  Output: {Path(args.out)}")
+
+
 def _run_estimate_group(args: argparse.Namespace) -> None:
     import json
     from pathlib import Path
@@ -584,7 +661,8 @@ def _run_estimate(args: argparse.Namespace) -> None:
         print(f"  {msg}")
 
     import langslice_harness.vlm_config as vlm_config
-    from langslice_harness.estimation import estimate_position, estimate_position_image_gen
+    from langslice_harness.estimation import estimate_position
+    from langslice_harness.harness.estimation.image_gen import estimate_position_image_gen
 
     if args.provider == "openai":
         import langslice_harness.openai_config as openai_config
@@ -731,6 +809,9 @@ def main():
     # langslice estimate-group
     _add_estimate_group_parser(subparsers)
 
+    # langslice collect-traces
+    _add_collect_traces_parser(subparsers)
+
     # langslice estimate-brain
     _add_estimate_brain_parser(subparsers)
 
@@ -755,6 +836,8 @@ def main():
         _run_estimate(args)
     elif args.command == "estimate-group":
         _run_estimate_group(args)
+    elif args.command == "collect-traces":
+        _run_collect_traces(args)
     elif args.command == "estimate-brain":
         _run_estimate_brain(args)
     elif args.command == "ollama":

@@ -1,16 +1,13 @@
-"""Wiring tests for the synchronous ``estimate_group`` compat shim.
+"""Wiring tests for synchronous estimation compat shims.
 
-These tests confirm the shim:
-  1. Exists at both the harness and legacy import paths.
-  2. Translates ``interval_um`` to ``interval_mm``.
-  3. Forwards ``model_name`` as ``model``, falling through to the runner default
-     when ``model_name`` is ``None``.
-  4. Accepts the legacy kwargs that current callers pass, forwarding the ones
-     the ADK runner understands and swallowing the rest.
+These tests confirm the shims:
+- Exist at both the harness and legacy import paths.
+- Convert legacy units/kwargs into the ADK runner call shape.
 
-The runner is monkeypatched; this is pure wiring.  The end-to-end paths live in
+The runner is monkeypatched; this is pure wiring. End-to-end paths live in
 ``tests/test_harness_runner.py``.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -20,19 +17,115 @@ from PIL import Image
 from langslice_harness.harness.estimation._types import MultiSliceResult, PositionResult
 
 
+def _fake_run_single_slice_session_factory(captured: dict[str, Any]):
+    async def _fake(**kwargs: Any) -> PositionResult:
+        captured.update(kwargs)
+        return PositionResult(position_mm=6.0, reasoning="fake shim test")
+
+    return _fake
+
+
 def _fake_run_group_session_factory(captured: dict[str, Any]):
     async def _fake(**kwargs: Any) -> MultiSliceResult:
         captured.update(kwargs)
         n = len(kwargs["images"])
         return MultiSliceResult(
-            positions=[
-                PositionResult(position_mm=float(i), reasoning="fake")
-                for i in range(n)
-            ],
+            positions=[PositionResult(position_mm=float(i), reasoning="fake") for i in range(n)],
             group_reasoning="fake shim test",
         )
 
     return _fake
+
+
+# --- estimate_position shim ---
+
+
+def test_estimate_position_exposed_on_legacy_shim():
+    """The legacy ``langslice_harness.estimation`` re-exports the harness shim."""
+    from langslice_harness.estimation import estimate_position as legacy
+    from langslice_harness.harness.estimation import estimate_position as harness
+
+    assert legacy is harness
+
+
+def test_estimate_position_forwards_supported_legacy_kwargs(monkeypatch):
+    """Legacy single-slice kwargs should reach the ADK runner when supported."""
+    from langslice_harness.harness.estimation import estimate_position
+
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(
+        "langslice_harness.harness.estimation.runner.run_single_slice_session",
+        _fake_run_single_slice_session_factory(captured),
+    )
+
+    image = Image.new("L", (16, 16), color=128)
+    result = estimate_position(
+        image=image,
+        atlas_name="allen_mouse_25um",
+        model_name="gemini-3-flash-preview",
+        max_iterations=12,
+        media_resolution="medium",
+        thinking="LOW",
+        temperature=0.7,
+        apply_clahe=False,
+        debug_dir="/tmp/does-not-exist",
+        send_individually=True,
+        show_borders=False,
+        some_future_kwarg="ignored",
+    )
+
+    assert isinstance(result, PositionResult)
+    assert captured["image"] is image
+    assert captured["atlas_name"] == "allen_mouse_25um"
+    assert captured["model"] == "gemini-3-flash-preview"
+    assert captured["max_iterations"] == 12
+    assert captured["media_resolution"] == "medium"
+    assert captured["thinking_level"] == "LOW"
+    assert captured["temperature"] == 0.7
+    assert captured["apply_clahe"] is False
+
+    for key in (
+        "model_name",
+        "thinking",
+        "debug_dir",
+        "send_individually",
+        "show_borders",
+        "some_future_kwarg",
+    ):
+        assert key not in captured, f"{key} unexpectedly forwarded to runner"
+
+
+def test_estimate_position_uses_vlm_config_defaults(monkeypatch):
+    """CLI-set Gemini config should be honored even without explicit kwargs."""
+    from langslice_harness import vlm_config
+    from langslice_harness.harness.estimation import estimate_position
+
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(
+        "langslice_harness.harness.estimation.runner.run_single_slice_session",
+        _fake_run_single_slice_session_factory(captured),
+    )
+    original_model = vlm_config.MODEL_NAME
+    original_thinking = vlm_config.THINKING_LEVEL
+    original_temperature = vlm_config.TEMPERATURE
+
+    try:
+        vlm_config.set_model_name("gemini-configured")
+        vlm_config.set_thinking_level("HIGH")
+        vlm_config.set_temperature(0.4)
+
+        estimate_position(Image.new("L", (16, 16), color=128), "allen_mouse_25um")
+    finally:
+        vlm_config.set_model_name(original_model)
+        vlm_config.set_thinking_level(original_thinking)
+        vlm_config.set_temperature(original_temperature)
+
+    assert captured["model"] == "gemini-configured"
+    assert captured["thinking_level"] == "HIGH"
+    assert captured["temperature"] == 0.4
+
+
+# --- estimate_group shim ---
 
 
 def test_estimate_group_exposed_on_legacy_shim():
@@ -53,8 +146,6 @@ def test_estimate_group_converts_interval_um_to_mm(monkeypatch):
         "langslice_harness.harness.estimation.runner.run_group_session",
         _fake_run_group_session_factory(captured),
     )
-    # The shim imports run_group_session inside the function body, so the
-    # monkeypatch hits it the first time the shim is called.
 
     images = [Image.new("L", (16, 16), color=128) for _ in range(3)]
     result = estimate_group(
@@ -111,7 +202,6 @@ def test_estimate_group_forwards_supported_legacy_kwargs(monkeypatch):
     def dummy_progress(msg: str) -> None:
         pass
 
-    # These cover the public CLI and helper API surface.
     result = estimate_group(
         images=images,
         atlas_name="allen_mouse_25um",
@@ -124,13 +214,11 @@ def test_estimate_group_forwards_supported_legacy_kwargs(monkeypatch):
         media_resolution="medium",
         show_borders=False,
         debug_dir="/tmp/does-not-exist",
-        # And something completely unknown — must fall into **_ignored silently.
         some_future_kwarg="whatever",
     )
     assert isinstance(result, MultiSliceResult)
     assert captured["media_resolution"] == "medium"
 
-    # Unsupported compat kwargs still do not leak to the runner.
     for key in (
         "send_individually",
         "on_progress",
@@ -156,3 +244,4 @@ def test_estimate_group_positional_interval_um(monkeypatch):
     estimate_group(images, "allen_mouse_25um", 200)
     assert captured["interval_mm"] == 0.200
     assert captured["atlas_name"] == "allen_mouse_25um"
+

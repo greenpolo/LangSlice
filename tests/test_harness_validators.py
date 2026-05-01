@@ -57,6 +57,18 @@ def test_gate_passes_when_all_checks_satisfied():
     assert out is None
 
 
+def test_gate_single_does_not_require_neighbor_bracket():
+    state = _make_state(
+        saw_broad_sweep=True, saw_narrow_sweep=True,
+        fetched_positions=[4.5, 5.0],
+    )
+    ctx = _fake_ctx(state)
+    out = gate_submit_tool(
+        _Tool("submit_estimate"), {"position_mm": 5.0, "reasoning": "x"}, ctx
+    )
+    assert out is None
+
+
 def test_gate_rejects_group_non_monotonic():
     state = _make_state(
         n_slices=3, interval_mm=0.200,
@@ -71,7 +83,7 @@ def test_gate_rejects_group_non_monotonic():
     assert out is not None and "monotonic" in out["error"].lower()
 
 
-def test_gate_rejects_group_bad_interval():
+def test_gate_allows_group_bad_interval_and_records_warning():
     state = _make_state(
         n_slices=3, interval_mm=0.200,
         saw_broad_sweep=True, saw_narrow_sweep=True,
@@ -82,8 +94,9 @@ def test_gate_rejects_group_bad_interval():
         {"positions_mm": [4.0, 4.2, 5.5], "reasoning": "x"},  # 1.3mm gap
         ctx,
     )
-    assert out is not None
-    assert "interval" in out["error"].lower()
+    assert out is None
+    assert state["group_interval_warnings"]
+    assert "1.300" in state["group_interval_warnings"][0]
 
 
 def test_gate_ignores_non_submit_tools():

@@ -141,7 +141,9 @@ def _is_budget_model(model_name: str) -> bool:
     return "2.5" in lower or "2.0" in lower
 
 
-def build_thinking_config(model_name: str, thinking_level: str) -> object | None:
+def build_thinking_config(
+    model_name: str, thinking_level: str, *, include_thoughts: bool = False
+) -> object | None:
     """Build a ThinkingConfig appropriate for the model.
 
     Gemma 4 only supports thinking on (HIGH) or off (None).
@@ -151,12 +153,18 @@ def build_thinking_config(model_name: str, thinking_level: str) -> object | None
     types_mod = importlib.import_module("google.genai.types")
     if is_gemma_model(model_name):
         if thinking_level in ("HIGH", "MEDIUM"):
-            return types_mod.ThinkingConfig(thinking_level="HIGH")
+            return types_mod.ThinkingConfig(
+                thinking_level="HIGH", include_thoughts=include_thoughts
+            )
         return None
     if _is_budget_model(model_name):
         budget = _THINKING_BUDGET_MAP.get(thinking_level, 2048)
-        return types_mod.ThinkingConfig(thinking_budget=budget)
-    return types_mod.ThinkingConfig(thinking_level=thinking_level)
+        return types_mod.ThinkingConfig(
+            thinking_budget=budget, include_thoughts=include_thoughts
+        )
+    return types_mod.ThinkingConfig(
+        thinking_level=thinking_level, include_thoughts=include_thoughts
+    )
 
 
 def is_image_generation_model(model_name: str | None) -> bool:
