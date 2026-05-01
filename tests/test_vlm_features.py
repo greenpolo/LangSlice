@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import langslice_harness.vlm_config as vlm_config
 
 
@@ -94,3 +96,18 @@ def test_build_thinking_config_gemini_passes_through():
 
     cfg = build_thinking_config("gemini-3-flash-preview", "LOW")
     assert cfg is not None
+
+
+def test_build_thinking_config_can_request_thought_summaries():
+    from langslice_harness.vlm_config import build_thinking_config
+
+    cfg = build_thinking_config(
+        "gemini-3.1-pro-preview",
+        "HIGH",
+        include_thoughts=True,
+    )
+
+    assert cfg is not None
+    cfg_any = cast(Any, cfg)
+    assert cfg_any.thinking_level == "HIGH"
+    assert cfg_any.include_thoughts is True

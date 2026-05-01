@@ -58,3 +58,10 @@ models/langslice-gemma-4/data/atlas_slices/
 !models/langslice-gemma-4/data/atlas_slices/.gitkeep
 models/langslice-gemma-4/checkpoints/
 !models/langslice-gemma-4/checkpoints/.gitkeep
+
+# Augmentation exemplar crops (style references) — only README is tracked
+models/langslice-gemma-4/data/augmentation/exemplars/**
+!models/langslice-gemma-4/data/augmentation/exemplars/README.md
+
+# Local scratch / dev script outputs
+tmp/

@@ -140,14 +140,17 @@ def _env_float(name: str) -> float | None:
     return float(value)
 
 
-def _build_plugins(run_label: str, multimodal_history: str) -> list[BasePlugin]:
+def _build_plugins(
+    run_label: str, multimodal_history: str, trace_recorder: BasePlugin | None = None
+) -> list[BasePlugin]:
     mode = multimodal_history.strip().lower()
     if mode not in _MULTIMODAL_HISTORY_MODES:
         allowed = ", ".join(sorted(_MULTIMODAL_HISTORY_MODES))
         raise ValueError(f"multimodal_history must be one of: {allowed}")
-    plugins: list[BasePlugin] = [
-        PersistentMultimodalToolResultsPlugin(persistent=(mode == "persistent"))
-    ]
+    plugins: list[BasePlugin] = []
+    if trace_recorder is not None:
+        plugins.append(trace_recorder)
+    plugins.append(PersistentMultimodalToolResultsPlugin(persistent=(mode == "persistent")))
     model_call_delay_s = _env_float("LANGSLICE_ADK_MODEL_CALL_DELAY_S")
     if model_call_delay_s is not None and model_call_delay_s > 0:
         plugins.append(ModelCallPacingPlugin(model_call_delay_s))
@@ -302,6 +305,8 @@ async def run_single_slice_session(
     apply_clahe: bool = True,
     target_transport: str = "auto",
     multimodal_history: str = "persistent",
+    trace_recorder: BasePlugin | None = None,
+    include_thought_summaries: bool = False,
 ) -> PositionResult:
     """Drive a single-slice position-estimation session to completion.
 
@@ -320,7 +325,11 @@ async def run_single_slice_session(
     thinking_cfg: object | None = None
     if isinstance(model, str) and _is_native_google_genai_model(model):
         from langslice_harness import vlm_config
-        thinking_cfg = vlm_config.build_thinking_config(model, thinking_level)
+        thinking_cfg = vlm_config.build_thinking_config(
+            model,
+            thinking_level,
+            include_thoughts=include_thought_summaries,
+        )
 
     agent_model = resolve_adk_model(model)
     species_val = species or str(atlas.metadata.get("species", "mouse"))
@@ -342,7 +351,7 @@ async def run_single_slice_session(
     app = App(
         name=_APP_NAME,
         root_agent=agent,
-        plugins=_build_plugins("single_slice", multimodal_history),
+        plugins=_build_plugins("single_slice", multimodal_history, trace_recorder),
     )
     runner = InMemoryRunner(app=app)
     # InMemoryRunner always wires in-memory services, but the base class types
@@ -523,6 +532,8 @@ async def run_group_session(
     apply_clahe: bool = True,
     target_transport: str = "auto",
     multimodal_history: str = "persistent",
+    trace_recorder: BasePlugin | None = None,
+    include_thought_summaries: bool = False,
 ) -> MultiSliceResult:
     """Drive a multi-slice group position-estimation session to completion.
 
@@ -547,7 +558,11 @@ async def run_group_session(
     thinking_cfg: object | None = None
     if isinstance(model, str) and _is_native_google_genai_model(model):
         from langslice_harness import vlm_config
-        thinking_cfg = vlm_config.build_thinking_config(model, thinking_level)
+        thinking_cfg = vlm_config.build_thinking_config(
+            model,
+            thinking_level,
+            include_thoughts=include_thought_summaries,
+        )
 
     agent_model = resolve_adk_model(model)
     species_val = species or str(atlas.metadata.get("species", "mouse"))
@@ -572,7 +587,7 @@ async def run_group_session(
     app = App(
         name=_APP_NAME,
         root_agent=agent,
-        plugins=_build_plugins("group", multimodal_history),
+        plugins=_build_plugins("group", multimodal_history, trace_recorder),
     )
     runner = InMemoryRunner(app=app)
     assert runner.artifact_service is not None

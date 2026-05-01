@@ -2,7 +2,7 @@
 title: Gemma 4 E4B — SFT Data Design
 date: 2026-04-25
 scope: Supervised fine-tuning data composition, generation pipeline, and augmentation architecture for the langslice-gemma-4 model. RLVR is a separate spec.
-status: draft v2 (post-Codex review and Gemini-researcher synthesis)
+status: draft v3 (hybrid Stage A/B framing; HistAug correction)
 ---
 
 # Gemma 4 E4B — SFT Data Design
@@ -200,7 +200,7 @@ Both single-slice and group-estimation prompts, weighted toward single-slice (~7
 
 ## 9. Augmentation pipeline — architecture
 
-Built once, reused for SFT and later RLVR data generation. Lives at `models/langslice-gemma-4/data/augmentation/`. Literature anchor: HistAug (Boutaj et al., ICCV 2025 — arxiv 2508.14588) — controllable augmentation preserving semantic content for digital pathology.
+Built once, reused for SFT and later RLVR data generation. Lives at `models/langslice-gemma-4/data/augmentation/`. Literature anchors: PathDiff (ICCV 2025) — unpaired mask-to-H&E / mask-to-IHC pixel-level diffusion, directly motivating the Stage B img2img approach; PixCell (Stony Brook, ICCV 2025) — SD 3.5 VAE backbone, layout-to-histology with Cell-ControlNet, trained on PanCan-30M. HistAug (Boutaj et al., ICCV 2025) was investigated and is not applicable here: it operates in feature space (UNI/Virchow2 embeddings) rather than pixel space.
 
 **Inputs:** an atlas slice (rendered from BrainGlobe at chosen resolution and plane), plus optional reference volume (the Nissl-like example volume some atlases ship with).
 
@@ -215,10 +215,20 @@ Built once, reused for SFT and later RLVR data generation. Lives at `models/lang
 
 **Composition:** randomized pipeline; each query draws a small subset of transforms with bounded magnitudes.
 
+### 9.1 Architecture: deterministic synthesis with custom textures
+
+**Stage B (diffusion via Flux 2 Klein) was explored thoroughly and abandoned 2026-04-27.** See `feedback_diffusion_synthesis_abandoned` for the full record. Briefly: multi-reference img2img with Flux 2 Klein 9B (NVFP4, ComfyUI backend) could produce either anatomy-preserving outputs that looked like recolored atlas (low denoise) or photorealistic-microscopy outputs that lost atlas-specific anatomy (high denoise) — the tradeoff window did not contain a usable point for SFT training data. The pivot is to **deterministic procedural synthesis with custom per-modality texture algorithms** (no image-gen models).
+
+**Architecture.** Per-modality procedural pipelines under `models/langslice-gemma-4/data/augmentation/{dapi,nissl,brightfield,fluorescence,ish}_pipeline.py`, each consuming the BrainGlobe atlas's grayscale **reference** slice + its annotation slice, and producing an HWC float32 [0,1] augmented section. Texture transforms (`transforms/texture.py`, `transforms/tissue_class.py`) carry their own per-call randomization (density, blob sigma/aspect, intensity); per-image global parameters (gamma, floor, tone shift, brightness/contrast) draw from bounded ranges to diversify outputs without changing gross anatomy.
+
+**Anatomy preservation strictness:** gross structure only. The model is being trained for position estimation, not landmark registration. Fine-boundary drift of a few millimeters is acceptable; gross section geometry (hemisphere outline, major white-matter tracts) must be preserved. The deterministic architecture preserves anatomy by construction — no transform displaces atlas structure.
+
+**Reusable infrastructure left over from the diffusion attempt:** the ComfyUI HTTP client (`src/langslice_harness/comfyui/`) and Hugging Face snapshot downloader are kept as general-purpose harness utilities. They are not on the SFT critical path; they remain available for any future local image-gen needs not related to data generation.
+
 **Validation gates (NEW in v2):**
 
 1. **Visual inspection** — render ~50 augmented samples and inspect for obvious artifacts (kept from v1).
-2. **Automated separability classifier** — train a small binary classifier (frozen ResNet penultimate features + logistic regression — minutes to train) to discriminate augmented vs. real histology. **Require ≤55% accuracy** before bulk generation. If the classifier exceeds 55%, the augmentation pipeline has a detectable signature the model could shortcut on; tighten transform magnitudes or add domain randomization.
+2. **Automated separability classifier** — train a small binary classifier (frozen ResNet penultimate features + logistic regression — minutes to train) to discriminate augmented vs. real histology. **Require ≤55% accuracy** before bulk generation. If the classifier exceeds 55%, the augmentation pipeline has a detectable signature the model could shortcut on; tighten transform magnitudes or add domain randomization. The gate runs **per modality** (DAPI, Nissl, brightfield, fluorescence, ISH) on a subject-level held-out set. Failure in one modality routes that modality — and only that modality — through Stage B (§9.1); other modalities continue with Stage A.
 
 ## 10. Dependencies
 
@@ -280,7 +290,8 @@ For traceability — these are the references that shaped specific spec decision
 
 - TL-Training (Ye et al., 2024, arxiv 2412.15495) — narrow-task SFT scale floor (§4)
 - iTool (Zeng et al., 2025, arxiv 2501.09766) — training-gain decay above ~10K, hard-negative ratio (§4, §5.4)
-- HistAug (Boutaj et al., ICCV 2025, arxiv 2508.14588) — controllable histology augmentation, separability validation (§9)
+- PathDiff (ICCV 2025) — unpaired mask-to-H&E / mask-to-IHC pixel-level diffusion; motivates Stage B img2img with structural reference (§9, §9.1)
+- PixCell (Stony Brook, ICCV 2025) — SD 3.5 VAE backbone, layout-to-histology foundation model with Cell-ControlNet, trained on PanCan-30M; evaluated and rejected in favor of Flux 2 Klein for licensing and general-modality coverage (§9.1)
 - ReVisual-R1 (Chen et al., 2025, arxiv 2506.04207) — *reference-class miss*: cited only as a contrast (foundation cold-start regime, not narrow-task SFT)
 - KOSMOS-2 (Peng et al., 2023) — bbox grounding as foundation capability, supports §5.1's bbox-bucket retention on roadmap grounds
 - "AI slipping on tiles" (Bussola et al., 2019, arxiv 1909.06539) — subject-level leakage in digital pathology (§11)

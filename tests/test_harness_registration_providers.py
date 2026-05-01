@@ -228,10 +228,9 @@ def test_google_route_uses_last_inline_image_from_parts(monkeypatch):
     fake_client = _FakeGeminiClient()
     monkeypatch.setattr(providers.vlm_config, "get_client", lambda: fake_client)
     monkeypatch.setattr(
-        providers.vlm_config,
-        "MODEL_NAME",
+        providers.vlm_config._runtime,
+        "model_name",
         "gemini-3.1-flash-image-preview",
-        raising=False,
     )
 
     request = providers.SegmentationGenerationRequest(

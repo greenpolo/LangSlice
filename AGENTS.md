@@ -57,6 +57,29 @@ still `langslice`, but Python imports should use `langslice_harness.*`.
 - Keep documentation literal to the current code. If behavior changes, update
   the relevant markdown files in the same pass.
 
+## Delegation (cost-saving)
+
+To minimize main-thread token spend, delegate work to other CLIs whenever the
+task fits one of these patterns:
+
+- **Deep codebase exploration** (broad reads across many files, tracing call
+  paths, structural questions): use the `gemini:explore` skill / `gemini-explorer`
+  subagent. Read-only, 1M-token context.
+- **Extensive outside research** (library docs, API specs, external best
+  practices, anything benefiting from web + Context7): use the `gemini:research`
+  skill / `gemini-researcher` subagent. Read-only.
+- **Plan execution** -- once a plan exists, delegate each step:
+  - **Codex** (`codex:execute` / `multi:codex-execute`) when the step meets a
+    complexity threshold: non-trivial logic, math, careful reasoning, multi-file
+    refactors with semantic decisions.
+  - **Cursor** (`cursor:execute` / `multi:cursor-execute`, Agent mode on Auto)
+    when the step is simple and well-defined: long mechanical writes,
+    pattern-following across files, bulk edits, boilerplate.
+
+Main-thread Claude stays in the planner/reviewer role: brainstorm, write the
+plan, dispatch steps, verify diffs. Avoid doing implementation work directly
+when a delegate fits.
+
 ## Verify After Edits
 
 - `python -m pytest`
