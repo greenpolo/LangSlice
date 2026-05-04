@@ -6,25 +6,25 @@ LangSlice is organized around one installable Python harness package,
 ## Package Layout
 
 - `src/langslice_harness/atlas/` -- BrainGlobe atlas loading, coordinate conversion, and slice extraction.
-- `src/langslice_harness/harness/estimation/` -- ADK AP-estimation agents, prompts, tools, validators, plugins, and runners.
-- `src/langslice_harness/harness/estimation/image_gen.py` -- image-gen AP estimation.
+- `src/langslice_harness/harness/estimation/` -- ADK slice-position estimation agents, prompts, tools, validators, plugins, and runners.
+- `src/langslice_harness/harness/estimation/image_gen.py` -- image-gen position estimation.
 - `src/langslice_harness/registration/` -- public registration wrapper, runtime, solver, and result types.
 - `src/langslice_harness/harness/registration/` -- image-gen registration candidate generation and optional ADK review.
-- `src/langslice_harness/whole_brain/` -- multi-slice AP estimation pipeline.
+- `src/langslice_harness/whole_brain/` -- multi-slice position estimation pipeline.
 - `src/langslice_harness/image_prep.py` -- image normalization, metadata detection, and downsampling.
 - `src/langslice_harness/export.py` -- QUINT/ABBA-compatible JSON export.
 
 The CLI command remains `langslice`, but the Python import package is
 `langslice_harness`.
 
-## AP Estimation
+## Position Estimation
 
-Single-slice and group AP estimation run through ADK. The agent can fetch atlas
+Single-slice and group position estimation run through ADK. The agent can fetch atlas
 images and must submit a structured estimate. Native Gemini requests can use the
 File API for target images, and a persistent multimodal plugin keeps fetched
 atlas images visible across turns.
 
-Image-gen AP estimation is available for visual sweep/zoom style estimation and
+Image-gen position estimation is available for visual sweep/zoom style estimation and
 is used by the whole-brain pipeline.
 
 ## Image-Gen Registration
@@ -45,12 +45,12 @@ inspect up to three candidates before confirming one.
 
 Whole-brain estimation discovers a folder of slices, estimates anchor slices,
 interpolates positions for non-anchor slices, runs windowed image-gen estimation,
-and fits a constrained monotonic AP curve.
+and fits a constrained monotonic position curve.
 
 ## Desktop App
 
 `tauri-gui/` contains the Rust backend and React frontend. The GUI invokes the
-Python harness as a sidecar for AP estimation, registration, and export while the
+Python harness as a sidecar for position estimation, registration, and export while the
 Rust side handles atlas loading, reslicing, and mesh serving.
 
 ## Debugging

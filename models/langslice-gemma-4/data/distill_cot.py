@@ -1,8 +1,9 @@
-"""Distill chain-of-thought reasoning from Gemini for training examples.
+"""Legacy scaffold for Gemini reasoning distillation.
 
-Takes comparison triplets and asks Gemini to produce anatomical reasoning
-explaining why the query image matches a particular AP position relative
-to the references.
+The active SFT plan no longer trains full chain-of-thought as the default
+target. Gemini rationale summaries are collected by the trace recorder and may
+be converted into compact auxiliary captions or fallback rationale traces if
+thinking-off deployment SFT fails.
 
 Usage:
     python models/langslice-gemma-4/data/distill_cot.py \
@@ -22,10 +23,14 @@ if str(_REPO_ROOT) not in sys.path:
 
 
 def _parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Distill CoT reasoning from Gemini")
+    p = argparse.ArgumentParser(description="Legacy Gemini rationale distillation scaffold")
     p.add_argument("--triplets", required=True, help="Input JSONL with triplets")
-    p.add_argument("--output", required=True, help="Output JSONL with CoT added")
-    p.add_argument("--model", default="gemini-2.5-pro-preview-05-06", help="Gemini model for distillation")
+    p.add_argument("--output", required=True, help="Output JSONL with rationale/caption text added")
+    p.add_argument(
+        "--model",
+        default="gemini-2.5-pro-preview-05-06",
+        help="Gemini model for distillation",
+    )
     p.add_argument("--max-parallel", type=int, default=5, help="Parallel API calls")
     return p.parse_args()
 
@@ -36,23 +41,23 @@ async def distill_reasoning(
     model: str,
     max_parallel: int = 5,
 ):
-    """Generate CoT reasoning for each triplet via Gemini.
+    """Generate compact rationale/caption text for each triplet via Gemini.
 
     Prompt strategy:
-    - Show Gemini the query image + two reference images with their AP positions
-    - Ask it to explain which anatomical features indicate where the query
-      falls relative to the references
-    - Extract the reasoning as the SFT target for Gemma fine-tuning
+    - Show Gemini the query image + references with their positions
+    - Ask for short visible anatomical cues relevant to position estimation
+    - Use the result only as auxiliary caption/rationale data, not the default
+      deployment SFT target
 
     The reasoning should be species-aware and reference visible structures,
-    their relative sizes/shapes, and how they change along the AP axis.
+    their relative sizes/shapes, and how they change along the active axis.
     """
     # TODO: Implement Gemini distillation
     # 1. Load triplets from JSONL
     # 2. For each triplet, construct a comparison prompt with images
-    # 3. Call Gemini API to get reasoning
+    # 3. Call Gemini API to get compact rationale/caption text
     # 4. Write triplet + reasoning to output JSONL
-    raise NotImplementedError("Gemini CoT distillation pending implementation")
+    raise NotImplementedError("Gemini rationale distillation pending implementation")
 
 
 if __name__ == "__main__":
