@@ -111,6 +111,48 @@ def test_export_sft_messages_excludes_teacher_thought_summaries():
     assert "Hidden teacher summary" not in rendered
 
 
+def test_export_sft_messages_can_include_rationale_summaries_and_user_images():
+    raw_events = [
+        {
+            "role": "assistant",
+            "visible_text": "Calling a broad sweep.",
+            "teacher_thought_summaries": ["The target looks mid-coronal."],
+            "tool_calls": [{"name": "fetch_atlas", "args": {"positions_mm": [4, 6, 8]}}],
+        },
+        {
+            "role": "tool",
+            "name": "fetch_atlas",
+            "response": {"status": "ok", "description": "Fetched atlas"},
+            "artifacts": [
+                {
+                    "type": "image_path",
+                    "path": "tool_images/fetch_atlas_001_img01.jpg",
+                    "mime_type": "image/jpeg",
+                }
+            ],
+        },
+    ]
+    user_message = {
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "Determine this slice position."},
+            {"type": "image_path", "path": "target_images/target_001.jpg"},
+        ],
+    }
+
+    messages = export_sft_messages(
+        raw_events,
+        user_message=user_message,
+        include_rationale_summaries=True,
+    )
+
+    rendered = json.dumps(messages)
+    assert messages[0] == user_message
+    assert "Rationale summary: The target looks mid-coronal." in rendered
+    assert "Calling a broad sweep." in rendered
+    assert "tool_images/fetch_atlas_001_img01.jpg" in rendered
+
+
 def test_agent_trace_recorder_captures_visible_text_thoughts_and_tool_calls():
     from google.adk.models.llm_response import LlmResponse
     from google.genai import types
@@ -149,6 +191,41 @@ def test_agent_trace_recorder_captures_visible_text_thoughts_and_tool_calls():
         {"name": "fetch_atlas", "args": {"positions_mm": [4.0, 6.0, 8.0]}}
     ]
     assert recorder.usage_totals["thoughts_token_count"] == 3
+
+
+def test_agent_trace_recorder_persists_multimodal_tool_images(tmp_path: Path):
+    from google.genai import types
+
+    recorder = AgentTraceRecorder(tool_artifact_dir=tmp_path / "tool_images")
+    image_part = types.Part.from_bytes(
+        mime_type="image/jpeg",
+        data=b"fake-jpeg-bytes",
+    )
+
+    recorder.record_tool_result(
+        tool_name="fetch_atlas",
+        tool_args={"positions_mm": [4.0]},
+        result={
+            "status": "ok",
+            "positions_mm": [4.0],
+            "_langslice_multimodal_parts": [
+                types.Part.from_text(text="Atlas at 4.00 mm:"),
+                image_part,
+            ],
+        },
+    )
+
+    event = recorder.raw_events[0]
+    artifacts = event["artifacts"]
+    assert artifacts == [
+        {
+            "type": "image_path",
+            "path": "tool_images/fetch_atlas_001_img01.jpg",
+            "mime_type": "image/jpeg",
+        }
+    ]
+    saved = tmp_path / "tool_images" / "fetch_atlas_001_img01.jpg"
+    assert saved.read_bytes() == b"fake-jpeg-bytes"
 
 
 def test_agent_trace_recorder_captures_tool_results_without_private_parts():
@@ -218,6 +295,12 @@ def test_collect_manifest_traces_writes_raw_sft_and_summary(tmp_path: Path):
 
     raw = json.loads((out_dir / "runs" / "single-1" / "raw_trace.json").read_text())
     sft = json.loads((out_dir / "runs" / "single-1" / "sft_trace.json").read_text())
+    sft_deployment = json.loads(
+        (out_dir / "runs" / "single-1" / "sft_trace_deployment.json").read_text()
+    )
+    sft_rationale = json.loads(
+        (out_dir / "runs" / "single-1" / "sft_trace_rationale.json").read_text()
+    )
     results = [
         json.loads(line)
         for line in (out_dir / "results.jsonl").read_text().splitlines()
@@ -228,7 +311,13 @@ def test_collect_manifest_traces_writes_raw_sft_and_summary(tmp_path: Path):
     assert raw["manifest"]["id"] == "single-1"
     assert "teacher-only" in json.dumps(raw)
     assert "teacher-only" not in json.dumps(sft)
+    assert "target_images/target_001.jpg" in json.dumps(sft_deployment)
+    assert "teacher-only" not in json.dumps(sft_deployment)
+    assert "Rationale summary: teacher-only" in json.dumps(sft_rationale)
+    assert (out_dir / "runs" / "single-1" / "target_images" / "target_001.jpg").exists()
+    assert raw["sft_quality"]["accepted_for_sft"] is True
     assert results[0]["category"]["accepted"] is True
+    assert results[0]["sft_quality"]["accepted_for_sft"] is True
     assert summary["total_runs"] == 1
     assert summary["accepted_runs"] == 1
 

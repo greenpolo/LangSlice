@@ -394,6 +394,25 @@ def _add_collect_traces_parser(subparsers: argparse._SubParsersAction) -> None:
         action="store_false",
         help="Do not request Gemini thought summaries",
     )
+    p.add_argument(
+        "--sft-export",
+        default="both",
+        choices=["deployment", "rationale", "both"],
+        help="Which SFT trace export variants to write",
+    )
+    p.add_argument(
+        "--persist-tool-images",
+        dest="persist_tool_images",
+        action="store_true",
+        default=True,
+        help="Persist multimodal atlas tool-result images beside each trace",
+    )
+    p.add_argument(
+        "--no-persist-tool-images",
+        dest="persist_tool_images",
+        action="store_false",
+        help="Do not persist multimodal atlas tool-result images",
+    )
 
 
 def _run_collect_traces(args: argparse.Namespace) -> None:
@@ -412,6 +431,8 @@ def _run_collect_traces(args: argparse.Namespace) -> None:
         media_resolution=args.media_resolution,
         max_iterations=args.max_iterations,
         include_thought_summaries=args.include_thought_summaries,
+        sft_export=args.sft_export,
+        persist_tool_images=args.persist_tool_images,
         limit=args.limit,
         kind_filter=kind_filter,
         resume=args.resume,

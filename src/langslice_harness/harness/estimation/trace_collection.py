@@ -14,6 +14,7 @@ from google.adk.plugins.base_plugin import BasePlugin
 from PIL import Image
 
 TraceKind = Literal["single", "group"]
+SftExportMode = Literal["deployment", "rationale", "both"]
 SingleRunner = Callable[..., Awaitable[Any]]
 GroupRunner = Callable[..., Awaitable[Any]]
 
@@ -98,13 +99,20 @@ def _usage_metadata_dict(response: Any) -> dict[str, int | float | str | bool]:
 class AgentTraceRecorder(BasePlugin):
     """ADK plugin that records deployment-shaped trace events and usage."""
 
-    def __init__(self, *, name: str = "langslice_trace_recorder") -> None:
+    def __init__(
+        self,
+        *,
+        name: str = "langslice_trace_recorder",
+        tool_artifact_dir: str | Path | None = None,
+    ) -> None:
         super().__init__(name)
         self.raw_events: list[dict[str, Any]] = []
         self.usage_by_call: list[dict[str, int | float | str | bool]] = []
         self.usage_totals: dict[str, int | float] = {}
         self.tool_call_count = 0
+        self.tool_result_count = 0
         self.submit_rejections = 0
+        self.tool_artifact_dir = Path(tool_artifact_dir) if tool_artifact_dir else None
 
     async def after_model_callback(self, *, callback_context: Any, llm_response: Any) -> None:
         del callback_context
@@ -173,17 +181,63 @@ class AgentTraceRecorder(BasePlugin):
         tool_args: dict[str, Any],
         result: dict[str, Any],
     ) -> None:
+        self.tool_result_count += 1
+        artifacts = self._persist_multimodal_tool_artifacts(tool_name, result)
         public_result = {
             key: value for key, value in result.items() if key not in _PRIVATE_RESULT_KEYS
         }
         if public_result.get("status") == "error" and tool_name.startswith("submit"):
             self.submit_rejections += 1
-        self.raw_events.append({
+        event = {
             "role": "tool",
             "name": tool_name,
             "args": _jsonable(tool_args),
             "response": _jsonable(public_result),
-        })
+        }
+        if artifacts:
+            event["artifacts"] = artifacts
+        self.raw_events.append(event)
+
+    def _persist_multimodal_tool_artifacts(
+        self, tool_name: str, result: dict[str, Any]
+    ) -> list[dict[str, str]]:
+        if self.tool_artifact_dir is None:
+            return []
+        parts = result.get("_langslice_multimodal_parts")
+        if not isinstance(parts, list):
+            return []
+
+        self.tool_artifact_dir.mkdir(parents=True, exist_ok=True)
+        artifacts: list[dict[str, str]] = []
+        image_index = 0
+        tool_slug = "".join(
+            ch if ch.isalnum() or ch in {"_", "-"} else "_" for ch in tool_name
+        ).strip("_") or "tool"
+        for part in parts:
+            inline_data = getattr(part, "inline_data", None)
+            if inline_data is None:
+                continue
+            data = getattr(inline_data, "data", None)
+            mime_type = getattr(inline_data, "mime_type", None)
+            if not isinstance(data, bytes) or not isinstance(mime_type, str):
+                continue
+            if not mime_type.startswith("image/"):
+                continue
+            image_index += 1
+            ext = ".png" if mime_type == "image/png" else ".jpg"
+            filename = f"{tool_slug}_{self.tool_result_count:03d}_img{image_index:02d}{ext}"
+            path = self.tool_artifact_dir / filename
+            path.write_bytes(data)
+            try:
+                stored_path = path.relative_to(self.tool_artifact_dir.parent)
+            except ValueError:
+                stored_path = path
+            artifacts.append({
+                "type": "image_path",
+                "path": str(stored_path).replace("\\", "/"),
+                "mime_type": mime_type,
+            })
+        return artifacts
 
 
 def _require_str(data: dict[str, Any], key: str) -> str:
@@ -365,34 +419,150 @@ def categorize_trace(
     }
 
 
-def export_sft_messages(raw_events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def export_sft_messages(
+    raw_events: list[dict[str, Any]],
+    *,
+    user_message: dict[str, Any] | None = None,
+    include_rationale_summaries: bool = False,
+) -> list[dict[str, Any]]:
     """Convert raw trace events to deployment-shaped SFT messages.
 
-    Teacher thought summaries are intentionally omitted from this export.
+    Teacher thought summaries are omitted by default. Rationale exports include
+    them as visible, compact ``Rationale summary: ...`` text rather than hidden
+    chain-of-thought.
     """
 
     messages: list[dict[str, Any]] = []
+    if user_message is not None:
+        messages.append(user_message)
     for event in raw_events:
         role = event.get("role")
         if role == "user":
             messages.append({"role": "user", "parts": event.get("parts", [])})
         elif role == "assistant":
             msg: dict[str, Any] = {"role": "assistant"}
+            content_chunks: list[str] = []
+            if include_rationale_summaries:
+                summaries = event.get("teacher_thought_summaries")
+                if isinstance(summaries, list):
+                    for summary in summaries:
+                        if isinstance(summary, str) and summary.strip():
+                            content_chunks.append(
+                                f"Rationale summary: {summary.strip()}"
+                            )
             visible = event.get("visible_text")
             if isinstance(visible, str) and visible:
-                msg["content"] = visible
+                content_chunks.append(visible)
+            if content_chunks:
+                msg["content"] = "\n\n".join(content_chunks)
             tool_calls = event.get("tool_calls")
             if isinstance(tool_calls, list) and tool_calls:
                 msg["tool_calls"] = tool_calls
             if "content" in msg or "tool_calls" in msg:
                 messages.append(msg)
         elif role == "tool":
-            messages.append({
+            tool_msg: dict[str, Any] = {
                 "role": "tool",
                 "name": event.get("name"),
                 "response": event.get("response"),
-            })
+            }
+            artifacts = event.get("artifacts")
+            if isinstance(artifacts, list) and artifacts:
+                tool_msg["artifacts"] = artifacts
+                content_parts: list[dict[str, Any]] = []
+                response = event.get("response")
+                description = (
+                    response.get("description")
+                    if isinstance(response, dict)
+                    else None
+                )
+                if isinstance(description, str) and description:
+                    content_parts.append({"type": "text", "text": description})
+                content_parts.extend(cast(list[dict[str, Any]], artifacts))
+                tool_msg["content"] = content_parts
+            messages.append(tool_msg)
     return messages
+
+
+def build_sft_user_message(
+    row: TraceManifestRow, target_artifacts: list[dict[str, str]]
+) -> dict[str, Any]:
+    axis_label = {"coronal": "AP", "sagittal": "ML", "horizontal": "DV"}.get(
+        row.plane, "position"
+    )
+    if row.kind == "single":
+        text = (
+            f"Determine this {row.plane} slice's {axis_label} position in "
+            f"the {row.atlas} atlas."
+        )
+    else:
+        text = (
+            f"Determine each {row.plane} slice's {axis_label} position in "
+            f"the {row.atlas} atlas. The images are ordered along the "
+            f"{axis_label} axis."
+        )
+    return {
+        "role": "user",
+        "content": [{"type": "text", "text": text}, *target_artifacts],
+    }
+
+
+def _persist_target_images(images: list[Image.Image], run_dir: Path) -> list[dict[str, str]]:
+    target_dir = run_dir / "target_images"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    artifacts: list[dict[str, str]] = []
+    for index, image in enumerate(images, start=1):
+        path = target_dir / f"target_{index:03d}.jpg"
+        image.convert("RGB").save(path, format="JPEG", quality=90)
+        artifacts.append({
+            "type": "image_path",
+            "path": str(path.relative_to(run_dir)).replace("\\", "/"),
+            "mime_type": "image/jpeg",
+        })
+    return artifacts
+
+
+def assess_sft_quality(
+    raw_events: list[dict[str, Any]],
+    category: Mapping[str, Any],
+    *,
+    max_rationale_chars: int = 800,
+) -> dict[str, Any]:
+    missing_rationale_before_tool = 0
+    overlong_rationale = 0
+    assistant_tool_turns = 0
+    for event in raw_events:
+        if event.get("role") != "assistant":
+            continue
+        tool_calls = event.get("tool_calls")
+        if not isinstance(tool_calls, list) or not tool_calls:
+            continue
+        assistant_tool_turns += 1
+        visible = event.get("visible_text")
+        summaries = event.get("teacher_thought_summaries")
+        rationale_chunks: list[str] = []
+        if isinstance(visible, str) and visible.strip():
+            rationale_chunks.append(visible)
+        if isinstance(summaries, list):
+            rationale_chunks.extend(
+                item for item in summaries if isinstance(item, str) and item.strip()
+            )
+        if not rationale_chunks:
+            missing_rationale_before_tool += 1
+        if any(len(chunk) > max_rationale_chars for chunk in rationale_chunks):
+            overlong_rationale += 1
+
+    accepted_for_sft = (
+        category.get("accepted") is True
+        and missing_rationale_before_tool == 0
+        and overlong_rationale == 0
+    )
+    return {
+        "accepted_for_sft": accepted_for_sft,
+        "assistant_tool_turns": assistant_tool_turns,
+        "missing_rationale_before_tool": missing_rationale_before_tool,
+        "overlong_rationale": overlong_rationale,
+    }
 
 
 def _write_json(path: Path, payload: Any) -> None:
@@ -491,6 +661,8 @@ async def _collect_manifest_traces_async(
     media_resolution: str,
     max_iterations: int,
     include_thought_summaries: bool,
+    sft_export: SftExportMode,
+    persist_tool_images: bool,
     limit: int | None,
     kind_filter: TraceKind | None,
     resume: bool,
@@ -518,8 +690,12 @@ async def _collect_manifest_traces_async(
         if resume and raw_path.exists():
             continue
 
-        recorder = AgentTraceRecorder()
         images = _load_images(row.images)
+        target_artifacts = _persist_target_images(images, run_dir)
+        user_message = build_sft_user_message(row, target_artifacts)
+        recorder = AgentTraceRecorder(
+            tool_artifact_dir=(run_dir / "tool_images") if persist_tool_images else None
+        )
         common_kwargs = {
             "atlas_name": row.atlas,
             "plane": row.plane,
@@ -560,6 +736,7 @@ async def _collect_manifest_traces_async(
             recorder.usage_totals,
             GEMINI_31_PRO_PREVIEW_PRICING,
         )
+        sft_quality = assess_sft_quality(recorder.raw_events, category)
         manifest_payload = {
             "id": row.id,
             "kind": row.kind,
@@ -580,18 +757,37 @@ async def _collect_manifest_traces_async(
             "usage_totals": recorder.usage_totals,
             "submitted_positions_mm": submitted,
             "category": category,
+            "sft_quality": sft_quality,
             "estimated_cost_usd": cost,
         }
         _write_json(raw_path, raw_payload)
-        _write_json(run_dir / "sft_trace.json", {
+        deployment_payload = {
             "manifest": manifest_payload,
-            "messages": export_sft_messages(recorder.raw_events),
-        })
+            "messages": export_sft_messages(
+                recorder.raw_events,
+                user_message=user_message,
+                include_rationale_summaries=False,
+            ),
+        }
+        rationale_payload = {
+            "manifest": manifest_payload,
+            "messages": export_sft_messages(
+                recorder.raw_events,
+                user_message=user_message,
+                include_rationale_summaries=True,
+            ),
+        }
+        _write_json(run_dir / "sft_trace.json", deployment_payload)
+        if sft_export in {"deployment", "both"}:
+            _write_json(run_dir / "sft_trace_deployment.json", deployment_payload)
+        if sft_export in {"rationale", "both"}:
+            _write_json(run_dir / "sft_trace_rationale.json", rationale_payload)
         _write_json(run_dir / "telemetry.json", {
             "usage_by_call": recorder.usage_by_call,
             "usage_totals": recorder.usage_totals,
             "estimated_cost_usd": cost,
             "category": category,
+            "sft_quality": sft_quality,
         })
         results.append({
             "id": row.id,
@@ -600,6 +796,7 @@ async def _collect_manifest_traces_async(
             "submitted_positions_mm": submitted,
             "truth_positions_mm": row.truth_positions_mm,
             "category": category,
+            "sft_quality": sft_quality,
             "estimated_cost_usd": cost,
         })
 
@@ -623,6 +820,8 @@ def collect_manifest_traces(
     media_resolution: str = "medium",
     max_iterations: int = 20,
     include_thought_summaries: bool = True,
+    sft_export: SftExportMode = "both",
+    persist_tool_images: bool = True,
     limit: int | None = None,
     kind_filter: TraceKind | None = None,
     resume: bool = False,
@@ -639,6 +838,8 @@ def collect_manifest_traces(
         media_resolution=media_resolution,
         max_iterations=max_iterations,
         include_thought_summaries=include_thought_summaries,
+        sft_export=sft_export,
+        persist_tool_images=persist_tool_images,
         limit=limit,
         kind_filter=kind_filter,
         resume=resume,
