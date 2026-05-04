@@ -2,16 +2,11 @@
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import landmarks
 import pytest
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(REPO_ROOT / "models" / "langslice-gemma-4" / "data"))
-
-import landmarks  # type: ignore  # noqa: E402
 
 
 @pytest.fixture
@@ -71,7 +66,7 @@ def tmp_atlas_map_json(tmp_path: Path) -> Path:
 
 def _fake_atlas_with_tree() -> object:
     """Build a tiny fake BrainGlobe atlas exposing the real API surface:
-    structures / lookup_df / get_structure_descendants(structure)."""
+    structures / lookup_df / get_structure_descendants(acronym)."""
     atlas = MagicMock()
     atlas.structures = {
         "HPF": {"acronym": "HPF", "id": 1089},
@@ -81,11 +76,8 @@ def _fake_atlas_with_tree() -> object:
     }
     atlas.lookup_df = None
 
-    def descendants(structure: str | dict) -> list[str]:
-        acronym = structure["acronym"] if isinstance(structure, dict) else structure
-        if acronym == "HPF":
-            return ["CA1", "DG"]
-        return []
+    def descendants(acronym: str) -> list[str]:
+        return ["CA1", "DG"] if acronym == "HPF" else []
 
     atlas.get_structure_descendants.side_effect = descendants
     return atlas

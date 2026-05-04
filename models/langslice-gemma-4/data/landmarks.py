@@ -8,8 +8,10 @@ region IDs, walking the structure-tree descendants when the mapping flags
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 _DEFAULT_LANDMARKS_PATH = Path(__file__).resolve().parent / "landmarks.json"
 _DEFAULT_ATLAS_MAP_PATH = Path(__file__).resolve().parent / "landmark_atlas_map.json"
@@ -62,10 +64,10 @@ class LandmarkLoader:
         structures = getattr(atlas, "structures", {})
         lookup_df = getattr(atlas, "lookup_df", None)
 
-        def _structure_for(ac: str) -> dict | None:
+        def _structure_for(ac: str) -> Mapping[str, Any] | None:
             try:
                 return structures[ac]
-            except Exception:
+            except KeyError:
                 pass
             if lookup_df is not None:
                 matches = lookup_df.loc[lookup_df["acronym"] == ac]
@@ -79,7 +81,7 @@ class LandmarkLoader:
         if root_structure is not None:
             ids.add(int(root_structure["id"]))
         if include_descendants and root_structure is not None:
-            for descendant_acronym in atlas.get_structure_descendants(root_structure):
+            for descendant_acronym in atlas.get_structure_descendants(acronym):
                 descendant = _structure_for(descendant_acronym)
                 if descendant is not None:
                     ids.add(int(descendant["id"]))

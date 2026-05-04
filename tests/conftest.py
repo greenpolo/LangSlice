@@ -1,9 +1,25 @@
+"""Pytest configuration and shared fixtures.
+
+Path setup: the directory ``models/langslice-gemma-4/`` has a hyphen and can't
+be a normal Python package. This conftest adds it to ``sys.path`` so tests can
+``import landmarks``, ``import region_bbox``, etc., without local sys.path
+hacks. (``pyproject.toml`` already lists this path under
+``tool.pytest.ini_options.pythonpath``; this duplicate guard is here so direct
+``python -m pytest`` invocations from non-pyproject contexts also work.)
+"""
 from __future__ import annotations
 
+import sys
 from dataclasses import replace
+from pathlib import Path
 
 import numpy as np
 import pytest
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+GEMMA4_DATA = REPO_ROOT / "models" / "langslice-gemma-4" / "data"
+if str(GEMMA4_DATA) not in sys.path:
+    sys.path.insert(0, str(GEMMA4_DATA))
 
 
 @pytest.fixture(scope="module")
