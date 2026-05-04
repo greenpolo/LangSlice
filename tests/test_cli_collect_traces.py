@@ -32,6 +32,9 @@ def test_collect_traces_cli_calls_collector(monkeypatch, tmp_path):
             "3",
             "--kind",
             "single",
+            "--sft-export",
+            "rationale",
+            "--no-persist-tool-images",
             "--no-include-thought-summaries",
         ],
     )
@@ -44,3 +47,5 @@ def test_collect_traces_cli_calls_collector(monkeypatch, tmp_path):
     assert captured["limit"] == 3
     assert captured["kind_filter"] == "single"
     assert captured["include_thought_summaries"] is False
+    assert captured["sft_export"] == "rationale"
+    assert captured["persist_tool_images"] is False

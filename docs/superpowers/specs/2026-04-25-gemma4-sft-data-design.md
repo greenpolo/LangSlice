@@ -2,14 +2,14 @@
 title: Gemma 4 E4B — SFT Data Design
 date: 2026-04-25
 scope: Supervised fine-tuning data composition, generation pipeline, and augmentation architecture for the langslice-gemma-4 model. RLVR is a separate spec.
-status: draft v3 (hybrid Stage A/B framing; HistAug correction)
+status: draft v4 (position-trace collection; no-thinking default; rationale fallback)
 ---
 
 # Gemma 4 E4B — SFT Data Design
 
 ## 1. Goal
 
-Produce an SFT corpus that turns Gemma 4 E4B into a drop-in replacement for Gemini inside the LangSlice estimation agent loop (`fetch_atlas` + `submit_estimate` / `submit_group_estimate` from `src/langslice_harness/harness/estimation/tools.py`), as the warm-start before a separate, larger RLVR phase.
+Produce an SFT corpus that turns Gemma 4 E4B into a drop-in replacement for Gemini inside the LangSlice position-estimation agent loop (`fetch_atlas` + `submit_estimate` / `submit_group_estimate` from `src/langslice_harness/harness/estimation/tools.py`), as the warm-start before a separate, larger RLVR phase. The task covers coronal, sagittal, and horizontal position estimation; do not frame this plan as AP-only except where discussing the coronal AP axis or legacy registration/export terminology.
 
 Two purposes for the SFT data:
 
@@ -59,19 +59,19 @@ Smaller and cleaner is preferred over the upper bound.
 
 | # | Bucket | Purpose | Source | Output shape | Approx volume |
 |---|---|---|---|---|---|
-| 1 | Agent traces | Teach tool-use loop, mm scales per atlas, sweep heuristics, narrow/fine-tune reasoning | Gemini 3.1 Pro (~500 runs) + cheaper teachers (~500–2K runs), filtered to ~40–60% accept rate | Multi-turn: visible reasoning + `fetch_atlas` calls + atlas-image tool results + `submit_estimate` / `submit_group_estimate` | ~500–1.5K traces (primary bucket) |
+| 1 | Agent traces | Teach tool-use loop, mm scales per atlas, broad-to-narrow sweep heuristics, and stable final submission | Gemini 3.1 Pro (~500 runs) + cheaper teachers (~500–2K runs), filtered to ~40–60% accept rate | Multi-turn deployment trace: target image + compact tool calls + atlas-image tool results + `submit_estimate` / `submit_group_estimate`; rationale export retained as a fallback experiment, not the default training target | ~500–1.5K traces (primary bucket) |
 | 2 | Landmark listing | Teach loop's first-turn contract: "describe 2–3 prominent anatomical landmarks" | Programmatic from atlas annotations (top-N visible regions by area, named) | Single-turn: image → "anterior commissure visible, hippocampus forming, …" | ~1–3K |
 | 3 | Bbox grounding | Visual-spatial grounding of curated landmarks; supports future LangSlice bbox-based registration | Programmatic from atlas registration; ≤1K Gemini-distilled on partial-registration real histology with user review | Both directions: (image + region name → bbox), (image + bbox → region name) | ~1–3K programmatic + ≤1K distilled. **Hard cap at ≤25% of total SFT volume** so traces dominate. |
-| 4 | Multi-slice morphology | Teach how regions transform across positions — supports the loop's narrowing reasoning | Gemini Pro distilled (text quality matters) | (6 atlas sections + region) → "this region begins as a thin crescent and broadens caudally…" | ~300–600 |
+| 4 | Multi-slice morphology | Teach how regions transform across positions; auxiliary visual-anatomy vocabulary, not required agent-loop output | Gemini Pro distilled (text quality matters) | (6 atlas sections + region) -> "this region begins as a thin crescent and broadens caudally..." | ~300–600 |
 | 5 | Programmatic tool-call skeletons (NEW in v2) | Backstop coverage for atlas × orientation × modality combos under-served by accepted teacher traces | Deterministic generation: known-correct broad sweep → narrow → submit, against random target positions | Same multi-turn shape as bucket 1 | A few hundred to ~1K, dialed up if bucket 1 yield is thin |
 
 ### 5.1 Format-alignment principle
 
-Every example's *output* shape matches what Gemma will emit at deployment. Bucket 2 outputs landmark lists because the loop's first turn does. Bucket 4 outputs prose morphology descriptions because that's the form of reasoning the model will produce while narrowing. Bucket 3 is the one exception that produces an output shape (bbox) the agent loop does not currently use; it is retained for two reasons: (a) future LangSlice versions are slated to use bbox output for registration, and (b) bbox grounding is a bounded auxiliary task in current VLM literature (KOSMOS-2, GLaMM, BoxTuning). The literature evidence for bbox-grounding *transfer* to AP-estimation specifically is weak — we keep the bucket on product-roadmap grounds, not on transfer-learning grounds, and cap its volume so it cannot dominate the output distribution.
+Bucket 1 and bucket 5 examples must match what Gemma will emit at deployment: tool calls and final position estimates, with thinking disabled by default and no required visible rationale. Buckets 2, 3, and 4 are auxiliary grounding/captioning tasks and may have non-deployment output shapes, but their volume is capped so they do not make the deployed agent chatty or bbox-oriented. Bucket 3 is retained because future LangSlice versions may use bbox output for registration and because bbox grounding is a bounded auxiliary task in current VLM literature (KOSMOS-2, GLaMM, BoxTuning). The evidence for bbox-grounding transfer to position estimation specifically is weak; keep it on product-roadmap grounds, not as a core trace objective.
 
 ### 5.2 Coordinate leakage rule
 
-The deployment loop is millimeter-native: `fetch_atlas` takes mm, tool results say "Atlas at 5.40 mm", and the final answer is `position_mm`. Removing mm from training data is incompatible with the deployment task. Therefore:
+The deployment loop is millimeter-native: `fetch_atlas` takes mm, tool results say "Atlas at 5.40 mm", and the final answer is `position_mm`. For coronal examples this is AP; for sagittal it is ML; for horizontal it is DV. Removing mm from training data is incompatible with the deployment task. Therefore:
 
 - Buckets 1, 3, and 5 keep mm where it appears naturally — in tool calls, tool results, and final answers.
 - Bucket 4 (multi-slice morphology) **must omit mm from prompts and outputs** — this bucket is the one place where the model could otherwise learn "section index ↔ mm" maps. The 6 sections are described positionally ("anterior to posterior") rather than by mm.
@@ -93,7 +93,7 @@ No hard percentage commitment per cell, but post-collection distribution is repo
 
 ### 5.4 Hard-negative coverage target (NEW in v2)
 
-Per iTool (2025), narrow-task tool-use SFT benefits from a deliberate ~20–30% share of "teacher struggled, then recovered" traces. These carry more gradient signal than clean-success-only traces because they teach the verify/restart sub-behavior the prompt explicitly requires.
+Per iTool (2025), narrow-task tool-use SFT benefits from a deliberate ~20–30% share of "teacher struggled, then recovered" traces. These carry more gradient signal than clean-success-only traces because they teach recovery after an initially poor comparison or overly broad sweep. Do not encode an over-specific policy such as mandatory bracket, verify, or fine-tune stages; the durable behavior is broad-to-narrow search with valid tool calls and a calibrated final estimate.
 
 We do not need a separate classifier (rejected as overhead in §13). Hard-negative detection is pure post-processing on accepted traces, using two cheap signals (defined in §8.2):
 
@@ -190,9 +190,23 @@ def is_hard_negative(trace, accept_tolerance_mm):
 
 Targeted ratio: **20–30% hard-negatives in final bucket 1 mix**. If natural distribution under-delivers (<20%), seed additional runs with deliberately-far starting hints to provoke restart-and-recover behavior.
 
-### 8.3 Bucket-1 thought-channel handling
+### 8.3 Bucket-1 rationale and thinking handling
 
-Strip Gemini's dedicated thought-summary channel (no inbound surface in Gemma). Keep the visible response text — this often contains brief reasoning interleaved with tool calls and is the shape Gemma will emit at deployment. Effective rule: if the content was rendered to the API user, keep it; if it was a hidden API channel, drop it.
+Gemini thinking is teacher-side scaffolding. Collect thought summaries when available for analysis, trace categorization, and fallback experiments, but do not make them the default SFT target.
+
+Default training export:
+
+- Use `sft_trace_deployment.json`.
+- Train Gemma with thinking off / no visible rationale by default.
+- Optimize for faithful, valid tool use and final position accuracy.
+
+Fallback / auxiliary exports:
+
+- `sft_trace_rationale.json` may be used if no-thinking tool use fails in held-out evaluation. It should include short teacher rationale summaries as visible assistant text, not hidden chain-of-thought.
+- Rationale text may also be converted into small caption/landmark auxiliary examples. Keep this mix modest so Gemma gains visual-anatomical vocabulary without learning to narrate every agent-loop step.
+- True Gemma thought-channel training is a later ablation only. If attempted, verify the exact current Gemma 4 E4B tokenizer/chat template, loss masking, tool-call parsing, and context handling first. Previous thought blocks must not be carried forward in multi-turn history.
+
+Process rewards in RLVR are optional. The verifiable reward can be final coordinate error, valid tool-call schema, successful submission, and tool-efficiency; RLVR does not require grading the model's reasoning text.
 
 ### 8.4 Bucket-1 prompt mix
 
@@ -241,6 +255,7 @@ Built once, reused for SFT and later RLVR data generation. Lives at `models/lang
 | Atlas-version metadata schema | Implementation | Phase 4 | Every example records atlas name + version (e.g., `allen_mouse_25um@CCFv3`) |
 | Real-histology collection (`eval/download_datasets.py`) | Ongoing | Bucket-1 query mix | Affects synthetic share |
 | Trace-rendering tool (Gemini agent run → Gemma chat-template multi-turn) | Implementation | Phase 4 | |
+| Rationale/deployment export selector | Implementation | Phase 4 | Default to deployment traces; rationale traces are fallback/ablation inputs |
 
 ## 11. Risks / open issues
 
@@ -253,7 +268,7 @@ Built once, reused for SFT and later RLVR data generation. Lives at `models/lang
 - **Subject-level leakage** (NEW in v2). Same brain appearing in SFT and SliceBench inflates eval scores. Cited evidence: "AI slipping on tiles" (Bussola et al., 2019 — arxiv 1909.06539), PathAlign (2024). Mitigation: subject-level holdout list locked *before* SFT generation begins (§10 dependency).
 - **Atlas-version contamination** (NEW in v2). Allen CCFv2 vs v3 have different coordinate origins and small alignment offsets. Without atlas-version metadata, mixing data from both versions teaches incoherent mm-anchor mappings. Mitigation: schema requirement in §10.
 - **Format-mismatch silent failure.** If trace data is generated in a format that does not match Gemma 4's chat template, training proceeds without error but the model learns nothing useful. Sanity-check the chat template AND instruct-masking before bulk generation.
-- **"Thinking off" assumption may be revisited.** Current observation that Gemma E4B "sucks at thinking" is pre-SFT, but recent narrow-fine-tuning literature (AdaTooler-V, VTool-R1) suggests that for procedural scaffolded tasks, parameter-accuracy gains dominate reasoning-length gains. Keep thinking-off as the default; revisit only if SliceBench shows specific reasoning-shaped failures post-SFT. Not a critical-path ablation.
+- **Thinking instability in E4B.** Gemma 4 E4B is small enough that visible/thought-channel reasoning can destabilize format, tool calls, or verbosity. Keep thinking-off deployment traces as the default. If that fails, ablate compact visible action captions/rationale exports before full thought-channel training.
 
 ## 12. Validation hookpoint
 
@@ -268,7 +283,7 @@ Subject-level holdout enforced: any brain represented in the SliceBench eval set
 - Cross-atlas synthetic queries (slice from atlas A queried against atlas B).
 - Self-correction *classifier* (cheap post-processing tags hard-negatives instead — §8.2).
 - Image-gen synthetic histology (deferred; revisit during RLVR planning).
-- Free-form bulk image captioning (reframed into Bucket 2 landmark-listing).
+- Free-form bulk image captioning as a primary objective. Short landmark/caption examples are allowed only as a modest auxiliary mix or rationale fallback.
 - Bbox-as-output trained on partial-registration histology without user review.
 - Local-step student-aware reasoning filter (rejected: locked prompt scaffold + outcome filter is sufficient for capable students).
 - Curriculum ordering (rejected: overkill for narrow-task fine-tuning of a capable base).
