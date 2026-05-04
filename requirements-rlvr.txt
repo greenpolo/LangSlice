@@ -1,0 +1,17 @@
+# Runtime pins for the langslice-gemma-4 RLVR pipeline.
+# See docs/superpowers/specs/2026-05-04-gemma4-rlvr-training-design.md §2.
+#
+# transformers >=5.2.0 is the floor for GRPOTrainer.environment_factory.
+# trl must include PR #5448 (multimodal tool-response test/docs, 2026-04-06)
+# and PR #5521 (image-boundary-aware tool truncation, 2026-04-11). Pin to a
+# release that contains both — the first cut that does is 0.29.0.
+
+transformers>=5.2.0
+trl>=0.29.0
+unsloth>=2026.4.3
+datasets>=3.2.0
+peft>=0.14.0
+accelerate>=1.5.0
+bitsandbytes>=0.45.0
+trackio>=0.1.0
+Pillow

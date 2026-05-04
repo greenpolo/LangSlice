@@ -41,7 +41,7 @@ include = ["langslice_harness*"]
 testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
 addopts = "-ra"
-pythonpath = ["src", "models/langslice-gemma-4/data"]
+pythonpath = ["src", "models/langslice-gemma-4/data", "models/langslice-gemma-4/training"]
 
 [tool.ruff]
 target-version = "py310"
@@ -51,6 +51,7 @@ include = [
     "tests/test_*.py",
     "tests/*_test.py",
     "models/langslice-gemma-4/data/augmentation/**/*.py",
+    "models/langslice-gemma-4/training/rlvr/**/*.py",
 ]
 
 [tool.ruff.lint]
@@ -58,6 +59,6 @@ select = ["E", "F", "I", "B", "UP"]
 
 [tool.pyright]
 include = ["src/langslice_harness", "tests"]
-extraPaths = ["src", "models/langslice-gemma-4/data"]
+extraPaths = ["src", "models/langslice-gemma-4/data", "models/langslice-gemma-4/training"]
 pythonVersion = "3.10"
 typeCheckingMode = "basic"
