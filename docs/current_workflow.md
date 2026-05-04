@@ -2,7 +2,7 @@
 
 This file describes the active CLI and Tauri GUI workflows.
 
-## AP Estimation
+## Position Estimation
 
 ```bash
 langslice estimate <image> [--atlas ...] [--model ...] [--workflow ...]
@@ -10,13 +10,13 @@ langslice estimate-group <img1> <img2> ... [--interval 200] [--atlas ...]
 langslice estimate-brain <image_folder> [--atlas ...] [--anchors ...]
 ```
 
-Single-slice and group AP estimation run through the ADK harness. The agent
+Single-slice and group position estimation run through the ADK harness. The agent
 surface is intentionally small: `fetch_atlas`, `submit_estimate`, and
 `submit_group_estimate`.
 
 Whole-brain estimation discovers a folder of slices, estimates anchor slices,
 interpolates center positions, runs windowed image-gen estimation for the
-remaining slices, and fits a constrained monotonic AP curve.
+remaining slices, and fits a constrained monotonic position curve.
 
 ## Image-Gen Registration
 
@@ -27,7 +27,7 @@ langslice register <image> --position <mm> [--registration-mode direct|agentic] 
 Registration has one active method: image-gen registration.
 
 1. Load, normalize, and downsample the histology slice.
-2. Generate atlas inputs at the requested AP position.
+2. Generate atlas inputs at the requested atlas position.
 3. Ask the image model to generate an atlas-colored target aligned to the histology.
 4. Register the generated target to the atlas color map with itk-elastix.
 5. Warp the atlas through the recovered transform.
@@ -53,5 +53,5 @@ views.
 
 ## Debug And Request Capture
 
-Set `LANGSLICE_VLM_DEBUG_DIR` to save run artifacts. For ADK AP request auditing,
+Set `LANGSLICE_VLM_DEBUG_DIR` to save run artifacts. For ADK estimation request auditing,
 set `LANGSLICE_ADK_CAPTURE_REQUESTS_DIR` to write redacted JSONL request captures.

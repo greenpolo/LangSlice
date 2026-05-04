@@ -1,0 +1,58 @@
+{
+  "version": "0.1.0",
+  "source": "User-curated 2026-05-04",
+  "notes": "Curated high-priority landmarks per orientation. Drives bucket-4 (multi-slice morphology) region selection. Names are human-readable; resolution to BrainGlobe atlas IDs/acronyms happens at render time. Aliases captured where the user's source listed them.",
+  "landmarks_by_orientation": {
+    "coronal": [
+      {"name": "Main Olfactory Bulb", "aliases": ["MOB"]},
+      {"name": "Anterior Commissure"},
+      {"name": "Piriform-Isocortex border (orbital area / agranular insular area)"},
+      {"name": "Corpus Callosum"},
+      {"name": "Major Island of Calleja"},
+      {"name": "Lateral Ventricle"},
+      {"name": "Nucleus Accumbens", "aliases": ["Accumbens Nucleus", "ACB"]},
+      {"name": "Caudate Putamen"},
+      {"name": "Dorsal Third Ventricle"},
+      {"name": "Lateral Septal Complex"},
+      {"name": "Fimbria"},
+      {"name": "Triangular Nucleus of Septum"},
+      {"name": "Thalamus"},
+      {"name": "Hypothalamus"},
+      {"name": "Hippocampal Formation"},
+      {"name": "Cortical Subplate"},
+      {"name": "Third Ventricle"},
+      {"name": "Cerebral Aqueduct"},
+      {"name": "Cerebellar Cortex - Hemispheric Regions"},
+      {"name": "Central Lobule - Lobule 2"},
+      {"name": "Central Lobule - Lobule 3"},
+      {"name": "Superior Colliculus"},
+      {"name": "Inferior Colliculus"},
+      {"name": "Nodulus (X)"},
+      {"name": "Pyramus (VIII)"}
+    ],
+    "sagittal": [
+      {"name": "Ammon's Horn"},
+      {"name": "Piriform Area"},
+      {"name": "Dentate Gyrus"},
+      {"name": "Lateral Ventricle"},
+      {"name": "Olfactory Tubercle"},
+      {"name": "Caudoputamen"},
+      {"name": "Lateral Septal Complex"},
+      {"name": "Anterior Commissure, Olfactory Limb"},
+      {"name": "Major Island of Calleja"},
+      {"name": "Third Ventricle"},
+      {"name": "Medial Habenula"}
+    ],
+    "horizontal": [
+      {"name": "Dentate Gyrus"},
+      {"name": "Ammon's Horn"},
+      {"name": "Lateral Ventricle"},
+      {"name": "Corpus Callosum"},
+      {"name": "Third Ventricle"},
+      {"name": "Caudoputamen"},
+      {"name": "Triangular Nucleus of Septum"},
+      {"name": "Superior Colliculus"},
+      {"name": "Inferior Colliculus"}
+    ]
+  }
+}

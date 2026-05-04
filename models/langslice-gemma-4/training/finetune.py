@@ -1,22 +1,25 @@
-"""QLoRA fine-tuning of Gemma 4 31B via Unsloth.
+"""QLoRA fine-tuning scaffold for LangSlice Gemma 4 E4B via Unsloth.
 
 Usage:
     python models/langslice-gemma-4/training/finetune.py \
-        --dataset models/langslice-gemma-4/data/triplets_with_cot.jsonl \
+        --dataset models/langslice-gemma-4/data/sft_traces.jsonl \
         --output-dir models/langslice-gemma-4/checkpoints
 """
 
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 
 
 def _parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Fine-tune Gemma 4 for AP estimation")
-    p.add_argument("--dataset", required=True, help="Training JSONL with CoT")
+    p = argparse.ArgumentParser(description="Fine-tune Gemma 4 E4B for slice position estimation")
+    p.add_argument(
+        "--dataset",
+        required=True,
+        help="Training JSONL rendered from deployment traces",
+    )
     p.add_argument("--output-dir", required=True, help="Checkpoint output directory")
-    p.add_argument("--base-model", default="unsloth/gemma-4-31b-it-bnb-4bit", help="Base model ID")
+    p.add_argument("--base-model", default="google/gemma-4-E4B-it", help="Base model ID")
     p.add_argument("--lora-rank", type=int, default=16, help="LoRA rank")
     p.add_argument("--epochs", type=int, default=3, help="Training epochs")
     p.add_argument("--batch-size", type=int, default=1, help="Batch size (keep low for 32GB VRAM)")
@@ -29,11 +32,14 @@ def finetune(args: argparse.Namespace):
     """Run QLoRA fine-tuning via Unsloth.
 
     Pipeline:
-    1. Load base Gemma 4 31B in 4-bit via Unsloth
+    1. Load base Gemma 4 E4B in 4-bit via Unsloth
     2. Attach LoRA adapters to attention layers
-    3. Load comparison triplet dataset with CoT targets
+    3. Load deployment-shaped trace data by default
     4. Train with gradient checkpointing + accumulation
     5. Save LoRA adapter weights + merged GGUF for inference
+
+    Gemini rationale summaries may be used for fallback experiments or auxiliary
+    caption tasks, but full reasoning traces are not the default target for E4B.
     """
     # TODO: Implement fine-tuning
     # Key Unsloth setup:

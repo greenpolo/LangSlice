@@ -1,3 +1,5 @@
+import numpy as np
+
 from langslice_harness.atlas.core import (
     get_position_range_mm,
     get_reference_slice,
@@ -58,3 +60,32 @@ def test_reference_slice_shape_differs_by_plane():
     # Coronal is (ML, DV); sagittal is (AP, DV); horizontal is (ML, AP).
     assert coronal.size != sagittal.size
     assert coronal.size != horizontal.size
+
+
+class _TinyAsrAtlas:
+    atlas_name = "tiny_asr"
+    orientation = "asr"
+    resolution = (1000.0, 1000.0, 1000.0)
+    metadata = {}
+
+    def __init__(self) -> None:
+        self.reference = np.zeros((5, 3, 4), dtype=np.uint8)
+        for ap_idx in range(self.reference.shape[0]):
+            self.reference[ap_idx, :, :] = ap_idx + 1
+        self.annotation = self.reference
+
+
+def test_sagittal_reference_slice_displays_ap_left_to_right():
+    atlas = _TinyAsrAtlas()
+    img = get_reference_slice(atlas, 0.0, plane="sagittal")
+
+    assert img.size == (5, 3)
+    assert img.getpixel((0, 0)) < img.getpixel((4, 0))
+
+
+def test_horizontal_reference_slice_displays_ap_left_to_right():
+    atlas = _TinyAsrAtlas()
+    img = get_reference_slice(atlas, 0.0, plane="horizontal")
+
+    assert img.size == (5, 4)
+    assert img.getpixel((0, 0)) < img.getpixel((4, 0))

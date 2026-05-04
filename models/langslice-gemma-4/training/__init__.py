@@ -1,1 +1,1 @@
-"""Fine-tuning pipeline for the Gemma 4 31B model project."""
+"""Fine-tuning pipeline for the LangSlice Gemma 4 E4B model project."""

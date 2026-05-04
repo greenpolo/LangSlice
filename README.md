@@ -8,9 +8,10 @@ desktop GUI in `tauri-gui/` and headless CLI support.
 
 ## Pipeline
 
-`AP estimation -> image-gen registration -> Elastix B-spline -> QUINT/ABBA export`
+`slice-position estimation -> image-gen registration -> Elastix B-spline -> QUINT/ABBA export`
 
-1. Estimate the anterior-posterior position of the tissue slice.
+1. Estimate the atlas position of the tissue slice. Coronal uses AP; sagittal
+   and horizontal use their corresponding atlas-native axes.
 2. Generate an atlas-colored registration target from the histology and atlas references.
 3. Recover a dense deformation field with itk-elastix B-spline registration.
 4. Warp the atlas and extract VisuAlign-compatible markers.
@@ -29,16 +30,16 @@ desktop GUI in `tauri-gui/` and headless CLI support.
 ## CLI
 
 ```bash
-# Single-slice AP estimation
+# Single-slice position estimation
 langslice estimate <image> [--atlas ...] [--model ...] [--workflow ...]
 
-# Multi-slice group AP estimation
+# Multi-slice group position estimation
 langslice estimate-group <img1> <img2> ... [--interval 200] [--atlas ...]
 
-# Whole-brain AP estimation
+# Whole-brain position estimation
 langslice estimate-brain <image_folder> [--atlas ...] [--anchors ...]
 
-# Image-gen registration at a known AP position
+# Image-gen registration at a known atlas position
 langslice register <image> --position <mm> [--registration-mode direct|agentic] [--image-model ...] [--openai-image-route images|responses] [--review-model ...] [--max-candidates 3] [--out ...]
 
 # Print package version

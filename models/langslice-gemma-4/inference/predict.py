@@ -1,4 +1,4 @@
-"""Run AP estimation inference with a fine-tuned Gemma 4 31B model.
+"""Run position-estimation inference with a fine-tuned Gemma 4 E4B model.
 
 Usage:
     python models/langslice-gemma-4/inference/predict.py \
@@ -10,27 +10,31 @@ Usage:
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 
 
 def _parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Predict AP position with fine-tuned Gemma 4 31B")
+    p = argparse.ArgumentParser(description="Predict slice position with fine-tuned Gemma 4 E4B")
     p.add_argument("--model-path", required=True, help="Path to fine-tuned model/adapter")
     p.add_argument("--image", required=True, help="Input slice image")
     p.add_argument("--atlas", default="allen_mouse_25um", help="BrainGlobe atlas name")
-    p.add_argument("--show-reasoning", action="store_true", help="Print CoT reasoning")
+    p.add_argument(
+        "--show-rationale",
+        action="store_true",
+        help="Print optional visible rationale if enabled",
+    )
     return p.parse_args()
 
 
-def predict(model_path: str, image_path: str, atlas: str, show_reasoning: bool = False):
-    """Run single-image AP estimation with the fine-tuned model.
+def predict(model_path: str, image_path: str, atlas: str, show_rationale: bool = False):
+    """Run single-image position estimation with the fine-tuned model.
 
     Pipeline:
-    1. Load atlas reference slices from BrainGlobe
-    2. Select bracketing references (coarse → fine)
-    3. Construct comparison prompt with query + references
-    4. Run inference through fine-tuned Gemma
-    5. Parse AP estimate from model output
+    1. Load target image and tool definitions
+    2. Run the constrained fetch-atlas / submit-estimate loop
+    3. Validate tool calls and final position output
+
+    Thinking is off by default. Optional rationale display is only for fallback
+    experiments, not the primary deployment path.
     """
     # TODO: Implement inference pipeline
     raise NotImplementedError("Inference pending model training")
@@ -42,5 +46,5 @@ if __name__ == "__main__":
         model_path=args.model_path,
         image_path=args.image,
         atlas=args.atlas,
-        show_reasoning=args.show_reasoning,
+        show_rationale=args.show_rationale,
     )

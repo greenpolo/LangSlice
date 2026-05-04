@@ -1,1 +1,1 @@
-"""Training data generation for the Gemma 4 31B model project."""
+"""Training data generation for the LangSlice Gemma 4 E4B model project."""

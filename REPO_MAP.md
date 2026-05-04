@@ -7,11 +7,11 @@ Short navigation map for the active LangSlice repo.
 - `src/langslice_harness/cli.py` -- CLI entry point for `langslice`.
 - `src/langslice_harness/vlm_config.py` -- Gemini backend selection and runtime settings.
 - `src/langslice_harness/atlas/` -- BrainGlobe atlas loading, AP/index conversion, and slice extraction.
-- `src/langslice_harness/harness/estimation/` -- ADK single-slice and group AP estimation.
-- `src/langslice_harness/harness/estimation/image_gen.py` -- image-gen AP estimation.
+- `src/langslice_harness/harness/estimation/` -- ADK single-slice and group position estimation.
+- `src/langslice_harness/harness/estimation/image_gen.py` -- image-gen position estimation.
 - `src/langslice_harness/registration/` -- registration public wrapper, runtime, solver, and result types.
 - `src/langslice_harness/harness/registration/` -- image-gen registration candidate pipeline, provider adapters, and optional ADK review loop.
-- `src/langslice_harness/whole_brain/` -- whole-brain multi-slice AP estimation.
+- `src/langslice_harness/whole_brain/` -- whole-brain multi-slice position estimation.
 - `src/langslice_harness/image_prep.py` -- image normalization, metadata detection, and VLM downsampling.
 - `src/langslice_harness/export.py` -- QUINT/ABBA-compatible JSON export.
 - `tauri-gui/` -- Tauri desktop app.
