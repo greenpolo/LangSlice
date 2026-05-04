@@ -1,0 +1,36 @@
+# Default GRPO configuration for the LangSlice RLVR pilot run (spec §8).
+# CLI flags supply paths; everything else lives here so runs are reproducible
+# from a tagged config file alone.
+
+[grpo]
+chat_template_kwargs = { enable_thinking = false }
+learning_rate = 5e-6
+num_generations = 2
+per_device_train_batch_size = 1
+gradient_accumulation_steps = 4
+max_prompt_length = 4096
+max_completion_length = 2048
+max_tool_calling_iterations = 20
+max_grad_norm = 0.1
+importance_sampling_level = "sequence"   # GSPO
+loss_type = "dr_grpo"
+optim = "adamw_8bit"
+log_completions = true
+logging_steps = 2
+save_steps = 50
+report_to = "trackio"
+load_in_4bit = true
+
+[lora]
+finetune_vision_layers = false
+finetune_language_layers = true
+finetune_attention_modules = true
+finetune_mlp_modules = true
+r = 16
+lora_alpha = 32
+use_gradient_checkpointing = "unsloth"
+
+[data]
+single_fraction = 0.7
+group_size = 4
+thickness_um = 30

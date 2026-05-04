@@ -1,0 +1,37 @@
+# Phase 2/3 pilot overrides — turn down rollouts and step count for the
+# sub-300-step single-slice pilot before we commit to the full run.
+
+[grpo]
+chat_template_kwargs = { enable_thinking = false }
+learning_rate = 5e-6
+num_generations = 2
+per_device_train_batch_size = 1
+gradient_accumulation_steps = 2
+max_prompt_length = 4096
+max_completion_length = 1536
+max_tool_calling_iterations = 16
+max_grad_norm = 0.1
+importance_sampling_level = "sequence"
+loss_type = "dr_grpo"
+optim = "adamw_8bit"
+log_completions = true
+logging_steps = 1
+save_steps = 25
+max_steps = 300
+report_to = "trackio"
+load_in_4bit = true
+
+[lora]
+finetune_vision_layers = false
+finetune_language_layers = true
+finetune_attention_modules = true
+finetune_mlp_modules = true
+r = 16
+lora_alpha = 32
+use_gradient_checkpointing = "unsloth"
+
+[data]
+# Phase 2 = single-slice only; Phase 4 will flip 30% to group via grpo_default.
+single_fraction = 0.99
+group_size = 4
+thickness_um = 30
