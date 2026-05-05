@@ -416,3 +416,41 @@ def test_stage_submit_writes_sft_jsonl(tmp_path: Path, monkeypatch):
     assistant_msg = [m for m in rec["messages"] if m["role"] == "assistant"][0]
     assert "thin crescent" in assistant_msg["content"]
     assert "[thinking]" not in assistant_msg["content"]
+
+
+def test_stage_submit_rejects_slicebench_subject_leakage(tmp_path: Path, monkeypatch):
+    import _stage_submit as stage_submit  # type: ignore
+
+    out_dir = tmp_path / "bbox_data"
+    out_dir.mkdir(parents=True)
+    draft = {
+        "id": "bbox_000001",
+        "atlas": "allen_mouse_25um",
+        "atlas_version": "CCFv3",
+        "orientation": "coronal",
+        "region": "Hippocampal Formation",
+        "source_type": "real_histology",
+        "source_brain": "SLICEBENCH_HELDOUT_001",
+        "is_hemisphere": False,
+        "modality": None,
+        "section_image_paths": [],
+        "section_positions_mm": [3.0, 3.4, 3.8, 4.2],
+        "bboxes": [{"left": [1, 1, 2, 2], "right": [3, 3, 4, 4]}] * 4,
+    }
+    (out_dir / "draft_manifest.jsonl").write_text(json.dumps(draft) + "\n", encoding="utf-8")
+    verdicts = tmp_path / "verdicts.jsonl"
+    verdicts.write_text(
+        json.dumps({"id": "bbox_000001", "verdict": "verify"}) + "\n",
+        encoding="utf-8",
+    )
+    holdouts = tmp_path / "slicebench_holdout_subjects.txt"
+    holdouts.write_text("SLICEBENCH_HELDOUT_001\n", encoding="utf-8")
+
+    args = build_bbox_data.parse_args([
+        "--stage", "submit",
+        "--out-dir", str(out_dir),
+        "--verdicts", str(verdicts),
+        "--slicebench-holdout-subjects", str(holdouts),
+        "--dry-run",
+    ])
+    assert stage_submit.run_stage_submit(args) == 1
