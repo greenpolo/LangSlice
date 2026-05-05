@@ -384,8 +384,11 @@ entries flagged as ambiguous (`status: "ambiguous"`) or missing
 
 Usage:
     python models/langslice-gemma-4/data/resolve_landmarks.py \
-        --atlases allen_mouse_25um whs_sd_rat_39um admba \
+        --atlases allen_mouse_25um whs_sd_rat_39um \
         --out models/langslice-gemma-4/data/landmark_atlas_map.draft.json
+
+Developmental-mouse coverage is left to the synth_dataset augmentation
+pipeline; this map only enumerates the two atlases we curate by hand.
 """
 from __future__ import annotations
 
@@ -473,11 +476,15 @@ if __name__ == "__main__":
 
 ```bash
 python models/langslice-gemma-4/data/resolve_landmarks.py \
-  --atlases allen_mouse_25um whs_sd_rat_39um admba \
+  --atlases allen_mouse_25um whs_sd_rat_39um \
   --out models/langslice-gemma-4/data/landmark_atlas_map.draft.json
 ```
 
-Expected: prints "Wrote draft map for ~25 landmarks to ...".
+Expected: prints "Wrote draft map for ~30 landmarks to ...".
+
+Developmental-mouse atlases (BrainGlobe `admba_3d_*`) are intentionally not
+curated here — that coverage is provided by the `synth_dataset` augmentation
+pipeline (Task 9 / spec §4.2), not by hand-mapped atlas IDs.
 
 - [ ] **Step 3: Curator review**
 
@@ -2202,7 +2209,7 @@ def run_stage_sample(args: argparse.Namespace) -> int:
     source_counts: dict[tuple[str, str], int] = {}
     loader = LandmarkLoader()
 
-    atlases = ["allen_mouse_25um", "whs_sd_rat_39um", "admba"]
+    atlases = ["allen_mouse_25um", "whs_sd_rat_39um"]
     orientations = ["coronal", "sagittal", "horizontal"]
     atlas_objs = {name: load_atlas(name) for name in atlases}
 

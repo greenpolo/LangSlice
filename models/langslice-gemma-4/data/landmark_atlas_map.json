@@ -1,0 +1,126 @@
+{
+  "Main Olfactory Bulb": {
+    "allen_mouse_25um": {"acronym": "MOB", "include_descendants": false},
+    "whs_sd_rat_39um": {"acronym": "OB", "include_descendants": true}
+  },
+  "Anterior Commissure": {
+    "allen_mouse_25um": {"acronym": "act", "include_descendants": false},
+    "whs_sd_rat_39um": {"acronym": "ac", "include_descendants": true}
+  },
+  "Corpus Callosum": {
+    "allen_mouse_25um": {"acronym": "cc", "include_descendants": true},
+    "whs_sd_rat_39um": {"acronym": "cc-ec-cing-dwm", "include_descendants": false}
+  },
+  "Major Island of Calleja": {
+    "allen_mouse_25um": null,
+    "whs_sd_rat_39um": null
+  },
+  "Lateral Ventricle": {
+    "allen_mouse_25um": {"acronym": "VL", "include_descendants": false},
+    "whs_sd_rat_39um": null
+  },
+  "Nucleus Accumbens": {
+    "allen_mouse_25um": {"acronym": "ACB", "include_descendants": false},
+    "whs_sd_rat_39um": {"acronym": "NAc", "include_descendants": true}
+  },
+  "Caudate Putamen": {
+    "allen_mouse_25um": {"acronym": "CP", "include_descendants": false},
+    "whs_sd_rat_39um": {"acronym": "CPu", "include_descendants": false}
+  },
+  "Dorsal Third Ventricle": {
+    "allen_mouse_25um": {"acronym": "V3", "include_descendants": false},
+    "whs_sd_rat_39um": null
+  },
+  "Lateral Septal Complex": {
+    "allen_mouse_25um": {"acronym": "LSX", "include_descendants": true},
+    "whs_sd_rat_39um": {"acronym": "Sep", "include_descendants": false}
+  },
+  "Fimbria": {
+    "allen_mouse_25um": {"acronym": "fi", "include_descendants": false},
+    "whs_sd_rat_39um": {"acronym": "fi", "include_descendants": false}
+  },
+  "Triangular Nucleus of Septum": {
+    "allen_mouse_25um": {"acronym": "TRS", "include_descendants": false},
+    "whs_sd_rat_39um": null
+  },
+  "Thalamus": {
+    "allen_mouse_25um": {"acronym": "TH", "include_descendants": true},
+    "whs_sd_rat_39um": {"acronym": "Thal-D", "include_descendants": true}
+  },
+  "Hypothalamus": {
+    "allen_mouse_25um": {"acronym": "HY", "include_descendants": true},
+    "whs_sd_rat_39um": {"acronym": "HY", "include_descendants": true}
+  },
+  "Hippocampal Formation": {
+    "allen_mouse_25um": {"acronym": "HPF", "include_descendants": true},
+    "whs_sd_rat_39um": {"acronym": "HF", "include_descendants": true}
+  },
+  "Cortical Subplate": {
+    "allen_mouse_25um": {"acronym": "CTXsp", "include_descendants": true},
+    "whs_sd_rat_39um": null
+  },
+  "Third Ventricle": {
+    "allen_mouse_25um": {"acronym": "V3", "include_descendants": false},
+    "whs_sd_rat_39um": null
+  },
+  "Cerebral Aqueduct": {
+    "allen_mouse_25um": {"acronym": "AQ", "include_descendants": false},
+    "whs_sd_rat_39um": null
+  },
+  "Cerebellar Cortex - Hemispheric Regions": {
+    "allen_mouse_25um": {"acronym": "HEM", "include_descendants": true},
+    "whs_sd_rat_39um": null
+  },
+  "Central Lobule - Lobule 2": {
+    "allen_mouse_25um": {"acronym": "CENT2", "include_descendants": false},
+    "whs_sd_rat_39um": null
+  },
+  "Central Lobule - Lobule 3": {
+    "allen_mouse_25um": {"acronym": "CENT3", "include_descendants": false},
+    "whs_sd_rat_39um": null
+  },
+  "Superior Colliculus": {
+    "allen_mouse_25um": {"acronym": "SCs", "include_descendants": true},
+    "whs_sd_rat_39um": {"acronym": "Su", "include_descendants": true}
+  },
+  "Inferior Colliculus": {
+    "allen_mouse_25um": {"acronym": "IC", "include_descendants": true},
+    "whs_sd_rat_39um": {"acronym": "IC", "include_descendants": true}
+  },
+  "Nodulus (X)": {
+    "allen_mouse_25um": {"acronym": "NOD", "include_descendants": false},
+    "whs_sd_rat_39um": null
+  },
+  "Pyramus (VIII)": {
+    "allen_mouse_25um": {"acronym": "PYR", "include_descendants": false},
+    "whs_sd_rat_39um": null
+  },
+  "Ammon's Horn": {
+    "allen_mouse_25um": {"acronym": "CA", "include_descendants": true},
+    "whs_sd_rat_39um": {"acronym": "CA", "include_descendants": true}
+  },
+  "Piriform Area": {
+    "allen_mouse_25um": {"acronym": "PIR", "include_descendants": false},
+    "whs_sd_rat_39um": {"acronym": "PIR", "include_descendants": true}
+  },
+  "Dentate Gyrus": {
+    "allen_mouse_25um": {"acronym": "DG", "include_descendants": true},
+    "whs_sd_rat_39um": {"acronym": "DG", "include_descendants": false}
+  },
+  "Olfactory Tubercle": {
+    "allen_mouse_25um": {"acronym": "OT", "include_descendants": false},
+    "whs_sd_rat_39um": null
+  },
+  "Caudoputamen": {
+    "allen_mouse_25um": {"acronym": "CP", "include_descendants": false},
+    "whs_sd_rat_39um": {"acronym": "CPu", "include_descendants": false}
+  },
+  "Anterior Commissure, Olfactory Limb": {
+    "allen_mouse_25um": {"acronym": "aco", "include_descendants": false},
+    "whs_sd_rat_39um": {"acronym": "aca", "include_descendants": false}
+  },
+  "Medial Habenula": {
+    "allen_mouse_25um": {"acronym": "MH", "include_descendants": false},
+    "whs_sd_rat_39um": {"acronym": "MHb", "include_descendants": false}
+  }
+}
