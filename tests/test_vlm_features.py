@@ -19,7 +19,7 @@ def test_feature_flags_for_ai_studio(monkeypatch) -> None:
     assert flags["ap_use_file_api"] is True
     assert flags["ap_use_context_cache"] is True
     assert flags["supports_file_api"] is True
-    assert flags["supports_batch_api"] is False
+    assert flags["supports_batch_api"] is True
 
 
 def test_set_temperature_updates_runtime_value() -> None:
