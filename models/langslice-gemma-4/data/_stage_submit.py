@@ -21,6 +21,32 @@ log = logging.getLogger("stage_submit")
 _POLL_INTERVAL_S = 30.0
 
 
+def _load_holdout_subjects(path: Path | None) -> set[str]:
+    if path is None:
+        return set()
+    text = path.read_text(encoding="utf-8").strip()
+    if not text:
+        return set()
+    if text.startswith("["):
+        return {str(item) for item in json.loads(text)}
+    return {line.strip() for line in text.splitlines() if line.strip()}
+
+
+def _assert_no_slicebench_leakage(draft: list[dict], holdouts: set[str]) -> bool:
+    if not holdouts:
+        return True
+    leaked = sorted({
+        str(record.get("source_brain"))
+        for record in draft
+        if record.get("source_type") == "real_histology"
+        and record.get("source_brain") in holdouts
+    })
+    if leaked:
+        log.error("SliceBench subject leakage detected: %s", ", ".join(leaked))
+        return False
+    return True
+
+
 def _get_genai_client():
     """Return the configured google-genai client for Batch API calls.
 
@@ -116,6 +142,10 @@ def run_stage_submit(args: argparse.Namespace) -> int:
         log.error("Draft manifest missing: %s", draft_path)
         return 1
     draft = list(bbox_io.read_jsonl(draft_path))
+
+    holdouts = _load_holdout_subjects(args.slicebench_holdout_subjects)
+    if not _assert_no_slicebench_leakage(draft, holdouts):
+        return 1
 
     verdicts = _read_verdicts(args.verdicts)
     log.info("Read %d verdicts; %d verified", len(verdicts),

@@ -124,6 +124,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--model", default="gemini-3.1-pro-preview")
     p.add_argument("--dry-run", action="store_true",
                    help="Build batch JSONL but don't submit")
+    p.add_argument(
+        "--slicebench-holdout-subjects",
+        type=Path,
+        default=None,
+        help="Text or JSON list of SliceBench held-out subject IDs; submit fails on overlap.",
+    )
     return p.parse_args(argv)
 
 
