@@ -309,3 +309,110 @@ def test_choose_real_section_subset_samples_n_and_per_gap_spacings(monkeypatch):
     ]
     assert all(0.2 <= gap <= 0.8 for gap in gaps)
     assert len({round(gap, 6) for gap in gaps}) > 1
+
+
+def test_stage_submit_writes_sft_jsonl(tmp_path: Path, monkeypatch):
+    import _stage_submit as stage_submit  # type: ignore
+
+    # Build a tiny draft manifest + a verdicts file.
+    draft = [
+        {
+            "id": "bbox_000001",
+            "atlas": "allen_mouse_25um",
+            "atlas_version": "CCFv3",
+            "orientation": "coronal",
+            "region": "Hippocampal Formation",
+            "source_type": "augmented_atlas",
+            "source_brain": None,
+            "is_hemisphere": False,
+            "modality": "dapi",
+            "section_image_paths": [str(tmp_path / f"sec_{i}.png") for i in range(4)],
+            "section_positions_mm": [3.0, 3.4, 3.8, 4.2],
+            "bboxes": [{"left": [10, 20, 30, 40], "right": [60, 20, 80, 40]}] * 4,
+        },
+    ]
+    for p in draft[0]["section_image_paths"]:
+        Image.new("RGB", (96, 96), (50, 50, 50)).save(p)
+
+    out_dir = tmp_path / "bbox_data"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "draft_manifest.jsonl").write_text(
+        "\n".join(json.dumps(r) for r in draft) + "\n", encoding="utf-8"
+    )
+    verdicts_path = tmp_path / "verdicts.jsonl"
+    verdicts_path.write_text(
+        json.dumps({"id": "bbox_000001", "verdict": "verify",
+                    "ts": 0.0, "note": ""}) + "\n", encoding="utf-8"
+    )
+
+    # Stub the current Batch API shape: upload JSONL, create batch with the
+    # uploaded file resource name, then download batch_job.dest.file_name.
+    class FakeFileRef:
+        name = "files/request-jsonl"
+
+    class FakeFiles:
+        def __init__(self):
+            self.uploaded_file = None
+            self.downloaded_file = None
+        def upload(self, **kw):
+            self.uploaded_file = kw["file"]
+            return FakeFileRef()
+        def download(self, *, file):
+            self.downloaded_file = file
+            rows = [
+                {
+                    "key": "bbox_000001",
+                    "response": {
+                        "candidates": [{
+                            "content": {"parts": [
+                                {"thought": True, "text": "[thinking]"},
+                                {"text": "The hippocampus appears as a thin crescent and broadens caudally. Dentate gyrus folding becomes more distinct across the strip."},  # noqa: E501
+                            ]}
+                        }]
+                    }
+                }
+            ]
+            return ("\n".join(json.dumps(r) for r in rows) + "\n").encode("utf-8")
+
+    class FakeBatches:
+        def __init__(self):
+            self.created_src = None
+        def create(self, **kw):
+            self.created_src = kw["src"]
+            return {"name": "fake-batch-id", "dest": {"file_name": "files/results-jsonl"}}
+        def get(self, **kw):
+            return {"state": "JOB_STATE_SUCCEEDED", "dest": {"file_name": "files/results-jsonl"}}
+
+    class FakeClient:
+        def __init__(self):
+            self.files = FakeFiles()
+            self.batches = FakeBatches()
+
+    fake = FakeClient()
+    monkeypatch.setattr(stage_submit, "_get_genai_client", lambda: fake)
+
+    args = build_bbox_data.parse_args([
+        "--stage", "submit",
+        "--out-dir", str(out_dir),
+        "--verdicts", str(verdicts_path),
+        "--coverage-index", str(tmp_path / "coverage.json"),
+    ])
+    rc = stage_submit.run_stage_submit(args)
+    assert rc == 0
+    assert fake.batches.created_src == "files/request-jsonl"
+    assert fake.files.downloaded_file == "files/results-jsonl"
+
+    sft_path = out_dir / "sft.jsonl"
+    assert sft_path.exists()
+    sft = [
+        json.loads(line)
+        for line in sft_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert len(sft) == 1
+    rec = sft[0]
+    assert rec["id"] == "bbox_000001"
+    # Caption should be present and not contain the dropped thinking text.
+    assistant_msg = [m for m in rec["messages"] if m["role"] == "assistant"][0]
+    assert "thin crescent" in assistant_msg["content"]
+    assert "[thinking]" not in assistant_msg["content"]
