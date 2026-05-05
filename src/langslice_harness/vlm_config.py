@@ -333,7 +333,8 @@ def supports_file_api() -> bool:
 
 
 def supports_batch_api() -> bool:
-    return get_backend() == _BACKEND_VERTEX_ADC
+    backend = get_backend()
+    return backend in (_BACKEND_AI_STUDIO, _BACKEND_VERTEX_ADC)
 
 
 def feature_flags() -> dict[str, Any]:
