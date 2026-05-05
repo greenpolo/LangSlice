@@ -202,6 +202,197 @@ def _render_overlay_strip(record: dict, out_dir: Path) -> Path:
     return out_path
 
 
+def _load_atlas_cached(name: str) -> object:
+    """Cache atlas loads; called from _render_example_real."""
+    if not hasattr(_load_atlas_cached, "_cache"):
+        _load_atlas_cached._cache = {}
+    cache = _load_atlas_cached._cache
+    if name not in cache:
+        cache[name] = load_atlas(name)
+    return cache[name]
+
+
+def _load_real_section_record(*, section_id: str, manifest_path: Path) -> dict:
+    """Load a section's image path, anchoring/markers, and registration helper.
+
+    Reads the canonical manifest, picks the section's record, calls
+    `section_to_atlas_voxel` to build the pixel->voxel function, and computes
+    the projected midline-line function.
+    """
+    from registration import section_to_atlas_voxel  # type: ignore
+
+    with manifest_path.open("r", encoding="utf-8") as f:
+        for line in f:
+            rec = json.loads(line)
+            if rec.get("section_id") == section_id:
+                break
+        else:
+            raise KeyError(f"section {section_id!r} not in manifest {manifest_path}")
+
+    atlas = _load_atlas_cached(rec["atlas"])
+    slice_record = rec["slice_record"]
+    pixel_to_voxel = section_to_atlas_voxel(slice_record, atlas)
+
+    H = int(slice_record["height"])
+    W = int(slice_record["width"])
+
+    # Project the atlas ML-midline plane to a line in section pixel space.
+    # BrainGlobe annotation order is (AP, DV, ML), while pixel_to_voxel returns
+    # QuickNII order (x_ml, y_ap, z_dv). Midline is therefore voxel[0].
+    midline_voxel_x = float(atlas.annotation.shape[2]) / 2.0
+
+    def midline_x_at_row(i: float) -> float:
+        # Bisection along the row to find the (i, j) where x_ml crosses midline.
+        lo, hi = 0.0, float(W - 1)
+        for _ in range(20):
+            mid = (lo + hi) / 2.0
+            voxel = pixel_to_voxel(mid, i)
+            if voxel[0] < midline_voxel_x:
+                lo = mid
+            else:
+                hi = mid
+        return (lo + hi) / 2.0
+
+    return {
+        "section_id": section_id,
+        "image_path": REPO_ROOT / rec["image_path"],
+        "image_shape": (H, W),
+        "pixel_to_voxel": pixel_to_voxel,
+        "midline_x_at_row": midline_x_at_row,
+        "is_hemisphere": bool(rec.get("is_hemisphere", False)),
+        "position_mm": float(rec["position_mm"]),
+        "atlas": rec["atlas"],
+    }
+
+
+def _render_example_real(
+    *,
+    atlas_name: str,
+    orientation: str,
+    landmark: str,
+    region_ids: set[int],
+    brain_id: str,
+    section_ids: list[str],
+    out_dir: Path,
+    example_id: str,
+    manifest_path: Path | None = None,
+    rng: np.random.Generator | None = None,
+) -> dict | None:
+    """Render a real-histology example: sample N in {4..8}, choose spacings and
+    anchor to fit available sections, compute bboxes."""
+    if manifest_path is None:
+        manifest_path = REPO_ROOT / "_local" / "eval" / "data" / "manifest.jsonl"
+    if rng is None:
+        rng = np.random.default_rng()
+
+    section_records = [
+        _load_real_section_record(section_id=sid, manifest_path=manifest_path)
+        for sid in section_ids
+    ]
+    section_records.sort(key=lambda r: r["position_mm"])
+
+    chosen = _choose_real_section_subset(section_records, rng=rng)
+    if chosen is None:
+        return None
+
+    atlas = _load_atlas_cached(atlas_name)
+    is_hemisphere = chosen[0]["is_hemisphere"]
+    section_paths: list[str] = []
+    bboxes: list[Any] = []
+    positions_mm: list[float] = []
+
+    for k, rec in enumerate(chosen):
+        bbox = region_bbox.bbox_from_real_section(
+            section_image_shape=rec["image_shape"],
+            pixel_to_voxel=rec["pixel_to_voxel"],
+            annotation_volume=atlas.annotation,
+            region_ids=region_ids,
+            midline_x_at_row=rec["midline_x_at_row"],
+            is_hemisphere=is_hemisphere,
+            grid_step=8,
+        )
+        if bbox is None:
+            return None
+
+        # Resize and save into the example's output dir for QC + submission.
+        from PIL import Image as _Image
+        section_dir = out_dir / "section_images" / example_id
+        section_dir.mkdir(parents=True, exist_ok=True)
+        section_path = section_dir / f"section_{k:02d}.png"
+        im = _Image.open(rec["image_path"])
+        original_w, original_h = im.size
+        im.thumbnail((768, 768))
+        scale_x = im.width / float(original_w)
+        scale_y = im.height / float(original_h)
+        bboxes.append(region_bbox.scale_bbox(bbox, scale_x=scale_x, scale_y=scale_y))
+        im.save(section_path)
+        try:
+            section_paths.append(str(section_path.relative_to(REPO_ROOT)))
+        except ValueError:
+            section_paths.append(str(section_path))
+        positions_mm.append(rec["position_mm"])
+
+    atlas_version = (atlas.metadata or {}).get("version") or "unknown"
+    return {
+        "id": example_id,
+        "atlas": atlas_name,
+        "atlas_version": atlas_version,
+        "orientation": orientation,
+        "region": landmark,
+        "source_type": "real_histology",
+        "source_brain": brain_id,
+        "modality": None,
+        "is_hemisphere": is_hemisphere,
+        "section_image_paths": section_paths,
+        "section_positions_mm": positions_mm,
+        "bboxes": bboxes,
+    }
+
+
+def _choose_real_section_subset(
+    section_records: list[dict],
+    rng: np.random.Generator,
+) -> list[dict] | None:
+    """Sample N uniformly from {4..8}, then choose per-gap spacings/anchor to fit records."""
+    if len(section_records) < 4:
+        return None
+    by_pos = sorted(section_records, key=lambda r: r["position_mm"])
+    for _attempt in range(100):
+        n = build_bbox_data.sample_section_count(rng)
+        if len(by_pos) < n:
+            continue
+        spacings = build_bbox_data.sample_spacings_mm(rng, n_gaps=n - 1)
+        positions = np.array([float(r["position_mm"]) for r in by_pos])
+        min_pos = float(positions.min())
+        max_pos = float(positions.max())
+        anchor = build_bbox_data.sample_anchor_mm(
+            rng=rng, region_mm_min=min_pos, region_mm_max=max_pos,
+            spacings_mm=spacings,
+        )
+        if anchor is None:
+            continue
+        targets = np.array([anchor + sum(spacings[:k]) for k in range(n)])
+        chosen: list[dict] = []
+        used: set[int] = set()
+        for target in targets:
+            order = np.argsort(np.abs(positions - target))
+            idx = next((int(i) for i in order if int(i) not in used), None)
+            if idx is None:
+                break
+            used.add(idx)
+            chosen.append(by_pos[idx])
+        chosen.sort(key=lambda r: r["position_mm"])
+        if len(chosen) != n:
+            continue
+        gaps = [
+            b["position_mm"] - a["position_mm"]
+            for a, b in zip(chosen, chosen[1:], strict=False)
+        ]
+        if all(0.2 <= gap <= 0.8 for gap in gaps):
+            return chosen
+    return None
+
+
 def run_stage_sample(args: argparse.Namespace) -> int:
     rng = np.random.default_rng(args.seed)
     source_counts: dict[tuple[str, str], int] = {}
@@ -246,11 +437,24 @@ def run_stage_sample(args: argparse.Namespace) -> int:
                 source_counts=source_counts,
             )
             if decision["source_type"] == "real_histology":
-                # Real-histology rendering is implemented separately; for the
-                # first iteration, fall back to atlas if real path is not yet
-                # ready. The orchestrator's hook is `_render_example_real`.
-                log.debug("real-histology path not yet implemented for %s/%s/%s",
-                          atlas_name, orientation, landmark)
+                example_id = f"bbox_{next_id:06d}"
+                next_id += 1
+                rec = _render_example_real(
+                    atlas_name=atlas_name, orientation=orientation,
+                    landmark=landmark, region_ids=region_ids,
+                    brain_id=decision["source_brain"],
+                    section_ids=decision["available_section_ids"],
+                    out_dir=args.out_dir, example_id=example_id,
+                    rng=rng,
+                )
+                if rec is None:
+                    continue
+                _render_overlay_strip(rec, args.out_dir)
+                records.append(rec)
+                source_counts[(decision["source_brain"], landmark)] = (
+                    source_counts.get((decision["source_brain"], landmark), 0) + 1
+                )
+                produced += 1
                 continue
 
             n = build_bbox_data.sample_section_count(rng)

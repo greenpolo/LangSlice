@@ -6,6 +6,7 @@ from pathlib import Path
 
 import build_bbox_data
 import numpy as np
+from PIL import Image
 
 
 def test_pick_source_prefers_real_when_eligible():
@@ -174,3 +175,137 @@ def test_stage_sample_writes_draft_manifest(tmp_path: Path, monkeypatch):
     record = json.loads(lines[0])
     assert record["region"] == "Hippocampal Formation"
     assert len(record["bboxes"]) == 4
+
+
+def _spacings_stub(rng, n_gaps):  # noqa: ARG001
+    return [0.2, 0.3, 0.4][:n_gaps]
+
+
+def _spacings_stub_choose(rng, n_gaps):  # noqa: ARG001
+    return [0.2, 0.4, 0.6][:n_gaps]
+
+
+def test_render_example_real_returns_record(tmp_path: Path, monkeypatch):
+    import _stage_sample as stage_sample  # type: ignore
+
+    monkeypatch.setattr(build_bbox_data, "sample_section_count", lambda rng: 4)
+    monkeypatch.setattr(build_bbox_data, "sample_spacings_mm", _spacings_stub)
+
+    # Stub the registration helper + atlas annotation so we don't need a real
+    # brain on disk.
+    def fake_voxel(i, j):
+        return np.array([i, 0.0, j], dtype=np.float64)
+
+    fake_records = []
+    for idx, pos in enumerate([3.0, 3.2, 3.5, 3.9]):
+        fake_records.append({
+            "section_id": f"FAKE:s{idx:03d}",
+            "image_path": tmp_path / "fake_real_section.png",
+            "image_shape": (96, 96),
+            "pixel_to_voxel": fake_voxel,
+            "midline_x_at_row": (lambda _i: 48.0),
+            "is_hemisphere": False,
+            "position_mm": pos,
+        })
+    by_id = {r["section_id"]: r for r in fake_records}
+
+    def _load_record_stub(**kw):
+        return by_id[kw["section_id"]]
+
+    monkeypatch.setattr(stage_sample, "_load_real_section_record", _load_record_stub)
+    # Ensure the test image exists.
+    Image.new("RGB", (96, 96), (50, 50, 50)).save(tmp_path / "fake_real_section.png")
+
+    fake_annotation = np.zeros((1, 96, 96), dtype=np.int32)
+    fake_annotation[0, 20:50, 10:40] = 1   # left
+    fake_annotation[0, 20:50, 60:90] = 1   # right
+    fake_atlas = type("FA", (), {
+        "annotation": fake_annotation,
+        "resolution": (25.0, 25.0, 25.0),
+        "metadata": {"version": "CCFv3"},
+    })()
+    monkeypatch.setattr(stage_sample, "_load_atlas_cached", lambda name: fake_atlas)
+
+    rec = stage_sample._render_example_real(
+        atlas_name="allen_mouse_25um", orientation="coronal",
+        landmark="Hippocampal Formation", region_ids={1},
+        brain_id="FAKE", section_ids=list(by_id),
+        out_dir=tmp_path, example_id="bbox_test",
+        rng=np.random.default_rng(0),
+    )
+    assert rec is not None
+    assert rec["source_type"] == "real_histology"
+    assert rec["source_brain"] == "FAKE"
+    assert len(rec["bboxes"]) == 4
+    for bbox in rec["bboxes"]:
+        assert "left" in bbox and "right" in bbox
+
+
+def test_render_example_real_scales_bbox_after_thumbnail(tmp_path: Path, monkeypatch):
+    import _stage_sample as stage_sample  # type: ignore
+
+    monkeypatch.setattr(build_bbox_data, "sample_section_count", lambda rng: 4)
+    monkeypatch.setattr(build_bbox_data, "sample_spacings_mm", _spacings_stub)
+
+    Image.new("RGB", (1600, 800), (50, 50, 50)).save(tmp_path / "wide_section.png")
+
+    def _wide_voxel(i, j):
+        return np.array([i / 10.0, 0.0, j / 10.0])
+
+    fake_records = []
+    for idx, pos in enumerate([0.0, 0.2, 0.5, 0.9]):
+        fake_records.append({
+            "section_id": f"FAKE:s{idx:03d}",
+            "image_path": tmp_path / "wide_section.png",
+            "image_shape": (800, 1600),
+            "pixel_to_voxel": _wide_voxel,
+            "midline_x_at_row": (lambda _i: 800.0),
+            "is_hemisphere": True,
+            "position_mm": pos,
+        })
+    by_id = {r["section_id"]: r for r in fake_records}
+
+    def _load_record_stub(**kw):
+        return by_id[kw["section_id"]]
+
+    monkeypatch.setattr(stage_sample, "_load_real_section_record", _load_record_stub)
+    fake_annotation = np.zeros((1, 100, 200), dtype=np.int32)
+    fake_annotation[0, 20:60, 20:80] = 1
+    fake_atlas = type("FA", (), {
+        "annotation": fake_annotation,
+        "metadata": {"version": "CCFv3"},
+    })()
+    monkeypatch.setattr(stage_sample, "_load_atlas_cached", lambda name: fake_atlas)
+
+    rec = stage_sample._render_example_real(
+        atlas_name="allen_mouse_25um", orientation="coronal",
+        landmark="Hippocampal Formation", region_ids={1},
+        brain_id="FAKE", section_ids=list(by_id),
+        out_dir=tmp_path, example_id="bbox_scale",
+        rng=np.random.default_rng(0),
+    )
+    assert rec is not None
+    # 1600x800 thumbnails to 768x384; bbox coordinates must be in that frame.
+    assert all(0 <= coord <= 768 for bbox in rec["bboxes"] for coord in bbox)
+
+
+def test_choose_real_section_subset_samples_n_and_per_gap_spacings(monkeypatch):
+    import _stage_sample as stage_sample  # type: ignore
+
+    monkeypatch.setattr(build_bbox_data, "sample_section_count", lambda rng: 4)
+    monkeypatch.setattr(build_bbox_data, "sample_spacings_mm", _spacings_stub_choose)
+    monkeypatch.setattr(build_bbox_data, "sample_anchor_mm", lambda **kw: 0.0)
+
+    records = [
+        {"section_id": f"s{i}", "position_mm": i * 0.2}
+        for i in range(20)
+    ]
+    chosen = stage_sample._choose_real_section_subset(records, rng=np.random.default_rng(4))
+    assert chosen is not None
+    assert 4 <= len(chosen) <= 8
+    gaps = [
+        b["position_mm"] - a["position_mm"]
+        for a, b in zip(chosen, chosen[1:], strict=False)
+    ]
+    assert all(0.2 <= gap <= 0.8 for gap in gaps)
+    assert len({round(gap, 6) for gap in gaps}) > 1
