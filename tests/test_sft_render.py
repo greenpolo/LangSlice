@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 from PIL import Image
-
 from sft.dataset import load_examples
 from sft.render import (
     AtlasMetaCache,

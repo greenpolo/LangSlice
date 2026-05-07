@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import sys
 import types
+from typing import Any, ClassVar, cast
 
 import pytest
-
 from sft.eval import (
     EvalRun,
     compute_position_mae_mm,
@@ -136,10 +136,10 @@ def test_run_agent_loop_for_one_uses_rlvr_env_single_slice(monkeypatch, tmp_path
             return StubMeta()
 
     class StubEnv:
-        reset_kwargs = None
+        reset_kwargs: ClassVar[dict[str, Any] | None] = None
 
         def __init__(self, atlas_grid):  # noqa: ANN001
-            self._state = type("State", (), {"turns": 0})()
+            self._state = types.SimpleNamespace(turns=0)
 
         def reset(self, **kwargs):  # noqa: ANN003
             StubEnv.reset_kwargs = kwargs
@@ -165,7 +165,7 @@ def test_run_agent_loop_for_one_uses_rlvr_env_single_slice(monkeypatch, tmp_path
     monkeypatch.setattr(eval_mod, "_extract_tool_call_from_decoded", lambda text: next(calls, None))
     rlvr_pkg = types.ModuleType("rlvr")
     rlvr_env_mod = types.ModuleType("rlvr.env")
-    rlvr_env_mod.LangSliceEstimateEnv = StubEnv
+    rlvr_env_mod.LangSliceEstimateEnv = StubEnv  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "rlvr", rlvr_pkg)
     monkeypatch.setitem(sys.modules, "rlvr.env", rlvr_env_mod)
 
@@ -194,9 +194,11 @@ def test_run_agent_loop_for_one_uses_rlvr_env_single_slice(monkeypatch, tmp_path
             "ground_truth_position_mm": 5.0,
         },
         atlas_grid=object(),
-        atlas_meta_cache=StubCache(),
+        atlas_meta_cache=cast(Any, StubCache()),
     )
     assert run.predicted_mm == [5.2]
     assert run.parseable is True
-    assert StubEnv.reset_kwargs["kind"] == "single"
-    assert StubEnv.reset_kwargs["valid_range_mm"] == (0.0, 13.2)
+    assert StubEnv.reset_kwargs is not None
+    reset_kwargs = StubEnv.reset_kwargs
+    assert reset_kwargs["kind"] == "single"
+    assert reset_kwargs["valid_range_mm"] == (0.0, 13.2)

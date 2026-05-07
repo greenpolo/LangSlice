@@ -20,15 +20,15 @@ assert _REPO_SRC.name == "src" and (_REPO_SRC / "langslice_harness").is_dir(), _
 if str(_REPO_SRC) not in sys.path:
     sys.path.insert(0, str(_REPO_SRC))
 
-from langslice_harness.atlas.core import (
+from langslice_harness.atlas.core import (  # noqa: E402
     get_position_range_mm,
     load_atlas,
     species_from_atlas_name,
 )
-from langslice_harness.atlas.space import Plane
-from langslice_harness.harness.estimation.prompts import build_single_slice_prompt
+from langslice_harness.atlas.space import Plane  # noqa: E402
+from langslice_harness.harness.estimation.prompts import build_single_slice_prompt  # noqa: E402
 
-from .dataset import Example
+from .dataset import Example  # noqa: E402
 
 
 @dataclass(frozen=True)
@@ -66,6 +66,12 @@ class AtlasMetaCache:
         )
         self._cache[key] = meta
         return meta
+
+
+def _parse_plane(raw: str) -> Plane:
+    if raw not in ("coronal", "sagittal", "horizontal"):
+        raise ValueError(f"unknown plane: {raw!r}")
+    return raw
 
 
 def build_system_prompt(
@@ -175,6 +181,10 @@ def _user_turn(query_image_paths: list[str], user_text: str, root: Path) -> dict
 def _assistant_tool_call(call_id: str, name: str, args: dict[str, Any]) -> dict[str, Any]:
     return {
         "role": "assistant",
+        # Empty list (not omitted): transformers' apply_chat_template iterates
+        # message["content"] to extract image/video blocks, which raises KeyError
+        # when the field is missing.
+        "content": [],
         "tool_calls": [
             {
                 "id": call_id,
@@ -188,12 +198,51 @@ def _assistant_tool_call(call_id: str, name: str, args: dict[str, Any]) -> dict[
     }
 
 
+GEMMA4_IMAGE_TOKEN = "<|image|>"
+
+
+def normalize_tool_message_content(content: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Inject a literal `<|image|>` marker into the text part for each image block.
+
+    Gemma 4's chat template renders image content blocks for non-tool messages
+    only; for role=tool it captures just the text. Without this fix the image
+    processor still receives the PIL images, but the rendered text has no
+    `<|image|>` placeholder for them — so processor expansion produces fewer
+    soft tokens than vision features, and the model's image/feature alignment
+    check fails at forward.
+
+    This helper preserves the original ordering of content blocks (apply_chat_
+    template walks them in order to collect images for the processor) and
+    prepends one `<|image|>` per image block to the text content. If no text
+    block exists, one is appended.
+    """
+    n_images = sum(1 for c in content if c.get("type") == "image")
+    if n_images == 0:
+        return content
+    markers = GEMMA4_IMAGE_TOKEN * n_images
+    out: list[dict[str, Any]] = []
+    text_seen = False
+    for c in content:
+        if c.get("type") == "text" and not text_seen:
+            out.append({"type": "text", "text": markers + c.get("text", "")})
+            text_seen = True
+        else:
+            out.append(c)
+    if not text_seen:
+        out.append({"type": "text", "text": markers})
+    return out
+
+
 def _tool_response(call_id: str, image_paths: list[str], text: str, root: Path) -> dict[str, Any]:
-    content: list[dict[str, Any]] = []
-    for p in image_paths:
-        content.append({"type": "image", "image": hydrate_image(p, root)})
+    content: list[dict[str, Any]] = [
+        {"type": "image", "image": hydrate_image(p, root)} for p in image_paths
+    ]
     content.append({"type": "text", "text": text})
-    return {"role": "tool", "tool_call_id": call_id, "content": content}
+    return {
+        "role": "tool",
+        "tool_call_id": call_id,
+        "content": normalize_tool_message_content(content),
+    }
 
 
 def render_example(
@@ -209,13 +258,13 @@ def render_example(
     system_prompt = build_system_prompt(
         kind=example.system_prompt_kind,
         atlas_name=example.atlas_name,
-        plane=example.plane,
+        plane=_parse_plane(example.plane),
         atlas_meta_cache=atlas_meta_cache,
     )
     tools = build_tools_schema(example.system_prompt_kind)
 
     messages: list[dict[str, Any]] = [
-        {"role": "system", "content": system_prompt},
+        {"role": "system", "content": [{"type": "text", "text": system_prompt}]},
         _user_turn(example.query_image_paths, example.user_prompt_text, root),
     ]
 

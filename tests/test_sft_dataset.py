@@ -50,7 +50,14 @@ def test_missing_image_path_is_rejected(tmp_path: Path) -> None:
         "system_prompt_kind": "single_slice",
         "query_image_paths": ["missing.png"],
         "user_prompt_text": "x",
-        "trace": [{"submit": {"name": "submit_estimate", "args": {"position_mm": 5.0, "reasoning": "x"}}}],
+        "trace": [
+            {
+                "submit": {
+                    "name": "submit_estimate",
+                    "args": {"position_mm": 5.0, "reasoning": "x"},
+                }
+            }
+        ],
     }
     path = tmp_path / "missing_image.jsonl"
     path.write_text(json.dumps(row) + "\n", encoding="utf-8")
