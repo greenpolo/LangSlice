@@ -279,6 +279,7 @@ def test_posterior_wing_damage_preserves_medial_core_shoulder() -> None:
     ctx = _ctx(modality="brightfield", h=h, w=w, tissue_mask=tissue)
     ctx.position_mm = 9.5
     ctx.tissue_class_masks = {
+        "isocortex": left_wing,
         "thalamus": np.zeros((h, w), dtype=bool),
         "tissue": tissue,
     }
@@ -331,6 +332,7 @@ def test_posterior_wing_damage_detaches_and_repositions_wing() -> None:
     ctx = _ctx(modality="brightfield", h=h, w=w, tissue_mask=tissue)
     ctx.position_mm = 9.5
     ctx.tissue_class_masks = {
+        "isocortex": left_wing | right_wing,
         "thalamus": np.zeros((h, w), dtype=bool),
         "tissue": tissue,
     }

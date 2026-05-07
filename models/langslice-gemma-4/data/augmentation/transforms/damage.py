@@ -30,6 +30,7 @@ __all__ = [
     "Debris",
     "IlluminationGradient",
     "PosteriorWingDamage",
+    "VentricleExpansion",
 ]
 
 
@@ -611,9 +612,6 @@ class PosteriorWingDamage:
         if thalamus is not None and thalamus.any():
             return image
 
-        bg_color = _sample_bg_color(image)
-        out = image.copy()
-        wing_source = _posterior_wing_source_mask(tissue.astype(bool), ctx.tissue_class_masks)
         has_specific_wing_masks = (
             ctx.tissue_class_masks is not None
             and any(
@@ -621,10 +619,20 @@ class PosteriorWingDamage:
                 for key in ("isocortex", "hippocampal_formation", "cortical_subplate")
             )
         )
+        # Wing damage targets cortical/hippocampal lateral slabs. When those
+        # specific masks are absent (e.g. cerebellum-only sections), the
+        # generic-tissue fallback would mis-classify central brain as a wing
+        # and cleave it — skip instead.
+        if not has_specific_wing_masks:
+            return image
+
+        bg_color = _sample_bg_color(image)
+        out = image.copy()
+        wing_source = _posterior_wing_source_mask(tissue.astype(bool), ctx.tissue_class_masks)
         wings = _side_wing_masks(
             wing_source,
             center_mask=tissue.astype(bool),
-            include_satellites=has_specific_wing_masks,
+            include_satellites=True,
         )
         if not wings["left"].any() and not wings["right"].any():
             return image
@@ -753,38 +761,30 @@ class PosteriorWingDamage:
 
 
 class Tears:
-    """Tissue tears that read as slide-background voids.
+    """Edge bites — irregular discs torn from the tissue boundary.
 
-    Real microtome sections tear at structurally weak points: ventricle walls
-    (CSF spaces retract during processing, making ventricles look larger than
-    the atlas predicts), tissue edges (jagged bites at the perimeter), and
-    occasionally across the interior. This transform applies a random subset
-    of those three patterns per call:
+    Microtome sections often lose small irregular bites at the perimeter where
+    the blade catches a thin or weakly-supported edge. This transform punches
+    a random number of background-colored discs out of the tissue boundary so
+    the silhouette acquires ragged notches.
 
-    - **ventricle_expansion** (preferred when ventricle pixels exist): dilate
-      the ventricle mask outward by an irregular amount, filling the new
-      pixels with slide-background color. Captures the "ventricles always
-      look bigger than the atlas" reality of real microscopy.
-    - **edge_bite**: bite small irregular regions out of the tissue boundary.
-    - **interior_curve**: legacy open-curve tear, now filled with the slide
-      background color rather than a hardcoded dark value.
+    The legacy ventricle-expansion and interior-curve modes were removed:
+    ventricle damage is handled pre-warp by ``VentricleExpansion`` so it
+    follows the warped ventricle, and the interior-curve mode produced visibly
+    artificial "marker line" tears that don't match real histology.
     """
 
     def __init__(
         self,
         p: float = 0.5,
         n_tears_range: tuple[int, int] = (1, 3),
-        ventricle_expansion_iter_range: tuple[int, int] = (2, 9),
         edge_bite_radius_range: tuple[int, int] = (4, 16),
         edge_bite_count_range: tuple[int, int] = (2, 6),
-        interior_shift_range: tuple[int, int] = (3, 14),
     ) -> None:
         self.p = p
         self.n_tears_range = n_tears_range
-        self.ventricle_expansion_iter_range = ventricle_expansion_iter_range
         self.edge_bite_radius_range = edge_bite_radius_range
         self.edge_bite_count_range = edge_bite_count_range
-        self.interior_shift_range = interior_shift_range
 
     def __call__(
         self,
@@ -802,50 +802,10 @@ class Tears:
         n_tears = int(rng.integers(
             self.n_tears_range[0], self.n_tears_range[1] + 1,
         ))
-
-        # Choose modes per tear with availability-aware weights.
-        ventricle_mask: np.ndarray | None = None
-        if ctx.tissue_class_masks is not None:
-            v = ctx.tissue_class_masks.get("ventricle")
-            if v is not None and v.any():
-                ventricle_mask = v.astype(bool)
-
         for _ in range(n_tears):
-            modes: list[str] = ["interior", "edge_bite"]
-            weights: list[float] = [0.25, 0.30]
-            if ventricle_mask is not None:
-                modes.append("ventricle")
-                weights.append(0.55)
-            wsum = sum(weights)
-            probs = np.array([w / wsum for w in weights], dtype=np.float64)
-            mode = str(rng.choice(modes, p=probs))
-
-            if mode == "ventricle" and ventricle_mask is not None:
-                out = self._apply_ventricle_expansion(out, ventricle_mask, bg_color, rng)
-            elif mode == "edge_bite":
-                out = self._apply_edge_bite(out, ctx, bg_color, rng)
-            else:
-                out = self._apply_interior_curve(out, bg_color, rng)
+            out = self._apply_edge_bite(out, ctx, bg_color, rng)
 
         return np.clip(out, 0.0, 1.0).astype(np.float32)
-
-    def _apply_ventricle_expansion(
-        self,
-        image: np.ndarray,
-        ventricle_mask: np.ndarray,
-        bg_color: np.ndarray,
-        rng: np.random.Generator,
-    ) -> np.ndarray:
-        """Dilate ventricle mask by N pixels, irregularly, fill with bg_color."""
-        from scipy.ndimage import binary_dilation
-
-        n_iter = int(rng.integers(*self.ventricle_expansion_iter_range))
-        dilated = binary_dilation(ventricle_mask, iterations=n_iter)
-        # Irregular boundary: keep ~70% of newly-dilated pixels (adds raggedness).
-        keep = rng.random(ventricle_mask.shape) > 0.30
-        new_torn = dilated & (~ventricle_mask) & keep
-        image[new_torn] = bg_color
-        return image
 
     def _apply_edge_bite(
         self,
@@ -879,44 +839,70 @@ class Tears:
             cy, cx = int(bys[i]), int(bxs[i])
             radius = int(rng.integers(*self.edge_bite_radius_range))
             disc = (yy - cy) ** 2 + (xx - cx) ** 2 <= radius * radius
-            # Irregularize: drop ~15% of disc pixels for a ragged bite edge.
             ragged = rng.random((h, w)) > 0.15
             bite = disc & ragged
             image[bite] = bg_color
         return image
 
-    def _apply_interior_curve(
+
+# ---------------------------------------------------------------------------
+# VentricleExpansion
+# ---------------------------------------------------------------------------
+
+
+class VentricleExpansion:
+    """Dilate the ventricle mask outward, fill with slide-background color.
+
+    Ventricles are CSF-filled cavities; tissue retracts during processing so
+    the ventricles in real sections almost always read larger than the atlas
+    predicts. This transform models that effect by dilating the ventricle
+    mask by N pixels and filling the new perimeter with slide-background
+    color.
+
+    Must run *before* geometry warps (``BladeStretchHorizontal``,
+    ``AffineJitter``, ``Folds``) so the expanded region warps along with the
+    canvas. Running it after the warps would leave the expansion aligned with
+    the pre-warp ventricle position, producing a stale outline that doesn't
+    match the visible ventricle.
+    """
+
+    def __init__(
+        self,
+        p: float = 0.55,
+        expansion_iter_range: tuple[int, int] = (3, 12),
+        rim_keep_prob: float = 0.85,
+    ) -> None:
+        self.p = p
+        self.expansion_iter_range = expansion_iter_range
+        self.rim_keep_prob = rim_keep_prob
+
+    def __call__(
         self,
         image: np.ndarray,
-        bg_color: np.ndarray,
+        *,
         rng: np.random.Generator,
+        ctx: TransformContext,
     ) -> np.ndarray:
-        """Legacy curve-displacement tear filled with bg_color."""
-        h, w = image.shape[:2]
-        n_pts = int(rng.integers(6, 10))
-        curve_pts = _make_open_curve_points(h, w, n_pts, rng)
-        col_coords = curve_pts[:, 1]
-        row_coords = curve_pts[:, 0]
-        sort_idx = np.argsort(col_coords)
-        col_sorted = col_coords[sort_idx]
-        row_sorted = row_coords[sort_idx]
-        all_cols = np.arange(w)
-        tear_row = np.interp(all_cols, col_sorted, row_sorted).astype(int)
-        tear_row = np.clip(tear_row, 0, h - 1)
+        if rng.random() > self.p:
+            return image
+        if ctx.tissue_class_masks is None:
+            return image
+        ventricle_mask = ctx.tissue_class_masks.get("ventricle")
+        if ventricle_mask is None or not ventricle_mask.any():
+            return image
+        ventricle_mask = ventricle_mask.astype(bool)
 
-        shift_px = int(rng.integers(*self.interior_shift_range))
-        jitter = rng.integers(-2, 3, size=w)
-        effective_shift = np.clip(shift_px + jitter, 1, shift_px + 2)
+        n_iter = int(rng.integers(*self.expansion_iter_range))
+        dilated = binary_dilation(ventricle_mask, iterations=n_iter)
+        # Irregular boundary: drop a small fraction of newly-added pixels so
+        # the expanded ventricle reads as a torn cavity rather than a clean disc.
+        keep = rng.random(ventricle_mask.shape) > (1.0 - self.rim_keep_prob)
+        expansion = (dilated & ~ventricle_mask) & keep
 
+        bg_color = _sample_bg_color(image)
         out = image.copy()
-        for col in range(w):
-            s = int(effective_shift[col])
-            t = int(tear_row[col])
-            if t + s >= h:
-                continue
-            out[t + s:, col, :] = image[t:h - s, col, :]
-            out[t:t + s, col, :] = bg_color
-        return out
+        out[ventricle_mask | expansion] = bg_color
+        return np.clip(out, 0.0, 1.0).astype(np.float32)
 
 
 # ---------------------------------------------------------------------------
@@ -937,20 +923,21 @@ class Microbubbles:
         source reflects off the curved air–medium interface.
 
     Bubbles are NOT solid black; they show whatever's underneath, just
-    distorted and rimmed. Size range is wider than the legacy implementation
-    (8–50 px radius vs the old 5–26).
+    distorted and rimmed. Defaults are tuned for sparse, modest-sized bubbles
+    so the artifact reads as a real mounting flaw rather than a dominant
+    feature of the slide.
     """
 
     def __init__(
         self,
-        p: float = 0.55,
-        n_bubbles_range: tuple[int, int] = (1, 12),
-        radius_range: tuple[float, float] = (8.0, 50.0),
-        lens_pinch_strength: float = 0.85,
-        rim_darkness: float = 0.55,
-        rim_thickness_frac: float = 0.12,
-        highlight_brightness: float = 0.45,
-        highlight_size_frac: float = 0.18,
+        p: float = 0.35,
+        n_bubbles_range: tuple[int, int] = (0, 4),
+        radius_range: tuple[float, float] = (4.0, 22.0),
+        lens_pinch_strength: float = 0.55,
+        rim_darkness: float = 0.28,
+        rim_thickness_frac: float = 0.10,
+        highlight_brightness: float = 0.22,
+        highlight_size_frac: float = 0.16,
     ) -> None:
         self.p = p
         self.n_bubbles_range = n_bubbles_range
@@ -1130,13 +1117,32 @@ def _draw_ellipse_mask(
 
 
 class Debris:
-    """Small random opaque/translucent shapes overlaid, 0–20 per image.
+    """Small dark specks of dust / sectioning crumbs sitting on the tissue.
 
-    Shapes are small ellipses with random color near the dominant tissue tone.
+    Real slide debris is sparse, small, and dark — dust, knife crumbs, bits of
+    paraffin or stain precipitate that fell on top of the section. It is *not*
+    bright glowing ellipses scattered across the slide background.
+
+    Specks are constrained to land on tissue pixels (or the immediate
+    perimeter) and use a dark grayscale tone so they read as occluding dirt
+    rather than additional fluorescent / stained material.
     """
 
-    def __init__(self, p: float = 0.3) -> None:
+    def __init__(
+        self,
+        p: float = 0.25,
+        n_pieces_range: tuple[int, int] = (0, 6),
+        size_range: tuple[float, float] = (1.0, 4.0),
+        axis_ratio_range: tuple[float, float] = (0.6, 1.4),
+        alpha_range: tuple[float, float] = (0.55, 0.95),
+        color_range: tuple[float, float] = (0.04, 0.20),
+    ) -> None:
         self.p = p
+        self.n_pieces_range = n_pieces_range
+        self.size_range = size_range
+        self.axis_ratio_range = axis_ratio_range
+        self.alpha_range = alpha_range
+        self.color_range = color_range
 
     def __call__(
         self,
@@ -1149,30 +1155,29 @@ class Debris:
             return image
 
         h, w = image.shape[:2]
-        out = image.copy()
-        n_pieces = int(rng.integers(0, 21))
+        n_pieces = int(rng.integers(
+            self.n_pieces_range[0], self.n_pieces_range[1] + 1
+        ))
         if n_pieces == 0:
             return image
 
-        # Dominant tissue tone for color variation.
         tissue = ctx.tissue_mask if ctx.tissue_mask is not None else _infer_tissue_mask(image)
-        tissue_pixels = image[tissue]
-        if tissue_pixels.size > 0:
-            base_color = tissue_pixels.mean(axis=0)
-        else:
-            base_color = np.array([0.5] * image.shape[2], dtype=np.float32)
+        tissue_rows, tissue_cols = np.where(tissue)
+        if tissue_rows.size == 0:
+            return image
 
+        out = image.copy()
         for _ in range(n_pieces):
-            cr = float(rng.uniform(0, h))
-            cc_ = float(rng.uniform(0, w))
-            size = float(rng.uniform(2, 16))
-            ra = size * float(rng.uniform(0.5, 2.0))
-            rb = size * float(rng.uniform(0.5, 2.0))
+            i = int(rng.integers(0, tissue_rows.size))
+            cr = float(tissue_rows[i])
+            cc_ = float(tissue_cols[i])
+            size = float(rng.uniform(*self.size_range))
+            ra = size * float(rng.uniform(*self.axis_ratio_range))
+            rb = size * float(rng.uniform(*self.axis_ratio_range))
             angle = float(rng.uniform(0, np.pi))
-            alpha = float(rng.uniform(0.3, 0.9))
-            # Color: jitter around dominant tissue tone.
-            color_jitter = rng.uniform(-0.25, 0.25, size=image.shape[2]).astype(np.float32)
-            color = np.clip(base_color + color_jitter, 0.0, 1.0)
+            alpha = float(rng.uniform(*self.alpha_range))
+            tone = float(rng.uniform(*self.color_range))
+            color = np.full(image.shape[2], tone, dtype=np.float32)
 
             mask = _draw_ellipse_mask(h, w, cr, cc_, ra, rb, angle)
             out[mask] = out[mask] * (1.0 - alpha) + color * alpha
