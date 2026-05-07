@@ -21,7 +21,7 @@ def parse_submit_call(arguments_json: str, *, expected_kind: str) -> ParsedSubmi
     if expected_kind == "single_slice":
         pos = args.get("position_mm")
         reasoning = args.get("reasoning")
-        if not isinstance(pos, (int, float)):
+        if not isinstance(pos, (int, float)) or isinstance(pos, bool):
             return ParsedSubmit(is_parseable=False)
         if not isinstance(reasoning, str) or not reasoning.strip():
             return ParsedSubmit(is_parseable=False)
@@ -49,7 +49,17 @@ class EvalRun:
 
 
 def summarize_eval_runs(runs: list[EvalRun]) -> dict[str, float]:
-    """Aggregate metrics over a held-out eval run."""
+    """Aggregate metrics over a held-out eval run.
+
+    Returns a dict with four keys:
+    - position_mae_mm: mean absolute error across parseable runs (mm).
+      ``float('nan')`` when no run produced a parseable submit.
+      Callers logging this to trackio/W&B/TensorBoard should guard with
+      ``math.isnan`` before aggregating, or skip logging on NaN.
+    - tool_call_parseability_rate: fraction of runs with a parseable submit.
+    - no_submit_rate: fraction of runs that emitted no submit at all.
+    - mean_trace_length: mean number of turns per run.
+    """
     if not runs:
         raise ValueError("no eval runs to summarize")
     # Collect (predicted, truth) pairs from runs that both parsed and emitted a submit.
