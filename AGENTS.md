@@ -64,6 +64,32 @@ write outputs to the paths documented in `_local/qc_app/CONTRACTS.md`. The QC
 app reloads on mtime change — no app code edit required. Do not invent new
 manifest shapes or paths; conform to the contract or extend it explicitly.
 
+## Manifest fixes (multi-agent safety)
+
+The training-data manifest is sharded by plane/dataset under
+`data/manifest/shards/<plane>/<dataset>.jsonl`.
+
+- **Task-oriented walkthrough** for fixing data:
+  `_local/eval/HOW_TO_FIX_DATA.md` (read this first if you're about
+  to drop, flip, or override anything).
+- **Architecture reference**: `_local/eval/SHARDS.md`.
+
+Two rules for any agent fixing data:
+
+1. **Never edit a shard file directly.** Direct edits do not survive a
+   rebuild and any other agent's rebuild can silently undo them.
+2. **Never write a script that touches more than one shard.** Each fix
+   should be scoped to one (plane, dataset) pair so parallel agents on
+   different shards cannot clobber each other.
+
+To fix data: edit the upstream source under `data/datasets/<name>/` and/or
+append entries to `data/manifest/overrides/<plane>/<dataset>.json` (drops,
+axis flips, per-section position overrides, atlas overrides). Then run
+`python _local/eval/rebuild_shard.py <plane>/<dataset>`.
+
+To check cross-shard integrity: `python _local/eval/validate_manifest.py`.
+Read-only — cannot write any shard.
+
 ## Delegation (cost-saving)
 
 To minimize main-thread token spend, delegate work to other CLIs whenever the

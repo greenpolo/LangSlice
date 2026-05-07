@@ -65,3 +65,6 @@ models/langslice-gemma-4/data/augmentation/exemplars/**
 
 # Local scratch / dev script outputs
 tmp/
+out/
+unsloth_compiled_cache/
+models/langslice-gemma-4/training/unsloth_compiled_cache/

@@ -4,15 +4,26 @@ Fine-tuned **Gemma 4 E4B** for brain-section position estimation, deployed as a 
 
 ## Authoritative Designs
 
-- SFT data: `docs/superpowers/specs/2026-04-25-gemma4-sft-data-design.md`
+- SFT training/input contract: `docs/superpowers/specs/2026-05-05-gemma4-sft-training-design.md`
+- Historical SFT data design: `docs/superpowers/specs/2026-04-25-gemma4-sft-data-design.md`
 - RLVR training: `docs/superpowers/specs/2026-05-04-gemma4-rlvr-training-design.md`
 
 ## Approach
 
 - **Base:** Gemma 4 E4B, multimodal, trained for the existing LangSlice tool loop.
-- **SFT:** narrow-task tool-use traces, landmark listing, bbox grounding, multi-slice morphology, and programmatic skeletons.
+- **SFT:** v1 trains only on strict-accepted single-slice agent traces, supplied as a langslice-native JSONL corpus. See `training/sft/README.md`.
 - **RLVR:** multi-turn GRPO in `training/rlvr/`, with one gated closeness reward on submitted coordinate accuracy.
 - **Holdout:** RLVR uses deterministic subject-level train/eval splitting; no subject appears in both sets.
+
+## SFT Corpus Handoff
+
+The SFT trainer does not read per-run `raw_trace.json` files directly. Build one corpus JSONL first:
+
+```bash
+models/langslice-gemma-4/data/sft_examples.jsonl
+```
+
+Each row is a single-slice langslice-native trace with relative image paths. The corpus builder should walk verified/reroll trace directories, select the best strict-accepted run per id, copy or stage referenced images under the JSONL parent directory, then emit the JSONL. The trainer validates and renders that JSONL into Gemma chat-template messages at training time.
 
 ## RLVR Launch
 
