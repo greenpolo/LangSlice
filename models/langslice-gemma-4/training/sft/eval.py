@@ -27,6 +27,7 @@ from sft.render import (  # noqa: E402
     build_system_prompt,
     build_tools_schema,
     hydrate_image,
+    normalize_tool_message_content,
 )
 
 if TYPE_CHECKING:
@@ -42,7 +43,10 @@ class ParsedSubmit:
 
 
 def parse_submit_call(arguments_json: str, *, expected_kind: str) -> ParsedSubmit:
-    """Parse a submit_*_estimate call's arguments string. Returns is_parseable=False on any failure."""
+    """Parse a submit_*_estimate call's arguments string.
+
+    Returns is_parseable=False on any failure.
+    """
     try:
         args = json.loads(arguments_json)
     except (json.JSONDecodeError, TypeError):
@@ -64,7 +68,7 @@ def compute_position_mae_mm(predicted: list[float], truth: list[float]) -> float
         raise ValueError(f"length mismatch: {len(predicted)} vs {len(truth)}")
     if not predicted:
         raise ValueError("empty prediction list")
-    errors = [abs(p - t) for p, t in zip(predicted, truth)]
+    errors = [abs(p - t) for p, t in zip(predicted, truth, strict=True)]
     return sum(errors) / len(errors)
 
 
@@ -203,7 +207,7 @@ def _run_agent_loop_for_one(
     tools = build_tools_schema(system_prompt_kind)
     meta = cache.get(eval_row["atlas_name"], eval_row["plane"])
     messages: list[dict[str, Any]] = [
-        {"role": "system", "content": system_prompt},
+        {"role": "system", "content": [{"type": "text", "text": system_prompt}]},
         {"role": "user", "content": [
             {"type": "image", "image": query_image},
             {"type": "text", "text": EVAL_USER_PROMPT_TEXT},
@@ -242,7 +246,11 @@ def _run_agent_loop_for_one(
         )
         text = processor.decode(gen_out[0], skip_special_tokens=False)
         tool_call = _extract_tool_call_from_decoded(text)
-        messages.append({"role": "assistant", "tool_calls": [tool_call] if tool_call else []})
+        messages.append({
+            "role": "assistant",
+            "content": [],
+            "tool_calls": [tool_call] if tool_call else [],
+        })
         if tool_call is None:
             break
         if tool_call["function"]["name"].startswith("submit"):
@@ -257,7 +265,9 @@ def _run_agent_loop_for_one(
         tool_msg = {
             "role": "tool",
             "tool_call_id": tool_call["id"],
-            "content": result.get("content", [{"type": "text", "text": str(result)}]),
+            "content": normalize_tool_message_content(
+                result.get("content", [{"type": "text", "text": str(result)}])
+            ),
         }
         messages.append(tool_msg)
 
@@ -289,6 +299,9 @@ class _AgentLoopEvalBase(TrainerCallback):
         self.log_prefix = log_prefix
 
     def _run(self, model: Any, step: int) -> dict[str, float]:
+        if not self.test_rows:
+            logger.warning("agent-loop eval skipped: no test images found")
+            return {}
         runs: list[EvalRun] = []
         for row in self.test_rows:
             try:

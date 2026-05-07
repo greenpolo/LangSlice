@@ -28,11 +28,12 @@ class LangSliceCollator:
         self.processor = processor
         self.max_seq_length = max_seq_length
 
-    def __call__(self, examples: list[RenderedExample]) -> dict[str, torch.Tensor]:
+    def __call__(self, examples: list[RenderedExample | dict[str, Any]]) -> dict[str, torch.Tensor]:
         # Apply chat template per-example (not as a batch) so the per-example
         # assistant_mask aligns 1:1 with that example's input_ids.
         per_example: list[dict[str, torch.Tensor]] = []
-        for ex in examples:
+        for raw_ex in examples:
+            ex = raw_ex["rendered"] if isinstance(raw_ex, dict) else raw_ex
             out = self.processor.apply_chat_template(
                 ex.messages,
                 tools=ex.tools,
@@ -143,7 +144,11 @@ class LangSliceCollator:
             )
         return mask.unsqueeze(0)
 
-    def _sanity_check_no_image_tokens_in_labels(self, ids: torch.Tensor, labels: torch.Tensor) -> None:
+    def _sanity_check_no_image_tokens_in_labels(
+        self,
+        ids: torch.Tensor,
+        labels: torch.Tensor,
+    ) -> None:
         """Safety net: assistant tokens must never overlap image-placeholder tokens.
 
         If none of the candidate names resolve to a real token id, the check is
@@ -191,15 +196,22 @@ def _pad_batch(
             t = ex[k]
             pad_len = max_len - t.shape[0]
             if pad_len > 0:
-                pad_value = pad_token_id if k == "input_ids" else (0 if k == "attention_mask" else -100)
+                pad_value = (
+                    pad_token_id if k == "input_ids"
+                    else 0 if k == "attention_mask"
+                    else -100
+                )
                 padding = torch.full((pad_len,), pad_value, dtype=t.dtype)
                 t = torch.cat([t, padding], dim=0)
             padded.append(t)
         out[k] = torch.stack(padded, dim=0)
 
-    # Image-related tensors: stack along batch dim. All examples must produce
-    # stackable shapes; ragged image tensors indicate a processor schema mismatch
-    # we don't currently handle.
+    # Image-related tensors (e.g. pixel_values, image_position_ids) have a leading
+    # "image-count" dimension per example, not a batch dim. Gemma 4's vision tower
+    # expects shape (total_images_in_batch, max_patches, ...); the language model
+    # then routes each image to its <image_soft_token> position via the prepared
+    # input_ids. Concatenate along dim=0 so we flatten across (example, image),
+    # rather than stack which would introduce a spurious extra dim.
     image_keys: set[str] = set()
     for ex in per_example:
         image_keys.update(
@@ -207,17 +219,12 @@ def _pad_batch(
         )
     for k in image_keys:
         try:
-            out[k] = torch.stack(
-                [
-                    ex[k] if ex[k].dim() == per_example[0][k].dim() else ex[k].squeeze(0)
-                    for ex in per_example
-                ],
-                dim=0,
-            )
+            out[k] = torch.cat([ex[k] for ex in per_example], dim=0)
         except RuntimeError as e:
             raise RuntimeError(
-                f"failed to stack image-tensor key {k!r} across batch: {e}. "
-                "Examples in the same batch must produce stackable image-tensor "
-                "shapes; check the processor configuration."
+                f"failed to concat image-tensor key {k!r} across batch: {e}. "
+                "Examples in the same batch must produce concatenatable image-tensor "
+                "shapes (matching dims after the leading image-count dim); check the "
+                "processor configuration."
             ) from e
     return out

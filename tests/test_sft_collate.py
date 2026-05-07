@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 import torch
-
 from sft.collate import LangSliceCollator
 from sft.dataset import load_examples
 from sft.render import AtlasMetaCache, render_example
