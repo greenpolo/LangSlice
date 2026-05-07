@@ -1,0 +1,35 @@
+# Default SFT configuration for the LangSlice Gemma 4 E4B run.
+# See docs/superpowers/specs/2026-05-05-gemma4-sft-training-design.md.
+
+[sft]
+base_model = "unsloth/gemma-4-E4B-it"
+load_in_4bit = true
+max_seq_length = 16384                  # multi-turn + multi-image traces
+num_train_epochs = 3
+per_device_train_batch_size = 1
+gradient_accumulation_steps = 8
+learning_rate = 2e-4
+lr_scheduler_type = "cosine"
+warmup_ratio = 0.03
+weight_decay = 0.01
+optim = "adamw_8bit"
+chat_template_kwargs = { enable_thinking = false }
+logging_steps = 5
+eval_steps = 50
+agent_eval_steps = 200
+save_steps = 100
+report_to = "trackio"
+seed = 0
+
+[lora]
+r = 16
+lora_alpha = 32
+finetune_vision_layers = false
+finetune_language_layers = true
+finetune_attention_modules = true
+finetune_mlp_modules = true
+use_gradient_checkpointing = "unsloth"
+
+[data]
+holdout_fraction = 0.10
+include_rationale = false
