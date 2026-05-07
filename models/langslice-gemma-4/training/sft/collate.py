@@ -18,6 +18,12 @@ class LangSliceCollator:
     """
 
     def __init__(self, *, processor: Any, max_seq_length: int) -> None:
+        if processor.tokenizer.pad_token_id is None:
+            raise RuntimeError(
+                "processor.tokenizer.pad_token_id is None — set it (e.g. to "
+                "eos_token_id) before constructing LangSliceCollator. Padding a "
+                "batch of variable-length examples requires a pad token."
+            )
         self.processor = processor
         self.max_seq_length = max_seq_length
 
@@ -42,6 +48,12 @@ class LangSliceCollator:
                     f"rendered example exceeds max_seq_length="
                     f"{self.max_seq_length} (got {ids.shape[1]} tokens). "
                     f"subject_id={ex.metadata.subject_id!r}"
+                )
+            if "assistant_masks" not in out:
+                raise RuntimeError(
+                    "processor.apply_chat_template did not return 'assistant_masks'; "
+                    "the Gemma 4 chat template likely lacks {% generation %} markers. "
+                    "Manual-span fallback lands in Task 8."
                 )
             assistant_mask = out["assistant_masks"]  # 1 where assistant, 0 elsewhere
             labels = ids.clone()
@@ -79,7 +91,9 @@ def _pad_batch(
             padded.append(t)
         out[k] = torch.stack(padded, dim=0)
 
-    # Image-related tensors: stack along batch dim if present in all examples
+    # Image-related tensors: stack along batch dim. All examples must produce
+    # stackable shapes; ragged image tensors indicate a processor schema mismatch
+    # we don't currently handle.
     image_keys: set[str] = set()
     for ex in per_example:
         image_keys.update(
@@ -94,8 +108,10 @@ def _pad_batch(
                 ],
                 dim=0,
             )
-        except RuntimeError:
-            # If image tensors have variable shapes, leave them as a list — TRL
-            # vision collators handle this case downstream.
-            out[k] = [ex[k] for ex in per_example]  # type: ignore[assignment]
+        except RuntimeError as e:
+            raise RuntimeError(
+                f"failed to stack image-tensor key {k!r} across batch: {e}. "
+                "Examples in the same batch must produce stackable image-tensor "
+                "shapes; check the processor configuration."
+            ) from e
     return out
