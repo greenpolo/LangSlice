@@ -106,8 +106,85 @@ def main(argv: list[str] | None = None) -> None:
 
 
 def _train(args, config, train_ds, eval_ds, cache, seed: int) -> None:
-    """Heavy-import path. Defined separately so dry-run never reaches it."""
-    raise NotImplementedError("filled in by Task 13")
+    """Heavy-import path. Loads model, builds trainer, runs trainer.train()."""
+    sft_cfg = dict(config["sft"])
+    lora_cfg = dict(config["lora"])
+
+    # Lazy imports — keep dataset/render/collate unit tests cheap
+    from trl import SFTConfig, SFTTrainer
+    from unsloth import FastVisionModel
+    from rlvr.atlas_grid import build_atlas_grid
+
+    # Pre-render the atlas grid once for the eval callbacks
+    pairs = {(ex.atlas_name, ex.plane) for ex in train_ds.examples + eval_ds.examples}
+    atlas_grid = build_atlas_grid(pairs)
+
+    # Load base model + processor
+    model, processor = FastVisionModel.from_pretrained(
+        sft_cfg["base_model"],
+        load_in_4bit=bool(sft_cfg.get("load_in_4bit", True)),
+        max_seq_length=int(sft_cfg.get("max_seq_length", 16384)),
+    )
+    model = FastVisionModel.get_peft_model(
+        model,
+        finetune_vision_layers=bool(lora_cfg.get("finetune_vision_layers", False)),
+        finetune_language_layers=bool(lora_cfg.get("finetune_language_layers", True)),
+        finetune_attention_modules=bool(lora_cfg.get("finetune_attention_modules", True)),
+        finetune_mlp_modules=bool(lora_cfg.get("finetune_mlp_modules", True)),
+        r=int(lora_cfg.get("r", 16)),
+        lora_alpha=int(lora_cfg.get("lora_alpha", 32)),
+        use_gradient_checkpointing=lora_cfg.get("use_gradient_checkpointing", "unsloth"),
+        random_state=seed,
+    )
+    FastVisionModel.for_training(model)
+
+    collator = LangSliceCollator(
+        processor=processor,
+        max_seq_length=int(sft_cfg.get("max_seq_length", 16384)),
+    )
+
+    sft_config_kwargs = {
+        k: v for k, v in sft_cfg.items()
+        if k not in ("base_model", "load_in_4bit", "max_seq_length", "agent_eval_steps")
+    }
+    training_args = SFTConfig(
+        output_dir=str(args.output_dir),
+        seed=seed,
+        # Critical: do not let TRL try to apply text-only assistant-only loss
+        assistant_only_loss=False,
+        # Critical for VLMs: no TRL truncation. The custom collator rejects
+        # examples beyond max_seq_length before they reach the trainer.
+        max_length=None,
+        **sft_config_kwargs,
+    )
+
+    callbacks = [
+        BaselineEvalCallback(
+            processor=processor,
+            atlas_grid=atlas_grid,
+            test_images_root=args.test_images_root,
+        ),
+        AgentLoopEvalCallback(
+            processor=processor,
+            atlas_grid=atlas_grid,
+            test_images_root=args.test_images_root,
+            agent_eval_steps=int(sft_cfg.get("agent_eval_steps", 200)),
+        ),
+    ]
+
+    trainer = SFTTrainer(
+        model=model,                  # already a PeftModel — do NOT pass peft_config
+        processing_class=processor,
+        args=training_args,
+        train_dataset=train_ds,
+        eval_dataset=eval_ds,
+        data_collator=collator,
+        callbacks=callbacks,
+    )
+    trainer.train()
+    trainer.save_model(str(args.output_dir))
+    processor.save_pretrained(str(args.output_dir))
+    logger.info("Saved adapter + processor to %s", args.output_dir)
 
 
 if __name__ == "__main__":
