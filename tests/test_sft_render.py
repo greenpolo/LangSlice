@@ -109,23 +109,23 @@ def test_build_system_prompt_rejects_unknown_kind_without_atlas_load() -> None:
     assert cache._cache == {}  # type: ignore[attr-defined]  # private inspection in test
 
 
-def _write_dummy_png(path: Path, color: tuple[int, int, int] = (128, 128, 128)) -> None:
-    Image.new("RGB", (32, 32), color=color).save(path)
+@pytest.fixture
+def staged_single_slice(tmp_path: Path) -> Path:
+    """Stage the single_slice fixture jsonl + dummy PNGs into tmp_path; return jsonl path."""
+    src = FIXTURES / "single_slice_minimal.jsonl"
+    dest = tmp_path / "single_slice_minimal.jsonl"
+    dest.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+    for name in ("query.png", "a3.png", "a5.png", "a7.png"):
+        Image.new("RGB", (32, 32), color=(128, 128, 128)).save(tmp_path / name)
+    return dest
 
 
 @pytest.mark.skipif(
     not _ATLAS_AVAILABLE,
     reason="atlas not downloaded locally",
 )
-def test_render_single_slice_minimal(tmp_path: Path) -> None:
-    # Stage the fixture trace alongside dummy images in tmp_path
-    src = FIXTURES / "single_slice_minimal.jsonl"
-    dest_jsonl = tmp_path / "single_slice_minimal.jsonl"
-    dest_jsonl.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
-    for name in ("query.png", "a3.png", "a5.png", "a7.png"):
-        _write_dummy_png(tmp_path / name)
-
-    examples = load_examples(dest_jsonl)
+def test_render_single_slice_minimal(staged_single_slice: Path) -> None:
+    examples = load_examples(staged_single_slice)
     cache = AtlasMetaCache()
     rendered = render_example(examples[0], atlas_meta_cache=cache)
 
@@ -162,15 +162,11 @@ def test_render_single_slice_minimal(tmp_path: Path) -> None:
     not _ATLAS_AVAILABLE,
     reason="atlas not downloaded locally",
 )
-def test_render_unique_tool_call_ids(tmp_path: Path) -> None:
+def test_render_unique_tool_call_ids(staged_single_slice: Path) -> None:
     """Every assistant tool_call.id must be unique within the trace."""
-    src = FIXTURES / "single_slice_minimal.jsonl"
-    dest_jsonl = tmp_path / "single_slice_minimal.jsonl"
-    dest_jsonl.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
-    for name in ("query.png", "a3.png", "a5.png", "a7.png"):
-        _write_dummy_png(tmp_path / name)
-
-    rendered = render_example(load_examples(dest_jsonl)[0], atlas_meta_cache=AtlasMetaCache())
+    rendered = render_example(
+        load_examples(staged_single_slice)[0], atlas_meta_cache=AtlasMetaCache()
+    )
     ids = []
     for m in rendered.messages:
         if m["role"] == "assistant":
