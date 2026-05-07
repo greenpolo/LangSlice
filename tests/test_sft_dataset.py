@@ -6,8 +6,12 @@ import json
 from pathlib import Path
 
 import pytest
-
-from sft.dataset import DatasetValidationError, Example, load_examples
+from sft.dataset import (
+    DatasetValidationError,
+    Example,
+    load_examples,
+    split_subject_aware,
+)
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "sft_traces"
 
@@ -54,9 +58,6 @@ def test_missing_image_path_is_rejected(tmp_path: Path) -> None:
         load_examples(path)
 
 
-from sft.dataset import split_subject_aware
-
-
 def _make_examples(subject_ids: list[str]) -> list[Example]:
     """Tiny helper for split tests — uses the single_slice fixture's shape."""
     template_path = FIXTURES / "single_slice_minimal.jsonl"
@@ -92,8 +93,8 @@ def test_split_subject_aware_no_subject_in_both_partitions() -> None:
         f"subject leakage between partitions: "
         f"{train_subjects & eval_subjects}"
     )
-    # Holdout fraction is approximate (subject-level, not row-level)
-    assert 2 <= len(eval_subjects) <= 4
+    # Holdout fraction is deterministic under fixed seed: round(10 * 0.3) = 3
+    assert len(eval_subjects) == 3
     # No examples lost
     assert len(train) + len(eval_) == len(examples)
 
@@ -104,3 +105,17 @@ def test_split_subject_aware_deterministic_with_seed() -> None:
     train_b, eval_b = split_subject_aware(examples, holdout_fraction=0.3, seed=42)
     assert [ex.subject_id for ex in train_a] == [ex.subject_id for ex in train_b]
     assert [ex.subject_id for ex in eval_a] == [ex.subject_id for ex in eval_b]
+
+
+def test_split_subject_aware_rejects_invalid_holdout_fraction() -> None:
+    examples = _make_examples([f"subj_{i:02d}" for i in range(4)])
+    for bad in (0.0, 1.0, -0.1, 1.5):
+        with pytest.raises(ValueError, match="holdout_fraction must be in"):
+            split_subject_aware(examples, holdout_fraction=bad, seed=0)
+
+
+def test_split_subject_aware_rejects_holdout_consuming_all_subjects() -> None:
+    examples = _make_examples(["subj_a", "subj_b"])
+    # 0.99 of 2 subjects rounds to 2, leaving zero for train.
+    with pytest.raises(ValueError, match="would consume all"):
+        split_subject_aware(examples, holdout_fraction=0.99, seed=0)
