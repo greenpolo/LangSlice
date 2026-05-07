@@ -28,7 +28,7 @@ def annotation_slice(atlas: object) -> np.ndarray:
 
     ctx = atlas_space_context(atlas)
     axis = slice_axis_index(ctx, "coronal")
-    idx = position_mm_to_index(atlas, 5.335)  # type: ignore[arg-type]
+    idx = position_mm_to_index(atlas, 6.0)  # type: ignore[arg-type]
     return np.take(np.asarray(atlas.annotation), idx, axis=axis).astype(np.int32)  # type: ignore[union-attr]
 
 
@@ -63,6 +63,10 @@ def test_classify_returns_expected_keys(annotation_slice: np.ndarray, atlas: obj
     masks = classify_tissue(annotation_slice, atlas)
     assert set(masks) == {
         "gray_matter",
+        "cortical_subplate",
+        "hippocampal_formation",
+        "isocortex",
+        "thalamus",
         "white_matter",
         "ventricle",
         "tissue",
@@ -93,9 +97,13 @@ def test_masks_partition_pixels(annotation_slice: np.ndarray, atlas: object) -> 
 
 
 def test_real_slice_has_all_classes(annotation_slice: np.ndarray, atlas: object) -> None:
-    """At AP=5.335 mm, every Allen tissue class should be present."""
+    """At AP=6.0 mm, every Allen tissue class should be present."""
     masks = classify_tissue(annotation_slice, atlas)
     assert masks["gray_matter"].sum() > 1000
+    assert masks["cortical_subplate"].sum() > 10
+    assert masks["hippocampal_formation"].sum() > 10
+    assert masks["isocortex"].sum() > 100
+    assert masks["thalamus"].sum() > 10
     assert masks["white_matter"].sum() > 100  # corpus callosum, internal capsule, etc.
     assert masks["ventricle"].sum() > 10  # third ventricle at this AP
     assert masks["background"].sum() > 0  # off-tissue padding always present
@@ -221,6 +229,10 @@ def test_atlas_agnostic_keyword_fallback_warns() -> None:
     masks = classify_tissue(ann, fake)
     assert set(masks) == {
         "gray_matter",
+        "cortical_subplate",
+        "hippocampal_formation",
+        "isocortex",
+        "thalamus",
         "white_matter",
         "ventricle",
         "tissue",

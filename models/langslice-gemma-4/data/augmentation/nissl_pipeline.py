@@ -96,6 +96,9 @@ def render_nissl_section(
     cream_base: tuple[float, float, float] | None = None,
     apply_damage: bool = True,
     damage_intensity: str = "medium",
+    apply_geometry_warp: bool = True,
+    plane: str = "coronal",
+    position_mm: float | None = None,
 ) -> np.ndarray:
     """Procedurally render one synthetic Nissl section.
 
@@ -138,6 +141,8 @@ def render_nissl_section(
         tissue_mask=masks["tissue"],
         pixel_size_um=pixel_size_um,
         tissue_class_masks=masks,
+        plane=plane,
+        position_mm=position_mm,
     )
 
     substrate_mask = masks["gray_matter"] | masks["white_matter"]
@@ -156,5 +161,6 @@ def render_nissl_section(
     if apply_damage:
         canvas = apply_damage_layer(
             canvas, rng=rng, ctx=ctx, modality="nissl", intensity=damage_intensity,
+            geometry=apply_geometry_warp,
         )
     return canvas

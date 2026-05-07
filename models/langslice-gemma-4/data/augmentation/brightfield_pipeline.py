@@ -110,6 +110,9 @@ def render_brightfield_section(
     counterstain: str = "auto",
     apply_damage: bool = True,
     damage_intensity: str = "medium",
+    apply_geometry_warp: bool = True,
+    plane: str = "coronal",
+    position_mm: float | None = None,
 ) -> np.ndarray:
     """Procedurally render one synthetic brightfield IHC section.
 
@@ -180,6 +183,8 @@ def render_brightfield_section(
         tissue_mask=masks["tissue"],
         pixel_size_um=pixel_size_um,
         tissue_class_masks=masks,
+        plane=plane,
+        position_mm=position_mm,
     )
 
     if use_hematoxylin:
@@ -238,5 +243,6 @@ def render_brightfield_section(
     if apply_damage:
         canvas = apply_damage_layer(
             canvas, rng=rng, ctx=ctx, modality="brightfield", intensity=damage_intensity,
+            geometry=apply_geometry_warp,
         )
     return canvas

@@ -121,6 +121,8 @@ def _augment(
     atlas: object,
     modality: str,
     seed: int,
+    position_mm: float,
+    plane: str = "coronal",
 ) -> np.ndarray:
     from augmentation.brightfield_pipeline import render_brightfield_section
     from augmentation.dapi_pipeline import render_dapi_section
@@ -133,22 +135,27 @@ def _augment(
     if modality == "dapi":
         return render_dapi_section(
             img, ann, atlas, seed=seed, pixel_size_um=pixel_size_um,
+            plane=plane, position_mm=position_mm,
         )
     if modality == "nissl":
         return render_nissl_section(
             img, ann, atlas, seed=seed, pixel_size_um=pixel_size_um,
+            plane=plane, position_mm=position_mm,
         )
     if modality == "brightfield":
         return render_brightfield_section(
             img, ann, atlas, seed=seed, pixel_size_um=pixel_size_um,
+            plane=plane, position_mm=position_mm,
         )
     if modality == "fluorescence":
         return render_fluorescence_section(
             img, ann, atlas, seed=seed, pixel_size_um=pixel_size_um,
+            plane=plane, position_mm=position_mm,
         )
     if modality == "ish":
         return render_ish_section(
             img, ann, atlas, seed=seed, pixel_size_um=pixel_size_um,
+            plane=plane, position_mm=position_mm,
         )
     raise ValueError(f"Unsupported modality {modality!r}")
 
@@ -177,7 +184,7 @@ def _cmd_render_grid(args: argparse.Namespace) -> int:
         for i, ap_mm in enumerate(_progress_iter(ap_positions, f"  {modality}")):
             cell_seed = int(rng.integers(0, 2**31))
             img, ann = _atlas_slice_float32(atlas, ap_mm)
-            aug = _augment(img, ann, atlas, modality, cell_seed)
+            aug = _augment(img, ann, atlas, modality, cell_seed, position_mm=ap_mm)
             images.append(aug)
             manifest_cells.append({"index": i, "ap_mm": round(ap_mm, 4), "seed": cell_seed})
 
@@ -220,7 +227,7 @@ def _cmd_generate(args: argparse.Namespace) -> int:
     for idx, ap_mm in _progress_iter(items, f"generate/{modality}"):
         cell_seed = int(rng.integers(0, 2**31))
         img, ann = _atlas_slice_float32(atlas, ap_mm)
-        aug = _augment(img, ann, atlas, modality, cell_seed)
+        aug = _augment(img, ann, atlas, modality, cell_seed, position_mm=ap_mm)
         out_path = out_dir / f"{modality}_{idx:05d}.png"
         _save_float32(aug, out_path)
 
@@ -241,7 +248,7 @@ def _cmd_inspect(args: argparse.Namespace) -> int:
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     img, ann = _atlas_slice_float32(atlas, ap_mm)
-    aug = _augment(img, ann, atlas, modality, args.seed)
+    aug = _augment(img, ann, atlas, modality, args.seed, position_mm=ap_mm)
 
     side_by_side = np.concatenate([img, aug], axis=1)
     _save_float32(side_by_side, out_path)

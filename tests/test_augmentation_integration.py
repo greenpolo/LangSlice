@@ -359,6 +359,70 @@ def test_pipeline_apply_damage_toggle_changes_output(modality: str, render_fn: s
     assert not np.array_equal(clean, damaged)
 
 
+def test_apply_damage_layer_geometry_disabled_skips_warps() -> None:
+    """When ``geometry=False``, no pixel-displacing transform runs.
+
+    Verified by patching each coord-affecting transform class with a sentinel
+    that raises if called. Non-coord transforms (illumination, halos, debris,
+    resolution-shift) are still allowed to run.
+    """
+    from unittest.mock import patch
+
+    image = _make_image(seed=99)
+    ctx = _damage_ctx("nissl")
+
+    class _ShouldNotRun:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError(
+                "geometry transform was instantiated despite geometry=False"
+            )
+
+    targets = [
+        "augmentation.damage_pipeline.BladeStretchHorizontal",
+        "augmentation.damage_pipeline.AffineJitter",
+        "augmentation.damage_pipeline.Folds",
+        "augmentation.damage_pipeline.Tears",
+    ]
+
+    with (
+        patch(targets[0], _ShouldNotRun),
+        patch(targets[1], _ShouldNotRun),
+        patch(targets[2], _ShouldNotRun),
+        patch(targets[3], _ShouldNotRun),
+    ):
+        out = apply_damage_layer(
+            image, rng=np.random.default_rng(5), ctx=ctx, modality="nissl",
+            geometry=False,
+        )
+
+    assert out.shape == image.shape
+    assert out.dtype == np.float32
+
+
+def test_apply_damage_layer_geometry_disabled_default_runs_warps() -> None:
+    """Sanity: with the default geometry=True, BladeStretchHorizontal IS used."""
+    from unittest.mock import patch
+
+    image = _make_image(seed=99)
+    ctx = _damage_ctx("nissl")
+
+    instantiated = {"called": False}
+
+    class _Sentinel:
+        def __init__(self, *args, **kwargs):
+            instantiated["called"] = True
+
+        def __call__(self, img, *, rng, ctx):  # noqa: ARG002
+            return img
+
+    with patch("augmentation.damage_pipeline.BladeStretchHorizontal", _Sentinel):
+        apply_damage_layer(
+            image, rng=np.random.default_rng(5), ctx=ctx, modality="nissl",
+        )
+
+    assert instantiated["called"], "BladeStretchHorizontal must run by default"
+
+
 def test_fluorescence_backwards_compat_p_green_p_red_warns() -> None:
     from augmentation.fluorescence_pipeline import render_fluorescence_section
 

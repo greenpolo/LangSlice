@@ -11,8 +11,10 @@ from augmentation.transforms.damage import (
     Debris,
     EmbeddingHalos,
     Folds,
+    HemibrainPreparation,
     IlluminationGradient,
     Microbubbles,
+    PosteriorWingDamage,
     Tears,
 )
 from augmentation.transforms.geometry import (
@@ -78,6 +80,8 @@ _CONTRACT_TRANSFORMS: list[type] = [
     EmbeddingHalos,
     Debris,
     IlluminationGradient,
+    HemibrainPreparation,
+    PosteriorWingDamage,
     # tonal
     DAPITonal,
     NisslTonal,
@@ -174,6 +178,228 @@ def test_blade_stretch_horizontal_anisotropy_smoke() -> None:
     assert diff > 1e-4
 
 
+def test_hemibrain_preparation_keeps_one_side_and_recenters() -> None:
+    h, w = 40, 80
+    image = np.zeros((h, w, 3), dtype=np.float32)
+    image[8:32, 4:36, :] = 0.8
+    image[8:32, 44:76, :] = 0.4
+    tissue = image.mean(axis=2) > 0
+    ctx = _ctx(modality="nissl", h=h, w=w, tissue_mask=tissue)
+
+    out = HemibrainPreparation(p=1.0, keep_side="left")(
+        image.copy(),
+        rng=np.random.default_rng(0),
+        ctx=ctx,
+    )
+
+    out_tissue = out.mean(axis=2) > 0.1
+    _, cols = np.where(out_tissue)
+    assert cols.min() >= 20
+    assert cols.max() <= 56
+    assert abs(float(cols.mean()) - (w - 1) / 2.0) < 1.0
+    assert np.isclose(out[out_tissue].mean(), 0.8)
+    assert ctx.tissue_mask is not None
+    np.testing.assert_array_equal(ctx.tissue_mask, out_tissue)
+
+
+def test_hemibrain_preparation_skips_sagittal() -> None:
+    h, w = 40, 80
+    image = np.zeros((h, w, 3), dtype=np.float32)
+    image[8:32, 4:36, :] = 0.8
+    tissue = image.mean(axis=2) > 0
+    ctx = _ctx(modality="nissl", h=h, w=w, tissue_mask=tissue)
+    ctx.plane = "sagittal"
+
+    out = HemibrainPreparation(p=1.0, keep_side="left")(
+        image.copy(),
+        rng=np.random.default_rng(0),
+        ctx=ctx,
+    )
+
+    np.testing.assert_array_equal(out, image)
+    np.testing.assert_array_equal(ctx.tissue_mask, tissue)
+
+
+def _posterior_wing_fixture() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    h, w = 72, 96
+    image = np.full((h, w, 3), 0.05, dtype=np.float32)
+    rr, cc = np.ogrid[:h, :w]
+    left_wing = ((rr - 25) ** 2 / 22**2 + (cc - 15) ** 2 / 15**2) <= 1.0
+    right_wing = ((rr - 25) ** 2 / 22**2 + (cc - 81) ** 2 / 15**2) <= 1.0
+    core = ((rr - 42) ** 2 / 18**2 + (cc - 48) ** 2 / 16**2) <= 1.0
+    image[left_wing, :] = 0.8
+    image[right_wing, :] = 0.7
+    image[core, :] = 0.45
+    return image, left_wing, right_wing, core
+
+
+def test_posterior_wing_damage_removes_entire_lateral_wing() -> None:
+    image, left_wing, right_wing, core = _posterior_wing_fixture()
+    h, w = image.shape[:2]
+    isocortex = np.zeros((h, w), dtype=bool)
+    isocortex[left_wing & (np.indices((h, w))[0] < 23)] = True
+    isocortex[right_wing & (np.indices((h, w))[0] < 23)] = True
+    tissue = image.mean(axis=2) > 0.1
+    ctx = _ctx(modality="brightfield", h=h, w=w, tissue_mask=tissue)
+    ctx.position_mm = 9.5
+    ctx.tissue_class_masks = {
+        "isocortex": isocortex,
+        "hippocampal_formation": left_wing & ~isocortex,
+        "thalamus": np.zeros((h, w), dtype=bool),
+        "tissue": tissue,
+    }
+
+    out = PosteriorWingDamage(p=1.0, mode="left_missing")(
+        image.copy(),
+        rng=np.random.default_rng(1),
+        ctx=ctx,
+    )
+
+    non_isocortex_wing = left_wing & ~isocortex
+    assert float(out[left_wing].mean()) < 0.25
+    assert float(out[non_isocortex_wing].mean()) < 0.1
+    assert float(out[right_wing].mean()) > 0.6
+    assert float(out[core].mean()) > 0.4
+    assert ctx.tissue_mask is not None
+    assert not ctx.tissue_mask[left_wing].any()
+
+
+def test_posterior_wing_damage_preserves_medial_core_shoulder() -> None:
+    h, w = 80, 160
+    image = np.full((h, w, 3), 0.05, dtype=np.float32)
+    rr, cc = np.ogrid[:h, :w]
+    left_wing = ((rr - 28) ** 2 / 24**2 + (cc - 16) ** 2 / 12**2) <= 1.0
+    core = ((rr - 48) ** 2 / 20**2 + (cc - 82) ** 2 / 23**2) <= 1.0
+    shoulder = np.zeros((h, w), dtype=bool)
+    shoulder[12:58, 32:40] = True
+    image[left_wing, :] = 0.8
+    image[core, :] = 0.45
+    image[shoulder, :] = 0.5
+    tissue = image.mean(axis=2) > 0.1
+    ctx = _ctx(modality="brightfield", h=h, w=w, tissue_mask=tissue)
+    ctx.position_mm = 9.5
+    ctx.tissue_class_masks = {
+        "thalamus": np.zeros((h, w), dtype=bool),
+        "tissue": tissue,
+    }
+
+    out = PosteriorWingDamage(p=1.0, mode="left_missing")(
+        image.copy(),
+        rng=np.random.default_rng(1),
+        ctx=ctx,
+    )
+
+    assert float(out[left_wing].mean()) < 0.1
+    assert float(out[shoulder].mean()) > 0.45
+    assert float(out[core].mean()) > 0.4
+
+
+def test_posterior_wing_damage_includes_lateral_isocortex_satellite() -> None:
+    h, w = 80, 160
+    image = np.full((h, w, 3), 0.05, dtype=np.float32)
+    rr, cc = np.ogrid[:h, :w]
+    left_wing = ((rr - 30) ** 2 / 22**2 + (cc - 18) ** 2 / 14**2) <= 1.0
+    satellite = ((rr - 10) ** 2 / 5**2 + (cc - 45) ** 2 / 5**2) <= 1.0
+    core = ((rr - 48) ** 2 / 20**2 + (cc - 82) ** 2 / 23**2) <= 1.0
+    image[left_wing, :] = 0.8
+    image[satellite, :] = 0.75
+    image[core, :] = 0.45
+    tissue = image.mean(axis=2) > 0.1
+    ctx = _ctx(modality="brightfield", h=h, w=w, tissue_mask=tissue)
+    ctx.position_mm = 9.5
+    ctx.tissue_class_masks = {
+        "isocortex": left_wing | satellite,
+        "thalamus": np.zeros((h, w), dtype=bool),
+        "tissue": tissue,
+    }
+
+    out = PosteriorWingDamage(p=1.0, mode="left_missing")(
+        image.copy(),
+        rng=np.random.default_rng(1),
+        ctx=ctx,
+    )
+
+    assert float(out[left_wing].mean()) < 0.1
+    assert float(out[satellite].mean()) < 0.1
+    assert float(out[core].mean()) > 0.4
+
+
+def test_posterior_wing_damage_detaches_and_repositions_wing() -> None:
+    image, left_wing, right_wing, core = _posterior_wing_fixture()
+    h, w = image.shape[:2]
+    tissue = image.mean(axis=2) > 0.1
+    ctx = _ctx(modality="brightfield", h=h, w=w, tissue_mask=tissue)
+    ctx.position_mm = 9.5
+    ctx.tissue_class_masks = {
+        "thalamus": np.zeros((h, w), dtype=bool),
+        "tissue": tissue,
+    }
+
+    out = PosteriorWingDamage(
+        p=1.0,
+        mode="right_detached",
+        detach_shift_px=(24, -8),
+        detach_angle_deg=(0.0, 0.0),
+    )(
+        image.copy(),
+        rng=np.random.default_rng(1),
+        ctx=ctx,
+    )
+
+    shifted_right_wing = np.zeros_like(right_wing)
+    shifted_right_wing[:-8, 24:] = right_wing[8:, :-24]
+    source_gap = right_wing & ~shifted_right_wing
+    assert float(out[source_gap].mean()) < 0.2
+    assert float(out[shifted_right_wing].mean()) > 0.45
+    assert float(out[left_wing].mean()) > 0.7
+    assert float(out[core].mean()) > 0.4
+    assert ctx.tissue_mask is not None
+    assert ctx.tissue_mask[source_gap].sum() < 0.05 * source_gap.sum()
+    assert ctx.tissue_mask[shifted_right_wing].any()
+
+
+def test_posterior_wing_damage_skips_before_posterior_gate() -> None:
+    image, _, _, _ = _posterior_wing_fixture()
+    h, w = image.shape[:2]
+    tissue = image.mean(axis=2) > 0.1
+    ctx = _ctx(modality="brightfield", h=h, w=w, tissue_mask=tissue)
+    ctx.position_mm = 5.0
+    ctx.tissue_class_masks = {
+        "thalamus": np.zeros((h, w), dtype=bool),
+        "tissue": tissue,
+    }
+
+    out = PosteriorWingDamage(p=1.0, mode="both_missing")(
+        image.copy(),
+        rng=np.random.default_rng(1),
+        ctx=ctx,
+    )
+
+    np.testing.assert_array_equal(out, image)
+
+
+def test_posterior_wing_damage_skips_when_thalamus_present() -> None:
+    image, _, _, _ = _posterior_wing_fixture()
+    h, w = image.shape[:2]
+    tissue = image.mean(axis=2) > 0.1
+    thalamus = np.zeros((h, w), dtype=bool)
+    thalamus[34:46, 42:54] = True
+    ctx = _ctx(modality="brightfield", h=h, w=w, tissue_mask=tissue | thalamus)
+    ctx.position_mm = 9.5
+    ctx.tissue_class_masks = {
+        "thalamus": thalamus,
+        "tissue": tissue | thalamus,
+    }
+
+    out = PosteriorWingDamage(p=1.0, mode="both_missing")(
+        image.copy(),
+        rng=np.random.default_rng(1),
+        ctx=ctx,
+    )
+
+    np.testing.assert_array_equal(out, image)
+
+
 @pytest.mark.parametrize(
     "cls",
     [DAPINuclei, NisslCellBodies, FluorescenceSpeckle, ISHPuncta],
@@ -251,4 +477,3 @@ def test_legacy_texture_performance_1024(cls: type) -> None:
     elapsed = time.perf_counter() - t0
     assert out.shape == (1024, 1024, 3)
     assert elapsed < 2.0, f"{cls.__name__} took {elapsed:.2f}s on 1024x1024"
-

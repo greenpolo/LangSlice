@@ -66,6 +66,9 @@ def render_dapi_section(
     floor_range: tuple[float, float] = (0.10, 0.20),
     apply_damage: bool = True,
     damage_intensity: str = "medium",
+    apply_geometry_warp: bool = True,
+    plane: str = "coronal",
+    position_mm: float | None = None,
 ) -> np.ndarray:
     """Procedurally render one synthetic DAPI section.
 
@@ -108,6 +111,8 @@ def render_dapi_section(
         tissue_mask=masks["tissue"],
         pixel_size_um=pixel_size_um,
         tissue_class_masks=masks,
+        plane=plane,
+        position_mm=position_mm,
     )
 
     canvas = np.zeros((h, w, 3), dtype=np.float32)
@@ -119,5 +124,6 @@ def render_dapi_section(
     if apply_damage:
         canvas = apply_damage_layer(
             canvas, rng=rng, ctx=ctx, modality="dapi", intensity=damage_intensity,
+            geometry=apply_geometry_warp,
         )
     return canvas

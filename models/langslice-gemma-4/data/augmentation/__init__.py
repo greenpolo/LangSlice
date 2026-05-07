@@ -24,6 +24,8 @@ def augment_atlas_slice(
     counterstain: str | None = None,
     apply_damage: bool = True,
     damage_intensity: str = "medium",
+    plane: str = "coronal",
+    position_mm: float | None = None,
 ) -> np.ndarray:
     if modality == "dapi":
         return render_dapi_section(
@@ -34,6 +36,8 @@ def augment_atlas_slice(
             pixel_size_um=pixel_size_um,
             apply_damage=apply_damage,
             damage_intensity=damage_intensity,
+            plane=plane,
+            position_mm=position_mm,
         )
     if modality == "nissl":
         return render_nissl_section(
@@ -44,6 +48,8 @@ def augment_atlas_slice(
             pixel_size_um=pixel_size_um,
             apply_damage=apply_damage,
             damage_intensity=damage_intensity,
+            plane=plane,
+            position_mm=position_mm,
         )
     if modality == "brightfield":
         return render_brightfield_section(
@@ -56,6 +62,8 @@ def augment_atlas_slice(
             counterstain="auto" if counterstain is None else str(counterstain),
             apply_damage=apply_damage,
             damage_intensity=damage_intensity,
+            plane=plane,
+            position_mm=position_mm,
         )
     if modality == "fluorescence":
         return render_fluorescence_section(
@@ -67,6 +75,8 @@ def augment_atlas_slice(
             mode=mode,
             apply_damage=apply_damage,
             damage_intensity=damage_intensity,
+            plane=plane,
+            position_mm=position_mm,
         )
     if modality == "ish":
         return render_ish_section(
@@ -78,6 +88,8 @@ def augment_atlas_slice(
             mode=mode,
             apply_damage=apply_damage,
             damage_intensity=damage_intensity,
+            plane=plane,
+            position_mm=position_mm,
         )
     raise ValueError(f"Unsupported modality: {modality!r}")
 

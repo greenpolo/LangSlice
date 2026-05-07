@@ -184,6 +184,25 @@ _TISSUE_CLASS_PATTERNS: dict[str, re.Pattern[str]] = {
     "ventricle": _VENTRICLE_PATTERNS,
 }
 
+_STRUCTURE_MASK_SPECS: dict[str, tuple[tuple[str, ...], re.Pattern[str]]] = {
+    "isocortex": (
+        ("Isocortex", "ISO", "CTX"),
+        re.compile(r"\bisocortex\b|cerebral cortex|cortical plate", re.I),
+    ),
+    "thalamus": (
+        ("TH", "Th", "Thal"),
+        re.compile(r"\bthalamus\b|\bthalamic\b", re.I),
+    ),
+    "hippocampal_formation": (
+        ("HPF", "HIP"),
+        re.compile(r"hippocampal", re.I),
+    ),
+    "cortical_subplate": (
+        ("CTXsp",),
+        re.compile(r"cortical subplate", re.I),
+    ),
+}
+
 
 def _find_root_by_keyword(atlas: object, tissue_class: str) -> str | None:
     """Search ``atlas.structures`` for a top-level structure matching keywords.
@@ -302,6 +321,58 @@ def _id_set_for_root(atlas_name: str, root_acronym: str) -> frozenset[int]:
     return _id_set_from_atlas_obj(atlas, root_acronym)
 
 
+def _find_structure_acronym(
+    atlas: object,
+    *,
+    candidate_acronyms: tuple[str, ...],
+    name_pattern: re.Pattern[str],
+) -> str | None:
+    """Find a structure acronym by exact acronym first, then by name keyword."""
+    structures = getattr(atlas, "structures", None)
+    if structures is None:
+        return None
+
+    for acronym in candidate_acronyms:
+        try:
+            structures[acronym]
+            return acronym
+        except Exception:
+            pass
+
+    try:
+        items = structures.values() if hasattr(structures, "values") else []
+        best: tuple[int, str] | None = None
+        for s in items:
+            if not isinstance(s, dict):
+                continue
+            name = str(s.get("name", ""))
+            if not name_pattern.search(name):
+                continue
+            acronym = str(s.get("acronym", ""))
+            if not acronym:
+                continue
+            depth = len(s.get("structure_id_path", []))
+            if best is None or depth < best[0]:
+                best = (depth, acronym)
+        return best[1] if best is not None else None
+    except Exception:
+        return None
+
+
+def _specific_structure_id_sets(atlas: object) -> dict[str, frozenset[int]]:
+    result: dict[str, frozenset[int]] = {}
+    for key, (candidate_acronyms, name_pattern) in _STRUCTURE_MASK_SPECS.items():
+        acronym = _find_structure_acronym(
+            atlas,
+            candidate_acronyms=candidate_acronyms,
+            name_pattern=name_pattern,
+        )
+        result[key] = (
+            _id_set_from_atlas_obj(atlas, acronym) if acronym is not None else frozenset()
+        )
+    return result
+
+
 def get_tissue_id_sets(atlas: object) -> dict[str, frozenset[int]]:
     """Return a class -> {annotation IDs} mapping for one atlas.
 
@@ -319,8 +390,6 @@ def get_tissue_id_sets(atlas: object) -> dict[str, frozenset[int]]:
     # atlas (i.e. it appears in the explicit mapping OR we can confirm it was loaded
     # via load_atlas).  For fake/mock objects that are already loaded, call the
     # compute function directly on the passed-in object.
-    from langslice_harness.atlas.core import load_atlas as _load_atlas
-
     result: dict[str, frozenset[int]] = {}
     for cls, root in roots.items():
         # Skip sentinel "missing" roots produced by the fallback.
@@ -361,6 +430,8 @@ def classify_tissue(
     id_sets = get_tissue_id_sets(atlas)
     masks: dict[str, np.ndarray] = {}
     for cls, ids in id_sets.items():
+        masks[cls] = np.isin(annotation_slice, np.fromiter(ids, dtype=np.int64))
+    for cls, ids in _specific_structure_id_sets(atlas).items():
         masks[cls] = np.isin(annotation_slice, np.fromiter(ids, dtype=np.int64))
     masks["background"] = annotation_slice == 0
     masks["tissue"] = ~masks["background"]

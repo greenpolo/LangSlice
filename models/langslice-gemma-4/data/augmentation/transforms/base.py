@@ -22,6 +22,8 @@ class TransformContext:
     tissue_mask: np.ndarray | None
     pixel_size_um: float
     tissue_class_masks: dict[str, np.ndarray] | None = None
+    plane: str = "coronal"
+    position_mm: float | None = None
     # Per-pixel coverage map populated by counterstain renderers, indicating
     # where the counterstain has deposited pigment. Signal renderers (NBT/BCIP
     # wash, DAB chromogen, fluorescent probes) consult this mask to confine
