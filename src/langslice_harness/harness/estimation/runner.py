@@ -317,6 +317,12 @@ async def run_single_slice_session(
     """
     atlas = load_atlas(atlas_name)
     pos_lo, pos_hi = get_position_range_mm(atlas, plane=plane)
+    if plane == "sagittal":
+        # Canonical hemisphere range: the two hemispheres are mirror images
+        # so the agent only needs to estimate within one. Halving pos_hi
+        # constrains both the prompt's reported range AND fetch_atlas's
+        # position clamp (state['pos_hi']) to the canonical hemisphere.
+        pos_hi = pos_hi / 2.0
     atlas_long_edge = get_in_plane_long_edge(atlas, plane=plane)
 
     # MEDIUM thinking is the validated sweet spot for Flash (0.14mm MAE on M01).
@@ -550,6 +556,12 @@ async def run_group_session(
 
     atlas = load_atlas(atlas_name)
     pos_lo, pos_hi = get_position_range_mm(atlas, plane=plane)
+    if plane == "sagittal":
+        # Canonical hemisphere range: the two hemispheres are mirror images
+        # so the agent only needs to estimate within one. Halving pos_hi
+        # constrains both the prompt's reported range AND fetch_atlas's
+        # position clamp (state['pos_hi']) to the canonical hemisphere.
+        pos_hi = pos_hi / 2.0
     atlas_long_edge = get_in_plane_long_edge(atlas, plane=plane)
 
     # MEDIUM thinking is the validated sweet spot for Flash (0.14mm MAE on M01).

@@ -1,0 +1,51 @@
+# Phase B — mixed single + group, started from the Phase A adapter.
+#
+# Launch:
+#     python -m langslice_rlvr \
+#         --config models/langslice-gemma-4/training/configs/grpo_phase_b.toml \
+#         --sft-model out/sft/gemma4-e4b-langslice \
+#         --resume-from-adapter out/rlvr/phase_a \
+#         --output-dir out/rlvr/phase_b \
+#         --test-images-root references/TestImages
+#
+# `--resume-from-adapter` attaches the saved Phase A adapter as trainable PEFT
+# weights on top of the post-SFT base loaded from `--sft-model`.
+
+[grpo]
+chat_template_kwargs = { enable_thinking = false }
+learning_rate = 5e-6
+num_generations = 2
+per_device_train_batch_size = 1
+gradient_accumulation_steps = 4
+max_completion_length = 2048
+max_tool_calling_iterations = 20
+stop_tool_names = ["submit_estimate", "submit_group_estimate"]
+max_grad_norm = 0.1
+importance_sampling_level = "sequence"
+loss_type = "dr_grpo"
+optim = "adamw_8bit"
+log_completions = true
+logging_steps = 2
+save_steps = 50
+report_to = "trackio"
+load_in_4bit = true
+max_seq_length = 4096
+
+[lora]
+finetune_vision_layers = false
+finetune_language_layers = true
+finetune_attention_modules = true
+finetune_mlp_modules = true
+r = 16
+lora_alpha = 32
+use_gradient_checkpointing = "unsloth"
+
+[data]
+# Phase B: 50/50 mixed single + group.
+single_fraction = 0.5
+group_size = 4
+thickness_um = 30
+eval_holdout_every = 5
+
+[reward]
+window_mm = 0.100

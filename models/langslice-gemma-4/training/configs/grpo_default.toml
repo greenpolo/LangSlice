@@ -1,6 +1,10 @@
 # Default GRPO configuration for the LangSlice RLVR pilot run (spec §8).
 # CLI flags supply paths; everything else lives here so runs are reproducible
 # from a tagged config file alone.
+#
+# `max_prompt_length` is NOT set here: TRL deprecated it in 0.29 and removed it
+# from the recommended config surface (see TRL issue #5018). Filter overlong
+# prompts at the dataset stage instead.
 
 [grpo]
 chat_template_kwargs = { enable_thinking = false }
@@ -8,9 +12,12 @@ learning_rate = 5e-6
 num_generations = 2
 per_device_train_batch_size = 1
 gradient_accumulation_steps = 4
-max_prompt_length = 4096
 max_completion_length = 2048
 max_tool_calling_iterations = 20
+# Either submit tool terminates the rollout immediately (TRL PR #5390),
+# mirroring the production ADK escalate=True semantics in
+# src/langslice_harness/harness/estimation/tools.py:176/188.
+stop_tool_names = ["submit_estimate", "submit_group_estimate"]
 max_grad_norm = 0.1
 importance_sampling_level = "sequence"   # GSPO
 loss_type = "dr_grpo"
@@ -20,6 +27,9 @@ logging_steps = 2
 save_steps = 50
 report_to = "trackio"
 load_in_4bit = true
+# Sequence length the Unsloth FastVisionModel patches the model to. Lifted into
+# the config so the pilot can run on shorter contexts than the default run.
+max_seq_length = 4096
 
 [lora]
 finetune_vision_layers = false
@@ -34,3 +44,11 @@ use_gradient_checkpointing = "unsloth"
 single_fraction = 0.7
 group_size = 4
 thickness_um = 30
+# Subject-level eval holdout. Defaults match P2(h) — every Nth sorted subject
+# id goes to eval and is excluded from training; zero overlap is enforced.
+eval_holdout_every = 5
+
+[reward]
+# Window for the gated linear closeness reward (P2(f)). reward = max(0, 1 - |err|/window).
+# Tune with the eval MAE curve, not by editing rewards.py.
+window_mm = 0.100

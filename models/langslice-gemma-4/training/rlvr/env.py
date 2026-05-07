@@ -2,9 +2,23 @@
 
 The trainer auto-exposes any public method (no leading ``_``, name != ``reset``)
 as a tool to the model. We deliberately keep only three tools — ``fetch_atlas``,
-``submit_estimate``, ``submit_group_estimate`` — to mirror the production
-ADK harness in ``src/langslice_harness/harness/estimation/tools.py`` so a
-trained adapter is wire-compatible at inference.
+``submit_estimate``, ``submit_group_estimate`` — to mirror the production ADK
+harness in ``src/langslice_harness/harness/estimation/tools.py`` so a trained
+adapter is wire-compatible at inference.
+
+Tool signature shapes match production exactly:
+    fetch_atlas(positions_mm, tool_context=None) -> dict
+    submit_estimate(position_mm, reasoning, tool_context=None) -> dict
+    submit_group_estimate(positions_mm, reasoning, tool_context=None) -> dict
+
+The only divergence from production is async vs sync: TRL ``environment_factory``
+requires sync methods. The optional ``tool_context`` kwarg is accepted and
+ignored (the env keeps state on ``self._state`` instead of via tool_context).
+
+Defensive done-fence: once ``_state.done`` is set (after a submit), any
+further tool call returns an error dict and counts as malformed. This
+double-fences the ``stop_tool_names`` configuration on GRPOConfig so the env
+is correct-by-construction even if the trainer-side termination is missing.
 
 Hidden ground-truth lives behind a leading underscore and is read by reward
 functions via the ``environments`` kwarg, NOT exposed via any tool.
@@ -15,11 +29,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from langslice_harness.atlas.space import Plane
-
 from .atlas_grid import AtlasGrid
 
 EstimationKind = Literal["single", "group"]
+Plane = Literal["coronal", "sagittal", "horizontal"]
 
 # Mirror the production tool's contract — see harness/estimation/tools.py.
 DEDUPE_TOL_MM: float = 0.02
@@ -111,6 +124,10 @@ def _clamp_and_dedupe(
     return kept, n_clipped, n_deduped
 
 
+def _done_error(message: str) -> dict[str, Any]:
+    return {"status": "error", "error": "ALREADY_DONE", "message": message}
+
+
 class LangSliceEstimateEnv:
     """Per-rollout estimation environment.
 
@@ -170,7 +187,11 @@ class LangSliceEstimateEnv:
 
     # --- Tools auto-exposed by GRPOTrainer.environment_factory ---
 
-    def fetch_atlas(self, positions_mm: list[float]) -> list[dict[str, Any]]:
+    def fetch_atlas(
+        self,
+        positions_mm: list[float],
+        tool_context: Any = None,  # noqa: ARG002 — prod-shape only; ignored at training time
+    ) -> dict[str, Any]:
         """Fetch reference atlas slices at the requested positions (1-8).
 
         Positions outside the valid mm range are clamped. Positions within
@@ -179,23 +200,35 @@ class LangSliceEstimateEnv:
 
         Args:
             positions_mm: List of mm positions along the slicing plane's normal axis.
+            tool_context: Production parity only; ignored here.
 
         Returns:
-            Image and text content blocks per kept position, suitable for direct
-            return as a multimodal tool response. Image blocks are PIL grayscale.
+            Dict with ``status``, ``positions_mm`` (snapped), ``description`` and
+            a ``content`` list of multimodal blocks (image+text, image-before-text)
+            suitable for direct return as a TRL multimodal tool response.
         """
         self._state.turns += 1
         self._state.fetch_calls += 1
 
+        if self._state.done:
+            self._state.malformed_tool_calls += 1
+            return _done_error(
+                "Episode already submitted; further tool calls are ignored."
+            )
+
         coerced = _coerce_positions(positions_mm)
         if coerced is None or len(coerced) == 0:
             self._state.malformed_tool_calls += 1
-            return [
-                {
-                    "type": "text",
-                    "text": "Error: positions_mm must be a non-empty list of numbers.",
-                }
-            ]
+            return {
+                "status": "error",
+                "error": "BAD_ARGS",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Error: positions_mm must be a non-empty list of numbers.",
+                    }
+                ],
+            }
 
         capped = coerced[:MAX_POSITIONS_PER_FETCH]
         n_extras = len(coerced) - len(capped)
@@ -204,7 +237,16 @@ class LangSliceEstimateEnv:
         )
         if not kept:
             self._state.malformed_tool_calls += 1
-            return [{"type": "text", "text": "Error: no usable positions after clamp/dedupe."}]
+            return {
+                "status": "error",
+                "error": "EMPTY_RESULT",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Error: no usable positions after clamp/dedupe.",
+                    }
+                ],
+            }
 
         notes: list[str] = []
         if n_extras > 0:
@@ -217,7 +259,7 @@ class LangSliceEstimateEnv:
         if n_deduped > 0:
             notes.append(f"deduped {n_deduped} position(s) within {DEDUPE_TOL_MM:.2f} mm")
 
-        blocks: list[dict[str, Any]] = []
+        content: list[dict[str, Any]] = []
         rendered: list[float] = []
         for pos in kept:
             img, snapped_mm = self._atlas_grid.get_slice(
@@ -225,8 +267,8 @@ class LangSliceEstimateEnv:
             )
             # Image MUST come before its text caption so Gemma 4's chat template
             # binds the caption to the right image.
-            blocks.append({"type": "image", "image": img})
-            blocks.append({"type": "text", "text": f"Atlas at {snapped_mm:.2f} mm."})
+            content.append({"type": "image", "image": img})
+            content.append({"type": "text", "text": f"Atlas at {snapped_mm:.2f} mm."})
             rendered.append(snapped_mm)
 
         self._state.fetched_positions_mm.extend(rendered)
@@ -236,43 +278,70 @@ class LangSliceEstimateEnv:
             summary += " Note: " + "; ".join(notes) + "."
         # Trailing summary text — placed at the end so the model sees per-image
         # captions inline first, then the global "Note:" once at the bottom.
-        blocks.append({"type": "text", "text": summary})
-        return blocks
+        content.append({"type": "text", "text": summary})
 
-    def submit_estimate(self, position_mm: float, reasoning: str) -> str:
+        return {
+            "status": "ok",
+            "positions_mm": [round(float(p), 2) for p in rendered],
+            "description": summary,
+            "content": content,
+        }
+
+    def submit_estimate(
+        self,
+        position_mm: float,
+        reasoning: str,
+        tool_context: Any = None,  # noqa: ARG002
+    ) -> dict[str, Any]:
         """Final answer for a single-slice task.
 
         Args:
             position_mm: Estimated position in mm along the slicing-plane normal axis.
             reasoning: Brief summary of the landmark/atlas evidence supporting the estimate.
+            tool_context: Production parity only; ignored here.
 
         Returns:
-            Confirmation text. Ends the rollout.
+            Dict with ``status`` and ``position_mm``. Marks the rollout done.
         """
         self._state.turns += 1
         self._state.submit_calls += 1
 
+        if self._state.done:
+            self._state.malformed_tool_calls += 1
+            return _done_error("Estimate already submitted; this call is ignored.")
+
         if self._state.kind != "single":
             self._state.malformed_tool_calls += 1
-            return (
-                "Error: submit_estimate is only valid for single-slice tasks. "
-                "Use submit_group_estimate for group tasks."
-            )
+            return {
+                "status": "error",
+                "error": "WRONG_KIND",
+                "message": (
+                    "submit_estimate is only valid for single-slice tasks. "
+                    "Use submit_group_estimate for group tasks."
+                ),
+            }
         try:
             value = float(position_mm)
         except (TypeError, ValueError):
             self._state.malformed_tool_calls += 1
-            return "Error: position_mm must be a number."
+            return {
+                "status": "error",
+                "error": "BAD_ARGS",
+                "message": "position_mm must be a number.",
+            }
 
         self._state.submitted_positions_mm = (value,)
         self._state.submitted_kind = "single"
         self._state.submitted_reasoning = str(reasoning)
         self._state.done = True
-        return f"Submitted estimate: {value:.3f} mm."
+        return {"status": "ok", "position_mm": value}
 
     def submit_group_estimate(
-        self, positions_mm: list[float], reasoning: str
-    ) -> str:
+        self,
+        positions_mm: list[float],
+        reasoning: str,
+        tool_context: Any = None,  # noqa: ARG002
+    ) -> dict[str, Any]:
         """Final answer for a multi-slice / group task.
 
         Args:
@@ -280,31 +349,43 @@ class LangSliceEstimateEnv:
                 as the slices were presented.
             reasoning: Brief summary of the landmark/atlas evidence supporting the
                 estimates and the inferred ordering.
+            tool_context: Production parity only; ignored here.
 
         Returns:
-            Confirmation text. Ends the rollout.
+            Dict with ``status`` and ``positions_mm``. Marks the rollout done.
         """
         self._state.turns += 1
         self._state.submit_calls += 1
 
+        if self._state.done:
+            self._state.malformed_tool_calls += 1
+            return _done_error("Estimate already submitted; this call is ignored.")
+
         if self._state.kind != "group":
             self._state.malformed_tool_calls += 1
-            return (
-                "Error: submit_group_estimate is only valid for group tasks. "
-                "Use submit_estimate for single-slice tasks."
-            )
+            return {
+                "status": "error",
+                "error": "WRONG_KIND",
+                "message": (
+                    "submit_group_estimate is only valid for group tasks. "
+                    "Use submit_estimate for single-slice tasks."
+                ),
+            }
         coerced = _coerce_positions(positions_mm)
         if coerced is None or len(coerced) == 0:
             self._state.malformed_tool_calls += 1
-            return "Error: positions_mm must be a non-empty list of numbers."
+            return {
+                "status": "error",
+                "error": "BAD_ARGS",
+                "message": "positions_mm must be a non-empty list of numbers.",
+            }
 
         values = tuple(float(p) for p in coerced)
         self._state.submitted_positions_mm = values
         self._state.submitted_kind = "group"
         self._state.submitted_reasoning = str(reasoning)
         self._state.done = True
-        joined = ", ".join(f"{v:.3f}" for v in values)
-        return f"Submitted {len(values)} estimate(s): [{joined}] mm."
+        return {"status": "ok", "positions_mm": [float(v) for v in values]}
 
 
 def _public_tool_method_names() -> tuple[str, ...]:

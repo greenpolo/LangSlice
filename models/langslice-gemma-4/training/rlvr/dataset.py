@@ -17,21 +17,50 @@ import random
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from PIL import Image
 
-from langslice_harness.atlas.core import (
-    canonicalize_atlas_name,
-    get_position_range_mm,
-    load_atlas,
-    species_from_atlas_name,
-)
-from langslice_harness.atlas.space import Plane
-from langslice_harness.harness.estimation.prompts import (
-    build_group_prompt,
-    build_single_slice_prompt,
-)
+Plane = Literal["coronal", "sagittal", "horizontal"]
+
+
+def canonicalize_atlas_name(atlas_name: str) -> str:
+    try:
+        from langslice_harness.atlas.core import canonicalize_atlas_name as _canonicalize
+    except ModuleNotFoundError:
+        return atlas_name
+
+    return _canonicalize(atlas_name)
+
+
+def get_position_range_mm(atlas, *, plane: Plane):  # noqa: ANN001
+    from langslice_harness.atlas.core import get_position_range_mm as _range_mm
+
+    return _range_mm(atlas, plane=plane)
+
+
+def load_atlas(atlas_name: str):
+    from langslice_harness.atlas.core import load_atlas as _load_atlas
+
+    return _load_atlas(atlas_name)
+
+
+def species_from_atlas_name(atlas_name: str) -> str:
+    from langslice_harness.atlas.core import species_from_atlas_name as _species
+
+    return _species(atlas_name)
+
+
+def build_group_prompt(**kwargs: Any) -> str:
+    from langslice_harness.harness.estimation.prompts import build_group_prompt as _build
+
+    return _build(**kwargs)
+
+
+def build_single_slice_prompt(**kwargs: Any) -> str:
+    from langslice_harness.harness.estimation.prompts import build_single_slice_prompt as _build
+
+    return _build(**kwargs)
 
 
 @dataclass(frozen=True)
@@ -251,12 +280,14 @@ def build_rlvr_rows(
 ) -> list[dict[str, Any]]:
     """Mix single-slice and group rows at the requested ratio.
 
-    The overall row count is bounded by whichever bucket runs out first when
-    pulled at ``single_fraction``/``1 - single_fraction``, so neither bucket
-    is silently oversampled into duplicates.
+    ``single_fraction`` accepts the closed interval [0.0, 1.0]:
+        - ``1.0`` → singles only (Phase A);
+        - ``0.0`` → groups only;
+        - any value in (0, 1) → mixed, capped by whichever bucket runs out
+          first so no row is silently oversampled into duplicates.
     """
-    if not 0.0 < single_fraction < 1.0:
-        raise ValueError(f"single_fraction must be in (0,1), got {single_fraction}")
+    if not 0.0 <= single_fraction <= 1.0:
+        raise ValueError(f"single_fraction must be in [0, 1], got {single_fraction}")
 
     rng = random.Random(seed)
     singles = list(single_examples)
@@ -266,9 +297,14 @@ def build_rlvr_rows(
 
     if not singles and not groups:
         return []
-    # Cap each bucket so the overall mix lands at single_fraction without
-    # repeats. Whichever side is the binding constraint determines total size.
-    if singles and groups:
+
+    if single_fraction == 1.0:
+        n_single, n_group = len(singles), 0
+    elif single_fraction == 0.0:
+        n_single, n_group = 0, len(groups)
+    elif singles and groups:
+        # Cap each bucket so the overall mix lands at single_fraction without
+        # repeats. Whichever side is the binding constraint determines total.
         max_total_by_singles = int(len(singles) / single_fraction)
         max_total_by_groups = int(len(groups) / (1.0 - single_fraction))
         total = min(max_total_by_singles, max_total_by_groups)
@@ -285,6 +321,29 @@ def build_rlvr_rows(
     rows.extend(_row_from_group(g) for g in groups[:n_group])
     rng.shuffle(rows)
     return rows
+
+
+def split_subjects_for_holdout(
+    examples: Iterable[SingleSliceExample],
+    *,
+    eval_holdout_every: int = 5,
+) -> tuple[set[str], set[str]]:
+    """Deterministic subject-level train/eval split.
+
+    Subject ids are sorted and every ``eval_holdout_every``-th one (1-indexed,
+    so the FIRST eligible position is the Nth-1 element) is assigned to eval.
+    A non-positive ``eval_holdout_every`` disables the holdout (everything to
+    train, eval set empty).
+
+    Returns ``(train_subject_ids, eval_subject_ids)``. The two sets are
+    guaranteed to be disjoint — every subject appears in exactly one.
+    """
+    sorted_ids = sorted({ex.subject_id for ex in examples})
+    if eval_holdout_every <= 0:
+        return set(sorted_ids), set()
+    eval_ids = {sid for i, sid in enumerate(sorted_ids) if (i + 1) % eval_holdout_every == 0}
+    train_ids = set(sorted_ids) - eval_ids
+    return train_ids, eval_ids
 
 
 def to_hf_dataset(rows: list[dict[str, Any]]) -> Any:

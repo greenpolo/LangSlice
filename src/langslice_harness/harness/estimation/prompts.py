@@ -9,8 +9,10 @@ _PLANE_BOILERPLATE: dict[str, str] = {
         "Coordinate system: 0.0 mm is the anterior edge (olfactory bulb); "
         "larger mm moves posterior toward the cerebellum.",
     "sagittal":
-        "Coordinate system: 0.0 mm is the right hemisphere lateral edge; "
-        "larger mm moves leftward.",
+        "Coordinate system: 0.0 mm is at the lateral edge of one hemisphere; "
+        "larger mm moves toward the midline. The two hemispheres are mirror "
+        "images, so estimate the canonical (single-hemisphere) ML position; "
+        "your estimate should fall in the canonical hemisphere range.",
     "horizontal":
         "Coordinate system: 0.0 mm is dorsal (top of brain); "
         "larger mm moves ventral.",

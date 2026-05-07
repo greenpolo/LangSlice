@@ -13,7 +13,61 @@ from typing import Any, Literal, cast
 from google.adk.plugins.base_plugin import BasePlugin
 from PIL import Image
 
+from langslice_harness.atlas.core import get_position_range_mm, load_atlas
+
 TraceKind = Literal["single", "group"]
+
+
+# Position-estimation tolerance is plane-relative (a fraction of the atlas
+# extent on the slice-normal axis). Without this, a 0.9mm rescue threshold is
+# 7% of coronal AP (13.2mm Allen) but 16% of canonical sagittal hemisphere
+# (5.7mm) — too loose for the shorter planes. These percentages give roughly
+# coronal-equivalent strictness across all three planes.
+_TOLERANCE_PCT = 0.015  # accept threshold ≈ 0.20mm coronal Allen
+_RESCUE_PCT = 0.07      # rescue threshold ≈ 0.92mm coronal Allen
+_TOLERANCE_FLOOR_MM = 0.05
+
+
+def plane_tolerance_mm(atlas_name: str, plane: str) -> float:
+    """Atlas-aware accept tolerance for `categorize_trace`.
+
+    For sagittal we use canonical-hemisphere extent (full ML extent / 2),
+    matching the production constraint that the agent estimates within one
+    hemisphere only.
+    """
+    atlas = load_atlas(atlas_name)
+    _, hi = get_position_range_mm(atlas, plane=plane)
+    extent = hi
+    if plane == "sagittal":
+        extent = extent / 2.0
+    return max(extent * _TOLERANCE_PCT, _TOLERANCE_FLOOR_MM)
+
+
+def plane_rescue_threshold_mm(atlas_name: str, plane: str) -> float:
+    """Atlas-aware rescue (near-miss) threshold."""
+    atlas = load_atlas(atlas_name)
+    _, hi = get_position_range_mm(atlas, plane=plane)
+    extent = hi
+    if plane == "sagittal":
+        extent = extent / 2.0
+    return max(extent * _RESCUE_PCT, _TOLERANCE_FLOOR_MM * 4)
+
+
+def canonicalize_positions(
+    positions: list[float] | None, atlas_name: str, plane: str
+) -> list[float] | None:
+    """Map sagittal positions to canonical (single-hemisphere) form.
+
+    The two hemispheres are mirror images so any GT (or model submission) in
+    the upper-half ML range is equivalent to its mirror in the lower-half.
+    Comparing GT and submission in canonical space removes the mirror flip
+    that otherwise drives ~50% of sagittal "errors". No-op for coronal/horizontal.
+    """
+    if positions is None or plane != "sagittal" or not positions:
+        return positions
+    atlas = load_atlas(atlas_name)
+    _, hi = get_position_range_mm(atlas, plane=plane)
+    return [min(float(p), hi - float(p)) for p in positions]
 SftExportMode = Literal["deployment", "rationale", "both"]
 SingleRunner = Callable[..., Awaitable[Any]]
 GroupRunner = Callable[..., Awaitable[Any]]
@@ -721,11 +775,15 @@ async def _collect_manifest_traces_async(
             "fell back" in str(getattr(item, "reasoning", "")).lower()
             for item in (getattr(result, "positions", None) or [result])
         )
+        truth_canonical = canonicalize_positions(
+            row.truth_positions_mm, row.atlas, row.plane
+        )
+        submitted_canonical = canonicalize_positions(submitted, row.atlas, row.plane)
         category = categorize_trace(
-            truth_positions=row.truth_positions_mm,
-            submitted_positions=submitted,
+            truth_positions=truth_canonical,
+            submitted_positions=submitted_canonical,
             fetched_positions=_fetched_positions(recorder.raw_events),
-            tolerance_mm=max(0.02 * (max(row.truth_positions_mm) or 1.0), 0.2),
+            tolerance_mm=plane_tolerance_mm(row.atlas, row.plane),
             turn_count=max(1, len(recorder.usage_by_call)),
             median_turn_count=6,
             had_broad_restart=_had_broad_restart(recorder.raw_events),
@@ -816,7 +874,7 @@ def collect_manifest_traces(
     manifest_path: str | Path,
     out_dir: str | Path,
     model: str = "gemini-3.1-pro-preview",
-    thinking_level: str = "HIGH",
+    thinking_level: str = "MEDIUM",
     media_resolution: str = "medium",
     max_iterations: int = 20,
     include_thought_summaries: bool = True,
