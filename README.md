@@ -1,5 +1,9 @@
 <p align="center">
-  <img src="assets/banner.svg" alt="LangSlice" width="600">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/LangSlice_dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="assets/Langslice_light.png">
+    <img alt="LangSlice" src="assets/Langslice_light.png" width="800">
+  </picture>
 </p>
 
 LangSlice registers histology slice images to BrainGlobe atlases. The active
