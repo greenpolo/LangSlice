@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import random
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -141,3 +142,39 @@ def _require_existing_image(root: Path, rel: Any, lineno: int, field_name: str) 
     path = (root / rel).resolve()
     if not path.is_file():
         raise DatasetValidationError(f"line {lineno}: {field_name} image not found: {path}")
+
+
+def split_subject_aware(
+    examples: list[Example],
+    *,
+    holdout_fraction: float,
+    seed: int,
+) -> tuple[list[Example], list[Example]]:
+    """Split *examples* into (train, eval) so no subject_id appears in both."""
+    if not 0.0 < holdout_fraction < 1.0:
+        raise ValueError(f"holdout_fraction must be in (0, 1), got {holdout_fraction}")
+
+    by_subject: dict[str, list[Example]] = {}
+    for ex in examples:
+        by_subject.setdefault(ex.subject_id, []).append(ex)
+
+    subjects = sorted(by_subject.keys())  # deterministic order before shuffle
+    rng = random.Random(seed)
+    rng.shuffle(subjects)
+
+    n_holdout = max(1, round(len(subjects) * holdout_fraction))
+    if n_holdout >= len(subjects):
+        raise ValueError(
+            f"holdout_fraction={holdout_fraction} would consume all "
+            f"{len(subjects)} subjects; need at least one for train"
+        )
+    eval_subjects = set(subjects[:n_holdout])
+
+    train: list[Example] = []
+    eval_: list[Example] = []
+    for ex in examples:
+        if ex.subject_id in eval_subjects:
+            eval_.append(ex)
+        else:
+            train.append(ex)
+    return train, eval_
