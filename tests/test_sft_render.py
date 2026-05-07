@@ -2,15 +2,22 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
+from PIL import Image
 
+from sft.dataset import load_examples
 from sft.render import (
     AtlasMetaCache,
+    RenderedExample,
     build_system_prompt,
     build_tools_schema,
+    render_example,
 )
+
+FIXTURES = Path(__file__).resolve().parent / "fixtures" / "sft_traces"
 
 
 def _allen_mouse_25um_cached() -> bool:
@@ -100,3 +107,73 @@ def test_build_system_prompt_rejects_unknown_kind_without_atlas_load() -> None:
         )
     # Cache should be empty — no atlas loaded.
     assert cache._cache == {}  # type: ignore[attr-defined]  # private inspection in test
+
+
+def _write_dummy_png(path: Path, color: tuple[int, int, int] = (128, 128, 128)) -> None:
+    Image.new("RGB", (32, 32), color=color).save(path)
+
+
+@pytest.mark.skipif(
+    not _ATLAS_AVAILABLE,
+    reason="atlas not downloaded locally",
+)
+def test_render_single_slice_minimal(tmp_path: Path) -> None:
+    # Stage the fixture trace alongside dummy images in tmp_path
+    src = FIXTURES / "single_slice_minimal.jsonl"
+    dest_jsonl = tmp_path / "single_slice_minimal.jsonl"
+    dest_jsonl.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+    for name in ("query.png", "a3.png", "a5.png", "a7.png"):
+        _write_dummy_png(tmp_path / name)
+
+    examples = load_examples(dest_jsonl)
+    cache = AtlasMetaCache()
+    rendered = render_example(examples[0], atlas_meta_cache=cache)
+
+    assert isinstance(rendered, RenderedExample)
+    msgs = rendered.messages
+    # system + user + (assistant + tool) + (assistant final submit)
+    assert msgs[0]["role"] == "system"
+    assert msgs[1]["role"] == "user"
+    # User turn has 1 image + 1 text content block
+    user_content = msgs[1]["content"]
+    assert sum(1 for c in user_content if c.get("type") == "image") == 1
+    assert sum(1 for c in user_content if c.get("type") == "text") == 1
+    # Find the first assistant turn — must carry tool_calls with fetch_atlas
+    first_assistant = next(m for m in msgs[2:] if m["role"] == "assistant")
+    assert first_assistant["tool_calls"][0]["function"]["name"] == "fetch_atlas"
+    args = json.loads(first_assistant["tool_calls"][0]["function"]["arguments"])
+    assert args["positions_mm"] == [3.0, 5.0, 7.0]
+    # Tool message must have matching tool_call_id and 3 images + 1 text
+    first_tool = msgs[msgs.index(first_assistant) + 1]
+    assert first_tool["role"] == "tool"
+    assert first_tool["tool_call_id"] == first_assistant["tool_calls"][0]["id"]
+    assert sum(1 for c in first_tool["content"] if c.get("type") == "image") == 3
+    # Final assistant turn has the submit
+    final_assistant = msgs[-1]
+    assert final_assistant["role"] == "assistant"
+    fn = final_assistant["tool_calls"][0]["function"]
+    assert fn["name"] == "submit_estimate"
+    submit_args = json.loads(fn["arguments"])
+    assert submit_args["position_mm"] == pytest.approx(5.2)
+    assert submit_args["reasoning"]
+
+
+@pytest.mark.skipif(
+    not _ATLAS_AVAILABLE,
+    reason="atlas not downloaded locally",
+)
+def test_render_unique_tool_call_ids(tmp_path: Path) -> None:
+    """Every assistant tool_call.id must be unique within the trace."""
+    src = FIXTURES / "single_slice_minimal.jsonl"
+    dest_jsonl = tmp_path / "single_slice_minimal.jsonl"
+    dest_jsonl.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+    for name in ("query.png", "a3.png", "a5.png", "a7.png"):
+        _write_dummy_png(tmp_path / name)
+
+    rendered = render_example(load_examples(dest_jsonl)[0], atlas_meta_cache=AtlasMetaCache())
+    ids = []
+    for m in rendered.messages:
+        if m["role"] == "assistant":
+            for tc in m.get("tool_calls", []):
+                ids.append(tc["id"])
+    assert len(ids) == len(set(ids))
