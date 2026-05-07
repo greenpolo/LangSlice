@@ -57,6 +57,13 @@ still `langslice`, but Python imports should use `langslice_harness.*`.
 - Keep documentation literal to the current code. If behavior changes, update
   the relevant markdown files in the same pass.
 
+## Training-data review (QC app)
+
+When assembling Inventory, SFT, RLVR, Eval, or synthetic data for the QC app,
+write outputs to the paths documented in `_local/qc_app/CONTRACTS.md`. The QC
+app reloads on mtime change — no app code edit required. Do not invent new
+manifest shapes or paths; conform to the contract or extend it explicitly.
+
 ## Delegation (cost-saving)
 
 To minimize main-thread token spend, delegate work to other CLIs whenever the
