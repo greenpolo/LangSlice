@@ -12,17 +12,18 @@ Intensity levels
 ``"medium"`` — default; visibly realistic but anatomical content fully legible.
 ``"heavy"``  — pushed params; clearly degraded but still recognisable.
 
-Probability schedule (medium — bumped 2026-04-30 to match real-microscopy realism)
-----------------------------------------------------------------------------------
+Probability schedule (medium)
+-----------------------------
 ALWAYS     BladeStretchHorizontal  — horizontal-biased anisotropic stretch (~22% max H stretch)
 85%        IlluminationGradient    — lamp / photobleaching gradient
 75%        AffineJitter            — small rotation + translation
 70%        EmbeddingHalos          — warm halo outside tissue (light-bg only)
-55%        Microbubbles            — circular bright mounting-medium artifacts
-55%        Debris                  — small dark spots / dust
-55%        Tears                   — bg-colored voids; ventricle expansion + edge bites
+55%        VentricleExpansion      — CSF retraction (pre-warp so it follows the warp)
 45%        Folds                   — sinusoidal tissue-fold warp
+35%        Microbubbles            — sparse refractive bubbles (toned down)
 35%        ResolutionShift         — down-then-up blur (resolution variation)
+30%        Tears                   — edge bites at the tissue boundary
+25%        Debris                  — small dark dust specks on tissue
 
 Light-background modalities that accept EmbeddingHalos:
     nissl, brightfield, ish
@@ -45,6 +46,7 @@ from .transforms.damage import (
     Microbubbles,
     PosteriorWingDamage,
     Tears,
+    VentricleExpansion,
 )
 from .transforms.geometry import AffineJitter, BladeStretchHorizontal, ResolutionShift
 
@@ -129,6 +131,17 @@ def apply_damage_layer(
         hemibrain = HemibrainPreparation(p=_p(0.08))
         out = hemibrain(out, rng=rng, ctx=ctx)
 
+    # --- 0b. VentricleExpansion (pre-warp) ----------------------------------
+    # CSF retraction makes ventricles read larger than the atlas predicts.
+    # MUST run before BladeStretchHorizontal / AffineJitter / Folds so the
+    # expanded ventricle warps along with the canvas — running it after the
+    # warps would leave the cavity aligned with the pre-warp ventricle
+    # position, producing a stale outline that doesn't match the visible
+    # ventricle.
+    if geometry:
+        ventricle = VentricleExpansion(p=_p(0.55))
+        out = ventricle(out, rng=rng, ctx=ctx)
+
     # --- 1. BladeStretchHorizontal (ALWAYS applied) -------------------------
     # H stretch is the defining microtome artifact — bumped to up to 22% at
     # medium, capped at 30% even at heavy. V stretch up to 10%. Shear up to 4°.
@@ -158,13 +171,13 @@ def apply_damage_layer(
         jitter = AffineJitter(p=_p(0.75))
         out = jitter(out, rng=rng, ctx=ctx)
 
-    # --- 5. Microbubbles (55% medium) ----------------------------------------
+    # --- 5. Microbubbles (35% medium) ----------------------------------------
     if geometry:
-        bubbles = Microbubbles(p=_p(0.55))
+        bubbles = Microbubbles(p=_p(0.35))
         out = bubbles(out, rng=rng, ctx=ctx)
 
-    # --- 6. Debris (55% medium) ----------------------------------------------
-    debris = Debris(p=_p(0.55))
+    # --- 6. Debris (25% medium) ----------------------------------------------
+    debris = Debris(p=_p(0.25))
     out = debris(out, rng=rng, ctx=ctx)
 
     # --- 7. Folds (45% medium) -----------------------------------------------
@@ -176,12 +189,12 @@ def apply_damage_layer(
     res = ResolutionShift(p=_p(0.35))
     out = res(out, rng=rng, ctx=ctx)
 
-    # --- 9. Tears (55% medium) -----------------------------------------------
-    # Tears now use bg-colored fill (not black) and bias toward ventricle
-    # expansion + edge bites. Ventricles in real sections almost always look
-    # larger than the atlas predicts due to CSF retraction; this captures that.
+    # --- 9. Tears (30% medium) -----------------------------------------------
+    # Edge bites: irregular discs torn from the tissue boundary so the
+    # silhouette acquires ragged notches. Ventricle damage is handled
+    # separately by VentricleExpansion above (pre-warp).
     if geometry:
-        tears = Tears(p=_p(0.55))
+        tears = Tears(p=_p(0.30))
         out = tears(out, rng=rng, ctx=ctx)
 
     # --- 10. Posterior wing detachment / loss --------------------------------
