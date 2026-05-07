@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from typing import Any
 
 import torch
@@ -49,12 +50,12 @@ class LangSliceCollator:
                     f"{self.max_seq_length} (got {ids.shape[1]} tokens). "
                     f"subject_id={ex.metadata.subject_id!r}"
                 )
-            if "assistant_masks" in out:
+            if "assistant_masks" in out and out["assistant_masks"].sum().item() > 0:
                 assistant_mask = out["assistant_masks"]  # 1 where assistant, 0 elsewhere
             else:
                 # Fallback: re-tokenize each assistant turn separately and find their token
                 # spans in the full sequence. Triggers when the chat template lacks
-                # {% generation %} markers.
+                # {% generation %} markers OR emits an all-zero mask (template bug).
                 assistant_mask = self._manual_span_mask(ex, ids[0])
             labels = ids.clone()
             labels[assistant_mask == 0] = -100
@@ -75,44 +76,105 @@ class LangSliceCollator:
         return _pad_batch(per_example, pad_token_id=self.processor.tokenizer.pad_token_id)
 
     def _manual_span_mask(self, example: RenderedExample, input_ids: torch.Tensor) -> torch.Tensor:
-        """Build a per-token assistant mask by re-tokenizing each assistant turn."""
+        """Build a per-token assistant mask via incremental-render diffs.
+
+        Strategy: for each assistant turn at position i in example.messages, render
+        messages[:i] and messages[:i+1]; the suffix that appears in the second but
+        not the first is the assistant turn's token span. This is robust to BOS
+        markers and chat-template wrappers that single-message rendering would
+        otherwise produce.
+
+        Raises RuntimeError if the diff is empty for any assistant turn (would
+        indicate a chat-template bug or mismatched tokenization).
+        """
         mask = torch.zeros_like(input_ids)
-        for msg in example.messages:
+        cursor = 0
+        for i, msg in enumerate(example.messages):
             if msg["role"] != "assistant":
                 continue
-            # Render just this assistant turn and find its span in input_ids
-            sub = self.processor.apply_chat_template(
-                [msg],
+            before = self.processor.apply_chat_template(
+                example.messages[:i],
                 tools=example.tools,
                 chat_template_kwargs={"enable_thinking": False},
                 add_generation_prompt=False,
                 tokenize=True,
                 return_dict=True,
                 return_tensors="pt",
-            )
-            sub_ids = sub["input_ids"][0]
-            # Linear search for the sub-sequence (cheap; assistant turns are short)
-            n = sub_ids.shape[0]
-            for start in range(0, input_ids.shape[0] - n + 1):
-                if torch.equal(input_ids[start:start + n], sub_ids):
+            )["input_ids"][0]
+            through = self.processor.apply_chat_template(
+                example.messages[: i + 1],
+                tools=example.tools,
+                chat_template_kwargs={"enable_thinking": False},
+                add_generation_prompt=False,
+                tokenize=True,
+                return_dict=True,
+                return_tensors="pt",
+            )["input_ids"][0]
+            if through.shape[0] <= before.shape[0]:
+                raise RuntimeError(
+                    f"manual-span mask: assistant turn {i} produced no new tokens "
+                    f"(before={before.shape[0]}, through={through.shape[0]}); "
+                    "chat template appears to drop assistant content."
+                )
+            # The new tokens added by including msg i are the suffix of `through`
+            # beyond `before`. Locate that suffix in the full input_ids by searching
+            # forward from `cursor`.
+            new_tokens = through[before.shape[0]:]
+            n = new_tokens.shape[0]
+            found = False
+            for start in range(cursor, input_ids.shape[0] - n + 1):
+                if torch.equal(input_ids[start:start + n], new_tokens):
                     mask[start:start + n] = 1
+                    cursor = start + n
+                    found = True
                     break
+            if not found:
+                raise RuntimeError(
+                    f"manual-span mask: could not locate assistant turn {i} "
+                    f"({n} tokens) in full input_ids beyond cursor={cursor}. "
+                    "Chat-template tokenization may differ between incremental and "
+                    "full renders."
+                )
+        if mask.sum().item() == 0:
+            raise RuntimeError(
+                "manual-span mask: no assistant tokens marked. "
+                f"messages had {sum(1 for m in example.messages if m['role'] == 'assistant')} "
+                "assistant turns but none could be located in input_ids."
+            )
         return mask.unsqueeze(0)
 
     def _sanity_check_no_image_tokens_in_labels(self, ids: torch.Tensor, labels: torch.Tensor) -> None:
-        """Optional safety net — disabled if the processor doesn't expose image-token IDs."""
+        """Safety net: assistant tokens must never overlap image-placeholder tokens.
+
+        If none of the candidate names resolve to a real token id, the check is
+        disabled — this is logged as a warning so users know the safety net is off.
+        """
         candidate_names = ("<image_soft_token>", "<image>", "<|image|>")
+        unk = self.processor.tokenizer.unk_token_id
+        resolved: set[int] = set()
         for name in candidate_names:
             tok_id = self.processor.tokenizer.convert_tokens_to_ids(name)
-            if tok_id is not None and tok_id >= 0:
-                bad = ((labels != -100) & (ids == tok_id)).any().item()
-                if bad:
-                    raise RuntimeError(
-                        f"labels mask is keeping image-token positions (token id={tok_id}, "
-                        f"name={name}); the chat template's assistant-mask logic is wrong "
-                        f"for this trace shape — investigate before training"
-                    )
-                return
+            if tok_id is None or tok_id < 0:
+                continue
+            if unk is not None and tok_id == unk:
+                continue
+            resolved.add(tok_id)
+        if not resolved:
+            warnings.warn(
+                "image-token sanity check disabled: none of "
+                f"{candidate_names} resolved to a real token id. "
+                "Verify your processor's image-placeholder token name.",
+                stacklevel=2,
+            )
+            return
+        image_ids = torch.tensor(sorted(resolved), dtype=ids.dtype, device=ids.device)
+        bad = ((labels != -100) & torch.isin(ids, image_ids)).any().item()
+        if bad:
+            raise RuntimeError(
+                f"labels mask is keeping image-token positions (token ids={sorted(resolved)}); "
+                "the chat template's assistant-mask logic is wrong for this trace shape — "
+                "investigate before training."
+            )
 
 
 def _pad_batch(

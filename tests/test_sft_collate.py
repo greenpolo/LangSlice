@@ -166,19 +166,193 @@ def test_collate_image_token_sanity_check(processor, rendered_single_slice):
 
 
 @pytest.mark.skipif(not _GEMMA4_AVAILABLE, reason=_GEMMA4_SKIP_REASON)
-def test_collate_falls_back_to_manual_span_when_no_assistant_mask(monkeypatch, processor, rendered_single_slice):
-    """If processor doesn't return assistant_masks, collator builds it manually."""
-    # Force the processor's apply_chat_template to omit assistant_masks
+def test_collate_falls_back_to_manual_span_when_no_assistant_mask(
+    monkeypatch, processor, rendered_single_slice
+):
+    """Stripping assistant_masks from the processor output forces the fallback,
+    which must reconstruct (approximately) the same labels mask the primary
+    path would have produced."""
+    # Primary path
+    collator = LangSliceCollator(processor=processor, max_seq_length=4096)
+    primary_batch = collator([rendered_single_slice])
+    primary_labels = primary_batch["labels"][0]
+
+    # Force fallback by stripping assistant_masks from processor output
     real = processor.apply_chat_template
 
     def fake_apply(*args, **kwargs):
         out = real(*args, **kwargs)
-        if "assistant_masks" in out:
+        if isinstance(out, dict) and "assistant_masks" in out:
             del out["assistant_masks"]
         return out
 
     monkeypatch.setattr(processor, "apply_chat_template", fake_apply)
-    collator = LangSliceCollator(processor=processor, max_seq_length=4096)
-    batch = collator([rendered_single_slice])
-    # Fallback should still produce some non-masked positions
-    assert (batch["labels"] != -100).sum().item() > 0
+
+    fallback_collator = LangSliceCollator(processor=processor, max_seq_length=4096)
+    fallback_batch = fallback_collator([rendered_single_slice])
+    fallback_labels = fallback_batch["labels"][0]
+
+    # The two label sequences should agree on the vast majority of positions.
+    # Allow some slack for BOS / template-edge tokens (these may differ by 1-2
+    # positions per assistant turn).
+    n_total = primary_labels.shape[0]
+    n_match = (primary_labels == fallback_labels).sum().item()
+    agreement = n_match / n_total
+    assert agreement > 0.9, (
+        f"fallback labels disagree with primary labels at {n_total - n_match} of "
+        f"{n_total} positions (agreement={agreement:.3f}); fallback is likely broken."
+    )
+
+
+def test_manual_span_mask_finds_assistant_turns_via_incremental_render():
+    """Stub processor: full render is concat of system+user+assistant+user+assistant
+    token sequences. Verify _manual_span_mask marks exactly the assistant spans."""
+    from sft.render import RenderedExample, RenderMetadata
+
+    # Token id legend (synthetic): 1-9 = system, 10-19 = user1, 20-29 = assistant1,
+    # 30-39 = user2, 40-49 = assistant2. Stub returns SEGMENTS[len(messages)],
+    # i.e. SEGMENTS[N] is the rendering of the first N messages.
+    SEGMENTS = {
+        0: torch.tensor([], dtype=torch.long),
+        1: torch.tensor([1, 2, 3]),                                                  # +system
+        2: torch.tensor([1, 2, 3, 10, 11, 12, 13]),                                  # +user1
+        3: torch.tensor([1, 2, 3, 10, 11, 12, 13, 20, 21, 22]),                      # +assistant1
+        4: torch.tensor([1, 2, 3, 10, 11, 12, 13, 20, 21, 22, 30, 31]),              # +user2
+        5: torch.tensor(  # +assistant2
+            [1, 2, 3, 10, 11, 12, 13, 20, 21, 22, 30, 31, 40, 41, 42, 43]
+        ),
+    }
+    full = SEGMENTS[5]
+
+    class StubTokenizer:
+        unk_token_id = 0
+        pad_token_id = 0
+
+        def convert_tokens_to_ids(self, name):
+            return -1
+
+    class StubProcessor:
+        tokenizer = StubTokenizer()
+
+        def apply_chat_template(self, messages, **kwargs):
+            return {"input_ids": SEGMENTS[len(messages)].unsqueeze(0)}
+
+    example = RenderedExample(
+        messages=[
+            {"role": "system", "content": "x"},
+            {"role": "user", "content": "x"},
+            {"role": "assistant", "content": "x"},
+            {"role": "user", "content": "x"},
+            {"role": "assistant", "content": "x"},
+        ],
+        tools=[],
+        metadata=RenderMetadata(
+            atlas_name="x", atlas_version="x", plane="coronal",
+            subject_id="stub", system_prompt_kind="single_slice",
+        ),
+    )
+    collator = LangSliceCollator(processor=StubProcessor(), max_seq_length=4096)
+    mask = collator._manual_span_mask(example, full)
+    expected = torch.zeros_like(full)
+    expected[7:10] = 1   # assistant1 span
+    expected[12:16] = 1  # assistant2 span
+    assert torch.equal(mask.squeeze(0), expected), (
+        f"got {mask.squeeze(0).tolist()}, expected {expected.tolist()}"
+    )
+
+
+def test_manual_span_mask_raises_when_turn_unfindable():
+    """If incremental render produces tokens that don't match input_ids, raise."""
+    from sft.render import RenderedExample, RenderMetadata
+
+    class StubTokenizer:
+        unk_token_id = 0
+        pad_token_id = 0
+
+        def convert_tokens_to_ids(self, name):
+            return -1
+
+    class StubProcessor:
+        tokenizer = StubTokenizer()
+
+        def apply_chat_template(self, messages, **kwargs):
+            n = len(messages)
+            return {"input_ids": torch.tensor([[100 + i for i in range(n + 1)]])}
+
+    example = RenderedExample(
+        messages=[
+            {"role": "user", "content": "x"},
+            {"role": "assistant", "content": "x"},
+        ],
+        tools=[],
+        metadata=RenderMetadata(
+            atlas_name="x", atlas_version="x", plane="coronal",
+            subject_id="stub", system_prompt_kind="single_slice",
+        ),
+    )
+    collator = LangSliceCollator(processor=StubProcessor(), max_seq_length=4096)
+    full_input_ids = torch.tensor([999, 999, 999])  # nothing matches
+    with pytest.raises(RuntimeError, match="could not locate assistant turn"):
+        collator._manual_span_mask(example, full_input_ids)
+
+
+def test_sanity_check_passes_when_no_image_tokens_in_labels():
+    """No labels positions match the image-token ids → no error."""
+    IMAGE_ID = 999
+
+    class StubTokenizer:
+        unk_token_id = 0
+        pad_token_id = 0
+
+        def convert_tokens_to_ids(self, name):
+            return IMAGE_ID if name == "<image_soft_token>" else 0
+
+    class StubProcessor:
+        tokenizer = StubTokenizer()
+
+    collator = LangSliceCollator(processor=StubProcessor(), max_seq_length=4096)
+    # ids has no IMAGE_ID; labels keeps a few positions (not -100). Should pass.
+    ids = torch.tensor([1, 2, 3, 4, 5])
+    labels = torch.tensor([-100, -100, 3, 4, -100])
+    collator._sanity_check_no_image_tokens_in_labels(ids, labels)  # no raise
+
+
+def test_sanity_check_raises_when_image_token_in_kept_labels():
+    """A kept (non -100) label position with the image-token id → raise."""
+    IMAGE_ID = 999
+
+    class StubTokenizer:
+        unk_token_id = 0
+        pad_token_id = 0
+
+        def convert_tokens_to_ids(self, name):
+            return IMAGE_ID if name == "<image_soft_token>" else 0
+
+    class StubProcessor:
+        tokenizer = StubTokenizer()
+
+    collator = LangSliceCollator(processor=StubProcessor(), max_seq_length=4096)
+    ids = torch.tensor([1, 2, IMAGE_ID, 4, 5])
+    labels = torch.tensor([-100, -100, IMAGE_ID, -100, -100])
+    with pytest.raises(RuntimeError, match="keeping image-token positions"):
+        collator._sanity_check_no_image_tokens_in_labels(ids, labels)
+
+
+def test_sanity_check_warns_when_no_candidate_resolves():
+    """If no candidate name resolves (or all UNK), warn but don't raise."""
+
+    class StubTokenizer:
+        unk_token_id = 3
+        pad_token_id = 0
+
+        def convert_tokens_to_ids(self, name):
+            return self.unk_token_id  # all candidates → UNK
+
+    class StubProcessor:
+        tokenizer = StubTokenizer()
+
+    collator = LangSliceCollator(processor=StubProcessor(), max_seq_length=4096)
+    ids = torch.tensor([1, 2, 3, 4, 5])
+    labels = torch.tensor([-100, -100, 3, 4, -100])
+    with pytest.warns(UserWarning, match="image-token sanity check disabled"):
+        collator._sanity_check_no_image_tokens_in_labels(ids, labels)
