@@ -8,6 +8,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+EVAL_USER_PROMPT_TEXT = "Estimate the position of this slice."
+"""Default user prompt for eval-time generation when no Example carries one.
+
+The renderer uses Example.user_prompt_text per row at training time. This
+constant is what the eval callback uses for held-out evaluation, where
+there is no source Example. Production data-distillation must emit
+matching text in trace JSONL or the eval-train distribution drifts.
+"""
+
 
 class DatasetValidationError(ValueError):
     """Raised when a JSONL row fails schema validation."""

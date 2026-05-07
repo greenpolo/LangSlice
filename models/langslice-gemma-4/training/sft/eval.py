@@ -15,12 +15,19 @@ from transformers import TrainerCallback
 # Make the rlvr package importable from the SFT package when this module is
 # loaded outside pytest (driver script invocation).
 _TRAINING_ROOT = Path(__file__).resolve().parents[1]
+assert _TRAINING_ROOT.name == "training", _TRAINING_ROOT
 if str(_TRAINING_ROOT) not in sys.path:
     sys.path.insert(0, str(_TRAINING_ROOT))
 
-# Renderer helpers — imported into module namespace so eval-callback tests can
-# monkeypatch ``AtlasMetaCache`` (the agent-loop helper constructs one inline).
-from sft.render import AtlasMetaCache, build_system_prompt, build_tools_schema
+# Renderer helpers — reused for system-prompt construction, tool schema, and
+# safe image hydration (file-handle-leak-free convert+copy).
+from sft.dataset import EVAL_USER_PROMPT_TEXT  # noqa: E402
+from sft.render import (  # noqa: E402
+    AtlasMetaCache,
+    build_system_prompt,
+    build_tools_schema,
+    hydrate_image,
+)
 
 if TYPE_CHECKING:
     from rlvr.env import LangSliceEstimateEnv  # noqa: F401
@@ -125,7 +132,8 @@ def _load_test_images_with_truth(test_images_root: Path) -> list[dict[str, Any]]
         for image_filename, meta in gt.items():
             image_path = sub / image_filename
             if not image_path.is_file():
-                continue  # skip missing files
+                logger.warning("missing test image: %s", image_path)
+                continue
             rows.append({
                 "subject_id": sub.name,
                 "image_path": image_path,
@@ -171,20 +179,21 @@ def _run_agent_loop_for_one(
     processor: Any,
     eval_row: dict[str, Any],
     atlas_grid: Any,
+    atlas_meta_cache: AtlasMetaCache,
     max_turns: int = 16,
 ) -> EvalRun:
     """Run the SFT model through the agent loop on one eval row, return EvalRun.
 
     Reuses LangSliceEstimateEnv (RLVR scaffolding) for tool execution.
     """
-    from PIL import Image
     from rlvr.env import LangSliceEstimateEnv
 
     env = LangSliceEstimateEnv(atlas_grid=atlas_grid)
-    query_image = Image.open(eval_row["image_path"]).convert("RGB")
+    image_path = eval_row["image_path"]
+    query_image = hydrate_image(image_path.name, image_path.parent)
     system_prompt_kind = "single_slice"
     truth = [eval_row["ground_truth_position_mm"]]
-    cache = AtlasMetaCache()
+    cache = atlas_meta_cache
     system_prompt = build_system_prompt(
         kind=system_prompt_kind,
         atlas_name=eval_row["atlas_name"],
@@ -197,7 +206,7 @@ def _run_agent_loop_for_one(
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": [
             {"type": "image", "image": query_image},
-            {"type": "text", "text": "Estimate the position of this slice."},
+            {"type": "text", "text": EVAL_USER_PROMPT_TEXT},
         ]},
     ]
     env.reset(
@@ -216,6 +225,8 @@ def _run_agent_loop_for_one(
     predicted: list[float] | None = None
     for _ in range(max_turns):
         n_turns += 1
+        # add_generation_prompt=True for inference; collate.py uses False because
+        # labels span the full assistant turn (the prompt prefix is part of the loss).
         gen_out = model.generate(
             **processor.apply_chat_template(
                 messages,
@@ -273,6 +284,8 @@ class _AgentLoopEvalBase(TrainerCallback):
         self.processor = processor
         self.atlas_grid = atlas_grid
         self.test_rows = _load_test_images_with_truth(test_images_root)
+        # Construct ONE cache per training run (see render.py:AtlasMetaCache docs).
+        self.atlas_meta_cache = AtlasMetaCache()
         self.log_prefix = log_prefix
 
     def _run(self, model: Any, step: int) -> dict[str, float]:
@@ -285,6 +298,7 @@ class _AgentLoopEvalBase(TrainerCallback):
                         processor=self.processor,
                         eval_row=row,
                         atlas_grid=self.atlas_grid,
+                        atlas_meta_cache=self.atlas_meta_cache,
                     )
                 )
             except Exception:
