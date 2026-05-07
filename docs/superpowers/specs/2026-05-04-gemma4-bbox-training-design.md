@@ -66,6 +66,8 @@ Fallback when real coverage is thin or absent. Reuses the existing `synth_datase
 
 Each example renders all N sections at the same modality and mode, varying only position along the chosen axis. This keeps the morphology-across-position signal isolated from modality variation.
 
+**Geometric augmentation is disabled for the bbox bucket** (`SynthSpec.apply_geometry_warp = False`). Bboxes are computed from the unwarped atlas annotation slice, so any pixel-displacing transform on the rendered image (`BladeStretchHorizontal`, `AffineJitter`, `Folds`, `Tears`, `Microbubbles`) would desynchronize the saved image from its label. Non-coord realism transforms (`IlluminationGradient`, `EmbeddingHalos`, `Debris`, `ResolutionShift`, plus all tonal/texture stages) still run. Geometric robustness is taught through other SFT buckets, where the target is not a coordinate.
+
 ### 4.3 Reference grayscale atlas
 
 Plain BrainGlobe reference volume slice for the chosen atlas, plane, and position — no augmentation. Useful as a "modality-neutral" anchor for vocabulary that should generalize across stains.
@@ -106,6 +108,8 @@ Two backends in `models/langslice-gemma-4/data/region_bbox.py`:
 ### 6.1 Atlas-slice path
 
 `SynthIterator.__next__()` returns `(image, metadata)`. The annotation slice for bbox computation comes from `get_oblique_slice()`, which returns `(ref_u8, ann_i32)`. For each pixel where `ann_i32 ∈ region_ids`, take min/max → bbox. For coronal/horizontal whole-brain atlas-path bboxes, split left/right using the BrainGlobe `atlas.hemispheres` annotation volume projected into the same slice frame; do not use an `image_width // 2` heuristic. Coverage gate: total qualifying pixels (both sides combined) must be ≥1% and ≤40% of image area, else the bbox is reported as failed.
+
+**Dense-core fallback.** When a per-hemisphere bbox would cover more than 10% of the image area, the mask is progressively eroded (`scipy.ndimage.binary_erosion`) and the bbox is taken from the largest connected component, repeating until either the bbox shrinks below 8% of image area or further erosion would empty the mask. This auto-tightens bboxes for thin sprawling regions (e.g. corpus callosum body, posterior hippocampal crescent) without requiring per-region landmark surgery. The 10% trigger / 8% target / 30-iteration cap are constants in `region_bbox.py`. Empirically: HPF (mouse) full-bbox 45% → dense-core 6%; HF (rat) full-bbox 21% → dense-core 9%.
 
 Bbox failure on any required side (both sides for whole-brain coronal/horizontal; single side for sagittal/hemisphere) causes the assembler to drop the entire example, not just the offending section. Examples never reach the draft manifest with null bboxes.
 

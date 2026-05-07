@@ -1,8 +1,8 @@
 ---
 title: Gemma 4 E4B — SFT Training Code Design
 date: 2026-05-05
-scope: Supervised fine-tuning training code for the langslice-gemma-4 model. Consumes the SFT corpus produced by separate data sessions (single bucket — agent traces); produces a LoRA adapter that feeds the RLVR phase via `train_grpo.py --sft-model`.
-status: design v1.3 — langslice-native trace format; renderer owns HF translation
+scope: Supervised fine-tuning training code for the langslice-gemma-4 model. Consumes the SFT corpus produced by separate data sessions (single-slice agent traces only); produces a LoRA adapter that feeds the RLVR phase via `train_grpo.py --sft-model`.
+status: design v1.4 — single-slice only; langslice-native trace format; renderer owns HF translation
 ---
 
 # Gemma 4 E4B — SFT Training Code Design
@@ -29,13 +29,14 @@ Out of scope:
 - SFT data generation. Separate sessions; this spec only defines the consumer contract.
 - SliceBench eval rig. Separate work; this spec only confirms the trained adapter loads into it.
 - Vision-tower fine-tuning. Deferred per RLVR spec §12.
+- Multi-slice/group SFT. Cut from v1 for schedule. SFT and the pre-RLVR gate train/evaluate single-slice traces only; RLVR may still have group-capable code, but this pipeline does not exercise it.
 - Anatomy-grounding buckets (landmark listing, bbox grounding, multi-slice morphology). Cut from v1 due to schedule; see §3.
 
 ## 3. Bucket revision (since 2026-04-25 SFT data spec)
 
-The 2026-04-25 SFT data spec (`docs/superpowers/specs/2026-04-25-gemma4-sft-data-design.md`) described five buckets — agent traces, landmark listing, bbox grounding, multi-slice morphology, programmatic skeletons. v1 collapses to **a single bucket: agent loop traces** distilled from Gemini 3.1 Pro running the production estimation agent loop. This teaches tool format and final-position output, which is the only training signal directly tied to the deployment task.
+The 2026-04-25 SFT data spec (`docs/superpowers/specs/2026-04-25-gemma4-sft-data-design.md`) described five buckets — agent traces, landmark listing, bbox grounding, multi-slice morphology, programmatic skeletons. v1 collapses to **a single bucket: single-slice agent loop traces** distilled from Gemini 3.1 Pro running the production estimation agent loop. This teaches tool format and final-position output, which is the only training signal directly tied to the deployment task.
 
-Anatomy-grounding buckets (landmark listing, bbox grounding, multi-slice morphology) and programmatic skeletons are deferred entirely. They remain options if v1 SFT under-performs post-RLVR — but the data-collection cost was judged not worth the schedule hit before the 2026-05-18 hackathon deadline.
+Group traces, anatomy-grounding buckets (landmark listing, bbox grounding, multi-slice morphology), and programmatic skeletons are deferred entirely. They remain options if v1 SFT under-performs post-RLVR — but the data-collection cost was judged not worth the schedule hit before the 2026-05-18 hackathon deadline.
 
 This revision supersedes §5–§5.4 of the 2026-04-25 SFT data spec for the v1 implementation. The earlier spec's content remains relevant if scope is later expanded.
 
@@ -62,8 +63,9 @@ models/langslice-gemma-4/training/
   configs/
     sft_default.toml    — hyperparameters
   rlvr/                 — (existing, untouched)
-requirements-rlvr.txt   — extended in place; no new requirements file
 ```
+
+Shared dependency pins live at repo root in `requirements-rlvr.txt`; there is no training-local requirements file.
 
 ## 6. Data contract (JSONL)
 
@@ -104,7 +106,8 @@ The renderer (`render.py`) translates each trace into HuggingFace chat-template 
     },
     {
       "submit": {"name": "submit_estimate",
-                 "args": {"position_mm": 5.2}}
+                 "args": {"position_mm": 5.2,
+                          "reasoning": "Best match after broad and narrow atlas comparison."}}
     }
   ],
   "gemini_reasoning": "<optional, ignored unless include_rationale=true>"
@@ -118,9 +121,11 @@ Notes on the schema:
   - A terminal `submit` step. Must be the last entry in `trace`.
 - **`tool_call.name`** is the production tool name (`fetch_atlas`). **`tool_call.args`** is the arg dict in production shape (`positions_mm: list[float]` etc.) — same as what `langslice_harness.harness.estimation.tools` defines.
 - **`tool_result.image_paths`** are paths relative to the dataset JSONL's parent directory. **`tool_result.text`** is the human-readable string the production tool returns to the model (e.g. `"Atlas at 3.00 mm | 5.00 mm"`).
-- **`submit.name`** is `submit_estimate` (single-slice) or `submit_group_estimate` (group). **`submit.args`** matches the production tool's arg dict: `{"position_mm": <float>}` for single, `{"positions_mm": [<float>, ...]}` for group.
-- **`query_image_paths`** is a list (length 1 for single-slice, N for group). The user turn shows all of them in order.
+- **`submit.name`** is always `submit_estimate` in v1. **`submit.args`** matches the production tool's arg dict: `{"position_mm": <float>, "reasoning": <str>}`. `reasoning` is required because both `src/langslice_harness/harness/estimation/tools.py` and `models/langslice-gemma-4/training/rlvr/env.py` require it.
+- **`query_image_paths`** is a list of length 1 in v1. The user turn shows that image before the prompt text.
 - **`user_prompt_text`** captures the exact user-message text the production loop sent — same source the data session distilled from.
+- **Group-only fields** (`interval_mm`, `thickness_um`) are not accepted in v1. They can return with a group-trace v2, but the current trainer rejects them to keep the SFT/RLVR handoff single-slice clean.
+- **Atlas-derived fields are NOT stored** (`pos_lo`, `pos_hi`, `species`). The renderer looks these up from `atlas_name` via `langslice_harness.atlas.core.load_atlas`; results cached per-atlas to avoid reloading the volume per example.
 - **System prompt and tool-schemas are NOT stored in the JSONL.** The renderer pulls the system prompt from `src/langslice_harness/harness/estimation/prompts.py` (via `system_prompt_kind`) and the tool-schemas from `src/langslice_harness/harness/estimation/tools.py`. Production code stays the single source of truth; stale copies in distilled traces can't drift.
 - **`bucket`** is fixed at `1` in v1, retained as a discriminator field so future buckets can be added without schema migration.
 
@@ -130,12 +135,13 @@ Notes on the schema:
 
 - Required fields present per schema; `bucket == 1`.
 - `subject_id` non-empty (subject-level holdout integrity).
-- `system_prompt_kind ∈ {"single_slice", "group"}`.
-- `query_image_paths` non-empty; for `single_slice` exactly length 1.
+- `system_prompt_kind == "single_slice"`.
+- `query_image_paths` has exactly one entry.
+- `interval_mm` and `thickness_um` are absent.
 - `trace` non-empty; final entry is a `submit` step; all preceding entries are `tool_call` + `tool_result` pairs.
-- Final `submit.name` matches `system_prompt_kind` (`submit_estimate` for single, `submit_group_estimate` for group).
-- For group: `submit.args.positions_mm` length equals `query_image_paths` length.
-- Every `image_paths` entry resolves on disk relative to the JSONL parent.
+- Final `submit.name == "submit_estimate"`.
+- Final `submit.args.position_mm` is numeric and `submit.args.reasoning` is a non-empty string.
+- Every `query_image_paths` and `tool_result.image_paths` entry resolves on disk relative to the JSONL parent.
 
 Malformed rows raise a clear error citing line number and the specific failure. No silent skipping.
 
@@ -156,9 +162,9 @@ Output: a dict ready for the processor — `{"messages": [...], "tools": [...], 
 
 Steps:
 
-1. **System prompt.** Load from `src/langslice_harness/harness/estimation/prompts.py:build_single_slice_prompt` or `build_group_prompt` per `system_prompt_kind`. Emit `{"role": "system", "content": <prompt>}` as the first message.
-2. **Tools schema.** Construct the HF `tools` list from `src/langslice_harness/harness/estimation/tools.py`. For `single_slice`: `[fetch_atlas, submit_estimate]`. For `group`: `[fetch_atlas, submit_group_estimate]`. Each tool entry follows the HF function-schema shape (`{"type": "function", "function": {"name": ..., "description": ..., "parameters": <JSON schema>}}`). Built once and threaded into `apply_chat_template(..., tools=tools)`.
-3. **User turn.** Emit one `user` message containing every `query_image_paths` entry as `{"type": "image", "image": <PIL>}` content blocks (image-before-text per Gemma 4's chat-template rule), followed by `{"type": "text", "text": <user_prompt_text>}`.
+1. **System prompt.** Load from `src/langslice_harness/harness/estimation/prompts.py:build_single_slice_prompt`. Emit `{"role": "system", "content": <prompt>}` as the first message.
+2. **Tools schema.** Construct the HF `tools` list from `src/langslice_harness/harness/estimation/tools.py`: `[fetch_atlas, submit_estimate]`. The `submit_estimate` schema requires both `position_mm` and `reasoning`. Each tool entry follows the HF function-schema shape (`{"type": "function", "function": {"name": ..., "description": ..., "parameters": <JSON schema>}}`). Built once and threaded into `apply_chat_template(..., tools=tools)`.
+3. **User turn.** Emit one `user` message containing the single `query_image_paths` entry as `{"type": "image", "image": <PIL>}` content block (image-before-text per Gemma 4's chat-template rule), followed by `{"type": "text", "text": <user_prompt_text>}`.
 4. **Trace translation.** For each `trace[i]` entry:
    - If it has `tool_call` + `tool_result`:
      - Generate a deterministic `tool_call_id` (e.g. `f"call_{i}"`).
@@ -195,7 +201,7 @@ TRL's `assistant_only_loss=True` (the standard "train on responses only" flag) d
 CLI:
 
 ```bash
-python -m models.langslice-gemma-4.training.sft.train_sft \
+cd models/langslice-gemma-4/training && python -m sft.train_sft \
     --config models/langslice-gemma-4/training/configs/sft_default.toml \
     --dataset models/langslice-gemma-4/data/sft_examples.jsonl \
     --output-dir out/sft/run0 \
@@ -212,7 +218,7 @@ Flow:
 6. Construct `SFTTrainer` (TRL) with:
    - `model` = the LoRA-wrapped `PeftModel` from step 4. **No `peft_config` argument.**
    - `processing_class` = `processor` returned by `FastVisionModel.from_pretrained`.
-   - `args` = `SFTConfig(output_dir, num_train_epochs, learning_rate, …)` populated from `[sft]` table. **`assistant_only_loss=False`** (the helper does not support VLMs; we mask manually in the collator).
+   - `args` = `SFTConfig(output_dir, num_train_epochs, learning_rate, max_length=None, …)` populated from `[sft]` table. **`assistant_only_loss=False`** (the helper does not support VLMs; we mask manually in the collator). Keep `max_seq_length` for Unsloth model loading and the custom collator's explicit over-length rejection, not as an `SFTConfig` field.
    - `data_collator` = the custom collator from `collate.py` (sets `labels = -100` outside assistant turns).
    - `train_dataset` / `eval_dataset` = the `RenderedDataset` partitions.
 7. Register a `BaselineEvalCallback` that runs **once before training** with the base model only (no adapter active): produces `position_mae_mm` and `tool_call_parseability_rate` on `references/TestImages/M0[1-9]/`. This baseline goes into trackio so post-training numbers are anchored to "did SFT actually move the needle?" instead of an absolute number with no reference point.
@@ -229,7 +235,7 @@ Logging: every step → trackio (loss, lr, gradient norm). Adapter saved to `--o
 
 ```toml
 [sft]
-base_model = "unsloth/gemma-4-e4b-it"   # verify exact ID via Unsloth docs before commit
+base_model = "unsloth/gemma-4-E4B-it"
 load_in_4bit = true
 max_seq_length = 16384                  # multi-turn + multi-image traces blow past 4K easily
 num_train_epochs = 3
@@ -267,7 +273,7 @@ Notes on defaults:
 - `num_train_epochs = 3` is generous for a small corpus. Drop to 1 if loss plateaus at epoch 1; bump to 5 if still falling at epoch 3.
 - `learning_rate = 2e-4` is the standard QLoRA starting point. Lower to 1e-4 if loss is too noisy.
 - `per_device_train_batch_size = 1` + `gradient_accumulation_steps = 8` → effective batch size 8. Higher per-device batch likely OOMs on 5090 with 4-bit E4B and image tokens.
-- `max_seq_length = 16384` accounts for ~6–10 atlas-return turns × 3 images each at typical Gemma 4 image-token expansion rates, plus tool-call text. **Verify against Gemma 4 E4B's actual context window during implementation** — if the model maxes out at 8K, raise `agent_eval_steps` and reduce dataset diversity to fit; if it supports 32K+, raising further is cheap with gradient checkpointing.
+- `max_seq_length = 16384` accounts for ~6–10 atlas-return turns × 3 images each at typical Gemma 4 image-token expansion rates, plus tool-call text. It is passed to `FastVisionModel.from_pretrained` and the custom collator. `SFTConfig.max_length` stays `None` so TRL does not truncate VLM examples and drop image tokens.
 
 ## 10. Evaluation
 
@@ -300,12 +306,12 @@ SliceBench (in development separately) — apples-to-apples against Flash and Pr
 
 ## 11. Verification
 
-- `tests/test_sft_render.py` — canned single-slice and group langslice-native traces → verify the renderer's translation to HF chat-template format: system prompt prepended from `prompts.py`, `tools` schema sourced from `tools.py`, image paths hydrated to PIL, `tool_call_id` pairing generated correctly between assistant and tool turns, JSON-stringified `arguments` round-trips, terminal submit's function name matches `system_prompt_kind`.
+- `tests/test_sft_render.py` — canned single-slice langslice-native traces → verify the renderer's translation to HF chat-template format: system prompt prepended from `prompts.py`, `tools` schema sourced from `tools.py`, image paths hydrated to PIL, `tool_call_id` pairing generated correctly between assistant and tool turns, JSON-stringified `arguments` round-trips, terminal submit's function name is `submit_estimate`, and submit args include required `reasoning`.
 - `tests/test_sft_dataset.py` — tiny canned JSONL → verify schema validation errors are clear and line-attributed; verify subject-aware 90/10 split has no `subject_id` leakage.
 - `tests/test_sft_collate.py` — fake batch of two examples through the actual processor → assert `labels` is `-100` on every system/user/tool/image-placeholder token and equals `input_ids` on every assistant token. Includes the §7.2 step-3 sanity check (no labels on image-placeholder token IDs).
 - **Smoke run (manual):** synthetic 100-row JSONL, 50 optimizer steps, `save_steps=25` → loss decreases, no OOM on 5090, checkpoint saves and reloads, tokenizer/processor are saved alongside the adapter.
-- **Inference smoke (manual):** load saved adapter via `FastVisionModel.from_pretrained(<adapter_dir>)` (or the equivalent base-model + `PeftModel.from_pretrained` two-step if Unsloth's loader doesn't auto-detect adapter dirs); run on `M01_001_001.tif` → produces a parseable `submit_estimate` call. Accuracy not asserted here; the only thing tested is wire compatibility.
-- **RLVR handoff:** run `rlvr/train_grpo.py` smoke with `--sft-model out/sft/run0` → loads without error, env unit tests pass, 10-rollout no-optimizer smoke completes. **If the load path fails** (likely if `train_grpo.py:121` calls `FastVisionModel.from_pretrained` directly on an adapter directory without base-model context), update RLVR's loader to do the explicit base + adapter load, or have SFT also save a merged-but-quantized variant alongside the adapter. The handoff convention should be pinned in code on the SFT side and verified by this smoke run.
+- **Inference smoke (manual):** load the saved adapter by reading `adapter_config.json`, loading `base_model_name_or_path` with `FastVisionModel.from_pretrained`, and attaching the adapter with `PeftModel.from_pretrained`; run on `M01_001_001.tif` → produces a parseable `submit_estimate` call. Accuracy not asserted here; the only thing tested is wire compatibility.
+- **RLVR handoff:** run `rlvr/train_grpo.py` smoke with `--sft-model out/sft/run0` → loads without error, env unit tests pass, 10-rollout no-optimizer smoke completes. RLVR now detects SFT adapter directories via `adapter_config.json`, loads the recorded base model, and attaches the SFT adapter as trainable weights before GRPO.
 - **Pre-RLVR gate:** run the agent-loop eval (§10.2) on the saved adapter → confirm `tool_call_parseability_rate >= 0.80` before considering SFT done.
 - **Existing harness regression:** `python -m pytest tests/` clean.
 - **Lint / type:** `python -m ruff check models/langslice-gemma-4/training/sft/` clean; `python -m basedpyright models/langslice-gemma-4/training/sft/` clean.
@@ -314,16 +320,16 @@ SliceBench (in development separately) — apples-to-apples against Flash and Pr
 
 - **Unsloth VLM SFT API surface.** Library moves fast; verify exact method names + argument shapes via Context7 before writing code (per memory note `feedback_verify_third_party_docs`). The implementation plan opens with this verification step.
 - **Chat-template assistant-mask reliability for VLM tool traces.** `processor.apply_chat_template(..., return_assistant_tokens_mask=True)` is the load-bearing mechanism in §7.2. If Gemma 4's chat template does not implement the `{% generation %}{% endgeneration %}` markers correctly around tool-call output, the mask will be wrong and the manual-span fallback in collate.py kicks in. The implementation plan's first step verifies the template *and* the mask round-trip on a canned trace before any optimizer step.
-- **LoRA adapter handoff to RLVR.** RLVR's `train_grpo.py:121` calls `FastVisionModel.from_pretrained(args.sft_model, ...)`. Whether this method auto-detects an adapter directory and loads it on top of the base model — versus requiring a `PeftModel.from_pretrained` second step — needs verification. If it doesn't auto-detect, the SFT save step writes both an adapter directory and a small `adapter_config.json` that points at the base model, and RLVR's loader is updated to do the explicit two-step load. Verified by the §11 RLVR-handoff smoke run.
+- **LoRA adapter handoff to RLVR.** SFT saves a normal PEFT adapter directory with `adapter_config.json`. RLVR explicitly handles that format by loading `base_model_name_or_path` first and then attaching the SFT adapter with `PeftModel.from_pretrained(..., is_trainable=True)`. Verified by `tests/test_rlvr_env.py::test_sft_adapter_model_loads_base_then_attaches_trainable_adapter` and the §11 RLVR-handoff smoke run.
 - **Subject-level holdout integrity.** If `subject_id` is missing or malformed in the data sessions' JSONL, holdout becomes useless. `dataset.py` validation must reject any row with empty `subject_id`.
 - **Atlas-version drift.** Different atlas versions (e.g. Allen CCFv2 vs CCFv3) have different mm origins. Data sessions stamp `atlas_version` per row; trainer trusts the data sessions and does not currently enforce same-version-only.
-- **Sequence-length budget.** `max_seq_length = 16384` is the default; multi-turn multi-image traces may still overflow if the corpus contains long trajectories. Truncating mid-trace silently drops images or assistant turns and produces meaningless training signal. The collator must reject (with a clear error) any rendered example exceeding `max_seq_length` rather than silently truncating.
+- **Sequence-length budget.** `max_seq_length = 16384` is the default; long multi-turn single-slice traces may still overflow. Truncating mid-trace silently drops images or assistant turns and produces meaningless training signal. `SFTConfig.max_length` must remain `None`; the collator must reject (with a clear error) any rendered example exceeding `max_seq_length` rather than silently truncating.
 - **Training-time agent-loop eval cost.** ~5–10 min per pass at default cadence × baseline + every 200 steps. Can dominate wall-clock for short runs. Mitigation: raise `agent_eval_steps` to 400+ or downsample to 3 of M0[1-9].
 - **Single-bucket coverage gap and parseability risk.** Without anatomy-grounding buckets *or* programmatic-skeleton coverage, the SFT corpus's only signal for tool format is whatever Gemini-distilled traces emit. If the parseability gate (§10.3) fails, the cheapest remediation is the deferred programmatic-skeletons bucket from the original spec — format-correct by construction, no LLM required to generate. **Keep that bucket spec-ready as a fallback even though it's cut from v1.**
 
 ## 13. Reuse pointers
 
-- `src/langslice_harness/harness/estimation/prompts.py` — single-slice + group system prompts, used verbatim.
+- `src/langslice_harness/harness/estimation/prompts.py` — single-slice system prompt, used verbatim.
 - `src/langslice_harness/harness/estimation/tools.py` — tool-name and arg signatures the renderer must produce.
 - `src/langslice_harness/atlas/` — slice helpers (used by agent-loop eval callback to render comparison images).
 - `references/TestImages/M0[1-9]/ground_truth.json` — ground-truth labels for the agent-loop eval callback.
@@ -345,12 +351,14 @@ Delete the following stubs flagged in `2026-05-04-gemma4-rlvr-training-design.md
 | SFT JSONL corpus (single bucket — agent traces) | Data sessions | Real training | Renderer + dataset code can be built and unit-tested without it (canned fixtures suffice). |
 | Gemma 4 E4B chat template + instruct-masking verification | Implementation | Real training | Must confirm tokenizer applies `enable_thinking=false` correctly and that loss masking aligns to assistant-turn token spans in the multimodal case. |
 | `prompts.py` + `tools.py` | Already in tree | Real training | Production prompts; renderer imports rather than duplicates. |
-| RLVR scaffold | Already in tree | Handoff verification | Integrates via `--sft-model`. May require a small change to `train_grpo.py`'s loader to do explicit base-model + adapter load if `FastVisionModel.from_pretrained` doesn't auto-detect adapter directories. Verified by `tests/test_sft_handoff.py`. |
+| RLVR scaffold | Already in tree | Handoff verification | Integrates via `--sft-model`. Adapter-directory handoff is implemented in `train_grpo.py` and covered by `tests/test_rlvr_env.py::test_sft_adapter_model_loads_base_then_attaches_trainable_adapter`. |
 | `references/TestImages/M0[1-9]` | Already in tree | Agent-loop eval callback | M01–M09 already labeled. |
 
 ## 16. Status
 
-Design v1.3.
+Design v1.4.
+
+**Diff vs v1.3** (this revision): SFT scope is now single-slice only. Group traces and group fixture/test tasks are deferred. Terminal `submit_estimate` args now require both `position_mm` and `reasoning`, matching production and RLVR env signatures. Corrected the default model ID to `unsloth/gemma-4-E4B-it`. Clarified that `SFTConfig.max_length` stays `None` for VLM safety while `max_seq_length` is used only by Unsloth loading and the custom collator's reject-on-overflow check. Validation now explicitly checks query and atlas image paths at JSONL load time.
 
 **Diff vs v1.2** (this revision): Data contract reverted from HF chat-template format back to a langslice-native trace format (§6) that mirrors the production agent loop's natural `tool_call → tool_result → ... → submit` shape. The HF translation moves into the renderer (§7.1) where it belongs. Data sessions emit a clean, readable trace; chat-template ceremony stays inside the trainer. Codex's structural concerns from v1.2 (`tool_call_id` pairing, content-block structure, `tools` schema) are still addressed — they're now generated by the renderer rather than carried in the JSONL.
 
