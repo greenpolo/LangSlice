@@ -7,9 +7,17 @@
     "allen_mouse_25um": {"acronym": "act", "include_descendants": false},
     "whs_sd_rat_39um": {"acronym": "ac", "include_descendants": true}
   },
-  "Corpus Callosum": {
-    "allen_mouse_25um": {"acronym": "cc", "include_descendants": true},
-    "whs_sd_rat_39um": {"acronym": "cc-ec-cing-dwm", "include_descendants": false}
+  "Corpus Callosum - Genu": {
+    "allen_mouse_25um": {"acronym": "ccg", "include_descendants": false},
+    "whs_sd_rat_39um": null
+  },
+  "Corpus Callosum - Body": {
+    "allen_mouse_25um": {"acronym": "ccb", "include_descendants": false},
+    "whs_sd_rat_39um": null
+  },
+  "Corpus Callosum - Splenium": {
+    "allen_mouse_25um": {"acronym": "ccs", "include_descendants": false},
+    "whs_sd_rat_39um": null
   },
   "Major Island of Calleja": {
     "allen_mouse_25um": null,

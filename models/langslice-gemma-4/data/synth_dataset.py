@@ -74,6 +74,7 @@ class SynthSpec:
     damage_intensity: str
     apply_damage: bool
     seed: int
+    apply_geometry_warp: bool = True
 
 
 def _coerce_weight_mapping(
@@ -242,6 +243,9 @@ def _render_from_slices(
             pixel_size_um=pixel_size_um,
             apply_damage=spec.apply_damage,
             damage_intensity=spec.damage_intensity,
+            apply_geometry_warp=spec.apply_geometry_warp,
+            plane=spec.plane,
+            position_mm=spec.position_mm,
         )
 
     if spec.modality == "nissl":
@@ -254,6 +258,9 @@ def _render_from_slices(
             cream_base=None,
             apply_damage=spec.apply_damage,
             damage_intensity=spec.damage_intensity,
+            apply_geometry_warp=spec.apply_geometry_warp,
+            plane=spec.plane,
+            position_mm=spec.position_mm,
         )
 
     if spec.modality == "brightfield":
@@ -268,6 +275,9 @@ def _render_from_slices(
             counterstain=counterstain,
             apply_damage=spec.apply_damage,
             damage_intensity=spec.damage_intensity,
+            apply_geometry_warp=spec.apply_geometry_warp,
+            plane=spec.plane,
+            position_mm=spec.position_mm,
         )
 
     if spec.modality == "fluorescence":
@@ -286,6 +296,9 @@ def _render_from_slices(
             mode=mode,
             apply_damage=spec.apply_damage,
             damage_intensity=spec.damage_intensity,
+            apply_geometry_warp=spec.apply_geometry_warp,
+            plane=spec.plane,
+            position_mm=spec.position_mm,
         )
 
     if spec.modality == "ish":
@@ -304,6 +317,9 @@ def _render_from_slices(
             mode=mode,
             apply_damage=spec.apply_damage,
             damage_intensity=spec.damage_intensity,
+            apply_geometry_warp=spec.apply_geometry_warp,
+            plane=spec.plane,
+            position_mm=spec.position_mm,
         )
 
     raise ValueError(f"Unsupported modality {spec.modality!r}")

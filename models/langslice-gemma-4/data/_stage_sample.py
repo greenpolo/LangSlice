@@ -86,7 +86,9 @@ def _render_example_atlas(
 
     section_paths: list[str] = []
     bboxes: list[Any] = []
-    is_hemisphere = False  # whole-brain by default for atlas rendering
+    # Sagittal sections show a single hemisphere; the bbox is one rectangle.
+    # Coronal and horizontal sections show both hemispheres; bbox is left/right.
+    is_hemisphere = orientation == "sagittal"
 
     positions_mm = [
         anchor_mm + sum(spacings_mm[:k])
@@ -102,6 +104,11 @@ def _render_example_atlas(
             )
             object.__setattr__(spec, "plane", orientation)
             object.__setattr__(spec, "position_mm", pos_mm)
+            # Bbox is computed from the unwarped annotation slice; disable
+            # pixel-displacing geometry transforms so the saved image stays
+            # coord-aligned with the bbox. Non-coord realism (illumination,
+            # halos, debris, resolution-shift, tonal/texture) still runs.
+            object.__setattr__(spec, "apply_geometry_warp", False)
             image_f32, _ = render(spec)
             modality = spec.modality
         else:
@@ -135,7 +142,10 @@ def _render_example_atlas(
         section_dir.mkdir(parents=True, exist_ok=True)
         section_path = section_dir / f"section_{k:02d}.png"
         Image.fromarray(np.clip(image_f32 * 255.0, 0, 255).astype(np.uint8)).save(section_path)
-        section_paths.append(str(section_path.relative_to(REPO_ROOT)))
+        try:
+            section_paths.append(str(section_path.resolve().relative_to(REPO_ROOT)))
+        except ValueError:
+            section_paths.append(str(section_path))
 
     atlas_version = (atlas.metadata or {}).get("version") or "unknown"
     return {
@@ -417,6 +427,11 @@ def run_stage_sample(args: argparse.Namespace) -> int:
         return 1
 
     target_per_tuple = max(1, args.target_total // len(viable))
+    # Per-tuple attempt budget. Floor of 20 ensures every viable tuple gets a
+    # fair shot at producing at least one example even when --target-total is
+    # close to len(viable) (so target_per_tuple=1 and the naive cap of 5 may
+    # exhaust before coverage-gate-friendly anchors are sampled).
+    attempt_budget = max(20, target_per_tuple * 5)
 
     records: list[dict] = []
     next_id = 0
@@ -427,9 +442,28 @@ def run_stage_sample(args: argparse.Namespace) -> int:
         if extent is None:
             continue
         rmin, rmax = extent
+        # Drop corpus-callosum coronal positions where hippocampus has appeared.
+        # CC body wings out laterally where HC is present, so the bbox would
+        # be visually conflated with the HC C-shape.
+        if (
+            orientation == "coronal"
+            and landmark.startswith("Corpus Callosum")
+        ):
+            hc_ids = loader.resolve("Ammon's Horn", atlas, atlas_name) or set()
+            if hc_ids:
+                hc_extent = _region_mm_extent(atlas, "coronal", hc_ids)
+                if hc_extent is not None:
+                    # Cap CC sampling at HC start (50 µm safety buffer).
+                    rmax = min(rmax, hc_extent[0] - 0.05)
+                    if rmax <= rmin:
+                        log.info(
+                            "skipping %s %s %s — fully posterior of HC start",
+                            atlas_name, orientation, landmark,
+                        )
+                        continue
         produced = 0
         attempts = 0
-        while produced < target_per_tuple and attempts < target_per_tuple * 5:
+        while produced < target_per_tuple and attempts < attempt_budget:
             attempts += 1
             decision = build_bbox_data.pick_source(
                 atlas=atlas_name, orientation=orientation, landmark=landmark,
