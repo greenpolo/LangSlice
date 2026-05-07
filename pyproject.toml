@@ -25,6 +25,12 @@ dependencies = [
 
 [project.scripts]
 langslice = "langslice_harness.cli:main"
+# Launcher for the RLVR (multi-turn GRPO) training driver. The training
+# package lives under models/langslice-gemma-4/training/rlvr (off the src/
+# tree); the shim at src/langslice_rlvr adds that directory to sys.path so
+# `python -m langslice_rlvr` and the installed `langslice-rlvr` script both
+# resolve without packaging the model directory.
+langslice-rlvr = "langslice_rlvr:main"
 
 [project.optional-dependencies]
 dev = [
@@ -35,7 +41,7 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["langslice_harness*"]
+include = ["langslice_harness*", "langslice_rlvr*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

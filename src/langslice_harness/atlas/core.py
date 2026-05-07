@@ -128,9 +128,13 @@ def canonicalize_atlas_name(name: str) -> str:
     return _ATLAS_ALIASES.get(cleaned, cleaned)
 
 
-@lru_cache(maxsize=4)
+@lru_cache(maxsize=64)
 def load_atlas(name: str) -> BrainGlobeAtlas:
-    """Load and cache a BrainGlobe atlas. First call downloads if needed."""
+    """Load and cache a BrainGlobe atlas. First call downloads if needed.
+
+    Cache size is generous to avoid re-load thrash in tools (e.g. the QC app)
+    that scroll across many per-age developmental atlases in one session.
+    """
     atlas_name = canonicalize_atlas_name(name)
     try:
         module = importlib.import_module("brainglobe_atlasapi")

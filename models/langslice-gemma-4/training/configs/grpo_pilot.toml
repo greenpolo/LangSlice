@@ -1,5 +1,8 @@
-# Phase 2/3 pilot overrides — turn down rollouts and step count for the
-# sub-300-step single-slice pilot before we commit to the full run.
+# Phase A — single-slice ONLY pilot. Runs on the post-SFT checkpoint, ~300
+# steps to validate the closeness reward and stop-tool wiring before we mix
+# group rollouts in Phase B (grpo_phase_b.toml).
+#
+# `max_prompt_length` is NOT set here: deprecated upstream in TRL (issue #5018).
 
 [grpo]
 chat_template_kwargs = { enable_thinking = false }
@@ -7,9 +10,9 @@ learning_rate = 5e-6
 num_generations = 2
 per_device_train_batch_size = 1
 gradient_accumulation_steps = 2
-max_prompt_length = 4096
 max_completion_length = 1536
 max_tool_calling_iterations = 16
+stop_tool_names = ["submit_estimate", "submit_group_estimate"]
 max_grad_norm = 0.1
 importance_sampling_level = "sequence"
 loss_type = "dr_grpo"
@@ -20,6 +23,7 @@ save_steps = 25
 max_steps = 300
 report_to = "trackio"
 load_in_4bit = true
+max_seq_length = 4096
 
 [lora]
 finetune_vision_layers = false
@@ -31,7 +35,12 @@ lora_alpha = 32
 use_gradient_checkpointing = "unsloth"
 
 [data]
-# Phase 2 = single-slice only; Phase 4 will flip 30% to group via grpo_default.
-single_fraction = 0.99
+# Phase A: single-slice ONLY. Phase B (grpo_phase_b.toml) flips to 0.5 and
+# loads the saved adapter from the Phase A run via --resume-from-adapter.
+single_fraction = 1.0
 group_size = 4
 thickness_um = 30
+eval_holdout_every = 5
+
+[reward]
+window_mm = 0.100

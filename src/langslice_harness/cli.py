@@ -362,7 +362,7 @@ def _add_collect_traces_parser(subparsers: argparse._SubParsersAction) -> None:
     p.add_argument("--model", default="gemini-3.1-pro-preview", help="Teacher model")
     p.add_argument(
         "--thinking",
-        default="HIGH",
+        default="MEDIUM",
         choices=["LOW", "MEDIUM", "HIGH"],
         help="Gemini thinking level for trace collection",
     )

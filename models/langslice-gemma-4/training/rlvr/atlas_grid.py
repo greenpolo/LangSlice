@@ -13,16 +13,38 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+from typing import Literal
 
 from PIL import Image
 
-from langslice_harness.atlas.core import (
-    canonicalize_atlas_name,
-    get_position_range_mm,
-    get_reference_slice,
-    load_atlas,
-)
-from langslice_harness.atlas.space import Plane
+Plane = Literal["coronal", "sagittal", "horizontal"]
+
+
+def canonicalize_atlas_name(atlas_name: str) -> str:
+    try:
+        from langslice_harness.atlas.core import canonicalize_atlas_name as _canonicalize
+    except ModuleNotFoundError:
+        return atlas_name
+
+    return _canonicalize(atlas_name)
+
+
+def load_atlas(atlas_name: str):
+    from langslice_harness.atlas.core import load_atlas as _load_atlas
+
+    return _load_atlas(atlas_name)
+
+
+def get_position_range_mm(atlas, *, plane: Plane):  # noqa: ANN001
+    from langslice_harness.atlas.core import get_position_range_mm as _range_mm
+
+    return _range_mm(atlas, plane=plane)
+
+
+def get_reference_slice(atlas, position_mm: float, *, plane: Plane):  # noqa: ANN001
+    from langslice_harness.atlas.core import get_reference_slice as _reference_slice
+
+    return _reference_slice(atlas, position_mm, plane=plane)
 
 # 0.05 mm step matches the spec's atlas-grid granularity. Position keys are
 # stored as int(round(position_mm / GRID_STEP_MM)) so float jitter from agent
@@ -127,8 +149,25 @@ def build_atlas_grid(
         key = _GridKey(atlas_name, plane)
         ranges[key] = GridRange(pos_lo=pos_lo, pos_hi=pos_hi)
 
+        # `_quantize` rounds to nearest 0.05 mm. If pos_hi is e.g. 13.225 then
+        # ceil-rounding it gives 13.25, which is past the atlas's last valid
+        # index — `get_reference_slice` rejects that with a ValueError. Clamp
+        # both ends INWARD so every grid point we ask the atlas to render is
+        # provably in-range. The same logic applies symmetrically at pos_lo
+        # (rare in practice since pos_lo is 0, but cheap to handle).
         lo_q = _quantize(pos_lo)
+        if _grid_position_mm(lo_q) < pos_lo:
+            lo_q += 1
         hi_q = _quantize(pos_hi)
+        if _grid_position_mm(hi_q) > pos_hi:
+            hi_q -= 1
+        if hi_q < lo_q:
+            raise ValueError(
+                f"Empty grid for ({atlas_name!r}, {plane!r}): "
+                f"valid range [{pos_lo:.4f}, {pos_hi:.4f}] mm is narrower than "
+                f"step {step_mm:.3f} mm"
+            )
+
         per_pair: dict[int, Image.Image] = {}
         for qkey in range(lo_q, hi_q + 1):
             position_mm = _grid_position_mm(qkey)
