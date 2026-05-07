@@ -65,6 +65,9 @@ def render_ish_section(
     mode: ISHMode | None = None,
     apply_damage: bool = True,
     damage_intensity: str = "medium",
+    apply_geometry_warp: bool = True,
+    plane: str = "coronal",
+    position_mm: float | None = None,
 ) -> np.ndarray:
     """Procedurally render one synthetic ISH section.
 
@@ -117,6 +120,8 @@ def render_ish_section(
         tissue_mask=masks["tissue"],
         pixel_size_um=pixel_size_um,
         tissue_class_masks=masks,
+        plane=plane,
+        position_mm=position_mm,
     )
 
     chosen_mode: ISHMode = mode if mode is not None else sample_mode(rng, ISH_MODES)
@@ -141,5 +146,6 @@ def render_ish_section(
     if apply_damage:
         canvas = apply_damage_layer(
             canvas, rng=rng, ctx=ctx, modality="ish", intensity=damage_intensity,
+            geometry=apply_geometry_warp,
         )
     return canvas

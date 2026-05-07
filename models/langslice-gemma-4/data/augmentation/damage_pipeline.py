@@ -40,8 +40,10 @@ from .transforms.damage import (
     Debris,
     EmbeddingHalos,
     Folds,
+    HemibrainPreparation,
     IlluminationGradient,
     Microbubbles,
+    PosteriorWingDamage,
     Tears,
 )
 from .transforms.geometry import AffineJitter, BladeStretchHorizontal, ResolutionShift
@@ -73,6 +75,7 @@ def apply_damage_layer(
     ctx: TransformContext,
     modality: str,
     intensity: str = "medium",
+    geometry: bool = True,
 ) -> np.ndarray:
     """Apply a randomised damage and geometry layer to a rendered canvas.
 
@@ -91,6 +94,13 @@ def apply_damage_layer(
     intensity:
         ``"light"`` / ``"medium"`` / ``"heavy"``.  Scales both probabilities
         and transform magnitude parameters.
+    geometry:
+        When True (default), apply pixel-displacing transforms
+        (``BladeStretchHorizontal``, ``AffineJitter``, ``Folds``, ``Tears``,
+        ``Microbubbles``).  When False, those are skipped while non-coord
+        transforms (illumination, halos, debris, resolution-shift) still run.
+        Set False for the bbox-grounding bucket so the saved image stays
+        coord-aligned with the bbox computed from the unwarped annotation.
 
     Returns
     -------
@@ -112,19 +122,27 @@ def apply_damage_layer(
 
     out = canvas
 
+    # --- 0. Deliberate hemibrain preparation --------------------------------
+    # Researchers often mount a single hemisphere on purpose. Model this as a
+    # clean preparation variant before adding microtome/slide artifacts.
+    if geometry:
+        hemibrain = HemibrainPreparation(p=_p(0.08))
+        out = hemibrain(out, rng=rng, ctx=ctx)
+
     # --- 1. BladeStretchHorizontal (ALWAYS applied) -------------------------
     # H stretch is the defining microtome artifact — bumped to up to 22% at
     # medium, capped at 30% even at heavy. V stretch up to 10%. Shear up to 4°.
-    h_max = 1.00 + (0.22 * param_scale)
-    v_max = 1.00 + (0.10 * param_scale)
-    shear_max = 4.0 * param_scale
-    blade = BladeStretchHorizontal(
-        p=1.0,
-        horizontal_stretch_range=(1.00, min(h_max, 1.30)),
-        vertical_stretch_range=(1.00, min(v_max, 1.18)),
-        shear_range_deg=(-min(shear_max, 7.0), min(shear_max, 7.0)),
-    )
-    out = blade(out, rng=rng, ctx=ctx)
+    if geometry:
+        h_max = 1.00 + (0.22 * param_scale)
+        v_max = 1.00 + (0.10 * param_scale)
+        shear_max = 4.0 * param_scale
+        blade = BladeStretchHorizontal(
+            p=1.0,
+            horizontal_stretch_range=(1.00, min(h_max, 1.30)),
+            vertical_stretch_range=(1.00, min(v_max, 1.18)),
+            shear_range_deg=(-min(shear_max, 7.0), min(shear_max, 7.0)),
+        )
+        out = blade(out, rng=rng, ctx=ctx)
 
     # --- 2. IlluminationGradient (85% medium) --------------------------------
     illum = IlluminationGradient(p=_p(0.85))
@@ -136,20 +154,23 @@ def apply_damage_layer(
         out = halos(out, rng=rng, ctx=ctx)
 
     # --- 4. AffineJitter (75% medium) ----------------------------------------
-    jitter = AffineJitter(p=_p(0.75))
-    out = jitter(out, rng=rng, ctx=ctx)
+    if geometry:
+        jitter = AffineJitter(p=_p(0.75))
+        out = jitter(out, rng=rng, ctx=ctx)
 
     # --- 5. Microbubbles (55% medium) ----------------------------------------
-    bubbles = Microbubbles(p=_p(0.55))
-    out = bubbles(out, rng=rng, ctx=ctx)
+    if geometry:
+        bubbles = Microbubbles(p=_p(0.55))
+        out = bubbles(out, rng=rng, ctx=ctx)
 
     # --- 6. Debris (55% medium) ----------------------------------------------
     debris = Debris(p=_p(0.55))
     out = debris(out, rng=rng, ctx=ctx)
 
     # --- 7. Folds (45% medium) -----------------------------------------------
-    folds = Folds(p=_p(0.45))
-    out = folds(out, rng=rng, ctx=ctx)
+    if geometry:
+        folds = Folds(p=_p(0.45))
+        out = folds(out, rng=rng, ctx=ctx)
 
     # --- 8. ResolutionShift (35% medium) -------------------------------------
     res = ResolutionShift(p=_p(0.35))
@@ -159,7 +180,15 @@ def apply_damage_layer(
     # Tears now use bg-colored fill (not black) and bias toward ventricle
     # expansion + edge bites. Ventricles in real sections almost always look
     # larger than the atlas predicts due to CSF retraction; this captures that.
-    tears = Tears(p=_p(0.55))
-    out = tears(out, rng=rng, ctx=ctx)
+    if geometry:
+        tears = Tears(p=_p(0.55))
+        out = tears(out, rng=rng, ctx=ctx)
+
+    # --- 10. Posterior wing detachment / loss --------------------------------
+    # In posterior coronal sections, lateral tissue wings often detach as whole
+    # slabs once the thalamus is no longer present.
+    if geometry:
+        posterior_wing = PosteriorWingDamage(p=_p(0.30))
+        out = posterior_wing(out, rng=rng, ctx=ctx)
 
     return np.clip(out, 0.0, 1.0).astype(np.float32)

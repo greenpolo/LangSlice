@@ -11,19 +11,25 @@ import numpy as np
 from scipy.interpolate import RBFInterpolator
 from scipy.ndimage import (
     binary_closing,
+    binary_dilation,
+    binary_fill_holes,
     gaussian_filter,
+    label,
     map_coordinates,
+    rotate,
 )
 
 from .base import TransformContext
 
 __all__ = [
     "Folds",
+    "HemibrainPreparation",
     "Tears",
     "Microbubbles",
     "EmbeddingHalos",
     "Debris",
     "IlluminationGradient",
+    "PosteriorWingDamage",
 ]
 
 
@@ -178,6 +184,572 @@ def _sample_bg_color(image: np.ndarray) -> np.ndarray:
         image[-corner:, -corner:].reshape(-1, 3),
     ], axis=0)
     return np.median(samples, axis=0).astype(np.float32)
+
+
+def _shift_canvas_like(
+    arr: np.ndarray,
+    *,
+    keep_side: str,
+    shift_cols: int,
+    fill_value: float | int | bool = 0,
+) -> np.ndarray:
+    """Keep one side of an array and shift it horizontally into a new canvas."""
+    w = arr.shape[1]
+    split = w // 2
+    keep_cols = np.arange(w) < split if keep_side == "left" else np.arange(w) >= split
+    out = np.full_like(arr, fill_value)
+    src_cols = np.where(keep_cols)[0]
+    dst_cols = src_cols + shift_cols
+    valid = (dst_cols >= 0) & (dst_cols < w)
+    if arr.ndim == 2:
+        out[:, dst_cols[valid]] = arr[:, src_cols[valid]]
+    else:
+        out[:, dst_cols[valid], :] = arr[:, src_cols[valid], :]
+    return out
+
+
+def _mask_column_center(mask: np.ndarray) -> float | None:
+    _, cols = np.where(mask)
+    if len(cols) == 0:
+        return None
+    return float((cols.min() + cols.max()) / 2.0)
+
+
+def _replace_masks_with_background(
+    out: np.ndarray,
+    masks: list[np.ndarray],
+    bg_color: np.ndarray,
+) -> None:
+    if not masks:
+        return
+    combined = np.zeros(out.shape[:2], dtype=bool)
+    for mask in masks:
+        combined |= mask.astype(bool)
+    out[combined] = bg_color
+
+
+def _fray_along_mask_edge(
+    keep_mask: np.ndarray,
+    cut_mask: np.ndarray,
+    rng: np.random.Generator,
+    *,
+    band_px: int | None = None,
+    band_frac: float = 0.022,
+    threshold: float = 0.62,
+    smoothness_frac: float = 0.005,
+) -> np.ndarray:
+    """Boolean mask of `keep_mask` pixels to remove for an irregular torn edge.
+
+    The fray band is `keep_mask` pixels within `band_px` of `cut_mask`. Within
+    the band, smoothed uniform noise is thresholded to produce ragged notches.
+
+    When `band_px` is None, it scales with image size as
+    ``band_frac * min(H, W)`` (default ~1.2% of the shorter side) so fraying
+    stays visible across resolutions. The Gaussian smoothing sigma scales the
+    same way via ``smoothness_frac``.
+    """
+    if not keep_mask.any() or not cut_mask.any():
+        return np.zeros_like(keep_mask, dtype=bool)
+    h, w = keep_mask.shape
+    short_side = min(h, w)
+    if band_px is None:
+        band_px = max(2, int(round(band_frac * short_side)))
+    if band_px <= 0:
+        return np.zeros_like(keep_mask, dtype=bool)
+    sigma = max(1.0, smoothness_frac * short_side)
+    band = binary_dilation(cut_mask, iterations=band_px) & keep_mask
+    if not band.any():
+        return np.zeros_like(keep_mask, dtype=bool)
+    noise = gaussian_filter(rng.random((h, w)).astype(np.float32), sigma=sigma)
+    return band & (noise < threshold)
+
+
+def _posterior_wing_source_mask(
+    tissue: np.ndarray,
+    tissue_class_masks: dict[str, np.ndarray] | None,
+) -> np.ndarray:
+    if tissue_class_masks is None:
+        return tissue
+    parts = [
+        tissue_class_masks[key].astype(bool)
+        for key in ("isocortex", "hippocampal_formation", "cortical_subplate")
+        if key in tissue_class_masks and tissue_class_masks[key].any()
+    ]
+    if not parts:
+        return tissue
+    source = np.zeros_like(tissue, dtype=bool)
+    for part in parts:
+        source |= part
+    return source & tissue
+
+
+def _side_wing_masks(
+    tissue: np.ndarray,
+    *,
+    center_mask: np.ndarray | None = None,
+    include_satellites: bool = False,
+) -> dict[str, np.ndarray]:
+    """Approximate posterior lateral tissue wings from the tissue silhouette."""
+    h, w = tissue.shape
+    rows, cols = np.indices((h, w))
+    tissue_cols = cols[tissue]
+    center_source = tissue if center_mask is None else center_mask
+    center_cols = cols[center_source]
+    center = float(np.median(center_cols)) if center_cols.size else (w - 1) / 2.0
+    tissue_min = int(tissue_cols.min()) if tissue_cols.size else 0
+    tissue_max = int(tissue_cols.max()) if tissue_cols.size else w - 1
+    lateral_edge_margin = max(4, int(round(0.12 * max(tissue_max - tissue_min, 1))))
+    row_norm = rows / max(h - 1, 1)
+    curve = 0.14 * w + 0.10 * w * (row_norm - 0.32) ** 2
+    dorsal_gate = rows <= int(round(0.78 * h))
+    source_cc, _ = label(tissue)
+    candidates = {
+        "left": tissue & dorsal_gate & (cols < center - curve),
+        "right": tissue & dorsal_gate & (cols > center + curve),
+    }
+    wings: dict[str, np.ndarray] = {}
+    for side, candidate in candidates.items():
+        cc, n = label(candidate)
+        if n == 0:
+            wings[side] = candidate
+            continue
+        keep = np.zeros_like(candidate, dtype=bool)
+        for component_id in range(1, n + 1):
+            component = cc == component_id
+            _, component_cols = np.where(component)
+            if component_cols.size == 0:
+                continue
+            source_component = _source_component_for(component, source_cc) if include_satellites else component
+            centroid = float(component_cols.mean())
+            lateral = centroid < center if side == "left" else centroid > center
+            reaches_outer_edge = (
+                int(component_cols.min()) <= tissue_min + lateral_edge_margin
+                if side == "left"
+                else int(component_cols.max()) >= tissue_max - lateral_edge_margin
+            )
+            large_enough = int(component.sum()) >= max(12, int(0.003 * h * w))
+            if lateral and reaches_outer_edge and large_enough:
+                keep |= source_component
+        if include_satellites and keep.any():
+            satellite_halo = binary_dilation(keep, iterations=max(6, int(round(0.20 * w))))
+            for component_id in range(1, n + 1):
+                component = cc == component_id
+                if (component & keep).any() or not (component & satellite_halo).any():
+                    continue
+                _, component_cols = np.where(component)
+                if component_cols.size == 0:
+                    continue
+                centroid = float(component_cols.mean())
+                lateral = centroid < center if side == "left" else centroid > center
+                large_enough = int(component.sum()) >= max(8, int(0.001 * h * w))
+                if lateral and large_enough:
+                    keep |= _source_component_for(component, source_cc)
+        wings[side] = keep
+    return wings
+
+
+def _source_component_for(component: np.ndarray, source_cc: np.ndarray) -> np.ndarray:
+    ids = np.unique(source_cc[component & (source_cc > 0)])
+    out = np.zeros_like(component, dtype=bool)
+    for component_id in ids:
+        out |= source_cc == component_id
+    return out
+
+
+def _translate_mask(mask: np.ndarray, *, dx: int, dy: int) -> np.ndarray:
+    out = np.zeros_like(mask, dtype=bool)
+    h, w = mask.shape
+    src_r0 = max(0, -dy)
+    src_r1 = min(h, h - dy)
+    dst_r0 = max(0, dy)
+    dst_r1 = min(h, h + dy)
+    src_c0 = max(0, -dx)
+    src_c1 = min(w, w - dx)
+    dst_c0 = max(0, dx)
+    dst_c1 = min(w, w + dx)
+    if src_r0 < src_r1 and src_c0 < src_c1:
+        out[dst_r0:dst_r1, dst_c0:dst_c1] = mask[src_r0:src_r1, src_c0:src_c1]
+    return out
+
+
+def _translate_numeric(
+    arr: np.ndarray,
+    *,
+    dx: int,
+    dy: int,
+    fill_value: float | int = 0,
+) -> np.ndarray:
+    out = np.full_like(arr, fill_value)
+    h, w = arr.shape
+    src_r0 = max(0, -dy)
+    src_r1 = min(h, h - dy)
+    dst_r0 = max(0, dy)
+    dst_r1 = min(h, h + dy)
+    src_c0 = max(0, -dx)
+    src_c1 = min(w, w - dx)
+    dst_c0 = max(0, dx)
+    dst_c1 = min(w, w + dx)
+    if src_r0 < src_r1 and src_c0 < src_c1:
+        out[dst_r0:dst_r1, dst_c0:dst_c1] = arr[src_r0:src_r1, src_c0:src_c1]
+    return out
+
+
+def _rotate_mask(mask: np.ndarray, angle_deg: float) -> np.ndarray:
+    if abs(angle_deg) < 1e-6:
+        return mask.astype(bool)
+    rotated = rotate(
+        mask.astype(np.float32),
+        angle=float(angle_deg),
+        reshape=False,
+        order=0,
+        mode="constant",
+        cval=0.0,
+    )
+    return rotated > 0.5
+
+
+def _rotate_image_patch(patch: np.ndarray, angle_deg: float, bg_color: np.ndarray) -> np.ndarray:
+    if abs(angle_deg) < 1e-6:
+        return patch
+    channels = []
+    for ch in range(patch.shape[2]):
+        channels.append(
+            rotate(
+                patch[:, :, ch],
+                angle=float(angle_deg),
+                reshape=False,
+                order=1,
+                mode="constant",
+                cval=float(bg_color[ch]),
+            )
+        )
+    return np.stack(channels, axis=2).astype(np.float32)
+
+
+def _move_mask(mask: np.ndarray, *, dx: int, dy: int, angle_deg: float) -> np.ndarray:
+    return _translate_mask(_rotate_mask(mask, angle_deg), dx=dx, dy=dy)
+
+
+def _move_array(
+    arr: np.ndarray,
+    source_mask: np.ndarray,
+    *,
+    dx: int,
+    dy: int,
+    angle_deg: float,
+    fill_value: float | int | bool,
+) -> tuple[np.ndarray, np.ndarray]:
+    moved_mask = _move_mask(source_mask, dx=dx, dy=dy, angle_deg=angle_deg)
+    out = np.full_like(arr, fill_value)
+    if not source_mask.any() or not moved_mask.any():
+        return out, moved_mask
+
+    values = np.where(source_mask, arr, fill_value)
+    if abs(angle_deg) >= 1e-6:
+        values = rotate(
+            values,
+            angle=float(angle_deg),
+            reshape=False,
+            order=0,
+            mode="constant",
+            cval=float(fill_value),
+        ).astype(arr.dtype, copy=False)
+    out[_translate_mask(source_mask, dx=dx, dy=dy)] = values[
+        _translate_mask(source_mask, dx=dx, dy=dy)
+    ]
+    return out, moved_mask
+
+
+class HemibrainPreparation:
+    """Deliberate one-hemisphere preparation.
+
+    Researchers often cut down the midline and mount only one hemisphere. This
+    transform models that preparation directly: it removes one full side and
+    shifts the retained hemisphere toward the center of the canvas.
+    """
+
+    def __init__(
+        self,
+        p: float = 0.08,
+        keep_side: str | None = None,
+        fray_band_px: int | None = None,
+    ) -> None:
+        self.p = p
+        if keep_side not in {None, "left", "right"}:
+            raise ValueError("keep_side must be 'left', 'right', or None")
+        self.keep_side = keep_side
+        self.fray_band_px = fray_band_px
+
+    def __call__(
+        self,
+        image: np.ndarray,
+        *,
+        rng: np.random.Generator,
+        ctx: TransformContext,
+    ) -> np.ndarray:
+        if rng.random() > self.p:
+            return image
+        if getattr(ctx, "plane", "coronal") not in {"coronal", "horizontal"}:
+            return image
+
+        keep_side = self.keep_side or str(rng.choice(["left", "right"]))
+        tissue = ctx.tissue_mask if ctx.tissue_mask is not None else _infer_tissue_mask(image)
+        w = image.shape[1]
+        split = w // 2
+        keep_cols = np.arange(w) < split if keep_side == "left" else np.arange(w) >= split
+        kept_tissue = tissue & keep_cols[None, :]
+        removed_half = tissue & ~keep_cols[None, :]
+        center = _mask_column_center(kept_tissue)
+        if center is None:
+            return image
+
+        # Fray the kept hemisphere's medial edge in source coordinates.
+        bg_color = _sample_bg_color(image)
+        fray = _fray_along_mask_edge(
+            kept_tissue, removed_half, rng, band_px=self.fray_band_px
+        )
+        if fray.any():
+            image = image.copy()
+            image[fray] = bg_color
+            kept_tissue = kept_tissue & ~fray
+
+        shift_cols = int(round((w - 1) / 2.0 - center))
+        out = np.empty_like(image)
+        out[...] = bg_color
+        out = _shift_canvas_like(image, keep_side=keep_side, shift_cols=shift_cols)
+        empty = out.mean(axis=2) <= 0
+        out[empty] = bg_color
+
+        if ctx.tissue_mask is not None:
+            ctx.tissue_mask = _shift_canvas_like(
+                kept_tissue, keep_side=keep_side, shift_cols=shift_cols, fill_value=False
+            ).astype(bool)
+        if ctx.annotation_slice is not None:
+            shifted_ann = _shift_canvas_like(
+                ctx.annotation_slice, keep_side=keep_side, shift_cols=shift_cols, fill_value=0
+            ).astype(ctx.annotation_slice.dtype, copy=False)
+            if fray.any() and ctx.tissue_mask is not None:
+                shifted_ann = np.where(ctx.tissue_mask, shifted_ann, 0).astype(
+                    ctx.annotation_slice.dtype, copy=False
+                )
+            ctx.annotation_slice = shifted_ann
+        if ctx.density_map is not None:
+            shifted_density = _shift_canvas_like(
+                ctx.density_map, keep_side=keep_side, shift_cols=shift_cols, fill_value=0.0
+            ).astype(ctx.density_map.dtype, copy=False)
+            if fray.any() and ctx.tissue_mask is not None:
+                shifted_density = np.where(ctx.tissue_mask, shifted_density, 0.0).astype(
+                    ctx.density_map.dtype, copy=False
+                )
+            ctx.density_map = shifted_density
+        if ctx.tissue_class_masks is not None:
+            updated: dict[str, np.ndarray] = {}
+            for key, mask in ctx.tissue_class_masks.items():
+                source = mask.astype(bool) & keep_cols[None, :] & ~fray
+                updated[key] = _shift_canvas_like(
+                    source, keep_side=keep_side, shift_cols=shift_cols, fill_value=False
+                ).astype(bool)
+            if "background" in updated:
+                updated["background"] = ~updated.get("tissue", ctx.tissue_mask).astype(bool)
+            ctx.tissue_class_masks = updated
+
+        return np.clip(out, 0.0, 1.0).astype(np.float32)
+
+
+class PosteriorWingDamage:
+    """Posterior coronal lateral-wing loss or detachment.
+
+    In posterior sections, the lateral "wings" can peel away as physical tissue
+    slabs. This targets the whole lateral slab from the tissue silhouette, not
+    only atlas isocortex pixels.
+    """
+
+    _MODES = (
+        "left_missing",
+        "right_missing",
+        "both_missing",
+        "both_detached",
+        "left_missing_right_detached",
+        "right_missing_left_detached",
+    )
+
+    def __init__(
+        self,
+        p: float = 0.18,
+        posterior_min_position_mm: float = 8.5,
+        mode: str | None = None,
+        detach_shift_px: tuple[int, int] | None = None,
+        detach_angle_deg: tuple[float, float] = (-8.0, 8.0),
+        fray_band_px: int | None = None,
+        fray_wing_band_px: int | None = None,
+    ) -> None:
+        self.p = p
+        self.posterior_min_position_mm = posterior_min_position_mm
+        if mode is not None and mode not in {*self._MODES, "left_detached", "right_detached"}:
+            raise ValueError(f"Unsupported posterior wing damage mode: {mode!r}")
+        self.mode = mode
+        self.detach_shift_px = detach_shift_px
+        self.detach_angle_deg = detach_angle_deg
+        self.fray_band_px = fray_band_px
+        self.fray_wing_band_px = fray_wing_band_px
+
+    def __call__(
+        self,
+        image: np.ndarray,
+        *,
+        rng: np.random.Generator,
+        ctx: TransformContext,
+    ) -> np.ndarray:
+        if rng.random() > self.p:
+            return image
+        if getattr(ctx, "plane", "coronal") != "coronal":
+            return image
+        if ctx.position_mm is None or ctx.position_mm < self.posterior_min_position_mm:
+            return image
+        tissue = ctx.tissue_mask if ctx.tissue_mask is not None else _infer_tissue_mask(image)
+        thalamus = None if ctx.tissue_class_masks is None else ctx.tissue_class_masks.get("thalamus")
+        if thalamus is not None and thalamus.any():
+            return image
+
+        bg_color = _sample_bg_color(image)
+        out = image.copy()
+        wing_source = _posterior_wing_source_mask(tissue.astype(bool), ctx.tissue_class_masks)
+        has_specific_wing_masks = (
+            ctx.tissue_class_masks is not None
+            and any(
+                key in ctx.tissue_class_masks and ctx.tissue_class_masks[key].any()
+                for key in ("isocortex", "hippocampal_formation", "cortical_subplate")
+            )
+        )
+        wings = _side_wing_masks(
+            wing_source,
+            center_mask=tissue.astype(bool),
+            include_satellites=has_specific_wing_masks,
+        )
+        if not wings["left"].any() and not wings["right"].any():
+            return image
+
+        mode = self.mode or str(rng.choice(self._MODES, p=[0.20, 0.20, 0.15, 0.25, 0.10, 0.10]))
+        actions: dict[str, str] = {}
+        if mode == "left_missing":
+            actions["left"] = "missing"
+        elif mode == "right_missing":
+            actions["right"] = "missing"
+        elif mode == "both_missing":
+            actions["left"] = actions["right"] = "missing"
+        elif mode == "both_detached":
+            actions["left"] = actions["right"] = "detached"
+        elif mode == "left_detached":
+            actions["left"] = "detached"
+        elif mode == "right_detached":
+            actions["right"] = "detached"
+        elif mode == "left_missing_right_detached":
+            actions["left"] = "missing"
+            actions["right"] = "detached"
+        elif mode == "right_missing_left_detached":
+            actions["right"] = "missing"
+            actions["left"] = "detached"
+
+        removed_masks: list[np.ndarray] = []
+        moved_masks: list[np.ndarray] = []
+
+        full_tissue = tissue.astype(bool)
+        for side, action in actions.items():
+            mask = wings[side]
+            if not mask.any():
+                continue
+
+            # Tear the whole lateral slab as a unit: include any enclosed tissue
+            # (e.g. fiber tracts inside the hippocampal C-shape) so the moved
+            # patch isn't punched through with background pixels.
+            filled = binary_fill_holes(mask)
+            if filled is not None:
+                mask = filled & full_tissue
+            central_brain = full_tissue & ~mask
+            keep_fray = _fray_along_mask_edge(
+                central_brain, mask, rng, band_px=self.fray_band_px
+            )
+            removed_masks.append(mask | keep_fray)
+            out[mask] = bg_color
+            if keep_fray.any():
+                out[keep_fray] = bg_color
+
+            if action != "detached":
+                continue
+
+            wing_fray = _fray_along_mask_edge(
+                mask, central_brain, rng, band_px=self.fray_wing_band_px
+            )
+            moved_wing = mask & ~wing_fray
+            if not moved_wing.any():
+                continue
+
+            dx, dy = self._sample_shift(side, rng)
+            angle = float(rng.uniform(*self.detach_angle_deg))
+            moved_mask = _move_mask(moved_wing, dx=dx, dy=dy, angle_deg=angle)
+            patch = np.empty_like(image)
+            patch[...] = bg_color
+            patch[moved_wing] = image[moved_wing]
+            moved_patch = np.empty_like(image)
+            moved_patch[...] = bg_color
+            if abs(angle) >= 1e-6:
+                patch = _rotate_image_patch(patch, angle, bg_color)
+            for ch in range(image.shape[2]):
+                moved_patch[:, :, ch] = _translate_numeric(
+                    patch[:, :, ch], dx=dx, dy=dy, fill_value=float(bg_color[ch])
+                )
+            out[moved_mask] = moved_patch[moved_mask]
+            moved_masks.append(moved_mask)
+
+        self._update_context(ctx, removed_masks=removed_masks, moved_masks=moved_masks)
+        return np.clip(out, 0.0, 1.0).astype(np.float32)
+
+    def _sample_shift(self, side: str, rng: np.random.Generator) -> tuple[int, int]:
+        if self.detach_shift_px is not None:
+            return self.detach_shift_px
+        lateral = -1 if side == "left" else 1
+        dx = int(lateral * rng.integers(5, 15))
+        dy = int(rng.integers(-8, 9))
+        return dx, dy
+
+    def _update_context(
+        self,
+        ctx: TransformContext,
+        *,
+        removed_masks: list[np.ndarray],
+        moved_masks: list[np.ndarray],
+    ) -> None:
+        if not removed_masks:
+            return
+        removed = np.zeros_like(removed_masks[0], dtype=bool)
+        for mask in removed_masks:
+            removed |= mask
+        moved = np.zeros_like(removed, dtype=bool)
+        for mask in moved_masks:
+            moved |= mask
+
+        if ctx.tissue_mask is not None:
+            ctx.tissue_mask = (ctx.tissue_mask.astype(bool) & ~removed) | moved
+        if ctx.tissue_class_masks is not None:
+            for key, mask in list(ctx.tissue_class_masks.items()):
+                if key == "background":
+                    continue
+                updated = mask.astype(bool) & ~removed
+                if key == "tissue":
+                    updated |= moved
+                ctx.tissue_class_masks[key] = updated
+            if "background" in ctx.tissue_class_masks:
+                tissue = (
+                    ctx.tissue_class_masks.get("tissue")
+                    if "tissue" in ctx.tissue_class_masks
+                    else ctx.tissue_mask
+                )
+                if tissue is not None:
+                    ctx.tissue_class_masks["background"] = ~tissue.astype(bool)
+        if ctx.annotation_slice is not None:
+            ctx.annotation_slice[removed] = 0
+        if ctx.density_map is not None:
+            ctx.density_map[removed] = 0.0
 
 
 class Tears:
