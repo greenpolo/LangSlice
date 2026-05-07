@@ -44,6 +44,20 @@ def test_parse_submit_call_rejects_empty_reasoning():
     assert parsed.is_parseable is False
 
 
+def test_parse_submit_call_rejects_bool_position():
+    parsed = parse_submit_call(
+        '{"position_mm": true, "reasoning": "ok"}', expected_kind="single_slice"
+    )
+    assert parsed.is_parseable is False
+
+
+def test_parse_submit_call_rejects_bool_position_false():
+    parsed = parse_submit_call(
+        '{"position_mm": false, "reasoning": "ok"}', expected_kind="single_slice"
+    )
+    assert parsed.is_parseable is False
+
+
 def test_compute_position_mae_mm_simple():
     pred = [1.0, 2.0, 3.0]
     truth = [1.5, 2.0, 4.0]
@@ -79,3 +93,16 @@ def test_summarize_eval_runs():
 def test_summarize_eval_runs_rejects_empty():
     with pytest.raises(ValueError, match="no eval runs"):
         summarize_eval_runs([])
+
+
+def test_summarize_eval_runs_all_no_submit():
+    runs = [
+        EvalRun(subject_id="M01", predicted_mm=None, truth_mm=[5.0], parseable=False, n_turns=8),
+        EvalRun(subject_id="M02", predicted_mm=None, truth_mm=[7.0], parseable=False, n_turns=10),
+    ]
+    summary = summarize_eval_runs(runs)
+    import math
+    assert math.isnan(summary["position_mae_mm"])
+    assert summary["tool_call_parseability_rate"] == 0.0
+    assert summary["no_submit_rate"] == 1.0
+    assert summary["mean_trace_length"] == pytest.approx(9.0)
