@@ -81,3 +81,22 @@ def test_build_system_prompt_single_slice_uses_production_prompt() -> None:
     # Production prompt mentions "AP" axis label for coronal
     assert "AP" in prompt
     assert "allen_mouse_25um" in prompt
+
+
+def test_build_tools_schema_rejects_unknown_kind() -> None:
+    with pytest.raises(ValueError, match="unknown system_prompt_kind"):
+        build_tools_schema("group")
+
+
+def test_build_system_prompt_rejects_unknown_kind_without_atlas_load() -> None:
+    # Must NOT load the atlas — fail fast on bad kind.
+    cache = AtlasMetaCache()
+    with pytest.raises(ValueError, match="unknown system_prompt_kind"):
+        build_system_prompt(
+            kind="group",
+            atlas_name="allen_mouse_25um",
+            plane="coronal",
+            atlas_meta_cache=cache,
+        )
+    # Cache should be empty — no atlas loaded.
+    assert cache._cache == {}  # type: ignore[attr-defined]  # private inspection in test
