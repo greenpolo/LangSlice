@@ -9,15 +9,25 @@ Coverage gate: the qualifying pixel/probe area must be >=1% and <=40% of total
 image area, else the bbox fails. Whole-brain coronal/horizontal returns
 `{left, right}`; either side empty causes the example to fail (returns None).
 Sagittal / hemisphere returns a single bbox.
+
+Dense-core fallback: if a hemisphere bbox covers more than `_BBOX_DENSE_CORE_TRIGGER`
+of the image area, the mask is progressively eroded and the largest connected
+component's bbox is taken. This auto-tightens bboxes for thin sprawling regions
+(e.g. corpus callosum body, hippocampal C-shape) without touching the
+landmark list.
 """
 from __future__ import annotations
 
 from collections.abc import Callable
 
 import numpy as np
+from scipy.ndimage import binary_erosion, label
 
-_COVERAGE_MIN = 0.01
+_COVERAGE_MIN = 0.005
 _COVERAGE_MAX = 0.40
+_BBOX_DENSE_CORE_TRIGGER = 0.07  # per-hemisphere; switch to dense-core above this
+_BBOX_DENSE_CORE_TARGET = 0.05   # erode until below this, or until single CC is reached
+_BBOX_DENSE_CORE_MAX_ITER = 30
 
 
 def _bbox_of_mask(mask: np.ndarray) -> list[int] | None:
@@ -26,6 +36,56 @@ def _bbox_of_mask(mask: np.ndarray) -> list[int] | None:
         return None
     ys, xs = np.where(mask)
     return [int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max())]
+
+
+def _bbox_area_frac(bbox: list[int], image_area: int) -> float:
+    x1, y1, x2, y2 = bbox
+    return float((x2 - x1 + 1) * (y2 - y1 + 1)) / float(image_area)
+
+
+def _largest_cc_bbox(mask: np.ndarray) -> list[int] | None:
+    """Bbox of the largest connected component in `mask`."""
+    labeled, n = label(mask)
+    if n == 0:
+        return None
+    sizes = np.bincount(labeled.ravel())
+    sizes[0] = 0  # ignore background
+    largest = int(np.argmax(sizes))
+    return _bbox_of_mask(labeled == largest)
+
+
+def _bbox_dense_core(mask: np.ndarray, image_area: int) -> list[int] | None:
+    """Progressively erode + take largest connected component until the bbox
+    fits within the dense-core target area, or until further erosion would
+    annihilate the mask. Falls back to the last viable CC bbox if no
+    iteration meets the target.
+    """
+    if not mask.any():
+        return None
+    eroded = mask
+    last_bbox: list[int] | None = None
+    for _ in range(_BBOX_DENSE_CORE_MAX_ITER):
+        if not eroded.any():
+            break
+        bbox = _largest_cc_bbox(eroded)
+        if bbox is None:
+            break
+        last_bbox = bbox
+        if _bbox_area_frac(bbox, image_area) <= _BBOX_DENSE_CORE_TARGET:
+            return bbox
+        eroded = binary_erosion(eroded)
+    return last_bbox
+
+
+def _bbox_with_dense_core(mask: np.ndarray, image_area: int) -> list[int] | None:
+    """Standard bbox; if the bbox is too large, fall back to dense-core."""
+    bbox = _bbox_of_mask(mask)
+    if bbox is None:
+        return None
+    if _bbox_area_frac(bbox, image_area) <= _BBOX_DENSE_CORE_TRIGGER:
+        return bbox
+    core = _bbox_dense_core(mask, image_area)
+    return core if core is not None else bbox
 
 
 def bbox_from_atlas_slice(
@@ -54,7 +114,7 @@ def bbox_from_atlas_slice(
         return None
 
     if is_hemisphere:
-        return _bbox_of_mask(mask)
+        return _bbox_with_dense_core(mask, total)
 
     if hemisphere_slice is None:
         raise ValueError("hemisphere_slice is required for whole-brain atlas bboxes")
@@ -67,8 +127,8 @@ def bbox_from_atlas_slice(
     left_mask = mask & (hemisphere_slice == 1)
     right_mask = mask & (hemisphere_slice == 2)
 
-    left_bbox = _bbox_of_mask(left_mask)
-    right_bbox = _bbox_of_mask(right_mask)
+    left_bbox = _bbox_with_dense_core(left_mask, total)
+    right_bbox = _bbox_with_dense_core(right_mask, total)
     if left_bbox is None or right_bbox is None:
         return None
     return {"left": left_bbox, "right": right_bbox}
@@ -129,8 +189,10 @@ def bbox_from_real_section(
     if coverage < _COVERAGE_MIN or coverage > _COVERAGE_MAX:
         return None
 
+    image_area = H * W
+
     def _padded_bbox(mask: np.ndarray) -> list[int] | None:
-        bbox = _bbox_of_mask(mask)
+        bbox = _bbox_with_dense_core(mask, image_area)
         if bbox is None:
             return None
         x1, y1, x2, y2 = bbox
