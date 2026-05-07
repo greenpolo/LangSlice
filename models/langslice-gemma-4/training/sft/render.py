@@ -16,6 +16,7 @@ from PIL import Image
 # pytest already injects `src` via `pyproject.toml::tool.pytest.ini_options.pythonpath`,
 # so this is defensive for direct script invocation.
 _REPO_SRC = Path(__file__).resolve().parents[4] / "src"
+assert _REPO_SRC.name == "src" and (_REPO_SRC / "langslice_harness").is_dir(), _REPO_SRC
 if str(_REPO_SRC) not in sys.path:
     sys.path.insert(0, str(_REPO_SRC))
 
@@ -150,7 +151,7 @@ class RenderedExample:
     metadata: RenderMetadata
 
 
-def _hydrate_image(rel_path: str, root: Path) -> Image.Image:
+def hydrate_image(rel_path: str, root: Path) -> Image.Image:
     abs_path = (root / rel_path).resolve()
     if not abs_path.is_file():
         raise FileNotFoundError(f"image not found: {abs_path}")
@@ -166,7 +167,7 @@ def _user_turn(query_image_paths: list[str], user_text: str, root: Path) -> dict
     """Image-before-text per Gemma 4 chat-template rule."""
     content: list[dict[str, Any]] = []
     for p in query_image_paths:
-        content.append({"type": "image", "image": _hydrate_image(p, root)})
+        content.append({"type": "image", "image": hydrate_image(p, root)})
     content.append({"type": "text", "text": user_text})
     return {"role": "user", "content": content}
 
@@ -190,7 +191,7 @@ def _assistant_tool_call(call_id: str, name: str, args: dict[str, Any]) -> dict[
 def _tool_response(call_id: str, image_paths: list[str], text: str, root: Path) -> dict[str, Any]:
     content: list[dict[str, Any]] = []
     for p in image_paths:
-        content.append({"type": "image", "image": _hydrate_image(p, root)})
+        content.append({"type": "image", "image": hydrate_image(p, root)})
     content.append({"type": "text", "text": text})
     return {"role": "tool", "tool_call_id": call_id, "content": content}
 

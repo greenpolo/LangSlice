@@ -162,7 +162,6 @@ def test_run_agent_loop_for_one_uses_rlvr_env_single_slice(monkeypatch, tmp_path
             "function": {"name": "submit_estimate", "arguments": submit_args},
         },
     ])
-    monkeypatch.setattr(eval_mod, "AtlasMetaCache", StubCache)
     monkeypatch.setattr(eval_mod, "_extract_tool_call_from_decoded", lambda text: next(calls, None))
     rlvr_pkg = types.ModuleType("rlvr")
     rlvr_env_mod = types.ModuleType("rlvr.env")
@@ -195,6 +194,7 @@ def test_run_agent_loop_for_one_uses_rlvr_env_single_slice(monkeypatch, tmp_path
             "ground_truth_position_mm": 5.0,
         },
         atlas_grid=object(),
+        atlas_meta_cache=StubCache(),
     )
     assert run.predicted_mm == [5.2]
     assert run.parseable is True
