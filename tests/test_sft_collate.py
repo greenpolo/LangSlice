@@ -146,3 +146,39 @@ def test_collate_labels_minus_100_outside_assistant(processor, rendered_single_s
     # The fraction of kept tokens should be small relative to total
     keep_fraction = (labels != -100).float().mean().item()
     assert keep_fraction < 0.5, f"unexpectedly high keep fraction: {keep_fraction}"
+
+
+@pytest.mark.skipif(not _GEMMA4_AVAILABLE, reason=_GEMMA4_SKIP_REASON)
+def test_collate_image_token_sanity_check(processor, rendered_single_slice):
+    """No labels position should fall on an image-placeholder token ID."""
+    collator = LangSliceCollator(processor=processor, max_seq_length=4096)
+    batch = collator([rendered_single_slice])
+    labels = batch["labels"][0]
+    input_ids = batch["input_ids"][0]
+    image_token_id = processor.tokenizer.convert_tokens_to_ids("<image_soft_token>")
+    if image_token_id is None or image_token_id < 0:
+        pytest.skip("Gemma 4 image-placeholder token not exposed under that name")
+    keep_positions = (labels != -100).nonzero(as_tuple=True)[0]
+    for pos in keep_positions:
+        assert input_ids[pos].item() != image_token_id, (
+            f"labels[{pos}] is {input_ids[pos].item()} which is the image token id"
+        )
+
+
+@pytest.mark.skipif(not _GEMMA4_AVAILABLE, reason=_GEMMA4_SKIP_REASON)
+def test_collate_falls_back_to_manual_span_when_no_assistant_mask(monkeypatch, processor, rendered_single_slice):
+    """If processor doesn't return assistant_masks, collator builds it manually."""
+    # Force the processor's apply_chat_template to omit assistant_masks
+    real = processor.apply_chat_template
+
+    def fake_apply(*args, **kwargs):
+        out = real(*args, **kwargs)
+        if "assistant_masks" in out:
+            del out["assistant_masks"]
+        return out
+
+    monkeypatch.setattr(processor, "apply_chat_template", fake_apply)
+    collator = LangSliceCollator(processor=processor, max_seq_length=4096)
+    batch = collator([rendered_single_slice])
+    # Fallback should still produce some non-masked positions
+    assert (batch["labels"] != -100).sum().item() > 0

@@ -49,15 +49,19 @@ class LangSliceCollator:
                     f"{self.max_seq_length} (got {ids.shape[1]} tokens). "
                     f"subject_id={ex.metadata.subject_id!r}"
                 )
-            if "assistant_masks" not in out:
-                raise RuntimeError(
-                    "processor.apply_chat_template did not return 'assistant_masks'; "
-                    "the Gemma 4 chat template likely lacks {% generation %} markers. "
-                    "Manual-span fallback lands in Task 8."
-                )
-            assistant_mask = out["assistant_masks"]  # 1 where assistant, 0 elsewhere
+            if "assistant_masks" in out:
+                assistant_mask = out["assistant_masks"]  # 1 where assistant, 0 elsewhere
+            else:
+                # Fallback: re-tokenize each assistant turn separately and find their token
+                # spans in the full sequence. Triggers when the chat template lacks
+                # {% generation %} markers.
+                assistant_mask = self._manual_span_mask(ex, ids[0])
             labels = ids.clone()
             labels[assistant_mask == 0] = -100
+
+            # Sanity check: assistant tokens never overlap image tokens.
+            self._sanity_check_no_image_tokens_in_labels(ids[0], labels[0])
+
             per_example.append({
                 "input_ids": ids[0],
                 "attention_mask": out["attention_mask"][0],
@@ -69,6 +73,46 @@ class LangSliceCollator:
 
         # Pad to the longest example in the batch
         return _pad_batch(per_example, pad_token_id=self.processor.tokenizer.pad_token_id)
+
+    def _manual_span_mask(self, example: RenderedExample, input_ids: torch.Tensor) -> torch.Tensor:
+        """Build a per-token assistant mask by re-tokenizing each assistant turn."""
+        mask = torch.zeros_like(input_ids)
+        for msg in example.messages:
+            if msg["role"] != "assistant":
+                continue
+            # Render just this assistant turn and find its span in input_ids
+            sub = self.processor.apply_chat_template(
+                [msg],
+                tools=example.tools,
+                chat_template_kwargs={"enable_thinking": False},
+                add_generation_prompt=False,
+                tokenize=True,
+                return_dict=True,
+                return_tensors="pt",
+            )
+            sub_ids = sub["input_ids"][0]
+            # Linear search for the sub-sequence (cheap; assistant turns are short)
+            n = sub_ids.shape[0]
+            for start in range(0, input_ids.shape[0] - n + 1):
+                if torch.equal(input_ids[start:start + n], sub_ids):
+                    mask[start:start + n] = 1
+                    break
+        return mask.unsqueeze(0)
+
+    def _sanity_check_no_image_tokens_in_labels(self, ids: torch.Tensor, labels: torch.Tensor) -> None:
+        """Optional safety net — disabled if the processor doesn't expose image-token IDs."""
+        candidate_names = ("<image_soft_token>", "<image>", "<|image|>")
+        for name in candidate_names:
+            tok_id = self.processor.tokenizer.convert_tokens_to_ids(name)
+            if tok_id is not None and tok_id >= 0:
+                bad = ((labels != -100) & (ids == tok_id)).any().item()
+                if bad:
+                    raise RuntimeError(
+                        f"labels mask is keeping image-token positions (token id={tok_id}, "
+                        f"name={name}); the chat template's assistant-mask logic is wrong "
+                        f"for this trace shape — investigate before training"
+                    )
+                return
 
 
 def _pad_batch(
