@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import sys
+import types
+
 import pytest
 
 from sft.eval import (
@@ -106,3 +109,94 @@ def test_summarize_eval_runs_all_no_submit():
     assert summary["tool_call_parseability_rate"] == 0.0
     assert summary["no_submit_rate"] == 1.0
     assert summary["mean_trace_length"] == pytest.approx(9.0)
+
+
+def test_agent_loop_eval_callback_signature_compiles():
+    """Smoke check that the callback class is importable + has the expected attrs."""
+    from sft.eval import AgentLoopEvalCallback, BaselineEvalCallback
+    assert hasattr(AgentLoopEvalCallback, "on_step_end")
+    assert hasattr(BaselineEvalCallback, "on_train_begin")
+
+
+def test_run_agent_loop_for_one_uses_rlvr_env_single_slice(monkeypatch, tmp_path):
+    """Stub model/processor path verifies env.reset/fetch wiring without loading Gemma."""
+    from PIL import Image
+    from sft import eval as eval_mod
+
+    image_path = tmp_path / "query.png"
+    Image.new("RGB", (32, 32), (128, 128, 128)).save(image_path)
+
+    class StubMeta:
+        pos_lo = 0.0
+        pos_hi = 13.2
+        species = "mouse"
+
+    class StubCache:
+        def get(self, atlas_name, plane):  # noqa: ANN001
+            return StubMeta()
+
+    class StubEnv:
+        reset_kwargs = None
+
+        def __init__(self, atlas_grid):  # noqa: ANN001
+            self._state = type("State", (), {"turns": 0})()
+
+        def reset(self, **kwargs):  # noqa: ANN003
+            StubEnv.reset_kwargs = kwargs
+
+        def fetch_atlas(self, positions_mm):  # noqa: ANN001
+            self._state.turns += 1
+            return {"content": [{"type": "text", "text": "Atlas at 5.00 mm."}]}
+
+    fetch_args = '{"positions_mm":[5.0]}'
+    submit_args = '{"position_mm":5.2,"reasoning":"matched"}'
+    calls = iter([
+        {
+            "id": "call_0",
+            "type": "function",
+            "function": {"name": "fetch_atlas", "arguments": fetch_args},
+        },
+        {
+            "id": "call_1",
+            "type": "function",
+            "function": {"name": "submit_estimate", "arguments": submit_args},
+        },
+    ])
+    monkeypatch.setattr(eval_mod, "AtlasMetaCache", StubCache)
+    monkeypatch.setattr(eval_mod, "_extract_tool_call_from_decoded", lambda text: next(calls, None))
+    rlvr_pkg = types.ModuleType("rlvr")
+    rlvr_env_mod = types.ModuleType("rlvr.env")
+    rlvr_env_mod.LangSliceEstimateEnv = StubEnv
+    monkeypatch.setitem(sys.modules, "rlvr", rlvr_pkg)
+    monkeypatch.setitem(sys.modules, "rlvr.env", rlvr_env_mod)
+
+    class StubProcessor:
+        def apply_chat_template(self, *args, **kwargs):  # noqa: ANN002, ANN003
+            class Batch(dict):
+                def to(self, device):  # noqa: ANN001
+                    return self
+            return Batch()
+        def decode(self, *args, **kwargs):  # noqa: ANN002, ANN003
+            return "<tool_call>{}</tool_call>"
+
+    class StubModel:
+        device = "cpu"
+        def generate(self, **kwargs):  # noqa: ANN003
+            return [[0]]
+
+    run = eval_mod._run_agent_loop_for_one(
+        model=StubModel(),
+        processor=StubProcessor(),
+        eval_row={
+            "subject_id": "M01",
+            "image_path": image_path,
+            "atlas_name": "allen_mouse_25um",
+            "plane": "coronal",
+            "ground_truth_position_mm": 5.0,
+        },
+        atlas_grid=object(),
+    )
+    assert run.predicted_mm == [5.2]
+    assert run.parseable is True
+    assert StubEnv.reset_kwargs["kind"] == "single"
+    assert StubEnv.reset_kwargs["valid_range_mm"] == (0.0, 13.2)
