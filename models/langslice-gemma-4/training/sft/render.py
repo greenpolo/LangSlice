@@ -133,19 +133,33 @@ def build_tools_schema(kind: str) -> list[dict[str, Any]]:
     raise ValueError(f"unknown system_prompt_kind: {kind!r}")
 
 
+@dataclass(frozen=True)
+class RenderMetadata:
+    atlas_name: str
+    atlas_version: str
+    plane: str
+    subject_id: str
+    system_prompt_kind: str
+
+
 @dataclass
 class RenderedExample:
     """Output of the renderer — ready for processor.apply_chat_template(...)."""
     messages: list[dict[str, Any]]
     tools: list[dict[str, Any]]
-    metadata: dict[str, Any]
+    metadata: RenderMetadata
 
 
 def _hydrate_image(rel_path: str, root: Path) -> Image.Image:
     abs_path = (root / rel_path).resolve()
     if not abs_path.is_file():
         raise FileNotFoundError(f"image not found: {abs_path}")
-    return Image.open(abs_path).convert("RGB")
+    # `Image.open` is lazy — the file handle stays open until the image data is
+    # fully realized AND the object is GC'd. Use a with-block + .copy() so the
+    # source handle closes before this function returns. The .copy() is required
+    # because convert() may return a view that still references the source.
+    with Image.open(abs_path) as src:
+        return src.convert("RGB").copy()
 
 
 def _user_turn(query_image_paths: list[str], user_text: str, root: Path) -> dict[str, Any]:
@@ -206,9 +220,18 @@ def render_example(
 
     seen_ids: set[str] = set()
     for i, step in enumerate(example.trace):
+        is_terminal = i == len(example.trace) - 1
+        if "submit" in step and not is_terminal:
+            raise RuntimeError(
+                f"submit step at non-terminal position {i} of {len(example.trace)}; "
+                "dataset validator should have caught this"
+            )
         if "submit" in step:
             call_id = f"call_final_{i}"
-            assert call_id not in seen_ids
+            if call_id in seen_ids:
+                raise RuntimeError(
+                    f"duplicate tool_call_id {call_id!r} at trace step {i}"
+                )
             seen_ids.add(call_id)
             messages.append(_assistant_tool_call(
                 call_id, step["submit"]["name"], step["submit"]["args"]
@@ -217,18 +240,21 @@ def render_example(
             continue
         # tool_call + tool_result pair
         call_id = f"call_{i}"
-        assert call_id not in seen_ids
+        if call_id in seen_ids:
+            raise RuntimeError(
+                f"duplicate tool_call_id {call_id!r} at trace step {i}"
+            )
         seen_ids.add(call_id)
         tc = step["tool_call"]
         tr = step["tool_result"]
         messages.append(_assistant_tool_call(call_id, tc["name"], tc["args"]))
         messages.append(_tool_response(call_id, tr["image_paths"], tr["text"], root))
 
-    metadata = {
-        "atlas_name": example.atlas_name,
-        "atlas_version": example.atlas_version,
-        "plane": example.plane,
-        "subject_id": example.subject_id,
-        "system_prompt_kind": example.system_prompt_kind,
-    }
+    metadata = RenderMetadata(
+        atlas_name=example.atlas_name,
+        atlas_version=example.atlas_version,
+        plane=example.plane,
+        subject_id=example.subject_id,
+        system_prompt_kind=example.system_prompt_kind,
+    )
     return RenderedExample(messages=messages, tools=tools, metadata=metadata)
