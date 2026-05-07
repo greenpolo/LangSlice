@@ -73,6 +73,21 @@ Data sessions emit one JSONL file at a path supplied via `--dataset` on the CLI.
 
 The renderer (`render.py`) translates each trace into HuggingFace chat-template format at training time. Data sessions never need to know about HF chat-template specifics, `tool_call_id` pairing, or content-block conventions — those concerns are owned by the trainer side.
 
+### 6.0 Corpus integration handoff
+
+The SFT trainer does **not** walk raw Gemini run directories or read `raw_trace.json` directly. It consumes the already-integrated JSONL supplied by `--dataset`.
+
+The data-side integration should therefore produce a corpus builder (for example `build_sft_corpus.py`) that:
+
+1. Walks `runs_verified/` plus any `runs_reroll_*/` directories.
+2. Chooses the best strict-accepted run per slice id.
+3. Drops non-strict-accepted, malformed, group, or multi-slice traces.
+4. Converts each accepted run into the §6.1 langslice-native row shape.
+5. Writes one final JSONL, normally `models/langslice-gemma-4/data/sft_examples.jsonl`.
+6. Stages every referenced query image and atlas-result image under the JSONL parent directory, using relative paths in `query_image_paths` and `tool_result.image_paths`.
+
+In short: the other agent should hand Codex/training one JSONL plus its image files, not a tree of raw traces. The SFT pipeline owns validation, prompt/schema construction, HF chat-template rendering, image hydration, loss masking, and training.
+
 ### 6.1 Schema
 
 ```json
