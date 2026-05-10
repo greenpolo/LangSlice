@@ -1,0 +1,104 @@
+# Single-turn GRPO (Lane A: terminal-state final-answer).
+#
+# Sibling of grpo_pilot.toml. The differences are:
+#   - max_completion_length=128 (output is one tiny JSON object, not a tool loop).
+#   - mask_truncated_completions=false (truncation is rare and the docs warn it
+#     causes KL/NaN issues; only enable if completion length actually creeps up).
+#   - loss_type="dapo" (TRL's documented default; falls through to TRL's
+#     internal default if the installed TRL build doesn't accept the key —
+#     _filter_grpo_config_for_installed_trl drops unknowns).
+#   - learning_rate=1e-6 (much lower than the multi-turn pilot's 5e-6 — the
+#     plan recommends starting conservative for single-turn so the policy
+#     doesn't drift away from the SFT init).
+#   - max_steps=100 (smoke run; gate on the diagnostics in README before
+#     scaling).
+#   - No stop_tool_names / max_tool_calling_iterations (no tool loop).
+# Plan: docs/superpowers/plans/2026-05-10-langslice-single-turn-rl-grpo.md.
+
+[grpo]
+chat_template_kwargs = { enable_thinking = false }
+learning_rate = 1e-6
+num_generations = 8
+generation_batch_size = 8
+per_device_train_batch_size = 1
+gradient_accumulation_steps = 4
+max_completion_length = 128
+dataloader_num_workers = 4
+dataloader_pin_memory = true
+max_grad_norm = 0.1
+importance_sampling_level = "sequence"
+loss_type = "dapo"
+mask_truncated_completions = false
+scale_rewards = "batch"
+temperature = 1.0
+top_p = 1.0
+optim = "adamw_8bit"
+log_completions = true
+logging_steps = 1
+save_steps = 25
+max_steps = 100
+report_to = "trackio"
+load_in_4bit = true
+# 9 images x 256 tokens + ~500 tokens of system/user text fits comfortably
+# under 4096. If a trace exceeds this (rare; SFT traces in our corpus cap at
+# ~9 atlas images), bump to 6144 like grpo_pilot.toml.
+max_seq_length = 4096
+
+[lora]
+finetune_vision_layers = false
+finetune_language_layers = true
+finetune_attention_modules = true
+finetune_mlp_modules = true
+r = 16
+lora_alpha = 32
+use_gradient_checkpointing = "unsloth"
+
+[data]
+# 1-in-N subjects held out for eval. Set to 0 to disable holdout (everything
+# to train).
+eval_holdout_every = 5
+# Cap rows for smoke runs; comment out for production.
+# max_examples = 200
+# Round index recorded in each curriculum_log.jsonl row (only used when
+# --curriculum-weights is set). Bump between expert-iteration rounds so the
+# next round's weight-update can attribute log rows correctly.
+curriculum_round = 0
+
+[reward]
+# Axis-normalized truncated Gaussian on (predicted - GT) / axis_span. Same
+# shape as the multi-turn lane so cross-lane reward comparisons are fair.
+# Calibrated against slicebench tiny num_gens=4 (best-of-4 median ~5% of plane
+# extent): cutoff at 15% covers ~95% of best-of-N samples; sigma 5% gives ~50%
+# reward at the median, generating a strong gradient vs the cutoff floor.
+cutoff_frac = 0.15
+sigma_frac = 0.05
+# format_penalty: returned when the completion is anything but a single
+# {"position_mm": <number>} JSON object. Negative penalty so the policy gets
+# an explicit gradient toward the strict-JSON contract from step 1.
+format_penalty = -1.0
+# out_of_range_reward: returned when the parse succeeds but position is
+# outside valid_range_mm. Plain 0 — neither penalize nor credit; the model
+# just doesn't earn anything for proposing impossibilities.
+out_of_range_reward = 0.0
+
+[adaptive]
+# Default knobs for the unified RL pipeline (Task 6). Used when
+# --reward-mode adaptive (the default) and/or --curriculum-mode adaptive
+# (the default). CLI flags override per-key. The static [reward] section
+# above remains the fallback when --reward-mode static is selected.
+#
+# AdaRFT update knobs (CurriculumRepeatingSampler):
+target_reward = 0.5            # β: where T settles when reward matches target
+alpha = 2.0                    # tanh slope of the AdaRFT update step
+eta = 0.05                     # max step magnitude of the AdaRFT update
+ema_decay = 0.7                # smoothing on top of the raw tanh step
+band_width = 0.15              # half-width of the difficulty band around T
+max_per_subject_in_batch = 2   # cap on rollouts from one subject per batch
+# Adaptive reward schedule knobs (AdaptiveRewardSchedule):
+sigma_quantile = 0.5           # error-fraction quantile mapped to bell sigma
+cutoff_quantile = 0.95         # error-fraction quantile mapped to bell cutoff
+min_sigma_frac = 0.005         # lower clamp on the dynamic sigma
+max_sigma_frac = 0.05          # upper clamp on the dynamic sigma
+min_observations = 50          # rolling-buffer warmup before dynamic kicks in
+# Cadence knobs (AdaRFTCurriculumCallback):
+persist_difficulty_every_n_ticks = 50  # 0 = disable JSON sidecar persist

@@ -1,0 +1,52 @@
+# Smoke config — 5 steps to compare num_generations 4 vs 8 step times.
+# Mirrors grpo_pilot.toml but with max_steps=5 and reduced eval.
+
+[grpo]
+chat_template_kwargs = { enable_thinking = false }
+learning_rate = 5e-6
+num_generations = 8
+generation_batch_size = 8
+per_device_train_batch_size = 1
+gradient_accumulation_steps = 4
+max_completion_length = 1200
+max_tool_calling_iterations = 12
+stop_tool_names = ["submit_estimate", "submit_group_estimate"]
+max_grad_norm = 0.1
+importance_sampling_level = "sequence"
+loss_type = "dr_grpo"
+mask_truncated_completions = true
+scale_rewards = "batch"
+temperature = 0.9
+top_p = 0.95
+optim = "adamw_8bit"
+log_completions = false
+logging_steps = 1
+save_steps = 100
+max_steps = 5
+report_to = "none"
+load_in_4bit = true
+max_seq_length = 4096
+dataloader_num_workers = 4
+dataloader_pin_memory = true
+
+[lora]
+finetune_vision_layers = false
+finetune_language_layers = true
+finetune_attention_modules = true
+finetune_mlp_modules = true
+r = 16
+lora_alpha = 32
+use_gradient_checkpointing = "unsloth"
+
+[data]
+single_fraction = 1.0
+group_size = 4
+thickness_um = 30
+eval_holdout_every = 0
+clahe_fraction = 0.25
+# Smoke cap — keep dataset assembly fast, enough rows for 5 steps × num_gens=8
+max_examples = 200
+
+[reward]
+cutoff_frac = 0.15
+sigma_frac = 0.05
