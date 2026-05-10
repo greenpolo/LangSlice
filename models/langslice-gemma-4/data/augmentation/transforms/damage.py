@@ -22,6 +22,8 @@ from scipy.ndimage import (
 from .base import TransformContext
 
 __all__ = [
+    "AnteriorIsocortexDetachment",
+    "AnteriorOlfactoryBulbDetachment",
     "Folds",
     "HemibrainPreparation",
     "Tears",
@@ -557,12 +559,432 @@ class HemibrainPreparation:
         return np.clip(out, 0.0, 1.0).astype(np.float32)
 
 
+# ---------------------------------------------------------------------------
+# Tear-line cut helpers (shared by OB + isocortex detachment transforms)
+# ---------------------------------------------------------------------------
+
+
+def _wavy_tear_cut_mask(
+    *,
+    tissue: np.ndarray,
+    target_mask: np.ndarray,
+    rng: np.random.Generator,
+    alpha_range: tuple[float, float],
+    amp_long_px_range: tuple[float, float],
+    amp_short_px_range: tuple[float, float],
+    wavelength_long_px_range: tuple[float, float],
+    wavelength_short_px_range: tuple[float, float],
+) -> np.ndarray | None:
+    """Return boolean mask of tissue pixels to remove via wavy tear-line cut.
+
+    The tear-line is perpendicular to the (non-target → target) centroid
+    direction, placed near the boundary, with two-frequency sinusoidal
+    waviness so the cut doesn't trace any anatomical contour. Returns None
+    when the geometry is degenerate (centroids coincide).
+    """
+    non_target = tissue & ~target_mask
+    if not non_target.any() or not target_mask.any():
+        return None
+    target_rows, target_cols = np.where(target_mask)
+    rem_rows, rem_cols = np.where(non_target)
+    oy, ox = float(target_rows.mean()), float(target_cols.mean())
+    ty, tx = float(rem_rows.mean()), float(rem_cols.mean())
+    dy, dx = oy - ty, ox - tx
+    v_norm = float(np.hypot(dy, dx))
+    if v_norm < 1.0:
+        return None
+    uy, ux = dy / v_norm, dx / v_norm
+    ny, nx = -ux, uy
+    alpha = float(rng.uniform(*alpha_range))
+    py, px = ty + alpha * dy, tx + alpha * dx
+
+    h, w = target_mask.shape
+    yy, xx = np.indices((h, w)).astype(np.float32)
+    dr = yy - py
+    dc = xx - px
+    signed_dist = uy * dr + ux * dc
+    along_line = ny * dr + nx * dc
+
+    wl_long = float(rng.uniform(*wavelength_long_px_range))
+    wl_short = float(rng.uniform(*wavelength_short_px_range))
+    amp_long = float(rng.uniform(*amp_long_px_range))
+    amp_short = float(rng.uniform(*amp_short_px_range))
+    phase_long = float(rng.uniform(0.0, 2.0 * np.pi))
+    phase_short = float(rng.uniform(0.0, 2.0 * np.pi))
+    displacement = (
+        amp_long * np.sin(2.0 * np.pi * along_line / wl_long + phase_long)
+        + amp_short * np.sin(2.0 * np.pi * along_line / wl_short + phase_short)
+    )
+    return ((signed_dist + displacement) > 0) & tissue
+
+
+def _apply_tear_cut_and_recenter(
+    image: np.ndarray,
+    *,
+    tissue: np.ndarray,
+    cut_removed: np.ndarray,
+    rng: np.random.Generator,
+    ctx: TransformContext,
+    fray_band_px: int | None,
+) -> np.ndarray:
+    """Fray the cut edge, blank removed pixels, recenter, and update ctx.
+
+    Returns HWC float32 [0, 1]. If fraying erases all remaining tissue,
+    returns the input unchanged.
+    """
+    bg_color = _sample_bg_color(image)
+    remaining_after_cut = tissue & ~cut_removed
+    fray = _fray_along_mask_edge(
+        remaining_after_cut, cut_removed, rng, band_px=fray_band_px,
+    )
+    removed = cut_removed | fray
+    new_tissue = remaining_after_cut & ~fray
+    if not new_tissue.any():
+        return image
+
+    out = image.copy()
+    out[removed] = bg_color
+
+    rows, cols = np.where(new_tissue)
+    cy = float(rows.mean())
+    cx = float(cols.mean())
+    h, w = out.shape[:2]
+    dy = int(round((h - 1) / 2.0 - cy))
+    dx = int(round((w - 1) / 2.0 - cx))
+
+    translated = np.empty_like(out)
+    for ch in range(out.shape[2]):
+        translated[:, :, ch] = _translate_numeric(
+            out[:, :, ch], dx=dx, dy=dy, fill_value=float(bg_color[ch]),
+        )
+
+    translated_tissue = _translate_mask(new_tissue, dx=dx, dy=dy)
+    if ctx.tissue_mask is not None:
+        ctx.tissue_mask = translated_tissue.astype(ctx.tissue_mask.dtype)
+    if ctx.annotation_slice is not None:
+        ann = ctx.annotation_slice.copy()
+        ann[removed] = 0
+        shifted_ann = _translate_numeric(ann, dx=dx, dy=dy, fill_value=0)
+        ctx.annotation_slice = shifted_ann.astype(ctx.annotation_slice.dtype)
+    if ctx.density_map is not None:
+        density = ctx.density_map.astype(np.float32, copy=True)
+        density[removed] = 0.0
+        shifted_density = _translate_numeric(density, dx=dx, dy=dy, fill_value=0.0)
+        ctx.density_map = shifted_density.astype(ctx.density_map.dtype)
+    if ctx.tissue_class_masks is not None:
+        updated: dict[str, np.ndarray] = {}
+        for key, m in ctx.tissue_class_masks.items():
+            if key == "background":
+                continue
+            kept = m.astype(bool) & ~removed
+            shifted = _translate_mask(kept, dx=dx, dy=dy)
+            updated[key] = shifted.astype(bool)
+        updated["tissue"] = translated_tissue
+        updated["background"] = ~translated_tissue
+        ctx.tissue_class_masks = updated
+
+    return np.clip(translated, 0.0, 1.0).astype(np.float32)
+
+
+def _half_mask_by_centroid_x(mask: np.ndarray, *, side: str) -> np.ndarray:
+    """Split ``mask`` at its own centroid-x and return the chosen half."""
+    rows, cols = np.where(mask)
+    if rows.size == 0:
+        return mask
+    midline_x = float(cols.mean())
+    h, w = mask.shape
+    xx = np.arange(w)
+    keep_cols = xx < midline_x if side == "left" else xx >= midline_x
+    return mask & keep_cols[None, :]
+
+
+class AnteriorOlfactoryBulbDetachment:
+    """Anterior coronal sections lose one or both olfactory bulbs during sectioning.
+
+    The OB protrudes from the anterior pole and is mechanically fragile; it
+    routinely snaps off during cryosectioning. Sometimes both bulbs detach
+    together as a unit; sometimes just one side comes off and the other stays
+    attached. The microscope FOV then re-centers on the remaining tissue.
+
+    Algorithm — wavy tear-line cut (not atlas-aligned):
+    A naive removal of OB-mask pixels traces the BrainGlobe MOB+AOB
+    segmentation pixel-perfectly, leaving an anatomical-shaped void that
+    reads as "drawn over with a black sharpie". Real cryostat tearing
+    follows tissue mechanics, not anatomy. So we cut along a wavy line
+    perpendicular to the (non-target tissue → target) centroid direction —
+    see ``_wavy_tear_cut_mask`` docstring.
+
+    Modes:
+    - ``"bilateral"`` — target = whole OB; both bulbs removed
+    - ``"left"`` / ``"right"`` — target = one half of OB by centroid-x split
+    - ``"auto"`` (default) — random per-call: P(unilateral) = ``unilateral_prob``
+
+    Behavior:
+    - Coronal plane only; ``ctx.position_mm < anterior_max_position_mm``.
+    - Requires ``olfactory_bulb`` mask in ``ctx.tissue_class_masks`` covering
+      ``min_ob_pixel_frac`` ≤ frac ≤ ``max_ob_pixel_frac`` of the tissue.
+    - Validates the cut removed ≥``min_ob_removed_frac`` of the targeted OB
+      and left ≥``min_remaining_tissue_frac`` of total tissue; otherwise
+      returns image unchanged.
+    - Updates ``ctx.tissue_mask``, ``ctx.annotation_slice``, ``ctx.density_map``,
+      and ``ctx.tissue_class_masks`` to reflect the new geometry.
+
+    Must run before geometry-warping transforms so the centered tissue
+    follows the warps.
+    """
+
+    _MODES = {"auto", "bilateral", "left", "right"}
+
+    def __init__(
+        self,
+        p: float = 0.40,
+        anterior_max_position_mm: float = 5.0,
+        min_ob_pixel_frac: float = 0.05,
+        max_ob_pixel_frac: float = 0.70,
+        fray_band_px: int | None = None,
+        mode: str = "auto",
+        unilateral_prob: float = 0.35,
+        bilateral_alpha_range: tuple[float, float] = (0.45, 0.70),
+        unilateral_alpha_range: tuple[float, float] = (0.55, 0.85),
+        tear_amp_long_px_range: tuple[float, float] = (8.0, 18.0),
+        tear_amp_short_px_range: tuple[float, float] = (3.0, 8.0),
+        tear_wavelength_long_px_range: tuple[float, float] = (50.0, 90.0),
+        tear_wavelength_short_px_range: tuple[float, float] = (18.0, 32.0),
+        min_ob_removed_frac: float = 0.50,
+        min_remaining_tissue_frac: float = 0.10,
+    ) -> None:
+        if mode not in self._MODES:
+            raise ValueError(f"mode must be one of {self._MODES}, got {mode!r}")
+        self.p = p
+        self.anterior_max_position_mm = anterior_max_position_mm
+        self.min_ob_pixel_frac = min_ob_pixel_frac
+        self.max_ob_pixel_frac = max_ob_pixel_frac
+        self.fray_band_px = fray_band_px
+        self.mode = mode
+        self.unilateral_prob = unilateral_prob
+        self.bilateral_alpha_range = bilateral_alpha_range
+        self.unilateral_alpha_range = unilateral_alpha_range
+        self.tear_amp_long_px_range = tear_amp_long_px_range
+        self.tear_amp_short_px_range = tear_amp_short_px_range
+        self.tear_wavelength_long_px_range = tear_wavelength_long_px_range
+        self.tear_wavelength_short_px_range = tear_wavelength_short_px_range
+        self.min_ob_removed_frac = min_ob_removed_frac
+        self.min_remaining_tissue_frac = min_remaining_tissue_frac
+
+    def __call__(
+        self,
+        image: np.ndarray,
+        *,
+        rng: np.random.Generator,
+        ctx: TransformContext,
+    ) -> np.ndarray:
+        if rng.random() > self.p:
+            return image
+        if getattr(ctx, "plane", "coronal") != "coronal":
+            return image
+        if ctx.position_mm is None or ctx.position_mm >= self.anterior_max_position_mm:
+            return image
+        if ctx.tissue_class_masks is None:
+            return image
+        ob_mask = ctx.tissue_class_masks.get("olfactory_bulb")
+        if ob_mask is None:
+            return image
+        ob_mask = ob_mask.astype(bool)
+        if not ob_mask.any():
+            return image
+
+        tissue = ctx.tissue_mask if ctx.tissue_mask is not None else _infer_tissue_mask(image)
+        tissue = tissue.astype(bool)
+        if not tissue.any():
+            return image
+        ob_frac = ob_mask.sum() / tissue.sum()
+        if ob_frac < self.min_ob_pixel_frac or ob_frac > self.max_ob_pixel_frac:
+            return image
+
+        if self.mode == "auto":
+            chosen_mode = (
+                ("left" if rng.random() < 0.5 else "right")
+                if rng.random() < self.unilateral_prob
+                else "bilateral"
+            )
+        else:
+            chosen_mode = self.mode
+
+        if chosen_mode == "bilateral":
+            target_mask = ob_mask
+            alpha_range = self.bilateral_alpha_range
+        else:
+            target_mask = _half_mask_by_centroid_x(ob_mask, side=chosen_mode)
+            alpha_range = self.unilateral_alpha_range
+            if not target_mask.any():
+                return image
+
+        cut_removed = _wavy_tear_cut_mask(
+            tissue=tissue,
+            target_mask=target_mask,
+            rng=rng,
+            alpha_range=alpha_range,
+            amp_long_px_range=self.tear_amp_long_px_range,
+            amp_short_px_range=self.tear_amp_short_px_range,
+            wavelength_long_px_range=self.tear_wavelength_long_px_range,
+            wavelength_short_px_range=self.tear_wavelength_short_px_range,
+        )
+        if cut_removed is None:
+            return image
+
+        target_removed_frac = (cut_removed & target_mask).sum() / max(target_mask.sum(), 1)
+        remaining_frac = (tissue & ~cut_removed).sum() / max(tissue.sum(), 1)
+        if (
+            target_removed_frac < self.min_ob_removed_frac
+            or remaining_frac < self.min_remaining_tissue_frac
+        ):
+            return image
+
+        return _apply_tear_cut_and_recenter(
+            image,
+            tissue=tissue,
+            cut_removed=cut_removed,
+            rng=rng,
+            ctx=ctx,
+            fray_band_px=self.fray_band_px,
+        )
+
+
+class AnteriorIsocortexDetachment:
+    """Early-isocortex anterior sections lose the small dorsal cortical wedge.
+
+    Where the isocortex is just emerging at the anterior pole, it sits as a
+    thin dorsal-frontal shell that can detach during sectioning while the
+    bulkier subcortical structures (and any remaining OB) stay intact. Same
+    wavy tear-line algorithm as the OB detachment, applied to the isocortex
+    mask.
+
+    Behavior:
+    - Coronal plane only; ``ctx.position_mm`` in
+      ``anterior_position_mm_range``.
+    - Requires the ``isocortex`` mask in ``ctx.tissue_class_masks`` covering
+      ``min_iso_pixel_frac`` ≤ frac ≤ ``max_iso_pixel_frac`` of the tissue —
+      i.e. isocortex must be present but not yet dominant.
+    - Validates the cut removed ≥``min_iso_removed_frac`` of the isocortex
+      and left ≥``min_remaining_tissue_frac`` of total tissue; otherwise
+      returns image unchanged.
+    - Updates ``ctx.tissue_mask``, ``ctx.annotation_slice``, ``ctx.density_map``,
+      and ``ctx.tissue_class_masks`` to reflect the new geometry.
+
+    Must run before geometry-warping transforms so the centered tissue
+    follows the warps.
+    """
+
+    def __init__(
+        self,
+        p: float = 0.30,
+        anterior_position_mm_range: tuple[float, float] = (1.5, 3.5),
+        min_iso_pixel_frac: float = 0.05,
+        max_iso_pixel_frac: float = 0.45,
+        fray_band_px: int | None = None,
+        tear_alpha_range: tuple[float, float] = (0.55, 0.80),
+        tear_amp_long_px_range: tuple[float, float] = (8.0, 18.0),
+        tear_amp_short_px_range: tuple[float, float] = (3.0, 8.0),
+        tear_wavelength_long_px_range: tuple[float, float] = (50.0, 90.0),
+        tear_wavelength_short_px_range: tuple[float, float] = (18.0, 32.0),
+        min_iso_removed_frac: float = 0.50,
+        min_remaining_tissue_frac: float = 0.20,
+    ) -> None:
+        self.p = p
+        self.anterior_position_mm_range = anterior_position_mm_range
+        self.min_iso_pixel_frac = min_iso_pixel_frac
+        self.max_iso_pixel_frac = max_iso_pixel_frac
+        self.fray_band_px = fray_band_px
+        self.tear_alpha_range = tear_alpha_range
+        self.tear_amp_long_px_range = tear_amp_long_px_range
+        self.tear_amp_short_px_range = tear_amp_short_px_range
+        self.tear_wavelength_long_px_range = tear_wavelength_long_px_range
+        self.tear_wavelength_short_px_range = tear_wavelength_short_px_range
+        self.min_iso_removed_frac = min_iso_removed_frac
+        self.min_remaining_tissue_frac = min_remaining_tissue_frac
+
+    def __call__(
+        self,
+        image: np.ndarray,
+        *,
+        rng: np.random.Generator,
+        ctx: TransformContext,
+    ) -> np.ndarray:
+        if rng.random() > self.p:
+            return image
+        if getattr(ctx, "plane", "coronal") != "coronal":
+            return image
+        ap_lo, ap_hi = self.anterior_position_mm_range
+        if ctx.position_mm is None or not (ap_lo <= ctx.position_mm < ap_hi):
+            return image
+        if ctx.tissue_class_masks is None:
+            return image
+        iso_mask = ctx.tissue_class_masks.get("isocortex")
+        if iso_mask is None:
+            return image
+        iso_mask = iso_mask.astype(bool)
+        if not iso_mask.any():
+            return image
+
+        tissue = ctx.tissue_mask if ctx.tissue_mask is not None else _infer_tissue_mask(image)
+        tissue = tissue.astype(bool)
+        if not tissue.any():
+            return image
+        iso_frac = iso_mask.sum() / tissue.sum()
+        if iso_frac < self.min_iso_pixel_frac or iso_frac > self.max_iso_pixel_frac:
+            return image
+
+        cut_removed = _wavy_tear_cut_mask(
+            tissue=tissue,
+            target_mask=iso_mask,
+            rng=rng,
+            alpha_range=self.tear_alpha_range,
+            amp_long_px_range=self.tear_amp_long_px_range,
+            amp_short_px_range=self.tear_amp_short_px_range,
+            wavelength_long_px_range=self.tear_wavelength_long_px_range,
+            wavelength_short_px_range=self.tear_wavelength_short_px_range,
+        )
+        if cut_removed is None:
+            return image
+
+        iso_removed_frac = (cut_removed & iso_mask).sum() / max(iso_mask.sum(), 1)
+        remaining_frac = (tissue & ~cut_removed).sum() / max(tissue.sum(), 1)
+        if (
+            iso_removed_frac < self.min_iso_removed_frac
+            or remaining_frac < self.min_remaining_tissue_frac
+        ):
+            return image
+
+        return _apply_tear_cut_and_recenter(
+            image,
+            tissue=tissue,
+            cut_removed=cut_removed,
+            rng=rng,
+            ctx=ctx,
+            fray_band_px=self.fray_band_px,
+        )
+
+
 class PosteriorWingDamage:
     """Posterior coronal lateral-wing loss or detachment.
 
-    In posterior sections, the lateral "wings" can peel away as physical tissue
-    slabs. This targets the whole lateral slab from the tissue silhouette, not
-    only atlas isocortex pixels.
+    In posterior sections (post-thalamus), the lateral cortical/hippocampal
+    wings shed as whole tissue slabs. Removal is *clean* along the wing's
+    natural lateral atlas boundary — the central brain stays untouched.
+    There's no need for wavy/torn cuts here: unlike OB or isocortex damage
+    (where the missing region cut into the central brain and required a
+    physical-tear treatment to avoid an "atlas-shape" void), posterior
+    wings sit at the lateral edge of the section, so removing them just
+    leaves the central brain bordered by its own natural cortical edge.
+
+    Modes (default weights pushed heavily toward bilateral loss — real
+    posterior sections most often shed both wings together):
+    - ``"both_missing"``: 0.55 — both wings removed
+    - ``"left_missing"``: 0.10
+    - ``"right_missing"``: 0.10
+    - ``"both_detached"``: 0.10 — both wings translated/rotated outward
+    - ``"left_missing_right_detached"``: 0.075
+    - ``"right_missing_left_detached"``: 0.075
     """
 
     _MODES = (
@@ -573,12 +995,14 @@ class PosteriorWingDamage:
         "left_missing_right_detached",
         "right_missing_left_detached",
     )
+    _DEFAULT_MODE_WEIGHTS = (0.10, 0.10, 0.55, 0.10, 0.075, 0.075)
 
     def __init__(
         self,
         p: float = 0.18,
         posterior_min_position_mm: float = 8.5,
         mode: str | None = None,
+        mode_weights: tuple[float, ...] | None = None,
         detach_shift_px: tuple[int, int] | None = None,
         detach_angle_deg: tuple[float, float] = (-8.0, 8.0),
         fray_band_px: int | None = None,
@@ -589,6 +1013,11 @@ class PosteriorWingDamage:
         if mode is not None and mode not in {*self._MODES, "left_detached", "right_detached"}:
             raise ValueError(f"Unsupported posterior wing damage mode: {mode!r}")
         self.mode = mode
+        if mode_weights is not None and len(mode_weights) != len(self._MODES):
+            raise ValueError(
+                f"mode_weights must have {len(self._MODES)} entries"
+            )
+        self.mode_weights = mode_weights or self._DEFAULT_MODE_WEIGHTS
         self.detach_shift_px = detach_shift_px
         self.detach_angle_deg = detach_angle_deg
         self.fray_band_px = fray_band_px
@@ -619,10 +1048,6 @@ class PosteriorWingDamage:
                 for key in ("isocortex", "hippocampal_formation", "cortical_subplate")
             )
         )
-        # Wing damage targets cortical/hippocampal lateral slabs. When those
-        # specific masks are absent (e.g. cerebellum-only sections), the
-        # generic-tissue fallback would mis-classify central brain as a wing
-        # and cleave it — skip instead.
         if not has_specific_wing_masks:
             return image
 
@@ -637,7 +1062,9 @@ class PosteriorWingDamage:
         if not wings["left"].any() and not wings["right"].any():
             return image
 
-        mode = self.mode or str(rng.choice(self._MODES, p=[0.20, 0.20, 0.15, 0.25, 0.10, 0.10]))
+        mode = self.mode or str(
+            rng.choice(self._MODES, p=list(self.mode_weights))
+        )
         actions: dict[str, str] = {}
         if mode == "left_missing":
             actions["left"] = "missing"
@@ -673,22 +1100,13 @@ class PosteriorWingDamage:
             filled = binary_fill_holes(mask)
             if filled is not None:
                 mask = filled & full_tissue
-            central_brain = full_tissue & ~mask
-            keep_fray = _fray_along_mask_edge(
-                central_brain, mask, rng, band_px=self.fray_band_px
-            )
-            removed_masks.append(mask | keep_fray)
+            removed_masks.append(mask)
             out[mask] = bg_color
-            if keep_fray.any():
-                out[keep_fray] = bg_color
 
             if action != "detached":
                 continue
 
-            wing_fray = _fray_along_mask_edge(
-                mask, central_brain, rng, band_px=self.fray_wing_band_px
-            )
-            moved_wing = mask & ~wing_fray
+            moved_wing = mask
             if not moved_wing.any():
                 continue
 

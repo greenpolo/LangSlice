@@ -14,16 +14,21 @@ Intensity levels
 
 Probability schedule (medium)
 -----------------------------
-ALWAYS     BladeStretchHorizontal  — horizontal-biased anisotropic stretch (~22% max H stretch)
-85%        IlluminationGradient    — lamp / photobleaching gradient
-75%        AffineJitter            — small rotation + translation
-70%        EmbeddingHalos          — warm halo outside tissue (light-bg only)
-55%        VentricleExpansion      — CSF retraction (pre-warp so it follows the warp)
-45%        Folds                   — sinusoidal tissue-fold warp
-35%        Microbubbles            — sparse refractive bubbles (toned down)
-35%        ResolutionShift         — down-then-up blur (resolution variation)
-30%        Tears                   — edge bites at the tissue boundary
-25%        Debris                  — small dark dust specks on tissue
+ALWAYS     BladeStretchHorizontal              — horizontal-biased anisotropic stretch (~22% max H stretch)
+85%        IlluminationGradient                — lamp / photobleaching gradient
+75%        AffineJitter                        — small rotation + translation
+70%        EmbeddingHalos                      — warm halo outside tissue (light-bg only)
+55%        VentricleExpansion                  — CSF retraction (pre-warp so it follows the warp)
+45%        Folds                               — sinusoidal tissue-fold warp
+40%        AnteriorOlfactoryBulbDetachment     — drop OB in anterior coronal sections, recenter tissue
+30%        AnteriorIsocortexDetachment         — drop emerging isocortex in narrow AP 1.5-3.5 window
+35%        Microbubbles                        — sparse refractive bubbles (toned down)
+25%        Debris                              — small dark dust specks on tissue
+
+Disabled: ``ResolutionShift`` (real microscopy is in focus) and ``Tears`` (the
+edge-bite mode produced grainy black discs that don't match real damage).
+Both classes still live in the codebase for the deprecated ``pipeline.py``
+path but are no longer wired into ``apply_damage_layer``.
 
 Light-background modalities that accept EmbeddingHalos:
     nissl, brightfield, ish
@@ -38,6 +43,8 @@ import numpy as np
 
 from .transforms.base import TransformContext
 from .transforms.damage import (
+    AnteriorIsocortexDetachment,
+    AnteriorOlfactoryBulbDetachment,
     Debris,
     EmbeddingHalos,
     Folds,
@@ -45,10 +52,9 @@ from .transforms.damage import (
     IlluminationGradient,
     Microbubbles,
     PosteriorWingDamage,
-    Tears,
     VentricleExpansion,
 )
-from .transforms.geometry import AffineJitter, BladeStretchHorizontal, ResolutionShift
+from .transforms.geometry import AffineJitter, BladeStretchHorizontal
 
 __all__ = ["apply_damage_layer"]
 
@@ -131,6 +137,23 @@ def apply_damage_layer(
         hemibrain = HemibrainPreparation(p=_p(0.08))
         out = hemibrain(out, rng=rng, ctx=ctx)
 
+    # --- 0a2. AnteriorOlfactoryBulbDetachment (pre-warp) --------------------
+    # Anterior coronal sections frequently lose one or both olfactory bulbs
+    # during cryosectioning; the FOV recenters on the remaining cortex. Must
+    # run before VentricleExpansion + geometry warps so all downstream stages
+    # see the recentered tissue.
+    if geometry:
+        ob_drop = AnteriorOlfactoryBulbDetachment(p=_p(0.40))
+        out = ob_drop(out, rng=rng, ctx=ctx)
+
+    # --- 0a3. AnteriorIsocortexDetachment (pre-warp) ------------------------
+    # In the narrow AP window where isocortex is just emerging at the
+    # anterior pole, the thin dorsal cortical wedge can detach during
+    # sectioning while the OB and other structures stay intact.
+    if geometry:
+        iso_drop = AnteriorIsocortexDetachment(p=_p(0.30))
+        out = iso_drop(out, rng=rng, ctx=ctx)
+
     # --- 0b. VentricleExpansion (pre-warp) ----------------------------------
     # CSF retraction makes ventricles read larger than the atlas predicts.
     # MUST run before BladeStretchHorizontal / AffineJitter / Folds so the
@@ -185,23 +208,16 @@ def apply_damage_layer(
         folds = Folds(p=_p(0.45))
         out = folds(out, rng=rng, ctx=ctx)
 
-    # --- 8. ResolutionShift (35% medium) -------------------------------------
-    res = ResolutionShift(p=_p(0.35))
-    out = res(out, rng=rng, ctx=ctx)
-
-    # --- 9. Tears (30% medium) -----------------------------------------------
-    # Edge bites: irregular discs torn from the tissue boundary so the
-    # silhouette acquires ragged notches. Ventricle damage is handled
-    # separately by VentricleExpansion above (pre-warp).
-    if geometry:
-        tears = Tears(p=_p(0.30))
-        out = tears(out, rng=rng, ctx=ctx)
+    # ResolutionShift and Tears intentionally omitted — see module docstring.
 
     # --- 10. Posterior wing detachment / loss --------------------------------
-    # In posterior coronal sections, lateral tissue wings often detach as whole
-    # slabs once the thalamus is no longer present.
+    # In posterior coronal sections, lateral tissue wings shed as whole slabs
+    # once the thalamus is no longer present. This is the dominant damage mode
+    # for posterior coronal sections — bumped to p=0.95 with mode weights
+    # heavily biased toward "both_missing" (default 0.55) so missing-both is
+    # the most common outcome among posterior-damaged slices.
     if geometry:
-        posterior_wing = PosteriorWingDamage(p=_p(0.30))
+        posterior_wing = PosteriorWingDamage(p=_p(0.95))
         out = posterior_wing(out, rng=rng, ctx=ctx)
 
     return np.clip(out, 0.0, 1.0).astype(np.float32)

@@ -96,21 +96,19 @@ def render_dapi_counterstain(
     ctx: TransformContext,
     rng: np.random.Generator,
     pixel_size_um: float,
-    density_range_per_mm2: tuple[float, float] = (2200.0, 3500.0),
-    intensity_range: tuple[float, float] = (0.55, 0.90),
+    density_range_per_mm2: tuple[float, float] = (2200.0, 3500.0),  # noqa: ARG001 — legacy
+    intensity_range: tuple[float, float] = (0.55, 0.90),  # noqa: ARG001 — legacy
 ) -> np.ndarray:
     """DAPI counterstain — additive blue blobs on near-black canvas.
 
-    Uses a slightly lower default density than dedicated DAPI imaging since
-    multi-channel acquisitions typically use shorter DAPI exposure.
+    Uses the GT-calibrated DAPI texture renderers (see ``transforms/dapi_texture.py``).
+    The ``density_range_per_mm2`` and ``intensity_range`` kwargs are kept for
+    API compatibility but no longer have effect (calibrated parameters live
+    in ``DAPI_GM_PARAMS`` / ``DAPI_WM_PARAMS``).
     """
     h, w = annotation_slice.shape[:2]
     canvas = np.zeros((h, w, 3), dtype=np.float32)
-    canvas = DAPIGrayMatterNuclei(
-        p=1.0,
-        density_range_per_mm2=density_range_per_mm2,
-        intensity_range=intensity_range,
-    )(canvas, rng=rng, ctx=ctx)
+    canvas = DAPIGrayMatterNuclei(p=1.0)(canvas, rng=rng, ctx=ctx)
     canvas = DAPIWhiteMatterNuclei(p=1.0)(canvas, rng=rng, ctx=ctx)
     # Coverage map = where blue brightness landed; used by signal layers to
     # avoid double-staining nuclei.
