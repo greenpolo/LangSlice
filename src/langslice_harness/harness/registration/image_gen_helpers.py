@@ -16,7 +16,7 @@ from langslice_harness.atlas import position_mm_to_index
 logger = logging.getLogger(__name__)
 
 
-_VENTRICLE_KEYWORDS = {"ventricle", "aqueduct", "central canal", "choroid", "subependymal"}
+_VENTRICLE_KEYWORDS = {"ventricle", "central canal", "choroid", "subependymal"}
 
 
 def _upscale_to_min_long_edge(img: Image.Image, min_long_edge: int = 1024) -> Image.Image:
@@ -162,7 +162,7 @@ def _run_elastix_registration(
     parameter_object.AddParameterMap(affine_map)
 
     bspline_map = parameter_object.GetDefaultParameterMap("bspline")
-    bspline_map["FinalGridSpacingInPhysicalUnits"] = ("16",)
+    bspline_map["FinalGridSpacingInPhysicalUnits"] = ("32",)
     bspline_map["Metric"] = ("AdvancedNormalizedCorrelation", "TransformBendingEnergyPenalty")
     bspline_map["Metric0Weight"] = ("1.0",)
     bspline_map["Metric1Weight"] = ("3.0",)

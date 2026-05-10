@@ -181,48 +181,6 @@ def test_openai_responses_route_uses_image_generation_tool_and_revised_prompt(mo
         assert part["image_url"].startswith("data:image/png;base64,")
 
 
-def test_openai_responses_route_rejects_gpt_image_review_model(monkeypatch):
-    providers = _providers()
-    monkeypatch.setattr(providers, "get_openai_client", lambda: _FakeOpenAIResponsesClient())
-    monkeypatch.setattr(providers, "get_openai_model", lambda: "gpt-image-2")
-
-    request = providers.SegmentationGenerationRequest(
-        colored_regions=_make_image((255, 0, 0)),
-        reference_slice=_make_image((0, 255, 0)),
-        slice_image=_make_image((0, 0, 255)),
-        prompt="edit please",
-        provider="openai",
-        openai_image_route="responses",
-        review_model="gpt-image-2",
-    )
-
-    with pytest.raises(ValueError, match="GPT Image models are not valid Responses model values"):
-        providers.generate_warped_segmentation_image(request)
-
-
-def test_openai_responses_route_rejects_non_openai_default_review_model(monkeypatch):
-    providers = _providers()
-    monkeypatch.setattr(providers, "get_openai_model", lambda: "gemma4:31b")
-
-    def _fail_if_called():
-        raise AssertionError("responses client should not be created for invalid defaults")
-
-    monkeypatch.setattr(providers, "get_openai_client", _fail_if_called)
-
-    request = providers.SegmentationGenerationRequest(
-        colored_regions=_make_image((255, 0, 0)),
-        reference_slice=_make_image((0, 255, 0)),
-        slice_image=_make_image((0, 0, 255)),
-        prompt="edit please",
-        provider="openai",
-        openai_image_route="responses",
-        review_model=None,
-    )
-
-    with pytest.raises(ValueError, match="text-capable OpenAI mainline model"):
-        providers.generate_warped_segmentation_image(request)
-
-
 def test_google_route_uses_last_inline_image_from_parts(monkeypatch):
     providers = _providers()
     fake_client = _FakeGeminiClient()

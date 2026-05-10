@@ -24,13 +24,6 @@ _VALID_REQUEST_ROUTES = {
     "openai_responses_image_generation",
 }
 
-_VALID_OPENAI_RESPONSES_PREFIXES = (
-    "gpt-4o",
-    "gpt-4.1",
-    "o3",
-    "gpt-5",
-)
-
 
 @dataclass
 class SegmentationGenerationRequest:
@@ -168,19 +161,6 @@ def _validate_requested_route(request_route: str | None) -> None:
         raise ValueError(f"Unknown route: {request_route}")
 
 
-def _validate_openai_responses_model(model_name: str) -> None:
-    if model_name.startswith("gpt-image-"):
-        raise ValueError("GPT Image models are not valid Responses model values")
-
-    normalized_model = model_name.lower()
-    if not normalized_model.startswith(_VALID_OPENAI_RESPONSES_PREFIXES):
-        raise ValueError(
-            "OpenAI Responses image_generation requires a text-capable OpenAI "
-            "mainline model; pass review_model explicitly instead of relying on "
-            f"the default {model_name!r}."
-        )
-
-
 def _generate_google_segmentation(request: SegmentationGenerationRequest) -> GeneratedSegmentation:
     model = request.model or vlm_config.MODEL_NAME
     client = vlm_config.get_client()
@@ -244,7 +224,6 @@ def _generate_openai_responses_segmentation(
     request: SegmentationGenerationRequest,
 ) -> GeneratedSegmentation:
     mainline_model = request.review_model or get_openai_model()
-    _validate_openai_responses_model(mainline_model)
 
     client = get_openai_client()
     contents = [
@@ -259,10 +238,13 @@ def _generate_openai_responses_segmentation(
         }
     ]
 
+    reasoning_effort = (request.thinking_level or "medium").lower()
+
     response = client.responses.create(  # type: ignore[attr-defined]
         model=mainline_model,
         input=cast(Any, contents),
         tools=[{"type": "image_generation", "action": "edit"}],
+        reasoning={"effort": reasoning_effort},
     )
 
     image, revised_prompt = _extract_openai_responses_image(response)
