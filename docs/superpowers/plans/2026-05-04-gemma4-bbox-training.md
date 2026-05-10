@@ -1,5 +1,10 @@
 # Gemma 4 BBox Training Data — Implementation Plan
 
+> **STATUS (2026-05-07):** Implementation **deferred past the 2026-05-18
+> hackathon**. v1 ships single-slice agent-trace SFT only. This plan is intact
+> and ready to resume from Task 1 if the user reactivates bucket 4 for v2.
+> Do not begin executing it without explicit user request.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the assembly + Gemini-Batch-API pipeline that produces the BBox-grounded multi-section morphology caption SFT corpus for the langslice-gemma-4 model.

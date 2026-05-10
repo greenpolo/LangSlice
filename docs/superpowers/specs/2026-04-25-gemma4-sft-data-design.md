@@ -7,6 +7,15 @@ status: draft v4 (position-trace collection; no-thinking default; rationale fall
 
 # Gemma 4 E4B — SFT Data Design
 
+> **STATUS (2026-05-07):** Active scope cut to single-slice agent traces only.
+> See `docs/superpowers/specs/2026-05-05-gemma4-sft-training-design.md` for the
+> live SFT design. Buckets 2 (landmark listing), 3 (multi-slice morphology),
+> 4 (bbox grounding), and 5 (programmatic skeletons) are **deferred past the
+> 2026-05-18 hackathon**. Bucket 4 has its own design at
+> `docs/superpowers/specs/2026-05-04-gemma4-bbox-training-design.md`, also
+> deferred. This document is retained as the long-term roadmap; do not start
+> work from it without explicit user request.
+
 ## 1. Goal
 
 Produce an SFT corpus that turns Gemma 4 E4B into a drop-in replacement for Gemini inside the LangSlice position-estimation agent loop (`fetch_atlas` + `submit_estimate` / `submit_group_estimate` from `src/langslice_harness/harness/estimation/tools.py`), as the warm-start before a separate, larger RLVR phase. The task covers coronal, sagittal, and horizontal position estimation; do not frame this plan as AP-only except where discussing the coronal AP axis or legacy registration/export terminology.
