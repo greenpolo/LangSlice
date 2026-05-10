@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 import warnings
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch
 
 from .render import RenderedExample
+
+if TYPE_CHECKING:
+    # Import-only for type hints; keeping the runtime path import-free means
+    # the unit tests for collate.py do not require the embeddings package
+    # (and its transitive rlvr.atlas_grid import) to be on sys.path.
+    from embeddings.cache import AtlasEmbeddingCache
 
 
 class LangSliceCollator:
@@ -16,9 +22,36 @@ class LangSliceCollator:
     The processor's chat template is the source of truth for the assistant-token
     mask. Labels are constructed by cloning input_ids and zeroing (with -100)
     every position where the assistant_mask is False.
+
+    Atlas-embedding cache integration
+    ---------------------------------
+
+    When ``atlas_cache`` is provided, the collator inspects every tool-result
+    image path on each example and counts how many of them snap to a cached
+    embedding. The hit/miss ratio is exposed via :meth:`cache_hit_rate` and
+    drives the Phase 1 measurement: ship the splice only if the hit rate
+    clears 50% on the real corpus.
+
+    The Phase 2 splice itself is gated by ``enable_splice`` — when False (the
+    default) the cache is used purely for measurement. When True, cached
+    images are still rendered through the processor (so the chat template
+    sees the right image-token count) but the per-image precomputed
+    embeddings are returned alongside the batch under
+    ``precomputed_image_embeddings`` and a positional mask
+    ``precomputed_image_mask`` so a vision-tower forward pre-hook can splice
+    them in without re-running SigLIP. The trainer is responsible for wiring
+    the hook (see ``embeddings.splice_hook``); the collator only emits the
+    sidecar.
     """
 
-    def __init__(self, *, processor: Any, max_seq_length: int) -> None:
+    def __init__(
+        self,
+        *,
+        processor: Any,
+        max_seq_length: int,
+        atlas_cache: AtlasEmbeddingCache | None = None,
+        enable_splice: bool = False,
+    ) -> None:
         if processor.tokenizer.pad_token_id is None:
             raise RuntimeError(
                 "processor.tokenizer.pad_token_id is None — set it (e.g. to "
@@ -27,13 +60,82 @@ class LangSliceCollator:
             )
         self.processor = processor
         self.max_seq_length = max_seq_length
+        self.atlas_cache = atlas_cache
+        self.enable_splice = enable_splice
+        if enable_splice and atlas_cache is None:
+            raise ValueError(
+                "enable_splice=True requires atlas_cache; passing splice without a "
+                "cache would mark every image as a miss and the forward hook "
+                "would never fire."
+            )
+        self._cache_hits: int = 0
+        self._cache_misses: int = 0
+
+    def cache_hit_rate(self) -> float:
+        """Return cumulative cache hit fraction since construction.
+
+        Returns 0.0 if the collator has not yet seen any atlas-grid image
+        paths (e.g. no batches consumed, or no atlas_cache provided).
+        """
+        total = self._cache_hits + self._cache_misses
+        if total == 0:
+            return 0.0
+        return self._cache_hits / total
+
+    def cache_counters(self) -> dict[str, int]:
+        """Return current ``{'hits': X, 'misses': Y}`` snapshot for logging."""
+        return {"hits": self._cache_hits, "misses": self._cache_misses}
+
+    def _account_atlas_paths(
+        self, example: RenderedExample
+    ) -> list[torch.Tensor | None]:
+        """Bump hit/miss counters from ``example.image_paths`` and return per-image embeddings.
+
+        The returned list is aligned with the per-example pixel_values dim-0
+        ordering: query images first, then tool-result images in trace
+        order. Entry ``i`` is the cached embedding tensor when the path at
+        index ``i`` snaps to a cache entry, else None.
+
+        Query images never match the atlas-grid pattern (they live under
+        ``queries/``), so they always contribute a None. We still walk them
+        to keep alignment with the pixel_values tensor.
+        """
+        if self.atlas_cache is None:
+            return [None] * len(example.image_paths)
+        per_image: list[torch.Tensor | None] = []
+        for path in example.image_paths:
+            emb = self.atlas_cache.lookup_by_path(path)
+            if emb is None:
+                self._cache_misses += 1
+                per_image.append(None)
+            else:
+                # Cache files store per-image SigLIP output as
+                # (1, num_patches, hidden) — the leading "1" is the
+                # processor's batch dim from a single-image render. Peel it
+                # so per-image tensors stack cleanly into the
+                # (N_cached, num_patches, hidden) layout the splice wants.
+                if emb.dim() > 2 and emb.shape[0] == 1:
+                    emb = emb.squeeze(0)
+                self._cache_hits += 1
+                per_image.append(emb)
+        return per_image
 
     def __call__(self, examples: list[RenderedExample | dict[str, Any]]) -> dict[str, torch.Tensor]:
         # Apply chat template per-example (not as a batch) so the per-example
         # assistant_mask aligns 1:1 with that example's input_ids.
         per_example: list[dict[str, torch.Tensor]] = []
-        for raw_ex in examples:
+        # Per-image cache lookups, batched across examples for the optional
+        # splice sidecar. Each entry is (example_index, image_index_in_example,
+        # cached_embedding_or_None). Order matches the eventual flattened
+        # pixel_values dim-0 in _pad_batch.
+        precomputed: list[torch.Tensor | None] = []
+        for ex_idx, raw_ex in enumerate(examples):
             ex = raw_ex["rendered"] if isinstance(raw_ex, dict) else raw_ex
+            # Account hits/misses BEFORE the heavy chat-template render so
+            # measurement runs aren't burdened with re-tokenization on dataset
+            # iteration alone. (No-op if atlas_cache is None.)
+            per_image_emb = self._account_atlas_paths(ex)
+            precomputed.extend(per_image_emb)
             out = self.processor.apply_chat_template(
                 ex.messages,
                 tools=ex.tools,
@@ -72,9 +174,33 @@ class LangSliceCollator:
                 **{k: v for k, v in out.items()
                    if k not in ("input_ids", "attention_mask", "assistant_masks")},
             })
+            del ex_idx  # tracked only via per_example/precomputed ordering
 
         # Pad to the longest example in the batch
-        return _pad_batch(per_example, pad_token_id=self.processor.tokenizer.pad_token_id)
+        batch = _pad_batch(per_example, pad_token_id=self.processor.tokenizer.pad_token_id)
+
+        # Phase 2 splice (gated): emit the per-image embedding sidecar so a
+        # vision-tower forward pre-hook can replace the cached slots without
+        # re-running SigLIP. Per-image patch counts vary across atlas slices
+        # (different positions render at different resolutions, query images
+        # differ from atlas images), so the sidecar is a flat concatenated
+        # tensor + a per-image patch-count list rather than a stacked
+        # uniform-shape tensor.
+        if self.enable_splice and any(e is not None for e in precomputed):
+            batch["precomputed_image_mask"] = torch.tensor(
+                [e is not None for e in precomputed], dtype=torch.bool,
+            )
+            cached_tensors = [e for e in precomputed if e is not None]
+            # Each cached entry has shape ``(P_i, hidden)`` with variable
+            # ``P_i``. Concatenating along dim=0 gives one flat
+            # ``(sum_P, hidden)`` tensor; the splice partitions it back into
+            # per-image chunks via the patch-count list.
+            batch["precomputed_cached_flat"] = torch.cat(cached_tensors, dim=0)
+            batch["precomputed_cached_patch_counts"] = torch.tensor(
+                [t.shape[0] for t in cached_tensors], dtype=torch.long,
+            )
+
+        return batch
 
     def _manual_span_mask(self, example: RenderedExample, input_ids: torch.Tensor) -> torch.Tensor:
         """Build a per-token assistant mask via incremental-render diffs.

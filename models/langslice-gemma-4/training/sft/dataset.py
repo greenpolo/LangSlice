@@ -122,7 +122,9 @@ def _validate_row(row: dict[str, Any], lineno: int, root: Path) -> None:
     if not isinstance(args.get("position_mm"), (int, float)):
         raise DatasetValidationError(f"line {lineno}: submit.args.position_mm must be numeric")
     if not isinstance(args.get("reasoning"), str) or not args["reasoning"].strip():
-        raise DatasetValidationError(f"line {lineno}: submit.args.reasoning must be non-empty string")
+        raise DatasetValidationError(
+            f"line {lineno}: submit.args.reasoning must be non-empty string"
+        )
     for i, step in enumerate(trace[:-1]):
         if "tool_call" not in step or "tool_result" not in step:
             raise DatasetValidationError(
@@ -147,7 +149,9 @@ def _validate_image_paths(row: dict[str, Any], lineno: int, root: Path) -> None:
 
 def _require_existing_image(root: Path, rel: Any, lineno: int, field_name: str) -> None:
     if not isinstance(rel, str) or not rel:
-        raise DatasetValidationError(f"line {lineno}: {field_name} entries must be non-empty strings")
+        raise DatasetValidationError(
+            f"line {lineno}: {field_name} entries must be non-empty strings"
+        )
     path = (root / rel).resolve()
     if not path.is_file():
         raise DatasetValidationError(f"line {lineno}: {field_name} image not found: {path}")

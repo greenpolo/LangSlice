@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 import json
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -151,10 +151,21 @@ class RenderMetadata:
 
 @dataclass
 class RenderedExample:
-    """Output of the renderer — ready for processor.apply_chat_template(...)."""
+    """Output of the renderer — ready for processor.apply_chat_template(...).
+
+    ``image_paths`` records every image path included in the rendered messages
+    in the same order the processor's chat template will visit them: first
+    the query images, then each tool_result block's image paths. This is the
+    canonical ordering the trainer's pixel_values tensor (after the
+    processor's image-encoding step) is concatenated in. Downstream
+    consumers (atlas-embedding cache, splice hook) align by this list
+    rather than re-walking ``messages`` and re-hydrating PIL objects.
+    """
+
     messages: list[dict[str, Any]]
     tools: list[dict[str, Any]]
     metadata: RenderMetadata
+    image_paths: list[str] = field(default_factory=list)
 
 
 def hydrate_image(rel_path: str, root: Path) -> Image.Image:
@@ -267,6 +278,10 @@ def render_example(
         {"role": "system", "content": [{"type": "text", "text": system_prompt}]},
         _user_turn(example.query_image_paths, example.user_prompt_text, root),
     ]
+    # Order matches the processor's chat-template walk: query images first
+    # (rendered into the user turn above), then tool_result images appended
+    # in trace order below.
+    image_paths_in_order: list[str] = list(example.query_image_paths)
 
     seen_ids: set[str] = set()
     for i, step in enumerate(example.trace):
@@ -299,6 +314,7 @@ def render_example(
         tr = step["tool_result"]
         messages.append(_assistant_tool_call(call_id, tc["name"], tc["args"]))
         messages.append(_tool_response(call_id, tr["image_paths"], tr["text"], root))
+        image_paths_in_order.extend(tr["image_paths"])
 
     metadata = RenderMetadata(
         atlas_name=example.atlas_name,
@@ -307,4 +323,9 @@ def render_example(
         subject_id=example.subject_id,
         system_prompt_kind=example.system_prompt_kind,
     )
-    return RenderedExample(messages=messages, tools=tools, metadata=metadata)
+    return RenderedExample(
+        messages=messages,
+        tools=tools,
+        metadata=metadata,
+        image_paths=image_paths_in_order,
+    )
