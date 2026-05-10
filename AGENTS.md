@@ -29,7 +29,12 @@ still `langslice`, but Python imports should use `langslice_harness.*`.
 - `src/langslice_harness/image_prep.py` -- image normalization, pixel-size
   detection, and VLM downsampling
 - `src/langslice_harness/export.py` -- QUINT/ABBA-compatible JSON export
-- `models/langslice-gemma-4/` -- fine-tuned model project
+- `models/langslice-gemma-4/` -- fine-tuned Gemma 4 E4B project (SFT + RLVR)
+  - `training/sft/` -- SFT trainer (`python -m sft.train_sft`)
+  - `training/rlvr/` -- RLVR GRPO trainer (`python -m langslice_rlvr`)
+  - `training/configs/` -- TOML configs (`sft_default`, `grpo_pilot`, `grpo_phase_b`)
+  - `data/sft_examples.jsonl` -- single-slice langslice-native trace corpus
+  - `data/augmentation/` -- stain-specific procedural augmentation pipelines
 - `tauri-gui/` -- Tauri desktop app
 - `tests/` -- pytest coverage
 - `docs/`, `README.md`, and `REPO_MAP.md` -- maintained documentation
@@ -57,38 +62,131 @@ still `langslice`, but Python imports should use `langslice_harness.*`.
 - Keep documentation literal to the current code. If behavior changes, update
   the relevant markdown files in the same pass.
 
-## Training-data review (QC app)
+## Training-data manifest (multi-agent safety)
 
-When assembling Inventory, SFT, RLVR, Eval, or synthetic data for the QC app,
-write outputs to the paths documented in `_local/qc_app/CONTRACTS.md`. The QC
-app reloads on mtime change — no app code edit required. Do not invent new
-manifest shapes or paths; conform to the contract or extend it explicitly.
+The training-data manifest has **two architecturally disjoint layers**.
+Most agents only touch one of them. The role separation is enforced by
+hard rules — mixing roles in one session will silently destroy another
+agent's work.
 
-## Manifest fixes (multi-agent safety)
+### Layer 1: shards (GT data)
 
-The training-data manifest is sharded by plane/dataset under
-`data/manifest/shards/<plane>/<dataset>.jsonl`.
+`data/manifest/shards/<plane>/<dataset>.jsonl` — one shard per
+`(plane, dataset)` pair. Rows carry GT (position, atlas, species, etc.)
+but **never** a `split` field. Per-shard curation lives in
+`data/manifest/overrides/<plane>/<dataset>.json` (drops, axis flips,
+per-section position overrides, atlas overrides).
 
-- **Task-oriented walkthrough** for fixing data:
-  `_local/eval/HOW_TO_FIX_DATA.md` (read this first if you're about
-  to drop, flip, or override anything).
-- **Architecture reference**: `_local/eval/SHARDS.md`.
+### Layer 2: allocations (split membership)
 
-Two rules for any agent fixing data:
+`data/manifest/allocations/<plane>/<split>.jsonl` — 9 files (3 planes ×
+3 splits: `eval` / `rlvr` / `sft`). Append-only with tombstone shape;
+each line names a `section_id` that lives in some shard for that plane.
+Splits are **computed at read time** via `compute_split_for(plane,
+section_id)` from `_local/eval/allocations.py`, never stored on the
+shard row. A `section_id` may belong to at most one split per plane.
 
-1. **Never edit a shard file directly.** Direct edits do not survive a
-   rebuild and any other agent's rebuild can silently undo them.
-2. **Never write a script that touches more than one shard.** Each fix
-   should be scoped to one (plane, dataset) pair so parallel agents on
-   different shards cannot clobber each other.
+### Two roles, never mixed in one session
 
-To fix data: edit the upstream source under `data/datasets/<name>/` and/or
-append entries to `data/manifest/overrides/<plane>/<dataset>.json` (drops,
-axis flips, per-section position overrides, atlas overrides). Then run
-`python _local/eval/rebuild_shard.py <plane>/<dataset>`.
+- **GT-fix agent.** Edits upstream sources or `overrides/`, then runs
+  `rebuild_shard.py`. Never runs `allocate.py`.
+- **Allocation agent.** Builds `eval` / `rlvr` / `sft` splits via
+  `allocate.py`. Never runs `rebuild_shard.py`, never edits shards,
+  never edits overrides.
 
-To check cross-shard integrity: `python _local/eval/validate_manifest.py`.
-Read-only — cannot write any shard.
+If you don't know which role you are, stop and ask the user.
+
+### Authoritative docs
+
+- `_local/eval/HOW_TO_FIX_DATA.md` — task-oriented walkthrough; **read this first** before any data fix. Includes the 8 hard rules.
+- `_local/eval/SHARDS.md` — architecture reference for the shards / overrides / allocations layout.
+- `_local/qc_app/CONTRACTS.md` — what the QC app reads from each layer (Inventory, SFT, RLVR, Eval, Synthetic). The app reloads on mtime change; do not invent new shapes or paths — conform to the contract or extend it explicitly.
+
+### GT-fix CLI
+
+```powershell
+# Edit upstream or append to overrides/<plane>/<dataset>.json, then:
+python _local/eval/rebuild_shard.py <plane>/<dataset>                  # dry-run, exits 1 on any diff
+python _local/eval/rebuild_shard.py <plane>/<dataset> --accept-diff N  # commit; N must match dry-run count
+```
+
+Diff gate: `--accept-diff N` must match the *exact* number of changed
+rows the dry-run reported. If `N` is bigger than expected, **stop** —
+something else changed under you. Never bypass this gate.
+
+### Allocation CLI
+
+```powershell
+python _local/eval/allocate.py add <plane>/<split> <section_id> --dataset <name> --added-by <agent_id>
+python _local/eval/allocate.py remove <plane>/<split> <section_id> --removed-by <agent_id>
+python _local/eval/allocate.py list <plane>/<split>
+```
+
+`<plane>` is `coronal` / `sagittal` / `horizontal`; `<split>` is
+`eval` / `rlvr` / `sft`. The CLI validates that each `section_id` exists
+in the corresponding inventory shard and that it isn't already in
+another split for the same plane.
+
+### Cross-shard checks
+
+```powershell
+python _local/eval/validate_manifest.py   # read-only; cannot write any shard or allocation
+```
+
+### Don't resurrect legacy scripts
+
+`_local/eval/legacy/` is read-only context for what older patchers did.
+Their old paths in `_local/eval/` now contain stubs that exit with code
+2. Running them re-introduces the multi-agent footgun this architecture
+was built to prevent.
+
+## Training (Gemma 4 E4B fine-tune)
+
+The active fine-tune project lives in `models/langslice-gemma-4/`. **v1
+scope (hackathon, deadline 2026-05-18) is single-slice agent traces
+only.** Bbox grounding, landmark listing, multi-slice morphology, and
+programmatic skeletons are designed but **deferred**; do not implement
+them without explicit user request.
+
+- **Authoritative SFT design:** `docs/superpowers/specs/2026-05-05-gemma4-sft-training-design.md`
+- **Authoritative RLVR design:** `docs/superpowers/specs/2026-05-04-gemma4-rlvr-training-design.md`
+- **Active SFT plan:** `docs/superpowers/plans/2026-05-06-gemma4-sft-training-code.md`
+
+### SFT data contract
+
+The trainer reads ONE langslice-native JSONL at
+`models/langslice-gemma-4/data/sft_examples.jsonl`. Row shape and
+constraints are documented in
+`models/langslice-gemma-4/training/sft/README.md`. Image paths are
+relative to the JSONL's parent directory. The trainer does NOT walk raw
+Gemini run folders directly — corpus assembly is upstream.
+
+### Run SFT
+
+```powershell
+cd models/langslice-gemma-4/training
+python -m sft.train_sft `
+  --config configs/sft_default.toml `
+  --dataset ../../../models/langslice-gemma-4/data/sft_examples.jsonl `
+  --output-dir ../../../out/sft/run0
+```
+
+Add `--dry-run` to validate JSONL structure without loading Gemma.
+
+### Run RLVR
+
+From the repo root, after SFT:
+
+```powershell
+python -m langslice_rlvr `
+  --config models/langslice-gemma-4/training/configs/grpo_pilot.toml `
+  --sft-model out/sft/gemma4-e4b-langslice `
+  --output-dir out/rlvr/phase_a `
+  --test-images-root references/TestImages
+```
+
+Phase B resumes Phase A's adapter via `--resume-from-adapter` with
+`grpo_phase_b.toml`.
 
 ## Delegation (cost-saving)
 

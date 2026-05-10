@@ -88,20 +88,31 @@ At training startup, pre-render atlas reference slices every `0.05 mm` for every
 
 ## 6. Rewards
 
-There is exactly one reward function: a gated linear ramp on final-coordinate closeness. No format reward, structure reward, malformed-tool penalty, submit-count check, or turn-count shaping is used.
+There is exactly one reward function: a normalized, truncated Gaussian on final-coordinate closeness. No format reward, structure reward, malformed-tool penalty, submit-count bonus, or turn-count shaping is used.
+
+The error is normalized by the active plane's valid coordinate span so the same raw-millimeter error is judged more strictly on shorter axes and more leniently on longer axes:
 
 Single-slice:
 
 ```python
-error_mm = abs(predicted_position_mm - ground_truth_mm)
-reward = max(0.0, 1.0 - error_mm / window_mm)
+axis_span_mm = valid_range_mm[1] - valid_range_mm[0]
+err_frac = abs(predicted_position_mm - ground_truth_mm) / axis_span_mm
+
+if err_frac >= cutoff_frac:
+    reward = 0.0
+else:
+    raw = exp(-0.5 * (err_frac / sigma_frac) ** 2)
+    floor = exp(-0.5 * (cutoff_frac / sigma_frac) ** 2)
+    reward = (raw - floor) / (1.0 - floor)
 ```
 
-Default `window_mm = 0.100`.
+Defaults:
+- `cutoff_frac = 0.10`
+- `sigma_frac = 0.035`
 
 - Exact hit: `1.0`.
-- `0.050 mm` error: `0.5`.
-- `>=0.100 mm` error: `0.0`.
+- Error at or beyond 10% of the plane axis span: `0.0`.
+- Errors inside the cutoff receive a smooth bell-shaped score rescaled to `[0, 1]`.
 
 Group:
 - Compute the same per-slice reward for each submitted coordinate.
@@ -212,7 +223,7 @@ python -m ruff check models/langslice-gemma-4/training/rlvr tests/test_rlvr_env.
 
 Unit coverage:
 - Env: tool surface, production-shaped signatures, dict responses, clamp/dedupe/cap, done-fence, hidden ground-truth privacy.
-- Rewards: exact, half-window, window-edge, beyond-window, malformed submit, no submit, mixed group mean.
+- Rewards: exact, axis-normalized bell score, cutoff edge, beyond-cutoff, malformed submit, no submit, mixed group mean.
 - Dataset: deterministic subject holdout, zero train/eval overlap, expected sizes.
 - Atlas grid: high-end boundary clamp.
 - Driver: `stop_tool_names` config forwarding, repo-root launcher, `max_seq_length` model load, Phase B adapter resume.

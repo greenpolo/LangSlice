@@ -8,6 +8,13 @@ supersedes: bucket 4 of `docs/superpowers/specs/2026-04-25-gemma4-sft-data-desig
 
 # Gemma 4 E4B — BBox Training Data Design
 
+> **STATUS (2026-05-07):** Design complete; implementation **deferred past the
+> 2026-05-18 hackathon**. v1 ships single-slice agent-trace SFT only (see
+> `docs/superpowers/specs/2026-05-05-gemma4-sft-training-design.md`). Resume
+> from Task 1 of `docs/superpowers/plans/2026-05-04-gemma4-bbox-training.md` if
+> bucket 4 is reactivated for v2. Do not start work from this spec without
+> explicit user request.
+
 ## 1. Goal
 
 Produce a single category of supervised data — **multi-section morphology captions, region-grounded by per-section hemisphere-split bounding boxes** — that teaches the Gemma 4 E4B model task-relevant anatomical vocabulary by example. Together with the agent-trace SFT bucket (still per the parent spec), this is the complete active SFT corpus for the langslice-gemma-4 model.

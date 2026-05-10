@@ -25,6 +25,17 @@ models/langslice-gemma-4/data/sft_examples.jsonl
 
 Each row is a single-slice langslice-native trace with relative image paths. The corpus builder should walk verified/reroll trace directories, select the best strict-accepted run per id, copy or stage referenced images under the JSONL parent directory, then emit the JSONL. The trainer validates and renders that JSONL into Gemma chat-template messages at training time.
 
+## Preferred SFT Launch
+
+Use Docker for SFT training:
+
+```powershell
+scripts/docker-training/smoke.ps1
+scripts/docker-training/sft.ps1 -RunName docker-run0
+```
+
+Native Windows SFT remains available through `models/langslice-gemma-4/training/_run_sft_msvc.cmd`, but Docker is preferred for CUDA/Unsloth performance and fewer Windows-specific dependency issues.
+
 ## RLVR Launch
 
 From the repo root:
