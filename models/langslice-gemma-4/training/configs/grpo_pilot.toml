@@ -1,21 +1,29 @@
-# Phase A — single-slice ONLY pilot. Runs on the post-SFT checkpoint, ~300
-# steps to validate the closeness reward and stop-tool wiring before we mix
-# group rollouts in Phase B (grpo_phase_b.toml).
+# Single-slice ONLY pilot. Runs on the post-SFT checkpoint, ~300 steps.
+# Multi-slice (group) rollouts are off the table — see
+# feedback_multi_slice_direction_bug. Set single_fraction < 1.0 if you
+# ever want to bring groups back.
 #
 # `max_prompt_length` is NOT set here: deprecated upstream in TRL (issue #5018).
 
 [grpo]
 chat_template_kwargs = { enable_thinking = false }
 learning_rate = 5e-6
-num_generations = 2
+num_generations = 8
+generation_batch_size = 8
 per_device_train_batch_size = 1
-gradient_accumulation_steps = 2
-max_completion_length = 1536
-max_tool_calling_iterations = 16
+gradient_accumulation_steps = 4
+max_completion_length = 3072
+max_tool_calling_iterations = 12
+dataloader_num_workers = 4
+dataloader_pin_memory = true
 stop_tool_names = ["submit_estimate", "submit_group_estimate"]
 max_grad_norm = 0.1
 importance_sampling_level = "sequence"
 loss_type = "dr_grpo"
+mask_truncated_completions = true
+scale_rewards = "batch"
+temperature = 0.9
+top_p = 0.95
 optim = "adamw_8bit"
 log_completions = true
 logging_steps = 1
@@ -23,7 +31,7 @@ save_steps = 25
 max_steps = 300
 report_to = "trackio"
 load_in_4bit = true
-max_seq_length = 4096
+max_seq_length = 6144
 
 [lora]
 finetune_vision_layers = false
@@ -35,12 +43,26 @@ lora_alpha = 32
 use_gradient_checkpointing = "unsloth"
 
 [data]
-# Phase A: single-slice ONLY. Phase B (grpo_phase_b.toml) flips to 0.5 and
-# loads the saved adapter from the Phase A run via --resume-from-adapter.
+# Single-slice ONLY. Multi-slice (group) rollouts are off the table; if you
+# ever set this < 1.0 the trainer will reactivate the group code path.
 single_fraction = 1.0
 group_size = 4
 thickness_um = 30
 eval_holdout_every = 5
+# 25% of sections get CLAHE applied at decode time, deterministic per
+# section_id — matches the SFT corpus mix exactly so RLVR rollouts see the
+# same pixel distribution the model was supervised on.
+clahe_fraction = 0.25
+# Lazy image decode means the full 14k allocation fits in RAM. Set this for
+# smoke tests; leave unset for the real run.
+# max_examples = 500
 
 [reward]
-window_mm = 0.100
+# Fractional coordinate-error curriculum. Exact hit scores 1.0; errors at or
+# beyond cutoff_frac of the plane's valid axis score 0.0.
+# Calibrated to slicebench tiny num_gens=4 results: best-of-4 median error is
+# ~5% of plane extent, so cutoff at 15% covers ~95% of best-of-N rollouts.
+# Sigma 5% gives 50% reward at the best-of-4 median, big spread vs zero-reward
+# samples → strong GRPO gradient. Tighten in stage 2.
+cutoff_frac = 0.15
+sigma_frac = 0.05

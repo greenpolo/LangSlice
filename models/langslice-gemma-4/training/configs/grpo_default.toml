@@ -9,11 +9,12 @@
 [grpo]
 chat_template_kwargs = { enable_thinking = false }
 learning_rate = 5e-6
-num_generations = 2
+num_generations = 4
+generation_batch_size = 4
 per_device_train_batch_size = 1
 gradient_accumulation_steps = 4
 max_completion_length = 2048
-max_tool_calling_iterations = 20
+max_tool_calling_iterations = 12
 # Either submit tool terminates the rollout immediately (TRL PR #5390),
 # mirroring the production ADK escalate=True semantics in
 # src/langslice_harness/harness/estimation/tools.py:176/188.
@@ -21,6 +22,10 @@ stop_tool_names = ["submit_estimate", "submit_group_estimate"]
 max_grad_norm = 0.1
 importance_sampling_level = "sequence"   # GSPO
 loss_type = "dr_grpo"
+mask_truncated_completions = true
+scale_rewards = "batch"
+temperature = 0.9
+top_p = 0.95
 optim = "adamw_8bit"
 log_completions = true
 logging_steps = 2
@@ -49,6 +54,8 @@ thickness_um = 30
 eval_holdout_every = 5
 
 [reward]
-# Window for the gated linear closeness reward (P2(f)). reward = max(0, 1 - |err|/window).
+# Fractional coordinate-error curriculum. Exact hit scores 1.0; errors at or
+# beyond cutoff_frac of the plane's valid axis score 0.0.
 # Tune with the eval MAE curve, not by editing rewards.py.
-window_mm = 0.100
+cutoff_frac = 0.10
+sigma_frac = 0.035

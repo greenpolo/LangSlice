@@ -401,6 +401,7 @@ def _example(subject_id: str) -> SingleSliceExample:
         plane="coronal",
         ap_mm=5.0,
         subject_id=subject_id,
+        section_id=f"{subject_id}:sec_1",
     )
 
 
@@ -441,7 +442,7 @@ def test_build_datasets_uses_disjoint_subject_holdout() -> None:
     examples = [_example(f"M{i:02d}") for i in range(1, 11)]
 
     def fake_rows(
-        *, single_examples, group_examples, single_fraction, seed
+        *, single_examples, group_examples, single_fraction, seed, **_kwargs
     ):  # noqa: ANN001, ARG001
         return [
             {
@@ -453,13 +454,14 @@ def test_build_datasets_uses_disjoint_subject_holdout() -> None:
             for ex in single_examples
         ]
 
-    with patch("rlvr.train_grpo.load_test_images", return_value=examples), patch(
+    with patch("rlvr.train_grpo.load_rlvr_allocation", return_value=examples), patch(
         "rlvr.train_grpo.make_group_examples", return_value=[]
     ), patch("rlvr.train_grpo.build_rlvr_rows", side_effect=fake_rows), patch(
         "rlvr.train_grpo.to_hf_dataset", side_effect=lambda rows: rows
     ):
         train_ds, eval_ds, train_rows, eval_rows, _atlas_pairs = build_datasets(
-            test_images_root=Path("unused"),
+            manifest_root=Path("unused"),
+            repo_root=Path("unused"),
             data_cfg={"eval_holdout_every": 5, "single_fraction": 1.0},
             seed=0,
         )
@@ -496,6 +498,17 @@ def test_grpo_default_config_has_stop_tool_names() -> None:
             "submit_estimate",
             "submit_group_estimate",
         }, name
+        assert cfg["grpo"]["num_generations"] == 4, name
+        assert cfg["grpo"]["generation_batch_size"] == 4, name
+        assert cfg["grpo"]["max_completion_length"] == 2048, name
+        assert cfg["grpo"]["max_tool_calling_iterations"] == 12, name
+        assert cfg["grpo"]["mask_truncated_completions"] is True, name
+        assert cfg["grpo"]["scale_rewards"] == "batch", name
+        assert cfg["grpo"]["temperature"] == pytest.approx(0.9), name
+        assert cfg["grpo"]["top_p"] == pytest.approx(0.95), name
+        assert cfg["reward"]["cutoff_frac"] == pytest.approx(0.10), name
+        assert cfg["reward"]["sigma_frac"] == pytest.approx(0.035), name
+        assert "window_mm" not in cfg["reward"], name
         # Confirm max_prompt_length is gone from every config (P1(a)).
         assert "max_prompt_length" not in cfg["grpo"], name
 
@@ -579,8 +592,8 @@ def test_resume_from_adapter_attaches_trainable_peft_adapter() -> None:
                 str(adapter_path),
                 "--output-dir",
                 str(output_path),
-                "--test-images-root",
-                "fake/TestImages",
+                "--manifest-root",
+                "fake/manifest",
             ]
         )
 
@@ -640,8 +653,8 @@ def test_no_resume_calls_get_peft_model() -> None:
                 str(sft_path),
                 "--output-dir",
                 "fake/out",
-                "--test-images-root",
-                "fake/TestImages",
+                "--manifest-root",
+                "fake/manifest",
             ]
         )
 
@@ -713,8 +726,8 @@ def test_sft_adapter_model_loads_base_then_attaches_trainable_adapter(
                 str(sft_path),
                 "--output-dir",
                 "fake/out",
-                "--test-images-root",
-                "fake/TestImages",
+                "--manifest-root",
+                "fake/manifest",
             ]
         )
 
@@ -734,6 +747,7 @@ def test_train_grpo_passes_stop_tool_names_to_grpo_config() -> None:
     import sys  # noqa: PLC0415
 
     captured_config_kwargs: dict[str, Any] = {}
+    captured_reward_kwargs: dict[str, Any] = {}
 
     fake_unsloth = MagicMock()
     fake_unsloth.FastVisionModel.from_pretrained.return_value = (
@@ -751,12 +765,18 @@ def test_train_grpo_passes_stop_tool_names_to_grpo_config() -> None:
     fake_trl.GRPOConfig.side_effect = capture_config
     fake_trl.GRPOTrainer.return_value = MagicMock()
 
+    def capture_reward(**kwargs):
+        captured_reward_kwargs.update(kwargs)
+        return MagicMock(name="position_reward")
+
     sft_path = Path("fake/sft")
     fake_grid = MagicMock()
 
     fake_datasets = (MagicMock(), None, [_FAKE_ROW], [], _FAKE_PAIRS)
     with patch.dict(sys.modules, {"trl": fake_trl, "unsloth": fake_unsloth}), patch(
         "rlvr.train_grpo.build_datasets", return_value=fake_datasets
+    ), patch(
+        "rlvr.train_grpo.make_position_reward", side_effect=capture_reward
     ), patch("rlvr.train_grpo.build_atlas_grid", return_value=fake_grid):
         from rlvr.train_grpo import main  # noqa: PLC0415
 
@@ -775,8 +795,8 @@ def test_train_grpo_passes_stop_tool_names_to_grpo_config() -> None:
                 str(sft_path),
                 "--output-dir",
                 "fake/out",
-                "--test-images-root",
-                "fake/TestImages",
+                "--manifest-root",
+                "fake/manifest",
             ]
         )
 
@@ -787,3 +807,5 @@ def test_train_grpo_passes_stop_tool_names_to_grpo_config() -> None:
     }
     # And max_prompt_length is NOT passed (P1(a)).
     assert "max_prompt_length" not in captured_config_kwargs
+    assert captured_reward_kwargs["cutoff_frac"] == pytest.approx(0.10)
+    assert captured_reward_kwargs["sigma_frac"] == pytest.approx(0.035)
