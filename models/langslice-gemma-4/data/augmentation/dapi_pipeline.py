@@ -7,11 +7,14 @@ draws fresh per-image randomization for diversification:
     - atlas-grayscale density modulation gamma     ∈ [0.9, 2.0]
     - atlas-grayscale floor                        ∈ [0.10, 0.20]
     - DAPI tone shift (pure-blue ↔ cyan ↔ purple) — applied to final canvas
-    - global brightness multiplier                  ∈ [0.80, 1.15]
-    - global contrast multiplier                    ∈ [0.85, 1.15]
+    - global brightness multiplier                  ∈ [0.65, 0.95]
+    - global contrast multiplier                    ∈ [1.00, 1.30]
 
-The two texture transforms (gray and white matter) carry their own per-call
-randomization (density, sigma, aspect ratio, intensity) — see texture.py.
+The three texture transforms (gray matter, white matter, dense cell layers)
+carry their own per-call randomization (density, sigma, aspect ratio,
+intensity) — see texture.py. The dense-cell-layers pass paints a bright base
++ sprinkled nuclei in hippocampal pyramidal/granule layers so they read as
+visibly solid bright bands.
 """
 
 from __future__ import annotations
@@ -21,37 +24,40 @@ import numpy as np
 from .damage_pipeline import apply_damage_layer
 from .density import atlas_grayscale_density_map
 from .transforms.base import TransformContext
-from .transforms.texture import DAPIGrayMatterNuclei, DAPIWhiteMatterNuclei
+from .transforms.texture import (
+    DAPIBoundaryHighlights,
+    DAPIDenseCellLayers,
+    DAPIGrayMatterNuclei,
+    DAPIWhiteMatterNuclei,
+)
 from .transforms.tissue_class import classify_tissue
 
 __all__ = ["render_dapi_section"]
 
 
-def _apply_tone_shift(canvas: np.ndarray, rng: np.random.Generator) -> np.ndarray:
-    """Random DAPI hue: small shift between pure-blue, cyan, and slight purple.
+def _apply_tone_shift(canvas: np.ndarray, rng: np.random.Generator) -> np.ndarray:  # noqa: ARG001
+    """No-op — GT showed pure single-channel blue (R=G=0).
 
-    DAPI emission peaks ~460 nm but real microscopes display it across a small
-    palette (deep blue, blue-cyan, blue-purple) depending on filter cube and
-    LUT. Drawing a per-image shift mimics that variation.
+    Kept as a function for backward compatibility with the pipeline; any
+    cyan/purple bleed makes the brightest features look pink/lavender,
+    which doesn't match real DAPI under typical imaging. Re-enable here
+    if the training set ever needs cross-modality color jitter.
     """
-    cyan_pull = rng.uniform(-0.10, 0.20)
-    purple_pull = rng.uniform(-0.10, 0.15)
-    out = canvas.copy()
-    # cyan_pull > 0  → bleed blue into green
-    # purple_pull > 0 → bleed blue into red
-    out[..., 1] += cyan_pull * canvas[..., 2]
-    out[..., 0] += purple_pull * canvas[..., 2]
-    return np.clip(out, 0.0, 1.0)
+    return canvas
 
 
 def _apply_brightness_contrast(
     canvas: np.ndarray, rng: np.random.Generator,
 ) -> np.ndarray:
-    brightness = rng.uniform(0.80, 1.15)
-    contrast = rng.uniform(0.85, 1.15)
+    # The texture renderers are now GT-calibrated (mean ≈ 0.20 by design).
+    # We only apply mild per-image variation here for exposure diversity
+    # (some imaging sessions are slightly dimmer/brighter than others).
+    # Aggressive gamma crushing was needed pre-GT-calibration when textures
+    # saturated; no longer warranted.
+    contrast = float(rng.uniform(0.95, 1.15))
     mean = canvas.mean(axis=(0, 1), keepdims=True)
     out = (canvas - mean) * contrast + mean
-    out *= brightness
+    out *= float(rng.uniform(0.85, 1.10))
     return np.clip(out, 0.0, 1.0)
 
 
@@ -118,6 +124,8 @@ def render_dapi_section(
     canvas = np.zeros((h, w, 3), dtype=np.float32)
     canvas = DAPIGrayMatterNuclei(p=1.0)(canvas, rng=rng, ctx=ctx)
     canvas = DAPIWhiteMatterNuclei(p=1.0)(canvas, rng=rng, ctx=ctx)
+    canvas = DAPIDenseCellLayers(p=1.0)(canvas, rng=rng, ctx=ctx)
+    canvas = DAPIBoundaryHighlights(p=1.0)(canvas, rng=rng, ctx=ctx)
 
     canvas = _apply_tone_shift(canvas, rng)
     canvas = _apply_brightness_contrast(canvas, rng)

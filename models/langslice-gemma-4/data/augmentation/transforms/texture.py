@@ -17,6 +17,9 @@ from __future__ import annotations
 __all__ = [
     "DAPIGrayMatterNuclei",
     "DAPIWhiteMatterNuclei",
+    "DAPIDenseCellLayers",
+    "DAPIBoundaryHighlights",
+    "DAPIStainClumps",
     "NisslGrayMatterCellBodies",
     "NisslWhiteMatterCellBodies",
     "BrightfieldGrayMatterDAB",
@@ -422,21 +425,23 @@ def _splat_alpha_anisotropic_blobs(
 
 
 def _local_tract_orientation(
-    mask: np.ndarray, *, smoothing_sigma: float = 2.0,
+    mask: np.ndarray, *, smoothing_sigma: float = 8.0,
 ) -> np.ndarray:
     """Per-pixel theta giving the local tract direction inside *mask*.
 
-    Computes the gradient of the (smoothed) distance transform of mask. The
-    gradient points perpendicular to the nearest mask boundary; the tract
-    direction is perpendicular to that. Pixels outside mask get theta=0.
-    """
-    from scipy.ndimage import distance_transform_edt, gaussian_filter
+    Tangent = perpendicular to the gradient of the heavily-smoothed
+    distance transform of *mask*. Heavy smoothing (sigma ~ region
+    half-thickness) is required so the medial-axis ridge inside thick
+    regions doesn't destabilize the gradient direction.
 
-    dt = distance_transform_edt(mask).astype(np.float32)
-    if smoothing_sigma > 0:
-        dt = gaussian_filter(dt, sigma=smoothing_sigma)
-    gy, gx = np.gradient(dt)
-    return np.arctan2(-gx, gy).astype(np.float32)
+    Behaviour falls out of the same algorithm for both shape classes:
+      - Elongated tract (corpus callosum) → tangent runs along long axis.
+      - Round region (anterior commissure) → circular flow tangent to the
+        boundary at every point.
+    """
+    from .dapi_texture import _shape_aware_orientation
+
+    return _shape_aware_orientation(mask, smoothing_sigma=smoothing_sigma)
 
 
 def _get_or_compute_tract_orientation(
@@ -444,14 +449,13 @@ def _get_or_compute_tract_orientation(
 ) -> np.ndarray:
     """Return ctx.tract_orientation, computing it if not yet cached.
 
-    Memoizes the per-pixel theta field derived from the WM mask's distance-
-    transform gradient.  When multiple WM-nuclei transforms run on the same
-    image (e.g. Nissl WM + Hematoxylin WM in a layered ISH mode), the field
-    is computed once and reused, avoiding redundant scipy calls.
+    Memoizes the per-pixel theta field derived from the WM mask's
+    smoothed distance-transform gradient. Reused across multiple WM-nuclei
+    transforms run on the same image.
     """
     if ctx.tract_orientation is not None:
         return ctx.tract_orientation
-    theta = _local_tract_orientation(wm_mask, smoothing_sigma=2.0)
+    theta = _local_tract_orientation(wm_mask)
     ctx.tract_orientation = theta
     return theta
 
@@ -464,25 +468,16 @@ def _resolve_class_mask(ctx: TransformContext, class_name: str) -> np.ndarray | 
 
 
 class DAPIGrayMatterNuclei:
-    """Dense small bright-blue nuclei in gray-matter regions only.
+    """GT-calibrated DAPI gray-matter texture renderer.
 
-    Real DAPI gray matter has ~10^5 neurons + glia per mm^3 — at 25 µm/px slice
-    thickness the visible 2D density is ~1500-2500/mm^2. Renders only within
-    ctx.tissue_class_masks["gray_matter"]; density modulated locally by
-    ctx.density_map.
+    Replaces the legacy blob-splat approach with per-pixel Poisson cell-count
+    sampling at production resolution. Calibrated against real DAPI screenshots
+    in ``GT_Textures/DAPI/`` downsampled to 25 µm/px (mean=0.205, p95=0.40).
+    See ``transforms/dapi_texture.py`` and ``tmp/dapi_iteration/`` for details.
     """
 
-    def __init__(
-        self,
-        p: float = 1.0,
-        density_range_per_mm2: tuple[float, float] = (2800.0, 4200.0),
-        sigma_range_scale: tuple[float, float] = (0.45, 0.85),
-        intensity_range: tuple[float, float] = (0.65, 1.0),
-    ) -> None:
+    def __init__(self, p: float = 1.0) -> None:
         self.p = p
-        self.density_range_per_mm2 = density_range_per_mm2
-        self.sigma_range_scale = sigma_range_scale
-        self.intensity_range = intensity_range
 
     def __call__(
         self,
@@ -493,60 +488,193 @@ class DAPIGrayMatterNuclei:
     ) -> np.ndarray:
         if rng.random() >= self.p:
             return image
+        from .dapi_texture import DAPI_GM_PARAMS, render_dapi_region_texture
 
         gm_mask = _resolve_class_mask(ctx, "gray_matter")
         if gm_mask is None or not gm_mask.any():
             return image
-
-        h, w = image.shape[:2]
-        density = _get_density(ctx, (h, w))
-        px_um = _pixel_size(ctx)
-
-        d_lo, d_hi = self.density_range_per_mm2
-        density_per_mm2 = float(rng.uniform(d_lo, d_hi))
-
-        n_target = _expected_count(density_per_mm2, px_um, h, w)
-        ys, xs = _sample_points(density, n_target, _MAX_BLOBS_DAPI_GM, rng, gm_mask)
-        n = len(ys)
-        if n == 0:
-            return image
-
-        sigma_scale = 10.0 / px_um
-        s_lo, s_hi = self.sigma_range_scale
-        sigmas = rng.uniform(s_lo * sigma_scale, s_hi * sigma_scale, size=n).astype(np.float32)
-        intensities = rng.uniform(*self.intensity_range, size=n).astype(np.float32)
-
-        blue_dom = rng.uniform(0.85, 1.0, size=n).astype(np.float32)
-        rg_bleed = rng.uniform(0.0, 0.15, size=n).astype(np.float32)
-        channel_weights = np.stack([rg_bleed, rg_bleed * 0.5, blue_dom], axis=1).astype(np.float32)
-
-        canvas = np.zeros_like(image)
-        _splat_blobs(canvas, ys, xs, sigmas, intensities, channel_weights, gm_mask)
-        return np.clip(image + canvas, 0.0, 1.0)
+        return render_dapi_region_texture(
+            image.copy(),
+            gm_mask.astype(bool),
+            DAPI_GM_PARAMS,
+            rng=rng,
+            pixel_size_um=_pixel_size(ctx),
+            density_map=ctx.density_map,
+            channel=2,
+        )
 
 
 class DAPIWhiteMatterNuclei:
-    """Sparse, elongated, dim nuclei in white-matter regions only.
+    """GT-calibrated DAPI white-matter texture renderer.
 
-    Oligodendrocyte nuclei in white matter are noticeably elongated parallel to
-    the local axon bundles they myelinate. Each blob's long axis is aligned
-    with the local tract direction (perpendicular to the gradient of the WM
-    mask's distance transform), with random per-blob jitter on top.
+    Sparser than GM (oligodendrocyte-dominated). Anisotropic blur aligned
+    with the local tract direction reproduces the directional striping
+    visible in real WM DAPI. Calibrated against
+    ``GT_Textures/DAPI/DAPI_whitematter_*.png``.
+    """
+
+    def __init__(self, p: float = 1.0) -> None:
+        self.p = p
+
+    def __call__(
+        self,
+        image: np.ndarray,
+        *,
+        rng: np.random.Generator,
+        ctx: TransformContext,
+    ) -> np.ndarray:
+        if rng.random() >= self.p:
+            return image
+        from .dapi_texture import DAPI_WM_PARAMS, render_dapi_region_texture
+
+        wm_mask = _resolve_class_mask(ctx, "white_matter")
+        if wm_mask is None or not wm_mask.any():
+            return image
+        # Reuse cached tract-orientation field for directional blur alignment.
+        theta_field = _get_or_compute_tract_orientation(ctx, wm_mask.astype(bool))
+        return render_dapi_region_texture(
+            image.copy(),
+            wm_mask.astype(bool),
+            DAPI_WM_PARAMS,
+            rng=rng,
+            pixel_size_um=_pixel_size(ctx),
+            density_map=ctx.density_map,
+            tract_orientation=theta_field,
+            channel=2,
+        )
+
+
+class DAPIDenseCellLayers:
+    """Solid bright bands in tightly-packed cell layers.
+
+    Real DAPI shows hippocampal pyramidal layers (CA1sp/CA2sp/CA3sp), the
+    dentate gyrus granule cell layer (DG-sg), olfactory bulb granule layers,
+    and the induseum griseum as visibly *solid* bright bands — the cells are
+    too tightly packed to resolve as individual nuclei at typical histology
+    resolution. This transform paints a high-intensity blue base over those
+    masked regions, then sprinkles a denser cell texture on top so the band
+    has fine grain at high resolution but still reads solid at low res.
+
+    The mask comes from ``ctx.tissue_class_masks["dense_cell_layers"]``,
+    populated by ``classify_tissue`` from name patterns like "granule cell
+    layer" / "pyramidal layer" / "induseum griseum".
     """
 
     def __init__(
         self,
         p: float = 1.0,
-        density_range_per_mm2: tuple[float, float] = (200.0, 600.0),
-        aspect_ratio_range: tuple[float, float] = (3.0, 10.0),
-        orientation_jitter_rad: float = 0.4,
-        intensity_range: tuple[float, float] = (0.25, 0.7),
+        base_intensity_range: tuple[float, float] = (0.30, 0.55),
+        density_range_per_mm2: tuple[float, float] = (8000.0, 14000.0),
+        sigma_range_scale: tuple[float, float] = (0.40, 0.70),
+        cell_intensity_range: tuple[float, float] = (0.40, 0.75),
     ) -> None:
         self.p = p
+        self.base_intensity_range = base_intensity_range
         self.density_range_per_mm2 = density_range_per_mm2
-        self.aspect_ratio_range = aspect_ratio_range
-        self.orientation_jitter_rad = orientation_jitter_rad
-        self.intensity_range = intensity_range
+        self.sigma_range_scale = sigma_range_scale
+        self.cell_intensity_range = cell_intensity_range
+
+    def __call__(
+        self,
+        image: np.ndarray,
+        *,
+        rng: np.random.Generator,
+        ctx: TransformContext,
+    ) -> np.ndarray:
+        if rng.random() >= self.p:
+            return image
+        from .dapi_texture import DAPI_DENSE_LAYER_PARAMS, render_dapi_region_texture
+
+        mask = _resolve_class_mask(ctx, "dense_cell_layers")
+        if mask is None or not mask.any():
+            return image
+        return render_dapi_region_texture(
+            image.copy(),
+            mask.astype(bool),
+            DAPI_DENSE_LAYER_PARAMS,
+            rng=rng,
+            pixel_size_um=_pixel_size(ctx),
+            density_map=ctx.density_map,
+            channel=2,
+        )
+
+
+class DAPIStainClumps:
+    """Discrete stain-precipitate clumps at slice edges, ventricles, and IsC.
+
+    Real DAPI sections show bright clumps of precipitate collecting in:
+      - the section perimeter (pia / sectioning crevices)
+      - the ventricle lumen (stain pooling in the empty space)
+      - the tissue band immediately bordering ventricles (ependymal layer)
+      - Islands of Calleja within the olfactory tubercle (always)
+
+    Each clump is a dense local cluster of *the same sub-pixel nuclei*
+    used by GM/WM, packed densely inside an irregular elliptical region.
+    After supersample-then-Lanczos downsample the cluster reads as a
+    bright granular blob with cell-level texture inside — not a smooth
+    ellipse. Clumps inherit per-cell shape from the DAPI cell renderer
+    so they integrate visually with the rest of the texture.
+
+    Sampling: per-zone Poisson density on the qualifying mask; IsC
+    always emits one clump per connected component. All compositing is
+    pure-blue max-blend (matches DAPI single-channel convention).
+    """
+
+    # Per-zone parameter bundles. Sizes in µm, intensities in [0, 1].
+    # `cell_density_factor` multiplies the GM cell density when packing
+    # nuclei into the clump — clumps are 3-6× denser than GM cortex.
+    _ZONE_PARAMS = {
+        "edge": dict(
+            size_um_range=(20.0, 90.0),
+            aspect_range=(0.30, 1.00),
+            intensity_range=(0.50, 0.90),
+            irregularity=0.70,
+            density_per_mm_perimeter=2.0,
+            cell_density_factor=4.5,
+        ),
+        "ventricle_lumen": dict(
+            size_um_range=(30.0, 130.0),
+            aspect_range=(0.45, 1.00),
+            intensity_range=(0.55, 0.95),
+            irregularity=0.75,
+            density_per_mm2_area=3.5,
+            cell_density_factor=5.0,
+        ),
+        "ventricle_wall": dict(
+            size_um_range=(25.0, 90.0),
+            aspect_range=(0.25, 0.70),
+            intensity_range=(0.45, 0.85),
+            irregularity=0.60,
+            density_per_mm_perimeter=3.0,
+            cell_density_factor=4.0,
+            orient_to_local_tangent=True,
+        ),
+        "islands_of_calleja": dict(
+            size_um_range=(20.0, 70.0),
+            aspect_range=(0.60, 1.00),
+            intensity_range=(0.55, 0.90),
+            irregularity=0.55,
+            cell_density_factor=5.5,
+            one_per_component=True,
+        ),
+    }
+
+    # Cell-level parameters shared with the GM renderer — clump nuclei
+    # use the same sub-pixel sphere geometry as the rest of the texture.
+    _CLUMP_CELL_RADIUS_UM_RANGE = (3.0, 5.0)
+    _CLUMP_BASE_INTENSITY = 0.45
+    _CLUMP_TAIL_SCALE = 0.40
+    _SUPERSAMPLE = 4
+
+    def __init__(
+        self,
+        p: float = 1.0,
+        edge_band_px: int = 4,
+        ventricle_band_px: int = 3,
+    ) -> None:
+        self.p = p
+        self.edge_band_px = edge_band_px
+        self.ventricle_band_px = ventricle_band_px
 
     def __call__(
         self,
@@ -558,51 +686,284 @@ class DAPIWhiteMatterNuclei:
         if rng.random() >= self.p:
             return image
 
-        wm_mask = _resolve_class_mask(ctx, "white_matter")
-        if wm_mask is None or not wm_mask.any():
-            return image
+        from scipy.ndimage import binary_dilation, binary_erosion, label
 
         h, w = image.shape[:2]
-        density = _get_density(ctx, (h, w))
-        px_um = _pixel_size(ctx)
+        pixel_size_um = _pixel_size(ctx)
 
-        # Per-image density draw — sometimes WM is faint, sometimes dense,
-        # so the trained model has to recognize tracts even when low-contrast.
-        d_lo, d_hi = self.density_range_per_mm2
-        density_per_mm2 = float(rng.uniform(d_lo, d_hi))
-
-        n_target = _expected_count(density_per_mm2, px_um, h, w)
-        ys, xs = _sample_points(density, n_target, _MAX_BLOBS_DAPI_WM, rng, wm_mask)
-        n = len(ys)
-        if n == 0:
+        tissue = ctx.tissue_mask
+        if tissue is None and ctx.tissue_class_masks is not None:
+            tissue = ctx.tissue_class_masks.get("tissue")
+        if tissue is None:
+            return image
+        tissue = tissue.astype(bool)
+        if not tissue.any():
             return image
 
-        sigma_scale = 10.0 / px_um
-        sigmas_short = rng.uniform(
-            0.5 * sigma_scale, 0.8 * sigma_scale, size=n,
-        ).astype(np.float32)
-        ar_lo, ar_hi = self.aspect_ratio_range
-        ar = rng.uniform(ar_lo, ar_hi, size=n).astype(np.float32)
-        sigmas_long = (sigmas_short * ar).astype(np.float32)
+        masks = ctx.tissue_class_masks or {}
+        ventricle = masks.get("ventricle")
+        ventricle = ventricle.astype(bool) if ventricle is not None else None
+        isc = masks.get("islands_of_calleja")
+        isc = isc.astype(bool) if isc is not None else None
 
-        theta_field = _get_or_compute_tract_orientation(ctx, wm_mask)
-        thetas = theta_field[ys, xs] + rng.uniform(
-            -self.orientation_jitter_rad, self.orientation_jitter_rad, size=n,
-        ).astype(np.float32)
+        # Phase 1: collect clump specs across all zones.
+        clump_specs: list[dict] = []
 
-        intensities = rng.uniform(*self.intensity_range, size=n).astype(np.float32)
-        blue_dom = rng.uniform(0.75, 0.95, size=n).astype(np.float32)
-        rg_bleed = rng.uniform(0.0, 0.10, size=n).astype(np.float32)
-        channel_weights = np.stack(
-            [rg_bleed, rg_bleed * 0.5, blue_dom], axis=1,
-        ).astype(np.float32)
+        if self.edge_band_px > 0:
+            inner = binary_erosion(tissue, iterations=self.edge_band_px)
+            edge_band = tissue & ~inner
+            if edge_band.any():
+                clump_specs.extend(self._sample_clumps(
+                    edge_band, "edge", rng, pixel_size_um,
+                ))
 
-        canvas = np.zeros_like(image)
-        _splat_anisotropic_blobs(
-            canvas, ys, xs, sigmas_long, sigmas_short, thetas,
-            intensities, channel_weights, wm_mask,
+        if ventricle is not None and ventricle.any():
+            clump_specs.extend(self._sample_clumps(
+                ventricle, "ventricle_lumen", rng, pixel_size_um,
+            ))
+
+            if self.ventricle_band_px > 0:
+                v_dilated = binary_dilation(ventricle, iterations=self.ventricle_band_px)
+                wall_band = v_dilated & tissue & ~ventricle
+                if wall_band.any():
+                    from .dapi_texture import _shape_aware_orientation
+                    theta = _shape_aware_orientation(ventricle, smoothing_sigma=3.0)
+                    clump_specs.extend(self._sample_clumps(
+                        wall_band, "ventricle_wall", rng, pixel_size_um,
+                        orientation_field=theta,
+                    ))
+
+        if isc is not None and isc.any():
+            labeled, n_components = label(isc)
+            for cid in range(1, n_components + 1):
+                comp_mask = labeled == cid
+                if comp_mask.any():
+                    clump_specs.extend(self._sample_clumps(
+                        comp_mask, "islands_of_calleja",
+                        rng, pixel_size_um,
+                    ))
+
+        if not clump_specs:
+            return image
+
+        # Phase 2: render all clumps in a single hi-res buffer as dense
+        # sub-pixel-cell clusters; downsample once at the end.
+        hi_canvas = self._render_clumps_supersampled(
+            clump_specs, h, w, pixel_size_um, rng,
         )
-        return np.clip(image + canvas, 0.0, 1.0)
+
+        from .dapi_texture import _downsample_lanczos
+        clump_layer = _downsample_lanczos(hi_canvas, h, w)
+
+        out = image.copy()
+        out[..., 2] = np.maximum(out[..., 2], clump_layer)
+        return np.clip(out, 0.0, 1.0).astype(np.float32)
+
+    # ------------------------------------------------------------------
+    # Sampling helpers
+
+    def _sample_clumps(
+        self,
+        zone_mask: np.ndarray,
+        zone_key: str,
+        rng: np.random.Generator,
+        pixel_size_um: float,
+        orientation_field: np.ndarray | None = None,
+    ) -> list[dict]:
+        params = self._ZONE_PARAMS[zone_key]
+        ys, xs = np.where(zone_mask)
+        if ys.size == 0:
+            return []
+        n_centers = self._sample_count(zone_mask, params, pixel_size_um, rng)
+        if n_centers == 0:
+            return []
+        sel = rng.integers(0, ys.size, size=n_centers)
+        cy_arr = ys[sel]
+        cx_arr = xs[sel]
+
+        specs: list[dict] = []
+        for i in range(n_centers):
+            cy, cx = int(cy_arr[i]), int(cx_arr[i])
+            if orientation_field is not None:
+                angle = float(orientation_field[cy, cx])
+            else:
+                angle = float(rng.uniform(0, np.pi))
+            specs.append(dict(
+                cy=cy, cx=cx,
+                size_um=float(rng.uniform(*params["size_um_range"])),
+                aspect=float(rng.uniform(*params["aspect_range"])),
+                angle=angle,
+                intensity=float(rng.uniform(*params["intensity_range"])),
+                irregularity=float(params["irregularity"]),
+                cell_density_factor=float(params["cell_density_factor"]),
+            ))
+        return specs
+
+    def _sample_count(
+        self,
+        zone_mask: np.ndarray,
+        params: dict,
+        pixel_size_um: float,
+        rng: np.random.Generator,
+    ) -> int:
+        if params.get("one_per_component"):
+            return 1
+        px_area_mm2 = (pixel_size_um / 1000.0) ** 2
+        if "density_per_mm2_area" in params:
+            area_mm2 = float(zone_mask.sum()) * px_area_mm2
+            mean = params["density_per_mm2_area"] * area_mm2
+        elif "density_per_mm_perimeter" in params:
+            from scipy.ndimage import binary_erosion
+            interior = binary_erosion(zone_mask, iterations=1)
+            perimeter_px = float((zone_mask & ~interior).sum())
+            perimeter_mm = perimeter_px * pixel_size_um / 1000.0
+            mean = params["density_per_mm_perimeter"] * perimeter_mm
+        else:
+            mean = 0.0
+        return int(rng.poisson(max(0.0, mean)))
+
+    # ------------------------------------------------------------------
+    # Hi-res splat — renders all clumps as dense nuclei clusters
+
+    def _render_clumps_supersampled(
+        self,
+        specs: list[dict],
+        h: int,
+        w: int,
+        pixel_size_um: float,
+        rng: np.random.Generator,
+    ) -> np.ndarray:
+        """Render clumps as dense clusters of sub-pixel cells in a hi-res
+        accumulator. Returns (H_hi, W_hi) float32. Downsample externally.
+        """
+        from scipy.ndimage import gaussian_filter
+
+        s = self._SUPERSAMPLE
+        H, W = h * s, w * s
+        px_um_hi = pixel_size_um / s
+
+        # Reference cell density (cells per mm² at GM cortex scale).
+        ref_density_per_mm2 = 5500.0
+
+        all_y, all_x, all_int, all_sigma = [], [], [], []
+
+        for sp in specs:
+            cy_hi = sp["cy"] * s + s / 2.0
+            cx_hi = sp["cx"] * s + s / 2.0
+            ra_um = sp["size_um"]
+            rb_um = sp["size_um"] * sp["aspect"]
+            ra_px_hi = ra_um / px_um_hi
+            rb_px_hi = rb_um / px_um_hi
+            angle = sp["angle"]
+            intensity = sp["intensity"]
+            irregularity = sp["irregularity"]
+            cell_density_factor = sp["cell_density_factor"]
+
+            # Number of cells in the clump = density × ellipse area
+            ellipse_area_mm2 = (
+                np.pi * ra_um * rb_um / (1000.0 ** 2)
+            )
+            n_cells = max(8, int(
+                ref_density_per_mm2 * cell_density_factor * ellipse_area_mm2
+            ))
+
+            # Sample positions inside a unit disc (rejection)
+            n_attempt = int(n_cells * 1.4) + 4
+            u = rng.uniform(-1.0, 1.0, size=n_attempt)
+            v = rng.uniform(-1.0, 1.0, size=n_attempt)
+            keep = (u * u + v * v) < 1.0
+            u = u[keep][:n_cells]
+            v = v[keep][:n_cells]
+            n_kept = u.size
+            if n_kept == 0:
+                continue
+
+            # Irregular boundary: scale each cell's radial coordinate by
+            # a small noise factor — produces ragged clump edges instead
+            # of perfectly elliptical ones.
+            if irregularity > 0:
+                jitter = 1.0 + rng.normal(
+                    0.0, irregularity * 0.45, size=n_kept
+                )
+                u = u * jitter
+                v = v * jitter
+
+            # Stretch to ellipse + rotate
+            cos_a = np.cos(angle)
+            sin_a = np.sin(angle)
+            x_local = u * ra_px_hi
+            y_local = v * rb_px_hi
+            x_rot = cos_a * x_local - sin_a * y_local
+            y_rot = sin_a * x_local + cos_a * y_local
+            ys = np.round(cy_hi + y_rot).astype(np.int32)
+            xs = np.round(cx_hi + x_rot).astype(np.int32)
+
+            # Keep only in-bounds
+            valid = (ys >= 0) & (ys < H) & (xs >= 0) & (xs < W)
+            ys = ys[valid]
+            xs = xs[valid]
+            if ys.size == 0:
+                continue
+
+            # Per-cell intensity — gamma tail like GM cells, scaled so
+            # the brightest pixel of the densest part of the clump
+            # approaches the requested peak intensity.
+            base = self._CLUMP_BASE_INTENSITY * intensity
+            tail = self._CLUMP_TAIL_SCALE * intensity
+            intens = rng.gamma(
+                shape=1.0, scale=base + tail, size=ys.size,
+            ).astype(np.float32)
+
+            # Per-cell radius in hi-res pixels
+            sigmas = (
+                rng.uniform(*self._CLUMP_CELL_RADIUS_UM_RANGE, size=ys.size)
+                / px_um_hi
+            ).astype(np.float32)
+
+            all_y.append(ys)
+            all_x.append(xs)
+            all_int.append(intens)
+            all_sigma.append(sigmas)
+
+        if not all_y:
+            return np.zeros((H, W), dtype=np.float32)
+
+        ys = np.concatenate(all_y)
+        xs = np.concatenate(all_x)
+        intens = np.concatenate(all_int)
+        sigmas = np.concatenate(all_sigma)
+
+        # Bucketed Gaussian splat: bin sigmas into N buckets, splat each
+        # bucket with a single convolution. Same trick the GM splatter
+        # uses in dapi_texture._splat_cells_supersampled.
+        canvas = np.zeros((H, W), dtype=np.float32)
+        n_buckets = 4
+        s_min = float(sigmas.min())
+        s_max = float(sigmas.max())
+        if s_max - s_min < 1e-6:
+            s_max = s_min + 1e-6
+        bucket_idx = np.clip(
+            np.floor((sigmas - s_min) / (s_max - s_min) * n_buckets).astype(np.int32),
+            0, n_buckets - 1,
+        )
+        bucket_edges = np.linspace(s_min, s_max, n_buckets + 1)
+        for b in range(n_buckets):
+            sel = bucket_idx == b
+            if not sel.any():
+                continue
+            sigma = float((bucket_edges[b] + bucket_edges[b + 1]) * 0.5)
+            impulses = np.zeros((H, W), dtype=np.float32)
+            np.add.at(impulses, (ys[sel], xs[sel]), intens[sel])
+            if sigma > 0.05:
+                impulses = gaussian_filter(impulses, sigma=sigma).astype(np.float32)
+            canvas += impulses
+
+        return canvas
+
+
+# Backwards-compat alias so dapi_pipeline.py and tests keep working
+# without changes — the new transform is a drop-in replacement.
+DAPIBoundaryHighlights = DAPIStainClumps
 
 
 # ---------------------------------------------------------------------------

@@ -61,7 +61,7 @@ def test_id_sets_cached(atlas: object) -> None:
 
 def test_classify_returns_expected_keys(annotation_slice: np.ndarray, atlas: object) -> None:
     masks = classify_tissue(annotation_slice, atlas)
-    assert set(masks) == {
+    required = {
         "gray_matter",
         "cortical_subplate",
         "hippocampal_formation",
@@ -72,6 +72,8 @@ def test_classify_returns_expected_keys(annotation_slice: np.ndarray, atlas: obj
         "tissue",
         "background",
     }
+    missing = required - set(masks)
+    assert not missing, f"classify_tissue missing required keys: {missing}"
     for v in masks.values():
         assert v.dtype == bool
         assert v.shape == annotation_slice.shape
@@ -227,7 +229,7 @@ def test_atlas_agnostic_keyword_fallback_warns() -> None:
     ann[1, :] = 1009  # white matter
     ann[2, :] = 73   # ventricle
     masks = classify_tissue(ann, fake)
-    assert set(masks) == {
+    required = {
         "gray_matter",
         "cortical_subplate",
         "hippocampal_formation",
@@ -238,6 +240,8 @@ def test_atlas_agnostic_keyword_fallback_warns() -> None:
         "tissue",
         "background",
     }
+    missing = required - set(masks)
+    assert not missing, f"classify_tissue missing required keys: {missing}"
 
 
 def test_unknown_atlas_with_unrecognized_ontology_falls_back_gracefully() -> None:

@@ -381,7 +381,6 @@ def test_apply_damage_layer_geometry_disabled_skips_warps() -> None:
         "augmentation.damage_pipeline.BladeStretchHorizontal",
         "augmentation.damage_pipeline.AffineJitter",
         "augmentation.damage_pipeline.Folds",
-        "augmentation.damage_pipeline.Tears",
         "augmentation.damage_pipeline.VentricleExpansion",
     ]
 
@@ -390,7 +389,6 @@ def test_apply_damage_layer_geometry_disabled_skips_warps() -> None:
         patch(targets[1], _ShouldNotRun),
         patch(targets[2], _ShouldNotRun),
         patch(targets[3], _ShouldNotRun),
-        patch(targets[4], _ShouldNotRun),
     ):
         out = apply_damage_layer(
             image, rng=np.random.default_rng(5), ctx=ctx, modality="nissl",

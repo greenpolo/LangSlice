@@ -178,6 +178,21 @@ _VENTRICLE_PATTERNS = re.compile(
     r"|third ventricle|fourth ventricle|central canal)", re.I
 )
 
+# Concepts whose union forms ``dense_cell_layers`` — these are densely-packed
+# cell layers that read as solid bright bands in DAPI/Nissl. Each entry is a
+# canonical-region concept registered in ``augmentation.canonical_regions``;
+# adding a new dense layer = register a concept + add its name here.
+_DENSE_CELL_LAYER_CONCEPTS: tuple[str, ...] = (
+    "dg_granule_layer",
+    "ca_pyramidal_layer",
+    "induseum_griseum",
+    "mob_granule_layer",
+    "aob_granule_layer",
+    "nlot_pyramidal_layer",
+    "purkinje_layer",
+    "cerebellar_granule_layer",
+)
+
 _TISSUE_CLASS_PATTERNS: dict[str, re.Pattern[str]] = {
     "gray_matter": _GRAY_MATTER_PATTERNS,
     "white_matter": _WHITE_MATTER_PATTERNS,
@@ -433,6 +448,31 @@ def classify_tissue(
         masks[cls] = np.isin(annotation_slice, np.fromiter(ids, dtype=np.int64))
     for cls, ids in _specific_structure_id_sets(atlas).items():
         masks[cls] = np.isin(annotation_slice, np.fromiter(ids, dtype=np.int64))
+
+    # Resolve every concept registered in canonical_regions to its own mask
+    # in the dict. Texture passes target concepts by name; the registry hides
+    # which atlas-specific acronyms they expand to.
+    from augmentation.canonical_regions import (
+        concept_id_set,
+        list_concepts,
+    )
+
+    for concept in list_concepts():
+        ids = concept_id_set(atlas, concept)
+        masks[concept] = np.isin(
+            annotation_slice, np.fromiter(ids, dtype=np.int64)
+        )
+
+    # Backward-compat aggregate: union of every dense-cell-layer concept,
+    # so existing callers asking for ``ctx.tissue_class_masks["dense_cell_layers"]``
+    # keep working. The aggregate set may be edited by appending or removing
+    # entries to ``_DENSE_CELL_LAYER_CONCEPTS``.
+    dense_mask = np.zeros_like(masks["tissue"] if "tissue" in masks else annotation_slice == 0, dtype=bool)
+    for concept in _DENSE_CELL_LAYER_CONCEPTS:
+        if concept in masks:
+            dense_mask |= masks[concept]
+    masks["dense_cell_layers"] = dense_mask
+
     masks["background"] = annotation_slice == 0
     masks["tissue"] = ~masks["background"]
     return masks

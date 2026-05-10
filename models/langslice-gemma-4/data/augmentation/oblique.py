@@ -1,7 +1,7 @@
 """Oblique atlas slice extraction — tilted coronal/sagittal/horizontal sections.
 
 Real histological sections are rarely cut perfectly orthogonal to the atlas
-axes.  Yaw, pitch, and roll tilts of up to ~10–15° are common artefacts of
+axes.  Yaw, pitch, and roll tilts of up to ~8° are common artefacts of
 mounting, sectioning angle, and brain positioning.  This module extracts
 tilted slices from the 3D atlas volumes by computing per-output-pixel sample
 coordinates via a 3D rotation matrix and then sampling with
@@ -33,7 +33,7 @@ __all__ = [
     "sample_oblique_angles",
 ]
 
-_MAX_ANGLE_DEG: float = 15.0
+_MAX_ANGLE_DEG: float = 8.0
 
 
 # ---------------------------------------------------------------------------
@@ -146,11 +146,11 @@ def get_oblique_slice(
         Canonical plane to tilt from: ``"coronal"``, ``"sagittal"``, or
         ``"horizontal"``.
     yaw_deg:
-        Rotation (degrees) around the DV (vertical) axis.  |angle| ≤ 15°.
+        Rotation (degrees) around the DV (vertical) axis.  |angle| ≤ 8°.
     pitch_deg:
-        Rotation (degrees) around the ML (left-right) axis.  |angle| ≤ 15°.
+        Rotation (degrees) around the ML (left-right) axis.  |angle| ≤ 8°.
     roll_deg:
-        Rotation (degrees) around the AP (front-back) axis.  |angle| ≤ 15°.
+        Rotation (degrees) around the AP (front-back) axis.  |angle| ≤ 8°.
     output_size:
         ``(H, W)`` of the returned arrays.  Defaults to the native canonical
         slice shape.
@@ -165,7 +165,7 @@ def get_oblique_slice(
     Raises
     ------
     ValueError
-        If any |angle| > 15°.
+        If any |angle| > 8°.
     """
     for name, angle in (("yaw_deg", yaw_deg), ("pitch_deg", pitch_deg), ("roll_deg", roll_deg)):
         if abs(angle) > _MAX_ANGLE_DEG:
@@ -288,8 +288,8 @@ def get_oblique_slice(
 def sample_oblique_angles(
     rng: np.random.Generator,
     *,
-    max_yaw_deg: float = 12.0,
-    max_pitch_deg: float = 12.0,
+    max_yaw_deg: float = 8.0,
+    max_pitch_deg: float = 8.0,
     max_roll_deg: float = 8.0,
 ) -> tuple[float, float, float]:
     """Sample random tilt angles uniformly within the specified bounds.
@@ -300,7 +300,7 @@ def sample_oblique_angles(
         A ``numpy.random.Generator`` (e.g. ``np.random.default_rng(seed)``).
     max_yaw_deg, max_pitch_deg, max_roll_deg:
         Symmetric bounds for each axis; the returned angle is in
-        ``[-max, +max]``.  Must not exceed ``15.0°``.
+        ``[-max, +max]``.  Must not exceed ``8.0°``.
 
     Returns
     -------
