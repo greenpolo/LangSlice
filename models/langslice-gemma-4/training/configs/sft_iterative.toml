@@ -1,0 +1,61 @@
+# Expert-iteration SFT configuration.
+# Used by `tools.expert_iteration.iterate.py` per-round SFT retrain.
+# Differs from sft_default.toml in: base_model points at the merged-bf16
+# anchor (instead of bare unsloth/gemma-4-E4B-it). This avoids the
+# double-LoRA-application bug where an --initial-adapter trained from
+# bare unsloth gets re-applied on top of an already-merged base.
+#
+# Math: with base_model = merged-bf16 anchor:
+#   train_sft loads merged-bf16 (= base + prior SFT baked in)
+#   FastVisionModel.get_peft_model adds a FRESH r=16 LoRA on top
+#   Training updates ONLY the fresh LoRA -> output adapter = pure delta
+#   vLLM merge or hot-swap onto merged-bf16 = base + prior + delta. ✓
+#
+# Don't pass --initial-adapter when using this config — the prior SFT
+# weights are already in the base via the merged-bf16, and adding an
+# initial-adapter on top would re-introduce the double-application bug.
+
+[sft]
+# Loaded from the langslice-models-fast named volume, mounted at /models:ro
+# in the training service (see docker-compose.training.yml). This is the
+# same volume vLLM uses, populated via _local/iSFT/copy-volume-override.yml.
+# Avoids the ~90 sec/step slowdown caused by loading from the slow
+# Windows-NTFS-via-WSL2 bind mount.
+base_model = "/models/sft-base"
+load_in_4bit = true
+max_seq_length = 6144
+num_train_epochs = 3
+per_device_train_batch_size = 1
+gradient_accumulation_steps = 8
+learning_rate = 2e-4
+lr_scheduler_type = "cosine"
+warmup_ratio = 0.03
+weight_decay = 0.01
+optim = "adamw_8bit"
+chat_template_kwargs = { enable_thinking = false }
+logging_steps = 5
+eval_steps = 50
+agent_eval_steps = 200
+save_steps = 25
+report_to = "trackio"
+seed = 0
+dataloader_num_workers = 8
+dataloader_persistent_workers = true
+dataloader_pin_memory = true
+# Each worker queues 4 batches ahead of the GPU. Hides per-row IO variance
+# behind compute. Was unset (PyTorch default 2) before 2026-05-10; bumped
+# after SFT-1716 step 311 cliff investigation.
+dataloader_prefetch_factor = 4
+
+[lora]
+r = 16
+lora_alpha = 32
+finetune_vision_layers = false
+finetune_language_layers = true
+finetune_attention_modules = true
+finetune_mlp_modules = true
+use_gradient_checkpointing = "unsloth"
+
+[data]
+holdout_fraction = 0.10
+include_rationale = false

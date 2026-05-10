@@ -57,6 +57,7 @@ include = [
     "tests/test_*.py",
     "tests/*_test.py",
     "models/langslice-gemma-4/data/augmentation/**/*.py",
+    "models/langslice-gemma-4/training/sft/**/*.py",
     "models/langslice-gemma-4/training/rlvr/**/*.py",
 ]
 

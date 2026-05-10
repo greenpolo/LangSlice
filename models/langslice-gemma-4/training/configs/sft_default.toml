@@ -4,7 +4,7 @@
 [sft]
 base_model = "unsloth/gemma-4-E4B-it"
 load_in_4bit = true
-max_seq_length = 16384                  # multi-turn + multi-image traces
+max_seq_length = 6144                   # Docker runtime-proof; SDPA fallback for gemma4 (head dim 512 > FA2 limit) is memory-hungry, so seq stays short. Note: lowering to 4096 drops 82% of distilled SFT corpus (rule of thumb: 4096 fits 7 images, 6144 fits 14). Cliff row at step 524 needs >32GB VRAM at 6144; a future fix should target VRAM directly (sample packing, empty_cache callback, drop by image-count) not max_seq_length.
 num_train_epochs = 3
 per_device_train_batch_size = 1
 gradient_accumulation_steps = 8
@@ -17,9 +17,19 @@ chat_template_kwargs = { enable_thinking = false }
 logging_steps = 5
 eval_steps = 50
 agent_eval_steps = 200
-save_steps = 100
+save_steps = 25
 report_to = "trackio"
 seed = 0
+# DataLoader knobs — keep GPU fed during multi-image collation. If you set
+# dataloader_num_workers = 0, train_sft auto-disables persistent_workers so
+# HF TrainingArguments doesn't reject the combo.
+dataloader_num_workers = 8
+dataloader_persistent_workers = true
+dataloader_pin_memory = true
+# Each worker queues 4 batches ahead of the GPU. Hides per-row IO variance
+# behind compute. Was unset (PyTorch default 2) before 2026-05-10; bumped
+# after SFT-1716 step 311 cliff investigation.
+dataloader_prefetch_factor = 4
 
 [lora]
 r = 16
