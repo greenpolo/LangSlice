@@ -58,6 +58,10 @@ class _EpisodeState:
     turns: int = 0
     fetched_positions_mm: list[float] = field(default_factory=list)
     done: bool = False
+    # Optional curriculum metadata — populated when the row carries a
+    # ``section_id``. Reward functions / curriculum loggers read these
+    # directly from ``env._state``.
+    section_id: str = ""
 
     def reset(
         self,
@@ -68,6 +72,7 @@ class _EpisodeState:
         pos_hi: float,
         kind: EstimationKind,
         ground_truth_positions_mm: tuple[float, ...],
+        section_id: str = "",
     ) -> None:
         self.atlas_name = atlas_name
         self.plane = plane
@@ -84,6 +89,7 @@ class _EpisodeState:
         self.turns = 0
         self.fetched_positions_mm = []
         self.done = False
+        self.section_id = section_id
 
 
 def _coerce_positions(value: Any) -> list[float] | None:
@@ -154,6 +160,7 @@ class LangSliceEstimateEnv:
         valid_range = kwargs["valid_range_mm"]
         gt_raw = kwargs["ground_truth_positions_mm"]
         kind = kwargs["kind"]
+        section_id = str(kwargs.get("section_id") or "")
 
         if kind not in ("single", "group"):
             raise ValueError(f"kind must be 'single' or 'group', got {kind!r}")
@@ -182,6 +189,7 @@ class LangSliceEstimateEnv:
             pos_hi=pos_hi,
             kind=kind,
             ground_truth_positions_mm=tuple(float(g) for g in gt_raw),
+            section_id=section_id,
         )
         return None
 

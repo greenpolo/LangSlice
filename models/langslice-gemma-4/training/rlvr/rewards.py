@@ -1,49 +1,76 @@
 """Reward functions for the LangSlice RLVR pipeline.
 
-Single reward: a gated linear ramp on absolute mm error.
+Single reward: a normalized, truncated Gaussian on final-coordinate error.
 
-    reward = max(0, 1 - |err_mm| / window_mm)
+    err_frac = abs(predicted_mm - truth_mm) / axis_span_mm
+    reward = rescaled exp(-0.5 * (err_frac / sigma_frac)^2)
+
+Exact hits score 1.0. Errors at or beyond ``cutoff_frac`` score 0.0. Scores
+inside the cutoff are smoothly rescaled to the [0, 1] range, which keeps AP,
+DV, and ML axes comparable despite their different physical spans.
 
 Single-slice rollouts get the per-slice reward directly. Group rollouts get
 the mean of per-slice rewards. A failure to submit, a wrong-kind submission,
 or a wrong-count group submission yields 0.0 — no extra penalty, no shaping
 terms. Format / structure / submit-count rewards from the prior version were
 gameable and have been removed.
-
-The window is parameterised via ``window_mm`` so it can be tuned from the
-TOML config without editing this file. Default 0.100 mm.
 """
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from .env import LangSliceEstimateEnv
 
-DEFAULT_WINDOW_MM: float = 0.100
+DEFAULT_CUTOFF_FRAC: float = 0.10
+DEFAULT_SIGMA_FRAC: float = 0.035
 
 
-def closeness_reward(error_mm: float, window_mm: float = DEFAULT_WINDOW_MM) -> float:
-    """Gated linear ramp on absolute mm error.
+def _validate_positive(name: str, value: float) -> None:
+    if value <= 0:
+        raise ValueError(f"{name} must be positive, got {value}")
 
-    1.0 at zero error, 0.0 at ``|err_mm| >= window_mm``, linear in between.
-    Negative ``window_mm`` is rejected (would invert the gradient signal).
+
+def normalized_bell_reward(
+    error_mm: float,
+    *,
+    axis_span_mm: float,
+    cutoff_frac: float = DEFAULT_CUTOFF_FRAC,
+    sigma_frac: float = DEFAULT_SIGMA_FRAC,
+) -> float:
+    """Truncated Gaussian reward on fractional axis error.
+
+    ``axis_span_mm`` is the valid coordinate range for the active plane, so the
+    same raw-mm error is judged more strictly on shorter axes.
     """
-    if window_mm <= 0:
-        raise ValueError(f"window_mm must be positive, got {window_mm}")
-    return max(0.0, 1.0 - abs(float(error_mm)) / float(window_mm))
+    _validate_positive("axis_span_mm", axis_span_mm)
+    _validate_positive("cutoff_frac", cutoff_frac)
+    _validate_positive("sigma_frac", sigma_frac)
+
+    err_frac = abs(float(error_mm)) / float(axis_span_mm)
+    if err_frac >= cutoff_frac:
+        return 0.0
+
+    raw = math.exp(-0.5 * (err_frac / sigma_frac) ** 2)
+    floor = math.exp(-0.5 * (cutoff_frac / sigma_frac) ** 2)
+    return (raw - floor) / (1.0 - floor)
 
 
-def make_position_reward(window_mm: float = DEFAULT_WINDOW_MM):
-    """Build a TRL-compatible reward function bound to ``window_mm``.
+def make_position_reward(
+    *,
+    cutoff_frac: float = DEFAULT_CUTOFF_FRAC,
+    sigma_frac: float = DEFAULT_SIGMA_FRAC,
+):
+    """Build a TRL-compatible reward function bound to reward schedule knobs.
 
     The returned callable matches ``GRPOTrainer.reward_funcs`` shape:
-    ``func(completions, environments, **kwargs) -> list[float]``. We bind the
-    window at construction time so the trainer never has to pass it through
-    its kwargs path (which is reserved for dataset columns).
+    ``func(completions, environments, **kwargs) -> list[float]``. We bind
+    schedule knobs at construction time so the trainer never has to pass them
+    through its kwargs path (which is reserved for dataset columns).
     """
-    if window_mm <= 0:
-        raise ValueError(f"window_mm must be positive, got {window_mm}")
+    _validate_positive("cutoff_frac", cutoff_frac)
+    _validate_positive("sigma_frac", sigma_frac)
 
     def position_reward(
         completions: list[Any] | None = None,  # noqa: ARG001 — TRL contract
@@ -63,8 +90,14 @@ def make_position_reward(window_mm: float = DEFAULT_WINDOW_MM):
             ):
                 out.append(0.0)
                 continue
+            axis_span_mm = s.pos_hi - s.pos_lo
             per_slice = [
-                closeness_reward(p - t, window_mm=window_mm)
+                normalized_bell_reward(
+                    p - t,
+                    axis_span_mm=axis_span_mm,
+                    cutoff_frac=cutoff_frac,
+                    sigma_frac=sigma_frac,
+                )
                 for p, t in zip(preds, truths, strict=True)
             ]
             if not per_slice:
@@ -81,5 +114,5 @@ def make_position_reward(window_mm: float = DEFAULT_WINDOW_MM):
     return position_reward
 
 
-# Default-window reward for callers that do not bind a custom window.
-position_reward = make_position_reward(DEFAULT_WINDOW_MM)
+# Default normalized reward for callers that do not bind a custom schedule.
+position_reward = make_position_reward()
