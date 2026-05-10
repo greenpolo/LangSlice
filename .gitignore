@@ -56,12 +56,32 @@ _local/
 # Fine-tuned model generated data and checkpoints
 models/langslice-gemma-4/data/atlas_slices/
 !models/langslice-gemma-4/data/atlas_slices/.gitkeep
+models/langslice-gemma-4/data/atlas/
+models/langslice-gemma-4/data/queries/
+models/langslice-gemma-4/data/sft_examples.jsonl
 models/langslice-gemma-4/checkpoints/
 !models/langslice-gemma-4/checkpoints/.gitkeep
 
 # Augmentation exemplar crops (style references) — only README is tracked
 models/langslice-gemma-4/data/augmentation/exemplars/**
 !models/langslice-gemma-4/data/augmentation/exemplars/README.md
+
+# Augmentation reference textures (DAPI/Damage exemplar JPGs) — keep local
+models/langslice-gemma-4/data/augmentation/GT_Textures/
+
+# Vendored upstream docs/source (deeptrack2, microsim) — reference material, not ours
+models/langslice-gemma-4/data/augmentation/vendored_docs/
+
+# Docker training infrastructure (kept local for now)
+docker/
+docker-compose*.yml
+scripts/docker-training/
+docs/training/docker-unsloth.md
+docs/superpowers/plans/2026-05-07-dockerize-langslice-sft-training.md
+
+# Slicebench eval outputs (regeneratable from run.py)
+slicebench/runs/
+slicebench/figures/
 
 # Local scratch / dev script outputs
 tmp/
