@@ -1,5 +1,5 @@
 <p align="center">
-  <img alt="LangSlice" src="assets/LangSlice_dark.png" width="600">
+  <img alt="LangSlice" src="assets/LangSlice_dark.png">
 </p>
 
 <p align="center">
