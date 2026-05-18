@@ -31,13 +31,14 @@ still `langslice`, but Python imports should use `langslice_harness.*`.
 - `src/langslice_harness/export.py` -- QUINT/ABBA-compatible JSON export
 - `models/langslice-gemma-4/` -- fine-tuned Gemma 4 E4B project (SFT + RLVR)
   - `training/sft/` -- SFT trainer (`python -m sft.train_sft`)
-  - `training/rlvr/` -- RLVR GRPO trainer (`python -m langslice_rlvr`)
+  - `training/rlvr/` -- RLVR GRPO trainer (parked 2026-05-09; see `training/rlvr/README.md`)
+  - `training/iSFT/` -- expert-iteration SFT driver (active pivot)
   - `training/configs/` -- TOML configs (`sft_default`, `grpo_pilot`, `grpo_phase_b`)
   - `data/sft_examples.jsonl` -- single-slice langslice-native trace corpus
   - `data/augmentation/` -- stain-specific procedural augmentation pipelines
 - `tauri-gui/` -- Tauri desktop app
 - `tests/` -- pytest coverage
-- `docs/`, `README.md`, and `REPO_MAP.md` -- maintained documentation
+- `docs/` and `README.md` -- maintained documentation
 
 ## Runtime Facts
 
@@ -57,7 +58,7 @@ still `langslice`, but Python imports should use `langslice_harness.*`.
 ## Boundaries
 
 - Treat `src/langslice_harness/`, `models/`, `tauri-gui/`, `tests/`, `docs/`,
-  `README.md`, and `REPO_MAP.md` as the active project.
+  and `README.md` as the active project.
 - Treat `_local/`, `references/`, and generated outputs as local-only material.
 - Keep documentation literal to the current code. If behavior changes, update
   the relevant markdown files in the same pass.
@@ -148,9 +149,9 @@ only.** Bbox grounding, landmark listing, multi-slice morphology, and
 programmatic skeletons are designed but **deferred**; do not implement
 them without explicit user request.
 
-- **Authoritative SFT design:** `docs/superpowers/specs/2026-05-05-gemma4-sft-training-design.md`
-- **Authoritative RLVR design:** `docs/superpowers/specs/2026-05-04-gemma4-rlvr-training-design.md`
-- **Active SFT plan:** `docs/superpowers/plans/2026-05-06-gemma4-sft-training-code.md`
+- **Public training overview:** `docs/training_overview.md`
+- **SFT contract:** `models/langslice-gemma-4/training/sft/README.md`
+- **Active single-turn RL:** `models/langslice-gemma-4/training/single_turn_rl/README.md`
 
 ### SFT data contract
 
@@ -173,20 +174,11 @@ python -m sft.train_sft `
 
 Add `--dry-run` to validate JSONL structure without loading Gemma.
 
-### Run RLVR
+### RLVR (parked)
 
-From the repo root, after SFT:
-
-```powershell
-python -m langslice_rlvr `
-  --config models/langslice-gemma-4/training/configs/grpo_pilot.toml `
-  --sft-model out/sft/gemma4-e4b-langslice `
-  --output-dir out/rlvr/phase_a `
-  --test-images-root references/TestImages
-```
-
-Phase B resumes Phase A's adapter via `--resume-from-adapter` with
-`grpo_phase_b.toml`.
+Multi-turn GRPO RLVR is parked as of 2026-05-09 in favor of expert-iteration
+SFT (`training/iSFT/`). The RLVR module + scripts are preserved at
+`models/langslice-gemma-4/training/rlvr/`; see that README before un-parking.
 
 ## Delegation (cost-saving)
 
@@ -194,11 +186,14 @@ To minimize main-thread token spend, delegate work to other CLIs whenever the
 task fits one of these patterns:
 
 - **Deep codebase exploration** (broad reads across many files, tracing call
-  paths, structural questions): use the `gemini:explore` skill / `gemini-explorer`
-  subagent. Read-only, 1M-token context.
+  paths, structural questions): dispatch a `general-purpose` Claude (Opus)
+  subagent. Read-only. Do NOT use any `gemini:*` subagent — Gemini is off the
+  table for both exploration and research (hallucinates library names; current
+  `multi:gemini-researcher` is broken in this environment).
 - **Extensive outside research** (library docs, API specs, external best
-  practices, anything benefiting from web + Context7): use the `gemini:research`
-  skill / `gemini-researcher` subagent. Read-only.
+  practices, anything benefiting from web + Context7): dispatch a
+  `general-purpose` Claude (Opus) subagent and instruct it to use Exa
+  (`web_search_exa`, `web_fetch_exa`) and Context7 for docs.
 - **Plan execution** -- once a plan exists, delegate each step:
   - **Codex** (`codex:execute` / `multi:codex-execute`) when the step meets a
     complexity threshold: non-trivial logic, math, careful reasoning, multi-file

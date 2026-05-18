@@ -258,6 +258,10 @@ class RequestCapturePlugin(BasePlugin):
         self.capture_dir = Path(capture_dir)
         self.run_label = run_label
         self._counter = 0
+        # Per-instance suffix so concurrent sessions don't clobber each other's
+        # capture files (run_label alone is shared across all single-slice runs).
+        import uuid as _uuid
+        self._instance = _uuid.uuid4().hex[:8]
 
     async def before_model_callback(
         self, *, callback_context: CallbackContext, llm_request: LlmRequest
@@ -277,6 +281,6 @@ class RequestCapturePlugin(BasePlugin):
                 for content in (llm_request.contents or [])
             ],
         }
-        path = self.capture_dir / f"{self.run_label}_{self._counter:03d}.json"
+        path = self.capture_dir / f"{self.run_label}_{self._instance}_{self._counter:03d}.json"
         path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         return None

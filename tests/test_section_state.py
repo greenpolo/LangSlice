@@ -194,7 +194,10 @@ def test_section_state_dataclass_is_frozen_and_has_expected_fields(
         valid_range_mm=(0.0, 13.2),
         ground_truth_mm=4.37,
         query_image_path="data/datasets/coronal/ds_a/subj/s00.png",
-        atlas_slate_paths=("data/atlas/allen_mouse_25um/coronal/0.65mm.jpg",),
+        atlas_slate_paths=(
+            "models/langslice-gemma-4/data/atlas/"
+            "allen_mouse_25um/coronal/0.65mm.jpg",
+        ),
         atlas_slate_positions_mm=(0.65,),
         difficulty_score=0.42,
     )
@@ -202,6 +205,9 @@ def test_section_state_dataclass_is_frozen_and_has_expected_fields(
     with pytest.raises(dataclasses.FrozenInstanceError):
         state.ground_truth_mm = 1.0  # type: ignore[misc]
     # Field set exactly matches the spec (catches accidental drift).
+    # ``source`` / ``quality`` are Task 4 additions for the randomized
+    # Lane B path; both default empty so the deterministic constructor
+    # above doesn't need to pass them.
     expected_fields = {
         "section_id",
         "subject_id",
@@ -214,6 +220,8 @@ def test_section_state_dataclass_is_frozen_and_has_expected_fields(
         "atlas_slate_paths",
         "atlas_slate_positions_mm",
         "difficulty_score",
+        "source",
+        "quality",
     }
     assert {f.name for f in dataclasses.fields(state)} == expected_fields
 
@@ -339,8 +347,13 @@ def test_build_canonical_slate_image_paths_use_repo_relative_convention(
     )
     assert len(slate.image_paths) == 4
     for pos, path in zip(slate.positions_mm, slate.image_paths, strict=True):
-        # Repo-relative convention: data/atlas/<atlas>/<plane>/<X.XX>mm.jpg
-        expected = f"data/atlas/allen_mouse_25um/sagittal/{pos:.2f}mm.jpg"
+        # Repo-relative convention (canonical per
+        # langslice_traces.CANONICAL_ATLAS_ROOT):
+        # models/langslice-gemma-4/data/atlas/<atlas>/<plane>/<X.XX>mm.jpg
+        expected = (
+            f"models/langslice-gemma-4/data/atlas/allen_mouse_25um/"
+            f"sagittal/{pos:.2f}mm.jpg"
+        )
         assert path == expected
 
 
@@ -661,10 +674,12 @@ def test_iter_section_states_does_not_touch_real_manifest(
         assert not state.query_image_path.startswith(str(PROD_MANIFEST))
         # Resolved query path must live under tmp_path.
         _assert_under_tmp((tmp_path / state.query_image_path), tmp_path)
-        # Atlas slate paths must be repo-relative under data/atlas/...
+        # Atlas slate paths must be repo-relative under the canonical
+        # models/langslice-gemma-4/data/atlas/ tree so the trainer's
+        # repo_root / p resolver finds the on-disk tile.
         for p in state.atlas_slate_paths:
-            assert p.startswith("data/atlas/"), (
-                f"slate path {p} doesn't follow data/atlas/ convention"
+            assert p.startswith("models/langslice-gemma-4/data/atlas/"), (
+                f"slate path {p} doesn't follow canonical atlas convention"
             )
 
     # And the slate JSON cache landed under tmp_path too.

@@ -46,6 +46,10 @@ fn encode_rgb_png_base64(pixels: &[u8], width: u32, height: u32) -> Result<Strin
 
 /// Pre-compute the entire 3D border volume from the annotation volume.
 /// Parallelized across slices with rayon.
+///
+/// Mark only the "lower" side of each boundary so resulting borders are
+/// 1-pixel thick. The 3D viewer pairs this with `LinearFilter` mag so the
+/// thin lines get sub-pixel anti-aliasing.
 pub fn precompute_border_volume_parallel(annotation: &Array3<u32>) -> Array3<u8> {
     let (depth, height, width) = (
         annotation.shape()[0],
@@ -53,7 +57,6 @@ pub fn precompute_border_volume_parallel(annotation: &Array3<u32>) -> Array3<u8>
         annotation.shape()[2],
     );
 
-    // Compute each slice independently in parallel
     let slices: Vec<Vec<u8>> = (0..depth)
         .into_par_iter()
         .map(|z| {
@@ -64,11 +67,8 @@ pub fn precompute_border_volume_parallel(annotation: &Array3<u32>) -> Array3<u8>
                     let val = ann_slice[[y, x]];
                     if x + 1 < width && ann_slice[[y, x + 1]] != val {
                         edges[y * width + x] = 255;
-                        edges[y * width + x + 1] = 255;
-                    }
-                    if y + 1 < height && ann_slice[[y + 1, x]] != val {
+                    } else if y + 1 < height && ann_slice[[y + 1, x]] != val {
                         edges[y * width + x] = 255;
-                        edges[(y + 1) * width + x] = 255;
                     }
                 }
             }
@@ -96,8 +96,8 @@ pub fn get_precomputed_border_slice(
     (b64, width, height)
 }
 
-/// Extract region boundaries from an annotation slice.
-/// Same algorithm as Python `_annotation_to_boundaries`.
+/// Extract region boundaries from an annotation slice. Marks only the
+/// lower side of each boundary so resulting lines are 1 pixel thick.
 fn compute_borders(annotation_slice: &ndarray::ArrayView2<u32>) -> Vec<u8> {
     let (h, w) = (annotation_slice.shape()[0], annotation_slice.shape()[1]);
     let mut edges = vec![0u8; h * w];
@@ -105,15 +105,10 @@ fn compute_borders(annotation_slice: &ndarray::ArrayView2<u32>) -> Vec<u8> {
     for y in 0..h {
         for x in 0..w {
             let val = annotation_slice[[y, x]];
-            // Horizontal edge
             if x + 1 < w && annotation_slice[[y, x + 1]] != val {
                 edges[y * w + x] = 255;
-                edges[y * w + x + 1] = 255;
-            }
-            // Vertical edge
-            if y + 1 < h && annotation_slice[[y + 1, x]] != val {
+            } else if y + 1 < h && annotation_slice[[y + 1, x]] != val {
                 edges[y * w + x] = 255;
-                edges[(y + 1) * w + x] = 255;
             }
         }
     }
@@ -206,8 +201,8 @@ mod tests {
     #[test]
     fn test_extract_coronal_slice() {
         let dir = find_atlas_dir("allen_mouse_25um").unwrap();
-        let reference = load_tiff_u16(&dir.join("reference.tiff")).unwrap();
-        let annotation = load_tiff_u32(&dir.join("annotation.tiff")).unwrap();
+        let reference = load_tiff_u16(&dir.join("reference.tiff"), |_| {}).unwrap();
+        let annotation = load_tiff_u32(&dir.join("annotation.tiff"), |_| {}).unwrap();
 
         // Slice at roughly the middle of the volume
         let mid = reference.shape()[0] / 2;

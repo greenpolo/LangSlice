@@ -22,6 +22,7 @@ from PIL import Image
 _REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_REPO))
 sys.path.insert(0, str(_REPO / "src"))
+sys.path.insert(0, str(_REPO / "models" / "langslice-gemma-4" / "training"))
 
 
 def _make_test_args(
@@ -55,6 +56,8 @@ def _make_test_args(
         planes=["coronal"],
         vllm_url="http://127.0.0.1:8000/v1",
         vllm_base_compose=Path("docker-compose.training.yml"),
+        training_container_name="langslice-training-dev",
+        skip_container_check=True,
         vllm_served_name="langslice-ft", vllm_max_model_len=8192,
         vllm_gpu_mem_util=0.85, vllm_startup_timeout=10.0,
         manage_vllm=False, skip_vllm_check=True,
@@ -63,6 +66,7 @@ def _make_test_args(
         vllm_lora_mode=False,
         vllm_lora_max_rank=16,
         vllm_lora_max_loras=4,
+        vllm_base_model_path=None,
         sft_config=Path("configs/sft_default.toml"),
         sft_initial_adapter=None,
         skip_retrain=skip_retrain, skip_eval=skip_eval,
@@ -71,6 +75,10 @@ def _make_test_args(
         distilled_sample_n=None,
         distilled_sample_seed=0,
         atlas_embedding_cache=None,
+        query_embedding_cache=None,
+        bucketed_shape_sampler=False,
+        clahe_augment_fraction=0.0,
+        synthetic_reasoning_mode="region_dump",
         repo_root=tmp_path,
         no_validate=True,
         run_id=run_id,
@@ -141,7 +149,7 @@ def fake_alloc_example():
 @pytest.fixture
 def fake_rollout_factory(tmp_path):
     """Factory producing a fake RolloutResult for a given (sid, gen_idx)."""
-    from tools.expert_iteration.rollout import RolloutResult, RolloutSpec
+    from iSFT.rollout import RolloutResult, RolloutSpec
 
     def make(spec_dict: dict, gen_idx: int, *, error: str | None = None) -> Any:
         run_dir = tmp_path / f"runs/{spec_dict['section_id']}_g{gen_idx}".replace("/", "_")
@@ -174,16 +182,16 @@ def fake_rollout_factory(tmp_path):
 
 def test_state_module_imports_via_iterate(tmp_path: Path) -> None:
     """Sanity: iterate.py imports state_mod; check the round-orchestration helper."""
-    from tools.expert_iteration import iterate
-    from tools.expert_iteration import state as state_mod
+    from iSFT import iterate
+    from iSFT import state as state_mod
     assert iterate is not None
     assert state_mod.PHASES[0] == "sampled"
 
 
 def test_round_skips_completed_phases(tmp_path: Path, monkeypatch) -> None:
     """When state.json marks 'unioned' as last-completed, only train+eval should run."""
-    from tools.expert_iteration import iterate
-    from tools.expert_iteration import state as state_mod
+    from iSFT import iterate
+    from iSFT import state as state_mod
 
     out_dir = tmp_path / "run_001"
     out_dir.mkdir()
@@ -261,8 +269,8 @@ def test_round_skips_completed_phases(tmp_path: Path, monkeypatch) -> None:
 
 def test_round_runs_phases_in_order_when_no_resume(tmp_path: Path, monkeypatch) -> None:
     """Fresh state — every phase runs exactly once, in the expected order."""
-    from tools.expert_iteration import iterate
-    from tools.expert_iteration import state as state_mod
+    from iSFT import iterate
+    from iSFT import state as state_mod
 
     out_dir = tmp_path / "run_002"
     out_dir.mkdir()
@@ -315,8 +323,8 @@ def test_round_runs_phases_in_order_when_no_resume(tmp_path: Path, monkeypatch) 
 
 def test_state_json_written_after_each_phase(tmp_path: Path, monkeypatch) -> None:
     """Verify state.json's phase field updates between phases (not just at end)."""
-    from tools.expert_iteration import iterate
-    from tools.expert_iteration import state as state_mod
+    from iSFT import iterate
+    from iSFT import state as state_mod
 
     out_dir = tmp_path / "run_003"
     out_dir.mkdir()
@@ -337,7 +345,10 @@ def test_state_json_written_after_each_phase(tmp_path: Path, monkeypatch) -> Non
         observed_phases_during_run.append(loaded.phase if loaded else None)
         return []
 
-    def _capturing_filter(scored, *, filter_mode, threshold_pct):
+    def _capturing_filter(
+        scored, *, filter_mode, threshold_pct,
+        adaptive_buffer=None, adaptive_quantile=0.95, adaptive_warmup_n=50,
+    ):
         loaded = state_mod.load_state(out_dir)
         observed_phases_during_run.append(loaded.phase if loaded else None)
         return []
@@ -364,8 +375,8 @@ def test_state_json_written_after_each_phase(tmp_path: Path, monkeypatch) -> Non
 
 def test_multi_round_advances_round_counter(tmp_path: Path, monkeypatch) -> None:
     """Round 0 → done → advance_round → Round 1 starts at phase=None."""
-    from tools.expert_iteration import iterate
-    from tools.expert_iteration import state as state_mod
+    from iSFT import iterate
+    from iSFT import state as state_mod
 
     out_dir = tmp_path / "run_004"
     out_dir.mkdir()
@@ -411,7 +422,7 @@ def test_multi_round_advances_round_counter(tmp_path: Path, monkeypatch) -> None
 
 
 def test_rounds_arg_must_be_positive(tmp_path: Path) -> None:
-    from tools.expert_iteration import iterate
+    from iSFT import iterate
     rc = iterate.main([
         "--base-checkpoint", "/fake/base",
         "--base-corpus", "/fake/base.jsonl",
@@ -425,7 +436,7 @@ def test_rounds_arg_must_be_positive(tmp_path: Path) -> None:
 
 
 def test_help_runs_and_includes_rounds_flag(capsys) -> None:
-    from tools.expert_iteration import iterate
+    from iSFT import iterate
     with pytest.raises(SystemExit) as excinfo:
         iterate.main(["--help"])
     assert excinfo.value.code == 0
@@ -451,8 +462,8 @@ def test_help_runs_and_includes_rounds_flag(capsys) -> None:
 def test_resume_from_arbitrary_phase_runs_only_remaining(
     tmp_path: Path, monkeypatch, completed_phase, phases_that_should_run,
 ) -> None:
-    from tools.expert_iteration import iterate
-    from tools.expert_iteration import state as state_mod
+    from iSFT import iterate
+    from iSFT import state as state_mod
 
     out_dir = tmp_path / f"run_resume_{completed_phase or 'fresh'}"
     out_dir.mkdir()
@@ -511,7 +522,7 @@ def _capture_phase_train_cmd(
     *, monkeypatch, args, tmp_path: Path
 ) -> list[str]:
     """Helper: invoke _phase_train, intercept subprocess.run, return its cmd."""
-    from tools.expert_iteration import iterate
+    from iSFT import iterate
 
     captured: list[list[str]] = []
 
@@ -541,8 +552,10 @@ def test_phase_train_passes_atlas_cache_when_set(
     """When args.atlas_embedding_cache is set, the train_sft.py cmd contains
     --atlas-embedding-cache pointing at the in-container path translation.
     """
-    out_dir = tmp_path / "run"; out_dir.mkdir()
-    iter_dir = tmp_path / "iter"; iter_dir.mkdir()
+    out_dir = tmp_path / "run"
+    out_dir.mkdir()
+    iter_dir = tmp_path / "iter"
+    iter_dir.mkdir()
     cache_dir = tmp_path / "out" / "atlas_embeddings"
     cache_dir.mkdir(parents=True)
 
@@ -567,8 +580,10 @@ def test_phase_train_omits_atlas_cache_when_none(
     """When args.atlas_embedding_cache is None (default), the cmd must NOT
     include --atlas-embedding-cache — splice stays off.
     """
-    out_dir = tmp_path / "run"; out_dir.mkdir()
-    iter_dir = tmp_path / "iter"; iter_dir.mkdir()
+    out_dir = tmp_path / "run"
+    out_dir.mkdir()
+    iter_dir = tmp_path / "iter"
+    iter_dir.mkdir()
 
     args = _make_test_args(
         out_dir=out_dir, iter_dir=iter_dir, tmp_path=tmp_path,

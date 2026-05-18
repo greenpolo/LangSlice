@@ -1,0 +1,61 @@
+# Phase 2 — coronal-only nosplice continuation of the 2026-05-14 finding
+# that nosplice training is viable now that math_sdp is re-enabled
+# (see reference_sdpa_math_dispatcher_gotcha).
+#
+# Dataset: combined_corpus_snapped_coronal.jsonl (56,772 rows pre-filter,
+# ~49k after 4096-token-budget filter).
+#
+# Run plan: 400 steps, checkpoint every 75. Manual slicebench eval after
+# each ckpt to find sweet spot. eval_strategy="steps" gives HF CE curve.
+#
+# Inherits the proven shape from nosplice_mathsdp_r256_20260514:
+# r=256 α=8 rsLoRA, PDBS=2 GA=12, max_seq=4096, no embedding caches,
+# math_sdp on (default now in train_sft.py).
+
+[sft]
+base_model = "unsloth/gemma-4-E4B-it"
+load_in_4bit = true
+max_seq_length = 4096
+num_train_epochs = 1
+# ~1 full epoch on the coronal corpus (49k rows ÷ 24 effective batch ≈ 2050).
+# At 18 sec/step → ~10 hours wall-clock. Save every 100 → 20 checkpoints to
+# slicebench-eval and pick from.
+max_steps = 2000
+per_device_train_batch_size = 2
+gradient_accumulation_steps = 12
+per_device_eval_batch_size = 2
+learning_rate = 2e-4
+lr_scheduler_type = "cosine"
+warmup_ratio = 0.03
+weight_decay = 0.01
+max_grad_norm = 0.8
+optim = "adamw_8bit"
+chat_template_kwargs = { enable_thinking = false }
+logging_steps = 5
+eval_strategy = "steps"
+eval_steps = 100
+prediction_loss_only = true
+agent_eval_steps = 99999
+save_strategy = "steps"
+save_steps = 100
+save_total_limit = 25
+report_to = "none"
+seed = 42
+dataloader_num_workers = 32
+dataloader_persistent_workers = true
+dataloader_pin_memory = true
+dataloader_prefetch_factor = 6
+
+[lora]
+r = 256
+lora_alpha = 8
+use_rslora = true
+finetune_vision_layers = false
+finetune_language_layers = true
+finetune_attention_modules = true
+finetune_mlp_modules = true
+use_gradient_checkpointing = "unsloth"
+
+[data]
+holdout_fraction = 0.10
+include_rationale = false

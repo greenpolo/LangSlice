@@ -5,6 +5,12 @@ import { useAppStore } from "../stores/appStore";
 
 const UM_TO_MM = 1 / 1000;
 
+// Same adaptive-wireframe limit as BrainMesh.tsx -- dense developmental
+// atlases (300k+ vertices) drown the brain in micro-edges instead of
+// rendering a clean cartoon outline.
+const WIREFRAME_VERTEX_LIMIT = 100_000;
+const WIREFRAME_ANGLE_THRESHOLD_DEG = 25;
+
 let cachedGeo: THREE.BufferGeometry | null = null;
 let cachedId: number | null = null;
 
@@ -34,6 +40,7 @@ function useSharedGeo() {
 }
 
 function RotatingBrain() {
+  const brainMesh = useAppStore((s) => s.brainMesh);
   const geo = useSharedGeo();
   const groupRef = useRef<THREE.Group>(null);
   const hoveredBrainId = useAppStore((s) => s.hoveredBrainId);
@@ -50,7 +57,10 @@ function RotatingBrain() {
     groupRef.current.rotation.y = baseAngle + Math.sin(timeRef.current * speed) * swing;
   });
 
-  if (!geo) return null;
+  if (!geo || !brainMesh) return null;
+
+  const showWireframe =
+    brainMesh.positions.length / 3 <= WIREFRAME_VERTEX_LIMIT;
 
   return (
     <group ref={groupRef}>
@@ -65,14 +75,16 @@ function RotatingBrain() {
         />
       </mesh>
 
-      <lineSegments>
-        <edgesGeometry args={[geo, 15]} />
-        <lineBasicMaterial
-          color="#2dd4bf"
-          transparent
-          opacity={hoveredBrainId ? 0.05 : 0.02}
-        />
-      </lineSegments>
+      {showWireframe && (
+        <lineSegments>
+          <edgesGeometry args={[geo, WIREFRAME_ANGLE_THRESHOLD_DEG]} />
+          <lineBasicMaterial
+            color="#2dd4bf"
+            transparent
+            opacity={hoveredBrainId ? 0.05 : 0.02}
+          />
+        </lineSegments>
+      )}
 
     </group>
   );

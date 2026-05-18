@@ -46,6 +46,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import random
 import re
 import sys
 from collections.abc import Iterable, Iterator
@@ -54,6 +55,12 @@ from pathlib import Path
 from typing import Any, Literal
 
 logger = logging.getLogger(__name__)
+
+# Tag stamped on rows synthesized by langslice_traces.generate_trace under
+# the Lane A strategy. Downstream consumers (curriculum, eval splits) use
+# this exact string to separate generator-fabricated rows from real teacher
+# traces (``sft_corpus:<tier>``).
+SYNTHETIC_LANE_A_SOURCE: str = "procedural_generator:lane_a"
 
 Plane = Literal["coronal", "sagittal", "horizontal"]
 TierFilter = Literal["strict", "rescued", "any"]
@@ -371,8 +378,10 @@ def build_from_sft_corpus(
     sft_corpus_path:
         Path to the SFT JSONL (one row per trace).
     sft_corpus_root:
-        Directory paths inside the JSONL are relative to. Defaults to the
-        JSONL's parent (matches ``models/langslice-gemma-4/data/``).
+        Directory paths inside the JSONL are relative to. Defaults to
+        ``repo_root`` (or ``Path.cwd()``) because SFT corpora store paths
+        like ``data/datasets/coronal/...`` that are repo-relative, not
+        relative to the JSONL's parent.
     manifest_root:
         Root of the data manifest used to resolve true GT. Defaults to
         ``data/manifest`` (canonical location per ``AGENTS.md``). Rows whose
@@ -394,8 +403,8 @@ def build_from_sft_corpus(
     """
     if tier not in _VALID_TIERS:
         raise ValueError(f"tier must be one of {_VALID_TIERS}, got {tier!r}")
-    sft_root = sft_corpus_root or sft_corpus_path.parent
     base_for_paths = repo_root or Path.cwd()
+    sft_root = sft_corpus_root or base_for_paths
     manifest_lookup = ManifestGTLookup(manifest_root or Path("data/manifest"))
 
     emitted = 0
@@ -521,12 +530,273 @@ def build_from_sft_corpus(
 
 
 # ---------------------------------------------------------------------------
+# Synthetic Lane-A builder
+# ---------------------------------------------------------------------------
+
+
+# Splits considered eligible for synthetic Lane-A synthesis. The RLVR-pool
+# allocation is the canonical training pool per
+# ``feedback_rl_data_pool_policy``; ``sft`` is excluded because those rows
+# already (or are scheduled to) emit teacher traces in the SFT corpus.
+_SYNTHETIC_SPLITS: tuple[str, ...] = ("rlvr",)
+
+
+def _flatten_canonical_trace_to_terminal(
+    trace: Any,  # CanonicalTrace — typed as Any to avoid hard import here
+) -> tuple[list[str], list[float]]:
+    """Flatten a synthetic ``CanonicalTrace`` into terminal-state lists.
+
+    Walks the generator's ``tool_steps`` in chronological order, returning
+    parallel ``(atlas_image_paths, atlas_positions_mm)``. The generator
+    guarantees ``positions_mm`` lengths match ``result_image_paths`` and
+    that the image-path filenames embed the same position the call_args
+    carry, so no filename re-parsing is needed here.
+
+    Each emitted path is normalized through
+    :func:`langslice_traces.canonical_atlas_repo_path` so the synthetic
+    rows ship with the same ``models/langslice-gemma-4/data/atlas/...``
+    prefix the SFT-teacher walker uses (the trainer's
+    ``repo_root / p`` resolver only handles one prefix at a time).
+    """
+    # Local import: keep this helper torch-free for callers that exercise
+    # only the SFT-teacher path.
+    from langslice_traces import canonical_atlas_repo_path  # noqa: PLC0415
+
+    paths: list[str] = []
+    positions: list[float] = []
+    for step in trace.tool_steps:
+        step_positions = step.call_args.get("positions_mm", [])
+        step_paths = list(step.result_image_paths)
+        if len(step_positions) != len(step_paths):
+            # Generator contract violation — fail closed rather than ship a
+            # mislabeled training pair.
+            raise ValueError(
+                "synthetic trace step has mismatched positions vs image paths: "
+                f"positions={step_positions!r} paths={step_paths!r}"
+            )
+        for p, pos in zip(step_paths, step_positions, strict=False):
+            paths.append(canonical_atlas_repo_path(str(p)))
+            positions.append(float(pos))
+    return paths, positions
+
+
+def build_synthetic_states(
+    manifest_index: Any,  # ManifestIndex — typed Any to avoid hard import cycle
+    *,
+    covered_keys: set[tuple[str, str, str]],
+    atlas_embedding_cache: Path,
+    seed: int = 1337,
+    planes: Iterable[str] | None = None,
+    splits: Iterable[str] = _SYNTHETIC_SPLITS,
+    max_rows: int | None = None,
+    on_missing_cache: Literal["skip", "raise"] = "skip",
+) -> Iterator[TerminalState]:
+    """Yield synthetic Lane-A ``TerminalState`` rows for bare manifest sections.
+
+    For every section in ``manifest_index`` whose
+    ``(plane, dataset, section_id)`` is NOT in ``covered_keys`` and whose
+    split is in ``splits``, call
+    :func:`langslice_traces.generate_trace` with ``strategy="lane_a_prefix"``
+    and yield a ``TerminalState`` with ``source="procedural_generator:lane_a"``.
+
+    Parameters
+    ----------
+    manifest_index:
+        A populated :class:`single_turn_rl.manifest_index.ManifestIndex`.
+    covered_keys:
+        ``(plane, dataset, section_id)`` triples already emitted by the
+        SFT walker. The caller is responsible for stamping
+        ``quality["dataset"]`` on teacher rows; this function will trust
+        the set.
+    atlas_embedding_cache:
+        Directory containing ``<atlas>_<plane>.pt`` files from which the
+        generator's grid universe is loaded. The generator's image-path
+        fabrications must agree byte-for-byte with this cache; section
+        whose ``(atlas, plane)`` lacks a cache file are skipped with a
+        warning (unless ``on_missing_cache="raise"``).
+    seed:
+        Single seed for ``random.Random``. Threaded into every per-section
+        ``generate_trace`` call so identical inputs produce identical
+        synthetic traces across reruns.
+    planes:
+        Optional plane filter. When ``None`` every plane present in the
+        index is iterated.
+    splits:
+        Allocation splits to include. Default ``("rlvr",)`` per the data
+        pool policy — never silently synthesize over the eval pool.
+    max_rows:
+        Optional cap on emitted rows (smoke runs).
+    on_missing_cache:
+        ``"skip"`` (default) → log + skip. ``"raise"`` → fail loudly.
+    """
+    # Local import to avoid pulling torch into the module's import graph
+    # for callers that never use the synthetic path.
+    from langslice_traces import generate_trace, load_atlas_grid  # noqa: PLC0415
+
+    rng = random.Random(seed)
+
+    # Cache atlas grids per (atlas, plane). load_atlas_grid touches torch
+    # + the on-disk .pt file; cache so big iterations don't re-pay.
+    grid_cache: dict[tuple[str, str], list[float] | None] = {}
+
+    def _grid_for(atlas_name: str, plane: str) -> list[float] | None:
+        key = (atlas_name, plane)
+        if key in grid_cache:
+            return grid_cache[key]
+        try:
+            grid = load_atlas_grid(atlas_embedding_cache, atlas_name, plane)  # type: ignore[arg-type]
+        except FileNotFoundError as exc:
+            if on_missing_cache == "raise":
+                raise
+            logger.warning("synthetic Lane-A skip (%s, %s): %s", atlas_name, plane, exc)
+            grid_cache[key] = None
+            return None
+        grid_cache[key] = grid
+        return grid
+
+    # Iterate sections deterministically. ManifestIndex.query() sorts by
+    # (plane, dataset, section_id) for us.
+    eligible_sections: list[Any] = []
+    for split in splits:
+        for plane in (planes if planes is not None else _planes_in_index(manifest_index)):
+            eligible_sections.extend(manifest_index.query(plane=plane, split=split))
+
+    emitted = 0
+    eligible_count = 0
+    skipped_covered = 0
+    skipped_no_cache = 0
+    skipped_grid_error = 0
+
+    for section in eligible_sections:
+        key = (section.plane, section.dataset, section.section_id)
+        if key in covered_keys:
+            skipped_covered += 1
+            continue
+        eligible_count += 1
+
+        grid = _grid_for(section.atlas, section.plane)
+        if grid is None:
+            skipped_no_cache += 1
+            continue
+
+        try:
+            trace = generate_trace(
+                image_path=section.image_path,
+                ground_truth_mm=float(section.position_mm),
+                plane=section.plane,  # type: ignore[arg-type]
+                atlas_name=section.atlas,
+                atlas_version="",  # not embedded in manifest; left blank
+                subject_id=section.subject_id,
+                grid=grid,
+                strategy="lane_a_prefix",
+                rng=rng,
+            )
+        except (ValueError, AssertionError) as exc:
+            logger.warning(
+                "synthetic generate_trace failed for %s/%s/%s: %s",
+                section.plane, section.dataset, section.section_id, exc,
+            )
+            skipped_grid_error += 1
+            continue
+
+        if not trace.tool_steps:
+            # The generator's roundness-snap can collapse all steps to <2
+            # positions on very short grids. Skip rather than emit an
+            # evidence-free Lane-A row.
+            skipped_grid_error += 1
+            continue
+
+        try:
+            atlas_paths, atlas_positions = _flatten_canonical_trace_to_terminal(trace)
+        except ValueError as exc:
+            logger.warning(
+                "synthetic trace flatten failed for %s/%s/%s: %s",
+                section.plane, section.dataset, section.section_id, exc,
+            )
+            skipped_grid_error += 1
+            continue
+
+        try:
+            valid_range = _atlas_valid_range_mm(section.atlas, section.plane)  # type: ignore[arg-type]
+        except (ImportError, OSError, RuntimeError, ValueError) as exc:
+            logger.warning(
+                "synthetic valid_range_mm lookup failed for (%s, %s): %s",
+                section.atlas, section.plane, exc,
+            )
+            skipped_grid_error += 1
+            continue
+
+        # Merge generator-stamped quality metadata, then override the
+        # source/strategy tags so downstream consumers can split rows
+        # by ``source`` and quality["strategy"] without ambiguity.
+        quality: dict[str, Any] = dict(trace.quality or {})
+        quality["strategy"] = "lane_a_prefix"
+        quality["synthetic"] = True
+        quality["dataset"] = section.dataset
+
+        yield TerminalState(
+            section_id=section.section_id,
+            subject_id=section.subject_id,
+            atlas_name=section.atlas,
+            plane=section.plane,  # type: ignore[arg-type]
+            valid_range_mm=valid_range,
+            ground_truth_mm=float(section.position_mm),
+            query_image_path=section.image_path,
+            atlas_image_paths=tuple(atlas_paths),
+            fetched_positions_mm=tuple(atlas_positions),
+            source=SYNTHETIC_LANE_A_SOURCE,
+            quality=quality,
+        )
+        emitted += 1
+        if max_rows is not None and emitted >= max_rows:
+            break
+
+    print(
+        f"[build_synthetic_states] eligible={eligible_count} emitted={emitted} "
+        f"skipped_covered={skipped_covered} "
+        f"skipped_no_cache={skipped_no_cache} "
+        f"skipped_grid_error={skipped_grid_error}",
+        file=sys.stderr, flush=True,
+    )
+
+
+def _planes_in_index(manifest_index: Any) -> list[str]:
+    """Distinct planes present in the index, deterministically ordered."""
+    seen_set: set[str] = set()
+    for _atlas, plane in manifest_index.pairs():
+        seen_set.add(plane)
+    return sorted(seen_set)
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
 
+def _validate_embedding_cache(cache_dir: Path) -> None:
+    """Fail fast at CLI parse time if the embedding cache is unusable."""
+    if not cache_dir.is_dir():
+        raise SystemExit(
+            f"--atlas-embedding-cache {cache_dir} is not a directory. "
+            "Re-run with a path that contains <atlas>_<plane>.pt files "
+            "(build the atlas embedding cache before running)."
+        )
+    pt_files = list(cache_dir.glob("*.pt"))
+    if not pt_files:
+        raise SystemExit(
+            f"--atlas-embedding-cache {cache_dir} contains no .pt files. "
+            "Synthetic Lane-A synthesis needs a populated embedding cache "
+            "to produce path-matching tool_results."
+        )
+
+
 def _build_cmd(args: argparse.Namespace) -> int:
-    rows = build_from_sft_corpus(
+    if args.include_synthetic:
+        _validate_embedding_cache(args.atlas_embedding_cache)
+
+    # Phase 1: SFT-corpus walker. Realize the iterator so we can build the
+    # covered-keys index BEFORE the synthetic pass runs.
+    teacher_rows: list[TerminalState] = list(build_from_sft_corpus(
         sft_corpus_path=args.sft_corpus,
         sft_corpus_root=args.sft_corpus_root,
         manifest_root=args.manifest_root,
@@ -535,9 +805,40 @@ def _build_cmd(args: argparse.Namespace) -> int:
         require_query_on_disk=not args.no_check_disk,
         require_atlas_on_disk=not args.no_check_disk,
         repo_root=args.repo_root,
+    ))
+    print(
+        f"walked SFT corpus: emitted {len(teacher_rows)} teacher Lane-A states",
+        file=sys.stderr, flush=True,
     )
-    n = write_terminal_states(rows, args.output)
-    print(f"wrote {n} terminal-state rows to {args.output}", file=sys.stderr)
+
+    synthetic_rows: list[TerminalState] = []
+    if args.include_synthetic:
+        # Local import: the manifest index pulls in the QC app loader, which
+        # we don't want to mandate on the non-synthetic path.
+        from .manifest_index import ManifestIndex  # noqa: PLC0415
+
+        index = ManifestIndex.from_manifest_root(args.manifest_root)
+        covered_keys = {
+            (r.plane, str(r.quality.get("dataset", "")), r.section_id)
+            for r in teacher_rows
+        }
+        # Drop the sentinel for rows that somehow lack a dataset stamp; we
+        # never want to "cover" an empty-dataset key (that'd shadow real
+        # manifest rows whose dataset is missing — a separate bug class).
+        covered_keys.discard(("", "", ""))
+        for r in build_synthetic_states(
+            index,
+            covered_keys=covered_keys,
+            atlas_embedding_cache=args.atlas_embedding_cache,
+            seed=args.synthetic_seed,
+        ):
+            synthetic_rows.append(r)
+
+    all_rows = [*teacher_rows, *synthetic_rows]
+    n = write_terminal_states(all_rows, args.output)
+    print(
+        f"total written: {n} rows to {args.output}", file=sys.stderr,
+    )
     return 0
 
 
@@ -569,6 +870,22 @@ def main(argv: list[str] | None = None) -> int:
                     help="Used to compute repo-relative paths in the JSONL. "
                     "Defaults to the current working directory so paths align "
                     "with the trainer's --repo-root . default.")
+    pb.add_argument("--include-synthetic", action="store_true",
+                    help="After walking the SFT corpus, synthesize Lane-A "
+                    "prefixes for every RLVR-pool section that has no teacher "
+                    "trace. Synthetic rows are tagged "
+                    "source='procedural_generator:lane_a'. Off by default; "
+                    "the existing pipelines see no change unless this is set.")
+    pb.add_argument("--synthetic-seed", type=int, default=1337,
+                    help="Seed for the synthetic generator's random.Random. "
+                    "Same seed yields identical synthetic traces across reruns. "
+                    "Default: 1337.")
+    pb.add_argument("--atlas-embedding-cache", type=Path,
+                    default=Path("out/atlas_embeddings"),
+                    help="Directory containing <atlas>_<plane>.pt embedding "
+                    "caches. Used to load the per-plane grid of valid atlas "
+                    "positions so synthetic tool_results reference real "
+                    "atlas filenames. Default: out/atlas_embeddings.")
     pb.set_defaults(func=_build_cmd)
 
     ns = p.parse_args(argv)

@@ -303,7 +303,10 @@ def test_curriculum_log_writes_one_row_per_rollout() -> None:
         round_idx=3,
     )
     wrapped(
-        completions=['{"position_mm": 5.0}', '{"position_mm": 6.0}'],
+        completions=[
+            '<|tool_call>call:submit_estimate{position_mm:5.0}<tool_call|>',
+            '<|tool_call>call:submit_estimate{position_mm:6.0}<tool_call|>',
+        ],
         ground_truth_mm=[5.0, 5.0],
         valid_range_mm=[(0.0, 10.0), (0.0, 10.0)],
         section_id=["sec_a", "sec_b"],
@@ -351,7 +354,9 @@ def test_curriculum_log_out_of_range_yields_at_least_full_span_error() -> None:
         section_bins={"sec_a": 0}, round_idx=0,
     )
     wrapped(
-        completions=['{"position_mm": 100.0}'],  # well outside [0, 10]
+        completions=[
+            '<|tool_call>call:submit_estimate{position_mm:100.0}<tool_call|>',
+        ],  # well outside [0, 10]
         ground_truth_mm=[5.0],
         valid_range_mm=[(0.0, 10.0)],
         section_id=["sec_a"],
@@ -368,7 +373,7 @@ def test_curriculum_log_unknown_section_id_marks_bin_minus_one() -> None:
         section_bins={"sec_known": 1}, round_idx=0,
     )
     wrapped(
-        completions=['{"position_mm": 5.0}'],
+        completions=['<|tool_call>call:submit_estimate{position_mm:5.0}<tool_call|>'],
         ground_truth_mm=[5.0],
         valid_range_mm=[(0.0, 10.0)],
         section_id=["sec_unknown"],
@@ -385,7 +390,7 @@ def test_curriculum_log_skips_rows_with_empty_section_id() -> None:
         section_bins={}, round_idx=0,
     )
     wrapped(
-        completions=['{"position_mm": 5.0}'],
+        completions=['<|tool_call>call:submit_estimate{position_mm:5.0}<tool_call|>'],
         ground_truth_mm=[5.0],
         valid_range_mm=[(0.0, 10.0)],
         section_id=[""],  # empty
@@ -405,7 +410,10 @@ def test_curriculum_log_returns_underlying_reward_scores() -> None:
         underlying, log=log, section_bins={}, round_idx=0,
     )
     out = wrapped(
-        completions=['{"position_mm": 5.0}', '{"position_mm": 6.0}'],
+        completions=[
+            '<|tool_call>call:submit_estimate{position_mm:5.0}<tool_call|>',
+            '<|tool_call>call:submit_estimate{position_mm:6.0}<tool_call|>',
+        ],
         ground_truth_mm=[5.0, 5.0],
         valid_range_mm=[(0.0, 10.0), (0.0, 10.0)],
         section_id=["a", "b"],

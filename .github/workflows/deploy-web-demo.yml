@@ -1,0 +1,74 @@
+# Builds web-demo/ and publishes to GitHub Pages on every main push that touches web-demo/.
+
+name: Deploy web-demo to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+      - feat/gui-rewire-demo
+    paths:
+      - "web-demo/**"
+      - ".github/workflows/deploy-web-demo.yml"
+  workflow_dispatch:
+
+permissions:
+  pages: write
+  id-token: write
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      # No `cache: pnpm` — would need web-demo/pnpm-lock.yaml to compute the
+      # cache key, and we haven't committed one yet. Re-enable both lines once
+      # the install step flips back to --frozen-lockfile.
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # NOTE: using --no-frozen-lockfile because web-demo/pnpm-lock.yaml is not
+      # yet committed to the repo (only package.json exists). Flip back to
+      # --frozen-lockfile once the lockfile is committed.
+      - name: Install dependencies
+        working-directory: web-demo
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Build web-demo
+        working-directory: web-demo
+        env:
+          VITE_BASE_PATH: /${{ github.event.repository.name }}/
+        run: pnpm build
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+        with:
+          # Create the Pages site on first run so the user doesn't need to
+          # toggle Settings → Pages → Source = GitHub Actions manually.
+          enablement: true
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: web-demo/dist
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

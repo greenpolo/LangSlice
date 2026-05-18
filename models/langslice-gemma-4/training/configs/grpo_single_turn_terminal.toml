@@ -13,13 +13,13 @@
 #   - max_steps=100 (smoke run; gate on the diagnostics in README before
 #     scaling).
 #   - No stop_tool_names / max_tool_calling_iterations (no tool loop).
-# Plan: docs/superpowers/plans/2026-05-10-langslice-single-turn-rl-grpo.md.
+# See models/langslice-gemma-4/training/single_turn_rl/README.md.
 
 [grpo]
 chat_template_kwargs = { enable_thinking = false }
 learning_rate = 1e-6
-num_generations = 8
-generation_batch_size = 8
+num_generations = 4
+generation_batch_size = 4
 per_device_train_batch_size = 1
 gradient_accumulation_steps = 4
 max_completion_length = 128
@@ -30,19 +30,25 @@ importance_sampling_level = "sequence"
 loss_type = "dapo"
 mask_truncated_completions = false
 scale_rewards = "batch"
-temperature = 1.0
+temperature = 1.5
 top_p = 1.0
+# vLLM's SamplingParams._verify_args does `if self.top_k < -1` and raises
+# TypeError on None. Unsloth's GRPOConfig defaults top_k=None; set the vLLM
+# "disabled" sentinel (-1) explicitly so it propagates through unsloth-zoo's
+# grpo_update_SamplingParams filter into SamplingParams without crashing.
+top_k = -1
 optim = "adamw_8bit"
 log_completions = true
 logging_steps = 1
 save_steps = 25
 max_steps = 100
 report_to = "trackio"
-load_in_4bit = true
-# 9 images x 256 tokens + ~500 tokens of system/user text fits comfortably
-# under 4096. If a trace exceeds this (rare; SFT traces in our corpus cap at
-# ~9 atlas images), bump to 6144 like grpo_pilot.toml.
-max_seq_length = 4096
+load_in_4bit = false
+# 10 images x ~570 tokens (Gemma 4 SigLIP actual, ~2x the original 256 estimate)
+# + ~500 tokens of system/user text + 128 completion = ~6300 tokens. Bumped to
+# 8192 for headroom; vLLM V1 strict-validates prompt length while v1's HF
+# transformers path silently tolerated overruns.
+max_seq_length = 8192
 
 [lora]
 finetune_vision_layers = false
@@ -70,7 +76,7 @@ curriculum_round = 0
 # Calibrated against slicebench tiny num_gens=4 (best-of-4 median ~5% of plane
 # extent): cutoff at 15% covers ~95% of best-of-N samples; sigma 5% gives ~50%
 # reward at the median, generating a strong gradient vs the cutoff floor.
-cutoff_frac = 0.15
+cutoff_frac = 0.25
 sigma_frac = 0.05
 # format_penalty: returned when the completion is anything but a single
 # {"position_mm": <number>} JSON object. Negative penalty so the policy gets
@@ -99,6 +105,7 @@ sigma_quantile = 0.5           # error-fraction quantile mapped to bell sigma
 cutoff_quantile = 0.95         # error-fraction quantile mapped to bell cutoff
 min_sigma_frac = 0.005         # lower clamp on the dynamic sigma
 max_sigma_frac = 0.05          # upper clamp on the dynamic sigma
+max_cutoff_frac = 0.40         # upper clamp on the dynamic cutoff (bounds format-fail saturation)
 min_observations = 50          # rolling-buffer warmup before dynamic kicks in
 # Cadence knobs (AdaRFTCurriculumCallback):
 persist_difficulty_every_n_ticks = 50  # 0 = disable JSON sidecar persist

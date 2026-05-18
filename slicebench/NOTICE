@@ -1,0 +1,79 @@
+SliceBench — Master Attribution Index
+=====================================
+
+This file is a single-page index of every dataset bundled with SliceBench,
+its license, and where to find the canonical attribution. SliceBench's
+source code (Python modules under this directory) is MIT-licensed; image
+content and per-section ground-truth coordinates are licensed per dataset
+as listed below.
+
+Each entry below points at a dataset's LICENSE and NOTICE files. Treat
+those per-folder files as authoritative — this index is a convenience.
+
+For a full prose summary with verification provenance and commercial-use
+implications, see ./LICENSES_CORONAL.md.
+
+================================================================================
+Coronal datasets in SliceBench
+================================================================================
+
+Path                                                  License           Citation source
+----------------------------------------------------  ----------------  -----------------------------------------
+data/datasets/coronal/allen_connectivity/             Allen ToU (NC)    ./LICENSE + ./NOTICE — © Allen Institute
+data/datasets/coronal/allen_dev_coronal/              Allen ToU (NC)    ./LICENSE + ./NOTICE — © Allen Institute
+data/datasets/coronal/deepslice_gt/                   CC BY 4.0         ./LICENSE + ./NOTICE — Carey et al. 2023
+data/datasets/coronal/rat_tract_eval/                 CC BY 4.0         ./LICENSE + ./NOTICE — Kondo et al. 2022
+data/datasets/coronal/zenodo_pnnpv/                   CC BY 4.0         ./LICENSE + ./NOTICE — Boutte / Lasztoczi
+
+(Walsh lab internal datasets m01_m03 and m04_m09 are scheduled to be
+swapped out for additional DeepSlice GT brains before public release —
+see the project_slicebench_publish_m01_swap memory.)
+
+================================================================================
+Shared license texts
+================================================================================
+
+CC BY 4.0 (used by deepslice_gt, rat_tract_eval, zenodo_pnnpv):
+  ./licenses/CC-BY-4.0.txt           — local copy of the shared CC BY 4.0
+                                       summary; canonical legal text at
+                                       https://creativecommons.org/licenses/by/4.0/legalcode
+
+Allen Institute Terms of Use (used by allen_connectivity, allen_dev_coronal):
+  Excerpted in each Allen dataset's LICENSE file; canonical at
+  https://alleninstitute.org/terms-of-use/
+
+SliceBench code (slicebench/*.py):
+  ./LICENSE                          — MIT License
+
+================================================================================
+What citation requirements apply to SliceBench results in a paper / model card
+================================================================================
+
+If you report a SliceBench score in a publication or model card, cite:
+
+  1. Each dataset whose brains are included in the bench tier you used.
+     See per-dataset NOTICE files for the exact citation format.
+
+  2. The SliceBench code repository itself (as the benchmark methodology
+     source). Use the repo URL + the version / commit SHA you ran against.
+
+================================================================================
+Commercial-use status
+================================================================================
+
+While SliceBench includes Allen-sourced brains (allen_connectivity,
+allen_dev_coronal, and the ISH_Calb1 brain inside deepslice_gt), the
+bench-as-distributed inherits the most-restrictive license:
+**noncommercial research use only**. The SliceBench CODE under MIT is
+unrestricted; the bundled DATA is bound by each dataset's terms.
+
+To produce a fully commercial-OK version, drop Allen-sourced content
+(allen_connectivity, allen_dev_coronal, and the ISH_Calb1 subject from
+deepslice_gt) and re-publish; the remaining CC BY 4.0 sources cover both
+academic and commercial use with attribution.
+
+For the Gemma 4 Good open-source academic hackathon (Kaggle prize
+eligibility, fully open-source model + benchmark): the bench is being
+published for noncommercial research use, which falls under the permission
+grant in every included dataset's license. See LICENSES_CORONAL.md for
+the per-dataset reasoning.

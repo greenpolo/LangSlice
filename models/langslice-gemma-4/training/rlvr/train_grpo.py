@@ -23,10 +23,9 @@ Usage
         --output-dir out/rlvr/phase_b \
         --test-images-root references/TestImages
 
-The repo-root ``langslice_rlvr`` shim makes ``python -m langslice_rlvr`` work
-without installing ``rlvr`` as a package. The installed console script still
-uses the equivalent ``src/langslice_rlvr`` shim. The TOML config supplies all
-GRPOConfig fields; CLI flags carry only the paths that change between runs.
+RLVR is parked as of 2026-05-09 — kept for reference, not actively used. See
+``README.md`` in this directory. The TOML config supplies all GRPOConfig
+fields; CLI flags carry only the paths that change between runs.
 """
 
 from __future__ import annotations

@@ -407,6 +407,7 @@ async def run_single_slice_session(
                 artifact=target_payload.artifact_part,
             )
 
+            _axis_label = {"coronal": "AP", "sagittal": "ML", "horizontal": "DV"}[plane]
             new_message = types.Content(
                 role="user",
                 parts=[
@@ -414,7 +415,12 @@ async def run_single_slice_session(
                         text=f"Target slice (artifact key: '{ARTIFACT_TARGET}'):"
                     ),
                     target_payload.request_part,
-                    types.Part.from_text(text="Determine its position in the atlas."),
+                    types.Part.from_text(
+                        text=(
+                            f"Determine this {plane} slice's {_axis_label} "
+                            f"position in the {atlas_name} atlas."
+                        )
+                    ),
                 ],
             )
 

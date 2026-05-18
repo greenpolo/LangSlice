@@ -16,8 +16,7 @@ in-training control loop. Static fallback paths (per-trace
 `terminal_states.jsonl`, fixed-bell reward, `WeightedRandomSampler`) stay
 fully supported as opt-in flags.
 
-The motivating diagnosis (see plan
-`docs/superpowers/plans/2026-05-10-langslice-single-turn-rl-grpo.md`):
+The motivating diagnosis:
 
 - SFT already made good answers sampleable (best-of-4 MAE 1.15 mm vs
   greedy 2.88 mm). RL should compress that pass@k advantage into pass@1.
@@ -38,7 +37,12 @@ Three orthogonal modes, each with an adaptive default and a static opt-out.
 |---|---|---|
 | `--curriculum-mode` | `adaptive` (`CurriculumRepeatingSampler` + AdaRFT `T` update + per-section live difficulty write-back) | `static_weights` (legacy `WeightedRandomSampler`, requires `--curriculum-weights`) or `none` (vanilla random sampling) |
 | `--reward-mode` | `adaptive` (bell sigma/cutoff scale to recent achievement quantiles via `AdaptiveRewardSchedule`) | `static` (fixed `cutoff_frac`/`sigma_frac` from `[reward]` in TOML) |
-| `--data-source` | `index` (pull rows from `data/manifest` via `ManifestIndex`, render via canonical `SectionState` slate) | `terminal_states` (legacy per-trace JSONL, requires `--terminal-states`) |
+| `--data-source` | `index` (pull rows from `data/manifest` via `ManifestIndex`, render via canonical `SectionState` slate over the full ~25k+ RLVR allocation) | `terminal_states` (per-trace JSONL from an external trace-factory, requires `--terminal-states PATH`) |
+
+`--data-source` defaults to `index` because RL operates on the full RLVR
+allocation; the SFT corpus is reserved for SFT runs only. Use
+`terminal_states` for runs against an external trace-factory artifact
+(e.g., the agent-built trace generator's output).
 
 The four mutual-exclusion + required-companion rules (enforced by the CLI):
 
@@ -50,25 +54,49 @@ The four mutual-exclusion + required-companion rules (enforced by the CLI):
 Adaptive-mode knobs override the TOML `[adaptive]` section per key. The
 defaults match the spec — see `configs/grpo_single_turn_terminal.toml`.
 
+**Note on Lane A + adaptive curriculum.** When running
+`--data-source terminal_states` with `--curriculum-mode adaptive`, the
+per-section difficulty write-back path is silently a no-op: terminal-state
+specs don't carry the `(plane, dataset, section_id)` keys the
+`ManifestIndex` is keyed on, so the sampler's per-iter refresh and the
+callback's manifest write-back both find no eligible rows. The AdaRFT
+`T`-update still works (driven by the trainer's logged reward), so the
+curriculum's global difficulty target keeps moving — but per-section
+banding stays at construction-time cold-start. For the full closed-loop
+curriculum, use `--data-source index`.
+
 ### Recommended workflow
 
 1. (Optional) Seed difficulty from a slicebench summary so the AdaRFT
    curriculum doesn't start cold:
 
    ```powershell
-   python tools/seed_difficulty_from_slicebench.py `
+   python models/langslice-gemma-4/training/tools/seed_difficulty_from_slicebench.py `
      --slicebench-summary _local/slicebench/round0_summary.json `
      --output _local/rlvr_progress/seeded_difficulty.json
    ```
 
 2. Train with the unified pipeline defaults (adaptive everywhere,
-   index-driven data):
+   terminal-states data — the production smoke path):
 
    ```powershell
-   python -m langslice_single_turn_rl `
+   langslice-single-turn-rl `
      --config models/langslice-gemma-4/training/configs/grpo_single_turn_terminal.toml `
      --sft-model out/sft/docker-sft-1011-merged-bf16 `
      --output-dir out/rlvr_single_turn/unified_smoke `
+     --terminal-states out/single_turn_rl/terminal_states.jsonl `
+     --difficulty-seed _local/rlvr_progress/seeded_difficulty.json
+   ```
+
+   Opt into the full-manifest index path (Lane B) once smoke-on-iron has
+   validated the curriculum loop:
+
+   ```powershell
+   langslice-single-turn-rl `
+     --config models/langslice-gemma-4/training/configs/grpo_single_turn_terminal.toml `
+     --sft-model out/sft/docker-sft-1011-merged-bf16 `
+     --output-dir out/rlvr_single_turn/index_smoke `
+     --data-source index `
      --difficulty-seed _local/rlvr_progress/seeded_difficulty.json
    ```
 
@@ -76,7 +104,7 @@ defaults match the spec — see `configs/grpo_single_turn_terminal.toml`.
    path is preserved verbatim for comparison runs):
 
    ```powershell
-   python -m langslice_single_turn_rl `
+   langslice-single-turn-rl `
      --config models/langslice-gemma-4/training/configs/grpo_single_turn_terminal.toml `
      --sft-model out/sft/docker-sft-1011-merged-bf16 `
      --output-dir out/rlvr_single_turn/legacy_smoke `
@@ -117,7 +145,7 @@ selected.
 | File | Purpose |
 |---|---|
 | `prompts.py` | Strict-JSON system + user prompt builder. |
-| `rewards.py` | TRL-shaped reward: parse JSON, score via `rlvr.rewards.normalized_bell_reward`, format/OOR penalties. Re-exports `make_adaptive_terminal_reward`. |
+| `rewards.py` | TRL-shaped reward: parse JSON, score via `rlvr.rewards.normalized_bell_reward`, format/OOR penalties. |
 | `adaptive_reward.py` | Rolling-error buffer + `AdaptiveRewardSchedule` + adaptive bell reward factory. |
 | `manifest_index.py` | In-memory wrapper over `_local/qc_app/app.py:load_inventory_manifest`; bisect-backed `(plane, atlas, position_range)` queries + per-section live difficulty + JSON sidecar persistence. |
 | `section_state.py` | Lane B `SectionState` dataclass + canonical-slate builder + `iter_section_states` generator. |
@@ -252,7 +280,7 @@ groups.
 Plain GRPO (uniform sampling, live SigLIP):
 
 ```powershell
-python -m langslice_single_turn_rl `
+langslice-single-turn-rl `
   --config models/langslice-gemma-4/training/configs/grpo_single_turn_terminal.toml `
   --sft-model out/sft/docker-sft-1011-merged-bf16 `
   --terminal-states out/single_turn_rl/terminal_states.jsonl `
@@ -264,7 +292,7 @@ slicebench MAE) **and** the atlas-embedding splice (skips SigLIP for
 cached atlas reference images):
 
 ```powershell
-python -m langslice_single_turn_rl `
+langslice-single-turn-rl `
   --config models/langslice-gemma-4/training/configs/grpo_single_turn_terminal.toml `
   --sft-model out/sft/docker-sft-1011-merged-bf16 `
   --terminal-states out/single_turn_rl/terminal_states.jsonl `
@@ -378,16 +406,49 @@ Smoke grid the plan suggests before an overnight run:
 - optional small `beta` if KL drifts again and memory permits
   reference-model loading.
 
+## Procedural-trace expansions (2026-05-10)
+
+Two opt-in flags landed that consume `langslice_traces.generator` to expand training pools beyond what teacher traces alone can cover. See `../langslice_traces/README.md` for the factory design + realism story.
+
+### Lane A: `--include-synthetic` (terminal_states.py)
+
+Expands the Lane A pool from 1716 → ~27,562 by synthesizing realistic prefixes for RLVR-split sections without a teacher trace.
+
+```powershell
+python -m single_turn_rl.terminal_states build `
+  --sft-corpus models/langslice-gemma-4/data/sft_examples.jsonl `
+  --output out/single_turn_rl/terminal_states.jsonl `
+  --tier strict `
+  --include-synthetic `
+  --synthetic-seed 1337 `
+  --atlas-embedding-cache out/atlas_embeddings
+```
+
+Synthetic rows are tagged `source="procedural_generator:lane_a"` (importable as `terminal_states.SYNTHETIC_LANE_A_SOURCE`). The synthesizer enforces sort/grid-compliance and matches the empirical step-0 GT correlation (~0.94 vs corpus 0.98), step-0 integer rate (~46% vs corpus 49.5%), and the n_fetch distribution.
+
+Splits default to `("rlvr",)` per the hard data-pool policy — SFT-allocated sections are never synthesized over.
+
+### Lane B: `--randomized-slate` (section_state.py)
+
+Replaces the deterministic 9-position canonical slate with a per-row randomized broad slate. GT lies inside the range but is never centered (>60% of slates have `|gt_fraction - 0.5| > 0.1`).
+
+```powershell
+python -m single_turn_rl.section_state ... `
+  --randomized-slate `
+  --randomized-seed 1337 `
+  --atlas-embedding-cache out/atlas_embeddings
+```
+
+Randomized rows tagged `source="procedural_generator:lane_b"` (`section_state.RANDOMIZED_LANE_B_SOURCE`). The deterministic builder is preserved (default-off) for repro experiments.
+
 ## Not implemented (deferred)
 
-These are specified in the plan but out of scope for this scaffold:
+These are specified in the plan but out of scope for the current scaffold:
 
-- **Lane B: fixed-slate final-answer GRPO.** Requires a deterministic
-  broad-slate generator (e.g. 7-9 evenly spaced positions across the
-  plane). Will reuse `rlvr.atlas_grid.build_atlas_grid` for the slate.
+- **Lane B secondary local slate.** A tight non-GT-centered slate near the SFT model's greedy estimate, appended to the broad slate. Adds production-style local refinement.
 - **Lane C: next-action single-turn GRPO.** Reward design needs more
   work (shaped reward for fetch validity / coverage / bracketing in
-  addition to submit coordinate).
+  addition to submit coordinate). The matching `lane_c_intermediate` generator strategy is also deferred — built alongside the Lane C trainer when that lane comes online.
 - **Production grid format (`send_individually=False`).** Production
   default is `send_individually=True`, so individual atlas images
   already match. If production switches to grids, regenerate terminal
@@ -396,7 +457,7 @@ These are specified in the plan but out of scope for this scaffold:
   writes a per-rollout log; the offline weight update (read log →
   per-bin MAE → next round's weights JSON via
   `curriculum.weights.compute_weights`) is the same pattern as
-  `tools/expert_iteration/iterate.py` for SFT and is left for the
+  `../iSFT/iterate.py` for SFT and is left for the
   caller to wire.
 
 ## Why this is separate from `rlvr/`

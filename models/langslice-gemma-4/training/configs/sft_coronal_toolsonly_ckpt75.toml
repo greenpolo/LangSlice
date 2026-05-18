@@ -1,0 +1,59 @@
+# ckpt75 test of "tools only, coordinates only" SFT design:
+# - Coronal-only corpus (56,772 rows after plane filter)
+# - thinking_mode stripped to False per row (no <|think|> prefix)
+# - thinking siblings stripped (no per-turn reasoning text)
+# - submit_estimate args remain position_mm only (already the case in
+#   thinking_signature corpus)
+#
+# Hypothesis (2026-05-14 user call): thinking_signature was the regression
+# source, not splicing. nosplice ckpt75 came in at 4.20 mm MAE — tied with
+# the regressed c1200 splice-on result — refuting the splice hypothesis.
+# New design: strip all the meta-reasoning, train tools-only.
+#
+# All other knobs inherit from the proven nosplice_mathsdp_r256 config that
+# completed cleanly: r=256 α=8 rsLoRA, PDBS=2 GA=12, max_seq=4096, no
+# embedding caches, math_sdp enabled (default in train_sft.py now).
+
+[sft]
+base_model = "unsloth/gemma-4-E4B-it"
+load_in_4bit = true
+max_seq_length = 4096
+num_train_epochs = 1
+max_steps = 75
+per_device_train_batch_size = 2
+gradient_accumulation_steps = 12
+per_device_eval_batch_size = 2
+learning_rate = 2e-4
+lr_scheduler_type = "cosine"
+warmup_ratio = 0.03
+weight_decay = 0.01
+max_grad_norm = 0.8
+optim = "adamw_8bit"
+chat_template_kwargs = { enable_thinking = false }
+logging_steps = 5
+eval_strategy = "no"
+prediction_loss_only = true
+agent_eval_steps = 99999
+save_strategy = "steps"
+save_steps = 75
+save_total_limit = 1
+report_to = "none"
+seed = 42
+dataloader_num_workers = 32
+dataloader_persistent_workers = true
+dataloader_pin_memory = true
+dataloader_prefetch_factor = 6
+
+[lora]
+r = 256
+lora_alpha = 8
+use_rslora = true
+finetune_vision_layers = false
+finetune_language_layers = true
+finetune_attention_modules = true
+finetune_mlp_modules = true
+use_gradient_checkpointing = "unsloth"
+
+[data]
+holdout_fraction = 0.10
+include_rationale = false

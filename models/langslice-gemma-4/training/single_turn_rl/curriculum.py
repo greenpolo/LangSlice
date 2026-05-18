@@ -16,8 +16,8 @@ Sibling to :mod:`single_turn_rl.adaptive_reward` (Layer 4) and
   reward into ``state.log_history`` at ``logging_steps``, so step-end would
   see stale data). It pulls the most-recent flushed reward, advances the
   sampler's target ``T`` via the AdaRFT update, and (optionally) writes
-  per-section live difficulty back to the :class:`ManifestIndex` so the
-  next batch's band query sees the freshest signal.
+  per-bin live difficulty back into the shared :class:`BinDifficultyMap`
+  so the next batch's band query sees the freshest signal.
 
 AdaRFT update
 -------------
@@ -33,6 +33,16 @@ reward path uses ``accuracy_pct / 100`` semantics (or any other
 [0,1]-bounded scalar) — passing the raw GRPO reward (which can dip to -1
 on format failures) would push the schedule toward ``d_min`` indefinitely
 and wedge the curriculum at trivial difficulty.
+
+AP-bin difficulty pooling
+-------------------------
+The corpus has ~14k unique sections seen 1x per epoch, so per-section
+observations don't accumulate signal in a 200-entry rolling buffer.
+Observations are pooled by AP-coordinate bin (sections at the same AP
+look visually similar across brains), which gives ~10 observations per
+bin with the same buffer. The sampler reads bin-level difficulty via a
+shared :class:`BinDifficultyMap`; the callback writes per-bin running
+means into the same map.
 
 Subject-cap fallback ladder
 ---------------------------
@@ -61,7 +71,9 @@ A row whose ``difficulty_score`` is ``None`` is treated as if its
 difficulty equals the current target ``T``. This bootstraps the
 curriculum: round 0 (no observations yet) trivially passes the band
 filter for every row, so the sampler doesn't deadlock waiting for live
-difficulty signal that hasn't accumulated yet.
+difficulty signal that hasn't accumulated yet. With the AP-bin keying,
+dataset construction also seeds ``difficulty_score = ap_pct`` so
+cold-start rows already have a meaningful position-based prior.
 
 DDP / multi-GPU note
 --------------------
@@ -75,6 +87,7 @@ from __future__ import annotations
 
 import logging
 import math
+from collections import Counter
 from collections.abc import Iterator, Sequence
 from typing import Any
 
@@ -82,14 +95,52 @@ import torch
 from torch.utils.data import Sampler
 from transformers import TrainerCallback
 
-from .adaptive_reward import AdaptiveRewardSchedule, recent_errors
-from .manifest_index import ManifestIndex
+from .adaptive_reward import (
+    AdaptiveRewardSchedule,
+    compute_ap_bin,
+    recent_errors,
+)
 
 logger = logging.getLogger(__name__)
 
 
 _BAND_WIDEN_FACTOR: float = 1.5
 """Multiplicative factor applied to band_width at ladder rung 2."""
+
+
+# ---------------------------------------------------------------------------
+# Bin-difficulty map (shared between sampler and callback)
+# ---------------------------------------------------------------------------
+
+
+class BinDifficultyMap:
+    """In-process ``(plane, ap_bin) -> mean_abs_err_pct`` map.
+
+    Shared between :class:`CurriculumRepeatingSampler` (reader) and
+    :class:`AdaRFTCurriculumCallback` (writer). Kept deliberately small —
+    no persistence, no serialization, no plane validation — because the
+    AP-bin pool is a transient run-time signal, not a curated artefact.
+    The persisted-difficulty sidecar still lives on the manifest index
+    for per-section bootstrapping; this map only handles live observations.
+    """
+
+    def __init__(self) -> None:
+        self._scores: dict[tuple[str, int], float] = {}
+
+    def update(self, plane: str, ap_bin: int, score: float) -> None:
+        """Record a new running-mean score for a ``(plane, ap_bin)`` key."""
+        self._scores[(str(plane), int(ap_bin))] = float(score)
+
+    def get(self, plane: str, ap_bin: int) -> float | None:
+        """Return the score for ``(plane, ap_bin)``, or ``None`` if absent."""
+        return self._scores.get((str(plane), int(ap_bin)))
+
+    def __len__(self) -> int:
+        return len(self._scores)
+
+    def keys(self) -> list[tuple[str, int]]:
+        """Snapshot of all observed ``(plane, ap_bin)`` keys."""
+        return list(self._scores.keys())
 
 
 # ---------------------------------------------------------------------------
@@ -123,6 +174,37 @@ def _spec_subject(spec: Any) -> str:
     return str(val) if val is not None else ""
 
 
+def _spec_ap_bin_key(spec: Any) -> tuple[str, int] | None:
+    """Extract the ``(plane, ap_bin)`` key for live-difficulty refresh.
+
+    Prefers a precomputed ``ap_bin`` field on the spec; falls back to
+    deriving it from ``ground_truth_mm`` + ``valid_range_mm`` when those
+    are available. Returns ``None`` when ``plane`` is missing or the bin
+    can't be derived — those specs keep their construction-time
+    difficulty during refresh.
+    """
+    if isinstance(spec, dict):
+        plane = spec.get("plane")
+        ap_bin = spec.get("ap_bin")
+        gt = spec.get("ground_truth_mm")
+        vr = spec.get("valid_range_mm")
+    else:
+        plane = getattr(spec, "plane", None)
+        ap_bin = getattr(spec, "ap_bin", None)
+        gt = getattr(spec, "ground_truth_mm", None)
+        vr = getattr(spec, "valid_range_mm", None)
+    if not plane:
+        return None
+    if ap_bin is None:
+        if gt is None or vr is None:
+            return None
+        try:
+            ap_bin = compute_ap_bin(float(gt), (float(vr[0]), float(vr[1])))
+        except (TypeError, ValueError, IndexError):
+            return None
+    return (str(plane), int(ap_bin))
+
+
 class CurriculumRepeatingSampler(Sampler[int]):
     """Difficulty-band sampler that repeats each unique prompt N times.
 
@@ -153,7 +235,11 @@ class CurriculumRepeatingSampler(Sampler[int]):
         band_width: float = 0.15,
         initial_T: float = 0.5,
         max_per_subject_in_batch: int = 2,
+        min_visits_per_bin: int = 0,
+        quota_slots_per_batch: int = 0,
         generator: torch.Generator | None = None,
+        bin_difficulty: BinDifficultyMap | None = None,
+        repeat_count: int = 1,
     ) -> None:
         # Validate everything up front — a misconfigured sampler would only
         # surface its bug after the first ``next(iter(sampler))`` call,
@@ -181,6 +267,16 @@ class CurriculumRepeatingSampler(Sampler[int]):
                 f"max_per_subject_in_batch must be positive, got "
                 f"{max_per_subject_in_batch}"
             )
+        if repeat_count < 1:
+            raise ValueError(f"repeat_count must be >= 1, got {repeat_count}")
+        if min_visits_per_bin < 0:
+            raise ValueError(
+                f"min_visits_per_bin must be non-negative, got {min_visits_per_bin}"
+            )
+        if quota_slots_per_batch < 0:
+            raise ValueError(
+                f"quota_slots_per_batch must be non-negative, got {quota_slots_per_batch}"
+            )
 
         # Skip the parent ``Sampler.__init__`` — it only emits a deprecation
         # warning when ``data_source`` is non-None (the arg is removed in
@@ -204,6 +300,14 @@ class CurriculumRepeatingSampler(Sampler[int]):
         self.num_generations: int = int(num_generations)
         self.batch_size: int = int(batch_size)
         self.unique_prompts: int = self.batch_size // self.num_generations
+        # ``repeat_count`` mirrors TRL's RepeatSampler arg; for GRPOTrainer the
+        # caller must pass ``num_iterations * steps_per_generation`` to match
+        # trl/trainer/grpo_trainer.py:921. With the TOML's
+        # gradient_accumulation_steps=4 (and no explicit steps_per_generation),
+        # GRPOConfig defaults steps_per_generation to 4, so a value of 1 here
+        # would emit only 1/4 of the indices the inner-loop reuses, breaking
+        # the group-relative-advantage layout downstream.
+        self.repeat_count: int = int(repeat_count)
 
         # AdaRFT hyperparameters
         self.target_reward: float = float(target_reward)
@@ -214,6 +318,13 @@ class CurriculumRepeatingSampler(Sampler[int]):
         self.d_max: float = float(d_max)
         self.band_width: float = float(band_width)
         self.max_per_subject_in_batch: int = int(max_per_subject_in_batch)
+        # Coverage quota: every bin gets at least ``min_visits_per_bin`` picks
+        # before AdaRFT is allowed to concentrate. While any bin is below
+        # quota, the sampler reserves ``quota_slots_per_batch`` slots per
+        # batch for picks from the most-deficit bins. Defaults of 0/0 keep
+        # the legacy pure-AdaRFT behavior — set both in the TOML to enable.
+        self.min_visits_per_bin: int = int(min_visits_per_bin)
+        self.quota_slots_per_batch: int = int(quota_slots_per_batch)
 
         # Schedule state — ``T`` clamped to bounds at construction so a
         # caller passing initial_T outside [d_min, d_max] still gets a
@@ -226,6 +337,17 @@ class CurriculumRepeatingSampler(Sampler[int]):
         # Per-batch diagnostic. 1-4 mapping the four ladder levels in the
         # module docstring; 0 means "no batch sampled yet".
         self.last_ladder_level: int = 0
+
+        # Per-batch + cumulative AP-bin coverage diagnostics. Populated in
+        # ``__iter__`` after the ladder picks. ``last_picked_bins`` is the
+        # bin index of each pick this batch (-1 for picks without a
+        # derivable ``(plane, ap_bin)`` key); ``bin_histogram`` is the
+        # cumulative count of picks per bin index across the whole run.
+        # Used by the AdaRFT callback to surface band-focus vs coverage —
+        # ``T`` alone tells us where the difficulty band sits but not which
+        # AP bins actually got gradient.
+        self.last_picked_bins: list[int] = []
+        self.bin_histogram: Counter[int] = Counter()
 
         # Generator for reproducibility. Defer construction of a default
         # generator until first use so two samplers built without an
@@ -240,16 +362,33 @@ class CurriculumRepeatingSampler(Sampler[int]):
             _spec_difficulty(s) for s in self._specs
         ]
 
+        # Optional bin-difficulty back-reference for live difficulty refresh.
+        # When set, ``__iter__`` re-reads ``bin_difficulty.get(plane, ap_bin)``
+        # for each spec at the start of every batch so the band query sees
+        # the freshest per-bin signal the AdaRFT callback wrote back.
+        # Without this, ``self._difficulty_scores`` would stay frozen at
+        # construction time and only ``T`` would move within a run — half-
+        # closing the curriculum loop.
+        self._bin_difficulty: BinDifficultyMap | None = bin_difficulty
+        # Pre-cache the ``(plane, ap_bin)`` keys so the per-batch refresh
+        # doesn't re-walk the spec dicts. ``None`` entries mark specs that
+        # can't be refreshed (no plane / no ap-bin derivable); those skip
+        # the refresh and keep their construction-time difficulty.
+        self._bin_keys: list[tuple[str, int] | None] = [
+            _spec_ap_bin_key(s) for s in self._specs
+        ]
+
     # ------------------------------------------------------------------ AdaRFT update
 
     def update(self, recent_reward_mean: float) -> None:
         """Advance the curriculum target ``T`` per the AdaRFT formula.
 
-        The caller is responsible for passing a reward already rescaled to
+        The ``recent_reward_mean`` argument MUST already be rescaled to
         ``[0, 1]`` (e.g. ``accuracy_pct / 100``). Passing the raw GRPO
         scalar (which can dip to ``-1`` on format failures) will skew the
         update toward ``d_min`` and wedge the curriculum at trivial
-        difficulty.
+        difficulty. The ``AdaRFTCurriculumCallback`` performs this
+        rescaling before forwarding the trainer's logged reward here.
         """
         r = float(recent_reward_mean)
         raw = self.eta * math.tanh(self.alpha * (r - self.target_reward))
@@ -265,10 +404,10 @@ class CurriculumRepeatingSampler(Sampler[int]):
 
         ``None`` rows always pass the band filter — which is what we want
         for a freshly-seeded run that hasn't observed any section yet.
-        Once the curriculum callback writes back live difficulties via
-        :meth:`ManifestIndex.update_difficulty`, those values flow into
-        the next dataset rebuild's specs and the cold-start treatment
-        falls away.
+        Once the curriculum callback writes back live bin difficulties via
+        :meth:`BinDifficultyMap.update`, those values flow into the
+        sampler's cached ``_difficulty_scores`` on the next batch refresh
+        and the cold-start treatment falls away.
         """
         d = self._difficulty_scores[idx]
         return self.T if d is None else float(d)
@@ -324,6 +463,61 @@ class CurriculumRepeatingSampler(Sampler[int]):
             subject_counts[subj] = subject_counts.get(subj, 0) + 1
         return picked
 
+    def _deficit_bins(self) -> list[int]:
+        """Bins below the visit quota, most-deficit first.
+
+        Considers only bins that have at least one spec in our dataset
+        (bins that don't appear in ``self._bin_keys`` are unreachable and
+        would force the quota into an infinite-deficit state). Returns []
+        when the quota is disabled (``min_visits_per_bin == 0``).
+        """
+        if self.min_visits_per_bin <= 0:
+            return []
+        bins_in_dataset: set[int] = set()
+        for key in self._bin_keys:
+            if key is not None:
+                bins_in_dataset.add(key[1])
+        deficit = [
+            b for b in bins_in_dataset
+            if self.bin_histogram[b] < self.min_visits_per_bin
+        ]
+        deficit.sort(key=lambda b: self.bin_histogram[b])
+        return deficit
+
+    def _fill_quota(self, n_needed: int) -> list[int]:
+        """Pick up to ``quota_slots_per_batch`` indices from deficit bins.
+
+        Each pick targets a different deficit bin (most-deficit first), so
+        a single batch can advance the quota on multiple under-visited
+        bins instead of piling all quota slots into one bin. Honors the
+        subject cap. Returns [] when no deficit bins remain.
+        """
+        if self.quota_slots_per_batch <= 0:
+            return []
+        deficit = self._deficit_bins()
+        if not deficit:
+            return []
+        n_to_pick = min(self.quota_slots_per_batch, n_needed, len(deficit))
+        picks: list[int] = []
+        subject_counts: dict[str, int] = {}
+        for target_bin in deficit:
+            if len(picks) >= n_to_pick:
+                break
+            bin_indices = [
+                i for i, key in enumerate(self._bin_keys)
+                if key is not None and key[1] == target_bin
+            ]
+            for idx in self._shuffle_indices(bin_indices):
+                if idx in picks:
+                    continue
+                subj = self._subject_ids[idx]
+                if subject_counts.get(subj, 0) >= self.max_per_subject_in_batch:
+                    continue
+                picks.append(idx)
+                subject_counts[subj] = subject_counts.get(subj, 0) + 1
+                break
+        return picks
+
     def _select_unique_prompts(self) -> tuple[list[int], int]:
         """Run the four-rung fallback ladder, returning (picks, level).
 
@@ -331,30 +525,52 @@ class CurriculumRepeatingSampler(Sampler[int]):
         the module docstring's ladder definition. The function never
         returns fewer than ``unique_prompts`` indices: at the bottom rung
         it backfills uniformly from the entire dataset.
+
+        When the quota is enabled (``min_visits_per_bin > 0`` and
+        ``quota_slots_per_batch > 0``), the function first reserves up to
+        ``quota_slots_per_batch`` slots for picks from under-visited bins.
+        The remaining slots are filled by the rung ladder, excluding any
+        index already chosen by the quota. ``level=0`` is returned when
+        the quota alone satisfied ``n_needed``.
         """
         n_needed = self.unique_prompts
+        quota_picks = self._fill_quota(n_needed)
+        quota_set = set(quota_picks)
+        n_remaining = n_needed - len(quota_picks)
+        if n_remaining <= 0:
+            return quota_picks[:n_needed], 0
 
         # Rung 1: band ± band_width AND subject cap.
-        candidates_1 = self._candidates_in_band(self.band_width)
-        picks = self._pick_with_subject_cap(
-            candidates_1, n_needed, self.max_per_subject_in_batch
+        candidates_1 = [
+            i for i in self._candidates_in_band(self.band_width)
+            if i not in quota_set
+        ]
+        rung_picks = self._pick_with_subject_cap(
+            candidates_1, n_remaining, self.max_per_subject_in_batch
         )
-        if len(picks) >= n_needed:
-            return picks[:n_needed], 1
+        if len(rung_picks) >= n_remaining:
+            return quota_picks + rung_picks[:n_remaining], 1
 
         # Rung 2: widen the band 50% (one-shot — do NOT mutate self.band_width).
         widened_hw = self.band_width * _BAND_WIDEN_FACTOR
-        candidates_2 = self._candidates_in_band(widened_hw)
-        picks = self._pick_with_subject_cap(
-            candidates_2, n_needed, self.max_per_subject_in_batch
+        candidates_2 = [
+            i for i in self._candidates_in_band(widened_hw)
+            if i not in quota_set
+        ]
+        rung_picks = self._pick_with_subject_cap(
+            candidates_2, n_remaining, self.max_per_subject_in_batch
         )
-        if len(picks) >= n_needed:
-            return picks[:n_needed], 2
+        if len(rung_picks) >= n_remaining:
+            return quota_picks + rung_picks[:n_remaining], 2
 
         # Rung 3: keep the widened band but drop the subject cap.
-        picks = self._pick_with_subject_cap(candidates_2, n_needed, subject_cap=None)
-        if len(picks) >= n_needed:
-            return picks[:n_needed], 3
+        rung_picks = self._pick_with_subject_cap(
+            candidates_2, n_remaining, subject_cap=None
+        )
+        if len(rung_picks) >= n_remaining:
+            return quota_picks + rung_picks[:n_remaining], 3
+        # Carry the rung-3 picks into the rung-4 backfill so we don't lose them.
+        picks = list(quota_picks) + list(rung_picks)
 
         # Rung 4: uniform backfill from the entire dataset. Two-stage so
         # the operator can still see what the band picked vs what we had
@@ -367,49 +583,82 @@ class CurriculumRepeatingSampler(Sampler[int]):
                 break
             picks.append(idx)
         if len(picks) < n_needed:
-            # Can only happen if the dataset itself is smaller than
-            # unique_prompts; the constructor doesn't reject that case
-            # because a smoke run might want batch_size=2 over a 1-row
-            # dataset. Pad by repeating the picks we have.
-            if not picks:
-                # Truly empty — should be impossible because the ctor
-                # rejects an empty dataset, but guard anyway.
-                raise RuntimeError(
-                    "CurriculumRepeatingSampler: no candidates available even "
-                    "after uniform backfill — dataset state is inconsistent."
-                )
-            j = 0
-            while len(picks) < n_needed:
-                picks.append(picks[j % len(picks)])
-                j += 1
+            # The rung-4 backfill exhausted every distinct index in the
+            # dataset and still fell short of ``unique_prompts``. Repeating
+            # picks would silently corrupt GRPO's group-relative-advantage
+            # assumption (identical prompts in different groups would
+            # collapse the advantage signal), so fail loudly with an
+            # operator-actionable message rather than continue.
+            raise RuntimeError(
+                "CurriculumRepeatingSampler rung 4: dataset has only "
+                f"{len(self._specs)} distinct rows but the batch needs "
+                f"{n_needed} unique prompts (batch_size={self.batch_size}, "
+                f"num_generations={self.num_generations}). Repeating prompts "
+                "across distinct slots would corrupt GRPO group-relative "
+                "advantage. Reduce batch_size or num_generations, or grow the "
+                "dataset to at least unique_prompts rows."
+            )
         return picks[:n_needed], 4
 
     # ------------------------------------------------------------------ Sampler protocol
 
     def __len__(self) -> int:
-        """One batch's worth of indices.
+        """Length matching TRL's RepeatSampler shape contract.
 
-        TRL invokes ``iter(sampler)`` once per batch, so the sampler
-        advertises a single batch of length ``unique_prompts *
-        num_generations``. ``DataLoader`` uses this for the progress bar
-        only — the iterator itself is the source of truth.
+        Returns ``unique_prompts * num_generations * repeat_count`` so the
+        emit length aligns with the parent ``RepeatSampler.__len__`` (see
+        ``trl/trainer/utils.py:746``). When ``repeat_count == 1`` (legacy
+        Lane A path with ``steps_per_generation==num_iterations==1``) the
+        value matches the previous "one batch's worth" semantics; when the
+        trainer config bumps either knob, the dataloader's index stream
+        gets the same number of slots TRL's own sampler would have emitted.
         """
-        return self.unique_prompts * self.num_generations
+        return self.unique_prompts * self.num_generations * self.repeat_count
+
+    def _refresh_difficulties(self) -> None:
+        """Re-read live per-bin difficulty from the shared bin map.
+
+        The AdaRFT callback writes back per-bin observations into
+        :class:`BinDifficultyMap` between batches; the sampler must
+        re-pull those before each band query or it would keep sampling
+        against the construction-time snapshot. No-op when the sampler
+        wasn't constructed with a ``bin_difficulty`` back-reference.
+        """
+        if self._bin_difficulty is None:
+            return
+        for i, key in enumerate(self._bin_keys):
+            if key is None:
+                continue
+            live = self._bin_difficulty.get(*key)
+            if live is not None:
+                self._difficulty_scores[i] = live
 
     def __iter__(self) -> Iterator[int]:
-        """Yield one batch worth of indices, repeated for GRPO grouping.
+        """Yield indices in the GRPO-compatible repetition shape.
 
         Picks ``unique_prompts`` distinct rows via the fallback ladder,
         records the achieved ladder level on ``self.last_ladder_level``,
-        and yields each pick ``num_generations`` times in a row so TRL's
-        group-relative-advantage computation sees identical prompts in
-        consecutive slots within a group.
+        and yields the repeated index sequence in the same shape TRL's
+        ``RepeatSampler`` produces (``trl/trainer/utils.py:739-743``):
+        the inner sequence ``[idx0]*num_generations + [idx1]*num_generations
+        + ...`` is then repeated ``repeat_count`` times so the dataloader
+        delivers enough slots for ``num_iterations * steps_per_generation``
+        inner reuses.
         """
+        self._refresh_difficulties()
         picks, level = self._select_unique_prompts()
         self.last_ladder_level = level
-        for idx in picks:
-            for _ in range(self.num_generations):
-                yield idx
+        picked_bins = [
+            self._bin_keys[i][1] if self._bin_keys[i] is not None else -1
+            for i in picks
+        ]
+        self.last_picked_bins = picked_bins
+        for bin_idx in picked_bins:
+            self.bin_histogram[bin_idx] += 1
+        for _ in range(self.repeat_count):
+            for idx in picks:
+                for _ in range(self.num_generations):
+                    yield idx
 
 
 # ---------------------------------------------------------------------------
@@ -418,7 +667,7 @@ class CurriculumRepeatingSampler(Sampler[int]):
 
 
 class AdaRFTCurriculumCallback(TrainerCallback):
-    """Trainer callback that feeds reward back into the sampler + manifest.
+    """Trainer callback that feeds reward back into the sampler + bin map.
 
     Hooks ``on_log`` because TRL only flushes per-batch reward into
     ``state.log_history`` at ``logging_steps`` cadence. Step-end fires
@@ -432,12 +681,9 @@ class AdaRFTCurriculumCallback(TrainerCallback):
     2. Call :meth:`CurriculumRepeatingSampler.update` to advance ``T``.
     3. If ``write_back=True``, walk a snapshot of
        :data:`adaptive_reward._RECENT_ERRORS`, dedupe by
-       ``(plane, dataset, section_id)``, and call
-       :meth:`ManifestIndex.update_difficulty` for each unique key with
-       the running mean from
-       :meth:`AdaptiveRewardSchedule.per_section_difficulty`. Uses
-       ``if_unknown="warn"`` so stale section keys (e.g. after a
-       manifest rebuild between runs) don't crash training.
+       ``(plane, ap_bin)``, and call :meth:`BinDifficultyMap.update`
+       for each unique key with the running mean from
+       :meth:`AdaptiveRewardSchedule.per_bin_difficulty`.
     4. Log a one-line diagnostic via the module logger so trackio /
        tensorboard runs can grep ``T`` / ``ladder`` over time even
        without direct access to the callback's state.
@@ -447,13 +693,13 @@ class AdaRFTCurriculumCallback(TrainerCallback):
         self,
         sampler: CurriculumRepeatingSampler,
         *,
-        manifest_index: ManifestIndex,
+        bin_difficulty: BinDifficultyMap,
         schedule: AdaptiveRewardSchedule,
         plane: str | None = None,
         write_back: bool = True,
     ) -> None:
         self.sampler = sampler
-        self.manifest_index: ManifestIndex = manifest_index
+        self.bin_difficulty: BinDifficultyMap = bin_difficulty
         self.schedule: AdaptiveRewardSchedule = schedule
         self.plane = plane
         self.write_back = write_back
@@ -494,60 +740,109 @@ class AdaRFTCurriculumCallback(TrainerCallback):
             # eval-only metric that didn't carry a reward. Don't pretend.
             return control
 
-        self.sampler.update(reward)
+        # Rescale the raw GRPO reward to AdaRFT's expected [0, 1] domain.
+        # The raw reward lives in [format_penalty, 1.0] (typically [-1, 1])
+        # — feeding the negative tail directly into tanh would saturate the
+        # update toward d_min and wedge the curriculum at trivial difficulty
+        # whenever a single format-fail dragged a small batch's mean below
+        # zero. Clamping into [0, 1] preserves the "didn't work" signal
+        # (collapses both OOR=0 and format=-1 to 0) without the wedge.
+        normalized_reward = max(0.0, min(1.0, reward))
+        self.sampler.update(normalized_reward)
 
         if self.write_back:
             self._write_back_difficulties()
 
+        # Surface the AdaRFT internals as trainer metrics so wandb/trackio
+        # can plot ``T`` / ladder / smoothed step over time. Two write paths
+        # because transformers ``Trainer.log`` calls integrations with the
+        # ``logs`` kwarg (a dict separate from the entry it just appended
+        # to ``state.log_history``); writing to both keeps the metric visible
+        # to live integrations AND to downstream readers of log_history.
+        # Cumulative bin coverage — how many distinct AP bins have been
+        # sampled at least once across the run, and the share of picks
+        # that came from the top-3 most-sampled bins. ``coverage_count``
+        # tells us if curriculum focus is broadening; ``top3_share`` flags
+        # over-concentration (e.g., 0.8 means 80% of picks hit just 3 bins).
+        histogram = self.sampler.bin_histogram
+        total_picks = sum(histogram.values())
+        if total_picks > 0:
+            top3_sum = sum(c for _, c in histogram.most_common(3))
+            top3_share = top3_sum / total_picks
+        else:
+            top3_share = 0.0
+        coverage_count = sum(1 for b, c in histogram.items() if b >= 0 and c > 0)
+        # Coverage quota deficit — how many bins remain under the quota.
+        # 0 means quota has been met for every reachable bin.
+        deficit_count = len(self.sampler._deficit_bins())  # noqa: SLF001
+
+        adarft_metrics = {
+            "adarft/T": float(self.sampler.T),
+            "adarft/raw_step": float(self.sampler.last_step),
+            "adarft/smoothed_step": float(self.sampler.last_smoothed_step),
+            "adarft/ladder_level": int(self.sampler.last_ladder_level),
+            "adarft/normalized_reward": float(normalized_reward),
+            "adarft/ap_bin_observed_count": len(self.bin_difficulty),
+            "adarft/ap_bin_coverage_count": int(coverage_count),
+            "adarft/ap_bin_top3_share": float(top3_share),
+            "adarft/ap_bin_deficit_count": int(deficit_count),
+        }
+        if isinstance(logs, dict):
+            logs.update(adarft_metrics)
+        if history and isinstance(history[-1], dict):
+            history[-1].update(adarft_metrics)
+
         # Diagnostic — one line per ``on_log`` call. Cheap and grep-friendly.
+        # Logs both the raw and normalized reward so a wedge at d_min (raw R
+        # frequently negative, normalized R clamped to 0) is diagnosable from
+        # the trainer log without re-deriving the rescale.
         logger.info(
-            "[adarft] T=%.4f step=%.4f smoothed=%.4f ladder=%d reward=%.4f",
+            "[adarft] T=%.4f step=%.4f smoothed=%.4f ladder=%d "
+            "reward_raw=%.4f reward_norm=%.4f bins=%d "
+            "ap_cov=%d ap_top3=%.2f ap_deficit=%d ap_last=%s",
             self.sampler.T,
             self.sampler.last_step,
             self.sampler.last_smoothed_step,
             self.sampler.last_ladder_level,
             reward,
+            normalized_reward,
+            len(self.bin_difficulty),
+            coverage_count,
+            top3_share,
+            deficit_count,
+            self.sampler.last_picked_bins,
         )
         return control
 
     def _write_back_difficulties(self) -> None:
-        """Push live per-section difficulty into the manifest index.
+        """Push live per-bin difficulty into the shared bin map.
 
         Walks a snapshot of :data:`adaptive_reward._RECENT_ERRORS` so a
         concurrent reward call can't mutate the deque under us. Dedupes
-        by ``(plane, dataset, section_id)`` and queries
-        :meth:`AdaptiveRewardSchedule.per_section_difficulty` for the
-        running mean — that method also reads ``_RECENT_ERRORS`` but the
-        cost is small (linear scan filtered by key) and the alternative
-        (carrying a parallel running-mean structure) duplicates state.
+        by ``(plane, ap_bin)`` and queries
+        :meth:`AdaptiveRewardSchedule.per_bin_difficulty` for the
+        running mean.
         """
         snapshot = recent_errors()
-        seen: set[tuple[str, str, str]] = set()
-        for _abs_err, _axis, plane, dataset, section_id in snapshot:
-            key = (plane, dataset, section_id)
+        seen: set[tuple[str, int]] = set()
+        for _abs_err_pct, plane, ap_bin in snapshot:
+            key = (plane, ap_bin)
             if key in seen:
                 continue
             seen.add(key)
             if self.plane is not None and plane != self.plane:
                 continue
-            mean = self.schedule.per_section_difficulty(key)
-            if mean is None:
+            running_mean = self.schedule.per_bin_difficulty(plane, ap_bin)
+            if running_mean is None:
                 # Defensive — a key in the snapshot must have at least one
-                # observation, but if filtering out axis_span<=0 ate them
-                # all (per_section_difficulty's inner filter), skip
+                # observation, but if filtering ever drops them all, skip
                 # rather than write None.
                 continue
-            self.manifest_index.update_difficulty(
-                plane,
-                dataset,
-                section_id,
-                score=float(mean),
-                source="live_rollout",
-                if_unknown="warn",
-            )
+            self.bin_difficulty.update(plane, ap_bin, float(running_mean))
 
 
 __all__ = [
     "AdaRFTCurriculumCallback",
+    "BinDifficultyMap",
     "CurriculumRepeatingSampler",
 ]

@@ -25,12 +25,9 @@ dependencies = [
 
 [project.scripts]
 langslice = "langslice_harness.cli:main"
-# Launcher for the RLVR (multi-turn GRPO) training driver. The training
-# package lives under models/langslice-gemma-4/training/rlvr (off the src/
-# tree); the shim at src/langslice_rlvr adds that directory to sys.path so
-# `python -m langslice_rlvr` and the installed `langslice-rlvr` script both
-# resolve without packaging the model directory.
-langslice-rlvr = "langslice_rlvr:main"
+langslice-single-turn-rl = "langslice_harness.training_launchers:single_turn_rl"
+langslice-sft-train = "langslice_harness.training_launchers:sft_train"
+langslice-isft = "langslice_harness.training_launchers:isft"
 
 [project.optional-dependencies]
 dev = [
@@ -41,13 +38,21 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["langslice_harness*", "langslice_rlvr*"]
+include = ["langslice_harness*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
 addopts = "-ra"
-pythonpath = ["src", "models/langslice-gemma-4/data", "models/langslice-gemma-4/training"]
+pythonpath = [
+    "src",
+    "models/langslice-traces",
+    "models/synthdata",
+    "models/training-core",
+    "models/data",
+    "models/langslice-gemma-4/data",
+    "models/langslice-gemma-4/training",
+]
 
 [tool.ruff]
 target-version = "py310"
@@ -56,6 +61,10 @@ include = [
     "src/langslice_harness/**/*.py",
     "tests/test_*.py",
     "tests/*_test.py",
+    "models/langslice-traces/**/*.py",
+    "models/synthdata/**/*.py",
+    "models/training-core/**/*.py",
+    "models/data/**/*.py",
     "models/langslice-gemma-4/data/augmentation/**/*.py",
     "models/langslice-gemma-4/training/sft/**/*.py",
     "models/langslice-gemma-4/training/rlvr/**/*.py",
@@ -66,6 +75,14 @@ select = ["E", "F", "I", "B", "UP"]
 
 [tool.pyright]
 include = ["src/langslice_harness", "tests"]
-extraPaths = ["src", "models/langslice-gemma-4/data", "models/langslice-gemma-4/training"]
+extraPaths = [
+    "src",
+    "models/langslice-traces",
+    "models/synthdata",
+    "models/training-core",
+    "models/data",
+    "models/langslice-gemma-4/data",
+    "models/langslice-gemma-4/training",
+]
 pythonVersion = "3.10"
 typeCheckingMode = "basic"

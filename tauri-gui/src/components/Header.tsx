@@ -1,6 +1,6 @@
-import { useState } from "react";
 import { useAppStore } from "../stores/appStore";
-import { SettingsDialog } from "./SettingsDialog";
+import { ApiKeysModal } from "./ApiKeysModal";
+import { LocalModelsModal } from "./LocalModelsModal";
 import logoSvg from "../assets/logo.svg";
 
 export function Header() {
@@ -8,7 +8,11 @@ export function Header() {
   const selectedBrainId = useAppStore((s) => s.selectedBrainId);
   const brains = useAppStore((s) => s.brains);
   const navigateToDashboard = useAppStore((s) => s.navigateToDashboard);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const openApiKeys = useAppStore((s) => s.openApiKeys);
+  const openLocalModels = useAppStore((s) => s.openLocalModels);
+  const openChat = useAppStore((s) => s.openChat);
+  const chatOpen = useAppStore((s) => s.chatOpen);
+  const chatStreaming = useAppStore((s) => s.chatStreaming);
 
   const selectedBrain = brains.find((b) => b.id === selectedBrainId);
 
@@ -17,8 +21,38 @@ export function Header() {
       <header className="app-header">
         <div className="header-brand">
           <img className="header-logo" src={logoSvg} alt="LangSlice" />
-          <span className="header-title">LangSlice</span>
         </div>
+
+        <div className="header-divider" />
+
+        <button
+          type="button"
+          className="header-tab-btn"
+          onClick={openApiKeys}
+          title="Configure cloud API keys (Google, Vertex, OpenRouter)"
+        >
+          API Keys
+        </button>
+        <button
+          type="button"
+          className="header-tab-btn"
+          onClick={openLocalModels}
+          title="Browse and use local models from Ollama, LM Studio, llama-server, vLLM, Jan, or a custom endpoint"
+        >
+          Local Models
+        </button>
+        <button
+          type="button"
+          className={`header-tab-btn header-chat-btn ${chatOpen ? "active" : ""}`}
+          onClick={openChat}
+          title="Chat with any reachable local model"
+        >
+          <span className="header-chat-glyph" aria-hidden>
+            &gt;_
+          </span>
+          Chat
+          {chatStreaming && <span className="header-chat-pulse" aria-hidden />}
+        </button>
 
         <div className="header-divider" />
 
@@ -40,18 +74,11 @@ export function Header() {
 
         <div className="header-spacer" />
 
-        <button
-          className="header-settings-btn"
-          onClick={() => setSettingsOpen(true)}
-          title="Settings"
-        >
-          &#9881;
-        </button>
-
         <span className="header-tag">v0.1.0</span>
       </header>
 
-      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <ApiKeysModal />
+      <LocalModelsModal />
     </>
   );
 }

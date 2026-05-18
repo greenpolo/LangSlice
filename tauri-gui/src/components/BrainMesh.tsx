@@ -59,14 +59,35 @@ export function BrainMesh() {
   );
 }
 
-/** Edge wireframe overlay for the cartoon/scientific look */
+/**
+ * Edge wireframe overlay for the cartoon/scientific look.
+ *
+ * `edgesGeometry` finds dihedral edges between adjacent triangles whose
+ * normals differ by more than the threshold angle. Edge count scales with
+ * triangulation density even on smooth surfaces: the Allen 25um root mesh
+ * (~49k vertices) produces a sparse cartoon outline, but the dense ADMBA
+ * developmental atlases (300k+ vertices) cover the brain in a fuzzy mesh
+ * of micro-edges that looks noisy rather than stylized.
+ *
+ * MeshView (BrainGlobe's reference WebGL viewer) renders these meshes with
+ * no wireframe at all — just flat colored fills. We split the difference:
+ * keep the wireframe for sparse meshes, drop it for dense ones, and bump
+ * the threshold angle so even the kept cases render a tighter silhouette.
+ */
+const WIREFRAME_VERTEX_LIMIT = 100_000;
+const WIREFRAME_ANGLE_THRESHOLD_DEG = 25;
+
 export function BrainMeshWireframe() {
+  const brainMesh = useAppStore((s) => s.brainMesh);
   const geometry = useBrainGeometry();
-  if (!geometry) return null;
+  if (!geometry || !brainMesh) return null;
+
+  // Dense meshes look noisy with edgesGeometry. Fall back to a clean fill.
+  if (brainMesh.positions.length / 3 > WIREFRAME_VERTEX_LIMIT) return null;
 
   return (
     <lineSegments>
-      <edgesGeometry args={[geometry, 15]} />
+      <edgesGeometry args={[geometry, WIREFRAME_ANGLE_THRESHOLD_DEG]} />
       <lineBasicMaterial color="#2dd4bf" transparent opacity={0.06} />
     </lineSegments>
   );

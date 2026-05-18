@@ -1,0 +1,146 @@
+{
+  "brain_id": "M01",
+  "atlas": "allen_mouse_25um",
+  "plane": "coronal",
+  "ap_convention": "atlas_mm_from_anterior_pole",
+  "preprocessing": {
+    "long_edge_px": 2048,
+    "percentile_stretch": [
+      1.0,
+      99.5
+    ],
+    "brightness": 1.3,
+    "contrast": 1.2,
+    "clahe": {
+      "recipe": "langslice_harness.image_prep.adaptive_preprocess",
+      "clip_limit": 4.0,
+      "tile_grid": [
+        8,
+        8
+      ],
+      "channel_weights_rgb": [
+        0.15,
+        0.15,
+        0.7
+      ],
+      "target_brightness": 90.0,
+      "max_boost": 3.0,
+      "brain_mask_threshold": 10
+    }
+  },
+  "dropped_section_ids": [
+    1,
+    2,
+    3,
+    4,
+    5
+  ],
+  "sections": [
+    {
+      "filename": "slice_06.png",
+      "clahe_filename": "slice_06_clahe.png",
+      "ground_truth_mm": 4.6075,
+      "original_index": 6
+    },
+    {
+      "filename": "slice_07.png",
+      "clahe_filename": "slice_07_clahe.png",
+      "ground_truth_mm": 4.7324,
+      "original_index": 7
+    },
+    {
+      "filename": "slice_08.png",
+      "clahe_filename": "slice_08_clahe.png",
+      "ground_truth_mm": 5.0458,
+      "original_index": 8
+    },
+    {
+      "filename": "slice_10.png",
+      "clahe_filename": "slice_10_clahe.png",
+      "ground_truth_mm": 5.1079,
+      "original_index": 10
+    },
+    {
+      "filename": "slice_09.png",
+      "clahe_filename": "slice_09_clahe.png",
+      "ground_truth_mm": 5.148,
+      "original_index": 9
+    },
+    {
+      "filename": "slice_11.png",
+      "clahe_filename": "slice_11_clahe.png",
+      "ground_truth_mm": 6.4979,
+      "original_index": 11
+    },
+    {
+      "filename": "slice_12.png",
+      "clahe_filename": "slice_12_clahe.png",
+      "ground_truth_mm": 6.6991,
+      "original_index": 12
+    },
+    {
+      "filename": "slice_13.png",
+      "clahe_filename": "slice_13_clahe.png",
+      "ground_truth_mm": 6.9233,
+      "original_index": 13
+    },
+    {
+      "filename": "slice_15.png",
+      "clahe_filename": "slice_15_clahe.png",
+      "ground_truth_mm": 6.9882,
+      "original_index": 15
+    },
+    {
+      "filename": "slice_17.png",
+      "clahe_filename": "slice_17_clahe.png",
+      "ground_truth_mm": 7.4718,
+      "original_index": 17
+    },
+    {
+      "filename": "slice_19.png",
+      "clahe_filename": "slice_19_clahe.png",
+      "ground_truth_mm": 7.8185,
+      "original_index": 19
+    },
+    {
+      "filename": "slice_23.png",
+      "clahe_filename": "slice_23_clahe.png",
+      "ground_truth_mm": 8.4652,
+      "original_index": 23
+    },
+    {
+      "filename": "slice_25.png",
+      "clahe_filename": "slice_25_clahe.png",
+      "ground_truth_mm": 8.9666,
+      "original_index": 25
+    },
+    {
+      "filename": "slice_26.png",
+      "clahe_filename": "slice_26_clahe.png",
+      "ground_truth_mm": 9.4119,
+      "original_index": 26
+    },
+    {
+      "filename": "slice_27.png",
+      "clahe_filename": "slice_27_clahe.png",
+      "ground_truth_mm": 9.9696,
+      "original_index": 27
+    }
+  ],
+  "skipped": [
+    "M01_01.tif: section 1 is in DROP_SECTION_IDS",
+    "M01_02.tif: section 2 is in DROP_SECTION_IDS",
+    "M01_03.tif: section 3 is in DROP_SECTION_IDS",
+    "M01_04.tif: section 4 is in DROP_SECTION_IDS",
+    "M01_05.tif: section 5 is in DROP_SECTION_IDS",
+    "M01_14.tif: no ABBA AP for section 14",
+    "M01_16.tif: no ABBA AP for section 16",
+    "M01_18.tif: no ABBA AP for section 18",
+    "M01_20.tif: no ABBA AP for section 20",
+    "M01_21.tif: no ABBA AP for section 21",
+    "M01_22.tif: no ABBA AP for section 22",
+    "M01_24.tif: no ABBA AP for section 24",
+    "M01_28.tif: no ABBA AP for section 28",
+    "M01_29.tif: no ABBA AP for section 29"
+  ]
+}

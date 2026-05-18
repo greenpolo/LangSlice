@@ -1,48 +1,51 @@
 """Adaptive bell-curve schedule for the single-turn final-answer reward.
 
-The static reward in :mod:`single_turn_rl.rewards` reads a fixed ``sigma_frac``
-and ``cutoff_frac`` from a TOML and uses them for every call. That works as a
-warmup but stops shaping useful gradient once the policy's typical error
-shrinks below ``sigma`` — the reward becomes near-flat at 1.0 and the
-policy stops being pushed toward tighter localisation.
+.. deprecated::
+    The schedule logic has been lifted into :mod:`adaptive.schedule` (Phase 5).
+    This module is now a thin backward-compatibility shim.  It preserves the
+    original public surface (``AdaptiveRewardSchedule``,
+    ``make_adaptive_terminal_reward``, ``record_error``, ``recent_errors``,
+    ``clear_recent_errors``, ``_RECENT_ERRORS``) so existing callers in
+    ``train_grpo.py`` and tests continue to work without modification.
 
-This module replaces the constants with a *schedule* that reads recent
-absolute-error observations and re-derives ``(sigma_frac, cutoff_frac)`` per
-call as quantiles of the running error distribution. As the policy improves,
-the bell auto-tightens around the new error scale.
+    New code should import directly from :mod:`adaptive.schedule` and manage
+    its own :func:`~adaptive.schedule.make_error_buffer` buffer.
 
-Implementation
---------------
+AP-bin keying
+-------------
+Per-section difficulty observations are keyed by AP-coordinate bin rather than
+by ``(plane, dataset, section_id)``. The training corpus has ~14k unique
+sections seen 1x per epoch, so per-section observations don't accumulate
+useful signal in a 200-entry buffer. Pooling by AP bin (sections at the same
+AP coordinate look visually similar across brains) gives ~10 observations
+per bin with the same buffer.
 
-* A module-level :class:`collections.deque` (``_RECENT_ERRORS``) holds the
-  most recent ``maxlen`` observations as
-  ``(abs_err_mm, axis_span_mm, plane, dataset, section_id)`` tuples. The
-  reward closure appends to it on every call. This sidecar is mandatory:
-  TRL's ``state.log_history`` only keeps aggregated metrics, not per-call
-  rows, so the schedule needs its own buffer to compute quantiles.
-* :class:`AdaptiveRewardSchedule` reads the deque and turns it into
-  ``(sigma_frac, cutoff_frac)`` via two configurable quantiles, with min/max
-  clamps and a static fallback used until the deque has warmed up.
-* :func:`make_adaptive_terminal_reward` mirrors the TRL contract of
-  :func:`single_turn_rl.rewards.make_terminal_reward` and substitutes the
-  dynamic schedule output for the static kwargs at call time.
+All errors stored in :data:`_RECENT_ERRORS` are *fractions of the axis span*
+(``abs_err_mm / axis_span_mm``), per the standing rule that MAE and AP
+coordinates are always expressed as percent-of-axis. The boundary
+:func:`record_error` takes raw mm values and converts immediately.
 
 DDP / multi-GPU note
 --------------------
-
 The rolling buffer is single-process module-level state and is only correct
 under single-GPU training. Under DDP each rank would see only its own
-observations and the schedule would diverge across ranks. A future
-multi-GPU port needs an ``all_gather`` of recent errors (or rank-0-only
-schedule + broadcast). Out of scope for this layer.
+observations and the schedule would diverge across ranks. A future multi-GPU
+port needs an ``all_gather`` of recent errors (or rank-0-only schedule +
+broadcast). Out of scope for this layer.
 """
 
 from __future__ import annotations
 
+import os
 from collections import deque
 from statistics import mean
 from typing import Any
 
+from adaptive.schedule import (
+    AdaptiveSchedule as _AdaptiveSchedule,
+    ErrorObservation as ErrorObservation,
+    make_error_buffer as make_error_buffer,
+)
 from rlvr.rewards import normalized_bell_reward
 from single_turn_rl.rewards import (
     DEFAULT_FORMAT_PENALTY,
@@ -54,43 +57,84 @@ from single_turn_rl.rewards import (
     _ParseError as _ParseError,
 )
 
-# Default static fallback used by the schedule before warmup, picked to match
-# the static defaults in :mod:`single_turn_rl.rewards` so behaviour pre-warmup
-# is identical to the legacy reward.
+# ---------------------------------------------------------------------------
+# Public constants — preserved for backward compat
+# ---------------------------------------------------------------------------
+
+#: Default static fallback matching the legacy fixed-schedule reward.
 DEFAULT_STATIC_FALLBACK: tuple[float, float] = (0.05, 0.15)
 DEFAULT_MIN_SIGMA_FRAC: float = 0.005
 DEFAULT_MAX_SIGMA_FRAC: float = 0.05
 DEFAULT_SIGMA_QUANTILE: float = 0.5
 DEFAULT_CUTOFF_QUANTILE: float = 0.95
+DEFAULT_MAX_CUTOFF_FRAC: float = 0.25
 DEFAULT_MIN_OBSERVATIONS: int = 50
 DEFAULT_BUFFER_MAXLEN: int = 200
 
+# ---------------------------------------------------------------------------
+# AP-bin configuration
+# ---------------------------------------------------------------------------
 
-# Module-level rolling buffer. Tuple shape:
-#   (abs_err_mm, axis_span_mm, plane, dataset, section_id)
-_RECENT_ERRORS: deque[tuple[float, float, str, str, str]] = deque(maxlen=DEFAULT_BUFFER_MAXLEN)
+#: Number of AP-coordinate bins used to pool difficulty observations.
+#: 20 bins → 5% of axis per bin. Tunable via the env var
+#: ``LANGSLICE_AP_BIN_COUNT`` so experiments can sweep without code edits.
+_AP_BIN_COUNT: int = int(os.environ.get("LANGSLICE_AP_BIN_COUNT", "20"))
+
+
+def compute_ap_bin(
+    ground_truth_mm: float,
+    valid_range_mm: tuple[float, float],
+) -> int:
+    """Map a ground-truth AP coordinate to a bin index in ``[0, N_BINS-1]``.
+
+    ``ap_pct = (gt - pos_lo) / axis_span_mm`` is clamped into ``[0, 1]``
+    before scaling so out-of-range or degenerate-span inputs still produce
+    a legal bin index rather than crashing the reward path.
+    """
+    pos_lo, pos_hi = float(valid_range_mm[0]), float(valid_range_mm[1])
+    axis_span = pos_hi - pos_lo
+    if axis_span <= 0.0:
+        return 0
+    ap_pct = (float(ground_truth_mm) - pos_lo) / axis_span
+    # Clamp into [0, 1] so the bin index lands in [0, N_BINS-1] even when
+    # the gt sits just outside the valid range (a few adapter rows do).
+    ap_pct = max(0.0, min(1.0, ap_pct))
+    bin_idx = int(ap_pct * _AP_BIN_COUNT)
+    if bin_idx >= _AP_BIN_COUNT:
+        bin_idx = _AP_BIN_COUNT - 1
+    return bin_idx
+
+
+# ---------------------------------------------------------------------------
+# Module-level rolling buffer — keyed by AP bin rather than per-section.
+# ---------------------------------------------------------------------------
+
+#: Module-level rolling buffer.  Shape: ``(abs_err_pct, plane, ap_bin)``.
+#: ``abs_err_pct`` is ``abs_err_mm / axis_span_mm`` ∈ ``[0, 1]``.
+_RECENT_ERRORS: deque[tuple[float, str, int]] = deque(maxlen=DEFAULT_BUFFER_MAXLEN)
 
 
 def record_error(
     abs_err_mm: float,
     axis_span_mm: float,
     plane: str,
-    dataset: str,
-    section_id: str,
+    ap_bin: int,
 ) -> None:
     """Append one observation to the module-level rolling buffer.
 
-    ``abs_err_mm`` is the absolute coordinate error in mm; ``axis_span_mm`` is
-    the valid range for the active plane (so the schedule can compute
-    ``error_frac = abs_err_mm / axis_span_mm`` later). Categorical metadata
-    keys the per-section difficulty lookup used by the curriculum callback.
+    The caller passes raw mm values at the boundary (TRL hands us mm); the
+    buffer stores ``abs_err_pct = abs_err_mm / axis_span_mm`` per the
+    percent-of-axis convention. Observations with non-positive
+    ``axis_span_mm`` are dropped — there's no meaningful percent to store.
     """
-    _RECENT_ERRORS.append(
-        (float(abs_err_mm), float(axis_span_mm), str(plane), str(dataset), str(section_id))
-    )
+    axis = float(axis_span_mm)
+    if axis <= 0.0:
+        return
+    abs_err_pct = float(abs_err_mm) / axis
+    _RECENT_ERRORS.append((abs_err_pct, str(plane), int(ap_bin)))
 
 
-def recent_errors() -> list[tuple[float, float, str, str, str]]:
+def recent_errors() -> list[tuple[float, str, int]]:
     """Snapshot of the rolling buffer for tests and external monitoring."""
     return list(_RECENT_ERRORS)
 
@@ -100,43 +144,22 @@ def clear_recent_errors() -> None:
     _RECENT_ERRORS.clear()
 
 
-def _quantile(sorted_values: list[float], q: float) -> float:
-    """Linear-interpolated quantile over a pre-sorted list.
-
-    Equivalent to ``numpy.quantile(values, q, method="linear")`` for a
-    non-empty input. We reimplement here so the module has no numpy
-    dependency — the existing reward stays on pure-python math too, and
-    the code path is hot (called per reward batch) so pulling in numpy
-    just for one quantile would be wasteful.
-    """
-    if not sorted_values:
-        raise ValueError("cannot compute quantile of empty sequence")
-    if not 0.0 <= q <= 1.0:
-        raise ValueError(f"quantile must be in [0, 1], got {q}")
-    n = len(sorted_values)
-    if n == 1:
-        return sorted_values[0]
-    pos = q * (n - 1)
-    lo = int(pos)
-    hi = min(lo + 1, n - 1)
-    frac = pos - lo
-    return sorted_values[lo] * (1.0 - frac) + sorted_values[hi] * frac
-
+# ---------------------------------------------------------------------------
+# AdaptiveRewardSchedule — backward-compat wrapper
+# ---------------------------------------------------------------------------
 
 class AdaptiveRewardSchedule:
     """Quantile-based schedule for ``(sigma_frac, cutoff_frac)``.
 
-    Reads :data:`_RECENT_ERRORS` on each :meth:`current` call, computes
-    ``error_frac = abs_err_mm / axis_span_mm`` per entry, and returns the
-    requested quantiles clamped to their min/max bounds. Until the deque
-    holds at least ``min_observations`` entries the schedule returns
-    ``static_fallback`` so early training matches the legacy fixed-schedule
-    reward.
+    Backward-compat wrapper over the stateless
+    :class:`~adaptive.schedule.AdaptiveSchedule`.  Uses the module-level
+    ``_RECENT_ERRORS`` deque as its observation source so existing callers
+    are unaffected.
 
-    The schedule is stateless apart from its constructor params and the
-    shared module-level deque. It is safe to construct multiple instances
-    with different bounds (e.g. one for monitoring, one for the live
-    reward); they will all see the same observations.
+    .. deprecated::
+        Prefer constructing :class:`~adaptive.schedule.AdaptiveSchedule`
+        directly and passing an explicit buffer from
+        :func:`~adaptive.schedule.make_error_buffer`.
     """
 
     def __init__(
@@ -148,12 +171,19 @@ class AdaptiveRewardSchedule:
         cutoff_quantile: float = DEFAULT_CUTOFF_QUANTILE,
         min_observations: int = DEFAULT_MIN_OBSERVATIONS,
         static_fallback: tuple[float, float] = DEFAULT_STATIC_FALLBACK,
+        max_cutoff_frac: float = DEFAULT_MAX_CUTOFF_FRAC,
     ) -> None:
+        # Validate inputs to preserve the original contract.
         if min_sigma_frac <= 0:
             raise ValueError(f"min_sigma_frac must be positive, got {min_sigma_frac}")
         if max_sigma_frac < min_sigma_frac:
             raise ValueError(
                 f"max_sigma_frac ({max_sigma_frac}) must be >= "
+                f"min_sigma_frac ({min_sigma_frac})"
+            )
+        if max_cutoff_frac < min_sigma_frac:
+            raise ValueError(
+                f"max_cutoff_frac ({max_cutoff_frac}) must be >= "
                 f"min_sigma_frac ({min_sigma_frac})"
             )
         if not 0.0 <= sigma_quantile <= 1.0:
@@ -170,87 +200,93 @@ class AdaptiveRewardSchedule:
 
         self.min_sigma_frac = float(min_sigma_frac)
         self.max_sigma_frac = float(max_sigma_frac)
+        self.max_cutoff_frac = float(max_cutoff_frac)
         self.sigma_quantile = float(sigma_quantile)
         self.cutoff_quantile = float(cutoff_quantile)
         self.min_observations = int(min_observations)
         self.static_fallback = (float(fb_sigma), float(fb_cutoff))
+
+        # Underlying stateless schedule; deque is passed at call time.
+        self._schedule = _AdaptiveSchedule(
+            sigma_quantile=self.sigma_quantile,
+            cutoff_quantile=self.cutoff_quantile,
+            sigma_clamp=(self.min_sigma_frac, self.max_sigma_frac),
+            cutoff_clamp=(0.0, self.max_cutoff_frac),
+            warmup_min_observations=self.min_observations,
+            warmup_sigma_frac=float(fb_sigma),
+            warmup_cutoff_frac=float(fb_cutoff),
+        )
 
     @property
     def n_observations(self) -> int:
         """Number of entries currently in the shared rolling buffer."""
         return len(_RECENT_ERRORS)
 
-    def current(self) -> tuple[float, float]:
+    def current(self, plane: str | None = None) -> tuple[float, float]:
         """Return ``(sigma_frac, cutoff_frac)`` derived from recent errors.
 
-        Computes ``error_frac`` for every entry in the rolling buffer, takes
-        the configured quantiles, clamps each to its bounds, and returns.
-        Pre-warmup (fewer than ``min_observations``) returns
-        ``static_fallback`` unchanged.
-
-        ``cutoff_frac`` is clamped to be at least ``sigma_frac`` so the
-        bell never collapses to a delta — equality is allowed because the
-        bell formula stays well-defined and the gradient just tightens.
+        Delegates to :meth:`~adaptive.schedule.AdaptiveSchedule.compute`.
+        The underlying schedule expects a buffer of
+        ``(abs_err, axis_span, plane, ...)`` tuples and computes
+        ``error_frac = abs_err / axis_span`` internally; our buffer already
+        stores ``abs_err_pct`` directly, so we adapt by passing
+        ``(abs_err_pct, 1.0, plane, ...)`` — the division by 1.0 leaves the
+        percent untouched.
         """
-        if len(_RECENT_ERRORS) < self.min_observations:
-            return self.static_fallback
+        adapted: list[tuple[float, float, str, int]] = [
+            (abs_err_pct, 1.0, p, ap_bin)
+            for abs_err_pct, p, ap_bin in _RECENT_ERRORS
+        ]
+        return self._schedule.compute(adapted, plane=plane)
 
-        # axis_span_mm came from valid_range_mm, which is positive by
-        # construction in the reward path. Guard anyway because a hostile
-        # caller of record_error could plant a zero.
-        error_fracs = sorted(
-            abs_err / axis_span
-            for abs_err, axis_span, *_ in _RECENT_ERRORS
-            if axis_span > 0
-        )
-        if not error_fracs:
-            return self.static_fallback
+    def per_bin_difficulty(self, plane: str, ap_bin: int) -> float | None:
+        """Mean ``abs_err_pct`` across observations matching ``(plane, ap_bin)``.
 
-        raw_sigma = _quantile(error_fracs, self.sigma_quantile)
-        raw_cutoff = _quantile(error_fracs, self.cutoff_quantile)
-
-        sigma_frac = min(max(raw_sigma, self.min_sigma_frac), self.max_sigma_frac)
-        # The cutoff isn't clamped to the same band as sigma — its purpose
-        # is to set the zero-reward threshold, which can sit well outside
-        # the sigma envelope. We do require cutoff >= sigma so the bell
-        # has a non-degenerate falloff region.
-        cutoff_frac = max(raw_cutoff, sigma_frac)
-        return sigma_frac, cutoff_frac
-
-    def per_section_difficulty(
-        self, section_key: tuple[str, str, str]
-    ) -> float | None:
-        """Mean ``error_frac`` across observations matching ``section_key``.
-
-        ``section_key`` is ``(plane, dataset, section_id)``. Returns ``None``
-        if no observations match — the curriculum callback uses ``None`` as
-        "no signal yet, fall back to uniform sampling".
+        Returns ``None`` if no observations match. This replaces the legacy
+        per-section keyed difficulty: the corpus has too many distinct
+        sections for a 200-entry buffer to give per-section signal, but
+        pooling by AP bin gives ~10 observations per bin.
         """
-        plane, dataset, section_id = section_key
         matches = [
-            abs_err / axis_span
-            for abs_err, axis_span, p, d, s in _RECENT_ERRORS
-            if p == plane and d == dataset and s == section_id and axis_span > 0
+            err_pct
+            for err_pct, p, b in _RECENT_ERRORS
+            if p == plane and b == ap_bin
         ]
         if not matches:
             return None
         return mean(matches)
 
+    def per_section_difficulty(self, section_key: Any) -> float | None:
+        """Removed in favor of :meth:`per_bin_difficulty`.
+
+        The training corpus has ~14k unique sections seen 1x per epoch; a
+        200-entry buffer can't give per-section signal. Observations are
+        now pooled by AP bin — call :meth:`per_bin_difficulty` instead.
+        """
+        raise NotImplementedError(
+            "per_section_difficulty was removed when the curriculum switched "
+            "to AP-bin keying. Use per_bin_difficulty(plane, ap_bin) — "
+            "compute the bin via compute_ap_bin(gt, valid_range)."
+        )
+
+
+# ---------------------------------------------------------------------------
+# make_adaptive_terminal_reward — RL-specific factory (stays in shim)
+# ---------------------------------------------------------------------------
 
 def make_adaptive_terminal_reward(
     *,
     schedule: AdaptiveRewardSchedule | None = None,
     format_penalty: float = DEFAULT_FORMAT_PENALTY,
     out_of_range_reward: float = DEFAULT_OUT_OF_RANGE_REWARD,
-    # Forwarded to a freshly-built schedule when ``schedule`` is None. Lets
-    # callers tune the schedule from CLI/TOML without constructing the
-    # object themselves; ignored when an explicit schedule is supplied.
+    # Forwarded to a freshly-built schedule when ``schedule`` is None.
     min_sigma_frac: float = DEFAULT_MIN_SIGMA_FRAC,
     max_sigma_frac: float = DEFAULT_MAX_SIGMA_FRAC,
     sigma_quantile: float = DEFAULT_SIGMA_QUANTILE,
     cutoff_quantile: float = DEFAULT_CUTOFF_QUANTILE,
     min_observations: int = DEFAULT_MIN_OBSERVATIONS,
     static_fallback: tuple[float, float] = DEFAULT_STATIC_FALLBACK,
+    max_cutoff_frac: float = DEFAULT_MAX_CUTOFF_FRAC,
 ):
     """Build an adaptive-reward callable matching the TRL GRPO contract.
 
@@ -266,18 +302,17 @@ def make_adaptive_terminal_reward(
     reward value does not depend on them):
 
     * ``plane`` — ``list[str]`` (e.g. ``"coronal"``).
-    * ``dataset`` — ``list[str]`` (e.g. ``"allen_mouse_25um"``).
-    * ``section_id`` — ``list[str]``, the per-row section identifier.
+
+    Other dataset columns (``dataset``, ``section_id``, ``atlas_name``, …)
+    are forwarded by TRL but ignored by the reward — the buffer is keyed
+    by AP bin computed from ``ground_truth_mm`` + ``valid_range_mm``, not
+    by per-section identity.
 
     Behaviour matches :func:`single_turn_rl.rewards.make_terminal_reward`
     (parse → in-range bell, out-of-range → ``out_of_range_reward``, parse
     failure → ``format_penalty``) except that the bell uses
     ``schedule.current()`` instead of fixed kwargs, and every scoring call
     appends to the rolling buffer via :func:`record_error`.
-
-    Pass an explicit ``schedule`` to share state across multiple reward
-    builds (e.g. a monitoring schedule); otherwise a fresh one is
-    constructed from the per-call kwargs.
     """
     sched = schedule if schedule is not None else AdaptiveRewardSchedule(
         min_sigma_frac=min_sigma_frac,
@@ -286,6 +321,7 @@ def make_adaptive_terminal_reward(
         cutoff_quantile=cutoff_quantile,
         min_observations=min_observations,
         static_fallback=static_fallback,
+        max_cutoff_frac=max_cutoff_frac,
     )
 
     def adaptive_terminal_reward(
@@ -294,8 +330,6 @@ def make_adaptive_terminal_reward(
         ground_truth_mm: list[float] | None = None,
         valid_range_mm: list[tuple[float, float]] | None = None,
         plane: list[str] | None = None,
-        dataset: list[str] | None = None,
-        section_id: list[str] | None = None,
         **kwargs: Any,  # noqa: ARG001 — swallow unused dataset columns
     ) -> list[float]:
         comps = completions or []
@@ -307,49 +341,49 @@ def make_adaptive_terminal_reward(
                 f"the same length; got {len(comps)}, {len(gts)}, {len(ranges)}"
             )
 
-        # Dynamic schedule is sampled once per batch — sigma/cutoff are not
-        # row-specific, only the recorded error is.
-        sigma_frac, cutoff_frac = sched.current()
         n = len(comps)
         planes = plane if plane is not None else [""] * n
-        datasets = dataset if dataset is not None else [""] * n
-        section_ids = section_id if section_id is not None else [""] * n
+
+        # Per-plane schedule: cache the (sigma, cutoff) per unique plane in
+        # this batch so the bell scoring path doesn't re-sort the buffer
+        # for every row.
+        schedule_cache: dict[str, tuple[float, float]] = {}
+
+        def _schedule_for(row_plane: str) -> tuple[float, float]:
+            cached = schedule_cache.get(row_plane)
+            if cached is not None:
+                return cached
+            params = sched.current(plane=row_plane or None)
+            schedule_cache[row_plane] = params
+            return params
 
         out: list[float] = []
-        for completion, gt, vr, p, d, s in zip(
-            comps, gts, ranges, planes, datasets, section_ids, strict=False
+        for completion, gt, vr, p in zip(
+            comps, gts, ranges, planes, strict=False
         ):
             gt_f = float(gt)
             pos_lo, pos_hi = float(vr[0]), float(vr[1])
             axis_span_mm = pos_hi - pos_lo
+            plane_str = str(p)
+            ap_bin = compute_ap_bin(gt_f, (pos_lo, pos_hi))
 
             text = _extract_completion_text(completion)
             try:
                 predicted = parse_position_mm(text)
             except _ParseError:
-                # Format-fail rows have no parseable position. We still record
-                # an observation so the AdaRFT curriculum can see that this
-                # section is hard — skipping would make hard sections look
-                # easier than they are and the curriculum would starve them.
-                # Use ``axis_span_mm`` as a max-plausible-error sentinel so
-                # the quantile estimator still gets a bounded contribution.
-                record_error(axis_span_mm, axis_span_mm, str(p), str(d), str(s))
+                record_error(axis_span_mm, axis_span_mm, plane_str, ap_bin)
                 out.append(float(format_penalty))
                 continue
 
             if predicted < pos_lo or predicted > pos_hi:
-                # Out-of-range rows do have a parsed prediction, but a wildly
-                # off prediction could otherwise dominate the quantiles. Cap
-                # the recorded absolute error at ``axis_span_mm`` so OOR rows
-                # contribute meaningful per-section difficulty signal without
-                # poisoning the quantile estimate.
                 oor_abs_err = min(abs(predicted - gt_f), axis_span_mm)
-                record_error(oor_abs_err, axis_span_mm, str(p), str(d), str(s))
+                record_error(oor_abs_err, axis_span_mm, plane_str, ap_bin)
                 out.append(float(out_of_range_reward))
                 continue
 
             abs_err = abs(predicted - gt_f)
-            record_error(abs_err, axis_span_mm, str(p), str(d), str(s))
+            record_error(abs_err, axis_span_mm, plane_str, ap_bin)
+            sigma_frac, cutoff_frac = _schedule_for(plane_str)
             out.append(
                 normalized_bell_reward(
                     predicted - gt_f,

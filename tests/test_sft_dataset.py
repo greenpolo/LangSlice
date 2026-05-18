@@ -32,6 +32,100 @@ def test_load_single_slice_minimal_returns_one_example() -> None:
     assert ex.trace[1]["submit"]["args"]["reasoning"]
 
 
+def test_load_thinking_submit_allows_optional_reasoning(tmp_path: Path) -> None:
+    (tmp_path / "query.png").write_bytes(b"q")
+    row = {
+        "bucket": 1,
+        "atlas_name": "allen_mouse_25um",
+        "atlas_version": "CCFv3",
+        "plane": "coronal",
+        "subject_id": "thinking_subj",
+        "system_prompt_kind": "single_slice",
+        "query_image_paths": ["query.png"],
+        "user_prompt_text": "Estimate.",
+        "thinking_mode": True,
+        "trace": [
+            {
+                "submit": {
+                    "name": "submit_estimate",
+                    "args": {"position_mm": 5.0},
+                },
+                "thinking": "I should sanity-check neighbors first.",
+            }
+        ],
+    }
+    path = tmp_path / "thinking_submit.jsonl"
+    path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+
+    examples = load_examples(path)
+    assert len(examples) == 1
+    assert examples[0].thinking_mode is True
+    assert examples[0].trace[-1]["submit"]["args"]["position_mm"] == pytest.approx(5.0)
+
+
+def test_load_terminal_fetch_tool_call_without_tool_result(tmp_path: Path) -> None:
+    for name in ("query.png", "a3.png"):
+        (tmp_path / name).write_bytes(b"x")
+    row = {
+        "bucket": 1,
+        "atlas_name": "allen_mouse_25um",
+        "atlas_version": "CCFv3",
+        "plane": "coronal",
+        "subject_id": "fetch_terminal_subj",
+        "system_prompt_kind": "single_slice",
+        "query_image_paths": ["query.png"],
+        "user_prompt_text": "Estimate.",
+        "thinking_mode": True,
+        "trace": [
+            {
+                "tool_call": {"name": "fetch_atlas", "args": {"positions_mm": [3.0]}},
+                "tool_result": {"image_paths": ["a3.png"], "text": "Atlas at 3.00 mm"},
+            },
+            {
+                "tool_call": {"name": "fetch_atlas", "args": {"positions_mm": [5.0]}},
+                "thinking": "Need a closer atlas comparison.",
+            },
+        ],
+    }
+    path = tmp_path / "terminal_fetch.jsonl"
+    path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+
+    examples = load_examples(path)
+    assert len(examples) == 1
+    assert "tool_call" in examples[0].trace[-1]
+    assert "tool_result" not in examples[0].trace[-1]
+    assert examples[0].thinking_mode is True
+
+
+def test_terminal_fetch_requires_thinking_mode(tmp_path: Path) -> None:
+    for name in ("query.png", "a3.png"):
+        (tmp_path / name).write_bytes(b"x")
+    row = {
+        "bucket": 1,
+        "atlas_name": "allen_mouse_25um",
+        "atlas_version": "CCFv3",
+        "plane": "coronal",
+        "subject_id": "fetch_terminal_subj",
+        "system_prompt_kind": "single_slice",
+        "query_image_paths": ["query.png"],
+        "user_prompt_text": "Estimate.",
+        "trace": [
+            {
+                "tool_call": {"name": "fetch_atlas", "args": {"positions_mm": [3.0]}},
+                "tool_result": {"image_paths": ["a3.png"], "text": "Atlas at 3.00 mm"},
+            },
+            {
+                "tool_call": {"name": "fetch_atlas", "args": {"positions_mm": [5.0]}},
+            },
+        ],
+    }
+    path = tmp_path / "terminal_fetch_no_thinking.jsonl"
+    path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+
+    with pytest.raises(DatasetValidationError, match="terminal tool_call.*thinking"):
+        load_examples(path)
+
+
 def test_malformed_examples_raise_validation_errors() -> None:
     with pytest.raises(DatasetValidationError) as exc:
         load_examples(FIXTURES / "malformed_examples.jsonl")
@@ -63,6 +157,58 @@ def test_missing_image_path_is_rejected(tmp_path: Path) -> None:
     path.write_text(json.dumps(row) + "\n", encoding="utf-8")
     with pytest.raises(DatasetValidationError, match="image not found"):
         load_examples(path)
+
+
+def test_repo_root_fallback_resolves_canonical_data_datasets_paths(
+    tmp_path: Path,
+) -> None:
+    """A row whose ``query_image_paths`` is the canonical repo-relative
+    ``data/datasets/...`` path (emitted by the path_rewriter's shortcut for
+    sources living under data/datasets) must validate even though the JSONL
+    sits in a different directory tree.
+
+    Without the repo-root fallback in ``_require_existing_image``, the
+    rewriter's shortcut would break validation 100% of the time.
+    """
+    # Fake repo layout: pyproject.toml at root, image under data/datasets/.
+    repo = tmp_path / "fake_repo"
+    repo.mkdir()
+    (repo / "pyproject.toml").write_text("[project]\nname='fake'\n", encoding="utf-8")
+    img_rel = "data/datasets/coronal/ds_a/subjA/section_001.jpg"
+    img_abs = repo / img_rel
+    img_abs.parent.mkdir(parents=True)
+    img_abs.write_bytes(b"\xff\xd8\xff\xe0\x00fakeJPEG")  # just enough header
+
+    # JSONL lives under repo/out/round/ — NOT next to the image.
+    jsonl_dir = repo / "out" / "round"
+    jsonl_dir.mkdir(parents=True)
+    row = {
+        "bucket": 1,
+        "atlas_name": "allen_mouse_25um",
+        "atlas_version": "v0.0.1",
+        "plane": "coronal",
+        "subject_id": "subjA",
+        "system_prompt_kind": "single_slice",
+        "query_image_paths": [img_rel],
+        "user_prompt_text": "Estimate position.",
+        "trace": [
+            {
+                "submit": {
+                    "name": "submit_estimate",
+                    "args": {"position_mm": 5.0, "reasoning": "x"},
+                }
+            }
+        ],
+    }
+    jsonl = jsonl_dir / "row.jsonl"
+    jsonl.write_text(json.dumps(row) + "\n", encoding="utf-8")
+
+    # Validation must succeed via the repo-root walk-up fallback. The naive
+    # `(root / rel)` resolution would point at out/round/data/datasets/... which
+    # doesn't exist; the fallback rewalks to repo and finds it there.
+    examples = load_examples(jsonl)
+    assert len(examples) == 1
+    assert examples[0].query_image_paths == [img_rel]
 
 
 def _make_examples(subject_ids: list[str]) -> list[Example]:

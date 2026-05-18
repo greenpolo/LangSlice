@@ -2,12 +2,11 @@
 
 The sampler + callback pair has zero TRL/Unsloth runtime dependency at the
 unit-test layer: the dataset is stubbed via dict specs (the same shape
-:mod:`single_turn_rl.dataset` builds), the schedule + manifest_index are
-faked or constructed against the synthetic-manifest pattern from
-:mod:`test_section_state` / :mod:`test_manifest_index`, and the trainer
-state is a tiny ``SimpleNamespace`` with a ``log_history`` list.
+:mod:`single_turn_rl.dataset` builds), the schedule + bin-difficulty map
+are faked, and the trainer state is a tiny ``SimpleNamespace`` with a
+``log_history`` list.
 
-Coverage map (mirrors the prompt's required test list):
+Coverage map:
 
 * Sampler shape (1-2): ``__len__`` and per-batch index count.
 * GRPO repetition (3): each unique prompt repeats ``num_generations`` times.
@@ -20,13 +19,12 @@ Coverage map (mirrors the prompt's required test list):
   moves up/down, clamping at ``d_min`` / ``d_max``, and EMA smoothing.
 * Reproducibility (15): two samplers with the same seed emit the same
   index stream.
-
-Callback (16-21):
-  * empty log_history is a no-op,
-  * reward present forwards to ``sampler.update``,
-  * write_back True/False gates ``manifest_index.update_difficulty``,
-  * stale section keys flow through with ``if_unknown="warn"``,
-  * plane filter restricts write-back to the configured plane.
+* AP-bin refresh: sampler re-reads :class:`BinDifficultyMap` between
+  iterations; missing keys fall back to the construction-time score.
+* Callback: empty/missing reward is a no-op; reward present forwards to
+  ``sampler.update`` and (optionally) writes per-bin running means back
+  into the shared :class:`BinDifficultyMap`; plane filter narrows the
+  write-back; reward rescaling clamps negative raw rewards before AdaRFT.
 """
 
 from __future__ import annotations
@@ -42,6 +40,7 @@ import torch
 from single_turn_rl import adaptive_reward as ar
 from single_turn_rl.curriculum import (
     AdaRFTCurriculumCallback,
+    BinDifficultyMap,
     CurriculumRepeatingSampler,
 )
 
@@ -53,19 +52,19 @@ from single_turn_rl.curriculum import (
 class _FakeSchedule:
     """Minimal stand-in for :class:`AdaptiveRewardSchedule`.
 
-    The callback only calls :meth:`per_section_difficulty`. Tests seed
-    ``_section_means`` directly to mimic a populated rolling buffer
+    The callback only calls :meth:`per_bin_difficulty`. Tests seed
+    ``_bin_means`` directly to mimic a populated rolling buffer
     without going through the real adaptive_reward module.
     """
 
     def __init__(
         self,
-        per_section_means: dict[tuple[str, str, str], float] | None = None,
+        per_bin_means: dict[tuple[str, int], float] | None = None,
     ) -> None:
-        self._section_means = per_section_means or {}
+        self._bin_means = per_bin_means or {}
 
-    def per_section_difficulty(self, key: tuple[str, str, str]) -> float | None:
-        return self._section_means.get(key)
+    def per_bin_difficulty(self, plane: str, ap_bin: int) -> float | None:
+        return self._bin_means.get((plane, ap_bin))
 
 
 class _RecentErrorsBuffer:
@@ -79,19 +78,17 @@ class _RecentErrorsBuffer:
     """
 
     def __init__(self) -> None:
-        self.entries: list[tuple[float, float, str, str, str]] = []
+        self.entries: list[tuple[float, str, int]] = []
 
     def add(
         self,
-        abs_err: float,
-        axis_span: float,
+        abs_err_pct: float,
         plane: str,
-        dataset: str,
-        section_id: str,
+        ap_bin: int,
     ) -> None:
-        self.entries.append((abs_err, axis_span, plane, dataset, section_id))
+        self.entries.append((abs_err_pct, plane, ap_bin))
 
-    def snapshot(self) -> list[tuple[float, float, str, str, str]]:
+    def snapshot(self) -> list[tuple[float, str, int]]:
         return list(self.entries)
 
 
@@ -110,6 +107,9 @@ def _spec(
     difficulty_score: float | None,
     plane: str = "coronal",
     dataset: str = "ds_a",
+    ap_bin: int | None = 10,
+    ground_truth_mm: float = 5.0,
+    valid_range_mm: tuple[float, float] = (0.0, 10.0),
 ) -> dict[str, Any]:
     """Build a minimal spec dict matching what
     :mod:`single_turn_rl.dataset`'s ``_spec_from_state`` emits — only the
@@ -120,6 +120,9 @@ def _spec(
         "plane": plane,
         "dataset": dataset,
         "difficulty_score": difficulty_score,
+        "ap_bin": ap_bin,
+        "ground_truth_mm": ground_truth_mm,
+        "valid_range_mm": valid_range_mm,
     }
 
 
@@ -152,6 +155,7 @@ def _make_dataset_uniform_difficulty(
             difficulty_score=difficulty,
             plane=plane,
             dataset=dataset,
+            ap_bin=i % 20,
         )
         for i in range(n)
     ]
@@ -174,6 +178,7 @@ def _make_dataset_with_difficulty_grid(
                     section_id=f"s{counter:03d}",
                     subject_id=f"subj_{counter:03d}",
                     difficulty_score=d,
+                    ap_bin=counter % 20,
                 )
             )
             counter += 1
@@ -327,6 +332,7 @@ def test_ladder_level_3_when_subject_cap_must_relax() -> None:
                 section_id=f"s{i:03d}",
                 subject_id=f"subj_{i % 2}",  # only 2 unique subjects
                 difficulty_score=0.5,
+                ap_bin=i % 20,
             )
         )
     dataset = _StubDataset(specs)
@@ -341,6 +347,28 @@ def test_ladder_level_3_when_subject_cap_must_relax() -> None:
     )
     list(iter(sampler))
     assert sampler.last_ladder_level == 3
+
+
+def test_rung_4_raises_when_dataset_smaller_than_unique_prompts() -> None:
+    """When the dataset has fewer distinct rows than unique_prompts, rung 4
+    must raise rather than silently repeat picks.
+
+    Repeating prompts across distinct GRPO group slots would collapse the
+    group-relative advantage assumption (TRL expects identical prompts only
+    within a num_generations group, never across them).
+    """
+    # 3 rows, but unique_prompts=4 (batch_size=8 / num_generations=2).
+    dataset = _make_dataset_uniform_difficulty(3, difficulty=0.95)
+    sampler = CurriculumRepeatingSampler(
+        dataset,
+        num_generations=2,
+        batch_size=8,
+        band_width=0.05,
+        initial_T=0.5,
+        generator=torch.Generator().manual_seed(0),
+    )
+    with pytest.raises(RuntimeError, match="rung 4"):
+        list(iter(sampler))
 
 
 def test_ladder_level_4_when_uniform_backfill_fires() -> None:
@@ -379,6 +407,7 @@ def test_subject_cap_honoured_at_rung_1() -> None:
             section_id=f"s{i:03d}",
             subject_id=f"subj_{i % 4}",  # 4 unique subjects
             difficulty_score=0.5,
+            ap_bin=i % 20,
         )
         for i in range(40)
     ]
@@ -452,8 +481,6 @@ def test_update_high_reward_moves_T_up() -> None:
     )
     initial_T = sampler.T
     sampler.update(1.0)
-    # raw = 0.05 * tanh(2.0 * 0.5) = 0.05 * tanh(1.0) ~ 0.05 * 0.7615 = 0.0381
-    # smoothed = 0.7 * 0 + 0.3 * 0.0381 = 0.01142
     expected_raw = 0.05 * math.tanh(2.0 * (1.0 - 0.5))
     expected_smoothed = (1.0 - 0.7) * expected_raw  # prev_step is 0.0
     assert sampler.T > initial_T
@@ -536,12 +563,7 @@ def test_update_clamps_at_d_min() -> None:
 
 
 def test_ema_smoothing_dampens_back_to_back_updates() -> None:
-    """Smoothed step on the first update is (1-decay) * raw, not raw itself.
-
-    So the first call's contribution to T is smaller than ``raw``,
-    proving the EMA is in fact smoothing rather than just passing the raw
-    step through.
-    """
+    """Smoothed step on the first update is (1-decay) * raw, not raw itself."""
     dataset = _make_dataset_uniform_difficulty(4)
     sampler = CurriculumRepeatingSampler(
         dataset,
@@ -556,13 +578,9 @@ def test_ema_smoothing_dampens_back_to_back_updates() -> None:
     sampler.update(1.0)
     raw = sampler.last_step
     smoothed = sampler.last_smoothed_step
-    # Smoothed should be (1 - 0.7) * raw on the first call (prev_step = 0).
     assert smoothed == pytest.approx((1.0 - 0.7) * raw)
-    # And smoothed strictly less than raw because |decay| > 0.
     assert smoothed < raw
 
-    # Two consecutive identical-R updates: cumulative T move < 2 * raw
-    # because the EMA hasn't converged to ``raw`` yet.
     sampler2 = CurriculumRepeatingSampler(
         dataset,
         num_generations=2,
@@ -602,8 +620,6 @@ def test_two_samplers_same_seed_same_stream() -> None:
         initial_T=0.5,
         generator=g2,
     )
-    # Two consecutive batches each, deterministic regardless of how
-    # many we draw.
     out1 = list(iter(s1)) + list(iter(s1))
     out2 = list(iter(s2)) + list(iter(s2))
     assert out1 == out2
@@ -641,6 +657,7 @@ def test_cold_start_difficulty_treated_as_T() -> None:
             section_id=f"s{i:03d}",
             subject_id=f"subj_{i:03d}",
             difficulty_score=None,
+            ap_bin=i % 20,
         )
         for i in range(8)
     ]
@@ -668,35 +685,6 @@ def _make_trainer_state(log_history: list[dict[str, Any]] | None = None) -> Any:
     return SimpleNamespace(log_history=log_history if log_history is not None else [])
 
 
-class _FakeManifestIndex:
-    """Minimal stand-in for :class:`ManifestIndex.update_difficulty`."""
-
-    def __init__(self) -> None:
-        self.calls: list[dict[str, Any]] = []
-
-    def update_difficulty(
-        self,
-        plane: str,
-        dataset: str,
-        section_id: str,
-        score: float,
-        source: str,
-        *,
-        if_unknown: str = "raise",
-    ) -> bool:
-        self.calls.append(
-            {
-                "plane": plane,
-                "dataset": dataset,
-                "section_id": section_id,
-                "score": score,
-                "source": source,
-                "if_unknown": if_unknown,
-            }
-        )
-        return True
-
-
 # ---------------------------------------------------------------------------
 # 16. on_log with empty log_history → no-op
 # ---------------------------------------------------------------------------
@@ -713,10 +701,10 @@ def test_callback_on_log_empty_history_is_noop(
         initial_T=0.5,
     )
     schedule = _FakeSchedule()
-    fake_index = _FakeManifestIndex()
+    bin_map = BinDifficultyMap()
     cb = AdaRFTCurriculumCallback(
         sampler,
-        manifest_index=fake_index,  # type: ignore[arg-type]
+        bin_difficulty=bin_map,
         schedule=schedule,  # type: ignore[arg-type]
         write_back=True,
     )
@@ -725,7 +713,7 @@ def test_callback_on_log_empty_history_is_noop(
     # Should not raise even though log_history is empty.
     cb.on_log(args=None, state=state, control=None)
     assert sampler.T == pytest.approx(0.5)  # unchanged
-    assert fake_index.calls == []  # nothing written back
+    assert len(bin_map) == 0  # nothing written back
 
 
 # ---------------------------------------------------------------------------
@@ -744,14 +732,13 @@ def test_callback_on_log_forwards_reward_to_sampler(
         target_reward=0.5,
         initial_T=0.5,
     )
-    # Spy on update via a wrapper.
     real_update = sampler.update
     spy = MagicMock(side_effect=real_update)
     sampler.update = spy  # type: ignore[method-assign]
 
     cb = AdaRFTCurriculumCallback(
         sampler,
-        manifest_index=_FakeManifestIndex(),  # type: ignore[arg-type]
+        bin_difficulty=BinDifficultyMap(),
         schedule=_FakeSchedule(),  # type: ignore[arg-type]
         write_back=False,
     )
@@ -761,15 +748,14 @@ def test_callback_on_log_forwards_reward_to_sampler(
 
 
 # ---------------------------------------------------------------------------
-# 18. write_back=True → calls update_difficulty per unique section
+# 18. write_back=True → calls bin_difficulty.update per unique (plane, ap_bin)
 # ---------------------------------------------------------------------------
 
 
-def test_callback_writes_back_unique_sections(
+def test_callback_writes_back_unique_bins(
     fake_buffer: _RecentErrorsBuffer,
 ) -> None:
-    """Snapshot of recent errors → one update per unique
-    ``(plane, dataset, section_id)``."""
+    """Snapshot of recent errors → one update per unique ``(plane, ap_bin)``."""
     dataset = _make_dataset_uniform_difficulty(4)
     sampler = CurriculumRepeatingSampler(
         dataset,
@@ -778,20 +764,20 @@ def test_callback_writes_back_unique_sections(
         initial_T=0.5,
     )
     # Seed the fake buffer with three observations for two unique keys.
-    fake_buffer.add(0.4, 10.0, "coronal", "ds_a", "s001")
-    fake_buffer.add(0.5, 10.0, "coronal", "ds_a", "s001")  # dupe key
-    fake_buffer.add(0.3, 10.0, "coronal", "ds_a", "s002")
+    fake_buffer.add(0.04, "coronal", 5)
+    fake_buffer.add(0.05, "coronal", 5)  # dupe key
+    fake_buffer.add(0.03, "coronal", 7)
 
     schedule = _FakeSchedule(
-        per_section_means={
-            ("coronal", "ds_a", "s001"): 0.045,
-            ("coronal", "ds_a", "s002"): 0.030,
+        per_bin_means={
+            ("coronal", 5): 0.045,
+            ("coronal", 7): 0.030,
         }
     )
-    fake_index = _FakeManifestIndex()
+    bin_map = BinDifficultyMap()
     cb = AdaRFTCurriculumCallback(
         sampler,
-        manifest_index=fake_index,  # type: ignore[arg-type]
+        bin_difficulty=bin_map,
         schedule=schedule,  # type: ignore[arg-type]
         write_back=True,
     )
@@ -799,26 +785,17 @@ def test_callback_writes_back_unique_sections(
     cb.on_log(args=None, state=state, control=None)
 
     # Two unique keys → two writes.
-    assert len(fake_index.calls) == 2
-    sections_seen = {(c["plane"], c["dataset"], c["section_id"]) for c in fake_index.calls}
-    assert sections_seen == {
-        ("coronal", "ds_a", "s001"),
-        ("coronal", "ds_a", "s002"),
-    }
-    # Source must be "live_rollout" so the slicebench-seed CLI can later
-    # tell live observations apart from cold-start seeds.
-    assert all(c["source"] == "live_rollout" for c in fake_index.calls)
-    # And every call uses if_unknown="warn" so stale keys don't crash
-    # training.
-    assert all(c["if_unknown"] == "warn" for c in fake_index.calls)
+    assert len(bin_map) == 2
+    assert bin_map.get("coronal", 5) == pytest.approx(0.045)
+    assert bin_map.get("coronal", 7) == pytest.approx(0.030)
 
 
 # ---------------------------------------------------------------------------
-# 19. write_back=False → no calls to update_difficulty
+# 19. write_back=False → bin map untouched
 # ---------------------------------------------------------------------------
 
 
-def test_callback_write_back_false_skips_manifest_update(
+def test_callback_write_back_false_skips_bin_update(
     fake_buffer: _RecentErrorsBuffer,
 ) -> None:
     dataset = _make_dataset_uniform_difficulty(4)
@@ -828,65 +805,26 @@ def test_callback_write_back_false_skips_manifest_update(
         batch_size=2,
         initial_T=0.5,
     )
-    fake_buffer.add(0.4, 10.0, "coronal", "ds_a", "s001")
+    fake_buffer.add(0.04, "coronal", 5)
 
-    fake_index = _FakeManifestIndex()
+    bin_map = BinDifficultyMap()
     cb = AdaRFTCurriculumCallback(
         sampler,
-        manifest_index=fake_index,  # type: ignore[arg-type]
+        bin_difficulty=bin_map,
         schedule=_FakeSchedule(
-            per_section_means={("coronal", "ds_a", "s001"): 0.04},
+            per_bin_means={("coronal", 5): 0.04},
         ),  # type: ignore[arg-type]
         write_back=False,
     )
     state = _make_trainer_state(log_history=[{"reward": 0.5}])
     cb.on_log(args=None, state=state, control=None)
 
-    # Sampler still updates (T moves, last_step set) but no manifest write.
-    assert fake_index.calls == []
+    # Sampler still updates (T moves, last_step set) but no bin write.
+    assert len(bin_map) == 0
 
 
 # ---------------------------------------------------------------------------
-# 20. Stale section keys flow through with if_unknown="warn"
-# ---------------------------------------------------------------------------
-
-
-def test_callback_uses_if_unknown_warn_for_stale_keys(
-    fake_buffer: _RecentErrorsBuffer,
-) -> None:
-    """When the section is unknown to the index, the callback should NOT crash.
-
-    The :class:`_FakeManifestIndex` always returns True (treats any key
-    as known) — but we still verify the kwarg is passed so a real
-    ManifestIndex stale-key would route to warn-mode.
-    """
-    dataset = _make_dataset_uniform_difficulty(4)
-    sampler = CurriculumRepeatingSampler(
-        dataset,
-        num_generations=2,
-        batch_size=2,
-        initial_T=0.5,
-    )
-    fake_buffer.add(0.4, 10.0, "coronal", "ds_a", "stale_section_id")
-
-    fake_index = _FakeManifestIndex()
-    cb = AdaRFTCurriculumCallback(
-        sampler,
-        manifest_index=fake_index,  # type: ignore[arg-type]
-        schedule=_FakeSchedule(
-            per_section_means={("coronal", "ds_a", "stale_section_id"): 0.04},
-        ),  # type: ignore[arg-type]
-        write_back=True,
-    )
-    state = _make_trainer_state(log_history=[{"reward": 0.5}])
-    cb.on_log(args=None, state=state, control=None)
-
-    assert len(fake_index.calls) == 1
-    assert fake_index.calls[0]["if_unknown"] == "warn"
-
-
-# ---------------------------------------------------------------------------
-# 21. Plane filter — only configured plane is written back
+# 20. Plane filter — only configured plane is written back
 # ---------------------------------------------------------------------------
 
 
@@ -901,19 +839,19 @@ def test_callback_plane_filter_restricts_write_back(
         initial_T=0.5,
     )
     # Mix of planes in the buffer.
-    fake_buffer.add(0.4, 10.0, "coronal", "ds_a", "c001")
-    fake_buffer.add(0.5, 10.0, "sagittal", "ds_b", "s001")
-    fake_buffer.add(0.3, 10.0, "horizontal", "ds_c", "h001")
+    fake_buffer.add(0.04, "coronal", 3)
+    fake_buffer.add(0.05, "sagittal", 8)
+    fake_buffer.add(0.03, "horizontal", 12)
 
-    fake_index = _FakeManifestIndex()
+    bin_map = BinDifficultyMap()
     cb = AdaRFTCurriculumCallback(
         sampler,
-        manifest_index=fake_index,  # type: ignore[arg-type]
+        bin_difficulty=bin_map,
         schedule=_FakeSchedule(
-            per_section_means={
-                ("coronal", "ds_a", "c001"): 0.04,
-                ("sagittal", "ds_b", "s001"): 0.05,
-                ("horizontal", "ds_c", "h001"): 0.03,
+            per_bin_means={
+                ("coronal", 3): 0.04,
+                ("sagittal", 8): 0.05,
+                ("horizontal", 12): 0.03,
             },
         ),  # type: ignore[arg-type]
         plane="coronal",
@@ -922,10 +860,11 @@ def test_callback_plane_filter_restricts_write_back(
     state = _make_trainer_state(log_history=[{"reward": 0.5}])
     cb.on_log(args=None, state=state, control=None)
 
-    # Only the coronal section should be written.
-    assert len(fake_index.calls) == 1
-    assert fake_index.calls[0]["plane"] == "coronal"
-    assert fake_index.calls[0]["section_id"] == "c001"
+    # Only the coronal bin should be written.
+    assert len(bin_map) == 1
+    assert bin_map.get("coronal", 3) == pytest.approx(0.04)
+    assert bin_map.get("sagittal", 8) is None
+    assert bin_map.get("horizontal", 12) is None
 
 
 # ---------------------------------------------------------------------------
@@ -936,13 +875,7 @@ def test_callback_plane_filter_restricts_write_back(
 def test_callback_falls_back_to_logs_when_history_empty(
     fake_buffer: _RecentErrorsBuffer,
 ) -> None:
-    """If state.log_history is empty but ``logs`` carries a reward, use ``logs``.
-
-    TRL's ``on_log`` passes the dict it just emitted as ``logs=...``.
-    Some configurations (e.g. logging_steps=1) might race so the dict
-    arrives before it's been appended to log_history; falling back keeps
-    the curriculum responsive.
-    """
+    """If state.log_history is empty but ``logs`` carries a reward, use ``logs``."""
     dataset = _make_dataset_uniform_difficulty(4)
     sampler = CurriculumRepeatingSampler(
         dataset,
@@ -953,7 +886,7 @@ def test_callback_falls_back_to_logs_when_history_empty(
     )
     cb = AdaRFTCurriculumCallback(
         sampler,
-        manifest_index=_FakeManifestIndex(),  # type: ignore[arg-type]
+        bin_difficulty=BinDifficultyMap(),
         schedule=_FakeSchedule(),  # type: ignore[arg-type]
         write_back=False,
     )
@@ -976,7 +909,7 @@ def test_callback_handles_non_numeric_reward_gracefully(
     )
     cb = AdaRFTCurriculumCallback(
         sampler,
-        manifest_index=_FakeManifestIndex(),  # type: ignore[arg-type]
+        bin_difficulty=BinDifficultyMap(),
         schedule=_FakeSchedule(),  # type: ignore[arg-type]
         write_back=False,
     )
@@ -986,12 +919,10 @@ def test_callback_handles_non_numeric_reward_gracefully(
     assert sampler.T == pytest.approx(0.5)
 
 
-def test_callback_skips_keys_with_no_running_mean(
+def test_callback_skips_bins_with_no_running_mean(
     fake_buffer: _RecentErrorsBuffer,
 ) -> None:
-    """If ``per_section_difficulty`` returns ``None`` (e.g. all observations
-    were filtered out), the callback should skip that key without crashing.
-    """
+    """If ``per_bin_difficulty`` returns ``None``, skip rather than write None."""
     dataset = _make_dataset_uniform_difficulty(4)
     sampler = CurriculumRepeatingSampler(
         dataset,
@@ -999,25 +930,54 @@ def test_callback_skips_keys_with_no_running_mean(
         batch_size=2,
         initial_T=0.5,
     )
-    fake_buffer.add(0.4, 10.0, "coronal", "ds_a", "s001")
-    fake_buffer.add(0.3, 10.0, "coronal", "ds_a", "s002")
-    fake_index = _FakeManifestIndex()
+    fake_buffer.add(0.04, "coronal", 5)
+    fake_buffer.add(0.03, "coronal", 7)
+    bin_map = BinDifficultyMap()
     cb = AdaRFTCurriculumCallback(
         sampler,
-        manifest_index=fake_index,  # type: ignore[arg-type]
+        bin_difficulty=bin_map,
         schedule=_FakeSchedule(
-            per_section_means={
-                # Only s001 has a running mean.
-                ("coronal", "ds_a", "s001"): 0.04,
+            per_bin_means={
+                # Only bin 5 has a running mean.
+                ("coronal", 5): 0.04,
             },
         ),  # type: ignore[arg-type]
         write_back=True,
     )
     state = _make_trainer_state(log_history=[{"reward": 0.5}])
     cb.on_log(args=None, state=state, control=None)
-    # Only the section with a non-None running mean is written.
-    assert len(fake_index.calls) == 1
-    assert fake_index.calls[0]["section_id"] == "s001"
+    # Only the bin with a non-None running mean is written.
+    assert len(bin_map) == 1
+    assert bin_map.get("coronal", 5) == pytest.approx(0.04)
+
+
+def test_callback_emits_adarft_metrics_into_logs(
+    fake_buffer: _RecentErrorsBuffer,
+) -> None:
+    """The callback must annotate the ``logs`` dict with adarft/* metrics."""
+    dataset = _make_dataset_uniform_difficulty(4)
+    sampler = CurriculumRepeatingSampler(
+        dataset,
+        num_generations=2,
+        batch_size=2,
+        target_reward=0.5,
+        initial_T=0.5,
+    )
+    bin_map = BinDifficultyMap()
+    bin_map.update("coronal", 5, 0.04)
+    cb = AdaRFTCurriculumCallback(
+        sampler,
+        bin_difficulty=bin_map,
+        schedule=_FakeSchedule(),  # type: ignore[arg-type]
+        write_back=False,
+    )
+    state = _make_trainer_state(log_history=[{"reward": 0.8}])
+    logs: dict[str, Any] = {"reward": 0.8}
+    cb.on_log(args=None, state=state, control=None, logs=logs)
+    assert "adarft/T" in logs
+    assert "adarft/ladder_level" in logs
+    assert "adarft/normalized_reward" in logs
+    assert logs["adarft/ap_bin_observed_count"] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -1028,3 +988,243 @@ def test_callback_skips_keys_with_no_running_mean(
 def test_real_adaptive_reward_buffer_uses_deque() -> None:
     """Sanity check that the real buffer shape hasn't drifted to e.g. a list."""
     assert isinstance(ar._RECENT_ERRORS, deque)
+
+
+# ---------------------------------------------------------------------------
+# Bin-map live difficulty refresh
+# ---------------------------------------------------------------------------
+
+
+def test_sampler_refreshes_difficulties_from_bin_map_per_iter() -> None:
+    """The sampler must re-read live difficulty from the bin map before each batch.
+
+    Setup: two specs, one initially in-band (d=0.5) and one out-of-band
+    (d=0.95). Tight band [0.45, 0.55] around T=0.5 → first batch picks
+    only the in-band row. Then we mutate the bin map so the previously
+    out-of-band row is now in-band (d=0.5) and the previously in-band
+    row is now out-of-band (d=0.95). The next batch must reflect that
+    swap — proving the sampler doesn't keep using the construction-time
+    snapshot.
+    """
+    specs = [
+        _spec(
+            section_id="s001",
+            subject_id="subj_a",
+            difficulty_score=0.5,
+            plane="coronal",
+            dataset="ds_a",
+            ap_bin=3,
+        ),
+        _spec(
+            section_id="s002",
+            subject_id="subj_b",
+            difficulty_score=0.95,
+            plane="coronal",
+            dataset="ds_a",
+            ap_bin=7,
+        ),
+    ]
+    dataset = _StubDataset(specs)
+    bin_map = BinDifficultyMap()
+    sampler = CurriculumRepeatingSampler(
+        dataset,
+        num_generations=1,
+        batch_size=1,  # unique_prompts = 1
+        band_width=0.05,  # tight band [0.45, 0.55]
+        initial_T=0.5,
+        max_per_subject_in_batch=1,
+        generator=torch.Generator().manual_seed(0),
+        bin_difficulty=bin_map,
+    )
+
+    # First batch: s001 (d=0.5) is in-band, s002 (d=0.95) is not.
+    indices = list(iter(sampler))
+    assert len(indices) == 1
+    assert indices[0] == 0  # s001 spec lives at index 0
+    # Sanity: s002 is currently out-of-band.
+    assert sampler._difficulty_for_index(1) == pytest.approx(0.95)
+
+    # Mutate the bin map: swap which bin is in-band.
+    bin_map.update("coronal", 3, 0.95)
+    bin_map.update("coronal", 7, 0.5)
+
+    # Next batch must reflect the swap.
+    indices2 = list(iter(sampler))
+    assert len(indices2) == 1
+    assert indices2[0] == 1  # s002 spec lives at index 1
+    assert sampler._difficulty_for_index(0) == pytest.approx(0.95)
+    assert sampler._difficulty_for_index(1) == pytest.approx(0.5)
+
+
+def test_sampler_without_bin_map_keeps_frozen_difficulties() -> None:
+    """Backwards compat: with no bin_difficulty, behaviour is unchanged.
+
+    The sampler must NOT mutate ``_difficulty_scores`` between iterations
+    when no back-reference is provided.
+    """
+    specs = [
+        _spec(
+            section_id=f"s{i:03d}",
+            subject_id=f"subj_{i:03d}",
+            difficulty_score=0.5,
+            plane="coronal",
+            dataset="ds_a",
+            ap_bin=i % 20,
+        )
+        for i in range(4)
+    ]
+    dataset = _StubDataset(specs)
+    sampler = CurriculumRepeatingSampler(
+        dataset,
+        num_generations=2,
+        batch_size=4,
+        band_width=0.15,
+        initial_T=0.5,
+        generator=torch.Generator().manual_seed(0),
+        # bin_difficulty intentionally omitted.
+    )
+    snapshot_before = list(sampler._difficulty_scores)
+    list(iter(sampler))
+    list(iter(sampler))
+    assert sampler._difficulty_scores == snapshot_before
+
+
+def test_sampler_skips_refresh_for_specs_missing_bin_keys() -> None:
+    """Specs without a derivable ``(plane, ap_bin)`` key skip the refresh.
+
+    A spec missing ``plane`` (or with no way to compute ap_bin) must keep
+    its construction-time difficulty rather than crash on the lookup.
+    """
+    # Mix one well-formed spec with one missing the plane field.
+    specs = [
+        _spec(
+            section_id="s001",
+            subject_id="subj_a",
+            difficulty_score=0.4,
+            plane="coronal",
+            dataset="ds_a",
+            ap_bin=5,
+        ),
+        # Plane missing → no refresh key.
+        {
+            "section_id": "s002",
+            "subject_id": "subj_b",
+            "plane": "",  # empty → key derivation returns None
+            "dataset": "ds_b",
+            "difficulty_score": 0.5,
+            "ap_bin": None,
+            "ground_truth_mm": None,
+            "valid_range_mm": None,
+        },
+    ]
+    dataset = _StubDataset(specs)
+    bin_map = BinDifficultyMap()
+    bin_map.update("coronal", 5, 0.7)
+    sampler = CurriculumRepeatingSampler(
+        dataset,
+        num_generations=1,
+        batch_size=1,
+        band_width=0.5,  # wide enough to catch everything
+        initial_T=0.5,
+        generator=torch.Generator().manual_seed(0),
+        bin_difficulty=bin_map,
+    )
+    # Trigger the refresh.
+    list(iter(sampler))
+    # Well-formed spec picked up the live score.
+    assert sampler._difficulty_for_index(0) == pytest.approx(0.7)
+    # Malformed spec kept its construction-time value.
+    assert sampler._difficulty_for_index(1) == pytest.approx(0.5)
+
+
+def test_sampler_derives_bin_key_from_gt_when_ap_bin_missing() -> None:
+    """When ``ap_bin`` isn't pre-set but ``ground_truth_mm`` + ``valid_range_mm``
+    are present, the sampler should derive the bin key on the fly."""
+    specs = [
+        {
+            "section_id": "s001",
+            "subject_id": "subj_a",
+            "plane": "coronal",
+            "dataset": "ds_a",
+            "difficulty_score": 0.4,
+            "ap_bin": None,  # not pre-computed
+            "ground_truth_mm": 5.0,
+            "valid_range_mm": (0.0, 10.0),
+        },
+    ]
+    dataset = _StubDataset(specs)
+    bin_map = BinDifficultyMap()
+    # ap_pct = 0.5 → bin = int(0.5 * 20) = 10.
+    bin_map.update("coronal", 10, 0.88)
+    sampler = CurriculumRepeatingSampler(
+        dataset,
+        num_generations=1,
+        batch_size=1,
+        band_width=0.5,
+        initial_T=0.5,
+        generator=torch.Generator().manual_seed(0),
+        bin_difficulty=bin_map,
+    )
+    list(iter(sampler))
+    assert sampler._difficulty_for_index(0) == pytest.approx(0.88)
+
+
+# ---------------------------------------------------------------------------
+# Reward rescale before AdaRFT update
+# ---------------------------------------------------------------------------
+
+
+def test_callback_rescales_negative_reward_to_zero(
+    fake_buffer: _RecentErrorsBuffer,
+) -> None:
+    """A negative raw reward (format penalty) must be clamped to 0 before update."""
+    dataset = _make_dataset_uniform_difficulty(4)
+    sampler = CurriculumRepeatingSampler(
+        dataset,
+        num_generations=2,
+        batch_size=2,
+        target_reward=0.5,
+        alpha=2.0,
+        eta=0.05,
+        ema_decay=0.7,
+        d_min=0.0,
+        d_max=1.0,
+        initial_T=0.5,
+    )
+    cb = AdaRFTCurriculumCallback(
+        sampler,
+        bin_difficulty=BinDifficultyMap(),
+        schedule=_FakeSchedule(),  # type: ignore[arg-type]
+        write_back=False,
+    )
+    state = _make_trainer_state(log_history=[{"reward": -1.0}])
+    cb.on_log(args=None, state=state, control=None)
+    expected_raw_step = 0.05 * math.tanh(2.0 * (0.0 - 0.5))
+    assert sampler.last_step == pytest.approx(expected_raw_step)
+
+
+def test_callback_rescales_in_range_reward_passes_through(
+    fake_buffer: _RecentErrorsBuffer,
+) -> None:
+    """A reward already in [0, 1] flows through the clamp unchanged."""
+    dataset = _make_dataset_uniform_difficulty(4)
+    sampler = CurriculumRepeatingSampler(
+        dataset,
+        num_generations=2,
+        batch_size=2,
+        target_reward=0.5,
+        alpha=2.0,
+        eta=0.05,
+        ema_decay=0.7,
+        initial_T=0.5,
+    )
+    cb = AdaRFTCurriculumCallback(
+        sampler,
+        bin_difficulty=BinDifficultyMap(),
+        schedule=_FakeSchedule(),  # type: ignore[arg-type]
+        write_back=False,
+    )
+    state = _make_trainer_state(log_history=[{"reward": 0.8}])
+    cb.on_log(args=None, state=state, control=None)
+    expected_raw_step = 0.05 * math.tanh(2.0 * (0.8 - 0.5))
+    assert sampler.last_step == pytest.approx(expected_raw_step)

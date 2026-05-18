@@ -3,7 +3,7 @@
 This directory holds the multi-turn agent GRPO RLVR trainer (Group Relative
 Policy Optimization with verifiable rewards). It is **parked** as of 2026-05-09
 in favor of expert-iteration SFT (see
-[`tools/expert_iteration/README.md`](../../../../tools/expert_iteration/README.md)).
+[`../iSFT/README.md`](../iSFT/README.md)).
 Code is preserved for future use and reference.
 
 ## Why parked
@@ -72,7 +72,7 @@ The trainer's `--sft-model` defaults to `out/sft/docker-sft-1011-trimmed-noeval`
 GRPO LoRA on top.
 
 Saves adapter to `out/rlvr/<run_name>/`. Use the wave-2 merge helper in
-`tools/expert_iteration/vllm_lifecycle.py` to merge for vLLM serving.
+`../iSFT/vllm_lifecycle.py` to merge for vLLM serving.
 
 ## Why we'd ever un-park
 

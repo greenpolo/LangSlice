@@ -7,6 +7,7 @@ from collections.abc import Callable
 
 from PIL import Image
 
+from langslice_harness.atlas.space import Plane
 from langslice_harness.registration.runtime import RegistrationFailure, estimate_registration
 from langslice_harness.registration.types import (
     RegistrationAnnotationSession,
@@ -24,6 +25,7 @@ def estimate_registration_runtime(
     on_trace: Callable[[dict[str, object]], None] | None = None,
     atlas_name: str | None = None,
     position_mm: float | None = None,
+    plane: Plane = "coronal",
     registration_mode: str = "direct",
     on_correspondences: Callable[[list[RegistrationCorrespondence]], None] | None = None,
     on_annotation_session: Callable[[RegistrationAnnotationSession], None] | None = None,
@@ -49,6 +51,7 @@ def estimate_registration_runtime(
         image=image,
         atlas_name=atlas_name,
         position_mm=position_mm,
+        plane=plane,
         registration_mode=registration_mode,
         on_correspondences=on_correspondences,
         on_annotation_session=on_annotation_session,

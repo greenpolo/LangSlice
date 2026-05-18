@@ -101,8 +101,20 @@ pub fn load_structures(atlas_dir: &Path) -> Result<Vec<AtlasStructure>, String> 
     serde_json::from_reader(reader).map_err(|e| format!("Cannot parse structures.json: {}", e))
 }
 
+/// Stride at which TIFF loaders invoke their progress callback. Per-page
+/// would flood the Tauri IPC channel (~800 pages over a few seconds);
+/// every 8 pages still gives ~100 updates for a typical atlas, which is
+/// well within what the webview can render smoothly.
+const TIFF_PROGRESS_STRIDE: usize = 8;
+
 /// Load a multi-page TIFF as a 3D u16 volume (shape: [depth, height, width]).
-pub fn load_tiff_u16(path: &Path) -> Result<Array3<u16>, String> {
+///
+/// ``on_page`` is invoked roughly every ``TIFF_PROGRESS_STRIDE`` pages with
+/// the count of pages read so far. Pass ``|_| {}`` if you don't care.
+pub fn load_tiff_u16<F>(path: &Path, on_page: F) -> Result<Array3<u16>, String>
+where
+    F: Fn(usize),
+{
     let file = File::open(path).map_err(|e| format!("Cannot open {}: {}", path.display(), e))?;
     let mut decoder =
         Decoder::new(BufReader::new(file)).map_err(|e| format!("TIFF decode error: {}", e))?;
@@ -123,6 +135,10 @@ pub fn load_tiff_u16(path: &Path) -> Result<Array3<u16>, String> {
         };
         slices.push(slice_data);
 
+        if slices.len() % TIFF_PROGRESS_STRIDE == 0 {
+            on_page(slices.len());
+        }
+
         if !decoder.more_images() {
             break;
         }
@@ -130,6 +146,8 @@ pub fn load_tiff_u16(path: &Path) -> Result<Array3<u16>, String> {
             .next_image()
             .map_err(|e| format!("TIFF next page: {}", e))?;
     }
+    // Final emit so the bar fills the phase even if total % stride != 0.
+    on_page(slices.len());
 
     let depth = slices.len();
     let flat: Vec<u16> = slices.into_iter().flatten().collect();
@@ -138,7 +156,10 @@ pub fn load_tiff_u16(path: &Path) -> Result<Array3<u16>, String> {
 }
 
 /// Load a multi-page TIFF as a 3D u32 volume (for annotation/label volumes).
-pub fn load_tiff_u32(path: &Path) -> Result<Array3<u32>, String> {
+pub fn load_tiff_u32<F>(path: &Path, on_page: F) -> Result<Array3<u32>, String>
+where
+    F: Fn(usize),
+{
     let file = File::open(path).map_err(|e| format!("Cannot open {}: {}", path.display(), e))?;
     let mut decoder =
         Decoder::new(BufReader::new(file)).map_err(|e| format!("TIFF decode error: {}", e))?;
@@ -160,6 +181,10 @@ pub fn load_tiff_u32(path: &Path) -> Result<Array3<u32>, String> {
         };
         slices.push(slice_data);
 
+        if slices.len() % TIFF_PROGRESS_STRIDE == 0 {
+            on_page(slices.len());
+        }
+
         if !decoder.more_images() {
             break;
         }
@@ -167,6 +192,7 @@ pub fn load_tiff_u32(path: &Path) -> Result<Array3<u32>, String> {
             .next_image()
             .map_err(|e| format!("TIFF next page: {}", e))?;
     }
+    on_page(slices.len());
 
     let depth = slices.len();
     let flat: Vec<u32> = slices.into_iter().flatten().collect();
@@ -175,11 +201,21 @@ pub fn load_tiff_u32(path: &Path) -> Result<Array3<u32>, String> {
 }
 
 /// Load the full atlas state: metadata, structures, volumes.
-pub fn load_atlas(name: &str) -> Result<AtlasState, String> {
+///
+/// ``on_progress`` is invoked at phase boundaries with a human-readable phase
+/// label and a cumulative percent (0..=100). The percent is reported at the
+/// *start* of each phase so the UI bar moves ahead of the slow op, giving the
+/// user immediate visual feedback. Pass ``|_, _| {}`` if you don't care.
+pub fn load_atlas<F>(name: &str, on_progress: F) -> Result<AtlasState, String>
+where
+    F: Fn(&str, u8),
+{
+    on_progress("Locating atlas...", 0);
     let atlas_dir = find_atlas_dir(name)?;
 
     log::info!("Loading atlas '{}' from {}", name, atlas_dir.display());
 
+    on_progress("Loading metadata...", 3);
     let mut metadata = load_metadata(&atlas_dir)?;
     let structures = load_structures(&atlas_dir)?;
     let structure_map: HashMap<u32, AtlasStructure> =
@@ -192,24 +228,39 @@ pub fn load_atlas(name: &str) -> Result<AtlasState, String> {
         metadata.orientation
     );
 
-    log::info!("Loading reference.tiff...");
-    let reference_volume = load_tiff_u16(&atlas_dir.join("reference.tiff"))?;
+    // Map per-page TIFF progress into the phase's percent range so the bar
+    // creeps during the multi-second read rather than freezing at the phase
+    // start. expected_pages = metadata.shape[0] (AP count); the cast to f32
+    // is for the percent math.
+    let expected_pages = metadata.shape[0].max(1) as f32;
+
+    on_progress("Loading reference volume...", 10);
+    let reference_volume = load_tiff_u16(&atlas_dir.join("reference.tiff"), |page| {
+        let frac = (page as f32 / expected_pages).min(1.0);
+        let pct = (10.0 + 35.0 * frac).round() as u8;
+        on_progress("Loading reference volume...", pct);
+    })?;
     log::info!(
         "Reference volume loaded: shape={:?}",
         reference_volume.shape()
     );
 
-    log::info!("Loading annotation.tiff...");
-    let annotation_volume = load_tiff_u32(&atlas_dir.join("annotation.tiff"))?;
+    on_progress("Loading annotation volume...", 45);
+    let annotation_volume = load_tiff_u32(&atlas_dir.join("annotation.tiff"), |page| {
+        let frac = (page as f32 / expected_pages).min(1.0);
+        let pct = (45.0 + 33.0 * frac).round() as u8;
+        on_progress("Loading annotation volume...", pct);
+    })?;
     log::info!(
         "Annotation volume loaded: shape={:?}",
         annotation_volume.shape()
     );
 
-    log::info!("Pre-computing border volume (parallel)...");
+    on_progress("Computing region borders...", 78);
     let border_volume = super::slicer::precompute_border_volume_parallel(&annotation_volume);
     log::info!("Border volume ready: shape={:?}", border_volume.shape());
 
+    on_progress("Loading additional volumes...", 90);
     // Load additional reference volumes (e.g. Nissl)
     // BrainGlobe stores these either in additional_references/ subdir
     // or at the atlas root level as <name>.tiff
@@ -228,7 +279,7 @@ pub fn load_atlas(name: &str) -> Result<AtlasState, String> {
                 name,
                 tiff_path.display()
             );
-            match load_tiff_u16(tiff_path) {
+            match load_tiff_u16(tiff_path, |_| {}) {
                 Ok(vol) => {
                     log::info!("  {} loaded: shape={:?}", name, vol.shape());
                     additional_volumes.insert(name.clone(), vol);
@@ -259,6 +310,7 @@ pub fn load_atlas(name: &str) -> Result<AtlasState, String> {
         }
     }
 
+    on_progress("Finalizing...", 99);
     Ok(AtlasState {
         metadata,
         structures,
@@ -317,7 +369,7 @@ fn try_load_augmented_nissl(
         nissl_path.display()
     );
 
-    let nissl_vol = load_tiff_u16(nissl_path).ok()?;
+    let nissl_vol = load_tiff_u16(nissl_path, |_| {}).ok()?;
     let aug_depth = nissl_vol.shape()[0];
     let target_depth = target_reference.shape()[0];
     let target_height = target_reference.shape()[1];
@@ -459,7 +511,7 @@ mod tests {
     fn test_load_reference_volume() {
         let dir = find_atlas_dir("allen_mouse_25um").unwrap();
         let meta = load_metadata(&dir).unwrap();
-        let vol = load_tiff_u16(&dir.join("reference.tiff")).unwrap();
+        let vol = load_tiff_u16(&dir.join("reference.tiff"), |_| {}).unwrap();
         assert_eq!(vol.shape()[0], meta.shape[0]);
         assert_eq!(vol.shape()[1], meta.shape[1]);
         assert_eq!(vol.shape()[2], meta.shape[2]);
@@ -470,7 +522,7 @@ mod tests {
     fn test_load_annotation_volume() {
         let dir = find_atlas_dir("allen_mouse_25um").unwrap();
         let meta = load_metadata(&dir).unwrap();
-        let vol = load_tiff_u32(&dir.join("annotation.tiff")).unwrap();
+        let vol = load_tiff_u32(&dir.join("annotation.tiff"), |_| {}).unwrap();
         assert_eq!(vol.shape()[0], meta.shape[0]);
         println!("Annotation volume shape: {:?}", vol.shape());
     }

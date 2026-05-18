@@ -1,0 +1,57 @@
+# v2 image smoke: train base (non-IT) Gemma 4 on the standard SFT corpus.
+# Goal: validate that the v2 stack (vllm 0.20.2 / torch 2.11 / cu13 / bnb 0.49.1)
+# can drive a real SFT loop without crashing AND that the base model is
+# learnable on our trace corpus. NOT a production run — short, no agent eval,
+# no Trackio, no save.
+#
+# Differences vs sft_default.toml:
+#   base_model:       gemma-4-E4B  (NO -it suffix; pure pretrain weights)
+#   max_steps:        100          (≈10-15 min on RTX 5090, enough to see loss trend)
+#   eval/save/agent:  disabled     (smoke, not anchor)
+#   report_to:        none         (no Trackio space pollution)
+#   logging_steps:    1            (every-step loss for tighter monitoring)
+#   gradient_accum:   4            (smaller than default 8 to reach 100 effective
+#                                   steps faster while staying single-GPU stable)
+
+[sft]
+# Base (non-IT) Gemma 4. With load_in_4bit=true, Unsloth routes to its
+# pre-quantized variant `unsloth/gemma-4-e4b-unsloth-bnb-4bit`. We've
+# patched that snapshot's processor_config.json to inline the IT model's
+# chat_template (the base ships without one), so apply_chat_template
+# works downstream.
+base_model = "unsloth/gemma-4-E4B"
+load_in_4bit = true
+max_seq_length = 6144
+num_train_epochs = 1
+max_steps = 100
+per_device_train_batch_size = 1
+gradient_accumulation_steps = 4
+learning_rate = 2e-4
+lr_scheduler_type = "cosine"
+warmup_ratio = 0.03
+weight_decay = 0.01
+optim = "adamw_8bit"
+chat_template_kwargs = { enable_thinking = false }
+logging_steps = 1
+eval_steps = 999
+agent_eval_steps = 999
+save_steps = 999
+report_to = "none"
+seed = 0
+dataloader_num_workers = 4
+dataloader_persistent_workers = true
+dataloader_pin_memory = true
+dataloader_prefetch_factor = 4
+
+[lora]
+r = 16
+lora_alpha = 32
+finetune_vision_layers = false
+finetune_language_layers = true
+finetune_attention_modules = true
+finetune_mlp_modules = true
+use_gradient_checkpointing = "unsloth"
+
+[data]
+holdout_fraction = 0.10
+include_rationale = false

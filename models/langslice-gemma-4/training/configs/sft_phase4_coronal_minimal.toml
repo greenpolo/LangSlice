@@ -1,0 +1,62 @@
+# Phase 4 — coronal-only MINIMAL TRACE: 56,772-row corpus
+# Each trace is exactly 2 steps:
+#   1. fetch_atlas at the (snapped) ground-truth position
+#   2. submit_estimate at the exact ground-truth position
+#
+# Hypothesis: Phase 2 (15k cleaned rows) plateaued at ~3.5 mm and Phase 3
+# (50k synth-submit rows) was worse at matched step count. Both retained
+# noisy multi-step exploration. This phase removes exploration entirely and
+# trains pure visual grounding: see-slice + see-atlas-at-GT -> emit GT.
+# Atlas embedding splice is ON to keep the cached SigLIP path warm.
+#
+# Dataset: combined_corpus_minimal_coronal.jsonl
+#
+# Run plan: 1000 steps, checkpoint every 50. Same hparams as Phase 2/3 so
+# Phase 4 ckpt-N is directly comparable to Phase 2 ckpt-N.
+# 1000 × 24 = 24k row-views ≈ 0.42 epochs over the 56,772-row corpus.
+# Sequences are much shorter than Phase 2 (~300-400 tokens vs ~1200+) so
+# step time should be faster.
+
+[sft]
+base_model = "unsloth/gemma-4-E4B-it"
+load_in_4bit = true
+max_seq_length = 4096
+num_train_epochs = 1
+max_steps = 1000
+per_device_train_batch_size = 2
+gradient_accumulation_steps = 12
+per_device_eval_batch_size = 2
+learning_rate = 2e-4
+lr_scheduler_type = "cosine"
+warmup_ratio = 0.03
+weight_decay = 0.01
+max_grad_norm = 0.8
+optim = "adamw_8bit"
+chat_template_kwargs = { enable_thinking = false }
+logging_steps = 5
+eval_strategy = "no"
+prediction_loss_only = true
+agent_eval_steps = 99999
+save_strategy = "steps"
+save_steps = 50
+save_total_limit = 25
+report_to = "none"
+seed = 42
+dataloader_num_workers = 32
+dataloader_persistent_workers = true
+dataloader_pin_memory = true
+dataloader_prefetch_factor = 6
+
+[lora]
+r = 256
+lora_alpha = 8
+use_rslora = true
+finetune_vision_layers = false
+finetune_language_layers = true
+finetune_attention_modules = true
+finetune_mlp_modules = true
+use_gradient_checkpointing = "unsloth"
+
+[data]
+holdout_fraction = 0.10
+include_rationale = false

@@ -114,7 +114,9 @@ def test_collator_no_cache_returns_zero_hit_rate():
     ex = _build_rendered_example(["queries/some.jpg"])
     collator([ex])
     assert collator.cache_hit_rate() == 0.0
-    assert collator.cache_counters() == {"hits": 0, "misses": 0}
+    counters = collator.cache_counters()
+    assert counters["hits"] == 0
+    assert counters["misses"] == 0
 
 
 def test_collator_with_cache_increments_hits(tmp_path):
@@ -131,6 +133,8 @@ def test_collator_with_cache_increments_hits(tmp_path):
     counters = collator.cache_counters()
     assert counters["hits"] == 2
     assert counters["misses"] == 0
+    assert counters.get("atlas_hits", 0) == 2
+    assert counters.get("query_hits", 0) == 0
     assert collator.cache_hit_rate() == 1.0
 
 
@@ -214,7 +218,7 @@ def test_splice_enabled_emits_sidecar(tmp_path):
 
 
 def test_splice_requires_cache():
-    with pytest.raises(ValueError, match="enable_splice=True requires atlas_cache"):
+    with pytest.raises(ValueError, match="enable_splice=True requires"):
         LangSliceCollator(
             processor=_StubProcessor(), max_seq_length=64,
             atlas_cache=None, enable_splice=True,

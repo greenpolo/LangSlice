@@ -1,0 +1,2675 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LangSlice QC</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0f1016;
+        --bg2: #14151c;
+        --bg3: #1a1c25;
+        --bg4: #232634;
+        --bd: #2a2d3a;
+        --fg: #e5e7ef;
+        --fg-dim: #aab1c2;
+        --fg-mute: #6c7385;
+        --accent: #8ab4ff;
+        /* RLVR live-status colors. Cool blue == already trained on;
+           amber == queued for the next step. */
+        --consumed:    #1b4f78;
+        --consumed-bg: #0e2438;
+        --consumed-fg: #6cb8ff;
+        --queued:      #6e561a;
+        --queued-bg:   #2a2210;
+        --queued-fg:   #ffc961;
+        --unseen:      #2a2d3a;
+        --unseen-bg:   #14151c;
+        --unseen-fg:   #aab1c2;
+      }
+      * { box-sizing: border-box; }
+      /* Browser default for [hidden] is display:none, but it loses to any
+         element rule with `display: flex` etc. We force it for predictable
+         module-bar hiding. */
+      [hidden] { display: none !important; }
+      html, body {
+        margin: 0; padding: 0; background: var(--bg2); color: var(--fg);
+        font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      body { display: flex; min-height: 100vh; }
+      a { color: var(--accent); }
+
+      /* Left sidebar: title + module-strip. Modules switch by replacing the
+         entire main column's contents — no module's controls ever leak into
+         another's. */
+      aside.sidebar {
+        flex: 0 0 180px;
+        background: var(--bg);
+        border-right: 1px solid var(--bd);
+        padding: 16px 12px;
+        display: flex; flex-direction: column; gap: 16px;
+        position: sticky; top: 0; align-self: flex-start;
+        height: 100vh;
+      }
+      aside.sidebar h1 {
+        margin: 0; font-size: 12px; font-weight: 700; letter-spacing: 0.08em;
+        text-transform: uppercase; color: var(--fg-mute);
+      }
+      .module-strip {
+        display: flex; flex-direction: column; gap: 4px;
+      }
+      .module-strip button {
+        appearance: none; text-align: left;
+        padding: 8px 12px; border: 1px solid transparent; border-radius: 4px;
+        background: transparent; color: var(--fg-dim); cursor: pointer;
+        font: inherit; font-weight: 600; font-size: 13px;
+        letter-spacing: 0.03em;
+      }
+      .module-strip button:hover { background: var(--bg2); color: var(--fg); }
+      .module-strip button.active {
+        background: var(--bg4); color: var(--fg); border-color: #3a3f52;
+      }
+
+      .main-col {
+        flex: 1; min-width: 0; display: flex; flex-direction: column;
+      }
+
+      header {
+        position: sticky; top: 0; background: var(--bg3);
+        border-bottom: 1px solid var(--bd); z-index: 8;
+      }
+      .stats-bar {
+        padding: 6px 12px; border-bottom: 1px solid var(--bd);
+        background: var(--bg3); color: var(--fg-mute); font-size: 12px;
+        min-height: 28px; display: flex; align-items: center;
+      }
+      .tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+      .tab {
+        padding: 4px 12px; border: 1px solid var(--bd); border-radius: 4px;
+        background: var(--bg2); color: var(--fg-dim); cursor: pointer;
+        font: inherit; font-weight: 600;
+      }
+      .tab.active { background: var(--bg4); color: var(--fg); border-color: #3a3f52; }
+      .tab:hover { filter: brightness(1.15); }
+
+      .subnav {
+        display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+        padding: 6px 12px; border-bottom: 1px solid var(--bd);
+        background: var(--bg3);
+      }
+
+      .filters {
+        display: flex; gap: 8px; padding: 6px 12px; flex-wrap: wrap;
+        align-items: center; font-size: 12px;
+      }
+      .filters label { color: var(--fg-mute); }
+      .filters select, .filters input[type=text] {
+        background: var(--bg2); color: var(--fg); border: 1px solid var(--bd);
+        border-radius: 3px; padding: 3px 6px; font: inherit;
+      }
+      .filters input[type=text] { width: 200px; }
+      .filters button.linklike {
+        background: none; border: none; color: var(--accent); cursor: pointer;
+        font: inherit; padding: 0; text-decoration: underline;
+      }
+
+      main { padding: 12px; }
+
+      /* GRID VIEW - generic tile grid */
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        gap: 8px;
+      }
+      .grid.wide {
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      }
+      .tile {
+        background: var(--bg); border: 1px solid var(--bd); border-radius: 4px;
+        padding: 4px; cursor: pointer; position: relative; overflow: hidden;
+        transition: border-color 0.1s, transform 0.05s;
+      }
+      .tile:hover { border-color: var(--accent); }
+      .tile .pair {
+        display: grid; grid-template-columns: 1fr 1fr; gap: 2px; aspect-ratio: 2/1;
+        background: var(--bg2);
+      }
+      .tile .triple {
+        display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 2px; aspect-ratio: 3/1;
+        background: var(--bg2);
+      }
+      .tile .pair img, .tile .triple img {
+        width: 100%; height: 100%; object-fit: contain; display: block;
+        background: #000;
+      }
+      .tile .triple-cap {
+        display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 2px;
+        font-size: 9px; color: var(--fg-mute); text-align: center;
+        text-transform: uppercase; letter-spacing: 0.04em;
+        padding: 2px 0 0;
+      }
+      .tile .cap {
+        font-size: 11px; color: var(--fg-dim); padding: 4px 2px 0;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      .tile .pos { color: var(--accent); font-weight: 600; }
+      .tile .badge {
+        position: absolute; top: 4px; right: 4px;
+        font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 3px;
+        text-transform: uppercase; letter-spacing: 0.05em;
+      }
+      .tile .rlvr-tag {
+        position: absolute; bottom: 4px; left: 4px;
+        font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 2px;
+        text-transform: uppercase; letter-spacing: 0.05em;
+      }
+      .tile .rlvr-tag.consumed { background: var(--consumed-bg); color: var(--consumed-fg); }
+      .tile .rlvr-tag.queued   { background: var(--queued-bg); color: var(--queued-fg); }
+      .tile .rlvr-tag.unseen   { background: var(--unseen-bg); color: var(--unseen-fg); }
+      .tile.consumed { border-color: var(--consumed); }
+      .tile.queued   { border-color: var(--queued); }
+
+      /* PAGINATION */
+      .pager {
+        display: flex; gap: 12px; align-items: center; justify-content: center;
+        margin: 16px 0; color: var(--fg-mute); font-size: 12px;
+      }
+      .pager button {
+        background: var(--bg4); color: var(--fg); border: 1px solid var(--bd);
+        padding: 4px 12px; border-radius: 3px; cursor: pointer; font: inherit;
+      }
+      .pager button:disabled { opacity: 0.4; cursor: default; }
+
+      /* SOURCE CARDS — vertical list, one full-width card per row */
+      .src-grid {
+        display: flex; flex-direction: column; gap: 8px;
+      }
+      .src-card {
+        background: var(--bg); border: 1px solid var(--bd); border-radius: 4px;
+        padding: 10px 12px;
+        display: grid;
+        grid-template-columns: 1fr 320px;
+        gap: 16px; align-items: center;
+      }
+      .src-card .src-info {
+        display: flex; flex-direction: column; gap: 4px; min-width: 0;
+      }
+      .src-card .src-head {
+        display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+      }
+      .src-card .src-name {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 14px; font-weight: 600;
+      }
+      .src-card .src-name button {
+        background: none; border: none; color: var(--accent);
+        text-decoration: underline; cursor: pointer; font: inherit; padding: 0;
+        font-weight: 600;
+      }
+      .src-card .src-count {
+        color: var(--fg-mute); font-size: 12px; white-space: nowrap;
+      }
+      .src-card .src-count b { color: var(--fg); }
+      .src-card .src-meta {
+        font-size: 11px; color: var(--fg-mute);
+        display: flex; flex-wrap: wrap; gap: 2px 12px;
+      }
+      .src-card .src-meta b { color: var(--fg-dim); font-weight: 600; }
+      .src-card .src-samples {
+        display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px;
+      }
+      .src-card .src-sample {
+        background: #000; border: 1px solid var(--bd); border-radius: 2px;
+        cursor: pointer; aspect-ratio: 4/3; display: grid;
+        grid-template-rows: auto 1fr;
+        overflow: hidden;
+      }
+      .src-card .src-sample:hover { border-color: var(--accent); }
+      .src-card .src-sample .lbl {
+        font-size: 9px; padding: 2px 4px; text-align: center;
+        color: var(--fg-mute); background: var(--bg2);
+        text-transform: uppercase; letter-spacing: 0.05em;
+      }
+      .src-card .src-sample img {
+        width: 100%; height: 100%; object-fit: contain;
+      }
+      .src-card .src-sample .pair-mini {
+        display: grid; grid-template-columns: 1fr 1fr; gap: 1px;
+        background: #000;
+      }
+      .src-card .src-sample .pair-mini img {
+        width: 100%; height: 100%; object-fit: contain;
+      }
+      /* Narrow viewports: drop the samples column under the info block. */
+      @media (max-width: 720px) {
+        .src-card { grid-template-columns: 1fr; }
+      }
+      .pill {
+        font-size: 10px; padding: 1px 5px; border-radius: 2px;
+        background: var(--bg4); color: var(--fg-dim);
+      }
+      .pill.consumed { background: var(--consumed-bg); color: var(--consumed-fg); }
+      .pill.queued { background: var(--queued-bg); color: var(--queued-fg); }
+      .pill.unseen { background: var(--unseen-bg); color: var(--unseen-fg); }
+
+      .breadcrumb {
+        padding: 6px 0; font-size: 12px;
+        display: flex; align-items: center; gap: 8px;
+      }
+      .breadcrumb button {
+        background: none; border: none; color: var(--accent); cursor: pointer;
+        font: inherit; padding: 0; text-decoration: underline;
+      }
+      .breadcrumb .sep { color: var(--fg-mute); }
+      .breadcrumb .cur { color: var(--fg); font-family: ui-monospace, monospace; }
+
+      /* HELP / TOAST */
+      #toast {
+        position: fixed; bottom: 16px; right: 16px;
+        background: var(--bg3); border: 1px solid var(--bd); padding: 6px 12px;
+        border-radius: 4px; font-size: 12px; color: var(--fg-dim); z-index: 99;
+        opacity: 0; transition: opacity 0.18s;
+      }
+      #toast.show { opacity: 1; }
+
+      /* LIGHTBOX */
+      #lightbox {
+        position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+        z-index: 50; display: none; flex-direction: column;
+      }
+      #lightbox.show { display: flex; }
+      #lightbox .lb-bar {
+        display: flex; gap: 12px; align-items: center;
+        padding: 8px 12px; background: var(--bg3);
+        border-bottom: 1px solid var(--bd); flex-wrap: wrap;
+      }
+      #lightbox .lb-meta { font-size: 12px; color: var(--fg-dim); }
+      #lightbox .lb-meta b { color: var(--fg); }
+      #lightbox .lb-spacer { flex: 1; }
+      #lightbox .lb-btn {
+        background: var(--bg4); color: var(--fg); border: 1px solid var(--bd);
+        padding: 6px 12px; border-radius: 3px; cursor: pointer; font: inherit;
+      }
+      #lightbox .lb-panes {
+        flex: 1; display: grid; gap: 8px; padding: 8px; min-height: 0;
+      }
+      #lightbox .lb-panes.cols-2 { grid-template-columns: 1fr 1fr; }
+      #lightbox .lb-panes.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+      #lightbox .lb-pane {
+        display: flex; flex-direction: column; min-height: 0;
+        background: #000; border: 1px solid var(--bd); border-radius: 3px;
+      }
+      #lightbox .lb-pane h3 {
+        margin: 0; padding: 4px 8px; font-size: 11px;
+        text-transform: uppercase; letter-spacing: 0.05em;
+        color: var(--fg-mute); background: var(--bg3);
+        border-bottom: 1px solid var(--bd);
+      }
+      #lightbox .lb-pane img {
+        flex: 1; min-height: 0; width: 100%; object-fit: contain;
+      }
+      #lightbox .lb-pip {
+        display: inline-block; padding: 1px 6px; border-radius: 3px;
+        font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em;
+      }
+      #lightbox .lb-pip.consumed { background: var(--consumed-bg); color: var(--consumed-fg); }
+      #lightbox .lb-pip.queued   { background: var(--queued-bg); color: var(--queued-fg); }
+
+      /* RLVR LIVE STRIP (relocated from inventory) */
+      .training-strip {
+        background: var(--bg3); border: 1px solid var(--bd); border-radius: 4px;
+        padding: 10px 12px; margin-bottom: 8px;
+        display: flex; flex-wrap: wrap; gap: 16px; align-items: center;
+      }
+      .training-strip .stat {
+        display: flex; flex-direction: column; gap: 2px; font-size: 11px;
+      }
+      .training-strip .stat .lbl {
+        color: var(--fg-mute); text-transform: uppercase;
+        letter-spacing: 0.05em; font-size: 10px;
+      }
+      .training-strip .stat .val { font-size: 16px; font-weight: 700; color: var(--fg); }
+      .training-strip .stat .val.consumed { color: var(--consumed-fg); }
+      .training-strip .stat .val.queued   { color: var(--queued-fg); }
+      .training-strip .stat .val.unseen   { color: var(--fg-mute); }
+      .training-strip .pulse {
+        display: inline-flex; align-items: center; gap: 6px;
+        font-size: 11px; color: var(--fg-mute);
+      }
+      .training-strip .pulse .dot {
+        width: 8px; height: 8px; border-radius: 50%;
+        background: var(--fg-mute);
+      }
+      .training-strip .pulse.live .dot {
+        background: #6ee49a;
+        animation: live-pulse 1.6s ease-in-out infinite;
+      }
+      @keyframes live-pulse {
+        0%, 100% { opacity: 0.5; transform: scale(1.0); }
+        50%      { opacity: 1.0; transform: scale(1.3); }
+      }
+      .recent-feed {
+        background: var(--bg3); border: 1px solid var(--bd); border-radius: 4px;
+        padding: 8px 10px; font-size: 12px; margin-bottom: 8px;
+      }
+      .recent-feed h4 {
+        margin: 0 0 6px 0; font-size: 11px; color: var(--fg-mute);
+        text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;
+      }
+      .recent-feed .row {
+        display: grid; grid-template-columns: 60px 80px 1fr 60px;
+        gap: 8px; padding: 2px 0; align-items: center;
+      }
+      .recent-feed .row .step { color: var(--accent); font-weight: 600; font-family: ui-monospace, monospace; }
+      .recent-feed .row .age { color: var(--fg-mute); font-size: 10px; }
+      .recent-feed .row .ids {
+        color: var(--fg); font-family: ui-monospace, monospace; font-size: 11px;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      }
+      .recent-feed .row .kind {
+        font-size: 10px; color: var(--fg-mute); text-align: right;
+      }
+      .recent-feed .row .kind.group { color: var(--accent); }
+      .recent-feed.empty { color: var(--fg-mute); padding: 12px; text-align: center; }
+
+      /* EVAL FLAT BRAIN LIST */
+      .brain-list {
+        display: flex; flex-direction: column; gap: 6px;
+      }
+      .brain-list .brain-card {
+        background: var(--bg); border: 1px solid var(--bd); border-radius: 4px;
+        padding: 8px 10px; cursor: pointer;
+        display: grid; grid-template-columns: 200px 1fr auto;
+        align-items: center; gap: 12px;
+      }
+      .brain-list .brain-card:hover { border-color: var(--accent); }
+      .brain-list .brain-card .name {
+        font-family: ui-monospace, monospace; font-size: 12px;
+        font-weight: 600; color: var(--fg);
+      }
+      .brain-list .brain-card .name .sub {
+        display: block; color: var(--fg-mute); font-weight: 400; font-size: 11px;
+      }
+      .brain-list .brain-card .meta {
+        font-size: 11px; color: var(--fg-mute);
+        display: flex; flex-wrap: wrap; gap: 4px 10px;
+      }
+      .brain-list .brain-card .meta b { color: var(--fg-dim); }
+      .brain-list .brain-card .samp {
+        display: grid; grid-template-columns: 1fr 1fr 1fr;
+        gap: 3px; width: 280px;
+      }
+      .brain-list .brain-card .samp img {
+        width: 100%; aspect-ratio: 4/3; object-fit: contain;
+        background: #000; border-radius: 2px;
+      }
+
+      details.help {
+        margin: 0; color: var(--fg-mute); font-size: 11px;
+      }
+      details.help summary { cursor: pointer; }
+      details.help kbd {
+        background: var(--bg2); border: 1px solid var(--bd); padding: 1px 4px;
+        border-radius: 2px; font-family: ui-monospace, monospace; font-size: 10px;
+        color: var(--fg);
+      }
+      .empty { color: var(--fg-mute); padding: 24px; text-align: center; }
+      .empty code {
+        background: var(--bg); border: 1px solid var(--bd);
+        border-radius: 3px; padding: 1px 6px; font-size: 11px;
+      }
+
+      /* HELP DIALOG */
+      #help-dialog {
+        position: fixed; top: 80px; right: 16px;
+        background: var(--bg3); border: 1px solid var(--bd);
+        padding: 12px 16px; border-radius: 4px; z-index: 60;
+        font-size: 12px; max-width: 360px; display: none;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+      }
+      #help-dialog.show { display: block; }
+      #help-dialog h3 {
+        margin: 0 0 6px 0; font-size: 12px; color: var(--fg-mute);
+        text-transform: uppercase; letter-spacing: 0.05em;
+      }
+      #help-dialog kbd {
+        background: var(--bg2); border: 1px solid var(--bd); padding: 1px 4px;
+        border-radius: 2px; font-family: ui-monospace, monospace; font-size: 10px;
+        color: var(--fg);
+      }
+      #help-dialog .row { padding: 2px 0; color: var(--fg-dim); }
+    </style>
+  </head>
+  <body>
+    <aside class="sidebar">
+      <h1>LangSlice QC</h1>
+      <nav class="module-strip" id="module-strip">
+        <button class="active" data-module="inventory">Inventory</button>
+        <button data-module="training">Training</button>
+        <button data-module="synth">Synthetic</button>
+      </nav>
+    </aside>
+    <div class="main-col">
+    <header>
+      <div class="stats-bar"><span id="stats"></span></div>
+
+      <!-- Module-specific subnav (sub-tabs + plane pills + filters). One row
+           per module; the active module's row is shown, others are hidden. -->
+
+      <!-- Inventory subnav -->
+      <div class="subnav module-bar" data-module="inventory">
+        <div class="tabs" id="inv-plane-tabs">
+          <button class="tab active" data-plane="all">All</button>
+          <button class="tab" data-plane="coronal">Coronal</button>
+          <button class="tab" data-plane="sagittal">Sagittal</button>
+          <button class="tab" data-plane="horizontal">Horizontal</button>
+        </div>
+      </div>
+      <div class="filters module-bar" data-module="inventory">
+        <label>dataset
+          <select id="inv-f-dataset"><option value="">(any)</option></select>
+        </label>
+        <label>atlas
+          <select id="inv-f-atlas"><option value="">(any)</option></select>
+        </label>
+        <label>reg
+          <select id="inv-f-reg"><option value="">(any)</option></select>
+        </label>
+        <label>sort
+          <select id="inv-f-sort">
+            <option value="position">position</option>
+            <option value="dataset">dataset</option>
+            <option value="filename">filename</option>
+            <option value="random">random</option>
+          </select>
+        </label>
+        <label>per page
+          <select id="inv-f-limit">
+            <option>24</option>
+            <option selected>48</option>
+            <option>96</option>
+            <option>200</option>
+          </select>
+        </label>
+        <input id="inv-f-q" type="text" placeholder="search section/path" />
+        <button class="linklike" id="inv-reset">reset</button>
+      </div>
+
+      <!-- Training subnav -->
+      <div class="subnav module-bar" data-module="training" hidden>
+        <div class="tabs" id="train-sub-tabs">
+          <button class="tab active" data-sub="sft">SFT</button>
+          <button class="tab" data-sub="rlvr">RLVR</button>
+          <button class="tab" data-sub="eval">Eval</button>
+        </div>
+      </div>
+      <div class="filters module-bar" data-module="training" hidden id="train-filters">
+        <!-- Populated per sub-tab. -->
+      </div>
+
+      <!-- Synth subnav -->
+      <div class="subnav module-bar" data-module="synth" hidden>
+        <div class="tabs" id="synth-plane-tabs">
+          <button class="tab active" data-plane="all">All</button>
+          <button class="tab" data-plane="coronal">Coronal</button>
+          <button class="tab" data-plane="sagittal">Sagittal</button>
+          <button class="tab" data-plane="horizontal">Horizontal</button>
+        </div>
+      </div>
+      <div class="filters module-bar" data-module="synth" hidden>
+        <label>modality
+          <select id="synth-f-modality"><option value="">(any)</option></select>
+        </label>
+        <label>atlas
+          <select id="synth-f-atlas"><option value="">(any)</option></select>
+        </label>
+        <label>mode
+          <select id="synth-f-mode"><option value="">(any)</option></select>
+        </label>
+        <label>damage
+          <select id="synth-f-damage"><option value="">(any)</option></select>
+        </label>
+        <label>sort
+          <select id="synth-f-sort">
+            <option value="position">position</option>
+            <option value="seed">seed</option>
+            <option value="random">random</option>
+          </select>
+        </label>
+        <label>per page
+          <select id="synth-f-limit">
+            <option>24</option>
+            <option selected>48</option>
+            <option>96</option>
+            <option>200</option>
+          </select>
+        </label>
+        <input id="synth-f-q" type="text" placeholder="search seed/mode" />
+        <button class="linklike" id="synth-reset">reset</button>
+      </div>
+    </header>
+
+    <main>
+      <div id="inventory-module" class="module"></div>
+      <div id="training-module" class="module" hidden></div>
+      <div id="synth-module" class="module" hidden></div>
+    </main>
+    </div>
+
+    <div id="toast"></div>
+
+    <!-- Single-instance lightbox. Each module passes a different items array
+         but the same key-handling state machine drives navigation. -->
+    <div id="lightbox" aria-hidden="true">
+      <div class="lb-bar">
+        <span class="lb-meta" id="lb-meta"></span>
+        <span class="lb-pip" id="lb-rlvr" style="display:none"></span>
+        <span class="lb-meta" id="lb-position" style="color:var(--fg-mute)"></span>
+        <span class="lb-spacer"></span>
+        <button class="lb-btn" id="lb-prev" title="prev (←)">←</button>
+        <button class="lb-btn" id="lb-next" title="next (→)">→</button>
+        <button class="lb-btn" id="lb-close">close (esc)</button>
+      </div>
+      <div class="lb-panes cols-2" id="lb-panes">
+        <!-- Panes populated dynamically. 2 panes for inventory/RLVR/eval/synth,
+             3 panes for SFT (real / GT / estimated). -->
+      </div>
+    </div>
+
+    <div id="help-dialog">
+      <h3>hotkeys</h3>
+      <div class="row"><kbd>←</kbd>/<kbd>→</kbd> prev/next slice in lightbox</div>
+      <div class="row"><kbd>Home</kbd>/<kbd>End</kbd> first/last slice</div>
+      <div class="row"><kbd>Esc</kbd> close lightbox</div>
+      <div class="row"><kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd>/<kbd>0</kbd> plane filter (Inventory / Synthetic)</div>
+      <div class="row"><kbd>/</kbd> focus search</div>
+      <div class="row"><kbd>?</kbd> toggle this dialog</div>
+    </div>
+
+    <script>
+      // ============================================================
+      // SHARED UTILITIES
+      // ============================================================
+
+      const $ = (id) => document.getElementById(id);
+      const toastEl = $("toast");
+      let toastTimer = null;
+      function toast(msg) {
+        toastEl.textContent = msg;
+        toastEl.classList.add("show");
+        if (toastTimer) clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => toastEl.classList.remove("show"), 1500);
+      }
+
+      function escapeHtml(s) {
+        return String(s ?? "").replace(/[&<>"']/g, (c) =>
+          ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+      }
+
+      function ageString(ts) {
+        if (!ts) return "";
+        const dt = (Date.now() / 1000) - ts;
+        if (dt < 60) return `${Math.max(0, Math.round(dt))}s ago`;
+        if (dt < 3600) return `${Math.round(dt / 60)}m ago`;
+        if (dt < 86400) return `${Math.round(dt / 3600)}h ago`;
+        return `${Math.round(dt / 86400)}d ago`;
+      }
+
+      async function fetchJSON(url) {
+        const res = await fetch(url);
+        if (!res.ok) {
+          const err = new Error(`HTTP ${res.status}`);
+          err.status = res.status;
+          throw err;
+        }
+        return await res.json();
+      }
+
+      function fmtPos(pos) {
+        return (pos == null || isNaN(pos)) ? "?" : Number(pos).toFixed(2);
+      }
+
+      // Thumbnail/atlas URL helpers. Each module has its own image route.
+      function histThumbUrl(path, w = 220, h = 220) {
+        if (!path) return "";
+        const u = new URLSearchParams({ path, w: String(w), h: String(h) });
+        return `/api/inventory/thumbnail?${u}`;
+      }
+      function histFullUrl(path, w = 1400, h = 1400) {
+        if (!path) return "";
+        const u = new URLSearchParams({ path, w: String(w), h: String(h) });
+        return `/api/inventory/thumbnail?${u}`;
+      }
+      function atlasUrl(atlas, plane, pos) {
+        if (!atlas || !plane || pos == null || isNaN(pos)) return null;
+        const u = new URLSearchParams({
+          atlas, plane, pos: String(pos), mode: "composite",
+        });
+        return `/api/atlas?${u}`;
+      }
+      function synthThumbUrl(seed, w = 256, h = 256, mtime = 0) {
+        if (seed == null) return "";
+        const u = new URLSearchParams({ seed: String(seed), w: String(w), h: String(h) });
+        // ?v=<floor(mtime)> defeats the browser's in-document image cache
+        // when the underlying PNG is regenerated. The server ignores `v`.
+        if (mtime) u.set("v", String(Math.floor(mtime)));
+        return `/api/synth/thumbnail?${u}`;
+      }
+      function synthFullUrl(seed, mtime = 0) {
+        if (seed == null) return "";
+        const u = new URLSearchParams({ seed: String(seed) });
+        if (mtime) u.set("v", String(Math.floor(mtime)));
+        return `/api/synth/image?${u}`;
+      }
+      function rawImageUrl(path) {
+        if (!path) return "";
+        return `/api/image?path=${encodeURIComponent(path)}`;
+      }
+
+      // ============================================================
+      // SHARED: source-card renderer
+      // Used by Inventory, RLVR, SFT, and Synth source views.
+      // Each caller provides:
+      //   - opts.onCardClick(dataset)        — called when name is clicked
+      //   - opts.onSampleClick(dataset, sample, idx)  — sample-thumb click
+      //   - opts.getSampleThumbUrl(sample)   — left thumbnail (histology/synth)
+      //   - opts.getSampleAtlasUrl(sample)   — right thumbnail (atlas), null = solo
+      //   - opts.headerExtras(d)             — extra HTML in card header
+      //   - opts.metaExtras(d)               — extra meta-row HTML
+      //   - opts.keyOf(d)                    — stable card-id (datasets[].dataset by default)
+      //   - opts.titleOf(d)                  — display name (datasets[].dataset by default)
+      // ============================================================
+      function renderSourceCards(container, datasets, opts = {}) {
+        container.innerHTML = "";
+        if (!datasets || !datasets.length) {
+          if (opts.emptyHtml) {
+            container.innerHTML = `<div class="empty">${opts.emptyHtml}</div>`;
+          } else {
+            container.innerHTML = "<div class='empty'>no sources match current filters</div>";
+          }
+          return;
+        }
+        const grid = document.createElement("div");
+        grid.className = "src-grid";
+        for (const d of datasets) {
+          const card = document.createElement("div");
+          card.className = "src-card";
+
+          const name = (opts.titleOf && opts.titleOf(d)) || d.dataset || "";
+          const planes = d.planes ? Object.entries(d.planes)
+            .filter(([_, n]) => n > 0)
+            .map(([k, n]) => `${k.charAt(0).toUpperCase()}:${n}`)
+            .join(" · ") : "";
+
+          const headerExtra = opts.headerExtras ? opts.headerExtras(d) : "";
+          const metaExtra = opts.metaExtras ? opts.metaExtras(d) : "";
+
+          card.innerHTML = `
+            <div class="src-info">
+              <div class="src-head">
+                <div class="src-name">
+                  <button class="src-name-btn">${escapeHtml(name)}</button>
+                </div>
+                <div class="src-count"><b>${d.n_total || 0}</b> sections</div>
+                ${headerExtra}
+              </div>
+              <div class="src-meta">
+                ${planes ? `<span><b>planes</b> ${escapeHtml(planes)}</span>` : ""}
+                ${(d.atlases && d.atlases.length) ? `<span><b>atlas</b> ${d.atlases.map(escapeHtml).join(", ")}</span>` : ""}
+                ${(d.species && d.species.length) ? `<span><b>species</b> ${d.species.map(escapeHtml).join(", ")}</span>` : ""}
+                ${(d.registration_sources && d.registration_sources.length) ? `<span><b>reg</b> ${d.registration_sources.map(escapeHtml).join(", ")}</span>` : ""}
+                ${d.n_subjects != null ? `<span><b>subjects</b> ${d.n_subjects}</span>` : ""}
+                ${(d.modes && d.modes.length) ? `<span><b>modes</b> ${d.modes.map(escapeHtml).join(", ")}</span>` : ""}
+                ${(d.damage_intensities && d.damage_intensities.length) ? `<span><b>damage</b> ${d.damage_intensities.map(escapeHtml).join(", ")}</span>` : ""}
+                ${metaExtra}
+              </div>
+            </div>
+            <div class="src-samples"></div>
+          `;
+
+          // Wire name click.
+          const nameBtn = card.querySelector(".src-name-btn");
+          nameBtn.addEventListener("click", () => {
+            if (opts.onCardClick) opts.onCardClick(d);
+          });
+
+          // Render up to 3 samples (anterior/middle/posterior or whatever
+          // the backend put there). Each shows source thumb + atlas thumb
+          // if available.
+          const sampWrap = card.querySelector(".src-samples");
+          const samples = (d.samples || []).slice(0, 3);
+          const sampLabels = ["ant", "mid", "post"];
+          if (samples.length === 0) {
+            sampWrap.innerHTML = `<div class="empty" style="grid-column:span 3;padding:12px">no preview</div>`;
+          }
+          samples.forEach((s, i) => {
+            const cell = document.createElement("div");
+            cell.className = "src-sample";
+            const lbl = samples.length === 3 ? sampLabels[i] : "";
+            const sUrl = opts.getSampleThumbUrl ? opts.getSampleThumbUrl(s) : "";
+            const aUrl = opts.getSampleAtlasUrl ? opts.getSampleAtlasUrl(s) : null;
+            const pos = fmtPos(s.position_mm);
+            cell.title = `${pos} mm${s.section_id ? " · " + s.section_id : ""}`;
+            if (aUrl) {
+              cell.innerHTML = `
+                <div class="lbl">${escapeHtml(lbl || pos + " mm")}</div>
+                <div class="pair-mini">
+                  <img loading="lazy" src="${escapeHtml(sUrl)}" alt="" />
+                  <img loading="lazy" src="${escapeHtml(aUrl)}" alt="" />
+                </div>
+              `;
+            } else {
+              cell.innerHTML = `
+                <div class="lbl">${escapeHtml(lbl || pos + " mm")}</div>
+                <img loading="lazy" src="${escapeHtml(sUrl)}" alt="" />
+              `;
+            }
+            cell.addEventListener("click", (e) => {
+              e.stopPropagation();
+              if (opts.onSampleClick) opts.onSampleClick(d, s, i);
+            });
+            sampWrap.appendChild(cell);
+          });
+
+          grid.appendChild(card);
+        }
+        container.appendChild(grid);
+      }
+
+      // ============================================================
+      // SHARED LIGHTBOX
+      // Items live in lb.items (caller-supplied). lb.idx walks them.
+      // panes is a list of {title, src, alt}. mode is "pair" or "triple".
+      // ============================================================
+      const lb = {
+        el: null,
+        meta: null,
+        rlvr: null,
+        position: null,
+        panes: null,
+        items: [],         // current items array
+        idx: 0,
+        renderItem: null,  // (item, idx) => { panes: [{title, src}, ...], meta: html, rlvrPip: {cls, txt}|null }
+      };
+
+      function _lbRender() {
+        const item = lb.items[lb.idx];
+        if (!item || !lb.renderItem) return;
+        const r = lb.renderItem(item, lb.idx, lb.items);
+        lb.meta.innerHTML = r.meta || "";
+        if (r.rlvrPip) {
+          lb.rlvr.style.display = "";
+          lb.rlvr.className = "lb-pip " + (r.rlvrPip.cls || "");
+          lb.rlvr.textContent = r.rlvrPip.txt || "";
+        } else {
+          lb.rlvr.style.display = "none";
+        }
+        lb.position.textContent = lb.items.length > 1
+          ? `${lb.idx + 1} / ${lb.items.length}` : "";
+        // Panes
+        const panesEl = lb.panes;
+        panesEl.innerHTML = "";
+        const cols = (r.panes && r.panes.length) || 2;
+        panesEl.classList.remove("cols-2", "cols-3");
+        panesEl.classList.add(cols >= 3 ? "cols-3" : "cols-2");
+        (r.panes || []).forEach((p) => {
+          const pane = document.createElement("div");
+          pane.className = "lb-pane";
+          pane.innerHTML = `
+            <h3>${escapeHtml(p.title || "")}</h3>
+            ${p.src ? `<img alt="${escapeHtml(p.title || "")}" src="${escapeHtml(p.src)}" />` : `<div class="empty" style="flex:1">no image</div>`}
+          `;
+          panesEl.appendChild(pane);
+        });
+        // Prefetch immediate neighbors for snappy ←/→.
+        _lbPrefetch(lb.idx + 1);
+        _lbPrefetch(lb.idx - 1);
+      }
+      function _lbPrefetch(j) {
+        if (j < 0 || j >= lb.items.length) return;
+        if (!lb.renderItem) return;
+        try {
+          const r = lb.renderItem(lb.items[j], j, lb.items);
+          (r.panes || []).forEach((p) => {
+            if (p.src) { const im = new Image(); im.src = p.src; }
+          });
+        } catch (_) { /* ignore prefetch errors */ }
+      }
+
+      function openLightbox(items, idx, renderItem) {
+        if (!lb.el) return;
+        lb.items = items || [];
+        lb.idx = Math.max(0, Math.min(idx || 0, lb.items.length - 1));
+        lb.renderItem = renderItem;
+        if (!lb.items.length) return;
+        _lbRender();
+        lb.el.classList.add("show");
+        lb.el.setAttribute("aria-hidden", "false");
+      }
+      function closeLightbox() {
+        if (!lb.el) return;
+        lb.el.classList.remove("show");
+        lb.el.setAttribute("aria-hidden", "true");
+      }
+      function lightboxOpen() { return lb.el && lb.el.classList.contains("show"); }
+      function lightboxNav(delta) {
+        if (!lb.items.length) return;
+        const next = lb.idx + delta;
+        if (next < 0 || next >= lb.items.length) return;
+        lb.idx = next;
+        _lbRender();
+      }
+      function lightboxJump(absIdx) {
+        if (!lb.items.length) return;
+        const i = Math.max(0, Math.min(absIdx, lb.items.length - 1));
+        lb.idx = i;
+        _lbRender();
+      }
+
+      // ============================================================
+      // MODULE-STRIP STATE MACHINE
+      // Switching modules fully swaps page content. Sub-tab state is
+      // owned by each module controller. URL state via hashroute.
+      // ============================================================
+      const app = {
+        module: "inventory",     // "inventory" | "training" | "synth"
+        sub: { training: "sft" },
+      };
+
+      function setModule(name, opts = {}) {
+        if (!["inventory", "training", "synth"].includes(name)) name = "inventory";
+        app.module = name;
+        // Toggle module containers.
+        ["inventory", "training", "synth"].forEach((m) => {
+          $(`${m}-module`).hidden = (m !== name);
+        });
+        // Toggle subnav rows.
+        document.querySelectorAll(".module-bar").forEach((el) => {
+          el.hidden = (el.dataset.module !== name);
+        });
+        // Mark active button.
+        document.querySelectorAll("#module-strip button").forEach((t) => {
+          t.classList.toggle("active", t.dataset.module === name);
+        });
+        // Stop training poll if not on training module.
+        if (name !== "training") stopTrainingPoll();
+
+        // Hashroute (best-effort).
+        if (!opts.skipHash) {
+          const h = "#/" + name + (name === "training" ? `/${app.sub.training}` : "");
+          if (location.hash !== h) history.replaceState(null, "", h);
+        }
+
+        // Mount the module.
+        if (name === "inventory") inv.mount();
+        else if (name === "training") training.mount();
+        else if (name === "synth") synth.mount();
+      }
+
+      function readHashRoute() {
+        const m = location.hash.match(/^#\/(inventory|training|synth)(?:\/(\w+))?/);
+        if (!m) return null;
+        return { module: m[1], sub: m[2] || null };
+      }
+
+      // ============================================================
+      // INVENTORY MODULE
+      // ============================================================
+      const inv = {
+        state: {
+          plane: "all",
+          dataset: "",
+          atlas: "",
+          registration_source: "",
+          sort: "position",
+          q: "",
+          limit: 48,
+          offset: 0,
+          mode: "sources",   // "sources" | "detail"
+        },
+        items: [],            // last-loaded grid items (used for lightbox nav)
+        mounted: false,
+
+        mount() {
+          if (!inv.mounted) {
+            inv.bindFilters();
+            inv.mounted = true;
+          }
+          inv.refresh();
+        },
+
+        bindFilters() {
+          $("inv-f-dataset").addEventListener("change", (e) => {
+            inv.state.dataset = e.target.value;
+            inv.state.offset = 0;
+            inv.refresh();
+          });
+          $("inv-f-atlas").addEventListener("change", (e) => {
+            inv.state.atlas = e.target.value;
+            inv.state.offset = 0;
+            inv.refresh();
+          });
+          $("inv-f-reg").addEventListener("change", (e) => {
+            inv.state.registration_source = e.target.value;
+            inv.state.offset = 0;
+            inv.refresh();
+          });
+          $("inv-f-sort").addEventListener("change", (e) => {
+            inv.state.sort = e.target.value;
+            inv.state.offset = 0;
+            inv.refresh();
+          });
+          $("inv-f-limit").addEventListener("change", (e) => {
+            inv.state.limit = parseInt(e.target.value, 10) || 48;
+            inv.state.offset = 0;
+            inv.refresh();
+          });
+          let qt = null;
+          $("inv-f-q").addEventListener("input", (e) => {
+            inv.state.q = e.target.value;
+            if (qt) clearTimeout(qt);
+            qt = setTimeout(() => { inv.state.offset = 0; inv.refresh(); }, 250);
+          });
+          $("inv-reset").addEventListener("click", () => {
+            Object.assign(inv.state, {
+              dataset: "", atlas: "", registration_source: "",
+              sort: "position", q: "", limit: 48, offset: 0,
+              mode: inv.state.mode,
+            });
+            $("inv-f-dataset").value = "";
+            $("inv-f-atlas").value = "";
+            $("inv-f-reg").value = "";
+            $("inv-f-sort").value = "position";
+            $("inv-f-limit").value = "48";
+            $("inv-f-q").value = "";
+            inv.refresh();
+          });
+          document.querySelectorAll("#inv-plane-tabs .tab").forEach((t) => {
+            t.addEventListener("click", () => inv.setPlane(t.dataset.plane));
+          });
+        },
+
+        setPlane(p) {
+          inv.state.plane = p;
+          inv.state.offset = 0;
+          document.querySelectorAll("#inv-plane-tabs .tab").forEach((t) => {
+            t.classList.toggle("active", t.dataset.plane === p);
+          });
+          inv.refresh();
+        },
+
+        buildQuery() {
+          const p = new URLSearchParams();
+          if (inv.state.plane && inv.state.plane !== "all") p.set("plane", inv.state.plane);
+          if (inv.state.dataset) p.set("dataset", inv.state.dataset);
+          if (inv.state.atlas) p.set("atlas", inv.state.atlas);
+          if (inv.state.registration_source) p.set("registration_source", inv.state.registration_source);
+          if (inv.state.sort) p.set("sort", inv.state.sort);
+          if (inv.state.q) p.set("q", inv.state.q);
+          return p;
+        },
+
+        async loadFacets() {
+          try {
+            const f = await fetchJSON(`/api/inventory/facets?${inv.buildQuery()}`);
+            inv.fillFacet("inv-f-dataset", f.datasets, inv.state.dataset);
+            inv.fillFacet("inv-f-atlas", f.atlases, inv.state.atlas);
+            inv.fillFacet("inv-f-reg", f.registration_sources, inv.state.registration_source);
+            $("stats").textContent = `${f.n_total || 0} rows · ${f.n_excluded || 0} excluded`;
+          } catch (_) {
+            $("stats").textContent = "—";
+          }
+        },
+
+        fillFacet(id, items, selected) {
+          const el = $(id);
+          el.innerHTML = "";
+          const opt0 = document.createElement("option");
+          opt0.value = ""; opt0.textContent = "(any)";
+          el.appendChild(opt0);
+          for (const it of items || []) {
+            const o = document.createElement("option");
+            o.value = it.value;
+            o.textContent = `${it.value}  [${it.n_total}]`;
+            if (it.value === selected) o.selected = true;
+            el.appendChild(o);
+          }
+          if (selected) el.value = selected;
+        },
+
+        refresh() {
+          inv.loadFacets();
+          if (inv.state.mode === "sources") inv.loadSources();
+          else inv.loadDetail();
+        },
+
+        async loadSources() {
+          const v = $("inventory-module");
+          v.innerHTML = "<div class='empty'>loading sources…</div>";
+          let data;
+          try {
+            data = await fetchJSON(`/api/inventory/datasets?${inv.buildQuery()}`);
+          } catch (err) {
+            v.innerHTML = `<div class='empty'>error loading sources: ${err.status || err.message}</div>`;
+            return;
+          }
+          inv.renderSources(data);
+        },
+
+        renderSources(data) {
+          const v = $("inventory-module");
+          v.innerHTML = "";
+          const wrap = document.createElement("div");
+          v.appendChild(wrap);
+          renderSourceCards(wrap, data.datasets || [], {
+            emptyHtml: "no datasets match current filters",
+            onCardClick: (d) => inv.drillInto(d.dataset),
+            onSampleClick: (d, s) => {
+              // Open lightbox at that sample's position. We need a list of
+              // items walking that subject — hit the manifest endpoint
+              // filtered to (dataset, subject) so ←/→ walks the brain.
+              inv.openSampleLightbox(d, s);
+            },
+            getSampleThumbUrl: (s) => histThumbUrl(s.image_path, 96, 72),
+            getSampleAtlasUrl: (s) => atlasUrl(s.atlas, s.orientation, s.position_mm),
+          });
+        },
+
+        async openSampleLightbox(d, sample) {
+          // Pull the brain's items for ←/→ navigation. Use the manifest
+          // endpoint with dataset + (best-effort) subject filter.
+          const subject = sample.subject_id || "";
+          const ds = d.dataset || "";
+          const p = new URLSearchParams({
+            dataset: ds, sort: "position", limit: "500", offset: "0",
+          });
+          if (subject) p.set("q", subject);
+          let items = [];
+          try {
+            const data = await fetchJSON(`/api/inventory/manifest?${p}`);
+            items = (data.items || []).filter((it) =>
+              !subject || it.subject_id === subject
+            );
+            items.sort((a, b) => {
+              const pa = a.position_mm == null ? Infinity : Number(a.position_mm);
+              const pb = b.position_mm == null ? Infinity : Number(b.position_mm);
+              return pa - pb;
+            });
+          } catch (_) {
+            items = [Object.assign({ dataset: ds }, sample)];
+          }
+          // Find the index of our sample by section_id (best key) or position.
+          let idx = 0;
+          if (sample.section_id) {
+            const i = items.findIndex((x) => x.section_id === sample.section_id);
+            if (i >= 0) idx = i;
+          } else if (sample.position_mm != null) {
+            let best = 0, bestD = Infinity;
+            items.forEach((x, i) => {
+              const dx = Math.abs(Number(x.position_mm || 0) - Number(sample.position_mm || 0));
+              if (dx < bestD) { bestD = dx; best = i; }
+            });
+            idx = best;
+          }
+          if (!items.length) {
+            items = [Object.assign({ dataset: ds }, sample)];
+            idx = 0;
+          }
+          openLightbox(items, idx, inv.lbRender);
+        },
+
+        drillInto(dataset) {
+          inv.state.dataset = dataset;
+          inv.state.mode = "detail";
+          inv.state.offset = 0;
+          $("inv-f-dataset").value = dataset;
+          inv.loadDetail();
+        },
+
+        async loadDetail() {
+          const v = $("inventory-module");
+          v.innerHTML = "<div class='empty'>loading…</div>";
+          const p = inv.buildQuery();
+          p.set("limit", String(inv.state.limit));
+          p.set("offset", String(inv.state.offset));
+          let data;
+          try {
+            data = await fetchJSON(`/api/inventory/manifest?${p}`);
+          } catch (err) {
+            v.innerHTML = `<div class='empty'>error: ${err.status || err.message}</div>`;
+            return;
+          }
+          inv.items = data.items || [];
+          inv.renderDetail(data);
+        },
+
+        renderDetail(data) {
+          const v = $("inventory-module");
+          v.innerHTML = "";
+          // Breadcrumb
+          const crumb = document.createElement("div");
+          crumb.className = "breadcrumb";
+          crumb.innerHTML = `
+            <button id="inv-back">← back to Sources</button>
+            <span class="sep">/</span>
+            <span class="cur">${escapeHtml(inv.state.dataset || "(filtered)")}</span>
+            <span class="sep">·</span>
+            <span style="color:var(--fg-mute)">${data.total || 0} sections</span>
+          `;
+          v.appendChild(crumb);
+          $("inv-back").addEventListener("click", () => inv.toSources());
+
+          if (!data.items || !data.items.length) {
+            const e = document.createElement("div");
+            e.className = "empty";
+            e.textContent = "no slices match current filters";
+            v.appendChild(e);
+            return;
+          }
+          const grid = document.createElement("div");
+          grid.className = "grid";
+          data.items.forEach((it, i) => {
+            grid.appendChild(makePairTile(it, () =>
+              openLightbox(data.items, i, inv.lbRender)
+            ));
+          });
+          v.appendChild(grid);
+          v.appendChild(makePager(data, (newOffset) => {
+            inv.state.offset = newOffset;
+            inv.loadDetail();
+          }));
+        },
+
+        toSources() {
+          inv.state.mode = "sources";
+          inv.state.dataset = "";
+          $("inv-f-dataset").value = "";
+          inv.refresh();
+        },
+
+        // Lightbox renderer for inventory items: 2 panes (histology + atlas).
+        lbRender(item) {
+          const pos = fmtPos(item.position_mm);
+          const ds = item.dataset || (item.id || "").split("/")[0] || "";
+          const sub = item.subject_id || "";
+          const sec = item.section_id || (item.id || "").split("/").slice(1).join("/");
+          const meta =
+            `<b>${escapeHtml(ds)}</b> / ${escapeHtml(sub)}` +
+            ` · ${escapeHtml(sec)}` +
+            ` · <b>${pos} mm</b>` +
+            ` · ${escapeHtml(item.atlas || "")}` +
+            ` · ${escapeHtml(item.orientation || "")}`;
+          return {
+            meta,
+            rlvrPip: null,
+            panes: [
+              { title: "histology", src: histFullUrl(item.image_path) },
+              { title: "atlas", src: atlasUrl(item.atlas, item.orientation, item.position_mm) || "" },
+            ],
+          };
+        },
+      };
+
+      // Generic 2-thumb (histology/atlas) tile, no verdict UI.
+      function makePairTile(it, onClick) {
+        const el = document.createElement("div");
+        el.className = "tile";
+        el.dataset.id = it.id || "";
+        const pair = document.createElement("div");
+        pair.className = "pair";
+        const img1 = document.createElement("img");
+        img1.loading = "lazy";
+        img1.alt = "histology";
+        img1.src = histThumbUrl(it.image_path, 240, 240);
+        pair.appendChild(img1);
+        const img2 = document.createElement("img");
+        img2.loading = "lazy";
+        img2.alt = "atlas";
+        const at = atlasUrl(it.atlas, it.orientation, it.position_mm);
+        if (at) img2.src = at;
+        pair.appendChild(img2);
+        const cap = document.createElement("div");
+        cap.className = "cap";
+        const pos = fmtPos(it.position_mm);
+        cap.innerHTML = `<span class="pos">${pos}mm</span> · ${escapeHtml(it.dataset || "")}/${escapeHtml(it.subject_id || "")}`;
+        const cap2 = document.createElement("div");
+        cap2.className = "cap";
+        cap2.style.color = "var(--fg-mute)";
+        cap2.textContent = `${it.section_id || ""} · ${it.atlas || ""}`;
+        // RLVR-status badges (only present when row carries the metadata).
+        if (it.rlvr_status === "consumed") {
+          el.classList.add("consumed");
+          const t = document.createElement("div");
+          t.className = "rlvr-tag consumed";
+          const s = it.rlvr_step != null ? `s${it.rlvr_step}` : "";
+          t.textContent = it.rlvr_queued_again ? `consumed ${s} · re-queued` : `consumed ${s}`;
+          el.appendChild(t);
+        } else if (it.rlvr_status === "queued") {
+          el.classList.add("queued");
+          const t = document.createElement("div");
+          t.className = "rlvr-tag queued";
+          t.textContent = "queued";
+          el.appendChild(t);
+        } else if (it.rlvr_status === "unseen") {
+          const t = document.createElement("div");
+          t.className = "rlvr-tag unseen";
+          t.textContent = "unseen";
+          el.appendChild(t);
+        }
+        el.appendChild(pair);
+        el.appendChild(cap);
+        el.appendChild(cap2);
+        el.title = `${it.image_path || ""}\n${it.atlas || ""} ${it.orientation || ""} ${pos}mm`;
+        el.addEventListener("click", (e) => {
+          e.preventDefault();
+          if (onClick) onClick();
+        });
+        return el;
+      }
+
+      // Generic pager block. onPage(newOffset).
+      function makePager(data, onPage) {
+        const total = data.total || 0;
+        const off = data.offset || 0;
+        const lim = data.limit || 48;
+        const last = Math.min(off + lim, total);
+        const wrap = document.createElement("div");
+        wrap.className = "pager";
+        wrap.innerHTML = `
+          <button class="prev" ${off <= 0 ? "disabled" : ""}>prev</button>
+          <span>${total ? `${off + 1} – ${last} of ${total}` : "0"}</span>
+          <button class="next" ${off + lim >= total ? "disabled" : ""}>next</button>
+        `;
+        wrap.querySelector(".prev").addEventListener("click", () => {
+          if (off <= 0) return;
+          onPage(Math.max(0, off - lim));
+        });
+        wrap.querySelector(".next").addEventListener("click", () => {
+          if (off + lim >= total) return;
+          onPage(off + lim);
+        });
+        return wrap;
+      }
+
+      // ============================================================
+      // TRAINING MODULE — owns SFT, RLVR, Eval sub-tabs.
+      // ============================================================
+      const training = {
+        sub: "sft",
+        mounted: false,
+
+        mount() {
+          if (!training.mounted) {
+            document.querySelectorAll("#train-sub-tabs .tab").forEach((t) => {
+              t.addEventListener("click", () => training.setSub(t.dataset.sub));
+            });
+            training.mounted = true;
+          }
+          training.setSub(app.sub.training || "sft");
+        },
+
+        setSub(s) {
+          if (!["sft", "rlvr", "eval"].includes(s)) s = "sft";
+          training.sub = s;
+          app.sub.training = s;
+          document.querySelectorAll("#train-sub-tabs .tab").forEach((t) => {
+            t.classList.toggle("active", t.dataset.sub === s);
+          });
+          // Update hashroute.
+          const h = `#/training/${s}`;
+          if (location.hash !== h) history.replaceState(null, "", h);
+          // Stop training poll between sub-tab swaps; only RLVR uses it.
+          stopTrainingPoll();
+          // Clear the previous sub-tab's DOM fully.
+          $("training-module").innerHTML = "";
+          $("train-filters").innerHTML = "";
+          if (s === "sft") sft.mount();
+          else if (s === "rlvr") rlvr.mount();
+          else if (s === "eval") evalmod.mount();
+        },
+      };
+
+      // ----- SFT sub-tab -----
+      const sft = {
+        state: {
+          source_dataset: "",
+          plane: "",
+          atlas: "",
+          q: "",
+          limit: 48,
+          offset: 0,
+          mode: "sources",   // "sources" | "detail"
+        },
+        items: [],
+
+        mount() {
+          // Filters row.
+          const f = $("train-filters");
+          f.innerHTML = `
+            <label>plane
+              <select id="sft-f-plane">
+                <option value="">(any)</option>
+                <option value="coronal">coronal</option>
+                <option value="sagittal">sagittal</option>
+                <option value="horizontal">horizontal</option>
+              </select>
+            </label>
+            <label>atlas
+              <select id="sft-f-atlas"><option value="">(any)</option></select>
+            </label>
+            <label>per page
+              <select id="sft-f-limit">
+                <option>24</option>
+                <option selected>48</option>
+                <option>96</option>
+                <option>200</option>
+              </select>
+            </label>
+            <input id="sft-f-q" type="text" placeholder="search id/subject" />
+            <button class="linklike" id="sft-reset">reset</button>
+          `;
+          $("sft-f-plane").value = sft.state.plane;
+          $("sft-f-plane").addEventListener("change", (e) => {
+            sft.state.plane = e.target.value;
+            sft.state.offset = 0;
+            sft.refresh();
+          });
+          $("sft-f-atlas").addEventListener("change", (e) => {
+            sft.state.atlas = e.target.value;
+            sft.state.offset = 0;
+            sft.refresh();
+          });
+          $("sft-f-limit").addEventListener("change", (e) => {
+            sft.state.limit = parseInt(e.target.value, 10) || 48;
+            sft.state.offset = 0;
+            sft.refresh();
+          });
+          let qt = null;
+          $("sft-f-q").addEventListener("input", (e) => {
+            sft.state.q = e.target.value;
+            if (qt) clearTimeout(qt);
+            qt = setTimeout(() => { sft.state.offset = 0; sft.refresh(); }, 250);
+          });
+          $("sft-reset").addEventListener("click", () => {
+            Object.assign(sft.state, {
+              source_dataset: "", plane: "", atlas: "", q: "",
+              limit: 48, offset: 0, mode: "sources",
+            });
+            $("sft-f-plane").value = "";
+            $("sft-f-atlas").value = "";
+            $("sft-f-limit").value = "48";
+            $("sft-f-q").value = "";
+            sft.refresh();
+          });
+          sft.refresh();
+        },
+
+        refresh() {
+          if (sft.state.mode === "sources") sft.loadSources();
+          else sft.loadDetail();
+        },
+
+        async loadSources() {
+          const v = $("training-module");
+          v.innerHTML = "<div class='empty'>loading SFT sources…</div>";
+          const p = new URLSearchParams();
+          if (sft.state.plane) p.set("plane", sft.state.plane);
+          if (sft.state.atlas) p.set("atlas", sft.state.atlas);
+          if (sft.state.q) p.set("q", sft.state.q);
+          let data;
+          try {
+            data = await fetchJSON(`/api/sft/sources?${p}`);
+          } catch (err) {
+            if (err.status === 404) {
+              v.innerHTML = `<div class='empty'>SFT endpoint not yet wired in backend</div>`;
+            } else {
+              v.innerHTML = `<div class='empty'>error: ${err.status || err.message}</div>`;
+            }
+            return;
+          }
+          // Populate atlas filter from the union of source atlases.
+          const atlasSet = new Set();
+          (data.datasets || []).forEach((d) => (d.atlases || []).forEach((a) => atlasSet.add(a)));
+          sft.fillAtlasFilter(atlasSet);
+          sft.renderSources(data);
+        },
+
+        fillAtlasFilter(set) {
+          const el = $("sft-f-atlas");
+          if (!el) return;
+          const cur = sft.state.atlas;
+          el.innerHTML = `<option value="">(any)</option>`;
+          for (const a of [...set].sort()) {
+            const o = document.createElement("option");
+            o.value = a; o.textContent = a;
+            if (a === cur) o.selected = true;
+            el.appendChild(o);
+          }
+        },
+
+        renderSources(data) {
+          const v = $("training-module");
+          v.innerHTML = "";
+          const wrap = document.createElement("div");
+          v.appendChild(wrap);
+          const datasets = data.datasets || [];
+          renderSourceCards(wrap, datasets, {
+            emptyHtml: "no SFT traces yet — drop a manifest into <code>_local/trace_collection/</code>",
+            onCardClick: (d) => sft.drillInto(d.dataset),
+            onSampleClick: (d, s) => sft.openSampleLightbox(d, s),
+            getSampleThumbUrl: (s) => histThumbUrl(s.image_path || (s.images && s.images[0]) || "", 96, 72),
+            getSampleAtlasUrl: (s) => atlasUrl(s.atlas, s.plane || s.orientation,
+              s.position_mm != null ? s.position_mm : (s.positions_mm && s.positions_mm[0])),
+            metaExtras: (d) => {
+              const ne = d.n_with_estimate != null ? d.n_with_estimate : 0;
+              return `<span><b>w/ estimate</b> ${ne} / ${d.n_total || 0}</span>`;
+            },
+          });
+        },
+
+        async openSampleLightbox(d, sample) {
+          // For SFT, the lightbox walks all traces in this source.
+          const items = await sft.fetchSourceItems(d.dataset);
+          if (!items.length) {
+            openLightbox([sample], 0, sft.lbRender);
+            return;
+          }
+          let idx = 0;
+          if (sample.id) {
+            const i = items.findIndex((x) => x.id === sample.id);
+            if (i >= 0) idx = i;
+          }
+          openLightbox(items, idx, sft.lbRender);
+        },
+
+        async fetchSourceItems(dataset) {
+          const p = new URLSearchParams({
+            source_dataset: dataset,
+            limit: "500",
+            offset: "0",
+          });
+          try {
+            const d = await fetchJSON(`/api/sft/manifest?${p}`);
+            return d.items || [];
+          } catch (_) {
+            return [];
+          }
+        },
+
+        drillInto(dataset) {
+          sft.state.source_dataset = dataset;
+          sft.state.mode = "detail";
+          sft.state.offset = 0;
+          sft.loadDetail();
+        },
+
+        async loadDetail() {
+          const v = $("training-module");
+          v.innerHTML = "<div class='empty'>loading…</div>";
+          const p = new URLSearchParams({
+            source_dataset: sft.state.source_dataset,
+            limit: String(sft.state.limit),
+            offset: String(sft.state.offset),
+          });
+          if (sft.state.plane) p.set("plane", sft.state.plane);
+          if (sft.state.atlas) p.set("atlas", sft.state.atlas);
+          if (sft.state.q) p.set("q", sft.state.q);
+          let data;
+          try {
+            data = await fetchJSON(`/api/sft/manifest?${p}`);
+          } catch (err) {
+            v.innerHTML = `<div class='empty'>error: ${err.status || err.message}</div>`;
+            return;
+          }
+          sft.items = data.items || [];
+          sft.renderDetail(data);
+        },
+
+        renderDetail(data) {
+          const v = $("training-module");
+          v.innerHTML = "";
+          const crumb = document.createElement("div");
+          crumb.className = "breadcrumb";
+          crumb.innerHTML = `
+            <button id="sft-back">← back to SFT Sources</button>
+            <span class="sep">/</span>
+            <span class="cur">${escapeHtml(sft.state.source_dataset || "(filtered)")}</span>
+            <span class="sep">·</span>
+            <span style="color:var(--fg-mute)">${data.total || 0} traces</span>
+          `;
+          v.appendChild(crumb);
+          $("sft-back").addEventListener("click", () => sft.toSources());
+          if (!data.items || !data.items.length) {
+            const e = document.createElement("div");
+            e.className = "empty";
+            e.textContent = "no traces in this source match current filters";
+            v.appendChild(e);
+            return;
+          }
+          const grid = document.createElement("div");
+          grid.className = "grid wide";
+          data.items.forEach((it, i) => {
+            grid.appendChild(sft.makeTraceTile(it, () =>
+              openLightbox(data.items, i, sft.lbRender)
+            ));
+          });
+          v.appendChild(grid);
+          v.appendChild(makePager(data, (newOffset) => {
+            sft.state.offset = newOffset;
+            sft.loadDetail();
+          }));
+        },
+
+        toSources() {
+          sft.state.mode = "sources";
+          sft.state.source_dataset = "";
+          sft.refresh();
+        },
+
+        // Each trace card has 3 thumbnails: real / GT / estimated. If
+        // submitted_positions_mm is null (manifest-only), only render
+        // the first two.
+        makeTraceTile(it, onClick) {
+          const el = document.createElement("div");
+          el.className = "tile";
+          el.dataset.id = it.id || "";
+          const histPath = it.image || (it.images && it.images[0]) || "";
+          const gtPos = (it.position_mm != null) ? it.position_mm
+            : (it.positions_mm && it.positions_mm[0] != null ? it.positions_mm[0] : null);
+          const estPos = (it.submitted_positions_mm && it.submitted_positions_mm[0] != null)
+            ? it.submitted_positions_mm[0] : null;
+
+          const hasEst = estPos != null;
+          const tripWrap = document.createElement("div");
+          tripWrap.className = hasEst ? "triple" : "pair";
+
+          const imHist = document.createElement("img");
+          imHist.loading = "lazy"; imHist.alt = "histology";
+          imHist.src = histThumbUrl(histPath, 240, 240);
+          tripWrap.appendChild(imHist);
+
+          const imGt = document.createElement("img");
+          imGt.loading = "lazy"; imGt.alt = "atlas-gt";
+          const gtUrl = atlasUrl(it.atlas, it.plane, gtPos);
+          if (gtUrl) imGt.src = gtUrl;
+          tripWrap.appendChild(imGt);
+
+          if (hasEst) {
+            const imEst = document.createElement("img");
+            imEst.loading = "lazy"; imEst.alt = "atlas-est";
+            const estUrl = atlasUrl(it.atlas, it.plane, estPos);
+            if (estUrl) imEst.src = estUrl;
+            tripWrap.appendChild(imEst);
+          }
+
+          const capRow = document.createElement("div");
+          capRow.className = hasEst ? "triple-cap" : "";
+          if (hasEst) {
+            capRow.innerHTML = `<span>real</span><span>GT</span><span>est</span>`;
+          }
+
+          el.appendChild(tripWrap);
+          if (hasEst) el.appendChild(capRow);
+
+          const cap = document.createElement("div");
+          cap.className = "cap";
+          const gt = fmtPos(gtPos);
+          const est = fmtPos(estPos);
+          cap.innerHTML = `<span class="pos">${gt}mm</span>` +
+            (hasEst ? ` <span style="color:var(--fg-mute)">→ ${est}mm</span>` : "") +
+            ` · ${escapeHtml(it.subject_id || "")}`;
+          const cap2 = document.createElement("div");
+          cap2.className = "cap";
+          cap2.style.color = "var(--fg-mute)";
+          const errTxt = (it.max_error_mm != null) ? `Δ${Number(it.max_error_mm).toFixed(2)}mm` : "";
+          cap2.textContent = `${(it.kind || "single")} · ${it.atlas || ""} · ${errTxt}`;
+
+          el.appendChild(cap);
+          el.appendChild(cap2);
+          el.title = `${histPath}\n${it.atlas || ""} ${it.plane || ""}\nGT ${gt}mm` +
+            (hasEst ? ` · est ${est}mm` : " (manifest-only)");
+          el.addEventListener("click", (e) => {
+            e.preventDefault();
+            if (onClick) onClick();
+          });
+          return el;
+        },
+
+        lbRender(item) {
+          const histPath = item.image || (item.images && item.images[0]) || "";
+          const gtPos = (item.position_mm != null) ? item.position_mm
+            : (item.positions_mm && item.positions_mm[0] != null ? item.positions_mm[0] : null);
+          const estPos = (item.submitted_positions_mm && item.submitted_positions_mm[0] != null)
+            ? item.submitted_positions_mm[0] : null;
+          const ds = item.source_dataset || "";
+          const sub = item.subject_id || "";
+          const meta =
+            `<b>${escapeHtml(ds)}</b> / ${escapeHtml(sub)}` +
+            ` · id ${escapeHtml(item.id || "")}` +
+            ` · GT <b>${fmtPos(gtPos)} mm</b>` +
+            (estPos != null ? ` · est <b>${fmtPos(estPos)} mm</b>` : " · manifest-only") +
+            (item.max_error_mm != null ? ` · Δ${Number(item.max_error_mm).toFixed(2)}mm` : "") +
+            ` · ${escapeHtml(item.atlas || "")}` +
+            ` · ${escapeHtml(item.plane || "")}`;
+          const panes = [
+            { title: "histology", src: histFullUrl(histPath) },
+            { title: "atlas (GT)", src: atlasUrl(item.atlas, item.plane, gtPos) || "" },
+          ];
+          if (estPos != null) {
+            panes.push({ title: "atlas (estimated)", src: atlasUrl(item.atlas, item.plane, estPos) || "" });
+          }
+          return { meta, rlvrPip: null, panes };
+        },
+      };
+
+      // ----- RLVR sub-tab -----
+      const rlvr = {
+        state: {
+          plane: "",
+          dataset: "",
+          atlas: "",
+          rlvr_status: "",
+          q: "",
+          limit: 48,
+          offset: 0,
+          mode: "sources",
+        },
+        items: [],
+        lastStatus: null,
+
+        mount() {
+          // Filters row.
+          const f = $("train-filters");
+          f.innerHTML = `
+            <label>plane
+              <select id="rlvr-f-plane">
+                <option value="">(any)</option>
+                <option value="coronal">coronal</option>
+                <option value="sagittal">sagittal</option>
+                <option value="horizontal">horizontal</option>
+              </select>
+            </label>
+            <label>dataset
+              <select id="rlvr-f-dataset"><option value="">(any)</option></select>
+            </label>
+            <label>rlvr status
+              <select id="rlvr-f-status">
+                <option value="">all</option>
+                <option value="consumed">consumed</option>
+                <option value="queued">queued</option>
+                <option value="unseen">unseen</option>
+              </select>
+            </label>
+            <label>per page
+              <select id="rlvr-f-limit">
+                <option>24</option>
+                <option selected>48</option>
+                <option>96</option>
+                <option>200</option>
+              </select>
+            </label>
+            <input id="rlvr-f-q" type="text" placeholder="search id/subject" />
+            <button class="linklike" id="rlvr-reset">reset</button>
+          `;
+          $("rlvr-f-plane").addEventListener("change", (e) => {
+            rlvr.state.plane = e.target.value;
+            rlvr.state.offset = 0;
+            rlvr.refresh();
+          });
+          $("rlvr-f-dataset").addEventListener("change", (e) => {
+            rlvr.state.dataset = e.target.value;
+            rlvr.state.offset = 0;
+            rlvr.refresh();
+          });
+          $("rlvr-f-status").addEventListener("change", (e) => {
+            rlvr.state.rlvr_status = e.target.value;
+            rlvr.state.offset = 0;
+            rlvr.refresh();
+          });
+          $("rlvr-f-limit").addEventListener("change", (e) => {
+            rlvr.state.limit = parseInt(e.target.value, 10) || 48;
+            rlvr.state.offset = 0;
+            rlvr.refresh();
+          });
+          let qt = null;
+          $("rlvr-f-q").addEventListener("input", (e) => {
+            rlvr.state.q = e.target.value;
+            if (qt) clearTimeout(qt);
+            qt = setTimeout(() => { rlvr.state.offset = 0; rlvr.refresh(); }, 250);
+          });
+          $("rlvr-reset").addEventListener("click", () => {
+            Object.assign(rlvr.state, {
+              plane: "", dataset: "", atlas: "", rlvr_status: "",
+              q: "", limit: 48, offset: 0, mode: rlvr.state.mode,
+            });
+            $("rlvr-f-plane").value = "";
+            $("rlvr-f-dataset").value = "";
+            $("rlvr-f-status").value = "";
+            $("rlvr-f-limit").value = "48";
+            $("rlvr-f-q").value = "";
+            rlvr.refresh();
+          });
+          startTrainingPoll();
+          rlvr.refresh();
+        },
+
+        refresh() {
+          if (rlvr.state.mode === "sources") rlvr.loadSources();
+          else rlvr.loadDetail();
+        },
+
+        buildQuery() {
+          const p = new URLSearchParams();
+          if (rlvr.state.plane) p.set("plane", rlvr.state.plane);
+          if (rlvr.state.dataset) p.set("dataset", rlvr.state.dataset);
+          if (rlvr.state.atlas) p.set("atlas", rlvr.state.atlas);
+          if (rlvr.state.rlvr_status) p.set("rlvr_status", rlvr.state.rlvr_status);
+          if (rlvr.state.q) p.set("q", rlvr.state.q);
+          return p;
+        },
+
+        async loadSources() {
+          const v = $("training-module");
+          v.innerHTML = "";
+          // Live progress strip, always rendered (even when empty).
+          const strip = document.createElement("div");
+          strip.id = "rlvr-progress-strip";
+          v.appendChild(strip);
+          rlvr.renderStrip(rlvr.lastStatus);
+
+          const feed = document.createElement("div");
+          feed.id = "rlvr-recent-feed";
+          feed.className = "recent-feed";
+          feed.style.display = "none";
+          v.appendChild(feed);
+          rlvr.renderFeed(rlvr.lastStatus);
+
+          const sourceWrap = document.createElement("div");
+          v.appendChild(sourceWrap);
+          sourceWrap.innerHTML = "<div class='empty'>loading RLVR sources…</div>";
+
+          let data;
+          try {
+            data = await fetchJSON(`/api/rlvr/sources?${rlvr.buildQuery()}`);
+          } catch (err) {
+            if (err.status === 404) {
+              sourceWrap.innerHTML = `<div class='empty'>RLVR endpoint not yet wired in backend</div>`;
+            } else {
+              sourceWrap.innerHTML = `<div class='empty'>error: ${err.status || err.message}</div>`;
+            }
+            return;
+          }
+          // Populate dataset filter from result.
+          const dsSet = new Set();
+          (data.datasets || []).forEach((d) => dsSet.add(d.dataset));
+          rlvr.fillDatasetFilter(dsSet);
+          renderSourceCards(sourceWrap, data.datasets || [], {
+            emptyHtml: "no RLVR sources yet — assign <code>split=\"rlvr\"</code> rows in <code>data/manifest.jsonl</code>",
+            onCardClick: (d) => rlvr.drillInto(d.dataset),
+            onSampleClick: (d, s) => rlvr.openSampleLightbox(d, s),
+            getSampleThumbUrl: (s) => histThumbUrl(s.image_path, 96, 72),
+            getSampleAtlasUrl: (s) => atlasUrl(s.atlas, s.orientation, s.position_mm),
+            metaExtras: (d) => {
+              const c = d.n_consumed != null ? d.n_consumed : 0;
+              const q = d.n_queued != null ? d.n_queued : 0;
+              const u = d.n_unseen != null ? d.n_unseen : 0;
+              return `<span><span class="pill consumed">${c} consumed</span> ` +
+                `<span class="pill queued">${q} queued</span> ` +
+                `<span class="pill unseen">${u} unseen</span></span>`;
+            },
+          });
+        },
+
+        fillDatasetFilter(set) {
+          const el = $("rlvr-f-dataset");
+          if (!el) return;
+          const cur = rlvr.state.dataset;
+          el.innerHTML = `<option value="">(any)</option>`;
+          for (const a of [...set].sort()) {
+            const o = document.createElement("option");
+            o.value = a; o.textContent = a;
+            if (a === cur) o.selected = true;
+            el.appendChild(o);
+          }
+        },
+
+        async openSampleLightbox(d, sample) {
+          const p = new URLSearchParams({
+            dataset: d.dataset,
+            limit: "500", offset: "0",
+          });
+          if (sample.subject_id) p.set("q", sample.subject_id);
+          let items = [];
+          try {
+            const data = await fetchJSON(`/api/rlvr/manifest?${p}`);
+            items = (data.items || []);
+            items.sort((a, b) => {
+              const pa = a.position_mm == null ? Infinity : Number(a.position_mm);
+              const pb = b.position_mm == null ? Infinity : Number(b.position_mm);
+              return pa - pb;
+            });
+          } catch (_) {
+            items = [Object.assign({ dataset: d.dataset }, sample)];
+          }
+          if (!items.length) {
+            items = [Object.assign({ dataset: d.dataset }, sample)];
+          }
+          let idx = 0;
+          if (sample.section_id) {
+            const i = items.findIndex((x) => x.section_id === sample.section_id);
+            if (i >= 0) idx = i;
+          }
+          openLightbox(items, idx, rlvr.lbRender);
+        },
+
+        drillInto(dataset) {
+          rlvr.state.dataset = dataset;
+          rlvr.state.mode = "detail";
+          rlvr.state.offset = 0;
+          $("rlvr-f-dataset").value = dataset;
+          rlvr.loadDetail();
+        },
+
+        async loadDetail() {
+          const v = $("training-module");
+          v.innerHTML = "";
+          const strip = document.createElement("div");
+          strip.id = "rlvr-progress-strip";
+          v.appendChild(strip);
+          rlvr.renderStrip(rlvr.lastStatus);
+          const feed = document.createElement("div");
+          feed.id = "rlvr-recent-feed";
+          feed.className = "recent-feed";
+          feed.style.display = "none";
+          v.appendChild(feed);
+          rlvr.renderFeed(rlvr.lastStatus);
+
+          const crumb = document.createElement("div");
+          crumb.className = "breadcrumb";
+          crumb.innerHTML = `
+            <button id="rlvr-back">← back to RLVR Sources</button>
+            <span class="sep">/</span>
+            <span class="cur">${escapeHtml(rlvr.state.dataset || "(filtered)")}</span>
+          `;
+          v.appendChild(crumb);
+          $("rlvr-back").addEventListener("click", () => rlvr.toSources());
+
+          const body = document.createElement("div");
+          v.appendChild(body);
+          body.innerHTML = "<div class='empty'>loading…</div>";
+
+          const p = rlvr.buildQuery();
+          p.set("limit", String(rlvr.state.limit));
+          p.set("offset", String(rlvr.state.offset));
+          let data;
+          try {
+            data = await fetchJSON(`/api/rlvr/manifest?${p}`);
+          } catch (err) {
+            body.innerHTML = `<div class='empty'>error: ${err.status || err.message}</div>`;
+            return;
+          }
+          rlvr.items = data.items || [];
+          body.innerHTML = "";
+          if (!data.items || !data.items.length) {
+            body.innerHTML = "<div class='empty'>no slices match current filters</div>";
+            return;
+          }
+          const grid = document.createElement("div");
+          grid.className = "grid";
+          data.items.forEach((it, i) => {
+            grid.appendChild(makePairTile(it, () =>
+              openLightbox(data.items, i, rlvr.lbRender)
+            ));
+          });
+          body.appendChild(grid);
+          body.appendChild(makePager(data, (newOffset) => {
+            rlvr.state.offset = newOffset;
+            rlvr.loadDetail();
+          }));
+        },
+
+        toSources() {
+          rlvr.state.mode = "sources";
+          rlvr.state.dataset = "";
+          $("rlvr-f-dataset") && ($("rlvr-f-dataset").value = "");
+          rlvr.refresh();
+        },
+
+        lbRender(item) {
+          const pos = fmtPos(item.position_mm);
+          const ds = item.dataset || "";
+          const sub = item.subject_id || "";
+          const sec = item.section_id || "";
+          const meta =
+            `<b>${escapeHtml(ds)}</b> / ${escapeHtml(sub)}` +
+            ` · ${escapeHtml(sec)}` +
+            ` · <b>${pos} mm</b>` +
+            ` · ${escapeHtml(item.atlas || "")}` +
+            ` · ${escapeHtml(item.orientation || "")}`;
+          let pip = null;
+          if (item.rlvr_status === "consumed") {
+            let txt = "consumed";
+            if (item.rlvr_step != null) txt = `consumed at step ${item.rlvr_step.toLocaleString()}`;
+            if (item.rlvr_ts) txt += ` · ${ageString(item.rlvr_ts)}`;
+            if (item.rlvr_queued_again) txt += " · re-queued";
+            pip = { cls: "consumed", txt };
+          } else if (item.rlvr_status === "queued") {
+            pip = { cls: "queued", txt: "queued for next step" };
+          }
+          return {
+            meta,
+            rlvrPip: pip,
+            panes: [
+              { title: "histology", src: histFullUrl(item.image_path) },
+              { title: "atlas", src: atlasUrl(item.atlas, item.orientation, item.position_mm) || "" },
+            ],
+          };
+        },
+
+        renderStrip(status) {
+          const strip = $("rlvr-progress-strip");
+          if (!strip) return;
+          strip.className = "training-strip";
+          if (!status || status.available === false) {
+            strip.innerHTML = `
+              <div class="stat">
+                <span class="lbl">trainer</span>
+                <span class="val" style="font-size:13px">awaiting trainer</span>
+                <span class="lbl">no _local/rlvr_progress/ yet</span>
+              </div>
+              <div class="stat" style="margin-left:auto">
+                <span class="pulse"><span class="dot"></span>idle</span>
+              </div>`;
+            return;
+          }
+          const parts = [];
+          if (status.run) {
+            const r = status.run;
+            parts.push(`
+              <div class="stat" style="min-width:160px">
+                <span class="lbl">run</span>
+                <span class="val" style="font-size:13px">${escapeHtml(r.config || "?")}</span>
+                <span class="lbl">${r.target_steps ? `target ${r.target_steps} steps` : ""}</span>
+              </div>
+            `);
+          }
+          const rl = status.rlvr || {};
+          const total = rl.n_total || 0;
+          const pct = (n) => total ? `${Math.round((n / total) * 100)}%` : "0%";
+          parts.push(`
+            <div class="stat"><span class="lbl">consumed</span>
+              <span class="val consumed">${rl.n_consumed || 0}</span>
+              <span class="lbl">${pct(rl.n_consumed || 0)}</span>
+            </div>
+            <div class="stat"><span class="lbl">queued</span>
+              <span class="val queued">${rl.n_queued || 0}</span>
+              <span class="lbl">${rl.n_consumed_and_queued ? `(${rl.n_consumed_and_queued} re-train)` : ""}</span>
+            </div>
+            <div class="stat"><span class="lbl">unseen</span>
+              <span class="val unseen">${rl.n_unseen || 0}</span>
+              <span class="lbl">${pct(rl.n_unseen || 0)}</span>
+            </div>
+            <div class="stat"><span class="lbl">step</span>
+              <span class="val" style="font-size:13px">
+                ${status.current_step != null && status.current_step >= 0 ? status.current_step.toLocaleString() : "—"}
+              </span>
+              <span class="lbl">${status.run && status.run.target_steps ? `of ${status.run.target_steps}` : ""}</span>
+            </div>
+          `);
+          const live = (trainingPoll.timer != null) && status.available !== false;
+          const lastTs = status.last_consumed_ts ? `last update ${ageString(status.last_consumed_ts)}` :
+            (status.available ? "no activity yet" : "trainer not started");
+          parts.push(`
+            <div class="stat" style="margin-left:auto">
+              <span class="pulse ${live ? "live" : ""}"><span class="dot"></span>${live ? "live" : "idle"}</span>
+              <span class="lbl">${escapeHtml(lastTs)}</span>
+            </div>
+          `);
+          strip.innerHTML = parts.join("");
+        },
+
+        renderFeed(status) {
+          const feed = $("rlvr-recent-feed");
+          if (!feed) return;
+          if (!status || !status.recent || !status.recent.length) {
+            feed.style.display = "none";
+            return;
+          }
+          feed.style.display = "";
+          feed.classList.remove("empty");
+          const rows = status.recent.map((ev) => {
+            const id0 = (ev.ids && ev.ids[0]) || "";
+            const more = ev.ids && ev.ids.length > 1
+              ? ` <span style="color:var(--fg-mute)">+${ev.ids.length - 1}</span>` : "";
+            const kindClass = ev.kind === "group" ? "group" : "";
+            return `<div class="row">
+              <span class="step">${ev.step != null ? ev.step.toLocaleString() : ""}</span>
+              <span class="age">${escapeHtml(ageString(ev.ts))}</span>
+              <span class="ids" title="${escapeHtml((ev.ids || []).join(", "))}">${escapeHtml(id0)}${more}</span>
+              <span class="kind ${kindClass}">${escapeHtml(ev.kind || "single")}</span>
+            </div>`;
+          }).join("");
+          feed.innerHTML = `<h4>recent activity (newest first)</h4>${rows}`;
+        },
+      };
+
+      // RLVR live polling (only ticks while Training/RLVR is active and the
+      // tab is visible). Uses /api/training/status?recent=20.
+      const trainingPoll = {
+        timer: null,
+        intervalMs: 2000,
+      };
+      function startTrainingPoll() {
+        if (trainingPoll.timer != null) return;
+        trainingTick();
+        trainingPoll.timer = setInterval(trainingTick, trainingPoll.intervalMs);
+      }
+      function stopTrainingPoll() {
+        if (trainingPoll.timer == null) return;
+        clearInterval(trainingPoll.timer);
+        trainingPoll.timer = null;
+      }
+      async function trainingTick() {
+        // Only poll when we're on training/rlvr.
+        if (app.module !== "training" || app.sub.training !== "rlvr") return;
+        if (document.visibilityState === "hidden") return;
+        try {
+          const data = await fetchJSON(`/api/training/status?recent=20`);
+          rlvr.lastStatus = data;
+          rlvr.renderStrip(data);
+          rlvr.renderFeed(data);
+        } catch (_) {
+          // Polling errors are non-fatal; UI keeps last good state.
+        }
+      }
+      document.addEventListener("visibilitychange", () => {
+        if (app.module === "training" && app.sub.training === "rlvr"
+            && document.visibilityState === "visible") {
+          startTrainingPoll();
+        } else {
+          stopTrainingPoll();
+        }
+      });
+
+      // ----- Eval sub-tab -----
+      const evalmod = {
+        state: { q: "" },
+        items: [],
+
+        mount() {
+          const f = $("train-filters");
+          f.innerHTML = `
+            <input id="eval-f-q" type="text" placeholder="search dataset/subject" />
+          `;
+          let qt = null;
+          $("eval-f-q").addEventListener("input", (e) => {
+            evalmod.state.q = e.target.value;
+            if (qt) clearTimeout(qt);
+            qt = setTimeout(() => evalmod.renderList(), 250);
+          });
+          evalmod.load();
+        },
+
+        async load() {
+          const v = $("training-module");
+          v.innerHTML = "<div class='empty'>loading eval brains…</div>";
+          let data;
+          try {
+            data = await fetchJSON(`/api/training/eval`);
+          } catch (err) {
+            if (err.status === 404) {
+              v.innerHTML = `<div class='empty'>Eval endpoint not yet wired in backend</div>`;
+            } else {
+              v.innerHTML = `<div class='empty'>error: ${err.status || err.message}</div>`;
+            }
+            return;
+          }
+          evalmod.items = Array.isArray(data) ? data : (data.items || []);
+          evalmod.renderList();
+        },
+
+        renderList() {
+          const v = $("training-module");
+          v.innerHTML = "";
+          const wrap = document.createElement("div");
+          wrap.className = "brain-list";
+          v.appendChild(wrap);
+          const q = (evalmod.state.q || "").toLowerCase().trim();
+          const rows = evalmod.items.filter((b) => {
+            if (!q) return true;
+            return (b.dataset || "").toLowerCase().includes(q) ||
+                   (b.subject_id || "").toLowerCase().includes(q);
+          });
+          if (!rows.length) {
+            wrap.innerHTML = "<div class='empty'>no eval brains" +
+              (q ? " match your search" : " yet — assign <code>split=\"eval\"</code> rows in <code>data/manifest.jsonl</code>") + "</div>";
+            return;
+          }
+          rows.forEach((b) => {
+            const card = document.createElement("div");
+            card.className = "brain-card";
+            const samples = (b.samples || []).slice(0, 3);
+            card.innerHTML = `
+              <div class="name">
+                ${escapeHtml(b.subject_id || "(no subject)")}
+                <span class="sub">${escapeHtml(b.dataset || "")}</span>
+              </div>
+              <div class="meta">
+                <span><b>${b.n_sections || 0}</b> sections</span>
+                <span><b>atlas</b> ${escapeHtml(b.atlas || "?")}</span>
+                <span><b>plane</b> ${escapeHtml(b.plane || b.orientation || "?")}</span>
+              </div>
+              <div class="samp"></div>
+            `;
+            const sampWrap = card.querySelector(".samp");
+            samples.forEach((s) => {
+              const im = document.createElement("img");
+              im.loading = "lazy";
+              im.src = histThumbUrl(s.image_path, 200, 150);
+              sampWrap.appendChild(im);
+            });
+            card.addEventListener("click", () => evalmod.drillInto(b));
+            wrap.appendChild(card);
+          });
+        },
+
+        async drillInto(b) {
+          const v = $("training-module");
+          v.innerHTML = "<div class='empty'>loading subject…</div>";
+          // Use inventory-manifest to walk the brain (eval rows live in
+          // data/manifest.jsonl, same shape as inventory rows).
+          const p = new URLSearchParams({
+            dataset: b.dataset || "",
+            sort: "position",
+            limit: "500", offset: "0",
+          });
+          if (b.subject_id) p.set("q", b.subject_id);
+          let items = [];
+          try {
+            const data = await fetchJSON(`/api/inventory/manifest?${p}`);
+            items = (data.items || []).filter((it) =>
+              !b.subject_id || it.subject_id === b.subject_id
+            );
+            items.sort((a, b) => {
+              const pa = a.position_mm == null ? Infinity : Number(a.position_mm);
+              const pb = b.position_mm == null ? Infinity : Number(b.position_mm);
+              return pa - pb;
+            });
+          } catch (_) {}
+          v.innerHTML = "";
+          const crumb = document.createElement("div");
+          crumb.className = "breadcrumb";
+          crumb.innerHTML = `
+            <button id="eval-back">← back to Eval brains</button>
+            <span class="sep">/</span>
+            <span class="cur">${escapeHtml(b.dataset || "")} / ${escapeHtml(b.subject_id || "")}</span>
+            <span class="sep">·</span>
+            <span style="color:var(--fg-mute)">${items.length} sections</span>
+          `;
+          v.appendChild(crumb);
+          $("eval-back").addEventListener("click", () => evalmod.renderList());
+          if (!items.length) {
+            const e = document.createElement("div");
+            e.className = "empty";
+            e.textContent = "no sections in this brain";
+            v.appendChild(e);
+            return;
+          }
+          const grid = document.createElement("div");
+          grid.className = "grid";
+          items.forEach((it, i) => {
+            grid.appendChild(makePairTile(it, () =>
+              openLightbox(items, i, inv.lbRender)
+            ));
+          });
+          v.appendChild(grid);
+        },
+      };
+
+      // ============================================================
+      // SYNTH MODULE
+      // ============================================================
+      const synth = {
+        state: {
+          plane: "all",
+          modality: "",
+          atlas: "",
+          mode: "",
+          damage: "",
+          sort: "position",
+          q: "",
+          limit: 48,
+          offset: 0,
+          phase: "sources",   // "sources" | "detail"
+          // detail-mode key:
+          detail: { modality: "", atlas: "", plane: "" },
+        },
+        items: [],
+        mounted: false,
+
+        mount() {
+          if (!synth.mounted) {
+            synth.bindFilters();
+            synth.mounted = true;
+          }
+          synth.refresh();
+        },
+
+        bindFilters() {
+          $("synth-f-modality").addEventListener("change", (e) => {
+            synth.state.modality = e.target.value; synth.state.offset = 0; synth.refresh();
+          });
+          $("synth-f-atlas").addEventListener("change", (e) => {
+            synth.state.atlas = e.target.value; synth.state.offset = 0; synth.refresh();
+          });
+          $("synth-f-mode").addEventListener("change", (e) => {
+            synth.state.mode = e.target.value; synth.state.offset = 0; synth.refresh();
+          });
+          $("synth-f-damage").addEventListener("change", (e) => {
+            synth.state.damage = e.target.value; synth.state.offset = 0; synth.refresh();
+          });
+          $("synth-f-sort").addEventListener("change", (e) => {
+            synth.state.sort = e.target.value; synth.state.offset = 0; synth.refresh();
+          });
+          $("synth-f-limit").addEventListener("change", (e) => {
+            synth.state.limit = parseInt(e.target.value, 10) || 48;
+            synth.state.offset = 0; synth.refresh();
+          });
+          let qt = null;
+          $("synth-f-q").addEventListener("input", (e) => {
+            synth.state.q = e.target.value;
+            if (qt) clearTimeout(qt);
+            qt = setTimeout(() => { synth.state.offset = 0; synth.refresh(); }, 250);
+          });
+          $("synth-reset").addEventListener("click", () => {
+            Object.assign(synth.state, {
+              modality: "", atlas: "", mode: "", damage: "",
+              sort: "position", q: "", limit: 48, offset: 0,
+              phase: synth.state.phase, detail: synth.state.detail,
+            });
+            $("synth-f-modality").value = "";
+            $("synth-f-atlas").value = "";
+            $("synth-f-mode").value = "";
+            $("synth-f-damage").value = "";
+            $("synth-f-sort").value = "position";
+            $("synth-f-limit").value = "48";
+            $("synth-f-q").value = "";
+            synth.refresh();
+          });
+          document.querySelectorAll("#synth-plane-tabs .tab").forEach((t) => {
+            t.addEventListener("click", () => synth.setPlane(t.dataset.plane));
+          });
+        },
+
+        setPlane(p) {
+          synth.state.plane = p;
+          synth.state.offset = 0;
+          document.querySelectorAll("#synth-plane-tabs .tab").forEach((t) => {
+            t.classList.toggle("active", t.dataset.plane === p);
+          });
+          synth.refresh();
+        },
+
+        refresh() {
+          if (synth.state.phase === "sources") synth.loadSources();
+          else synth.loadDetail();
+        },
+
+        async loadSources() {
+          const v = $("synth-module");
+          v.innerHTML = "<div class='empty'>loading synth sources…</div>";
+          const p = new URLSearchParams();
+          if (synth.state.plane && synth.state.plane !== "all") p.set("plane", synth.state.plane);
+          if (synth.state.modality) p.set("modality", synth.state.modality);
+          if (synth.state.atlas) p.set("atlas", synth.state.atlas);
+          if (synth.state.mode) p.set("mode", synth.state.mode);
+          if (synth.state.damage) p.set("damage", synth.state.damage);
+          if (synth.state.q) p.set("q", synth.state.q);
+          let data;
+          try {
+            data = await fetchJSON(`/api/synth/datasets?${p}`);
+          } catch (err) {
+            if (err.status === 404) {
+              v.innerHTML = synth.emptyHtml();
+            } else {
+              v.innerHTML = `<div class='empty'>error: ${err.status || err.message}</div>`;
+            }
+            return;
+          }
+          synth.populateFilters(data.datasets || []);
+          synth.renderSources(data);
+        },
+
+        emptyHtml() {
+          return `<div class='empty'>no synth data yet — run <code>python -m synth_dataset write --out _local/synth_data --n 100</code></div>`;
+        },
+
+        populateFilters(datasets) {
+          const fillSel = (id, set, cur) => {
+            const el = $(id);
+            if (!el) return;
+            el.innerHTML = `<option value="">(any)</option>`;
+            for (const v of [...set].filter(Boolean).sort()) {
+              const o = document.createElement("option");
+              o.value = v; o.textContent = v;
+              if (v === cur) o.selected = true;
+              el.appendChild(o);
+            }
+          };
+          const mods = new Set();
+          const atls = new Set();
+          const modes = new Set();
+          const dmgs = new Set();
+          datasets.forEach((d) => {
+            if (d.modality) mods.add(d.modality);
+            if (d.atlas_name) atls.add(d.atlas_name);
+            (d.modes || []).forEach((m) => modes.add(m));
+            (d.damage_intensities || []).forEach((x) => dmgs.add(x));
+          });
+          fillSel("synth-f-modality", mods, synth.state.modality);
+          fillSel("synth-f-atlas", atls, synth.state.atlas);
+          fillSel("synth-f-mode", modes, synth.state.mode);
+          fillSel("synth-f-damage", dmgs, synth.state.damage);
+        },
+
+        renderSources(data) {
+          const v = $("synth-module");
+          v.innerHTML = "";
+          if (!data.datasets || !data.datasets.length) {
+            v.innerHTML = synth.emptyHtml();
+            return;
+          }
+          // Adapter: synth datasets group by (modality, atlas, plane).
+          // renderSourceCards expects {dataset, samples, planes...}; adapt
+          // each row so it still renders cleanly.
+          const adapted = data.datasets.map((d) => Object.assign({}, d, {
+            dataset: `${d.modality || "?"} · ${d.atlas_name || "?"} · ${d.plane || "?"}`,
+            atlases: d.atlas_name ? [d.atlas_name] : [],
+            // Keep plane breakdown empty since each card is single-plane.
+          }));
+          renderSourceCards(v, adapted, {
+            emptyHtml: "no synth datasets match current filters",
+            onCardClick: (d) => synth.drillInto(d),
+            onSampleClick: (d, s) => synth.openSampleLightbox(d, s),
+            getSampleThumbUrl: (s) => synthThumbUrl(s.seed, 96, 72, s.image_mtime || 0),
+            getSampleAtlasUrl: (s) =>
+              atlasUrl(s.atlas_name || (s.atlas) || "",
+                       s.plane || s.orientation, s.position_mm),
+            metaExtras: (d) => {
+              const parts = [];
+              if (d.modes && d.modes.length) parts.push(`<span><b>modes</b> ${d.modes.map(escapeHtml).join(", ")}</span>`);
+              if (d.damage_intensities && d.damage_intensities.length)
+                parts.push(`<span><b>damage</b> ${d.damage_intensities.map(escapeHtml).join(", ")}</span>`);
+              return parts.join("");
+            },
+          });
+        },
+
+        async openSampleLightbox(d, sample) {
+          // Walk the source's seeds via /api/synth/manifest.
+          const items = await synth.fetchSourceItems(d);
+          if (!items.length) {
+            openLightbox([sample], 0, synth.lbRender);
+            return;
+          }
+          let idx = 0;
+          if (sample.seed != null) {
+            const i = items.findIndex((x) => x.seed === sample.seed);
+            if (i >= 0) idx = i;
+          }
+          openLightbox(items, idx, synth.lbRender);
+        },
+
+        async fetchSourceItems(d) {
+          const p = new URLSearchParams({ limit: "500", offset: "0" });
+          if (d.modality) p.set("modality", d.modality);
+          if (d.atlas_name) p.set("atlas", d.atlas_name);
+          if (d.plane) p.set("plane", d.plane);
+          try {
+            const data = await fetchJSON(`/api/synth/manifest?${p}`);
+            return data.items || [];
+          } catch (_) {
+            return [];
+          }
+        },
+
+        drillInto(d) {
+          synth.state.detail = {
+            modality: d.modality || "",
+            atlas: d.atlas_name || "",
+            plane: d.plane || "",
+          };
+          synth.state.phase = "detail";
+          synth.state.offset = 0;
+          synth.loadDetail();
+        },
+
+        async loadDetail() {
+          const v = $("synth-module");
+          v.innerHTML = "<div class='empty'>loading…</div>";
+          const p = new URLSearchParams();
+          if (synth.state.detail.modality) p.set("modality", synth.state.detail.modality);
+          if (synth.state.detail.atlas) p.set("atlas", synth.state.detail.atlas);
+          if (synth.state.detail.plane) p.set("plane", synth.state.detail.plane);
+          if (synth.state.mode) p.set("mode", synth.state.mode);
+          if (synth.state.damage) p.set("damage", synth.state.damage);
+          if (synth.state.q) p.set("q", synth.state.q);
+          if (synth.state.sort) p.set("sort", synth.state.sort);
+          p.set("limit", String(synth.state.limit));
+          p.set("offset", String(synth.state.offset));
+          let data;
+          try {
+            data = await fetchJSON(`/api/synth/manifest?${p}`);
+          } catch (err) {
+            v.innerHTML = `<div class='empty'>error: ${err.status || err.message}</div>`;
+            return;
+          }
+          synth.items = data.items || [];
+          synth.renderDetail(data);
+        },
+
+        renderDetail(data) {
+          const v = $("synth-module");
+          v.innerHTML = "";
+          const det = synth.state.detail;
+          const crumb = document.createElement("div");
+          crumb.className = "breadcrumb";
+          crumb.innerHTML = `
+            <button id="synth-back">← back to Synth Sources</button>
+            <span class="sep">/</span>
+            <span class="cur">${escapeHtml(det.modality || "?")} · ${escapeHtml(det.atlas || "?")} · ${escapeHtml(det.plane || "?")}</span>
+            <span class="sep">·</span>
+            <span style="color:var(--fg-mute)">${data.total || 0} samples</span>
+          `;
+          v.appendChild(crumb);
+          $("synth-back").addEventListener("click", () => synth.toSources());
+
+          if (!data.items || !data.items.length) {
+            const e = document.createElement("div");
+            e.className = "empty";
+            e.textContent = "no synth samples match current filters";
+            v.appendChild(e);
+            return;
+          }
+          const grid = document.createElement("div");
+          grid.className = "grid";
+          data.items.forEach((it, i) => {
+            grid.appendChild(synth.makeTile(it, () =>
+              openLightbox(data.items, i, synth.lbRender)
+            ));
+          });
+          v.appendChild(grid);
+          v.appendChild(makePager(data, (newOffset) => {
+            synth.state.offset = newOffset;
+            synth.loadDetail();
+          }));
+        },
+
+        toSources() {
+          synth.state.phase = "sources";
+          synth.state.detail = { modality: "", atlas: "", plane: "" };
+          synth.refresh();
+        },
+
+        makeTile(it, onClick) {
+          const el = document.createElement("div");
+          el.className = "tile";
+          el.dataset.id = it.id || it.seed || "";
+          const pair = document.createElement("div");
+          pair.className = "pair";
+          const im1 = document.createElement("img");
+          im1.loading = "lazy"; im1.alt = "synth";
+          im1.src = synthThumbUrl(it.seed, 240, 240, it.image_mtime || 0);
+          pair.appendChild(im1);
+          const im2 = document.createElement("img");
+          im2.loading = "lazy"; im2.alt = "atlas";
+          const at = atlasUrl(it.atlas_name || it.atlas, it.plane || it.orientation, it.position_mm);
+          if (at) im2.src = at;
+          pair.appendChild(im2);
+          const cap = document.createElement("div");
+          cap.className = "cap";
+          const pos = fmtPos(it.position_mm);
+          cap.innerHTML = `<span class="pos">${pos}mm</span> · seed ${it.seed != null ? it.seed : "?"}`;
+          const cap2 = document.createElement("div");
+          cap2.className = "cap";
+          cap2.style.color = "var(--fg-mute)";
+          const dmg = it.apply_damage ? `damage:${it.damage_intensity || "?"}` : "no damage";
+          cap2.textContent = `${it.modality || "?"} · ${it.mode || "?"} · ${dmg}`;
+          el.appendChild(pair);
+          el.appendChild(cap);
+          el.appendChild(cap2);
+          el.title = `seed ${it.seed} · ${it.modality}/${it.mode}\n${pos}mm · ${it.atlas_name || ""}`;
+          el.addEventListener("click", (e) => {
+            e.preventDefault();
+            if (onClick) onClick();
+          });
+          return el;
+        },
+
+        lbRender(item) {
+          const pos = fmtPos(item.position_mm);
+          const dmg = item.apply_damage ? `damage:${item.damage_intensity || "?"}` : "no damage";
+          const meta =
+            `<b>seed ${item.seed != null ? item.seed : "?"}</b>` +
+            ` · ${escapeHtml(item.modality || "?")}/${escapeHtml(item.mode || "?")}` +
+            ` · <b>${pos} mm</b>` +
+            ` · ${escapeHtml(item.atlas_name || item.atlas || "")}` +
+            ` · ${escapeHtml(item.plane || item.orientation || "")}` +
+            ` · ${escapeHtml(dmg)}`;
+          return {
+            meta,
+            rlvrPip: null,
+            panes: [
+              { title: "synthetic", src: synthFullUrl(item.seed, item.image_mtime || 0) },
+              { title: "atlas",
+                src: atlasUrl(item.atlas_name || item.atlas,
+                              item.plane || item.orientation, item.position_mm) || "" },
+            ],
+          };
+        },
+      };
+
+      // ============================================================
+      // GLOBAL HOTKEY DISPATCHER
+      // Final hotkey set: ←/→/Home/End/Esc in lightbox; 1/2/3/0 plane;
+      // / focus search; ? help. (Verdict hotkeys removed entirely.)
+      // ============================================================
+      document.addEventListener("keydown", (e) => {
+        // Don't hijack keys while user is typing in an input/select.
+        if (document.activeElement) {
+          const tag = document.activeElement.tagName;
+          if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") {
+            // Esc still closes lightbox even if focus is in an input that
+            // happens to live inside it; otherwise let the input handle keys.
+            if (e.key === "Escape" && lightboxOpen()) {
+              e.preventDefault(); closeLightbox();
+            }
+            return;
+          }
+        }
+        // Lightbox-scoped keys.
+        if (lightboxOpen()) {
+          if (e.key === "Escape") { e.preventDefault(); closeLightbox(); return; }
+          if (e.key === "ArrowLeft") { e.preventDefault(); lightboxNav(-1); return; }
+          if (e.key === "ArrowRight") { e.preventDefault(); lightboxNav(1); return; }
+          if (e.key === "Home") { e.preventDefault(); lightboxJump(0); return; }
+          if (e.key === "End") { e.preventDefault(); lightboxJump(lb.items.length - 1); return; }
+          // Block fall-through; we don't switch planes / modules from inside the lightbox.
+          return;
+        }
+        // Plane filter (only meaningful for inventory + synth).
+        if (e.key === "1" || e.key === "2" || e.key === "3" || e.key === "0") {
+          const plane = e.key === "1" ? "coronal"
+            : e.key === "2" ? "sagittal"
+            : e.key === "3" ? "horizontal" : "all";
+          if (app.module === "inventory") inv.setPlane(plane);
+          else if (app.module === "synth") synth.setPlane(plane);
+          return;
+        }
+        if (e.key === "/") {
+          // Focus the active module's search input.
+          let target = null;
+          if (app.module === "inventory") target = $("inv-f-q");
+          else if (app.module === "synth") target = $("synth-f-q");
+          else if (app.module === "training") {
+            if (app.sub.training === "sft") target = $("sft-f-q");
+            else if (app.sub.training === "rlvr") target = $("rlvr-f-q");
+            else if (app.sub.training === "eval") target = $("eval-f-q");
+          }
+          if (target) { e.preventDefault(); target.focus(); }
+          return;
+        }
+        if (e.key === "?") {
+          e.preventDefault();
+          $("help-dialog").classList.toggle("show");
+          return;
+        }
+      });
+
+      // ============================================================
+      // BOOT
+      // ============================================================
+      // Wire the lightbox DOM.
+      lb.el = $("lightbox");
+      lb.meta = $("lb-meta");
+      lb.rlvr = $("lb-rlvr");
+      lb.position = $("lb-position");
+      lb.panes = $("lb-panes");
+      $("lb-close").addEventListener("click", closeLightbox);
+      $("lb-prev").addEventListener("click", () => lightboxNav(-1));
+      $("lb-next").addEventListener("click", () => lightboxNav(1));
+      // Click on the dimmed backdrop closes the box.
+      lb.el.addEventListener("click", (e) => {
+        if (e.target === lb.el) closeLightbox();
+      });
+
+      // Wire module strip.
+      document.querySelectorAll("#module-strip button").forEach((t) => {
+        t.addEventListener("click", () => setModule(t.dataset.module));
+      });
+
+      // Hashroute-driven landing.
+      const route = readHashRoute();
+      if (route) {
+        if (route.module === "training" && route.sub) {
+          app.sub.training = route.sub;
+        }
+        setModule(route.module, { skipHash: true });
+      } else {
+        setModule("inventory");
+      }
+      // Respond to back/forward navigation (best-effort).
+      window.addEventListener("hashchange", () => {
+        const r = readHashRoute();
+        if (!r) return;
+        if (r.module !== app.module) {
+          if (r.module === "training" && r.sub) app.sub.training = r.sub;
+          setModule(r.module, { skipHash: true });
+        } else if (r.module === "training" && r.sub && r.sub !== app.sub.training) {
+          training.setSub(r.sub);
+        }
+      });
+    </script>
+  </body>
+</html>

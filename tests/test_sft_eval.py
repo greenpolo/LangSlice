@@ -9,6 +9,7 @@ from typing import Any, ClassVar, cast
 import pytest
 from sft.eval import (
     EvalRun,
+    _extract_tool_call_from_decoded,
     compute_position_mae_mm,
     parse_submit_call,
     summarize_eval_runs,
@@ -17,6 +18,13 @@ from sft.eval import (
 
 def test_parse_submit_call_extracts_position_from_valid_json():
     raw = '{"position_mm": 5.2, "reasoning": "looks like AC level"}'
+    parsed = parse_submit_call(raw, expected_kind="single_slice")
+    assert parsed.position_mm == pytest.approx(5.2)
+    assert parsed.is_parseable is True
+
+
+def test_parse_submit_call_accepts_missing_reasoning():
+    raw = '{"position_mm": 5.2}'
     parsed = parse_submit_call(raw, expected_kind="single_slice")
     assert parsed.position_mm == pytest.approx(5.2)
     assert parsed.is_parseable is True
@@ -59,6 +67,18 @@ def test_parse_submit_call_rejects_bool_position_false():
         '{"position_mm": false, "reasoning": "ok"}', expected_kind="single_slice"
     )
     assert parsed.is_parseable is False
+
+
+def test_extract_tool_call_ignores_thought_prefix_text():
+    decoded = (
+        "<|channel>thought\n"
+        "compare neighboring structures\n"
+        "<channel|>"
+        "<tool_call>{\"name\":\"submit_estimate\",\"arguments\":{\"position_mm\":5.1}}</tool_call>"
+    )
+    tool_call = _extract_tool_call_from_decoded(decoded)
+    assert tool_call is not None
+    assert tool_call["function"]["name"] == "submit_estimate"
 
 
 def test_compute_position_mae_mm_simple():

@@ -6,7 +6,12 @@ from pathlib import Path
 
 import pytest
 import torch
-from sft.collate import LangSliceCollator
+from sft.collate import (
+    LangSliceCollator,
+    _BoundaryTokens,
+    _resolve_gemma4_boundary_tokens,
+    _token_level_assistant_mask,
+)
 from sft.dataset import load_examples
 from sft.render import AtlasMetaCache, render_example
 
@@ -54,6 +59,15 @@ def test_collate_rejects_over_length_example(monkeypatch):
 
     class StubTokenizer:
         pad_token_id = 0
+        unk_token_id = 0
+
+        def convert_tokens_to_ids(self, name):
+            return -1
+
+        def __call__(self, text, **kwargs):
+            class O:
+                input_ids = [-1]
+            return O()
 
     class StubProcessor:
         tokenizer = StubTokenizer()
@@ -62,7 +76,6 @@ def test_collate_rejects_over_length_example(monkeypatch):
             return {
                 "input_ids": torch.zeros((1, 5000), dtype=torch.long),
                 "attention_mask": torch.ones((1, 5000), dtype=torch.long),
-                "assistant_masks": torch.zeros((1, 5000), dtype=torch.long),
             }
 
     rendered = RenderedExample(
@@ -121,6 +134,35 @@ def test_pad_batch_pads_labels_with_minus_100():
     assert out["labels"][1, 2].item() == -100
 
 
+def test_pad_batch_pads_processor_batched_seq_tensors():
+    # Gemma 4's processor returns ``mm_token_type_ids`` as ``[1, seq_len]`` —
+    # the batch dim is preserved unlike input_ids/attention_mask/labels which
+    # are explicitly ``[0]``-indexed in collate. Verify the per-token shape
+    # detection handles both cases at PDBS>1.
+    per_example = [
+        {"input_ids": torch.tensor([1, 2, 3]),
+         "attention_mask": torch.tensor([1, 1, 1]),
+         "labels": torch.tensor([1, 2, 3]),
+         "mm_token_type_ids": torch.tensor([[0, 1, 1]]),
+         "pixel_values": torch.zeros(2, 3, 4, 4)},
+        {"input_ids": torch.tensor([4, 5]),
+         "attention_mask": torch.tensor([1, 1]),
+         "labels": torch.tensor([4, 5]),
+         "mm_token_type_ids": torch.tensor([[0, 1]]),
+         "pixel_values": torch.zeros(1, 3, 4, 4)},
+    ]
+    from sft.collate import _pad_batch
+    out = _pad_batch(per_example, pad_token_id=99)
+    assert out["mm_token_type_ids"].shape == (2, 3)
+    # Padding position (row 1, col 2) is 0 (non-image marker)
+    assert out["mm_token_type_ids"][1, 2].item() == 0
+    # Pre-padding positions are preserved
+    assert out["mm_token_type_ids"][0].tolist() == [0, 1, 1]
+    assert out["mm_token_type_ids"][1, :2].tolist() == [0, 1]
+    # Pixel values still concat along image-count dim
+    assert out["pixel_values"].shape == (3, 3, 4, 4)
+
+
 @pytest.mark.skipif(not _GEMMA4_AVAILABLE, reason=_GEMMA4_SKIP_REASON)
 def test_collate_labels_match_input_ids_on_assistant_tokens(processor, rendered_single_slice):
     collator = LangSliceCollator(processor=processor, max_seq_length=4096)
@@ -154,9 +196,13 @@ def test_collate_image_token_sanity_check(processor, rendered_single_slice):
     batch = collator([rendered_single_slice])
     labels = batch["labels"][0]
     input_ids = batch["input_ids"][0]
-    image_token_id = processor.tokenizer.convert_tokens_to_ids("<image_soft_token>")
-    if image_token_id is None or image_token_id < 0:
-        pytest.skip("Gemma 4 image-placeholder token not exposed under that name")
+    # ``<|image|>`` is the canonical Gemma 4 image-soft-token (id 258880).
+    # The earlier name ``<image_soft_token>`` resolves to UNK (id 3) on this
+    # tokenizer, which would make the check trivially pass — use the real one.
+    image_token_id = processor.tokenizer.convert_tokens_to_ids("<|image|>")
+    assert image_token_id is not None and image_token_id > 0, (
+        "<|image|> token must resolve to a real id on Gemma 4"
+    )
     keep_positions = (labels != -100).nonzero(as_tuple=True)[0]
     for pos in keep_positions:
         assert input_ids[pos].item() != image_token_id, (
@@ -165,35 +211,30 @@ def test_collate_image_token_sanity_check(processor, rendered_single_slice):
 
 
 @pytest.mark.skipif(not _GEMMA4_AVAILABLE, reason=_GEMMA4_SKIP_REASON)
-def test_collate_falls_back_to_manual_span_when_no_assistant_mask(
-    monkeypatch, processor, rendered_single_slice
+def test_collate_falls_back_to_manual_span_when_no_boundary_tokens(
+    processor, rendered_single_slice
 ):
-    """Stripping assistant_masks from the processor output forces the fallback,
-    which must reconstruct (approximately) the same labels mask the primary
-    path would have produced."""
-    # Primary path
+    """Disabling the token-level walker (``_boundary_tokens = None``) forces
+    the ``_manual_span_mask`` fallback, which must reconstruct (approximately)
+    the same labels mask the primary path would have produced."""
+    # Primary path: token-level walker
     collator = LangSliceCollator(processor=processor, max_seq_length=4096)
     primary_batch = collator([rendered_single_slice])
     primary_labels = primary_batch["labels"][0]
 
-    # Force fallback by stripping assistant_masks from processor output
-    real = processor.apply_chat_template
-
-    def fake_apply(*args, **kwargs):
-        out = real(*args, **kwargs)
-        if isinstance(out, dict) and "assistant_masks" in out:
-            del out["assistant_masks"]
-        return out
-
-    monkeypatch.setattr(processor, "apply_chat_template", fake_apply)
-
+    # Force fallback by nulling the boundary-token cache
     fallback_collator = LangSliceCollator(processor=processor, max_seq_length=4096)
+    fallback_collator._boundary_tokens = None
     fallback_batch = fallback_collator([rendered_single_slice])
     fallback_labels = fallback_batch["labels"][0]
 
     # The two label sequences should agree on the vast majority of positions.
-    # Allow some slack for BOS / template-edge tokens (these may differ by 1-2
-    # positions per assistant turn).
+    # The token-level walker includes the trailing ``<turn|>\n`` of each
+    # assistant span in the mask (the model learns to emit eos), while
+    # ``_manual_span_mask`` derives spans from the incremental-render diff
+    # which may or may not capture that pair depending on Jinja whitespace.
+    # Some image-token positions are also handled defensively by the walker
+    # but cannot be by the span-diff path. Allow some slack here.
     n_total = primary_labels.shape[0]
     n_match = (primary_labels == fallback_labels).sum().item()
     agreement = n_match / n_total
@@ -355,3 +396,248 @@ def test_sanity_check_warns_when_no_candidate_resolves():
     labels = torch.tensor([-100, -100, 3, 4, -100])
     with pytest.warns(UserWarning, match="image-token sanity check disabled"):
         collator._sanity_check_no_image_tokens_in_labels(ids, labels)
+
+
+# --- Token-level assistant-mask walker ----------------------------------
+
+
+def _synth_boundary_tokens() -> _BoundaryTokens:
+    """Synthetic token IDs for the standalone walker tests.
+
+    These don't correspond to the real Gemma 4 vocab — the walker only cares
+    that all 9 IDs are distinct and that the role-name IDs follow ``sot`` and
+    precede ``newline`` in turn-header triples.
+    """
+    return _BoundaryTokens(
+        sot=100,
+        model_role=200,
+        user_role=201,
+        system_role=202,
+        newline=300,
+        eot=400,
+        tool_resp_open=500,
+        tool_resp_close=501,
+        image=900,
+    )
+
+
+def test_token_level_mask_simple_two_turn():
+    """user → assistant text. Mask covers ONLY the assistant span (incl. eot)."""
+    tok = _synth_boundary_tokens()
+    # Layout:
+    #   [sot, user, nl, 10, 11, eot, nl,     <- user turn (mask=0)
+    #    sot, model, nl, 20, 21, 22, eot, nl] <- model turn (mask=1 inside)
+    ids = torch.tensor([
+        100, 201, 300, 10, 11, 400, 300,
+        100, 200, 300, 20, 21, 22, 400, 300,
+    ], dtype=torch.long)
+    mask = _token_level_assistant_mask(ids, tok).squeeze(0)
+    expected = torch.tensor([
+        0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 1, 1, 1, 1, 1,  # 20/21/22 + <turn|> + \n masked ON
+    ], dtype=torch.long)
+    assert torch.equal(mask, expected), (
+        f"got {mask.tolist()}, expected {expected.tolist()}"
+    )
+
+
+def test_token_level_mask_tool_response_inline_excluded():
+    """Model turn with inlined tool response. Tool-response span (incl. images) masked OFF.
+
+    Mirrors a Gemma 4 multi-turn agent trace where the assistant emits a
+    tool_call, the template inlines ``<|tool_response>...<image>...<tool_response|>``,
+    then the assistant emits a final tool_call.
+    """
+    tok = _synth_boundary_tokens()
+    # Token legend:
+    #   30, 31  = tool_call content #1 (mask ON)
+    #   900     = image-soft-token (always OFF)
+    #   40, 41  = tool response payload text (mask OFF — inside tool_resp)
+    #   50, 51  = tool_call content #2 (mask ON)
+    ids = torch.tensor([
+        100, 201, 300, 10, 11, 400, 300,                     # user turn
+        100, 200, 300,                                       # model turn start
+        30, 31,                                              # tool_call 1
+        500, 40, 900, 900, 41, 501,                          # <|tool_resp> ... <tool_resp|>
+        50, 51,                                              # tool_call 2
+        400, 300,                                            # <turn|> \n
+    ], dtype=torch.long)
+    mask = _token_level_assistant_mask(ids, tok).squeeze(0)
+    # Expected mask: 30/31, 50/51, eot, nl masked ON; tool-resp body OFF;
+    # image tokens always OFF.
+    expected_idx_on = {
+        # tool_call 1 positions:
+        10, 11,                  # indices of 30, 31 in `ids`
+        # tool_call 2 positions:
+        18, 19,                  # indices of 50, 51
+        # eot, nl:
+        20, 21,
+    }
+    for i in range(ids.shape[0]):
+        if i in expected_idx_on:
+            assert mask[i].item() == 1, f"expected mask[{i}]=1 (tok={ids[i].item()})"
+        else:
+            assert mask[i].item() == 0, f"expected mask[{i}]=0 (tok={ids[i].item()})"
+    # Sanity: zero image tokens kept
+    for i in range(ids.shape[0]):
+        if ids[i].item() == tok.image:
+            assert mask[i].item() == 0
+
+
+def test_token_level_mask_image_in_user_turn_stays_masked():
+    """Image tokens in user turns must NOT be in the mask either."""
+    tok = _synth_boundary_tokens()
+    ids = torch.tensor([
+        100, 201, 300, 900, 900, 11, 400, 300,    # user turn with images
+        100, 200, 300, 20, 400, 300,              # model turn
+    ], dtype=torch.long)
+    mask = _token_level_assistant_mask(ids, tok).squeeze(0)
+    # Only positions 11 (val=20), 12 (val=400=eot), 13 (val=300=nl) should be 1
+    for i in range(8):
+        assert mask[i].item() == 0
+    assert mask[11].item() == 1
+    assert mask[12].item() == 1
+    assert mask[13].item() == 1
+
+
+def test_token_level_mask_returns_empty_when_no_model_turn():
+    """No ``<|turn>model\\n`` header → mask is all zeros."""
+    tok = _synth_boundary_tokens()
+    ids = torch.tensor([
+        100, 201, 300, 10, 11, 400, 300,
+        100, 202, 300, 1, 2, 3, 400, 300,
+    ], dtype=torch.long)
+    mask = _token_level_assistant_mask(ids, tok).squeeze(0)
+    assert mask.sum().item() == 0
+
+
+def test_token_level_mask_trailing_dangling_tool_response():
+    """Last model turn ends with a dangling ``<|tool_response>`` (no close)
+    when the template emits a tool-call generation prompt with no follow-up.
+    The trailing region must be masked OFF; no IndexError on EOS.
+    """
+    tok = _synth_boundary_tokens()
+    ids = torch.tensor([
+        100, 200, 300,  # model turn start
+        30, 31,         # tool_call (mask ON)
+        500,            # dangling <|tool_response> (no close)
+    ], dtype=torch.long)
+    mask = _token_level_assistant_mask(ids, tok).squeeze(0)
+    expected = torch.tensor([0, 0, 0, 1, 1, 0], dtype=torch.long)
+    assert torch.equal(mask, expected)
+
+
+# --- Gemma 4 integration tests (require local processor) ------------------
+
+
+@pytest.fixture
+def fresh_processor():
+    """Function-scoped processor; the new collator never mutates the
+    processor's chat_template, so this fixture exists purely so tests that
+    expect a clean state aren't affected by other tests' side effects."""
+    from transformers import AutoProcessor
+    return AutoProcessor.from_pretrained("unsloth/gemma-4-E4B-it", trust_remote_code=False)
+
+
+@pytest.mark.skipif(not _GEMMA4_AVAILABLE, reason=_GEMMA4_SKIP_REASON)
+def test_resolve_gemma4_boundary_tokens_succeeds(fresh_processor):
+    """The real Gemma 4 tokenizer resolves all 9 boundary tokens."""
+    bt = _resolve_gemma4_boundary_tokens(fresh_processor.tokenizer)
+    assert bt is not None
+    # Spot-check known IDs (probed 2026-05-12).
+    assert bt.sot == 105
+    assert bt.eot == 106
+    assert bt.user_role == 2364
+    assert bt.model_role == 4368
+    assert bt.system_role == 9731
+    assert bt.newline == 107
+    assert bt.tool_resp_open == 50
+    assert bt.tool_resp_close == 51
+    assert bt.image == 258880
+
+
+@pytest.mark.skipif(not _GEMMA4_AVAILABLE, reason=_GEMMA4_SKIP_REASON)
+def test_collator_multi_turn_agent_fixture_no_image_tokens_in_mask(processor):
+    """Multi-turn agent trace with image-in-tool-response.
+
+    Constructs the canonical bug-reproduction fixture (user query image,
+    assistant tool_call, tool result containing an image, final assistant
+    tool_call). Verifies:
+      - mask is non-empty
+      - no kept position holds the image-soft-token id (258880)
+      - tool_call payloads ARE in the mask
+      - tool-response body is NOT in the mask
+    """
+    from PIL import Image
+    from sft.render import RenderedExample, RenderMetadata
+
+    image_token_id = processor.tokenizer.convert_tokens_to_ids("<|image|>")
+    # Skip if the canonical name doesn't resolve — would indicate a
+    # tokenizer regression worth investigating before training.
+    assert image_token_id is not None and image_token_id > 0
+
+    tools = [
+        {"type": "function", "function": {
+            "name": "fetch_atlas", "description": "Fetch atlas slices",
+            "parameters": {"type": "object", "properties": {
+                "section_index": {"type": "integer"},
+            }, "required": ["section_index"]},
+        }},
+        {"type": "function", "function": {
+            "name": "submit_estimate", "description": "Submit final estimate",
+            "parameters": {"type": "object", "properties": {
+                "position_mm": {"type": "number"},
+            }, "required": ["position_mm"]},
+        }},
+    ]
+    messages = [
+        {"role": "system", "content": [{"type": "text", "text": "You are an AP estimator."}]},
+        {"role": "user", "content": [
+            {"type": "image", "image": Image.new("RGB", (224, 224))},
+            {"type": "text", "text": "Where is this slice?"},
+        ]},
+        {"role": "assistant", "content": [], "tool_calls": [{
+            "id": "1", "type": "function",
+            "function": {"name": "fetch_atlas", "arguments": "{\"section_index\":31}"},
+        }]},
+        {"role": "tool", "tool_call_id": "1", "name": "fetch_atlas",
+         "content": [
+             {"type": "image", "image": Image.new("RGB", (224, 224))},
+             {"type": "text", "text": "<|image|>Atlas at section 31"},
+         ]},
+        {"role": "assistant", "content": [], "tool_calls": [{
+            "id": "2", "type": "function",
+            "function": {"name": "submit_estimate", "arguments": "{\"position_mm\":6.5}"},
+        }]},
+    ]
+    rendered = RenderedExample(
+        messages=messages, tools=tools,
+        metadata=RenderMetadata(
+            atlas_name="x", atlas_version="x", plane="coronal",
+            subject_id="multi_turn_fixture", system_prompt_kind="single_slice",
+        ),
+        image_paths=["q.png", "a.png"], n_query_images=1,
+    )
+    collator = LangSliceCollator(processor=processor, max_seq_length=4096)
+    batch = collator([rendered])
+    labels = batch["labels"][0]
+    input_ids = batch["input_ids"][0]
+    # Non-empty mask
+    n_kept = (labels != -100).sum().item()
+    assert n_kept > 0, "mask is empty — token-level walker failed to find model spans"
+    # No kept position holds the image-soft-token id (the bug we're fixing)
+    keep_positions = (labels != -100).nonzero(as_tuple=True)[0]
+    for pos in keep_positions:
+        assert input_ids[pos].item() != image_token_id, (
+            f"labels[{pos}] = {input_ids[pos].item()} = image-soft-token id"
+        )
+    # tool_call tokens ARE in the mask (sanity: 48 = <|tool_call>, 49 = <tool_call|>)
+    TOOL_CALL_OPEN = 48
+    TOOL_CALL_CLOSE = 49
+    assert ((labels != -100) & (input_ids == TOOL_CALL_OPEN)).sum().item() == 2
+    assert ((labels != -100) & (input_ids == TOOL_CALL_CLOSE)).sum().item() == 2
+    # tool_response markers are NOT in the mask
+    TOOL_RESP_OPEN = 50
+    TOOL_RESP_CLOSE = 51
+    assert ((labels != -100) & (input_ids == TOOL_RESP_OPEN)).sum().item() == 0
+    assert ((labels != -100) & (input_ids == TOOL_RESP_CLOSE)).sum().item() == 0

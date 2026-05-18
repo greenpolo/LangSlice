@@ -540,6 +540,7 @@ class ManifestIndex:
         dataset: str | None = None,
         difficulty_range: tuple[float, float] | None = None,
         exclude_zero_axes: bool = False,
+        include_excluded: bool = False,
     ) -> list[Section]:
         """Filtered view over the index.
 
@@ -559,6 +560,13 @@ class ManifestIndex:
         the legitimate anterior-pole position; this flag exists for
         adapters where 0.0 is a sentinel for "unknown" and should be
         dropped explicitly.
+
+        ``include_excluded`` is off by default — sections whose
+        ``exclude_from_training`` flag is truthy are dropped before any
+        downstream training consumer sees them. The data-immutability
+        principle treats those rows as a hard contract: once a section is
+        excluded it must not silently re-enter training, and only callers
+        that explicitly want the full pool (e.g. QC tooling) may opt in.
 
         The return value is sorted by ``(plane, dataset, section_id)``
         for determinism — caller-side sorting could otherwise drift.
@@ -597,6 +605,8 @@ class ManifestIndex:
             if dataset is not None and s.dataset != dataset:
                 continue
             if split is not None and s.split != split:
+                continue
+            if not include_excluded and s.exclude_from_training:
                 continue
             if exclude_zero_axes and s.position_mm == 0.0:
                 continue

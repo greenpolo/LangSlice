@@ -2,11 +2,12 @@
 
 Fine-tuned **Gemma 4 E4B** for brain-section position estimation, deployed as a drop-in replacement for Gemini inside the LangSlice estimation agent loop (`fetch_atlas` + `submit_estimate` / `submit_group_estimate`).
 
-## Authoritative Designs
+## Training Docs
 
-- SFT training/input contract: `docs/superpowers/specs/2026-05-05-gemma4-sft-training-design.md`
-- Historical SFT data design: `docs/superpowers/specs/2026-04-25-gemma4-sft-data-design.md`
-- RLVR training: `docs/superpowers/specs/2026-05-04-gemma4-rlvr-training-design.md`
+- Public training overview: `docs/training_overview.md`
+- SFT data contract and trainer usage: `training/sft/README.md`
+- Active single-turn RL trainer: `training/single_turn_rl/README.md`
+- Parked multi-turn RLVR trainer: `training/rlvr/README.md`
 
 ## Approach
 
@@ -30,34 +31,17 @@ Each row is a single-slice langslice-native trace with relative image paths. The
 Use Docker for SFT training:
 
 ```powershell
-scripts/docker-training/smoke.ps1
-scripts/docker-training/sft.ps1 -RunName docker-run0
+models/langslice-gemma-4/training/scripts/docker/smoke.ps1
+models/langslice-gemma-4/training/scripts/docker/sft.ps1 -RunName docker-run0
 ```
 
 Native Windows SFT remains available through `models/langslice-gemma-4/training/_run_sft_msvc.cmd`, but Docker is preferred for CUDA/Unsloth performance and fewer Windows-specific dependency issues.
 
-## RLVR Launch
+## RLVR (parked)
 
-From the repo root:
-
-```bash
-python -m langslice_rlvr \
-  --config models/langslice-gemma-4/training/configs/grpo_pilot.toml \
-  --sft-model out/sft/gemma4-e4b-langslice \
-  --output-dir out/rlvr/phase_a \
-  --test-images-root references/TestImages
-```
-
-Phase B resumes the Phase A LoRA adapter:
-
-```bash
-python -m langslice_rlvr \
-  --config models/langslice-gemma-4/training/configs/grpo_phase_b.toml \
-  --sft-model out/sft/gemma4-e4b-langslice \
-  --resume-from-adapter out/rlvr/phase_a \
-  --output-dir out/rlvr/phase_b \
-  --test-images-root references/TestImages
-```
+Multi-turn GRPO RLVR is parked as of 2026-05-09 in favor of expert-iteration
+SFT (`training/iSFT/`). The RLVR module is preserved at `training/rlvr/`; see
+that README before un-parking.
 
 ## Directory Layout
 
@@ -65,3 +49,10 @@ python -m langslice_rlvr \
 - `training/` - Unsloth QLoRA configs and runners.
 - `training/rlvr/` - RLVR environment, dataset, reward, atlas grid, and GRPO driver.
 - `inference/` - local agent-loop runner using the fine-tuned model.
+- `variants/langslice-gemma-4-e4b/README.md` - public model card + Hugging Face pointer (weights not stored in this repo).
+
+## Compatibility and migration
+
+- Preferred launch commands: `langslice-sft-train`, `langslice-isft`, and `langslice-single-turn-rl`.
+- During transition, training/data imports can resolve from shared package roots when present:
+  `models/langslice-traces`, `models/synthdata`, `models/training-core`, `models/data`.

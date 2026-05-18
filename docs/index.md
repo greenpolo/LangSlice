@@ -1,17 +1,35 @@
 # Documentation Index
 
-This directory documents the code that is currently in `src/langslice_harness/`.
-These files are meant to describe the implementation that exists now, not a separate design target.
+This directory documents the public LangSlice implementation. It is meant to
+describe the code that exists now, not private planning notes or historical
+session handoffs.
 
-## Files
+## Start Here
 
-- `architecture_overview.md` - package boundaries, major modules, and end-to-end control flow
-- `current_workflow.md` - current CLI and Tauri GUI workflows
-- `abba_ap_coordinate_system.md` - the AP coordinate rules used by atlas helpers and export
-- `registration_plan.md` - current image-gen registration runtime
+- `README.md` - setup, quickstart, and high-level project behavior.
+- `architecture_overview.md` - package boundaries, major modules, and end-to-end control flow.
+- `current_workflow.md` - current CLI and Tauri GUI workflows.
+- `training_overview.md` - public training layout, entrypoints, and local-data policy.
 
-## Related Top-Level Docs
+## Runtime References
 
-- `README.md` - setup, auth modes, CLI, and high-level behavior
-- `REPO_MAP.md` - short navigation map for the repository
-- `AGENTS.md` - agent-facing implementation notes
+- `abba_ap_coordinate_system.md` - atlas-native AP coordinate conventions.
+- `registration_plan.md` - current image-generation registration runtime.
+- `image_gen_AIstudio_examples/` - small provider examples and reference images.
+
+## Repository Map
+
+- `src/langslice_harness/` - installable Python harness and `langslice` CLI.
+- `tauri-gui/` - desktop GUI.
+- `web-demo/` - static browser demo.
+- `models/langslice-gemma-4/` - Gemma 4 E4B fine-tuning project.
+- `models/langslice-traces/`, `models/synthdata/`, `models/training-core/`, `models/data/` - shared model/data packages.
+- `tests/` - pytest coverage.
+- `docs/` - public documentation.
+
+## Local-Only Material
+
+The repo intentionally does not track private data rows, generated corpora,
+model checkpoints, local run outputs, or private planning notes. Keep those in
+ignored paths such as `_local/`, `out/`, `data/`, `debug_runs/`, and
+`references/`.

@@ -1,0 +1,169 @@
+# Phase 9 v4 — Lane A single-turn GRPO, resumed from v3 ckpt-60.
+# (Reused by v5 launch with stop-token + mask-off knobs — see v4 → v5 below.)
+# (Reused by v6 launch with K=3 + AdaRFT retune — see v5 → v6 below.)
+#
+# v3 → v4 diff (only one functional change):
+#   - generation_kwargs.stop_strings added so completions terminate naturally
+#     instead of hitting max_completion_length cap. In v3 ~75-80% of steps had
+#     clipped_ratio=1.0 (model emits `call:submit_estimate{...}` correctly then
+#     keeps chatting with "Thanks for the detailed analysis...") and were
+#     masked by mask_truncated_completions=true → no gradient. Empirically the
+#     chatter starts immediately after the close-brace of submit_estimate args
+#     with no whitespace, so "}" reliably cuts at end-of-args. Two more stops
+#     cover the wrapped-form sentinel and chat-template termination.
+#   - save_steps 20 → 50 (less ckpt clutter at the longer max_steps)
+#   - max_steps 200 → 2224 = 1 full epoch over Lane A corpus (17792 rows /
+#     effective batch 8 prompts per step = 2224 grad updates per epoch).
+#
+# v4 → v5 (next restart) diff:
+#   - max_completion_length 512 → 768. With the SubmitEstimateCloseCriteria +
+#     post-generate eos rewrite installed, clipped rollouts dropped from
+#     mostly-1.0 to mostly-0.5 (one of two K=2 rollouts still rambles past
+#     512 before emitting submit). 768 gives headroom for the rambling
+#     branch to converge to a tool call without exploding VRAM (single
+#     query image, PDBS=1, K=2: extra 256 tokens is a few hundred MB).
+#   - mask_truncated_completions true → false. The stop-token criterion now
+#     correctly converts every successful submit into a clean EOS termination,
+#     so the only remaining truncated rollouts are the format failures we
+#     WANT a gradient on (the format_penalty=-1.0 signal). With masking on,
+#     TRL zeroed the gradient that would have taught the model "do not
+#     ramble past the budget" — the bug rambling rollouts get penalty but
+#     never propagate it. Now the penalty propagates. Risk = a small
+#     amount of noise from legitimately long reasoning that did emit the
+#     submit (already eos-rewritten so not masked anyway, no change there).
+#
+# K=2 retained per arxiv 2510.00977 ("It Takes Two: Your GRPO Is Secretly DPO"):
+# 2-GRPO retains 98.1% of 16-GRPO at 21% wall-time. K=4 would have bought
+# minor advantage variance reduction for ~2x wall-clock, bad trade.
+
+[grpo]
+chat_template_kwargs = { enable_thinking = false }
+generation_kwargs = { stop_strings = ["<tool_call|>", "<end_of_turn>"] }
+# stop_strings note: the literal `}` stop was REMOVED. It used to fire on
+# inner braces in the model's reasoning (e.g. `{atlas_name}` constructs)
+# producing 26-token garbage completions with reward=-1 (~12% of steps), and
+# even on healthy completions stop_strings does NOT append eos, so TRL
+# v0.27.x ``mask_truncated_completions=true`` zero-masked every successful
+# rollout (see grpo_trainer.py lines 1874-1878 / 1921-1925). Replaced by a
+# string-aware ``SubmitEstimateCloseCriteria`` (default-on via
+# ``submit_estimate_stop_criterion`` below) + a post-generate eos rewrite
+# wired into ``_generate_with_tokenizer`` in single_turn_rl/train_grpo.py.
+# The remaining two stops are kept as safety nets in case the model emits
+# the wrapped sentinel or the chat-template terminator.
+submit_estimate_stop_criterion = true
+learning_rate = 1e-6
+# v5→v6 (this restart): num_generations 2→3 to fix K=2 zero-variance failures
+# observed in v5 first 50 steps (frac_reward_zero_std ~50-65% even after the
+# stop-token + mask-off patches landed — when both K=2 rollouts converged to
+# similar reward there was no contrastive signal). K=3 adds a third sample
+# per group; advantage variance estimator gains a degree of freedom and at
+# least one rollout being "different" becomes likely. Per
+# [[reference-grpo-k2-dpo-paper]] K=2 is theoretically sufficient for
+# multi-epoch math reasoning, but our single-epoch unique-prompt regime hits
+# the floor of "both rollouts happen to be equally good/bad" too often.
+num_generations = 3
+generation_batch_size = 3
+per_device_train_batch_size = 1
+gradient_accumulation_steps = 8
+# v6→v6a: max_completion_length 640→512 after live VRAM revealed silent
+# allocator thrashing. Effective GPU memory is ~31.5 GB (32.6 - system
+# overhead), and 640 + K=3 left us at 31.96 GB used with ~228 MB nominal
+# free — PyTorch's expandable_segments allocator started defragmenting
+# every alloc, causing step time to climb 86s → 165s without crashing.
+# Dropping to 512 matches the K=2 v3-era footprint per token-slot math
+# (K=3 × 512 = 1536 = K=2 × 768), reclaiming ~5 GB headroom.
+max_completion_length = 512
+dataloader_num_workers = 16
+dataloader_pin_memory = true
+dataloader_persistent_workers = true
+dataloader_prefetch_factor = 4
+max_grad_norm = 0.1
+importance_sampling_level = "sequence"
+loss_type = "dapo"
+# v5: turned off so the format_penalty (-1.0) from non-submitting rollouts
+# actually propagates as gradient. Was masking the very signal we need to
+# teach "stop rambling, emit submit_estimate". Safe to disable because the
+# SubmitEstimateCloseCriteria + post-generate eos rewrite already converts
+# every successful submit into a clean EOS termination — TRL's eos/pad
+# check now naturally separates "good completion" (not masked) from
+# "format failure" (also not masked → gradient flows).
+mask_truncated_completions = false
+scale_rewards = "batch"
+temperature = 1.5
+top_p = 1.0
+optim = "adamw_8bit"
+log_completions = true
+logging_steps = 1
+save_steps = 50
+max_steps = 2224
+report_to = "none"
+load_in_4bit = false
+max_seq_length = 8192
+
+[lora]
+finetune_vision_layers = false
+finetune_language_layers = true
+finetune_attention_modules = true
+finetune_mlp_modules = true
+r = 64
+lora_alpha = 8
+use_rslora = true
+use_gradient_checkpointing = "unsloth"
+
+[data]
+eval_holdout_every = 5
+curriculum_round = 0
+
+[reward]
+cutoff_frac = 0.25
+# v6→v7: sigma_frac (warmup static fallback) widened 0.05→0.10 to match
+# the new max_sigma_frac cap below. Affects only the first ~16 steps before
+# the rolling-error buffer fills to min_observations=50.
+sigma_frac = 0.10
+# v6→v7: format_penalty -1.0 → -0.3. Empirical reward histogram from v6
+# (104 steps) showed 44% of steps were format-penalty-dominated (≤-0.5)
+# while only 25% gave any meaningful positive accuracy gradient (>+0.05).
+# The 1.0 magnitude gap between format-fail (-1.0) and in-range-garbage
+# (0.0) trained the model to optimize format compliance over accuracy →
+# slicebench regressed from mae 2.05 (step 60) → 2.45 (step 210). Softer
+# penalty narrows that gap to 0.3, letting the bell signal compete.
+format_penalty = -0.3
+out_of_range_reward = 0.0
+
+# v5→v6: AdaRFT knobs tuned after observing T-wedge at d_min=0 for ~25
+# consecutive steps (steps 24-48 in v5). Mean observed reward was ~0.20 but
+# default target_reward was 0.5 — unreachable for the current policy → T
+# crashed → sampler degenerated to ladder=4 (uniform from full dataset). The
+# changes:
+#   - target_reward 0.5→0.3: more realistic target given current policy
+#     accuracy. T finds equilibrium at a usable difficulty band instead of
+#     pegging d_min.
+#   - eta 0.05→0.03: slower T drift. Per-step max move drops from ±0.038 to
+#     ±0.023 → less violent oscillation, less likely to slam d_min on a few
+#     bad steps.
+[adaptive]
+target_reward = 0.3
+eta = 0.03
+# d_min 0.0→0.2: hard floor on T. With band_width=0.15, this keeps the
+# sampling band at minimum [0.05, 0.35] even when reward stays low. Forces
+# at least 7 of 20 bins into the candidate pool, preventing the ladder=4
+# uniform-backfill collapse we saw in v5. Bottom 5% of AP (most anterior
+# OB) is excluded — acceptable, that's the least challenging zone anyway.
+d_min = 0.2
+# v6→v7: max_sigma_frac 0.05→0.15. With cap at 0.05 (=0.66 mm sigma on
+# coronal mouse), the bell vanished at the model's typical 2-3 mm error
+# (~3-4σ → reward ≈ 0). Wider cap means meaningful reward gradient at
+# typical model error: at sigma=0.15 (=1.98 mm), a 2 mm error gives
+# reward ≈ 0.6 instead of ≈ 0.01. Restores "closer = better" signal that
+# was the missing piece in v3-v6.
+max_sigma_frac = 0.15
+# v6→v7: per-bin coverage quota. AdaRFT alone concentrated training on
+# the easy difficulty band, starving harder bins of gradient → uniform
+# regression on per-brain MAE between step 60 and step 210. The quota
+# forces every reachable AP bin to receive ≥20 gradient updates before
+# AdaRFT is allowed to concentrate; while any bin is below quota, 2 of
+# 8 slots per batch (25%) are reserved for picks from the most-deficit
+# bins. Lets AdaRFT keep its focused-band advantage on the remaining
+# 6/8 slots while guaranteeing coverage of every bin.
+min_visits_per_bin = 20
+quota_slots_per_batch = 2

@@ -42,13 +42,198 @@ pub fn list_atlases() -> Result<Vec<String>, String> {
     loader::list_downloaded_atlases()
 }
 
+/// Metadata for one BrainGlobe atlas — what the manager modal renders per row.
+#[derive(serde::Serialize)]
+pub struct AvailableAtlas {
+    pub name: String,
+    pub version: String,
+    pub latest_version: String,
+    pub downloaded: bool,
+    pub updated: bool,
+}
+
+/// List every atlas the BrainGlobe API knows about, with `downloaded` set per
+/// entry. Shells out to Python because the registry lives in
+/// `brainglobe-atlasapi`.
+///
+/// Uses `get_all_atlases_lastversions()` (the full remote registry, ~200
+/// atlases) as the baseline and overlays per-atlas local state from
+/// `get_atlases_lastversions()` so installed atlases show their cached
+/// version. The remote call falls back to local-only if the network is
+/// unreachable, so the modal still works offline.
+#[tauri::command]
+pub async fn list_available_atlases() -> Result<Vec<AvailableAtlas>, String> {
+    use tokio::process::Command;
+
+    let script = r#"
+import json
+from brainglobe_atlasapi.list_atlases import get_atlases_lastversions
+local = get_atlases_lastversions()
+try:
+    from brainglobe_atlasapi.list_atlases import get_all_atlases_lastversions
+    remote = get_all_atlases_lastversions()
+except Exception:
+    remote = {name: info.get("latest_version", "") for name, info in local.items()}
+out = {}
+for name, latest in remote.items():
+    info = local.get(name)
+    if info is not None:
+        out[name] = {
+            "version": info.get("version", ""),
+            "latest_version": info.get("latest_version", latest),
+            "downloaded": bool(info.get("downloaded", False)),
+            "updated": bool(info.get("updated", False)),
+        }
+    else:
+        out[name] = {
+            "version": "",
+            "latest_version": str(latest),
+            "downloaded": False,
+            "updated": False,
+        }
+print(json.dumps(out))
+"#;
+
+    let output = Command::new("python")
+        .args(["-c", script])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to spawn python: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("brainglobe listing failed: {}", stderr));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: serde_json::Map<String, serde_json::Value> =
+        serde_json::from_str(stdout.trim())
+            .map_err(|e| format!("Failed to parse atlas listing JSON: {}", e))?;
+
+    let mut atlases: Vec<AvailableAtlas> = parsed
+        .into_iter()
+        .map(|(name, val)| AvailableAtlas {
+            name,
+            version: val
+                .get("version")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            latest_version: val
+                .get("latest_version")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("")
+                .to_string(),
+            downloaded: val
+                .get("downloaded")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false),
+            updated: val
+                .get("updated")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false),
+        })
+        .collect();
+
+    atlases.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(atlases)
+}
+
+/// Download a BrainGlobe atlas, emitting `atlas-download-progress` events as
+/// the download proceeds. The Python helper streams JSON-line progress to
+/// stdout; each line has `phase` plus optional `completed`/`total` bytes.
+#[tauri::command]
+pub async fn download_atlas(name: String, app: tauri::AppHandle) -> Result<(), String> {
+    use tauri::Emitter;
+    use tokio::io::{AsyncBufReadExt, BufReader};
+    use tokio::process::Command;
+
+    let script = r#"
+import sys, json
+from brainglobe_atlasapi import BrainGlobeAtlas
+name = sys.argv[1]
+last = [0]
+def cb(completed, total):
+    last[0] = total
+    print(json.dumps({"phase":"downloading","completed":completed,"total":total}), flush=True)
+print(json.dumps({"phase":"resolving"}), flush=True)
+BrainGlobeAtlas(name, fn_update=cb, check_latest=False)
+print(json.dumps({"phase":"extracting"}), flush=True)
+print(json.dumps({"phase":"complete","total":last[0]}), flush=True)
+"#;
+
+    let mut child = Command::new("python")
+        .args(["-c", script, &name])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to spawn python: {}", e))?;
+
+    let stdout = child.stdout.take().ok_or("No stdout")?;
+    let stderr = child.stderr.take().ok_or("No stderr")?;
+
+    let app_for_stderr = app.clone();
+    let name_for_stderr = name.clone();
+    let stderr_handle = tokio::spawn(async move {
+        let reader = BufReader::new(stderr);
+        let mut lines = reader.lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            let _ = app_for_stderr.emit(
+                "atlas-download-log",
+                serde_json::json!({ "atlas": name_for_stderr, "line": line }),
+            );
+        }
+    });
+
+    let reader = BufReader::new(stdout);
+    let mut lines = reader.lines();
+    while let Ok(Some(line)) = lines.next_line().await {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let mut payload: serde_json::Value = match serde_json::from_str(trimmed) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if let Some(obj) = payload.as_object_mut() {
+            obj.insert("atlas".to_string(), serde_json::Value::String(name.clone()));
+        }
+        let _ = app.emit("atlas-download-progress", &payload);
+    }
+
+    stderr_handle.await.ok();
+
+    let status = child
+        .wait()
+        .await
+        .map_err(|e| format!("Process error: {}", e))?;
+    if !status.success() {
+        return Err(format!(
+            "Atlas download failed (exit code {:?})",
+            status.code()
+        ));
+    }
+    Ok(())
+}
+
 /// Load an atlas by name. Caches volumes in managed state.
 #[tauri::command]
 pub fn load_atlas(
     name: String,
+    app: tauri::AppHandle,
     state: State<'_, Mutex<AppState>>,
 ) -> Result<AtlasMetadata, String> {
-    let atlas_state = loader::load_atlas(&name)?;
+    use tauri::Emitter;
+
+    // Emit phase-boundary progress events so the frontend can render a
+    // determinate bar. Payload shape matches AtlasLoadProgress in lib/types.ts.
+    let atlas_state = loader::load_atlas(&name, |phase, percent| {
+        let _ = app.emit(
+            "atlas-load-progress",
+            serde_json::json!({ "phase": phase, "percent": percent }),
+        );
+    })?;
     let metadata = atlas_state.metadata.clone();
 
     let mut app_state = state
@@ -134,7 +319,9 @@ pub fn get_coronal_slice(
     slicer::extract_coronal_slice(&atlas.reference_volume, &atlas.annotation_volume, idx)
 }
 
-/// Load the whole-brain outline mesh (structure 997).
+/// Load the whole-brain outline mesh. The root structure ID varies by atlas
+/// (Allen mouse = 997, ADMBA p14 = 15564, etc.), so we look it up from
+/// structures.json via ``acronym == "root"`` rather than hardcoding.
 #[tauri::command]
 pub fn get_brain_mesh(state: State<'_, Mutex<AppState>>) -> Result<MeshData, String> {
     let app_state = state
@@ -142,9 +329,20 @@ pub fn get_brain_mesh(state: State<'_, Mutex<AppState>>) -> Result<MeshData, Str
         .map_err(|e| format!("State lock error: {}", e))?;
     let atlas = app_state.atlas.as_ref().ok_or("No atlas loaded")?;
 
-    let mesh_path = atlas.atlas_dir.join("meshes").join("997.obj");
+    let root_id = atlas
+        .root_structure_id()
+        .ok_or("No 'root' structure (acronym=root) found in atlas")?;
+
+    let mesh_path = atlas
+        .atlas_dir
+        .join("meshes")
+        .join(format!("{}.obj", root_id));
     if !mesh_path.exists() {
-        return Err(format!("Brain mesh not found: {}", mesh_path.display()));
+        return Err(format!(
+            "Brain mesh not found for root id {}: {}",
+            root_id,
+            mesh_path.display()
+        ));
     }
 
     loader::load_obj_mesh(&mesh_path)
@@ -298,16 +496,25 @@ pub fn load_slice_image(
 }
 
 /// Run `langslice estimate` CLI and return the JSON result + stdout logs.
+///
+/// Argument set is a trimmed subset of `_add_estimate_parser` in
+/// `src/langslice_harness/cli.py`. Flags the GUI no longer surfaces
+/// (--workflow, --vlm-resolution, --borders, --grid) are left to the
+/// harness defaults: auto-picks workflow (tool_use for text/vision models),
+/// 2048px VLM resolution, no borders, individual atlas slices.
 #[tauri::command]
 pub async fn run_estimate(
     image_path: String,
     atlas: String,
+    plane: String,
     model: String,
     thinking: String,
     temperature: f64,
-    vlm_resolution: u32,
+    media_resolution: String,
     max_iterations: u32,
-    workflow: String,
+    preprocess: String,
+    provider: String,
+    endpoint: Option<String>,
     app: tauri::AppHandle,
 ) -> Result<serde_json::Value, String> {
     use tauri::Emitter;
@@ -321,21 +528,29 @@ pub async fn run_estimate(
         image_path,
         "--atlas".to_string(),
         atlas,
+        "--plane".to_string(),
+        plane,
         "--model".to_string(),
         model,
         "--thinking".to_string(),
         thinking,
         "--temperature".to_string(),
         temperature.to_string(),
-        "--vlm-resolution".to_string(),
-        vlm_resolution.to_string(),
+        "--media-resolution".to_string(),
+        media_resolution,
         "--max-iterations".to_string(),
         max_iterations.to_string(),
+        "--preprocess".to_string(),
+        preprocess,
+        "--provider".to_string(),
+        provider,
         "--json".to_string(),
     ];
-    if workflow != "auto" {
-        args.push("--workflow".to_string());
-        args.push(workflow);
+    if let Some(ep) = endpoint {
+        if !ep.is_empty() {
+            args.push("--endpoint".to_string());
+            args.push(ep);
+        }
     }
 
     let mut child = Command::new("python")
@@ -384,22 +599,32 @@ pub async fn run_estimate(
 }
 
 /// Run `langslice register` CLI and return the JSON result.
+///
+/// Argument set is a trimmed subset of `_add_register_parser` in
+/// `src/langslice_harness/cli.py`. Flags the GUI no longer surfaces
+/// (--registration-mode, --max-candidates, --openai-image-route,
+/// --vlm-resolution, --review-model) fall back to harness defaults: direct
+/// mode (agentic review is unverified), 3 candidates, /v1/images route,
+/// 2048px VLM, review-model defaults to the image-model fallback chain.
+/// The register subcommand does NOT accept --media-resolution.
 #[tauri::command]
 pub async fn run_register(
     image_path: String,
     position_mm: f64,
     atlas: String,
-    model: String,
+    plane: String,
+    image_model: String,
     thinking: String,
     temperature: f64,
-    vlm_resolution: u32,
+    provider: String,
+    endpoint: Option<String>,
     app: tauri::AppHandle,
 ) -> Result<serde_json::Value, String> {
     use tauri::Emitter;
     use tokio::io::{AsyncBufReadExt, BufReader};
     use tokio::process::Command;
 
-    let args = vec![
+    let mut args = vec![
         "-m".to_string(),
         "langslice_harness".to_string(),
         "register".to_string(),
@@ -408,16 +633,24 @@ pub async fn run_register(
         atlas,
         "--position".to_string(),
         position_mm.to_string(),
-        "--model".to_string(),
-        model,
+        "--plane".to_string(),
+        plane,
+        "--image-model".to_string(),
+        image_model,
         "--thinking".to_string(),
         thinking,
         "--temperature".to_string(),
         temperature.to_string(),
-        "--vlm-resolution".to_string(),
-        vlm_resolution.to_string(),
+        "--provider".to_string(),
+        provider,
         "--json".to_string(),
     ];
+    if let Some(ep) = endpoint {
+        if !ep.is_empty() {
+            args.push("--endpoint".to_string());
+            args.push(ep);
+        }
+    }
     let mut child = Command::new("python")
         .args(&args)
         .stdout(std::process::Stdio::piped())
@@ -463,6 +696,107 @@ pub async fn run_register(
     extract_json(&stdout_text)
 }
 
+/// Run the silhouette-based affine preview pipeline. Used by the GUI to
+/// drop a brain-shaped warped slice into the 3D viewer the moment the user
+/// locks an AP position, before the full nano-banana pipeline runs.
+///
+/// Output path is derived server-side from a hash of (image_path, position,
+/// atlas, plane) inside Tauri's app cache directory — never the source
+/// folder, so the histology scanner can't accidentally pick the preview up
+/// as another slice. Re-locking at the same coordinates overwrites in place;
+/// different positions produce distinct cache files.
+#[tauri::command]
+pub async fn run_quick_affine(
+    image_path: String,
+    position_mm: f64,
+    atlas: String,
+    plane: String,
+    app: tauri::AppHandle,
+) -> Result<serde_json::Value, String> {
+    use std::hash::{Hash, Hasher};
+    use tauri::{Emitter, Manager};
+    use tokio::io::{AsyncBufReadExt, BufReader};
+    use tokio::process::Command;
+
+    // Hash the inputs into a stable filename. Quantize position to integer
+    // micrometres so micro-jitter in the slider doesn't generate thousands
+    // of distinct cache files.
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    image_path.hash(&mut hasher);
+    atlas.hash(&mut hasher);
+    plane.hash(&mut hasher);
+    ((position_mm * 1000.0).round() as i64).hash(&mut hasher);
+    let filename = format!("qa_{:016x}.png", hasher.finish());
+
+    let cache_dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| format!("Failed to resolve app cache dir: {}", e))?
+        .join("quick_affine");
+    std::fs::create_dir_all(&cache_dir)
+        .map_err(|e| format!("Failed to create cache dir: {}", e))?;
+    let out_path = cache_dir.join(&filename);
+    let out_path_str = out_path.to_string_lossy().to_string();
+
+    let args = vec![
+        "-m".to_string(),
+        "langslice_harness".to_string(),
+        "quick-affine".to_string(),
+        image_path,
+        "--atlas".to_string(),
+        atlas,
+        "--position".to_string(),
+        position_mm.to_string(),
+        "--plane".to_string(),
+        plane,
+        "--out".to_string(),
+        out_path_str,
+        "--json".to_string(),
+    ];
+
+    let mut child = Command::new("python")
+        .args(&args)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to spawn python: {}", e))?;
+
+    let stdout = child.stdout.take().ok_or("No stdout")?;
+    let stderr = child.stderr.take().ok_or("No stderr")?;
+    let app_clone = app.clone();
+
+    let stderr_handle = tokio::spawn(async move {
+        let reader = BufReader::new(stderr);
+        let mut lines = reader.lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            let _ = app_clone.emit("pipeline-log", &format!("[quick-affine] {}", line));
+        }
+    });
+
+    let reader = BufReader::new(stdout);
+    let mut lines = reader.lines();
+    let mut all_stdout = Vec::new();
+    while let Ok(Some(line)) = lines.next_line().await {
+        let _ = app.emit("pipeline-log", &format!("[quick-affine] {}", line));
+        all_stdout.push(line);
+    }
+    stderr_handle.await.ok();
+
+    let status = child
+        .wait()
+        .await
+        .map_err(|e| format!("Process error: {}", e))?;
+    if !status.success() {
+        return Err(format!(
+            "Quick-affine failed (exit code {:?})",
+            status.code()
+        ));
+    }
+
+    let stdout_text = all_stdout.join("\n");
+    extract_json(&stdout_text)
+}
+
 /// Extract the last JSON object from mixed stdout output.
 fn extract_json(stdout: &str) -> Result<serde_json::Value, String> {
     let mut depth = 0i32;
@@ -494,12 +828,13 @@ fn extract_json(stdout: &str) -> Result<serde_json::Value, String> {
     }
 }
 
-/// Run `langslice register` with export output.
+/// Run `langslice_harness register` with export output.
 #[tauri::command]
 pub async fn run_export(
     image_path: String,
     position_mm: f64,
     atlas: String,
+    plane: String,
     output_dir: String,
 ) -> Result<String, String> {
     use tokio::process::Command;
@@ -507,13 +842,15 @@ pub async fn run_export(
     let output = Command::new("python")
         .args([
             "-m",
-            "langslice",
+            "langslice_harness",
             "register",
             &image_path,
             "--atlas",
             &atlas,
             "--position",
             &position_mm.to_string(),
+            "--plane",
+            &plane,
             "--out",
             &output_dir,
             "--json",
@@ -606,8 +943,7 @@ pub fn write_env_file(vars: serde_json::Value) -> Result<(), String> {
 
 /// Find the .env file path (project root).
 fn find_env_path() -> std::path::PathBuf {
-    // Look for .env relative to the langslice package
-    // In development, this is C:\LabSoftware\LangSlice\.env
+    // Look for .env relative to the local development checkout.
     let candidates = [
         std::path::PathBuf::from("C:/LabSoftware/LangSlice/.env"),
         dirs::home_dir().unwrap_or_default().join(".langslice.env"),

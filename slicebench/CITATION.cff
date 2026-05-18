@@ -1,0 +1,29 @@
+cff-version: 1.2.0
+title: SliceBench
+message: "If you use SliceBench in your work, please cite the following."
+type: software
+abstract: >-
+  SliceBench is a position-estimation benchmark for histological brain sections.
+  Given an image of a slice, models predict its anterior-posterior coordinate
+  in the matching brain atlas. The benchmark spans coronal, sagittal, and
+  horizontal planes across mouse and rat using public Allen Institute, EBRAINS,
+  Zenodo, and figshare data.
+authors:
+  - family-names: Baughman
+    given-names: Nicholas
+    affiliation: Walsh Lab
+  - name: Walsh Lab
+license: MIT
+repository-code: "https://github.com/greenpolo/LangSlice/tree/main/slicebench"
+url: "https://github.com/greenpolo/LangSlice/tree/main/slicebench"
+date-released: "2026-05-17"
+version: "1.4"
+keywords:
+  - benchmark
+  - brain-imaging
+  - histology
+  - neuroscience
+  - allen-atlas
+  - vision-language-models
+  - position-estimation
+  - registration

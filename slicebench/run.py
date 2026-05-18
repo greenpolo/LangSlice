@@ -109,6 +109,7 @@ def _run_one(
     *,
     generation_idx: int = 0,
     temperature: float | None = None,
+    apply_clahe: bool = True,
 ) -> dict:
     """Run estimate_position once. Returns a result dict for predictions.jsonl."""
     image_abs = (REPO_ROOT / row.image_path).resolve()
@@ -124,6 +125,7 @@ def _run_one(
             "plane": row.plane,
             "model": model,
             "trace_recorder": recorder,
+            "apply_clahe": apply_clahe,
         }
         if temperature is not None:
             kwargs["temperature"] = float(temperature)
@@ -180,6 +182,8 @@ def run(
     limit: int | None = None,
     num_generations: int = 1,
     temperature: float | None = None,
+    apply_clahe: bool = True,
+    plane: str | None = None,
 ) -> dict:
     if num_generations < 1:
         raise ValueError(f"num_generations must be >= 1, got {num_generations}")
@@ -189,6 +193,8 @@ def run(
     meta_path = out_dir / "run_meta.json"
 
     rows = load_bench(bench)
+    if plane is not None:
+        rows = [r for r in rows if r.plane == plane]
     if limit is not None:
         rows = rows[:limit]
 
@@ -252,6 +258,7 @@ def run(
             result = _run_one(
                 row, model, run_id,
                 generation_idx=gen_idx, temperature=temperature,
+                apply_clahe=apply_clahe,
             )
             _append(result)
             n_added += 1
@@ -264,6 +271,7 @@ def run(
                 pool.submit(
                     _run_one, row, model, run_id,
                     generation_idx=gen_idx, temperature=temperature,
+                    apply_clahe=apply_clahe,
                 ): (row, gen_idx)
                 for row, gen_idx in work
             }
@@ -384,12 +392,31 @@ def main(argv: list[str] | None = None) -> int:
             "runs through specific AI Studio projects without editing .env."
         ),
     )
+    parser.add_argument(
+        "--plane",
+        choices=["coronal", "sagittal", "horizontal"],
+        default=None,
+        help="Restrict eval to a single plane (e.g. coronal-only training runs).",
+    )
+    parser.add_argument(
+        "--apply-clahe",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Apply CLAHE preprocessing to query images (production parity). "
+            "Default True. Use --no-apply-clahe to disable; useful for testing "
+            "the model against the training-time image distribution when "
+            "training CLAHE coverage was less than 100%."
+        ),
+    )
     args = parser.parse_args(argv)
 
     run(
         args.model, args.bench, args.out,
         concurrency=args.concurrency, limit=args.limit,
         num_generations=args.num_generations, temperature=args.temperature,
+        apply_clahe=args.apply_clahe,
+        plane=args.plane,
     )
     return 0
 

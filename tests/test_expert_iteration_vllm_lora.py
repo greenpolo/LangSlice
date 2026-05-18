@@ -37,6 +37,7 @@ _REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_REPO))
 sys.path.insert(0, str(_REPO / "src"))
 sys.path.insert(0, str(_REPO / "tests"))
+sys.path.insert(0, str(_REPO / "models" / "langslice-gemma-4" / "training"))
 
 # isort: off
 # Reuse the sibling test module's _make_test_args so the CLI-arg shape
@@ -51,7 +52,7 @@ from test_expert_iteration_iterate import _make_test_args  # noqa: E402
 # ──────────────────────────────────────────────────────────────────────────
 
 def test_compose_override_enable_lora_emits_flags(tmp_path: Path) -> None:
-    from tools.expert_iteration import vllm_lifecycle
+    from iSFT import vllm_lifecycle
 
     out = tmp_path / "lora.override.yml"
     vllm_lifecycle.write_compose_override(
@@ -76,7 +77,7 @@ def test_compose_override_enable_lora_emits_flags(tmp_path: Path) -> None:
 
 
 def test_compose_override_disable_lora_omits_flags(tmp_path: Path) -> None:
-    from tools.expert_iteration import vllm_lifecycle
+    from iSFT import vllm_lifecycle
 
     out = tmp_path / "merge.override.yml"
     vllm_lifecycle.write_compose_override(
@@ -114,7 +115,7 @@ class _FakeResp:
 
 
 def test_load_lora_adapter_posts_correct_payload() -> None:
-    from tools.expert_iteration import vllm_lifecycle
+    from iSFT import vllm_lifecycle
 
     captured = {}
 
@@ -141,7 +142,7 @@ def test_load_lora_adapter_posts_correct_payload() -> None:
 
 
 def test_load_lora_adapter_raises_on_http_error() -> None:
-    from tools.expert_iteration import vllm_lifecycle
+    from iSFT import vllm_lifecycle
 
     def fake_urlopen(req, timeout):
         raise urllib.error.HTTPError(
@@ -160,7 +161,7 @@ def test_load_lora_adapter_raises_on_http_error() -> None:
 
 
 def test_unload_lora_adapter_swallows_not_found() -> None:
-    from tools.expert_iteration import vllm_lifecycle
+    from iSFT import vllm_lifecycle
 
     def fake_urlopen(req, timeout):
         raise urllib.error.HTTPError(
@@ -176,7 +177,7 @@ def test_unload_lora_adapter_swallows_not_found() -> None:
 
 
 def test_list_loaded_models_parses_data_array() -> None:
-    from tools.expert_iteration import vllm_lifecycle
+    from iSFT import vllm_lifecycle
 
     body = json.dumps({"object": "list", "data": [
         {"id": "langslice-ft"},
@@ -205,7 +206,7 @@ def _patch_compose_calls(monkeypatch, vllm_lifecycle):
 def test_round0_lora_mode_does_not_load_adapter(tmp_path: Path, monkeypatch) -> None:
     """Round 0 in lora-mode should bring up vLLM with the base + --enable-lora,
     but NOT hot-load any adapter (no prior trained adapter exists)."""
-    from tools.expert_iteration import iterate, vllm_lifecycle
+    from iSFT import iterate, vllm_lifecycle
 
     args = _make_test_args(
         out_dir=tmp_path / "out",
@@ -240,7 +241,7 @@ def test_roundN_lora_mode_hotloads_prev_adapter(tmp_path: Path, monkeypatch) -> 
     """Round 2 in lora-mode hot-loads round_1_adapter under model name
     round_2_rollout_adapter (so subsequent rollouts route to round 1's
     trained best-of)."""
-    from tools.expert_iteration import iterate, vllm_lifecycle
+    from iSFT import iterate, vllm_lifecycle
 
     out_dir = tmp_path / "out"
     out_dir.mkdir()
@@ -273,7 +274,7 @@ def test_roundN_lora_mode_hotloads_prev_adapter(tmp_path: Path, monkeypatch) -> 
 
 
 def test_roundN_lora_mode_eval_hotloads_just_trained(tmp_path: Path, monkeypatch) -> None:
-    from tools.expert_iteration import iterate, vllm_lifecycle
+    from iSFT import iterate, vllm_lifecycle
 
     out_dir = tmp_path / "out"
     out_dir.mkdir()
@@ -308,7 +309,7 @@ def test_roundN_lora_mode_eval_hotloads_just_trained(tmp_path: Path, monkeypatch
 def test_lora_mode_eviction_when_at_max_loras(tmp_path: Path, monkeypatch) -> None:
     """When --max-loras is hit, the oldest convention-named adapter is
     unloaded before the new one is loaded."""
-    from tools.expert_iteration import iterate, vllm_lifecycle
+    from iSFT import iterate, vllm_lifecycle
 
     out_dir = tmp_path / "out"
     out_dir.mkdir()
@@ -354,7 +355,7 @@ def test_lora_mode_eviction_when_at_max_loras(tmp_path: Path, monkeypatch) -> No
 
 def test_lora_mode_skips_load_if_adapter_already_loaded(tmp_path: Path, monkeypatch) -> None:
     """If the target adapter name is already registered, skip the POST."""
-    from tools.expert_iteration import iterate, vllm_lifecycle
+    from iSFT import iterate, vllm_lifecycle
 
     out_dir = tmp_path / "out"
     out_dir.mkdir()
@@ -393,7 +394,7 @@ def test_lora_mode_default_off_preserves_merge_path(tmp_path: Path, monkeypatch)
     """With --vllm-lora-mode unset, --enable-lora must not appear in the
     written override and the merge_lora_to_bf16 path must still be used
     for round k>0."""
-    from tools.expert_iteration import iterate, vllm_lifecycle
+    from iSFT import iterate, vllm_lifecycle
 
     out_dir = tmp_path / "out"
     out_dir.mkdir()
@@ -437,8 +438,8 @@ def test_run_round_lora_mode_routes_rollouts_to_adapter_alias(
     """End-to-end ``_run_round`` smoke: in lora-mode for round k>0, the
     model_str routed to rollouts must be the round_k_rollout_adapter alias,
     not the bare model_alias."""
-    from tools.expert_iteration import iterate
-    from tools.expert_iteration import state as state_mod
+    from iSFT import iterate
+    from iSFT import state as state_mod
 
     out_dir = tmp_path / "out"
     out_dir.mkdir()
@@ -485,7 +486,7 @@ def test_run_round_lora_mode_routes_rollouts_to_adapter_alias(
 def test_phase_eval_uses_served_name_override(tmp_path: Path, monkeypatch) -> None:
     """``_phase_eval(served_name=...)`` must thread the override into the
     slicebench --model arg, not the static args.vllm_served_name."""
-    from tools.expert_iteration import iterate
+    from iSFT import iterate
 
     args = _make_test_args(
         out_dir=tmp_path / "out", iter_dir=tmp_path / "iter",
@@ -513,7 +514,7 @@ def test_phase_eval_uses_served_name_override(tmp_path: Path, monkeypatch) -> No
 
 def test_phase_eval_default_served_name_falls_back(tmp_path: Path, monkeypatch) -> None:
     """When ``served_name`` is None, fall back to args.vllm_served_name (merge mode)."""
-    from tools.expert_iteration import iterate
+    from iSFT import iterate
 
     args = _make_test_args(
         out_dir=tmp_path / "out", iter_dir=tmp_path / "iter",
@@ -540,7 +541,7 @@ def test_phase_eval_default_served_name_falls_back(tmp_path: Path, monkeypatch) 
 # ──────────────────────────────────────────────────────────────────────────
 
 def test_cli_flag_default_off() -> None:
-    from tools.expert_iteration import iterate
+    from iSFT import iterate
 
     ns = iterate._parse_args([
         "--base-checkpoint", "/x",
@@ -555,7 +556,7 @@ def test_cli_flag_default_off() -> None:
 
 
 def test_cli_flag_enables_lora_mode() -> None:
-    from tools.expert_iteration import iterate
+    from iSFT import iterate
 
     ns = iterate._parse_args([
         "--base-checkpoint", "/x",

@@ -2,12 +2,35 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   AtlasInfo,
   AtlasMetadata,
+  AvailableAtlas,
+  LocalEngineStatus,
   MeshData,
+  Plane,
+  RegistrationResult,
   SliceResult,
 } from "./types";
 
 export async function listAtlases(): Promise<string[]> {
   return invoke<string[]>("list_atlases");
+}
+
+export async function listAvailableAtlases(): Promise<AvailableAtlas[]> {
+  return invoke<AvailableAtlas[]>("list_available_atlases");
+}
+
+export async function downloadAtlas(name: string): Promise<void> {
+  return invoke<void>("download_atlas", { name });
+}
+
+export async function probeLocalEngines(): Promise<LocalEngineStatus[]> {
+  return invoke<LocalEngineStatus[]>("probe_local_engines");
+}
+
+export async function probeCustomLocalEndpoint(
+  label: string,
+  url: string,
+): Promise<LocalEngineStatus> {
+  return invoke<LocalEngineStatus>("probe_custom_local_endpoint", { label, url });
 }
 
 export async function loadAtlas(name: string): Promise<AtlasMetadata> {
@@ -54,32 +77,79 @@ export async function getAllVolumes(): Promise<AllVolumesResult> {
 export async function runEstimate(params: {
   imagePath: string;
   atlas: string;
+  plane: Plane;
   model: string;
   thinking: string;
   temperature: number;
-  vlmResolution: number;
+  mediaResolution: string;
   maxIterations: number;
-  workflow: string;
+  preprocess: "auto" | "none";
+  provider: "google" | "openai";
+  endpoint?: string | null;
 }): Promise<Record<string, unknown>> {
   return invoke<Record<string, unknown>>("run_estimate", params);
+}
+
+/** Helper: coerce a JSON-as-object value into a string-or-null. */
+function asStringOrNull(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
 }
 
 export async function runRegister(params: {
   imagePath: string;
   positionMm: number;
   atlas: string;
-  model: string;
+  plane: Plane;
+  imageModel: string;
   thinking: string;
   temperature: number;
-  vlmResolution: number;
-}): Promise<Record<string, unknown>> {
-  return invoke<Record<string, unknown>>("run_register", params);
+  provider: "google" | "openai";
+  endpoint?: string | null;
+}): Promise<RegistrationResult> {
+  const raw = await invoke<Record<string, unknown>>("run_register", params);
+  // Map Python snake_case → TS camelCase. Required forward-warp paths
+  // default to empty strings so the type is non-null (the Python pipeline
+  // always emits them on success — they only go null if the CLI returns
+  // an unexpected shape).
+  return {
+    warpedAtlasPath: asStringOrNull(raw.warped_atlas_path) ?? "",
+    warpedBorderOverlayPath: asStringOrNull(raw.warped_border_overlay_path) ?? "",
+    generatedSegmentationPath:
+      asStringOrNull(raw.generated_segmentation_path) ?? "",
+    generatedBorderOverlayPath: asStringOrNull(
+      raw.generated_border_overlay_path,
+    ),
+    sliceWarpedToAtlasPath: asStringOrNull(raw.slice_warped_to_atlas_path),
+    sliceAtlasBorderOverlayPath: asStringOrNull(
+      raw.slice_atlas_border_overlay_path,
+    ),
+    inverseWarpStatus: asStringOrNull(raw.inverse_warp_status),
+  };
+}
+
+/** Silhouette-based affine preview registration. The output path is derived
+ * server-side inside Tauri's app cache dir, keyed by a hash of the input
+ * parameters — never the source folder, so the histology scanner can't
+ * mistake the preview for another slice. */
+export async function runQuickAffine(params: {
+  imagePath: string;
+  positionMm: number;
+  atlas: string;
+  plane: Plane;
+}): Promise<{ warpedSlicePath: string; elapsedS: number; silhouetteIou: number }> {
+  const raw = await invoke<Record<string, unknown>>("run_quick_affine", params);
+  return {
+    warpedSlicePath: asStringOrNull(raw.warped_slice_path) ?? "",
+    elapsedS: typeof raw.elapsed_s === "number" ? raw.elapsed_s : 0,
+    silhouetteIou: typeof raw.silhouette_iou === "number" ? raw.silhouette_iou : 0,
+  };
 }
 
 export async function runExport(params: {
   imagePath: string;
   positionMm: number;
   atlas: string;
+  plane: Plane;
   outputDir: string;
 }): Promise<string> {
   return invoke<string>("run_export", params);

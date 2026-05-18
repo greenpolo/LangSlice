@@ -1,10 +1,19 @@
-# Atlas Vision Embedding Cache (DORMANT, mostly Phase 1)
+# Vision Embedding Caches — atlas + query (LIVE, flag-gated)
 
-Pre-computes SigLIP embeddings for every atlas reference image once at startup,
-so SFT training can skip the SigLIP forward pass for cached atlas-image
-inputs. Phase 1 (precompute + cache + measurement) is built and validated.
-Phase 2 (the splice that actually skips SigLIP at training time) is built but
-flag-gated off pending a bit-exact correctness test.
+Pre-computes SigLIP embeddings for two classes of training images so the
+trainer can skip the vision tower for cached inputs:
+
+1. **Atlas cache** (`cache.py`, `precompute.py`) — keyed by
+   `(atlas, plane, snapped_position_mm)`. 100% hit rate on the SFT
+   corpus's atlas tool-result images.
+2. **Query (slice) cache** (`query_cache.py`, `precompute_query.py`) —
+   keyed by full manifest-relative image path. Sized to whatever fraction
+   of the RLVR allocation gets precomputed.
+
+Both run through the same forward-pre-hook in `splice.py`; atlas wins on
+path collision (it's bit-exact-verified). The splice is **live as of Phase
+2 of the iSFT speed upgrade (commit `e9f8ac2`)** but flag-gated off by
+default — runs without the flags are byte-identical to the no-splice path.
 
 For top-level orientation, see
 [`../README.md`](../README.md).
@@ -23,35 +32,48 @@ into the model's forward pass.
 
 | Component | Status |
 |---|---|
-| `precompute.py` (CLI: precompute SigLIP for every atlas grid pos) | ✓ Built, not run yet on a real GPU |
-| `cache.py` (`AtlasEmbeddingCache` lookup by atlas/plane/snapped position) | ✓ Built, unit-tested |
-| `LangSliceCollator` Phase-1 hit/miss counters | ✓ Built, accepts `atlas_cache=` param |
-| **Phase 2 splice** (forward hook to skip SigLIP for cached images) | ✗ **Sidecar tensor scaffolded** but `enable_splice=False` by default |
-| Bit-exact correctness gate | ✗ Test exists but auto-skips without GPU + Gemma 4 weights |
-| Hit-rate measurement on real corpus | ✓ **100% on 8643-row corpus, 11 atlas/plane pairs** |
-| **Used in any actual training** | ✗ **No.** |
+| `cache.py` (atlas lookup by atlas/plane/snapped position) | ✓ Built, unit-tested, bit-exact-verified |
+| `precompute.py` (CLI: precompute SigLIP for every atlas grid pos) | ✓ Built; one-time GPU job |
+| `query_cache.py` (slice-image lookup by full path) | ✓ Built, unit-tested |
+| `precompute_query.py` (CLI: precompute SigLIP for slice images) | ✓ Built; one-time GPU job |
+| `splice.py` (forward-pre-hook substituting cached embeddings) | ✓ **Live**; flag-gated off by default |
+| `LangSliceCollator` hit/miss counters + sidecar emission | ✓ Built; accepts `atlas_cache=` + `query_cache=` + `enable_splice=` |
+| `render_slates_from_cache.py` (on-disk atlas slate JPGs for SigLIP) | ✓ Built |
+| `render_slates_native_step.py` (variant: native voxel-step atlas slate generator) | ✓ Built |
+| `_measure_sft_hit_rate.py` (utility: walk SFT corpus, report cache hit rate) | ✓ Built |
+| `_verify_query_cache.py` (utility: bit-exact check cached vs live SigLIP) | ✓ Built |
+| Hit-rate measurement on the SFT corpus (atlas side) | ✓ **100% on 8643-row corpus, 11 atlas/plane pairs** |
+| Hit-rate measurement on iSFT iterative corpus (query side) | ⧖ Pending the first overnight precompute pass |
 
 ## Files
 
 | File | Purpose |
 |---|---|
-| `__init__.py` | Re-exports `AtlasEmbeddingCache`, `parse_atlas_path` |
-| `cache.py` | Lazy mmap-backed lookup keyed by (atlas, plane, snapped_pos_mm) |
+| `__init__.py` | Re-exports `AtlasEmbeddingCache`, `QueryEmbeddingCache`, `parse_atlas_path`, `save_query_pair` |
+| `cache.py` | Lazy mmap-backed atlas lookup keyed by `(atlas, plane, snapped_pos_mm)` |
+| `query_cache.py` | Lazy mmap-backed slice-image lookup keyed by full manifest path; per-`(plane, dataset)` shard files |
 | `precompute.py` | CLI: load model, run SigLIP on every atlas grid image, save tensor cache |
+| `precompute_query.py` | CLI: load model, run SigLIP on every slice image, save per-`(plane, dataset)` cache |
+| `splice.py` | Forward-pre-hook on `Gemma4Model.get_image_features`: consults the sidecar, substitutes cached embeddings at the masked positions |
+| `render_slates_from_cache.py` | Render on-disk JPGs for cached atlas embeddings (debug + SigLIP-input visualization) |
+| `render_slates_native_step.py` | Variant slate generator at native atlas voxel step |
+| `_measure_sft_hit_rate.py` | Walk an SFT-format JSONL corpus and report atlas/query cache hit-rate breakdown |
+| `_verify_query_cache.py` | Sample-and-verify: cached query tensors match live SigLIP forward to `atol=1e-5` |
 
-External entry point: `tools/embeddings_hit_rate.py` walks a corpus and
-reports atlas-grid coverage.
+Tests: `tests/test_atlas_embedding_cache.py` (atlas)
++ `tests/test_atlas_embedding_collate.py` (collator)
++ `tests/test_query_cache_splice.py` (Phase 2; 11 tests).
 
-Tests: `tests/test_atlas_embedding_cache.py` (19) +
-`tests/test_atlas_embedding_collate.py` (8) — **27 pass + 1 GPU-skipped**.
+## How to activate
 
-## How to activate (when ready)
+### Step 1: precompute the caches (one-time, GPU)
 
-### Step 1: precompute the cache (one-time, ~10 min on the 5090)
+**Atlas cache** (~10 min on the 5090):
 
 ```powershell
 docker compose -f docker-compose.training.yml run --rm training bash -lc "
-  cd /workspace/LangSlice && python -m embeddings.precompute \
+  cd /workspace/LangSlice/models/langslice-gemma-4/training && \
+  python -m embeddings.precompute \
     --atlas-pairs allen_mouse_25um:coronal,whs_sd_rat_39um:coronal,whs_sd_rat_39um:horizontal,allen_mouse_25um:sagittal \
     --model /workspace/LangSlice/out/sft/docker-sft-1011-merged-bf16 \
     --output-dir /workspace/LangSlice/out/atlas_embeddings \
@@ -59,57 +81,76 @@ docker compose -f docker-compose.training.yml run --rm training bash -lc "
 "
 ```
 
-Will produce `out/atlas_embeddings/<atlas>_<plane>.pt` per pair.
+Produces `out/atlas_embeddings/<atlas>_<plane>.pt` per pair.
 
-### Step 2: run the bit-exact correctness test
+**Query cache** (longer — depends on RLVR allocation size):
 
-`tests/test_atlas_embedding_cache.py::test_precomputed_matches_live_get_image_features`
-auto-skips when GPU is unavailable. Run it on the host once the precompute
-has produced cache files. Pass criterion: cached embeddings match live
-`model.get_image_features` to floating-point precision (`atol=1e-5`).
-
-If the test fails: do not enable splicing. The cache is wrong.
-
-### Step 3: enable the splice in SFT
-
-Add to `LangSliceCollator`'s constructor in `train_sft.py`:
-```python
-collator = LangSliceCollator(
-    processor=processor,
-    max_seq_length=max_seq_length,
-    atlas_cache=AtlasEmbeddingCache(Path("out/atlas_embeddings")),
-    enable_splice=True,  # ← currently False
-)
+```powershell
+docker compose -f docker-compose.training.yml run --rm training bash -lc "
+  cd /workspace/LangSlice/models/langslice-gemma-4/training && \
+  python -m embeddings.precompute_query \
+    --split rlvr \
+    --model /workspace/LangSlice/out/sft/docker-sft-1011-merged-bf16 \
+    --output-dir /workspace/LangSlice/out/query_embeddings \
+    --device cuda --dtype bf16
+"
 ```
 
-The collator then emits sidecar tensors `precomputed_image_embeddings` +
-`precomputed_image_mask` alongside standard `pixel_values`. A forward hook
-on `model.get_image_features` (NOT YET WRITTEN) would consult the sidecar
-and substitute cached embeddings for the masked slots, letting SigLIP run
-only on uncached images.
+Produces `out/query_embeddings/<plane>__<dataset>.pt` per pair.
 
-**The forward hook is the missing piece.** Without it, the sidecar is just
-extra fields the model ignores. The agent picking this up needs to:
-1. Locate `Gemma4ForConditionalGeneration.get_image_features` (per
-   `unsloth_compiled_cache/unsloth_compiled_module_gemma4.py:1452`)
-2. Register a pre-forward hook that reads the sidecar from the input batch
-3. Substitute cached embeddings at masked positions
-4. Verify training loss stays in distribution after substitution
-5. Verify slicebench MAE doesn't shift
+### Step 2: pass the caches to the trainer
+
+Two callers, same flag pair:
+
+```powershell
+# Standalone SFT
+python -m sft.train_sft \
+  --atlas-embedding-cache out/atlas_embeddings \
+  --query-embedding-cache out/query_embeddings \
+  ...
+
+# Expert iteration (threads through to each round's train_sft.py call)
+python -m iSFT.iterate \
+  --atlas-embedding-cache out/atlas_embeddings \
+  --query-embedding-cache out/query_embeddings \
+  ...
+```
+
+When unset, behavior is byte-identical to the no-splice path.
+
+### Step 3: measure hit rate (optional but recommended)
+
+```powershell
+python -m embeddings._measure_sft_hit_rate \
+  --corpus out/iterative_sft/round_0.jsonl \
+  --atlas-cache out/atlas_embeddings \
+  --query-cache out/query_embeddings
+```
+
+Prints per-source hit-rate breakdown. Target: >50% combined hit rate to
+justify the precompute. Atlas side alone typically >95%; query side
+depends on whether you precomputed the full RLVR allocation.
+
+### Step 4: bit-exact verification
+
+`tests/test_atlas_embedding_cache.py::test_precomputed_matches_live_get_image_features`
+(atlas side) and `embeddings._verify_query_cache` (query side) sample a
+few cached entries and assert `torch.allclose(cached, live, atol=1e-5)`.
+Both auto-skip when no GPU is available. **Run at least once after each
+precompute** — a subtly-wrong embedding silently corrupts training.
 
 ## When to activate
 
-After:
-1. Expert iteration is producing measurably-improving checkpoints across
-   rounds (so we have a working baseline to compare against).
-2. We can afford ~half-day of work on the forward hook + correctness gate.
-3. We need the speed boost — the current SFT phase is ~13 min on 180-slice
-   corpora. With 100% cache hit rate, savings would be ~1-2 min per phase.
-   Smaller win than vLLM perf wins.
+The forward hook and both caches are built — what remains is the
+one-time GPU precompute job. Recommendation:
 
-For 30-minute SFT phases on larger corpora, the savings would scale
-proportionally — maybe ~10-15 min saved per phase. Worth it for the real
-multi-round runs.
+1. Run the atlas precompute (~10 min). Verify bit-exact. Then turn on
+   `--atlas-embedding-cache` for the next iSFT run. Should save 1-2 min
+   per phase on small corpora, 10-15 min on larger ones.
+2. Run the query precompute over the RLVR allocation (~hours). Verify
+   bit-exact. Then add `--query-embedding-cache`. The combined hit rate
+   on iSFT iterative corpora typically pushes >70%, which compounds the
+   savings.
 
 ## Risks / things to know
 

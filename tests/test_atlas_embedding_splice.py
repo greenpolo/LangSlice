@@ -237,21 +237,85 @@ def test_splice_mask_length_mismatch_raises():
         )
 
 
-def test_splice_uneven_uncached_division_raises():
-    """If uncached partial output isn't divisible by N_uncached, splice raises."""
-    # Use a fake whose uncached output count is NOT divisible by N_uncached.
-    # The default fake derives count from pid; build an asymmetric pid where
-    # total_real_patches isn't a multiple of N_uncached.
+def test_splice_heterogeneous_uncached_falls_back_to_per_image():
+    """Heterogeneous uncached batch (different per-image patch counts) must
+    fall back to per-image SigLIP calls and produce the correct scattered
+    output.
+
+    Setup: image 0 cached (4 patches), images 1 and 2 uncached with 3 and 4
+    real patches respectively — non-uniform, so the batched fast-path can't
+    infer per-image output counts by division.
+    """
     model = _make_top_model()
     install_atlas_splice(model)
     pv = torch.randn(3, 8, 8)
-    # 2 uncached images: pid says 3 + 4 = 7 real patches total, but N_uncached=2
-    # doesn't divide 7. Splice raises.
-    pid = _build_pid([4, 3, 4])  # image 0 cached, 1 and 2 uncached
+    pid = _build_pid([4, 3, 4])  # image 0 cached, 1 and 2 uncached (3 + 4)
     mask = torch.tensor([True, False, False])
-    cached_flat = torch.full((4, 8), 1.0)
+    cached_flat = torch.full((4, 8), 99.0)
     cached_pc = torch.tensor([4], dtype=torch.long)
-    with pytest.raises(RuntimeError, match="not divisible by N_uncached"):
+    out = model(
+        pixel_values=pv,
+        image_position_ids=pid,
+        precomputed_image_mask=mask,
+        precomputed_cached_flat=cached_flat,
+        precomputed_cached_patch_counts=cached_pc,
+    )
+    # Per-image fallback: 2 separate calls, one per uncached image.
+    assert len(model.gif_calls) == 2
+    assert model.gif_calls[0][0].shape[0] == 1
+    assert model.gif_calls[1][0].shape[0] == 1
+    # Total patches: 4 (cached) + 3 + 4 = 11
+    assert out.last_hidden_state.shape == (11, 8)
+    # Image 0 (cached) at rows 0-3
+    assert torch.allclose(out.last_hidden_state[0:4], cached_flat)
+    # Pooler matches embed_vision applied to merged flat
+    assert torch.allclose(out.pooler_output, out.last_hidden_state * 2)
+
+
+def test_splice_homogeneous_assumption_violation_raises():
+    """Defense in depth: if uncached pids are uniform but the model returns a
+    non-divisible output, splice raises rather than silently mis-scattering.
+
+    This is a model-contract violation that should not happen in practice; the
+    test pins the defensive raise so future regressions are caught.
+    """
+    import torch.nn as nn
+    from embeddings.splice import install_atlas_splice
+
+    class _BadOut:
+        def __init__(self, lhs):
+            self.last_hidden_state = lhs
+            self.pooler_output = lhs
+
+    class _BadInner(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.vision_tower = nn.Identity()
+
+            class _E(nn.Module):
+                def __call__(self, *, inputs_embeds):
+                    return inputs_embeds
+
+            self.embed_vision = _E()
+
+        def get_image_features(self, pixel_values, image_position_ids=None, **kwargs):
+            # Return 7 patches for 2 uncached images — uniform input, weird output.
+            return _BadOut(torch.zeros(7, 8))
+
+        def forward(self, **kwargs):
+            return self.get_image_features(
+                kwargs.get("pixel_values"),
+                kwargs.get("image_position_ids"),
+            )
+
+    model = _BadInner()
+    install_atlas_splice(model)
+    pv = torch.randn(3, 8, 8)
+    pid = _build_pid([3, 3, 3])  # all images same pid → homogeneous
+    mask = torch.tensor([True, False, False])
+    cached_flat = torch.full((3, 8), 1.0)
+    cached_pc = torch.tensor([3], dtype=torch.long)
+    with pytest.raises(RuntimeError, match="despite homogeneous input pids"):
         model(
             pixel_values=pv,
             image_position_ids=pid,
