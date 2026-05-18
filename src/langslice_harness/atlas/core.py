@@ -202,8 +202,13 @@ def _normalize_to_uint8(arr: np.ndarray) -> np.ndarray:
     return np.clip((arr_float / max_val) * 255.0, 0, 255).astype(np.uint8)
 
 
-def _orient_slice_for_display(slice_2d: np.ndarray, plane: Plane) -> np.ndarray:
-    """Orient atlas slices for visual comparison with histology images."""
+def orient_slice_for_display(slice_2d: np.ndarray, plane: Plane) -> np.ndarray:
+    """Orient atlas slices for visual comparison with histology images.
+
+    For sagittal and horizontal slices the raw axis order is awkward for
+    overlaying onto histology; swap the in-plane axes so the AP axis lies
+    horizontally in the resulting image.
+    """
     if plane in {"sagittal", "horizontal"}:
         return np.swapaxes(slice_2d, 0, 1)
     return slice_2d
@@ -216,7 +221,7 @@ def get_reference_slice(
     idx = position_mm_to_index(atlas, position_mm, plane=plane)
     axis = slice_axis_index(atlas_space_context(atlas), plane)
     reference_slice = np.take(np.asarray(atlas.reference), idx, axis=axis)
-    reference_slice = _orient_slice_for_display(reference_slice, plane)
+    reference_slice = orient_slice_for_display(reference_slice, plane)
     normalized = _normalize_to_uint8(reference_slice)
     return Image.fromarray(normalized, mode="L")
 
@@ -248,7 +253,7 @@ def get_boundary_slice(
     axis = slice_axis_index(atlas_space_context(atlas), plane)
     annotation_slice = np.take(np.asarray(atlas.annotation), idx, axis=axis)
     edges = _annotation_to_boundaries(annotation_slice)
-    edges = _orient_slice_for_display(edges, plane)
+    edges = orient_slice_for_display(edges, plane)
     return Image.fromarray(edges, mode="L")
 
 
@@ -266,12 +271,12 @@ def get_composite_slice(
     idx = position_mm_to_index(atlas, position_mm, plane=plane)
     axis = slice_axis_index(atlas_space_context(atlas), plane)
     ref_slice = np.take(np.asarray(atlas.reference), idx, axis=axis)
-    ref_slice = _orient_slice_for_display(ref_slice, plane)
+    ref_slice = orient_slice_for_display(ref_slice, plane)
     ref_norm = _normalize_to_uint8(ref_slice)
     ref_rgb = np.stack([ref_norm, ref_norm, ref_norm], axis=-1).astype(np.float32)
 
     ann_slice = np.take(np.asarray(atlas.annotation), idx, axis=axis)
-    ann_slice = _orient_slice_for_display(ann_slice, plane)
+    ann_slice = orient_slice_for_display(ann_slice, plane)
     edges = _annotation_to_boundaries(ann_slice)
 
     result = ref_rgb.copy()
@@ -292,7 +297,7 @@ def get_colored_region_slice(
     idx = position_mm_to_index(atlas, position_mm, plane=plane)
     axis = slice_axis_index(atlas_space_context(atlas), plane)
     annotation_slice = np.take(np.asarray(atlas.annotation), idx, axis=axis)
-    annotation_slice = _orient_slice_for_display(annotation_slice, plane)
+    annotation_slice = orient_slice_for_display(annotation_slice, plane)
     h, w = cast(tuple[int, int], annotation_slice.shape)
 
     rgb = np.zeros((h, w, 3), dtype=np.uint8)
@@ -327,7 +332,7 @@ def get_smoothed_boundary_slice(
     idx = position_mm_to_index(atlas, position_mm, plane=plane)
     axis = slice_axis_index(atlas_space_context(atlas), plane)
     annotation_slice = np.take(np.asarray(atlas.annotation), idx, axis=axis)
-    annotation_slice = _orient_slice_for_display(annotation_slice, plane)
+    annotation_slice = orient_slice_for_display(annotation_slice, plane)
 
     if target_size is not None:
         tw, th = target_size
@@ -399,7 +404,7 @@ def get_additional_reference_slice(
         )
 
     slice_2d = np.take(ref_volume, idx, axis=axis)
-    slice_2d = _orient_slice_for_display(slice_2d, plane)
+    slice_2d = orient_slice_for_display(slice_2d, plane)
     normalized = _normalize_to_uint8(slice_2d)
     return Image.fromarray(normalized, mode="L")
 
@@ -464,7 +469,7 @@ def get_structure_mask_slice(
         )
 
     slice_mask = np.take(mask_volume, idx, axis=axis)
-    slice_mask = _orient_slice_for_display(slice_mask, plane)
+    slice_mask = orient_slice_for_display(slice_mask, plane)
     binary = np.where(slice_mask > 0, 255, 0).astype(np.uint8)
     return Image.fromarray(binary, mode="L")
 

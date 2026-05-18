@@ -30,9 +30,20 @@ def test_train_passes_max_seq_length_to_unsloth_and_collator(monkeypatch, tmp_pa
     fake_rlvr = types.SimpleNamespace(atlas_grid=fake_rlvr_atlas_grid)
 
     class FakeCollator:
-        def __init__(self, *, processor, max_seq_length):
+        def __init__(
+            self,
+            *,
+            processor,
+            max_seq_length,
+            atlas_cache=None,
+            query_cache=None,
+            enable_splice=False,
+        ):
             self.processor = processor
             self.max_seq_length = max_seq_length
+            self.atlas_cache = atlas_cache
+            self.query_cache = query_cache
+            self.enable_splice = enable_splice
 
     class FakeCallback:
         def __init__(self, **kwargs):

@@ -47,6 +47,21 @@ function SceneContent() {
 
 export function Scene3D() {
   const atlasInfo = useAppStore((s) => s.atlasInfo);
+  const selectedSliceIndex = useAppStore((s) => s.selectedSliceIndex);
+  const selectedBrain = useAppStore(
+    (s) => s.brains.find((b) => b.id === s.selectedBrainId) ?? null,
+  );
+  const selectedSlice =
+    selectedBrain && selectedSliceIndex !== null
+      ? selectedBrain.slices[selectedSliceIndex] ?? null
+      : null;
+  // Hide the hint once the slice is visible in the volume — that's true
+  // whether it came from a full registration or just the quick-affine
+  // preview triggered by Lock Position.
+  const showPreRegNote =
+    selectedSlice !== null &&
+    !selectedSlice.registrationResult &&
+    !selectedSlice.quickAffineWarpedPath;
 
   if (!atlasInfo) {
     return (
@@ -76,6 +91,11 @@ export function Scene3D() {
           <SceneContent />
         </Suspense>
       </Canvas>
+      {showPreRegNote && (
+        <div className="scene3d-prereg-note">
+          Lock an AP position manually or run Estimate to see the slice appear in the brain volume.
+        </div>
+      )}
     </div>
   );
 }

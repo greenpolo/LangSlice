@@ -98,4 +98,15 @@ impl AtlasState {
     pub fn index_to_ap_mm(&self, idx: usize) -> f64 {
         idx as f64 * self.ap_resolution_mm()
     }
+
+    /// BrainGlobe atlases use ``acronym = "root"`` for the whole-brain shell.
+    /// IDs differ per atlas (Allen mouse = 997, ADMBA p14 = 15564, etc.), so
+    /// callers that want the root mesh should resolve it dynamically rather
+    /// than hardcoding a specific ID.
+    pub fn root_structure_id(&self) -> Option<u32> {
+        self.structures
+            .iter()
+            .find(|s| s.acronym == "root")
+            .map(|s| s.id)
+    }
 }

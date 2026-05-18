@@ -1,13 +1,20 @@
 """HF-style dataset assembly for single-turn GRPO (Lane A).
 
-Each terminal-state JSONL row becomes a TRL chat-format training row whose
-``user`` content interleaves PIL images and short captions in the order
+Each terminal-state JSONL row becomes a TRL chat-format training row that
+mirrors the production ADK protocol's state right before ``submit_estimate``:
 
-    [target image] "TARGET slice."
-    [atlas image]  "Atlas reference at X.XX mm."
-    [atlas image]  "Atlas reference at Y.YY mm."
-    ...
-    "Output the JSON object for the TARGET slice's position now."
+    system: build_single_slice_prompt(atlas, plane, ...)
+    user:   [TARGET image] + "Determine this {plane} slice's {axis}
+             position in the {atlas} atlas."
+    assistant: tool_call(fetch_atlas, args={"positions_mm": [pos1, pos2, ...]})
+    tool:   [atlas image, "Atlas at X.XX mm:", ...] + summary text
+    <model generates next turn — must be submit_estimate>
+
+The rollout starts immediately before the policy's terminal ``submit_estimate``
+decision; the upstream fetch_atlas is pre-rendered so the policy only learns
+to refine the terminal coordinate, never to invoke (or skip) the atlas
+fetch itself. Slicebench evaluates against the same multi-turn protocol, so
+training and eval contracts match byte-for-byte.
 
 PIL images are embedded **inline** as ``{"type": "image", "image": <PIL>}``
 blocks because TRL's ``GRPOTrainer._tokenize_prompts`` extracts images via
@@ -15,8 +22,12 @@ blocks because TRL's ``GRPOTrainer._tokenize_prompts`` extracts images via
 on the no-environment-factory path.
 
 Image-before-text follows Gemma 4's multimodal layout (same rule
-:mod:`rlvr.dataset` enforces). Atlas images are sent individually because
-production ADK runs default to ``send_individually=True``.
+:mod:`rlvr.dataset` enforces). The tool-response message needs explicit
+``<|image|>`` markers in its text content because Gemma 4's chat template
+renders image content blocks for non-tool messages only; for role=tool it
+captures just the text. The :func:`_normalize_tool_message_content` helper
+injects the markers in trace order so the processor's soft-token count
+matches the vision-feature count.
 
 The dataset row also exposes the metadata GRPOTrainer's reward + atlas-cache
 machinery need:
@@ -58,15 +69,100 @@ from rlvr.dataset import (
     species_from_atlas_name,
 )
 
+from .adaptive_reward import compute_ap_bin
 from .prompts import (
     ATLAS_CAPTION_TEMPLATE,
-    TARGET_CAPTION,
-    USER_INSTRUCTION,
+    TARGET_CAPTION,  # noqa: F401 — exported for tests
     build_single_turn_system_prompt,
+    build_user_instruction,
 )
 from .terminal_states import TerminalState, read_terminal_states
 
 Plane = Literal["coronal", "sagittal", "horizontal"]
+
+# Gemma 4 chat-template image marker. Tool messages don't get implicit image
+# blocks rendered (the template only walks ``content`` lists for non-tool
+# messages), so we inject one ``<|image|>`` per atlas image into the tool
+# response's text content. Without this the processor expands fewer soft
+# tokens than vision features and the model's image/feature alignment check
+# fails at forward. Mirrors ``sft/render.py:normalize_tool_message_content``.
+_GEMMA4_IMAGE_TOKEN: str = "<|image|>"
+
+# Synthetic tool-call id stamped on the pre-rendered ``fetch_atlas`` turn.
+# The chat template uses the id to match the tool response to its call, so
+# the call_id field needs to be consistent between the assistant and tool
+# messages — but the value itself is opaque.
+_PREFIX_FETCH_CALL_ID: str = "call_prefix_fetch_atlas"
+
+# Gemma 4 tool declaration block — what ``apply_chat_template(..., tools=[...])``
+# would emit at the end of the system turn for our two ADK tools. The
+# GRPOTrainer doesn't accept tool *schemas* (only callable tools — which would
+# trigger multi-turn rollouts we don't want), so we bake the declarations into
+# the system message text. Without this, base E4B-IT generates free-text prose
+# instead of ``<|tool_call>`` wrappers (verified 100% format-fail at smoke).
+# The string is byte-identical to ``apply_chat_template`` output for the
+# OpenAI-format schemas of ``fetch_atlas`` and ``submit_estimate``.
+_GEMMA4_TOOL_DECLARATIONS: str = (
+    '<|tool>declaration:fetch_atlas{'
+    'description:<|"|>Fetch 1-8 atlas reference images at given AP positions (mm). '
+    'Use to compare landmarks before submitting your estimate.<|"|>,'
+    'parameters:{properties:{'
+    'positions_mm:{items:{type:<|"|>NUMBER<|"|>},type:<|"|>ARRAY<|"|>}'
+    '},required:[<|"|>positions_mm<|"|>],type:<|"|>OBJECT<|"|>}'
+    '}<tool|>'
+    '<|tool>declaration:submit_estimate{'
+    'description:<|"|>Submit your final AP position estimate (mm) for the target slice.<|"|>,'
+    'parameters:{properties:{'
+    'position_mm:{type:<|"|>NUMBER<|"|>},'
+    'reasoning:{type:<|"|>STRING<|"|>}'
+    '},required:[<|"|>position_mm<|"|>],type:<|"|>OBJECT<|"|>}'
+    '}<tool|>'
+)
+
+
+def _normalize_tool_message_content(
+    content: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Prepend ``<|image|>`` markers to the text block for each image block.
+
+    Preserves original ordering; if no text block exists, appends one. Used
+    so Gemma 4's chat template (which doesn't auto-render images inside
+    role=tool) still emits the right number of soft tokens for the
+    multimodal processor.
+    """
+    n_images = sum(1 for c in content if c.get("type") == "image")
+    if n_images == 0:
+        return content
+    markers = _GEMMA4_IMAGE_TOKEN * n_images
+    out: list[dict[str, Any]] = []
+    text_seen = False
+    for c in content:
+        if c.get("type") == "text" and not text_seen:
+            out.append({"type": "text", "text": markers + c.get("text", "")})
+            text_seen = True
+        else:
+            out.append(c)
+    if not text_seen:
+        out.append({"type": "text", "text": markers})
+    return out
+
+
+def _build_fetch_atlas_tool_response_text(positions_mm: Sequence[float]) -> str:
+    """Mirror the production ``fetch_atlas`` tool result text.
+
+    Format taken verbatim from
+    ``langslice_harness.harness.estimation.tools.fetch_atlas`` so the
+    training prefix is byte-identical to what the ADK harness emits at
+    inference. The text precedes the atlas images in the tool message.
+    """
+    descriptions = [f"{p:.2f} mm" for p in positions_mm]
+    summary = (
+        f"Fetched {len(positions_mm)} atlas section"
+        f"{'s' if len(positions_mm) != 1 else ''} at: "
+        + ", ".join(descriptions)
+        + "."
+    )
+    return summary
 
 # Public columns every row exposes — what GRPOTrainer + reward + curriculum
 # bin lookup all consume. Underscore-free so TRL's identity collator preserves
@@ -88,7 +184,27 @@ _PUBLIC_COLUMNS: tuple[str, ...] = (
     "section_id",
     "dataset",
     "difficulty_score",
+    "ap_bin",
 )
+
+
+def _ap_pct_for_spec(
+    *, ground_truth_mm: float, valid_range_mm: tuple[float, float]
+) -> float:
+    """Position-fraction along the axis: ``(gt - pos_lo) / (pos_hi - pos_lo)``.
+
+    Used as the cold-start ``difficulty_score`` seed so the AdaRFT band
+    sampler has a meaningful prior on round 0 — sections at the anterior
+    pole get low scores, posterior pole high. Clamped to ``[0, 1]`` so a
+    gt that sits just outside the valid range still produces a legal
+    seed. Degenerate (zero-span) axes seed to 0.0.
+    """
+    pos_lo, pos_hi = float(valid_range_mm[0]), float(valid_range_mm[1])
+    axis_span = pos_hi - pos_lo
+    if axis_span <= 0.0:
+        return 0.0
+    ap_pct = (float(ground_truth_mm) - pos_lo) / axis_span
+    return max(0.0, min(1.0, ap_pct))
 
 
 def load_atlas_reference_image(path: Path) -> Image.Image:
@@ -107,19 +223,25 @@ def _spec_from_state(state: TerminalState, *, repo_root: Path) -> dict[str, Any]
     :meth:`RowDataset.__getitem__`. The atlas long-edge lookup is cached so
     repeated calls for the same (atlas, plane) pair are O(1).
 
-    Lane A specs leave ``dataset`` and ``difficulty_score`` empty: the
-    terminal-state JSONL doesn't carry per-section difficulty, and dataset
-    name is inside ``quality["dataset"]`` if present.
+    Lane A specs leave ``dataset`` empty (terminal-state JSONL doesn't carry
+    the manifest dataset name; that lives in ``quality["dataset"]`` if
+    present). ``difficulty_score`` seeds to ``ap_pct`` so the AdaRFT band
+    sampler has a real cold-start prior, and ``ap_bin`` is precomputed so
+    the curriculum's per-bin refresh doesn't re-derive it every batch.
     """
+    valid_range = (float(state.valid_range_mm[0]), float(state.valid_range_mm[1]))
+    gt = float(state.ground_truth_mm)
+    ap_pct = _ap_pct_for_spec(ground_truth_mm=gt, valid_range_mm=valid_range)
     return {
         "section_id": state.section_id,
         "subject_id": state.subject_id,
         "atlas_name": state.atlas_name,
         "plane": state.plane,
         "dataset": str(state.quality.get("dataset", "")) if state.quality else "",
-        "difficulty_score": None,
-        "valid_range_mm": (float(state.valid_range_mm[0]), float(state.valid_range_mm[1])),
-        "ground_truth_mm": float(state.ground_truth_mm),
+        "difficulty_score": ap_pct,
+        "ap_bin": compute_ap_bin(gt, valid_range),
+        "valid_range_mm": valid_range,
+        "ground_truth_mm": gt,
         "repo_root": str(repo_root),
         "query_image_path": state.query_image_path,
         "atlas_image_paths": tuple(state.atlas_image_paths),
@@ -137,19 +259,32 @@ def _spec_from_section_state(section_state: Any, *, repo_root: Path) -> dict[str
     into the other path. ``SectionState.atlas_slate_paths`` /
     ``atlas_slate_positions_mm`` map directly onto Lane A's
     ``atlas_image_paths`` / ``fetched_positions_mm``.
+
+    Preserves ``section_state.difficulty_score`` when set (seeded/live
+    observation); otherwise falls back to ``ap_pct`` so cold-start rows
+    still seat into a meaningful AdaRFT band.
     """
+    valid_range = (
+        float(section_state.valid_range_mm[0]),
+        float(section_state.valid_range_mm[1]),
+    )
+    gt = float(section_state.ground_truth_mm)
+    ap_pct = _ap_pct_for_spec(ground_truth_mm=gt, valid_range_mm=valid_range)
+    difficulty = (
+        float(section_state.difficulty_score)
+        if section_state.difficulty_score is not None
+        else ap_pct
+    )
     return {
         "section_id": section_state.section_id,
         "subject_id": section_state.subject_id,
         "atlas_name": section_state.atlas_name,
         "plane": section_state.plane,
         "dataset": section_state.dataset,
-        "difficulty_score": section_state.difficulty_score,
-        "valid_range_mm": (
-            float(section_state.valid_range_mm[0]),
-            float(section_state.valid_range_mm[1]),
-        ),
-        "ground_truth_mm": float(section_state.ground_truth_mm),
+        "difficulty_score": difficulty,
+        "ap_bin": compute_ap_bin(gt, valid_range),
+        "valid_range_mm": valid_range,
+        "ground_truth_mm": gt,
         "repo_root": str(repo_root),
         "query_image_path": section_state.query_image_path,
         "atlas_image_paths": tuple(section_state.atlas_slate_paths),
@@ -186,22 +321,65 @@ def _build_row_from_spec(spec: dict[str, Any]) -> dict[str, Any]:
         species=species,
     )
 
+    user_instruction = build_user_instruction(
+        plane=spec["plane"], atlas_name=spec["atlas_name"]
+    )
     user_blocks: list[dict[str, Any]] = [
         {"type": "image", "image": target},
-        {"type": "text", "text": TARGET_CAPTION},
+        {"type": "text", "text": user_instruction},
     ]
-    fetched_positions: tuple[float, ...] = spec["fetched_positions_mm"]
-    for pil, pos_mm in zip(atlas_images, fetched_positions[: len(atlas_images)], strict=False):
-        user_blocks.append({"type": "image", "image": pil})
-        user_blocks.append(
+
+    # Pre-render the fetch_atlas tool call + tool response so the rollout
+    # begins immediately before the policy's terminal submit_estimate turn.
+    # The arguments must be a dict (not a JSON string) — the chat template's
+    # ``format_argument`` macro produces the Gemma-native compact format that
+    # the reward parser expects.
+    fetched_positions: tuple[float, ...] = tuple(
+        float(p) for p in spec["fetched_positions_mm"][: len(atlas_images)]
+    )
+    fetch_args: dict[str, Any] = {"positions_mm": list(fetched_positions)}
+
+    tool_response_content: list[dict[str, Any]] = []
+    for pil, pos_mm in zip(atlas_images, fetched_positions, strict=False):
+        tool_response_content.append({"type": "image", "image": pil})
+        tool_response_content.append(
             {"type": "text", "text": ATLAS_CAPTION_TEMPLATE.format(position_mm=pos_mm)}
         )
-    user_blocks.append({"type": "text", "text": USER_INSTRUCTION})
+    tool_response_content.append(
+        {
+            "type": "text",
+            "text": _build_fetch_atlas_tool_response_text(fetched_positions),
+        }
+    )
 
     return {
         "prompt": [
-            {"role": "system", "content": [{"type": "text", "text": system_prompt}]},
+            {
+                "role": "system",
+                "content": [
+                    {"type": "text", "text": system_prompt + _GEMMA4_TOOL_DECLARATIONS},
+                ],
+            },
             {"role": "user", "content": user_blocks},
+            {
+                "role": "assistant",
+                "content": [],
+                "tool_calls": [
+                    {
+                        "id": _PREFIX_FETCH_CALL_ID,
+                        "type": "function",
+                        "function": {
+                            "name": "fetch_atlas",
+                            "arguments": fetch_args,
+                        },
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "tool_call_id": _PREFIX_FETCH_CALL_ID,
+                "content": _normalize_tool_message_content(tool_response_content),
+            },
         ],
         "image_paths": [spec["query_image_path"], *atlas_paths],
         "ground_truth_mm": spec["ground_truth_mm"],
@@ -216,9 +394,12 @@ def _build_row_from_spec(spec: dict[str, Any]) -> dict[str, Any]:
         # write-back path tolerates both via ``if_unknown="warn"``.
         "dataset": str(spec.get("dataset", "") or ""),
         # ``difficulty_score`` is consumed by :class:`CurriculumRepeatingSampler`
-        # for band selection. Lane A specs carry ``None`` (cold-start);
-        # Lane B specs carry the live or seeded score.
+        # for band selection. Lane A specs seed to ``ap_pct``; Lane B specs
+        # carry the live observation if any, else ``ap_pct`` fallback.
         "difficulty_score": spec.get("difficulty_score"),
+        # ``ap_bin`` is the curriculum's per-bin refresh key; precomputed at
+        # spec construction so the sampler doesn't redo the bin math.
+        "ap_bin": spec.get("ap_bin"),
     }
 
 
@@ -352,6 +533,10 @@ def build_datasets_from_index(
     seed: int = 0,
     require_query_on_disk: bool = True,
     require_atlas_on_disk: bool = True,
+    randomized: bool = False,
+    strategy: str = "lane_b_broad_slate",
+    atlas_embedding_cache_dir: Path | None = None,
+    rng: random.Random | None = None,
 ) -> tuple[RowDataset, RowDataset | None]:
     """Lane B dataset assembly: pull rows from a :class:`ManifestIndex`.
 
@@ -362,6 +547,22 @@ def build_datasets_from_index(
     :func:`single_turn_rl.section_state.iter_section_states`, then converts
     each to a row spec via :func:`_spec_from_section_state`.
 
+    Static (default) vs randomized prefix
+    -------------------------------------
+    Default (``randomized=False``): the deterministic canonical slate path —
+    every section for an ``(atlas, plane)`` pair shares the same evenly-
+    spaced slate. ``strategy`` and ``atlas_embedding_cache_dir`` are
+    ignored on this path; behaviour is byte-identical to pre-Lane A code.
+
+    Randomized (``randomized=True``): every section gets a fresh slate from
+    :func:`langslice_traces.generate_trace` with the requested ``strategy``
+    (``"lane_b_broad_slate"`` for the existing single-slate path,
+    ``"lane_a_prefix"`` for the new multi-step prefix data source). The
+    ``atlas_embedding_cache_dir`` argument is required (it provides the
+    per-(atlas, plane) grid of fetchable positions); a missing value raises
+    :class:`ValueError`. ``rng`` defaults to ``random.Random(seed)`` when
+    not provided so the same ``seed`` reproduces the same randomized rows.
+
     The eval holdout uses the same subject-level deterministic split as
     Lane A so the two lanes are comparable.
 
@@ -370,34 +571,53 @@ def build_datasets_from_index(
     """
     from .section_state import iter_section_states  # noqa: PLC0415
 
+    if randomized and atlas_embedding_cache_dir is None:
+        raise ValueError(
+            "build_datasets_from_index(randomized=True) requires "
+            "atlas_embedding_cache_dir (the procedural generator needs the "
+            "per-(atlas, plane) embedding cache as the universe of "
+            "fetchable positions)."
+        )
+    # Use the caller-provided rng when randomized, else seed one off ``seed``
+    # so the existing static path keeps its prior shuffle order.
+    rng_for_iter: random.Random | None = None
+    if randomized:
+        rng_for_iter = rng if rng is not None else random.Random(seed)
+
     pairs = manifest_index.pairs()
     specs: list[dict[str, Any]] = []
     for atlas, atlas_plane in pairs:
         if plane is not None and atlas_plane != plane:
             continue
-        for section_state in iter_section_states(
-            index=manifest_index,
-            plane=atlas_plane,
-            atlas=atlas,
-            split=split,
-            slate_root=slate_root,
-            n_positions=n_positions,
-            require_query_on_disk=require_query_on_disk,
-            require_atlas_on_disk=require_atlas_on_disk,
-            repo_root=repo_root,
-        ):
+        iter_kwargs: dict[str, Any] = {
+            "index": manifest_index,
+            "plane": atlas_plane,
+            "atlas": atlas,
+            "split": split,
+            "slate_root": slate_root,
+            "n_positions": n_positions,
+            "require_query_on_disk": require_query_on_disk,
+            "require_atlas_on_disk": require_atlas_on_disk,
+            "repo_root": repo_root,
+        }
+        if randomized:
+            iter_kwargs["randomized"] = True
+            iter_kwargs["strategy"] = strategy
+            iter_kwargs["atlas_embedding_cache_dir"] = atlas_embedding_cache_dir
+            iter_kwargs["rng"] = rng_for_iter
+        for section_state in iter_section_states(**iter_kwargs):
             specs.append(_spec_from_section_state(section_state, repo_root=repo_root))
 
-    rng = random.Random(seed)
+    shuffle_rng = random.Random(seed)
     if max_examples is not None and 0 < int(max_examples) < len(specs):
-        rng.shuffle(specs)
+        shuffle_rng.shuffle(specs)
         specs = specs[: int(max_examples)]
     train_subjects, eval_subjects = split_subjects_for_holdout(
         specs, eval_holdout_every=eval_holdout_every
     )
     train_specs = [s for s in specs if str(s["subject_id"]) in train_subjects]
     eval_specs = [s for s in specs if str(s["subject_id"]) in eval_subjects]
-    rng.shuffle(train_specs)
+    shuffle_rng.shuffle(train_specs)
     train = RowDataset(train_specs)
     evald = RowDataset(eval_specs) if eval_specs else None
     return train, evald

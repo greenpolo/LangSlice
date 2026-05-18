@@ -28,6 +28,7 @@ _STATE_OPENAI_IMAGE_ROUTE_KEY = "openai_image_route"
 _STATE_REVIEW_MODEL_KEY = "review_model"
 _STATE_DEBUG_DIR_KEY = "debug_dir"
 _STATE_LAST_PROMPT_REVISION_KEY = "prompt_revision"
+_STATE_PLANE_KEY = "plane"
 _HARDCAP_MAX_CANDIDATES = 3
 
 _ARTIFACT_SEGMENTATION = "generated_segmentation"
@@ -176,6 +177,7 @@ async def _generate_registration_candidate_impl(
         source_image,
         atlas_name=str(state["atlas_name"]),
         position_mm=float(state["position_mm"]),
+        plane=str(state.get(_STATE_PLANE_KEY, "coronal")),
         provider=str(state.get(_STATE_IMAGE_PROVIDER_KEY, state.get("provider", "google"))),
         image_model=state.get(_STATE_IMAGE_MODEL_KEY),
         prompt_revision=active_prompt_revision,

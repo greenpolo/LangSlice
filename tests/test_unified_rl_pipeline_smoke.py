@@ -25,6 +25,7 @@ verifies the wiring works without instantiating the heavy TRL
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -185,7 +186,7 @@ def test_manifest_index_loads_and_seeds(
     rlvr_sections = index.query(split="rlvr")
     assert len(rlvr_sections) == 50
 
-    # Write a seed file mirroring tools/seed_difficulty_from_slicebench.py output.
+    # Write a seed file mirroring the seed-difficulty training tool output.
     seed_rows = []
     for section in rlvr_sections[:10]:
         seed_rows.append(
@@ -237,8 +238,15 @@ def test_build_datasets_from_index_yields_lane_b_rows(
         # the spec for shape parity with Lane A).
         assert len(spec["atlas_image_paths"]) == 5
         assert len(spec["fetched_positions_mm"]) == 5
-    # Holdout split is non-empty when we have >1 subject.
-    assert evald is None or len(evald) >= 0
+    # 10 distinct subjects (2 datasets × 5 subjects); eval_holdout_every=5 → 2
+    # eval subjects (every 5th in sorted order). Each has 5 sections → 10 rows.
+    assert evald is not None
+    assert len(evald) > 0
+    assert len(evald) <= len(train) // 2 + len(train)  # sanity upper bound
+    # No subject-level leakage between train and eval.
+    train_subjects = {s["subject_id"] for s in train._specs}  # noqa: SLF001
+    eval_subjects = {s["subject_id"] for s in evald._specs}  # noqa: SLF001
+    assert train_subjects.isdisjoint(eval_subjects)
 
 
 # ---------------------------------------------------------------------------
@@ -352,6 +360,66 @@ def test_adaptive_schedule_returns_quantile_after_warmup() -> None:
 # ---------------------------------------------------------------------------
 # 6. AdaRFTCurriculumCallback advances T and writes back when wired
 # ---------------------------------------------------------------------------
+
+
+def test_adaRFT_callback_surfaces_metrics_to_log_history(
+    synthetic_index: tuple[ManifestIndex, Path], tmp_path: Path,
+) -> None:
+    """The callback must write adarft/* keys into both ``logs`` and
+    ``state.log_history[-1]`` so trackio/wandb pick them up.
+
+    Without this surface, operators could only see curriculum starvation
+    via the ``logger.info`` line — useless for trackio/wandb dashboards.
+    """
+    index, _ = synthetic_index
+    train, _ = ds.build_datasets_from_index(
+        manifest_index=index,
+        split="rlvr",
+        repo_root=tmp_path,
+        slate_root=tmp_path,
+        n_positions=3,
+        eval_holdout_every=0,
+        seed=0,
+    )
+    sampler = CurriculumRepeatingSampler(
+        train,
+        num_generations=2,
+        batch_size=4,
+        initial_T=0.5,
+        target_reward=0.5,
+        alpha=2.0,
+        eta=0.05,
+        ema_decay=0.7,
+        band_width=0.5,
+        max_per_subject_in_batch=8,
+        generator=torch.Generator().manual_seed(0),
+    )
+    schedule = ar.AdaptiveRewardSchedule(min_observations=1)
+    callback = AdaRFTCurriculumCallback(
+        sampler=sampler,
+        manifest_index=index,
+        schedule=schedule,
+        write_back=False,
+    )
+    logs = {"reward": 0.8}
+    state = SimpleNamespace(log_history=[{"reward": 0.8, "step": 1}])
+    callback.on_log(args=None, state=state, control=None, logs=logs)
+
+    expected_keys = {
+        "adarft/T",
+        "adarft/raw_step",
+        "adarft/smoothed_step",
+        "adarft/ladder_level",
+        "adarft/normalized_reward",
+    }
+    # Metrics must be visible to the live wandb/trackio path (the ``logs`` dict).
+    assert expected_keys.issubset(set(logs.keys()))
+    # And to log_history readers (the appended entry).
+    assert expected_keys.issubset(set(state.log_history[-1].keys()))
+    # Sanity: T was advanced and surfaced; reward (0.8) > target (0.5) ⇒ T > 0.5.
+    assert state.log_history[-1]["adarft/T"] > 0.5
+    # Normalized reward clamps to [0, 1]; 0.8 passes through unchanged.
+    assert state.log_history[-1]["adarft/normalized_reward"] == pytest.approx(0.8)
 
 
 def test_adaRFT_callback_advances_T_and_writes_back(
@@ -554,8 +622,40 @@ def test_cli_mutex_terminal_states_required_with_terminal_data_source(
         )
 
 
+def test_cli_mutex_index_data_source_rejects_static_weights_curriculum(
+    tmp_path: Path,
+) -> None:
+    """``--data-source index`` + ``--curriculum-mode static_weights`` is invalid.
+
+    static_weights expects a WeightedRowDataset built only by the
+    terminal-states path; combining it with index-driven data would crash
+    later at an isinstance assert with a bare AssertionError. The CLI
+    mutex must surface a usable error here.
+    """
+    cfg_path = tmp_path / "cfg.toml"
+    cfg_path.write_text("[grpo]\n", encoding="utf-8")
+    weights_path = tmp_path / "weights.json"
+    weights_path.write_text("{}", encoding="utf-8")
+    with pytest.raises(SystemExit):
+        tg._parse_args(
+            [
+                "--config", str(cfg_path),
+                "--sft-model", str(tmp_path),
+                "--output-dir", str(tmp_path),
+                "--data-source", "index",
+                "--curriculum-mode", "static_weights",
+                "--curriculum-weights", str(weights_path),
+            ]
+        )
+
+
 def test_cli_defaults_unified_pipeline_modes(tmp_path: Path) -> None:
-    """Documented defaults: adaptive curriculum, adaptive reward, index data."""
+    """Documented defaults: adaptive curriculum, adaptive reward, index data.
+
+    The data-source default is ``index`` (Lane B): RL feeds from the full
+    ~25k+ RLVR allocation via ManifestIndex. The terminal_states path stays
+    available for runs against external trace-factory artifacts.
+    """
     cfg_path = tmp_path / "cfg.toml"
     cfg_path.write_text("[grpo]\n", encoding="utf-8")
     args = tg._parse_args(
@@ -686,25 +786,62 @@ def test_select_trainer_adarft_only(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_select_trainer_splice_only(monkeypatch: pytest.MonkeyPatch) -> None:
     _stub_trl_imports(monkeypatch)
+    fake_cache = MagicMock()
     cls = tg._select_trainer_cls(
         adarft_enabled=False,
         static_curriculum_enabled=False,
-        atlas_cache=MagicMock(),
+        atlas_cache=fake_cache,
     )
     assert issubclass(cls, _FakeGRPOTrainer)
     assert cls is not _FakeGRPOTrainer
+    # Instantiating verifies __init__ pops atlas_cache and wraps processing_class.
+    fake_processor = MagicMock()
+    instance = cls(atlas_cache=fake_cache, processing_class=fake_processor)
+    assert instance._atlas_cache is fake_cache  # type: ignore[attr-defined]
+    # processing_class must have been replaced with a sidecar-emitting proxy.
+    assert instance.kwargs["processing_class"] is not fake_processor  # type: ignore[attr-defined]
 
 
 def test_select_trainer_splice_plus_adarft(monkeypatch: pytest.MonkeyPatch) -> None:
     _stub_trl_imports(monkeypatch)
+    fake_cache = MagicMock()
     cls = tg._select_trainer_cls(
         adarft_enabled=True,
         static_curriculum_enabled=False,
-        atlas_cache=MagicMock(),
+        atlas_cache=fake_cache,
     )
     assert issubclass(cls, _FakeGRPOTrainer)
     # Both mixins applied.
     assert cls is not _FakeGRPOTrainer
+    # Instantiating verifies both the splice and adarft __init__ paths fire.
+    fake_processor = MagicMock()
+    instance = cls(
+        atlas_cache=fake_cache,
+        processing_class=fake_processor,
+        curriculum_sampler="sentinel",
+    )
+    assert instance._atlas_cache is fake_cache  # type: ignore[attr-defined]
+    assert instance._curriculum_sampler == "sentinel"  # type: ignore[attr-defined]
+    assert instance.kwargs["processing_class"] is not fake_processor  # type: ignore[attr-defined]
+
+
+def test_select_trainer_splice_plus_static(monkeypatch: pytest.MonkeyPatch) -> None:
+    _stub_trl_imports(monkeypatch)
+    fake_cache = MagicMock()
+    cls = tg._select_trainer_cls(
+        adarft_enabled=False,
+        static_curriculum_enabled=True,
+        atlas_cache=fake_cache,
+    )
+    # Splice wraps CurriculumGRPOTrainer, which is _FakeCurriculumGRPOTrainer here.
+    assert issubclass(cls, _FakeCurriculumGRPOTrainer)
+    assert cls is not _FakeCurriculumGRPOTrainer
+    # Instantiating verifies the splice __init__ fired (atlas_cache stashed,
+    # processing_class wrapped) while static-curriculum base is in the MRO.
+    fake_processor = MagicMock()
+    instance = cls(atlas_cache=fake_cache, processing_class=fake_processor)
+    assert instance._atlas_cache is fake_cache  # type: ignore[attr-defined]
+    assert instance.kwargs["processing_class"] is not fake_processor  # type: ignore[attr-defined]
 
 
 def test_select_trainer_rejects_double_curriculum(
@@ -718,3 +855,119 @@ def test_select_trainer_rejects_double_curriculum(
             static_curriculum_enabled=True,
             atlas_cache=None,
         )
+
+
+# ---------------------------------------------------------------------------
+# 11. "no NaN rewards" — adaptive terminal reward is always finite
+# ---------------------------------------------------------------------------
+
+
+def test_adaptive_terminal_reward_never_returns_nan() -> None:
+    """Every branch of the adaptive reward returns a finite float.
+
+    Covers: clean parse + in-range hit, out-of-range numeric, and format
+    failure (unparseable completion). This is the literal "no NaN rewards"
+    assertion from verification item 6.
+    """
+    reward_fn = ar.make_adaptive_terminal_reward(
+        min_observations=50,  # stays in static-fallback mode for this call
+        static_fallback=(0.05, 0.15),
+    )
+
+    # Four completions exercising all code branches:
+    #   [0] clean parse, in-range (bell path)
+    #   [1] clean parse, out-of-range
+    #   [2] clean parse, in-range but at the boundary (edge of bell)
+    #   [3] format failure (unparseable)
+    completions = [
+        '{"position_mm": 6.0}',   # in-range: GT=6.0, range (0.0, 13.2)
+        '{"position_mm": 99.0}',  # out-of-range
+        '{"position_mm": 0.01}',  # barely in-range, far from GT
+        "not json",               # parse failure → format_penalty
+    ]
+    ground_truth_mm = [6.0, 6.0, 6.0, 6.0]
+    valid_range_mm = [
+        (0.0, 13.2),
+        (0.0, 13.2),
+        (0.0, 13.2),
+        (0.0, 13.2),
+    ]
+
+    rewards = reward_fn(
+        completions=completions,
+        ground_truth_mm=ground_truth_mm,
+        valid_range_mm=valid_range_mm,
+    )
+
+    assert len(rewards) == 4
+    for i, r in enumerate(rewards):
+        assert math.isfinite(r), (
+            f"reward[{i}] is not finite: {r!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 12. "sigma narrows over the run" — AdaptiveRewardSchedule tracks improvement
+# ---------------------------------------------------------------------------
+
+
+def test_adaptive_sigma_narrows_as_errors_shrink(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Sigma shrinks when the rolling buffer transitions from large to small errors.
+
+    Phase 1: fill the deque with large error fracs (0.10) — sigma lands near max.
+    Phase 2: overflow with small error fracs (0.01) — sigma should be strictly
+    smaller. This is the literal "sigma narrows over the run" assertion from
+    verification item 6.
+
+    The _isolate_recent_errors autouse fixture clears the buffer before and
+    after every test, so this test doesn't need its own monkeypatch teardown.
+    """
+    schedule = ar.AdaptiveRewardSchedule(
+        min_sigma_frac=0.005,
+        max_sigma_frac=0.05,
+        sigma_quantile=0.5,
+        cutoff_quantile=0.95,
+        min_observations=50,
+        static_fallback=(0.05, 0.15),
+    )
+
+    axis_span_mm = 10.0  # constant; vary abs_err_mm to control error_frac
+
+    # Phase 1: 60 observations with error_frac = 0.03 (large, within [min, max]
+    # so the clamp does not flatten the difference). The median lands at 0.03,
+    # which is between min_sigma_frac (0.005) and max_sigma_frac (0.05).
+    for i in range(60):
+        ar.record_error(
+            abs_err_mm=0.03 * axis_span_mm,
+            axis_span_mm=axis_span_mm,
+            plane="coronal",
+            dataset="ds_0",
+            section_id=f"sec_{i}",
+        )
+    sigma_frac_a, cutoff_frac_a = schedule.current()
+
+    # Phase 2: 60 more observations with error_frac = 0.007 (small, above
+    # min_sigma_frac so the lower clamp doesn't hide the difference either).
+    # The deque maxlen is 200 by default, so 120 total fit; the small-error
+    # batch dominates the median once added.
+    for i in range(60):
+        ar.record_error(
+            abs_err_mm=0.007 * axis_span_mm,
+            axis_span_mm=axis_span_mm,
+            plane="coronal",
+            dataset="ds_0",
+            section_id=f"sec_{i}",
+        )
+    sigma_frac_b, cutoff_frac_b = schedule.current()
+
+    # Sigma must narrow as errors shrink.
+    assert sigma_frac_b < sigma_frac_a, (
+        f"Expected sigma to narrow: phase-1 sigma={sigma_frac_a}, "
+        f"phase-2 sigma={sigma_frac_b}"
+    )
+
+    # Both readings must stay within the configured bounds.
+    assert schedule.min_sigma_frac <= sigma_frac_a <= schedule.max_sigma_frac
+    assert schedule.min_sigma_frac <= sigma_frac_b <= schedule.max_sigma_frac

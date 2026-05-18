@@ -1,0 +1,58 @@
+# Phase 5 — coronal-only SUBMIT-ONLY: 56,772-row corpus
+# Each trace is exactly 1 step: submit_estimate at the exact ground-truth.
+# No tool calls, no atlas image, no reasoning. Pure slice -> coordinate map.
+#
+# Hypothesis: Phase 4's 2-step minimal trace caused the model to unlearn
+# multi-step exploration (mae 6.80 vs Phase 2's 3.43). Go to the limit —
+# remove ALL tool plumbing. Tests whether the model can learn slice -> mm
+# from pure SFT on 56k single-decode targets. Failure mode would be
+# "model averages everything to brain center"; success mode would prove
+# Gemma 4 E4B is a competent 1-shot perceptron given enough examples.
+#
+# Dataset: combined_corpus_submitonly_coronal.jsonl
+#
+# Same hparams as Phase 4 so ckpt-150 is directly comparable.
+
+[sft]
+base_model = "unsloth/gemma-4-E4B-it"
+load_in_4bit = true
+max_seq_length = 4096
+num_train_epochs = 1
+max_steps = 1000
+per_device_train_batch_size = 2
+gradient_accumulation_steps = 12
+per_device_eval_batch_size = 2
+learning_rate = 2e-4
+lr_scheduler_type = "cosine"
+warmup_ratio = 0.03
+weight_decay = 0.01
+max_grad_norm = 0.8
+optim = "adamw_8bit"
+chat_template_kwargs = { enable_thinking = false }
+logging_steps = 5
+eval_strategy = "no"
+prediction_loss_only = true
+agent_eval_steps = 99999
+save_strategy = "steps"
+save_steps = 50
+save_total_limit = 25
+report_to = "none"
+seed = 42
+dataloader_num_workers = 32
+dataloader_persistent_workers = true
+dataloader_pin_memory = true
+dataloader_prefetch_factor = 6
+
+[lora]
+r = 256
+lora_alpha = 8
+use_rslora = true
+finetune_vision_layers = false
+finetune_language_layers = true
+finetune_attention_modules = true
+finetune_mlp_modules = true
+use_gradient_checkpointing = "unsloth"
+
+[data]
+holdout_fraction = 0.10
+include_rationale = false

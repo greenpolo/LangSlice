@@ -1,0 +1,2 @@
+{"dataset":"demo_dataset","section_id":"demo_section_001","subject_id":"demo_subject_001","slice_axis":"ap","position_mm":1.23,"atlas":"allen_mouse_25um","image_path":"data/datasets/demo/s1.png"}
+{"dataset":"demo_dataset","section_id":"demo_section_002","subject_id":"demo_subject_001","slice_axis":"ap","position_mm":1.13,"atlas":"allen_mouse_25um","image_path":"data/datasets/demo/s2.png"}

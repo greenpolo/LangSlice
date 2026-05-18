@@ -6,7 +6,7 @@ the final coordinate decision: given a query image plus the atlas evidence the
 production agent already gathered, output strict-JSON ``{"position_mm": <float>}``
 and get scored by the same axis-normalized truncated-Gaussian reward.
 
-Plan: ``docs/superpowers/plans/2026-05-10-langslice-single-turn-rl-grpo.md``.
+See ``models/langslice-gemma-4/training/single_turn_rl/README.md``.
 """
 
 from __future__ import annotations

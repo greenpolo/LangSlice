@@ -4,6 +4,11 @@ import sys
 
 import langslice_harness
 
+_PLANE_HELP = (
+    "Slicing plane (normal axis). Position is interpreted along this axis "
+    "(AP for coronal, ML for sagittal, DV for horizontal)."
+)
+
 
 def _resolve_register_models(
     *,
@@ -26,6 +31,12 @@ def _add_register_parser(subparsers: argparse._SubParsersAction) -> None:
     reg.add_argument("image", help="Path to slice image (PNG, TIFF, JPEG)")
     reg.add_argument("--atlas", default="allen_mouse_25um", help="BrainGlobe atlas name")
     reg.add_argument("--position", type=float, required=True, help="AP position in mm")
+    reg.add_argument(
+        "--plane",
+        default="coronal",
+        choices=["coronal", "sagittal", "horizontal"],
+        help=_PLANE_HELP,
+    )
     reg.add_argument(
         "--registration-mode",
         default="direct",
@@ -53,6 +64,13 @@ def _add_register_parser(subparsers: argparse._SubParsersAction) -> None:
         default=2048,
         help="Max long-edge pixels for VLM",
     )
+    reg.add_argument(
+        "--clahe",
+        action="store_true",
+        help="Apply adaptive CLAHE + DAPI-weighted grayscale preprocessing to the slice "
+        "before sending it to the image-gen registration model. Useful when the red "
+        "fluorescence channel dominates and washes out structural detail.",
+    )
     reg.add_argument("--temperature", type=float, default=None, help="Generation temperature")
     reg.add_argument(
         "--thinking",
@@ -71,22 +89,42 @@ def _add_register_parser(subparsers: argparse._SubParsersAction) -> None:
         choices=["google", "openai"],
         help="Model provider: 'google' for Gemini, 'openai' for OpenAI-compatible (Ollama, etc.)",
     )
+    reg.add_argument(
+        "--endpoint",
+        default=None,
+        help=(
+            "OpenAI-compatible base URL (e.g. http://127.0.0.1:1234/v1). When "
+            "set, the model name is used verbatim and the request is sent here, "
+            "bypassing prefix dispatch."
+        ),
+    )
     reg.add_argument("--json", action="store_true", help="Print result JSON to stdout")
 
 
 def _run_register(args: argparse.Namespace) -> None:
     import json
+    import os
     from datetime import datetime
     from pathlib import Path
 
     from PIL import Image
 
-    from langslice_harness.image_prep import normalize_image, prepare_image_for_vlm
+    from langslice_harness.image_prep import (
+        adaptive_preprocess,
+        normalize_image,
+        prepare_image_for_vlm,
+    )
     from langslice_harness.registration.core import estimate_registration_runtime
     from langslice_harness.registration.types import (
         annotation_session_to_dict,
         build_annotation_session_from_correspondences,
     )
+
+    # Optional endpoint override: when the GUI picks a local-engine model
+    # from the Estimate dropdown it passes --endpoint here. The harness's
+    # model resolver picks this up via env var.
+    if args.endpoint:
+        os.environ["LANGSLICE_ENDPOINT"] = args.endpoint
 
     image_model_arg = args.image_model
 
@@ -130,6 +168,9 @@ def _run_register(args: argparse.Namespace) -> None:
         f"VLM input: {image.size[0]}x{image.size[1]}  "
         f"(scale={prep.scale_factor:.3f}, max_edge={args.vlm_resolution})"
     )
+    if args.clahe:
+        image = adaptive_preprocess(image)
+        print("  CLAHE: adaptive per-channel + DAPI-weighted grayscale (70/15/15 B/R/G)")
 
     # Set up output directory.
     if args.out:
@@ -140,7 +181,7 @@ def _run_register(args: argparse.Namespace) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     debug_dir = str(out_dir)
 
-    print(f"Atlas: {args.atlas}  Position: {args.position:.2f} mm")
+    print(f"Atlas: {args.atlas}  Plane: {args.plane}  Position: {args.position:.2f} mm")
     print(f"Registration: image-gen  Model: {effective_model}  Provider: {args.provider}")
     print(f"Output: {out_dir}")
     print()
@@ -153,6 +194,7 @@ def _run_register(args: argparse.Namespace) -> None:
         image=image,
         atlas_name=args.atlas,
         position_mm=args.position,
+        plane=args.plane,
         registration_mode=args.registration_mode,
         on_progress=on_progress,
         debug_dir=debug_dir,
@@ -191,6 +233,39 @@ def _run_register(args: argparse.Namespace) -> None:
         session = result.annotation_session or build_annotation_session_from_correspondences(
             result.accepted_correspondences
         )
+        # Surface forward + inverse warp artifact paths at the top level so
+        # callers (CLI consumers, the Tauri GUI) don't have to dig into
+        # candidate_metadata. These mirror the keys stamped into
+        # session_metadata / candidate_metadata by the image-gen pipeline.
+        session_meta = result.annotation_session.metadata if result.annotation_session else {}
+        artifact_path_keys = (
+            "warped_atlas_path",
+            "warped_border_overlay_path",
+            "generated_segmentation_path",
+            "generated_border_overlay_path",
+            "slice_warped_to_atlas_path",
+            "slice_atlas_border_overlay_path",
+        )
+        artifact_paths: dict[str, str | None] = {}
+        for key in artifact_path_keys:
+            value = session_meta.get(key)
+            if value is None and isinstance(candidate_metadata, dict):
+                value = candidate_metadata.get(key)
+            artifact_paths[key] = value if isinstance(value, str) else None
+
+        # Hoist inverse_warp_status to the top-level payload so GUI/CLI
+        # consumers can detect inverse-warp failures without digging into
+        # annotation_session.metadata. "ok" on success, "failed: ..." on
+        # failure, None if the workflow didn't run an inverse warp.
+        inverse_warp_status_value = session_meta.get("inverse_warp_status")
+        if inverse_warp_status_value is None and isinstance(candidate_metadata, dict):
+            inverse_warp_status_value = candidate_metadata.get("inverse_warp_status")
+        inverse_warp_status: str | None = (
+            inverse_warp_status_value
+            if isinstance(inverse_warp_status_value, str)
+            else None
+        )
+
         payload = {
             "accepted_correspondences": [
                 {
@@ -213,6 +288,8 @@ def _run_register(args: argparse.Namespace) -> None:
                 "provenance": affine.provenance,
             },
             "annotation_session": annotation_session_to_dict(session),
+            "inverse_warp_status": inverse_warp_status,
+            **artifact_paths,
         }
         print()
         print(json.dumps(payload, indent=2))
@@ -226,6 +303,12 @@ def _add_estimate_parser(subparsers: argparse._SubParsersAction) -> None:
     )
     est.add_argument("image", help="Path to slice image (PNG, TIFF, JPEG)")
     est.add_argument("--atlas", default="allen_mouse_25um", help="BrainGlobe atlas name")
+    est.add_argument(
+        "--plane",
+        default="coronal",
+        choices=["coronal", "sagittal", "horizontal"],
+        help=_PLANE_HELP,
+    )
     est.add_argument(
         "--workflow",
         default=None,
@@ -286,6 +369,15 @@ def _add_estimate_parser(subparsers: argparse._SubParsersAction) -> None:
         default="google",
         choices=["google", "openai"],
         help="Model provider: 'google' for Gemini, 'openai' for OpenAI-compatible (Ollama, etc.)",
+    )
+    est.add_argument(
+        "--endpoint",
+        default=None,
+        help=(
+            "OpenAI-compatible base URL (e.g. http://127.0.0.1:1234/v1). When "
+            "set, the model name is used verbatim and the request is sent here, "
+            "bypassing prefix dispatch."
+        ),
     )
 
 
@@ -651,6 +743,10 @@ def _run_estimate(args: argparse.Namespace) -> None:
 
     from langslice_harness.image_prep import normalize_image, prepare_image_for_vlm
 
+    # Optional endpoint override (see _run_register for context).
+    if args.endpoint:
+        os.environ["LANGSLICE_ENDPOINT"] = args.endpoint
+
     # Load and downscale image.
     print(f"Loading {args.image} ...")
     raw_image = Image.open(args.image)
@@ -698,7 +794,7 @@ def _run_estimate(args: argparse.Namespace) -> None:
         if args.thinking:
             vlm_config.set_thinking_level(args.thinking)
 
-    print(f"Atlas: {args.atlas}")
+    print(f"Atlas: {args.atlas}  Plane: {args.plane}")
     print(
         f"Model: {effective_model}  Provider: {provider_label}  "
         f"Thinking: {vlm_config.THINKING_LEVEL}  Temp: {vlm_config.TEMPERATURE}"
@@ -723,6 +819,11 @@ def _run_estimate(args: argparse.Namespace) -> None:
                 "OpenAI AP image-gen is not available in the active harness; use the "
                 "ADK tool_use workflow with an OpenAI-compatible model instead."
             )
+        if args.plane != "coronal":
+            raise SystemExit(
+                f"image_gen workflow is currently coronal-only (got plane={args.plane!r}). "
+                "Use --workflow tool_use for sagittal/horizontal estimation."
+            )
         result = estimate_position_image_gen(
             image=image,
             atlas_name=args.atlas,
@@ -736,6 +837,7 @@ def _run_estimate(args: argparse.Namespace) -> None:
         result = estimate_position(
             image=image,
             atlas_name=args.atlas,
+            plane=args.plane,
             on_progress=on_progress,
             max_iterations=args.max_iterations,
             media_resolution=args.media_resolution,
@@ -808,7 +910,7 @@ def _run_ollama(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
-def main():
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="langslice",
         description="VLM-based brain slice registration using Gemini and BrainGlobe atlases",
@@ -839,6 +941,57 @@ def main():
     # langslice ollama
     _add_ollama_parser(subparsers)
 
+    # langslice quick-affine
+    _add_quick_affine_parser(subparsers)
+
+    return parser
+
+
+def _add_quick_affine_parser(subparsers: argparse._SubParsersAction) -> None:
+    """Fast affine-only Elastix preview, no image-gen. Used by the GUI to
+    drop a placeholder warped-slice into the 3D viewer the moment the user
+    locks an AP position, before the full pipeline finishes."""
+    p = subparsers.add_parser(
+        "quick-affine",
+        help="Affine-only Elastix preview registration (no image-gen, ~2s)",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    p.add_argument("image", help="Path to slice image")
+    p.add_argument("--atlas", required=True, help="BrainGlobe atlas name")
+    p.add_argument("--position", type=float, required=True, help="Position in mm (per plane)")
+    p.add_argument(
+        "--plane",
+        default="coronal",
+        choices=["coronal", "sagittal", "horizontal"],
+        help=_PLANE_HELP,
+    )
+    p.add_argument("--out", required=True, help="Path to write the warped slice PNG")
+    p.add_argument("--json", action="store_true", help="Print result JSON to stdout")
+
+
+def _run_quick_affine(args: argparse.Namespace) -> None:
+    import json
+    from pathlib import Path
+
+    from PIL import Image
+
+    from langslice_harness.harness.registration.quick_affine import quick_affine_register
+
+    image = Image.open(args.image)
+    result = quick_affine_register(
+        image,
+        atlas_name=args.atlas,
+        position_mm=args.position,
+        plane=args.plane,
+        out_path=Path(args.out),
+    )
+    print(f"Quick affine complete: {result['warped_slice_path']} ({result['elapsed_s']}s)")
+    if args.json:
+        print(json.dumps(result, indent=2))
+
+
+def main():
+    parser = _build_parser()
     args = parser.parse_args()
 
     if args.command == "gui":
@@ -853,6 +1006,8 @@ def main():
         print(f"langslice {langslice_harness.__version__}")
     elif args.command == "register":
         _run_register(args)
+    elif args.command == "quick-affine":
+        _run_quick_affine(args)
     elif args.command == "estimate":
         _run_estimate(args)
     elif args.command == "estimate-group":

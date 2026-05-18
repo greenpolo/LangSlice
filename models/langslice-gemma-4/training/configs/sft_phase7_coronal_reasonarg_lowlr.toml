@@ -1,0 +1,57 @@
+# Phase 7 — same as Phase 6 (reasoning-in-submit-args, 23,721 rows) but with
+# learning_rate dropped 10x from 2e-4 to 2e-5.
+#
+# Hypothesis: Every prior phase used lr=2e-4 cosine with r=256 rsLoRA + 4-bit
+# base. With rsLoRA scaling α/√r = 0.5 at r=256/α=8 the effective LoRA update
+# step is large. Combined with lr=2e-4 it appears to be disrupting load-bearing
+# base representations — every SFT at this LR regressed below base. Lower the
+# LR sharply and see if accuracy converges *above* base instead of below it.
+#
+# Dataset: combined_corpus_reasonarg_coronal.jsonl (23,721 rows, multi-step
+# exploration kept, reasoning text in submit.args.reasoning).
+#
+# All other hparams identical to Phase 6 for clean LR-only ablation.
+
+[sft]
+base_model = "unsloth/gemma-4-E4B-it"
+load_in_4bit = true
+max_seq_length = 6144
+num_train_epochs = 1
+max_steps = 1000
+per_device_train_batch_size = 2
+gradient_accumulation_steps = 12
+per_device_eval_batch_size = 2
+learning_rate = 2e-5
+lr_scheduler_type = "cosine"
+warmup_ratio = 0.03
+weight_decay = 0.01
+max_grad_norm = 0.8
+optim = "adamw_8bit"
+chat_template_kwargs = { enable_thinking = false }
+logging_steps = 5
+eval_strategy = "no"
+prediction_loss_only = true
+agent_eval_steps = 99999
+save_strategy = "steps"
+save_steps = 50
+save_total_limit = 25
+report_to = "none"
+seed = 42
+dataloader_num_workers = 32
+dataloader_persistent_workers = true
+dataloader_pin_memory = true
+dataloader_prefetch_factor = 6
+
+[lora]
+r = 256
+lora_alpha = 8
+use_rslora = true
+finetune_vision_layers = false
+finetune_language_layers = true
+finetune_attention_modules = true
+finetune_mlp_modules = true
+use_gradient_checkpointing = "unsloth"
+
+[data]
+holdout_fraction = 0.10
+include_rationale = false

@@ -1,0 +1,157 @@
+# Canonical GRPO Lane A config — frozen 2026-05-17 alongside
+# langslice-gemma-4-E4B v1.0 (= phase9_lane_a_v7 checkpoint-300, cumulative
+# step 360 across the v3→v5→v6→v7 lineage).
+#
+# This is the snapshot of grpo_phase9_lane_a_tool_call_r64_v4.toml at the
+# moment v1.0 was blessed. The v4 file in this directory retains its
+# v3→v4→v5→v6→v7 inline iteration commentary as the lab notebook; this file
+# is the clean release config — every value here is one we observed to work
+# under slicebench small coronal, mouse-only mae 1.20 mm.
+#
+# When starting a new Lane A run, prefer this file over the v4 file. When
+# proposing a knob change, FIRST justify why v1.0 numbers won't hold; then
+# branch a new vN config rather than edit this one in place.
+
+[grpo]
+chat_template_kwargs = { enable_thinking = false }
+
+# Safety-net stops only. The actual termination signal is the string-aware
+# SubmitEstimateCloseCriteria + post-generate EOS rewrite installed in
+# single_turn_rl/train_grpo.py — together they convert every successful
+# `call:submit_estimate{...}` rollout into a clean EOS termination so
+# TRL's "last token in {eos, pad}" check passes naturally (the literal `}`
+# stop-string was REMOVED because it fired on inner braces in reasoning).
+generation_kwargs = { stop_strings = ["<tool_call|>", "<end_of_turn>"] }
+submit_estimate_stop_criterion = true
+
+learning_rate = 1e-6
+
+# K=3 group size. K=2 (per arxiv 2510.00977) is theoretically sufficient for
+# multi-epoch math reasoning but our single-epoch unique-prompt regime hit
+# frac_reward_zero_std ~50-65% (both rollouts converged to identical reward
+# → no contrastive signal). K=3 buys a third sample per group so at least
+# one rollout being "different" becomes likely; advantage variance estimator
+# gains a degree of freedom. K=4 would have marginal variance improvement
+# for ~2x wall-clock — bad trade.
+num_generations = 3
+generation_batch_size = 3
+
+# Effective batch = PDBS × GA = 1 × 8 = 8 prompts per gradient step.
+per_device_train_batch_size = 1
+gradient_accumulation_steps = 8
+
+# Empirical 5090 ceiling. K=3 × max_completion_length=512 = 1536 token
+# slots = ~25 GB peak VRAM with frozen-vision + atlas splice. Pushing to
+# 640 left ~228 MB nominal free and triggered allocator thrashing
+# (expandable_segments fragmentation cascade), step time 86s → 165s with
+# no crash. 512 + K=3 is the durable shape.
+max_completion_length = 512
+
+# Dataloader: 16 workers + pin + persistent + prefetch_factor=4. Verified
+# CPU-side is not the bottleneck under this PDBS/K combo on this hardware.
+dataloader_num_workers = 16
+dataloader_pin_memory = true
+dataloader_persistent_workers = true
+dataloader_prefetch_factor = 4
+
+# Aggressive grad clip — RL signal is noisy; 0.1 keeps step-to-step LoRA
+# delta in a regime that doesn't catastrophically forget the SFT base.
+max_grad_norm = 0.1
+
+# DAPO loss + sequence-level importance sampling. Default for tool-call
+# Lane A; aligns the per-token policy ratio at the sequence boundary which
+# is what we actually reward.
+importance_sampling_level = "sequence"
+loss_type = "dapo"
+
+# Critical: do NOT mask truncated completions. The SubmitEstimateCloseCriteria
+# + EOS rewrite converts every successful rollout into a clean EOS-terminated
+# completion, so the only remaining truncated rollouts are exactly the
+# format-failures we WANT a gradient on (format_penalty propagates through).
+# Setting this to true zeroes the format-failure gradient → model never
+# learns "stop rambling, emit submit_estimate" → mae regresses over training.
+mask_truncated_completions = false
+
+scale_rewards = "batch"
+temperature = 1.5
+top_p = 1.0
+optim = "adamw_8bit"
+
+log_completions = true
+logging_steps = 1
+save_steps = 50
+
+# 2224 steps = 1 full epoch over Lane A corpus (17792 rows / batch 8 = 2224
+# gradient updates). v1.0 was blessed at cumulative step 360 across the
+# v3→v5→v6→v7 lineage. Resuming from v1.0 toward 2224 is the v8+ path.
+max_steps = 2224
+
+report_to = "none"
+load_in_4bit = false
+max_seq_length = 8192
+
+[lora]
+finetune_vision_layers = false
+finetune_language_layers = true
+finetune_attention_modules = true
+finetune_mlp_modules = true
+# r=64 with rsLoRA. Higher r is fine for narrow-task RL — see memory
+# [[feedback_rslora_high_rank_for_domain_adaptation]]. r=64 was the value
+# that produced v1.0; r=128 untested under the v7 config.
+r = 64
+lora_alpha = 8
+use_rslora = true
+use_gradient_checkpointing = "unsloth"
+
+[data]
+eval_holdout_every = 5
+curriculum_round = 0
+
+[reward]
+cutoff_frac = 0.25
+
+# Warmup fallback sigma (used during the first ~16 steps before the rolling
+# error buffer fills to min_observations=50). Widened from the original 0.05
+# to match max_sigma_frac below; the bell needs to be wide enough that the
+# model's typical 2-3 mm error gets a meaningful gradient instead of ~0.
+sigma_frac = 0.10
+
+# Format penalty softened from −1.0 to −0.3 after empirical evidence that
+# the −1.0 magnitude dominated training: 44% of v6 steps were format-fail
+# (≤−0.5) while only 25% gave positive accuracy gradient (>+0.05). The
+# 1.0-vs-0.0 gap trained the model to optimize format compliance over
+# accuracy → mae regressed 2.05 (step 60) → 2.45 (step 210). At −0.3 the
+# bell signal competes properly and accuracy gradient survives.
+format_penalty = -0.3
+
+out_of_range_reward = 0.0
+
+[adaptive]
+# AdaRFT band sampler: T = eta * tanh(alpha * (reward - target_reward)),
+# EMA-smoothed. Defaults below produced v1.0.
+target_reward = 0.3
+eta = 0.03
+
+# d_min hard-floor on T. With band_width=0.15, this keeps the sampling band
+# at minimum [0.05, 0.35] (7 of 20 bins) even when reward stays low.
+# Prevents the ladder=4 uniform-backfill collapse seen in v5 first 50 steps
+# when both rollouts converged to ~0.2 < target=0.5.
+d_min = 0.2
+
+# Widened bell. At max_sigma_frac=0.05 the bell vanished at the model's
+# typical 2-3 mm error (~3-4σ → reward ≈ 0). At 0.15 (=1.98 mm on coronal
+# mouse), a 2 mm error gives reward ≈ 0.6 instead of ≈ 0.01. Restored the
+# "closer = better" signal that was the missing piece in v3-v6.
+max_sigma_frac = 0.15
+
+# Per-bin coverage quota. AdaRFT alone concentrated training on the easy
+# difficulty band, starving harder bins of gradient — uniform per-brain MAE
+# regression observed between step 60 and step 210. The quota forces every
+# reachable AP bin to receive ≥20 gradient updates before AdaRFT is allowed
+# to concentrate; while any bin is below quota, 2 of 8 slots per batch
+# (25%) are reserved for picks from the most-deficit bins. Lets AdaRFT keep
+# its focused-band advantage on the remaining 6/8 slots while guaranteeing
+# coverage of every bin. Coverage instrumentation in adarft log line:
+# `ap_cov=N ap_top3=F ap_deficit=N`.
+min_visits_per_bin = 20
+quota_slots_per_batch = 2

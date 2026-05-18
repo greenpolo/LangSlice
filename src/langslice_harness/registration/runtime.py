@@ -16,6 +16,7 @@ from PIL import Image
 
 from langslice_harness.agent_trace import image_part_from_pil, json_part, runtime_event
 from langslice_harness.atlas import get_composite_slice, load_atlas
+from langslice_harness.atlas.space import Plane
 from langslice_harness.harness.registration.image_gen_registration import (
     generate_registration_candidate,
 )
@@ -114,6 +115,7 @@ def _run_registration_review_session_sync(
     image: Image.Image,
     atlas_name: str,
     position_mm: float,
+    plane: Plane = "coronal",
     image_provider: str,
     image_model: str | None,
     review_model: str | object | None,
@@ -128,6 +130,7 @@ def _run_registration_review_session_sync(
         image=image,
         atlas_name=atlas_name,
         position_mm=position_mm,
+        plane=plane,
         image_provider=image_provider,
         image_model=image_model,
         model=review_model,
@@ -155,6 +158,7 @@ def _run_dense_registration(
     *,
     atlas_name: str,
     position_mm: float,
+    plane: Plane,
     selected_mode: str,
     atlas_image: Image.Image,
     debug_dir: str | None,
@@ -180,6 +184,7 @@ def _run_dense_registration(
             image=image,
             atlas_name=atlas_name,
             position_mm=position_mm,
+            plane=plane,
             image_provider=effective_provider,
             image_model=image_model,
             review_model=review_model,
@@ -196,6 +201,7 @@ def _run_dense_registration(
             image,
             atlas_name=atlas_name,
             position_mm=position_mm,
+            plane=plane,
             provider=effective_provider,
             image_model=image_model,
             debug_dir=str(dense_debug_root) if dense_debug_root is not None else None,
@@ -289,6 +295,7 @@ def estimate_registration(
     *,
     atlas_name: str,
     position_mm: float,
+    plane: Plane = "coronal",
     registration_mode: str = "direct",
     on_correspondences: Callable[[list[RegistrationCorrespondence]], None] | None = None,
     on_annotation_session: Callable[[RegistrationAnnotationSession], None] | None = None,
@@ -304,7 +311,7 @@ def estimate_registration(
 ) -> RegistrationResult:
     """Run image-gen registration and return affine + nonlinear results."""
     atlas = load_atlas(atlas_name)
-    atlas_image = get_composite_slice(atlas, position_mm)
+    atlas_image = get_composite_slice(atlas, position_mm, plane=plane)
     selected_mode = str(registration_mode).strip().lower() or "direct"
 
     if selected_mode not in {"direct", "agentic"}:
@@ -316,6 +323,7 @@ def estimate_registration(
         image,
         atlas_name=atlas_name,
         position_mm=position_mm,
+        plane=plane,
         selected_mode=selected_mode,
         atlas_image=atlas_image,
         debug_dir=debug_dir,

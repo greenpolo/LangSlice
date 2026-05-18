@@ -58,7 +58,22 @@ def _is_narrow_sweep(positions: list[float]) -> bool:
 def _clamp_and_dedupe_positions(
     positions: list[float], *, pos_lo: float, pos_hi: float, dedupe_tol: float = 0.02
 ) -> list[float]:
-    clamped = [max(pos_lo, min(pos_hi, float(p))) for p in positions]
+    # Defensive flatten: Gemini occasionally emits positions_mm as [[1.5, 2.5]]
+    # (nested) instead of [1.5, 2.5]. Walk one level of nesting and coerce.
+    flat: list[float] = []
+    for p in positions:
+        if isinstance(p, (list, tuple)):
+            for q in p:
+                try:
+                    flat.append(float(q))
+                except (TypeError, ValueError):
+                    continue
+        else:
+            try:
+                flat.append(float(p))
+            except (TypeError, ValueError):
+                continue
+    clamped = [max(pos_lo, min(pos_hi, p)) for p in flat]
     out: list[float] = []
     for p in clamped:
         if any(abs(p - q) <= dedupe_tol for q in out):
@@ -165,7 +180,7 @@ async def fetch_atlas(
 
 
 def submit_estimate(
-    position_mm: float, reasoning: str, tool_context: Any
+    position_mm: float, reasoning: str = "", tool_context: Any = None
 ) -> dict[str, Any]:
     """Submit the final position estimate for the target slice.
 

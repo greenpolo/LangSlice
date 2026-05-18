@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 from PIL import Image
-from sft.dataset import load_examples
+from sft.dataset import Example, load_examples
 from sft.render import (
     AtlasMetaCache,
     RenderedExample,
@@ -53,11 +53,11 @@ def test_tools_schema_function_shape_matches_hf_format() -> None:
     assert "positions_mm" in params["properties"]
 
 
-def test_submit_estimate_schema_requires_position_and_reasoning() -> None:
+def test_submit_estimate_schema_requires_position_only_reasoning_optional() -> None:
     tools = build_tools_schema("single_slice")
     submit = next(t for t in tools if t["function"]["name"] == "submit_estimate")
     params = submit["function"]["parameters"]
-    assert set(params["required"]) == {"position_mm", "reasoning"}
+    assert set(params["required"]) == {"position_mm"}
     assert "reasoning" in params["properties"]
 
 
@@ -119,6 +119,26 @@ def staged_single_slice(tmp_path: Path) -> Path:
     return dest
 
 
+def _make_example_with_images(
+    tmp_path: Path, *, trace: list[dict], thinking_mode: bool = False
+) -> Example:
+    for name in ("query.png", "a3.png", "a5.png"):
+        Image.new("RGB", (32, 32), color=(128, 128, 128)).save(tmp_path / name)
+    return Example(
+        bucket=1,
+        atlas_name="allen_mouse_25um",
+        atlas_version="CCFv3",
+        plane="coronal",
+        subject_id="test_subj_think",
+        system_prompt_kind="single_slice",
+        query_image_paths=["query.png"],
+        user_prompt_text="Estimate the position of this slice.",
+        trace=trace,
+        dataset_root=tmp_path,
+        thinking_mode=thinking_mode,
+    )
+
+
 @pytest.mark.skipif(
     not _ATLAS_AVAILABLE,
     reason="atlas not downloaded locally",
@@ -172,3 +192,58 @@ def test_render_unique_tool_call_ids(staged_single_slice: Path) -> None:
             for tc in m.get("tool_calls", []):
                 ids.append(tc["id"])
     assert len(ids) == len(set(ids))
+
+
+def test_render_thinking_row_prefixes_system_and_renders_terminal_thought(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    monkeypatch.setattr("sft.render.build_system_prompt", lambda **kwargs: "SYSTEM PROMPT")
+    trace = [
+        {
+            "tool_call": {"name": "fetch_atlas", "args": {"positions_mm": [3.0]}},
+            "tool_result": {"image_paths": ["a3.png"], "text": "Atlas at 3.00 mm"},
+        },
+        {
+            "submit": {"name": "submit_estimate", "args": {"position_mm": 5.0}},
+            "thinking": "Narrow sweep converges near 5.0 mm.",
+        },
+    ]
+    ex = _make_example_with_images(tmp_path, trace=trace, thinking_mode=True)
+
+    rendered = render_example(ex, atlas_meta_cache=AtlasMetaCache())
+    system_text = rendered.messages[0]["content"][0]["text"]
+    assert system_text.startswith("<|think|>SYSTEM PROMPT")
+
+    history_assistant = rendered.messages[2]
+    assert history_assistant["role"] == "assistant"
+    assert history_assistant["content"] == []
+
+    final_assistant = rendered.messages[-1]
+    assert final_assistant["role"] == "assistant"
+    thought_text = final_assistant["content"][0]["text"]
+    assert thought_text.startswith("<|channel>thought\n")
+    assert "Narrow sweep converges near 5.0 mm." in thought_text
+    assert thought_text.endswith("<channel|>")
+
+
+def test_render_terminal_fetch_row_has_no_following_tool_response(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    monkeypatch.setattr("sft.render.build_system_prompt", lambda **kwargs: "SYSTEM PROMPT")
+    trace = [
+        {
+            "tool_call": {"name": "fetch_atlas", "args": {"positions_mm": [3.0]}},
+            "tool_result": {"image_paths": ["a3.png"], "text": "Atlas at 3.00 mm"},
+        },
+        {
+            "tool_call": {"name": "fetch_atlas", "args": {"positions_mm": [5.0]}},
+            "thinking": "Need a tighter comparison around 5.0 mm.",
+        },
+    ]
+    ex = _make_example_with_images(tmp_path, trace=trace, thinking_mode=True)
+
+    rendered = render_example(ex, atlas_meta_cache=AtlasMetaCache())
+    roles = [m["role"] for m in rendered.messages]
+    assert roles == ["system", "user", "assistant", "tool", "assistant"]
+    final_assistant = rendered.messages[-1]
+    assert final_assistant["tool_calls"][0]["function"]["name"] == "fetch_atlas"

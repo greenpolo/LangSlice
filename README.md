@@ -1,86 +1,69 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/LangSlice_dark.png">
-    <source media="(prefers-color-scheme: light)" srcset="assets/Langslice_light.png">
-    <img alt="LangSlice" src="assets/Langslice_light.png" width="800">
-  </picture>
+  <img alt="LangSlice" src="assets/LangSlice_dark.png" width="600">
 </p>
 
-LangSlice registers histology slice images to BrainGlobe atlases. The active
-runtime is the ADK-based harness in `src/langslice_harness/`, with a Tauri
-desktop GUI in `tauri-gui/` and headless CLI support.
+<p align="center">
+  <em>Register histological brain sections to BrainGlobe atlases.<br>
+  A VLM estimates position, an image-gen model lays down atlas colors, Elastix warps the rest.</em>
+</p>
 
-## Pipeline
+<p align="center">
+  <img alt="Three histology slices registered to the Allen mouse atlas" src="assets/promo_registration_combined.png" width="780">
+</p>
 
-`slice-position estimation -> image-gen registration -> Elastix B-spline -> QUINT/ABBA export`
+## How it works
 
-1. Estimate the atlas position of the tissue slice. Coronal uses AP; sagittal
-   and horizontal use their corresponding atlas-native axes.
-2. Generate an atlas-colored registration target from the histology and atlas references.
-3. Recover a dense deformation field with itk-elastix B-spline registration.
-4. Warp the atlas and extract VisuAlign-compatible markers.
-5. Export a QUINT/ABBA-compatible JSON file.
+<p align="center">
+  <img alt="Agent loop: inspect, explore atlas candidates, submit AP" src="assets/agent_loop.png" width="900">
+</p>
 
-## Setup
+A VLM agent (default [`langslice-gemma-4-E4B`](https://huggingface.co/greenpolo/langslice-gemma-4-E4B))
+inspects the slice, explores candidate atlas planes through tool calls, and
+submits an AP coordinate. Image generation then produces an atlas-colored
+target from the histology, and itk-elastix recovers a dense B-spline
+deformation. Results export to VisuAlign-compatible JSON for QUINT / ABBA.
 
-1. Create the conda environment:
-   `conda env create -f environment.yml`
-2. Activate it:
-   `conda activate langslice`
-3. Install the harness in editable mode:
-   `pip install -e .`
-4. Configure authentication in `.env` using `.env.example`.
+<p align="center">
+  <img alt="LangSlice registration pipeline: histology slice to atlas-colored target, dense warp, and overlay" src="assets/registration_pipeline_square.png" width="780">
+</p>
 
-## CLI
+## Quick start
 
 ```bash
-# Single-slice position estimation
-langslice estimate <image> [--atlas ...] [--model ...] [--workflow ...]
-
-# Multi-slice group position estimation
-langslice estimate-group <img1> <img2> ... [--interval 200] [--atlas ...]
-
-# Whole-brain position estimation
-langslice estimate-brain <image_folder> [--atlas ...] [--anchors ...]
-
-# Image-gen registration at a known atlas position
-langslice register <image> --position <mm> [--registration-mode direct|agentic] [--image-model ...] [--openai-image-route images|responses] [--review-model ...] [--max-candidates 3] [--out ...]
-
-# Print package version
-langslice version
+conda env create -f environment.yml
+conda activate langslice
+pip install -e .
+cp .env.example .env  # add AI Studio / Vertex / OpenAI keys
 ```
 
-## Registration
+```bash
+# Position estimation
+langslice estimate slice.png
 
-Registration is one pipeline now: image-gen registration. Direct mode generates
-one candidate and returns it. Agentic mode wraps the same candidate generator in
-an ADK review loop that can inspect up to three candidates before confirmation.
+# End-to-end registration at a known atlas position
+langslice register slice.png --position 3.9
+```
 
-The registration result includes the model-generated atlas target, the
-Elastix-warped atlas, and the warped atlas borders overlaid on the histology
-slice for review.
+Full CLI: `langslice --help`. Pipeline detail: [`docs/index.md`](./docs/index.md).
 
-## Authentication
+## Model Hub Transition
 
-`src/langslice_harness/vlm_config.py` supports:
+LangSlice is migrating training/data helpers into shared packages under `models/`:
 
-- `ai_studio`
-- `vertex_api_key`
-- `vertex_adc`
+- `models/langslice-traces/langslice_traces`
+- `models/synthdata/synthdata`
+- `models/training-core/langslice_training`
+- `models/data/langslice_data`
 
-Google image-generation models route through the Google provider adapter.
-OpenAI image generation defaults to the Images API path for `gpt-image-2`;
-the Responses `image_generation` route is opt-in. Flux models use the
-OpenAI-compatible Images API path.
+Training entrypoints are exposed as small launchers:
+`langslice-single-turn-rl`, `langslice-isft`, and `langslice-sft-train`.
 
-## Repository Layout
+Public model-card metadata for the released variant is in
+`models/langslice-gemma-4/variants/langslice-gemma-4-e4b/README.md`.
 
-- `src/langslice_harness/` -- installable ADK harness package
-- `models/` -- fine-tuned model projects and related assets
-- `tauri-gui/` -- desktop app
-- `tests/` -- pytest suite
-- `docs/` -- maintained project docs
-- `assets/` and `configs/` -- project assets and configuration
-- `_local/` -- ignored local scratch, archives, and experiments
+## Links
 
-See `docs/index.md` and `REPO_MAP.md` for navigation.
+- [**langslice-gemma-4-E4B**](https://huggingface.co/greenpolo/langslice-gemma-4-E4B) — the v1.0 fine-tune
+- [**SliceBench**](./slicebench) — self-contained position-estimation benchmark
+- [`tauri-gui/`](./tauri-gui) — desktop app
+- [`docs/`](./docs) — full pipeline + harness internals

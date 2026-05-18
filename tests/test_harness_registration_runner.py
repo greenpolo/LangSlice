@@ -74,6 +74,7 @@ def _install_pipeline_fake(
         *,
         atlas_name: str,
         position_mm: float,
+        plane: str = "coronal",
         provider: str = "google",
         image_model: str | None = None,
         prompt_revision: str | None = None,
@@ -90,6 +91,7 @@ def _install_pipeline_fake(
             {
                 "atlas_name": atlas_name,
                 "position_mm": position_mm,
+                "plane": plane,
                 "provider": provider,
                 "image_model": image_model,
                 "prompt_revision": prompt_revision,

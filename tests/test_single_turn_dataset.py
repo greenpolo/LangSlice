@@ -75,74 +75,104 @@ def _make_row(state: TerminalState, monkeypatch: pytest.MonkeyPatch) -> dict:
 # --- Chat content shape ----------------------------------------------------
 
 
-def test_user_content_alternates_image_then_text(
+def test_prompt_has_four_message_multi_turn_structure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Lane A rows render the ADK multi-turn protocol: system + user(target) +
+    assistant(fetch_atlas tool_call) + tool(atlas images). The model generates
+    the next turn (submit_estimate), which matches slicebench's eval path."""
     row = _make_row(_make_state(), monkeypatch)
+    prompt = row["prompt"]
+    assert len(prompt) == 4
+    assert prompt[0]["role"] == "system"
+    assert prompt[1]["role"] == "user"
+    assert prompt[2]["role"] == "assistant"
+    assert prompt[3]["role"] == "tool"
 
+
+def test_user_message_carries_target_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The user turn has the target image + the slicebench-parity user instruction.
+    Atlas images now live in the tool-response message, not the user message."""
+    row = _make_row(_make_state(), monkeypatch)
     user_msg = row["prompt"][1]
-    assert user_msg["role"] == "user"
     blocks = user_msg["content"]
-
-    image_indices = [i for i, b in enumerate(blocks) if b.get("type") == "image"]
-    for idx in image_indices:
-        assert idx + 1 < len(blocks), "image block at end of content"
-        assert blocks[idx + 1].get("type") == "text", (
-            f"image block at index {idx} not followed by text"
-        )
-    assert blocks[-1].get("type") == "text"
-    assert "Output the JSON object" in blocks[-1]["text"]
-
-
-def test_pil_images_embedded_in_chat_blocks(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """TRL's _tokenize_prompts reads PIL via ``part["image"]`` — verify it's there."""
-    state = _make_state()
-    row = _make_row(state, monkeypatch)
-    blocks = row["prompt"][1]["content"]
-
-    image_blocks = [b for b in blocks if b.get("type") == "image"]
-    # 1 target + N atlas images
-    assert len(image_blocks) == 1 + len(state.atlas_image_paths)
-    # First image block is the target; remaining are atlas refs.
-    assert image_blocks[0]["image"] == "QUERY_IMAGE"
-    assert all(b["image"] == "ATLAS_IMAGE" for b in image_blocks[1:])
-
-
-def test_target_caption_first(monkeypatch: pytest.MonkeyPatch) -> None:
-    row = _make_row(_make_state(), monkeypatch)
-    blocks = row["prompt"][1]["content"]
     assert blocks[0]["type"] == "image"
+    assert blocks[0]["image"] == "QUERY_IMAGE"
     assert blocks[1]["type"] == "text"
-    assert "TARGET" in blocks[1]["text"]
+    # User instruction matches slicebench's runner.py prompt verbatim.
+    assert "Determine this coronal slice" in blocks[1]["text"]
+    assert "AP position" in blocks[1]["text"]
+    assert "allen_mouse_25um" in blocks[1]["text"]
 
 
-def test_atlas_captions_carry_position_mm(
+def test_assistant_message_has_fetch_atlas_tool_call(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """The pre-rendered assistant turn invokes fetch_atlas with the fetched
+    positions as a dict arg (NOT a JSON string) — dict args route through the
+    chat template's ``format_argument`` macro and produce the Gemma-native
+    compact format that the reward parser expects."""
+    state = _make_state(
+        atlas_image_paths=("a/2.00mm.jpg", "a/4.50mm.jpg"),
+        fetched_positions_mm=(2.0, 4.5),
+    )
+    row = _make_row(state, monkeypatch)
+    assistant_msg = row["prompt"][2]
+    assert assistant_msg.get("tool_calls"), "assistant turn missing tool_calls"
+    tc = assistant_msg["tool_calls"][0]
+    assert tc["type"] == "function"
+    assert tc["function"]["name"] == "fetch_atlas"
+    args = tc["function"]["arguments"]
+    assert isinstance(args, dict), (
+        "fetch_atlas arguments must be a dict, not a JSON string — see "
+        "chat_template.jinja format_argument macro"
+    )
+    assert args["positions_mm"] == [2.0, 4.5]
+
+
+def test_tool_response_carries_atlas_images_and_captions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Atlas images are returned by the synthetic fetch_atlas tool response,
+    each followed by a position caption. The final text block is the
+    production fetch_atlas summary line."""
     state = _make_state(
         atlas_image_paths=("a/2.00mm.jpg", "a/3.50mm.jpg"),
         fetched_positions_mm=(2.0, 3.5),
     )
     row = _make_row(state, monkeypatch)
-    blocks = row["prompt"][1]["content"]
-    text_blocks = [b for b in blocks if b.get("type") == "text"]
-    captions = " ".join(b["text"] for b in text_blocks)
-    assert "2.00 mm" in captions
-    assert "3.50 mm" in captions
+    tool_msg = row["prompt"][3]
+    assert tool_msg["tool_call_id"]  # must match assistant tool_call id
+    blocks = tool_msg["content"]
+    image_blocks = [b for b in blocks if b.get("type") == "image"]
+    assert len(image_blocks) == 2
+    assert all(b["image"] == "ATLAS_IMAGE" for b in image_blocks)
+    text_joined = " ".join(b["text"] for b in blocks if b.get("type") == "text")
+    # The chat template's role=tool path doesn't auto-render images; the
+    # tool message must inject <|image|> markers into its text content.
+    assert "<|image|>" in text_joined
+    assert "2.00 mm" in text_joined
+    assert "3.50 mm" in text_joined
+    assert "Fetched 2 atlas sections" in text_joined
 
 
-def test_system_prompt_includes_atlas_and_range(
+def test_system_prompt_is_production_single_slice_prompt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """The system prompt now delegates to
+    ``langslice_harness.harness.estimation.prompts.build_single_slice_prompt``
+    — same instruction slicebench feeds the model at eval time."""
     state = _make_state(valid_range_mm=(0.5, 12.7))
     row = _make_row(state, monkeypatch)
     sys_text = row["prompt"][0]["content"][0]["text"]
     assert "allen_mouse_25um" in sys_text
     assert "mouse" in sys_text
     assert "0.50-12.70 mm" in sys_text
-    assert '"position_mm"' in sys_text
+    # Production prompt's strategy boilerplate
+    assert "fetch_atlas" in sys_text
+    assert "submit_estimate" in sys_text
 
 
 # --- Public columns --------------------------------------------------------
@@ -320,3 +350,163 @@ def test_split_subjects_deduplicates_across_specs() -> None:
     train, evald = ds.split_subjects_for_holdout(specs, eval_holdout_every=0)
     assert train == {"shared", "alone"}
     assert evald == set()
+
+
+# --- build_datasets_from_index Lane A randomized path ----------------------
+
+
+REPO_ROOT_DS_TEST = Path(__file__).resolve().parent.parent
+ATLAS_CACHE_DIR_DS_TEST = REPO_ROOT_DS_TEST / "out" / "atlas_embeddings"
+ALLEN_CORONAL_CACHE_DS_TEST = ATLAS_CACHE_DIR_DS_TEST / "allen_mouse_25um_coronal.pt"
+
+
+_requires_atlas_cache_ds = pytest.mark.skipif(
+    not ALLEN_CORONAL_CACHE_DS_TEST.is_file(),
+    reason=(
+        "build_datasets_from_index Lane-A tests need "
+        "out/atlas_embeddings/allen_mouse_25um_coronal.pt — build it with "
+        "the atlas embedding cache before running."
+    ),
+)
+
+
+def _ds_write_jsonl(path: Path, rows: list[dict]) -> None:
+    import json as _json
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as fh:
+        for row in rows:
+            fh.write(_json.dumps(row) + "\n")
+
+
+def _build_lane_a_test_manifest(tmp_path: Path) -> Path:
+    """Build a 4-section coronal manifest whose positions span ~1-9mm so
+    Lane A's GT-anchored sweep has room on both sides."""
+    manifest_root = tmp_path / "manifest"
+    shards_root = manifest_root / "shards"
+    rows = [
+        {
+            "image_path": f"data/datasets/coronal/ds_a/subj_{i}/sec_{i:02d}.png",
+            "dataset": "ds_a",
+            "subject_id": f"subj_{i}",
+            "section_id": f"sec_{i:02d}",
+            "species": "mouse",
+            "atlas": "allen_mouse_25um",
+            "orientation": "coronal",
+            "slice_axis": "ap",
+            "position_mm": pos,
+            "imaging": "brightfield",
+            "staining": "Nissl",
+            "exclude_from_training": False,
+        }
+        for i, pos in enumerate([2.0, 4.0, 6.0, 8.0])
+    ]
+    _ds_write_jsonl(shards_root / "coronal" / "ds_a.jsonl", rows)
+    alloc_root = manifest_root / "allocations"
+    rlvr_rows = [
+        {
+            "section_id": r["section_id"],
+            "dataset": r["dataset"],
+            "added_by": "test",
+            "added_at": "2026-05-10T00:00:00+00:00",
+        }
+        for r in rows
+    ]
+    _ds_write_jsonl(alloc_root / "coronal" / "rlvr.jsonl", rlvr_rows)
+    _ds_write_jsonl(alloc_root / "coronal" / "sft.jsonl", [])
+    _ds_write_jsonl(alloc_root / "coronal" / "eval.jsonl", [])
+    return manifest_root
+
+
+def _stub_atlas_range_for_ds(monkeypatch: pytest.MonkeyPatch) -> None:
+    from single_turn_rl import section_state as ss
+    monkeypatch.setattr(
+        ss,
+        "_atlas_valid_range_mm",
+        lambda atlas, plane: {
+            ("allen_mouse_25um", "coronal"): (0.0, 13.2),
+            ("allen_mouse_25um", "sagittal"): (0.0, 6.0),
+            ("allen_mouse_25um", "horizontal"): (0.0, 8.0),
+        }[(atlas, plane)],
+    )
+    monkeypatch.setattr(ds, "_atlas_in_plane_long_edge", lambda _atlas, _plane: 320)
+
+
+def _seed_query_files_ds(base: Path, manifest_root: Path) -> None:
+    from single_turn_rl.manifest_index import ManifestIndex
+    idx = ManifestIndex.from_manifest_root(manifest_root, repo_root=base)
+    for section in idx.query(plane="coronal"):
+        target = base / section.image_path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b"")
+
+
+@_requires_atlas_cache_ds
+def test_build_datasets_from_index_randomized_lane_a(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``build_datasets_from_index(randomized=True, strategy="lane_a_prefix",
+    ...)`` produces row specs whose ``image_paths`` carry the query plus
+    every fetched-prefix atlas tile."""
+    pytest.importorskip("torch")
+    _stub_atlas_range_for_ds(monkeypatch)
+
+    from single_turn_rl.manifest_index import ManifestIndex
+    import random as _random
+
+    manifest_root = _build_lane_a_test_manifest(tmp_path)
+    _seed_query_files_ds(tmp_path, manifest_root)
+    index = ManifestIndex.from_manifest_root(manifest_root, repo_root=tmp_path)
+
+    train, _ = ds.build_datasets_from_index(
+        manifest_index=index,
+        plane="coronal",
+        split="rlvr",
+        repo_root=tmp_path,
+        slate_root=tmp_path,
+        eval_holdout_every=0,
+        seed=0,
+        randomized=True,
+        strategy="lane_a_prefix",
+        atlas_embedding_cache_dir=ATLAS_CACHE_DIR_DS_TEST,
+        rng=_random.Random(7),
+    )
+    assert len(train) >= 1, "expected at least one randomized Lane A spec"
+    # Inspect the first spec's spec dict, then materialize the row to confirm
+    # the parallel image_paths column is well-formed.
+    first_spec = train._specs[0]  # noqa: SLF001
+    assert first_spec["dataset"] == "ds_a"
+    assert len(first_spec["atlas_image_paths"]) == len(first_spec["fetched_positions_mm"])
+    assert len(first_spec["atlas_image_paths"]) >= 2, (
+        f"expected the Lane A prefix to carry >=2 atlas tiles, got "
+        f"{len(first_spec['atlas_image_paths'])}"
+    )
+    # Every atlas path is rooted under the canonical layout.
+    for p in first_spec["atlas_image_paths"]:
+        assert p.startswith("models/langslice-gemma-4/data/atlas/")
+
+
+def test_build_datasets_from_index_randomized_lane_a_requires_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without an atlas_embedding_cache_dir the randomized path must raise."""
+    _stub_atlas_range_for_ds(monkeypatch)
+
+    from single_turn_rl.manifest_index import ManifestIndex
+
+    manifest_root = _build_lane_a_test_manifest(tmp_path)
+    _seed_query_files_ds(tmp_path, manifest_root)
+    index = ManifestIndex.from_manifest_root(manifest_root, repo_root=tmp_path)
+
+    with pytest.raises(ValueError, match="atlas_embedding_cache_dir"):
+        ds.build_datasets_from_index(
+            manifest_index=index,
+            plane="coronal",
+            split="rlvr",
+            repo_root=tmp_path,
+            slate_root=tmp_path,
+            eval_holdout_every=0,
+            seed=0,
+            randomized=True,
+            strategy="lane_a_prefix",
+            atlas_embedding_cache_dir=None,
+        )

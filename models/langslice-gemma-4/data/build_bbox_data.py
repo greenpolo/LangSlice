@@ -5,7 +5,8 @@ Two stages, both via this script's CLI:
 - `--stage submit --verdicts <path>` filters by QC verdicts, packs batch JSONL,
    submits to AI Studio Batch API, polls, retrieves, mm-strips, writes final SFT.
 
-Spec: docs/superpowers/specs/2026-05-04-gemma4-bbox-training-design.md
+Experimental bbox data helper. Bbox grounding is deferred for the public v1
+training scope; see docs/training_overview.md.
 """
 from __future__ import annotations
 

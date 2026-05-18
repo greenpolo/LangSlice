@@ -1,0 +1,56 @@
+# Phase 9 smoke run — 10 GRPO steps on 40 Lane A rows. Smoke goal:
+# (a) trainer loads and the prefix renders without crashing, (b) reward
+# returns non-flat values from step 1 (most rollouts should not be -1
+# format-fail because base E4B-IT emits clean submit_estimate tool calls),
+# (c) no OOM at PDBS=1 GA=4 num_generations=4 with r=64 rsLoRA.
+#
+# Inherits the same shape as grpo_phase9_lane_a_tool_call_r64.toml; only
+# step count, example count, and save cadence differ.
+
+[grpo]
+chat_template_kwargs = { enable_thinking = false }
+learning_rate = 1e-6
+num_generations = 2
+generation_batch_size = 2
+per_device_train_batch_size = 1
+gradient_accumulation_steps = 8
+max_completion_length = 512
+dataloader_num_workers = 2
+dataloader_pin_memory = true
+max_grad_norm = 0.1
+importance_sampling_level = "sequence"
+loss_type = "dapo"
+mask_truncated_completions = true
+scale_rewards = "batch"
+temperature = 1.5
+top_p = 1.0
+# top_k omitted — transformers' TopKLogitsWarper rejects top_k<=0; leave at HF default
+optim = "adamw_8bit"
+log_completions = true
+logging_steps = 1
+save_steps = 10
+max_steps = 10
+report_to = "none"
+load_in_4bit = false
+max_seq_length = 8192
+
+[lora]
+finetune_vision_layers = false
+finetune_language_layers = true
+finetune_attention_modules = true
+finetune_mlp_modules = true
+r = 64
+lora_alpha = 8
+use_rslora = true
+use_gradient_checkpointing = "unsloth"
+
+[data]
+eval_holdout_every = 0
+max_examples = 40
+curriculum_round = 0
+
+[reward]
+cutoff_frac = 0.25
+sigma_frac = 0.05
+format_penalty = -1.0
+out_of_range_reward = 0.0

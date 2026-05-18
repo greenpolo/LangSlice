@@ -62,6 +62,32 @@ models/langslice-gemma-4/data/sft_examples.jsonl
 models/langslice-gemma-4/checkpoints/
 !models/langslice-gemma-4/checkpoints/.gitkeep
 
+# Shared model hub: keep package code/docs, ignore generated artifacts.
+models/langslice-traces/**/checkpoints/
+models/langslice-traces/**/cache/
+models/langslice-traces/**/caches/
+models/langslice-traces/**/runs/
+models/langslice-traces/**/generated/
+models/synthdata/**/checkpoints/
+models/synthdata/**/cache/
+models/synthdata/**/caches/
+models/synthdata/**/generated/
+models/synthdata/**/corpora/
+models/synthdata/**/augmentation/exemplars/**
+!models/synthdata/**/augmentation/exemplars/README.md
+models/synthdata/**/augmentation/GT_Textures/
+models/synthdata/**/augmentation/vendored_docs/
+models/training-core/**/checkpoints/
+models/training-core/**/cache/
+models/training-core/**/caches/
+models/training-core/**/runs/
+models/training-core/**/generated/
+models/data/**/cache/
+models/data/**/caches/
+models/data/**/generated/
+models/data/**/manifest_rows/
+models/data/manifest/**
+
 # Augmentation exemplar crops (style references) — only README is tracked
 models/langslice-gemma-4/data/augmentation/exemplars/**
 !models/langslice-gemma-4/data/augmentation/exemplars/README.md
@@ -88,3 +114,18 @@ tmp/
 out/
 unsloth_compiled_cache/
 models/langslice-gemma-4/training/unsloth_compiled_cache/
+last_launch_dir.txt
+tauri-gui/src-tauri/langslice_output/
+_live_*
+_deployed_*.png
+_3d_view_*.png
+web-demo/_dbg_*.png
+/C*/
+/LabSoftwareLangSlicetmppytest-basetemp/
+/pytest-basetemp/
+
+# Local litert-lm spike venv (not portable, large)
+_spike_litert_venv/
+
+# Litert-lm sidecar binaries (desktop Tauri build only; judges fetch themselves)
+tauri-gui/src-tauri/binaries/

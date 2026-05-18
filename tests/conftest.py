@@ -1,11 +1,8 @@
 """Pytest configuration and shared fixtures.
 
-Path setup: the directory ``models/langslice-gemma-4/`` has a hyphen and can't
-be a normal Python package. This conftest adds it to ``sys.path`` so tests can
-``import landmarks``, ``import region_bbox``, etc., without local sys.path
-hacks. (``pyproject.toml`` already lists this path under
-``tool.pytest.ini_options.pythonpath``; this duplicate guard is here so direct
-``python -m pytest`` invocations from non-pyproject contexts also work.)
+Path setup: model workspace packages live under presentable directory names,
+including some hyphenated folders. The shared bootstrap keeps direct
+``python -m pytest`` invocations aligned with ``pyproject.toml``.
 """
 from __future__ import annotations
 
@@ -17,9 +14,16 @@ import numpy as np
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+from models.langslice_model_paths import add_model_python_paths
+
+add_model_python_paths(REPO_ROOT)
+
 GEMMA4_DATA = REPO_ROOT / "models" / "langslice-gemma-4" / "data"
 if str(GEMMA4_DATA) not in sys.path:
     sys.path.insert(0, str(GEMMA4_DATA))
+GEMMA4_TRAINING = REPO_ROOT / "models" / "langslice-gemma-4" / "training"
+if str(GEMMA4_TRAINING) not in sys.path:
+    sys.path.insert(0, str(GEMMA4_TRAINING))
 
 
 @pytest.fixture(scope="module")
@@ -110,4 +114,3 @@ def ctx_with(
     if tissue_class_masks is not None:
         fields["tissue_class_masks"] = tissue_class_masks  # type: ignore[assignment]
     return replace(ctx, **fields)
-

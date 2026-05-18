@@ -8,15 +8,14 @@ and prints:
 - err-log: kwargs-warning count + last N non-kwargs lines
 - output-dir: any checkpoint subdirs
 
-Run from the repo root (or anywhere) — paths are absolute via env discovery.
+Run from the repo root or set ``LANGSLICE_REPO_ROOT`` explicitly.
 """
 from __future__ import annotations
 
 import os
-import sys
 from pathlib import Path
 
-REPO = Path(r"C:\LabSoftware\LangSlice")
+REPO = Path(os.environ.get("LANGSLICE_REPO_ROOT", Path.cwd())).resolve()
 LOGS = REPO / "out" / "sft" / "logs"
 LATEST = LOGS / "latest_run.txt"
 
@@ -39,7 +38,10 @@ def _summarize_log(path: Path, *, tail_n: int = 8) -> None:
     lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
     kwargs = sum(1 for ln in lines if "Kwargs passed to" in ln)
     non_kwargs = [ln for ln in lines if "Kwargs passed to" not in ln]
-    print(f"[err] {path.name}: {len(lines)} lines, {kwargs} kwargs warnings, {len(non_kwargs)} other")
+    print(
+        f"[err] {path.name}: {len(lines)} lines, {kwargs} kwargs warnings, "
+        f"{len(non_kwargs)} other"
+    )
     print(f"[err] last {tail_n} non-kwargs:")
     for ln in non_kwargs[-tail_n:]:
         print(f"  {ln}")
@@ -53,7 +55,8 @@ def _gpu_snapshot() -> None:
             import nvidia_ml_py as pynvml  # type: ignore  # nvitop bundles this
         except ImportError:
             print("[gpu] no NVML bindings; falling back to nvidia-smi")
-            os.system("nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw --format=csv,noheader")
+            query = "utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw"
+            os.system(f"nvidia-smi --query-gpu={query} --format=csv,noheader")
             return
     pynvml.nvmlInit()
     n = pynvml.nvmlDeviceGetCount()

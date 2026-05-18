@@ -20,5 +20,11 @@ bit-exact correctness test passes.
 """
 
 from .cache import AtlasEmbeddingCache, parse_atlas_path
+from .query_cache import QueryEmbeddingCache, save_query_pair
 
-__all__ = ["AtlasEmbeddingCache", "parse_atlas_path"]
+__all__ = [
+    "AtlasEmbeddingCache",
+    "QueryEmbeddingCache",
+    "parse_atlas_path",
+    "save_query_pair",
+]

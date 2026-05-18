@@ -53,10 +53,10 @@ def parse_submit_call(arguments_json: str, *, expected_kind: str) -> ParsedSubmi
         return ParsedSubmit(is_parseable=False)
     if expected_kind == "single_slice":
         pos = args.get("position_mm")
-        reasoning = args.get("reasoning")
         if not isinstance(pos, (int, float)) or isinstance(pos, bool):
             return ParsedSubmit(is_parseable=False)
-        if not isinstance(reasoning, str) or not reasoning.strip():
+        reasoning = args.get("reasoning")
+        if reasoning is not None and (not isinstance(reasoning, str) or not reasoning.strip()):
             return ParsedSubmit(is_parseable=False)
         return ParsedSubmit(is_parseable=True, position_mm=float(pos))
     raise ValueError(f"unknown expected_kind: {expected_kind!r}")
@@ -159,12 +159,28 @@ def _extract_tool_call_from_decoded(text: str) -> dict[str, Any] | None:
 
     Returns a dict shaped like HF tool_calls items, or None if no parseable call.
     """
-    # Placeholder pattern — replace after Task 14 smoke generation reveals format.
-    m = re.search(r"<tool_call>(.*?)</tool_call>", text, flags=re.DOTALL)
-    if not m:
+    # Strip a leading Gemma thought channel block when present.
+    body = re.sub(
+        r"^\s*<\|channel>thought\n.*?<channel\|>\s*",
+        "",
+        text,
+        count=1,
+        flags=re.DOTALL,
+    )
+    payload_raw: str | None = None
+    for pattern in (
+        r"<tool_call>(.*?)</tool_call>",
+        r"<\|tool_call\|>(.*?)<\|/tool_call\|>",
+        r"<\|tool_call\|>(.*?)</tool_call>",
+    ):
+        m = re.search(pattern, body, flags=re.DOTALL)
+        if m:
+            payload_raw = m.group(1).strip()
+            break
+    if payload_raw is None:
         return None
     try:
-        payload = json.loads(m.group(1).strip())
+        payload = json.loads(payload_raw)
     except json.JSONDecodeError:
         return None
     return {
@@ -185,10 +201,23 @@ def _run_agent_loop_for_one(
     atlas_grid: Any,
     atlas_meta_cache: AtlasMetaCache,
     max_turns: int = 16,
+    thinking_mode: bool = False,
+    omit_submit_reasoning: bool = False,
 ) -> EvalRun:
     """Run the SFT model through the agent loop on one eval row, return EvalRun.
 
     Reuses LangSliceEstimateEnv (RLVR scaffolding) for tool execution.
+
+    ``thinking_mode`` mirrors the renderer: when True, the system prompt is
+    prefixed with ``<|think|>`` (the trigger the Gemma 4 chat template uses
+    to emit thinking-channel content). Must match the per-row flag the
+    adapter was trained with — runs trained with
+    ``--synthetic-reasoning-mode thinking_signature`` need True here.
+
+    ``omit_submit_reasoning`` drops the ``reasoning`` property from the
+    submit_estimate tool schema. Use with ``thinking_mode=True`` when the
+    chain-of-thought lives in the thinking channel and the submit args
+    carry only ``position_mm`` (matches the thinking-signature SFT run).
     """
     from rlvr.env import LangSliceEstimateEnv
 
@@ -204,7 +233,14 @@ def _run_agent_loop_for_one(
         plane=eval_row["plane"],
         atlas_meta_cache=cache,
     )
+    if thinking_mode:
+        system_prompt = f"<|think|>{system_prompt}"
     tools = build_tools_schema(system_prompt_kind)
+    if omit_submit_reasoning:
+        for tool in tools:
+            fn = tool.get("function", {})
+            if fn.get("name") == "submit_estimate":
+                fn["parameters"]["properties"].pop("reasoning", None)
     meta = cache.get(eval_row["atlas_name"], eval_row["plane"])
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": [{"type": "text", "text": system_prompt}]},
@@ -231,11 +267,17 @@ def _run_agent_loop_for_one(
         n_turns += 1
         # add_generation_prompt=True for inference; collate.py uses False because
         # labels span the full assistant turn (the prompt prefix is part of the loss).
+        # ``chat_template_kwargs={"enable_thinking": False}`` was removed
+        # 2026-05-12: it isn't a valid kwarg on the Gemma 4 processor
+        # (transformers 5.x's apply_chat_template introspects the Jinja
+        # template for variables and forwards by name) and was being silently
+        # dropped while triggering a per-step warning. The Gemma 4 template's
+        # ``is defined and enable_thinking`` guard means undefined ==
+        # thinking off, so behavior is preserved.
         gen_out = model.generate(
             **processor.apply_chat_template(
                 messages,
                 tools=tools,
-                chat_template_kwargs={"enable_thinking": False},
                 add_generation_prompt=True,
                 tokenize=True,
                 return_dict=True,

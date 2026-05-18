@@ -1,9 +1,15 @@
-"""Bench loader — joins data/slicebench.json + per-shard rows + active eval allocations.
+"""Bench loader — joins slicebench/bench.json + bundled shards + active eval allocations.
 
 A bench (small or large) is a list of `EvalRow`s. Each row carries the truth
 position, atlas info, and `plane_extent_mm` (sagittal halved for canonical
 hemisphere) so scoring can compute plane-relative accuracy without re-loading
 atlases per row.
+
+The bench is self-contained under `slicebench/`:
+  - `slicebench/bench.json`                            — brain composition
+  - `slicebench/data/shards/<plane>/<dataset>.jsonl`   — per-section GT rows
+  - `slicebench/data/allocations/<plane>/eval.jsonl`   — active eval section_ids
+  - `slicebench/data/images/<plane>/<dataset>/...`     — downscaled JPEGs
 """
 
 from __future__ import annotations
@@ -16,9 +22,10 @@ from typing import Iterator
 from langslice_harness.atlas.core import get_position_range_mm, load_atlas
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SLICEBENCH_JSON = REPO_ROOT / "data" / "slicebench.json"
-SHARDS_ROOT = REPO_ROOT / "data" / "manifest" / "shards"
-ALLOCATIONS_ROOT = REPO_ROOT / "data" / "manifest" / "allocations"
+SLICEBENCH_ROOT = Path(__file__).resolve().parent
+SLICEBENCH_JSON = SLICEBENCH_ROOT / "bench.json"
+SHARDS_ROOT = SLICEBENCH_ROOT / "data" / "shards"
+ALLOCATIONS_ROOT = SLICEBENCH_ROOT / "data" / "allocations"
 
 
 @dataclass(frozen=True)
@@ -94,15 +101,16 @@ def _stratified_sample(rows: list[EvalRow], n: int) -> list[EvalRow]:
 def load_bench(name: str) -> list[EvalRow]:
     """Return the tiny, small, or large SliceBench row list.
 
-    Joins three sources of truth:
-      - data/slicebench.json — the canonical brain list (tiny=8 brains × N/brain,
+    Joins three sources of truth (all bundled under ``slicebench/``):
+      - ``slicebench/bench.json`` — the canonical brain list (tiny=8 brains × N/brain,
         small=8 brains, large=24 brains)
-      - data/manifest/shards/<plane>/<dataset>.jsonl — per-section ground-truth rows
-      - data/manifest/allocations/<plane>/eval.jsonl — active eval assignments
+      - ``slicebench/data/shards/<plane>/<dataset>.jsonl`` — per-section ground-truth rows
+      - ``slicebench/data/allocations/<plane>/eval.jsonl`` — active eval assignments
 
-    A row is dropped (with stderr warning) if its section_id isn't in the active
-    eval allocation. That keeps the bench honest after manifest curation that
-    moves rows between splits.
+    A row is dropped (silently — already filtered at bundle time) if its
+    section_id isn't in the active eval allocation. Brains listed in
+    ``bench.json`` that have no matching shard rows simply contribute zero
+    sections.
 
     For ``tiny`` (or any bench whose brain entries carry an ``n_sections`` field),
     the loader deterministically samples N evenly-spaced sections per brain after

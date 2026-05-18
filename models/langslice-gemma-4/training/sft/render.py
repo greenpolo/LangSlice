@@ -21,12 +21,18 @@ if str(_REPO_SRC) not in sys.path:
     sys.path.insert(0, str(_REPO_SRC))
 
 from langslice_harness.atlas.core import (  # noqa: E402
+    get_in_plane_long_edge,
     get_position_range_mm,
     load_atlas,
     species_from_atlas_name,
 )
 from langslice_harness.atlas.space import Plane  # noqa: E402
 from langslice_harness.harness.estimation.prompts import build_single_slice_prompt  # noqa: E402
+from langslice_harness.image_prep import (  # noqa: E402
+    adaptive_preprocess,
+    normalize_image,
+    prepare_image_for_vlm,
+)
 
 from .dataset import Example  # noqa: E402
 
@@ -36,6 +42,13 @@ class AtlasMeta:
     pos_lo: float
     pos_hi: float
     species: str  # human-readable, e.g. "mouse" / "rat" / "developmental mouse"
+    # In-plane long edge in pixels for this (atlas, plane). Mirrors the value
+    # `precompute_query.py` and the RLVR live trainer use for query-image
+    # downsampling so the SFT trainer hands SigLIP the same visual content,
+    # and the query-embedding cache patch counts match live forward.
+    # Defaults to 0 (skip downsample) for stub-cache test sites that construct
+    # AtlasMeta directly; production `AtlasMetaCache.get` always sets it.
+    in_plane_long_edge: int = 0
 
 
 class AtlasMetaCache:
@@ -63,6 +76,7 @@ class AtlasMetaCache:
             pos_lo=float(pos_lo),
             pos_hi=float(pos_hi),
             species=species,
+            in_plane_long_edge=int(get_in_plane_long_edge(atlas, plane=plane)),
         )
         self._cache[key] = meta
         return meta
@@ -127,7 +141,7 @@ _SUBMIT_ESTIMATE_TOOL: dict[str, Any] = {
                 "position_mm": {"type": "number"},
                 "reasoning": {"type": "string"},
             },
-            "required": ["position_mm", "reasoning"],
+            "required": ["position_mm"],
         },
     },
 }
@@ -160,42 +174,104 @@ class RenderedExample:
     processor's image-encoding step) is concatenated in. Downstream
     consumers (atlas-embedding cache, splice hook) align by this list
     rather than re-walking ``messages`` and re-hydrating PIL objects.
+
+    ``n_query_images`` slices ``image_paths`` into the leading per-row slice
+    images vs the trailing tool_result atlas images — the collator uses this
+    to scope the query-cache skip when ``apply_clahe`` is set.
     """
 
     messages: list[dict[str, Any]]
     tools: list[dict[str, Any]]
     metadata: RenderMetadata
     image_paths: list[str] = field(default_factory=list)
+    n_query_images: int = 0
+    apply_clahe: bool = False
 
 
-def hydrate_image(rel_path: str, root: Path) -> Image.Image:
+def _find_repo_root(start: Path) -> Path | None:
+    for cand in (start, *start.parents):
+        if (cand / "pyproject.toml").is_file():
+            return cand
+    return None
+
+
+def hydrate_image(
+    rel_path: str, root: Path, *, apply_clahe: bool = False,
+    max_long_edge: int | None = None,
+) -> Image.Image:
     abs_path = (root / rel_path).resolve()
     if not abs_path.is_file():
-        raise FileNotFoundError(f"image not found: {abs_path}")
+        # Mirror the validator's fallback in dataset.py: when the corpus jsonl
+        # lives somewhere other than the repo root (e.g. an iSFT run dir under
+        # out/iSFT/...), canonical repo-relative paths like
+        # "data/datasets/<plane>/<dataset>/..." or
+        # "models/langslice-gemma-4/data/queries/..." resolve via the repo
+        # root, not the corpus's parent dir.
+        repo_root = _find_repo_root(root)
+        if repo_root is not None:
+            alt = (repo_root / rel_path).resolve()
+            if alt.is_file():
+                abs_path = alt
+        if not abs_path.is_file():
+            raise FileNotFoundError(f"image not found: {abs_path}")
     # `Image.open` is lazy — the file handle stays open until the image data is
     # fully realized AND the object is GC'd. Use a with-block + .copy() so the
     # source handle closes before this function returns. The .copy() is required
     # because convert() may return a view that still references the source.
     with Image.open(abs_path) as src:
-        return src.convert("RGB").copy()
+        img = src.convert("RGB").copy()
+    if max_long_edge is not None:
+        # Match precompute_query.py + production runner._encode_target_jpeg_bytes:
+        # normalize → atlas-aware downscale → optional CLAHE. Without this the
+        # path_rewriter data/datasets shortcut hands hydrate_image() a full-res
+        # source JPG (e.g. 4096px) while the query embedding cache was computed
+        # on the same JPG downsampled to atlas_long_edge (e.g. 456px) — patch
+        # counts diverge and splice substitution fails with "Image features
+        # and image tokens do not match". normalize_image() is a no-op for
+        # RGB JPGs, and prepare_image_for_vlm short-circuits when the image is
+        # already at or below max_long_edge (covers pre-staged distilled JPGs).
+        img = normalize_image(img)
+        img = prepare_image_for_vlm(img, max_long_edge=max_long_edge).image
+    if apply_clahe:
+        # Production parity: match the params estimation runner.py uses
+        # (defaults of adaptive_preprocess — clahe_clip=4.0, tile=(8,8)).
+        img = adaptive_preprocess(img)
+    return img
 
 
-def _user_turn(query_image_paths: list[str], user_text: str, root: Path) -> dict[str, Any]:
+def _user_turn(
+    query_image_paths: list[str], user_text: str, root: Path,
+    *, apply_clahe: bool = False, max_long_edge: int | None = None,
+) -> dict[str, Any]:
     """Image-before-text per Gemma 4 chat-template rule."""
     content: list[dict[str, Any]] = []
     for p in query_image_paths:
-        content.append({"type": "image", "image": hydrate_image(p, root)})
+        content.append({
+            "type": "image",
+            "image": hydrate_image(
+                p, root, apply_clahe=apply_clahe, max_long_edge=max_long_edge,
+            ),
+        })
     content.append({"type": "text", "text": user_text})
     return {"role": "user", "content": content}
 
 
-def _assistant_tool_call(call_id: str, name: str, args: dict[str, Any]) -> dict[str, Any]:
+def _assistant_tool_call(
+    call_id: str,
+    name: str,
+    args: dict[str, Any],
+    *,
+    thinking: str | None = None,
+) -> dict[str, Any]:
+    content: list[dict[str, Any]] = []
+    if isinstance(thinking, str) and thinking.strip():
+        content = [{"type": "text", "text": f"<|channel>thought\n{thinking}<channel|>"}]
     return {
         "role": "assistant",
         # Empty list (not omitted): transformers' apply_chat_template iterates
         # message["content"] to extract image/video blocks, which raises KeyError
         # when the field is missing.
-        "content": [],
+        "content": content,
         "tool_calls": [
             {
                 "id": call_id,
@@ -260,23 +336,38 @@ def render_example(
     example: Example,
     *,
     atlas_meta_cache: AtlasMetaCache,
+    apply_clahe: bool = False,
 ) -> RenderedExample:
     """Translate a langslice-native Example to HF chat-template messages + tools."""
     root = example.dataset_root
     if root is None:
         raise ValueError("Example.dataset_root not set; load via load_examples()")
 
+    plane = _parse_plane(example.plane)
+    meta = atlas_meta_cache.get(example.atlas_name, plane)
     system_prompt = build_system_prompt(
         kind=example.system_prompt_kind,
         atlas_name=example.atlas_name,
-        plane=_parse_plane(example.plane),
+        plane=plane,
         atlas_meta_cache=atlas_meta_cache,
     )
+    thinking_mode = bool(example.thinking_mode)
+    if thinking_mode:
+        system_prompt = f"<|think|>{system_prompt}"
     tools = build_tools_schema(example.system_prompt_kind)
 
+    # getattr-with-default: duck-typed stub caches (e.g. from
+    # ``langslice_traces.renderers._common.AtlasMeta``) don't carry this field.
+    # Passing None to hydrate_image skips the downsample, matching legacy
+    # behavior; production AtlasMetaCache always supplies a real positive int.
+    max_long_edge = int(getattr(meta, "in_plane_long_edge", 0)) or None
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": [{"type": "text", "text": system_prompt}]},
-        _user_turn(example.query_image_paths, example.user_prompt_text, root),
+        _user_turn(
+            example.query_image_paths, example.user_prompt_text, root,
+            apply_clahe=apply_clahe,
+            max_long_edge=max_long_edge,
+        ),
     ]
     # Order matches the processor's chat-template walk: query images first
     # (rendered into the user turn above), then tool_result images appended
@@ -298,10 +389,24 @@ def render_example(
                     f"duplicate tool_call_id {call_id!r} at trace step {i}"
                 )
             seen_ids.add(call_id)
+            thinking = step.get("thinking") if thinking_mode and is_terminal else None
             messages.append(_assistant_tool_call(
-                call_id, step["submit"]["name"], step["submit"]["args"]
+                call_id, step["submit"]["name"], step["submit"]["args"], thinking=thinking
             ))
             # No matching tool message for the terminal submit.
+            continue
+        if "tool_call" in step and is_terminal:
+            call_id = f"call_final_{i}"
+            if call_id in seen_ids:
+                raise RuntimeError(
+                    f"duplicate tool_call_id {call_id!r} at trace step {i}"
+                )
+            seen_ids.add(call_id)
+            tc = step["tool_call"]
+            thinking = step.get("thinking") if thinking_mode else None
+            messages.append(
+                _assistant_tool_call(call_id, tc["name"], tc["args"], thinking=thinking)
+            )
             continue
         # tool_call + tool_result pair
         call_id = f"call_{i}"
@@ -328,4 +433,6 @@ def render_example(
         tools=tools,
         metadata=metadata,
         image_paths=image_paths_in_order,
+        n_query_images=len(example.query_image_paths),
+        apply_clahe=apply_clahe,
     )

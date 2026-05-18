@@ -1,0 +1,338 @@
+{
+  "$comment": "SliceBench — single-slice position-estimation benchmark. tiny=56 sections (7 brains, stratified evenly by truth_mm), small=287 sections (7 brains), large=910 sections (20 brains). tiny ⊂ small ⊂ large by brain composition. Use rows where (dataset, subject_id) matches an entry below AND the row's section_id is in slicebench/data/allocations/<plane>/eval.jsonl.",
+  "version": "1.4",
+  "created": "2026-05-07",
+  "tiny": [
+    {
+      "dataset": "zenodo_pnnpv",
+      "subject_id": "CC2B",
+      "plane": "coronal",
+      "n_sections": 8
+    },
+    {
+      "dataset": "deepslice_gt",
+      "subject_id": "m287",
+      "plane": "coronal",
+      "n_sections": 8
+    },
+    {
+      "dataset": "rat_tract_eval",
+      "subject_id": "F1/PHAL",
+      "plane": "coronal",
+      "n_sections": 8
+    },
+    {
+      "dataset": "bjaalie_misc",
+      "subject_id": "tgArcSwe_Abeta_381",
+      "plane": "sagittal",
+      "n_sections": 8
+    },
+    {
+      "dataset": "boccara_sagittal",
+      "subject_id": "1297",
+      "plane": "sagittal",
+      "n_sections": 8
+    },
+    {
+      "dataset": "ebrains_tta_atlas",
+      "subject_id": "NOP_2877",
+      "plane": "horizontal",
+      "n_sections": 8
+    },
+    {
+      "dataset": "pvrat_horizontal",
+      "subject_id": "25206",
+      "plane": "horizontal",
+      "n_sections": 8
+    }
+  ],
+  "small": [
+    {
+      "dataset": "zenodo_pnnpv",
+      "subject_id": "CC2B",
+      "plane": "coronal",
+      "species": "mouse",
+      "atlas": "allen_mouse_25um",
+      "imaging": "fluorescence",
+      "staining": "WFA + PV",
+      "lab": "Boutte/Lasztoczi (Zenodo 7419283)"
+    },
+    {
+      "dataset": "deepslice_gt",
+      "subject_id": "m287",
+      "plane": "coronal",
+      "species": "mouse",
+      "atlas": "allen_mouse_25um",
+      "imaging": "brightfield",
+      "staining": "4G8 (Tg2576 Abeta)",
+      "lab": "DeepSlice GT (figshare 22802411)",
+      "notes": "independent benchmark; enables apples-to-apples vs DeepSlice"
+    },
+    {
+      "dataset": "rat_tract_eval",
+      "subject_id": "F1/PHAL",
+      "plane": "coronal",
+      "species": "rat",
+      "atlas": "whs_sd_rat_39um",
+      "imaging": "fluorescence",
+      "staining": "PHA-L tract tracer",
+      "lab": "EBRAINS Olsen orbitofrontal (DOI 10.25493/2MX9-3XF)",
+      "notes": "last 13 sections (positions 19.7-24.3 mm) excluded as too damaged via overrides/coronal/rat_tract_eval.json; 30 sections retained"
+    },
+    {
+      "dataset": "bjaalie_misc",
+      "subject_id": "tgArcSwe_Abeta_381",
+      "plane": "sagittal",
+      "species": "mouse",
+      "atlas": "allen_mouse_25um",
+      "imaging": "brightfield",
+      "staining": "Abeta IHC (Tg-ArcSwe)",
+      "lab": "EBRAINS Bjaalie misc (hbp-00138, p6ebec-Bjaalie_RUP_T5.5.1)"
+    },
+    {
+      "dataset": "boccara_sagittal",
+      "subject_id": "1297",
+      "plane": "sagittal",
+      "species": "rat",
+      "atlas": "whs_sd_rat_39um",
+      "imaging": "brightfield",
+      "staining": "NeuN / Calbindin / PV (multi-stain)",
+      "lab": "EBRAINS Boccara hippocampal (DOI 10.25493/JQ8F-TNF)"
+    },
+    {
+      "dataset": "ebrains_tta_atlas",
+      "subject_id": "NOP_2877",
+      "plane": "horizontal",
+      "species": "mouse",
+      "atlas": "allen_mouse_25um",
+      "imaging": "brightfield",
+      "staining": "NOP-Cre transgenic IHC",
+      "lab": "EBRAINS tTA Atlas",
+      "notes": "rare orientation-species cell; DV-flip fix applied 2026-05-05"
+    },
+    {
+      "dataset": "pvrat_horizontal",
+      "subject_id": "25206",
+      "plane": "horizontal",
+      "species": "rat",
+      "atlas": "whs_sd_rat_39um",
+      "imaging": "brightfield",
+      "staining": "Parvalbumin IHC",
+      "lab": "EBRAINS Laja PV rat (DOI 10.25493/8KCQ-3C7)"
+    }
+  ],
+  "large": [
+    {
+      "dataset": "zenodo_pnnpv",
+      "subject_id": "AL1A",
+      "plane": "coronal",
+      "species": "mouse",
+      "atlas": "allen_mouse_25um",
+      "imaging": "fluorescence",
+      "staining": "WFA + PV",
+      "lab": "Boutte/Lasztoczi (Zenodo 7419283)"
+    },
+    {
+      "dataset": "zenodo_pnnpv",
+      "subject_id": "CC2B",
+      "plane": "coronal",
+      "species": "mouse",
+      "atlas": "allen_mouse_25um",
+      "imaging": "fluorescence",
+      "staining": "WFA + PV",
+      "lab": "Boutte/Lasztoczi (Zenodo 7419283)"
+    },
+    {
+      "dataset": "zenodo_pnnpv",
+      "subject_id": "CC1A",
+      "plane": "coronal",
+      "species": "mouse",
+      "atlas": "allen_mouse_25um",
+      "imaging": "fluorescence",
+      "staining": "WFA + PV (+ DAPI)",
+      "lab": "Boutte/Lasztoczi (Zenodo 7419283)"
+    },
+    {
+      "dataset": "deepslice_gt",
+      "subject_id": "m287",
+      "plane": "coronal",
+      "species": "mouse",
+      "atlas": "allen_mouse_25um",
+      "imaging": "brightfield",
+      "staining": "4G8 (Tg2576 Abeta)",
+      "lab": "DeepSlice GT (figshare 22802411)",
+      "notes": "independent benchmark; enables apples-to-apples vs DeepSlice"
+    },
+    {
+      "dataset": "deepslice_gt",
+      "subject_id": "ISH_Calb1",
+      "plane": "coronal",
+      "species": "mouse",
+      "atlas": "allen_mouse_25um",
+      "imaging": "chromogenic",
+      "staining": "Calb1 ISH",
+      "lab": "DeepSlice GT (figshare 22802411)",
+      "notes": "adds chromogenic ISH modality"
+    },
+    {
+      "dataset": "allen_connectivity",
+      "subject_id": "540685246",
+      "plane": "coronal",
+      "species": "mouse",
+      "atlas": "allen_mouse_25um",
+      "imaging": "fluorescence",
+      "staining": "viral tracer (AAV)",
+      "lab": "Allen Mouse Brain Connectivity Atlas",
+      "notes": "shard direct-edited; rebuild reverts formula override (do not run rebuild_shard.py on this dataset)"
+    },
+    {
+      "dataset": "allen_dev_coronal",
+      "subject_id": "P14/100093542",
+      "plane": "coronal",
+      "species": "mouse",
+      "atlas": "admba_3d_p14_mouse_16.752um",
+      "imaging": "chromogenic",
+      "staining": "Neurod1 ISH",
+      "lab": "Allen Developing Mouse Brain Atlas",
+      "notes": "P14 developmental time point; ADMBA atlas"
+    },
+    {
+      "dataset": "rat_tract_eval",
+      "subject_id": "F1/PHAL",
+      "plane": "coronal",
+      "species": "rat",
+      "atlas": "whs_sd_rat_39um",
+      "imaging": "fluorescence",
+      "staining": "PHA-L tract tracer",
+      "lab": "EBRAINS Olsen orbitofrontal (DOI 10.25493/2MX9-3XF)",
+      "notes": "last 13 sections (positions 19.7-24.3 mm) excluded as too damaged via overrides/coronal/rat_tract_eval.json; 30 sections retained"
+    },
+    {
+      "dataset": "rat_tract_eval",
+      "subject_id": "F1/BDA",
+      "plane": "coronal",
+      "species": "rat",
+      "atlas": "whs_sd_rat_39um",
+      "imaging": "fluorescence",
+      "staining": "BDA tract tracer",
+      "lab": "EBRAINS Olsen orbitofrontal (DOI 10.25493/2MX9-3XF)",
+      "notes": "14 posterior sections (169-247) excluded as too damaged"
+    },
+    {
+      "dataset": "rat_tract_eval",
+      "subject_id": "F10/BDA",
+      "plane": "coronal",
+      "species": "rat",
+      "atlas": "whs_sd_rat_39um",
+      "imaging": "fluorescence",
+      "staining": "BDA tract tracer",
+      "lab": "EBRAINS Olsen orbitofrontal (DOI 10.25493/2MX9-3XF)",
+      "notes": "2 posterior sections (247, 253) excluded"
+    },
+    {
+      "dataset": "bjaalie_misc",
+      "subject_id": "tgArcSwe_Abeta_381",
+      "plane": "sagittal",
+      "species": "mouse",
+      "atlas": "allen_mouse_25um",
+      "imaging": "brightfield",
+      "staining": "Abeta IHC (Tg-ArcSwe)",
+      "lab": "EBRAINS Bjaalie misc (hbp-00138, p6ebec-Bjaalie_RUP_T5.5.1)"
+    },
+    {
+      "dataset": "allen_dev_sagittal",
+      "subject_id": "P56/72471743",
+      "plane": "sagittal",
+      "species": "mouse",
+      "atlas": "allen_mouse_25um",
+      "imaging": "chromogenic",
+      "staining": "ISH",
+      "lab": "Allen Developing Mouse Brain Atlas",
+      "notes": "P56 adult; per memory P56 anchoring re-applied 2026-05-07"
+    },
+    {
+      "dataset": "allen_ish_sagittal",
+      "subject_id": "8",
+      "plane": "sagittal",
+      "species": "mouse",
+      "atlas": "allen_mouse_25um",
+      "imaging": "chromogenic",
+      "staining": "ISH (mixed genes)",
+      "lab": "Allen Mouse Brain ISH (sagittal)",
+      "notes": "third mouse sagittal; second ISH source"
+    },
+    {
+      "dataset": "boccara_sagittal",
+      "subject_id": "1297",
+      "plane": "sagittal",
+      "species": "rat",
+      "atlas": "whs_sd_rat_39um",
+      "imaging": "brightfield",
+      "staining": "NeuN / Calbindin / PV (multi-stain)",
+      "lab": "EBRAINS Boccara hippocampal (DOI 10.25493/JQ8F-TNF)"
+    },
+    {
+      "dataset": "timm_nissl",
+      "subject_id": "H201",
+      "plane": "sagittal",
+      "species": "rat",
+      "atlas": "whs_sd_rat_39um",
+      "imaging": "brightfield",
+      "staining": "Nissl",
+      "lab": "Timm Nissl rat (H201)",
+      "notes": "139 sections; rat sagittal Nissl reference"
+    },
+    {
+      "dataset": "ebrains_tta_atlas",
+      "subject_id": "NOP_2877",
+      "plane": "horizontal",
+      "species": "mouse",
+      "atlas": "allen_mouse_25um",
+      "imaging": "brightfield",
+      "staining": "NOP-Cre transgenic IHC",
+      "lab": "EBRAINS tTA Atlas",
+      "notes": "rare orientation-species cell; DV-flip fix applied 2026-05-05"
+    },
+    {
+      "dataset": "waxh_bbp_horizontal",
+      "subject_id": "WAXH_BBP_C57BL6J",
+      "plane": "horizontal",
+      "species": "mouse",
+      "atlas": "allen_mouse_25um",
+      "imaging": "brightfield",
+      "staining": "Nissl",
+      "lab": "WAXH BBP",
+      "notes": "second mouse horizontal; rounds out the thin plane"
+    },
+    {
+      "dataset": "boccara_horizontal",
+      "subject_id": "1342",
+      "plane": "horizontal",
+      "species": "rat",
+      "atlas": "whs_sd_rat_39um",
+      "imaging": "brightfield",
+      "staining": "NeuN / Calbindin / PV (multi-stain)",
+      "lab": "EBRAINS Boccara hippocampal"
+    },
+    {
+      "dataset": "pvrat_horizontal",
+      "subject_id": "25206",
+      "plane": "horizontal",
+      "species": "rat",
+      "atlas": "whs_sd_rat_39um",
+      "imaging": "brightfield",
+      "staining": "Parvalbumin IHC",
+      "lab": "EBRAINS Laja PV rat (DOI 10.25493/8KCQ-3C7)"
+    },
+    {
+      "dataset": "pvrat_horizontal",
+      "subject_id": "25205",
+      "plane": "horizontal",
+      "species": "rat",
+      "atlas": "whs_sd_rat_39um",
+      "imaging": "brightfield",
+      "staining": "Parvalbumin IHC",
+      "lab": "EBRAINS Laja PV rat (DOI 10.25493/8KCQ-3C7)"
+    }
+  ]
+}

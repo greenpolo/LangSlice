@@ -1,14 +1,31 @@
 import { create } from "zustand";
 import type {
+  AtlasDownloadProgress,
   AtlasInfo,
+  AtlasLoadProgress,
+  AvailableAtlas,
   Brain,
+  ChatMessage,
+  ChatTelemetry,
+  CustomEndpoint,
+  LocalEngineStatus,
   MeshData,
   NavigationView,
+  Plane,
   SliceInfo,
   ViewMode,
   PipelineStatus,
 } from "../lib/types";
 import * as commands from "../lib/commands";
+
+/** View mode for the registration result overlay (forward vs inverse warp). */
+export type RegistrationViewMode = "atlas-to-slice" | "slice-to-atlas";
+
+/** Which atlas-borders rendering to show in the atlas→slice overlay:
+ *  - "elastix": Elastix-warped atlas regions → borders extracted → overlaid (current default)
+ *  - "generated": region borders extracted directly from the model's image-gen
+ *    output, with no Elastix step. Shows the raw model prediction. */
+export type BorderSource = "elastix" | "generated";
 
 /** Decode base64 to Uint8Array */
 function b64ToBytes(b64: string): Uint8Array {
@@ -60,7 +77,17 @@ interface AppState {
   atlasName: string;
   atlasInfo: AtlasInfo | null;
   atlasLoading: boolean;
+  atlasLoadProgress: AtlasLoadProgress | null;
   brainMesh: MeshData | null;
+
+  // Atlas manager modal — full BrainGlobe catalog + per-atlas download
+  // progress. `atlasManagerFocus` is set when we open the modal in
+  // response to a missing-atlas prompt (e.g. Load Demo) so the modal can
+  // scroll and highlight that row.
+  availableForDownload: AvailableAtlas[];
+  atlasManagerOpen: boolean;
+  atlasManagerFocus: string | null;
+  atlasDownloadProgress: Record<string, AtlasDownloadProgress>;
 
   // Border volume (held in frontend memory)
   borderVolume: BorderVolume | null;
@@ -90,13 +117,51 @@ interface AppState {
   currentCompositeDataUrl: string | null;
   atlasOpacity: number;
 
-  // Agent settings (mirrors CLI params)
-  agentModel: string;
-  agentWorkflow: string;
-  agentThinking: string;
-  agentTemperature: number;
-  agentVlmResolution: number;
-  agentMaxIterations: number;
+  // Per-stage CLI parameters. Estimate and Register have overlapping but
+  // not identical flag sets in `langslice_harness/cli.py`, so they get
+  // separate slices here. Defaults mirror the CLI's `default=...` values.
+
+  // === Estimate Position (langslice estimate) ===
+  estimateModel: string;
+  /** When the Estimate model is a local-engine model, holds its OpenAI-compat
+   * base URL so the harness can be told `--endpoint <url>`. null for cloud. */
+  estimateEndpoint: string | null;
+  estimateThinking: string;
+  estimateTemperature: number;
+  estimateMediaResolution: string;
+  estimateMaxIterations: number;
+  estimatePreprocess: "auto" | "none";
+
+  // === Run Registration (langslice register) ===
+  /** Image-generation model — e.g. gemini-3-pro-image-preview. */
+  registerImageModel: string;
+  registerThinking: string;
+  registerTemperature: number;
+  registerEndpoint: string | null;
+
+  // Local-engine browser (Local Models modal).
+  localEngines: LocalEngineStatus[];
+  /** User-added endpoints (non-default ports, remote machines, etc.). */
+  customEndpoints: CustomEndpoint[];
+  localModelsOpen: boolean;
+  apiKeysOpen: boolean;
+  /** Whether a probe is currently running, so the modal can show a spinner. */
+  localEnginesProbing: boolean;
+
+  // BYO-engine chat drawer. Conversation lives in-memory only — closing the
+  // app discards it (intentional, this is a debug/inspection tool, not a
+  // session-keeping notebook). Engine + model are sticky so reopening the
+  // drawer doesn't force a fresh pick every time.
+  chatOpen: boolean;
+  chatMessages: ChatMessage[];
+  chatEndpoint: string | null;   // e.g. "http://127.0.0.1:11434/v1"
+  chatModelId: string | null;    // e.g. "gemma3:e4b-it"
+  chatEngineName: string | null; // human label for the LINK pill ("Ollama")
+  chatStreaming: boolean;
+  chatError: string | null;
+  chatTelemetry: ChatTelemetry;
+  /** Abort handle for the in-flight stream so the user can cancel mid-token. */
+  chatAbort: AbortController | null;
 
   // Pipeline
   pipelineStatus: PipelineStatus;
@@ -109,6 +174,11 @@ interface AppState {
 
   // View
   viewMode: ViewMode;
+  /** Which warp direction the registration result viewer should display. */
+  registrationViewMode: RegistrationViewMode;
+  /** In atlas→slice view, choose between Elastix-warped borders or borders
+   * extracted directly from the image-gen output. Ignored in slice→atlas. */
+  borderSource: BorderSource;
 
   // Actions — navigation
   navigateToDashboard: () => void;
@@ -120,12 +190,25 @@ interface AppState {
   addBrainFromFolder: (folderPath: string) => Promise<void>;
   loadBrainImages: (brainId: string, folderPath: string) => Promise<void>;
   removeBrain: (brainId: string) => void;
+  setBrainPlane: (brainId: string, plane: Plane) => void;
 
-  // Actions — agent settings
-  setAgentSetting: (key: string, value: string | number) => void;
+  /** Per-stage settings updater. `stage` selects which slice, `key` is the
+   * field name inside that slice (e.g. setStageSetting("estimate","thinking","HIGH")). */
+  setStageSetting: (
+    stage: "estimate" | "register",
+    key: string,
+    value: string | number | boolean,
+  ) => void;
 
-  // Actions — pipeline
-  runPipeline: () => Promise<void>;
+  // Actions — view
+  setRegistrationViewMode: (mode: RegistrationViewMode) => void;
+  setBorderSource: (source: BorderSource) => void;
+
+  // Actions — pipeline. The two stages are separately invokable so the user
+  // can re-run registration without re-estimating, or skip estimation when
+  // they've manually set the AP via the slider.
+  runEstimatePosition: () => Promise<void>;
+  runRegistration: () => Promise<void>;
   exportResults: () => Promise<void>;
 
   // Actions — slices
@@ -133,8 +216,42 @@ interface AppState {
 
   // Actions — atlas
   fetchAtlasList: () => Promise<void>;
+  fetchAvailableAtlases: () => Promise<void>;
+  openAtlasManager: (focus?: string | null) => void;
+  closeAtlasManager: () => void;
+  downloadAtlas: (name: string) => Promise<void>;
   loadAtlas: (name: string) => Promise<void>;
+
+  // Actions — chat drawer
+  openChat: () => void;
+  closeChat: () => void;
+  setChatModel: (endpoint: string, modelId: string, engineName: string) => void;
+  sendChatMessage: (text: string, attachSlice: boolean) => Promise<void>;
+  cancelChatStream: () => void;
+  clearChat: () => void;
+
+  // Actions — local engines + top-bar modals
+  openLocalModels: () => void;
+  closeLocalModels: () => void;
+  openApiKeys: () => void;
+  closeApiKeys: () => void;
+  probeLocalEngines: () => Promise<void>;
+  addCustomEndpoint: (ep: CustomEndpoint) => Promise<void>;
+  removeCustomEndpoint: (url: string) => void;
+  setEstimateModelChoice: (modelId: string, endpoint: string | null) => void;
   setApPosition: (apMm: number) => void;
+  /** Toggle the lock on the selected slice's AP position. Run Registration
+   * is gated on this so users can either Estimate (auto-locks) or manually
+   * dial in a position and click Lock to commit. */
+  setApLocked: (locked: boolean) => void;
+  /** Affine-only Elastix preview. Fired automatically by Lock Position so a
+   * brain-shaped warped slice appears in the 3D viewer in ~15-20s instead
+   * of waiting for the full nano-banana pipeline (~45-60s). */
+  runQuickAffine: () => Promise<void>;
+  /** Toggle whether a given slice's warped plane is shown in the 3D viewer.
+   * Only meaningful once the slice is locked; the slice-list eye toggle
+   * surfaces this. */
+  toggleSliceVisibleIn3D: (sliceIndex: number) => void;
   fetchBrainMesh: () => Promise<void>;
   buildComposite: () => void;
   setViewMode: (mode: ViewMode) => void;
@@ -160,7 +277,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   atlasName: "allen_mouse_25um",
   atlasInfo: null,
   atlasLoading: false,
+  atlasLoadProgress: null,
   brainMesh: null,
+
+  availableForDownload: [],
+  atlasManagerOpen: false,
+  atlasManagerFocus: null,
+  atlasDownloadProgress: {},
 
   borderVolume: null,
   currentApMm: 5.0,
@@ -183,13 +306,37 @@ export const useAppStore = create<AppState>((set, get) => ({
   currentCompositeDataUrl: null,
   atlasOpacity: 0.5,
 
-  // Agent settings defaults (match CLI defaults)
-  agentModel: "gemini-3-flash-preview",
-  agentWorkflow: "auto",
-  agentThinking: "HIGH",
-  agentTemperature: 1.0,
-  agentVlmResolution: 2048,
-  agentMaxIterations: 20,
+  // Defaults mirror `_add_estimate_parser` / `_add_register_parser` in
+  // `src/langslice_harness/cli.py`. Estimate: Gemini 3 Flash text/vision
+  // tool loop. Register: Nano Banana Pro for the colored-region warp.
+  estimateModel: "gemini-3-flash-preview",
+  estimateEndpoint: null,
+  estimateThinking: "MEDIUM",
+  estimateTemperature: 1.0,
+  estimateMediaResolution: "medium",
+  estimateMaxIterations: 20,
+  estimatePreprocess: "auto",
+
+  registerImageModel: "gemini-3-pro-image-preview",
+  registerThinking: "MEDIUM",
+  registerTemperature: 1.0,
+  registerEndpoint: null,
+
+  localEngines: [],
+  customEndpoints: [],
+  localModelsOpen: false,
+  apiKeysOpen: false,
+  localEnginesProbing: false,
+
+  chatOpen: false,
+  chatMessages: [],
+  chatEndpoint: null,
+  chatModelId: null,
+  chatEngineName: null,
+  chatStreaming: false,
+  chatError: null,
+  chatTelemetry: {},
+  chatAbort: null,
 
   ollamaStatus: "not_installed",
 
@@ -199,6 +346,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   logs: [],
 
   viewMode: "3d",
+  registrationViewMode: "atlas-to-slice",
+  borderSource: "elastix",
 
   // Navigation actions
   navigateToDashboard: () => set({ currentView: "dashboard", selectedBrainId: null }),
@@ -218,6 +367,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         slices: [],
         status: "queued",
         completedCount: 0,
+        plane: "coronal",
       });
     }
     set((s) => ({ brains: [...s.brains, ...newBrains] }));
@@ -242,6 +392,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         slices,
         status: "queued",
         completedCount: 0,
+        plane: "coronal",
       };
 
       set((s) => ({ brains: [...s.brains, brain] }));
@@ -298,14 +449,32 @@ export const useAppStore = create<AppState>((set, get) => ({
   removeBrain: (brainId: string) =>
     set((s) => ({ brains: s.brains.filter((b) => b.id !== brainId) })),
 
-  setAgentSetting: (key: string, value: string | number) => {
-    set({ [key]: value } as Partial<AppState>);
+  setBrainPlane: (brainId: string, plane: Plane) =>
+    set((s) => ({
+      brains: s.brains.map((b) => (b.id === brainId ? { ...b, plane } : b)),
+    })),
+
+  setStageSetting: (stage, key, value) => {
+    // Stage-prefixed keys (e.g. "estimate" + "thinking" -> "estimateThinking")
+    // keep the dispatch single-line at the call sites while still landing in
+    // typed top-level state slots.
+    const prefix = stage;
+    const camel = key.charAt(0).toUpperCase() + key.slice(1);
+    set({ [`${prefix}${camel}`]: value } as Partial<AppState>);
   },
 
-  runPipeline: async () => {
-    const { selectedBrainId, selectedSliceIndex, brains, atlasName,
-            agentModel, agentWorkflow, agentThinking, agentTemperature,
-            agentVlmResolution, agentMaxIterations } = get();
+  setRegistrationViewMode: (mode: RegistrationViewMode) =>
+    set({ registrationViewMode: mode }),
+
+  setBorderSource: (source: BorderSource) => set({ borderSource: source }),
+
+  runEstimatePosition: async () => {
+    const {
+      selectedBrainId, selectedSliceIndex, brains, atlasName,
+      estimateModel, estimateEndpoint, estimateThinking,
+      estimateTemperature, estimateMediaResolution,
+      estimateMaxIterations, estimatePreprocess,
+    } = get();
 
     const brain = brains.find((b) => b.id === selectedBrainId);
     if (!brain || selectedSliceIndex === null) {
@@ -316,9 +485,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!slice) return;
 
     set({ pipelineRunning: true, pipelineStatus: "estimating", pipelineError: null });
-    get().addLog(`Running AP estimation on ${slice.name}...`);
+    get().addLog(`Estimating AP position on ${slice.name}...`);
 
-    // Update slice status
     set((s) => ({
       brains: s.brains.map((b) =>
         b.id === selectedBrainId
@@ -328,38 +496,100 @@ export const useAppStore = create<AppState>((set, get) => ({
     }));
 
     try {
-      // Step 1: AP estimation
       const apResult = await commands.runEstimate({
         imagePath: slice.path,
         atlas: atlasName,
-        model: agentModel,
-        thinking: agentThinking,
-        temperature: agentTemperature,
-        vlmResolution: agentVlmResolution,
-        maxIterations: agentMaxIterations,
-        workflow: agentWorkflow === "auto" ? "auto" : agentWorkflow,
+        plane: brain.plane,
+        model: estimateModel,
+        thinking: estimateThinking,
+        temperature: estimateTemperature,
+        mediaResolution: estimateMediaResolution,
+        maxIterations: estimateMaxIterations,
+        preprocess: estimatePreprocess,
+        provider: estimateEndpoint ? "openai" : "google",
+        endpoint: estimateEndpoint,
       });
 
       const positionMm = apResult.position_mm as number;
       get().addLog(`AP estimated: ${positionMm.toFixed(3)} mm`);
       get().setApPosition(positionMm);
-      set({ pipelineStatus: "registering" });
 
-      // Step 2: Registration
-      get().addLog("Running registration...");
-      await commands.runRegister({
+      // Estimation is an explicit commit — auto-lock so the user can proceed
+      // straight to Run Registration without an extra click.
+      set((s) => ({
+        pipelineStatus: "complete",
+        brains: s.brains.map((b) =>
+          b.id === selectedBrainId
+            ? {
+                ...b,
+                slices: b.slices.map((sl, i) =>
+                  i === selectedSliceIndex
+                    ? { ...sl, status: "done" as const, apMm: positionMm, apLocked: true }
+                    : sl
+                ),
+              }
+            : b
+        ),
+      }));
+      // Kick off the affine preview alongside auto-lock so the 3D viewer
+      // shows a warped slice without waiting on the full pipeline.
+      void get().runQuickAffine();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      get().addLog(`Estimation error: ${msg}`);
+      set({ pipelineStatus: "error", pipelineError: msg });
+      set((s) => ({
+        brains: s.brains.map((b) =>
+          b.id === selectedBrainId
+            ? { ...b, slices: b.slices.map((sl, i) => i === selectedSliceIndex ? { ...sl, status: "pending" as const } : sl) }
+            : b
+        ),
+      }));
+    } finally {
+      set({ pipelineRunning: false });
+    }
+  },
+
+  runRegistration: async () => {
+    const {
+      selectedBrainId, selectedSliceIndex, brains, atlasName,
+      registerImageModel,
+      registerThinking, registerTemperature, registerEndpoint,
+    } = get();
+
+    const brain = brains.find((b) => b.id === selectedBrainId);
+    if (!brain || selectedSliceIndex === null) {
+      get().addLog("Select a slice first");
+      return;
+    }
+    const slice = brain.slices[selectedSliceIndex];
+    if (!slice) return;
+    if (slice.apMm === undefined) {
+      get().addLog("No AP position set -- estimate or pick one with the slider first");
+      return;
+    }
+
+    set({ pipelineRunning: true, pipelineStatus: "registering", pipelineError: null });
+    get().addLog(`Running registration at ${slice.apMm.toFixed(3)} mm...`);
+
+    try {
+      const registrationResult = await commands.runRegister({
         imagePath: slice.path,
-        positionMm,
+        positionMm: slice.apMm,
         atlas: atlasName,
-        model: agentModel,
-        thinking: agentThinking,
-        temperature: agentTemperature,
-        vlmResolution: agentVlmResolution,
+        plane: brain.plane,
+        imageModel: registerImageModel,
+        thinking: registerThinking,
+        temperature: registerTemperature,
+        provider: registerEndpoint ? "openai" : "google",
+        endpoint: registerEndpoint,
       });
 
       get().addLog("Image-gen registration complete");
+      if (registrationResult.inverseWarpStatus !== null) {
+        get().addLog(`Inverse warp: ${registrationResult.inverseWarpStatus}`);
+      }
 
-      // Update slice status to done with AP position
       set((s) => ({
         pipelineStatus: "complete",
         brains: s.brains.map((b) =>
@@ -368,7 +598,9 @@ export const useAppStore = create<AppState>((set, get) => ({
                 ...b,
                 completedCount: b.completedCount + 1,
                 slices: b.slices.map((sl, i) =>
-                  i === selectedSliceIndex ? { ...sl, status: "done" as const, apMm: positionMm } : sl
+                  i === selectedSliceIndex
+                    ? { ...sl, status: "done" as const, registrationResult }
+                    : sl
                 ),
               }
             : b
@@ -376,17 +608,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       }));
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      get().addLog(`Pipeline error: ${msg}`);
+      get().addLog(`Registration error: ${msg}`);
       set({ pipelineStatus: "error", pipelineError: msg });
-
-      // Reset slice status
-      set((s) => ({
-        brains: s.brains.map((b) =>
-          b.id === selectedBrainId
-            ? { ...b, slices: b.slices.map((sl, i) => i === selectedSliceIndex ? { ...sl, status: "pending" as const } : sl) }
-            : b
-        ),
-      }));
     } finally {
       set({ pipelineRunning: false });
     }
@@ -413,6 +636,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         imagePath: slice.path,
         positionMm: slice.apMm,
         atlas: atlasName,
+        plane: brain.plane,
         outputDir: folder as string,
       });
       get().addLog("Export complete");
@@ -429,6 +653,16 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     set({ selectedSliceIndex: index, sliceImageLoading: true, selectedSliceImage: null });
 
+    // Snap the AP slider to this slice's saved position so the slider and
+    // the slice stay tied together. If the slice has no AP yet (pre-estimate),
+    // leave the slider where it was — the next drag will write its position
+    // back to the slice via setApPosition. The selectedSliceIndex is already
+    // updated above so setApPosition's write-back targets this slice.
+    const slice = brain.slices[index];
+    if (slice.apMm !== undefined) {
+      get().setApPosition(slice.apMm);
+    }
+
     try {
       const result = await commands.loadSliceImage(brain.slices[index].path);
       // Only apply if still the same selection
@@ -444,7 +678,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     // Also fetch composite for 2D views
     const { viewMode } = get();
-    if (viewMode === "split" || viewMode === "overlay") {
+    if (viewMode === "split") {
       get().buildComposite();
     }
   },
@@ -458,10 +692,462 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
+  fetchAvailableAtlases: async () => {
+    try {
+      const atlases = await commands.listAvailableAtlases();
+      set({ availableForDownload: atlases });
+    } catch (e) {
+      console.error("Failed to list available atlases:", e);
+      get().addLog(
+        `Failed to list available atlases: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  },
+
+  openAtlasManager: (focus?: string | null) => {
+    set({ atlasManagerOpen: true, atlasManagerFocus: focus ?? null });
+    // Fire-and-forget refresh — modal renders with the current list and
+    // updates once the new payload lands.
+    get().fetchAvailableAtlases();
+  },
+
+  closeAtlasManager: () =>
+    set({ atlasManagerOpen: false, atlasManagerFocus: null }),
+
+  // Chat drawer ───────────────────────────────────────────────────────
+  openChat: () => {
+    set({ chatOpen: true });
+    // Refresh the local-engine list on open so the connection picker is
+    // never showing stale "not running" rows. Doesn't block the drawer
+    // from rendering — the UI handles the in-flight state.
+    if (get().localEngines.length === 0) {
+      get().probeLocalEngines();
+    }
+  },
+  closeChat: () => {
+    // Cancel any in-flight stream when the drawer closes so we don't burn
+    // tokens for a window the user can't see.
+    get().cancelChatStream();
+    set({ chatOpen: false });
+  },
+  setChatModel: (endpoint, modelId, engineName) =>
+    set({
+      chatEndpoint: endpoint,
+      chatModelId: modelId,
+      chatEngineName: engineName,
+      chatError: null,
+    }),
+
+  cancelChatStream: () => {
+    const abort = get().chatAbort;
+    if (abort) abort.abort();
+    set({ chatAbort: null, chatStreaming: false });
+  },
+
+  clearChat: () =>
+    set({ chatMessages: [], chatTelemetry: {}, chatError: null }),
+
+  sendChatMessage: async (text, attachSlice) => {
+    const state = get();
+    if (!state.chatEndpoint || !state.chatModelId) {
+      set({ chatError: "No engine selected. Patch into a local model first." });
+      return;
+    }
+    if (state.chatStreaming) return; // ignore re-entrance
+
+    const trimmed = text.trim();
+    if (!trimmed) return;
+
+    // Build the new user turn. If the user opted in, attach the currently
+    // selected slice as a data URL so vision-capable models can see it.
+    const sliceB64 = state.selectedSliceImage;
+    const images: string[] = [];
+    if (attachSlice && sliceB64) {
+      images.push(`data:image/png;base64,${sliceB64}`);
+    }
+
+    const userMessage: ChatMessage = {
+      id: `u-${Date.now()}`,
+      role: "user",
+      content: trimmed,
+      images: images.length > 0 ? images : undefined,
+    };
+    const assistantMessage: ChatMessage = {
+      id: `a-${Date.now()}`,
+      role: "assistant",
+      content: "",
+    };
+
+    set({
+      chatMessages: [...state.chatMessages, userMessage, assistantMessage],
+      chatStreaming: true,
+      chatError: null,
+      chatTelemetry: {},
+    });
+
+    // OpenAI-compat `messages` shape. For multimodal turns, the user
+    // content becomes an array of {type:"text"|"image_url",...} parts.
+    const messagesForApi = [...state.chatMessages, userMessage].map((m) => {
+      if (m.role === "user" && m.images && m.images.length > 0) {
+        return {
+          role: m.role,
+          content: [
+            { type: "text", text: m.content },
+            ...m.images.map((url) => ({
+              type: "image_url",
+              image_url: { url },
+            })),
+          ],
+        };
+      }
+      return { role: m.role, content: m.content };
+    });
+
+    const controller = new AbortController();
+    set({ chatAbort: controller });
+    const startedAt = performance.now();
+    let firstTokenAt: number | null = null;
+    let rxTokens = 0;
+    let assistantText = "";
+
+    try {
+      const res = await fetch(`${state.chatEndpoint}/chat/completions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: state.chatModelId,
+          messages: messagesForApi,
+          stream: true,
+        }),
+        signal: controller.signal,
+      });
+
+      if (!res.ok || !res.body) {
+        const detail = await res.text().catch(() => "");
+        throw new Error(`HTTP ${res.status}: ${detail.slice(0, 200) || res.statusText}`);
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        // SSE frames are separated by blank lines. Split, keep the trailing
+        // partial in the buffer for the next chunk.
+        const frames = buffer.split("\n\n");
+        buffer = frames.pop() ?? "";
+
+        for (const frame of frames) {
+          for (const line of frame.split("\n")) {
+            if (!line.startsWith("data:")) continue;
+            const payload = line.slice(5).trim();
+            if (!payload || payload === "[DONE]") continue;
+            let parsed: { choices?: { delta?: { content?: string } }[] };
+            try {
+              parsed = JSON.parse(payload);
+            } catch {
+              continue;
+            }
+            const delta = parsed.choices?.[0]?.delta?.content;
+            if (!delta) continue;
+
+            if (firstTokenAt === null) {
+              firstTokenAt = performance.now();
+            }
+            assistantText += delta;
+            rxTokens += 1; // chunks ≈ tokens for most engines; close enough for HUD
+            const now = performance.now();
+            const elapsedMs = now - startedAt;
+            const tokPerSec = elapsedMs > 0 ? (rxTokens * 1000) / elapsedMs : 0;
+            set((s) => ({
+              chatMessages: s.chatMessages.map((m) =>
+                m.id === assistantMessage.id ? { ...m, content: assistantText } : m,
+              ),
+              chatTelemetry: {
+                rxTokens,
+                ttftMs: firstTokenAt !== null ? Math.round(firstTokenAt - startedAt) : undefined,
+                elapsedMs: Math.round(elapsedMs),
+                tokensPerSec: Math.round(tokPerSec * 10) / 10,
+              },
+            }));
+          }
+        }
+      }
+    } catch (e: unknown) {
+      const name = e instanceof Error ? e.name : "";
+      if (name === "AbortError") {
+        // Quiet cancel — leave whatever tokens we already streamed.
+      } else {
+        const msg = e instanceof Error ? e.message : String(e);
+        set({ chatError: msg });
+      }
+    } finally {
+      set({ chatStreaming: false, chatAbort: null });
+    }
+  },
+
+  openLocalModels: () => {
+    set({ localModelsOpen: true });
+    // Fire-and-forget probe so the modal mounts with a fresh list.
+    get().probeLocalEngines();
+  },
+
+  closeLocalModels: () => set({ localModelsOpen: false }),
+
+  openApiKeys: () => set({ apiKeysOpen: true }),
+  closeApiKeys: () => set({ apiKeysOpen: false }),
+
+  probeLocalEngines: async () => {
+    set({ localEnginesProbing: true });
+    try {
+      const builtIns = await commands.probeLocalEngines();
+      // Re-probe each saved custom endpoint too so they show up alongside.
+      const customResults = await Promise.all(
+        get().customEndpoints.map((ep) =>
+          commands.probeCustomLocalEndpoint(ep.label, ep.url).catch((e) => ({
+            name: ep.label,
+            port: 0,
+            endpoint: ep.url,
+            reachable: false,
+            models: [],
+            error: e instanceof Error ? e.message : String(e),
+          } as LocalEngineStatus)),
+        ),
+      );
+      set({ localEngines: [...builtIns, ...customResults] });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      get().addLog(`Local-engine probe failed: ${msg}`);
+    } finally {
+      set({ localEnginesProbing: false });
+    }
+  },
+
+  addCustomEndpoint: async (ep: CustomEndpoint) => {
+    // Reject duplicates by URL so the list stays clean.
+    const existing = get().customEndpoints;
+    if (existing.some((e) => e.url === ep.url)) return;
+    set({ customEndpoints: [...existing, ep] });
+    await get().probeLocalEngines();
+  },
+
+  removeCustomEndpoint: (url: string) => {
+    set((s) => ({
+      customEndpoints: s.customEndpoints.filter((e) => e.url !== url),
+      localEngines: s.localEngines.filter((eng) => eng.endpoint !== url),
+    }));
+  },
+
+  setEstimateModelChoice: (modelId: string, endpoint: string | null) =>
+    set({ estimateModel: modelId, estimateEndpoint: endpoint }),
+
+  setApLocked: (locked: boolean) => {
+    const { selectedBrainId, selectedSliceIndex } = get();
+    if (!selectedBrainId || selectedSliceIndex === null) return;
+    set((s) => ({
+      brains: s.brains.map((b) =>
+        b.id !== selectedBrainId
+          ? b
+          : {
+              ...b,
+              slices: b.slices.map((sl, i) =>
+                i === selectedSliceIndex ? { ...sl, apLocked: locked } : sl,
+              ),
+            },
+      ),
+    }));
+    // Locking commits the AP — kick off a fast affine preview so the slice
+    // appears in the 3D viewer immediately, before the slow image-gen
+    // pipeline runs. Fire-and-forget so the UI stays responsive.
+    if (locked) {
+      void get().runQuickAffine();
+    }
+  },
+
+  toggleSliceVisibleIn3D: (sliceIndex: number) => {
+    const { selectedBrainId } = get();
+    if (!selectedBrainId) return;
+    set((s) => ({
+      brains: s.brains.map((b) =>
+        b.id !== selectedBrainId
+          ? b
+          : {
+              ...b,
+              slices: b.slices.map((sl, i) =>
+                i === sliceIndex
+                  ? { ...sl, visibleIn3D: sl.visibleIn3D === false ? true : false }
+                  : sl,
+              ),
+            },
+      ),
+    }));
+  },
+
+  /** Affine-only Elastix preview. Triggered automatically by Lock Position
+   * (and by Estimate auto-lock). Stale-result guard: each call captures the
+   * current (sliceIndex, apMm) snapshot; the result is discarded if either
+   * has changed when the subprocess returns. */
+  runQuickAffine: async () => {
+    const state = get();
+    const { selectedBrainId, selectedSliceIndex, atlasName, currentApMm } = state;
+    if (!selectedBrainId || selectedSliceIndex === null || !atlasName) return;
+    const brain = state.brains.find((b) => b.id === selectedBrainId);
+    if (!brain) return;
+    const slice = brain.slices[selectedSliceIndex];
+    if (!slice) return;
+
+    const sliceIndexSnapshot = selectedSliceIndex;
+    const apSnapshot = currentApMm;
+    const brainIdSnapshot = selectedBrainId;
+
+    // Mark running on the snapshotted slice. Using a setter so concurrent
+    // mutations to other slices don't clobber this one.
+    set((s) => ({
+      brains: s.brains.map((b) =>
+        b.id !== brainIdSnapshot
+          ? b
+          : {
+              ...b,
+              slices: b.slices.map((sl, i) =>
+                i === sliceIndexSnapshot
+                  ? { ...sl, quickAffineRunning: true, quickAffineError: null }
+                  : sl,
+              ),
+            },
+      ),
+    }));
+
+    try {
+      const result = await commands.runQuickAffine({
+        imagePath: slice.path,
+        positionMm: apSnapshot,
+        atlas: atlasName,
+        plane: brain.plane,
+      });
+
+      // Stale-result guard: bail if the user changed slice or AP while we
+      // were in-flight. The output file still exists on disk; we just
+      // don't wire it into state. Next lock will overwrite.
+      const now = get();
+      if (
+        now.selectedSliceIndex !== sliceIndexSnapshot ||
+        now.selectedBrainId !== brainIdSnapshot ||
+        Math.abs(now.currentApMm - apSnapshot) > 0.01
+      ) {
+        return;
+      }
+
+      set((s) => ({
+        brains: s.brains.map((b) =>
+          b.id !== brainIdSnapshot
+            ? b
+            : {
+                ...b,
+                slices: b.slices.map((sl, i) =>
+                  i === sliceIndexSnapshot
+                    ? {
+                        ...sl,
+                        quickAffineRunning: false,
+                        quickAffineWarpedPath: result.warpedSlicePath,
+                        quickAffineError: null,
+                      }
+                    : sl,
+                ),
+              },
+        ),
+      }));
+      get().addLog(`Quick affine preview ready (${result.elapsedS}s)`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      set((s) => ({
+        brains: s.brains.map((b) =>
+          b.id !== brainIdSnapshot
+            ? b
+            : {
+                ...b,
+                slices: b.slices.map((sl, i) =>
+                  i === sliceIndexSnapshot
+                    ? { ...sl, quickAffineRunning: false, quickAffineError: msg }
+                    : sl,
+                ),
+              },
+        ),
+      }));
+      get().addLog(`Quick affine failed: ${msg}`);
+    }
+  },
+
+  downloadAtlas: async (name: string) => {
+    // Subscribe to per-atlas progress events for the lifetime of this call.
+    // The Rust side emits with `phase: complete` when extraction is done.
+    const { listen } = await import("@tauri-apps/api/event");
+    const unlisten = await listen<AtlasDownloadProgress>(
+      "atlas-download-progress",
+      (event) => {
+        const payload = event.payload;
+        if (payload.atlas !== name) return;
+        set((s) => ({
+          atlasDownloadProgress: {
+            ...s.atlasDownloadProgress,
+            [name]: payload,
+          },
+        }));
+      },
+    );
+
+    try {
+      set((s) => ({
+        atlasDownloadProgress: {
+          ...s.atlasDownloadProgress,
+          [name]: { atlas: name, phase: "resolving" },
+        },
+      }));
+      get().addLog(`Downloading atlas "${name}"...`);
+      await commands.downloadAtlas(name);
+      get().addLog(`Atlas "${name}" downloaded.`);
+
+      // Refresh both lists — installed shortcut for the selector and the
+      // full catalog for the manager modal — so the row flips to Installed.
+      await Promise.all([
+        get().fetchAtlasList(),
+        get().fetchAvailableAtlases(),
+      ]);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      get().addLog(`Atlas download failed: ${msg}`);
+      throw e;
+    } finally {
+      unlisten();
+      // Leave the final progress payload in state so the row can show
+      // "Installed" without flicker; consumers can read phase==="complete".
+    }
+  },
+
   loadAtlas: async (name: string) => {
-    set({ atlasLoading: true, pipelineStatus: "loading_atlas", pipelineError: null });
+    set({
+      atlasLoading: true,
+      atlasLoadProgress: { phase: "Starting...", percent: 0 },
+      pipelineStatus: "loading_atlas",
+      pipelineError: null,
+    });
+
+    // Subscribe to phase-boundary progress events emitted by the Rust loader.
+    // The event-listener import is dynamic so this module doesn't pay for it
+    // outside an atlas-load cycle.
+    const { listen } = await import("@tauri-apps/api/event");
+    const unlisten = await listen<AtlasLoadProgress>(
+      "atlas-load-progress",
+      (event) => set({ atlasLoadProgress: event.payload }),
+    );
     try {
       await commands.loadAtlas(name);
+      // Rust-side phases done; show a near-complete bar while we decode the
+      // border + reference + additional volumes on the frontend.
+      set({ atlasLoadProgress: { phase: "Caching volumes...", percent: 95 } });
       const info = await commands.getAtlasInfo();
       const midAp = (info.ap_min_mm + info.ap_max_mm) / 2;
       set({ atlasName: name, atlasInfo: info, currentApMm: midAp });
@@ -522,13 +1208,19 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ pipelineStatus: "error", pipelineError: msg });
       get().addLog(`Error loading atlas: ${msg}`);
     } finally {
-      set({ atlasLoading: false });
+      unlisten();
+      set({ atlasLoading: false, atlasLoadProgress: null });
     }
   },
 
-  // Pure local operation — no IPC, no debounce needed
+  // Pure local operation — no IPC, no debounce needed.
+  //
+  // When a slice is selected, the slider acts as the slice's AP-position
+  // editor: every drag writes back to that slice's `apMm` so the slider and
+  // the slice stay in lock-step. Without a selected slice, this is a plain
+  // atlas-navigation control.
   setApPosition: (apMm: number) => {
-    const { borderVolume, atlasInfo } = get();
+    const { borderVolume, atlasInfo, selectedBrainId, selectedSliceIndex } = get();
     if (!borderVolume || !atlasInfo) {
       set({ currentApMm: apMm });
       return;
@@ -546,9 +1238,26 @@ export const useAppStore = create<AppState>((set, get) => ({
       borderVolume.height,
     );
 
-    set({
-      currentApMm: apMm,
-      currentBorderPixels: pixels,
+    set((s) => {
+      const next: Partial<AppState> = {
+        currentApMm: apMm,
+        currentBorderPixels: pixels,
+      };
+      // Write the AP back to the selected slice so the list, badges, and
+      // pipeline all see the user-edited position. Any movement releases
+      // the lock — the user must re-commit before registration can run.
+      if (selectedBrainId && selectedSliceIndex !== null) {
+        next.brains = s.brains.map((b) => {
+          if (b.id !== selectedBrainId) return b;
+          return {
+            ...b,
+            slices: b.slices.map((sl, i) =>
+              i === selectedSliceIndex ? { ...sl, apMm, apLocked: false } : sl,
+            ),
+          };
+        });
+      }
+      return next;
     });
 
     // Rebuild composite locally if in 2D view
@@ -561,7 +1270,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ brainMesh: mesh });
       get().addLog(`Brain mesh loaded: ${mesh.positions.length / 3} vertices`);
     } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
       console.error("Failed to fetch brain mesh:", e);
+      get().addLog(`Brain mesh unavailable: ${msg}`);
     }
   },
 
@@ -570,7 +1281,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { referenceVolume, additionalVolumes, borderVolume, atlasInfo,
             currentApMm, viewMode, activeChannel, showBorders } = get();
     if (!borderVolume || !atlasInfo) return;
-    if (viewMode !== "split" && viewMode !== "overlay") return;
+    if (viewMode !== "split") return;
 
     // Pick the active volume
     const vol = activeChannel === "reference"
@@ -620,7 +1331,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setViewMode: (mode: ViewMode) => {
     set({ viewMode: mode });
-    if (mode === "split" || mode === "overlay") {
+    if (mode === "split") {
       get().buildComposite();
     }
   },
@@ -639,5 +1350,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   addLog: (msg: string) =>
-    set((s) => ({ logs: [...s.logs, `[${new Date().toLocaleTimeString()}] ${msg}`] })),
+    set((s) => {
+      // Cap log at 500 entries — the panel re-renders a <div> per entry so
+      // unbounded growth tanks scroll perf on long pipelines.
+      const next = [...s.logs, `[${new Date().toLocaleTimeString()}] ${msg}`];
+      return { logs: next.length > 500 ? next.slice(next.length - 500) : next };
+    }),
 }));

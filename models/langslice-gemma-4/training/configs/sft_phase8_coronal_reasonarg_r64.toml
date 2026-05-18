@@ -1,0 +1,67 @@
+# Phase 8 — r=64 (vs Phase 7's r=256), same corpus + lr.
+#
+# Hypothesis: Phase 7 (r=256, lr=2e-5) showed ckpt-150 close to base
+# (mae 3.00 vs parity-fix base 2.87) but ckpt-400 regressed hard
+# (mae 5.02, 20 fails) despite training loss still dropping. That looks like
+# the high-rank LoRA subspace is gradually rotating load-bearing base
+# representations even at low LR; the model is overspecializing on the SFT
+# corpus and unlearning useful base behavior.
+#
+# Per feedback_rslora_high_rank_for_domain_adaptation, r=64-128 is the
+# default for narrow-task LoRA. r=256 was always speculative. Drop to r=64
+# and keep everything else (corpus, lr, alpha, rsLoRA) identical to Phase 7.
+#
+# rsLoRA scaling: alpha/sqrt(r) = 8/8 = 1.0 (vs 0.5 at r=256). Stronger
+# per-step update *within* a much smaller subspace — fewer directions to
+# disrupt, so larger amplitude within each is acceptable.
+#
+# PDBS=4 GA=6 keeps effective batch at 24 (same as Phase 7's PDBS=2 GA=12).
+# Tried PDBS=6 first; OOM at step 2 — max_seq=6144 activations dominate at
+# r=64, the LoRA savings vs r=256 weren't enough to support 3x the micro-batch.
+#
+# Dataset: combined_corpus_reasonarg_coronal.jsonl (23,721 rows, same as
+# Phase 6/7).
+
+[sft]
+base_model = "unsloth/gemma-4-E4B-it"
+load_in_4bit = true
+max_seq_length = 6144
+num_train_epochs = 1
+max_steps = 1000
+per_device_train_batch_size = 4
+gradient_accumulation_steps = 6
+per_device_eval_batch_size = 2
+learning_rate = 2e-5
+lr_scheduler_type = "cosine"
+warmup_ratio = 0.03
+weight_decay = 0.01
+max_grad_norm = 0.8
+optim = "adamw_8bit"
+chat_template_kwargs = { enable_thinking = false }
+logging_steps = 5
+eval_strategy = "no"
+prediction_loss_only = true
+agent_eval_steps = 99999
+save_strategy = "steps"
+save_steps = 50
+save_total_limit = 25
+report_to = "none"
+seed = 42
+dataloader_num_workers = 32
+dataloader_persistent_workers = true
+dataloader_pin_memory = true
+dataloader_prefetch_factor = 6
+
+[lora]
+r = 64
+lora_alpha = 8
+use_rslora = true
+finetune_vision_layers = false
+finetune_language_layers = true
+finetune_attention_modules = true
+finetune_mlp_modules = true
+use_gradient_checkpointing = "unsloth"
+
+[data]
+holdout_fraction = 0.10
+include_rationale = false

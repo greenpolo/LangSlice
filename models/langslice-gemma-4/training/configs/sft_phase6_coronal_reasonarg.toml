@@ -1,0 +1,59 @@
+# Phase 6 — coronal-only REASONING-IN-SUBMIT-ARGS: 23,721-row corpus
+# Same shape as Phase 2 (multi-step exploration kept, thinking_mode=False)
+# but the terminal submit_estimate carries an `args.reasoning` field containing
+# the original Phase 1 region-dump text. The model decodes the reasoning
+# immediately before the position_mm.
+#
+# Hypothesis: Phase 4 proved exploration is load-bearing. Phase 1 had rich
+# region-dump thinking, but as a separate thinking-mode turn it confused
+# the model. Embedding the same content inside submit.args.reasoning aligns
+# the reasoning channel with the tool-call format the base already uses well.
+#
+# Dataset: combined_corpus_reasonarg_coronal.jsonl (23,721 rows, every row
+# has submit.args.reasoning, avg 1238 chars).
+#
+# Same hparams as Phase 2 for direct ckpt-150 comparison. Atlas splice ON.
+
+[sft]
+base_model = "unsloth/gemma-4-E4B-it"
+load_in_4bit = true
+max_seq_length = 6144
+num_train_epochs = 1
+max_steps = 1000
+per_device_train_batch_size = 2
+gradient_accumulation_steps = 12
+per_device_eval_batch_size = 2
+learning_rate = 2e-4
+lr_scheduler_type = "cosine"
+warmup_ratio = 0.03
+weight_decay = 0.01
+max_grad_norm = 0.8
+optim = "adamw_8bit"
+chat_template_kwargs = { enable_thinking = false }
+logging_steps = 5
+eval_strategy = "no"
+prediction_loss_only = true
+agent_eval_steps = 99999
+save_strategy = "steps"
+save_steps = 50
+save_total_limit = 25
+report_to = "none"
+seed = 42
+dataloader_num_workers = 32
+dataloader_persistent_workers = true
+dataloader_pin_memory = true
+dataloader_prefetch_factor = 6
+
+[lora]
+r = 256
+lora_alpha = 8
+use_rslora = true
+finetune_vision_layers = false
+finetune_language_layers = true
+finetune_attention_modules = true
+finetune_mlp_modules = true
+use_gradient_checkpointing = "unsloth"
+
+[data]
+holdout_fraction = 0.10
+include_rationale = false

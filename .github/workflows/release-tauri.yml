@@ -1,0 +1,67 @@
+name: Release Tauri GUI
+
+# Triggered when you push a tag matching v* (e.g. `git tag v0.1.0 && git push --tags`).
+# Builds the Tauri GUI on windows-latest and uploads the NSIS .exe + MSI .msi
+# installers to a *draft* GitHub release. You then review the draft, edit the
+# release notes, and publish manually.
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: tauri-gui/pnpm-lock.yaml
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: './tauri-gui/src-tauri -> target'
+
+      - name: Install frontend deps
+        working-directory: tauri-gui
+        run: pnpm install --frozen-lockfile
+
+      - name: Build + upload to draft release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: tauri-gui
+          tagName: ${{ github.ref_name }}
+          releaseName: 'LangSlice ${{ github.ref_name }}'
+          releaseBody: |
+            **LangSlice ${{ github.ref_name }}** — Tauri desktop installer.
+
+            Pick whichever installer you prefer:
+            - `.exe` — friendly NSIS installer, double-click to install.
+            - `.msi` — Microsoft Installer format (for IT-managed deployment).
+
+            On first launch Windows SmartScreen may warn that the installer is
+            unsigned — click **More info → Run anyway**.
+
+            Local LangSlice-Gemma 4 model card:
+            https://huggingface.co/greenpolo/langslice-gemma-4-E4B
+          releaseDraft: true
+          prerelease: false
+          includeUpdaterJson: false

@@ -1,4 +1,4 @@
-"""Unit tests for tools.expert_iteration.state — phase tracker + resume."""
+"""Unit tests for iSFT.state — phase tracker + resume."""
 
 from __future__ import annotations
 
@@ -9,9 +9,9 @@ from pathlib import Path
 import pytest
 
 _REPO = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(_REPO))
+sys.path.insert(0, str(_REPO / "models" / "langslice-gemma-4" / "training"))
 
-from tools.expert_iteration.state import (  # noqa: E402
+from iSFT.state import (  # noqa: E402
     PHASES,
     RunState,
     init_or_resume,
@@ -24,7 +24,7 @@ from tools.expert_iteration.state import (  # noqa: E402
 def test_phases_constant_includes_expected_steps() -> None:
     expected = (
         "sampled", "rollouts", "scored", "filtered", "appended",
-        "unioned", "trained", "evaluated", "done",
+        "unioned", "trained", "evaluated", "curriculum", "done",
     )
     assert PHASES == expected
 
@@ -178,7 +178,8 @@ def test_state_json_is_atomic(tmp_path: Path) -> None:
     ("appended", "unioned"),
     ("unioned", "trained"),
     ("trained", "evaluated"),
-    ("evaluated", "done"),
+    ("evaluated", "curriculum"),
+    ("curriculum", "done"),
     ("done", "done"),
 ])
 def test_resume_from_each_phase_picks_correct_next(

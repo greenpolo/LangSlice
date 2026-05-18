@@ -1,0 +1,59 @@
+# Overnight vision-on training from BARE base — 2026-05-13
+#
+# Hypothesis: prior vision-on pivot regressed because we started vision-tower
+# LoRA from /models/sft-base (a frozen-vision SFT'd anchor). The language model
+# had drifted away from the original co-aligned SigLIP features. Adding vision
+# LoRA on top forced the towers to fight, hurting eval accuracy.
+#
+# This run: start from bare unsloth/gemma-4-E4B-it (vision+language still
+# co-aligned from Google's pretrain). Train both towers' LoRA jointly on a
+# 100% multi-turn corpus (distilled + synth) so the vision tower sees diverse
+# atlas tiles per row. LR dropped 5e-5 -> 1e-5 for safety on small corpus +
+# bare-base + vision-on (three risk factors stacked).
+#
+# Run lineage: out/iSFT/overnight_20260513-042130/
+
+[sft]
+base_model = "unsloth/gemma-4-E4B-it"
+load_in_4bit = true
+max_seq_length = 6144
+num_train_epochs = 1
+per_device_train_batch_size = 3
+gradient_accumulation_steps = 8
+learning_rate = 1e-5
+lr_scheduler_type = "cosine"
+warmup_ratio = 0.03
+weight_decay = 0.01
+# Same clip as last vision-on run; saved training at step 225 (3.27 -> 0.8).
+max_grad_norm = 0.8
+optim = "adamw_8bit"
+chat_template_kwargs = { enable_thinking = false }
+logging_steps = 5
+eval_strategy = "no"
+agent_eval_steps = 200
+save_strategy = "epoch"
+save_total_limit = 2
+report_to = "trackio"
+seed = 42
+dataloader_num_workers = 32
+dataloader_persistent_workers = true
+dataloader_pin_memory = false
+dataloader_prefetch_factor = 6
+
+[lora]
+# Match frozen-vision baseline rank (r=16) to isolate "vision LoRA" as the
+# variable. The prior vision-on used r=32 + use_rslora=true, which confounded
+# capacity with update-scale. use_rslora=false here means alpha/r = 32/16 = 2.0
+# scaling (matching frozen-vision's update magnitude per step).
+r = 16
+lora_alpha = 32
+use_rslora = false
+finetune_vision_layers = true
+finetune_language_layers = true
+finetune_attention_modules = true
+finetune_mlp_modules = true
+use_gradient_checkpointing = "unsloth"
+
+[data]
+holdout_fraction = 0.10
+include_rationale = false

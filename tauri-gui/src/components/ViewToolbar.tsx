@@ -4,7 +4,6 @@ import type { ViewMode } from "../lib/types";
 const modes: { key: ViewMode; label: string }[] = [
   { key: "3d", label: "3D" },
   { key: "split", label: "Split" },
-  { key: "overlay", label: "Overlay" },
 ];
 
 export function ViewToolbar() {

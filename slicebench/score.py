@@ -27,8 +27,9 @@ import argparse
 import json
 import statistics
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Iterable
 
@@ -93,6 +94,108 @@ def _total_tps(row: dict) -> float | None:
     if not total or not elapsed or float(elapsed) <= 0:
         return None
     return float(total) / float(elapsed)
+
+
+def _classify_error(err_str: str | None) -> str:
+    """Bucket a slicebench prediction error string for eval-health reporting."""
+    if not err_str:
+        return "ok"
+    s = err_str
+    if "Connection error" in s:
+        return "connection"
+    if "Context" in s or "context length" in s or "ContextWindowExceeded" in s:
+        return "context_window"
+    if "BadRequest" in s:
+        return "bad_request"
+    if "Timeout" in s.lower() or "timeout" in s.lower():
+        return "timeout"
+    if "RateLimit" in s or "429" in s:
+        return "rate_limit"
+    if "InternalServer" in s:
+        return "server_500"
+    return "other"
+
+
+def _eval_health(predictions: list[dict]) -> dict:
+    """Diagnose eval infrastructure issues that contaminate headline numbers.
+
+    Specifically detects vllm cold-start bursts: a cluster of connection errors
+    within ~30 seconds of run start, which slicebench will silently count as
+    100%-error rows (since predicted_mm is None) and inflate the mean.
+
+    Returns a dict with:
+      - n_total, n_failed, n_ok
+      - failures_by_type: counter of error categories
+      - cold_start_burst: detected? if yes, count + window_sec
+      - contamination_warning: human-readable flag if any concerning pattern
+    """
+    n_total = len(predictions)
+    failed = [r for r in predictions if r.get("predicted_mm") is None]
+    by_type = Counter(_classify_error(r.get("error")) for r in failed)
+
+    # Cold-start detection: count connection errors in the first 30 sec of the run.
+    cold_burst: dict = {"detected": False}
+    timestamps: list[datetime] = []
+    for r in predictions:
+        ts = r.get("ts")
+        if isinstance(ts, str):
+            try:
+                timestamps.append(datetime.fromisoformat(ts.replace("Z", "+00:00")))
+            except ValueError:
+                pass
+    if timestamps:
+        run_start = min(timestamps)
+        early_window_sec = 30.0
+        early_conn_errs = 0
+        for r in failed:
+            if _classify_error(r.get("error")) != "connection":
+                continue
+            ts = r.get("ts")
+            if not isinstance(ts, str):
+                continue
+            try:
+                t = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            if (t - run_start).total_seconds() <= early_window_sec:
+                early_conn_errs += 1
+        if early_conn_errs >= 5:
+            cold_burst = {
+                "detected": True,
+                "n_connection_errors_first_30s": early_conn_errs,
+                "advice": (
+                    "Pre-warm vllm before launching slicebench (5+ chat-completion "
+                    "pings). These rows count as 100% error and will inflate "
+                    "mean_err_pct. Consider rerunning."
+                ),
+            }
+
+    warnings = []
+    if cold_burst.get("detected"):
+        warnings.append(
+            f"COLD-START contamination: {cold_burst['n_connection_errors_first_30s']} "
+            f"connection errors in first 30 sec — likely vllm cold-start, NOT model behavior."
+        )
+    if by_type.get("connection", 0) > 0 and not cold_burst.get("detected"):
+        warnings.append(
+            f"{by_type['connection']} connection errors scattered through the run "
+            f"(not a cold-start cluster). May indicate flaky network / vllm instability."
+        )
+    if by_type.get("context_window", 0) >= 5:
+        warnings.append(
+            f"{by_type['context_window']} context-window failures — consider raising "
+            f"vllm --max-model-len. These are real failures (model couldn't read prompt) "
+            f"and the rows count as 100% error in headline mean."
+        )
+
+    return {
+        "n_total": n_total,
+        "n_failed": len(failed),
+        "n_ok": n_total - len(failed),
+        "failures_by_type": dict(by_type),
+        "cold_start_burst": cold_burst,
+        "contamination_warnings": warnings,
+    }
 
 
 def score_predictions(predictions: Iterable[dict]) -> list[dict]:
@@ -238,16 +341,19 @@ def summarize(scored: list[dict], *, n_coord_bins: int = 5) -> dict:
     by_coord_bin: dict[str, dict[str, list[dict]]] = defaultdict(lambda: defaultdict(list))
     by_brain: dict[str, list[dict]] = defaultdict(list)
     by_species: dict[str, list[dict]] = defaultdict(list)
+    by_species_plane: dict[str, list[dict]] = defaultdict(list)
     by_imaging: dict[str, list[dict]] = defaultdict(list)
     by_staining: dict[str, list[dict]] = defaultdict(list)
 
     for row in scored:
         plane = row["plane"]
+        species = row.get("species") or "unknown"
         by_plane[plane].append(row)
         bin_idx = _bin_index(float(row["truth_mm"]), float(row["plane_extent_mm"]), n_coord_bins)
         by_coord_bin[plane][_coord_bin_label(bin_idx)].append(row)
         by_brain[f"{plane}/{row['dataset']}/{row['subject_id']}"].append(row)
-        by_species[row.get("species") or "unknown"].append(row)
+        by_species[species].append(row)
+        by_species_plane[f"{species}/{plane}"].append(row)
         by_imaging[row.get("imaging") or "unknown"].append(row)
         by_staining[row.get("staining") or "unknown"].append(row)
 
@@ -276,6 +382,7 @@ def summarize(scored: list[dict], *, n_coord_bins: int = 5) -> dict:
         "per_coord_bin": coord_bin_summary,
         "per_brain": {k: _stat_block(rs) for k, rs in by_brain.items()},
         "per_species": {k: _stat_block(rs) for k, rs in by_species.items()},
+        "per_species_plane": {k: _stat_block(rs) for k, rs in by_species_plane.items()},
         "per_imaging": {k: _stat_block(rs) for k, rs in by_imaging.items()},
         "per_staining": {k: _stat_block(rs) for k, rs in by_staining.items()},
     }
@@ -328,6 +435,7 @@ def score_run(run_dir: Path) -> dict:
             fh.write(json.dumps(row) + "\n")
 
     summary = summarize(scored)
+    summary["eval_health"] = _eval_health(predictions)
     summary_path = run_dir / "summary.json"
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     return summary
@@ -335,6 +443,17 @@ def score_run(run_dir: Path) -> dict:
 
 def _print_table(summary: dict) -> None:
     """Pretty-print summary to stdout."""
+    health = summary.get("eval_health", {})
+    warnings = health.get("contamination_warnings", [])
+    if warnings:
+        print("\n!!! EVAL HEALTH WARNINGS !!!")
+        for w in warnings:
+            print(f"  ⚠  {w}")
+        bt = health.get("failures_by_type", {})
+        if bt:
+            print(f"  failures_by_type: {bt}")
+        print()
+
     o = summary["overall"]
     n_gens = summary.get("num_generations", 1)
     label = "all-samples (every (section, gen) pair)" if n_gens > 1 else "overall"
@@ -384,6 +503,10 @@ def _print_table(summary: dict) -> None:
     print("\n=== per_species ===")
     for k, s in sorted(summary["per_species"].items()):
         print(f"  {k:15s} n={s['n']:4d}  mean_err={s['mean_err_pct']:.2f}%  (mae_mm={s['mae_mm']:.4f})")
+
+    print("\n=== per_species_plane (cross-cut — use to compare same species×plane across models) ===")
+    for k, s in sorted(summary["per_species_plane"].items()):
+        print(f"  {k:22s} n={s['n']:4d}  mean_err={s['mean_err_pct']:.2f}%  (mae_mm={s['mae_mm']:.4f})")
 
     print("\n=== per_imaging ===")
     for k, s in sorted(summary["per_imaging"].items()):

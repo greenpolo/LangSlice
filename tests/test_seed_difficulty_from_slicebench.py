@@ -1,4 +1,4 @@
-"""Unit tests for ``tools/seed_difficulty_from_slicebench.py``.
+"""Unit tests for ``models/langslice-gemma-4/training/tools/seed_difficulty_from_slicebench.py``.
 
 Tests build a synthetic manifest tree under ``tmp_path`` (same pattern as
 ``tests/test_manifest_index.py``) and stub the atlas-extent lookup so the
@@ -40,12 +40,19 @@ from single_turn_rl.manifest_index import ManifestIndex
 # ---------------------------------------------------------------------------
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-TOOL_PATH = REPO_ROOT / "tools" / "seed_difficulty_from_slicebench.py"
+TOOL_PATH = (
+    REPO_ROOT
+    / "models"
+    / "langslice-gemma-4"
+    / "training"
+    / "tools"
+    / "seed_difficulty_from_slicebench.py"
+)
 
 
 def _load_tool_module() -> Any:
     """Import the tool by file path so the test doesn't depend on a package
-    layout for ``tools/``. Re-imports each call so per-test monkeypatches
+    layout for training tools. Re-imports each call so per-test monkeypatches
     of cached state stay scoped (the tool keeps a module-level extent
     cache that would otherwise leak across tests)."""
     spec = importlib.util.spec_from_file_location(
@@ -589,6 +596,53 @@ def test_per_coord_bin_uses_slicebench_bin_index_correctly(
 # ---------------------------------------------------------------------------
 
 
+def test_per_section_difficulty_clamped_to_unit_interval(
+    tool: Any, index: ManifestIndex, stub_extents: None,
+) -> None:
+    """A degenerate row with mae > extent must clamp to 1.0 rather than
+    push the curriculum sampler past its expected difficulty domain."""
+    summary = {
+        "per_section": {
+            "ds_a_s00": {
+                "plane": "coronal", "dataset": "ds_a",
+                "atlas": "allen_mouse_25um",
+                # Coronal extent = 10.0; mae > extent ⇒ raw ratio 1.5 > 1.0.
+                "mae_mm": 15.0,
+            },
+            "ds_a_s01": {
+                "plane": "coronal", "dataset": "ds_a",
+                "atlas": "allen_mouse_25um",
+                # Mid-range row sanity-checks the clamp didn't break the
+                # ordinary path.
+                "mae_mm": 2.0,
+            },
+        },
+    }
+    rows = tool.build_rows(summary, index, source_label="slicebench")
+    by_section = {r["section_id"]: r["difficulty_score"] for r in rows}
+    assert by_section["ds_a_s00"] == pytest.approx(1.0)
+    assert by_section["ds_a_s01"] == pytest.approx(0.2)
+
+
+def test_per_coord_bin_difficulty_clamped_to_unit_interval(
+    tool: Any, index: ManifestIndex, stub_extents: None,
+) -> None:
+    """Same clamp must apply to the per_coord_bin expansion path."""
+    summary = {
+        "per_coord_bin": {
+            "coronal": {
+                # bin_mae > extent (10.0) ⇒ raw ratio 1.2 > 1.0; must clamp.
+                "q1": {"mae_mm": 12.0},
+            },
+        },
+    }
+    rows = tool.build_rows(summary, index, source_label="slicebench")
+    # Every emitted row falls in q1 (positions 0.0 + 1.5) on coronal.
+    assert rows
+    for r in rows:
+        assert r["difficulty_score"] == pytest.approx(1.0)
+
+
 def test_per_section_invalid_entries_are_counted_as_invalid(
     tool: Any,
     index: ManifestIndex,
@@ -631,7 +685,7 @@ def test_per_section_invalid_entries_are_counted_as_invalid(
 
 
 def test_cli_help_smoke() -> None:
-    """``python tools/seed_difficulty_from_slicebench.py --help`` exits 0
+    """The seed-difficulty tool's ``--help`` exits 0
     with a usage line — covers the argparse plumbing without exercising the
     rest of the pipeline."""
     proc = subprocess.run(

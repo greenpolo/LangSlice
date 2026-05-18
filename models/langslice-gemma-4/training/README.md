@@ -28,16 +28,27 @@ should resume from. Don't overwrite it.
 models/langslice-gemma-4/training/
 ├── sft/              # Foundational SFT trainer (working). README in there.
 ├── rlvr/             # GRPO RLVR trainer (PARKED — see rlvr/README.md).
-├── curriculum/       # Dynamic difficulty sampler (DORMANT, flag-gated off).
-├── embeddings/       # Atlas SigLIP embedding cache (DORMANT, flag-gated off).
+├── adaptive/         # Shared adaptive primitives. Lifted in Phase 5–6 (2026-05-11).
+│   ├── schedule.py     # AdaptiveSchedule (stateless quantile schedule)
+│   └── curriculum/     # Coordinate-bin sampler (LIVE, flag-gated)
+├── curriculum/       # Lazy shim — re-exports from adaptive.curriculum.
+├── embeddings/       # Atlas + query SigLIP caches with splice (LIVE, flag-gated).
+├── iSFT/             # Expert-iteration SFT driver (active pivot, see README).
+│                       Phases 1–6 + post-review fixes landed 2026-05-11.
+├── langslice_traces/ # Trace primitives + render factory (synthetic + real).
+├── langslice_rlvr/   # PARKED — multi-turn TRL env factory, superseded by single_turn_rl.
+├── single_turn_rl/   # Single-turn GRPO trainer (active).
 ├── configs/          # TOML configs for SFT/GRPO runs.
 └── unsloth_compiled_cache/   # Unsloth's compiled Triton kernels (do not edit).
 
-tools/expert_iteration/   # Expert-iteration SFT driver (active pivot, see README).
 slicebench/              # Eval tool (working). per-bin breakdowns + tok/s metrics.
 ```
 
-Each subdirectory has its own README explaining its scope and current status.
+Each subdirectory has its own README explaining its scope and current
+status. The iSFT speed upgrade (2026-05-11) restructured the tree from
+`tools/expert_iteration/` + `src/langslice_{traces,rlvr}/` into the layout
+above; see [`iSFT/README.md`](iSFT/README.md) for the phase-by-phase
+change log.
 
 ## Training journey (the short version)
 
@@ -49,7 +60,7 @@ Each subdirectory has its own README explaining its scope and current status.
 3. **Pivot: Expert-iteration SFT (rejection-sampling)** — generate N rollouts
    per prompt with current best model, keep the best ones, retrain on those,
    repeat. This is where active work is happening. See
-   [`tools/expert_iteration/README.md`](../../../tools/expert_iteration/README.md).
+   [`iSFT/README.md`](iSFT/README.md).
 4. First expert-iteration smoke (option C: fresh-LoRA on small corpus)
    regressed the model to MAE 15mm. Diagnosed: fresh LoRA + 180 slices ×
    63 steps = under-trained adapter. **Option D fix shipped**:
@@ -60,7 +71,7 @@ Each subdirectory has its own README explaining its scope and current status.
 ## How to run the active pipeline (expert iteration)
 
 ```powershell
-python -m tools.expert_iteration.iterate `
+python -m iSFT.iterate `
   --base-checkpoint out/sft/docker-sft-1011-merged-bf16 `
   --base-corpus models/langslice-gemma-4/data/sft_examples.jsonl `
   --iterative-corpus-dir out/iterative_sft `
@@ -77,7 +88,7 @@ python -m tools.expert_iteration.iterate `
   --eval-bench small --eval-num-generations 1
 ```
 
-Full flag reference in `tools/expert_iteration/README.md`.
+Full flag reference in `iSFT/README.md`.
 
 ## Eval baseline (slicebench tiny num_gens=4 temp=0.9)
 

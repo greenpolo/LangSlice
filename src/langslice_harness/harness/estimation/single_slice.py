@@ -23,6 +23,25 @@ def _is_native_gemini_string(model: str | object) -> bool:
     return lowered.startswith("gemini-") or lowered.startswith("models/gemini-")
 
 
+def _wants_thinking_prefix(model: str | object) -> bool:
+    """Return True for langslice-ft adapters trained with thinking_signature mode.
+
+    The thinking-signature SFT corpus rewrites every system prompt to
+    ``f"<|think|>{prompt}"`` (see ``models/langslice-gemma-4/training/sft/
+    render.py``); the model learned to emit a concise ``<|channel>thought
+    \\n…<channel|>`` block per turn ONLY when it sees that literal token
+    early in its context. Without it, the model goes off-distribution into
+    verbose freeform reasoning and overflows the 8192 context window before
+    submitting (observed: 39% session-failure rate on slicebench tiny).
+    The chat template's ``enable_thinking`` Jinja branch is unrelated —
+    it's a separate template variable that the renderer never set.
+    """
+    if not isinstance(model, str):
+        return False
+    lowered = model.strip().lower()
+    return "langslice-ft" in lowered
+
+
 def build_single_slice_agent(
     *,
     atlas_name: str,
@@ -50,14 +69,24 @@ def build_single_slice_agent(
             retry_options=types.HttpRetryOptions(initial_delay=1, attempts=5)
         )
 
+    instruction = build_single_slice_prompt(
+        atlas_name=atlas_name, plane=plane,
+        pos_lo=pos_lo, pos_hi=pos_hi, species=species,
+    )
+    if _wants_thinking_prefix(model):
+        instruction = f"<|think|>{instruction}"
+
     return LlmAgent(
         model=model,  # type: ignore[arg-type]
         name="single_slice_position_estimator",
-        instruction=build_single_slice_prompt(
-            atlas_name=atlas_name, plane=plane,
-            pos_lo=pos_lo, pos_hi=pos_hi, species=species,
-        ),
+        instruction=instruction,
         tools=[fetch_atlas, submit_estimate],
         generate_content_config=types.GenerateContentConfig(**config_kwargs),
-        before_tool_callback=gate_submit_tool,
+        # gate_submit_tool intentionally NOT wired here for the langslice-ft
+        # (Gemma 4) model. The training corpus (round_2_corpus_capped8.jsonl)
+        # is ~52% direct-submit traces with zero fetch_atlas calls, so a small
+        # model trained on it has learned to submit immediately when confident.
+        # The broad+narrow sweep gate is a Gemini-shaped optimization that
+        # kneecaps a model trained without it (rejected submits inflate context
+        # until 8192 overflow). Re-enable only when serving Gemini, not Gemma-ft.
     )

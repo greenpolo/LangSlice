@@ -35,6 +35,8 @@ class Example:
     trace: list[dict[str, Any]]        # langslice-native trace; see spec section 6.1
     gemini_reasoning: str | None = None  # ignored by trainer in v1
     dataset_root: Path | None = field(default=None, compare=False)
+    section_id: str | None = None      # optional; present when row came from RLVR allocation
+    thinking_mode: bool = False
 
 
 _REQUIRED_FIELDS = (
@@ -45,8 +47,19 @@ _VALID_KIND = "single_slice"
 _SUBMIT_NAME = "submit_estimate"
 
 
-def load_examples(jsonl_path: str | Path) -> list[Example]:
-    """Load and validate every row in *jsonl_path*. Raise on the first defect."""
+def load_examples(
+    jsonl_path: str | Path, *, validate_image_paths: bool = True,
+) -> list[Example]:
+    """Load and validate every row in *jsonl_path*. Raise on the first defect.
+
+    ``validate_image_paths=False`` skips the per-row fs.stat() of every
+    query_image_path and trace[i].tool_result.image_paths entry. Use this
+    only when the corpus has been pre-validated upstream (e.g. by
+    ``models/langslice-gemma-4/training/tools/snap_corpus_atlas_paths.py``, which validates atlas + query
+    paths and snaps off-grid atlas positions). Saves ~30 min of
+    NTFS-via-Docker p9 RPC overhead at 65k+ rows on Windows hosts. Schema
+    validation still runs regardless.
+    """
     path = Path(jsonl_path)
     root = path.parent
     examples: list[Example] = []
@@ -59,7 +72,7 @@ def load_examples(jsonl_path: str | Path) -> list[Example]:
                 row = json.loads(line)
             except json.JSONDecodeError as e:
                 raise DatasetValidationError(f"line {lineno}: invalid JSON ({e.msg})") from e
-            _validate_row(row, lineno, root)
+            _validate_row(row, lineno, root, validate_image_paths=validate_image_paths)
             ex = Example(
                 bucket=row["bucket"],
                 atlas_name=row["atlas_name"],
@@ -72,6 +85,8 @@ def load_examples(jsonl_path: str | Path) -> list[Example]:
                 trace=list(row["trace"]),
                 gemini_reasoning=row.get("gemini_reasoning"),
                 dataset_root=root,
+                section_id=row.get("section_id") or None,
+                thinking_mode=_row_thinking_mode(row),
             )
             examples.append(ex)
     if not examples:
@@ -79,7 +94,10 @@ def load_examples(jsonl_path: str | Path) -> list[Example]:
     return examples
 
 
-def _validate_row(row: dict[str, Any], lineno: int, root: Path) -> None:
+def _validate_row(
+    row: dict[str, Any], lineno: int, root: Path,
+    *, validate_image_paths: bool = True,
+) -> None:
     for required in _REQUIRED_FIELDS:
         if required not in row:
             raise DatasetValidationError(f"line {lineno}: missing required field '{required}'")
@@ -108,29 +126,86 @@ def _validate_row(row: dict[str, Any], lineno: int, root: Path) -> None:
     trace = row["trace"]
     if not isinstance(trace, list) or not trace:
         raise DatasetValidationError(f"line {lineno}: trace must be non-empty list")
+    if "thinking_mode" in row and not isinstance(row["thinking_mode"], bool):
+        raise DatasetValidationError(f"line {lineno}: thinking_mode must be boolean when present")
     last = trace[-1]
-    if "submit" not in last:
-        raise DatasetValidationError(f"line {lineno}: trace must end with a submit step")
-    submit = last["submit"]
-    submit_name = submit.get("name")
-    if submit_name != _SUBMIT_NAME:
+    row_is_thinking = _row_thinking_mode(row)
+    if "submit" in last and "tool_call" in last:
         raise DatasetValidationError(
-            f"line {lineno}: submit.name must be {_SUBMIT_NAME!r} for v1 "
-            f"(got {submit_name!r})"
+            f"line {lineno}: terminal trace step must be either submit or tool_call, not both"
         )
-    args = submit.get("args", {})
-    if not isinstance(args.get("position_mm"), (int, float)):
-        raise DatasetValidationError(f"line {lineno}: submit.args.position_mm must be numeric")
-    if not isinstance(args.get("reasoning"), str) or not args["reasoning"].strip():
+    if row_is_thinking and "thinking" not in last:
         raise DatasetValidationError(
-            f"line {lineno}: submit.args.reasoning must be non-empty string"
+            f"line {lineno}: thinking-mode rows require terminal thinking text"
+        )
+    if "thinking" in last:
+        if not isinstance(last["thinking"], str) or not last["thinking"].strip():
+            raise DatasetValidationError(
+                f"line {lineno}: terminal thinking must be non-empty string when present"
+            )
+    if "submit" in last:
+        submit = last["submit"]
+        submit_name = submit.get("name")
+        if submit_name != _SUBMIT_NAME:
+            raise DatasetValidationError(
+                f"line {lineno}: submit.name must be {_SUBMIT_NAME!r} for v1 "
+                f"(got {submit_name!r})"
+            )
+        args = submit.get("args", {})
+        if not isinstance(args.get("position_mm"), (int, float)):
+            raise DatasetValidationError(f"line {lineno}: submit.args.position_mm must be numeric")
+        reasoning = args.get("reasoning")
+        if reasoning is not None and (not isinstance(reasoning, str) or not reasoning.strip()):
+            raise DatasetValidationError(
+                f"line {lineno}: submit.args.reasoning must be non-empty string when present"
+            )
+    elif "tool_call" in last:
+        if not row_is_thinking:
+            raise DatasetValidationError(
+                f"line {lineno}: terminal tool_call requires thinking-mode terminal thinking"
+            )
+        if "tool_result" in last:
+            raise DatasetValidationError(
+                f"line {lineno}: terminal tool_call step must not include tool_result"
+            )
+        terminal_call = last["tool_call"]
+        if not isinstance(terminal_call, dict):
+            raise DatasetValidationError(f"line {lineno}: terminal tool_call must be an object")
+        name = terminal_call.get("name")
+        if not isinstance(name, str) or not name:
+            raise DatasetValidationError(
+                f"line {lineno}: terminal tool_call.name must be non-empty string"
+            )
+        args = terminal_call.get("args")
+        if not isinstance(args, dict):
+            raise DatasetValidationError(
+                f"line {lineno}: terminal tool_call.args must be an object"
+            )
+    else:
+        raise DatasetValidationError(
+            f"line {lineno}: trace must end with terminal submit or terminal tool_call"
         )
     for i, step in enumerate(trace[:-1]):
         if "tool_call" not in step or "tool_result" not in step:
             raise DatasetValidationError(
                 f"line {lineno}: trace[{i}] must have both tool_call and tool_result"
             )
-    _validate_image_paths(row, lineno, root)
+    if validate_image_paths:
+        _validate_image_paths(row, lineno, root)
+
+
+def _row_thinking_mode(row: dict[str, Any]) -> bool:
+    explicit = row.get("thinking_mode")
+    if isinstance(explicit, bool):
+        return explicit
+    trace = row.get("trace")
+    if not isinstance(trace, list) or not trace:
+        return False
+    terminal = trace[-1]
+    if not isinstance(terminal, dict):
+        return False
+    thinking = terminal.get("thinking")
+    return isinstance(thinking, str) and bool(thinking.strip())
 
 
 def _validate_image_paths(row: dict[str, Any], lineno: int, root: Path) -> None:
@@ -153,8 +228,33 @@ def _require_existing_image(root: Path, rel: Any, lineno: int, field_name: str) 
             f"line {lineno}: {field_name} entries must be non-empty strings"
         )
     path = (root / rel).resolve()
-    if not path.is_file():
-        raise DatasetValidationError(f"line {lineno}: {field_name} image not found: {path}")
+    if path.is_file():
+        return
+    # Fallback: repo-root resolution. The path_rewriter emits canonical
+    # `data/datasets/<plane>/<dataset>/...` for query images that live under
+    # the langslice-data-fast volume; those paths don't resolve relative to
+    # the JSONL's parent dir, but they DO resolve relative to the repo root
+    # (which is also the container's /workspace/LangSlice root). Walking up
+    # to find pyproject.toml is cheap and keeps the resolution self-contained
+    # — callers don't need to thread a repo_root parameter through.
+    repo_root = _find_repo_root(root)
+    if repo_root is not None:
+        alt = (repo_root / rel).resolve()
+        if alt.is_file():
+            return
+    raise DatasetValidationError(f"line {lineno}: {field_name} image not found: {path}")
+
+
+def _find_repo_root(start: Path) -> Path | None:
+    """Walk up from *start* looking for pyproject.toml. Returns None on miss.
+
+    Used by _require_existing_image to resolve canonical repo-relative paths
+    (e.g. `data/datasets/...`) emitted by the iSFT path_rewriter.
+    """
+    for cand in (start, *start.parents):
+        if (cand / "pyproject.toml").is_file():
+            return cand
+    return None
 
 
 def split_subject_aware(

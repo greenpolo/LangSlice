@@ -7,18 +7,22 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+import cv2
 import numpy as np
 from PIL import Image
 
 from langslice_harness.agent_trace import image_part_from_pil, json_part, runtime_event
 from langslice_harness.atlas import get_reference_slice, load_atlas
+from langslice_harness.atlas.space import Plane
 from langslice_harness.harness.registration.image_gen_helpers import (
     _SEGMENTATION_PROMPT,
+    _build_atlas_root_mask,
     _classify_pixels_to_region_ids,
     _extract_borders_from_classified,
     _extract_visualign_markers,
     _generate_colored_region_slice,
     _register_colored_images,
+    _run_inverse_warp_for_slice,
     _upscale_to_min_long_edge,
     _warp_atlas_rgb,
 )
@@ -59,6 +63,7 @@ def _segmentation_prompt(prompt_revision: str | None) -> str:
 
 
 def _overlay_borders(base_image: Image.Image, borders: np.ndarray) -> Image.Image:
+    """Draw atlas-region borders in cyan over a base image."""
     overlay = base_image.convert("RGB").copy()
     overlay_rgb = np.asarray(overlay, dtype=np.uint8).copy()
     border_mask = np.asarray(borders) > 0
@@ -75,14 +80,38 @@ def _save_debug_artifacts(
     input_colored_regions: Image.Image,
     input_reference: Image.Image,
     input_slice: Image.Image,
-) -> None:
+    generated_border_overlay: Image.Image | None = None,
+    slice_warped_to_atlas: Image.Image | None = None,
+    slice_atlas_border_overlay: Image.Image | None = None,
+) -> dict[str, str]:
+    """Persist registration artifacts to disk and return absolute paths."""
     artifact_dir.mkdir(parents=True, exist_ok=True)
-    generated_segmentation.convert("RGB").save(artifact_dir / "generated_segmentation.png")
-    warped_atlas.convert("RGB").save(artifact_dir / "warped_atlas.png")
-    warped_border_overlay.convert("RGB").save(artifact_dir / "warped_border_overlay.png")
-    input_colored_regions.convert("RGB").save(artifact_dir / "input_colored_regions.png")
-    input_reference.convert("RGB").save(artifact_dir / "input_reference.png")
-    input_slice.convert("RGB").save(artifact_dir / "input_slice.png")
+    paths: dict[str, str] = {}
+
+    def _save(name: str, image: Image.Image) -> None:
+        out_path = artifact_dir / name
+        # Preserve alpha for RGBA inputs so the atlas-space slice texture keeps
+        # its root-mask silhouette. Everything else gets flattened to RGB for
+        # consistent on-disk format across forward-pipeline artifacts.
+        if image.mode == "RGBA":
+            image.save(out_path)
+        else:
+            image.convert("RGB").save(out_path)
+        paths[name] = str(out_path.resolve())
+
+    _save("generated_segmentation.png", generated_segmentation)
+    _save("warped_atlas.png", warped_atlas)
+    _save("warped_border_overlay.png", warped_border_overlay)
+    _save("input_colored_regions.png", input_colored_regions)
+    _save("input_reference.png", input_reference)
+    _save("input_slice.png", input_slice)
+    if generated_border_overlay is not None:
+        _save("generated_border_overlay.png", generated_border_overlay)
+    if slice_warped_to_atlas is not None:
+        _save("slice_warped_to_atlas.png", slice_warped_to_atlas)
+    if slice_atlas_border_overlay is not None:
+        _save("slice_atlas_border_overlay.png", slice_atlas_border_overlay)
+    return paths
 
 
 def _emit_trace(
@@ -118,6 +147,7 @@ def generate_registration_candidate(
     *,
     atlas_name: str,
     position_mm: float,
+    plane: Plane = "coronal",
     provider: str = "google",
     image_model: str | None = None,
     prompt_revision: str | None = None,
@@ -140,10 +170,10 @@ def generate_registration_candidate(
     atlas = load_atlas(atlas_name)
 
     colored_regions = _upscale_to_min_long_edge(
-        _generate_colored_region_slice(atlas, position_mm, None)
+        _generate_colored_region_slice(atlas, position_mm, None, plane=plane)
     )
     reference_slice = _upscale_to_min_long_edge(
-        get_reference_slice(atlas, position_mm).convert("RGB")
+        get_reference_slice(atlas, position_mm, plane=plane).convert("RGB")
     )
     slice_image = _resize_if_needed(image, target_size)
 
@@ -153,6 +183,7 @@ def generate_registration_candidate(
         "candidate_id": candidate_id,
         "atlas_name": atlas_name,
         "position_mm": float(position_mm),
+        "plane": plane,
         "target_size": list(target_size),
         "original_size": [original_width, original_height],
     }
@@ -182,7 +213,9 @@ def generate_registration_candidate(
         resample=Image.Resampling.LANCZOS,
     )
     model_output_rgb = np.asarray(model_output, dtype=np.uint8)
-    atlas_colored_at_target = _generate_colored_region_slice(atlas, position_mm, target_size)
+    atlas_colored_at_target = _generate_colored_region_slice(
+        atlas, position_mm, target_size, plane=plane
+    )
     atlas_target_rgb = np.asarray(atlas_colored_at_target, dtype=np.uint8)
 
     if on_progress:
@@ -196,9 +229,60 @@ def generate_registration_candidate(
         on_progress("Image-gen registration: warping atlas and extracting borders...")
     warped_atlas_rgb = _warp_atlas_rgb(atlas_target_rgb, result_transform)
     warped_atlas_img = Image.fromarray(warped_atlas_rgb, mode="RGB")
-    warped_classified = _classify_pixels_to_region_ids(warped_atlas_rgb, atlas, position_mm)
+    warped_classified = _classify_pixels_to_region_ids(
+        warped_atlas_rgb, atlas, position_mm, plane=plane
+    )
     warped_borders = _extract_borders_from_classified(warped_classified)
     warped_border_overlay = _overlay_borders(slice_image, warped_borders)
+
+    # Generated borders: classify the raw image-gen RGB directly (no Elastix
+    # warp) so the GUI can show the model's region prediction overlaid on the
+    # slice without the deformation step intermediating. Useful for inspecting
+    # the model's output independent of Elastix accuracy.
+    generated_classified = _classify_pixels_to_region_ids(
+        model_output_rgb, atlas, position_mm, plane=plane
+    )
+    generated_borders = _extract_borders_from_classified(generated_classified)
+    generated_border_overlay = _overlay_borders(slice_image, generated_borders)
+
+    # Inverse warp: deform the histology slice into atlas space (slice -> atlas),
+    # then overlay atlas-space region borders so callers have a complementary
+    # view to the forward warped-atlas-on-slice overlay.
+    if on_progress:
+        on_progress("Image-gen registration: computing inverse warp (slice -> atlas)...")
+    slice_rgb_array = np.asarray(slice_image.convert("RGB"), dtype=np.uint8)
+    forward_fixed_gray = cv2.cvtColor(model_output_rgb, cv2.COLOR_RGB2GRAY)
+    try:
+        warped_slice_to_atlas_rgb, _inverse_transform = _run_inverse_warp_for_slice(
+            slice_rgb_array,
+            forward_fixed_gray=forward_fixed_gray,
+            forward_result_transform=result_transform,
+        )
+        # Mask the warped slice to the atlas root silhouette so the 3D viewer
+        # can render it as a brain-shaped sheet at the AP position instead of
+        # a rectangular slab. NEAREST resize keeps alpha binary (0 or 255).
+        root_mask = _build_atlas_root_mask(
+            atlas, position_mm, target_size, plane=plane
+        )
+        warped_slice_to_atlas_img: Image.Image | None = Image.fromarray(
+            np.dstack([warped_slice_to_atlas_rgb, root_mask]), mode="RGBA"
+        )
+        atlas_classified = _classify_pixels_to_region_ids(
+            atlas_target_rgb, atlas, position_mm, plane=plane
+        )
+        atlas_borders = _extract_borders_from_classified(atlas_classified)
+        # Border overlay stays RGB — it's consumed by the 2D Split/Overlay
+        # views, which composite against a solid panel background.
+        slice_atlas_border_overlay: Image.Image | None = _overlay_borders(
+            Image.fromarray(warped_slice_to_atlas_rgb, mode="RGB"), atlas_borders
+        )
+        inverse_warp_status: str = "ok"
+    except Exception as exc:
+        warped_slice_to_atlas_img = None
+        slice_atlas_border_overlay = None
+        inverse_warp_status = f"failed: {type(exc).__name__}: {exc}"
+        if on_progress:
+            on_progress(f"Image-gen registration: inverse warp skipped ({inverse_warp_status})")
 
     scale_to_slice = float(original_width) / float(target_size[0])
     markers = _extract_visualign_markers(
@@ -221,6 +305,8 @@ def generate_registration_candidate(
         "candidate_id": candidate_id,
         "atlas_name": atlas_name,
         "position_mm": float(position_mm),
+        "plane": plane,
+        "inverse_warp_status": inverse_warp_status,
     }
     if previous_candidate_id is not None:
         session_metadata["previous_candidate_id"] = previous_candidate_id
@@ -238,8 +324,10 @@ def generate_registration_candidate(
         "candidate_id": candidate_id,
         "atlas_name": atlas_name,
         "position_mm": float(position_mm),
+        "plane": plane,
         "target_size": list(target_size),
         "original_size": [original_width, original_height],
+        "inverse_warp_status": inverse_warp_status,
         "generated": {
             "provider": generated.provider,
             "model": generated.model,
@@ -253,8 +341,9 @@ def generate_registration_candidate(
     if prompt_revision is not None:
         candidate_metadata["prompt_revision"] = prompt_revision
 
+    saved_artifact_paths: dict[str, str] = {}
     if debug_dir is not None:
-        _save_debug_artifacts(
+        saved_artifact_paths = _save_debug_artifacts(
             Path(debug_dir) / "registration" / candidate_id,
             generated_segmentation=generated.image,
             warped_atlas=warped_atlas_img,
@@ -262,7 +351,37 @@ def generate_registration_candidate(
             input_colored_regions=colored_regions,
             input_reference=reference_slice,
             input_slice=slice_image,
+            generated_border_overlay=generated_border_overlay,
+            slice_warped_to_atlas=warped_slice_to_atlas_img,
+            slice_atlas_border_overlay=slice_atlas_border_overlay,
         )
+
+    # Surface artifact paths in metadata so the register CLI can return them in
+    # its JSON payload (forward + inverse pair).
+    artifact_paths: dict[str, str | None] = {
+        "warped_atlas_path": saved_artifact_paths.get("warped_atlas.png"),
+        "warped_border_overlay_path": saved_artifact_paths.get("warped_border_overlay.png"),
+        "generated_segmentation_path": saved_artifact_paths.get(
+            "generated_segmentation.png"
+        ),
+        "generated_border_overlay_path": saved_artifact_paths.get(
+            "generated_border_overlay.png"
+        ),
+        "slice_warped_to_atlas_path": saved_artifact_paths.get(
+            "slice_warped_to_atlas.png"
+        ),
+        "slice_atlas_border_overlay_path": saved_artifact_paths.get(
+            "slice_atlas_border_overlay.png"
+        ),
+    }
+    session_metadata["artifact_paths"] = dict(artifact_paths)
+    for key, value in artifact_paths.items():
+        if value is not None:
+            session_metadata[key] = value
+    candidate_metadata["artifact_paths"] = dict(artifact_paths)
+    for key, value in artifact_paths.items():
+        if value is not None:
+            candidate_metadata[key] = value
 
     trace_metadata = {
         **session_metadata,

@@ -1,0 +1,60 @@
+# Phase 2 — coronal-only TOOLS-ONLY continuation of 2026-05-14 finding
+# that thinking_signature was the regression source (confirmed by ckpt75
+# delta vs the 2.51 mm splice-on c8 baseline).
+#
+# Dataset: combined_corpus_snapped_coronal_toolsonly.jsonl
+#   - 23,721 rows after dropping terminal-tool_call traces (those required
+#     thinking-mode terminal thinking text; can't survive strip)
+#   - 16,345 rows after the 4096-token-budget filter (15,128 train / 1,217 eval)
+#
+# Run plan: 1000 steps, checkpoint every 50. Manual slicebench eval after
+# each ckpt to find sweet spot. 1000 × 24 = 24k row-views ≈ 1.6 epochs over
+# the 15k train rows, ~5 hours wall-clock at ~18 sec/step.
+#
+# Inherits the proven shape from nosplice_mathsdp_r256_20260514 +
+# sft_coronal_toolsonly_ckpt75: r=256 α=8 rsLoRA, PDBS=2 GA=12,
+# max_seq=4096, no embedding caches, math_sdp on (default now in train_sft.py).
+
+[sft]
+base_model = "unsloth/gemma-4-E4B-it"
+load_in_4bit = true
+max_seq_length = 4096
+num_train_epochs = 1
+max_steps = 1000
+per_device_train_batch_size = 2
+gradient_accumulation_steps = 12
+per_device_eval_batch_size = 2
+learning_rate = 2e-4
+lr_scheduler_type = "cosine"
+warmup_ratio = 0.03
+weight_decay = 0.01
+max_grad_norm = 0.8
+optim = "adamw_8bit"
+chat_template_kwargs = { enable_thinking = false }
+logging_steps = 5
+eval_strategy = "no"
+prediction_loss_only = true
+agent_eval_steps = 99999
+save_strategy = "steps"
+save_steps = 50
+save_total_limit = 25
+report_to = "none"
+seed = 42
+dataloader_num_workers = 32
+dataloader_persistent_workers = true
+dataloader_pin_memory = true
+dataloader_prefetch_factor = 6
+
+[lora]
+r = 256
+lora_alpha = 8
+use_rslora = true
+finetune_vision_layers = false
+finetune_language_layers = true
+finetune_attention_modules = true
+finetune_mlp_modules = true
+use_gradient_checkpointing = "unsloth"
+
+[data]
+holdout_fraction = 0.10
+include_rationale = false

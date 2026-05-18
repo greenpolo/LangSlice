@@ -17,8 +17,6 @@ from __future__ import annotations
 
 import inspect
 import json
-import subprocess
-import sys
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -513,18 +511,10 @@ def test_grpo_default_config_has_stop_tool_names() -> None:
         assert "max_prompt_length" not in cfg["grpo"], name
 
 
-def test_repo_root_launch_module_shows_help() -> None:
-    """Canonical repo-root launch must not rely on pytest pythonpath."""
-    repo = Path(__file__).resolve().parents[1]
-    result = subprocess.run(
-        [sys.executable, "-m", "langslice_rlvr", "--help"],
-        cwd=repo,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    assert result.returncode == 0, result.stderr
-    assert "--resume-from-adapter" in result.stdout
+# Removed test_repo_root_launch_module_shows_help: the langslice_rlvr launch
+# shim was decommissioned 2026-05-11 along with the iSFT restructure. RLVR is
+# parked; if un-parked, launch via `PYTHONPATH=models/langslice-gemma-4/training
+# python -m rlvr.train_grpo`.
 
 
 # --- adapter resume smoke test (P2(g) + P4) --------------------------------

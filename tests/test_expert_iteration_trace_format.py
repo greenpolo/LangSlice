@@ -1,4 +1,4 @@
-"""Unit tests for tools.expert_iteration.trace_format.
+"""Unit tests for iSFT.trace_format.
 
 Uses a small mocked ADK event log fixture and on-disk dummy atlas image
 artifacts; does NOT require the model or live atlas data. We do touch
@@ -18,6 +18,7 @@ from PIL import Image
 _REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_REPO))
 sys.path.insert(0, str(_REPO / "src"))
+sys.path.insert(0, str(_REPO / "models" / "langslice-gemma-4" / "training"))
 
 
 def _write_dummy_image(path: Path) -> None:
@@ -92,7 +93,7 @@ def _build_minimal_events(run_dir: Path) -> list[dict]:
 # ──────────────────────────────────────────────────────────────────────────
 
 def test_convert_trace_returns_alternating_steps_with_submit(tmp_path: Path) -> None:
-    from tools.expert_iteration.trace_format import convert_trace
+    from iSFT.trace_format import convert_trace
 
     run_dir = tmp_path / "rollout_xyz"
     run_dir.mkdir()
@@ -121,7 +122,7 @@ def test_convert_trace_returns_alternating_steps_with_submit(tmp_path: Path) -> 
 
 
 def test_convert_trace_returns_none_when_no_submit(tmp_path: Path) -> None:
-    from tools.expert_iteration.trace_format import convert_trace
+    from iSFT.trace_format import convert_trace
 
     run_dir = tmp_path / "rollout_xyz"
     run_dir.mkdir()
@@ -141,7 +142,7 @@ def test_convert_trace_returns_none_when_no_submit(tmp_path: Path) -> None:
 
 
 def test_convert_trace_stages_atlas_images_under_out_dir(tmp_path: Path) -> None:
-    from tools.expert_iteration.trace_format import convert_trace
+    from iSFT.trace_format import convert_trace
 
     run_dir = tmp_path / "rollout_xyz"
     run_dir.mkdir()
@@ -170,7 +171,7 @@ def test_convert_trace_stages_atlas_images_under_out_dir(tmp_path: Path) -> None
 # ──────────────────────────────────────────────────────────────────────────
 
 def test_trim_trace_caps_fetch_calls(tmp_path: Path) -> None:
-    from tools.expert_iteration.trace_format import trim_trace
+    from iSFT.trace_format import trim_trace
 
     # Five fetch turns + one submit; positions_mm progressively closer to 5.0.
     trace = []
@@ -198,7 +199,7 @@ def test_trim_trace_caps_fetch_calls(tmp_path: Path) -> None:
 
 
 def test_classify_quality_marks_in_tolerance() -> None:
-    from tools.expert_iteration.trace_format import classify_quality
+    from iSFT.trace_format import classify_quality
 
     quality = classify_quality(
         model="litellm-proxy:langslice-ft",
@@ -219,7 +220,7 @@ def test_classify_quality_marks_in_tolerance() -> None:
 # ──────────────────────────────────────────────────────────────────────────
 
 def test_build_row_produces_validated_row(tmp_path: Path) -> None:
-    from tools.expert_iteration.trace_format import build_row
+    from iSFT.trace_format import build_row
     sys.path.insert(0, str(_REPO / "models" / "langslice-gemma-4" / "training"))
     from sft.dataset import _validate_row  # type: ignore[import-not-found]
 
@@ -268,7 +269,7 @@ def test_build_row_produces_validated_row(tmp_path: Path) -> None:
 
 
 def test_build_row_returns_none_for_traceless_events(tmp_path: Path) -> None:
-    from tools.expert_iteration.trace_format import build_row
+    from iSFT.trace_format import build_row
 
     run_dir = tmp_path / "rollout_xyz"
     run_dir.mkdir()

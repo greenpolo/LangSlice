@@ -1,4 +1,4 @@
-import type { Brain } from "../lib/types";
+import type { Brain, Plane } from "../lib/types";
 import { useAppStore } from "../stores/appStore";
 import { SliceAxis } from "./SliceAxis";
 
@@ -14,11 +14,18 @@ const statusLabels = {
   complete: "Complete",
 } as const;
 
+const planeOptions: { key: Plane; label: string }[] = [
+  { key: "coronal", label: "Coronal" },
+  { key: "sagittal", label: "Sagittal" },
+  { key: "horizontal", label: "Horizontal" },
+];
+
 export function BrainCard({ brain }: { brain: Brain }) {
   const navigateToBrain = useAppStore((s) => s.navigateToBrain);
   const removeBrain = useAppStore((s) => s.removeBrain);
   const loadBrainImages = useAppStore((s) => s.loadBrainImages);
   const setHoveredBrain = useAppStore((s) => s.setHoveredBrain);
+  const setBrainPlane = useAppStore((s) => s.setBrainPlane);
   const atlasInfo = useAppStore((s) => s.atlasInfo);
 
   const hasImages = brain.slices.length > 0;
@@ -63,6 +70,29 @@ export function BrainCard({ brain }: { brain: Brain }) {
             ? `${brain.slices.length} section${brain.slices.length !== 1 ? "s" : ""}`
             : "No sections loaded"
           }
+        </div>
+
+        <div
+          className="brain-plate-plane"
+          onClick={(e) => e.stopPropagation()}
+          role="group"
+          aria-label={`Slicing plane for brain ${brain.name}`}
+        >
+          {planeOptions.map(({ key, label }) => (
+            <button
+              key={key}
+              type="button"
+              className={`brain-plate-plane-btn ${brain.plane === key ? "active" : ""}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                setBrainPlane(brain.id, key);
+              }}
+              aria-pressed={brain.plane === key}
+              title={`Set slicing plane to ${label}`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
 
         {hasImages && atlasInfo && (

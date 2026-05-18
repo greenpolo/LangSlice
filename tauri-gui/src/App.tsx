@@ -5,7 +5,8 @@ import { AgentPanel } from "./components/AgentPanel";
 import { ViewToolbar } from "./components/ViewToolbar";
 import { Scene3D } from "./components/Scene3D";
 import { SplitView } from "./components/SplitView";
-import { OverlayView } from "./components/OverlayView";
+import { AtlasLoadingOverlay } from "./components/AtlasLoadingOverlay";
+import { ChatDrawer } from "./components/ChatDrawer";
 import { useAppStore } from "./stores/appStore";
 
 function MainView() {
@@ -16,8 +17,6 @@ function MainView() {
       return <Scene3D />;
     case "split":
       return <SplitView />;
-    case "overlay":
-      return <OverlayView />;
   }
 }
 
@@ -45,6 +44,8 @@ function App() {
       ) : (
         <BrainDetailView />
       )}
+      <AtlasLoadingOverlay />
+      <ChatDrawer />
     </div>
   );
 }

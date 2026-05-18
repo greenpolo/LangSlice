@@ -131,8 +131,8 @@ body {
 }
 
 .header-logo {
-  width: 28px;
   height: 28px;
+  width: auto;
   object-fit: contain;
 }
 
@@ -243,6 +243,30 @@ body {
   box-shadow: none;
 }
 
+.btn-secondary {
+  width: 100%;
+  padding: 8px 16px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--text-primary);
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-secondary:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.btn-secondary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 /* ── Info rows ───────────────────────── */
 
 .info-grid {
@@ -312,6 +336,87 @@ body {
   color: var(--text-dim);
   margin-left: 4px;
   font-weight: 400;
+}
+
+.ap-lock-pill {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  background: transparent;
+}
+
+.ap-lock-pill--locked {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+  background: rgba(45, 212, 191, 0.08);
+}
+
+/* Quick-affine preview status line. Sits directly under the Lock Position
+ * button so the affordance is colocated with the action that triggered it. */
+.quick-affine-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.3px;
+  padding: 5px 8px;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+}
+.quick-affine-status--running {
+  color: var(--warning);
+  background: rgba(251, 191, 36, 0.06);
+  border-color: rgba(251, 191, 36, 0.25);
+}
+.quick-affine-status--ready {
+  color: var(--accent);
+  background: var(--accent-dim);
+  border-color: var(--accent-border);
+}
+.quick-affine-status--error {
+  color: var(--error);
+  background: rgba(248, 113, 113, 0.06);
+  border-color: rgba(248, 113, 113, 0.25);
+}
+.quick-affine-spinner {
+  display: inline-block;
+  animation: quick-affine-spin 1.5s linear infinite;
+}
+@keyframes quick-affine-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* Lock-position toggle. Unlocked = subdued/secondary; locked = filled accent
+ * so it visibly mirrors the "Run Registration" affordance below. */
+.ap-lock-btn:not(:disabled) {
+  background: var(--bg-surface);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  box-shadow: none;
+}
+
+.ap-lock-btn:not(:disabled):hover {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+  background: rgba(45, 212, 191, 0.06);
+  box-shadow: none;
+}
+
+.ap-lock-btn--locked:not(:disabled),
+.ap-lock-btn--locked:not(:disabled):hover {
+  background: var(--accent);
+  color: var(--bg-deep);
+  border-color: var(--accent);
+  box-shadow: 0 0 16px var(--accent-dim);
 }
 
 /* ── View Toggle ─────────────────────── */
@@ -473,6 +578,26 @@ body {
   background: var(--accent-dim);
 }
 
+.header-tab-btn {
+  padding: 5px 14px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.header-tab-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent-border);
+  background: var(--accent-dim);
+}
+
 .header-settings-btn {
   background: none;
   border: 1px solid var(--border);
@@ -537,6 +662,35 @@ body {
   background: var(--bg-panel);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
+  /* relative + clipped so the absolute progress strip stays inside the
+     rounded corners while the bar is loading. */
+  position: relative;
+  overflow: hidden;
+}
+
+/* Atlas-load progress bar — appears only while atlasLoadProgress is non-null.
+   Phase-boundary events from the Rust loader drive `width`; the transition
+   makes the bar coast between phases instead of jumping. */
+.dashboard-atlas-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--bg-input);
+}
+
+.dashboard-atlas-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 200ms ease-out;
+}
+
+.dashboard-atlas-progress-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-left: 6px;
 }
 
 .dashboard-atlas-left {
@@ -773,6 +927,45 @@ body {
   letter-spacing: 0.3px;
 }
 
+/* ── Plane selector (segmented control) ─ */
+
+.brain-plate-plane {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius);
+  background: rgba(12, 15, 20, 0.6);
+  border: 1px solid var(--border);
+  margin-top: 4px;
+  margin-bottom: 4px;
+}
+
+.brain-plate-plane-btn {
+  flex: 1;
+  padding: 4px 6px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 400;
+  color: var(--text-dim);
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.15s;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+.brain-plate-plane-btn:hover {
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.brain-plate-plane-btn.active {
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+
 /* ── Slice axis (AP bar with ticks) ──── */
 
 .slice-axis {
@@ -978,6 +1171,68 @@ body {
   min-width: 60px;
 }
 
+.settings-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+
+.settings-checkbox input[type="checkbox"] {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* Collapsible "Advanced" disclosure inside Estimate / Register sections.
+ * Uses native <details>/<summary> so it stays accessible and self-toggling. */
+.advanced-disclosure {
+  margin-top: 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.advanced-disclosure > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 6px 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  user-select: none;
+}
+
+.advanced-disclosure > summary::-webkit-details-marker { display: none; }
+.advanced-disclosure > summary::marker { content: ""; }
+
+.advanced-disclosure > summary::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: 6px;
+  transition: transform 0.15s;
+  color: var(--accent);
+}
+
+.advanced-disclosure[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.advanced-disclosure > summary:hover {
+  color: var(--accent);
+}
+
+.advanced-body {
+  padding: 8px 10px 4px 10px;
+  border-top: 1px solid var(--border);
+}
+
 /* ── Slice list (brain detail sidebar) ── */
 
 .slice-list {
@@ -1021,6 +1276,16 @@ body {
   color: var(--text-dim);
 }
 
+.slice-list-thumb {
+  width: 32px;
+  height: 32px;
+  border-radius: 3px;
+  object-fit: cover;
+  background: var(--bg-input);
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+}
+
 .slice-list-name {
   flex: 1;
   overflow: hidden;
@@ -1035,6 +1300,38 @@ body {
   flex-shrink: 0;
 }
 
+/* Per-row 3D-visibility toggle. Only rendered once a slice is locked
+ * (gating happens in SettingsPanel.tsx). Filled dot = visible in the
+ * volume; hollow ring = hidden. */
+.slice-visibility-btn {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--bg-surface);
+  color: var(--accent);
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.12s;
+}
+.slice-visibility-btn:hover {
+  border-color: var(--accent-border);
+  background: var(--accent-dim);
+}
+.slice-visibility-btn--hidden {
+  color: var(--text-dim);
+  background: transparent;
+}
+.slice-visibility-btn--hidden:hover {
+  color: var(--accent);
+}
+
 /* ── Split View ──────────────────────── */
 
 .split-view {
@@ -1042,6 +1339,9 @@ body {
   display: flex;
   gap: 0;
   overflow: hidden;
+  /* Clear the floating .view-toolbar (top:12 + ~28px tall) so panel headers
+   * and channel controls aren't obscured by the 3D/Split toggle. */
+  padding-top: 44px;
 }
 
 .split-panel {
@@ -1104,6 +1404,55 @@ body {
   font-size: 10px;
 }
 
+/* ── Registration view-mode toggle (shared by Split + Overlay) ── */
+
+.registration-view-toggle {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius);
+  background: rgba(12, 15, 20, 0.6);
+  border: 1px solid var(--border);
+}
+
+.registration-view-toggle-btn {
+  padding: 4px 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--text-dim);
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.15s;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.registration-view-toggle-btn:hover:not(:disabled) {
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.registration-view-toggle-btn.active {
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.registration-view-toggle-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.registration-view-toggle-warn {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
 .split-panel-image {
   flex: 1;
   display: flex;
@@ -1138,112 +1487,6 @@ body {
   width: 1px;
   background: var(--border-strong);
   flex-shrink: 0;
-}
-
-/* ── Overlay View ────────────────────── */
-
-.overlay-view {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.overlay-canvas {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  background: var(--bg-deep);
-  position: relative;
-}
-
-.overlay-layers {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 100%;
-}
-
-.overlay-base-image {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-}
-
-.overlay-atlas-image {
-  position: absolute;
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-  pointer-events: none;
-}
-
-.overlay-atlas-only {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.overlay-image {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-  image-rendering: pixelated;
-}
-
-.overlay-badge {
-  position: absolute;
-  bottom: 12px;
-  right: 12px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-primary);
-  background: rgba(0, 0, 0, 0.75);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 4px 10px;
-}
-
-.overlay-empty {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-dim);
-}
-
-.overlay-controls {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 16px;
-  background: var(--bg-panel);
-  border-top: 1px solid var(--border);
-  flex-shrink: 0;
-}
-
-.overlay-control-label {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--text-dim);
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  flex-shrink: 0;
-}
-
-.overlay-control-value {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--accent);
-  min-width: 36px;
-  text-align: right;
 }
 
 /* ── Dialog ──────────────────────────── */
@@ -1331,6 +1574,316 @@ body {
   border-top: 1px solid var(--border);
 }
 
+/* ── Atlas-manager modal ────────────── */
+
+.atlas-manager-dialog {
+  width: 640px;
+  max-width: calc(100vw - 64px);
+}
+
+.atlas-manager-search {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.atlas-manager-filter {
+  flex: 1;
+  padding: 6px 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-primary);
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  outline: none;
+}
+.atlas-manager-filter:focus {
+  border-color: var(--accent);
+}
+
+.atlas-manager-count {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.atlas-manager-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 60vh;
+}
+
+.atlas-manager-empty {
+  padding: 24px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.atlas-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  transition: background 0.15s, border-color 0.15s;
+}
+.atlas-row:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+.atlas-row-focus {
+  border-color: var(--accent);
+  background: rgba(45, 212, 191, 0.06);
+}
+
+.atlas-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.atlas-row-name {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
+.atlas-row-status {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.atlas-row-action {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 160px;
+}
+
+.atlas-row-installed {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.atlas-row-download {
+  width: auto;
+  padding: 6px 14px;
+}
+.atlas-row-download.highlight {
+  box-shadow: 0 0 16px var(--accent-dim);
+}
+
+.atlas-row-progress {
+  width: 160px;
+  height: 6px;
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.atlas-row-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.2s ease-out;
+}
+.atlas-row-progress-fill.indeterminate {
+  width: 30%;
+  animation: atlas-row-progress-pulse 1.2s ease-in-out infinite;
+}
+@keyframes atlas-row-progress-pulse {
+  0%   { margin-left: -30%; }
+  100% { margin-left: 100%; }
+}
+
+/* ── Atlas loading overlay ──────────── */
+
+.atlas-loading-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 8, 12, 0.82);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.atlas-loading-card {
+  width: 360px;
+  padding: 22px 26px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
+}
+
+.atlas-loading-title {
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: 0.3px;
+}
+
+.atlas-loading-phase {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.atlas-loading-bar {
+  height: 6px;
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.atlas-loading-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  box-shadow: 0 0 12px var(--accent-dim);
+  transition: width 0.25s ease-out;
+}
+
+.atlas-loading-percent {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  text-align: right;
+  letter-spacing: 0.4px;
+}
+
+/* ── Local Models modal ─────────────── */
+
+.local-engine-section {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.01);
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.local-engine-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.local-engine-row:hover { background: rgba(255, 255, 255, 0.02); }
+
+.local-engine-row-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.local-engine-row-name {
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.local-engine-row-status {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.local-engine-row-status.ok  { color: var(--accent); }
+.local-engine-row-status.off { color: var(--text-dim); }
+
+.local-engine-row-endpoint {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  opacity: 0.6;
+}
+
+.local-engine-row-action {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.local-engine-row-chevron {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.local-engine-body {
+  padding: 8px 12px 12px 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--bg-deep);
+}
+
+.local-engine-hint {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  padding: 6px 0;
+  line-height: 1.5;
+}
+
+.local-model-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.local-model-id {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
+.local-engine-quickinstall summary {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 6px 0;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.local-engine-quickinstall[open] summary { color: var(--accent); }
+
 /* ── Canvas container ────────────────── */
 
 .canvas-container {
@@ -1353,4 +1906,542 @@ body {
   background-size: 40px 40px;
   pointer-events: none;
   z-index: 1;
+}
+
+/* Pre-registration note for the 3D view. */
+.scene3d-prereg-note {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  background: rgba(20, 24, 32, 0.85);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-style: italic;
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 5;
+}
+.scene3d-prereg-note { bottom: 24px; }
+
+/* ── Chat drawer (BYO-engine chat) ────────────────────────────────────
+ *
+ * Right-edge slide-in drawer. Lives at the app root, sits above the main
+ * workspace but below modal dialogs. Visual language is "serial console
+ * for lab equipment" — pulsing LINK status dot, monospace prompts, faint
+ * scanline overlay, TX/RX telemetry strip. Specifically NOT a modal — the
+ * registration workspace stays visible behind it so users can reference
+ * the slice they're chatting about. */
+
+.header-chat-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+}
+.header-chat-btn.active {
+  color: var(--accent);
+  border-color: var(--accent-border);
+  background: var(--accent-dim);
+}
+.header-chat-glyph {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  opacity: 0.7;
+  letter-spacing: -1px;
+}
+.header-chat-btn:hover .header-chat-glyph {
+  opacity: 1;
+}
+.header-chat-pulse {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent);
+  animation: chat-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes chat-pulse {
+  0%, 100% { opacity: 0.35; transform: scale(0.85); }
+  50%      { opacity: 1;    transform: scale(1.15); }
+}
+
+.chat-drawer {
+  position: fixed;
+  top: 48px; /* below the header */
+  right: 0;
+  bottom: 0;
+  width: 440px;
+  background:
+    linear-gradient(180deg, rgba(45, 212, 191, 0.025) 0%, transparent 30%),
+    var(--bg-primary);
+  border-left: 1px solid var(--accent-border);
+  box-shadow: -16px 0 48px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  z-index: 90;
+  animation: chat-slide-in 0.22s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@keyframes chat-slide-in {
+  from { transform: translateX(100%); opacity: 0.4; }
+  to   { transform: translateX(0);   opacity: 1; }
+}
+
+/* Header strip ─────────────────────────────────────────────────────── */
+.chat-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 14px 18px 10px;
+  border-bottom: 1px solid var(--border);
+  position: relative;
+}
+.chat-header::before {
+  /* A single hairline accent at the very top edge — reads as the
+   * "patch cable" connector seam. */
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--accent) 50%, transparent);
+  opacity: 0.55;
+}
+.chat-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.chat-title {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: var(--accent);
+  text-transform: uppercase;
+}
+.chat-subtitle {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  letter-spacing: 0.5px;
+}
+.chat-close {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 6px;
+  transition: color 0.15s;
+}
+.chat-close:hover { color: var(--text-primary); }
+
+/* LINK connection bar ─────────────────────────────────────────────── */
+.chat-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 18px;
+  background: rgba(255, 255, 255, 0.015);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+.chat-link-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: background 0.2s, box-shadow 0.2s;
+}
+.chat-link-dot-pulse {
+  animation: chat-pulse 0.9s ease-in-out infinite;
+}
+.chat-link-label {
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  color: var(--text-primary);
+  font-size: 9px;
+}
+.chat-link-sep {
+  color: var(--text-dim);
+}
+.chat-link-select {
+  flex: 1;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 4px 6px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  min-width: 0;
+}
+.chat-link-select:hover { border-color: var(--accent-border); }
+.chat-link-select:disabled { opacity: 0.5; cursor: default; }
+.chat-link-action {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  width: 26px;
+  height: 24px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+.chat-link-action:hover:not(:disabled) {
+  border-color: var(--accent-border);
+  color: var(--accent);
+}
+.chat-link-action:disabled { opacity: 0.5; cursor: default; }
+
+/* Message log ────────────────────────────────────────────────────── */
+.chat-log {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 18px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  position: relative;
+}
+.chat-log::before {
+  /* Scanline overlay — extremely subtle, 4px repeat. Only inside the
+   * log so the rest of the drawer chrome stays crisp. */
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent 0px,
+    transparent 3px,
+    rgba(45, 212, 191, 0.012) 3px,
+    rgba(45, 212, 191, 0.012) 4px
+  );
+  z-index: 0;
+}
+.chat-log > * { position: relative; z-index: 1; }
+
+/* Empty state ────────────────────────────────────────────────────── */
+.chat-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 40px 0 20px;
+}
+.chat-empty-frame {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--text-dim);
+  white-space: pre;
+  margin: 0;
+}
+.chat-empty-cta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: var(--accent-dim);
+  border: 1px solid var(--accent-border);
+  padding: 7px 14px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.chat-empty-cta:hover {
+  background: rgba(45, 212, 191, 0.18);
+  box-shadow: 0 0 12px var(--accent-dim);
+}
+
+/* Message blocks ─────────────────────────────────────────────────── */
+.chat-msg {
+  display: flex;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+  word-break: break-word;
+}
+.chat-msg-user .chat-msg-caret {
+  color: var(--accent);
+  font-weight: 700;
+  flex-shrink: 0;
+  padding-top: 1px;
+}
+.chat-msg-user .chat-msg-body {
+  color: var(--text-primary);
+  white-space: pre-wrap;
+}
+.chat-msg-assistant {
+  position: relative;
+  padding-left: 12px;
+}
+.chat-msg-rail {
+  position: absolute;
+  left: 0;
+  top: 2px;
+  bottom: 2px;
+  width: 1px;
+  background: linear-gradient(
+    180deg,
+    var(--accent) 0%,
+    rgba(45, 212, 191, 0.2) 40%,
+    rgba(45, 212, 191, 0.05) 100%
+  );
+}
+.chat-msg-assistant .chat-msg-body {
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  flex: 1;
+}
+.chat-msg-waiting {
+  color: var(--text-dim);
+  font-style: italic;
+  font-size: 11px;
+}
+.chat-msg-images {
+  margin-top: 8px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.chat-msg-img {
+  max-width: 120px;
+  max-height: 120px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  object-fit: cover;
+}
+.chat-stream-cursor {
+  display: inline-block;
+  color: var(--accent);
+  margin-left: 1px;
+  animation: chat-cursor-blink 1s steps(2, start) infinite;
+}
+@keyframes chat-cursor-blink {
+  0%, 50%   { opacity: 1; }
+  50.01%, 100% { opacity: 0; }
+}
+
+/* Error pill ─────────────────────────────────────────────────────── */
+.chat-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: rgba(248, 113, 113, 0.08);
+  border: 1px solid rgba(248, 113, 113, 0.3);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+.chat-error-tag {
+  color: var(--error);
+  font-weight: 700;
+  letter-spacing: 1px;
+  flex-shrink: 0;
+}
+.chat-error-text {
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+/* Telemetry strip ────────────────────────────────────────────────── */
+.chat-telemetry {
+  display: flex;
+  gap: 14px;
+  padding: 8px 18px;
+  background: rgba(255, 255, 255, 0.015);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.5px;
+}
+.chat-tel-cell {
+  display: flex;
+  gap: 5px;
+  align-items: baseline;
+}
+.chat-tel-key {
+  color: var(--text-dim);
+  text-transform: uppercase;
+}
+.chat-tel-val {
+  color: var(--accent);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Composer ───────────────────────────────────────────────────────── */
+.chat-composer {
+  padding: 12px 18px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-primary);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.chat-attach {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--accent-dim);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius);
+}
+.chat-attach-thumb {
+  width: 32px;
+  height: 32px;
+  object-fit: cover;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  background: var(--bg-deep);
+}
+.chat-attach-meta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--accent);
+  flex: 1;
+}
+.chat-attach-remove {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 6px;
+}
+.chat-attach-remove:hover { color: var(--text-primary); }
+
+.chat-composer-row {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.chat-composer-row:focus-within {
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 1px var(--accent-glow);
+}
+.chat-prompt-caret {
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 1.4;
+  flex-shrink: 0;
+  user-select: none;
+}
+.chat-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  resize: vertical;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  min-height: 36px;
+  max-height: 200px;
+}
+.chat-input::placeholder {
+  color: var(--text-dim);
+  font-style: italic;
+}
+.chat-input:disabled { color: var(--text-dim); cursor: not-allowed; }
+
+.chat-composer-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.chat-spacer { flex: 1; }
+
+.chat-attach-btn,
+.chat-clear-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  padding: 4px 8px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.chat-attach-btn:hover:not(:disabled),
+.chat-clear-btn:hover:not(:disabled) {
+  color: var(--text-secondary);
+  border-color: var(--border-strong);
+}
+.chat-attach-btn.active {
+  color: var(--accent);
+  border-color: var(--accent-border);
+  background: var(--accent-dim);
+}
+.chat-attach-btn:disabled,
+.chat-clear-btn:disabled { opacity: 0.4; cursor: default; }
+
+.chat-send-btn {
+  background: var(--accent-dim);
+  border: 1px solid var(--accent-border);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.chat-send-btn:hover:not(:disabled) {
+  background: rgba(45, 212, 191, 0.18);
+  box-shadow: 0 0 10px var(--accent-dim);
+}
+.chat-send-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.chat-send-btn.streaming {
+  background: rgba(248, 113, 113, 0.1);
+  border-color: rgba(248, 113, 113, 0.35);
+  color: var(--error);
+}
+.chat-send-btn.streaming:hover {
+  background: rgba(248, 113, 113, 0.18);
+  box-shadow: 0 0 10px rgba(248, 113, 113, 0.2);
 }

@@ -1,0 +1,122 @@
+# Overnight SFT config for the thinking-signature run (2026-05-13).
+#
+# Trained from BARE unsloth/gemma-4-E4B-it (no merged-bf16 anchor) on a
+# 100% synthetic, 100% multi-turn corpus generated with
+# --synthetic-reasoning-mode thinking_signature. Each multi-turn synthetic
+# trace is split into one supervised row per assistant action; rows carry
+# top-level `"thinking_mode": true` which render.py picks up to prepend the
+# `<|think|>` system prefix and emit sibling `thinking` strings on each
+# assistant turn. Final submit args carry only `position_mm` (no
+# `reasoning`), so the chain-of-thought lives in the thinking channel.
+#
+# Frozen-vision baseline (epoch 1). Epoch 2 (vision-on, conservative LR)
+# will use a separate TOML and --initial-adapter against this run's output.
+#
+# Source-of-truth recipe: `reference_gemma4_sft_frozen_vision_defaults`
+# memory (validated 2026-05-12 PDBS=4 GA=8, peak ~30 GB / 0.79 samples/sec).
+#
+# CLAHE augmentation: pass `--clahe-augment-fraction 0.25` on the train_sft
+# invocation. 25% of train rows render their slice image through CLAHE (the
+# same adaptive_preprocess production uses) and bypass the query embedding
+# cache so live SigLIP sees the augmented pixels. CLI-only (no TOML key) so
+# the overnight launch command MUST include the flag — don't drop it.
+
+[sft]
+# Bare HF id — pulls from the langslice-hf-cache volume (already populated).
+# NOT /models/sft-base: that anchor was trained with the legacy region_dump
+# reasoning bucket and would mix prior behavior into this run's signal.
+base_model = "unsloth/gemma-4-E4B-it"
+load_in_4bit = true
+# Reverted 3072 → 4096 after discovering 3072 filtered the dataset to 25k rows
+# (rows >3072 tokens are dropped by TRL, not truncated), which collapsed
+# max_steps below the resume's global_step and ended the run immediately.
+# 4096 retains ~51k rows (vs 59k full at 6144); pairing with PDBS=2 instead
+# of 3 gives SDPA enough scratch to clear the heavy batches.
+max_seq_length = 4096
+num_train_epochs = 1
+# PDBS=2 GA=16 (effective batch 32) — dropped from PDBS=3 after two
+# deterministic SDPA "Invalid backend" crashes (step 558 then step 1210)
+# from heavy r=512 attention batches. Halving the per-batch row count gives
+# SDPA enough kernel scratch to clear those batches. Different batch
+# composition also avoids the seed-locked crash batch on resume.
+per_device_train_batch_size = 2
+gradient_accumulation_steps = 16
+# Eval-only batch size: train uses gradient checkpointing to drop activations
+# between layers, eval does not (no backward → nothing to recompute), so eval
+# VRAM scales linearly with per_device_eval_batch_size with no offset. Smoke
+# at PDBS=4 eval hit 32 GB → OOM. Train + eval are sequential (train
+# activations freed before eval starts), so eval VRAM is independent of the
+# train-step peak — the only constraint is eval-itself fitting under 31.84 GB.
+# Extrapolating from the OOM trace: ~13 GB baseline + ~5 GB/row → eval peak
+# ≈ 13 + 3×5 = 28 GB at PDBS=3. Safe under the ceiling, ~3× faster than
+# PDBS=1. Holdout ~52 rows → eval pass ~20-30 sec.
+per_device_eval_batch_size = 3
+learning_rate = 2e-4
+lr_scheduler_type = "cosine"
+warmup_ratio = 0.03
+weight_decay = 0.01
+# Cheap insurance against early-step anomaly spikes. Frozen-vision steady-state
+# grad_norm sits 0.15-0.25 so 0.8 only ever activates on a true outlier
+# (see reference_gemma4_max_grad_norm_clip).
+max_grad_norm = 0.8
+optim = "adamw_8bit"
+# No-op in current transformers (5.x apply_chat_template doesn't accept the
+# kwarg) but kept for repo convention — the Gemma 4 template's
+# `is defined and enable_thinking` guard treats undefined as "thinking off",
+# which is the right global default. Per-row thinking_mode=true is the actual
+# switch for this run.
+chat_template_kwargs = { enable_thinking = false }
+logging_steps = 5
+# Single end-of-epoch eval (teacher-forced CE on the 10% holdout). For a
+# 100k+-row corpus the eval pass is expensive — bump to "no" if wall-time
+# bites.
+eval_strategy = "epoch"
+prediction_loss_only = true
+agent_eval_steps = 200
+# User request: checkpoint every ~75 steps. On a ~3500-step epoch that's
+# ~47 checkpoints — ~94 GB of adapter weights at ~2 GB each. Acceptable for
+# overnight; revisit if disk pressure shows up.
+save_steps = 75
+report_to = "trackio"
+# Bumped 0 → 1 on resume from checkpoint-1200 to break out of the seed-locked
+# crash sequence at step ~1210 (deterministic SDPA scratch OOM on a specific
+# heavy batch). With a fresh shuffle, post-resume batches see different rows.
+seed = 1
+dataloader_num_workers = 32
+dataloader_persistent_workers = true
+dataloader_pin_memory = true
+dataloader_prefetch_factor = 6
+
+[lora]
+# rsLoRA at very high rank for narrow-task domain adaptation (2026-05-13).
+# Rationale: tool calling is already free from base E4B-IT (see
+# `reference_gemma4_e4b_native_tool_calling`), so SFT shapes domain-specific
+# reasoning + atlas-grounded coordinate accuracy. High r = adapter capacity
+# for domain structure; modest α (α=16) controls update magnitude to limit
+# forgetting. rsLoRA's α/√r scaling keeps effective updates in a useful
+# range at high r (α/r would collapse to 0.03 at r=512).
+#
+# Effective scale at r=512 α=16 rsLoRA = 16/√512 ≈ 0.71. Trainable params
+# ~1.18B (vs ~294M at r=128). The rsLoRA paper author (HF PEFT discussion
+# #1387) explicitly recommends this neighborhood — "use the largest rank you
+# can fit; alpha=8 at r=256 works well" → our config sits between that and
+# r=128 α=16, in the rank-stable regime.
+#
+# VRAM: smoke at PDBS=4 r=128 peaked 22.6 GB train; r=512 adds ~1.5 GB
+# optimizer state at adamw_8bit, so PDBS=4 r=512 estimate ~24-25 GB peak with
+# 7+ GB headroom. PDBS=5 r=512 was tried (smoke 2026-05-13 16:21) and OOMed
+# with SDPA "Invalid backend" at 31.15 GB peak — at the 31.84 GB ceiling
+# attention can't allocate kernel scratch space. PDBS=4 GA=8 stays put as the
+# durable train shape for r=512.
+r = 512
+lora_alpha = 16
+use_rslora = true
+finetune_vision_layers = false
+finetune_language_layers = true
+finetune_attention_modules = true
+finetune_mlp_modules = true
+use_gradient_checkpointing = "unsloth"
+
+[data]
+holdout_fraction = 0.10
+include_rationale = false

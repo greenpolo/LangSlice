@@ -1,4 +1,4 @@
-"""Unit tests for tools.expert_iteration.path_rewriter."""
+"""Unit tests for iSFT.path_rewriter."""
 
 from __future__ import annotations
 
@@ -9,9 +9,9 @@ from pathlib import Path
 from PIL import Image
 
 _REPO = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(_REPO))
+sys.path.insert(0, str(_REPO / "models" / "langslice-gemma-4" / "training"))
 
-from tools.expert_iteration.path_rewriter import (  # noqa: E402
+from iSFT.path_rewriter import (  # noqa: E402
     build_unified_corpus,
 )
 
@@ -65,6 +65,62 @@ def _make_row(
 # ──────────────────────────────────────────────────────────────────────────
 # Smoke: single corpus → unified tree
 # ──────────────────────────────────────────────────────────────────────────
+
+def test_query_images_under_data_datasets_bypass_staging(tmp_path: Path) -> None:
+    """Slice images that already live under ``<repo>/data/datasets/`` should
+    be emitted as canonical repo-relative paths and NOT copied into
+    ``output_dir/queries/``. Two wins handled by the shortcut:
+
+    1. No JPEG copy onto slow NTFS — the JPEG decode at training time reads
+       from the langslice-data-fast volume.
+    2. The query embedding cache (keyed on canonical ``data/datasets/...``
+       paths) actually hits during ``lookup_by_path`` instead of missing
+       100% of the time as it does with the ``queries/<hash>_<name>`` shape.
+    """
+    # Stand up a fake repo root with a pyproject.toml so the rewriter's
+    # walk-up succeeds and the shortcut fires.
+    repo = tmp_path / "fake_repo"
+    repo.mkdir()
+    (repo / "pyproject.toml").write_text("[project]\nname='fake'\n", encoding="utf-8")
+    src_img = repo / "data" / "datasets" / "coronal" / "ds_a" / "subjA" / "section_001.jpg"
+    _write_image(src_img)
+
+    base_dir = repo / "out" / "base_corpus"
+    base_dir.mkdir(parents=True)
+    _write_image(base_dir / "atlas" / "p0500.jpg")
+    base_jsonl = base_dir / "examples.jsonl"
+    # Query path is repo-relative to the data/datasets/ tree.
+    base_jsonl.write_text(
+        json.dumps(_make_row(
+            subject_id="subjA",
+            query_path="../../data/datasets/coronal/ds_a/subjA/section_001.jpg",
+            atlas_paths=["atlas/p0500.jpg"],
+        )) + "\n",
+        encoding="utf-8",
+    )
+
+    out_dir = repo / "out" / "round"
+    out_jsonl = out_dir / "round_0_corpus.jsonl"
+    stats = build_unified_corpus(
+        base_corpus=base_jsonl,
+        iterative_corpus_dir=base_dir / "doesnt_exist",
+        iterative_jsonls=[],
+        output_dir=out_dir,
+        output_jsonl=out_jsonl,
+    )
+    assert stats["rows_kept"] == 1
+    # The query was NOT staged into queries/ — no copy, no symlink.
+    queries_dir = out_dir / "queries"
+    assert not queries_dir.exists() or not any(queries_dir.iterdir())
+    # The rewritten path is the canonical repo-relative one (cache-key match).
+    row = json.loads(out_jsonl.read_text(encoding="utf-8").strip())
+    assert row["query_image_paths"] == [
+        "data/datasets/coronal/ds_a/subjA/section_001.jpg"
+    ]
+    # Atlas images STILL get staged (snap-to-grid + cache-key shape).
+    atlas_paths = row["trace"][0]["tool_result"]["image_paths"]
+    assert all(p.startswith("atlas/") for p in atlas_paths)
+
 
 def test_unified_corpus_stages_query_and_atlas_images(tmp_path: Path) -> None:
     base_dir = tmp_path / "base_corpus"

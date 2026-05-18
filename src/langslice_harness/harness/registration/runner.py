@@ -11,6 +11,7 @@ from google.adk.runners import InMemoryRunner
 from google.genai import types
 from PIL import Image
 
+from langslice_harness.atlas.space import Plane
 from langslice_harness.harness.estimation.adk_plugins import PersistentMultimodalToolResultsPlugin
 from langslice_harness.harness.estimation.model_resolver import resolve_adk_model
 from langslice_harness.harness.registration.agent import build_registration_review_agent
@@ -124,6 +125,7 @@ async def run_registration_review_session(
     image: Image.Image,
     atlas_name: str,
     position_mm: float,
+    plane: Plane = "coronal",
     image_provider: str = "google",
     image_model: str | None = None,
     model: str | object | None = None,
@@ -178,6 +180,7 @@ async def run_registration_review_session(
         "workflow": "image_gen_registration",
         "atlas_name": atlas_name,
         "position_mm": float(position_mm),
+        "plane": plane,
         "image_provider": image_provider,
         "provider": image_provider,
         "image_model": image_model,

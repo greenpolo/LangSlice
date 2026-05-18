@@ -1,5 +1,5 @@
 # Default SFT configuration for the LangSlice Gemma 4 E4B run.
-# See docs/superpowers/specs/2026-05-05-gemma4-sft-training-design.md.
+# See models/langslice-gemma-4/training/sft/README.md.
 
 [sft]
 base_model = "unsloth/gemma-4-E4B-it"

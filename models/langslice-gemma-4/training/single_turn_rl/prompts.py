@@ -1,44 +1,27 @@
-"""Strict-JSON final-answer prompts for single-turn GRPO (Lane A).
+"""Single-turn GRPO prompts that mirror the production ADK protocol.
 
-The single-turn lane bypasses the multi-turn agent loop entirely. The prompt
-shows the policy the same query + atlas evidence the production agent had at
-the moment it should call ``submit_estimate``, and the contract is to emit
-nothing but a one-key JSON object with the predicted coordinate.
+Earlier versions of this module used a strict "JSON only" final-answer
+contract — bare ``{"position_mm": N}`` output. That format diverged from
+``slicebench``'s evaluation path, which uses ADK + Gemma 4 tool-call sentinels
+(``<|tool_call>call:submit_estimate{position_mm:N,...}<tool_call|>``). A
+checkpoint trained on bare JSON would be incompatible with that eval path.
 
-We keep two pieces of the production prompt verbatim so transfer is preserved:
-
-* The plane-axis label (``AP`` / ``ML`` / ``DV``) and coordinate-system
-  boilerplate from ``langslice_harness.harness.estimation.prompts`` — same
-  semantics the policy saw at SFT time.
-* The atlas + species + valid range header — the policy still has to obey the
-  axis bounds.
-
-Everything else is replaced with a hard "JSON only" instruction. No landmark
-prose, no broad/narrow/recover protocol, no reasoning field. The reward parser
-in :mod:`rewards` returns ``format_penalty`` when the completion is anything
-other than a single ``{"position_mm": <number>}`` object.
+Now the single-turn lane reuses the production system prompt and the production
+``submit_estimate``/``fetch_atlas`` tool schemas. The dataset module
+(:mod:`single_turn_rl.dataset`) pre-renders one ``fetch_atlas`` tool call +
+its tool response into the chat history, so each rollout begins immediately
+before the policy's ``submit_estimate`` turn. The reward parser
+(:mod:`single_turn_rl.rewards`) extracts ``position_mm`` from the model's
+emitted tool call.
 """
 
 from __future__ import annotations
 
 from typing import Literal
 
+from langslice_harness.harness.estimation.prompts import build_single_slice_prompt
+
 Plane = Literal["coronal", "sagittal", "horizontal"]
-
-
-_PLANE_BOILERPLATE: dict[str, str] = {
-    "coronal":
-        "Coordinate system: 0.0 mm is the anterior edge (olfactory bulb); "
-        "larger mm moves posterior toward the cerebellum.",
-    "sagittal":
-        "Coordinate system: 0.0 mm is at the lateral edge of one hemisphere; "
-        "larger mm moves toward the midline. The two hemispheres are mirror "
-        "images, so estimate the canonical (single-hemisphere) ML position; "
-        "your estimate should fall in the canonical hemisphere range.",
-    "horizontal":
-        "Coordinate system: 0.0 mm is dorsal (top of brain); "
-        "larger mm moves ventral.",
-}
 
 
 _PLANE_AXIS_LABEL: dict[str, str] = {
@@ -48,29 +31,10 @@ _PLANE_AXIS_LABEL: dict[str, str] = {
 }
 
 
-SYSTEM_PROMPT_TEMPLATE: str = (
-    "You are an expert neuroanatomist. You are given a histology brain slice "
-    "image (TARGET) followed by a sequence of atlas reference images already "
-    "fetched from positions across the {axis} axis. Your job is to choose the "
-    "single best {axis} position for the TARGET in millimeters.\n\n"
-    "{boilerplate}\n\n"
-    "Atlas: {atlas_name} ({species}). "
-    "Valid {axis} range: {pos_lo:.2f}-{pos_hi:.2f} mm.\n\n"
-    "Output contract (STRICT):\n"
-    "Reply with ONE JSON object and nothing else. No prose, no markdown, no "
-    "code fences, no extra keys. Schema:\n"
-    "    {{\"position_mm\": <number in [{pos_lo:.2f}, {pos_hi:.2f}]>}}\n"
-)
-
-
-USER_INSTRUCTION: str = (
-    "Output the JSON object for the TARGET slice's position now."
-)
-
-
-ATLAS_CAPTION_TEMPLATE: str = "Atlas reference at {position_mm:.2f} mm."
-
-
+# Atlas reference captions are rendered inside the synthetic ``fetch_atlas``
+# tool response (see :mod:`single_turn_rl.dataset`). The text matches what
+# the production ``fetch_atlas`` tool emits.
+ATLAS_CAPTION_TEMPLATE: str = "Atlas at {position_mm:.2f} mm:"
 TARGET_CAPTION: str = "TARGET slice."
 
 
@@ -82,17 +46,31 @@ def build_single_turn_system_prompt(
     pos_hi: float,
     species: str,
 ) -> str:
-    """Return the strict-JSON single-turn system instruction.
+    """Return the production single-slice system instruction (axis-aware).
 
-    Mirrors the production single-slice prompt's plane boilerplate and atlas
-    header (so axis semantics carry over from SFT) but replaces the multi-step
-    landmarks/sweep/narrow protocol with a "JSON only" final-answer contract.
+    Identical to what ``slicebench`` + the ADK harness pass at inference,
+    so the trained policy sees the same plane/atlas/strategy contract at
+    train time and eval time.
     """
-    return SYSTEM_PROMPT_TEMPLATE.format(
-        axis=_PLANE_AXIS_LABEL[plane],
-        boilerplate=_PLANE_BOILERPLATE[plane],
+    return build_single_slice_prompt(
         atlas_name=atlas_name,
-        species=species,
+        plane=plane,
         pos_lo=pos_lo,
         pos_hi=pos_hi,
+        species=species,
+    )
+
+
+def build_user_instruction(*, plane: Plane, atlas_name: str) -> str:
+    """Brief user-turn instruction that follows the TARGET image.
+
+    Matches ``slicebench``'s harness prompt verbatim — ``runner.py`` emits
+    ``f"Determine this {plane} slice's {axis_label} position in the {atlas_name} atlas."``.
+    Keeping this text identical avoids the prompt-mismatch regression that
+    cost ~10% mae on Phase 5/6 SFTs.
+    """
+    axis = _PLANE_AXIS_LABEL[plane]
+    return (
+        f"Determine this {plane} slice's {axis} position in the "
+        f"{atlas_name} atlas."
     )

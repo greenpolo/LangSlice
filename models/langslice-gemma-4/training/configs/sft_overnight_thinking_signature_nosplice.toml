@@ -1,0 +1,81 @@
+# Variant of sft_overnight_thinking_signature.toml: NO splice / NO cache.
+# Hypothesis (2026-05-14): the atlas+query embedding splice subsystem is the
+# variable that regressed thinking_signature training vs the c8 region_dump
+# run. Both cached embeddings AND the monkey-patched get_image_features path
+# changed since the run that beat base (sft-1716-splice ckpt300, 2.51 mm MAE).
+# A heterogeneous-batch fallback was added 2026-05-14 — newly-touched code.
+#
+# This run: same corpus, same hyperparams as the overnight, with two diffs:
+#   1. Drop both --atlas-embedding-cache and --query-embedding-cache flags.
+#      Forces live SigLIP forward for every image (atlas grid + slice).
+#   2. PDBS=2 GA=12 (effective batch 24) — was GA=16 (eff 32). Lowered to
+#      leave VRAM headroom for live SigLIP activations. Slice + atlas
+#      images both go through tower live now.
+#
+# Step-75 ablation: save_steps=75 fires once and we eval manually against
+# splice-on ckpt75 baseline (MAE 2.51 mm).
+
+[sft]
+base_model = "unsloth/gemma-4-E4B-it"
+load_in_4bit = true
+# Reverted to 4096 — max_seq=3072 made the first batch shape unfriendly to
+# SDPA backends (Invalid backend crash step 0). 4096 worked for 14 steps on
+# attempt 1. Heavy-batch hang at step 15 is a separate concern; seed=99 gives
+# a fresh shuffle to roll different batch compositions through step 15.
+max_seq_length = 4096
+num_train_epochs = 1
+max_steps = 75
+# PDBS=1 GA=24 crashes step 0 with SDPA "Invalid backend" (batch=1 +
+# head_dim=512 + seq=4096 unsupported). PDBS=2 GA=12 hung at step 15 on the
+# first try due to a heavy batch composition. Sticking with PDBS=2 GA=12
+# (smoke-validated to fit at peak 30.96 GB) but adding max_seq=3072 to
+# eliminate the heaviest row tier and seed=99 for fresh batch shuffle.
+per_device_train_batch_size = 2
+gradient_accumulation_steps = 12
+# Was 3 (inherited from overnight which assumed splice ON). Without splice,
+# eval at PDBS=3 hit 32 GB and OOMed on attempt 4 at step 25. Dropped to 2
+# so live SigLIP eval forward fits: ~13 GB baseline + 2 × ~9 GB ≈ 31 GB peak.
+per_device_eval_batch_size = 2
+learning_rate = 2e-4
+lr_scheduler_type = "cosine"
+warmup_ratio = 0.03
+weight_decay = 0.01
+max_grad_norm = 0.8
+optim = "adamw_8bit"
+chat_template_kwargs = { enable_thinking = false }
+logging_steps = 5
+# Attempt 4 OOMed in the HF eval pass at step 25 (per_device_eval_batch_size=3
+# × no-grad-checkpointing × live SigLIP > 32 GB ceiling without splice).
+# Disabled entirely — we'll judge by training-loss curve + slicebench at ckpt75.
+eval_strategy = "no"
+prediction_loss_only = true
+agent_eval_steps = 99999
+save_strategy = "steps"
+save_steps = 75
+save_total_limit = 1
+report_to = "trackio"
+# Fresh seed (overnight resume used seed=1 to escape SDPA crash batch).
+seed = 99
+dataloader_num_workers = 32
+dataloader_persistent_workers = true
+dataloader_pin_memory = true
+dataloader_prefetch_factor = 6
+
+[lora]
+# r=256 to save VRAM headroom for math_sdp fallback (now enabled in
+# train_sft.py:470). Live SigLIP on both atlas+slice images produces
+# variable attention shapes that hit math fallback on some batches;
+# math uses quadratic memory (~4 GB extra at seq=4096), so r=256 frees
+# the ~600 MB needed to keep peak under 32 GB on bad batches.
+r = 256
+lora_alpha = 8
+use_rslora = true
+finetune_vision_layers = false
+finetune_language_layers = true
+finetune_attention_modules = true
+finetune_mlp_modules = true
+use_gradient_checkpointing = "unsloth"
+
+[data]
+holdout_fraction = 0.10
+include_rationale = false

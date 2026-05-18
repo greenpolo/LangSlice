@@ -353,6 +353,45 @@ def test_query_result_sorted_by_composite_key(index: ManifestIndex) -> None:
     assert keys == sorted(keys)
 
 
+def test_query_excludes_sections_marked_exclude_from_training(
+    tmp_path: Path,
+) -> None:
+    """Sections whose ``exclude_from_training`` flag is True must be dropped
+    from the default ``query()`` view — otherwise they would silently re-enter
+    training, in violation of the data-immutability principle."""
+    manifest_root = tmp_path / "manifest"
+    shards = manifest_root / "shards"
+    rows = [
+        _make_row(
+            plane="coronal", dataset="ds_a", section_id="keep",
+            position_mm=1.0, exclude_from_training=False,
+        ),
+        _make_row(
+            plane="coronal", dataset="ds_a", section_id="drop",
+            position_mm=2.0, exclude_from_training=True,
+        ),
+    ]
+    _write_jsonl(shards / "coronal" / "ds_a.jsonl", rows)
+    # Empty allocation tree so the loader doesn't choke.
+    for plane in ("coronal", "sagittal", "horizontal"):
+        for split in ("eval", "rlvr", "sft"):
+            (manifest_root / "allocations" / plane / f"{split}.jsonl").parent.mkdir(
+                parents=True, exist_ok=True
+            )
+            (manifest_root / "allocations" / plane / f"{split}.jsonl").touch()
+
+    idx = ManifestIndex.from_manifest_root(manifest_root)
+    default_view = idx.query()
+    section_ids = {s.section_id for s in default_view}
+    assert "keep" in section_ids
+    assert "drop" not in section_ids
+
+    # ``include_excluded=True`` opts back into the full pool.
+    full_view = idx.query(include_excluded=True)
+    section_ids_full = {s.section_id for s in full_view}
+    assert section_ids_full == {"keep", "drop"}
+
+
 def test_query_combined_filters(index: ManifestIndex) -> None:
     """Sanity check: combining several filters returns the AND of them."""
     out = index.query(

@@ -1,32 +1,32 @@
 """Reward function for single-turn final-answer GRPO (Lane A).
 
-Compared to :mod:`rlvr.rewards`, this lane has no environment object — the
-policy emits one completion and the reward is computed from the completion
-text plus the dataset-row kwargs that TRL forwards from the dataset
-(``ground_truth_mm``, ``axis_span_mm``, ``valid_range_mm``).
+The policy emits one completion — a Gemma 4 ``submit_estimate`` tool call —
+and the reward is computed from the completion text plus the dataset-row
+kwargs TRL forwards (``ground_truth_mm``, ``valid_range_mm``).
 
 Three reward branches:
 
-1. **Parse failure** (no JSON object, missing key, non-numeric, NaN, extra
-   keys, surrounding prose): ``format_penalty`` (negative by default — the
-   policy must learn the strict output contract).
-2. **Out of range** (parsed cleanly but ``position_mm`` outside the plane's
-   ``valid_range_mm``): ``out_of_range_reward`` (0.0 by default — neither
-   penalize nor credit; the model just gets nothing).
+1. **Parse failure** (no ``submit_estimate`` tool call found, or it has no
+   numeric ``position_mm``): ``format_penalty`` (negative by default).
+2. **Out of range** (parsed but outside the plane's ``valid_range_mm``):
+   ``out_of_range_reward`` (0.0 by default).
 3. **In range**: axis-normalized truncated-Gaussian bell on
    ``abs(position_mm - ground_truth_mm) / axis_span_mm`` via
-   :func:`rlvr.rewards.normalized_bell_reward` (reused so the single-turn
-   lane and the multi-turn lane agree on the underlying scoring shape).
+   :func:`rlvr.rewards.normalized_bell_reward`.
 
-The format-penalty branch is the main behavioral difference from the
-multi-turn reward, which scored failure-to-submit as plain 0.0. Single-turn
-GRPO needs an explicit format gradient because the policy starts from an SFT
-checkpoint that was trained to emit prose + tool calls, not bare JSON.
+Tool-call format: Gemma 4's chat template renders ``submit_estimate`` as
+
+    <|tool_call>call:submit_estimate{position_mm:3.5,reasoning:<|"|>...<|"|>}<tool_call|>
+
+Authoritative pattern verified against
+``transformers /models/sft-base/chat_template.jinja format_argument`` macro
++ ``vllm.tool_parsers.gemma4_utils.parse_tool_calls`` (dictsorted keys, bare
+numerics, ``<|"|>`` escape tokens around strings, ``<tool_call|>`` or
+``<turn|>`` close sentinel).
 """
 
 from __future__ import annotations
 
-import json
 import math
 import re
 from typing import Any
@@ -39,12 +39,30 @@ DEFAULT_FORMAT_PENALTY: float = -1.0
 DEFAULT_OUT_OF_RANGE_REWARD: float = 0.0
 
 
-_BARE_JSON_OBJECT_RE = re.compile(r"^\s*(\{.*\})\s*\Z", re.DOTALL)
-_ALLOWED_KEYS: frozenset[str] = frozenset({"position_mm"})
+# Gemma 4 tool-call sentinel + name + args + close sentinel.
+# `<tool_call|>` is the canonical close; some Gemma 4 outputs emit `<turn|>`
+# in its place (per vllm.tool_parsers.gemma4_utils).
+_GEMMA4_TOOL_CALL_RE = re.compile(
+    r"<\|tool_call\>call:(\w+)\{(.*?)\}(?:<tool_call\|>|<turn\|>)",
+    re.DOTALL,
+)
+# Bare ``call:NAME{...`` form — emitted by E4B-IT in thinking/reasoning mode
+# when the assistant prefixes its tool call with prose. The opening
+# `<|tool_call>` sentinel is omitted; the args block opens with `{` but the
+# closing `}` may not be reliable (reasoning prose can contain `}`), so the
+# regex captures the call NAME and lets ``_POSITION_MM_RE`` scan the
+# remainder of the text for the numeric arg.
+_GEMMA4_BARE_CALL_RE = re.compile(r"call:(\w+)\{", re.DOTALL)
+# `position_mm` is rendered as a bare numeric by the chat template's
+# format_argument macro (numbers don't get the `<|"|>` string-escape).
+_POSITION_MM_RE = re.compile(
+    r"position_mm\s*:\s*([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)"
+)
+_SUBMIT_TOOL_NAME: str = "submit_estimate"
 
 
 class _ParseError(Exception):
-    """Raised when a completion does not satisfy the strict-JSON contract."""
+    """Raised when a completion does not satisfy the submit_estimate contract."""
 
 
 def _extract_completion_text(completion: Any) -> str:
@@ -83,37 +101,44 @@ def _extract_completion_text(completion: Any) -> str:
 
 
 def parse_position_mm(text: str) -> float:
-    """Parse a strict ``{"position_mm": <number>}`` object out of ``text``.
+    """Parse ``position_mm`` from the first Gemma 4 ``submit_estimate`` tool call.
 
-    Tolerates leading/trailing whitespace but rejects:
-
-    * surrounding prose or markdown fences,
-    * missing or extra keys,
-    * non-numeric / NaN / infinite ``position_mm``.
-
-    Raises :class:`_ParseError` on any deviation.
+    Tolerates surrounding text — thought channels, prose, additional non-submit
+    tool calls — and picks the FIRST ``submit_estimate`` invocation. Raises
+    :class:`_ParseError` if no ``submit_estimate`` appears or the parsed
+    ``position_mm`` isn't a finite number.
     """
-    match = _BARE_JSON_OBJECT_RE.match(text)
-    if match is None:
-        raise _ParseError("completion is not a single JSON object")
-    try:
-        obj = json.loads(match.group(1))
-    except json.JSONDecodeError as exc:
-        raise _ParseError(f"invalid JSON: {exc}") from exc
-    if not isinstance(obj, dict):
-        raise _ParseError("top-level JSON value is not an object")
-    if "position_mm" not in obj:
-        raise _ParseError("missing required key 'position_mm'")
-    extra = set(obj.keys()) - _ALLOWED_KEYS
-    if extra:
-        raise _ParseError(f"unexpected keys: {sorted(extra)}")
-    raw = obj["position_mm"]
-    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
-        raise _ParseError(f"position_mm must be a number, got {type(raw).__name__}")
-    value = float(raw)
-    if math.isnan(value) or math.isinf(value):
-        raise _ParseError(f"position_mm must be finite, got {value}")
-    return value
+    def _parse_numeric(s: str) -> float:
+        try:
+            value = float(s)
+        except ValueError as exc:
+            raise _ParseError(f"position_mm not numeric: {s!r}") from exc
+        if math.isnan(value) or math.isinf(value):
+            raise _ParseError(f"position_mm must be finite, got {value}")
+        return value
+
+    # Preferred: wrapped form ``<|tool_call>call:submit_estimate{...}<tool_call|>``.
+    for m in _GEMMA4_TOOL_CALL_RE.finditer(text):
+        if m.group(1) != _SUBMIT_TOOL_NAME:
+            continue
+        pos_match = _POSITION_MM_RE.search(m.group(2))
+        if pos_match is None:
+            raise _ParseError("submit_estimate has no numeric position_mm")
+        return _parse_numeric(pos_match.group(1))
+
+    # Fallback: bare ``call:submit_estimate{`` form (no leading sentinel).
+    # Scan the text after the opening brace for ``position_mm:N`` — the
+    # reasoning prose inside the args block isn't escape-wrapped, so a
+    # strict closing ``}`` match isn't reliable.
+    for m in _GEMMA4_BARE_CALL_RE.finditer(text):
+        if m.group(1) != _SUBMIT_TOOL_NAME:
+            continue
+        pos_match = _POSITION_MM_RE.search(text, m.end())
+        if pos_match is None:
+            raise _ParseError("submit_estimate has no numeric position_mm")
+        return _parse_numeric(pos_match.group(1))
+
+    raise _ParseError("no submit_estimate tool call found in completion")
 
 
 def score_completion(
@@ -203,32 +228,3 @@ def make_terminal_reward(
 
 # Default callable for callers that do not bind a custom schedule.
 terminal_reward = make_terminal_reward()
-
-
-# ---------------------------------------------------------------------------
-# Adaptive-reward re-export
-# ---------------------------------------------------------------------------
-# The unified RL pipeline (Task 6) selects between the static reward above and
-# the adaptive bell-curve schedule in ``adaptive_reward.py``. Re-export the
-# adaptive factory + schedule from this module so callers (e.g. ``train_grpo``)
-# can switch modes via a single import surface. The static path stays
-# unchanged and is the fallback when ``--reward-mode static`` is selected.
-def make_adaptive_terminal_reward(*args: Any, **kwargs: Any):  # noqa: ANN201
-    """Re-export of :func:`single_turn_rl.adaptive_reward.make_adaptive_terminal_reward`.
-
-    The actual implementation lives in :mod:`single_turn_rl.adaptive_reward`;
-    we forward via a thin wrapper so a circular-import chain doesn't form
-    (the adaptive module imports the static reward's parse helpers).
-    """
-    from .adaptive_reward import (  # noqa: PLC0415
-        make_adaptive_terminal_reward as _impl,
-    )
-
-    return _impl(*args, **kwargs)
-
-
-def adaptive_reward_schedule_cls():  # noqa: ANN201
-    """Lazy accessor for :class:`AdaptiveRewardSchedule` (avoids the circular import)."""
-    from .adaptive_reward import AdaptiveRewardSchedule  # noqa: PLC0415
-
-    return AdaptiveRewardSchedule

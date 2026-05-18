@@ -16,6 +16,12 @@ _DEFAULT_PROXY_BASE = "http://127.0.0.1:4000/v1"
 _DEFAULT_PROXY_KEY = "sk-langslice-local"
 _DEFAULT_OLLAMA_BASE = "http://localhost:11434"
 _ENV_OLLAMA_THINK = "LANGSLICE_OLLAMA_THINK"
+# When set, every model resolution short-circuits to the OpenAI-compat
+# wrapper pointed at this base URL. The CLI exposes this via `--endpoint`;
+# the Tauri GUI sets it when the user picks a local-engine model from the
+# Estimate dropdown. Bypasses every prefix below.
+_ENV_ENDPOINT = "LANGSLICE_ENDPOINT"
+_ENV_ENDPOINT_KEY = "LANGSLICE_ENDPOINT_KEY"
 
 
 def _env(name: str, default: str | None = None) -> str | None:
@@ -73,6 +79,25 @@ def resolve_adk_model(model: str | object) -> str | object:
         return model
 
     stripped = model.strip()
+
+    # An explicit endpoint override beats every prefix below. The GUI sets
+    # this when the user picks a local-engine model from the Estimate
+    # dropdown (LM Studio, vLLM, etc.) so the request goes to that engine
+    # regardless of how the model id is shaped.
+    endpoint = _env(_ENV_ENDPOINT)
+    if endpoint:
+        try:
+            litellm_cls = _load_litellm_class()
+        except ImportError as exc:
+            raise _missing_litellm_error() from exc
+        endpoint_kwargs: dict[str, Any] = {
+            "api_base": endpoint.rstrip("/"),
+        }
+        key = _env(_ENV_ENDPOINT_KEY)
+        if key:
+            endpoint_kwargs["api_key"] = key
+        return litellm_cls(model=f"openai/{stripped}", **endpoint_kwargs)
+
     lowered = stripped.lower()
     if lowered.startswith("gemma-") or lowered.startswith(f"{_MODELS_PREFIX}gemma-"):
         model_id = stripped
