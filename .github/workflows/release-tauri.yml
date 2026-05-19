@@ -28,9 +28,7 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
-          cache-dependency-path: |
-            tauri-gui/pnpm-lock.yaml
-            web-demo/pnpm-lock.yaml
+          cache-dependency-path: tauri-gui/pnpm-lock.yaml
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -40,12 +38,8 @@ jobs:
         with:
           workspaces: './tauri-gui/src-tauri -> target'
 
-      - name: Install Tauri shell deps
+      - name: Install frontend deps
         working-directory: tauri-gui
-        run: pnpm install --frozen-lockfile
-
-      - name: Install web-demo deps
-        working-directory: web-demo
         run: pnpm install --frozen-lockfile
 
       - name: Build + upload to draft release
@@ -57,19 +51,14 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: 'LangSlice ${{ github.ref_name }}'
           releaseBody: |
-            **LangSlice ${{ github.ref_name }}** — Windows desktop installer.
-
-            Wraps the LangSlice web demo in a native Tauri shell. No Python or
-            other prereqs needed — install and run.
+            **LangSlice ${{ github.ref_name }}** — Tauri desktop installer.
 
             Pick whichever installer you prefer:
             - `.exe` — friendly NSIS installer, double-click to install.
             - `.msi` — Microsoft Installer format (for IT-managed deployment).
 
             On first launch Windows SmartScreen may warn that the installer is
-            unsigned — click **More info → Run anyway**. The app uses the
-            Gemini API for position estimation; you'll need a Google AI Studio
-            API key, configurable in the app's "API Keys" tab.
+            unsigned — click **More info → Run anyway**.
 
             Local LangSlice-Gemma 4 model card:
             https://huggingface.co/greenpolo/langslice-gemma-4-E4B
