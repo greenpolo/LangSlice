@@ -96,12 +96,13 @@ the estimate completes, the Python pipeline is wired up correctly.
 
 ## What ships in the installer
 
-- The Tauri shell + UI (~30 MB)
-- The `litert-lm` sidecar (~10 MB) + supporting DLLs for fully-offline
-  inference with the LangSlice-Gemma 4 model. The sidecar isn't auto-
-  started in v0.1; spin it up via the **Local Models** tab if you want
-  to use the local model instead of the Gemini API. Model weights are
-  not bundled — the Local Models tab links to the Hugging Face page.
+- The Tauri shell + UI (~30 MB).
+
+The `litert-lm` sidecar for fully-offline Gemma 4 inference is **not**
+bundled in v0.1 — it's platform-specific and large. Download it
+separately from the [LiteRT-LM releases](https://github.com/google-ai-edge/LiteRT-LM/releases/latest)
+and run `litert-lm serve --port 8765` before launching LangSlice; the
+**Local Models** tab will auto-detect it on the standard port.
 
 ## Roadmap
 
