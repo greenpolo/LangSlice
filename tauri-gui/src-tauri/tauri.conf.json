@@ -4,16 +4,10 @@
   "version": "0.1.0",
   "identifier": "com.langslice.gui",
   "build": {
-    "frontendDist": "../../web-demo/dist",
-    "devUrl": "http://localhost:5173",
-    "beforeDevCommand": {
-      "cwd": "../../web-demo",
-      "script": "pnpm dev"
-    },
-    "beforeBuildCommand": {
-      "cwd": "../../web-demo",
-      "script": "pnpm install && pnpm build"
-    }
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "pnpm build"
   },
   "app": {
     "windows": [
