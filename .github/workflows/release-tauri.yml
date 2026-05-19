@@ -51,17 +51,26 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: 'LangSlice ${{ github.ref_name }}'
           releaseBody: |
-            **LangSlice ${{ github.ref_name }}** — Tauri desktop installer.
+            **LangSlice ${{ github.ref_name }} — developer preview**
 
-            Pick whichever installer you prefer:
-            - `.exe` — friendly NSIS installer, double-click to install.
-            - `.msi` — Microsoft Installer format (for IT-managed deployment).
+            Windows desktop app for the LangSlice brain-slice AP-position
+            pipeline. **Read [INSTALL.md](https://github.com/greenpolo/LangSlice/blob/main/INSTALL.md)
+            before downloading** — this build requires Python 3.10+ and the
+            `langslice-harness` package on the host machine. For the
+            no-prereq option, use [the browser demo](https://greenpolo.github.io/LangSlice).
+
+            ## Downloads
+            - `.exe` — NSIS installer, double-click to install.
+            - `.msi` — Microsoft Installer format (IT-managed deployment).
 
             On first launch Windows SmartScreen may warn that the installer is
             unsigned — click **More info → Run anyway**.
 
-            Local LangSlice-Gemma 4 model card:
-            https://huggingface.co/greenpolo/langslice-gemma-4-E4B
+            ## Bundled
+            - `litert-lm` sidecar (offline Gemma 4 inference, opt-in via the
+              Local Models tab).
+            - LangSlice-Gemma 4 model card on Hugging Face:
+              https://huggingface.co/greenpolo/langslice-gemma-4-E4B
           releaseDraft: true
           prerelease: false
           includeUpdaterJson: false
