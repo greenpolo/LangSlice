@@ -43,18 +43,6 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ],
-    "externalBin": [
-      "binaries/litert-lm"
-    ],
-    "resources": [
-      "binaries/dxcompiler.dll",
-      "binaries/dxil.dll",
-      "binaries/libGemmaModelConstraintProvider.dll",
-      "binaries/libLiteRt.dll",
-      "binaries/libLiteRtTopKWebGpuSampler.dll",
-      "binaries/libLiteRtWebGpuAccelerator.dll",
-      "binaries/litert-lm.dll"
     ]
   }
 }
