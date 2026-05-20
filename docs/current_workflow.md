@@ -1,6 +1,6 @@
-# Current Workflow
+# CLI usage
 
-This file describes the active CLI and Tauri GUI workflows.
+This page describes the active CLI and Tauri GUI workflows.
 
 ## Position Estimation
 

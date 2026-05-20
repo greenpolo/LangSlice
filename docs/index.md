@@ -13,9 +13,7 @@ session handoffs.
 
 ## Runtime References
 
-- [`abba_ap_coordinate_system.md`](abba_ap_coordinate_system.md) - atlas-native AP coordinate conventions.
-- [`registration_plan.md`](registration_plan.md) - current image-generation registration runtime.
-- `image_gen_AIstudio_examples/` - small provider examples and reference images.
+- [`registration_plan.md`](registration_plan.md) - current image-generation registration pipeline.
 
 ## Repository Map
 

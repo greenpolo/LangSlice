@@ -1,6 +1,6 @@
-# Registration Runtime
+# Registration pipeline
 
-Registration now has one active method: image-gen registration.
+Registration has one active method: image-gen registration.
 
 ## Active Files
 
