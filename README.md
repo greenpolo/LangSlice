@@ -1,5 +1,5 @@
 <p align="center">
-  <img alt="LangSlice" src="assets/LangSlice_dark.png">
+  <img alt="LangSlice" src="assets/LangSlice_dark.png" width="720">
 </p>
 
 <p align="center">
@@ -22,7 +22,7 @@
 ## How it works
 
 <p align="center">
-  <img alt="Agent loop: inspect, explore atlas candidates, submit AP" src="assets/agent_loop.png" width="900">
+  <img alt="Agent loop: inspect, explore atlas candidates, submit AP" src="assets/agent_loop.png" width="780">
 </p>
 
 A VLM agent (default [`langslice-gemma-4-E4B`](https://huggingface.co/greenpolo/langslice-gemma-4-E4B))
