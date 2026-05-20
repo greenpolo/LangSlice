@@ -1,0 +1,70 @@
+site_name: LangSlice
+site_description: Register histological brain sections to BrainGlobe atlases.
+site_url: https://langslice.readthedocs.io/
+repo_url: https://github.com/greenpolo/LangSlice
+repo_name: greenpolo/LangSlice
+edit_uri: edit/main/docs/
+
+docs_dir: docs
+
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.expand
+    - search.highlight
+    - search.suggest
+    - content.code.copy
+    - content.action.edit
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  icon:
+    repo: fontawesome/brands/github
+
+nav:
+  - Overview: index.md
+  - Architecture: architecture_overview.md
+  - Workflow: current_workflow.md
+  - AP coordinate system: abba_ap_coordinate_system.md
+  - Registration runtime: registration_plan.md
+  - Training overview: training_overview.md
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/greenpolo/LangSlice
+    - icon: simple/huggingface
+      link: https://huggingface.co/greenpolo/langslice-gemma-4-E4B
+
+# RTD-friendly: do not error on the missing README at the project root
+# (the README lives in the repo root, not inside docs/).
+strict: false

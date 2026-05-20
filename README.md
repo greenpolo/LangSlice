@@ -3,6 +3,14 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/greenpolo/LangSlice/blob/main/LICENSE"><img alt="License: BSD-3-Clause" src="https://img.shields.io/badge/License-BSD%203--Clause-blue.svg"></a>
+  <a href="https://www.python.org/downloads/"><img alt="Python 3.10+" src="https://img.shields.io/badge/python-3.10+-blue.svg"></a>
+  <a href="https://github.com/greenpolo/LangSlice/actions/workflows/tests.yml"><img alt="Tests" src="https://github.com/greenpolo/LangSlice/actions/workflows/tests.yml/badge.svg"></a>
+  <a href="https://langslice.readthedocs.io"><img alt="Documentation Status" src="https://readthedocs.org/projects/langslice/badge/?version=latest"></a>
+  <a href="https://huggingface.co/greenpolo/langslice-gemma-4-E4B"><img alt="Hugging Face Model" src="https://img.shields.io/badge/%F0%9F%A4%97%20Model-langslice--gemma--4--E4B-yellow"></a>
+</p>
+
+<p align="center">
   <em>Register histological brain sections to BrainGlobe atlases.<br>
   A VLM estimates position, an image-gen model lays down atlas colors, Elastix warps the rest.</em>
 </p>
@@ -63,7 +71,17 @@ Public model-card metadata for the released variant is in
 
 ## Links
 
+- [**Documentation**](https://langslice.readthedocs.io) — full pipeline + harness internals
 - [**langslice-gemma-4-E4B**](https://huggingface.co/greenpolo/langslice-gemma-4-E4B) — the v1.0 fine-tune
 - [**SliceBench**](./slicebench) — self-contained position-estimation benchmark
 - [`tauri-gui/`](./tauri-gui) — desktop app
-- [`docs/`](./docs) — full pipeline + harness internals
+
+## Citation
+
+If you use LangSlice in your work, please cite the project metadata in
+[`CITATION.cff`](./CITATION.cff). GitHub renders a "Cite this repository"
+button in the right sidebar from that file.
+
+## License
+
+BSD-3-Clause. See [`LICENSE`](./LICENSE).
