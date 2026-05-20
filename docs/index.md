@@ -6,15 +6,15 @@ session handoffs.
 
 ## Start Here
 
-- `README.md` - setup, quickstart, and high-level project behavior.
-- `architecture_overview.md` - package boundaries, major modules, and end-to-end control flow.
-- `current_workflow.md` - current CLI and Tauri GUI workflows.
-- `training_overview.md` - public training layout, entrypoints, and local-data policy.
+- [README](https://github.com/greenpolo/LangSlice#readme) - setup, quickstart, and high-level project behavior.
+- [`architecture_overview.md`](architecture_overview.md) - package boundaries, major modules, and end-to-end control flow.
+- [`current_workflow.md`](current_workflow.md) - current CLI and Tauri GUI workflows.
+- [`training_overview.md`](training_overview.md) - public training layout, entrypoints, and local-data policy.
 
 ## Runtime References
 
-- `abba_ap_coordinate_system.md` - atlas-native AP coordinate conventions.
-- `registration_plan.md` - current image-generation registration runtime.
+- [`abba_ap_coordinate_system.md`](abba_ap_coordinate_system.md) - atlas-native AP coordinate conventions.
+- [`registration_plan.md`](registration_plan.md) - current image-generation registration runtime.
 - `image_gen_AIstudio_examples/` - small provider examples and reference images.
 
 ## Repository Map
