@@ -33,6 +33,7 @@ Optional 6th row (tract tracing):
 
 Output: tmp/outputs/overview.png
 """
+
 from __future__ import annotations
 
 import sys
@@ -42,8 +43,6 @@ sys.path.insert(0, "src")
 sys.path.insert(0, "models/langslice-gemma-4/data")
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
-
 from augmentation.brightfield_pipeline import render_brightfield_section
 from augmentation.dapi_pipeline import render_dapi_section
 from augmentation.fluorescence_pipeline import render_fluorescence_section
@@ -53,6 +52,8 @@ from augmentation.modes import (
     ISH_MODES,
 )
 from augmentation.nissl_pipeline import render_nissl_section
+from PIL import Image, ImageDraw, ImageFont
+
 from langslice_harness.atlas.core import (
     get_reference_slice,
     load_atlas,
@@ -120,7 +121,7 @@ def _blank_panel() -> np.ndarray:
     return np.asarray(img)
 
 
-def _try_font(size: int = 13) -> "ImageFont.FreeTypeFont | ImageFont.ImageFont":
+def _try_font(size: int = 13) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
     for name in ("arial.ttf", "DejaVuSans.ttf", "FreeSans.ttf"):
         try:
             return ImageFont.truetype(name, size)
@@ -153,8 +154,12 @@ def render_row_dapi(ref, ann, atlas) -> list[np.ndarray]:
     Column 1: apply_damage=True  (default; realistic damaged output).
     Column 2: n/a.
     """
-    clean = render_dapi_section(ref, ann, atlas, seed=SEED, pixel_size_um=TARGET_PX_UM, apply_damage=False)
-    damaged = render_dapi_section(ref, ann, atlas, seed=SEED, pixel_size_um=TARGET_PX_UM, apply_damage=True)
+    clean = render_dapi_section(
+        ref, ann, atlas, seed=SEED, pixel_size_um=TARGET_PX_UM, apply_damage=False
+    )
+    damaged = render_dapi_section(
+        ref, ann, atlas, seed=SEED, pixel_size_um=TARGET_PX_UM, apply_damage=True
+    )
     panels = [
         _label_panel(_to_thumb(clean), "DAPI clean"),
         _label_panel(_to_thumb(damaged), "DAPI + damage"),
@@ -167,9 +172,33 @@ def render_row_nissl(ref, ann, atlas) -> list[np.ndarray]:
     """Row 1: Nissl — warm-cream clean | warm-cream damaged | blue-cream damaged."""
     cream_warm = (0.85, 0.78, 0.65)
     cream_blue = (0.74, 0.82, 0.95)
-    clean = render_nissl_section(ref, ann, atlas, seed=SEED, pixel_size_um=TARGET_PX_UM, cream_base=cream_warm, apply_damage=False)
-    damaged_warm = render_nissl_section(ref, ann, atlas, seed=SEED, pixel_size_um=TARGET_PX_UM, cream_base=cream_warm, apply_damage=True)
-    damaged_blue = render_nissl_section(ref, ann, atlas, seed=SEED, pixel_size_um=TARGET_PX_UM, cream_base=cream_blue, apply_damage=True)
+    clean = render_nissl_section(
+        ref,
+        ann,
+        atlas,
+        seed=SEED,
+        pixel_size_um=TARGET_PX_UM,
+        cream_base=cream_warm,
+        apply_damage=False,
+    )
+    damaged_warm = render_nissl_section(
+        ref,
+        ann,
+        atlas,
+        seed=SEED,
+        pixel_size_um=TARGET_PX_UM,
+        cream_base=cream_warm,
+        apply_damage=True,
+    )
+    damaged_blue = render_nissl_section(
+        ref,
+        ann,
+        atlas,
+        seed=SEED,
+        pixel_size_um=TARGET_PX_UM,
+        cream_base=cream_blue,
+        apply_damage=True,
+    )
     panels = [
         _label_panel(_to_thumb(clean), "Nissl warm-cream clean"),
         _label_panel(_to_thumb(damaged_warm), "Nissl warm-cream + damage"),
@@ -181,16 +210,20 @@ def render_row_nissl(ref, ann, atlas) -> list[np.ndarray]:
 def render_row_brightfield(ref, ann, atlas) -> list[np.ndarray]:
     """Row 2: Brightfield — 3 mode × counterstain combos (with default damage)."""
     combos = [
-        ("pan_neuronal", "none",        "BF pan_neuronal+none"),
+        ("pan_neuronal", "none", "BF pan_neuronal+none"),
         ("pan_neuronal", "hematoxylin", "BF pan_neuronal+hematox"),
-        ("myelin",       "none",        "BF myelin+none"),
+        ("myelin", "none", "BF myelin+none"),
     ]
     panels = []
     for mode, cs, label in combos:
         out = render_brightfield_section(
-            ref, ann, atlas,
-            seed=SEED, pixel_size_um=TARGET_PX_UM,
-            mode=mode, counterstain=cs,
+            ref,
+            ann,
+            atlas,
+            seed=SEED,
+            pixel_size_um=TARGET_PX_UM,
+            mode=mode,
+            counterstain=cs,
             apply_damage=True,
         )
         panels.append(_label_panel(_to_thumb(out), label))
@@ -205,8 +238,11 @@ def render_row_fluorescence(ref, ann, atlas) -> list[np.ndarray]:
     for name in target_names:
         fm = mode_map[name]
         out = render_fluorescence_section(
-            ref, ann, atlas,
-            seed=SEED, pixel_size_um=TARGET_PX_UM,
+            ref,
+            ann,
+            atlas,
+            seed=SEED,
+            pixel_size_um=TARGET_PX_UM,
             mode=fm,
             apply_damage=True,
         )
@@ -222,8 +258,11 @@ def render_row_ish(ref, ann, atlas) -> list[np.ndarray]:
     for name in target_names:
         im = mode_map[name]
         out = render_ish_section(
-            ref, ann, atlas,
-            seed=SEED, pixel_size_um=TARGET_PX_UM,
+            ref,
+            ann,
+            atlas,
+            seed=SEED,
+            pixel_size_um=TARGET_PX_UM,
             mode=im,
             apply_damage=True,
         )
@@ -236,8 +275,11 @@ def render_row_tract(ref, ann, atlas) -> list[np.ndarray]:
     mode_map = {m.name: m for m in FLUORESCENCE_MODES}
     fm = mode_map["tract_aav_gfp_neurotrace"]
     out = render_fluorescence_section(
-        ref, ann, atlas,
-        seed=SEED, pixel_size_um=TARGET_PX_UM,
+        ref,
+        ann,
+        atlas,
+        seed=SEED,
+        pixel_size_um=TARGET_PX_UM,
         mode=fm,
         apply_damage=True,
     )
@@ -283,12 +325,12 @@ def main() -> int:
     print(f"Slice shape: ref={ref.shape}  ann={ann.shape}", flush=True)
 
     row_specs = [
-        ("DAPI",        render_row_dapi),
-        ("Nissl",       render_row_nissl),
+        ("DAPI", render_row_dapi),
+        ("Nissl", render_row_nissl),
         ("Brightfield", render_row_brightfield),
         ("Fluorescence", render_row_fluorescence),
-        ("ISH",         render_row_ish),
-        ("Tract",       render_row_tract),
+        ("ISH", render_row_ish),
+        ("Tract", render_row_tract),
     ]
 
     rows_rendered: list[np.ndarray] = []

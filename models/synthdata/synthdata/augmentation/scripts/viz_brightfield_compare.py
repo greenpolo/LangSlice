@@ -8,6 +8,7 @@ Two columns:
 
 Output: tmp/outputs/brightfield/compare.png
 """
+
 from __future__ import annotations
 
 import sys
@@ -17,11 +18,13 @@ sys.path.insert(0, "src")
 sys.path.insert(0, "models/langslice-gemma-4/data")
 
 import numpy as np
+from augmentation.brightfield_pipeline import render_brightfield_section
 from PIL import Image, ImageDraw, ImageFont
 
-from augmentation.brightfield_pipeline import render_brightfield_section
 from langslice_harness.atlas.core import (
-    get_reference_slice, load_atlas, position_mm_to_index,
+    get_reference_slice,
+    load_atlas,
+    position_mm_to_index,
 )
 from langslice_harness.atlas.space import atlas_space_context, slice_axis_index
 
@@ -87,7 +90,7 @@ def main() -> int:
     # Keep rows up to last row that's darker than 240 (non-white)
     dark_rows = np.where(row_means < 240)[0]
     if len(dark_rows) > 0:
-        real_arr = real_arr[:dark_rows[-1] + 1, :, :]
+        real_arr = real_arr[: dark_rows[-1] + 1, :, :]
     real_img = Image.fromarray(real_arr)
     print(f"Real reference (cropped): {real_img.size}")
 
@@ -95,7 +98,9 @@ def main() -> int:
     atlas = load_atlas("allen_mouse_25um")
     ref, ann = upsampled_inputs(atlas, AP_MM)
     out = render_brightfield_section(
-        ref, ann, atlas,
+        ref,
+        ann,
+        atlas,
         seed=SEED,
         pixel_size_um=TARGET_PX_UM,
         mode="pan_neuronal",
@@ -111,7 +116,7 @@ def main() -> int:
     crop_w = min(w_full // 3, crop_h * 2)  # keep landscape aspect
     y0 = h_full // 8  # slightly below the very top edge (sub-dural tissue)
     x0 = (w_full - crop_w) // 2
-    proc_crop = out[y0:y0 + crop_h, x0:x0 + crop_w, :]
+    proc_crop = out[y0 : y0 + crop_h, x0 : x0 + crop_w, :]
     proc_arr = np.clip(proc_crop * 255, 0, 255).astype(np.uint8)
     proc_img = Image.fromarray(proc_arr)
     print(f"Procedural crop: {proc_img.size}")

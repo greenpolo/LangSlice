@@ -14,9 +14,10 @@ import json
 import os
 import sys
 from collections import defaultdict
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator, NamedTuple
+from typing import Any, NamedTuple
 
 _SCRIPT_DIR = Path(__file__).resolve().parent
 _REPO_ROOT = _SCRIPT_DIR.parents[1]
@@ -24,9 +25,9 @@ if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
 from build_manifest import (  # noqa: E402
+    _BG_ASR_EXTENTS_MM,
     ORIENTATION_TO_AXIS,
     PLAUSIBLE_RANGES,
-    _BG_ASR_EXTENTS_MM,
     _resolve_dev_atlas,
     write_summary,
 )
@@ -164,7 +165,9 @@ def _format_shard_ref(row: dict[str, Any]) -> tuple[str | None, str | None]:
     return (row.get("_plane"), row.get("_dataset_stem"))
 
 
-def _load_shards(shards_dir: Path, errors: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int, dict[str, int]]:
+def _load_shards(
+    shards_dir: Path, errors: list[dict[str, Any]]
+) -> tuple[list[dict[str, Any]], int, dict[str, int]]:
     rows: list[dict[str, Any]] = []
     shards_loaded = 0
     rows_by_plane = {plane: 0 for plane in PLANES}
@@ -251,7 +254,10 @@ def _range_for_row(row: dict[str, Any]) -> tuple[float, float] | None:
 
 
 def _check_duplicates(rows: list[dict[str, Any]], errors: list[dict[str, Any]]) -> None:
-    for field, category in (("section_id", "duplicate_section_id"), ("image_path", "duplicate_image_path")):
+    for field, category in (
+        ("section_id", "duplicate_section_id"),
+        ("image_path", "duplicate_image_path"),
+    ):
         seen: dict[Any, list[dict[str, Any]]] = defaultdict(list)
         for row in rows:
             value = row.get(field)
@@ -271,11 +277,19 @@ def _check_duplicates(rows: list[dict[str, Any]], errors: list[dict[str, Any]]) 
             )
 
 
-def _check_row_fields(rows: list[dict[str, Any]], errors: list[dict[str, Any]], check_images: bool) -> None:
+def _check_row_fields(
+    rows: list[dict[str, Any]], errors: list[dict[str, Any]], check_images: bool
+) -> None:
     for row in rows:
         for field in CRITICAL_FIELDS:
             if field not in row or _is_empty(row.get(field)):
-                _add_error(errors, "critical_fields", f"missing or empty critical field {field!r}", row, field=field)
+                _add_error(
+                    errors,
+                    "critical_fields",
+                    f"missing or empty critical field {field!r}",
+                    row,
+                    field=field,
+                )
 
         expected_axis = ORIENTATION_TO_AXIS[row["_plane"]]
         slice_axis = row.get("slice_axis")
@@ -283,7 +297,10 @@ def _check_row_fields(rows: list[dict[str, Any]], errors: list[dict[str, Any]], 
             _add_error(
                 errors,
                 "plane_consistency",
-                f"slice_axis {slice_axis!r} does not match plane {row['_plane']!r}; expected {expected_axis!r}",
+                (
+                    f"slice_axis {slice_axis!r} does not match plane "
+                    f"{row['_plane']!r}; expected {expected_axis!r}"
+                ),
                 row,
             )
 
@@ -298,7 +315,9 @@ def _check_row_fields(rows: list[dict[str, Any]], errors: list[dict[str, Any]], 
 
         atlas = row.get("atlas")
         if not _is_empty(atlas) and not _is_valid_atlas(row):
-            _add_error(errors, "atlas_resolution", f"unresolved or unsupported atlas {atlas!r}", row)
+            _add_error(
+                errors, "atlas_resolution", f"unresolved or unsupported atlas {atlas!r}", row
+            )
 
         position = row.get("position_mm")
         numeric_position = _to_number(position)
@@ -419,8 +438,7 @@ def _do_check_allocation_integrity(
                     "allocation_cross_split",
                     (
                         f"section_id {section_id!r} is active in multiple splits "
-                        f"for plane {plane!r}: "
-                        + " and ".join(f"{plane}/{s}" for s in splits)
+                        f"for plane {plane!r}: " + " and ".join(f"{plane}/{s}" for s in splits)
                     ),
                     section_id=section_id,
                     plane=plane,
@@ -529,8 +547,12 @@ def _write_report(rows: list[dict[str, Any]], error_count: int, target_path: Pat
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--report", action="store_true", help="write data/manifest/manifest_summary.md")
-    parser.add_argument("--check-images", action="store_true", help="verify every image_path exists on disk")
+    parser.add_argument(
+        "--report", action="store_true", help="write data/manifest/manifest_summary.md"
+    )
+    parser.add_argument(
+        "--check-images", action="store_true", help="verify every image_path exists on disk"
+    )
     parser.add_argument("--shards-dir", type=Path, default=Path("data/manifest/shards"))
     parser.add_argument(
         "--allocations-dir",
@@ -555,7 +577,9 @@ def main(argv: list[str] | None = None) -> int:
         )
         _print_summary(result)
         if args.report:
-            _write_report(result.rows, result.error_count, _REPO_ROOT / "data/manifest/manifest_summary.md")
+            _write_report(
+                result.rows, result.error_count, _REPO_ROOT / "data/manifest/manifest_summary.md"
+            )
     return 1 if result.error_count else 0
 
 

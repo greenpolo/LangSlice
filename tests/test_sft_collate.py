@@ -65,9 +65,9 @@ def test_collate_rejects_over_length_example(monkeypatch):
             return -1
 
         def __call__(self, text, **kwargs):
-            class O:
+            class _Tokenized:
                 input_ids = [-1]
-            return O()
+            return _Tokenized()
 
     class StubProcessor:
         tokenizer = StubTokenizer()

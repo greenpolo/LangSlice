@@ -9,6 +9,7 @@ Three atlas APs (2.0 / 5.335 / 8.0 mm) × four columns:
 Renders at 5 µm/px so individual nuclei are resolvable. The atlas slice is
 upsampled by lanczos before texture synthesis.
 """
+
 from __future__ import annotations
 
 import sys
@@ -18,14 +19,16 @@ sys.path.insert(0, "src")
 sys.path.insert(0, "models/langslice-gemma-4/data")
 
 import numpy as np
-from PIL import Image
-
 from augmentation.density import atlas_grayscale_density_map
 from augmentation.transforms.base import TransformContext
 from augmentation.transforms.texture import DAPIGrayMatterNuclei, DAPIWhiteMatterNuclei
 from augmentation.transforms.tissue_class import classify_tissue
+from PIL import Image
+
 from langslice_harness.atlas.core import (
-    get_reference_slice, load_atlas, position_mm_to_index,
+    get_reference_slice,
+    load_atlas,
+    position_mm_to_index,
 )
 from langslice_harness.atlas.space import atlas_space_context, slice_axis_index
 
@@ -106,7 +109,7 @@ def main() -> int:
     for r, c, img in cells:
         h, w = img.shape[:2]
         y0, x0 = r * max_h, c * max_w
-        grid[y0:y0 + h, x0:x0 + w] = img
+        grid[y0 : y0 + h, x0 : x0 + w] = img
 
     out = Path("tmp/outputs/dapi/textures_grid.png")
     Image.fromarray(grid, "RGB").save(out)

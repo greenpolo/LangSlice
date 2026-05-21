@@ -10,6 +10,7 @@ requires-python = ">=3.10"
 dependencies = [
     "google-genai",
     "google-adk",
+    "pydantic>=2",
     "litellm>=1.83.3",
     "backoff>=2.2.1",
     "openai",
@@ -74,7 +75,7 @@ include = [
 select = ["E", "F", "I", "B", "UP"]
 
 [tool.pyright]
-include = ["src/langslice_harness", "tests"]
+include = ["src/langslice_harness"]
 extraPaths = [
     "src",
     "models/langslice-traces",

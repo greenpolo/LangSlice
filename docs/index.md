@@ -14,6 +14,7 @@ session handoffs.
 ## Runtime References
 
 - [`registration_plan.md`](registration_plan.md) - current image-generation registration pipeline.
+- [`engine_schema.json`](engine_schema.json) - generated JSON Schema bundle for the Python engine API.
 
 ## Repository Map
 

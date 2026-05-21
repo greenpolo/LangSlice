@@ -82,7 +82,8 @@ class _StubProcessor:
             for block in (m.get("content") or [])
             if isinstance(block, dict) and block.get("type") == "image"
         )
-        ids = torch.tensor([[1, 2, 3, 4, 5, 6, 7, 8]])
+        token_count = max(4, len(messages) * 4)
+        ids = torch.arange(1, token_count + 1, dtype=torch.long).unsqueeze(0)
         attn = torch.ones_like(ids)
         amask = torch.zeros_like(ids)
         amask[:, 4:] = 1

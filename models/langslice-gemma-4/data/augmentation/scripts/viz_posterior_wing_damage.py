@@ -18,12 +18,12 @@ sys.path.insert(0, "models/langslice-gemma-4/data")
 import copy
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
-
 from augmentation.nissl_pipeline import render_nissl_section
 from augmentation.transforms.base import TransformContext
 from augmentation.transforms.damage import HemibrainPreparation, PosteriorWingDamage
 from augmentation.transforms.tissue_class import classify_tissue
+from PIL import Image, ImageDraw, ImageFont
+
 from langslice_harness.atlas.core import (
     get_reference_slice,
     load_atlas,

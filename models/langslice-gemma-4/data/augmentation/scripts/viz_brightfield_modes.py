@@ -9,6 +9,7 @@ Grid layout (columns left to right):
     sparse_interneuron+none | sparse_interneuron+hematoxylin
     myelin+none | myelin+hematoxylin
 """
+
 from __future__ import annotations
 
 import sys
@@ -18,13 +19,16 @@ sys.path.insert(0, "src")
 sys.path.insert(0, "models/langslice-gemma-4/data")
 
 import numpy as np
+from augmentation.brightfield_pipeline import (
+    BRIGHTFIELD_MODES,
+    render_brightfield_section,
+)
 from PIL import Image, ImageDraw, ImageFont
 
-from augmentation.brightfield_pipeline import (
-    BRIGHTFIELD_MODES, render_brightfield_section,
-)
 from langslice_harness.atlas.core import (
-    get_reference_slice, load_atlas, position_mm_to_index,
+    get_reference_slice,
+    load_atlas,
+    position_mm_to_index,
 )
 from langslice_harness.atlas.space import atlas_space_context, slice_axis_index
 
@@ -82,19 +86,19 @@ def main() -> int:
 
     # Build column list: mode × counterstain pairs
     columns: list[tuple[str, str]] = [
-        (mode, cs)
-        for mode in BRIGHTFIELD_MODES
-        for cs in COUNTERSTAINS
+        (mode, cs) for mode in BRIGHTFIELD_MODES for cs in COUNTERSTAINS
     ]
     n_cols = len(columns)  # 6
-    n_rows = len(SEEDS)    # 3
+    n_rows = len(SEEDS)  # 3
 
     cells: list[list[np.ndarray]] = []
     for s in SEEDS:
         row: list[np.ndarray] = []
         for mode, cs in columns:
             out = render_brightfield_section(
-                ref, ann, atlas,
+                ref,
+                ann,
+                atlas,
                 seed=s,
                 pixel_size_um=TARGET_PX_UM,
                 mode=mode,
@@ -111,7 +115,7 @@ def main() -> int:
     grid = np.zeros((n_rows * h0, n_cols * w0, 3), dtype=np.uint8)
     for r, row in enumerate(cells):
         for c, img in enumerate(row):
-            grid[r * h0:(r + 1) * h0, c * w0:(c + 1) * w0] = img
+            grid[r * h0 : (r + 1) * h0, c * w0 : (c + 1) * w0] = img
 
     out_path = Path("tmp/outputs/brightfield/modes.png")
     out_path.parent.mkdir(parents=True, exist_ok=True)

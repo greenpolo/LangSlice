@@ -320,9 +320,9 @@ def test_tract_orientation_memoized_per_context() -> None:
         return original_fn(mask, smoothing_sigma=smoothing_sigma)
 
     with mock.patch.object(tex_module, "_local_tract_orientation", counting):
-        DAPIWhiteMatterNuclei(p=1.0, density_range_per_mm2=(400.0, 420.0))(img, rng=rng, ctx=ctx)
+        DAPIWhiteMatterNuclei(p=1.0)(img, rng=rng, ctx=ctx)
         assert call_count == 1
-        DAPIWhiteMatterNuclei(p=1.0, density_range_per_mm2=(400.0, 420.0))(img, rng=rng, ctx=ctx)
+        DAPIWhiteMatterNuclei(p=1.0)(img, rng=rng, ctx=ctx)
         assert call_count == 1
 
 
@@ -408,4 +408,3 @@ def test_fluorescent_probe_green_channel_additive(
     assert out.min() >= 0.0
     assert out.max() <= 1.0
     assert out[..., 1].sum() >= canvas[..., 1].sum() - 1e-3
-

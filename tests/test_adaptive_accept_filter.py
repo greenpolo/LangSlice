@@ -14,18 +14,16 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import pytest
-
 _REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_REPO))
 sys.path.insert(0, str(_REPO / "src"))
 sys.path.insert(0, str(_REPO / "models" / "langslice-gemma-4" / "training"))
 
-from adaptive.schedule import make_error_buffer
+from adaptive.schedule import make_error_buffer  # noqa: E402
+
 # Direct import of the function under test (not via module; it's a module-level
 # function that we import directly so tests never touch vLLM or Docker).
-from iSFT.iterate import _kept_rollouts_for_filter  # noqa: PLC0415
-
+from iSFT.iterate import _kept_rollouts_for_filter  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -116,7 +114,9 @@ def test_adaptive_accept_tightens_on_low_mae() -> None:
     rollouts = [
         _row("a", 0, 0.04),   # under 0.05 cutoff → pass
         _row("a", 1, 0.06),   # over 0.05 cutoff → fail
-        _row("b", 0, 0.05),   # exactly at (or just over) cutoff; int(0.95*100)=95 → errs[95]=0.05 → pass
+        _row(
+            "b", 0, 0.05
+        ),   # exactly at (or just over) cutoff; int(0.95*100)=95 → errs[95]=0.05 → pass
         _row("c", 0, 0.20),   # well over → fail
     ]
     result = _kept_rollouts_for_filter(

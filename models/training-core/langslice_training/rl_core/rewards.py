@@ -83,11 +83,7 @@ def make_position_reward(
             s = env._state  # noqa: SLF001 — reward funcs read private state by design
             preds = s.submitted_positions_mm
             truths = s.ground_truth_positions_mm
-            if (
-                preds is None
-                or s.submitted_kind != s.kind
-                or len(preds) != len(truths)
-            ):
+            if preds is None or s.submitted_kind != s.kind or len(preds) != len(truths):
                 out.append(0.0)
                 continue
             axis_span_mm = s.pos_hi - s.pos_lo

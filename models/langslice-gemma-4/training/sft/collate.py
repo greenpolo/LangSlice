@@ -280,7 +280,7 @@ class LangSliceCollator:
         return self._cache_hits / total
 
     def cache_counters(self) -> dict[str, int]:
-        """Return current ``{'hits': X, 'misses': Y, 'atlas_hits': A, 'query_hits': Q}`` snapshot for logging."""
+        """Return the current cache counter snapshot for logging."""
         return {
             "hits": self._cache_hits,
             "misses": self._cache_misses,
@@ -397,19 +397,27 @@ class LangSliceCollator:
                     f"{self.max_seq_length} (got {ids.shape[1]} tokens). "
                     f"subject_id={ex.metadata.subject_id!r}"
                 )
+            template_mask = out.get("assistant_masks")
             if self._boundary_tokens is not None:
                 assistant_mask = _token_level_assistant_mask(ids[0], self._boundary_tokens)
                 if assistant_mask.sum().item() == 0:
                     # Boundary tokens resolved but no assistant span found
                     # — likely an example with zero assistant turns OR a
-                    # template change that breaks our walker. Defer to the
-                    # safety net.
-                    assistant_mask = self._manual_span_mask(ex, ids[0])
+                    # template change that breaks our walker. Defer to
+                    # processor-provided assistant masks when available, then
+                    # the incremental-render safety net.
+                    if template_mask is not None and template_mask.sum().item() > 0:
+                        assistant_mask = template_mask
+                    else:
+                        assistant_mask = self._manual_span_mask(ex, ids[0])
             else:
-                # Non-Gemma-4 / stub processor: fall back to incremental-render
-                # diff. Slow (2 chat_template calls per assistant turn) but
-                # correct.
-                assistant_mask = self._manual_span_mask(ex, ids[0])
+                # Non-Gemma-4 / stub processor: prefer explicit
+                # assistant_masks if provided; otherwise fall back to
+                # incremental-render diff.
+                if template_mask is not None and template_mask.sum().item() > 0:
+                    assistant_mask = template_mask
+                else:
+                    assistant_mask = self._manual_span_mask(ex, ids[0])
             labels = ids.clone()
             labels[assistant_mask == 0] = -100
 

@@ -4,11 +4,15 @@ import importlib.util
 import json
 from pathlib import Path
 
+import pytest
+
 REPO = Path(__file__).resolve().parents[1]
 
 
 def _load_script(name: str):
     path = REPO / "_local" / "eval" / name
+    if not path.is_file():
+        pytest.skip(f"local eval script is not present in this checkout: {path}")
     spec = importlib.util.spec_from_file_location(path.stem, path)
     assert spec is not None
     module = importlib.util.module_from_spec(spec)

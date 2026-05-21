@@ -43,7 +43,11 @@ from typing import Any
 
 from adaptive.schedule import (
     AdaptiveSchedule as _AdaptiveSchedule,
+)
+from adaptive.schedule import (
     ErrorObservation as ErrorObservation,
+)
+from adaptive.schedule import (
     make_error_buffer as make_error_buffer,
 )
 from rlvr.rewards import normalized_bell_reward
@@ -112,13 +116,19 @@ def compute_ap_bin(
 #: Module-level rolling buffer.  Shape: ``(abs_err_pct, plane, ap_bin)``.
 #: ``abs_err_pct`` is ``abs_err_mm / axis_span_mm`` ∈ ``[0, 1]``.
 _RECENT_ERRORS: deque[tuple[float, str, int]] = deque(maxlen=DEFAULT_BUFFER_MAXLEN)
+_RECENT_SECTION_ERRORS: deque[tuple[float, str, int, str, str]] = deque(
+    maxlen=DEFAULT_BUFFER_MAXLEN
+)
 
 
 def record_error(
     abs_err_mm: float,
     axis_span_mm: float,
     plane: str,
-    ap_bin: int,
+    ap_bin: int | None = None,
+    *,
+    dataset: str | None = None,
+    section_id: str | None = None,
 ) -> None:
     """Append one observation to the module-level rolling buffer.
 
@@ -131,7 +141,17 @@ def record_error(
     if axis <= 0.0:
         return
     abs_err_pct = float(abs_err_mm) / axis
-    _RECENT_ERRORS.append((abs_err_pct, str(plane), int(ap_bin)))
+    bin_idx = int(ap_bin) if ap_bin is not None else 0
+    plane_str = str(plane)
+    _RECENT_ERRORS.append((abs_err_pct, plane_str, bin_idx))
+    if dataset is not None and section_id is not None:
+        _RECENT_SECTION_ERRORS.append((
+            abs_err_pct,
+            plane_str,
+            bin_idx,
+            str(dataset),
+            str(section_id),
+        ))
 
 
 def recent_errors() -> list[tuple[float, str, int]]:
@@ -139,9 +159,15 @@ def recent_errors() -> list[tuple[float, str, int]]:
     return list(_RECENT_ERRORS)
 
 
+def recent_section_errors() -> list[tuple[float, str, int, str, str]]:
+    """Snapshot of section-keyed observations for legacy manifest write-back."""
+    return list(_RECENT_SECTION_ERRORS)
+
+
 def clear_recent_errors() -> None:
     """Empty the rolling buffer. Tests use this for isolation between cases."""
     _RECENT_ERRORS.clear()
+    _RECENT_SECTION_ERRORS.clear()
 
 
 # ---------------------------------------------------------------------------

@@ -66,6 +66,28 @@ from typing import Any, Literal
 _QC_APP_MODULE: Any = None
 
 
+def _resolve_qc_app_path(repo_root: Path) -> Path:
+    """Resolve the QC app module path for this checkout layout.
+
+    Production checkouts keep the canonical loader at ``_local/qc_app/app.py``.
+    Some worktrees intentionally omit ``_local``; for those, use the packaged
+    QC app copy under ``models/data/langslice_data/qc_app/app.py``.
+    """
+    candidates = (
+        repo_root / "_local" / "qc_app" / "app.py",
+        repo_root / "models" / "data" / "langslice_data" / "qc_app" / "app.py",
+    )
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    expected = ", ".join(str(p) for p in candidates)
+    raise FileNotFoundError(
+        "Could not locate the QC app module. Tried: "
+        f"{expected}. manifest_index requires a QC app module that exposes "
+        "load_inventory_manifest."
+    )
+
+
 def _load_qc_app_module() -> Any:
     """Import ``_local/qc_app/app.py`` once and return the module object.
 
@@ -83,13 +105,7 @@ def _load_qc_app_module() -> Any:
     #   <repo>/models/langslice-gemma-4/training/single_turn_rl/manifest_index.py
     here = Path(__file__).resolve()
     repo_root = here.parents[4]
-    qc_app_path = repo_root / "_local" / "qc_app" / "app.py"
-    if not qc_app_path.is_file():
-        raise FileNotFoundError(
-            f"Could not locate the QC app module at {qc_app_path}. "
-            "manifest_index requires _local/qc_app/app.py to be present "
-            "because it wraps that module's load_inventory_manifest."
-        )
+    qc_app_path = _resolve_qc_app_path(repo_root)
 
     # Make sure ``langslice_harness`` (used by the QC app at import time) is
     # importable; the canonical layout puts it under ``<repo>/src``.

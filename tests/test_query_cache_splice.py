@@ -27,7 +27,6 @@ from embeddings.query_cache import QueryEmbeddingCache, save_query_pair
 from sft.collate import LangSliceCollator
 from sft.render import RenderedExample, RenderMetadata
 
-
 # ---------------------------------------------------------------------------
 # Stubs (mirror test_atlas_embedding_collate)
 # ---------------------------------------------------------------------------

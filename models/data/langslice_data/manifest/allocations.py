@@ -39,13 +39,13 @@ from __future__ import annotations
 
 import json
 import sys
+from collections.abc import Iterator
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterator
 
 _SCRIPT_DIR = Path(__file__).resolve().parent
 _REPO_ROOT = _SCRIPT_DIR.parents[4]
-from .paths import resolve_manifest_root
+from .paths import resolve_manifest_root  # noqa: E402
 
 ALLOCATIONS_ROOT: Path = resolve_manifest_root(_REPO_ROOT) / "allocations"
 
@@ -87,7 +87,9 @@ def load_allocation(plane: str, split: str) -> dict[str, dict]:
             except json.JSONDecodeError as exc:
                 raise ValueError(f"{path}:{lineno}: invalid JSON: {exc}") from exc
             if not isinstance(entry, dict):
-                raise ValueError(f"{path}:{lineno}: expected JSON object, got {type(entry).__name__}")
+                raise ValueError(
+                    f"{path}:{lineno}: expected JSON object, got {type(entry).__name__}"
+                )
             section_id = entry.get("section_id")
             if not section_id or not isinstance(section_id, str):
                 raise ValueError(f"{path}:{lineno}: missing or invalid section_id")

@@ -260,7 +260,7 @@ def run_separability_gate(
 
     aug_paths = list(augmented_image_paths)
     rng.shuffle(aug_paths)  # type: ignore[arg-type]
-    train_aug = aug_paths[: n_train_aug]
+    train_aug = aug_paths[:n_train_aug]
     test_aug = aug_paths[n_train_aug : n_train_aug + n_test_aug]
 
     if len(test_aug) < _MIN_TEST_IMAGES:
@@ -282,13 +282,9 @@ def run_separability_gate(
     feat_test_aug = _extract_features(test_aug, dev, model, transform)
 
     X_train = np.concatenate([feat_train_real, feat_train_aug], axis=0)
-    y_train = np.concatenate(
-        [np.zeros(len(feat_train_real)), np.ones(len(feat_train_aug))]
-    )
+    y_train = np.concatenate([np.zeros(len(feat_train_real)), np.ones(len(feat_train_aug))])
     X_test = np.concatenate([feat_test_real, feat_test_aug], axis=0)
-    y_test = np.concatenate(
-        [np.zeros(len(feat_test_real)), np.ones(len(feat_test_aug))]
-    )
+    y_test = np.concatenate([np.zeros(len(feat_test_real)), np.ones(len(feat_test_aug))])
 
     clf = LogisticRegression(C=1.0, max_iter=1000, random_state=seed)
     clf.fit(X_train, y_train)

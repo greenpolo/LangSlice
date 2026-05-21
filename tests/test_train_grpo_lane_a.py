@@ -32,8 +32,6 @@ def test_train_grpo_help_advertises_index_lane_a(tmp_path: Path) -> None:
     the human-readable help so operators can discover it without grep."""
     # Reach into the argparse help text via the parser, not via SystemExit.
     # ``_parse_args`` builds the parser fresh on each call; mirror that.
-    import argparse
-
     # Re-construct the parser by invoking the same logic _parse_args uses,
     # except we capture format_help() instead of parsing argv. Easiest: drive
     # parser.parse_args(["--help"]) inside a SystemExit context and read the
@@ -62,10 +60,8 @@ def test_train_grpo_help_advertises_index_lane_a(tmp_path: Path) -> None:
     # The new help blurb references the cache dependency.
     assert "atlas-embedding-cache" in out
 
-    # Defensive: the parser's choice list itself contains the new option.
-    parser = argparse.ArgumentParser()
-    # Round-trip via _parse_args won't expose the parser, so we instead
-    # confirm parse-time acceptance below.
+    # Round-trip via _parse_args doesn't expose the underlying parser object,
+    # so parse-time acceptance is confirmed below.
 
 
 # ---------------------------------------------------------------------------

@@ -42,8 +42,8 @@ from pathlib import Path
 _SCRIPT_DIR = Path(__file__).resolve().parent
 _REPO_ROOT = _SCRIPT_DIR.parents[4]
 
-from . import allocations as alloc_lib
-from .paths import resolve_manifest_root
+from . import allocations as alloc_lib  # noqa: E402
+from .paths import resolve_manifest_root  # noqa: E402
 
 SHARDS_ROOT = resolve_manifest_root(_REPO_ROOT) / "shards"
 ALLOCATIONS_CANONICAL_ROOT = alloc_lib.ALLOCATIONS_ROOT.resolve()
@@ -96,8 +96,7 @@ def _iter_shard_rows(plane: str, dataset: str):
     path = SHARDS_ROOT / plane / f"{dataset}.jsonl"
     if not path.exists():
         raise FileNotFoundError(
-            f"shard not found: {path}\n"
-            f"  (looked up plane={plane!r}, dataset={dataset!r})"
+            f"shard not found: {path}\n  (looked up plane={plane!r}, dataset={dataset!r})"
         )
     with path.open("r", encoding="utf-8") as handle:
         for lineno, raw_line in enumerate(handle, start=1):
@@ -167,9 +166,7 @@ def _find_subject_conflicts(
                     continue
                 brain_key = (ds, ex_subj)
                 if brain_key in new_brains:
-                    other_brains.setdefault(brain_key, []).append(
-                        (plane, split, str(ex_sid))
-                    )
+                    other_brains.setdefault(brain_key, []).append((plane, split, str(ex_sid)))
 
     conflicts: list[tuple[str, str, str, str, str]] = []
     for new_sid, new_subj in new_subjects.items():
@@ -262,8 +259,8 @@ def cmd_add(args: argparse.Namespace) -> int:
         if brain_conflicts:
             seen: set[tuple[str, str, str, str]] = set()
             print(
-                f"ERROR: the following sections belong to brains already "
-                f"allocated to another split:",
+                "ERROR: the following sections belong to brains already "
+                "allocated to another split:",
                 file=sys.stderr,
             )
             for new_sid, subj, ex_plane, ex_split, ex_sid in brain_conflicts:
@@ -285,9 +282,7 @@ def cmd_add(args: argparse.Namespace) -> int:
 
     # Append allocation entries
     for sid in args.section_ids:
-        alloc_lib.add_to_allocation(
-            plane, split, sid, dataset=args.dataset, added_by=args.added_by
-        )
+        alloc_lib.add_to_allocation(plane, split, sid, dataset=args.dataset, added_by=args.added_by)
         print(f"added: {plane}/{split} <- {sid}")
 
     return 0
@@ -331,19 +326,25 @@ def cmd_list(args: argparse.Namespace) -> int:
     print(f"{plane}/{split}: {len(entries)} active allocations")
     for section_id in sorted(entries):
         entry = entries[section_id]
-        print(f"  {section_id}  dataset={entry.get('dataset', '?')}  added_by={entry.get('added_by', '?')}")
+        dataset = entry.get("dataset", "?")
+        added_by = entry.get("added_by", "?")
+        print(f"  {section_id}  dataset={dataset}  added_by={added_by}")
     return 0
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # add
     add_parser = subparsers.add_parser("add", help="Add section_ids to a split allocation.")
     add_parser.add_argument("plane_split", type=_parse_plane_split, metavar="<plane>/<split>")
     add_parser.add_argument("section_ids", nargs="+", metavar="section_id")
-    add_parser.add_argument("--dataset", required=True, help="Dataset name (must match a shard stem).")
+    add_parser.add_argument(
+        "--dataset", required=True, help="Dataset name (must match a shard stem)."
+    )
     add_parser.add_argument("--added-by", required=True, dest="added_by", help="Agent identifier.")
     add_parser.add_argument(
         "--allow-subject-in-other-splits",
@@ -356,10 +357,14 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
 
     # remove
-    remove_parser = subparsers.add_parser("remove", help="Remove section_ids from a split (tombstone).")
+    remove_parser = subparsers.add_parser(
+        "remove", help="Remove section_ids from a split (tombstone)."
+    )
     remove_parser.add_argument("plane_split", type=_parse_plane_split, metavar="<plane>/<split>")
     remove_parser.add_argument("section_ids", nargs="+", metavar="section_id")
-    remove_parser.add_argument("--removed-by", required=True, dest="removed_by", help="Agent identifier.")
+    remove_parser.add_argument(
+        "--removed-by", required=True, dest="removed_by", help="Agent identifier."
+    )
 
     # list
     list_parser = subparsers.add_parser("list", help="List active allocations for a plane/split.")

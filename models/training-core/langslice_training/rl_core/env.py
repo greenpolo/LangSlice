@@ -169,9 +169,7 @@ class LangSliceEstimateEnv:
                 f"single-slice kind expects exactly 1 ground-truth position, got {len(gt_raw)}"
             )
         if kind == "group" and len(gt_raw) < 2:
-            raise ValueError(
-                f"group kind expects >=2 ground-truth positions, got {len(gt_raw)}"
-            )
+            raise ValueError(f"group kind expects >=2 ground-truth positions, got {len(gt_raw)}")
 
         pos_lo, pos_hi = float(valid_range[0]), float(valid_range[1])
         if pos_hi <= pos_lo:
@@ -220,9 +218,7 @@ class LangSliceEstimateEnv:
 
         if self._state.done:
             self._state.malformed_tool_calls += 1
-            return _done_error(
-                "Episode already submitted; further tool calls are ignored."
-            )
+            return _done_error("Episode already submitted; further tool calls are ignored.")
 
         coerced = _coerce_positions(positions_mm)
         if coerced is None or len(coerced) == 0:

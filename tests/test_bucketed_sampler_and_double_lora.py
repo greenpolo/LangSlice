@@ -8,9 +8,8 @@ import argparse
 import types
 
 import pytest
-
-from sft.train_sft import ShapeBucketBatchSampler
 from iSFT.iterate import _assert_no_double_lora
+from sft.train_sft import ShapeBucketBatchSampler
 
 
 def _example(trace_len: int):

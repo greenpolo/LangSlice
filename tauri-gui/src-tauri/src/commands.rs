@@ -10,6 +10,7 @@ use std::path::Path;
 use crate::atlas::loader;
 use crate::atlas::slicer;
 use crate::atlas::types::{AtlasMetadata, MeshData, SliceResult};
+use crate::engine;
 
 /// Cached thumbnail: pre-encoded JPEG base64 + dimensions.
 struct CachedThumb {
@@ -106,9 +107,8 @@ print(json.dumps(out))
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let parsed: serde_json::Map<String, serde_json::Value> =
-        serde_json::from_str(stdout.trim())
-            .map_err(|e| format!("Failed to parse atlas listing JSON: {}", e))?;
+    let parsed: serde_json::Map<String, serde_json::Value> = serde_json::from_str(stdout.trim())
+        .map_err(|e| format!("Failed to parse atlas listing JSON: {}", e))?;
 
     let mut atlases: Vec<AvailableAtlas> = parsed
         .into_iter()
@@ -517,85 +517,21 @@ pub async fn run_estimate(
     endpoint: Option<String>,
     app: tauri::AppHandle,
 ) -> Result<serde_json::Value, String> {
-    use tauri::Emitter;
-    use tokio::io::{AsyncBufReadExt, BufReader};
-    use tokio::process::Command;
-
-    let mut args = vec![
-        "-m".to_string(),
-        "langslice_harness".to_string(),
-        "estimate".to_string(),
-        image_path,
-        "--atlas".to_string(),
-        atlas,
-        "--plane".to_string(),
-        plane,
-        "--model".to_string(),
-        model,
-        "--thinking".to_string(),
-        thinking,
-        "--temperature".to_string(),
-        temperature.to_string(),
-        "--media-resolution".to_string(),
-        media_resolution,
-        "--max-iterations".to_string(),
-        max_iterations.to_string(),
-        "--preprocess".to_string(),
-        preprocess,
-        "--provider".to_string(),
-        provider,
-        "--json".to_string(),
-    ];
-    if let Some(ep) = endpoint {
-        if !ep.is_empty() {
-            args.push("--endpoint".to_string());
-            args.push(ep);
-        }
-    }
-
-    let mut child = Command::new("python")
-        .args(&args)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("Failed to spawn python: {}", e))?;
-
-    let stdout = child.stdout.take().ok_or("No stdout")?;
-    let stderr = child.stderr.take().ok_or("No stderr")?;
-
-    let app_clone = app.clone();
-
-    // Stream stderr as log lines
-    let stderr_handle = tokio::spawn(async move {
-        let reader = BufReader::new(stderr);
-        let mut lines = reader.lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            let _ = app_clone.emit("pipeline-log", &line);
-        }
+    let effective_endpoint = endpoint.filter(|value| !value.trim().is_empty());
+    let params = serde_json::json!({
+        "image_path": image_path,
+        "atlas": atlas,
+        "plane": plane,
+        "model": model,
+        "thinking": thinking,
+        "temperature": temperature,
+        "media_resolution": media_resolution,
+        "max_iterations": max_iterations,
+        "preprocess": preprocess,
+        "provider": provider,
+        "endpoint": effective_endpoint,
     });
-
-    // Capture all stdout
-    let reader = BufReader::new(stdout);
-    let mut lines = reader.lines();
-    let mut all_stdout = Vec::new();
-    while let Ok(Some(line)) = lines.next_line().await {
-        let _ = app.emit("pipeline-log", &line);
-        all_stdout.push(line);
-    }
-
-    stderr_handle.await.ok();
-
-    let status = child
-        .wait()
-        .await
-        .map_err(|e| format!("Process error: {}", e))?;
-    if !status.success() {
-        return Err(format!("Estimation failed (exit code {:?})", status.code()));
-    }
-
-    // Extract JSON from the end of stdout
-    let stdout_text = all_stdout.join("\n");
-    extract_json(&stdout_text)
+    engine::run_engine_method(&app, "estimate.run", params, None).await
 }
 
 /// Run `langslice register` CLI and return the JSON result.
@@ -620,80 +556,19 @@ pub async fn run_register(
     endpoint: Option<String>,
     app: tauri::AppHandle,
 ) -> Result<serde_json::Value, String> {
-    use tauri::Emitter;
-    use tokio::io::{AsyncBufReadExt, BufReader};
-    use tokio::process::Command;
-
-    let mut args = vec![
-        "-m".to_string(),
-        "langslice_harness".to_string(),
-        "register".to_string(),
-        image_path,
-        "--atlas".to_string(),
-        atlas,
-        "--position".to_string(),
-        position_mm.to_string(),
-        "--plane".to_string(),
-        plane,
-        "--image-model".to_string(),
-        image_model,
-        "--thinking".to_string(),
-        thinking,
-        "--temperature".to_string(),
-        temperature.to_string(),
-        "--provider".to_string(),
-        provider,
-        "--json".to_string(),
-    ];
-    if let Some(ep) = endpoint {
-        if !ep.is_empty() {
-            args.push("--endpoint".to_string());
-            args.push(ep);
-        }
-    }
-    let mut child = Command::new("python")
-        .args(&args)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("Failed to spawn python: {}", e))?;
-
-    let stdout = child.stdout.take().ok_or("No stdout")?;
-    let stderr = child.stderr.take().ok_or("No stderr")?;
-
-    let app_clone = app.clone();
-
-    let stderr_handle = tokio::spawn(async move {
-        let reader = BufReader::new(stderr);
-        let mut lines = reader.lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            let _ = app_clone.emit("pipeline-log", &line);
-        }
+    let effective_endpoint = endpoint.filter(|value| !value.trim().is_empty());
+    let params = serde_json::json!({
+        "image_path": image_path,
+        "atlas": atlas,
+        "position_mm": position_mm,
+        "plane": plane,
+        "image_model": image_model,
+        "thinking": thinking,
+        "temperature": temperature,
+        "provider": provider,
+        "endpoint": effective_endpoint,
     });
-
-    let reader = BufReader::new(stdout);
-    let mut lines = reader.lines();
-    let mut all_stdout = Vec::new();
-    while let Ok(Some(line)) = lines.next_line().await {
-        let _ = app.emit("pipeline-log", &line);
-        all_stdout.push(line);
-    }
-
-    stderr_handle.await.ok();
-
-    let status = child
-        .wait()
-        .await
-        .map_err(|e| format!("Process error: {}", e))?;
-    if !status.success() {
-        return Err(format!(
-            "Registration failed (exit code {:?})",
-            status.code()
-        ));
-    }
-
-    let stdout_text = all_stdout.join("\n");
-    extract_json(&stdout_text)
+    engine::run_engine_method(&app, "register.run", params, None).await
 }
 
 /// Run the silhouette-based affine preview pipeline. Used by the GUI to
@@ -714,9 +589,7 @@ pub async fn run_quick_affine(
     app: tauri::AppHandle,
 ) -> Result<serde_json::Value, String> {
     use std::hash::{Hash, Hasher};
-    use tauri::{Emitter, Manager};
-    use tokio::io::{AsyncBufReadExt, BufReader};
-    use tokio::process::Command;
+    use tauri::Manager;
 
     // Hash the inputs into a stable filename. Quantize position to integer
     // micrometres so micro-jitter in the slider doesn't generate thousands
@@ -737,95 +610,14 @@ pub async fn run_quick_affine(
         .map_err(|e| format!("Failed to create cache dir: {}", e))?;
     let out_path = cache_dir.join(&filename);
     let out_path_str = out_path.to_string_lossy().to_string();
-
-    let args = vec![
-        "-m".to_string(),
-        "langslice_harness".to_string(),
-        "quick-affine".to_string(),
-        image_path,
-        "--atlas".to_string(),
-        atlas,
-        "--position".to_string(),
-        position_mm.to_string(),
-        "--plane".to_string(),
-        plane,
-        "--out".to_string(),
-        out_path_str,
-        "--json".to_string(),
-    ];
-
-    let mut child = Command::new("python")
-        .args(&args)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("Failed to spawn python: {}", e))?;
-
-    let stdout = child.stdout.take().ok_or("No stdout")?;
-    let stderr = child.stderr.take().ok_or("No stderr")?;
-    let app_clone = app.clone();
-
-    let stderr_handle = tokio::spawn(async move {
-        let reader = BufReader::new(stderr);
-        let mut lines = reader.lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            let _ = app_clone.emit("pipeline-log", &format!("[quick-affine] {}", line));
-        }
+    let params = serde_json::json!({
+        "image_path": image_path,
+        "atlas": atlas,
+        "position_mm": position_mm,
+        "plane": plane,
+        "output_path": out_path_str,
     });
-
-    let reader = BufReader::new(stdout);
-    let mut lines = reader.lines();
-    let mut all_stdout = Vec::new();
-    while let Ok(Some(line)) = lines.next_line().await {
-        let _ = app.emit("pipeline-log", &format!("[quick-affine] {}", line));
-        all_stdout.push(line);
-    }
-    stderr_handle.await.ok();
-
-    let status = child
-        .wait()
-        .await
-        .map_err(|e| format!("Process error: {}", e))?;
-    if !status.success() {
-        return Err(format!(
-            "Quick-affine failed (exit code {:?})",
-            status.code()
-        ));
-    }
-
-    let stdout_text = all_stdout.join("\n");
-    extract_json(&stdout_text)
-}
-
-/// Extract the last JSON object from mixed stdout output.
-fn extract_json(stdout: &str) -> Result<serde_json::Value, String> {
-    let mut depth = 0i32;
-    let mut json_start = None;
-    let mut json_end = None;
-
-    for (i, ch) in stdout.char_indices().rev() {
-        if json_end.is_none() && ch == '}' {
-            json_end = Some(i + 1);
-            depth = 1;
-        } else if json_end.is_some() {
-            if ch == '}' {
-                depth += 1;
-            }
-            if ch == '{' {
-                depth -= 1;
-            }
-            if depth == 0 {
-                json_start = Some(i);
-                break;
-            }
-        }
-    }
-
-    match (json_start, json_end) {
-        (Some(start), Some(end)) => serde_json::from_str(&stdout[start..end])
-            .map_err(|e| format!("JSON parse error: {}", e)),
-        _ => Err("No JSON object found in output".into()),
-    }
+    engine::run_engine_method(&app, "quick_affine.run", params, Some("quick-affine")).await
 }
 
 /// Run `langslice_harness register` with export output.
@@ -839,7 +631,12 @@ pub async fn run_export(
 ) -> Result<String, String> {
     use tokio::process::Command;
 
-    let output = Command::new("python")
+    // Milestone choice: keep export on the legacy register CLI path until the
+    // engine protocol supports an affine-aware export request that preserves
+    // registration-derived warp/transform fidelity.
+    let mut command = Command::new("python");
+    engine::apply_local_python_dev_bootstrap(&mut command);
+    let output = command
         .args([
             "-m",
             "langslice_harness",
@@ -863,7 +660,6 @@ pub async fn run_export(
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!("Export failed: {}", stderr));
     }
-
     Ok(output_dir)
 }
 

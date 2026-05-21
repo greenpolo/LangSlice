@@ -49,19 +49,27 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         description="Compute curriculum weights from a slicebench summary.",
     )
     p.add_argument(
-        "--slicebench-summary", type=Path, required=True,
+        "--slicebench-summary",
+        type=Path,
+        required=True,
         help="Path to slicebench summary.json with per_coord_bin block.",
     )
     p.add_argument(
-        "--section-bins", type=Path, required=True,
+        "--section-bins",
+        type=Path,
+        required=True,
         help="JSON file mapping section_id → bin_idx (int) or [plane, bin_label].",
     )
     p.add_argument(
-        "--output", type=Path, required=True,
+        "--output",
+        type=Path,
+        required=True,
         help="Where to write the new weights JSON.",
     )
     p.add_argument(
-        "--prev-weights", type=Path, default=None,
+        "--prev-weights",
+        type=Path,
+        default=None,
         help="Optional previous-round weights for EMA smoothing + ratio cap.",
     )
     p.add_argument("--alpha", type=float, default=1.0)
@@ -69,11 +77,15 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--floor-fraction", type=float, default=0.1)
     p.add_argument("--smoothing", type=float, default=0.5)
     p.add_argument(
-        "--baseline-mae", type=float, default=None,
+        "--baseline-mae",
+        type=float,
+        default=None,
         help="Optional baseline_mae override; defaults to mean of per_bin_mae.",
     )
     p.add_argument(
-        "--round-idx", type=int, default=None,
+        "--round-idx",
+        type=int,
+        default=None,
         help="Optional round index recorded in output _metadata.",
     )
     return p.parse_args(argv)

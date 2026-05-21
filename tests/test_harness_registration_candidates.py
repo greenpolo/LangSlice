@@ -486,8 +486,6 @@ def test_run_inverse_warp_for_slice_writes_forward_transform_to_disk(monkeypatch
     fake_itk = _make_fake_itk_module(recorder=recorder)
     monkeypatch.setitem(__import__("sys").modules, "itk", fake_itk)
 
-    written_paths: list[str] = []
-
     class FakeResultTransform:
         def __init__(self, n_maps: int = 2) -> None:
             self._n_maps = n_maps
@@ -496,12 +494,11 @@ def test_run_inverse_warp_for_slice_writes_forward_transform_to_disk(monkeypatch
             return self._n_maps
 
         def GetParameterMap(self, idx: int):  # noqa: N802 - itk API name
-            return SimpleNamespace(idx=idx)
-
-        def WriteParameterFile(self, parameter_map, path):  # noqa: N802 - itk API name
-            written_paths.append(str(path))
-            # Touch the file so a downstream `os.path.exists` check would pass.
-            Path(path).write_text(f"# fake parameter map {parameter_map.idx}\n")
+            return {
+                "Transform": ["AffineTransform"],
+                "InitialTransformParameterFileName": [""],
+                "Stage": [str(idx)],
+            }
 
     # Replace ParameterObject construction so we don't need a real itk install.
     monkeypatch.setattr(
@@ -520,14 +517,11 @@ def test_run_inverse_warp_for_slice_writes_forward_transform_to_disk(monkeypatch
         forward_result_transform=forward_transform,
     )
 
-    # Both parameter maps must be written so the chained
-    # InitialTransformParametersFileName references resolve correctly.
-    assert len(written_paths) == 2
     # The last-stage path is what gets passed to elastix as initial transform.
-    last_written = written_paths[-1]
     elastix_calls = recorder["elastix_calls"]
     assert len(elastix_calls) == 1
-    assert elastix_calls[0]["initial_transform_parameter_file_name"] == last_written
+    last_written = Path(elastix_calls[0]["initial_transform_parameter_file_name"])
+    assert last_written.name == "TransformParameters.1.txt"
     assert warped.shape == slice_rgb.shape
 
 

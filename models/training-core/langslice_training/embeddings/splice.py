@@ -119,12 +119,7 @@ def install_atlas_splice(
         cached_flat: torch.Tensor | None = getattr(inner, _CACHED_FLAT_ATTR, None)
         cached_pc: torch.Tensor | None = getattr(inner, _CACHED_PATCH_COUNTS_ATTR, None)
 
-        if (
-            mask is None
-            or cached_flat is None
-            or cached_pc is None
-            or not bool(mask.any().item())
-        ):
+        if mask is None or cached_flat is None or cached_pc is None or not bool(mask.any().item()):
             with _vision_ctx():
                 return original_get_image_features(
                     pixel_values, image_position_ids=image_position_ids, **kwargs
@@ -152,7 +147,7 @@ def install_atlas_splice(
                 tuple(cached_pc.shape),
                 tuple(mask.shape),
             )
-            setattr(inner, "_atlas_splice_logged_shapes", True)
+            inner._atlas_splice_logged_shapes = True
 
         device = pixel_values.device
         mask_dev = mask.to(device=device)
@@ -201,8 +196,10 @@ def install_atlas_splice(
                     )
                 uncached_pc_per_image = partial_flat.shape[0] // n_uncached
                 uncached_pc = torch.full(
-                    (n_uncached,), uncached_pc_per_image,
-                    dtype=torch.long, device=device,
+                    (n_uncached,),
+                    uncached_pc_per_image,
+                    dtype=torch.long,
+                    device=device,
                 )
             else:
                 # Heterogeneous: probe each uncached image individually so
@@ -212,8 +209,8 @@ def install_atlas_splice(
                 per_image_pc_list: list[int] = []
                 partial = None
                 for j in range(n_uncached):
-                    single_pv = uncached_pv[j:j + 1]
-                    single_pid = uncached_pid[j:j + 1]
+                    single_pv = uncached_pv[j : j + 1]
+                    single_pid = uncached_pid[j : j + 1]
                     with _vision_ctx():
                         single_out = original_get_image_features(
                             single_pv, image_position_ids=single_pid, **kwargs
@@ -225,7 +222,9 @@ def install_atlas_splice(
                         partial = single_out  # template for return type
                 partial_flat = torch.cat(per_image_flats, dim=0)
                 uncached_pc = torch.tensor(
-                    per_image_pc_list, dtype=torch.long, device=device,
+                    per_image_pc_list,
+                    dtype=torch.long,
+                    device=device,
                 )
 
             patch_counts_all[not_mask_dev] = uncached_pc
@@ -246,7 +245,8 @@ def install_atlas_splice(
         ref = partial_flat if partial_flat is not None else cached_flat
         full_flat = torch.empty(
             (total_patches, int(ref.shape[1])),
-            dtype=ref.dtype, device=ref.device,
+            dtype=ref.dtype,
+            device=ref.device,
         )
         cached_flat_dev = cached_flat.to(device=ref.device, dtype=ref.dtype)
         cached_idx = 0
@@ -268,7 +268,7 @@ def install_atlas_splice(
             else:
                 assert partial_flat is not None
                 slot = out_hi - out_lo
-                full_flat[out_lo:out_hi] = partial_flat[uncached_cursor:uncached_cursor + slot]
+                full_flat[out_lo:out_hi] = partial_flat[uncached_cursor : uncached_cursor + slot]
                 uncached_cursor += slot
         if partial_flat is not None and uncached_cursor != partial_flat.shape[0]:
             raise RuntimeError(
@@ -292,6 +292,7 @@ def install_atlas_splice(
             return partial
 
         from transformers.modeling_outputs import BaseModelOutputWithPooling
+
         return BaseModelOutputWithPooling(
             last_hidden_state=full_flat,
             pooler_output=pooler,
@@ -350,6 +351,7 @@ def install_atlas_splice(
             for name in sidecar_names:
                 model_kwargs.pop(name, None)
             return original(model_kwargs)
+
         return patched
 
     patched_count = 0

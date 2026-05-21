@@ -19,14 +19,14 @@ sys.path.insert(0, "src")
 sys.path.insert(0, "models/langslice-gemma-4/data")
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
-
 from augmentation.brightfield_pipeline import render_brightfield_section
 from augmentation.dapi_pipeline import render_dapi_section
 from augmentation.fluorescence_pipeline import render_fluorescence_section
 from augmentation.ish_pipeline import render_ish_section
 from augmentation.modes import FLUORESCENCE_MODES, ISH_MODES
 from augmentation.nissl_pipeline import render_nissl_section
+from PIL import Image, ImageDraw, ImageFont
+
 from langslice_harness.atlas.core import (
     get_reference_slice,
     load_atlas,
@@ -115,9 +115,27 @@ def _row_label_strip(label: str, cell_h: int) -> np.ndarray:
 
 
 def render_row_dapi(ref, ann, atlas) -> list[np.ndarray]:
-    clean = render_dapi_section(ref, ann, atlas, seed=SEED, pixel_size_um=TARGET_PX_UM, apply_damage=False)
-    medium = render_dapi_section(ref, ann, atlas, seed=SEED, pixel_size_um=TARGET_PX_UM, apply_damage=True, damage_intensity="medium")
-    heavy = render_dapi_section(ref, ann, atlas, seed=SEED, pixel_size_um=TARGET_PX_UM, apply_damage=True, damage_intensity="heavy")
+    clean = render_dapi_section(
+        ref, ann, atlas, seed=SEED, pixel_size_um=TARGET_PX_UM, apply_damage=False
+    )
+    medium = render_dapi_section(
+        ref,
+        ann,
+        atlas,
+        seed=SEED,
+        pixel_size_um=TARGET_PX_UM,
+        apply_damage=True,
+        damage_intensity="medium",
+    )
+    heavy = render_dapi_section(
+        ref,
+        ann,
+        atlas,
+        seed=SEED,
+        pixel_size_um=TARGET_PX_UM,
+        apply_damage=True,
+        damage_intensity="heavy",
+    )
     return [
         _label_panel(_to_thumb(clean), "DAPI clean"),
         _label_panel(_to_thumb(medium), "DAPI medium damage"),
@@ -127,9 +145,29 @@ def render_row_dapi(ref, ann, atlas) -> list[np.ndarray]:
 
 def render_row_nissl(ref, ann, atlas) -> list[np.ndarray]:
     cream = (0.85, 0.78, 0.65)
-    clean = render_nissl_section(ref, ann, atlas, seed=SEED, pixel_size_um=TARGET_PX_UM, cream_base=cream, apply_damage=False)
-    medium = render_nissl_section(ref, ann, atlas, seed=SEED, pixel_size_um=TARGET_PX_UM, cream_base=cream, apply_damage=True, damage_intensity="medium")
-    heavy = render_nissl_section(ref, ann, atlas, seed=SEED, pixel_size_um=TARGET_PX_UM, cream_base=cream, apply_damage=True, damage_intensity="heavy")
+    clean = render_nissl_section(
+        ref, ann, atlas, seed=SEED, pixel_size_um=TARGET_PX_UM, cream_base=cream, apply_damage=False
+    )
+    medium = render_nissl_section(
+        ref,
+        ann,
+        atlas,
+        seed=SEED,
+        pixel_size_um=TARGET_PX_UM,
+        cream_base=cream,
+        apply_damage=True,
+        damage_intensity="medium",
+    )
+    heavy = render_nissl_section(
+        ref,
+        ann,
+        atlas,
+        seed=SEED,
+        pixel_size_um=TARGET_PX_UM,
+        cream_base=cream,
+        apply_damage=True,
+        damage_intensity="heavy",
+    )
     return [
         _label_panel(_to_thumb(clean), "Nissl clean"),
         _label_panel(_to_thumb(medium), "Nissl medium damage"),
@@ -138,9 +176,38 @@ def render_row_nissl(ref, ann, atlas) -> list[np.ndarray]:
 
 
 def render_row_brightfield(ref, ann, atlas) -> list[np.ndarray]:
-    clean = render_brightfield_section(ref, ann, atlas, seed=SEED, pixel_size_um=TARGET_PX_UM, mode="pan_neuronal", counterstain="none", apply_damage=False)
-    medium = render_brightfield_section(ref, ann, atlas, seed=SEED, pixel_size_um=TARGET_PX_UM, mode="pan_neuronal", counterstain="none", apply_damage=True, damage_intensity="medium")
-    heavy = render_brightfield_section(ref, ann, atlas, seed=SEED, pixel_size_um=TARGET_PX_UM, mode="pan_neuronal", counterstain="none", apply_damage=True, damage_intensity="heavy")
+    clean = render_brightfield_section(
+        ref,
+        ann,
+        atlas,
+        seed=SEED,
+        pixel_size_um=TARGET_PX_UM,
+        mode="pan_neuronal",
+        counterstain="none",
+        apply_damage=False,
+    )
+    medium = render_brightfield_section(
+        ref,
+        ann,
+        atlas,
+        seed=SEED,
+        pixel_size_um=TARGET_PX_UM,
+        mode="pan_neuronal",
+        counterstain="none",
+        apply_damage=True,
+        damage_intensity="medium",
+    )
+    heavy = render_brightfield_section(
+        ref,
+        ann,
+        atlas,
+        seed=SEED,
+        pixel_size_um=TARGET_PX_UM,
+        mode="pan_neuronal",
+        counterstain="none",
+        apply_damage=True,
+        damage_intensity="heavy",
+    )
     return [
         _label_panel(_to_thumb(clean), "Brightfield clean"),
         _label_panel(_to_thumb(medium), "Brightfield medium damage"),
@@ -151,9 +218,29 @@ def render_row_brightfield(ref, ann, atlas) -> list[np.ndarray]:
 def render_row_fluorescence(ref, ann, atlas) -> list[np.ndarray]:
     mode_map = {m.name: m for m in FLUORESCENCE_MODES}
     fm = mode_map["dapi_gfp"]
-    clean = render_fluorescence_section(ref, ann, atlas, seed=SEED, pixel_size_um=TARGET_PX_UM, mode=fm, apply_damage=False)
-    medium = render_fluorescence_section(ref, ann, atlas, seed=SEED, pixel_size_um=TARGET_PX_UM, mode=fm, apply_damage=True, damage_intensity="medium")
-    heavy = render_fluorescence_section(ref, ann, atlas, seed=SEED, pixel_size_um=TARGET_PX_UM, mode=fm, apply_damage=True, damage_intensity="heavy")
+    clean = render_fluorescence_section(
+        ref, ann, atlas, seed=SEED, pixel_size_um=TARGET_PX_UM, mode=fm, apply_damage=False
+    )
+    medium = render_fluorescence_section(
+        ref,
+        ann,
+        atlas,
+        seed=SEED,
+        pixel_size_um=TARGET_PX_UM,
+        mode=fm,
+        apply_damage=True,
+        damage_intensity="medium",
+    )
+    heavy = render_fluorescence_section(
+        ref,
+        ann,
+        atlas,
+        seed=SEED,
+        pixel_size_um=TARGET_PX_UM,
+        mode=fm,
+        apply_damage=True,
+        damage_intensity="heavy",
+    )
     return [
         _label_panel(_to_thumb(clean), "Fluor dapi_gfp clean"),
         _label_panel(_to_thumb(medium), "Fluor dapi_gfp medium"),
@@ -164,9 +251,29 @@ def render_row_fluorescence(ref, ann, atlas) -> list[np.ndarray]:
 def render_row_ish(ref, ann, atlas) -> list[np.ndarray]:
     mode_map = {m.name: m for m in ISH_MODES}
     im = mode_map["allen_style"]
-    clean = render_ish_section(ref, ann, atlas, seed=SEED, pixel_size_um=TARGET_PX_UM, mode=im, apply_damage=False)
-    medium = render_ish_section(ref, ann, atlas, seed=SEED, pixel_size_um=TARGET_PX_UM, mode=im, apply_damage=True, damage_intensity="medium")
-    heavy = render_ish_section(ref, ann, atlas, seed=SEED, pixel_size_um=TARGET_PX_UM, mode=im, apply_damage=True, damage_intensity="heavy")
+    clean = render_ish_section(
+        ref, ann, atlas, seed=SEED, pixel_size_um=TARGET_PX_UM, mode=im, apply_damage=False
+    )
+    medium = render_ish_section(
+        ref,
+        ann,
+        atlas,
+        seed=SEED,
+        pixel_size_um=TARGET_PX_UM,
+        mode=im,
+        apply_damage=True,
+        damage_intensity="medium",
+    )
+    heavy = render_ish_section(
+        ref,
+        ann,
+        atlas,
+        seed=SEED,
+        pixel_size_um=TARGET_PX_UM,
+        mode=im,
+        apply_damage=True,
+        damage_intensity="heavy",
+    )
     return [
         _label_panel(_to_thumb(clean), "ISH allen_style clean"),
         _label_panel(_to_thumb(medium), "ISH allen_style medium"),
@@ -186,11 +293,11 @@ def main() -> int:
     print(f"Slice shape: ref={ref.shape}  ann={ann.shape}", flush=True)
 
     row_specs = [
-        ("DAPI",        render_row_dapi),
-        ("Nissl",       render_row_nissl),
+        ("DAPI", render_row_dapi),
+        ("Nissl", render_row_nissl),
         ("Brightfield", render_row_brightfield),
         ("Fluorescence", render_row_fluorescence),
-        ("ISH",         render_row_ish),
+        ("ISH", render_row_ish),
     ]
 
     rows_rendered: list[np.ndarray] = []
