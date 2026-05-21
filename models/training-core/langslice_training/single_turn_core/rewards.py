@@ -55,9 +55,7 @@ _GEMMA4_TOOL_CALL_RE = re.compile(
 _GEMMA4_BARE_CALL_RE = re.compile(r"call:(\w+)\{", re.DOTALL)
 # `position_mm` is rendered as a bare numeric by the chat template's
 # format_argument macro (numbers don't get the `<|"|>` string-escape).
-_POSITION_MM_RE = re.compile(
-    r"position_mm\s*:\s*([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)"
-)
+_POSITION_MM_RE = re.compile(r"position_mm\s*:\s*([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)")
 _SUBMIT_TOOL_NAME: str = "submit_estimate"
 
 
@@ -108,6 +106,7 @@ def parse_position_mm(text: str) -> float:
     :class:`_ParseError` if no ``submit_estimate`` appears or the parsed
     ``position_mm`` isn't a finite number.
     """
+
     def _parse_numeric(s: str) -> float:
         try:
             value = float(s)

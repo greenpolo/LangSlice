@@ -12,9 +12,9 @@ sys.path.insert(0, "src")
 sys.path.insert(0, "models/langslice-gemma-4/data")
 
 import numpy as np
+from augmentation.nissl_pipeline import render_nissl_section
 from PIL import Image, ImageDraw, ImageFont
 
-from augmentation.nissl_pipeline import render_nissl_section
 from langslice_harness.atlas.core import (
     get_reference_slice,
     load_atlas,
@@ -64,14 +64,25 @@ def main() -> int:
 
     print("Rendering clean...", flush=True)
     clean = render_nissl_section(
-        ref, ann_up, atlas, seed=SEED, pixel_size_um=TARGET_PX_UM,
-        cream_base=CREAM, apply_damage=False,
+        ref,
+        ann_up,
+        atlas,
+        seed=SEED,
+        pixel_size_um=TARGET_PX_UM,
+        cream_base=CREAM,
+        apply_damage=False,
     )
 
     print("Rendering damaged...", flush=True)
     damaged = render_nissl_section(
-        ref, ann_up, atlas, seed=SEED, pixel_size_um=TARGET_PX_UM,
-        cream_base=CREAM, apply_damage=True, damage_intensity="medium",
+        ref,
+        ann_up,
+        atlas,
+        seed=SEED,
+        pixel_size_um=TARGET_PX_UM,
+        cream_base=CREAM,
+        apply_damage=True,
+        damage_intensity="medium",
     )
 
     def _to_panel(arr: np.ndarray, label: str) -> np.ndarray:

@@ -480,6 +480,29 @@ def test_grpo_default_config_has_stop_tool_names() -> None:
     """Both TOML configs must set stop_tool_names to terminate on submit."""
     import tomllib  # noqa: PLC0415
 
+    expected = {
+        "grpo_default.toml": {
+            "num_generations": 4,
+            "generation_batch_size": 4,
+            "max_completion_length": 2048,
+            "cutoff_frac": 0.10,
+            "sigma_frac": 0.035,
+        },
+        "grpo_pilot.toml": {
+            "num_generations": 8,
+            "generation_batch_size": 8,
+            "max_completion_length": 3072,
+            "cutoff_frac": 0.15,
+            "sigma_frac": 0.05,
+        },
+        "grpo_phase_b.toml": {
+            "num_generations": 4,
+            "generation_batch_size": 4,
+            "max_completion_length": 2048,
+            "cutoff_frac": 0.10,
+            "sigma_frac": 0.035,
+        },
+    }
     for name in ("grpo_default.toml", "grpo_pilot.toml", "grpo_phase_b.toml"):
         path = (
             Path(__file__).resolve().parents[1]
@@ -496,16 +519,17 @@ def test_grpo_default_config_has_stop_tool_names() -> None:
             "submit_estimate",
             "submit_group_estimate",
         }, name
-        assert cfg["grpo"]["num_generations"] == 4, name
-        assert cfg["grpo"]["generation_batch_size"] == 4, name
-        assert cfg["grpo"]["max_completion_length"] == 2048, name
+        expected_cfg = expected[name]
+        assert cfg["grpo"]["num_generations"] == expected_cfg["num_generations"], name
+        assert cfg["grpo"]["generation_batch_size"] == expected_cfg["generation_batch_size"], name
+        assert cfg["grpo"]["max_completion_length"] == expected_cfg["max_completion_length"], name
         assert cfg["grpo"]["max_tool_calling_iterations"] == 12, name
         assert cfg["grpo"]["mask_truncated_completions"] is True, name
         assert cfg["grpo"]["scale_rewards"] == "batch", name
         assert cfg["grpo"]["temperature"] == pytest.approx(0.9), name
         assert cfg["grpo"]["top_p"] == pytest.approx(0.95), name
-        assert cfg["reward"]["cutoff_frac"] == pytest.approx(0.10), name
-        assert cfg["reward"]["sigma_frac"] == pytest.approx(0.035), name
+        assert cfg["reward"]["cutoff_frac"] == pytest.approx(expected_cfg["cutoff_frac"]), name
+        assert cfg["reward"]["sigma_frac"] == pytest.approx(expected_cfg["sigma_frac"]), name
         assert "window_mm" not in cfg["reward"], name
         # Confirm max_prompt_length is gone from every config (P1(a)).
         assert "max_prompt_length" not in cfg["grpo"], name

@@ -328,8 +328,7 @@ class ShapeBucketBatchSampler:
                 batches.append(shuffled[k * self._batch_size : (k + 1) * self._batch_size])
         rng.shuffle(batches)
         self._seed += 1
-        for batch in batches:
-            yield batch
+        yield from batches
 
     def __len__(self) -> int:
         return sum(len(b) // self._batch_size for b in self._buckets)
@@ -474,7 +473,8 @@ def _train(args, config, train_ds, eval_ds, cache, seed: int) -> None:
     # reject ("Invalid backend"). Math is the floor — quadratic memory on
     # bad batches only, cheap on normal batches.
     _torch_sdpa.backends.cuda.enable_math_sdp(True)
-    _torch_sdpa.backends.cuda.enable_flash_sdp(True)  # harmless; SDPA dispatcher just skips it for head_dim=512
+    # Harmless; SDPA dispatcher just skips it for head_dim=512.
+    _torch_sdpa.backends.cuda.enable_flash_sdp(True)
     # Multi-turn rows with 3-8 images vary seq_len 1500-6144 — _dynamo's default
     # cache-size limit of 8 falls back to slow eager once exceeded. 64 leaves
     # plenty of room for every shape we hit; cached graphs are RAM-cheap.

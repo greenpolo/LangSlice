@@ -11,6 +11,7 @@ directly + lightweight post-processing rather than a full pipeline module.
 Track B (B2 brightfield+hematoxylin refactor) integrates the counterstain
 into the full pipeline; this script is for standalone visual proof.
 """
+
 from __future__ import annotations
 
 import sys
@@ -20,8 +21,6 @@ sys.path.insert(0, "src")
 sys.path.insert(0, "models/langslice-gemma-4/data")
 
 import numpy as np
-from PIL import Image
-
 from augmentation.counterstain import (
     _HEMATOXYLIN_SUBSTRATE_PRESETS,
     render_hematoxylin_counterstain,
@@ -29,8 +28,12 @@ from augmentation.counterstain import (
 from augmentation.density import atlas_grayscale_density_map
 from augmentation.transforms.base import TransformContext
 from augmentation.transforms.tissue_class import classify_tissue
+from PIL import Image
+
 from langslice_harness.atlas.core import (
-    get_reference_slice, load_atlas, position_mm_to_index,
+    get_reference_slice,
+    load_atlas,
+    position_mm_to_index,
 )
 from langslice_harness.atlas.space import atlas_space_context, slice_axis_index
 
@@ -70,7 +73,8 @@ def _apply_tone_shift(canvas: np.ndarray, rng: np.random.Generator) -> np.ndarra
 
 
 def _apply_brightness_contrast(
-    canvas: np.ndarray, rng: np.random.Generator,
+    canvas: np.ndarray,
+    rng: np.random.Generator,
 ) -> np.ndarray:
     brightness = rng.uniform(0.88, 1.08)
     contrast = rng.uniform(0.88, 1.12)
@@ -108,7 +112,10 @@ def render_hematoxylin_section(
     gamma = float(rng.uniform(*gamma_range))
     floor = float(rng.uniform(0.10, 0.20))
     density = atlas_grayscale_density_map(
-        reference_slice, masks["tissue"], gamma=gamma, floor=floor,
+        reference_slice,
+        masks["tissue"],
+        gamma=gamma,
+        floor=floor,
     )
 
     ctx = TransformContext(
@@ -156,7 +163,7 @@ def main() -> int:
     grid = np.zeros((rows * h0, cols * w0, 3), dtype=np.uint8)
     for idx, img in enumerate(cells):
         r, c = divmod(idx, cols)
-        grid[r * h0:(r + 1) * h0, c * w0:(c + 1) * w0] = img
+        grid[r * h0 : (r + 1) * h0, c * w0 : (c + 1) * w0] = img
 
     out_path = Path("tmp/outputs/hematoxylin/diversity.png")
     Image.fromarray(grid).save(out_path)

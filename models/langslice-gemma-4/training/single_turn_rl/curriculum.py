@@ -99,6 +99,7 @@ from .adaptive_reward import (
     AdaptiveRewardSchedule,
     compute_ap_bin,
     recent_errors,
+    recent_section_errors,
 )
 
 logger = logging.getLogger(__name__)
@@ -693,13 +694,17 @@ class AdaRFTCurriculumCallback(TrainerCallback):
         self,
         sampler: CurriculumRepeatingSampler,
         *,
-        bin_difficulty: BinDifficultyMap,
+        bin_difficulty: BinDifficultyMap | None = None,
+        manifest_index: Any | None = None,
         schedule: AdaptiveRewardSchedule,
         plane: str | None = None,
         write_back: bool = True,
     ) -> None:
         self.sampler = sampler
-        self.bin_difficulty: BinDifficultyMap = bin_difficulty
+        self.bin_difficulty: BinDifficultyMap = (
+            bin_difficulty if bin_difficulty is not None else BinDifficultyMap()
+        )
+        self.manifest_index = manifest_index
         self.schedule: AdaptiveRewardSchedule = schedule
         self.plane = plane
         self.write_back = write_back
@@ -839,6 +844,25 @@ class AdaRFTCurriculumCallback(TrainerCallback):
                 # rather than write None.
                 continue
             self.bin_difficulty.update(plane, ap_bin, float(running_mean))
+
+        if self.manifest_index is None:
+            return
+
+        section_snapshot = recent_section_errors()
+        section_means: dict[tuple[str, str, str], list[float]] = {}
+        for abs_err_pct, plane, _ap_bin, dataset, section_id in section_snapshot:
+            if self.plane is not None and plane != self.plane:
+                continue
+            section_means.setdefault((plane, dataset, section_id), []).append(abs_err_pct)
+        for (plane, dataset, section_id), values in section_means.items():
+            self.manifest_index.update_difficulty(
+                plane,
+                dataset,
+                section_id,
+                score=sum(values) / len(values),
+                source="adarft_live",
+                if_unknown="ignore",
+            )
 
 
 __all__ = [

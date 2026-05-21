@@ -58,9 +58,7 @@ def _atlas_slice_float32(atlas: object, ap_mm: float) -> tuple[np.ndarray, np.nd
     return img, ann
 
 
-def _random_ap_positions(
-    atlas: object, count: int, rng: np.random.Generator
-) -> list[float]:
+def _random_ap_positions(atlas: object, count: int, rng: np.random.Generator) -> list[float]:
     min_mm, max_mm = _get_position_range(atlas)
     return [float(rng.uniform(min_mm, max_mm)) for _ in range(count)]
 
@@ -134,28 +132,53 @@ def _augment(
 
     if modality == "dapi":
         return render_dapi_section(
-            img, ann, atlas, seed=seed, pixel_size_um=pixel_size_um,
-            plane=plane, position_mm=position_mm,
+            img,
+            ann,
+            atlas,
+            seed=seed,
+            pixel_size_um=pixel_size_um,
+            plane=plane,
+            position_mm=position_mm,
         )
     if modality == "nissl":
         return render_nissl_section(
-            img, ann, atlas, seed=seed, pixel_size_um=pixel_size_um,
-            plane=plane, position_mm=position_mm,
+            img,
+            ann,
+            atlas,
+            seed=seed,
+            pixel_size_um=pixel_size_um,
+            plane=plane,
+            position_mm=position_mm,
         )
     if modality == "brightfield":
         return render_brightfield_section(
-            img, ann, atlas, seed=seed, pixel_size_um=pixel_size_um,
-            plane=plane, position_mm=position_mm,
+            img,
+            ann,
+            atlas,
+            seed=seed,
+            pixel_size_um=pixel_size_um,
+            plane=plane,
+            position_mm=position_mm,
         )
     if modality == "fluorescence":
         return render_fluorescence_section(
-            img, ann, atlas, seed=seed, pixel_size_um=pixel_size_um,
-            plane=plane, position_mm=position_mm,
+            img,
+            ann,
+            atlas,
+            seed=seed,
+            pixel_size_um=pixel_size_um,
+            plane=plane,
+            position_mm=position_mm,
         )
     if modality == "ish":
         return render_ish_section(
-            img, ann, atlas, seed=seed, pixel_size_um=pixel_size_um,
-            plane=plane, position_mm=position_mm,
+            img,
+            ann,
+            atlas,
+            seed=seed,
+            pixel_size_um=pixel_size_um,
+            plane=plane,
+            position_mm=position_mm,
         )
     raise ValueError(f"Unsupported modality {modality!r}")
 
@@ -298,9 +321,7 @@ def _build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     gen.add_argument("--atlas", default="allen_mouse_25um", help="BrainGlobe atlas name")
-    gen.add_argument(
-        "--modality", required=True, choices=list(_MODALITIES), help="Target modality"
-    )
+    gen.add_argument("--modality", required=True, choices=list(_MODALITIES), help="Target modality")
     gen.add_argument("--count", type=int, default=1000, help="Number of images to generate")
     gen.add_argument("--out", required=True, help="Output directory")
 
@@ -312,9 +333,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     ins.add_argument("--atlas", default="allen_mouse_25um", help="BrainGlobe atlas name")
     ins.add_argument("--ap-mm", type=float, required=True, help="AP position in mm")
-    ins.add_argument(
-        "--modality", required=True, choices=list(_MODALITIES), help="Target modality"
-    )
+    ins.add_argument("--modality", required=True, choices=list(_MODALITIES), help="Target modality")
     ins.add_argument("--out", required=True, help="Output PNG path")
 
     return parser

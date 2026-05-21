@@ -12,7 +12,8 @@ weight-update policy lands.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Sequence
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any
 
 # Import the parent ``RowDataset`` lazily to keep the curriculum package
 # importable in environments without the full RLVR dataset loader (e.g. the
@@ -53,9 +54,7 @@ class WeightedRowDataset(RowDataset):
         """
         n = len(self)
         if len(weights) != n:
-            raise ValueError(
-                f"set_weights: expected {n} values (len(dataset)), got {len(weights)}"
-            )
+            raise ValueError(f"set_weights: expected {n} values (len(dataset)), got {len(weights)}")
         coerced = [float(w) for w in weights]
         if any(w < 0.0 for w in coerced):
             raise ValueError("set_weights: weights must be non-negative")

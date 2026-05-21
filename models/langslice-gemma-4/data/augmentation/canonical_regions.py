@@ -129,9 +129,7 @@ CANONICAL_REGIONS: dict[str, ConceptDef] = {
             "ccfv3augmented_mouse_*": ["DG-sg"],
             "allen_mouse_bluebrain_*": ["DG-sg"],
         },
-        name_pattern=re.compile(
-            r"dentate gyrus.*granule|granule cell layer.*dentate", re.I
-        ),
+        name_pattern=re.compile(r"dentate gyrus.*granule|granule cell layer.*dentate", re.I),
     ),
     "ca_pyramidal_layer": ConceptDef(
         name="ca_pyramidal_layer",

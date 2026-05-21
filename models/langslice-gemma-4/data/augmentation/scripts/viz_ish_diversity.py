@@ -9,6 +9,7 @@ The mode actually chosen for each panel is printed to stdout.
 
 Output: tmp/outputs/ish/diversity.png
 """
+
 from __future__ import annotations
 
 import sys
@@ -18,12 +19,14 @@ sys.path.insert(0, "src")
 sys.path.insert(0, "models/langslice-gemma-4/data")
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
-
 from augmentation.ish_pipeline import render_ish_section
 from augmentation.modes import ISH_MODES, sample_mode
+from PIL import Image, ImageDraw, ImageFont
+
 from langslice_harness.atlas.core import (
-    get_reference_slice, load_atlas, position_mm_to_index,
+    get_reference_slice,
+    load_atlas,
+    position_mm_to_index,
 )
 from langslice_harness.atlas.space import atlas_space_context, slice_axis_index
 
@@ -82,8 +85,8 @@ def main() -> int:
         # render_ish_section: rng → masks (no rng calls) → gamma (1) → floor (1)
         # → sample_mode (1 draw).  Replicate those 3 draws to peek at mode.
         rng_peek = np.random.default_rng(s)
-        rng_peek.uniform(0.9, 1.7)   # gamma
-        rng_peek.uniform(0.10, 0.20) # floor
+        rng_peek.uniform(0.9, 1.7)  # gamma
+        rng_peek.uniform(0.10, 0.20)  # floor
         chosen = sample_mode(rng_peek, ISH_MODES)
 
         out = render_ish_section(ref, ann, atlas, seed=s, pixel_size_um=TARGET_PX_UM)
@@ -101,7 +104,7 @@ def main() -> int:
     grid = np.zeros((rows * h0, cols * w0, 3), dtype=np.uint8)
     for idx, img in enumerate(cells):
         r, c = divmod(idx, cols)
-        grid[r * h0:(r + 1) * h0, c * w0:(c + 1) * w0] = img
+        grid[r * h0 : (r + 1) * h0, c * w0 : (c + 1) * w0] = img
 
     out_path = Path("tmp/outputs/ish/diversity.png")
     out_path.parent.mkdir(parents=True, exist_ok=True)

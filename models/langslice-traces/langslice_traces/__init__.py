@@ -44,8 +44,8 @@ from .schema import (
     CanonicalTrace,
     FinalAnswer,
     Plane,
-    RenderMetadata,
     RenderedExample,
+    RenderMetadata,
     ToolStep,
 )
 from .trace_ops import trim_trace

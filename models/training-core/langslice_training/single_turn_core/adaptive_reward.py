@@ -43,7 +43,11 @@ from typing import Any
 
 from langslice_training.adaptive.schedule import (
     AdaptiveSchedule as _AdaptiveSchedule,
+)
+from langslice_training.adaptive.schedule import (
     ErrorObservation as ErrorObservation,
+)
+from langslice_training.adaptive.schedule import (
     make_error_buffer as make_error_buffer,
 )
 from langslice_training.rl_core.rewards import normalized_bell_reward
@@ -112,13 +116,19 @@ def compute_ap_bin(
 #: Module-level rolling buffer.  Shape: ``(abs_err_pct, plane, ap_bin)``.
 #: ``abs_err_pct`` is ``abs_err_mm / axis_span_mm`` ∈ ``[0, 1]``.
 _RECENT_ERRORS: deque[tuple[float, str, int]] = deque(maxlen=DEFAULT_BUFFER_MAXLEN)
+_RECENT_SECTION_ERRORS: deque[tuple[float, str, int, str, str]] = deque(
+    maxlen=DEFAULT_BUFFER_MAXLEN
+)
 
 
 def record_error(
     abs_err_mm: float,
     axis_span_mm: float,
     plane: str,
-    ap_bin: int,
+    ap_bin: int | None = None,
+    *,
+    dataset: str | None = None,
+    section_id: str | None = None,
 ) -> None:
     """Append one observation to the module-level rolling buffer.
 
@@ -131,7 +141,17 @@ def record_error(
     if axis <= 0.0:
         return
     abs_err_pct = float(abs_err_mm) / axis
-    _RECENT_ERRORS.append((abs_err_pct, str(plane), int(ap_bin)))
+    bin_idx = int(ap_bin) if ap_bin is not None else 0
+    plane_str = str(plane)
+    _RECENT_ERRORS.append((abs_err_pct, plane_str, bin_idx))
+    if dataset is not None and section_id is not None:
+        _RECENT_SECTION_ERRORS.append((
+            abs_err_pct,
+            plane_str,
+            bin_idx,
+            str(dataset),
+            str(section_id),
+        ))
 
 
 def recent_errors() -> list[tuple[float, str, int]]:
@@ -139,14 +159,21 @@ def recent_errors() -> list[tuple[float, str, int]]:
     return list(_RECENT_ERRORS)
 
 
+def recent_section_errors() -> list[tuple[float, str, int, str, str]]:
+    """Snapshot of section-keyed observations for legacy manifest write-back."""
+    return list(_RECENT_SECTION_ERRORS)
+
+
 def clear_recent_errors() -> None:
     """Empty the rolling buffer. Tests use this for isolation between cases."""
     _RECENT_ERRORS.clear()
+    _RECENT_SECTION_ERRORS.clear()
 
 
 # ---------------------------------------------------------------------------
 # AdaptiveRewardSchedule — backward-compat wrapper
 # ---------------------------------------------------------------------------
+
 
 class AdaptiveRewardSchedule:
     """Quantile-based schedule for ``(sigma_frac, cutoff_frac)``.
@@ -178,13 +205,11 @@ class AdaptiveRewardSchedule:
             raise ValueError(f"min_sigma_frac must be positive, got {min_sigma_frac}")
         if max_sigma_frac < min_sigma_frac:
             raise ValueError(
-                f"max_sigma_frac ({max_sigma_frac}) must be >= "
-                f"min_sigma_frac ({min_sigma_frac})"
+                f"max_sigma_frac ({max_sigma_frac}) must be >= min_sigma_frac ({min_sigma_frac})"
             )
         if max_cutoff_frac < min_sigma_frac:
             raise ValueError(
-                f"max_cutoff_frac ({max_cutoff_frac}) must be >= "
-                f"min_sigma_frac ({min_sigma_frac})"
+                f"max_cutoff_frac ({max_cutoff_frac}) must be >= min_sigma_frac ({min_sigma_frac})"
             )
         if not 0.0 <= sigma_quantile <= 1.0:
             raise ValueError(f"sigma_quantile must be in [0, 1], got {sigma_quantile}")
@@ -194,9 +219,7 @@ class AdaptiveRewardSchedule:
             raise ValueError(f"min_observations must be >= 1, got {min_observations}")
         fb_sigma, fb_cutoff = static_fallback
         if fb_sigma <= 0 or fb_cutoff <= 0:
-            raise ValueError(
-                f"static_fallback components must be positive, got {static_fallback}"
-            )
+            raise ValueError(f"static_fallback components must be positive, got {static_fallback}")
 
         self.min_sigma_frac = float(min_sigma_frac)
         self.max_sigma_frac = float(max_sigma_frac)
@@ -234,8 +257,7 @@ class AdaptiveRewardSchedule:
         percent untouched.
         """
         adapted: list[tuple[float, float, str, int]] = [
-            (abs_err_pct, 1.0, p, ap_bin)
-            for abs_err_pct, p, ap_bin in _RECENT_ERRORS
+            (abs_err_pct, 1.0, p, ap_bin) for abs_err_pct, p, ap_bin in _RECENT_ERRORS
         ]
         return self._schedule.compute(adapted, plane=plane)
 
@@ -247,11 +269,7 @@ class AdaptiveRewardSchedule:
         sections for a 200-entry buffer to give per-section signal, but
         pooling by AP bin gives ~10 observations per bin.
         """
-        matches = [
-            err_pct
-            for err_pct, p, b in _RECENT_ERRORS
-            if p == plane and b == ap_bin
-        ]
+        matches = [err_pct for err_pct, p, b in _RECENT_ERRORS if p == plane and b == ap_bin]
         if not matches:
             return None
         return mean(matches)
@@ -273,6 +291,7 @@ class AdaptiveRewardSchedule:
 # ---------------------------------------------------------------------------
 # make_adaptive_terminal_reward — RL-specific factory (stays in shim)
 # ---------------------------------------------------------------------------
+
 
 def make_adaptive_terminal_reward(
     *,
@@ -314,14 +333,18 @@ def make_adaptive_terminal_reward(
     ``schedule.current()`` instead of fixed kwargs, and every scoring call
     appends to the rolling buffer via :func:`record_error`.
     """
-    sched = schedule if schedule is not None else AdaptiveRewardSchedule(
-        min_sigma_frac=min_sigma_frac,
-        max_sigma_frac=max_sigma_frac,
-        sigma_quantile=sigma_quantile,
-        cutoff_quantile=cutoff_quantile,
-        min_observations=min_observations,
-        static_fallback=static_fallback,
-        max_cutoff_frac=max_cutoff_frac,
+    sched = (
+        schedule
+        if schedule is not None
+        else AdaptiveRewardSchedule(
+            min_sigma_frac=min_sigma_frac,
+            max_sigma_frac=max_sigma_frac,
+            sigma_quantile=sigma_quantile,
+            cutoff_quantile=cutoff_quantile,
+            min_observations=min_observations,
+            static_fallback=static_fallback,
+            max_cutoff_frac=max_cutoff_frac,
+        )
     )
 
     def adaptive_terminal_reward(
@@ -358,9 +381,7 @@ def make_adaptive_terminal_reward(
             return params
 
         out: list[float] = []
-        for completion, gt, vr, p in zip(
-            comps, gts, ranges, planes, strict=False
-        ):
+        for completion, gt, vr, p in zip(comps, gts, ranges, planes, strict=False):
             gt_f = float(gt)
             pos_lo, pos_hi = float(vr[0]), float(vr[1])
             axis_span_mm = pos_hi - pos_lo

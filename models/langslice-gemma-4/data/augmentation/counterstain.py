@@ -75,7 +75,8 @@ def _build_substrate(
     color_arr = np.clip(
         np.array(substrate_color, dtype=np.float32)
         + rng.uniform(-color_jitter, color_jitter, size=3).astype(np.float32),
-        0.0, 1.0,
+        0.0,
+        1.0,
     )
     canvas[substrate_mask] = color_arr
     return canvas
@@ -117,7 +118,8 @@ def render_dapi_counterstain(
         ctx.counterstain_signal_mask = (coverage > 0.05).astype(np.float32)
     else:
         ctx.counterstain_signal_mask = np.maximum(
-            ctx.counterstain_signal_mask, (coverage > 0.05).astype(np.float32),
+            ctx.counterstain_signal_mask,
+            (coverage > 0.05).astype(np.float32),
         )
     return canvas
 
@@ -156,30 +158,30 @@ def render_nissl_counterstain(
     """
     h, w = annotation_slice.shape[:2]
     if cream_base is None:
-        cream_base = _NISSL_CREAM_PRESETS[
-            int(rng.integers(0, len(_NISSL_CREAM_PRESETS)))
-        ]
+        cream_base = _NISSL_CREAM_PRESETS[int(rng.integers(0, len(_NISSL_CREAM_PRESETS)))]
     substrate_mask = masks["gray_matter"] | masks["white_matter"]
     canvas = _build_substrate((h, w), substrate_mask, cream_base, rng)
     shading_strength = float(rng.uniform(*shading_strength_range))
     canvas = shade_substrate_by_atlas(
-        canvas, reference_slice, substrate_mask,
-        strength=shading_strength, gamma=1.0,
+        canvas,
+        reference_slice,
+        substrate_mask,
+        strength=shading_strength,
+        gamma=1.0,
     )
     canvas = NisslGrayMatterCellBodies(p=1.0, cream=cream_base)(canvas, rng=rng, ctx=ctx)
     canvas = NisslWhiteMatterCellBodies(p=1.0, cream=cream_base)(canvas, rng=rng, ctx=ctx)
     # Coverage: any pixel meaningfully darker than substrate cream is a Nissl
     # cell. Approximated via luminance drop from cream baseline.
     cream_lum = 0.2126 * cream_base[0] + 0.7152 * cream_base[1] + 0.0722 * cream_base[2]
-    canvas_lum = (
-        0.2126 * canvas[..., 0] + 0.7152 * canvas[..., 1] + 0.0722 * canvas[..., 2]
-    )
+    canvas_lum = 0.2126 * canvas[..., 0] + 0.7152 * canvas[..., 1] + 0.0722 * canvas[..., 2]
     coverage = np.clip((cream_lum - canvas_lum) / max(cream_lum * 0.5, 1e-6), 0.0, 1.0)
     if ctx.counterstain_signal_mask is None:
         ctx.counterstain_signal_mask = coverage.astype(np.float32)
     else:
         ctx.counterstain_signal_mask = np.maximum(
-            ctx.counterstain_signal_mask, coverage.astype(np.float32),
+            ctx.counterstain_signal_mask,
+            coverage.astype(np.float32),
         )
     return canvas
 
@@ -212,8 +214,11 @@ def render_no_counterstain(
     canvas = _build_substrate((h, w), substrate_mask, substrate_color, rng)
     shading_strength = float(rng.uniform(*shading_strength_range))
     canvas = shade_substrate_by_atlas(
-        canvas, reference_slice, substrate_mask,
-        strength=shading_strength, gamma=1.0,
+        canvas,
+        reference_slice,
+        substrate_mask,
+        strength=shading_strength,
+        gamma=1.0,
     )
     # No cellular signal mask — substrate is uniform within tissue.
     if ctx.counterstain_signal_mask is None:
@@ -280,8 +285,11 @@ def render_hematoxylin_counterstain(
     # Use gamma-adjusted reference for shading so cell-dense cortical layers
     # get a mild darkening without over-darkening WM tracts.
     canvas = shade_substrate_by_atlas(
-        canvas, reference_slice, substrate_mask,
-        strength=shading_strength, gamma=gamma,
+        canvas,
+        reference_slice,
+        substrate_mask,
+        strength=shading_strength,
+        gamma=gamma,
     )
 
     canvas = HematoxylinGrayMatterNuclei(
@@ -295,17 +303,18 @@ def render_hematoxylin_counterstain(
 
     # Coverage: any pixel meaningfully darker than substrate is a stained nucleus.
     sub_lum = 0.2126 * substrate_base[0] + 0.7152 * substrate_base[1] + 0.0722 * substrate_base[2]
-    canvas_lum = (
-        0.2126 * canvas[..., 0] + 0.7152 * canvas[..., 1] + 0.0722 * canvas[..., 2]
-    )
+    canvas_lum = 0.2126 * canvas[..., 0] + 0.7152 * canvas[..., 1] + 0.0722 * canvas[..., 2]
     coverage = np.clip(
-        (sub_lum - canvas_lum) / max(sub_lum * 0.5, 1e-6), 0.0, 1.0,
+        (sub_lum - canvas_lum) / max(sub_lum * 0.5, 1e-6),
+        0.0,
+        1.0,
     )
     if ctx.counterstain_signal_mask is None:
         ctx.counterstain_signal_mask = coverage.astype(np.float32)
     else:
         ctx.counterstain_signal_mask = np.maximum(
-            ctx.counterstain_signal_mask, coverage.astype(np.float32),
+            ctx.counterstain_signal_mask,
+            coverage.astype(np.float32),
         )
     return canvas
 
@@ -354,8 +363,11 @@ def render_nuclear_fast_red_counterstain(
     shading_strength = float(rng.uniform(*shading_strength_range))
     gamma = float(rng.uniform(*gamma_range))
     canvas = shade_substrate_by_atlas(
-        canvas, reference_slice, substrate_mask,
-        strength=shading_strength, gamma=gamma,
+        canvas,
+        reference_slice,
+        substrate_mask,
+        strength=shading_strength,
+        gamma=gamma,
     )
 
     canvas = NuclearFastRedGrayMatterNuclei(
@@ -368,17 +380,18 @@ def render_nuclear_fast_red_counterstain(
     )(canvas, rng=rng, ctx=ctx)
 
     sub_lum = 0.2126 * substrate_base[0] + 0.7152 * substrate_base[1] + 0.0722 * substrate_base[2]
-    canvas_lum = (
-        0.2126 * canvas[..., 0] + 0.7152 * canvas[..., 1] + 0.0722 * canvas[..., 2]
-    )
+    canvas_lum = 0.2126 * canvas[..., 0] + 0.7152 * canvas[..., 1] + 0.0722 * canvas[..., 2]
     coverage = np.clip(
-        (sub_lum - canvas_lum) / max(sub_lum * 0.5, 1e-6), 0.0, 1.0,
+        (sub_lum - canvas_lum) / max(sub_lum * 0.5, 1e-6),
+        0.0,
+        1.0,
     )
     if ctx.counterstain_signal_mask is None:
         ctx.counterstain_signal_mask = coverage.astype(np.float32)
     else:
         ctx.counterstain_signal_mask = np.maximum(
-            ctx.counterstain_signal_mask, coverage.astype(np.float32),
+            ctx.counterstain_signal_mask,
+            coverage.astype(np.float32),
         )
     return canvas
 

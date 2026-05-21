@@ -41,9 +41,7 @@ _MAX_ANGLE_DEG: float = 8.0
 # ---------------------------------------------------------------------------
 
 
-def _rotation_matrix_zyx(
-    yaw_deg: float, pitch_deg: float, roll_deg: float
-) -> np.ndarray:
+def _rotation_matrix_zyx(yaw_deg: float, pitch_deg: float, roll_deg: float) -> np.ndarray:
     """Return a 3×3 ZYX intrinsic Euler rotation matrix (right-hand).
 
     Convention used here (matching a standard neuroimaging frame):
@@ -63,25 +61,34 @@ def _rotation_matrix_zyx(
     cos_r, sin_r = math.cos(r), math.sin(r)
 
     # Rz (yaw)
-    Rz = np.array([
-        [ cos_y, -sin_y, 0.0],
-        [ sin_y,  cos_y, 0.0],
-        [   0.0,    0.0, 1.0],
-    ], dtype=np.float64)
+    Rz = np.array(
+        [
+            [cos_y, -sin_y, 0.0],
+            [sin_y, cos_y, 0.0],
+            [0.0, 0.0, 1.0],
+        ],
+        dtype=np.float64,
+    )
 
     # Ry (pitch)
-    Ry = np.array([
-        [ cos_p, 0.0, sin_p],
-        [   0.0, 1.0,   0.0],
-        [-sin_p, 0.0, cos_p],
-    ], dtype=np.float64)
+    Ry = np.array(
+        [
+            [cos_p, 0.0, sin_p],
+            [0.0, 1.0, 0.0],
+            [-sin_p, 0.0, cos_p],
+        ],
+        dtype=np.float64,
+    )
 
     # Rx (roll)
-    Rx = np.array([
-        [1.0,   0.0,    0.0],
-        [0.0, cos_r, -sin_r],
-        [0.0, sin_r,  cos_r],
-    ], dtype=np.float64)
+    Rx = np.array(
+        [
+            [1.0, 0.0, 0.0],
+            [0.0, cos_r, -sin_r],
+            [0.0, sin_r, cos_r],
+        ],
+        dtype=np.float64,
+    )
 
     return Rz @ Ry @ Rx
 
@@ -221,9 +228,6 @@ def get_oblique_slice(
     # Flatten to (out_h * out_w,) vectors for batch rotation.
     flat_rows = grid_rows.ravel()
     flat_cols = grid_cols.ravel()
-    # Canonical plane offset from the normal axis.
-    flat_normal = np.zeros_like(flat_rows)
-
     # Assemble per-point vectors in (AP, ML, DV) anatomical space, then rotate.
     # Map row_axis/col_axis/normal_axis slots back to (AP, ML, DV) order.
     # We work in a frame where the slice-normal direction is 0, row is the
@@ -312,9 +316,7 @@ def sample_oblique_angles(
         ("max_roll_deg", max_roll_deg),
     ):
         if limit > _MAX_ANGLE_DEG:
-            raise ValueError(
-                f"{name}={limit:.1f}° exceeds the {_MAX_ANGLE_DEG:.0f}° safety limit."
-            )
+            raise ValueError(f"{name}={limit:.1f}° exceeds the {_MAX_ANGLE_DEG:.0f}° safety limit.")
 
     yaw = float(rng.uniform(-max_yaw_deg, max_yaw_deg))
     pitch = float(rng.uniform(-max_pitch_deg, max_pitch_deg))

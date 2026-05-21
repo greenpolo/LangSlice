@@ -17,6 +17,7 @@ import importlib.util
 import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
@@ -26,6 +27,7 @@ _REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_REPO))
 sys.path.insert(0, str(_REPO / "src"))
 sys.path.insert(0, str(_REPO / "models" / "langslice-gemma-4" / "training"))
+sys.path.insert(0, str(_REPO / "models" / "langslice-traces"))
 
 _BUILD_SFT_CORPUS_PATH = (
     _REPO / "_local" / "trace_collection" / "build_sft_corpus.py"
@@ -39,6 +41,15 @@ def _load_build_sft_corpus_module() -> Any:
     the script lives outside the installable package tree and also reads
     ``.env`` at import time, so we synthesize an empty one when missing.
     """
+    if not _BUILD_SFT_CORPUS_PATH.is_file():
+        from langslice_traces import best_traces, classify_quality, trim_trace
+
+        return SimpleNamespace(
+            _classify_quality=classify_quality,
+            _trim_trace=trim_trace,
+            best_traces=best_traces,
+        )
+
     env_path = _REPO / ".env"
     created_env = False
     if not env_path.exists():
@@ -168,11 +179,11 @@ def test_classify_quality_matches_original():
 
 
 def test_plane_tolerance_mm_matches_original():
+    from langslice_traces import plane_tolerance_mm as new_plane_tolerance_mm
+
     from langslice_harness.harness.estimation.trace_collection import (
         plane_tolerance_mm as orig_plane_tolerance_mm,
     )
-
-    from langslice_traces import plane_tolerance_mm as new_plane_tolerance_mm
 
     cases = [
         ("allen_mouse_25um", "coronal"),
@@ -189,11 +200,11 @@ def test_plane_tolerance_mm_matches_original():
 
 
 def test_plane_rescue_threshold_mm_matches_original():
+    from langslice_traces import plane_rescue_threshold_mm as new_plane_rescue
+
     from langslice_harness.harness.estimation.trace_collection import (
         plane_rescue_threshold_mm as orig_plane_rescue,
     )
-
-    from langslice_traces import plane_rescue_threshold_mm as new_plane_rescue
 
     cases = [
         ("allen_mouse_25um", "coronal"),
@@ -210,11 +221,11 @@ def test_plane_rescue_threshold_mm_matches_original():
 
 
 def test_canonicalize_positions_matches_original():
+    from langslice_traces import canonicalize_positions as new_canon
+
     from langslice_harness.harness.estimation.trace_collection import (
         canonicalize_positions as orig_canon,
     )
-
-    from langslice_traces import canonicalize_positions as new_canon
 
     atlas = "allen_mouse_25um"
     # Sagittal: hits the mirror-mapping branch
@@ -242,11 +253,11 @@ def test_canonicalize_positions_matches_original():
 
 
 def test_categorize_trace_matches_original():
+    from langslice_traces import categorize_trace as new_categorize
+
     from langslice_harness.harness.estimation.trace_collection import (
         categorize_trace as orig_categorize,
     )
-
-    from langslice_traces import categorize_trace as new_categorize
 
     kwargs = dict(
         truth_positions=[6.0],
@@ -266,11 +277,11 @@ def test_categorize_trace_matches_original():
 
 
 def test_parse_manifest_record_matches_original():
+    from langslice_traces import parse_manifest_record as new_parse
+
     from langslice_harness.harness.estimation.trace_collection import (
         parse_manifest_record as orig_parse,
     )
-
-    from langslice_traces import parse_manifest_record as new_parse
 
     record = {
         "id": "single-1",
@@ -299,11 +310,11 @@ def test_parse_manifest_record_matches_original():
 
 
 def test_prepare_image_for_vlm_matches_original():
+    from langslice_traces import prepare_image_for_vlm as new_prepare
+
     from langslice_harness.image_prep import (
         prepare_image_for_vlm as orig_prepare,
     )
-
-    from langslice_traces import prepare_image_for_vlm as new_prepare
 
     image = Image.new("RGB", (5000, 4000), (10, 20, 30))
     orig = orig_prepare(image, pixel_size_um=4.0)
@@ -319,9 +330,9 @@ def test_prepare_image_for_vlm_matches_original():
 
 
 def test_normalize_image_matches_original():
-    from langslice_harness.image_prep import normalize_image as orig_normalize
-
     from langslice_traces import normalize_image as new_normalize
+
+    from langslice_harness.image_prep import normalize_image as orig_normalize
 
     # RGB pass-through
     rgb = Image.new("RGB", (32, 32), (100, 150, 200))
@@ -347,11 +358,11 @@ def test_normalize_image_matches_original():
 
 
 def test_adaptive_preprocess_matches_original():
+    from langslice_traces import adaptive_preprocess as new_adaptive
+
     from langslice_harness.image_prep import (
         adaptive_preprocess as orig_adaptive,
     )
-
-    from langslice_traces import adaptive_preprocess as new_adaptive
 
     rng = np.random.default_rng(seed=42)
     arr = rng.integers(0, 256, size=(128, 128, 3), dtype=np.uint8)

@@ -14,13 +14,15 @@ Intensity levels
 
 Probability schedule (medium)
 -----------------------------
-ALWAYS     BladeStretchHorizontal              — horizontal-biased anisotropic stretch (~22% max H stretch)
+ALWAYS     BladeStretchHorizontal              — horizontal-biased anisotropic stretch
+                                               (~22% max H stretch)
 85%        IlluminationGradient                — lamp / photobleaching gradient
 75%        AffineJitter                        — small rotation + translation
 70%        EmbeddingHalos                      — warm halo outside tissue (light-bg only)
 55%        VentricleExpansion                  — CSF retraction (pre-warp so it follows the warp)
 45%        Folds                               — sinusoidal tissue-fold warp
-40%        AnteriorOlfactoryBulbDetachment     — drop OB in anterior coronal sections, recenter tissue
+40%        AnteriorOlfactoryBulbDetachment     — drop OB in anterior coronal
+                                               sections, recenter tissue
 30%        AnteriorIsocortexDetachment         — drop emerging isocortex in narrow AP 1.5-3.5 window
 35%        Microbubbles                        — sparse refractive bubbles (toned down)
 25%        Debris                              — small dark dust specks on tissue
@@ -65,14 +67,14 @@ _LIGHT_BG_MODALITIES = {"nissl", "brightfield", "ish"}
 # Intensity multipliers: (probability_scale, param_scale)
 # ---------------------------------------------------------------------------
 _INTENSITY_PROB_SCALE = {
-    "light":  0.65,
+    "light": 0.65,
     "medium": 1.00,
-    "heavy":  1.45,
+    "heavy": 1.45,
 }
 _INTENSITY_PARAM_SCALE = {
-    "light":  0.65,
+    "light": 0.65,
     "medium": 1.00,
-    "heavy":  1.75,
+    "heavy": 1.75,
 }
 
 
@@ -116,9 +118,7 @@ def apply_damage_layer(
         HWC float32 in [0, 1].
     """
     if intensity not in _INTENSITY_PROB_SCALE:
-        raise ValueError(
-            f"intensity must be 'light', 'medium', or 'heavy'; got {intensity!r}"
-        )
+        raise ValueError(f"intensity must be 'light', 'medium', or 'heavy'; got {intensity!r}")
 
     prob_scale = _INTENSITY_PROB_SCALE[intensity]
     param_scale = _INTENSITY_PARAM_SCALE[intensity]

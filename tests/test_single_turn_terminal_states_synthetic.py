@@ -32,8 +32,8 @@ import pytest
 # load_atlas_grid uses torch.load on the .pt cache.
 torch = pytest.importorskip("torch")
 
-from single_turn_rl import terminal_states as ts
-from single_turn_rl.manifest_index import ManifestIndex
+from single_turn_rl import terminal_states as ts  # noqa: E402
+from single_turn_rl.manifest_index import ManifestIndex  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Atlas embedding cache dependency

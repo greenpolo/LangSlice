@@ -133,14 +133,10 @@ def _atlas_image_path(atlas_name: str, plane: str, position_mm: float) -> str:
     # not installed the langslice_traces dependency cone.
     from langslice_traces import canonical_atlas_repo_path  # noqa: PLC0415
 
-    return canonical_atlas_repo_path(
-        f"atlas/{atlas_name}/{plane}/{position_mm:.2f}mm.jpg"
-    )
+    return canonical_atlas_repo_path(f"atlas/{atlas_name}/{plane}/{position_mm:.2f}mm.jpg")
 
 
-def _evenly_spaced_positions(
-    pos_lo: float, pos_hi: float, n_positions: int
-) -> list[float]:
+def _evenly_spaced_positions(pos_lo: float, pos_hi: float, n_positions: int) -> list[float]:
     """Compute ``n_positions`` evenly-spaced positions across ``[pos_lo, pos_hi]``.
 
     For ``n_positions=1`` the single position is the midpoint (anything
@@ -152,9 +148,7 @@ def _evenly_spaced_positions(
     if n_positions <= 0:
         raise ValueError(f"n_positions must be positive, got {n_positions}")
     if pos_hi < pos_lo:
-        raise ValueError(
-            f"pos_hi ({pos_hi}) must be >= pos_lo ({pos_lo}) for slate generation"
-        )
+        raise ValueError(f"pos_hi ({pos_hi}) must be >= pos_lo ({pos_lo}) for slate generation")
     if n_positions == 1:
         return [(pos_lo + pos_hi) / 2.0]
     step = (pos_hi - pos_lo) / (n_positions - 1)
@@ -203,9 +197,7 @@ def build_canonical_slate(
         seen.add(snap)
         snapped.append(snap)
 
-    image_paths = tuple(
-        _atlas_image_path(atlas_name, plane, p) for p in snapped
-    )
+    image_paths = tuple(_atlas_image_path(atlas_name, plane, p) for p in snapped)
     return CanonicalSlate(
         atlas_name=atlas_name,
         plane=plane,
@@ -280,8 +272,7 @@ def load_canonical_slate(
         plane=str(payload["plane"]),
         positions_mm=tuple(float(p) for p in payload.get("positions_mm", [])),
         image_paths=tuple(
-            canonical_atlas_repo_path(str(p))
-            for p in payload.get("image_paths", [])
+            canonical_atlas_repo_path(str(p)) for p in payload.get("image_paths", [])
         ),
     )
 
@@ -305,7 +296,9 @@ def get_or_build_canonical_slate(
     if cached is not None:
         return cached
     slate = build_canonical_slate(
-        atlas_name, plane, n_positions=n_positions,
+        atlas_name,
+        plane,
+        n_positions=n_positions,
     )
     save_canonical_slate(slate, root)
     return slate
@@ -392,9 +385,7 @@ class SectionState:
             query_image_path=section.image_path,
             atlas_slate_paths=tuple(slate.image_paths),
             atlas_slate_positions_mm=tuple(slate.positions_mm),
-            difficulty_score=(
-                None if difficulty_score is None else float(difficulty_score)
-            ),
+            difficulty_score=(None if difficulty_score is None else float(difficulty_score)),
             source=str(source),
             quality=dict(quality) if quality is not None else None,
         )
@@ -475,7 +466,11 @@ def build_randomized_section_state(
     except (ValueError, AssertionError) as exc:
         logger.warning(
             "randomized %s generate_trace failed for %s/%s/%s: %s",
-            strategy, section.plane, section.dataset, section.section_id, exc,
+            strategy,
+            section.plane,
+            section.dataset,
+            section.section_id,
+            exc,
         )
         return None
 
@@ -485,7 +480,10 @@ def build_randomized_section_state(
         # so the caller can count drops without crashing the run.
         logger.warning(
             "randomized %s emitted zero tool_steps for %s/%s/%s; skipping",
-            strategy, section.plane, section.dataset, section.section_id,
+            strategy,
+            section.plane,
+            section.dataset,
+            section.section_id,
         )
         return None
 
@@ -496,8 +494,10 @@ def build_randomized_section_state(
         if len(trace.tool_steps) != 1:
             logger.warning(
                 "randomized lane_b emitted %d tool_steps (expected 1) for %s/%s/%s",
-                len(trace.tool_steps), section.plane,
-                section.dataset, section.section_id,
+                len(trace.tool_steps),
+                section.plane,
+                section.dataset,
+                section.section_id,
             )
             return None
 
@@ -511,10 +511,13 @@ def build_randomized_section_state(
         step_paths = list(step.result_image_paths)
         if len(step_positions) != len(step_paths):
             logger.warning(
-                "randomized %s position/path length mismatch for %s/%s/%s: "
-                "positions=%d paths=%d",
-                strategy, section.plane, section.dataset, section.section_id,
-                len(step_positions), len(step_paths),
+                "randomized %s position/path length mismatch for %s/%s/%s: positions=%d paths=%d",
+                strategy,
+                section.plane,
+                section.dataset,
+                section.section_id,
+                len(step_positions),
+                len(step_paths),
             )
             return None
         flat_positions.extend(float(p) for p in step_positions)
@@ -524,7 +527,10 @@ def build_randomized_section_state(
         # All tool steps were empty after parsing; treat as a soft skip.
         logger.warning(
             "randomized %s flattened to zero positions for %s/%s/%s; skipping",
-            strategy, section.plane, section.dataset, section.section_id,
+            strategy,
+            section.plane,
+            section.dataset,
+            section.section_id,
         )
         return None
 
@@ -636,8 +642,7 @@ def iter_section_states(
         # Randomized: per-row slate via the procedural generator.
         if atlas_embedding_cache_dir is None:
             raise ValueError(
-                "iter_section_states(randomized=True) requires "
-                "atlas_embedding_cache_dir to be set."
+                "iter_section_states(randomized=True) requires atlas_embedding_cache_dir to be set."
             )
         if rng is None:
             # Seeded callers pass an explicit ``Random``; an unseeded
@@ -653,13 +658,15 @@ def iter_section_states(
 
         try:
             atlas_grid = load_atlas_grid(
-                atlas_embedding_cache_dir, atlas, plane,  # type: ignore[arg-type]
+                atlas_embedding_cache_dir,
+                atlas,
+                plane,  # type: ignore[arg-type]
             )
         except FileNotFoundError as exc:
             print(
-                f"[iter_section_states] randomized slate skip ({atlas!r}, "
-                f"{plane!r}): {exc}",
-                file=sys.stderr, flush=True,
+                f"[iter_section_states] randomized slate skip ({atlas!r}, {plane!r}): {exc}",
+                file=sys.stderr,
+                flush=True,
             )
             return
 
@@ -667,7 +674,9 @@ def iter_section_states(
             if require_query_on_disk and not (base / section.image_path).is_file():
                 continue
             live = index.live_difficulty(
-                section.plane, section.dataset, section.section_id,
+                section.plane,
+                section.dataset,
+                section.section_id,
             )
             difficulty = None if live is None else float(live.score)
             state = build_randomized_section_state(
@@ -683,7 +692,10 @@ def iter_section_states(
         return
 
     slate = get_or_build_canonical_slate(
-        atlas, plane, root=slate_root, n_positions=n_positions,
+        atlas,
+        plane,
+        root=slate_root,
+        n_positions=n_positions,
     )
 
     if require_atlas_on_disk:
@@ -708,7 +720,9 @@ def iter_section_states(
         live = index.live_difficulty(section.plane, section.dataset, section.section_id)
         difficulty = None if live is None else float(live.score)
         yield SectionState.from_section(
-            section, slate=slate, difficulty_score=difficulty,
+            section,
+            slate=slate,
+            difficulty_score=difficulty,
         )
 
 
@@ -730,13 +744,12 @@ def _build_cmd(args: argparse.Namespace) -> int:
     repo_root: Path = (args.repo_root or Path.cwd()).resolve()
     slate_root: Path = args.slate_root or (repo_root / "models" / "langslice-gemma-4" / "data")
 
-    cache_label = (
-        str(args.atlas_embedding_cache) if args.randomized_slate else "<canonical>"
-    )
+    cache_label = str(args.atlas_embedding_cache) if args.randomized_slate else "<canonical>"
     print(
         f"[section_state] randomized={args.randomized_slate}, "
         f"seed={args.randomized_seed}, cache={cache_label}",
-        file=sys.stderr, flush=True,
+        file=sys.stderr,
+        flush=True,
     )
 
     index = ManifestIndex.from_manifest_root(args.manifest_root, repo_root=repo_root)
@@ -790,7 +803,8 @@ def _build_cmd(args: argparse.Namespace) -> int:
         f"[section_state] total written: {n_total} rows "
         f"(synthesized={n_synthesized}, deterministic={n_deterministic}) "
         f"to {args.output}",
-        file=sys.stderr, flush=True,
+        file=sys.stderr,
+        flush=True,
     )
     return 0
 
@@ -806,45 +820,79 @@ def main(argv: list[str] | None = None) -> int:
         "build",
         help="Walk the manifest index and emit SectionState JSONL.",
     )
-    pb.add_argument("--manifest-root", type=Path, default=Path("data/manifest"),
-                    help="Root of the data manifest. Defaults to data/manifest "
-                    "(canonical per AGENTS.md).")
-    pb.add_argument("--output", type=Path, required=True,
-                    help="Destination JSONL path.")
-    pb.add_argument("--plane", type=str, default="coronal",
-                    help="Plane filter (coronal/sagittal/horizontal). "
-                    "Default: coronal.")
-    pb.add_argument("--atlas", type=str, default="allen_mouse_25um",
-                    help="Atlas filter. Default: allen_mouse_25um.")
-    pb.add_argument("--split", type=str, default="rlvr",
-                    help="Allocation split filter (rlvr/sft/eval/'' for any). "
-                    "Default: rlvr.")
-    pb.add_argument("--slate-root", type=Path, default=None,
-                    help="Root for canonical-slate JSON cache. Defaults to "
-                    "<repo_root>/models/langslice-gemma-4/data/.")
-    pb.add_argument("--n-positions", type=int, default=9,
-                    help="Number of positions in the canonical slate (deterministic "
-                    "path only). Default: 9.")
-    pb.add_argument("--no-check-disk", action="store_true",
-                    help="Skip image-on-disk existence checks.")
-    pb.add_argument("--repo-root", type=Path, default=None,
-                    help="Repo root for resolving repo-relative paths. "
-                    "Defaults to the current working directory.")
-    pb.add_argument("--randomized-slate", action="store_true",
-                    help="Replace the deterministic canonical slate with a "
-                    "fresh per-row randomized Lane B slate from "
-                    "langslice_traces.generate_trace(strategy='lane_b_broad_slate'). "
-                    "Synthetic rows are tagged source='procedural_generator:lane_b'. "
-                    "Off by default; existing pipelines see no change unless set.")
-    pb.add_argument("--randomized-seed", type=int, default=1337,
-                    help="Seed for the randomized-slate random.Random. "
-                    "Same seed yields identical slates across reruns. "
-                    "Default: 1337.")
-    pb.add_argument("--atlas-embedding-cache", type=Path,
-                    default=Path("out/atlas_embeddings"),
-                    help="Directory containing <atlas>_<plane>.pt embedding "
-                    "caches. Used by --randomized-slate to load the per-plane "
-                    "grid of valid atlas positions. Default: out/atlas_embeddings.")
+    pb.add_argument(
+        "--manifest-root",
+        type=Path,
+        default=Path("data/manifest"),
+        help="Root of the data manifest. Defaults to data/manifest (canonical per AGENTS.md).",
+    )
+    pb.add_argument("--output", type=Path, required=True, help="Destination JSONL path.")
+    pb.add_argument(
+        "--plane",
+        type=str,
+        default="coronal",
+        help="Plane filter (coronal/sagittal/horizontal). Default: coronal.",
+    )
+    pb.add_argument(
+        "--atlas",
+        type=str,
+        default="allen_mouse_25um",
+        help="Atlas filter. Default: allen_mouse_25um.",
+    )
+    pb.add_argument(
+        "--split",
+        type=str,
+        default="rlvr",
+        help="Allocation split filter (rlvr/sft/eval/'' for any). Default: rlvr.",
+    )
+    pb.add_argument(
+        "--slate-root",
+        type=Path,
+        default=None,
+        help="Root for canonical-slate JSON cache. Defaults to "
+        "<repo_root>/models/langslice-gemma-4/data/.",
+    )
+    pb.add_argument(
+        "--n-positions",
+        type=int,
+        default=9,
+        help="Number of positions in the canonical slate (deterministic path only). Default: 9.",
+    )
+    pb.add_argument(
+        "--no-check-disk", action="store_true", help="Skip image-on-disk existence checks."
+    )
+    pb.add_argument(
+        "--repo-root",
+        type=Path,
+        default=None,
+        help="Repo root for resolving repo-relative paths. "
+        "Defaults to the current working directory.",
+    )
+    pb.add_argument(
+        "--randomized-slate",
+        action="store_true",
+        help="Replace the deterministic canonical slate with a "
+        "fresh per-row randomized Lane B slate from "
+        "langslice_traces.generate_trace(strategy='lane_b_broad_slate'). "
+        "Synthetic rows are tagged source='procedural_generator:lane_b'. "
+        "Off by default; existing pipelines see no change unless set.",
+    )
+    pb.add_argument(
+        "--randomized-seed",
+        type=int,
+        default=1337,
+        help="Seed for the randomized-slate random.Random. "
+        "Same seed yields identical slates across reruns. "
+        "Default: 1337.",
+    )
+    pb.add_argument(
+        "--atlas-embedding-cache",
+        type=Path,
+        default=Path("out/atlas_embeddings"),
+        help="Directory containing <atlas>_<plane>.pt embedding "
+        "caches. Used by --randomized-slate to load the per-plane "
+        "grid of valid atlas positions. Default: out/atlas_embeddings.",
+    )
     pb.set_defaults(func=_build_cmd)
 
     ns = p.parse_args(argv)

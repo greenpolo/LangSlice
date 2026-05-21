@@ -23,6 +23,7 @@ fish         : No suitable CC-licensed fluorescent ISH image available on disk
 nissl_nbt    : Cresyl-violet Nissl, Mouse10 P120 dataset (CC0, EBRAINS).
                Pre-cropped at tmp/outputs/nissl/real_gm_crop.png.
 """
+
 from __future__ import annotations
 
 import sys
@@ -32,12 +33,14 @@ sys.path.insert(0, "src")
 sys.path.insert(0, "models/langslice-gemma-4/data")
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
-
 from augmentation.ish_pipeline import render_ish_section
 from augmentation.modes import ISH_MODES
+from PIL import Image, ImageDraw, ImageFont
+
 from langslice_harness.atlas.core import (
-    get_reference_slice, load_atlas, position_mm_to_index,
+    get_reference_slice,
+    load_atlas,
+    position_mm_to_index,
 )
 from langslice_harness.atlas.space import atlas_space_context, slice_axis_index
 
@@ -50,11 +53,11 @@ TARGET_PX_UM = 5.0
 SEED_BASE = 42
 
 REAL_REFS: dict[str, Path | None] = {
-    "allen_style":     Path("tmp/outputs/ish/real_gm_crop.png"),
-    "nbt_nfr":         Path("tmp/outputs/nfr/real_section.png"),
+    "allen_style": Path("tmp/outputs/ish/real_gm_crop.png"),
+    "nbt_nfr": Path("tmp/outputs/nfr/real_section.png"),
     "dab_hematoxylin": Path("tmp/outputs/hematoxylin/real_section.png"),
-    "fish":            None,  # no CC-licensed FISH image available on disk
-    "nissl_nbt":       Path("tmp/outputs/nissl/real_gm_crop.png"),
+    "fish": None,  # no CC-licensed FISH image available on disk
+    "nissl_nbt": Path("tmp/outputs/nissl/real_gm_crop.png"),
 }
 
 PANEL_W = 320
@@ -130,7 +133,9 @@ def upsampled_inputs(atlas, ap_mm: float):
     axis = slice_axis_index(ctx, "coronal")
     idx = position_mm_to_index(atlas, ap_mm)
     ann = np.take(
-        np.asarray(atlas.annotation), idx, axis=axis,
+        np.asarray(atlas.annotation),
+        idx,
+        axis=axis,
     ).astype(np.int32)
 
     src_um = atlas.resolution[0]
@@ -172,7 +177,6 @@ def main() -> int:
     columns: list[np.ndarray] = []  # each entry = one full-column (header+row0+row1)
 
     for i, mode in enumerate(ISH_MODES):
-        label = f"{mode.name}\n[{mode.counterstain}+{mode.signal}]"
         print(f"  mode {i}: {mode.name} …", flush=True)
 
         # Row 0 — real reference
@@ -181,7 +185,9 @@ def main() -> int:
 
         # Row 1 — procedural rendering (mode pinned)
         out = render_ish_section(
-            ref, ann, atlas,
+            ref,
+            ann,
+            atlas,
             seed=SEED_BASE + i,
             pixel_size_um=TARGET_PX_UM,
             mode=mode,

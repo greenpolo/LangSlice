@@ -261,19 +261,19 @@ def _spec_from_section_state(section_state: Any, *, repo_root: Path) -> dict[str
     ``atlas_image_paths`` / ``fetched_positions_mm``.
 
     Preserves ``section_state.difficulty_score`` when set (seeded/live
-    observation); otherwise falls back to ``ap_pct`` so cold-start rows
-    still seat into a meaningful AdaRFT band.
+    observation). Cold-start Lane B rows intentionally keep
+    ``difficulty_score=None`` so curriculum logic can treat them as
+    target-matched until live updates arrive.
     """
     valid_range = (
         float(section_state.valid_range_mm[0]),
         float(section_state.valid_range_mm[1]),
     )
     gt = float(section_state.ground_truth_mm)
-    ap_pct = _ap_pct_for_spec(ground_truth_mm=gt, valid_range_mm=valid_range)
     difficulty = (
         float(section_state.difficulty_score)
         if section_state.difficulty_score is not None
-        else ap_pct
+        else None
     )
     return {
         "section_id": section_state.section_id,

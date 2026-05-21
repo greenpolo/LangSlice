@@ -88,9 +88,7 @@ def validate_dataset(dataset: Any, *, line_number: int, section_id: Any) -> str:
         )
     filename = f"{dataset}.jsonl"
     if not SHARD_FILENAME_RE.fullmatch(filename):
-        raise PartitionError(
-            f"invalid shard filename {filename!r}; expected [A-Za-z0-9_]+.jsonl"
-        )
+        raise PartitionError(f"invalid shard filename {filename!r}; expected [A-Za-z0-9_]+.jsonl")
     return dataset
 
 
@@ -125,13 +123,9 @@ def read_manifest(
             try:
                 row = json.loads(line)
             except json.JSONDecodeError as exc:
-                raise PartitionError(
-                    f"invalid JSON in manifest line {line_number}: {exc}"
-                ) from exc
+                raise PartitionError(f"invalid JSON in manifest line {line_number}: {exc}") from exc
             if not isinstance(row, dict):
-                raise PartitionError(
-                    f"manifest line {line_number} is not a JSON object"
-                )
+                raise PartitionError(f"manifest line {line_number} is not a JSON object")
 
             plane = derive_plane(row, line_number=line_number)
             dataset = validate_dataset(
@@ -289,9 +283,7 @@ def partition_overrides(
         dataset = require_string(entry, "dataset", context="subject_axis_flips entry")
         axis = require_string(entry, "axis", context="subject_axis_flips entry")
         if axis not in AXES:
-            raise PartitionError(
-                f"subject_axis_flips entry has invalid axis {axis!r}: {entry!r}"
-            )
+            raise PartitionError(f"subject_axis_flips entry has invalid axis {axis!r}: {entry!r}")
         planes = find_planes_for_override(
             dataset,
             planes_by_dataset,
@@ -326,10 +318,7 @@ def partition_overrides(
         }
     )
     if unknown_keys:
-        log["unknown_override_keys"] = {
-            key: overrides[key]
-            for key in unknown_keys
-        }
+        log["unknown_override_keys"] = {key: overrides[key] for key in unknown_keys}
     return shard_overrides, log
 
 
@@ -337,9 +326,7 @@ def write_text_atomic(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     partial = path.with_name(path.name + ".partial")
     if partial.exists():
-        raise PartitionError(
-            f"{display_path(partial)} already exists; remove it before re-running"
-        )
+        raise PartitionError(f"{display_path(partial)} already exists; remove it before re-running")
     partial.write_text(text, encoding="utf-8")
     partial.replace(path)
 
@@ -374,8 +361,7 @@ def build_output_texts(
         override_path = out_dir / "overrides" / plane / f"{dataset}.json"
         outputs[shard_path] = "\n".join(rows) + "\n"
         outputs[override_path] = (
-            json.dumps(shard_overrides[(plane, dataset)], indent=2, ensure_ascii=False)
-            + "\n"
+            json.dumps(shard_overrides[(plane, dataset)], indent=2, ensure_ascii=False) + "\n"
         )
 
     log = dict(partition_log)
@@ -385,9 +371,7 @@ def build_output_texts(
         "input_rows": input_rows,
         "shard_count": len(shards),
     }
-    outputs[out_dir / "_partition_log.json"] = (
-        json.dumps(log, indent=2, ensure_ascii=False) + "\n"
-    )
+    outputs[out_dir / "_partition_log.json"] = json.dumps(log, indent=2, ensure_ascii=False) + "\n"
     return outputs
 
 
@@ -401,16 +385,14 @@ def print_summary(
         for plane in PLANES
     }
     plane_dataset_counts = {
-        plane: sum(1 for row_plane, _dataset in counts if row_plane == plane)
-        for plane in PLANES
+        plane: sum(1 for row_plane, _dataset in counts if row_plane == plane) for plane in PLANES
     }
     total = sum(plane_totals.values())
 
     print("Partition complete:")
     for plane in PLANES:
         print(
-            f"  {plane}: {plane_totals[plane]} rows "
-            f"across {plane_dataset_counts[plane]} datasets"
+            f"  {plane}: {plane_totals[plane]} rows across {plane_dataset_counts[plane]} datasets"
         )
     print(f"  total: {total} rows")
     print(f"  input manifest: {input_rows} rows")
@@ -423,11 +405,7 @@ def print_summary(
     print("Top datasets by plane:")
     for plane in PLANES:
         top = Counter(
-            {
-                dataset: count
-                for (row_plane, dataset), count in counts.items()
-                if row_plane == plane
-            }
+            {dataset: count for (row_plane, dataset), count in counts.items() if row_plane == plane}
         ).most_common(10)
         print(f"  {plane}:")
         if not top:

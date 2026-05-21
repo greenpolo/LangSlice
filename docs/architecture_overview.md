@@ -13,9 +13,27 @@ LangSlice is organized around one installable Python harness package,
 - `src/langslice_harness/whole_brain/` -- multi-slice position estimation pipeline.
 - `src/langslice_harness/image_prep.py` -- image normalization, metadata detection, and downsampling.
 - `src/langslice_harness/export.py` -- QUINT/ABBA-compatible JSON export.
+- `src/langslice_harness/api/` -- Pydantic engine contract, runtime wrappers,
+  schema export, and stdio service used by non-Python clients.
 
 The CLI command remains `langslice`, but the Python import package is
 `langslice_harness`.
+
+## Engine Contract
+
+The Python harness is the source of truth for LangSlice runtime behavior. The
+engine contract is defined with Pydantic models and exported to JSON Schema plus
+generated TypeScript types:
+
+```bash
+python scripts/generate_engine_contract.py
+langslice schema --out docs/engine_schema.json
+```
+
+`langslice serve --stdio` runs the newline-delimited JSON engine service. It
+accepts request envelopes such as `version`, `estimate.run`, `register.run`,
+`quick_affine.run`, and `export.run`, emits progress/log event envelopes, and
+returns either result or error envelopes.
 
 ## Position Estimation
 
@@ -50,8 +68,16 @@ and fits a constrained monotonic position curve.
 ## Desktop App
 
 `tauri-gui/` contains the Rust backend and React frontend. The GUI invokes the
-Python harness as a sidecar for position estimation, registration, and export while the
-Rust side handles atlas loading, reslicing, and mesh serving.
+Python engine protocol for position estimation, registration, and quick-affine
+preview. Export remains on the legacy `langslice register --out ...` path until
+the engine contract grows an affine-aware export request. The Rust side handles
+atlas loading, reslicing, mesh serving, image thumbnails, and process lifecycle.
+
+## Web Demo
+
+`web-demo/` is a static browser demo with a deliberately limited runtime. It
+keeps generated TypeScript engine contract types and declares the subset of
+engine methods it supports, but Python remains the canonical runtime.
 
 ## Debugging
 

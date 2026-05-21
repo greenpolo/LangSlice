@@ -22,8 +22,7 @@ sys.path.insert(0, str(_REPO))
 sys.path.insert(0, str(_REPO / "src"))
 sys.path.insert(0, str(_REPO / "models" / "langslice-gemma-4" / "training"))
 
-from adaptive.schedule import AdaptiveSchedule, ErrorObservation, make_error_buffer
-
+from adaptive.schedule import AdaptiveSchedule, make_error_buffer  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -138,10 +137,10 @@ def test_shim_reexports_work() -> None:
     """Backward-compat shim must still export AdaptiveRewardSchedule and its factory."""
     from single_turn_rl.adaptive_reward import (  # noqa: PLC0415
         AdaptiveRewardSchedule,
-        make_adaptive_terminal_reward,
-        record_error,
-        recent_errors,
         clear_recent_errors,
+        make_adaptive_terminal_reward,
+        recent_errors,
+        record_error,
     )
     assert callable(AdaptiveRewardSchedule)
     assert callable(make_adaptive_terminal_reward)

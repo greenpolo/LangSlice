@@ -180,12 +180,15 @@ def _sample_bg_color(image: np.ndarray) -> np.ndarray:
     """
     h, w = image.shape[:2]
     corner = max(20, min(h, w) // 16)
-    samples = np.concatenate([
-        image[:corner, :corner].reshape(-1, 3),
-        image[:corner, -corner:].reshape(-1, 3),
-        image[-corner:, :corner].reshape(-1, 3),
-        image[-corner:, -corner:].reshape(-1, 3),
-    ], axis=0)
+    samples = np.concatenate(
+        [
+            image[:corner, :corner].reshape(-1, 3),
+            image[:corner, -corner:].reshape(-1, 3),
+            image[-corner:, :corner].reshape(-1, 3),
+            image[-corner:, -corner:].reshape(-1, 3),
+        ],
+        axis=0,
+    )
     return np.median(samples, axis=0).astype(np.float32)
 
 
@@ -322,7 +325,9 @@ def _side_wing_masks(
             _, component_cols = np.where(component)
             if component_cols.size == 0:
                 continue
-            source_component = _source_component_for(component, source_cc) if include_satellites else component
+            source_component = (
+                _source_component_for(component, source_cc) if include_satellites else component
+            )
             centroid = float(component_cols.mean())
             lateral = centroid < center if side == "left" else centroid > center
             reaches_outer_edge = (
@@ -508,9 +513,7 @@ class HemibrainPreparation:
 
         # Fray the kept hemisphere's medial edge in source coordinates.
         bg_color = _sample_bg_color(image)
-        fray = _fray_along_mask_edge(
-            kept_tissue, removed_half, rng, band_px=self.fray_band_px
-        )
+        fray = _fray_along_mask_edge(kept_tissue, removed_half, rng, band_px=self.fray_band_px)
         if fray.any():
             image = image.copy()
             image[fray] = bg_color
@@ -611,10 +614,9 @@ def _wavy_tear_cut_mask(
     amp_short = float(rng.uniform(*amp_short_px_range))
     phase_long = float(rng.uniform(0.0, 2.0 * np.pi))
     phase_short = float(rng.uniform(0.0, 2.0 * np.pi))
-    displacement = (
-        amp_long * np.sin(2.0 * np.pi * along_line / wl_long + phase_long)
-        + amp_short * np.sin(2.0 * np.pi * along_line / wl_short + phase_short)
-    )
+    displacement = amp_long * np.sin(
+        2.0 * np.pi * along_line / wl_long + phase_long
+    ) + amp_short * np.sin(2.0 * np.pi * along_line / wl_short + phase_short)
     return ((signed_dist + displacement) > 0) & tissue
 
 
@@ -635,7 +637,10 @@ def _apply_tear_cut_and_recenter(
     bg_color = _sample_bg_color(image)
     remaining_after_cut = tissue & ~cut_removed
     fray = _fray_along_mask_edge(
-        remaining_after_cut, cut_removed, rng, band_px=fray_band_px,
+        remaining_after_cut,
+        cut_removed,
+        rng,
+        band_px=fray_band_px,
     )
     removed = cut_removed | fray
     new_tissue = remaining_after_cut & ~fray
@@ -655,7 +660,10 @@ def _apply_tear_cut_and_recenter(
     translated = np.empty_like(out)
     for ch in range(out.shape[2]):
         translated[:, :, ch] = _translate_numeric(
-            out[:, :, ch], dx=dx, dy=dy, fill_value=float(bg_color[ch]),
+            out[:, :, ch],
+            dx=dx,
+            dy=dy,
+            fill_value=float(bg_color[ch]),
         )
 
     translated_tissue = _translate_mask(new_tissue, dx=dx, dy=dy)
@@ -1014,9 +1022,7 @@ class PosteriorWingDamage:
             raise ValueError(f"Unsupported posterior wing damage mode: {mode!r}")
         self.mode = mode
         if mode_weights is not None and len(mode_weights) != len(self._MODES):
-            raise ValueError(
-                f"mode_weights must have {len(self._MODES)} entries"
-            )
+            raise ValueError(f"mode_weights must have {len(self._MODES)} entries")
         self.mode_weights = mode_weights or self._DEFAULT_MODE_WEIGHTS
         self.detach_shift_px = detach_shift_px
         self.detach_angle_deg = detach_angle_deg
@@ -1037,16 +1043,15 @@ class PosteriorWingDamage:
         if ctx.position_mm is None or ctx.position_mm < self.posterior_min_position_mm:
             return image
         tissue = ctx.tissue_mask if ctx.tissue_mask is not None else _infer_tissue_mask(image)
-        thalamus = None if ctx.tissue_class_masks is None else ctx.tissue_class_masks.get("thalamus")
+        thalamus = (
+            None if ctx.tissue_class_masks is None else ctx.tissue_class_masks.get("thalamus")
+        )
         if thalamus is not None and thalamus.any():
             return image
 
-        has_specific_wing_masks = (
-            ctx.tissue_class_masks is not None
-            and any(
-                key in ctx.tissue_class_masks and ctx.tissue_class_masks[key].any()
-                for key in ("isocortex", "hippocampal_formation", "cortical_subplate")
-            )
+        has_specific_wing_masks = ctx.tissue_class_masks is not None and any(
+            key in ctx.tissue_class_masks and ctx.tissue_class_masks[key].any()
+            for key in ("isocortex", "hippocampal_formation", "cortical_subplate")
         )
         if not has_specific_wing_masks:
             return image
@@ -1062,9 +1067,7 @@ class PosteriorWingDamage:
         if not wings["left"].any() and not wings["right"].any():
             return image
 
-        mode = self.mode or str(
-            rng.choice(self._MODES, p=list(self.mode_weights))
-        )
+        mode = self.mode or str(rng.choice(self._MODES, p=list(self.mode_weights)))
         actions: dict[str, str] = {}
         if mode == "left_missing":
             actions["left"] = "missing"
@@ -1217,9 +1220,12 @@ class Tears:
         bg_color = _sample_bg_color(image)
         out = image.copy()
 
-        n_tears = int(rng.integers(
-            self.n_tears_range[0], self.n_tears_range[1] + 1,
-        ))
+        n_tears = int(
+            rng.integers(
+                self.n_tears_range[0],
+                self.n_tears_range[1] + 1,
+            )
+        )
         for _ in range(n_tears):
             out = self._apply_edge_bite(out, ctx, bg_color, rng)
 
@@ -1379,9 +1385,12 @@ class Microbubbles:
         h, w = image.shape[:2]
         tissue = ctx.tissue_mask if ctx.tissue_mask is not None else _infer_tissue_mask(image)
 
-        n_bubbles = int(rng.integers(
-            self.n_bubbles_range[0], self.n_bubbles_range[1] + 1,
-        ))
+        n_bubbles = int(
+            rng.integers(
+                self.n_bubbles_range[0],
+                self.n_bubbles_range[1] + 1,
+            )
+        )
         if n_bubbles == 0:
             return image
 
@@ -1439,7 +1448,7 @@ class Microbubbles:
             # --- Dark refractive rim (Becke line) ---
             rim_thickness = max(1.5, radius * self.rim_thickness_frac)
             # Smooth dark ring centered on the boundary.
-            rim_falloff = np.exp(-((r - radius) / (rim_thickness * 0.6)) ** 2)
+            rim_falloff = np.exp(-(((r - radius) / (rim_thickness * 0.6)) ** 2))
             rim_factor = 1.0 - self.rim_darkness * rim_falloff
             for ch in range(image.shape[2]):
                 out[y0:y1, x0:x1, ch] *= rim_factor
@@ -1452,7 +1461,7 @@ class Microbubbles:
             hi_x = center_c + hi_r * np.cos(theta)
             hi_radius = max(1.5, radius * self.highlight_size_frac)
             hi_dist = np.sqrt((yy - hi_y) ** 2 + (xx - hi_x) ** 2)
-            hi_falloff = np.exp(-(hi_dist / hi_radius) ** 2)
+            hi_falloff = np.exp(-((hi_dist / hi_radius) ** 2))
             hi_mask = inside & (hi_falloff > 0.05)
             for ch in range(image.shape[2]):
                 tile = out[y0:y1, x0:x1, ch]
@@ -1573,9 +1582,7 @@ class Debris:
             return image
 
         h, w = image.shape[:2]
-        n_pieces = int(rng.integers(
-            self.n_pieces_range[0], self.n_pieces_range[1] + 1
-        ))
+        n_pieces = int(rng.integers(self.n_pieces_range[0], self.n_pieces_range[1] + 1))
         if n_pieces == 0:
             return image
 

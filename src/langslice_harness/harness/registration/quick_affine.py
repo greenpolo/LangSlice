@@ -31,7 +31,7 @@ from __future__ import annotations
 import logging
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import cv2
 import numpy as np
@@ -99,7 +99,8 @@ def _extract_slice_silhouette(image_gray: np.ndarray) -> np.ndarray:
         binary = 255 - binary
 
     # Fill ventricles, white-matter gaps etc. that Otsu classed as background.
-    filled = binary_fill_holes(binary > 0).astype(np.uint8) * 255
+    filled_bool = cast(np.ndarray, binary_fill_holes(binary > 0))
+    filled = filled_bool.astype(np.uint8) * 255
 
     # Keep only the largest non-background CC — drops debris and staining
     # specks that survive thresholding.
@@ -221,7 +222,8 @@ def quick_affine_register(
             best_affine = candidate
             best_pattern = sign_pattern
 
-    assert best_affine is not None
+    if best_affine is None:
+        raise ValueError("No affine candidate could be computed.")
 
     # Apply the winning affine to the RGB slice with linear interpolation for
     # smoothness; clip to the atlas silhouette via alpha so the 3D viewer

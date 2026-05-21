@@ -35,16 +35,14 @@ from urllib.parse import parse_qs, urlparse
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
+from langslice_data.manifest.allocations import (  # noqa: E402
+    ALLOCATIONS_ROOT as _DEFAULT_ALLOCATIONS_ROOT,
+)
+
 from langslice_harness.atlas.core import (  # noqa: E402
     get_composite_slice,
     get_reference_slice,
     load_atlas,
-)
-from langslice_data.manifest.allocations import (  # noqa: E402
-    ALLOCATIONS_ROOT as _DEFAULT_ALLOCATIONS_ROOT,
-    PLANES as _ALLOC_PLANES,
-    compute_split_for,
-    load_allocation,
 )
 
 logger = logging.getLogger("qc_app")
@@ -59,10 +57,10 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 # Imported at module level so tests can monkeypatch the singleton; see
 # training_progress.py for the on-disk contract this consumes.
-import sys as _sys
+import sys as _sys  # noqa: E402
+
 _sys.path.insert(0, str(Path(__file__).resolve().parent))
 from training_progress import TrainingProgress, status_per_id  # noqa: E402
-
 
 # ----------------------------------------------------------------------
 # Atlas rendering with caching
@@ -70,7 +68,7 @@ from training_progress import TrainingProgress, status_per_id  # noqa: E402
 
 _atlas_lock = threading.Lock()
 _atlas_status: dict[str, str] = {}  # atlas_name -> "ok" | error message
-_render_cache: "OrderedDict[tuple[str, str, int, str], bytes]" = OrderedDict()
+_render_cache: OrderedDict[tuple[str, str, int, str], bytes] = OrderedDict()
 # Bumped from 256 -> 1024 because aggressive prefetch (5+ slices ahead, plus
 # composite + reference variants per slice) used to evict tiles seconds after
 # loading them. 1024 PNGs is ~25MB at typical sizes; trivial.
@@ -120,9 +118,7 @@ def _placeholder_png(text: str) -> bytes:
     return buf.getvalue()
 
 
-def render_atlas_png(
-    atlas_name: str, plane: str, position_mm: float, mode: str
-) -> bytes:
+def render_atlas_png(atlas_name: str, plane: str, position_mm: float, mode: str) -> bytes:
     pos_microns = _quantize_position(position_mm)
     key = (atlas_name, plane, pos_microns, mode)
     with _atlas_lock:
@@ -232,9 +228,8 @@ def load_estimates(path: Path) -> dict[str, dict]:
             if not tid:
                 continue
 
-            positions: list[float] | None = (
-                d.get("submitted_positions_mm")
-                or d.get("estimated_positions_mm")
+            positions: list[float] | None = d.get("submitted_positions_mm") or d.get(
+                "estimated_positions_mm"
             )
             if positions is None and d.get("estimated_position_mm") is not None:
                 positions = [float(d["estimated_position_mm"])]
@@ -285,11 +280,7 @@ def _entry_to_payload(e: dict, plane: str, estimates: dict[str, dict]) -> dict:
         if e.get("kind") == "group"
         else [float(e.get("position_mm", 0.0))]
     )
-    images = (
-        list(e.get("images", []))
-        if e.get("kind") == "group"
-        else [e.get("image", "")]
-    )
+    images = list(e.get("images", [])) if e.get("kind") == "group" else [e.get("image", "")]
     est = estimates.get(e["id"], {}) if estimates else {}
     return {
         "id": e["id"],
@@ -507,8 +498,8 @@ def _matches_inventory_filter(row: dict, q: dict) -> bool:
     qstr = (q.get("q") or "").strip().lower()
     if qstr:
         haystack = (
-            f"{row.get('dataset','')} {row.get('subject_id','')} "
-            f"{row.get('section_id','')} {row.get('image_path','')}"
+            f"{row.get('dataset', '')} {row.get('subject_id', '')} "
+            f"{row.get('section_id', '')} {row.get('image_path', '')}"
         ).lower()
         if qstr not in haystack:
             return False
@@ -616,10 +607,7 @@ def compute_inventory_facets(rows: list[dict]) -> dict:
 
     def _shape(d: dict) -> list[dict]:
         return sorted(
-            (
-                {"value": k, "n_total": v["n_total"]}
-                for k, v in d.items()
-            ),
+            ({"value": k, "n_total": v["n_total"]} for k, v in d.items()),
             key=lambda r: (-r["n_total"], r["value"]),
         )
 
@@ -674,12 +662,10 @@ def compute_inventory_dataset_rollup(rows: list[dict]) -> list[dict]:
         bucket["_rows_for_samples"].append(row)
 
     out: list[dict] = []
-    for ds, b in by_ds.items():
+    for _ds, b in by_ds.items():
         rs = b.pop("_rows_for_samples")
         # Pick anterior + middle + posterior representatives by position_mm.
-        rs_with_pos = [
-            r for r in rs if isinstance(r.get("position_mm"), (int, float))
-        ]
+        rs_with_pos = [r for r in rs if isinstance(r.get("position_mm"), (int, float))]
         rs_with_pos.sort(key=lambda r: float(r["position_mm"]))
         samples: list[dict] = []
         if rs_with_pos:
@@ -792,7 +778,7 @@ def compute_training_summary(
 
 
 _thumb_lock = threading.Lock()
-_thumb_mem_cache: "OrderedDict[tuple[str, int, int, float], bytes]" = OrderedDict()
+_thumb_mem_cache: OrderedDict[tuple[str, int, int, float], bytes] = OrderedDict()
 _THUMB_MEM_MAX = 512
 
 
@@ -954,9 +940,7 @@ class InventoryApp:
                 self.manifest_path, allocations_root=self.allocations_root
             )
             self._manifest_mtime = mt
-            logger.info(
-                "(re)loaded inventory manifest: %d rows", len(self.rows)
-            )
+            logger.info("(re)loaded inventory manifest: %d rows", len(self.rows))
             return True
         return False
 
@@ -1043,8 +1027,8 @@ def _matches_synth_filter(row: dict, q: dict) -> bool:
     qstr = (q.get("q") or "").strip().lower()
     if qstr:
         haystack = (
-            f"{row.get('modality','')} {row.get('atlas_name','')} "
-            f"{row.get('mode','')} {row.get('seed','')}"
+            f"{row.get('modality', '')} {row.get('atlas_name', '')} "
+            f"{row.get('mode', '')} {row.get('seed', '')}"
         ).lower()
         if qstr not in haystack:
             return False
@@ -1187,11 +1171,9 @@ def compute_synth_rollup(rows: list[dict], *, synth_dir: Path | None = None) -> 
         bucket["_rows_for_samples"].append(row)
 
     out: list[dict] = []
-    for key, b in by_key.items():
+    for _key, b in by_key.items():
         rs = b.pop("_rows_for_samples")
-        rs_with_pos = [
-            r for r in rs if isinstance(r.get("position_mm"), (int, float))
-        ]
+        rs_with_pos = [r for r in rs if isinstance(r.get("position_mm"), (int, float))]
         rs_with_pos.sort(key=lambda r: float(r["position_mm"]))
         samples: list[dict] = []
         if rs_with_pos:
@@ -1212,9 +1194,7 @@ def compute_synth_rollup(rows: list[dict], *, synth_dir: Path | None = None) -> 
                 image_mtime = 0.0
                 if synth_dir is not None:
                     try:
-                        image_mtime = (
-                            synth_dir / "images" / f"{seed_int:08d}.png"
-                        ).stat().st_mtime
+                        image_mtime = (synth_dir / "images" / f"{seed_int:08d}.png").stat().st_mtime
                     except OSError:
                         pass
                 samples.append(
@@ -1255,9 +1235,7 @@ class SynthApp:
         if mt != self._manifest_mtime:
             self.rows = load_synth_manifest(self.manifest_path)
             self._manifest_mtime = mt
-            logger.info(
-                "(re)loaded synth manifest: %d rows", len(self.rows)
-            )
+            logger.info("(re)loaded synth manifest: %d rows", len(self.rows))
             return True
         return False
 
@@ -1410,8 +1388,10 @@ def load_sft_estimates_best_per_id(sft_dir: Path) -> dict[str, dict]:
                 "accepted": err <= tol,
                 "rescuable": err <= rescue,
                 "label": (
-                    "clean_success" if err <= tol
-                    else "rescuable" if err <= rescue
+                    "clean_success"
+                    if err <= tol
+                    else "rescuable"
+                    if err <= rescue
                     else cat.get("label") or "out_of_tolerance"
                 ),
                 "cost_usd": d.get("estimated_cost_usd"),
@@ -1466,15 +1446,12 @@ def load_sft_traces(
     rescues = load_sft_rescues(sft_dir)
 
     kept = [
-        e for e in entries_by_id.values()
-        if e.get("kind") != "group" and e.get("id") in estimates
+        e for e in entries_by_id.values() if e.get("kind") != "group" and e.get("id") in estimates
     ]
     return kept, estimates, rescues
 
 
-def _sft_entry_to_payload(
-    entry: dict, est: dict | None, rescue: dict | None = None
-) -> dict:
+def _sft_entry_to_payload(entry: dict, est: dict | None, rescue: dict | None = None) -> dict:
     kind = entry.get("kind", "single")
     if kind == "group":
         positions = list(entry.get("positions_mm", []))
@@ -1493,7 +1470,6 @@ def _sft_entry_to_payload(
     cost_usd = None
     sft_accepted = None
     sft_notes = None
-    model = None
     source_file = None
     if est is not None:
         truth_positions = est.get("truth_positions_mm")
@@ -1572,7 +1548,7 @@ def compute_sft_rollup(
         bucket["_entries_for_samples"].append(e)
 
     out: list[dict] = []
-    for ds, b in by_ds.items():
+    for _ds, b in by_ds.items():
         es = b.pop("_entries_for_samples")
 
         def _first_pos(en: dict) -> float:
@@ -1656,9 +1632,7 @@ class SftApp:
         )
         return True
 
-    def filter_entries(
-        self, q: dict
-    ) -> tuple[list[dict], dict[str, dict], dict[str, dict]]:
+    def filter_entries(self, q: dict) -> tuple[list[dict], dict[str, dict], dict[str, dict]]:
         self._reload_if_stale()
         source_dataset = q.get("source_dataset")
         plane = q.get("plane")
@@ -1676,8 +1650,8 @@ class SftApp:
                 continue
             if qstr:
                 hay = (
-                    f"{meta.get('source_dataset','')} {meta.get('subject_id','')} "
-                    f"{e.get('id','')} {e.get('atlas','')} {e.get('plane','')}"
+                    f"{meta.get('source_dataset', '')} {meta.get('subject_id', '')} "
+                    f"{e.get('id', '')} {e.get('atlas', '')} {e.get('plane', '')}"
                 ).lower()
                 if qstr not in hay:
                     continue
@@ -1907,9 +1881,16 @@ class Handler(BaseHTTPRequestHandler):
     def _handle_inventory_manifest(self, qs: dict) -> None:
         inv = self._inv_app()
         if inv is None:
-            self._send_json(HTTPStatus.OK, {
-                "items": [], "offset": 0, "limit": 0, "total": 0, "sort": "position",
-            })
+            self._send_json(
+                HTTPStatus.OK,
+                {
+                    "items": [],
+                    "offset": 0,
+                    "limit": 0,
+                    "total": 0,
+                    "sort": "position",
+                },
+            )
             return
         q = self._parse_inventory_query(qs)
         sort_order = (qs.get("sort", ["position"])[0] or "position").lower()
@@ -1935,9 +1916,7 @@ class Handler(BaseHTTPRequestHandler):
         if prog is not None and page_has_rlvr:
             ids_on_page = [r["_id"] for r in page if (r.get("_split") or "") == "rlvr"]
             rlvr_status_map = status_per_id(prog, ids_on_page)
-        items = [
-            _row_to_payload(r, rlvr_status=rlvr_status_map) for r in page
-        ]
+        items = [_row_to_payload(r, rlvr_status=rlvr_status_map) for r in page]
         self._send_json(
             HTTPStatus.OK,
             {
@@ -1952,10 +1931,18 @@ class Handler(BaseHTTPRequestHandler):
     def _handle_inventory_facets(self, qs: dict) -> None:
         inv = self._inv_app()
         if inv is None:
-            self._send_json(HTTPStatus.OK, {
-                "datasets": [], "atlases": [], "planes": [], "species": [],
-                "registration_sources": [], "n_total": 0, "n_excluded": 0,
-            })
+            self._send_json(
+                HTTPStatus.OK,
+                {
+                    "datasets": [],
+                    "atlases": [],
+                    "planes": [],
+                    "species": [],
+                    "registration_sources": [],
+                    "n_total": 0,
+                    "n_excluded": 0,
+                },
+            )
             return
         q = self._parse_inventory_query(qs)
         rows = inv.filter_rows(q)
@@ -1970,9 +1957,7 @@ class Handler(BaseHTTPRequestHandler):
         q = self._parse_inventory_query(qs)
         rows = inv.filter_rows(q)
         rollup = compute_inventory_dataset_rollup(rows)
-        self._send_json(
-            HTTPStatus.OK, {"datasets": rollup, "n_total_rows": len(rows)}
-        )
+        self._send_json(HTTPStatus.OK, {"datasets": rollup, "n_total_rows": len(rows)})
 
     def _handle_inventory_thumbnail(self, qs: dict) -> None:
         try:
@@ -1987,9 +1972,7 @@ class Handler(BaseHTTPRequestHandler):
             w, h = 256, 256
         data, ct = render_thumbnail(rel, w, h, base_dir=None)
         if data is None:
-            status = (
-                HTTPStatus.NOT_FOUND if ct == "not_found" else HTTPStatus.BAD_REQUEST
-            )
+            status = HTTPStatus.NOT_FOUND if ct == "not_found" else HTTPStatus.BAD_REQUEST
             self._send(status, ct.encode("utf-8"), content_type="text/plain")
             return
         self._send(HTTPStatus.OK, data, content_type=ct, cache=True)
@@ -2067,9 +2050,7 @@ class Handler(BaseHTTPRequestHandler):
         if prog is None:
             self._send_json(HTTPStatus.OK, {"recent": []})
             return
-        self._send_json(
-            HTTPStatus.OK, {"recent": prog.recent_payload(limit=limit)}
-        )
+        self._send_json(HTTPStatus.OK, {"recent": prog.recent_payload(limit=limit)})
 
     def _handle_training_summary(self, qs: dict) -> None:
         """Per-split rollup for the Training tab header.
@@ -2082,10 +2063,16 @@ class Handler(BaseHTTPRequestHandler):
         if inv is None:
             self._send_json(
                 HTTPStatus.OK,
-                {"splits": [], "rlvr": {
-                    "n_total": 0, "n_consumed": 0, "n_queued": 0,
-                    "n_consumed_and_queued": 0, "n_unseen": 0,
-                }},
+                {
+                    "splits": [],
+                    "rlvr": {
+                        "n_total": 0,
+                        "n_consumed": 0,
+                        "n_queued": 0,
+                        "n_consumed_and_queued": 0,
+                        "n_unseen": 0,
+                    },
+                },
             )
             return
         q = self._parse_inventory_query(qs)
@@ -2094,9 +2081,7 @@ class Handler(BaseHTTPRequestHandler):
         q.pop("rlvr_status", None)
         rows = inv.filter_rows(q)
         prog = getattr(inv, "training_progress", None)
-        self._send_json(
-            HTTPStatus.OK, compute_training_summary(rows, prog)
-        )
+        self._send_json(HTTPStatus.OK, compute_training_summary(rows, prog))
 
     def _handle_training_eval(self, qs: dict) -> None:
         """Flat brain list for the Eval sub-tab.
@@ -2129,11 +2114,9 @@ class Handler(BaseHTTPRequestHandler):
             bucket["_rows"].append(r)
 
         out: list[dict] = []
-        for key, b in by_brain.items():
+        for _key, b in by_brain.items():
             rs = b.pop("_rows")
-            rs_with_pos = [
-                r for r in rs if isinstance(r.get("position_mm"), (int, float))
-            ]
+            rs_with_pos = [r for r in rs if isinstance(r.get("position_mm"), (int, float))]
             rs_with_pos.sort(key=lambda r: float(r["position_mm"]))
             samples: list[dict] = []
             if rs_with_pos:
@@ -2193,9 +2176,16 @@ class Handler(BaseHTTPRequestHandler):
     def _handle_rlvr_manifest(self, qs: dict) -> None:
         inv = self._inv_app()
         if inv is None:
-            self._send_json(HTTPStatus.OK, {
-                "items": [], "offset": 0, "limit": 0, "total": 0, "sort": "position",
-            })
+            self._send_json(
+                HTTPStatus.OK,
+                {
+                    "items": [],
+                    "offset": 0,
+                    "limit": 0,
+                    "total": 0,
+                    "sort": "position",
+                },
+            )
             return
         q = self._parse_inventory_query(qs)
         # Always force rlvr filter regardless of query input.
@@ -2220,9 +2210,7 @@ class Handler(BaseHTTPRequestHandler):
         if prog is not None:
             ids_on_page = [r["_id"] for r in page]
             rlvr_status_map = status_per_id(prog, ids_on_page)
-        items = [
-            _row_to_payload(r, rlvr_status=rlvr_status_map) for r in page
-        ]
+        items = [_row_to_payload(r, rlvr_status=rlvr_status_map) for r in page]
         self._send_json(
             HTTPStatus.OK,
             {
@@ -2261,9 +2249,15 @@ class Handler(BaseHTTPRequestHandler):
     def _handle_sft_manifest(self, qs: dict) -> None:
         sft = self._sft_app()
         if sft is None:
-            self._send_json(HTTPStatus.OK, {
-                "items": [], "offset": 0, "limit": 0, "total": 0,
-            })
+            self._send_json(
+                HTTPStatus.OK,
+                {
+                    "items": [],
+                    "offset": 0,
+                    "limit": 0,
+                    "total": 0,
+                },
+            )
             return
         try:
             limit = max(1, min(200, int(qs.get("limit", ["48"])[0] or 48)))
@@ -2321,9 +2315,16 @@ class Handler(BaseHTTPRequestHandler):
     def _handle_synth_manifest(self, qs: dict) -> None:
         synth = self._synth_app()
         if synth is None:
-            self._send_json(HTTPStatus.OK, {
-                "items": [], "offset": 0, "limit": 0, "total": 0, "sort": "position",
-            })
+            self._send_json(
+                HTTPStatus.OK,
+                {
+                    "items": [],
+                    "offset": 0,
+                    "limit": 0,
+                    "total": 0,
+                    "sort": "position",
+                },
+            )
             return
         sort_order = (qs.get("sort", ["position"])[0] or "position").lower()
         try:
@@ -2364,11 +2365,18 @@ class Handler(BaseHTTPRequestHandler):
     def _handle_synth_facets(self, qs: dict) -> None:
         synth = self._synth_app()
         if synth is None:
-            self._send_json(HTTPStatus.OK, {
-                "modality": [], "atlases": [], "planes": [], "modes": [],
-                "damage_intensities": [], "apply_damage": {"true": 0, "false": 0},
-                "n_total": 0,
-            })
+            self._send_json(
+                HTTPStatus.OK,
+                {
+                    "modality": [],
+                    "atlases": [],
+                    "planes": [],
+                    "modes": [],
+                    "damage_intensities": [],
+                    "apply_damage": {"true": 0, "false": 0},
+                    "n_total": 0,
+                },
+            )
             return
         rows = synth.filter_rows(self._parse_synth_query(qs))
         self._send_json(HTTPStatus.OK, compute_synth_facets(rows))
@@ -2397,8 +2405,10 @@ class Handler(BaseHTTPRequestHandler):
         # cached copy is misleading. Local-only tool; bandwidth cost is
         # negligible.
         self._send(
-            HTTPStatus.OK, candidate.read_bytes(),
-            content_type="image/png", cache=False,
+            HTTPStatus.OK,
+            candidate.read_bytes(),
+            content_type="image/png",
+            cache=False,
         )
 
     def _handle_synth_thumbnail(self, qs: dict) -> None:
@@ -2416,13 +2426,9 @@ class Handler(BaseHTTPRequestHandler):
             h = max(32, min(1024, int(qs.get("h", ["256"])[0] or 256)))
         except ValueError:
             w, h = 256, 256
-        data, ct = render_thumbnail(
-            f"images/{seed:08d}.png", w, h, base_dir=synth.synth_dir
-        )
+        data, ct = render_thumbnail(f"images/{seed:08d}.png", w, h, base_dir=synth.synth_dir)
         if data is None:
-            status = (
-                HTTPStatus.NOT_FOUND if ct == "not_found" else HTTPStatus.BAD_REQUEST
-            )
+            status = HTTPStatus.NOT_FOUND if ct == "not_found" else HTTPStatus.BAD_REQUEST
             self._send(status, ct.encode("utf-8"), content_type="text/plain")
             return
         # cache=False — same rationale as _handle_synth_image. Regen with
@@ -2444,7 +2450,9 @@ class _ExclusiveHTTPServer(ThreadingHTTPServer):
     def server_bind(self) -> None:  # pragma: no cover - exercised at runtime
         if sys.platform == "win32" and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
             self.socket.setsockopt(
-                socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1  # type: ignore[attr-defined]
+                socket.SOL_SOCKET,
+                socket.SO_EXCLUSIVEADDRUSE,
+                1,  # type: ignore[attr-defined]
             )
         super().server_bind()
 
@@ -2498,7 +2506,11 @@ def prewarm_atlases(rows: list[dict]) -> threading.Thread:
                 load_atlas(name)
                 logger.info(
                     "prewarm %d/%d %s (%d entries) in %.1fs",
-                    idx, total, name, n, time.monotonic() - t0,
+                    idx,
+                    total,
+                    name,
+                    n,
+                    time.monotonic() - t0,
                 )
             except Exception as exc:
                 logger.warning("prewarm %d/%d %s failed: %s", idx, total, name, exc)
@@ -2755,9 +2767,7 @@ def main(argv: list[str] | None = None) -> int:
         args.port,
     )
     if actual_port != args.port:
-        logger.info(
-            "port %d busy; using %d (override with --port)", args.port, actual_port
-        )
+        logger.info("port %d busy; using %d (override with --port)", args.port, actual_port)
     url = f"http://{args.host}:{actual_port}/"
     logger.info(
         "QC app serving inventory=%d rows, synth=%d rows, sft=%d entries at %s",

@@ -244,7 +244,7 @@ def _generate_openai_responses_segmentation(
         model=mainline_model,
         input=cast(Any, contents),
         tools=[{"type": "image_generation", "action": "edit"}],
-        reasoning={"effort": reasoning_effort},
+        reasoning=cast(Any, {"effort": reasoning_effort}),
     )
 
     image, revised_prompt = _extract_openai_responses_image(response)

@@ -248,16 +248,17 @@ class ManifestGTLookup:
                         pos = row.get("position_mm")
                         if not sid or subj is None or pos is None:
                             continue
-                        out.setdefault(str(subj), []).append(
-                            (dataset, str(sid), float(pos))
-                        )
+                        out.setdefault(str(subj), []).append((dataset, str(sid), float(pos)))
             except (OSError, json.JSONDecodeError) as exc:
                 logger.warning("manifest GT: failed to read %s: %s", shard_path, exc)
                 continue
         self._cache[plane] = out
 
     def lookup(
-        self, plane: str, subject_id: str, query_image_stem: str,
+        self,
+        plane: str,
+        subject_id: str,
+        query_image_stem: str,
     ) -> tuple[str, str, float] | None:
         """Return ``(dataset, section_id, position_mm)`` for the SFT row, or None."""
         self._ensure_plane(plane)
@@ -279,7 +280,9 @@ class ManifestGTLookup:
             # Still ambiguous — log and skip rather than guess.
             logger.warning(
                 "manifest GT: ambiguous match for plane=%s subject=%s stem=%s: %s",
-                plane, subject_id, query_image_stem,
+                plane,
+                subject_id,
+                query_image_stem,
                 [(d, s) for d, s, _ in matched],
             )
             return None
@@ -458,7 +461,8 @@ def build_from_sft_corpus(
                 if missing:
                     logger.warning(
                         "atlas image(s) missing for %s: %s",
-                        query_rel, missing[:3],
+                        query_rel,
+                        missing[:3],
                     )
                     skipped_missing_atlas += 1
                     continue
@@ -471,7 +475,9 @@ def build_from_sft_corpus(
             # submit as a fallback would cap the policy at teacher-level
             # accuracy and turn RLVR into imitation.
             gt_lookup = manifest_lookup.lookup(
-                plane, subject_id, _query_stem_for_match(query_rel),
+                plane,
+                subject_id,
+                _query_stem_for_match(query_rel),
             )
             if gt_lookup is None:
                 skipped_no_manifest_gt += 1
@@ -483,7 +489,9 @@ def build_from_sft_corpus(
             except (ImportError, OSError, RuntimeError, ValueError) as exc:
                 logger.warning(
                     "could not resolve valid_range_mm for (%s, %s): %s",
-                    atlas_name, plane, exc,
+                    atlas_name,
+                    plane,
+                    exc,
                 )
                 continue
 
@@ -525,7 +533,8 @@ def build_from_sft_corpus(
         f"skipped_missing_query={skipped_missing_query} "
         f"skipped_missing_atlas={skipped_missing_atlas} "
         f"skipped_no_manifest_gt={skipped_no_manifest_gt}",
-        file=sys.stderr, flush=True,
+        file=sys.stderr,
+        flush=True,
     )
 
 
@@ -658,7 +667,7 @@ def build_synthetic_states(
     # (plane, dataset, section_id) for us.
     eligible_sections: list[Any] = []
     for split in splits:
-        for plane in (planes if planes is not None else _planes_in_index(manifest_index)):
+        for plane in planes if planes is not None else _planes_in_index(manifest_index):
             eligible_sections.extend(manifest_index.query(plane=plane, split=split))
 
     emitted = 0
@@ -694,7 +703,10 @@ def build_synthetic_states(
         except (ValueError, AssertionError) as exc:
             logger.warning(
                 "synthetic generate_trace failed for %s/%s/%s: %s",
-                section.plane, section.dataset, section.section_id, exc,
+                section.plane,
+                section.dataset,
+                section.section_id,
+                exc,
             )
             skipped_grid_error += 1
             continue
@@ -711,7 +723,10 @@ def build_synthetic_states(
         except ValueError as exc:
             logger.warning(
                 "synthetic trace flatten failed for %s/%s/%s: %s",
-                section.plane, section.dataset, section.section_id, exc,
+                section.plane,
+                section.dataset,
+                section.section_id,
+                exc,
             )
             skipped_grid_error += 1
             continue
@@ -721,7 +736,9 @@ def build_synthetic_states(
         except (ImportError, OSError, RuntimeError, ValueError) as exc:
             logger.warning(
                 "synthetic valid_range_mm lookup failed for (%s, %s): %s",
-                section.atlas, section.plane, exc,
+                section.atlas,
+                section.plane,
+                exc,
             )
             skipped_grid_error += 1
             continue
@@ -756,7 +773,8 @@ def build_synthetic_states(
         f"skipped_covered={skipped_covered} "
         f"skipped_no_cache={skipped_no_cache} "
         f"skipped_grid_error={skipped_grid_error}",
-        file=sys.stderr, flush=True,
+        file=sys.stderr,
+        flush=True,
     )
 
 
@@ -796,19 +814,22 @@ def _build_cmd(args: argparse.Namespace) -> int:
 
     # Phase 1: SFT-corpus walker. Realize the iterator so we can build the
     # covered-keys index BEFORE the synthetic pass runs.
-    teacher_rows: list[TerminalState] = list(build_from_sft_corpus(
-        sft_corpus_path=args.sft_corpus,
-        sft_corpus_root=args.sft_corpus_root,
-        manifest_root=args.manifest_root,
-        tier=args.tier,
-        max_rows=args.max_rows,
-        require_query_on_disk=not args.no_check_disk,
-        require_atlas_on_disk=not args.no_check_disk,
-        repo_root=args.repo_root,
-    ))
+    teacher_rows: list[TerminalState] = list(
+        build_from_sft_corpus(
+            sft_corpus_path=args.sft_corpus,
+            sft_corpus_root=args.sft_corpus_root,
+            manifest_root=args.manifest_root,
+            tier=args.tier,
+            max_rows=args.max_rows,
+            require_query_on_disk=not args.no_check_disk,
+            require_atlas_on_disk=not args.no_check_disk,
+            repo_root=args.repo_root,
+        )
+    )
     print(
         f"walked SFT corpus: emitted {len(teacher_rows)} teacher Lane-A states",
-        file=sys.stderr, flush=True,
+        file=sys.stderr,
+        flush=True,
     )
 
     synthetic_rows: list[TerminalState] = []
@@ -819,8 +840,7 @@ def _build_cmd(args: argparse.Namespace) -> int:
 
         index = ManifestIndex.from_manifest_root(args.manifest_root)
         covered_keys = {
-            (r.plane, str(r.quality.get("dataset", "")), r.section_id)
-            for r in teacher_rows
+            (r.plane, str(r.quality.get("dataset", "")), r.section_id) for r in teacher_rows
         }
         # Drop the sentinel for rows that somehow lack a dataset stamp; we
         # never want to "cover" an empty-dataset key (that'd shadow real
@@ -837,7 +857,8 @@ def _build_cmd(args: argparse.Namespace) -> int:
     all_rows = [*teacher_rows, *synthetic_rows]
     n = write_terminal_states(all_rows, args.output)
     print(
-        f"total written: {n} rows to {args.output}", file=sys.stderr,
+        f"total written: {n} rows to {args.output}",
+        file=sys.stderr,
     )
     return 0
 
@@ -850,42 +871,71 @@ def main(argv: list[str] | None = None) -> int:
     sub = p.add_subparsers(dest="cmd", required=True)
 
     pb = sub.add_parser("build", help="Walk an SFT corpus and emit a terminal-state JSONL.")
-    pb.add_argument("--sft-corpus", type=Path, required=True,
-                    help="Path to the SFT JSONL (e.g. data/sft_examples.jsonl).")
-    pb.add_argument("--sft-corpus-root", type=Path, default=None,
-                    help="Directory the JSONL's relative paths resolve against. "
-                    "Defaults to the JSONL's parent.")
-    pb.add_argument("--manifest-root", type=Path, default=Path("data/manifest"),
-                    help="Root of the data manifest for true-GT lookup. "
-                    "Defaults to data/manifest (canonical per AGENTS.md).")
-    pb.add_argument("--output", type=Path, required=True,
-                    help="Destination JSONL path.")
-    pb.add_argument("--tier", choices=_VALID_TIERS, default="strict",
-                    help="Acceptance-tier filter (default: strict).")
-    pb.add_argument("--max-rows", type=int, default=None,
-                    help="Optional cap for smoke runs.")
-    pb.add_argument("--no-check-disk", action="store_true",
-                    help="Skip image-on-disk existence checks.")
-    pb.add_argument("--repo-root", type=Path, default=None,
-                    help="Used to compute repo-relative paths in the JSONL. "
-                    "Defaults to the current working directory so paths align "
-                    "with the trainer's --repo-root . default.")
-    pb.add_argument("--include-synthetic", action="store_true",
-                    help="After walking the SFT corpus, synthesize Lane-A "
-                    "prefixes for every RLVR-pool section that has no teacher "
-                    "trace. Synthetic rows are tagged "
-                    "source='procedural_generator:lane_a'. Off by default; "
-                    "the existing pipelines see no change unless this is set.")
-    pb.add_argument("--synthetic-seed", type=int, default=1337,
-                    help="Seed for the synthetic generator's random.Random. "
-                    "Same seed yields identical synthetic traces across reruns. "
-                    "Default: 1337.")
-    pb.add_argument("--atlas-embedding-cache", type=Path,
-                    default=Path("out/atlas_embeddings"),
-                    help="Directory containing <atlas>_<plane>.pt embedding "
-                    "caches. Used to load the per-plane grid of valid atlas "
-                    "positions so synthetic tool_results reference real "
-                    "atlas filenames. Default: out/atlas_embeddings.")
+    pb.add_argument(
+        "--sft-corpus",
+        type=Path,
+        required=True,
+        help="Path to the SFT JSONL (e.g. data/sft_examples.jsonl).",
+    )
+    pb.add_argument(
+        "--sft-corpus-root",
+        type=Path,
+        default=None,
+        help="Directory the JSONL's relative paths resolve against. "
+        "Defaults to the JSONL's parent.",
+    )
+    pb.add_argument(
+        "--manifest-root",
+        type=Path,
+        default=Path("data/manifest"),
+        help="Root of the data manifest for true-GT lookup. "
+        "Defaults to data/manifest (canonical per AGENTS.md).",
+    )
+    pb.add_argument("--output", type=Path, required=True, help="Destination JSONL path.")
+    pb.add_argument(
+        "--tier",
+        choices=_VALID_TIERS,
+        default="strict",
+        help="Acceptance-tier filter (default: strict).",
+    )
+    pb.add_argument("--max-rows", type=int, default=None, help="Optional cap for smoke runs.")
+    pb.add_argument(
+        "--no-check-disk", action="store_true", help="Skip image-on-disk existence checks."
+    )
+    pb.add_argument(
+        "--repo-root",
+        type=Path,
+        default=None,
+        help="Used to compute repo-relative paths in the JSONL. "
+        "Defaults to the current working directory so paths align "
+        "with the trainer's --repo-root . default.",
+    )
+    pb.add_argument(
+        "--include-synthetic",
+        action="store_true",
+        help="After walking the SFT corpus, synthesize Lane-A "
+        "prefixes for every RLVR-pool section that has no teacher "
+        "trace. Synthetic rows are tagged "
+        "source='procedural_generator:lane_a'. Off by default; "
+        "the existing pipelines see no change unless this is set.",
+    )
+    pb.add_argument(
+        "--synthetic-seed",
+        type=int,
+        default=1337,
+        help="Seed for the synthetic generator's random.Random. "
+        "Same seed yields identical synthetic traces across reruns. "
+        "Default: 1337.",
+    )
+    pb.add_argument(
+        "--atlas-embedding-cache",
+        type=Path,
+        default=Path("out/atlas_embeddings"),
+        help="Directory containing <atlas>_<plane>.pt embedding "
+        "caches. Used to load the per-plane grid of valid atlas "
+        "positions so synthetic tool_results reference real "
+        "atlas filenames. Default: out/atlas_embeddings.",
+    )
     pb.set_defaults(func=_build_cmd)
 
     ns = p.parse_args(argv)
@@ -893,5 +943,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+    )
     raise SystemExit(main(sys.argv[1:]))

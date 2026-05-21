@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 # Position-estimation tolerance is plane-relative (a fraction of the atlas
 # extent on the slice-normal axis). Without this, a 0.9mm rescue threshold is
 # 7% of coronal AP (13.2mm Allen) but 16% of canonical sagittal hemisphere

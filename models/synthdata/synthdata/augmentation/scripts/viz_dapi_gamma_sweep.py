@@ -3,6 +3,7 @@
 One row, four columns: same atlas slice (AP=5.335) rendered at gamma=
 0.9 / 1.2 / 1.6 / 2.0. Each gets its own seed so blob placements differ too.
 """
+
 from __future__ import annotations
 
 import sys
@@ -14,8 +15,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 import numpy as np
 from PIL import Image
-
 from viz_dapi_textures import render_on
+
 from langslice_harness.atlas.core import load_atlas
 
 GAMMAS = (0.9, 1.2, 1.6, 2.0)
@@ -37,7 +38,7 @@ def main() -> int:
     grid = np.zeros((max_h, len(GAMMAS) * max_w, 3), dtype=np.uint8)
     for c, img in enumerate(cells):
         h, w = img.shape[:2]
-        grid[:h, c * max_w:c * max_w + w] = img
+        grid[:h, c * max_w : c * max_w + w] = img
 
     out = Path("tmp/outputs/dapi/gamma_sweep.png")
     Image.fromarray(grid).save(out)

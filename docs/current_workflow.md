@@ -46,10 +46,34 @@ Provider routing:
 
 ## Tauri GUI
 
-The desktop app lives in `tauri-gui/` and runs the Python harness as a sidecar.
-The Rust backend handles atlas loading, reslicing, and mesh serving. The React
-frontend provides the 3D atlas view, settings, dashboard, and registration review
-views.
+The desktop app lives in `tauri-gui/`. For position estimation, registration,
+and quick-affine preview, Rust sends one request to the Python engine service
+protocol:
+
+```bash
+langslice serve --stdio
+```
+
+The service streams progress/log events and returns typed JSON result or error
+envelopes. In the developer checkout, the Rust bridge uses the local `src/`
+package so the app exercises the worktree code. Export still shells out through
+the legacy `langslice register --out ... --json` path until the engine API has
+an affine-aware export request. Rust continues to handle atlas loading,
+reslicing, mesh serving, local engine management, and image thumbnail caching.
+
+## Engine Contract Artifacts
+
+The engine API is defined in Python Pydantic models and mirrored into generated
+frontend types:
+
+```bash
+python scripts/generate_engine_contract.py
+langslice schema --out docs/engine_schema.json
+```
+
+The generated TypeScript contract is written to both `tauri-gui/src/lib/` and
+`web-demo/src/lib/`. The web demo declares only its supported subset of engine
+methods.
 
 ## Debug And Request Capture
 

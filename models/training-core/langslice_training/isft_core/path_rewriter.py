@@ -35,10 +35,11 @@ import os
 import random
 import re
 import shutil
+from collections.abc import Iterable, Iterator
 from contextlib import nullcontext
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Iterable, Iterator
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +83,7 @@ _ATLAS_POS_PATH_RE = re.compile(
 # ──────────────────────────────────────────────────────────────────────────
 # Path resolution & symlink/copy
 # ──────────────────────────────────────────────────────────────────────────
+
 
 def _resolve_existing(
     rel: str,
@@ -275,7 +277,7 @@ def _rewritten_subpath(rel: str, *, bucket: str) -> str:
     """
     rel_norm = rel.replace("\\", "/")
     if rel_norm.startswith(bucket):
-        rel_norm = rel_norm[len(bucket):]
+        rel_norm = rel_norm[len(bucket) :]
     # Try to keep clean basenames when the path is already simple.
     if "/" not in rel_norm:
         return bucket + rel_norm
@@ -287,6 +289,7 @@ def _rewritten_subpath(rel: str, *, bucket: str) -> str:
 # ──────────────────────────────────────────────────────────────────────────
 # Public API
 # ──────────────────────────────────────────────────────────────────────────
+
 
 def build_unified_corpus(
     *,
@@ -346,19 +349,20 @@ def build_unified_corpus(
     sources: list[tuple[Path, Path, list[str] | None]] = []
     if base_sample_n == 0:
         logger.info(
-            "base_sample_n=0 — excluding base corpus entirely; "
-            "training on iterative rounds only",
+            "base_sample_n=0 — excluding base corpus entirely; training on iterative rounds only",
         )
     elif base_corpus.is_file():
         if base_sample_n is not None and base_sample_n > 0:
             all_lines = base_corpus.read_text(encoding="utf-8").splitlines()
-            nonempty = [l for l in all_lines if l.strip()]
+            nonempty = [line for line in all_lines if line.strip()]
             rng = random.Random(base_sample_seed)
             n = min(base_sample_n, len(nonempty))
             sampled = rng.sample(nonempty, n)
             logger.info(
                 "Sampled %d / %d rows from distilled base corpus (seed=%d)",
-                n, len(nonempty), base_sample_seed,
+                n,
+                len(nonempty),
+                base_sample_seed,
             )
             sources.append((base_corpus, base_corpus.parent, sampled))
         else:
@@ -450,8 +454,10 @@ def build_unified_corpus(
                         resolved = _resolve_existing(q, parents)
                         if resolved is None:
                             logger.warning(
-                                "Drop row (subject_id=%s): missing query image %s "
-                                "(roots=%s)", row.get("subject_id"), q, parents,
+                                "Drop row (subject_id=%s): missing query image %s (roots=%s)",
+                                row.get("subject_id"),
+                                q,
+                                parents,
                             )
                             row_ok = False
                             break
@@ -459,7 +465,8 @@ def build_unified_corpus(
                             logger.warning(
                                 "Drop row (subject_id=%s): query image is not "
                                 "a valid JPEG/PNG (likely a saved error response) %s",
-                                row.get("subject_id"), resolved,
+                                row.get("subject_id"),
+                                resolved,
                             )
                             row_ok = False
                             break
@@ -488,12 +495,15 @@ def build_unified_corpus(
                         for p in tr.get("image_paths") or []:
                             bucket = _bucket_for(p)
                             resolved = _resolve_existing(
-                                p, parents, snap_atlas_to_grid=True,
+                                p,
+                                parents,
+                                snap_atlas_to_grid=True,
                             )
                             if resolved is None:
                                 logger.warning(
                                     "Drop row (subject_id=%s): missing trace image %s",
-                                    row.get("subject_id"), p,
+                                    row.get("subject_id"),
+                                    p,
                                 )
                                 row_ok = False
                                 break
@@ -515,10 +525,13 @@ def build_unified_corpus(
                     stats["rows_kept"] += 1
 
     logger.info(
-        "Unified corpus built: rows=%d kept=%d dropped=%d "
-        "(symlinks=%d copies=%d skipped=%d) -> %s",
-        stats["rows_input"], stats["rows_kept"], stats["rows_dropped_missing_images"],
-        stats["images_symlinked"], stats["images_copied"], stats["images_skipped"],
+        "Unified corpus built: rows=%d kept=%d dropped=%d (symlinks=%d copies=%d skipped=%d) -> %s",
+        stats["rows_input"],
+        stats["rows_kept"],
+        stats["rows_dropped_missing_images"],
+        stats["images_symlinked"],
+        stats["images_copied"],
+        stats["images_skipped"],
         output_jsonl,
     )
     return stats

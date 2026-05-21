@@ -13,7 +13,6 @@ from langslice_harness.harness.estimation.tools import (
     fetch_atlas,
     submit_estimate,
 )
-from langslice_harness.harness.estimation.validators import gate_submit_tool
 
 
 def _is_native_gemini_string(model: str | object) -> bool:
