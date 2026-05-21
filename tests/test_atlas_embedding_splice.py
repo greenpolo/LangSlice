@@ -209,7 +209,7 @@ def test_splice_all_uncached_falls_through():
     mask = torch.tensor([False, False, False])
     cached_flat = torch.empty(0, 8)
     cached_pc = torch.tensor([], dtype=torch.long)
-    out = model(
+    model(
         pixel_values=pv,
         image_position_ids=pid,
         precomputed_image_mask=mask,

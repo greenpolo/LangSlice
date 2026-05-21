@@ -210,11 +210,11 @@ def test_rowdataset_column_names_match_public_set() -> None:
     expected = {
         "prompt", "image_paths", "ground_truth_mm", "valid_range_mm",
         "plane", "atlas_name", "subject_id", "section_id",
-        # Task 6 (unified RL pipeline): Lane B specs carry ``dataset`` and
-        # ``difficulty_score``. Lane A specs default these to ""/None so the
-        # column shape stays uniform across both lanes.
-        "dataset", "difficulty_score",
-    }
+            # Task 6 (unified RL pipeline): Lane B specs carry ``dataset`` and
+            # ``difficulty_score``. Lane A specs default these to ""/None so the
+            # column shape stays uniform across both lanes.
+            "dataset", "difficulty_score", "ap_bin",
+        }
     assert set(rd.column_names) == expected
 
 
@@ -450,8 +450,9 @@ def test_build_datasets_from_index_randomized_lane_a(
     pytest.importorskip("torch")
     _stub_atlas_range_for_ds(monkeypatch)
 
-    from single_turn_rl.manifest_index import ManifestIndex
     import random as _random
+
+    from single_turn_rl.manifest_index import ManifestIndex
 
     manifest_root = _build_lane_a_test_manifest(tmp_path)
     _seed_query_files_ds(tmp_path, manifest_root)

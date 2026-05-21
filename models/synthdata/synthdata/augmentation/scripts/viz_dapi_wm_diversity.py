@@ -5,6 +5,7 @@ density and per-blob aspect-ratio draws produce visibly different WM looks.
 The model trained on these should learn to recognize white-matter tracts even
 when they're faint or when nuclei are unphysically streaky.
 """
+
 from __future__ import annotations
 
 import sys
@@ -16,8 +17,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 import numpy as np
 from PIL import Image
-
 from viz_dapi_textures import render_on
+
 from langslice_harness.atlas.core import load_atlas
 
 AP_MM = 5.335
@@ -42,7 +43,7 @@ def main() -> int:
     for idx, img in enumerate(cells):
         r, c = divmod(idx, cols)
         h, w = img.shape[:2]
-        grid[r * max_h:r * max_h + h, c * max_w:c * max_w + w] = img
+        grid[r * max_h : r * max_h + h, c * max_w : c * max_w + w] = img
 
     out = Path("tmp/outputs/dapi/wm_diversity.png")
     Image.fromarray(grid).save(out)

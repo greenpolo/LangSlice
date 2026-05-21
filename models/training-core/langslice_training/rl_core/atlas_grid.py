@@ -46,6 +46,7 @@ def get_reference_slice(atlas, position_mm: float, *, plane: Plane):  # noqa: AN
 
     return _reference_slice(atlas, position_mm, plane=plane)
 
+
 # 0.05 mm step matches the spec's atlas-grid granularity. Position keys are
 # stored as int(round(position_mm / GRID_STEP_MM)) so float jitter from agent
 # arguments cannot produce two cache entries for what is functionally one slice.
@@ -98,8 +99,7 @@ class AtlasGrid:
         key = _GridKey(canonicalize_atlas_name(atlas_name), plane)
         if key not in self._ranges:
             raise KeyError(
-                f"AtlasGrid has no entry for ({atlas_name!r}, {plane!r}); "
-                f"known pairs: {self.pairs}"
+                f"AtlasGrid has no entry for ({atlas_name!r}, {plane!r}); known pairs: {self.pairs}"
             )
         return self._ranges[key]
 
@@ -112,8 +112,7 @@ class AtlasGrid:
             grid = self._slices[key]
         except KeyError as exc:
             raise KeyError(
-                f"AtlasGrid has no entry for ({atlas_name!r}, {plane!r}); "
-                f"known pairs: {self.pairs}"
+                f"AtlasGrid has no entry for ({atlas_name!r}, {plane!r}); known pairs: {self.pairs}"
             ) from exc
         rng = self._ranges[key]
         clipped = max(rng.pos_lo, min(rng.pos_hi, float(position_mm)))

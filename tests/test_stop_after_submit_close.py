@@ -26,7 +26,6 @@ from typing import Any
 
 import pytest
 import torch
-
 from single_turn_rl.train_grpo import (
     SUBMIT_MARKER,
     _build_submit_estimate_stopping_criteria,
@@ -34,7 +33,6 @@ from single_turn_rl.train_grpo import (
     _find_submit_close_index,
     rewrite_completions_with_eos_after_submit_close,
 )
-
 
 # --- Section 1: pure string-level brace counter ----------------------------
 

@@ -123,8 +123,9 @@ def _run_register(args: argparse.Namespace) -> None:
     # Optional endpoint override: when the GUI picks a local-engine model
     # from the Estimate dropdown it passes --endpoint here. The harness's
     # model resolver picks this up via env var.
-    if args.endpoint:
-        os.environ["LANGSLICE_ENDPOINT"] = args.endpoint
+    endpoint = getattr(args, "endpoint", None)
+    if endpoint:
+        os.environ["LANGSLICE_ENDPOINT"] = endpoint
 
     image_model_arg = args.image_model
 
@@ -168,7 +169,7 @@ def _run_register(args: argparse.Namespace) -> None:
         f"VLM input: {image.size[0]}x{image.size[1]}  "
         f"(scale={prep.scale_factor:.3f}, max_edge={args.vlm_resolution})"
     )
-    if args.clahe:
+    if getattr(args, "clahe", False):
         image = adaptive_preprocess(image)
         print("  CLAHE: adaptive per-channel + DAPI-weighted grayscale (70/15/15 B/R/G)")
 
@@ -944,6 +945,12 @@ def _build_parser() -> argparse.ArgumentParser:
     # langslice quick-affine
     _add_quick_affine_parser(subparsers)
 
+    # langslice serve
+    _add_serve_parser(subparsers)
+
+    # langslice schema
+    _add_schema_parser(subparsers)
+
     return parser
 
 
@@ -990,9 +997,60 @@ def _run_quick_affine(args: argparse.Namespace) -> None:
         print(json.dumps(result, indent=2))
 
 
-def main():
+def _add_serve_parser(subparsers: argparse._SubParsersAction) -> None:
+    p = subparsers.add_parser(
+        "serve",
+        help="Run LangSlice engine service",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    p.add_argument(
+        "--stdio",
+        action="store_true",
+        help="Run newline-delimited JSON service over stdin/stdout",
+    )
+
+
+def _add_schema_parser(subparsers: argparse._SubParsersAction) -> None:
+    p = subparsers.add_parser(
+        "schema",
+        help="Regenerate engine schema + TypeScript contracts",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    p.add_argument(
+        "--out",
+        default="docs/engine_schema.json",
+        help=(
+            "Output path for schema bundle JSON. TypeScript contracts are also "
+            "regenerated at their standard frontend paths."
+        ),
+    )
+
+
+def _run_serve(args: argparse.Namespace) -> None:
+    if not args.stdio:
+        raise SystemExit("serve currently requires --stdio")
+    from langslice_harness.api.service import run_stdio
+
+    raise SystemExit(run_stdio())
+
+
+def _run_schema(args: argparse.Namespace) -> None:
+    from pathlib import Path
+
+    from langslice_harness.api.typegen import write_contract_outputs
+
+    schema_path, ts_paths = write_contract_outputs(
+        project_root=Path.cwd(),
+        schema_path=Path(args.out),
+    )
+    print(f"Wrote schema bundle to {schema_path}")
+    for ts_path in ts_paths:
+        print(f"Wrote TypeScript contract to {ts_path}")
+
+
+def main(argv: list[str] | None = None):
     parser = _build_parser()
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     if args.command == "gui":
         print("The PySide6 GUI has been replaced by the Tauri desktop app.")
@@ -1018,6 +1076,10 @@ def main():
         _run_estimate_brain(args)
     elif args.command == "ollama":
         _run_ollama(args)
+    elif args.command == "serve":
+        _run_serve(args)
+    elif args.command == "schema":
+        _run_schema(args)
     else:
         parser.print_help()
         sys.exit(1)

@@ -19,8 +19,8 @@ indistinguishable from real Gemini behavior at cohort scale:
 
 from __future__ import annotations
 
-import random
 import os
+import random
 from pathlib import Path
 from typing import Literal
 
@@ -63,7 +63,8 @@ _ANCHOR_CLIP_MARGIN_MM: float = 0.05
 
 def _user_prompt(plane: Plane, atlas_name: str) -> str:
     """Build the user prompt matching the existing SFT corpus template."""
-    return f"Determine this {plane} slice's {_PLANE_AXIS[plane]} position in the {atlas_name} atlas."
+    axis = _PLANE_AXIS[plane]
+    return f"Determine this {plane} slice's {axis} position in the {atlas_name} atlas."
 
 
 def _format_position(p: float) -> str:

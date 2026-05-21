@@ -66,6 +66,23 @@ from typing import Any, Literal
 _QC_APP_MODULE: Any = None
 
 
+def _resolve_qc_app_path(repo_root: Path) -> Path:
+    """Resolve the QC app module path for full and package-only checkouts."""
+    candidates = (
+        repo_root / "_local" / "qc_app" / "app.py",
+        repo_root / "models" / "data" / "langslice_data" / "qc_app" / "app.py",
+    )
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    expected = ", ".join(str(path) for path in candidates)
+    raise FileNotFoundError(
+        "Could not locate the QC app module. Tried: "
+        f"{expected}. manifest_index requires a QC app module that exposes "
+        "load_inventory_manifest."
+    )
+
+
 def _load_qc_app_module() -> Any:
     """Import ``_local/qc_app/app.py`` once and return the module object.
 
@@ -83,13 +100,7 @@ def _load_qc_app_module() -> Any:
     #   <repo>/models/langslice-gemma-4/training/single_turn_rl/manifest_index.py
     here = Path(__file__).resolve()
     repo_root = here.parents[4]
-    qc_app_path = repo_root / "_local" / "qc_app" / "app.py"
-    if not qc_app_path.is_file():
-        raise FileNotFoundError(
-            f"Could not locate the QC app module at {qc_app_path}. "
-            "manifest_index requires _local/qc_app/app.py to be present "
-            "because it wraps that module's load_inventory_manifest."
-        )
+    qc_app_path = _resolve_qc_app_path(repo_root)
 
     # Make sure ``langslice_harness`` (used by the QC app at import time) is
     # importable; the canonical layout puts it under ``<repo>/src``.
@@ -205,9 +216,7 @@ class ManifestIndex:
         self._sections: list[Section] = sorted(
             sections, key=lambda s: (s.plane, s.dataset, s.section_id)
         )
-        self._by_key: dict[tuple[str, str, str], Section] = {
-            s.key: s for s in self._sections
-        }
+        self._by_key: dict[tuple[str, str, str], Section] = {s.key: s for s in self._sections}
         # Per (atlas, plane) sorted-by-position_mm lists for bisect range
         # queries. Sections are referenced (not copied) so memory cost is
         # one extra list of pointers per pair.
@@ -222,8 +231,7 @@ class ManifestIndex:
         # operates on sorted scalars; pre-extracting keeps the hot path
         # branch-free.
         self._positions_by_pair: dict[tuple[str, str], list[float]] = {
-            pair: [s.position_mm for s in lst]
-            for pair, lst in self._by_atlas_plane.items()
+            pair: [s.position_mm for s in lst] for pair, lst in self._by_atlas_plane.items()
         }
         self._live_difficulty: dict[tuple[str, str, str], LiveDifficulty] = {}
         self._manifest_root: Path | None = manifest_root
@@ -292,9 +300,7 @@ class ManifestIndex:
         """Distinct ``(atlas, plane)`` pairs present in the index, sorted."""
         return sorted(self._by_atlas_plane.keys())
 
-    def section_by_key(
-        self, plane: str, dataset: str, section_id: str
-    ) -> Section | None:
+    def section_by_key(self, plane: str, dataset: str, section_id: str) -> Section | None:
         """Exact lookup by composite key. Returns ``None`` when absent."""
         return self._by_key.get((plane, dataset, section_id))
 
@@ -337,13 +343,10 @@ class ManifestIndex:
         key = (plane, dataset, section_id)
         if key not in self._by_key:
             if if_unknown == "raise":
-                raise KeyError(
-                    f"Cannot update difficulty for unknown section {key!r}"
-                )
+                raise KeyError(f"Cannot update difficulty for unknown section {key!r}")
             if if_unknown == "warn":
                 print(
-                    f"[manifest_index] update_difficulty: skipping unknown "
-                    f"section {key!r}",
+                    f"[manifest_index] update_difficulty: skipping unknown section {key!r}",
                     file=sys.stderr,
                     flush=True,
                 )
@@ -356,9 +359,7 @@ class ManifestIndex:
         )
         return True
 
-    def live_difficulty(
-        self, plane: str, dataset: str, section_id: str
-    ) -> LiveDifficulty | None:
+    def live_difficulty(self, plane: str, dataset: str, section_id: str) -> LiveDifficulty | None:
         """Return the live difficulty record for a section, or ``None``."""
         return self._live_difficulty.get((plane, dataset, section_id))
 
@@ -386,9 +387,7 @@ class ManifestIndex:
             payload = json.load(fh)
         rows = payload.get("rows") or []
         if not isinstance(rows, list):
-            raise ValueError(
-                f"Expected 'rows' to be a list in {path}; got {type(rows).__name__}."
-            )
+            raise ValueError(f"Expected 'rows' to be a list in {path}; got {type(rows).__name__}.")
 
         loaded = 0
         n_orphan = 0
@@ -582,9 +581,7 @@ class ManifestIndex:
             positions = self._positions_by_pair[(atlas, plane)]
             i_lo = bisect.bisect_left(positions, lo)
             i_hi = bisect.bisect_right(positions, hi)
-            candidates: list[Section] = list(
-                self._by_atlas_plane[(atlas, plane)][i_lo:i_hi]
-            )
+            candidates: list[Section] = list(self._by_atlas_plane[(atlas, plane)][i_lo:i_hi])
             # Bisect already enforced the position bound, so further
             # filtering can skip it — but keep the rest of the predicates
             # in one loop for clarity.

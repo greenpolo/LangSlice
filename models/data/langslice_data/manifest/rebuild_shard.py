@@ -26,20 +26,19 @@ import json
 import logging
 import re
 import sys
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Iterable, Iterator
+from typing import Any
 
 from build_manifest import (  # type: ignore[import-not-found]
-    ADAPTERS,
-    ORIENTATION_TO_AXIS,
     _BG_ASR_EXTENTS_MM,
+    ADAPTERS,
     _normpath,
     _resolve_dev_atlas,
     load_allocation,
     make_record,
-    section_number_position_mm,
     split_for,
 )
 
@@ -95,7 +94,6 @@ def _allen_adapter_no_connectivity_override(
         log.warning("%s: %s missing, skipping", dataset_name, src)
         return
     records = json.loads(src.read_text(encoding="utf-8"))
-    slice_axis = ORIENTATION_TO_AXIS[orientation]
     for r in records:
         # May 2026 incident: the section-number formula override clobbered
         # connectivity fixers' metadata-stored AP values for WT/Cre shards.
@@ -146,7 +144,9 @@ def _adapter_allen_connectivity_wt_no_override(data_root: Path, allocation: dict
     )
 
 
-def _adapter_allen_connectivity_cre_no_override(data_root: Path, allocation: dict) -> Iterator[dict]:
+def _adapter_allen_connectivity_cre_no_override(
+    data_root: Path, allocation: dict
+) -> Iterator[dict]:
     yield from _allen_adapter_no_connectivity_override(
         data_root,
         allocation,
@@ -351,7 +351,10 @@ def _section_position_overrides(value: Any) -> dict[str, tuple[float, str | None
                 axis = None
             if pos is None:
                 raise ValueError(f"position override for {section_id!r} has null position_mm")
-            result[str(section_id)] = (round(float(pos), 4), str(axis) if axis is not None else None)
+            result[str(section_id)] = (
+                round(float(pos), 4),
+                str(axis) if axis is not None else None,
+            )
         return result
     if not isinstance(value, list):
         raise ValueError("section_position_overrides must be a list or object")
@@ -398,11 +401,7 @@ def apply_overrides(records: list[dict], overrides: dict[str, Any]) -> list[dict
     # (data/manifest/allocations/<plane>/<split>.jsonl).  Inventory shards must
     # never contain a `split` key.  If any row still carries one, the migration
     # script has not been run, or a bug re-introduced the field.
-    rows_with_split = [
-        str(rec.get("section_id", "<unknown>"))
-        for rec in records
-        if "split" in rec
-    ]
+    rows_with_split = [str(rec.get("section_id", "<unknown>")) for rec in records if "split" in rec]
     if rows_with_split:
         raise ValueError(
             f"inventory shard contains {len(rows_with_split)} row(s) with a 'split' field "
@@ -437,8 +436,7 @@ def apply_overrides(records: list[dict], overrides: dict[str, Any]) -> list[dict
         extent = _BG_ASR_EXTENTS_MM.get((rec.get("atlas"), axis))
         if extent is None:
             raise ValueError(
-                f"cannot flip {rec.get('section_id')}: no extent for "
-                f"{rec.get('atlas')} {axis}"
+                f"cannot flip {rec.get('section_id')}: no extent for {rec.get('atlas')} {axis}"
             )
         rec["position_mm"] = round(extent - float(rec["position_mm"]), 4)
         rec["axis_flip_applied"] = axis
@@ -447,7 +445,9 @@ def apply_overrides(records: list[dict], overrides: dict[str, Any]) -> list[dict
     for section_id, (position_mm, axis) in position_overrides.items():
         rec = by_section.get(section_id)
         if rec is None:
-            raise ValueError(f"section_position_overrides references missing section {section_id!r}")
+            raise ValueError(
+                f"section_position_overrides references missing section {section_id!r}"
+            )
         if axis is not None and axis != rec.get("slice_axis"):
             raise ValueError(
                 f"section_position_overrides axis {axis!r} does not match "
@@ -546,7 +546,9 @@ def load_jsonl(path: Path) -> list[dict]:
 def diff_records(current: list[dict], rebuilt: list[dict]) -> DiffResult:
     old = _index_by_section(current, "current shard")
     new = _index_by_section(rebuilt, "rebuilt shard")
-    changed = [(sid, old[sid], new[sid]) for sid in sorted(old.keys() & new.keys()) if old[sid] != new[sid]]
+    changed = [
+        (sid, old[sid], new[sid]) for sid in sorted(old.keys() & new.keys()) if old[sid] != new[sid]
+    ]
     added = [(sid, new[sid]) for sid in sorted(new.keys() - old.keys())]
     removed = [(sid, old[sid]) for sid in sorted(old.keys() - new.keys())]
     return DiffResult(changed=changed, added=added, removed=removed)
@@ -566,8 +568,7 @@ def print_diff_summary(diff: DiffResult) -> None:
             if label == "changed":
                 section_id, old, new = row
                 print(
-                    f"  {label}: {section_id} "
-                    f"{old.get('position_mm')} -> {new.get('position_mm')}"
+                    f"  {label}: {section_id} {old.get('position_mm')} -> {new.get('position_mm')}"
                 )
             else:
                 section_id, rec = row
@@ -653,7 +654,10 @@ def load_accept_diff_file(path: Path) -> set[tuple[str, str]]:
         line = line.strip()
         if not line or line.startswith("#"):
             continue
-        if lineno == 1 and line.lower().replace(" ", "") in {"section_id,position_mm", "section_id position_mm"}:
+        if lineno == 1 and line.lower().replace(" ", "") in {
+            "section_id,position_mm",
+            "section_id position_mm",
+        }:
             continue
         if "," in line:
             section_id, position_mm = line.rsplit(",", 1)
@@ -747,7 +751,9 @@ def main(argv: list[str] | None = None) -> int:
             return 1 if diff.total else 0
 
         if args.accept_diff is not None and diff.total != args.accept_diff:
-            log.error("diff gate rejected: expected %d changes, saw %d", args.accept_diff, diff.total)
+            log.error(
+                "diff gate rejected: expected %d changes, saw %d", args.accept_diff, diff.total
+            )
             return 1
 
         if args.accept_diff_file is not None:

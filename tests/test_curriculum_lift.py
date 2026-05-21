@@ -35,7 +35,10 @@ _BASE_ROW: dict[str, Any] = {
     "trace": [
         {
             "tool_call": {"name": "fetch_atlas", "args": {"positions_mm": [3.0, 5.0, 7.0]}},
-            "tool_result": {"image_paths": ["a3.png", "a5.png", "a7.png"], "text": "Atlas at 3.00 mm | 5.00 mm | 7.00 mm"},
+            "tool_result": {
+                "image_paths": ["a3.png", "a5.png", "a7.png"],
+                "text": "Atlas at 3.00 mm | 5.00 mm | 7.00 mm",
+            },
         },
         {
             "submit": {
@@ -119,7 +122,9 @@ def test_example_section_id_optional_default_none() -> None:
         system_prompt_kind="single_slice",
         query_image_paths=["query.png"],
         user_prompt_text="Estimate.",
-        trace=[{"submit": {"name": "submit_estimate", "args": {"position_mm": 5.0, "reasoning": "ok"}}}],
+        trace=[
+            {"submit": {"name": "submit_estimate", "args": {"position_mm": 5.0, "reasoning": "ok"}}}
+        ],
     )
     assert ex.section_id is None
 
@@ -145,7 +150,9 @@ def test_example_section_id_can_be_set_explicitly() -> None:
         system_prompt_kind="single_slice",
         query_image_paths=["q.png"],
         user_prompt_text="x",
-        trace=[{"submit": {"name": "submit_estimate", "args": {"position_mm": 3.0, "reasoning": "r"}}}],
+        trace=[
+            {"submit": {"name": "submit_estimate", "args": {"position_mm": 3.0, "reasoning": "r"}}}
+        ],
         section_id="ds_coronal:0042",
     )
     assert ex.section_id == "ds_coronal:0042"
@@ -215,7 +222,14 @@ def test_weighted_sampler_prefers_section_id_when_present() -> None:
             system_prompt_kind="single_slice",
             query_image_paths=["q.png"],
             user_prompt_text="x",
-            trace=[{"submit": {"name": "submit_estimate", "args": {"position_mm": 1.0, "reasoning": "r"}}}],
+            trace=[
+                {
+                    "submit": {
+                        "name": "submit_estimate",
+                        "args": {"position_mm": 1.0, "reasoning": "r"},
+                    }
+                }
+            ],
             section_id=section_id,
         )
 
@@ -252,7 +266,9 @@ def test_weighted_sampler_falls_back_to_default_when_no_match() -> None:
         system_prompt_kind="single_slice",
         query_image_paths=["q.png"],
         user_prompt_text="x",
-        trace=[{"submit": {"name": "submit_estimate", "args": {"position_mm": 1.0, "reasoning": "r"}}}],
+        trace=[
+            {"submit": {"name": "submit_estimate", "args": {"position_mm": 1.0, "reasoning": "r"}}}
+        ],
         section_id=None,
     )
     weights_map: dict[str, float] = {}
@@ -273,4 +289,6 @@ def test_adaptive_init_reexports_curriculum() -> None:
     """``from adaptive import curriculum`` must expose compute_section_bins."""
     from adaptive import curriculum  # noqa: PLC0415
 
-    assert hasattr(curriculum, "compute_section_bins") or hasattr(curriculum.bins, "compute_section_bins")
+    assert hasattr(curriculum, "compute_section_bins") or hasattr(
+        curriculum.bins, "compute_section_bins"
+    )

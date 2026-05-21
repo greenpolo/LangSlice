@@ -94,8 +94,18 @@ P_CENTER_OFFSET_STEP1: list[tuple[float, float]] = [
 ]
 
 # Roundness class probabilities per step.
-P_ROUNDNESS_STEP0: dict[str, float] = {"int": 0.495134, "half": 0.119042, "tenth": 0.347766, "raw": 0.038058}
-P_ROUNDNESS_STEP1: dict[str, float] = {"int": 0.109869, "half": 0.119592, "tenth": 0.521147, "raw": 0.249392}
+P_ROUNDNESS_STEP0: dict[str, float] = {
+    "int": 0.495134,
+    "half": 0.119042,
+    "tenth": 0.347766,
+    "raw": 0.038058,
+}
+P_ROUNDNESS_STEP1: dict[str, float] = {
+    "int": 0.109869,
+    "half": 0.119592,
+    "tenth": 0.521147,
+    "raw": 0.249392,
+}
 
 # Sigma for the step-0 anchor in the slope-1 model: sampling
 # ``center_0 = gt + N(0, SIGMA_ANCHOR_MM)`` reproduces the observed
@@ -104,11 +114,19 @@ P_ROUNDNESS_STEP1: dict[str, float] = {"int": 0.109869, "half": 0.119592, "tenth
 SIGMA_ANCHOR_MM: float = 0.891648
 
 # Per-plane breakdown of the same sigma (planes have different extents).
-SIGMA_ANCHOR_MM_BY_PLANE: dict[str, float] = {"coronal": 0.891980, "horizontal": 0.955550, "sagittal": 0.820223}
+SIGMA_ANCHOR_MM_BY_PLANE: dict[str, float] = {
+    "coronal": 0.891980,
+    "horizontal": 0.955550,
+    "sagittal": 0.820223,
+}
 
 # Diagnostic - what the source corpus actually shows.
 OBSERVED_R_STEP0_GT: float = 0.981682
-OBSERVED_R_STEP0_GT_BY_PLANE: dict[str, float] = {"coronal": 0.983136, "horizontal": 0.894835, "sagittal": 0.888796}
+OBSERVED_R_STEP0_GT_BY_PLANE: dict[str, float] = {
+    "coronal": 0.983136,
+    "horizontal": 0.894835,
+    "sagittal": 0.888796,
+}
 OBSERVED_INTEGER_RATE_STEP0: float = 0.495134
 OBSERVED_N: int = 1716
 

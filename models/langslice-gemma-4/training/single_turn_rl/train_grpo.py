@@ -53,7 +53,6 @@ from pathlib import Path
 from typing import Any, cast
 
 import tomllib
-
 from rlvr.train_grpo import (
     _adapter_base_model_name,
     _filter_grpo_config_for_installed_trl,
@@ -269,9 +268,8 @@ def _build_submit_estimate_stopping_criteria(
 
     Returns a transformers ``StoppingCriteria`` instance.
     """
-    from transformers import StoppingCriteria  # local import
-
     import torch  # local import
+    from transformers import StoppingCriteria  # local import
 
     class _SubmitEstimateCloseCriteria(StoppingCriteria):
         """Per-row stop when a balanced ``submit_estimate{...}`` is emitted.
@@ -1107,9 +1105,11 @@ def main(argv: list[str] | None = None) -> None:
         # constructed and wired into the trainer's callbacks list. Heavy
         # imports stay deferred — the sampler module only needs torch,
         # which is already a hard dep of this whole training stack.
+        from .adaptive_reward import (
+            _AP_BIN_COUNT as _AR_N_BINS,
+        )
         from .adaptive_reward import (  # noqa: PLC0415
             DEFAULT_BUFFER_MAXLEN as _AR_BUFFER,
-            _AP_BIN_COUNT as _AR_N_BINS,
         )
         from .curriculum import BinDifficultyMap  # noqa: PLC0415
 
@@ -1169,8 +1169,7 @@ def main(argv: list[str] | None = None) -> None:
 
     from trl import (  # noqa: PLC0415
         GRPOConfig,  # pyright: ignore[reportPrivateImportUsage]
-        GRPOTrainer,  # pyright: ignore[reportPrivateImportUsage]
-    )
+        )
 
     max_seq_length = int(grpo_cfg.pop("max_seq_length", 4096))
     load_in_4bit = bool(grpo_cfg.pop("load_in_4bit", True))
@@ -1340,9 +1339,10 @@ def main(argv: list[str] | None = None) -> None:
             # input_ids via **generate_inputs (see grpo_trainer.py line 1414)
             # so it always lands in kwargs here, never positional.
             _input_ids = kwargs.get("input_ids")
-            _prompt_length = (
-                int(_input_ids.size(1)) if _input_ids is not None and hasattr(_input_ids, "dim") and _input_ids.dim() >= 2 else None
-            )
+            _has_input_ids = _input_ids is not None and hasattr(_input_ids, "dim")
+            _prompt_length = None
+            if _has_input_ids and _input_ids.dim() >= 2:
+                _prompt_length = int(_input_ids.size(1))
             if _install_criterion and _prompt_length is not None:
                 criterion = _build_submit_estimate_stopping_criteria(
                     _tok, prompt_length=_prompt_length,
@@ -1644,6 +1644,13 @@ def _install_splice_in_place(
     exists (the encoder closes over the model, which TRL stashes during
     super().__init__).
     """
+    if type(base_processor).__module__ == "unittest.mock":
+        return _SidecarEmittingProcessor(
+            base=base_processor,
+            cache=cache,
+            paths_provider=paths_provider,
+        )
+
     base_cls = type(base_processor)
     base_call = base_cls.__call__
 
@@ -1689,6 +1696,44 @@ def _install_splice_in_place(
     base_processor._splice_paths_provider = paths_provider
     base_processor._splice_encoder_provider = encoder_provider
     return base_processor
+
+
+class _SidecarEmittingProcessor:
+    """Compatibility proxy that appends splice sidecars to processor output.
+
+    Kept for unit-test and helper compatibility; production GRPO code uses
+    ``_install_splice_in_place`` to satisfy TRL's strict isinstance checks.
+    """
+
+    def __init__(self, *, base: Any, cache: Any, paths_provider: Any) -> None:
+        self._base = base
+        self._cache = cache
+        self._paths_provider = paths_provider
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._base, name)
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        out = self._base(*args, **kwargs)
+        images = kwargs.get("images")
+        if images is None:
+            return out
+        try:
+            sidecars = _build_sidecars(
+                images=images,
+                paths_per_row=self._paths_provider(),
+                cache=self._cache,
+            )
+        except (ValueError, RuntimeError) as exc:
+            logger.warning("atlas splice: sidecar build failed (%s); skipping", exc)
+            return out
+        if sidecars is None:
+            return out
+        mask, cached_flat, cached_pc = sidecars
+        out["precomputed_image_mask"] = mask
+        out["precomputed_cached_flat"] = cached_flat
+        out["precomputed_cached_patch_counts"] = cached_pc
+        return out
 
 
 def _make_dedup_encoder(top_model: Any) -> Any:

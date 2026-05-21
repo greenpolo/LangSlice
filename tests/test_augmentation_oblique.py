@@ -6,7 +6,7 @@ Covers:
 - Tilted slices still contain tissue (not catastrophically misaligned)
 - Annotation uses nearest-neighbour (no fractional region IDs)
 - sample_oblique_angles stays within bounds
-- Angles > 15° raise ValueError
+- Angles > 8° raise ValueError
 - Determinism: same atlas + same angles → identical output
 - roll-only and yaw-only tilts produce spatially shifted tissue
 """
@@ -207,11 +207,11 @@ def test_sample_oblique_angles_within_bounds() -> None:
     rng = np.random.default_rng(42)
     for _ in range(200):
         yaw, pitch, roll = sample_oblique_angles(
-            rng, max_yaw_deg=12.0, max_pitch_deg=10.0, max_roll_deg=8.0
+            rng, max_yaw_deg=8.0, max_pitch_deg=7.0, max_roll_deg=6.0
         )
-        assert abs(yaw) <= 12.0, f"yaw out of bounds: {yaw}"
-        assert abs(pitch) <= 10.0, f"pitch out of bounds: {pitch}"
-        assert abs(roll) <= 8.0, f"roll out of bounds: {roll}"
+        assert abs(yaw) <= 8.0, f"yaw out of bounds: {yaw}"
+        assert abs(pitch) <= 7.0, f"pitch out of bounds: {pitch}"
+        assert abs(roll) <= 6.0, f"roll out of bounds: {roll}"
 
 
 def test_sample_oblique_angles_uses_full_range() -> None:
@@ -228,22 +228,22 @@ def test_sample_oblique_angles_max_exceeds_limit_raises() -> None:
     from augmentation.oblique import sample_oblique_angles
 
     rng = np.random.default_rng(0)
-    with pytest.raises(ValueError, match="15"):
+    with pytest.raises(ValueError, match="8"):
         sample_oblique_angles(rng, max_yaw_deg=20.0)
 
 
 # ---------------------------------------------------------------------------
-# Test 6 — angles > 15° raise ValueError
+# Test 6 — angles > 8° raise ValueError
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
     "yaw,pitch,roll",
     [
-        (16.0, 0.0, 0.0),
-        (0.0, -16.0, 0.0),
-        (0.0, 0.0, 20.0),
-        (15.1, 0.0, 0.0),
+        (8.1, 0.0, 0.0),
+        (0.0, -8.1, 0.0),
+        (0.0, 0.0, 8.1),
+        (9.0, 0.0, 0.0),
     ],
 )
 def test_large_angles_raise_value_error(
@@ -251,7 +251,7 @@ def test_large_angles_raise_value_error(
 ) -> None:
     from augmentation.oblique import get_oblique_slice
 
-    with pytest.raises(ValueError, match="15"):
+    with pytest.raises(ValueError, match="8"):
         get_oblique_slice(
             atlas,
             base_position_mm=5.335,
@@ -262,15 +262,15 @@ def test_large_angles_raise_value_error(
         )
 
 
-def test_exactly_15_degrees_is_allowed(atlas: object) -> None:
-    """The boundary value 15.0° should not raise."""
+def test_exactly_8_degrees_is_allowed(atlas: object) -> None:
+    """The boundary value 8.0° should not raise."""
     from augmentation.oblique import get_oblique_slice
 
     ref, ann = get_oblique_slice(
         atlas,
         base_position_mm=5.335,
         plane="coronal",
-        yaw_deg=15.0,
+        yaw_deg=8.0,
         pitch_deg=0.0,
         roll_deg=0.0,
     )
@@ -315,7 +315,7 @@ def test_tilt_changes_annotation(
         atlas,
         base_position_mm=5.335,
         plane="coronal",
-        yaw_deg=10.0,
+        yaw_deg=7.0,
         pitch_deg=8.0,
         roll_deg=0.0,
     )

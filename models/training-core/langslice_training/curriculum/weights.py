@@ -1,4 +1,5 @@
 """Backward-compatible shim to shared adaptive curriculum weights."""
+
 from langslice_training.adaptive.curriculum.weights import *  # noqa: F401,F403
 from langslice_training.adaptive.curriculum.weights import (  # noqa: F401
     PerBinMAE,

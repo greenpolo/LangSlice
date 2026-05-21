@@ -24,7 +24,8 @@
 from __future__ import annotations
 
 import numpy as np
-from .transforms.base import Transform, TransformContext
+
+from .transforms.base import Transform
 from .transforms.damage import (
     Debris,
     EmbeddingHalos,
@@ -128,9 +129,5 @@ def build_modality_pipeline(modality: str, *, seed: int) -> list[Transform]:  # 
 
 
 def _infer_mask_from_luminance(image: np.ndarray) -> np.ndarray:
-    lum = (
-        0.2126 * image[:, :, 0]
-        + 0.7152 * image[:, :, 1]
-        + 0.0722 * image[:, :, 2]
-    )
-    return (lum > 0.02)
+    lum = 0.2126 * image[:, :, 0] + 0.7152 * image[:, :, 1] + 0.0722 * image[:, :, 2]
+    return lum > 0.02

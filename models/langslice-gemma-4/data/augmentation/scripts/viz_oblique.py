@@ -22,10 +22,10 @@ sys.path.insert(0, "src")
 sys.path.insert(0, "models/langslice-gemma-4/data")
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
-
 from augmentation.dapi_pipeline import render_dapi_section
 from augmentation.oblique import get_oblique_slice, sample_oblique_angles
+from PIL import Image, ImageDraw, ImageFont
+
 from langslice_harness.atlas.core import load_atlas
 
 AP_MM = 5.335
@@ -45,7 +45,7 @@ LABEL_H = 32
 # ---------------------------------------------------------------------------
 
 
-def _try_font(size: int = 12) -> "ImageFont.FreeTypeFont | ImageFont.ImageFont":
+def _try_font(size: int = 12) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
     for name in ("arial.ttf", "DejaVuSans.ttf", "FreeSans.ttf"):
         try:
             return ImageFont.truetype(name, size)
@@ -100,14 +100,10 @@ def main() -> int:
         tilt_configs.append((yaw, pitch, roll))
 
     panels: list[np.ndarray] = []
-    cell_h = LABEL_H + THUMB_H
-
     for i, (yaw, pitch, roll) in enumerate(tilt_configs):
-        row_num = i // 3
-        col_num = i % 3
         label_prefix = "Canonical" if i == 0 else f"Panel {i}"
         label = f"{label_prefix}  yaw={yaw:+.1f}° pitch={pitch:+.1f}° roll={roll:+.1f}°"
-        print(f"  [{i+1}/9] {label}", flush=True)
+        print(f"  [{i + 1}/9] {label}", flush=True)
 
         # Extract oblique reference + annotation
         ref_slice, ann_slice = get_oblique_slice(
@@ -131,9 +127,7 @@ def main() -> int:
             dtype=np.uint8,
         )
         ann_up = np.asarray(
-            Image.fromarray(ann_slice.astype(np.int32), "I").resize(
-                (w_up, h_up), Image.NEAREST
-            ),
+            Image.fromarray(ann_slice.astype(np.int32), "I").resize((w_up, h_up), Image.NEAREST),
             dtype=np.int32,
         )
 

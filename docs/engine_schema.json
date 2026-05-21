@@ -1,0 +1,985 @@
+{
+  "schema_version": "1",
+  "schemas": {
+    "EngineError": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "details": {
+          "additionalProperties": true,
+          "title": "Details",
+          "type": "object"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "title": "EngineError",
+      "type": "object"
+    },
+    "EngineErrorEnvelope": {
+      "$defs": {
+        "EngineError": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "title": "Code",
+              "type": "string"
+            },
+            "details": {
+              "additionalProperties": true,
+              "title": "Details",
+              "type": "object"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "title": "EngineError",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "error": {
+          "$ref": "#/$defs/EngineError"
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Id"
+        },
+        "type": {
+          "const": "error",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "error"
+      ],
+      "title": "EngineErrorEnvelope",
+      "type": "object"
+    },
+    "EngineEventEnvelope": {
+      "$defs": {
+        "EngineLogEvent": {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "log",
+              "title": "Kind",
+              "type": "string"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "message"
+          ],
+          "title": "EngineLogEvent",
+          "type": "object"
+        },
+        "EngineProgressEvent": {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "progress",
+              "title": "Kind",
+              "type": "string"
+            },
+            "message": {
+              "title": "Message",
+              "type": "string"
+            },
+            "stage": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Stage"
+            }
+          },
+          "required": [
+            "kind",
+            "message"
+          ],
+          "title": "EngineProgressEvent",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "event": {
+          "discriminator": {
+            "mapping": {
+              "log": "#/$defs/EngineLogEvent",
+              "progress": "#/$defs/EngineProgressEvent"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/EngineProgressEvent"
+            },
+            {
+              "$ref": "#/$defs/EngineLogEvent"
+            }
+          ],
+          "title": "Event"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "event",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "event"
+      ],
+      "title": "EngineEventEnvelope",
+      "type": "object"
+    },
+    "EngineLogEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "log",
+          "title": "Kind",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "message"
+      ],
+      "title": "EngineLogEvent",
+      "type": "object"
+    },
+    "EngineProgressEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "progress",
+          "title": "Kind",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "stage": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stage"
+        }
+      },
+      "required": [
+        "kind",
+        "message"
+      ],
+      "title": "EngineProgressEvent",
+      "type": "object"
+    },
+    "EngineRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "method": {
+          "enum": [
+            "version",
+            "estimate.run",
+            "register.run",
+            "quick_affine.run",
+            "export.run"
+          ],
+          "title": "Method",
+          "type": "string"
+        },
+        "params": {
+          "additionalProperties": true,
+          "title": "Params",
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "method"
+      ],
+      "title": "EngineRequest",
+      "type": "object"
+    },
+    "EngineResultEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "result": {
+          "additionalProperties": true,
+          "title": "Result",
+          "type": "object"
+        },
+        "type": {
+          "const": "result",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "type"
+      ],
+      "title": "EngineResultEnvelope",
+      "type": "object"
+    },
+    "EstimateRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "atlas": {
+          "title": "Atlas",
+          "type": "string"
+        },
+        "endpoint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Endpoint"
+        },
+        "image_path": {
+          "title": "Image Path",
+          "type": "string"
+        },
+        "max_iterations": {
+          "default": 20,
+          "title": "Max Iterations",
+          "type": "integer"
+        },
+        "media_resolution": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Media Resolution"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "output_dir": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Dir"
+        },
+        "plane": {
+          "default": "coronal",
+          "enum": [
+            "coronal",
+            "sagittal",
+            "horizontal"
+          ],
+          "title": "Plane",
+          "type": "string"
+        },
+        "preprocess": {
+          "default": "none",
+          "enum": [
+            "none",
+            "auto"
+          ],
+          "title": "Preprocess",
+          "type": "string"
+        },
+        "provider": {
+          "default": "google",
+          "enum": [
+            "google",
+            "openai"
+          ],
+          "title": "Provider",
+          "type": "string"
+        },
+        "temperature": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Temperature"
+        },
+        "thinking": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Thinking"
+        },
+        "workflow": {
+          "anyOf": [
+            {
+              "enum": [
+                "tool_use",
+                "image_gen"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Workflow"
+        }
+      },
+      "required": [
+        "image_path",
+        "atlas"
+      ],
+      "title": "EstimateRequest",
+      "type": "object"
+    },
+    "EstimateResult": {
+      "additionalProperties": false,
+      "properties": {
+        "debug_dir": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Debug Dir"
+        },
+        "position_mm": {
+          "title": "Position Mm",
+          "type": "number"
+        },
+        "reasoning": {
+          "title": "Reasoning",
+          "type": "string"
+        }
+      },
+      "required": [
+        "position_mm",
+        "reasoning"
+      ],
+      "title": "EstimateResult",
+      "type": "object"
+    },
+    "ExportRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "affine_matrix": {
+          "anyOf": [
+            {
+              "items": {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Affine Matrix"
+        },
+        "atlas": {
+          "title": "Atlas",
+          "type": "string"
+        },
+        "image_path": {
+          "title": "Image Path",
+          "type": "string"
+        },
+        "output_height": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Height"
+        },
+        "output_path": {
+          "title": "Output Path",
+          "type": "string"
+        },
+        "output_width": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Width"
+        },
+        "position_mm": {
+          "title": "Position Mm",
+          "type": "number"
+        },
+        "rotation_deg": {
+          "default": 0.0,
+          "title": "Rotation Deg",
+          "type": "number"
+        },
+        "translate_x_pct": {
+          "default": 0.0,
+          "title": "Translate X Pct",
+          "type": "number"
+        },
+        "translate_y_pct": {
+          "default": 0.0,
+          "title": "Translate Y Pct",
+          "type": "number"
+        }
+      },
+      "required": [
+        "image_path",
+        "atlas",
+        "position_mm",
+        "output_path"
+      ],
+      "title": "ExportRequest",
+      "type": "object"
+    },
+    "ExportResult": {
+      "additionalProperties": false,
+      "properties": {
+        "aligner": {
+          "title": "Aligner",
+          "type": "string"
+        },
+        "output_path": {
+          "title": "Output Path",
+          "type": "string"
+        },
+        "slices": {
+          "title": "Slices",
+          "type": "integer"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "output_path",
+        "target",
+        "aligner",
+        "slices"
+      ],
+      "title": "ExportResult",
+      "type": "object"
+    },
+    "QuickAffineRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "atlas": {
+          "title": "Atlas",
+          "type": "string"
+        },
+        "image_path": {
+          "title": "Image Path",
+          "type": "string"
+        },
+        "output_dir": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Dir"
+        },
+        "output_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Path"
+        },
+        "plane": {
+          "default": "coronal",
+          "enum": [
+            "coronal",
+            "sagittal",
+            "horizontal"
+          ],
+          "title": "Plane",
+          "type": "string"
+        },
+        "position_mm": {
+          "title": "Position Mm",
+          "type": "number"
+        }
+      },
+      "required": [
+        "image_path",
+        "atlas",
+        "position_mm"
+      ],
+      "title": "QuickAffineRequest",
+      "type": "object"
+    },
+    "QuickAffineResult": {
+      "additionalProperties": false,
+      "properties": {
+        "elapsed_s": {
+          "title": "Elapsed S",
+          "type": "number"
+        },
+        "silhouette_iou": {
+          "title": "Silhouette Iou",
+          "type": "number"
+        },
+        "warped_slice_path": {
+          "title": "Warped Slice Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "warped_slice_path",
+        "elapsed_s",
+        "silhouette_iou"
+      ],
+      "title": "QuickAffineResult",
+      "type": "object"
+    },
+    "RegisterRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "atlas": {
+          "title": "Atlas",
+          "type": "string"
+        },
+        "endpoint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Endpoint"
+        },
+        "image_model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Image Model"
+        },
+        "image_path": {
+          "title": "Image Path",
+          "type": "string"
+        },
+        "max_iterations": {
+          "default": 20,
+          "title": "Max Iterations",
+          "type": "integer"
+        },
+        "media_resolution": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Media Resolution"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "output_dir": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Dir"
+        },
+        "plane": {
+          "default": "coronal",
+          "enum": [
+            "coronal",
+            "sagittal",
+            "horizontal"
+          ],
+          "title": "Plane",
+          "type": "string"
+        },
+        "position_mm": {
+          "title": "Position Mm",
+          "type": "number"
+        },
+        "preprocess": {
+          "default": "none",
+          "enum": [
+            "none",
+            "auto"
+          ],
+          "title": "Preprocess",
+          "type": "string"
+        },
+        "provider": {
+          "default": "google",
+          "enum": [
+            "google",
+            "openai"
+          ],
+          "title": "Provider",
+          "type": "string"
+        },
+        "review_model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Review Model"
+        },
+        "temperature": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Temperature"
+        },
+        "thinking": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Thinking"
+        }
+      },
+      "required": [
+        "image_path",
+        "atlas",
+        "position_mm"
+      ],
+      "title": "RegisterRequest",
+      "type": "object"
+    },
+    "RegisterResult": {
+      "additionalProperties": false,
+      "properties": {
+        "accepted_correspondence_count": {
+          "title": "Accepted Correspondence Count",
+          "type": "integer"
+        },
+        "annotation_session": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Annotation Session"
+        },
+        "debug_dir": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Debug Dir"
+        },
+        "generated_border_overlay_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Generated Border Overlay Path"
+        },
+        "generated_segmentation_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Generated Segmentation Path"
+        },
+        "inverse_warp_status": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Inverse Warp Status"
+        },
+        "rotation_deg": {
+          "title": "Rotation Deg",
+          "type": "number"
+        },
+        "scale": {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Scale",
+          "type": "array"
+        },
+        "shear": {
+          "title": "Shear",
+          "type": "number"
+        },
+        "slice_atlas_border_overlay_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Slice Atlas Border Overlay Path"
+        },
+        "slice_warped_to_atlas_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Slice Warped To Atlas Path"
+        },
+        "translation_px": {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Translation Px",
+          "type": "array"
+        },
+        "warped_atlas_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Warped Atlas Path"
+        },
+        "warped_border_overlay_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Warped Border Overlay Path"
+        }
+      },
+      "required": [
+        "accepted_correspondence_count",
+        "rotation_deg",
+        "translation_px",
+        "scale",
+        "shear"
+      ],
+      "title": "RegisterResult",
+      "type": "object"
+    },
+    "VersionResult": {
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "version"
+      ],
+      "title": "VersionResult",
+      "type": "object"
+    }
+  }
+}

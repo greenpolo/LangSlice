@@ -5,12 +5,13 @@ from __future__ import annotations
 import copy
 import inspect
 import io
-from typing import Any
+from typing import Any, cast
 
 from google.genai import types
 from PIL import Image
 
 from langslice_harness.agent_trace import format_json
+from langslice_harness.atlas.space import Plane
 from langslice_harness.harness.estimation.adk_plugins import MULTIMODAL_PARTS_RESULT_KEY
 from langslice_harness.harness.registration.image_gen_registration import (
     generate_registration_candidate as _generate_registration_candidate_pipeline,
@@ -34,6 +35,12 @@ _HARDCAP_MAX_CANDIDATES = 3
 _ARTIFACT_SEGMENTATION = "generated_segmentation"
 _ARTIFACT_WARPED_ATLAS = "warped_atlas"
 _ARTIFACT_BORDER_OVERLAY = "warped_border_overlay"
+
+
+def _parse_plane(value: object) -> Plane:
+    if value not in {"coronal", "sagittal", "horizontal"}:
+        raise ValueError(f"Unsupported plane: {value!r}")
+    return cast(Plane, value)
 
 
 def _png_bytes(image: Image.Image) -> bytes:
@@ -177,7 +184,7 @@ async def _generate_registration_candidate_impl(
         source_image,
         atlas_name=str(state["atlas_name"]),
         position_mm=float(state["position_mm"]),
-        plane=str(state.get(_STATE_PLANE_KEY, "coronal")),
+        plane=_parse_plane(state.get(_STATE_PLANE_KEY, "coronal")),
         provider=str(state.get(_STATE_IMAGE_PROVIDER_KEY, state.get("provider", "google"))),
         image_model=state.get(_STATE_IMAGE_MODEL_KEY),
         prompt_revision=active_prompt_revision,

@@ -62,9 +62,7 @@ class CurriculumLogger:
         """
         missing = [f for f in REQUIRED_FIELDS if f not in row]
         if missing:
-            raise ValueError(
-                f"CurriculumLogger.append: missing required field(s): {missing}"
-            )
+            raise ValueError(f"CurriculumLogger.append: missing required field(s): {missing}")
         out = dict(row)
         if "ts" not in out:
             out["ts"] = _now_iso()

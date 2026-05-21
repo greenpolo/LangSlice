@@ -43,7 +43,8 @@ __all__ = ["render_ish_section"]
 
 
 def _apply_brightness_contrast(
-    canvas: np.ndarray, rng: np.random.Generator,
+    canvas: np.ndarray,
+    rng: np.random.Generator,
 ) -> np.ndarray:
     brightness = rng.uniform(0.85, 1.10)
     contrast = rng.uniform(0.85, 1.15)
@@ -110,7 +111,10 @@ def render_ish_section(
     gamma = float(rng.uniform(*gamma_range))
     floor = float(rng.uniform(*floor_range))
     density = atlas_grayscale_density_map(
-        reference_slice, masks["tissue"], gamma=gamma, floor=floor,
+        reference_slice,
+        masks["tissue"],
+        gamma=gamma,
+        floor=floor,
     )
 
     ctx = TransformContext(
@@ -129,9 +133,14 @@ def render_ish_section(
     # --- Stage 1: counterstain (substrate + anatomical cells) ---
     counterstain_fn = COUNTERSTAIN_REGISTRY[chosen_mode.counterstain]
     canvas = counterstain_fn(
-        reference_slice, annotation_slice, atlas,
-        masks=masks, density_map=density, ctx=ctx,
-        rng=rng, pixel_size_um=pixel_size_um,
+        reference_slice,
+        annotation_slice,
+        atlas,
+        masks=masks,
+        density_map=density,
+        ctx=ctx,
+        rng=rng,
+        pixel_size_um=pixel_size_um,
         **chosen_mode.counterstain_kwargs,
     )
 
@@ -145,7 +154,11 @@ def render_ish_section(
     # --- Stage 4 (optional): damage / realism layer ---
     if apply_damage:
         canvas = apply_damage_layer(
-            canvas, rng=rng, ctx=ctx, modality="ish", intensity=damage_intensity,
+            canvas,
+            rng=rng,
+            ctx=ctx,
+            modality="ish",
+            intensity=damage_intensity,
             geometry=apply_geometry_warp,
         )
     return canvas

@@ -19,8 +19,9 @@ __all__ = [
 ]
 
 import numpy as np
-from .base import TransformContext
 from scipy.ndimage import gaussian_filter  # type: ignore[import-untyped]
+
+from .base import TransformContext
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -95,11 +96,14 @@ class DAPITonal:
         density = _density_or_uniform(ctx, h, w)
 
         bg_color = _jitter(rng, (0.02, 0.02, 0.06))
-        out = np.stack([
-            np.full((h, w), bg_color[0], dtype=np.float32),
-            np.full((h, w), bg_color[1], dtype=np.float32),
-            np.full((h, w), bg_color[2], dtype=np.float32),
-        ], axis=-1)
+        out = np.stack(
+            [
+                np.full((h, w), bg_color[0], dtype=np.float32),
+                np.full((h, w), bg_color[1], dtype=np.float32),
+                np.full((h, w), bg_color[2], dtype=np.float32),
+            ],
+            axis=-1,
+        )
 
         # Blue ramp: R/G kept low, B = luminance × 0.6 with cyan in mid-tones.
         b_channel = lum * 0.60
@@ -169,11 +173,14 @@ class NisslTonal:
         blend_weight = stain_intensity * 0.6 + density_weight * 0.4
         blend_weight = np.clip(blend_weight, 0.0, 1.0)
 
-        out = np.stack([
-            bg_color[0] * (1.0 - blend_weight) + stain_color[0] * blend_weight,
-            bg_color[1] * (1.0 - blend_weight) + stain_color[1] * blend_weight,
-            bg_color[2] * (1.0 - blend_weight) + stain_color[2] * blend_weight,
-        ], axis=-1)
+        out = np.stack(
+            [
+                bg_color[0] * (1.0 - blend_weight) + stain_color[0] * blend_weight,
+                bg_color[1] * (1.0 - blend_weight) + stain_color[1] * blend_weight,
+                bg_color[2] * (1.0 - blend_weight) + stain_color[2] * blend_weight,
+            ],
+            axis=-1,
+        )
 
         # Background pixels snap back to cream.
         mask_3 = mask[:, :, np.newaxis].astype(np.float32)
@@ -227,11 +234,14 @@ class BrightfieldTonal:
             target_mask = target_mask & (random_field > sub_threshold)
 
         # Tissue base slightly darker than background; modulated by luminance.
-        tissue_rgb = np.stack([
-            tissue_base[0] - lum * 0.05,
-            tissue_base[1] - lum * 0.05,
-            tissue_base[2] - lum * 0.05,
-        ], axis=-1)
+        tissue_rgb = np.stack(
+            [
+                tissue_base[0] - lum * 0.05,
+                tissue_base[1] - lum * 0.05,
+                tissue_base[2] - lum * 0.05,
+            ],
+            axis=-1,
+        )
 
         # Brown modulation in target region.
         brown_strength = np.clip(density * 0.6, 0.0, 1.0)
@@ -286,11 +296,14 @@ class FluorescenceTonal:
         density = _density_or_uniform(ctx, h, w)
 
         bg_color = _jitter(rng, (0.01, 0.01, 0.02), spread=0.01)
-        out = np.stack([
-            np.full((h, w), bg_color[0], dtype=np.float32),
-            np.full((h, w), bg_color[1], dtype=np.float32),
-            np.full((h, w), bg_color[2], dtype=np.float32),
-        ], axis=-1)
+        out = np.stack(
+            [
+                np.full((h, w), bg_color[0], dtype=np.float32),
+                np.full((h, w), bg_color[1], dtype=np.float32),
+                np.full((h, w), bg_color[2], dtype=np.float32),
+            ],
+            axis=-1,
+        )
 
         # DAPI channel (blue): always present, density-modulated.
         dapi_scale = rng.uniform(0.40, 0.65)
@@ -374,10 +387,10 @@ class ISHTonal:
         # Distance-based fall-off from the chosen centre.
         ys_grid = np.arange(h, dtype=np.float32)[:, np.newaxis]
         xs_grid = np.arange(w, dtype=np.float32)[np.newaxis, :]
-        dist = np.sqrt((ys_grid - cy)**2 + (xs_grid - cx)**2)
+        dist = np.sqrt((ys_grid - cy) ** 2 + (xs_grid - cx) ** 2)
         # Sigma roughly 15–35% of the shorter image dimension.
         sigma_px = rng.uniform(0.15, 0.35) * min(h, w)
-        fall_off = np.exp(-0.5 * (dist / max(sigma_px, 1.0))**2).astype(np.float32)
+        fall_off = np.exp(-0.5 * (dist / max(sigma_px, 1.0)) ** 2).astype(np.float32)
 
         # Brown stain modulated by fall-off, density, and tissue mask.
         stain_weight = fall_off * np.clip(soft_density * 1.2, 0.0, 1.0) * mask.astype(np.float32)

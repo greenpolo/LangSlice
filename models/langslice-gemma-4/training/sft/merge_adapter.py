@@ -17,7 +17,10 @@ logger = logging.getLogger(__name__)
 
 
 def main(argv: list[str] | None = None) -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
 
     p = argparse.ArgumentParser(description="Merge SFT LoRA into bf16 base for serving.")
     p.add_argument("--adapter-dir", type=Path, required=True)

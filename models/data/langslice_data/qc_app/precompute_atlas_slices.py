@@ -10,7 +10,8 @@ that cache before falling back to live render.
 
 Usage:
     python _local/qc_app/precompute_atlas_slices.py
-    python _local/qc_app/precompute_atlas_slices.py --include-estimates _local/trace_collection/runs/.../results.jsonl
+    python _local/qc_app/precompute_atlas_slices.py --include-estimates \
+_local/trace_collection/runs/.../results.jsonl
 """
 
 from __future__ import annotations
@@ -33,9 +34,7 @@ from langslice_data.qc_app.app import (  # noqa: E402
     render_atlas_png,
 )
 
-DEFAULT_MANIFEST = (
-    REPO_ROOT / "_local/trace_collection/gemini31_position_trace_manifest_qc.jsonl"
-)
+DEFAULT_MANIFEST = REPO_ROOT / "_local/trace_collection/gemini31_position_trace_manifest_qc.jsonl"
 
 logger = logging.getLogger("precompute_atlas_slices")
 
@@ -140,7 +139,9 @@ def main(argv: list[str] | None = None) -> int:
         by_atlas[atlas] = by_atlas.get(atlas, 0) + 1
     logger.info(
         "%d unique slices across %d atlases -> %s",
-        len(targets), len(by_atlas), ATLAS_DISK_CACHE,
+        len(targets),
+        len(by_atlas),
+        ATLAS_DISK_CACHE,
     )
 
     rendered = 0
@@ -166,7 +167,10 @@ def main(argv: list[str] | None = None) -> int:
     elapsed = time.monotonic() - t_start
     logger.info(
         "done: rendered=%d skipped_existing=%d failed=%d in %.1fs",
-        rendered, skipped_existing, failed, elapsed,
+        rendered,
+        skipped_existing,
+        failed,
+        elapsed,
     )
     return 0 if failed == 0 else 1
 

@@ -14,6 +14,7 @@ from google.adk.plugins.base_plugin import BasePlugin
 from PIL import Image
 
 from langslice_harness.atlas.core import get_position_range_mm, load_atlas
+from langslice_harness.atlas.space import Plane
 
 TraceKind = Literal["single", "group"]
 
@@ -28,7 +29,13 @@ _RESCUE_PCT = 0.07      # rescue threshold ≈ 0.92mm coronal Allen
 _TOLERANCE_FLOOR_MM = 0.05
 
 
-def plane_tolerance_mm(atlas_name: str, plane: str) -> float:
+def _parse_plane(value: str) -> Plane:
+    if value not in {"coronal", "sagittal", "horizontal"}:
+        raise ValueError(f"Unsupported plane {value!r}")
+    return cast(Plane, value)
+
+
+def plane_tolerance_mm(atlas_name: str, plane: Plane) -> float:
     """Atlas-aware accept tolerance for `categorize_trace`.
 
     For sagittal we use canonical-hemisphere extent (full ML extent / 2),
@@ -43,7 +50,7 @@ def plane_tolerance_mm(atlas_name: str, plane: str) -> float:
     return max(extent * _TOLERANCE_PCT, _TOLERANCE_FLOOR_MM)
 
 
-def plane_rescue_threshold_mm(atlas_name: str, plane: str) -> float:
+def plane_rescue_threshold_mm(atlas_name: str, plane: Plane) -> float:
     """Atlas-aware rescue (near-miss) threshold."""
     atlas = load_atlas(atlas_name)
     _, hi = get_position_range_mm(atlas, plane=plane)
@@ -54,7 +61,7 @@ def plane_rescue_threshold_mm(atlas_name: str, plane: str) -> float:
 
 
 def canonicalize_positions(
-    positions: list[float] | None, atlas_name: str, plane: str
+    positions: list[float] | None, atlas_name: str, plane: Plane
 ) -> list[float] | None:
     """Map sagittal positions to canonical (single-hemisphere) form.
 
@@ -90,7 +97,7 @@ class TraceManifestRow:
     kind: TraceKind
     images: list[str]
     atlas: str
-    plane: str
+    plane: Plane
     truth_positions_mm: list[float]
     interval_um: int | None = None
     thickness_um: int = 50
@@ -347,7 +354,7 @@ def parse_manifest_record(data: dict[str, Any]) -> TraceManifestRow:
         raise ValueError(f"Manifest record {record_id!r} has unsupported kind {kind!r}")
 
     atlas = _require_str(data, "atlas")
-    plane = _require_str(data, "plane")
+    plane = _parse_plane(_require_str(data, "plane"))
     if kind == "single":
         image = _require_str(data, "image")
         truth_positions = [_require_float(data, "position_mm")]
@@ -780,7 +787,7 @@ async def _collect_manifest_traces_async(
         )
         submitted_canonical = canonicalize_positions(submitted, row.atlas, row.plane)
         category = categorize_trace(
-            truth_positions=truth_canonical,
+            truth_positions=truth_canonical or [],
             submitted_positions=submitted_canonical,
             fetched_positions=_fetched_positions(recorder.raw_events),
             tolerance_mm=plane_tolerance_mm(row.atlas, row.plane),

@@ -153,7 +153,12 @@ def _filter_grpo_config_for_installed_trl(
     # delegates to TRL's stricter base via super().__init__, and that base
     # is the one whose TypeError we have to dodge.
     accepted: set[str] | None = None
-    for cls in inspect.getmro(grpo_config_cls):
+    try:
+        mro = inspect.getmro(grpo_config_cls)
+    except (AttributeError, TypeError):
+        return grpo_cfg
+
+    for cls in mro:
         try:
             sig = inspect.signature(cls.__init__)
         except (TypeError, ValueError):

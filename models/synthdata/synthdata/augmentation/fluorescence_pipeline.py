@@ -56,23 +56,35 @@ __all__ = ["render_fluorescence_section"]
 
 _GENERIC_IF_PRESETS: tuple[IFChannelSpec, ...] = (
     IFChannelSpec(
-        name="generic_red_sparse", channel=0, distribution="sparse",
-        density_range_per_mm2=(30.0, 200.0), intensity_range=(0.55, 0.95),
+        name="generic_red_sparse",
+        channel=0,
+        distribution="sparse",
+        density_range_per_mm2=(30.0, 200.0),
+        intensity_range=(0.55, 0.95),
         sigma_range_scale=(0.6, 1.4),
     ),
     IFChannelSpec(
-        name="generic_red_moderate", channel=0, distribution="moderate",
-        density_range_per_mm2=(150.0, 600.0), intensity_range=(0.50, 0.90),
+        name="generic_red_moderate",
+        channel=0,
+        distribution="moderate",
+        density_range_per_mm2=(150.0, 600.0),
+        intensity_range=(0.50, 0.90),
         sigma_range_scale=(0.7, 1.5),
     ),
     IFChannelSpec(
-        name="generic_green_sparse", channel=1, distribution="sparse",
-        density_range_per_mm2=(30.0, 200.0), intensity_range=(0.55, 0.95),
+        name="generic_green_sparse",
+        channel=1,
+        distribution="sparse",
+        density_range_per_mm2=(30.0, 200.0),
+        intensity_range=(0.55, 0.95),
         sigma_range_scale=(0.6, 1.4),
     ),
     IFChannelSpec(
-        name="generic_green_moderate", channel=1, distribution="moderate",
-        density_range_per_mm2=(150.0, 600.0), intensity_range=(0.50, 0.90),
+        name="generic_green_moderate",
+        channel=1,
+        distribution="moderate",
+        density_range_per_mm2=(150.0, 600.0),
+        intensity_range=(0.50, 0.90),
         sigma_range_scale=(0.7, 1.5),
     ),
 )
@@ -92,7 +104,8 @@ def _sample_generic_if_channels(rng: np.random.Generator, n: int) -> list[IFChan
 
 
 def _apply_brightness_contrast(
-    canvas: np.ndarray, rng: np.random.Generator,
+    canvas: np.ndarray,
+    rng: np.random.Generator,
 ) -> np.ndarray:
     brightness = rng.uniform(0.85, 1.15)
     contrast = rng.uniform(0.85, 1.15)
@@ -108,19 +121,27 @@ def _apply_brightness_contrast(
 
 
 _LEGACY_GFP = IFChannelSpec(
-    name="legacy_gfp", channel=1, distribution="moderate",
-    density_range_per_mm2=(150.0, 600.0), intensity_range=(0.55, 0.95),
+    name="legacy_gfp",
+    channel=1,
+    distribution="moderate",
+    density_range_per_mm2=(150.0, 600.0),
+    intensity_range=(0.55, 0.95),
     sigma_range_scale=(0.7, 1.5),
 )
 _LEGACY_TDTOM = IFChannelSpec(
-    name="legacy_tdtom", channel=0, distribution="moderate",
-    density_range_per_mm2=(120.0, 500.0), intensity_range=(0.60, 0.95),
+    name="legacy_tdtom",
+    channel=0,
+    distribution="moderate",
+    density_range_per_mm2=(120.0, 500.0),
+    intensity_range=(0.60, 0.95),
     sigma_range_scale=(0.7, 1.5),
 )
 
 
 def _legacy_mode(
-    rng: np.random.Generator, p_green: float, p_red: float,
+    rng: np.random.Generator,
+    p_green: float,
+    p_red: float,
 ) -> tuple[FluorescenceMode, list[IFChannelSpec]]:
     """Build a synthetic DAPI mode from legacy p_green/p_red flags.
 
@@ -203,7 +224,10 @@ def render_fluorescence_section(
     gamma = float(rng.uniform(*gamma_range))
     floor = float(rng.uniform(*floor_range))
     density = atlas_grayscale_density_map(
-        reference_slice, masks["tissue"], gamma=gamma, floor=floor,
+        reference_slice,
+        masks["tissue"],
+        gamma=gamma,
+        floor=floor,
     )
 
     ctx = TransformContext(
@@ -220,7 +244,7 @@ def render_fluorescence_section(
     # -------------------------------------------------------------------
     # Mode selection
     # -------------------------------------------------------------------
-    use_legacy = (mode is None and p_green is not None and p_red is not None)
+    use_legacy = mode is None and p_green is not None and p_red is not None
 
     if use_legacy:
         warnings.warn(
@@ -261,7 +285,9 @@ def render_fluorescence_section(
         # NeuroTrace look — cool blue-cream substrate for tract-tracing modes
         counterstain_kwargs["cream_base"] = (0.74, 0.82, 0.95)
     canvas = counterstain_fn(
-        reference_slice, annotation_slice, atlas,
+        reference_slice,
+        annotation_slice,
+        atlas,
         masks=masks,
         density_map=density,
         ctx=ctx,
@@ -293,7 +319,11 @@ def render_fluorescence_section(
     # -------------------------------------------------------------------
     if apply_damage:
         canvas = apply_damage_layer(
-            canvas, rng=rng, ctx=ctx, modality="fluorescence", intensity=damage_intensity,
+            canvas,
+            rng=rng,
+            ctx=ctx,
+            modality="fluorescence",
+            intensity=damage_intensity,
             geometry=apply_geometry_warp,
         )
     return canvas

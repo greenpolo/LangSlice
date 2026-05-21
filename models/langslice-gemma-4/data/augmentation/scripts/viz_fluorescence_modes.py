@@ -16,7 +16,8 @@ Output: tmp/outputs/fluorescence/modes.png
 Real reference sources
 ----------------------
 dapi_only      : Allen Connectivity CRE experiment 286483411, CC0 (DAPI + autofluorescence)
-                 Gap note: not a pure DAPI image; using closest available (DAPI visible in B channel)
+                 Gap note: not a pure DAPI image; using closest available
+                 (DAPI visible in B channel)
 dapi_gfp       : Allen Connectivity CRE experiment 301540850, CC0 (GFP-expressing Cre neurons)
 dapi_tdtom     : Allen Connectivity CRE experiment 300687607, CC0 (tdTomato Cre neurons)
 dapi_pv_som_vip: No suitable CC-licensed three-color PV+SOM+VIP triple confocal image available
@@ -25,6 +26,7 @@ tract_aav_gfp  : Allen Connectivity CRE experiment 294481346, CC0 (AAV-tdTom spa
 generic_dapi_2if: No fixed real reference for generic mode (by design — picks random channels).
                  Placeholder generated.
 """
+
 from __future__ import annotations
 
 import sys
@@ -34,12 +36,14 @@ sys.path.insert(0, "src")
 sys.path.insert(0, "models/langslice-gemma-4/data")
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
-
 from augmentation.fluorescence_pipeline import render_fluorescence_section
 from augmentation.modes import FLUORESCENCE_MODES
+from PIL import Image, ImageDraw, ImageFont
+
 from langslice_harness.atlas.core import (
-    get_reference_slice, load_atlas, position_mm_to_index,
+    get_reference_slice,
+    load_atlas,
+    position_mm_to_index,
 )
 from langslice_harness.atlas.space import atlas_space_context, slice_axis_index
 
@@ -63,12 +67,12 @@ COLUMN_MODES: list[str] = [
 
 # Real reference paths — None means placeholder
 REAL_REFS: dict[str, Path | None] = {
-    "dapi_only":               Path("tmp/outputs/fluorescence/real_dapi_gfp_section.png"),  # closest available
-    "dapi_gfp":                Path("tmp/outputs/fluorescence/real_dapi_gfp_section.png"),
-    "dapi_tdtom":              Path("tmp/outputs/fluorescence/real_dapi_tdtom_section.png"),
-    "dapi_pv_som_vip":         None,   # gap: no CC triple-color PV+SOM+VIP on disk
+    "dapi_only": Path("tmp/outputs/fluorescence/real_dapi_gfp_section.png"),  # closest available
+    "dapi_gfp": Path("tmp/outputs/fluorescence/real_dapi_gfp_section.png"),
+    "dapi_tdtom": Path("tmp/outputs/fluorescence/real_dapi_tdtom_section.png"),
+    "dapi_pv_som_vip": None,  # gap: no CC triple-color PV+SOM+VIP on disk
     "tract_aav_gfp_neurotrace": Path("tmp/outputs/fluorescence/real_tract_section.png"),
-    "generic_dapi_2if":        None,   # gap: generic mode has no fixed real reference
+    "generic_dapi_2if": None,  # gap: generic mode has no fixed real reference
 }
 
 PANEL_W = 320
@@ -95,7 +99,10 @@ def _try_font(size: int = 13) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
 
 
 def _label_panel(
-    arr: np.ndarray, text: str, *, bg: tuple[int, int, int] = (20, 20, 20),
+    arr: np.ndarray,
+    text: str,
+    *,
+    bg: tuple[int, int, int] = (20, 20, 20),
 ) -> np.ndarray:
     img = Image.fromarray(arr)
     draw = ImageDraw.Draw(img)
@@ -133,7 +140,10 @@ def _make_placeholder(h: int, w: int, text: str) -> np.ndarray:
 
 
 def _load_real(
-    path: Path | None, h: int, w: int, mode_name: str,
+    path: Path | None,
+    h: int,
+    w: int,
+    mode_name: str,
 ) -> np.ndarray:
     if path is None or not path.exists():
         note = f"[No real reference]\n{mode_name}\n(gap documented\nin report)"
@@ -148,7 +158,9 @@ def upsampled_inputs(atlas: object, ap_mm: float):
     axis = slice_axis_index(ctx, "coronal")
     idx = position_mm_to_index(atlas, ap_mm)
     ann = np.take(
-        np.asarray(atlas.annotation), idx, axis=axis,
+        np.asarray(atlas.annotation),
+        idx,
+        axis=axis,
     ).astype(np.int32)
 
     src_um = atlas.resolution[0]  # type: ignore[attr-defined]
@@ -203,7 +215,9 @@ def main() -> int:
 
         # Row 1 — procedural (mode pinned)
         out = render_fluorescence_section(
-            ref, ann, atlas,
+            ref,
+            ann,
+            atlas,
             seed=SEED_BASE + i,
             pixel_size_um=TARGET_PX_UM,
             mode=mode,

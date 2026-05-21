@@ -12,8 +12,8 @@ cache redesign and is out of scope here.
 from __future__ import annotations
 
 import random
+from collections.abc import Callable
 from dataclasses import replace
-from typing import Callable, Optional
 
 from .schema import CanonicalTrace, ToolStep
 
@@ -40,7 +40,7 @@ class AtlasFetchJitter:
         *,
         sigma_mm: float,
         max_calls_jittered: int,
-        grid_resolver: Optional[Callable[[str, str], list[float]]] = None,
+        grid_resolver: Callable[[str, str], list[float]] | None = None,
     ):
         """Build a stateless jitter augmentation.
 

@@ -7,15 +7,15 @@ from __future__ import annotations
 
 import json
 import os
-import time
-from pathlib import Path
-
-import pytest
 
 # The seen_ledger module lives under models/.../iSFT/ which is already on
 # sys.path via conftest.py or directly importable when running from the
 # training directory.  We add it explicitly so tests run from the repo root.
 import sys
+import time
+from pathlib import Path
+
+import pytest
 
 _TRAINING = (
     Path(__file__).resolve().parents[1]
@@ -25,7 +25,6 @@ if str(_TRAINING) not in sys.path:
     sys.path.insert(0, str(_TRAINING))
 
 from iSFT.seen_ledger import SeenLedger, StaleLedgerError  # noqa: E402
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -134,7 +133,11 @@ class TestSeenLedger:
         ledger.mark_seen("sec_Y", round_idx=3, source="real_rollout")
 
         path = tmp_path / "ledger.jsonl"
-        lines = [l.strip() for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
+        lines = [
+            line.strip()
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
         # First line is the header, second is the entry.
         assert len(lines) == 2
         entry = json.loads(lines[1])

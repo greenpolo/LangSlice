@@ -151,7 +151,7 @@ def pearson_r(xs: list[float], ys: list[float]) -> float:
         return 0.0
     mx = sum(xs) / n
     my = sum(ys) / n
-    num = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
+    num = sum((x - mx) * (y - my) for x, y in zip(xs, ys, strict=True))
     dx = math.sqrt(sum((x - mx) ** 2 for x in xs))
     dy = math.sqrt(sum((y - my) ** 2 for y in ys))
     if dx == 0 or dy == 0:
@@ -169,13 +169,16 @@ def linear_regression(xs: list[float], ys: list[float]) -> tuple[float, float, f
     n = len(xs)
     mx = sum(xs) / n
     my = sum(ys) / n
-    num = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
+    num = sum((x - mx) * (y - my) for x, y in zip(xs, ys, strict=True))
     den = sum((x - mx) ** 2 for x in xs)
     if den == 0:
         return 0.0, my, statistics.pstdev(ys) if n >= 1 else 0.0
     slope = num / den
     intercept = my - slope * mx
-    residuals = [y - (slope * x + intercept) for x, y in zip(xs, ys)]
+    residuals = [
+        y - (slope * x + intercept)
+        for x, y in zip(xs, ys, strict=True)
+    ]
     resid_std = math.sqrt(sum(r * r for r in residuals) / n) if n >= 1 else 0.0
     return slope, intercept, resid_std
 
@@ -191,7 +194,7 @@ def slope_one_residual_std(xs: list[float], ys: list[float]) -> float:
     n = len(xs)
     if n == 0:
         return 0.0
-    diffs = [y - x for x, y in zip(xs, ys)]
+    diffs = [y - x for x, y in zip(xs, ys, strict=True)]
     return statistics.pstdev(diffs)
 
 
@@ -242,7 +245,7 @@ def build_paste_block(
         f"Frozen at extraction time {extraction_date} from\n"
         f"{corpus_path} (n={n_rows}).\n"
         f"\n"
-        f"Regenerate by running models/langslice-traces/scripts/extract_empirical_distributions.py if the\n"
+        f"Regenerate by running the extract_empirical_distributions.py script if the\n"
         f"SFT corpus is materially changed.\n"
         f"\n"
         f"All distributions are lists of (value, weight) tuples where weights sum to 1.0.\n"

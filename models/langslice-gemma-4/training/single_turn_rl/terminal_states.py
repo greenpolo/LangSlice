@@ -404,7 +404,7 @@ def build_from_sft_corpus(
     if tier not in _VALID_TIERS:
         raise ValueError(f"tier must be one of {_VALID_TIERS}, got {tier!r}")
     base_for_paths = repo_root or Path.cwd()
-    sft_root = sft_corpus_root or base_for_paths
+    sft_root = sft_corpus_root or sft_corpus_path.parent
     manifest_lookup = ManifestGTLookup(manifest_root or Path("data/manifest"))
 
     emitted = 0
@@ -893,5 +893,8 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
     raise SystemExit(main(sys.argv[1:]))

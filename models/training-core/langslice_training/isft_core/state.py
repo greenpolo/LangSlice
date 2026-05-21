@@ -119,7 +119,9 @@ class RunState:
                 logger.warning(
                     "Advancing from round %d (phase=%s) to round %d without "
                     "completing the prior round.",
-                    self.round, self.phase, round_idx,
+                    self.round,
+                    self.phase,
+                    round_idx,
                 )
             self.round = round_idx
             self.phase = None
@@ -147,7 +149,7 @@ class RunState:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, payload: dict[str, Any]) -> "RunState":
+    def from_dict(cls, payload: dict[str, Any]) -> RunState:
         return cls(
             run_id=str(payload.get("run_id", "")),
             rounds_total=int(payload.get("rounds_total", 1)),
@@ -161,6 +163,7 @@ class RunState:
 # ──────────────────────────────────────────────────────────────────────────
 # Disk I/O
 # ──────────────────────────────────────────────────────────────────────────
+
 
 def state_path(output_dir: Path) -> Path:
     return Path(output_dir) / "state.json"
@@ -212,8 +215,9 @@ def init_or_resume(output_dir: Path, *, run_id: str, rounds_total: int) -> RunSt
     if existing is not None:
         if existing.run_id and run_id and existing.run_id != run_id:
             logger.warning(
-                "state.json run_id=%r differs from requested run_id=%r; "
-                "honoring on-disk state.", existing.run_id, run_id,
+                "state.json run_id=%r differs from requested run_id=%r; honoring on-disk state.",
+                existing.run_id,
+                run_id,
             )
         existing.rounds_total = rounds_total
         save_state(existing, output_dir)

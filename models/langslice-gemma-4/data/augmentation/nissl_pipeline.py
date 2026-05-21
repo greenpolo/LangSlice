@@ -22,7 +22,8 @@ from .damage_pipeline import apply_damage_layer
 from .density import atlas_grayscale_density_map, shade_substrate_by_atlas
 from .transforms.base import TransformContext
 from .transforms.texture import (
-    NisslGrayMatterCellBodies, NisslWhiteMatterCellBodies,
+    NisslGrayMatterCellBodies,
+    NisslWhiteMatterCellBodies,
 )
 from .transforms.tissue_class import classify_tissue
 
@@ -53,7 +54,8 @@ def _build_cream_canvas(
 
 
 def _apply_nissl_tone_shift(
-    canvas: np.ndarray, rng: np.random.Generator,
+    canvas: np.ndarray,
+    rng: np.random.Generator,
 ) -> np.ndarray:
     """Warm/cool drift in cream tone — mimics scanner white balance variation."""
     warm_pull = rng.uniform(-0.05, 0.10)
@@ -66,7 +68,8 @@ def _apply_nissl_tone_shift(
 
 
 def _apply_brightness_contrast(
-    canvas: np.ndarray, rng: np.random.Generator,
+    canvas: np.ndarray,
+    rng: np.random.Generator,
 ) -> np.ndarray:
     brightness = rng.uniform(0.85, 1.10)
     contrast = rng.uniform(0.85, 1.15)
@@ -131,7 +134,10 @@ def render_nissl_section(
     gamma = float(rng.uniform(*gamma_range))
     floor = float(rng.uniform(*floor_range))
     density = atlas_grayscale_density_map(
-        ref, masks["tissue"], gamma=gamma, floor=floor,
+        ref,
+        masks["tissue"],
+        gamma=gamma,
+        floor=floor,
     )
 
     ctx = TransformContext(
@@ -151,8 +157,11 @@ def render_nissl_section(
     # and read slightly darker even before stained cells are added.
     shading_strength = float(rng.uniform(0.12, 0.28))
     canvas = shade_substrate_by_atlas(
-        canvas, reference_slice, substrate_mask,
-        strength=shading_strength, gamma=1.0,
+        canvas,
+        reference_slice,
+        substrate_mask,
+        strength=shading_strength,
+        gamma=1.0,
     )
     canvas = NisslGrayMatterCellBodies(p=1.0, cream=cream_base)(canvas, rng=rng, ctx=ctx)
     canvas = NisslWhiteMatterCellBodies(p=1.0, cream=cream_base)(canvas, rng=rng, ctx=ctx)
@@ -160,7 +169,11 @@ def render_nissl_section(
     canvas = _apply_brightness_contrast(canvas, rng)
     if apply_damage:
         canvas = apply_damage_layer(
-            canvas, rng=rng, ctx=ctx, modality="nissl", intensity=damage_intensity,
+            canvas,
+            rng=rng,
+            ctx=ctx,
+            modality="nissl",
+            intensity=damage_intensity,
             geometry=apply_geometry_warp,
         )
     return canvas

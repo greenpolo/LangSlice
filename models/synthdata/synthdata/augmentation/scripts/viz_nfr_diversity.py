@@ -4,6 +4,7 @@ Each panel renders a full atlas slice with a different seed and one of the
 Nuclear Fast Red substrate presets. Demonstrates pink-substrate variation,
 density variation, and brightness/contrast drift across 9 variants.
 """
+
 from __future__ import annotations
 
 import sys
@@ -65,7 +66,8 @@ def _apply_tone_shift(canvas: np.ndarray, rng: np.random.Generator) -> np.ndarra
 
 
 def _apply_brightness_contrast(
-    canvas: np.ndarray, rng: np.random.Generator,
+    canvas: np.ndarray,
+    rng: np.random.Generator,
 ) -> np.ndarray:
     brightness = rng.uniform(0.90, 1.08)
     contrast = rng.uniform(0.88, 1.12)
@@ -91,7 +93,10 @@ def render_nfr_section(
     gamma = float(rng.uniform(*gamma_range))
     floor = float(rng.uniform(0.10, 0.20))
     density = atlas_grayscale_density_map(
-        reference_slice, masks["tissue"], gamma=gamma, floor=floor,
+        reference_slice,
+        masks["tissue"],
+        gamma=gamma,
+        floor=floor,
     )
 
     ctx = TransformContext(
@@ -131,8 +136,12 @@ def main() -> int:
     for idx, seed in enumerate(SEEDS):
         preset_name, substrate = presets[idx % len(presets)]
         out = render_nfr_section(
-            ref, ann, atlas,
-            seed=seed, pixel_size_um=TARGET_PX_UM, substrate_base=substrate,
+            ref,
+            ann,
+            atlas,
+            seed=seed,
+            pixel_size_um=TARGET_PX_UM,
+            substrate_base=substrate,
         )
         arr = np.clip(out * 255, 0, 255).astype(np.uint8)
         cells.append(arr)
@@ -144,7 +153,7 @@ def main() -> int:
     grid = np.zeros((rows * h0, cols * w0, 3), dtype=np.uint8)
     for idx, img in enumerate(cells):
         r, c = divmod(idx, cols)
-        grid[r * h0:(r + 1) * h0, c * w0:(c + 1) * w0] = img
+        grid[r * h0 : (r + 1) * h0, c * w0 : (c + 1) * w0] = img
 
     out_path = Path("tmp/outputs/nfr/diversity.png")
     out_path.parent.mkdir(parents=True, exist_ok=True)
