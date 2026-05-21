@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING
 from slicebench.score import _bin_index  # noqa: PLC2701 — stable internal API
 
 if TYPE_CHECKING:
-    from langslice_training.rl_core.dataset import Plane, SingleSliceExample
+    from langslice_training.rl_core.dataset import SingleSliceExample
 
 
 # Cache of (atlas_name, plane) → plane_extent_mm so we don't reload BrainGlobe
@@ -56,7 +56,7 @@ def _plane_extent_mm(atlas_name: str, plane: str) -> float:
 
 
 def compute_section_bins(
-    allocation: list["SingleSliceExample"],
+    allocation: list[SingleSliceExample],
     n_bins: int = 5,
     *,
     plane_extent_overrides: dict[tuple[str, str], float] | None = None,

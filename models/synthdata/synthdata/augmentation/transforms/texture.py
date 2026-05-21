@@ -281,7 +281,7 @@ def _splat_anisotropic_blobs(
         th = float(thetas[i])
         hw = max(1, int(np.ceil(3.0 * max(sl, ss))))
 
-        yy, xx = np.mgrid[-hw:hw + 1, -hw:hw + 1].astype(np.float32)
+        yy, xx = np.mgrid[-hw : hw + 1, -hw : hw + 1].astype(np.float32)
         cos_t, sin_t = np.cos(th), np.sin(th)
         xr = cos_t * xx + sin_t * yy
         yr = -sin_t * xx + cos_t * yy
@@ -396,7 +396,7 @@ def _splat_alpha_anisotropic_blobs(
         th = float(thetas[i])
         hw = max(1, int(np.ceil(3.0 * max(sl, ss))))
 
-        yy, xx = np.mgrid[-hw:hw + 1, -hw:hw + 1].astype(np.float32)
+        yy, xx = np.mgrid[-hw : hw + 1, -hw : hw + 1].astype(np.float32)
         cos_t, sin_t = np.cos(th), np.sin(th)
         xr = cos_t * xx + sin_t * yy
         yr = -sin_t * xx + cos_t * yy
@@ -425,7 +425,9 @@ def _splat_alpha_anisotropic_blobs(
 
 
 def _local_tract_orientation(
-    mask: np.ndarray, *, smoothing_sigma: float = 8.0,
+    mask: np.ndarray,
+    *,
+    smoothing_sigma: float = 8.0,
 ) -> np.ndarray:
     """Per-pixel theta giving the local tract direction inside *mask*.
 
@@ -445,7 +447,8 @@ def _local_tract_orientation(
 
 
 def _get_or_compute_tract_orientation(
-    ctx: "TransformContext", wm_mask: np.ndarray,
+    ctx: TransformContext,
+    wm_mask: np.ndarray,
 ) -> np.ndarray:
     """Return ctx.tract_orientation, computing it if not yet cached.
 
@@ -713,35 +716,55 @@ class DAPIStainClumps:
             inner = binary_erosion(tissue, iterations=self.edge_band_px)
             edge_band = tissue & ~inner
             if edge_band.any():
-                clump_specs.extend(self._sample_clumps(
-                    edge_band, "edge", rng, pixel_size_um,
-                ))
+                clump_specs.extend(
+                    self._sample_clumps(
+                        edge_band,
+                        "edge",
+                        rng,
+                        pixel_size_um,
+                    )
+                )
 
         if ventricle is not None and ventricle.any():
-            clump_specs.extend(self._sample_clumps(
-                ventricle, "ventricle_lumen", rng, pixel_size_um,
-            ))
+            clump_specs.extend(
+                self._sample_clumps(
+                    ventricle,
+                    "ventricle_lumen",
+                    rng,
+                    pixel_size_um,
+                )
+            )
 
             if self.ventricle_band_px > 0:
                 v_dilated = binary_dilation(ventricle, iterations=self.ventricle_band_px)
                 wall_band = v_dilated & tissue & ~ventricle
                 if wall_band.any():
                     from .dapi_texture import _shape_aware_orientation
+
                     theta = _shape_aware_orientation(ventricle, smoothing_sigma=3.0)
-                    clump_specs.extend(self._sample_clumps(
-                        wall_band, "ventricle_wall", rng, pixel_size_um,
-                        orientation_field=theta,
-                    ))
+                    clump_specs.extend(
+                        self._sample_clumps(
+                            wall_band,
+                            "ventricle_wall",
+                            rng,
+                            pixel_size_um,
+                            orientation_field=theta,
+                        )
+                    )
 
         if isc is not None and isc.any():
             labeled, n_components = label(isc)
             for cid in range(1, n_components + 1):
                 comp_mask = labeled == cid
                 if comp_mask.any():
-                    clump_specs.extend(self._sample_clumps(
-                        comp_mask, "islands_of_calleja",
-                        rng, pixel_size_um,
-                    ))
+                    clump_specs.extend(
+                        self._sample_clumps(
+                            comp_mask,
+                            "islands_of_calleja",
+                            rng,
+                            pixel_size_um,
+                        )
+                    )
 
         if not clump_specs:
             return image
@@ -749,10 +772,15 @@ class DAPIStainClumps:
         # Phase 2: render all clumps in a single hi-res buffer as dense
         # sub-pixel-cell clusters; downsample once at the end.
         hi_canvas = self._render_clumps_supersampled(
-            clump_specs, h, w, pixel_size_um, rng,
+            clump_specs,
+            h,
+            w,
+            pixel_size_um,
+            rng,
         )
 
         from .dapi_texture import _downsample_lanczos
+
         clump_layer = _downsample_lanczos(hi_canvas, h, w)
 
         out = image.copy()
@@ -788,15 +816,18 @@ class DAPIStainClumps:
                 angle = float(orientation_field[cy, cx])
             else:
                 angle = float(rng.uniform(0, np.pi))
-            specs.append(dict(
-                cy=cy, cx=cx,
-                size_um=float(rng.uniform(*params["size_um_range"])),
-                aspect=float(rng.uniform(*params["aspect_range"])),
-                angle=angle,
-                intensity=float(rng.uniform(*params["intensity_range"])),
-                irregularity=float(params["irregularity"]),
-                cell_density_factor=float(params["cell_density_factor"]),
-            ))
+            specs.append(
+                dict(
+                    cy=cy,
+                    cx=cx,
+                    size_um=float(rng.uniform(*params["size_um_range"])),
+                    aspect=float(rng.uniform(*params["aspect_range"])),
+                    angle=angle,
+                    intensity=float(rng.uniform(*params["intensity_range"])),
+                    irregularity=float(params["irregularity"]),
+                    cell_density_factor=float(params["cell_density_factor"]),
+                )
+            )
         return specs
 
     def _sample_count(
@@ -814,6 +845,7 @@ class DAPIStainClumps:
             mean = params["density_per_mm2_area"] * area_mm2
         elif "density_per_mm_perimeter" in params:
             from scipy.ndimage import binary_erosion
+
             interior = binary_erosion(zone_mask, iterations=1)
             perimeter_px = float((zone_mask & ~interior).sum())
             perimeter_mm = perimeter_px * pixel_size_um / 1000.0
@@ -860,12 +892,8 @@ class DAPIStainClumps:
             cell_density_factor = sp["cell_density_factor"]
 
             # Number of cells in the clump = density × ellipse area
-            ellipse_area_mm2 = (
-                np.pi * ra_um * rb_um / (1000.0 ** 2)
-            )
-            n_cells = max(8, int(
-                ref_density_per_mm2 * cell_density_factor * ellipse_area_mm2
-            ))
+            ellipse_area_mm2 = np.pi * ra_um * rb_um / (1000.0**2)
+            n_cells = max(8, int(ref_density_per_mm2 * cell_density_factor * ellipse_area_mm2))
 
             # Sample positions inside a unit disc (rejection)
             n_attempt = int(n_cells * 1.4) + 4
@@ -882,9 +910,7 @@ class DAPIStainClumps:
             # a small noise factor — produces ragged clump edges instead
             # of perfectly elliptical ones.
             if irregularity > 0:
-                jitter = 1.0 + rng.normal(
-                    0.0, irregularity * 0.45, size=n_kept
-                )
+                jitter = 1.0 + rng.normal(0.0, irregularity * 0.45, size=n_kept)
                 u = u * jitter
                 v = v * jitter
 
@@ -911,13 +937,14 @@ class DAPIStainClumps:
             base = self._CLUMP_BASE_INTENSITY * intensity
             tail = self._CLUMP_TAIL_SCALE * intensity
             intens = rng.gamma(
-                shape=1.0, scale=base + tail, size=ys.size,
+                shape=1.0,
+                scale=base + tail,
+                size=ys.size,
             ).astype(np.float32)
 
             # Per-cell radius in hi-res pixels
             sigmas = (
-                rng.uniform(*self._CLUMP_CELL_RADIUS_UM_RANGE, size=ys.size)
-                / px_um_hi
+                rng.uniform(*self._CLUMP_CELL_RADIUS_UM_RANGE, size=ys.size) / px_um_hi
             ).astype(np.float32)
 
             all_y.append(ys)
@@ -944,7 +971,8 @@ class DAPIStainClumps:
             s_max = s_min + 1e-6
         bucket_idx = np.clip(
             np.floor((sigmas - s_min) / (s_max - s_min) * n_buckets).astype(np.int32),
-            0, n_buckets - 1,
+            0,
+            n_buckets - 1,
         )
         bucket_edges = np.linspace(s_min, s_max, n_buckets + 1)
         for b in range(n_buckets):
@@ -972,10 +1000,13 @@ DAPIBoundaryHighlights = DAPIStainClumps
 
 
 def _nissl_cell_colors(
-    rng: np.random.Generator, n: int,
+    rng: np.random.Generator,
+    n: int,
     *,
     color_range: tuple[tuple[float, float], tuple[float, float], tuple[float, float]] = (
-        (0.30, 0.55), (0.25, 0.50), (0.50, 0.75),
+        (0.30, 0.55),
+        (0.25, 0.50),
+        (0.50, 0.75),
     ),
 ) -> np.ndarray:
     """Per-blob target cell color (R, G, B) for alpha compositing.
@@ -984,11 +1015,14 @@ def _nissl_cell_colors(
     presentations depending on stain (cresyl violet vs thionine).
     """
     (r_lo, r_hi), (g_lo, g_hi), (b_lo, b_hi) = color_range
-    return np.stack([
-        rng.uniform(r_lo, r_hi, size=n).astype(np.float32),
-        rng.uniform(g_lo, g_hi, size=n).astype(np.float32),
-        rng.uniform(b_lo, b_hi, size=n).astype(np.float32),
-    ], axis=1).astype(np.float32)
+    return np.stack(
+        [
+            rng.uniform(r_lo, r_hi, size=n).astype(np.float32),
+            rng.uniform(g_lo, g_hi, size=n).astype(np.float32),
+            rng.uniform(b_lo, b_hi, size=n).astype(np.float32),
+        ],
+        axis=1,
+    ).astype(np.float32)
 
 
 class NisslGrayMatterCellBodies:
@@ -1054,10 +1088,14 @@ class NisslGrayMatterCellBodies:
         large_lo, large_hi = self.sigma_range_scale_large
         sigmas = np.empty(n, dtype=np.float32)
         sigmas[~is_large] = rng.uniform(
-            small_lo * sigma_scale, small_hi * sigma_scale, size=int((~is_large).sum()),
+            small_lo * sigma_scale,
+            small_hi * sigma_scale,
+            size=int((~is_large).sum()),
         )
         sigmas[is_large] = rng.uniform(
-            large_lo * sigma_scale, large_hi * sigma_scale, size=int(is_large.sum()),
+            large_lo * sigma_scale,
+            large_hi * sigma_scale,
+            size=int(is_large.sum()),
         )
 
         intensities = rng.uniform(*self.intensity_range, size=n).astype(np.float32)
@@ -1130,7 +1168,9 @@ class NisslWhiteMatterCellBodies:
 
         s_lo, s_hi = self.sigma_range_scale
         sigmas_short = rng.uniform(
-            s_lo * sigma_scale, s_hi * sigma_scale, size=n,
+            s_lo * sigma_scale,
+            s_hi * sigma_scale,
+            size=n,
         ).astype(np.float32)
         ar_lo, ar_hi = self.aspect_ratio_range
         ar = rng.uniform(ar_lo, ar_hi, size=n).astype(np.float32)
@@ -1138,19 +1178,29 @@ class NisslWhiteMatterCellBodies:
 
         theta_field = _get_or_compute_tract_orientation(ctx, wm_mask)
         thetas = theta_field[ys, xs] + rng.uniform(
-            -self.orientation_jitter_rad, self.orientation_jitter_rad, size=n,
+            -self.orientation_jitter_rad,
+            self.orientation_jitter_rad,
+            size=n,
         ).astype(np.float32)
 
         intensities = rng.uniform(*self.intensity_range, size=n).astype(np.float32)
         cell_colors = _nissl_cell_colors(
-            rng, n,
+            rng,
+            n,
             color_range=((0.40, 0.55), (0.40, 0.55), (0.60, 0.78)),
         )
 
         out = image.copy()
         _splat_alpha_anisotropic_blobs(
-            out, ys, xs, sigmas_long, sigmas_short, thetas,
-            intensities, cell_colors, wm_mask,
+            out,
+            ys,
+            xs,
+            sigmas_long,
+            sigmas_short,
+            thetas,
+            intensities,
+            cell_colors,
+            wm_mask,
         )
         return out
 
@@ -1161,7 +1211,9 @@ class NisslWhiteMatterCellBodies:
 
 
 def _dab_channel_weights(
-    rng: np.random.Generator, n: int, tan: tuple[float, float, float],
+    rng: np.random.Generator,
+    n: int,
+    tan: tuple[float, float, float],
 ) -> np.ndarray:
     """(DAB - tan) deltas for subtractive compositing.
 
@@ -1172,7 +1224,8 @@ def _dab_channel_weights(
     dab_g = rng.uniform(0.22, 0.34, size=n).astype(np.float32)
     dab_b = rng.uniform(0.10, 0.20, size=n).astype(np.float32)
     return np.stack(
-        [dab_r - tan[0], dab_g - tan[1], dab_b - tan[2]], axis=1,
+        [dab_r - tan[0], dab_g - tan[1], dab_b - tan[2]],
+        axis=1,
     ).astype(np.float32)
 
 
@@ -1189,14 +1242,14 @@ class BrightfieldGrayMatterDAB:
     """
 
     _MODE_DENSITY: dict[str, tuple[float, float]] = {
-        "pan_neuronal":         (1500.0, 2500.0),
-        "sparse_interneuron":   (60.0, 200.0),
-        "myelin":               (40.0, 120.0),
+        "pan_neuronal": (1500.0, 2500.0),
+        "sparse_interneuron": (60.0, 200.0),
+        "myelin": (40.0, 120.0),
     }
     _MODE_INTENSITY: dict[str, tuple[float, float]] = {
-        "pan_neuronal":         (0.55, 0.90),
-        "sparse_interneuron":   (0.65, 0.95),
-        "myelin":               (0.20, 0.40),
+        "pan_neuronal": (0.55, 0.90),
+        "sparse_interneuron": (0.65, 0.95),
+        "myelin": (0.20, 0.40),
     }
 
     def __init__(
@@ -1258,14 +1311,14 @@ class BrightfieldWhiteMatterDAB:
     """
 
     _MODE_DENSITY: dict[str, tuple[float, float]] = {
-        "pan_neuronal":         (50.0, 150.0),
-        "sparse_interneuron":   (0.0, 30.0),
-        "myelin":               (1500.0, 2500.0),
+        "pan_neuronal": (50.0, 150.0),
+        "sparse_interneuron": (0.0, 30.0),
+        "myelin": (1500.0, 2500.0),
     }
     _MODE_INTENSITY: dict[str, tuple[float, float]] = {
-        "pan_neuronal":         (0.20, 0.40),
-        "sparse_interneuron":   (0.20, 0.40),
-        "myelin":               (0.55, 0.90),
+        "pan_neuronal": (0.20, 0.40),
+        "sparse_interneuron": (0.20, 0.40),
+        "myelin": (0.55, 0.90),
     }
 
     def __init__(
@@ -1440,7 +1493,9 @@ class ISHExpressionPuncta:
         cream: tuple[float, float, float] = (0.86, 0.82, 0.92),
         wash_color: tuple[float, float, float] = (0.30, 0.25, 0.55),
         punctum_color_range: tuple[
-            tuple[float, float], tuple[float, float], tuple[float, float],
+            tuple[float, float],
+            tuple[float, float],
+            tuple[float, float],
         ] = ((0.18, 0.40), (0.15, 0.32), (0.45, 0.70)),
     ) -> None:
         self.p = p
@@ -1501,7 +1556,11 @@ class ISHExpressionPuncta:
         density_per_mm2 = float(rng.uniform(d_lo, d_hi))
         n_target = _expected_count(density_per_mm2, px_um, h, w)
         ys, xs = _sample_points(
-            puncta_density, n_target, _MAX_BLOBS_ISH * 4, rng, binary_expr,
+            puncta_density,
+            n_target,
+            _MAX_BLOBS_ISH * 4,
+            rng,
+            binary_expr,
         )
         n = len(ys)
         if n == 0:
@@ -1511,11 +1570,14 @@ class ISHExpressionPuncta:
         sigmas = rng.uniform(s_lo * sigma_scale, s_hi * sigma_scale, size=n).astype(np.float32)
         intensities = rng.uniform(*self.intensity_range, size=n).astype(np.float32)
         (r_lo, r_hi), (g_lo, g_hi), (b_lo, b_hi) = self.punctum_color_range
-        cell_colors = np.stack([
-            rng.uniform(r_lo, r_hi, size=n).astype(np.float32),
-            rng.uniform(g_lo, g_hi, size=n).astype(np.float32),
-            rng.uniform(b_lo, b_hi, size=n).astype(np.float32),
-        ], axis=1).astype(np.float32)
+        cell_colors = np.stack(
+            [
+                rng.uniform(r_lo, r_hi, size=n).astype(np.float32),
+                rng.uniform(g_lo, g_hi, size=n).astype(np.float32),
+                rng.uniform(b_lo, b_hi, size=n).astype(np.float32),
+            ],
+            axis=1,
+        ).astype(np.float32)
 
         _splat_alpha_blobs(out, ys, xs, sigmas, intensities, cell_colors, binary_expr)
         return out
@@ -1564,9 +1626,7 @@ class DAPINuclei:
 
         blue_dom = rng.uniform(0.85, 1.0, size=n).astype(np.float32)
         rg_bleed = rng.uniform(0.0, 0.15, size=n).astype(np.float32)
-        channel_weights = np.stack([rg_bleed, rg_bleed * 0.5, blue_dom], axis=1).astype(
-            np.float32
-        )
+        channel_weights = np.stack([rg_bleed, rg_bleed * 0.5, blue_dom], axis=1).astype(np.float32)
 
         out = image.copy()
         _splat_blobs(out, ys, xs, sigmas, intensities, channel_weights, ctx.tissue_mask)
@@ -1775,7 +1835,9 @@ def _hematoxylin_cell_colors(
     n: int,
     *,
     color_range: tuple[tuple[float, float], tuple[float, float], tuple[float, float]] = (
-        (0.20, 0.40), (0.20, 0.45), (0.50, 0.75),
+        (0.20, 0.40),
+        (0.20, 0.45),
+        (0.50, 0.75),
     ),
 ) -> np.ndarray:
     """Per-blob target cell color (R, G, B) for hematoxylin nuclear staining.
@@ -1786,11 +1848,14 @@ def _hematoxylin_cell_colors(
     sharply delineated dots.
     """
     (r_lo, r_hi), (g_lo, g_hi), (b_lo, b_hi) = color_range
-    return np.stack([
-        rng.uniform(r_lo, r_hi, size=n).astype(np.float32),
-        rng.uniform(g_lo, g_hi, size=n).astype(np.float32),
-        rng.uniform(b_lo, b_hi, size=n).astype(np.float32),
-    ], axis=1).astype(np.float32)
+    return np.stack(
+        [
+            rng.uniform(r_lo, r_hi, size=n).astype(np.float32),
+            rng.uniform(g_lo, g_hi, size=n).astype(np.float32),
+            rng.uniform(b_lo, b_hi, size=n).astype(np.float32),
+        ],
+        axis=1,
+    ).astype(np.float32)
 
 
 class HematoxylinGrayMatterNuclei:
@@ -1810,7 +1875,9 @@ class HematoxylinGrayMatterNuclei:
         sigma_range_scale: tuple[float, float] = (0.5, 0.9),
         intensity_range: tuple[float, float] = (0.55, 0.90),
         color_range: tuple[
-            tuple[float, float], tuple[float, float], tuple[float, float],
+            tuple[float, float],
+            tuple[float, float],
+            tuple[float, float],
         ] = ((0.20, 0.40), (0.20, 0.45), (0.50, 0.75)),
     ) -> None:
         self.p = p
@@ -1849,7 +1916,9 @@ class HematoxylinGrayMatterNuclei:
 
         s_lo, s_hi = self.sigma_range_scale
         sigmas = rng.uniform(
-            s_lo * sigma_scale, s_hi * sigma_scale, size=n,
+            s_lo * sigma_scale,
+            s_hi * sigma_scale,
+            size=n,
         ).astype(np.float32)
         intensities = rng.uniform(*self.intensity_range, size=n).astype(np.float32)
         cell_colors = _hematoxylin_cell_colors(rng, n, color_range=self.color_range)
@@ -1880,7 +1949,9 @@ class HematoxylinWhiteMatterNuclei:
         orientation_jitter_rad: float = 0.40,
         intensity_range: tuple[float, float] = (0.35, 0.65),
         color_range: tuple[
-            tuple[float, float], tuple[float, float], tuple[float, float],
+            tuple[float, float],
+            tuple[float, float],
+            tuple[float, float],
         ] = ((0.25, 0.45), (0.28, 0.50), (0.52, 0.72)),
     ) -> None:
         self.p = p
@@ -1920,7 +1991,9 @@ class HematoxylinWhiteMatterNuclei:
 
         s_lo, s_hi = self.sigma_range_scale
         sigmas_short = rng.uniform(
-            s_lo * sigma_scale, s_hi * sigma_scale, size=n,
+            s_lo * sigma_scale,
+            s_hi * sigma_scale,
+            size=n,
         ).astype(np.float32)
         ar_lo, ar_hi = self.aspect_ratio_range
         ar = rng.uniform(ar_lo, ar_hi, size=n).astype(np.float32)
@@ -1928,7 +2001,9 @@ class HematoxylinWhiteMatterNuclei:
 
         theta_field = _get_or_compute_tract_orientation(ctx, wm_mask)
         thetas = theta_field[ys, xs] + rng.uniform(
-            -self.orientation_jitter_rad, self.orientation_jitter_rad, size=n,
+            -self.orientation_jitter_rad,
+            self.orientation_jitter_rad,
+            size=n,
         ).astype(np.float32)
 
         intensities = rng.uniform(*self.intensity_range, size=n).astype(np.float32)
@@ -1936,8 +2011,15 @@ class HematoxylinWhiteMatterNuclei:
 
         out = image.copy()
         _splat_alpha_anisotropic_blobs(
-            out, ys, xs, sigmas_long, sigmas_short, thetas,
-            intensities, cell_colors, wm_mask,
+            out,
+            ys,
+            xs,
+            sigmas_long,
+            sigmas_short,
+            thetas,
+            intensities,
+            cell_colors,
+            wm_mask,
         )
         return out
 
@@ -1961,11 +2043,14 @@ def _nfr_cell_colors(
     aluminium sulfate mordant combined with the thin section and tissue auto-
     absorption shifts the apparent hue toward a desaturated violet.
     """
-    return np.stack([
-        rng.uniform(*r_range, size=n).astype(np.float32),
-        rng.uniform(*g_range, size=n).astype(np.float32),
-        rng.uniform(*b_range, size=n).astype(np.float32),
-    ], axis=1).astype(np.float32)
+    return np.stack(
+        [
+            rng.uniform(*r_range, size=n).astype(np.float32),
+            rng.uniform(*g_range, size=n).astype(np.float32),
+            rng.uniform(*b_range, size=n).astype(np.float32),
+        ],
+        axis=1,
+    ).astype(np.float32)
 
 
 class NuclearFastRedGrayMatterNuclei:
@@ -2016,7 +2101,9 @@ class NuclearFastRedGrayMatterNuclei:
 
         s_lo, s_hi = self.sigma_range_scale
         sigmas = rng.uniform(
-            s_lo * sigma_scale, s_hi * sigma_scale, size=n,
+            s_lo * sigma_scale,
+            s_hi * sigma_scale,
+            size=n,
         ).astype(np.float32)
         intensities = rng.uniform(*self.intensity_range, size=n).astype(np.float32)
         cell_colors = _nfr_cell_colors(rng, n)
@@ -2077,7 +2164,9 @@ class NuclearFastRedWhiteMatterNuclei:
 
         s_lo, s_hi = self.sigma_range_scale
         sigmas_short = rng.uniform(
-            s_lo * sigma_scale, s_hi * sigma_scale, size=n,
+            s_lo * sigma_scale,
+            s_hi * sigma_scale,
+            size=n,
         ).astype(np.float32)
         ar_lo, ar_hi = self.aspect_ratio_range
         aspect = rng.uniform(ar_lo, ar_hi, size=n).astype(np.float32)
@@ -2085,7 +2174,9 @@ class NuclearFastRedWhiteMatterNuclei:
 
         theta_field = _get_or_compute_tract_orientation(ctx, wm_mask)
         thetas = theta_field[ys, xs] + rng.uniform(
-            -self.orientation_jitter_rad, self.orientation_jitter_rad, size=n,
+            -self.orientation_jitter_rad,
+            self.orientation_jitter_rad,
+            size=n,
         ).astype(np.float32)
 
         intensities = rng.uniform(*self.intensity_range, size=n).astype(np.float32)
@@ -2093,8 +2184,15 @@ class NuclearFastRedWhiteMatterNuclei:
 
         out = image.copy()
         _splat_alpha_anisotropic_blobs(
-            out, ys, xs, sigmas_long, sigmas_short, thetas,
-            intensities, cell_colors, wm_mask,
+            out,
+            ys,
+            xs,
+            sigmas_long,
+            sigmas_short,
+            thetas,
+            intensities,
+            cell_colors,
+            wm_mask,
         )
         return out
 

@@ -317,7 +317,9 @@ def test_render_sft_full_byte_identical_to_render_example(tmp_path: Path):
     #    images are hydrated independently by each renderer, so compare by
     #    fingerprint (mode + size + raw bytes), not object identity.
     assert len(new.messages) == len(old.messages)
-    for i, (new_msg, old_msg) in enumerate(zip(new.messages, old.messages)):
+    for i, (new_msg, old_msg) in enumerate(
+        zip(new.messages, old.messages, strict=True)
+    ):
         new_fp = _message_fingerprint(new_msg)
         old_fp = _message_fingerprint(old_msg)
         assert new_fp == old_fp, f"message[{i}] diverged: {new_fp!r} vs {old_fp!r}"
@@ -337,7 +339,7 @@ def test_render_sft_full_byte_identical_to_render_example(tmp_path: Path):
     new_assistant_calls = [m for m in new.messages if m["role"] == "assistant"]
     old_assistant_calls = [m for m in old.messages if m["role"] == "assistant"]
     assert len(new_assistant_calls) == len(old_assistant_calls)
-    for n_msg, o_msg in zip(new_assistant_calls, old_assistant_calls):
+    for n_msg, o_msg in zip(new_assistant_calls, old_assistant_calls, strict=True):
         assert n_msg["tool_calls"] == o_msg["tool_calls"]
 
     # 11. Tool-response messages must carry the matching tool_call_id and the
@@ -345,7 +347,7 @@ def test_render_sft_full_byte_identical_to_render_example(tmp_path: Path):
     new_tool_msgs = [m for m in new.messages if m["role"] == "tool"]
     old_tool_msgs = [m for m in old.messages if m["role"] == "tool"]
     assert len(new_tool_msgs) == len(old_tool_msgs)
-    for n_msg, o_msg in zip(new_tool_msgs, old_tool_msgs):
+    for n_msg, o_msg in zip(new_tool_msgs, old_tool_msgs, strict=True):
         assert n_msg["tool_call_id"] == o_msg["tool_call_id"]
         # text block content (last entry per normalize_tool_message_content)
         n_text = n_msg["content"][-1]["text"]
@@ -548,7 +550,9 @@ def test_render_isft_prefix_same_prefix_diff_label(tmp_path: Path):
 
     # Messages compare byte-for-byte modulo PIL identity.
     assert len(rl.messages) == len(isft.messages)
-    for i, (rl_msg, isft_msg) in enumerate(zip(rl.messages, isft.messages)):
+    for i, (rl_msg, isft_msg) in enumerate(
+        zip(rl.messages, isft.messages, strict=True)
+    ):
         rl_fp = _message_fingerprint(rl_msg)
         isft_fp = _message_fingerprint(isft_msg)
         assert rl_fp == isft_fp, f"message[{i}] diverged: {rl_fp!r} vs {isft_fp!r}"
@@ -681,9 +685,9 @@ def test_iterator_seeding_deterministic(tmp_path: Path):
     out_a = list(it_a)
     out_b = list(it_b)
     assert len(out_a) == len(out_b) == 2
-    for ex_a, ex_b in zip(out_a, out_b):
+    for ex_a, ex_b in zip(out_a, out_b, strict=True):
         assert len(ex_a.messages) == len(ex_b.messages)
-        for msg_a, msg_b in zip(ex_a.messages, ex_b.messages):
+        for msg_a, msg_b in zip(ex_a.messages, ex_b.messages, strict=True):
             assert _message_fingerprint(msg_a) == _message_fingerprint(msg_b)
 
 
@@ -870,9 +874,9 @@ def test_iterator_iterable_corpus_reiterable(tmp_path: Path):
     assert len(out_a) == 1
     assert len(out_b) == 1
     # Output must be byte-identical across the two passes (modulo PIL identity).
-    for ex_a, ex_b in zip(out_a, out_b):
+    for ex_a, ex_b in zip(out_a, out_b, strict=True):
         assert len(ex_a.messages) == len(ex_b.messages)
-        for msg_a, msg_b in zip(ex_a.messages, ex_b.messages):
+        for msg_a, msg_b in zip(ex_a.messages, ex_b.messages, strict=True):
             assert _message_fingerprint(msg_a) == _message_fingerprint(msg_b)
         assert ex_a.image_paths == ex_b.image_paths
 
@@ -1015,7 +1019,7 @@ def test_atlas_fetch_jitter_preserves_metadata(tmp_path: Path):
 
     # Same number of tool_steps; call_name, result_image_paths, result_text unchanged.
     assert len(out.tool_steps) == len(canonical.tool_steps)
-    for orig, new in zip(canonical.tool_steps, out.tool_steps):
+    for orig, new in zip(canonical.tool_steps, out.tool_steps, strict=True):
         assert new.call_name == orig.call_name
         assert new.result_image_paths == orig.result_image_paths
         assert new.result_text == orig.result_text
@@ -1053,7 +1057,9 @@ def test_atlas_fetch_jitter_respects_max_calls_jittered(tmp_path: Path):
         != canonical.tool_steps[i].call_args["positions_mm"]
         for i in range(len(canonical.tool_steps))
     ]
-    assert sum(differences) == 1, f"expected exactly 1 jittered step, got {sum(differences)}: {differences}"
+    assert sum(differences) == 1, (
+        f"expected exactly 1 jittered step, got {sum(differences)}: {differences}"
+    )
 
 
 def test_atlas_fetch_jitter_no_tool_steps_passthrough(tmp_path: Path):
@@ -1297,7 +1303,7 @@ def _pearson_r(xs: list[float], ys: list[float]) -> float:
         return 0.0
     mx = sum(xs) / n
     my = sum(ys) / n
-    num = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
+    num = sum((x - mx) * (y - my) for x, y in zip(xs, ys, strict=True))
     dx = math.sqrt(sum((x - mx) ** 2 for x in xs))
     dy = math.sqrt(sum((y - my) ** 2 for y in ys))
     if dx == 0.0 or dy == 0.0:
@@ -1536,7 +1542,7 @@ def test_image_path_format():
             positions = step.call_args["positions_mm"]
             image_paths = step.result_image_paths
             assert len(positions) == len(image_paths)
-            for p, path in zip(positions, image_paths):
+            for p, path in zip(positions, image_paths, strict=True):
                 expected = f"atlas/{atlas}/{plane}/{p:.2f}mm.jpg"
                 assert path == expected, f"mismatch: {path!r} vs {expected!r}"
 
@@ -1546,7 +1552,6 @@ def test_tool_result_text_format():
     grid = _synthetic_grid_01()
     # Generate a sample of traces and check whichever singular/plural cases occur.
     rng = random.Random(59)
-    saw_singular = False
     saw_plural = False
     for _ in range(50):
         trace = generate_trace(
@@ -1564,7 +1569,6 @@ def test_tool_result_text_format():
             n = len(step.call_args["positions_mm"])
             text = step.result_text
             if n == 1:
-                saw_singular = True
                 assert text.startswith("Fetched 1 atlas section:"), text
                 assert "atlas sections" not in text
             else:

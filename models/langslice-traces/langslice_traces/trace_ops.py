@@ -62,7 +62,7 @@ def trim_trace(
     by_distance = sorted(indexed_fetches, key=lambda t: t[0])
     kept_indices: set[int] = set()
     kept_images = 0
-    for min_dist, idx, step, n_images in by_distance:
+    for _min_dist, idx, _step, n_images in by_distance:
         if len(kept_indices) >= max_fetch_calls:
             break
         if kept_indices and kept_images + n_images > max_total_images:

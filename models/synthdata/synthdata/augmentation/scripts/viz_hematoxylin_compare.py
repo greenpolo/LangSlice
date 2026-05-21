@@ -11,6 +11,7 @@ density to isolate color / sigma / density choices from anatomy.
 Real reference: Bmouzon (CC BY-SA 4.0), Wikimedia Commons.
 Hematoxylin & LFB stained mouse brain coronal section.
 """
+
 from __future__ import annotations
 
 import sys
@@ -20,14 +21,12 @@ sys.path.insert(0, "src")
 sys.path.insert(0, "models/langslice-gemma-4/data")
 
 import numpy as np
-from PIL import Image
-
 from augmentation.transforms.base import TransformContext
 from augmentation.transforms.texture import (
     HematoxylinGrayMatterNuclei,
     HematoxylinWhiteMatterNuclei,
 )
-
+from PIL import Image
 
 REAL_GM = Path("tmp/outputs/hematoxylin/real_gm_crop.png")
 REAL_WM = Path("tmp/outputs/hematoxylin/real_wm_crop.png")
@@ -56,7 +55,8 @@ def _ctx_uniform_class(h: int, w: int, *, kind: str) -> TransformContext:
 
 
 def _make_canvas(
-    h: int, w: int,
+    h: int,
+    w: int,
     substrate: tuple[float, float, float],
     rng: np.random.Generator,
 ) -> np.ndarray:
@@ -100,6 +100,7 @@ def _to_uint8(arr: np.ndarray) -> np.ndarray:
 
 def _label(arr: np.ndarray, text: str) -> np.ndarray:
     from PIL import ImageDraw, ImageFont
+
     img = Image.fromarray(arr)
     draw = ImageDraw.Draw(img)
     try:

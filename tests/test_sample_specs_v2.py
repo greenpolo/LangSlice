@@ -16,8 +16,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import pytest
-
 _TRAINING = (
     Path(__file__).resolve().parents[1]
     / "models" / "langslice-gemma-4" / "training"
@@ -25,9 +23,8 @@ _TRAINING = (
 if str(_TRAINING) not in sys.path:
     sys.path.insert(0, str(_TRAINING))
 
-from iSFT.seen_ledger import SeenLedger  # noqa: E402
 from iSFT.iterate import _sample_specs_v2  # noqa: E402
-
+from iSFT.seen_ledger import SeenLedger  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Fake allocation example (minimal fields consumed by _sample_specs_v2)

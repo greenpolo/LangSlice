@@ -15,6 +15,7 @@ session handoffs.
 
 - `abba_ap_coordinate_system.md` - atlas-native AP coordinate conventions.
 - `registration_plan.md` - current image-generation registration runtime.
+- `engine_schema.json` - generated JSON Schema bundle for the Python engine API.
 - `image_gen_AIstudio_examples/` - small provider examples and reference images.
 
 ## Repository Map

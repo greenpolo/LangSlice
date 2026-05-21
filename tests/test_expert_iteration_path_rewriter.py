@@ -377,6 +377,7 @@ def test_unified_corpus_base_sample_n_caps_distilled_rows(tmp_path: Path) -> Non
         base_sample_n=5,
         base_sample_seed=42,
     )
+    assert stats2["rows_kept"] == 5
     rows1 = (out_dir / "out.jsonl").read_text(encoding="utf-8")
     rows2 = (tmp_path / "out2" / "out.jsonl").read_text(encoding="utf-8")
     assert rows1 == rows2

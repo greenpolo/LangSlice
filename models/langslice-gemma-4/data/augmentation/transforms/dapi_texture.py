@@ -34,7 +34,6 @@ a wrapping ``Transform`` class so the existing pipeline contract is preserved.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 import numpy as np
 from scipy.ndimage import gaussian_filter
@@ -249,9 +248,7 @@ def _per_pixel_oriented_blur(
     return out
 
 
-def _shape_aware_orientation(
-    mask: np.ndarray, smoothing_sigma: float = 8.0
-) -> np.ndarray:
+def _shape_aware_orientation(mask: np.ndarray, smoothing_sigma: float = 8.0) -> np.ndarray:
     """Per-pixel tangent angle field from a region's distance transform.
 
     For elongated regions (corpus callosum) the tangent runs along the
@@ -291,7 +288,7 @@ def _splat_cells_supersampled(
     intensity_mean: float,
     intensity_tail: float,
     rng: np.random.Generator,
-    density_map_hi: Optional[np.ndarray] = None,
+    density_map_hi: np.ndarray | None = None,
 ) -> np.ndarray:
     """Splat n_cells small Gaussians into a hi-res accumulator.
 
@@ -334,9 +331,11 @@ def _splat_cells_supersampled(
     n_buckets = 4
     edges = np.linspace(r_min, r_max, n_buckets + 1)
     bucket_idx = np.clip(
-        np.floor((rng.uniform(r_min, r_max, size=n_cells) - r_min)
-                 / max(r_max - r_min, 1e-6) * n_buckets).astype(np.int32),
-        0, n_buckets - 1,
+        np.floor(
+            (rng.uniform(r_min, r_max, size=n_cells) - r_min) / max(r_max - r_min, 1e-6) * n_buckets
+        ).astype(np.int32),
+        0,
+        n_buckets - 1,
     )
 
     for b in range(n_buckets):
@@ -371,8 +370,8 @@ def render_dapi_region_texture(
     *,
     rng: np.random.Generator,
     pixel_size_um: float,
-    density_map: Optional[np.ndarray] = None,
-    tract_orientation: Optional[np.ndarray] = None,
+    density_map: np.ndarray | None = None,
+    tract_orientation: np.ndarray | None = None,
     channel: int = 2,
 ) -> np.ndarray:
     """Paint DAPI texture in ``canvas[mask]`` via supersampled rendering.
@@ -430,9 +429,7 @@ def render_dapi_region_texture(
         if s == 1:
             density_hi = density_map.astype(np.float32)
         else:
-            density_hi = np.repeat(
-                np.repeat(density_map.astype(np.float32), s, axis=0), s, axis=1
-            )
+            density_hi = np.repeat(np.repeat(density_map.astype(np.float32), s, axis=0), s, axis=1)
 
     region_mm2 = float(mask_hi.sum()) * px_area_mm2_hi
 
@@ -443,9 +440,15 @@ def render_dapi_region_texture(
         params.cell_radius_um_range[1] * um_to_px_hi,
     )
     hi_canvas = _splat_cells_supersampled(
-        H, W, mask_hi, n_cells, cell_radius_px_hi,
-        params.base_cell_intensity, params.cell_tail_scale,
-        rng, density_hi,
+        H,
+        W,
+        mask_hi,
+        n_cells,
+        cell_radius_px_hi,
+        params.base_cell_intensity,
+        params.cell_tail_scale,
+        rng,
+        density_hi,
     )
 
     # 2. Bright cluster splats — fewer, larger, brighter.
@@ -456,11 +459,16 @@ def render_dapi_region_texture(
             params.bright_cluster_radius_um_range[1] * um_to_px_hi,
         )
         cluster_canvas = _splat_cells_supersampled(
-            H, W, mask_hi, n_clusters, cluster_radius_px_hi,
+            H,
+            W,
+            mask_hi,
+            n_clusters,
+            cluster_radius_px_hi,
             float(np.mean(params.bright_cluster_intensity_range)),
-            (params.bright_cluster_intensity_range[1]
-             - params.bright_cluster_intensity_range[0]) * 0.5,
-            rng, density_hi,
+            (params.bright_cluster_intensity_range[1] - params.bright_cluster_intensity_range[0])
+            * 0.5,
+            rng,
+            density_hi,
         )
         hi_canvas = np.maximum(hi_canvas, cluster_canvas)
 
@@ -501,7 +509,9 @@ def render_dapi_region_texture(
         if params.directional_noise_amp > 0:
             noise = rng.normal(0, 1, size=(h, w)).astype(np.float32)
             noise = _per_pixel_oriented_blur(
-                noise, theta_field, mask.astype(bool),
+                noise,
+                theta_field,
+                mask.astype(bool),
                 params.aniso_sigma_long_px * 1.6,
                 params.aniso_sigma_short_px * 0.7,
                 n_bins=8,
@@ -514,21 +524,19 @@ def render_dapi_region_texture(
     if params.autofluor_floor > 0:
         floor_seed = rng.random((h, w)).astype(np.float32)
         floor = gaussian_filter(floor_seed, sigma=h * params.autofluor_lf_sigma_frac)
-        floor /= (floor.max() + 1e-6)
+        floor /= floor.max() + 1e-6
         floor *= params.autofluor_floor
         region_canvas = region_canvas + floor
 
     # 6. Final PSF blur (sub-pixel softening).
     if params.psf_sigma_px > 0:
-        region_canvas = gaussian_filter(
-            region_canvas, sigma=params.psf_sigma_px
-        ).astype(np.float32)
+        region_canvas = gaussian_filter(region_canvas, sigma=params.psf_sigma_px).astype(np.float32)
 
     # 7. Sensor noise.
     if params.bg_noise_sigma > 0:
-        region_canvas = region_canvas + rng.normal(
-            0, params.bg_noise_sigma, size=(h, w)
-        ).astype(np.float32)
+        region_canvas = region_canvas + rng.normal(0, params.bg_noise_sigma, size=(h, w)).astype(
+            np.float32
+        )
 
     region_canvas = np.clip(region_canvas, 0.0, 1.0)
 

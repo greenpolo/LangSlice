@@ -72,7 +72,8 @@ def _do_rollout_sync(
     multimodal_history: str,
 ) -> RolloutResult:
     """Run one rollout in a worker thread; returns a RolloutResult."""
-    rollout_id = f"{spec.section_id.replace('/', '_').replace(':', '_')}_g{spec.generation_idx}_{uuid.uuid4().hex[:8]}"
+    section_id_safe = spec.section_id.replace("/", "_").replace(":", "_")
+    rollout_id = f"{section_id_safe}_g{spec.generation_idx}_{uuid.uuid4().hex[:8]}"
     run_dir = artifacts_root / rollout_id
     tool_artifact_dir = run_dir / "tool_artifacts"
     tool_artifact_dir.mkdir(parents=True, exist_ok=True)
@@ -99,7 +100,9 @@ def _do_rollout_sync(
     except Exception as exc:  # noqa: BLE001 — capture for caller filtering
         logger.exception(
             "Rollout failed for %s gen=%d: %s",
-            spec.section_id, spec.generation_idx, exc,
+            spec.section_id,
+            spec.generation_idx,
+            exc,
         )
         return RolloutResult(
             spec=spec,

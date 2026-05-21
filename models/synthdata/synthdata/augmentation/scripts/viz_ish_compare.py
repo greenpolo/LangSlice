@@ -5,6 +5,7 @@ Three rows:
     real WM corpus callosum | procedural WM patch
     real expressed hippocampus | procedural expressed patch
 """
+
 from __future__ import annotations
 
 import sys
@@ -14,11 +15,9 @@ sys.path.insert(0, "src")
 sys.path.insert(0, "models/langslice-gemma-4/data")
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
-
 from augmentation.transforms.base import TransformContext
 from augmentation.transforms.texture import ISHExpressionPuncta
-
+from PIL import Image, ImageDraw, ImageFont
 
 REAL_GM = Path("tmp/outputs/ish/real_gm_crop.png")
 REAL_WM = Path("tmp/outputs/ish/real_wm_crop.png")
@@ -138,6 +137,7 @@ def main() -> int:
         rows.append(np.concatenate([r, p], axis=1))
 
     target_w = max(r.shape[1] for r in rows)
+
     def pad(a):
         if a.shape[1] == target_w:
             return a

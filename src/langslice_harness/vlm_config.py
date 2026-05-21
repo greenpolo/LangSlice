@@ -4,6 +4,8 @@ import atexit
 import importlib
 import logging
 import os
+import sys
+import types
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
@@ -487,3 +489,36 @@ def __getattr__(name: str) -> object:
     if attr is not None:
         return getattr(_runtime, attr)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+class _RuntimeConfigModule(types.ModuleType):
+    """Module type that keeps legacy global assignment in sync with _runtime."""
+
+    def __getattribute__(self, name: str) -> object:
+        runtime_attrs = types.ModuleType.__getattribute__(self, "_RUNTIME_ATTRS")
+        attr = runtime_attrs.get(name)
+        if attr is not None:
+            runtime = types.ModuleType.__getattribute__(self, "_runtime")
+            return getattr(runtime, attr)
+        return types.ModuleType.__getattribute__(self, name)
+
+    def __setattr__(self, name: str, value: object) -> None:
+        runtime_attrs = types.ModuleType.__getattribute__(self, "_RUNTIME_ATTRS")
+        attr = runtime_attrs.get(name)
+        if attr is None:
+            types.ModuleType.__setattr__(self, name, value)
+            return
+
+        runtime = cast(Any, types.ModuleType.__getattribute__(self, "_runtime"))
+        if name == "TEMPERATURE":
+            setattr(runtime, attr, float(cast(Any, value)))
+        elif name == "CODE_EXECUTION_ENABLED":
+            setattr(runtime, attr, bool(value))
+        elif name == "THINKING_LEVEL":
+            setattr(runtime, attr, str(value))
+            runtime._thinking_overridden = True
+        else:
+            setattr(runtime, attr, str(value))
+
+
+sys.modules[__name__].__class__ = _RuntimeConfigModule

@@ -1,4 +1,5 @@
 """End-to-end Nissl diversification panel — 9 variants of the same atlas slice."""
+
 from __future__ import annotations
 
 import sys
@@ -8,11 +9,13 @@ sys.path.insert(0, "src")
 sys.path.insert(0, "models/langslice-gemma-4/data")
 
 import numpy as np
+from augmentation.nissl_pipeline import render_nissl_section
 from PIL import Image
 
-from augmentation.nissl_pipeline import render_nissl_section
 from langslice_harness.atlas.core import (
-    get_reference_slice, load_atlas, position_mm_to_index,
+    get_reference_slice,
+    load_atlas,
+    position_mm_to_index,
 )
 from langslice_harness.atlas.space import atlas_space_context, slice_axis_index
 
@@ -59,7 +62,7 @@ def main() -> int:
     grid = np.zeros((rows * h0, cols * w0, 3), dtype=np.uint8)
     for idx, img in enumerate(cells):
         r, c = divmod(idx, cols)
-        grid[r * h0:(r + 1) * h0, c * w0:(c + 1) * w0] = img
+        grid[r * h0 : (r + 1) * h0, c * w0 : (c + 1) * w0] = img
 
     out_path = Path("tmp/outputs/nissl/diversity.png")
     Image.fromarray(grid).save(out_path)

@@ -11,8 +11,8 @@ Renderer signature (uniform across all entries in SIGNAL_REGISTRY):
         *,
         ctx: TransformContext,
         rng: np.random.Generator,
-        **kwargs,                       # mode-specific overrides forwarded from ISHMode.signal_kwargs
-    ) -> np.ndarray                    # HWC float32 [0,1]
+        **kwargs,  # mode-specific overrides forwarded from ISHMode.signal_kwargs
+    ) -> np.ndarray  # HWC float32 [0,1]
 
 The renderers respect ``ctx.counterstain_signal_mask`` when it is not
 None: pixels where the counterstain has already deposited pigment
@@ -54,7 +54,9 @@ def apply_nbt_bcip_signal(
     rng: np.random.Generator,
     wash_color: tuple[float, float, float] = (0.30, 0.25, 0.55),
     punctum_color_range: tuple[
-        tuple[float, float], tuple[float, float], tuple[float, float],
+        tuple[float, float],
+        tuple[float, float],
+        tuple[float, float],
     ] = ((0.18, 0.40), (0.15, 0.32), (0.45, 0.70)),
     density_range_per_mm2: tuple[float, float] = (1500.0, 3500.0),
     wash_strength_range: tuple[float, float] = (0.04, 0.14),

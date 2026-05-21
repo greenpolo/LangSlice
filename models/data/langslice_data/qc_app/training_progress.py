@@ -80,9 +80,9 @@ import logging
 import threading
 import time
 from collections import deque
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable
 
 logger = logging.getLogger("qc_app.training_progress")
 
@@ -322,9 +322,7 @@ class TrainingProgress:
         ev = _StepEvent(step=step, ts=ts, ids=ids, kind=kind, phase=phase)
         self._consumed.recent.append(ev)
         for rid in ids:
-            self._consumed.by_id[rid] = _ConsumedRecord(
-                step=step, ts=ts, kind=kind, phase=phase
-            )
+            self._consumed.by_id[rid] = _ConsumedRecord(step=step, ts=ts, kind=kind, phase=phase)
         if step > self._consumed.last_step:
             self._consumed.last_step = step
 
@@ -405,16 +403,10 @@ class TrainingProgress:
         self._run_mtime = st.st_mtime
 
     def _any_file_present_locked(self) -> bool:
-        return (
-            self.consumed_path.exists()
-            or self.queue_path.exists()
-            or self.run_path.exists()
-        )
+        return self.consumed_path.exists() or self.queue_path.exists() or self.run_path.exists()
 
 
-def status_per_id(
-    progress: TrainingProgress, ids: Iterable[str]
-) -> dict[str, dict]:
+def status_per_id(progress: TrainingProgress, ids: Iterable[str]) -> dict[str, dict]:
     """Convenience: project consumed/queued metadata for a set of ids.
 
     Output: id -> {"status": "consumed"|"queued"|"unseen",

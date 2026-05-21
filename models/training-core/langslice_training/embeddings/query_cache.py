@@ -60,9 +60,7 @@ import torch
 # Cache filename pattern: <plane>__<dataset>.pt
 # Plane is restricted to the canonical three to make the regex unambiguous;
 # dataset is anything not containing the double-underscore separator.
-_FILENAME_RE = re.compile(
-    r"^(?P<plane>coronal|sagittal|horizontal)__(?P<dataset>.+)\.pt$"
-)
+_FILENAME_RE = re.compile(r"^(?P<plane>coronal|sagittal|horizontal)__(?P<dataset>.+)\.pt$")
 
 
 @dataclass
@@ -85,8 +83,7 @@ class _QueryCacheEntry:
             payload = torch.load(self.path, map_location="cpu", weights_only=False)
         if not isinstance(payload, dict) or "embeddings" not in payload:
             raise RuntimeError(
-                f"query embedding cache file {self.path} is malformed "
-                "(missing 'embeddings' key)"
+                f"query embedding cache file {self.path} is malformed (missing 'embeddings' key)"
             )
         self.embeddings = payload["embeddings"]
 

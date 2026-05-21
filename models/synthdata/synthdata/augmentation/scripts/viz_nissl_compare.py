@@ -9,6 +9,7 @@ Tunes the procedural pipeline against a known real sample. The synthetic
 patches use a uniform GM-only or WM-only mask + uniform high density so the
 comparison isolates color/sigma/density choices, not anatomy.
 """
+
 from __future__ import annotations
 
 import sys
@@ -18,13 +19,12 @@ sys.path.insert(0, "src")
 sys.path.insert(0, "models/langslice-gemma-4/data")
 
 import numpy as np
-from PIL import Image
-
 from augmentation.transforms.base import TransformContext
 from augmentation.transforms.texture import (
-    NisslGrayMatterCellBodies, NisslWhiteMatterCellBodies,
+    NisslGrayMatterCellBodies,
+    NisslWhiteMatterCellBodies,
 )
-
+from PIL import Image
 
 REAL_GM = Path("tmp/outputs/nissl/real_gm_crop.png")
 REAL_WM = Path("tmp/outputs/nissl/real_wm_crop.png")
@@ -98,6 +98,7 @@ def _to_uint8(arr: np.ndarray) -> np.ndarray:
 
 def _label(arr: np.ndarray, text: str) -> np.ndarray:
     from PIL import ImageDraw, ImageFont
+
     img = Image.fromarray(arr)
     draw = ImageDraw.Draw(img)
     try:
@@ -127,6 +128,7 @@ def main() -> int:
 
     # Pad widths to the wider row
     target_w = max(gm_row.shape[1], wm_row.shape[1])
+
     def pad_w(a):
         if a.shape[1] == target_w:
             return a

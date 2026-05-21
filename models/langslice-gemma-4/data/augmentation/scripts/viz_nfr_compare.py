@@ -8,6 +8,7 @@ Bottom row:
 The procedural patches use a uniform GM-only or WM-only mask + uniform high
 density to isolate color / sigma / density choices from anatomy.
 """
+
 from __future__ import annotations
 
 import sys
@@ -26,8 +27,13 @@ REAL_WM = Path("tmp/outputs/nfr/real_wm_crop.png")
 OUT = Path("tmp/outputs/nfr/compare.png")
 
 
-def _ctx_uniform_class(h: int, w: int, *, kind: str) -> tuple[
-    TransformContext, dict[str, np.ndarray], np.ndarray, np.ndarray,
+def _ctx_uniform_class(
+    h: int, w: int, *, kind: str
+) -> tuple[
+    TransformContext,
+    dict[str, np.ndarray],
+    np.ndarray,
+    np.ndarray,
 ]:
     if kind not in ("gray_matter", "white_matter"):
         raise ValueError(kind)
@@ -58,8 +64,14 @@ def render_gm_patch(h: int, w: int, *, seed: int) -> np.ndarray:
     ctx, masks, density, ann = _ctx_uniform_class(h, w, kind="gray_matter")
     ref = np.full((h, w), 220, dtype=np.uint8)
     return render_nuclear_fast_red_counterstain(
-        ref, ann, object(),
-        masks=masks, density_map=density, ctx=ctx, rng=rng, pixel_size_um=5.0,
+        ref,
+        ann,
+        object(),
+        masks=masks,
+        density_map=density,
+        ctx=ctx,
+        rng=rng,
+        pixel_size_um=5.0,
         substrate_base=(0.93, 0.85, 0.85),
         density_range_per_mm2_gm=(3200.0, 4200.0),
     )
@@ -70,8 +82,14 @@ def render_wm_patch(h: int, w: int, *, seed: int) -> np.ndarray:
     ctx, masks, density, ann = _ctx_uniform_class(h, w, kind="white_matter")
     ref = np.full((h, w), 220, dtype=np.uint8)
     return render_nuclear_fast_red_counterstain(
-        ref, ann, object(),
-        masks=masks, density_map=density, ctx=ctx, rng=rng, pixel_size_um=5.0,
+        ref,
+        ann,
+        object(),
+        masks=masks,
+        density_map=density,
+        ctx=ctx,
+        rng=rng,
+        pixel_size_um=5.0,
         substrate_base=(0.94, 0.86, 0.86),
         density_range_per_mm2_wm=(250.0, 400.0),
     )
@@ -83,6 +101,7 @@ def _to_uint8(arr: np.ndarray) -> np.ndarray:
 
 def _label(arr: np.ndarray, text: str) -> np.ndarray:
     from PIL import ImageDraw, ImageFont
+
     img = Image.fromarray(arr)
     draw = ImageDraw.Draw(img)
     try:

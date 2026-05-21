@@ -32,8 +32,8 @@ needs an ``all_gather`` of recent errors (or rank-0-only schedule + broadcast).
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import dataclass, field
-from typing import Sequence
+from collections.abc import Sequence
+from dataclasses import dataclass
 
 # ---------------------------------------------------------------------------
 # Public types
@@ -46,6 +46,7 @@ ErrorObservation = tuple[float, float, str, str, str]
 # ---------------------------------------------------------------------------
 # Buffer factory
 # ---------------------------------------------------------------------------
+
 
 def make_error_buffer(maxlen: int = 1024) -> deque[ErrorObservation]:
     """Construct a fresh error buffer for one consumer (iSFT or RL).
@@ -68,6 +69,7 @@ def make_error_buffer(maxlen: int = 1024) -> deque[ErrorObservation]:
 # ---------------------------------------------------------------------------
 # Pure-quantile helper
 # ---------------------------------------------------------------------------
+
 
 def _quantile(sorted_values: list[float], q: float) -> float:
     """Linear-interpolated quantile over a pre-sorted list.
@@ -92,6 +94,7 @@ def _quantile(sorted_values: list[float], q: float) -> float:
 # ---------------------------------------------------------------------------
 # Schedule
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class AdaptiveSchedule:
@@ -167,18 +170,14 @@ class AdaptiveSchedule:
             return self.warmup_sigma_frac, self.warmup_cutoff_frac
 
         error_fracs = sorted(
-            abs_err / axis_span
-            for abs_err, axis_span, *_ in buffer
-            if axis_span > 0
+            abs_err / axis_span for abs_err, axis_span, *_ in buffer if axis_span > 0
         )
         if not error_fracs:
             return self.warmup_sigma_frac, self.warmup_cutoff_frac
 
         return self._derive_from_sorted(error_fracs)
 
-    def _derive_from_sorted(
-        self, sorted_fracs: list[float]
-    ) -> tuple[float, float]:
+    def _derive_from_sorted(self, sorted_fracs: list[float]) -> tuple[float, float]:
         sigma_min, sigma_max = self.sigma_clamp
         _, cutoff_max = self.cutoff_clamp
 

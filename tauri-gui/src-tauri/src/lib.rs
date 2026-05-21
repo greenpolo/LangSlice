@@ -1,5 +1,6 @@
 mod atlas;
 mod commands;
+mod engine;
 mod litert_lm;
 mod local_engines;
 mod ollama;

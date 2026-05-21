@@ -1361,6 +1361,7 @@ def _phase_eval(
     in_container_out = _to_container_path(eval_out_dir, repo_root)
     served = served_name or args.vllm_served_name
     model_arg = f"litellm-proxy:{served}"
+    eval_concurrency = getattr(args, "eval_concurrency", getattr(args, "concurrency", 16))
     # In-container slicebench can't reach the host's `127.0.0.1:8000` (that's
     # container loopback, not host). vLLM lives on the same docker-compose
     # default network under service name `vllm`, so route via service DNS.
@@ -1378,7 +1379,7 @@ def _phase_eval(
         f"python -m slicebench.run --model {model_arg} "
         f"--bench {args.eval_bench} --out {in_container_out} "
         f"--num-generations {args.eval_num_generations} "
-        f"--concurrency {args.eval_concurrency} && "
+        f"--concurrency {eval_concurrency} && "
         f"python -m slicebench.score {in_container_out}"
     )
     cmd = _docker_exec_training_cmd(
@@ -2197,7 +2198,7 @@ def main(argv: list[str] | None = None) -> int:
         logger.error("--rounds must be >= 1 (got %d)", args.rounds)
         return 2
     _assert_no_double_lora(args)
-    if not args.skip_container_check:
+    if not args.skip_container_check and not args.skip_retrain:
         _verify_training_container_running(args.training_container_name)
 
     # Wire --vllm-url to the env vars that langslice_harness.model_resolver

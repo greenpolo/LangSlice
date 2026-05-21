@@ -165,17 +165,17 @@ _ATLAS_TISSUE_ROOTS: dict[str, dict[str, str]] = {
 # Keyword-fallback patterns used when an atlas is not in the explicit mapping
 # ---------------------------------------------------------------------------
 
-_GRAY_MATTER_PATTERNS = re.compile(
-    r"(grey|gray matter|basic cell groups|isocortex|cerebrum)", re.I
-)
+_GRAY_MATTER_PATTERNS = re.compile(r"(grey|gray matter|basic cell groups|isocortex|cerebrum)", re.I)
 _WHITE_MATTER_PATTERNS = re.compile(
     r"(white matter|fiber tract|fibre tract|corpus callosum|internal capsule"
     r"|callosum|commissure|capsule|funiculus|lemniscus|peduncle|fasciculus"
-    r"|fornix|fimbria|stria|tract)", re.I
+    r"|fornix|fimbria|stria|tract)",
+    re.I,
 )
 _VENTRICLE_PATTERNS = re.compile(
     r"(ventricle|ventricular system|aqueduct|csf|lateral ventricle"
-    r"|third ventricle|fourth ventricle|central canal)", re.I
+    r"|third ventricle|fourth ventricle|central canal)",
+    re.I,
 )
 
 # Concepts whose union forms ``dense_cell_layers`` — these are densely-packed
@@ -382,9 +382,7 @@ def _specific_structure_id_sets(atlas: object) -> dict[str, frozenset[int]]:
             candidate_acronyms=candidate_acronyms,
             name_pattern=name_pattern,
         )
-        result[key] = (
-            _id_set_from_atlas_obj(atlas, acronym) if acronym is not None else frozenset()
-        )
+        result[key] = _id_set_from_atlas_obj(atlas, acronym) if acronym is not None else frozenset()
     return result
 
 
@@ -459,15 +457,15 @@ def classify_tissue(
 
     for concept in list_concepts():
         ids = concept_id_set(atlas, concept)
-        masks[concept] = np.isin(
-            annotation_slice, np.fromiter(ids, dtype=np.int64)
-        )
+        masks[concept] = np.isin(annotation_slice, np.fromiter(ids, dtype=np.int64))
 
     # Backward-compat aggregate: union of every dense-cell-layer concept,
     # so existing callers asking for ``ctx.tissue_class_masks["dense_cell_layers"]``
     # keep working. The aggregate set may be edited by appending or removing
     # entries to ``_DENSE_CELL_LAYER_CONCEPTS``.
-    dense_mask = np.zeros_like(masks["tissue"] if "tissue" in masks else annotation_slice == 0, dtype=bool)
+    dense_mask = np.zeros_like(
+        masks["tissue"] if "tissue" in masks else annotation_slice == 0, dtype=bool
+    )
     for concept in _DENSE_CELL_LAYER_CONCEPTS:
         if concept in masks:
             dense_mask |= masks[concept]

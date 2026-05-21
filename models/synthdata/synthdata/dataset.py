@@ -3,12 +3,15 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Iterable, Iterator, Mapping
+from typing import Any
 
 import numpy as np
 from PIL import Image
+
+from langslice_harness.atlas.core import get_position_range_mm, load_atlas
 
 from .augmentation.brightfield_pipeline import render_brightfield_section
 from .augmentation.dapi_pipeline import render_dapi_section
@@ -17,7 +20,6 @@ from .augmentation.ish_pipeline import render_ish_section
 from .augmentation.modes import FLUORESCENCE_MODES, ISH_MODES
 from .augmentation.nissl_pipeline import render_nissl_section
 from .augmentation.oblique import get_oblique_slice, sample_oblique_angles
-from langslice_harness.atlas.core import get_position_range_mm, load_atlas
 
 __version__ = "0.1.0"
 

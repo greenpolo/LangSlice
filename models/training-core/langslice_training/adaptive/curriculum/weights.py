@@ -222,7 +222,7 @@ def compute_weights(
 
 
 def update_weighted_dataset(
-    dataset: "WeightedRowDataset",
+    dataset: WeightedRowDataset,
     weights: dict[str, float],
     *,
     section_id_key: str = "section_id",

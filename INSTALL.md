@@ -1,9 +1,10 @@
 # LangSlice — Install (v0.1 developer preview)
 
 The v0.1 Tauri desktop app is a **developer preview**: it wraps the
-Python `langslice-harness` CLI and needs Python 3.10+ available on
-`PATH`. The estimation, registration, and quick-affine features all
-shell out to Python at runtime — the installer alone is not enough.
+Python `langslice-harness` engine and needs Python 3.10+ available on
+`PATH`. Estimation, registration, and quick-affine preview use the
+`langslice serve --stdio` engine protocol. Export still shells out through
+the legacy registration CLI path. The installer alone is not enough.
 
 For the no-prereq option, use the browser version at
 [greenpolo.github.io/LangSlice](https://greenpolo.github.io/LangSlice).
@@ -90,6 +91,9 @@ the estimate completes, the Python pipeline is wired up correctly.
 - **"No module named langslice_harness"** — the `python` on PATH isn't
   the one with `langslice-harness` installed. Either install into the
   global Python, or update PATH so your venv's `python.exe` wins.
+- **"Engine error ..."** — the Tauri app reached the Python engine, but
+  the engine rejected or failed the request. Open the app log panel for
+  the streamed pipeline message.
 - **Atlas operations hang on first run** — BrainGlobe is downloading
   the atlas (~500 MB for `allen_mouse_25um`). Check
   `~/.brainglobe/` for progress.

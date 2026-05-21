@@ -29,7 +29,8 @@ from .density import atlas_grayscale_density_map, shade_substrate_by_atlas
 from .signals import apply_dab_signal
 from .transforms.base import TransformContext
 from .transforms.texture import (
-    BrightfieldGrayMatterDAB, BrightfieldWhiteMatterDAB,
+    BrightfieldGrayMatterDAB,
+    BrightfieldWhiteMatterDAB,
 )
 from .transforms.tissue_class import classify_tissue
 
@@ -73,7 +74,8 @@ def _build_tan_canvas(
 
 
 def _apply_brightfield_tone_shift(
-    canvas: np.ndarray, rng: np.random.Generator,
+    canvas: np.ndarray,
+    rng: np.random.Generator,
 ) -> np.ndarray:
     """Tan/yellow drift mimicking microscope white-balance variation."""
     warm = rng.uniform(-0.05, 0.10)
@@ -86,7 +88,8 @@ def _apply_brightfield_tone_shift(
 
 
 def _apply_brightness_contrast(
-    canvas: np.ndarray, rng: np.random.Generator,
+    canvas: np.ndarray,
+    rng: np.random.Generator,
 ) -> np.ndarray:
     brightness = rng.uniform(0.85, 1.10)
     contrast = rng.uniform(0.85, 1.15)
@@ -165,15 +168,17 @@ def render_brightfield_section(
         use_hematoxylin = False
     else:
         raise ValueError(
-            f"Unknown counterstain {counterstain!r}; "
-            "expected 'none', 'hematoxylin', or 'auto'."
+            f"Unknown counterstain {counterstain!r}; expected 'none', 'hematoxylin', or 'auto'."
         )
 
     masks = classify_tissue(annotation_slice, atlas)
     gamma = float(rng.uniform(*gamma_range))
     floor = float(rng.uniform(*floor_range))
     density = atlas_grayscale_density_map(
-        reference_slice, masks["tissue"], gamma=gamma, floor=floor,
+        reference_slice,
+        masks["tissue"],
+        gamma=gamma,
+        floor=floor,
     )
 
     ctx = TransformContext(
@@ -200,7 +205,9 @@ def render_brightfield_section(
         #      overwhelm the blue-violet nuclei already on the canvas.
         # ------------------------------------------------------------------ #
         canvas = render_hematoxylin_counterstain(
-            reference_slice, annotation_slice, atlas,
+            reference_slice,
+            annotation_slice,
+            atlas,
             masks=masks,
             density_map=density,
             ctx=ctx,
@@ -228,21 +235,34 @@ def render_brightfield_section(
         canvas = _build_tan_canvas((h, w), substrate_mask, tan_base, rng)
         shading_strength = float(rng.uniform(0.10, 0.24))
         canvas = shade_substrate_by_atlas(
-            canvas, reference_slice, substrate_mask,
-            strength=shading_strength, gamma=1.0,
+            canvas,
+            reference_slice,
+            substrate_mask,
+            strength=shading_strength,
+            gamma=1.0,
         )
         canvas = BrightfieldGrayMatterDAB(p=1.0, tan=tan_base)(
-            canvas, rng=rng, ctx=ctx, mode=chosen_mode,
+            canvas,
+            rng=rng,
+            ctx=ctx,
+            mode=chosen_mode,
         )
         canvas = BrightfieldWhiteMatterDAB(p=1.0, tan=tan_base)(
-            canvas, rng=rng, ctx=ctx, mode=chosen_mode,
+            canvas,
+            rng=rng,
+            ctx=ctx,
+            mode=chosen_mode,
         )
         canvas = _apply_brightfield_tone_shift(canvas, rng)
         canvas = _apply_brightness_contrast(canvas, rng)
 
     if apply_damage:
         canvas = apply_damage_layer(
-            canvas, rng=rng, ctx=ctx, modality="brightfield", intensity=damage_intensity,
+            canvas,
+            rng=rng,
+            ctx=ctx,
+            modality="brightfield",
+            intensity=damage_intensity,
             geometry=apply_geometry_warp,
         )
     return canvas

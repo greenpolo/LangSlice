@@ -109,8 +109,7 @@ class _CacheEntry:
             payload = torch.load(self.path, map_location="cpu", weights_only=False)
         if not isinstance(payload, dict) or "embeddings" not in payload:
             raise RuntimeError(
-                f"atlas embedding cache file {self.path} is malformed "
-                "(missing 'embeddings' key)"
+                f"atlas embedding cache file {self.path} is malformed (missing 'embeddings' key)"
             )
         self.embeddings = payload["embeddings"]
 

@@ -222,9 +222,7 @@ class ResolutionShift:
         down = TVF.resize(
             t, [mid_h, mid_w], interpolation=InterpolationMode.BILINEAR, antialias=True
         )
-        up = TVF.resize(
-            down, [h, w], interpolation=InterpolationMode.BILINEAR, antialias=True
-        )
+        up = TVF.resize(down, [h, w], interpolation=InterpolationMode.BILINEAR, antialias=True)
         result = _to_numpy(up).astype(np.float32)
 
         if ctx.density_map is not None:
@@ -307,8 +305,8 @@ class BladeStretchHorizontal:
         # Shear: small skew along x-axis.
         theta = torch.tensor(
             [
-                [1.0 / sx,  math.tan(shear_rad) / sx, 0.0],
-                [0.0,        1.0 / sy,                  0.0],
+                [1.0 / sx, math.tan(shear_rad) / sx, 0.0],
+                [0.0, 1.0 / sy, 0.0],
             ],
             dtype=torch.float32,
         ).unsqueeze(0)
@@ -317,6 +315,8 @@ class BladeStretchHorizontal:
         t = _to_tensor(image, device)
         theta = theta.to(device)
         grid = torch.nn.functional.affine_grid(theta, list(t.shape), align_corners=False)
-        out = TF.grid_sample(t, grid, mode="bilinear", padding_mode="reflection", align_corners=False)
+        out = TF.grid_sample(
+            t, grid, mode="bilinear", padding_mode="reflection", align_corners=False
+        )
         result = _to_numpy(out).astype(np.float32)
         return np.clip(result, 0.0, 1.0)

@@ -1,6 +1,8 @@
 // Barrel re-export so other modules can grab these from `lib/types`. The
 // source of truth lives in `localEngines.ts` (probe impl owns the shape).
 export type { LocalEngineStatus, LocalModel, CustomEndpoint } from "./localEngines";
+export type { WebDemoSupportedEngineMethod } from "./engineTypes";
+export { WEB_DEMO_SUPPORTED_ENGINE_METHODS } from "./engineTypes";
 
 /** Matches Rust AtlasMetadata */
 export interface AtlasMetadata {
@@ -139,4 +141,3 @@ export interface ChatTelemetry {
   elapsedMs?: number;
   tokensPerSec?: number;
 }
-

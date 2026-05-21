@@ -486,9 +486,7 @@ def preprocess_query_image(
     return prepped.convert("RGB")
 
 
-def _row_from_single(
-    ex: SingleSliceExample, *, clahe_fraction: float
-) -> dict[str, Any]:
+def _row_from_single(ex: SingleSliceExample, *, clahe_fraction: float) -> dict[str, Any]:
     system, pos_lo, pos_hi = _system_prompt_single(ex.atlas_name, ex.plane)
     user_text = "Estimate the position (mm) of this slice."
     return {
@@ -521,9 +519,7 @@ def _row_from_single(
     }
 
 
-def _row_from_group(
-    ex: GroupExample, *, clahe_fraction: float
-) -> dict[str, Any]:
+def _row_from_group(ex: GroupExample, *, clahe_fraction: float) -> dict[str, Any]:
     n = len(ex.image_paths)
     system, pos_lo, pos_hi = _system_prompt_group(
         ex.atlas_name,
@@ -545,9 +541,7 @@ def _row_from_group(
             {"role": "user", "content": user_blocks},
         ],
         "_image_paths": tuple(str(p) for p in ex.image_paths),
-        "_apply_clahes": tuple(
-            _should_apply_clahe(sid, clahe_fraction) for sid in ex.section_ids
-        ),
+        "_apply_clahes": tuple(_should_apply_clahe(sid, clahe_fraction) for sid in ex.section_ids),
         "_atlas_long_edge": _atlas_in_plane_long_edge(ex.atlas_name, ex.plane),
         "atlas_name": canonicalize_atlas_name(ex.atlas_name),
         "plane": ex.plane,

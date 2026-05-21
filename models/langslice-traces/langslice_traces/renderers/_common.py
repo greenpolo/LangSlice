@@ -138,7 +138,7 @@ _SUBMIT_ESTIMATE_TOOL: dict[str, Any] = {
                 "position_mm": {"type": "number"},
                 "reasoning": {"type": "string"},
             },
-            "required": ["position_mm", "reasoning"],
+            "required": ["position_mm"],
         },
     },
 }

@@ -12,8 +12,9 @@ each (image, truth_position_mm) pair is unrolled into its own index entry.
 from __future__ import annotations
 
 import random
+from collections.abc import Callable, Iterable, Iterator
 from pathlib import Path
-from typing import Any, Callable, Iterable, Iterator, Literal
+from typing import Any, Literal
 
 from .augmentations import AtlasFetchJitter
 from .manifest import TraceManifestRow, load_manifest
@@ -194,7 +195,7 @@ class TraceIterator:
                 # parse_manifest_record already enforces this for grouped
                 # records; keep the guard for defensive iteration.
                 continue
-            for image, pos in zip(row.images, row.truth_positions_mm):
+            for image, pos in zip(row.images, row.truth_positions_mm, strict=True):
                 key = (row.plane, subject_id, Path(image).stem)
                 index[key] = float(pos)
         return index

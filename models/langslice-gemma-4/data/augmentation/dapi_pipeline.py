@@ -47,7 +47,8 @@ def _apply_tone_shift(canvas: np.ndarray, rng: np.random.Generator) -> np.ndarra
 
 
 def _apply_brightness_contrast(
-    canvas: np.ndarray, rng: np.random.Generator,
+    canvas: np.ndarray,
+    rng: np.random.Generator,
 ) -> np.ndarray:
     # The texture renderers are now GT-calibrated (mean ≈ 0.20 by design).
     # We only apply mild per-image variation here for exposure diversity
@@ -107,7 +108,10 @@ def render_dapi_section(
     gamma = float(rng.uniform(*gamma_range))
     floor = float(rng.uniform(*floor_range))
     density = atlas_grayscale_density_map(
-        ref, masks["tissue"], gamma=gamma, floor=floor,
+        ref,
+        masks["tissue"],
+        gamma=gamma,
+        floor=floor,
     )
 
     ctx = TransformContext(
@@ -131,7 +135,11 @@ def render_dapi_section(
     canvas = _apply_brightness_contrast(canvas, rng)
     if apply_damage:
         canvas = apply_damage_layer(
-            canvas, rng=rng, ctx=ctx, modality="dapi", intensity=damage_intensity,
+            canvas,
+            rng=rng,
+            ctx=ctx,
+            modality="dapi",
+            intensity=damage_intensity,
             geometry=apply_geometry_warp,
         )
     return canvas

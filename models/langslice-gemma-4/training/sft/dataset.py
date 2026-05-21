@@ -54,11 +54,11 @@ def load_examples(
 
     ``validate_image_paths=False`` skips the per-row fs.stat() of every
     query_image_path and trace[i].tool_result.image_paths entry. Use this
-    only when the corpus has been pre-validated upstream (e.g. by
-    ``models/langslice-gemma-4/training/tools/snap_corpus_atlas_paths.py``, which validates atlas + query
-    paths and snaps off-grid atlas positions). Saves ~30 min of
-    NTFS-via-Docker p9 RPC overhead at 65k+ rows on Windows hosts. Schema
-    validation still runs regardless.
+    only when the corpus has been pre-validated upstream (e.g. by the
+    ``snap_corpus_atlas_paths.py`` training tool, which validates atlas +
+    query paths and snaps off-grid atlas positions). Saves ~30 min of
+    NTFS-via-Docker p9 RPC overhead at 65k+ rows on Windows hosts.
+    Schema validation still runs regardless.
     """
     path = Path(jsonl_path)
     root = path.parent

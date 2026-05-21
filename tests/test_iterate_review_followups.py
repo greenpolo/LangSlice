@@ -16,10 +16,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
-
 from iSFT.iterate import _count_synthetic_rows
-
 
 # ──────────────────────────────────────────────────────────────────────────
 # _count_synthetic_rows

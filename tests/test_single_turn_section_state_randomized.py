@@ -31,7 +31,6 @@ import pytest
 
 # Defer torch import to test bodies — needed by load_atlas_grid but not by
 # the CLI-help / parse-time tests.
-
 from single_turn_rl import section_state as ss
 from single_turn_rl.manifest_index import ManifestIndex
 
@@ -335,8 +334,9 @@ def test_randomized_grid_compliance(
     pytest.importorskip("torch")
     _stub_atlas_range(monkeypatch)
     _seed_query_files(tmp_path, index, "coronal")
-    from langslice_traces import load_atlas_grid  # noqa: PLC0415
     import random as _random
+
+    from langslice_traces import load_atlas_grid  # noqa: PLC0415
 
     grid = load_atlas_grid(ATLAS_CACHE_DIR, "allen_mouse_25um", "coronal")
     grid_set = {round(g, 6) for g in grid}

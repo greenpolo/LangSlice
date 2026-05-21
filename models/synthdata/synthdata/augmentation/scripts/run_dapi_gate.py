@@ -12,6 +12,7 @@ End-to-end:
 Pass condition: held-out accuracy ≤ 0.55. Anything higher means the augmented
 set has a detectable signature.
 """
+
 from __future__ import annotations
 
 import json
@@ -26,12 +27,15 @@ sys.path.insert(0, "models/langslice-gemma-4/data")
 import dataclasses
 
 import numpy as np
-from PIL import Image
-
 from augmentation.dapi_pipeline import render_dapi_section
 from augmentation.validate import run_separability_gate
+from PIL import Image
+
 from langslice_harness.atlas.core import (
-    get_position_range_mm, get_reference_slice, load_atlas, position_mm_to_index,
+    get_position_range_mm,
+    get_reference_slice,
+    load_atlas,
+    position_mm_to_index,
 )
 from langslice_harness.atlas.space import atlas_space_context, slice_axis_index
 
@@ -96,7 +100,11 @@ def generate_augmented_set(atlas: object, n: int, master_seed: int) -> list[Path
         t0 = time.time()
         ref, ann = upsampled_inputs(atlas, ap)
         img = render_dapi_section(
-            ref, ann, atlas, seed=seed, pixel_size_um=TARGET_PX_UM,
+            ref,
+            ann,
+            atlas,
+            seed=seed,
+            pixel_size_um=TARGET_PX_UM,
         )
         arr = np.clip(img * 255, 0, 255).astype(np.uint8)
         path = AUG_DIR / f"aug_{i:04d}_ap{ap:05.2f}_s{seed}.png"
@@ -142,7 +150,9 @@ def main() -> int:
     print(f"  modality:    {result.modality}")
     print(f"  accuracy:    {result.accuracy:.4f}")
     print(f"  auc:         {result.auc:.4f}")
-    print(f"  ci 95%:      [{result.confidence_interval[0]:.4f}, {result.confidence_interval[1]:.4f}]")
+    print(
+        f"  ci 95%:      [{result.confidence_interval[0]:.4f}, {result.confidence_interval[1]:.4f}]"
+    )
     print(f"  n_train:     {result.n_train}  ({result.n_real_subjects_train} real subjects)")
     print(f"  n_test:      {result.n_test}  ({result.n_real_subjects_test} real subjects)")
     print(f"  PASS GATE?:  {result.pass_gate}  (target ≤ 0.55)")
