@@ -31,8 +31,8 @@ import pytest
 
 # Defer torch import to test bodies — needed by load_atlas_grid but not by
 # the CLI-help / parse-time tests.
-from single_turn_rl import section_state as ss
-from single_turn_rl.manifest_index import ManifestIndex
+from langslice_training.rl.single_turn import section_state as ss
+from langslice_training.rl.single_turn.manifest_index import ManifestIndex
 
 # ---------------------------------------------------------------------------
 # Atlas embedding cache dependency (per-test skip, not module-wide)

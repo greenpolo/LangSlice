@@ -1,4 +1,4 @@
-"""Smoke tests for ``rlvr.dataset.load_rlvr_allocation``.
+"""Smoke tests for ``langslice_training.rl.common.dataset.load_rlvr_allocation``.
 
 The loader joins per-plane RLVR allocation files with their dataset shards and
 produces ``SingleSliceExample`` rows with absolute image paths. Tests here use
@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from rlvr.dataset import SingleSliceExample, load_rlvr_allocation
+from langslice_training.rl.common.dataset import SingleSliceExample, load_rlvr_allocation
 
 
 def _write_jsonl(path: Path, rows: list[dict]) -> None:

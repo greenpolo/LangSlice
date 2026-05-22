@@ -33,15 +33,15 @@ from unittest.mock import MagicMock
 
 import pytest
 import torch
-from single_turn_rl import adaptive_reward as ar
-from single_turn_rl import dataset as ds
-from single_turn_rl import section_state as ss
-from single_turn_rl import train_grpo as tg
-from single_turn_rl.curriculum import (
+from langslice_training.rl.single_turn import adaptive_reward as ar
+from langslice_training.rl.single_turn import dataset as ds
+from langslice_training.rl.single_turn import section_state as ss
+from langslice_training.rl.single_turn import train_grpo as tg
+from langslice_training.rl.single_turn.curriculum import (
     AdaRFTCurriculumCallback,
     CurriculumRepeatingSampler,
 )
-from single_turn_rl.manifest_index import ManifestIndex
+from langslice_training.rl.single_turn.manifest_index import ManifestIndex
 
 # ---------------------------------------------------------------------------
 # Synthetic manifest builder (mirrors test_section_state)
@@ -732,7 +732,7 @@ def _stub_trl_imports(
     grpo_cls: type = _FakeGRPOTrainer,
     curriculum_cls: type = _FakeCurriculumGRPOTrainer,
 ) -> None:
-    """Patch ``trl.GRPOTrainer`` and ``curriculum.sampler.CurriculumGRPOTrainer``
+    """Patch ``trl.GRPOTrainer`` and curriculum trainer import targets
     inside ``_select_trainer_cls``'s import scope."""
     import sys
 
@@ -746,6 +746,11 @@ def _stub_trl_imports(
     )
     monkeypatch.setitem(
         sys.modules, "curriculum.sampler", fake_curriculum_sampler_module,
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "langslice_training.adaptive.curriculum.sampler",
+        fake_curriculum_sampler_module,
     )
 
 

@@ -1,4 +1,4 @@
-"""Tests for ``curriculum.weights`` — Phase C of the LangSlice curriculum.
+"""Tests for ``langslice_training.adaptive.curriculum.weights``.
 
 The formula under test is::
 
@@ -14,7 +14,7 @@ import json
 from pathlib import Path
 
 import pytest
-from curriculum.weights import (
+from langslice_training.adaptive.curriculum.weights import (
     compute_weights,
     read_per_bin_mae,
     read_weights_json,
@@ -227,7 +227,7 @@ def test_no_prev_weights_skips_cap_and_smoothing() -> None:
 
 def test_update_weighted_dataset_maps_section_ids_to_rows() -> None:
     """Rows whose ``section_id`` matches the weights map get those weights."""
-    from curriculum.sampler import WeightedRowDataset
+    from langslice_training.adaptive.curriculum.sampler import WeightedRowDataset
 
     rows = [
         {"section_id": "a", "kind": "single",
@@ -249,7 +249,7 @@ def test_update_weighted_dataset_maps_section_ids_to_rows() -> None:
 
 def test_update_weighted_dataset_baseline_for_missing() -> None:
     """The baseline_weight kwarg controls the default for unmatched rows."""
-    from curriculum.sampler import WeightedRowDataset
+    from langslice_training.adaptive.curriculum.sampler import WeightedRowDataset
 
     rows = [
         {"section_id": "a", "kind": "single",

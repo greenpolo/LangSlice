@@ -37,8 +37,8 @@ from unittest.mock import MagicMock
 
 import pytest
 import torch
-from single_turn_rl import adaptive_reward as ar
-from single_turn_rl.curriculum import (
+from langslice_training.rl.single_turn import adaptive_reward as ar
+from langslice_training.rl.single_turn.curriculum import (
     AdaRFTCurriculumCallback,
     BinDifficultyMap,
     CurriculumRepeatingSampler,
@@ -96,7 +96,10 @@ class _RecentErrorsBuffer:
 def fake_buffer(monkeypatch: pytest.MonkeyPatch) -> _RecentErrorsBuffer:
     """Provide a controlled rolling-error buffer to the curriculum module."""
     buf = _RecentErrorsBuffer()
-    monkeypatch.setattr("single_turn_rl.curriculum.recent_errors", buf.snapshot)
+    monkeypatch.setattr(
+        "langslice_training.rl.single_turn.curriculum.recent_errors",
+        buf.snapshot,
+    )
     return buf
 
 

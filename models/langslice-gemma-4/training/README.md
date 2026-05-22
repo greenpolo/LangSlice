@@ -27,17 +27,8 @@ should resume from. Don't overwrite it.
 ```
 models/langslice-gemma-4/training/
 ├── sft/              # Foundational SFT trainer (working). README in there.
-├── rlvr/             # GRPO RLVR trainer (PARKED — see rlvr/README.md).
-├── adaptive/         # Shared adaptive primitives. Lifted in Phase 5–6 (2026-05-11).
-│   ├── schedule.py     # AdaptiveSchedule (stateless quantile schedule)
-│   └── curriculum/     # Coordinate-bin sampler (LIVE, flag-gated)
-├── curriculum/       # Lazy shim — re-exports from adaptive.curriculum.
-├── embeddings/       # Atlas + query SigLIP caches with splice (LIVE, flag-gated).
-├── iSFT/             # Expert-iteration SFT driver (active pivot, see README).
-│                       Phases 1–6 + post-review fixes landed 2026-05-11.
 ├── langslice_traces/ # Trace primitives + render factory (synthetic + real).
-├── langslice_rlvr/   # PARKED — multi-turn TRL env factory, superseded by single_turn_rl.
-├── single_turn_rl/   # Single-turn GRPO trainer (active).
+├── tools/            # Corpus assembly + utility scripts.
 ├── configs/          # TOML configs for SFT/GRPO runs.
 └── unsloth_compiled_cache/   # Unsloth's compiled Triton kernels (do not edit).
 
@@ -45,10 +36,8 @@ slicebench/              # Eval tool (working). per-bin breakdowns + tok/s metri
 ```
 
 Each subdirectory has its own README explaining its scope and current
-status. The iSFT speed upgrade (2026-05-11) restructured the tree from
-`tools/expert_iteration/` + `src/langslice_{traces,rlvr}/` into the layout
-above; see [`iSFT/README.md`](iSFT/README.md) for the phase-by-phase
-change log.
+status. Public training entrypoints are `langslice-gemma-sft` and
+`langslice-gemma-rl`.
 
 ## Training journey (the short version)
 
@@ -57,38 +46,23 @@ change log.
 2. **GRPO RLVR on the SFT base** → ran 300 steps, reward stayed flat
    (mean 0.24, KL grew 17×). Resulting checkpoint is **worse than the SFT
    base** on slicebench: 55% failure rate, MAE 15mm (vs 2.88mm). Pivoted away.
-3. **Pivot: Expert-iteration SFT (rejection-sampling)** — generate N rollouts
-   per prompt with current best model, keep the best ones, retrain on those,
-   repeat. This is where active work is happening. See
-   [`iSFT/README.md`](iSFT/README.md).
+3. **Current training surface**: shared training-core modules behind
+   `langslice-gemma-sft` and `langslice-gemma-rl`.
 4. First expert-iteration smoke (option C: fresh-LoRA on small corpus)
    regressed the model to MAE 15mm. Diagnosed: fresh LoRA + 180 slices ×
    63 steps = under-trained adapter. **Option D fix shipped**:
    `--initial-adapter` flag in `sft.train_sft` resumes training of an
-   existing PEFT adapter rather than attaching a fresh one. Combine with
-   `--sft-initial-adapter` in `iterate.py`.
+   existing PEFT adapter rather than attaching a fresh one.
 
-## How to run the active pipeline (expert iteration)
+## How to run the active pipeline
 
 ```powershell
-python -m iSFT.iterate `
-  --base-checkpoint out/sft/docker-sft-1011-merged-bf16 `
-  --base-corpus models/langslice-gemma-4/data/sft_examples.jsonl `
-  --iterative-corpus-dir out/iterative_sft `
-  --allocation-root data/manifest `
-  --output-dir out/expert_iteration/run_<timestamp> `
-  --rounds 1 --rollouts-per-prompt 4 --prompts-per-round 30 `
-  --filter-mode best-of-n --apply-clahe `
-  --manage-vllm --vllm-lora-mode `
-  --vllm-base-compose docker-compose.training.yml `
-  --vllm-url "http://127.0.0.1:8000/v1" --vllm-max-model-len 16384 `
-  --concurrency 4 --temperature 0.9 `
-  --distilled-sample-n 150 --distilled-sample-seed 42 `
-  --sft-initial-adapter out/sft/docker-sft-1011-trimmed-noeval `
-  --eval-bench small --eval-num-generations 1
+langslice-gemma-sft --help
+langslice-gemma-rl --help
 ```
 
-Full flag reference in `iSFT/README.md`.
+Legacy Gemma-side training shims were removed; active training code lives in
+`models/training-core/langslice_training/` with Gemma-specific wrappers here.
 
 ## Eval baseline (slicebench tiny num_gens=4 temp=0.9)
 

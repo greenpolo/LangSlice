@@ -2071,7 +2071,7 @@
         trainingPoll.timer = null;
       }
       async function trainingTick() {
-        // Only poll when we're on training/rlvr.
+        // Only poll when the QC hash route is #/training/rlvr.
         if (app.module !== "training" || app.sub.training !== "rlvr") return;
         if (document.visibilityState === "hidden") return;
         try {

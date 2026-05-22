@@ -1,4 +1,4 @@
-"""Unit tests for ``single_turn_rl.adaptive_reward``.
+"""Unit tests for ``langslice_training.rl.single_turn.adaptive_reward``.
 
 The adaptive layer wraps the static single-turn reward with a quantile-based
 schedule that auto-tightens the bell as the policy improves. Tests cover:
@@ -19,7 +19,7 @@ from __future__ import annotations
 import math
 
 import pytest
-from single_turn_rl.adaptive_reward import (
+from langslice_training.rl.single_turn.adaptive_reward import (
     _AP_BIN_COUNT,
     _RECENT_ERRORS,
     DEFAULT_BUFFER_MAXLEN,
@@ -31,7 +31,7 @@ from single_turn_rl.adaptive_reward import (
     recent_errors,
     record_error,
 )
-from single_turn_rl.rewards import (
+from langslice_training.rl.single_turn.rewards import (
     DEFAULT_FORMAT_PENALTY,
     DEFAULT_OUT_OF_RANGE_REWARD,
     make_terminal_reward,

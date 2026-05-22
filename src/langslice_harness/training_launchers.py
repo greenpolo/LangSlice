@@ -1,4 +1,4 @@
-"""Installed console-script wrappers for model-hub training commands."""
+"""Installed console-script wrappers for model-scoped training commands."""
 
 from __future__ import annotations
 
@@ -31,14 +31,9 @@ def _load_model_launchers() -> ModuleType:
     return module
 
 
-def single_turn_rl() -> None:
-    _load_model_launchers().single_turn_rl(sys.argv[1:])
+def gemma_rl() -> None:
+    _load_model_launchers().gemma_rl(sys.argv[1:])
 
 
-def sft_train() -> None:
-    _load_model_launchers().sft_train(sys.argv[1:])
-
-
-def isft() -> int:
-    return _load_model_launchers().isft(sys.argv[1:])
-
+def gemma_sft() -> None:
+    _load_model_launchers().gemma_sft(sys.argv[1:])

@@ -1,12 +1,11 @@
 # langslice_traces
 
-> Moved from `src/langslice_traces/` on 2026-05-11 as part of the iSFT speed upgrade.
+> Moved from `src/langslice_traces/` on 2026-05-11 during training package cleanup.
 
 The factory layer that sits between **raw trace data on disk** and the **HF chat-template messages a trainer eats**. One place that knows how to turn a langslice-native trace (real teacher or procedurally synthesized) into a training example in any of the four modes consumers need.
 
 Built across two passes (Pass 2 commits `e47b45d..a1661fd`, the procedural generator + realism work `f65738a..613be9c`). Pass 3 — wiring consumers — fully landed:
-* Lane A + Lane B in `../single_turn_rl/`
-* iSFT synthetic terminal traces in `../iSFT/synth_corpus.py` (Phase 3, commit `3a26430`). The iSFT path calls `generate_trace(strategy="lane_a_prefix")`, injects a synthetic `FinalAnswer`, and renders via `render_sft_answer_only` (90% by default) or `render_sft_full` (10%).
+* Lane A + Lane B in `models/training-core/langslice_training/rl/single_turn/`
 
 ## Two factory paths
 
@@ -120,9 +119,9 @@ Both wirings are **opt-in** — default behavior is unchanged.
 
 ```powershell
 $env:PYTHONPATH = "models/langslice-gemma-4/training"
-python -m single_turn_rl.terminal_states build `
+python -m langslice_training.rl.single_turn.terminal_states build `
   --sft-corpus models/langslice-gemma-4/data/sft_examples.jsonl `
-  --output out/single_turn_rl/terminal_states.jsonl `
+  --output out/rl_single_turn/terminal_states.jsonl `
   --tier strict `
   --include-synthetic `
   --synthetic-seed 1337 `
@@ -134,7 +133,7 @@ After walking the 1716 SFT-traced rows, every RLVR-split section that doesn't al
 ### Lane B: randomized per-row slate instead of the deterministic 9-pos canonical slate
 
 ```powershell
-python -m single_turn_rl.section_state ... `
+python -m langslice_training.rl.single_turn.section_state ... `
   --randomized-slate `
   --randomized-seed 1337 `
   --atlas-embedding-cache out/atlas_embeddings
@@ -180,11 +179,11 @@ These were specified in the design but explicitly scoped out:
 
 - **`lane_c_intermediate` strategy + Lane C trainer.** Cut at any step (not just terminal). Built alongside the Lane C trainer when that lane comes online.
 - **Lane B secondary local slate.** A tight non-GT-centered local slate near the SFT model's greedy estimate, appended to the broad slate. Adds production-style local refinement.
-- **iSFT wiring.** `iSFT/` should consume `render_sft_full` / `render_isft_prefix` instead of its private `_local/trace_collection/build_sft_corpus.py` dependency. Unblocked by the realistic Lane A synthesis.
+- **Legacy wiring cleanup.** Keep consumers on the shared `langslice_traces` renderers instead of private legacy helpers under `_local/`.
 - **`ClaheMixToggle` augmentation.** Path-keyed atlas cache invalidation needs design work first — `iterator.py` raises `NotImplementedError` if the key is set.
 
 ## Why this exists
 
-Before this package, trace plumbing was duplicated across the SFT trainer (`models/langslice-gemma-4/training/sft/render.py`), iSFT (`models/langslice-gemma-4/training/iSFT/rollout.py`), the RL prefix walker (`models/langslice-gemma-4/training/single_turn_rl/terminal_states.py`), and the synthetic distillation builder. Each had its own subtly different copy of the prefix-construction logic and the chat-template rendering. The factory consolidates that into one well-tested surface that consumers opt into.
+Before this package, trace plumbing was duplicated across the SFT trainer (`models/langslice-gemma-4/training/sft/render.py`), the RL prefix walker (`models/training-core/langslice_training/rl/single_turn/terminal_states.py`), and the synthetic distillation builder. Each had its own subtly different copy of the prefix-construction logic and the chat-template rendering. The factory consolidates that into one well-tested surface that consumers opt into.
 
 The procedural generator extends the same surface to the much larger pool of RLVR-allocated slices that never had a Gemini teacher trace — bringing the realism work in `_empirical.py` along so synthesized data doesn't poison training with a learnable shortcut.

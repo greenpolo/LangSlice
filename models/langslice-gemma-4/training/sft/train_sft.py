@@ -112,7 +112,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "Sample shape-pure batches: every micro-batch contains either all "
             "answer-only rows (trace length == 1) or all multi-turn rows (trace "
             "length > 1), never a mix. Required when training on the synthetic "
-            "answer-only/multi-turn mix from iSFT's synth_corpus, where the per-row "
+            "answer-only/multi-turn synthetic mix, where the per-row "
             "image count differs by ~5x between buckets and mixed batches produce "
             "high-variance loss. When set, bypasses --curriculum-weights "
             "(curriculum operates at section-selection time upstream of training)."
@@ -298,7 +298,7 @@ class ShapeBucketBatchSampler:
     Incomplete tail batches (last ``len(bucket) % batch_size`` indices)
     are dropped to keep batch size uniform. With a balanced mix this is
     a few rows per epoch; with very small buckets it can drop the whole
-    smaller bucket — but in the synth_corpus workflow both buckets are
+    smaller bucket — but in large synthetic corpora both buckets are
     sized in the hundreds-to-thousands range.
     """
 
@@ -345,8 +345,8 @@ def _bucketed_sft_trainer_cls() -> type:
 
     class BucketedSFTTrainer(SFTTrainer):  # type: ignore[misc, valid-type]
         """``SFTTrainer`` that wraps the train DataLoader in a shape-pure
-        batch sampler. Ignores per-row weights — the iSFT pipeline applies
-        curriculum at section-selection time upstream of training."""
+        batch sampler. Ignores per-row weights when this mode is enabled,
+        because curriculum should be applied upstream at section selection."""
 
         def _get_train_dataloader(self):  # type: ignore[override]
             import torch  # noqa: PLC0415
@@ -405,7 +405,9 @@ def main(argv: list[str] | None = None) -> None:
     # isn't in the map keep weight 1.0.
     if args.curriculum_weights is not None:
         if args.curriculum_weights.is_file():
-            from adaptive.curriculum.weights import read_weights_json  # noqa: PLC0415
+            from langslice_training.adaptive.curriculum.weights import (
+                read_weights_json,  # noqa: PLC0415
+            )
 
             weights_map = read_weights_json(args.curriculum_weights)
 
@@ -481,7 +483,7 @@ def _train(args, config, train_ds, eval_ds, cache, seed: int) -> None:
     import torch._dynamo as _torch_dynamo  # noqa: PLC0415
     _torch_dynamo.config.recompile_limit = 64
     from trl import SFTConfig, SFTTrainer  # noqa: I001
-    from rlvr.atlas_grid import build_atlas_grid
+    from langslice_training.rl.common.atlas_grid import build_atlas_grid
 
     from .eval import AgentLoopEvalCallback, BaselineEvalCallback
 
@@ -533,7 +535,7 @@ def _train(args, config, train_ds, eval_ds, cache, seed: int) -> None:
     atlas_cache_path = getattr(args, "atlas_embedding_cache", None)
     atlas_cache = None
     if atlas_cache_path is not None:
-        from embeddings.cache import AtlasEmbeddingCache
+        from langslice_training.embeddings.cache import AtlasEmbeddingCache
 
         atlas_cache = AtlasEmbeddingCache(atlas_cache_path)
         if not atlas_cache.pairs():
@@ -550,7 +552,7 @@ def _train(args, config, train_ds, eval_ds, cache, seed: int) -> None:
     query_cache_path = getattr(args, "query_embedding_cache", None)
     query_cache = None
     if query_cache_path is not None:
-        from embeddings.query_cache import QueryEmbeddingCache
+        from langslice_training.embeddings.query_cache import QueryEmbeddingCache
 
         query_cache = QueryEmbeddingCache(query_cache_path)
         if not query_cache.pairs():
@@ -570,7 +572,7 @@ def _train(args, config, train_ds, eval_ds, cache, seed: int) -> None:
     # mechanism applies equally to atlas+query embeddings.
     enable_splice = atlas_cache is not None or query_cache is not None
     if enable_splice:
-        from embeddings.splice import install_atlas_splice
+        from langslice_training.embeddings.splice import install_atlas_splice
 
         # When vision layers are frozen, wrap the splice's vision-tower and
         # projector forward calls in torch.no_grad() — autograd tape over a
@@ -634,7 +636,7 @@ def _train(args, config, train_ds, eval_ds, cache, seed: int) -> None:
     # Trainer-class selection:
     # 1. --bucketed-shape-sampler wins: synthetic answer-only + multi-turn rows
     #    have ~5x different per-row image counts, so mixed batches would blow
-    #    up loss variance. The iSFT pipeline applies curriculum upstream at
+    #    up loss variance. Curriculum should be applied upstream at
     #    section-selection time, so we drop the per-row WeightedRandomSampler
     #    in this mode even if --curriculum-weights was also passed.
     # 2. Else, curriculum-aware path when the dataset has _weights wired.
@@ -649,7 +651,9 @@ def _train(args, config, train_ds, eval_ds, cache, seed: int) -> None:
             )
         trainer_cls = _bucketed_sft_trainer_cls()
     elif use_curriculum:
-        from curriculum.sampler import CurriculumSFTTrainer  # noqa: PLC0415
+        from langslice_training.adaptive.curriculum.sampler import (
+            CurriculumSFTTrainer,  # noqa: PLC0415
+        )
 
         trainer_cls = CurriculumSFTTrainer
     else:

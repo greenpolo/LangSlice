@@ -6,14 +6,13 @@ Fine-tuned **Gemma 4 E4B** for brain-section position estimation, deployed as a 
 
 - Public training overview: `docs/training_overview.md`
 - SFT data contract and trainer usage: `training/sft/README.md`
-- Active single-turn RL trainer: `training/single_turn_rl/README.md`
-- Parked multi-turn RLVR trainer: `training/rlvr/README.md`
+- Active single-turn RL trainer: `models/training-core/langslice_training/rl/single_turn/`
 
 ## Approach
 
 - **Base:** Gemma 4 E4B, multimodal, trained for the existing LangSlice tool loop.
 - **SFT:** v1 trains only on strict-accepted single-slice agent traces, supplied as a langslice-native JSONL corpus. See `training/sft/README.md`.
-- **RLVR:** multi-turn GRPO in `training/rlvr/`, with one gated closeness reward on submitted coordinate accuracy.
+- **RL:** single-turn GRPO in `models/training-core/langslice_training/rl/single_turn/`, with one gated closeness reward on submitted coordinate accuracy.
 - **Holdout:** RLVR uses deterministic subject-level train/eval splitting; no subject appears in both sets.
 
 ## SFT Corpus Handoff
@@ -37,22 +36,20 @@ models/langslice-gemma-4/training/scripts/docker/sft.ps1 -RunName docker-run0
 
 Native Windows SFT remains available through `models/langslice-gemma-4/training/_run_sft_msvc.cmd`, but Docker is preferred for CUDA/Unsloth performance and fewer Windows-specific dependency issues.
 
-## RLVR (parked)
+## iSFT status
 
-Multi-turn GRPO RLVR is parked as of 2026-05-09 in favor of expert-iteration
-SFT (`training/iSFT/`). The RLVR module is preserved at `training/rlvr/`; see
-that README before un-parking.
+iSFT is retired as a public LangSlice product/pipeline; there is no public iSFT launcher.
 
 ## Directory Layout
 
 - `data/` - slice extraction, augmentation pipeline, bucket-specific generators.
 - `training/` - Unsloth QLoRA configs and runners.
-- `training/rlvr/` - RLVR environment, dataset, reward, atlas grid, and GRPO driver.
+- `models/training-core/langslice_training/rl/single_turn/` - single-turn RL environment, dataset, reward, and eval tooling.
 - `inference/` - local agent-loop runner using the fine-tuned model.
 - `variants/langslice-gemma-4-e4b/README.md` - public model card + Hugging Face pointer (weights not stored in this repo).
 
 ## Compatibility and migration
 
-- Preferred launch commands: `langslice-sft-train`, `langslice-isft`, and `langslice-single-turn-rl`.
+- Preferred launch commands: `langslice-gemma-sft` and `langslice-gemma-rl`.
 - During transition, training/data imports can resolve from shared package roots when present:
   `models/langslice-traces`, `models/synthdata`, `models/training-core`, `models/data`.

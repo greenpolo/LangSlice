@@ -5,8 +5,8 @@ Each test calls both the original primitive location (the existing harness or
 ``langslice_traces`` with identical inputs. The package was lifted from those
 sources, so deep equality must hold; any divergence is a porting bug.
 
-For the ``_local`` builder we re-use the same import-by-path loader that
-``models/langslice-gemma-4/training/iSFT/trace_format.py`` uses in production,
+For the ``_local`` builder we re-use the same import-by-path loader used by
+the legacy training adapter path in production,
 so the original underscored helpers stay reachable without polluting the
 regular package tree.
 """
@@ -37,7 +37,7 @@ _BUILD_SFT_CORPUS_PATH = (
 def _load_build_sft_corpus_module() -> Any:
     """Import the private ``_local`` builder via importlib.
 
-    Mirrors the loader at ``models/langslice-gemma-4/training/iSFT/trace_format.py:37-60`` —
+    Mirrors the legacy import-by-path loader shape —
     the script lives outside the installable package tree and also reads
     ``.env`` at import time, so we synthesize an empty one when missing.
     """

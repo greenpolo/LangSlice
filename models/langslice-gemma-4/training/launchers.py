@@ -1,4 +1,4 @@
-"""Console launchers for LangSlice Gemma training commands."""
+"""Console launchers for LangSlice Gemma model-scoped training commands."""
 
 from __future__ import annotations
 
@@ -20,26 +20,17 @@ def _bootstrap() -> None:
     add_model_python_paths(repo_root)
 
 
-def single_turn_rl(argv: list[str] | None = None) -> None:
-    """Run the single-turn RL training CLI."""
+def gemma_rl(argv: list[str] | None = None) -> None:
+    """Run the Gemma single-turn RL training CLI."""
     _bootstrap()
-    from single_turn_rl.train_grpo import main  # noqa: PLC0415
+    from langslice_training.rl.single_turn.train_grpo import main  # noqa: PLC0415
 
     main(argv)
 
 
-def sft_train(argv: list[str] | None = None) -> None:
-    """Run the SFT training CLI."""
+def gemma_sft(argv: list[str] | None = None) -> None:
+    """Run the Gemma SFT training CLI."""
     _bootstrap()
     from sft.train_sft import main  # noqa: PLC0415
 
     main(argv)
-
-
-def isft(argv: list[str] | None = None) -> int:
-    """Run the expert-iteration SFT CLI."""
-    _bootstrap()
-    from iSFT.iterate import main  # noqa: PLC0415
-
-    return main(argv)
-

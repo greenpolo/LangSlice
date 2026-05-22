@@ -37,7 +37,7 @@ from typing import Literal
 
 import torch
 
-from langslice_training.rl_core.atlas_grid import canonicalize_atlas_name
+from langslice_training.rl.common.atlas_grid import canonicalize_atlas_name
 
 Plane = Literal["coronal", "sagittal", "horizontal"]
 

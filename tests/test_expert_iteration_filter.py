@@ -1,17 +1,8 @@
-"""Unit tests for iSFT.filter (pure functions, no I/O)."""
+"""Unit tests for shared SFT filtering helpers (pure functions, no I/O)."""
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-# Ensure the package import works regardless of where pytest is invoked
-# from. The training-container session sets cwd=/workspace/LangSlice, but
-# CI may run from a worktree.
-_REPO = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(_REPO / "models" / "langslice-gemma-4" / "training"))
-
-from iSFT.filter import best_of_n, threshold_accept  # noqa: E402
+from langslice_training.sft.filtering import best_of_n, threshold_accept
 
 
 def _row(section_id: str, gen_idx: int, abs_err_mm: float,

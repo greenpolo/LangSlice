@@ -22,16 +22,21 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
-from PIL import Image
-from rlvr import env as env_mod
-from rlvr.atlas_grid import GRID_STEP_MM, GridRange, _grid_position_mm, _quantize
-from rlvr.dataset import SingleSliceExample, split_subjects_for_holdout
-from rlvr.env import (
+from langslice_training.rl.common.atlas_grid import (
+    GRID_STEP_MM,
+    GridRange,
+    _grid_position_mm,
+    _quantize,
+)
+from langslice_training.rl.common.dataset import SingleSliceExample, split_subjects_for_holdout
+from langslice_training.rl.multi_turn_env import env as env_mod
+from langslice_training.rl.multi_turn_env.env import (
     DEDUPE_TOL_MM,
     MAX_POSITIONS_PER_FETCH,
     LangSliceEstimateEnv,
     _public_tool_method_names,
 )
+from PIL import Image
 
 
 class _StubAtlasGrid:
@@ -361,10 +366,13 @@ def test_atlas_grid_clamps_hi_index_inward() -> None:
         rendered_positions.append(position_mm)
         return Image.new("L", (4, 4))
 
-    with patch("rlvr.atlas_grid.load_atlas", fake_load_atlas), patch(
-        "rlvr.atlas_grid.get_position_range_mm", fake_get_position_range_mm
-    ), patch("rlvr.atlas_grid.get_reference_slice", fake_get_reference_slice):
-        from rlvr.atlas_grid import build_atlas_grid  # noqa: PLC0415
+    with patch("langslice_training.rl.common.atlas_grid.load_atlas", fake_load_atlas), patch(
+        "langslice_training.rl.common.atlas_grid.get_position_range_mm", fake_get_position_range_mm
+    ), patch(
+        "langslice_training.rl.common.atlas_grid.get_reference_slice",
+        fake_get_reference_slice,
+    ):
+        from langslice_training.rl.common.atlas_grid import build_atlas_grid  # noqa: PLC0415
 
         grid = build_atlas_grid([("allen_mouse_25um", "coronal")])
 
@@ -435,35 +443,41 @@ def test_split_subjects_for_holdout_dedupes_subjects() -> None:
 
 def test_build_datasets_uses_disjoint_subject_holdout() -> None:
     """Driver dataset assembly must keep held-out subjects out of train rows."""
-    from rlvr.train_grpo import build_datasets  # noqa: PLC0415
+    from langslice_training.rl.single_turn.dataset import build_datasets  # noqa: PLC0415
 
-    examples = [_example(f"M{i:02d}") for i in range(1, 11)]
+    specs = [
+        {
+            "subject_id": f"M{i:02d}",
+            "atlas_name": "allen_mouse_25um",
+            "plane": "coronal",
+            "query_image_path": str(Path("/fake") / f"M{i:02d}.tif"),
+            "ground_truth_mm": 5.0,
+            "valid_range_mm": [0.0, 13.2],
+            "section_id": f"M{i:02d}:sec_1",
+            "prefix_fetch_positions_mm": [5.0],
+            "prefix_fetch_paths": [str(Path("/fake") / f"M{i:02d}_atlas.tif")],
+        }
+        for i in range(1, 11)
+    ]
 
-    def fake_rows(
-        *, single_examples, group_examples, single_fraction, seed, **_kwargs
-    ):  # noqa: ANN001, ARG001
-        return [
-            {
-                "atlas_name": ex.atlas_name,
-                "plane": ex.plane,
-                "kind": "single",
-                "subject_id": ex.subject_id,
-            }
-            for ex in single_examples
-        ]
-
-    with patch("rlvr.train_grpo.load_rlvr_allocation", return_value=examples), patch(
-        "rlvr.train_grpo.make_group_examples", return_value=[]
-    ), patch("rlvr.train_grpo.build_rlvr_rows", side_effect=fake_rows), patch(
-        "rlvr.train_grpo.to_hf_dataset", side_effect=lambda rows: rows
-    ):
-        train_ds, eval_ds, train_rows, eval_rows, _atlas_pairs = build_datasets(
-            manifest_root=Path("unused"),
+    with patch("langslice_training.rl.single_turn.dataset.load_specs", return_value=specs):
+        train_ds, eval_ds = build_datasets(
+            Path("unused"),
             repo_root=Path("unused"),
-            data_cfg={"eval_holdout_every": 5, "single_fraction": 1.0},
+            eval_holdout_every=5,
             seed=0,
         )
 
+    train_rows = train_ds.specs if hasattr(train_ds, "specs") else train_ds._specs  # type: ignore[attr-defined]
+    eval_rows = (
+        []
+        if eval_ds is None
+        else (
+            eval_ds.specs
+            if hasattr(eval_ds, "specs")
+            else eval_ds._specs  # type: ignore[attr-defined]
+        )
+    )
     train_subjects = {row["subject_id"] for row in train_rows}
     eval_subjects = {row["subject_id"] for row in eval_rows}
     assert train_subjects == {f"M{i:02d}" for i in range(1, 11)} - {"M05", "M10"}
@@ -538,7 +552,7 @@ def test_grpo_default_config_has_stop_tool_names() -> None:
 # Removed test_repo_root_launch_module_shows_help: the langslice_rlvr launch
 # shim was decommissioned 2026-05-11 along with the iSFT restructure. RLVR is
 # parked; if un-parked, launch via `PYTHONPATH=models/langslice-gemma-4/training
-# python -m rlvr.train_grpo`.
+# python -m langslice_training.rl.single_turn.train_grpo`.
 
 
 # --- adapter resume smoke test (P2(g) + P4) --------------------------------
@@ -571,6 +585,9 @@ def test_resume_from_adapter_attaches_trainable_peft_adapter() -> None:
     fake_trainer = MagicMock()
     fake_trl.GRPOTrainer.return_value = fake_trainer
     fake_trl.GRPOConfig.side_effect = lambda **kw: kw  # passthrough
+    fake_torch = MagicMock()
+    fake_torch_dynamo = MagicMock()
+    fake_torch_dynamo.config = MagicMock()
 
     sft_path = Path("fake/sft")
     adapter_path = Path("fake/phase_a")
@@ -580,14 +597,27 @@ def test_resume_from_adapter_attaches_trainable_peft_adapter() -> None:
     fake_grid = MagicMock()
     fake_train_ds = MagicMock(name="train_dataset")
     fake_eval_ds = MagicMock(name="eval_dataset")
+    fake_train_ds.__len__.return_value = 1
+    fake_eval_ds.__len__.return_value = 0
 
-    fake_datasets = (fake_train_ds, fake_eval_ds, [_FAKE_ROW], [], _FAKE_PAIRS)
+    fake_datasets = (fake_train_ds, fake_eval_ds)
     with patch.dict(
-        sys.modules, {"trl": fake_trl, "unsloth": fake_unsloth, "peft": fake_peft}
+        sys.modules,
+        {
+            "trl": fake_trl,
+            "unsloth": fake_unsloth,
+            "peft": fake_peft,
+            "torch": fake_torch,
+            "torch._dynamo": fake_torch_dynamo,
+        },
     ), patch(
-        "rlvr.train_grpo.build_datasets", return_value=fake_datasets
-    ), patch("rlvr.train_grpo.build_atlas_grid", return_value=fake_grid):
-        from rlvr.train_grpo import main  # noqa: PLC0415
+        "langslice_training.rl.single_turn.train_grpo.build_datasets", return_value=fake_datasets
+    ), patch(
+        "langslice_training.rl.single_turn.train_grpo.build_atlas_grid",
+        return_value=fake_grid,
+        create=True,
+    ):
+        from langslice_training.rl.single_turn.train_grpo import main  # noqa: PLC0415
 
         main(
             [
@@ -606,6 +636,14 @@ def test_resume_from_adapter_attaches_trainable_peft_adapter() -> None:
                 str(adapter_path),
                 "--output-dir",
                 str(output_path),
+                "--curriculum-mode",
+                "none",
+                "--reward-mode",
+                "static",
+                "--data-source",
+                "terminal_states",
+                "--terminal-states",
+                "fake/terminal_states.jsonl",
                 "--manifest-root",
                 "fake/manifest",
             ]
@@ -640,17 +678,33 @@ def test_no_resume_calls_get_peft_model() -> None:
     fake_trainer = MagicMock()
     fake_trl.GRPOTrainer.return_value = fake_trainer
     fake_trl.GRPOConfig.side_effect = lambda **kw: kw
+    fake_torch = MagicMock()
+    fake_torch_dynamo = MagicMock()
+    fake_torch_dynamo.config = MagicMock()
 
     sft_path = Path("fake/sft")
 
     fake_grid = MagicMock()
     fake_train_ds = MagicMock()
+    fake_train_ds.__len__.return_value = 1
 
-    fake_datasets = (fake_train_ds, None, [_FAKE_ROW], [], _FAKE_PAIRS)
-    with patch.dict(sys.modules, {"trl": fake_trl, "unsloth": fake_unsloth}), patch(
-        "rlvr.train_grpo.build_datasets", return_value=fake_datasets
-    ), patch("rlvr.train_grpo.build_atlas_grid", return_value=fake_grid):
-        from rlvr.train_grpo import main  # noqa: PLC0415
+    fake_datasets = (fake_train_ds, None)
+    with patch.dict(
+        sys.modules,
+        {
+            "trl": fake_trl,
+            "unsloth": fake_unsloth,
+            "torch": fake_torch,
+            "torch._dynamo": fake_torch_dynamo,
+        },
+    ), patch(
+        "langslice_training.rl.single_turn.train_grpo.build_datasets", return_value=fake_datasets
+    ), patch(
+        "langslice_training.rl.single_turn.train_grpo.build_atlas_grid",
+        return_value=fake_grid,
+        create=True,
+    ):
+        from langslice_training.rl.single_turn.train_grpo import main  # noqa: PLC0415
 
         main(
             [
@@ -667,6 +721,14 @@ def test_no_resume_calls_get_peft_model() -> None:
                 str(sft_path),
                 "--output-dir",
                 "fake/out",
+                "--curriculum-mode",
+                "none",
+                "--reward-mode",
+                "static",
+                "--data-source",
+                "terminal_states",
+                "--terminal-states",
+                "fake/terminal_states.jsonl",
                 "--manifest-root",
                 "fake/manifest",
             ]
@@ -705,6 +767,9 @@ def test_sft_adapter_model_loads_base_then_attaches_trainable_adapter(
     fake_trainer = MagicMock()
     fake_trl.GRPOTrainer.return_value = fake_trainer
     fake_trl.GRPOConfig.side_effect = lambda **kw: kw
+    fake_torch = MagicMock()
+    fake_torch_dynamo = MagicMock()
+    fake_torch_dynamo.config = MagicMock()
 
     sft_path = tmp_path / "sft_adapter"
     sft_path.mkdir()
@@ -716,14 +781,26 @@ def test_sft_adapter_model_loads_base_then_attaches_trainable_adapter(
 
     fake_grid = MagicMock()
     fake_train_ds = MagicMock(name="train_dataset")
-    fake_datasets = (fake_train_ds, None, [_FAKE_ROW], [], _FAKE_PAIRS)
+    fake_train_ds.__len__.return_value = 1
+    fake_datasets = (fake_train_ds, None)
 
     with patch.dict(
-        sys.modules, {"trl": fake_trl, "unsloth": fake_unsloth, "peft": fake_peft}
+        sys.modules,
+        {
+            "trl": fake_trl,
+            "unsloth": fake_unsloth,
+            "peft": fake_peft,
+            "torch": fake_torch,
+            "torch._dynamo": fake_torch_dynamo,
+        },
     ), patch(
-        "rlvr.train_grpo.build_datasets", return_value=fake_datasets
-    ), patch("rlvr.train_grpo.build_atlas_grid", return_value=fake_grid):
-        from rlvr.train_grpo import main  # noqa: PLC0415
+        "langslice_training.rl.single_turn.train_grpo.build_datasets", return_value=fake_datasets
+    ), patch(
+        "langslice_training.rl.single_turn.train_grpo.build_atlas_grid",
+        return_value=fake_grid,
+        create=True,
+    ):
+        from langslice_training.rl.single_turn.train_grpo import main  # noqa: PLC0415
 
         main(
             [
@@ -740,6 +817,14 @@ def test_sft_adapter_model_loads_base_then_attaches_trainable_adapter(
                 str(sft_path),
                 "--output-dir",
                 "fake/out",
+                "--curriculum-mode",
+                "none",
+                "--reward-mode",
+                "static",
+                "--data-source",
+                "terminal_states",
+                "--terminal-states",
+                "fake/terminal_states.jsonl",
                 "--manifest-root",
                 "fake/manifest",
             ]
@@ -771,6 +856,9 @@ def test_train_grpo_passes_stop_tool_names_to_grpo_config() -> None:
     fake_unsloth.FastVisionModel.get_peft_model.return_value = MagicMock()
 
     fake_trl = MagicMock()
+    fake_torch = MagicMock()
+    fake_torch_dynamo = MagicMock()
+    fake_torch_dynamo.config = MagicMock()
 
     def capture_config(**kwargs):
         captured_config_kwargs.update(kwargs)
@@ -786,13 +874,28 @@ def test_train_grpo_passes_stop_tool_names_to_grpo_config() -> None:
     sft_path = Path("fake/sft")
     fake_grid = MagicMock()
 
-    fake_datasets = (MagicMock(), None, [_FAKE_ROW], [], _FAKE_PAIRS)
-    with patch.dict(sys.modules, {"trl": fake_trl, "unsloth": fake_unsloth}), patch(
-        "rlvr.train_grpo.build_datasets", return_value=fake_datasets
+    fake_train_ds = MagicMock(name="train_dataset")
+    fake_train_ds.__len__.return_value = 1
+    fake_datasets = (fake_train_ds, None)
+    with patch.dict(
+        sys.modules,
+        {
+            "trl": fake_trl,
+            "unsloth": fake_unsloth,
+            "torch": fake_torch,
+            "torch._dynamo": fake_torch_dynamo,
+        },
     ), patch(
-        "rlvr.train_grpo.make_position_reward", side_effect=capture_reward
-    ), patch("rlvr.train_grpo.build_atlas_grid", return_value=fake_grid):
-        from rlvr.train_grpo import main  # noqa: PLC0415
+        "langslice_training.rl.single_turn.train_grpo.build_datasets", return_value=fake_datasets
+    ), patch(
+        "langslice_training.rl.single_turn.train_grpo.make_terminal_reward",
+        side_effect=capture_reward,
+    ), patch(
+        "langslice_training.rl.single_turn.train_grpo.build_atlas_grid",
+        return_value=fake_grid,
+        create=True,
+    ):
+        from langslice_training.rl.single_turn.train_grpo import main  # noqa: PLC0415
 
         main(
             [
@@ -809,6 +912,14 @@ def test_train_grpo_passes_stop_tool_names_to_grpo_config() -> None:
                 str(sft_path),
                 "--output-dir",
                 "fake/out",
+                "--curriculum-mode",
+                "none",
+                "--reward-mode",
+                "static",
+                "--data-source",
+                "terminal_states",
+                "--terminal-states",
+                "fake/terminal_states.jsonl",
                 "--manifest-root",
                 "fake/manifest",
             ]

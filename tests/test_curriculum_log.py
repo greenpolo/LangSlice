@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 import pytest
-from curriculum.log import CurriculumLogger
+from langslice_training.adaptive.curriculum.log import CurriculumLogger
 
 
 def _row(round_idx: int = 0, section_id: str = "subj_a:s1") -> dict:

@@ -1,4 +1,4 @@
-"""Unit tests for ``adaptive.schedule``.
+"""Unit tests for ``langslice_training.adaptive.schedule``.
 
 Covers:
 - warmup behavior (returns defaults before min_observations)
@@ -22,7 +22,7 @@ sys.path.insert(0, str(_REPO))
 sys.path.insert(0, str(_REPO / "src"))
 sys.path.insert(0, str(_REPO / "models" / "langslice-gemma-4" / "training"))
 
-from adaptive.schedule import AdaptiveSchedule, make_error_buffer  # noqa: E402
+from langslice_training.adaptive.schedule import AdaptiveSchedule, make_error_buffer  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -133,9 +133,9 @@ def test_separate_buffers_dont_share_state() -> None:
     assert len(buf_b) == 0  # completely independent
 
 
-def test_shim_reexports_work() -> None:
-    """Backward-compat shim must still export AdaptiveRewardSchedule and its factory."""
-    from single_turn_rl.adaptive_reward import (  # noqa: PLC0415
+def test_single_turn_adaptive_reward_exports_work() -> None:
+    """Canonical single-turn module exports AdaptiveRewardSchedule and helpers."""
+    from langslice_training.rl.single_turn.adaptive_reward import (  # noqa: PLC0415
         AdaptiveRewardSchedule,
         clear_recent_errors,
         make_adaptive_terminal_reward,

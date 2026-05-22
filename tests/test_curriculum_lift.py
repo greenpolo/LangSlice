@@ -1,8 +1,8 @@
-"""Tests for Phase 6: curriculum lift into adaptive/ + section_id keying.
+"""Tests for Phase 6: curriculum lift + section_id keying.
 
 Coverage:
-  A. adaptive.curriculum.bins import works (new canonical path).
-  B. curriculum.bins shim re-export still works.
+  A. langslice_training.adaptive.curriculum.bins import works.
+  B. langslice_training.curriculum.* exports work.
   C. Example.section_id is optional and defaults to None.
   D. load_examples round-trips section_id through JSONL.
   E. WeightedRandomSampler in train_sft prefers section_id over subject_id.
@@ -72,8 +72,8 @@ def _write_jsonl(tmp_path: Path, rows: list[dict[str, Any]]) -> Path:
 
 
 def test_curriculum_imports_from_adaptive() -> None:
-    """The canonical path adaptive.curriculum.bins must export compute_section_bins."""
-    from adaptive.curriculum.bins import compute_section_bins  # noqa: PLC0415
+    """Canonical adaptive curriculum path exports compute_section_bins."""
+    from langslice_training.adaptive.curriculum.bins import compute_section_bins  # noqa: PLC0415
 
     assert callable(compute_section_bins)
 
@@ -83,23 +83,23 @@ def test_curriculum_imports_from_adaptive() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_curriculum_shim_reexports_work() -> None:
-    """curriculum.bins shim at the old path must still export compute_section_bins."""
-    from curriculum.bins import compute_section_bins  # noqa: PLC0415
+def test_curriculum_bins_imports_work() -> None:
+    """Canonical curriculum bins module exports compute_section_bins."""
+    from langslice_training.adaptive.curriculum.bins import compute_section_bins  # noqa: PLC0415
 
     assert callable(compute_section_bins)
 
 
-def test_curriculum_weights_shim_reexports_work() -> None:
-    """curriculum.weights shim must export read_weights_json."""
-    from curriculum.weights import read_weights_json  # noqa: PLC0415
+def test_curriculum_weights_imports_work() -> None:
+    """Canonical curriculum weights module exports read_weights_json."""
+    from langslice_training.adaptive.curriculum.weights import read_weights_json  # noqa: PLC0415
 
     assert callable(read_weights_json)
 
 
-def test_curriculum_log_shim_reexports_work() -> None:
-    """curriculum.log shim must export CurriculumLogger."""
-    from curriculum.log import CurriculumLogger  # noqa: PLC0415
+def test_curriculum_log_imports_work() -> None:
+    """Canonical curriculum log module exports CurriculumLogger."""
+    from langslice_training.adaptive.curriculum.log import CurriculumLogger  # noqa: PLC0415
 
     assert callable(CurriculumLogger)
 
@@ -285,10 +285,7 @@ def test_weighted_sampler_falls_back_to_default_when_no_match() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_adaptive_init_reexports_curriculum() -> None:
-    """``from adaptive import curriculum`` must expose compute_section_bins."""
-    from adaptive import curriculum  # noqa: PLC0415
-
-    assert hasattr(curriculum, "compute_section_bins") or hasattr(
-        curriculum.bins, "compute_section_bins"
-    )
+def test_curriculum_module_exports_compute_section_bins() -> None:
+    """Canonical curriculum package root exposes compute_section_bins."""
+    import langslice_training.adaptive.curriculum as curriculum  # noqa: PLC0415
+    assert hasattr(curriculum, "compute_section_bins")

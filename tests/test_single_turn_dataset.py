@@ -20,8 +20,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from single_turn_rl import dataset as ds
-from single_turn_rl.terminal_states import Plane, TerminalState
+from langslice_training.rl.single_turn import dataset as ds
+from langslice_training.rl.single_turn.terminal_states import Plane, TerminalState
 
 
 def _stub_atlas_helpers(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -418,7 +418,7 @@ def _build_lane_a_test_manifest(tmp_path: Path) -> Path:
 
 
 def _stub_atlas_range_for_ds(monkeypatch: pytest.MonkeyPatch) -> None:
-    from single_turn_rl import section_state as ss
+    from langslice_training.rl.single_turn import section_state as ss
     monkeypatch.setattr(
         ss,
         "_atlas_valid_range_mm",
@@ -432,7 +432,7 @@ def _stub_atlas_range_for_ds(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _seed_query_files_ds(base: Path, manifest_root: Path) -> None:
-    from single_turn_rl.manifest_index import ManifestIndex
+    from langslice_training.rl.single_turn.manifest_index import ManifestIndex
     idx = ManifestIndex.from_manifest_root(manifest_root, repo_root=base)
     for section in idx.query(plane="coronal"):
         target = base / section.image_path
@@ -452,7 +452,7 @@ def test_build_datasets_from_index_randomized_lane_a(
 
     import random as _random
 
-    from single_turn_rl.manifest_index import ManifestIndex
+    from langslice_training.rl.single_turn.manifest_index import ManifestIndex
 
     manifest_root = _build_lane_a_test_manifest(tmp_path)
     _seed_query_files_ds(tmp_path, manifest_root)
@@ -492,7 +492,7 @@ def test_build_datasets_from_index_randomized_lane_a_requires_cache(
     """Without an atlas_embedding_cache_dir the randomized path must raise."""
     _stub_atlas_range_for_ds(monkeypatch)
 
-    from single_turn_rl.manifest_index import ManifestIndex
+    from langslice_training.rl.single_turn.manifest_index import ManifestIndex
 
     manifest_root = _build_lane_a_test_manifest(tmp_path)
     _seed_query_files_ds(tmp_path, manifest_root)

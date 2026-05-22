@@ -98,7 +98,10 @@ for _p in (_REPO_ROOT, _GEMMA4_TRAINING):
 
 # Wildcard import would drag in the QC-app-loader side effect at module import
 # time; explicit names keep the dependency surface visible.
-from single_turn_rl.manifest_index import ManifestIndex, Section  # noqa: E402
+from langslice_training.rl.single_turn.manifest_index import (  # noqa: E402
+    ManifestIndex,
+    Section,
+)
 
 from slicebench.score import _bin_index  # noqa: E402, PLC2701 — stable internal API
 

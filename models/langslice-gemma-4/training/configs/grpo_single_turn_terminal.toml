@@ -13,7 +13,7 @@
 #   - max_steps=100 (smoke run; gate on the diagnostics in README before
 #     scaling).
 #   - No stop_tool_names / max_tool_calling_iterations (no tool loop).
-# See models/langslice-gemma-4/training/single_turn_rl/README.md.
+# See models/training-core/langslice_training/rl/single_turn/README.md.
 
 [grpo]
 chat_template_kwargs = { enable_thinking = false }

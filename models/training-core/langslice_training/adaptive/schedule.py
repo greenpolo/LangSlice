@@ -7,7 +7,7 @@ observe the same buffer without racing or sharing config.
 
 Usage (typical)::
 
-    from adaptive.schedule import AdaptiveSchedule, make_error_buffer
+    from langslice_training.adaptive.schedule import AdaptiveSchedule, make_error_buffer
 
     # At run startup — one buffer per pipeline, never shared across processes.
     buf = make_error_buffer()

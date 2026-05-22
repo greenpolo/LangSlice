@@ -16,7 +16,7 @@ from __future__ import annotations
 import pytest
 import torch
 import torch.nn as nn
-from embeddings.splice import (
+from langslice_training.embeddings.splice import (
     _CACHED_FLAT_ATTR,
     _CACHED_PATCH_COUNTS_ATTR,
     _INSTALLED_ATTR,
@@ -280,7 +280,7 @@ def test_splice_homogeneous_assumption_violation_raises():
     test pins the defensive raise so future regressions are caught.
     """
     import torch.nn as nn
-    from embeddings.splice import install_atlas_splice
+    from langslice_training.embeddings.splice import install_atlas_splice
 
     class _BadOut:
         def __init__(self, lhs):
@@ -344,7 +344,7 @@ def test_splice_requires_image_position_ids_when_active():
 
 
 def test_find_gemma_inner_raises_when_no_match():
-    from embeddings.splice import _find_gemma_inner
+    from langslice_training.embeddings.splice import _find_gemma_inner
 
     bare = nn.Linear(4, 4)
     with pytest.raises(RuntimeError, match="could not locate the inner Gemma 4 model"):
