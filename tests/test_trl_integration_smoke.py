@@ -49,7 +49,7 @@ except (ImportError, AttributeError):
         allow_module_level=True,
     )
 
-from single_turn_rl.curriculum import CurriculumRepeatingSampler  # noqa: E402
+from langslice_training.rl.single_turn.curriculum import CurriculumRepeatingSampler  # noqa: E402
 
 
 class _StubDataset:

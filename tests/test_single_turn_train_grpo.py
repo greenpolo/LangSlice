@@ -15,9 +15,9 @@ from unittest.mock import MagicMock
 
 import pytest
 import torch
-from single_turn_rl import dataset as ds
-from single_turn_rl import train_grpo as tg
-from single_turn_rl.terminal_states import TerminalState
+from langslice_training.rl.single_turn import dataset as ds
+from langslice_training.rl.single_turn import train_grpo as tg
+from langslice_training.rl.single_turn.terminal_states import TerminalState
 
 # --- Test fixtures --------------------------------------------------------
 

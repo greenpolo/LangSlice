@@ -31,7 +31,7 @@ from sft.render import (  # noqa: E402
 )
 
 if TYPE_CHECKING:
-    from rlvr.env import LangSliceEstimateEnv  # noqa: F401
+    from langslice_training.rl.multi_turn_env.env import LangSliceEstimateEnv  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -219,7 +219,7 @@ def _run_agent_loop_for_one(
     chain-of-thought lives in the thinking channel and the submit args
     carry only ``position_mm`` (matches the thinking-signature SFT run).
     """
-    from rlvr.env import LangSliceEstimateEnv
+    from langslice_training.rl.multi_turn_env.env import LangSliceEstimateEnv
 
     env = LangSliceEstimateEnv(atlas_grid=atlas_grid)
     image_path = eval_row["image_path"]

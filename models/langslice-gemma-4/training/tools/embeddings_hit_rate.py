@@ -36,7 +36,10 @@ _GEMMA4_TRAINING = Path(__file__).resolve().parents[1]
 if str(_GEMMA4_TRAINING) not in sys.path:
     sys.path.insert(0, str(_GEMMA4_TRAINING))
 
-from embeddings.cache import AtlasEmbeddingCache, parse_atlas_path  # noqa: E402
+from langslice_training.embeddings.cache import (  # noqa: E402
+    AtlasEmbeddingCache,
+    parse_atlas_path,
+)
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:

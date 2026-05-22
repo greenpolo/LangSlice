@@ -26,7 +26,7 @@ from typing import Any
 
 import pytest
 import torch
-from single_turn_rl.train_grpo import (
+from langslice_training.rl.single_turn.train_grpo import (
     SUBMIT_MARKER,
     _build_submit_estimate_stopping_criteria,
     _completion_close_token_index,

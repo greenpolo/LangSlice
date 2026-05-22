@@ -13,7 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from single_turn_rl import train_grpo as tg
+from langslice_training.rl.single_turn import train_grpo as tg
 
 
 def _make_cfg(tmp_path: Path) -> Path:

@@ -1,5 +1,5 @@
-# Hard pins for the langslice-gemma-4 RLVR pipeline.
-# See docs/training_overview.md and training/rlvr/README.md before installing.
+# Hard pins for the langslice-gemma-4 single-turn RL pipeline.
+# See docs/training_overview.md before installing.
 #
 # Verified 2026-05-04 via Context7 + Exa:
 # - TRL 1.1.0 is the latest PyPI release after multimodal tool responses

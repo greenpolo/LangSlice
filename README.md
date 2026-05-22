@@ -63,8 +63,8 @@ LangSlice is migrating training/data helpers into shared packages under `models/
 - `models/training-core/langslice_training`
 - `models/data/langslice_data`
 
-Training entrypoints are exposed as small launchers:
-`langslice-single-turn-rl`, `langslice-isft`, and `langslice-sft-train`.
+Training entrypoints are exposed as model-scoped launchers:
+`langslice-gemma-rl` and `langslice-gemma-sft`.
 
 Public model-card metadata for the released variant is in
 `models/langslice-gemma-4/variants/langslice-gemma-4-e4b/README.md`.

@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 import torch
-from embeddings.cache import AtlasEmbeddingCache
+from langslice_training.embeddings.cache import AtlasEmbeddingCache
 from sft.collate import LangSliceCollator
 from sft.render import RenderedExample, RenderMetadata
 

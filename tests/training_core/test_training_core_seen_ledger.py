@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from langslice_training.isft_core.seen_ledger import SeenLedger
+from langslice_training.sft.seen_ledger import SeenLedger
 
 
 def test_seen_ledger_roundtrip_no_manifest(tmp_path: Path) -> None:

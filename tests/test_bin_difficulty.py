@@ -11,7 +11,7 @@ that the caller can iterate without seeing concurrent writes.
 from __future__ import annotations
 
 import pytest
-from single_turn_rl.curriculum import BinDifficultyMap
+from langslice_training.rl.single_turn.curriculum import BinDifficultyMap
 
 
 def test_empty_map_returns_none_for_any_key() -> None:

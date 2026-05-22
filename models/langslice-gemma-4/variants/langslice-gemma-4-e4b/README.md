@@ -24,10 +24,10 @@ Numbers above are copied from tracked training docs and should be refreshed when
 
 ## Compatibility notes
 
-- Legacy commands remain supported during the transition:
-  - `langslice-single-turn-rl`
-  - `python -m iSFT.iterate`
-  - `python -m sft.train_sft`
+- Public model-scoped launch commands:
+  - `langslice-gemma-rl`
+  - `langslice-gemma-sft`
+- iSFT is retired as a public product/pipeline and has no public launcher.
 - Transition shims prefer shared packages when available under:
   - `models/langslice-traces/langslice_traces`
   - `models/synthdata/synthdata`

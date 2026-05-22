@@ -10,13 +10,12 @@ Writes:
 
 Usage (host-side):
   python models/langslice-gemma-4/training/tools/build_overnight_corpus.py \\
-      --out out/iSFT/overnight_<TS>/ \\
+      --out out/synth/overnight_<TS>/ \\
       --n-synth 12000 \\
       --seed 42
 
 Multi-turn floor is hard-pinned to 1.0 (every synth row gets the full
-fetch_atlas → ... → submit_estimate prefix). The 0.10 default in
-iSFT/iterate.py would defeat the point of this run.
+fetch_atlas → ... → submit_estimate prefix).
 
 All paths are relative to the repo root; resolves cwd up if needed.
 """
@@ -44,10 +43,10 @@ def _find_repo_root() -> Path:
 
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = _find_repo_root()
-TRAINING_ROOT = HERE.parent
+SYNTHDATA_ROOT = REPO_ROOT / "models" / "synthdata"
 
-# Add training/ to sys.path so we can import iSFT.synth_corpus
-sys.path.insert(0, str(TRAINING_ROOT))
+# Add synthdata + src roots for local package imports.
+sys.path.insert(0, str(SYNTHDATA_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -65,10 +64,10 @@ def _generate_chunk(args_tuple):
     """
     chunk_id, specs_chunk, seed, mt_floor, atlas_grid_cache_dir, max_total_images, mode = args_tuple
 
-    sys.path.insert(0, str(TRAINING_ROOT))
+    sys.path.insert(0, str(SYNTHDATA_ROOT))
     sys.path.insert(0, str(REPO_ROOT / "src"))
 
-    from iSFT.synth_corpus import generate_synthetic_rows
+    from synthdata.sft_corpus import generate_synthetic_rows
 
     worker_rng = random.Random(seed)
     t0 = time.monotonic()
@@ -191,7 +190,7 @@ def main() -> int:
             "Number of worker processes for parallel synth-row generation. "
             "Defaults to half the logical CPU count (skip hyperthreaded siblings). "
             "Set to 1 to disable the pool entirely. Each worker re-imports "
-            "iSFT.synth_corpus and rebuilds its own atlas-grid cache on first "
+            "synthdata.sft_corpus and rebuilds its own atlas-grid cache on first "
             "use per (atlas, plane), so worker startup adds ~5-10 sec/worker; "
             "amortizes well above ~500 specs per worker."
         ),
@@ -217,7 +216,7 @@ def main() -> int:
         logger.info("Distilled plane mix: %s", dict(distilled_planes))
 
     # ---- 2. Build synth specs from allocation manifest --------------------
-    from iSFT.synth_corpus import (
+    from synthdata.sft_corpus import (
         generate_synthetic_rows,
         load_specs_from_allocation,
     )

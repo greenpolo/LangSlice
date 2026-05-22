@@ -1,4 +1,4 @@
-"""Tests for ``curriculum.bins.compute_section_bins``.
+"""Tests for ``langslice_training.adaptive.curriculum.bins.compute_section_bins``.
 
 We use mock plane extents (passed via ``plane_extent_overrides``) so the
 test environment doesn't have to load real BrainGlobe atlases. Concrete
@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from curriculum.bins import compute_section_bins
-from rlvr.dataset import SingleSliceExample
+from langslice_training.adaptive.curriculum.bins import compute_section_bins
+from langslice_training.rl.common.dataset import SingleSliceExample
 
 
 def _make(section_id: str, atlas: str, plane: str, ap_mm: float) -> SingleSliceExample:

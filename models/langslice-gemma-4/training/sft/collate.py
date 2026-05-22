@@ -13,8 +13,8 @@ if TYPE_CHECKING:
     # Import-only for type hints; keeping the runtime path import-free means
     # the unit tests for collate.py do not require the embeddings package
     # (and its transitive rlvr.atlas_grid import) to be on sys.path.
-    from embeddings.cache import AtlasEmbeddingCache
-    from embeddings.query_cache import QueryEmbeddingCache
+    from langslice_training.embeddings.cache import AtlasEmbeddingCache
+    from langslice_training.embeddings.query_cache import QueryEmbeddingCache
 
 
 # --- Gemma 4 token-level assistant-mask boundary IDs ---------------------

@@ -6,10 +6,8 @@ checkpoints, and private run logs are local-only.
 ## Layout
 
 - `models/langslice-gemma-4/training/sft/` - SFT trainer and data contract.
-- `models/langslice-gemma-4/training/iSFT/` - expert-iteration SFT driver.
-- `models/langslice-gemma-4/training/single_turn_rl/` - active single-turn RL trainer.
-- `models/langslice-gemma-4/training/rlvr/` - parked multi-turn RLVR trainer.
-- `models/training-core/langslice_training/` - shared curriculum, embedding, iSFT, and RL helper code.
+- `models/training-core/langslice_training/rl/single_turn/` - active single-turn RL trainer.
+- `models/training-core/langslice_training/` - shared reusable training code.
 - `models/langslice-traces/langslice_traces/` - trace generation and rendering primitives.
 - `models/synthdata/synthdata/` - augmentation and synthetic-data utilities.
 - `models/data/langslice_data/` - public manifest/QC tooling and fixtures.
@@ -26,13 +24,14 @@ Training entrypoints live under the model hub and are exposed through small
 launchers:
 
 ```powershell
-langslice-sft-train --help
-langslice-isft --help
-langslice-single-turn-rl --help
+langslice-gemma-sft --help
+langslice-gemma-rl --help
 ```
 
 These launchers only validate imports and arguments when invoked with `--help`;
 they do not start training unless full training arguments are provided.
+
+iSFT is retired as a public product/pipeline and no longer has a public launcher.
 
 ## Data Policy
 

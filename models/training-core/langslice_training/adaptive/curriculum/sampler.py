@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:  # pragma: no cover - typing only
     pass
 
-from langslice_training.rl_core.dataset import RowDataset
+from langslice_training.rl.common.dataset import RowDataset
 
 
 class WeightedRowDataset(RowDataset):
@@ -110,7 +110,8 @@ def _curriculum_grpo_trainer_cls() -> type:
     """Build :class:`CurriculumGRPOTrainer` against the installed TRL.
 
     Done lazily because TRL pulls heavy deps (transformers, accelerate, …)
-    that we don't want to require for ``import curriculum``.
+    that we don't want to require for
+    ``import langslice_training.adaptive.curriculum``.
     """
     from trl import GRPOTrainer  # noqa: PLC0415
 
@@ -145,7 +146,8 @@ def _curriculum_sft_trainer_cls() -> type:
 
 
 def __getattr__(name: str):  # noqa: D401 — module-level lazy class loaders
-    """Lazy class construction so ``import curriculum.sampler`` doesn't
+    """Lazy class construction so
+    ``import langslice_training.adaptive.curriculum.sampler`` doesn't
     drag TRL into every consumer (e.g. unit tests for ``bins.py``).
     """
     if name == "CurriculumGRPOTrainer":

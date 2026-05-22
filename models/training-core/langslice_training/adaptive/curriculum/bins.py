@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING
 from slicebench.score import _bin_index  # noqa: PLC2701 — stable internal API
 
 if TYPE_CHECKING:
-    from langslice_training.rl_core.dataset import SingleSliceExample
+    from langslice_training.rl.common.dataset import SingleSliceExample
 
 
 # Cache of (atlas_name, plane) → plane_extent_mm so we don't reload BrainGlobe

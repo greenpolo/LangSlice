@@ -1,4 +1,4 @@
-"""Tests for models/langslice-gemma-4/training/embeddings/cache.py."""
+"""Tests for models/training-core/langslice_training/embeddings/cache.py."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 import torch
-from embeddings.cache import (
+from langslice_training.embeddings.cache import (
     AtlasEmbeddingCache,
     parse_atlas_path,
 )

@@ -15,8 +15,8 @@ skip the ~30 min of redundant NTFS-via-Docker p9 RPC overhead during
 
 Usage:
   python models/langslice-gemma-4/training/tools/snap_corpus_atlas_paths.py \
-      --in  out/iSFT/<corpus>/combined_corpus.jsonl \
-      --out out/iSFT/<corpus>/combined_corpus_snapped.jsonl
+      --in  out/synth/<corpus>/combined_corpus.jsonl \
+      --out out/synth/<corpus>/combined_corpus_snapped.jsonl
 """
 from __future__ import annotations
 

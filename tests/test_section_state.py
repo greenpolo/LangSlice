@@ -29,8 +29,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from single_turn_rl import section_state as ss
-from single_turn_rl.manifest_index import ManifestIndex
+from langslice_training.rl.single_turn import section_state as ss
+from langslice_training.rl.single_turn.manifest_index import ManifestIndex
 
 # ---------------------------------------------------------------------------
 # Synthetic manifest (mirrors test_manifest_index._build_manifest_tree)

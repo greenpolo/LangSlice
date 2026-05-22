@@ -1,19 +1,14 @@
-"""Unit tests for iSFT.path_rewriter."""
+"""Unit tests for shared SFT path rewriter."""
 
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 
-from PIL import Image
-
-_REPO = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(_REPO / "models" / "langslice-gemma-4" / "training"))
-
-from iSFT.path_rewriter import (  # noqa: E402
+from langslice_training.sft.path_rewriter import (
     build_unified_corpus,
 )
+from PIL import Image
 
 
 def _write_image(path: Path, color=(127, 64, 32)) -> None:

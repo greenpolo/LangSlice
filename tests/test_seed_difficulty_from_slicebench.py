@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from single_turn_rl.manifest_index import ManifestIndex
+from langslice_training.rl.single_turn.manifest_index import ManifestIndex
 
 # ---------------------------------------------------------------------------
 # Module-under-test loader
@@ -690,7 +690,13 @@ def test_cli_help_smoke() -> None:
     rest of the pipeline."""
     proc = subprocess.run(
         [sys.executable, str(TOOL_PATH), "--help"],
-        check=False, capture_output=True, text=True,
+        check=False,
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "PYTHONPATH": str(REPO_ROOT / "models" / "training-core"),
+        },
     )
     assert proc.returncode == 0
     assert "--slicebench-summary" in proc.stdout

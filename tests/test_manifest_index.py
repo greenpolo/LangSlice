@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from single_turn_rl.manifest_index import (
+from langslice_training.rl.single_turn.manifest_index import (
     LiveDifficulty,
     ManifestIndex,
     Section,

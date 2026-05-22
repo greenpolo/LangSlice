@@ -24,7 +24,7 @@ from __future__ import annotations
 import math
 
 import pytest
-from single_turn_rl.rewards import (
+from langslice_training.rl.single_turn.rewards import (
     DEFAULT_CUTOFF_FRAC,
     DEFAULT_FORMAT_PENALTY,
     DEFAULT_OUT_OF_RANGE_REWARD,

@@ -17,7 +17,7 @@ from collections import Counter
 from typing import Any
 
 import torch
-from curriculum.sampler import WeightedRowDataset
+from langslice_training.adaptive.curriculum.sampler import WeightedRowDataset
 from torch.utils.data import RandomSampler, WeightedRandomSampler
 
 

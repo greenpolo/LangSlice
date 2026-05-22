@@ -1,4 +1,4 @@
-"""Unit tests for iSFT/seen_ledger.py.
+"""Unit tests for shared SFT seen_ledger.py.
 
 All tests are pure-Python and require no GPU, Docker, or real manifest files.
 """
@@ -7,24 +7,11 @@ from __future__ import annotations
 
 import json
 import os
-
-# The seen_ledger module lives under models/.../iSFT/ which is already on
-# sys.path via conftest.py or directly importable when running from the
-# training directory.  We add it explicitly so tests run from the repo root.
-import sys
 import time
 from pathlib import Path
 
 import pytest
-
-_TRAINING = (
-    Path(__file__).resolve().parents[1]
-    / "models" / "langslice-gemma-4" / "training"
-)
-if str(_TRAINING) not in sys.path:
-    sys.path.insert(0, str(_TRAINING))
-
-from iSFT.seen_ledger import SeenLedger, StaleLedgerError  # noqa: E402
+from langslice_training.sft.seen_ledger import SeenLedger, StaleLedgerError
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -101,7 +88,7 @@ class TestSeenLedger:
 
         # Loading now should raise StaleLedgerError.
         ledger2 = SeenLedger(tmp_path / "ledger.jsonl", manifest_root=manifest_root)
-        with pytest.raises(StaleLedgerError, match="fingerprint mismatch"):
+        with pytest.raises(StaleLedgerError, match="Manifest changed since ledger write"):
             ledger2.load()
 
     def test_fingerprint_matches_no_change(self, tmp_path: Path) -> None:

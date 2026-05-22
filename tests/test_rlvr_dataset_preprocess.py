@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections import Counter
 from unittest.mock import patch
 
-from rlvr.dataset import RowDataset, _should_apply_clahe
+from langslice_training.rl.common.dataset import RowDataset, _should_apply_clahe
 
 
 def test_should_apply_clahe_is_deterministic_per_section() -> None:
@@ -72,7 +72,10 @@ def test_row_dataset_lazy_decode_calls_preprocess_per_image() -> None:
     ]
     ds = RowDataset(rows)
     sentinel = object()
-    with patch("rlvr.dataset.preprocess_query_image", return_value=sentinel) as mock_pp:
+    with patch(
+        "langslice_training.rl.common.dataset.preprocess_query_image",
+        return_value=sentinel,
+    ) as mock_pp:
         single = ds[0]
         group = ds[1]
     # Single row: one decode, exposes "image"; "images" absent.
@@ -99,7 +102,10 @@ def test_row_dataset_lazy_decode_passes_per_image_clahe_flag() -> None:
         }
     ]
     ds = RowDataset(rows)
-    with patch("rlvr.dataset.preprocess_query_image", return_value=object()) as mock_pp:
+    with patch(
+        "langslice_training.rl.common.dataset.preprocess_query_image",
+        return_value=object(),
+    ) as mock_pp:
         ds[0]
     flag_args = [c.kwargs["apply_clahe"] for c in mock_pp.call_args_list]
     assert flag_args == [True, False, True]

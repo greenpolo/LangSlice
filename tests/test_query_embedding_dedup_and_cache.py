@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 import torch
-from single_turn_rl import train_grpo as tg
+from langslice_training.rl.single_turn import train_grpo as tg
 
 # ---------------------------------------------------------------------------
 # Stub helpers (mirror existing test_single_turn_train_grpo style)
@@ -251,7 +251,7 @@ def test_within_step_dedup_disk_cache_takes_precedence_for_first_occurrence() ->
 
 def test_query_cache_save_load_roundtrip(tmp_path: Path) -> None:
     """Precompute writes a per-(plane, dataset) .pt file; reload looks it up."""
-    from embeddings.query_cache import QueryEmbeddingCache, save_query_pair
+    from langslice_training.embeddings.query_cache import QueryEmbeddingCache, save_query_pair
 
     plane = "coronal"
     dataset = "ad_bxd"
@@ -274,7 +274,7 @@ def test_query_cache_save_load_roundtrip(tmp_path: Path) -> None:
 
 def test_query_cache_unknown_path_returns_none(tmp_path: Path) -> None:
     """Lookup for a path not in any cache file returns None (no exception)."""
-    from embeddings.query_cache import QueryEmbeddingCache
+    from langslice_training.embeddings.query_cache import QueryEmbeddingCache
 
     cache = QueryEmbeddingCache(tmp_path)  # empty dir
     assert cache.lookup_by_path("queries/nope.jpg") is None
@@ -283,7 +283,7 @@ def test_query_cache_unknown_path_returns_none(tmp_path: Path) -> None:
 
 def test_query_cache_separates_planes_and_datasets(tmp_path: Path) -> None:
     """(plane, dataset) pairs map to separate cache files; lookups are isolated."""
-    from embeddings.query_cache import QueryEmbeddingCache, save_query_pair
+    from langslice_training.embeddings.query_cache import QueryEmbeddingCache, save_query_pair
 
     save_query_pair(
         tmp_path, plane="coronal", dataset="ad_bxd",
@@ -306,7 +306,7 @@ def test_query_cache_separates_planes_and_datasets(tmp_path: Path) -> None:
 
 def test_query_cache_returns_clone(tmp_path: Path) -> None:
     """Mutating returned tensor must not corrupt the cache."""
-    from embeddings.query_cache import QueryEmbeddingCache, save_query_pair
+    from langslice_training.embeddings.query_cache import QueryEmbeddingCache, save_query_pair
 
     p = "data/datasets/coronal/ad_bxd/x.jpg"
     save_query_pair(
@@ -325,7 +325,7 @@ def test_query_cache_returns_clone(tmp_path: Path) -> None:
 def test_query_cache_unions_with_atlas(tmp_path: Path) -> None:
     """Combined lookup: atlas hit takes precedence on collision; otherwise query
     fills in. Mirrors what the trainer wires when both flags are passed."""
-    from embeddings.query_cache import QueryEmbeddingCache, save_query_pair
+    from langslice_training.embeddings.query_cache import QueryEmbeddingCache, save_query_pair
 
     # Atlas cache (stub via _StubCache for isolation).
     atlas_emb = torch.full((2, 4), 1.0)
@@ -354,7 +354,7 @@ def test_query_cache_unions_with_atlas(tmp_path: Path) -> None:
 
 def test_query_cache_atlas_takes_precedence_on_collision(tmp_path: Path) -> None:
     """If both caches happen to contain the same key, atlas wins (deterministic)."""
-    from embeddings.query_cache import QueryEmbeddingCache, save_query_pair
+    from langslice_training.embeddings.query_cache import QueryEmbeddingCache, save_query_pair
 
     p = "atlas/x/coronal/2.00mm.jpg"
     atlas_emb = torch.full((2, 4), 1.0)
@@ -433,7 +433,7 @@ def test_train_grpo_query_cache_missing_dir_error_is_clear(
 
     We exercise the helper that loads the cache rather than the full main()
     (which requires TRL/Unsloth)."""
-    from embeddings.query_cache import QueryEmbeddingCache
+    from langslice_training.embeddings.query_cache import QueryEmbeddingCache
 
     bogus = tmp_path / "does_not_exist"
     cache = QueryEmbeddingCache(bogus)

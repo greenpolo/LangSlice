@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from single_turn_rl import terminal_states as ts
+from langslice_training.rl.single_turn import terminal_states as ts
 
 # ---------------------------------------------------------------------------
 # Test helpers

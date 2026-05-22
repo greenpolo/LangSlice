@@ -22,8 +22,8 @@ from pathlib import Path
 
 import pytest
 import torch
-from embeddings.cache import AtlasEmbeddingCache
-from embeddings.query_cache import QueryEmbeddingCache, save_query_pair
+from langslice_training.embeddings.cache import AtlasEmbeddingCache
+from langslice_training.embeddings.query_cache import QueryEmbeddingCache, save_query_pair
 from sft.collate import LangSliceCollator
 from sft.render import RenderedExample, RenderMetadata
 
@@ -354,7 +354,7 @@ def test_splice_hook_accepts_mixed_sidecars():
     atlas (small) + query (large) caches produce in practice.
     """
     import torch.nn as nn
-    from embeddings.splice import install_atlas_splice
+    from langslice_training.embeddings.splice import install_atlas_splice
 
     class _FakeOut:
         def __init__(self, lhs, pool):
@@ -429,7 +429,7 @@ def test_splice_hook_accepts_mixed_sidecars():
 
 
 # ---------------------------------------------------------------------------
-# CLI parsing: --query-embedding-cache on train_sft and iSFT/iterate
+# CLI parsing: --query-embedding-cache on train_sft
 # ---------------------------------------------------------------------------
 
 
@@ -456,40 +456,6 @@ def test_train_sft_query_cache_flag_parses(tmp_path):
     args = _parse_args([
         "--config", str(cfg),
         "--dataset", str(dataset),
-        "--output-dir", str(out),
-        "--query-embedding-cache", str(qcache),
-    ])
-    assert args.query_embedding_cache == qcache
-
-
-def test_isft_iterate_query_cache_flag_parses(tmp_path):
-    """iSFT iterate.py exposes --query-embedding-cache and defaults to None."""
-    from iSFT.iterate import _parse_args
-
-    base = tmp_path / "base"
-    base_corpus = tmp_path / "corpus.jsonl"
-    base_corpus.write_text("", encoding="utf-8")
-    iter_dir = tmp_path / "iter"
-    alloc = tmp_path / "alloc"
-    out = tmp_path / "out"
-    qcache = tmp_path / "qcache"
-
-    # Default
-    args = _parse_args([
-        "--base-checkpoint", str(base),
-        "--base-corpus", str(base_corpus),
-        "--iterative-corpus-dir", str(iter_dir),
-        "--allocation-root", str(alloc),
-        "--output-dir", str(out),
-    ])
-    assert args.query_embedding_cache is None
-
-    # Set
-    args = _parse_args([
-        "--base-checkpoint", str(base),
-        "--base-corpus", str(base_corpus),
-        "--iterative-corpus-dir", str(iter_dir),
-        "--allocation-root", str(alloc),
         "--output-dir", str(out),
         "--query-embedding-cache", str(qcache),
     ])

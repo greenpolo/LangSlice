@@ -1,4 +1,4 @@
-"""Unit tests for ``rlvr.rewards`` (spec §11 verification 2).
+"""Unit tests for ``langslice_training.rl.multi_turn_env.rewards`` (spec §11 verification 2).
 
 The reward is a normalized, truncated Gaussian on final coordinate error:
     err_frac = abs(pred - truth) / axis_span_mm
@@ -12,19 +12,19 @@ the mean. Failure modes (no submit, malformed, wrong-kind, wrong-count) → 0.0.
 from __future__ import annotations
 
 import pytest
-from rlvr.env import LangSliceEstimateEnv
-from rlvr.rewards import (
+from langslice_training.rl.common.rewards import (
     DEFAULT_CUTOFF_FRAC,
     DEFAULT_SIGMA_FRAC,
     make_position_reward,
     normalized_bell_reward,
     position_reward,
 )
+from langslice_training.rl.multi_turn_env.env import LangSliceEstimateEnv
 
 
 class _StubAtlasGrid:
     def range_mm(self, *args, **kwargs):  # noqa: ANN001, ANN002, ANN003, ARG002
-        from rlvr.atlas_grid import GridRange  # noqa: PLC0415
+        from langslice_training.rl.common.atlas_grid import GridRange  # noqa: PLC0415
 
         return GridRange(pos_lo=0.0, pos_hi=13.2)
 

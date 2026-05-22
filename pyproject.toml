@@ -26,9 +26,8 @@ dependencies = [
 
 [project.scripts]
 langslice = "langslice_harness.cli:main"
-langslice-single-turn-rl = "langslice_harness.training_launchers:single_turn_rl"
-langslice-sft-train = "langslice_harness.training_launchers:sft_train"
-langslice-isft = "langslice_harness.training_launchers:isft"
+langslice-gemma-rl = "langslice_harness.training_launchers:gemma_rl"
+langslice-gemma-sft = "langslice_harness.training_launchers:gemma_sft"
 
 [project.optional-dependencies]
 dev = [
@@ -68,7 +67,6 @@ include = [
     "models/data/**/*.py",
     "models/langslice-gemma-4/data/augmentation/**/*.py",
     "models/langslice-gemma-4/training/sft/**/*.py",
-    "models/langslice-gemma-4/training/rlvr/**/*.py",
 ]
 
 [tool.ruff.lint]

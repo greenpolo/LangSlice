@@ -1,5 +1,5 @@
 """Shared synthdata package."""
 
-from . import augmentation, dataset
+from . import atlas_signature, augmentation, dataset, sft_corpus
 
-__all__ = ["augmentation", "dataset"]
+__all__ = ["atlas_signature", "augmentation", "dataset", "sft_corpus"]
