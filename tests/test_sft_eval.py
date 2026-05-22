@@ -183,11 +183,11 @@ def test_run_agent_loop_for_one_uses_rlvr_env_single_slice(monkeypatch, tmp_path
         },
     ])
     monkeypatch.setattr(eval_mod, "_extract_tool_call_from_decoded", lambda text: next(calls, None))
-    rlvr_pkg = types.ModuleType("rlvr")
-    rlvr_env_mod = types.ModuleType("rlvr.env")
-    rlvr_env_mod.LangSliceEstimateEnv = StubEnv  # type: ignore[attr-defined]
-    monkeypatch.setitem(sys.modules, "rlvr", rlvr_pkg)
-    monkeypatch.setitem(sys.modules, "rlvr.env", rlvr_env_mod)
+    fake_env_mod = types.ModuleType("langslice_training.rl.multi_turn_env.env")
+    fake_env_mod.LangSliceEstimateEnv = StubEnv  # type: ignore[attr-defined]
+    monkeypatch.setitem(
+        sys.modules, "langslice_training.rl.multi_turn_env.env", fake_env_mod
+    )
 
     class StubProcessor:
         def apply_chat_template(self, *args, **kwargs):  # noqa: ANN002, ANN003

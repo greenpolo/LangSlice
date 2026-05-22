@@ -1,6 +1,6 @@
 """Persistent cache for SigLIP embeddings of training query (slice) images.
 
-Sibling of :mod:`embeddings.cache` (which caches atlas reference images).
+Sibling of :mod:`langslice_training.embeddings.cache` (which caches atlas reference images).
 Where the atlas cache is keyed by ``atlas/<atlas>/<plane>/<basename>``
 because every training row references the same atlas grid, the query cache
 is keyed by the **full repo-relative image_path** taken from the manifest
@@ -11,7 +11,7 @@ Cache layout on disk
 ====================
 
 One ``.pt`` file per ``(plane, dataset)`` pair, written by
-:mod:`embeddings.precompute_query`::
+:mod:`langslice_training.embeddings.precompute_query`::
 
     <cache_dir>/<plane>__<dataset>.pt
 
@@ -35,7 +35,7 @@ Why ``(plane, dataset)`` instead of a single global file? Two reasons:
 Atomic-write contract
 =====================
 
-:func:`save_query_pair` mirrors :func:`embeddings.precompute._save_pair`:
+:func:`save_query_pair` mirrors :func:`langslice_training.embeddings.precompute._save_pair`:
 torch-saves to ``<path>.partial`` then ``replace``s atomically so an
 interrupted precompute never leaves a half-written file behind.
 
@@ -45,7 +45,7 @@ Lookup precedence vs the atlas cache
 The trainer wires the two caches in a chain (atlas first). In the rare
 event a path collides between the two layers, atlas wins — the atlas cache
 is treated as canonical because it's bit-exact-verified by
-``embeddings._verify_cache``.
+``langslice_training.embeddings._verify_cache``.
 """
 
 from __future__ import annotations
@@ -67,7 +67,7 @@ _FILENAME_RE = re.compile(r"^(?P<plane>coronal|sagittal|horizontal)__(?P<dataset
 class _QueryCacheEntry:
     """Lazy-loaded per-(plane, dataset) embedding map.
 
-    Same lazy-load pattern as :class:`embeddings.cache._CacheEntry`: defer
+    Same lazy-load pattern as :class:`langslice_training.embeddings.cache._CacheEntry`: defer
     the torch.load until the first lookup forces it. mmap when possible.
     """
 
@@ -95,7 +95,7 @@ class QueryEmbeddingCache:
     ``<plane>__<dataset>.pt`` file in ``cache_dir`` at init time but defers
     reading their tensors until the first lookup for that pair.
 
-    Mirror :class:`embeddings.cache.AtlasEmbeddingCache` API surface:
+    Mirror :class:`langslice_training.embeddings.cache.AtlasEmbeddingCache` API surface:
 
     * ``pairs()`` returns ``[(plane, dataset), ...]``.
     * ``lookup_by_path(path)`` returns the cached embedding or ``None``.
@@ -212,7 +212,7 @@ def save_query_pair(
 ) -> Path:
     """Atomic-write one ``<plane>__<dataset>.pt`` file under ``output_dir``.
 
-    Mirrors :func:`embeddings.precompute._save_pair`: torch-save to a
+    Mirrors :func:`langslice_training.embeddings.precompute._save_pair`: torch-save to a
     ``.partial`` and ``replace`` so an interrupted precompute leaves no
     half-written file behind.
     """
