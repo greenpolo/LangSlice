@@ -1,4 +1,4 @@
-"""Unit tests for ``single_turn_rl.manifest_index``.
+"""Unit tests for ``langslice_training.rl.single_turn.manifest_index``.
 
 The tests build a synthetic manifest tree under ``tmp_path`` (shards +
 allocations) so they exercise the real ``load_inventory_manifest`` code
@@ -778,7 +778,7 @@ def test_persist_writes_via_tmp_then_renames(
         return real_replace(src, dst)
 
     monkeypatch.setattr(
-        "single_turn_rl.manifest_index.os.replace", _spy_replace
+        "langslice_training.rl.single_turn.manifest_index.os.replace", _spy_replace
     )
     index.persist_live_difficulty(sidecar)
     assert seen["src"].name == "live.json.tmp"

@@ -18,7 +18,7 @@ Optional features (mirroring the rlvr / SFT lanes):
   to ``<output_dir>/curriculum_log.jsonl`` for the next round's weight update.
 * **Atlas embedding splice** via ``--atlas-embedding-cache PATH``. When set,
   loads the precomputed SigLIP cache, calls
-  :func:`embeddings.splice.install_atlas_splice` on the wrapped model, and
+  :func:`langslice_training.embeddings.splice.install_atlas_splice` on the wrapped model, and
   uses :class:`SingleTurnGRPOTrainer` (a GRPOTrainer subclass) which wraps
   the processor to emit per-batch sidecars
   (``precomputed_image_mask`` / ``precomputed_cached_flat`` /
@@ -435,7 +435,8 @@ def _validate_atlas_cache_coverage(cache: Any, dataset: RowDataset) -> None:
         logger.warning(
             "atlas-embedding cache is missing %d (atlas, plane) pair(s) the "
             "training set uses: %s. Splice will fall back to live SigLIP for "
-            "those images. Re-run `python -m embeddings.precompute` to fill them.",
+            "those images. Re-run "
+            "`python -m langslice_training.embeddings.precompute` to fill them.",
             len(missing), sorted(missing),
         )
 
@@ -453,14 +454,14 @@ def _validate_query_cache_loaded(cache: Any, cache_dir: Path) -> None:
         raise FileNotFoundError(
             f"--query-embedding-cache points at {cache_dir}, but no "
             "<plane>__<dataset>.pt cache files were found there. Run "
-            "`python -m embeddings.precompute_query` first."
+            "`python -m langslice_training.embeddings.precompute_query` first."
         )
 
 
 class _ChainedEmbeddingCache:
     """Two-tier path-keyed cache: atlas takes precedence, query fills the rest.
 
-    Mirrors the public surface of :class:`embeddings.cache.AtlasEmbeddingCache`
+    Mirrors the public surface of :class:`langslice_training.embeddings.cache.AtlasEmbeddingCache`
     that the sidecar build consumes (just ``lookup_by_path``). ``pairs()`` is
     omitted because the chain doesn't have a single notion of pair —
     callers needing the underlying lists should hold the originals.
@@ -597,7 +598,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "splice consults this cache for the per-row query image after "
         "(failing) the atlas-cache lookup. Atlas-cache hits win on any "
         "path collision. Generate via "
-        "`python -m embeddings.precompute_query`.",
+        "`python -m langslice_training.embeddings.precompute_query`.",
     )
 
     # ---- Adaptive-mode knobs (overridable from [adaptive] in TOML) ----
@@ -1077,7 +1078,7 @@ def main(argv: list[str] | None = None) -> None:
             raise FileNotFoundError(
                 f"--atlas-embedding-cache points at {args.atlas_embedding_cache}, "
                 "but no <atlas>_<plane>.pt cache files were found there. Run "
-                "`python -m embeddings.precompute` first."
+                "`python -m langslice_training.embeddings.precompute` first."
             )
         _validate_atlas_cache_coverage(atlas_cache, train_dataset)
 
@@ -1743,7 +1744,7 @@ def _make_dedup_encoder(top_model: Any) -> Any:
     """Build a ``(pixel_values, image_position_ids) -> output`` callable for dedup.
 
     The encoder calls ``inner.get_image_features(pv, pid)`` on the inner
-    Gemma 4 model. Because :func:`embeddings.splice.install_atlas_splice`
+    Gemma 4 model. Because :func:`langslice_training.embeddings.splice.install_atlas_splice`
     monkey-patches that method, calling it naively would re-enter the
     splice's mask logic. The encoder defends against that by:
 
@@ -1830,7 +1831,7 @@ def _build_sidecars(
     paths_per_row:
         Parallel ``list[list[str]]`` from the dataset's ``image_paths`` column.
     cache:
-        :class:`embeddings.cache.AtlasEmbeddingCache` (or a chain — anything
+        :class:`langslice_training.embeddings.cache.AtlasEmbeddingCache` (or a chain — anything
         with ``lookup_by_path(path) -> Tensor | None``).
     pixel_values, image_position_ids:
         Processor output tensors. Required only when ``encode_fn`` is set

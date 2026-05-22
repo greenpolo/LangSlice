@@ -63,7 +63,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--atlas-embedding-cache", type=Path, default=None,
         help=(
             "Optional path to a precomputed atlas-embedding cache directory "
-            "(produced by `python -m embeddings.precompute`). When set, the "
+            "(produced by `python -m langslice_training.embeddings.precompute`). When set, the "
             "collator emits per-image cache hits as a sidecar and a "
             "forward-pre-hook substitutes the cached SigLIP outputs in place, "
             "skipping the vision tower for cached atlas images. "
@@ -74,7 +74,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--query-embedding-cache", type=Path, default=None,
         help=(
             "Optional path to a precomputed query (slice) embedding cache "
-            "directory (produced by `python -m embeddings.precompute_query`). "
+            "directory (produced by `python -m langslice_training.embeddings.precompute_query`). "
             "Sibling of --atlas-embedding-cache: when set, slice images whose "
             "manifest-relative path is in the cache are spliced from disk in "
             "the same forward-pre-hook, skipping SigLIP for the per-row slice "
@@ -542,7 +542,7 @@ def _train(args, config, train_ds, eval_ds, cache, seed: int) -> None:
             raise FileNotFoundError(
                 f"--atlas-embedding-cache points at {atlas_cache_path}, but no "
                 "<atlas>_<plane>.pt cache files were found there. Run "
-                "`python -m embeddings.precompute` first."
+                "`python -m langslice_training.embeddings.precompute` first."
             )
         logger.info(
             "atlas-embedding splice enabled: %d pair files loaded from %s",
@@ -559,7 +559,7 @@ def _train(args, config, train_ds, eval_ds, cache, seed: int) -> None:
             raise FileNotFoundError(
                 f"--query-embedding-cache points at {query_cache_path}, but no "
                 "<plane>__<dataset>.pt cache files were found there. Run "
-                "`python -m embeddings.precompute_query` first."
+                "`python -m langslice_training.embeddings.precompute_query` first."
             )
         logger.info(
             "query-embedding splice enabled: %d pair files loaded from %s",

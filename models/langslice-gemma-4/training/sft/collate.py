@@ -226,7 +226,7 @@ class LangSliceCollator:
     ``precomputed_cached_flat`` + ``precomputed_image_mask`` +
     ``precomputed_cached_patch_counts`` so a vision-tower forward pre-hook can
     splice them in without re-running SigLIP. The trainer is responsible for
-    wiring the hook (see ``embeddings.splice``); the collator only emits the
+    wiring the hook (see ``langslice_training.embeddings.splice``); the collator only emits the
     sidecar.
     """
 
@@ -299,7 +299,7 @@ class LangSliceCollator:
         index ``i`` snaps to either the atlas or query cache, else ``None``.
 
         Atlas cache wins on path collision — its bit-exact verification
-        history (``embeddings._verify_cache``) makes it canonical. Query
+        history (``langslice_training.embeddings._verify_cache``) makes it canonical. Query
         cache fills slots the atlas cache doesn't cover (the slice/per-row
         images, which live under ``data/datasets/<plane>/<dataset>/...``
         rather than ``atlas/<atlas>/<plane>/...``).

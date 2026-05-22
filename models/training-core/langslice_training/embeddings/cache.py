@@ -4,7 +4,7 @@ Cache layout on disk
 ====================
 
 One ``.pt`` file per ``(atlas, plane)`` pair, written by
-:mod:`models.langslice-gemma-4.training.embeddings.precompute`::
+:mod:`langslice_training.embeddings.precompute`::
 
     <cache_dir>/<atlas>_<plane>.pt
 
