@@ -15,6 +15,14 @@
   A VLM estimates position, an image-gen model lays down atlas colors, Elastix warps the rest.</em>
 </p>
 
+> [!WARNING]
+> LangSlice is in-development. Some atlases may produce mixed results.
+> Horizontal and sagittal orientations are possible, but results may vary.
+> LangSlice does not offer manual registration methods — it is meant to be
+> used in combination with other registration software (ABBA, QUINT,
+> PyNutil, BrainGlobe ecosystem, etc.). Export functions to these tools
+> have not been fully developed yet.
+
 <p align="center">
   <img alt="Three histology slices registered to the Allen mouse atlas" src="assets/promo_registration_combined.png" width="780">
 </p>
