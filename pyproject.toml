@@ -17,6 +17,7 @@ dependencies = [
     "brainglobe-atlasapi",
     "brainglobe-space",
     "numpy",
+    "opencv-python-headless",
     "scipy",
     "Pillow",
     "tifffile",
