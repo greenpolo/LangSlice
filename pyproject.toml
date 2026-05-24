@@ -43,7 +43,11 @@ include = ["langslice_harness*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
-addopts = "-ra"
+addopts = "-ra -m 'not slow and not legacy_local'"
+markers = [
+    "slow: integration tests that load real atlases or render larger synthetic assets",
+    "legacy_local: archived local-maintenance tests kept out of the default suite",
+]
 pythonpath = [
     "src",
     "models/langslice-traces",

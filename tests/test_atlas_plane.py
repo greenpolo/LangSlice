@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from langslice_harness.atlas.core import (
     get_position_range_mm,
@@ -8,6 +9,8 @@ from langslice_harness.atlas.core import (
     position_mm_to_index,
 )
 from langslice_harness.atlas.space import atlas_space_context, slice_axis_index
+
+pytestmark = pytest.mark.slow
 
 
 def test_coronal_axis_is_ap():

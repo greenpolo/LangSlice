@@ -12,6 +12,8 @@ from augmentation.modes import FLUORESCENCE_MODES, ISH_MODES, sample_mode
 from augmentation.transforms.base import TransformContext
 from augmentation.transforms.texture import FluorescenceMarker
 
+pytestmark = pytest.mark.slow
+
 
 def _synth_reference_hw(h: int = 64, w: int = 64, seed: int = 0) -> np.ndarray:
     """HW uint8 grayscale reference (matches pipeline contracts)."""
@@ -444,4 +446,3 @@ def test_fluorescence_backwards_compat_p_green_p_red_warns() -> None:
     assert out.dtype == np.float32
     assert out.min() >= 0.0 and out.max() <= 1.0
     assert out[..., 1].max() > 0.1
-
