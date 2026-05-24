@@ -13,10 +13,13 @@ from PIL import Image
 
 OFFLINE = os.environ.get("OFFLINE", "") in ("1", "true", "True")
 
-pytestmark = pytest.mark.skipif(
-    OFFLINE,
-    reason="Skipped in OFFLINE mode (requires ResNet50 download)",
-)
+pytestmark = [
+    pytest.mark.slow,
+    pytest.mark.skipif(
+        OFFLINE,
+        reason="Skipped in OFFLINE mode (requires ResNet50 download)",
+    ),
+]
 
 
 # ---------------------------------------------------------------------------

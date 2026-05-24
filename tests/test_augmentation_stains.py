@@ -24,6 +24,8 @@ from augmentation.transforms.texture import (
 )
 from augmentation.transforms.tissue_class import classify_tissue
 
+pytestmark = pytest.mark.slow
+
 
 def _substrate_canvas(
     h: int,

@@ -12,6 +12,8 @@ from augmentation.transforms.tissue_class import (
     get_tissue_id_sets,
 )
 
+pytestmark = pytest.mark.slow
+
 
 @pytest.fixture(scope="module")
 def atlas() -> object:

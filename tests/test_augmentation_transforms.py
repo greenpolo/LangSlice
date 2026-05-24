@@ -37,6 +37,8 @@ from augmentation.transforms.tonal import (
     NisslTonal,
 )
 
+pytestmark = pytest.mark.slow
+
 
 def _img(h: int = 64, w: int = 64, seed: int = 0) -> np.ndarray:
     return np.random.default_rng(seed).random((h, w, 3)).astype(np.float32)

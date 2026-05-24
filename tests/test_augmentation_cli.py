@@ -11,6 +11,8 @@ import numpy as np
 import pytest
 from augmentation.cli import _build_parser, main
 
+pytestmark = pytest.mark.slow
+
 # ---------------------------------------------------------------------------
 # Fake atlas fixture
 # ---------------------------------------------------------------------------
