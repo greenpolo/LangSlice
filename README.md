@@ -62,9 +62,9 @@ langslice register slice.png --position 3.9
 
 Full CLI: `langslice --help`. Pipeline detail: [`docs/index.md`](./docs/index.md).
 
-## Model Hub Transition
+## Model Hub 
 
-LangSlice is migrating training/data helpers into shared packages under `models/`:
+LangSlice hosts training/data helpers in shared packages under `models/`:
 
 - `models/langslice-traces/langslice_traces`
 - `models/synthdata/synthdata`
