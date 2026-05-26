@@ -16,8 +16,8 @@
 </p>
 
 > [!WARNING]
-> LangSlice is in-development. Some atlases may produce mixed results.
-> Horizontal and sagittal orientations are possible, but results may vary.
+> LangSlice is in-development. Some atlases may produce mixed results; and
+> horizontal and sagittal orientations haven't yet been thoroughly tested.
 > LangSlice does not offer manual registration methods — it is meant to be
 > used in combination with other registration software (ABBA, QUINT,
 > PyNutil, BrainGlobe ecosystem, etc.). Export functions to these tools
