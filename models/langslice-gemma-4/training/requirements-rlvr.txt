@@ -1,27 +1,35 @@
-# Hard pins for the langslice-gemma-4 single-turn RL pipeline.
-# See docs/training_overview.md before installing.
+# Reference snapshot of the langslice-gemma-4 training stack.
 #
-# Verified 2026-05-04 via Context7 + Exa:
-# - TRL 1.1.0 is the latest PyPI release after multimodal tool responses
-#   (PR #5323/#5448) and drop-overlong tool results (PR #5521). PR #5390
-#   defines stop_tool_names, but it was still open in the verified GitHub
-#   source; if PyPI 1.1.0 rejects stop_tool_names, install a TRL build that
-#   includes PR #5390 before running RLVR.
-# - Unsloth 2026.4.8 is the latest PyPI release after the Gemma 4 RL docs and
-#   installer floor bumps. Its metadata still caps trl at <=0.24.0, which is
-#   older than TRL's multimodal environment_factory tool-response work.
-# - Transformers 5.5.0 is the latest version allowed by Unsloth metadata and
-#   the first Gemma 4 release. Later 5.5.x Gemma 4 patches exist but exceed
-#   Unsloth's published <=5.5.0 cap.
+# CANONICAL SOURCE OF TRUTH IS THE DOCKER IMAGE, NOT THIS FILE.
+# The training/RL pipeline runs inside `langslice-train:unsloth-2026.5.7`, built
+# from docker/unsloth/Dockerfile.train (Unsloth's official image + transformers
+# 5.5.0 + the langslice package). Runs use that image via
+# docker-compose.training.yml; nothing pip-installs this file.
+#
+# The pins below MIRROR what that image actually ships (verified 2026-05-27 via
+# `pip freeze` in the container). They are kept as a human-readable record and
+# for bare-metal / CI use. If they drift from the image, regenerate with:
+#   docker run --rm langslice-train:unsloth-2026.5.7 pip freeze
+#
+# Caveats for reproducing OUTSIDE Docker:
+#  - unsloth is pulled by the base image as a build tag (2026.5.7 here), not a
+#    clean PyPI release — install it via Unsloth's documented path, not a bare
+#    pin. (That is the whole reason the Docker image, not this file, is canonical.)
+#  - torch is the cu128 build (2.10.0+cu128); a bare `torch==2.10.0` from PyPI
+#    will not match. Use the appropriate CUDA index.
+#  - The single-turn GRPO pipeline uses TRL 0.23.1. The previous trl==1.1.0
+#    multi-turn `environment_factory` line was abandoned 2026-05-10.
 
-trl==1.1.0
 transformers==5.5.0
-unsloth==2026.4.8
-unsloth_zoo==2026.4.8
-peft==0.19.1
+trl==0.23.1
+unsloth_zoo==2026.5.4
+# unsloth==2026.5.7   # base-image build tag; install via Unsloth's docs, not this pin
+peft==0.18.1
 torch==2.10.0
-bitsandbytes==0.49.2
+tokenizers==0.22.2
+bitsandbytes==0.49.1
+accelerate==1.12.0
 datasets==4.3.0
-accelerate==1.13.0
-trackio==0.1.0
+triton==3.6.0
+trackio==0.26.0
 Pillow==12.2.0
