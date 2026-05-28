@@ -93,6 +93,44 @@ def test_validate_atlas_cache_coverage_silent_when_full(
     assert not any("missing" in r.message.lower() for r in caplog.records)
 
 
+# --- _parse_args resume flags --------------------------------------------
+
+
+def _min_argv(tmp_path: Path, *extra: str) -> list[str]:
+    """Minimal valid argv for ``_parse_args`` (only the 3 required flags)."""
+    return [
+        "--config", str(tmp_path / "c.toml"),
+        "--sft-model", "/models/sft-base",
+        "--output-dir", str(tmp_path / "out"),
+        *extra,
+    ]
+
+
+def test_parse_args_resume_from_checkpoint(tmp_path: Path) -> None:
+    ckpt = tmp_path / "checkpoint-300"
+    args = tg._parse_args(_min_argv(tmp_path, "--resume-from-checkpoint", str(ckpt)))
+    assert args.resume_from_checkpoint == ckpt
+    assert args.resume_from_adapter is None
+
+
+def test_parse_args_resume_from_adapter_still_works(tmp_path: Path) -> None:
+    adapter = tmp_path / "adapter"
+    args = tg._parse_args(_min_argv(tmp_path, "--resume-from-adapter", str(adapter)))
+    assert args.resume_from_adapter == adapter
+    assert args.resume_from_checkpoint is None
+
+
+def test_parse_args_resume_flags_mutually_exclusive(tmp_path: Path) -> None:
+    # Warm-start (adapter-only) and full-state continuation are contradictory;
+    # passing both must fail at parse time rather than silently pick one.
+    with pytest.raises(SystemExit):
+        tg._parse_args(_min_argv(
+            tmp_path,
+            "--resume-from-adapter", str(tmp_path / "a"),
+            "--resume-from-checkpoint", str(tmp_path / "c"),
+        ))
+
+
 # --- _build_sidecars ------------------------------------------------------
 
 
@@ -420,3 +458,20 @@ def test_curriculum_log_returns_underlying_reward_scores() -> None:
         plane=["coronal", "coronal"],
     )
     assert out == [pytest.approx(0.42), pytest.approx(0.84)]
+
+
+# --- _resolve_adaptive_cfg per-bin sigma knobs ---------------------------
+
+
+def test_resolve_adaptive_cfg_threads_per_bin_from_toml(tmp_path: Path) -> None:
+    args = tg._parse_args(_min_argv(tmp_path))
+    cfg = tg._resolve_adaptive_cfg(args, {"per_bin": True, "min_bin_observations": 8})
+    assert cfg["per_bin"] is True
+    assert cfg["min_bin_observations"] == 8
+
+
+def test_resolve_adaptive_cfg_per_bin_defaults_off(tmp_path: Path) -> None:
+    args = tg._parse_args(_min_argv(tmp_path))
+    cfg = tg._resolve_adaptive_cfg(args, {})
+    assert cfg["per_bin"] is False
+    assert cfg["min_bin_observations"] == 12
