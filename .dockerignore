@@ -1,0 +1,13 @@
+# Minimize the Docker build context. The daemon receives the build context on
+# every `docker build`; without this file it would ship the entire repo —
+# multi-GB out/, data/ datasets, .git, node_modules, model variants — for a
+# build that only COPYs pyproject.toml + src/ (+ docker/ for the legacy v3
+# patch). Allowlist exactly those; ignore everything else.
+*
+!pyproject.toml
+!src
+!docker
+
+# Re-exclude churn that lives under the allowlisted dirs.
+**/__pycache__
+**/*.pyc
