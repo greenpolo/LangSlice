@@ -1,16 +1,17 @@
 import { useEffect } from "react";
+import { resolveResource } from "@tauri-apps/api/path";
 import { useAppStore } from "../stores/appStore";
 import { BrainCard, AddBrainCard } from "./BrainCard";
 import { DashboardScene } from "./DashboardScene";
 import { AtlasManagerModal } from "./AtlasManagerModal";
 
-const DEMO_BRAIN_PATH =
-  "C:\\LabSoftware\\LangSlice\\tauri-gui\\demo\\demo_brain";
-// DeMBA has per-region rgb_triplets (835/836 structures), which the image-gen
-// registration pipeline needs for colored-region warping. The older AMBA
-// developmental atlas (admba_3d_p14_mouse) lacks those colors so registration
-// won't work against it.
-const DEMO_ATLAS_NAME = "demba_allen_seg_dev_mouse_p14_25um";
+// Demo brain (M01, coronal, adult mouse) ships as a bundled Tauri resource at
+// $RESOURCE/demo_brain (see bundle.resources in tauri.conf.json) and is
+// resolved at runtime, so the path is valid in `tauri dev` and packaged builds
+// alike and sits inside the asset-protocol scope (so the slice thumbnails
+// render). allen_mouse_25um carries per-region rgb_triplets, which the
+// image-gen registration pipeline needs for colored-region warping.
+const DEMO_ATLAS_NAME = "allen_mouse_25um";
 
 export function Dashboard() {
   const brains = useAppStore((s) => s.brains);
@@ -35,11 +36,12 @@ export function Dashboard() {
       openAtlasManager(DEMO_ATLAS_NAME);
       return;
     }
+    const demoBrainPath = await resolveResource("demo_brain");
     const atlasTask =
       atlasName === DEMO_ATLAS_NAME && !atlasLoading
         ? Promise.resolve()
         : loadAtlas(DEMO_ATLAS_NAME);
-    await Promise.all([atlasTask, addBrainFromFolder(DEMO_BRAIN_PATH)]);
+    await Promise.all([atlasTask, addBrainFromFolder(demoBrainPath)]);
   };
 
   return (
@@ -80,7 +82,7 @@ export function Dashboard() {
               style={{ width: "auto", padding: "8px 20px" }}
               onClick={handleLoadDemo}
               disabled={atlasLoading}
-              title="Demo brain (coronal, 10 sections spanning AP 3.45-6.91 mm) + demba_allen_seg_dev_mouse_p14_25um atlas"
+              title="Demo brain (M01, coronal, 15 sections spanning AP 4.61-9.97 mm) + allen_mouse_25um atlas"
             >
               Load Demo
             </button>
