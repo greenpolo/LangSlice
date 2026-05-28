@@ -1,53 +1,139 @@
 # LangSlice Project Guide
 
-## Overview
+LangSlice is an ADK-based Python harness plus a Tauri desktop app for
+registering histology slice images to BrainGlobe atlases. CLI command is
+`langslice`; Python imports use `langslice_harness.*`.
 
-LangSlice is an ADK-based Python harness and Tauri desktop application for
-registering histology slice images to BrainGlobe atlases.
+`CLAUDE.md` is a verbatim copy of this file. Edit one, mirror to the other.
 
-The active runtime lives in `src/langslice_harness/`. The public CLI command is
-still `langslice`, but Python imports should use `langslice_harness.*`.
+## Before writing code (READ THIS FIRST)
 
-## Active Paths
+LangSlice moves fast and depends on libraries that move fast (Unsloth, TRL,
+vLLM, transformers, PEFT, ADK, Gemini SDK). Three subagents are configured
+to keep that velocity from costing you correctness.
 
-- `src/langslice_harness/cli.py` -- CLI entry point for `version`, `register`,
-  `estimate`, `estimate-group`, `estimate-brain`, and `ollama`
-- `src/langslice_harness/vlm_config.py` -- Gemini backend selection and runtime
-  settings
-- `src/langslice_harness/openai_config.py` -- OpenAI-compatible model settings
-- `src/langslice_harness/atlas/` -- BrainGlobe loading, AP coordinate helpers,
-  slice extraction, colored region maps, and borders
-- `src/langslice_harness/harness/estimation/` -- ADK AP-estimation agents,
-  prompts, tools, validators, and runners
-- `src/langslice_harness/estimation/` -- public AP-estimation exports and shared
-  helper code
-- `src/langslice_harness/harness/registration/` -- image-gen registration
-  candidate generation, provider adapters, and optional ADK review loop
-- `src/langslice_harness/registration/` -- public registration wrapper, runtime,
-  solver helpers, and result types
-- `src/langslice_harness/whole_brain/` -- multi-slice whole-brain AP estimation
-- `src/langslice_harness/image_prep.py` -- image normalization, pixel-size
-  detection, and VLM downsampling
-- `src/langslice_harness/export.py` -- QUINT/ABBA-compatible JSON export
-- `models/langslice-gemma-4/` -- fine-tuned Gemma 4 E4B project (SFT + RLVR)
-  - `training/sft/` -- SFT trainer (`python -m sft.train_sft`)
-  - `training/rlvr/` -- RLVR GRPO trainer (parked 2026-05-09; see `training/rlvr/README.md`)
-  - `training/iSFT/` -- expert-iteration SFT driver (active pivot)
-  - `training/configs/` -- TOML configs (`sft_default`, `grpo_pilot`, `grpo_phase_b`)
-  - `data/sft_examples.jsonl` -- single-slice langslice-native trace corpus
-  - `data/augmentation/` -- stain-specific procedural augmentation pipelines
-- `tauri-gui/` -- Tauri desktop app
-- `tests/` -- pytest coverage
-- `docs/` and `README.md` -- maintained documentation
+### 1. Explore the codebase before editing — `Explore` subagent
 
-## Runtime Facts
+For anything beyond a single-file tweak, dispatch the **`Explore`** subagent
+(profile in `.claude/agents/Explore.md`, runs on Haiku, read-only:
+Read/Grep/Glob) to map call sites before changing them. Good Explore
+queries:
 
-- The main pipeline is `AP estimate -> image-gen registration -> Elastix
-  B-spline -> VisuAlign markers -> export`.
-- Registration has one active path: image-gen registration.
-- Registration can run directly or with an optional ADK review loop.
-- The ADK review loop receives the generated atlas target, the Elastix-warped
-  atlas, and the warped-atlas border overlay.
+- "Where is `function_name` defined? Where is it called from?"
+- "Which files reference `LANGSLICE_VLM_DEBUG_DIR`?"
+- "Find the entry point for the `register` CLI command."
+- "List all TOML configs under `models/langslice-gemma-4/training/configs/`."
+
+Don't speculate about paths or call shapes from memory — paths and module
+layouts have churned (see `[project_training_core_consolidation_2026_05_22]`
+in auto-memory). Memory is a hint; the filesystem is ground truth.
+
+**Skip Explore when:** the path is already known and you just need to Read
+it; the answer is a one-shot Grep that's faster inline; the question is
+about an external library (dispatch Librarian instead).
+
+### 2. Verify external knowledge — `Librarian` subagent
+
+For anything library-, SDK-, model-, or API-shaped — especially AI/ML —
+dispatch the **`Librarian`** subagent (profile in `.claude/agents/Librarian.md`,
+runs on Sonnet) to fetch current docs and concrete implementation examples.
+Training-data cutoffs lag; model IDs, SDK defaults, and library APIs change
+quarterly.
+
+Librarian's toolkit:
+
+- **Context7** for library/framework/SDK/API docs:
+  `mcp__context7__resolve-library-id`, then `mcp__context7__query-docs`. Use
+  even for well-known libraries (React, PyTorch, HuggingFace, Anthropic SDK,
+  Gemini SDK) — catches API drift your training data doesn't.
+- **Exa** for web search and changelog hunting:
+  `mcp__exa__web_search_exa`, `mcp__exa__web_fetch_exa`. Prefer Exa over
+  generic web-search paths.
+- `WebFetch` / `WebSearch` as fallback for explicit URLs.
+
+Verify before writing code that depends on: model IDs (Gemini, Claude, Gemma
+variants), SDK class/method shapes, training-library knobs (TRL GRPO args,
+Unsloth flags, vLLM serving flags), atlas/data tooling (BrainGlobe,
+SimpleITK, Elastix). Several painful debugging sessions are recorded under
+`[reference_unsloth_*]` and `[reference_gemma4_*]` in auto-memory — failure
+modes a docs check would have prevented.
+
+**Skip Librarian when:** refactoring local code; writing one-off scripts;
+debugging business logic; questions about general programming concepts that
+don't depend on a specific library version.
+
+### 3. Delegating bigger work — `general-purpose` (Opus)
+
+For multi-step work that needs synthesis rather than just retrieval —
+executing a slice of a written plan, tracing a pipeline end-to-end, auditing
+cross-package consistency, or any open-ended agentic task — dispatch the
+built-in **`general-purpose`** subagent (Opus). Main-thread Claude stays
+planner/reviewer; verify diffs the subagent produces before integrating.
+
+`codex:codex-rescue` remains available for second-opinion diagnoses or
+stuck-state rescue when the general-purpose pass isn't getting unstuck.
+
+**Skip general-purpose when:** the task is pure code lookup (Explore is
+faster) or pure docs/API verification (Librarian is faster). Don't reach for
+Opus when Haiku/Sonnet can answer.
+
+## Active paths
+
+### Runtime (`src/langslice_harness/`)
+
+- `cli.py` — CLI entry for `version`, `gui`, `register`, `estimate`,
+  `estimate-group`, `estimate-brain`, `collect-traces`, `quick-affine`,
+  `serve`, `schema`, `ollama`
+- `vlm_config.py` — Gemini backend selection and runtime settings
+- `openai_config.py` — OpenAI-compatible model settings
+- `atlas/` — BrainGlobe loading, AP coordinate helpers, slice extraction,
+  colored region maps, borders; orientation assumptions live in `atlas/space.py`
+- `harness/estimation/` — ADK AP-estimation agents, prompts, tools, validators,
+  runners
+- `estimation/` — public AP-estimation exports + shared helpers
+- `harness/registration/` — image-gen registration candidates, provider
+  adapters, optional ADK review loop
+- `registration/` — public registration wrapper, runtime, solver helpers,
+  result types
+- `whole_brain/` — multi-slice whole-brain AP estimation
+- `image_prep.py` — image normalization, pixel-size detection, VLM downsampling
+- `export.py` — QUINT/ABBA-compatible JSON export
+- `api/`, `comfyui/`, `ml/` — auxiliary surfaces (REST, ComfyUI nodes, ML helpers)
+- `training_launchers.py` — exposes `langslice-gemma-sft` and
+  `langslice-gemma-rl` console scripts
+
+### Models (`models/`)
+
+- `langslice-gemma-4/` — fine-tuned Gemma 4 E4B project
+  - `data/sft_examples.jsonl` — single-slice langslice-native trace corpus
+  - `data/augmentation/` — stain-specific procedural augmentation pipelines
+  - `training/sft/` — SFT trainer (model-scoped; entry `train_sft.py`)
+  - `training/configs/` — TOML configs (`sft_default`, `grpo_lane_a_default`,
+    `grpo_pilot`, phase-specific variants)
+  - `training/single_turn_rl/` — thin shim; canonical RL code lives in
+    `models/training-core/langslice_training/rl/single_turn/`
+  - `inference/` — server-side inference helpers
+  - `variants/` — released checkpoint trees (e.g. `langslice-gemma-4-e4b/`)
+- `training-core/langslice_training/` — shared training package
+  - `sft/`, `rl/{single_turn,multi_turn_env,common}/`, `embeddings/`,
+    `curriculum/`, `adaptive/`, `model_io/`, `contracts/`
+- `synthdata/synthdata/` — synthetic-data generation (atlas signature,
+  sft corpus, render)
+- `langslice-traces/` — agent-trace utilities
+
+### Other top-level
+
+- `tauri-gui/` — Tauri desktop app (TypeScript + Rust)
+- `tests/` — pytest coverage (mirrors `src/langslice_harness/` layout)
+- `docs/`, `README.md` — maintained documentation
+
+## Runtime facts
+
+- Main pipeline: `AP estimate → image-gen registration → Elastix B-spline →
+  VisuAlign markers → export`.
+- Registration has one active path (image-gen); can run directly or with an
+  optional ADK review loop. The review loop receives the generated atlas
+  target, the Elastix-warped atlas, and the warped-atlas border overlay.
 - AP coordinates are atlas-native millimeters from the anterior edge of the
   volume.
 - Atlas orientation assumptions are centralized in
@@ -57,161 +143,133 @@ still `langslice`, but Python imports should use `langslice_harness.*`.
 
 ## Boundaries
 
-- Treat `src/langslice_harness/`, `models/`, `tauri-gui/`, `tests/`, `docs/`,
-  and `README.md` as the active project.
-- Treat `_local/`, `references/`, and generated outputs as local-only material.
-- Keep documentation literal to the current code. If behavior changes, update
-  the relevant markdown files in the same pass.
+- Active surface: `src/langslice_harness/`, `models/`, `tauri-gui/`, `tests/`,
+  `docs/`, `README.md`.
+- Local-only (do not ship, do not document publicly): `_local/`, `references/`,
+  generated outputs, `out/`, `archive/`.
+- Keep markdown literal to the code it describes. Behavior change → update the
+  relevant doc in the same pass.
 
 ## Training-data manifest (multi-agent safety)
 
 The training-data manifest has **two architecturally disjoint layers**.
-Most agents only touch one of them. The role separation is enforced by
-hard rules — mixing roles in one session will silently destroy another
-agent's work.
+Most agents only touch one. Role separation is enforced by hard rules —
+mixing roles in a single session silently destroys another agent's work.
 
-### Layer 1: shards (GT data)
+### Layers
 
-`data/manifest/shards/<plane>/<dataset>.jsonl` — one shard per
-`(plane, dataset)` pair. Rows carry GT (position, atlas, species, etc.)
-but **never** a `split` field. Per-shard curation lives in
-`data/manifest/overrides/<plane>/<dataset>.json` (drops, axis flips,
-per-section position overrides, atlas overrides).
-
-### Layer 2: allocations (split membership)
-
-`data/manifest/allocations/<plane>/<split>.jsonl` — 9 files (3 planes ×
-3 splits: `eval` / `rlvr` / `sft`). Append-only with tombstone shape;
-each line names a `section_id` that lives in some shard for that plane.
-Splits are **computed at read time** via `compute_split_for(plane,
-section_id)` from `_local/eval/allocations.py`, never stored on the
-shard row. A `section_id` may belong to at most one split per plane.
+- **Shards (GT data):** `data/manifest/shards/<plane>/<dataset>.jsonl` —
+  one shard per `(plane, dataset)` pair. Rows carry GT (position, atlas,
+  species, etc.) but **never** a `split` field. Per-shard curation lives in
+  `data/manifest/overrides/<plane>/<dataset>.json`.
+- **Allocations (split membership):**
+  `data/manifest/allocations/<plane>/<split>.jsonl` — 9 files (3 planes ×
+  3 splits: `eval` / `rlvr` / `sft`). Append-only with tombstones. Splits
+  are computed at read time via `compute_split_for(plane, section_id)`;
+  never stored on the shard row.
 
 ### Two roles, never mixed in one session
 
 - **GT-fix agent.** Edits upstream sources or `overrides/`, then runs
   `rebuild_shard.py`. Never runs `allocate.py`.
 - **Allocation agent.** Builds `eval` / `rlvr` / `sft` splits via
-  `allocate.py`. Never runs `rebuild_shard.py`, never edits shards,
-  never edits overrides.
+  `allocate.py`. Never runs `rebuild_shard.py`, never edits shards or
+  overrides.
 
 If you don't know which role you are, stop and ask the user.
 
-### Authoritative docs
+### Authoritative docs (read before any data fix)
 
-- `_local/eval/HOW_TO_FIX_DATA.md` — task-oriented walkthrough; **read this first** before any data fix. Includes the 8 hard rules.
-- `_local/eval/SHARDS.md` — architecture reference for the shards / overrides / allocations layout.
-- `_local/qc_app/CONTRACTS.md` — what the QC app reads from each layer (Inventory, SFT, RLVR, Eval, Synthetic). The app reloads on mtime change; do not invent new shapes or paths — conform to the contract or extend it explicitly.
+- `_local/eval/HOW_TO_FIX_DATA.md` — task-oriented walkthrough + 8 hard rules.
+- `_local/eval/SHARDS.md` — architecture reference for shards/overrides/allocations.
+- `_local/qc_app/CONTRACTS.md` — what the QC app reads from each layer.
+  The app reloads on mtime change; do not invent shapes or paths.
 
-### GT-fix CLI
-
-```powershell
-# Edit upstream or append to overrides/<plane>/<dataset>.json, then:
-python _local/eval/rebuild_shard.py <plane>/<dataset>                  # dry-run, exits 1 on any diff
-python _local/eval/rebuild_shard.py <plane>/<dataset> --accept-diff N  # commit; N must match dry-run count
-```
-
-Diff gate: `--accept-diff N` must match the *exact* number of changed
-rows the dry-run reported. If `N` is bigger than expected, **stop** —
-something else changed under you. Never bypass this gate.
-
-### Allocation CLI
+### CLIs
 
 ```powershell
-python _local/eval/allocate.py add <plane>/<split> <section_id> --dataset <name> --added-by <agent_id>
-python _local/eval/allocate.py remove <plane>/<split> <section_id> --removed-by <agent_id>
-python _local/eval/allocate.py list <plane>/<split>
+# GT-fix: edit upstream or overrides/<plane>/<dataset>.json, then:
+python _local/eval/rebuild_shard.py <plane>/<dataset>                  # dry-run, exits 1 on diff
+python _local/eval/rebuild_shard.py <plane>/<dataset> --accept-diff N  # commit; N must match exactly
+
+# Allocation:
+python _local/eval/allocate.py add    <plane>/<split> <section_id> --dataset <name> --added-by <agent_id>
+python _local/eval/allocate.py remove <plane>/<split> <section_id>                  --removed-by <agent_id>
+python _local/eval/allocate.py list   <plane>/<split>
+
+# Read-only cross-shard check:
+python _local/eval/validate_manifest.py
 ```
 
-`<plane>` is `coronal` / `sagittal` / `horizontal`; `<split>` is
-`eval` / `rlvr` / `sft`. The CLI validates that each `section_id` exists
-in the corresponding inventory shard and that it isn't already in
-another split for the same plane.
-
-### Cross-shard checks
-
-```powershell
-python _local/eval/validate_manifest.py   # read-only; cannot write any shard or allocation
-```
+Diff gate: `--accept-diff N` must match the dry-run count *exactly*. If `N`
+is bigger than expected, **stop** — something else changed under you.
+Never bypass.
 
 ### Don't resurrect legacy scripts
 
-`_local/eval/legacy/` is read-only context for what older patchers did.
-Their old paths in `_local/eval/` now contain stubs that exit with code
-2. Running them re-introduces the multi-agent footgun this architecture
-was built to prevent.
+`_local/eval/legacy/` is read-only context. The old paths in `_local/eval/`
+are now stubs that exit with code 2. Running them re-introduces the
+multi-agent footgun this architecture was built to prevent.
 
 ## Training (Gemma 4 E4B fine-tune)
 
-The active fine-tune project lives in `models/langslice-gemma-4/`. **v1
-scope (hackathon, deadline 2026-05-18) is single-slice agent traces
-only.** Bbox grounding, landmark listing, multi-slice morphology, and
-programmatic skeletons are designed but **deferred**; do not implement
-them without explicit user request.
+`langslice-gemma-4 E4B v1.0` was blessed 2026-05-17 (see
+`[project_phase9_v7_v1_release_2026_05_17]`). Post-hackathon, the training
+package was consolidated into `models/training-core/langslice_training/`
+(merged 2026-05-22, see `[project_training_core_consolidation_2026_05_22]`).
 
-- **Public training overview:** `docs/training_overview.md`
+- **Public overview:** `docs/training_overview.md`
 - **SFT contract:** `models/langslice-gemma-4/training/sft/README.md`
-- **Active single-turn RL:** `models/langslice-gemma-4/training/single_turn_rl/README.md`
+- **Single-turn RL code:**
+  `models/training-core/langslice_training/rl/single_turn/` (canonical entry `train_grpo.py`; no top-level README yet)
+- **Multi-turn RL env (parked, preserved internally):**
+  `models/training-core/langslice_training/rl/multi_turn_env/`
 
 ### SFT data contract
 
 The trainer reads ONE langslice-native JSONL at
-`models/langslice-gemma-4/data/sft_examples.jsonl`. Row shape and
-constraints are documented in
-`models/langslice-gemma-4/training/sft/README.md`. Image paths are
-relative to the JSONL's parent directory. The trainer does NOT walk raw
+`models/langslice-gemma-4/data/sft_examples.jsonl`. Row shape and constraints
+are documented in `models/langslice-gemma-4/training/sft/README.md`. Image
+paths are relative to the JSONL's parent. The trainer does NOT walk raw
 Gemini run folders directly — corpus assembly is upstream.
 
-### Run SFT
+### Launchers
 
 ```powershell
-cd models/langslice-gemma-4/training
-python -m sft.train_sft `
-  --config configs/sft_default.toml `
-  --dataset ../../../models/langslice-gemma-4/data/sft_examples.jsonl `
-  --output-dir ../../../out/sft/run0
+# SFT (canonical)
+langslice-gemma-sft `
+  --config models/langslice-gemma-4/training/configs/sft_default.toml `
+  --dataset models/langslice-gemma-4/data/sft_examples.jsonl `
+  --output-dir out/cache_fast/sft/run0
+
+# Add --dry-run to validate JSONL structure without loading Gemma.
+
+# Single-turn GRPO RL (canonical)
+langslice-gemma-rl `
+  --config models/langslice-gemma-4/training/configs/grpo_lane_a_default.toml `
+  --output-dir out/cache_fast/rl/run0
 ```
 
-Add `--dry-run` to validate JSONL structure without loading Gemma.
+### Before depending on training-library APIs
 
-### RLVR (parked)
+TRL, Unsloth, vLLM, and PEFT all changed shape in the last quarter.
+Before adding new args, swapping callbacks, or changing model-loading flow,
+dispatch a research subagent against Context7 (`unsloth`, `trl`, `vllm`,
+`peft`, `transformers`) and Exa for upstream changelogs. Several painful
+debugging sessions are recorded under `[reference_unsloth_*]` and
+`[reference_gemma4_*]` in auto-memory — those are the failure modes a docs
+check would have prevented.
 
-Multi-turn GRPO RLVR is parked as of 2026-05-09 in favor of expert-iteration
-SFT (`training/iSFT/`). The RLVR module + scripts are preserved at
-`models/langslice-gemma-4/training/rlvr/`; see that README before un-parking.
+## Verify after edits
 
-## Delegation (cost-saving)
-
-To minimize main-thread token spend, delegate work to other CLIs whenever the
-task fits one of these patterns:
-
-- **Deep codebase exploration** (broad reads across many files, tracing call
-  paths, structural questions): dispatch a `general-purpose` Claude (Opus)
-  subagent. Read-only. Do NOT use any `gemini:*` subagent — Gemini is off the
-  table for both exploration and research (hallucinates library names; current
-  `multi:gemini-researcher` is broken in this environment).
-- **Extensive outside research** (library docs, API specs, external best
-  practices, anything benefiting from web + Context7): dispatch a
-  `general-purpose` Claude (Opus) subagent and instruct it to use Exa
-  (`web_search_exa`, `web_fetch_exa`) and Context7 for docs.
-- **Plan execution** -- once a plan exists, delegate each step:
-  - **Codex** (`codex:execute` / `multi:codex-execute`) when the step meets a
-    complexity threshold: non-trivial logic, math, careful reasoning, multi-file
-    refactors with semantic decisions.
-  - **Cursor** (`cursor:execute` / `multi:cursor-execute`, Agent mode on Auto)
-    when the step is simple and well-defined: long mechanical writes,
-    pattern-following across files, bulk edits, boilerplate.
-
-Main-thread Claude stays in the planner/reviewer role: brainstorm, write the
-plan, dispatch steps, verify diffs. Avoid doing implementation work directly
-when a delegate fits.
-
-## Verify After Edits
-
-- `python -m pytest`
-- `python -m ruff check .`
-- `python -m basedpyright`
-- `python -m langslice_harness version`
-- `langslice version`
-- `pnpm build` from `tauri-gui/` when GUI TypeScript changes
-- `cargo check` from `tauri-gui/src-tauri/` when Rust/Tauri changes
+```powershell
+python -m pytest
+python -m ruff check .
+python -m basedpyright
+python -m langslice_harness version
+langslice version
+# When GUI TypeScript changes:
+pnpm build      # from tauri-gui/
+# When Rust/Tauri changes:
+cargo check     # from tauri-gui/src-tauri/
+```
