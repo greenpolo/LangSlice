@@ -215,6 +215,43 @@ def test_rewrite_writes_eos_and_pad(tokenizer: Any) -> None:
         assert torch.all(tail == pad), f"expected all-pad tail, got {tail.tolist()}"
 
 
+def test_rewrite_handles_inference_tensor(tokenizer: Any) -> None:
+    # Regression: TRL/Unsloth run model.generate() under torch.inference_mode(),
+    # so the ids it returns are an inference tensor. The pre-fix code mutated it
+    # in place and raised "Inplace update to inference tensor outside
+    # InferenceMode is not allowed", which the wrapper swallowed -> the eos
+    # rewrite silently never happened. The function must clone first and return
+    # a normal, rewritten tensor.
+    completion_text = "call:submit_estimate{position_mm: 5.0} TAIL_NOISE_TO_BE_PADDED"
+    prompt_ids = _encode(tokenizer, "PROMPT ")
+    comp_ids = _encode(tokenizer, completion_text)
+    full = prompt_ids + comp_ids
+
+    with torch.inference_mode():
+        pcid = torch.tensor([full], dtype=torch.long)
+    assert torch.is_inference(pcid), "fixture must produce an inference tensor"
+
+    # Must not raise, and must return a normal (non-inference) tensor.
+    out = rewrite_completions_with_eos_after_submit_close(
+        pcid, prompt_length=len(prompt_ids), tokenizer=tokenizer,
+    )
+    assert not torch.is_inference(out), "rewrite must return a normal tensor"
+
+    eos = tokenizer.eos_token_id
+    pad = tokenizer.pad_token_id
+    completion = out[0, len(prompt_ids):]
+
+    # eos written after the close-brace, all-pad tail -- same contract as the
+    # normal-tensor case, just proving it works on an inference-tensor input.
+    last = int(completion[-1].item())
+    assert last in (eos, pad)
+    eos_positions = (completion == eos).nonzero(as_tuple=True)[0].tolist()
+    assert len(eos_positions) >= 1
+    first_eos = eos_positions[0]
+    if first_eos + 1 < completion.size(0):
+        assert torch.all(completion[first_eos + 1 :] == pad)
+
+
 def test_rewrite_no_op_on_already_eos_terminated(tokenizer: Any) -> None:
     prompt_ids = _encode(tokenizer, "PROMPT ")
     comp_ids = _encode(tokenizer, "thinking about something")

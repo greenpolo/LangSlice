@@ -74,6 +74,13 @@ DEFAULT_CUTOFF_QUANTILE: float = 0.95
 DEFAULT_MAX_CUTOFF_FRAC: float = 0.25
 DEFAULT_MIN_OBSERVATIONS: int = 50
 DEFAULT_BUFFER_MAXLEN: int = 200
+#: Per-bin sigma defaults. Each AP bin keeps its own ``abs_err_pct`` window so
+#: a coordinate range the policy has mastered can tighten independently of the
+#: ranges it's still weak at. ``MIN_BIN_OBSERVATIONS`` is the per-bin warmup —
+#: below it, a bin falls back to the (denser) plane-global sigma rather than a
+#: noisy 1-2 observation estimate.
+DEFAULT_MIN_BIN_OBSERVATIONS: int = 12
+DEFAULT_BIN_BUFFER_MAXLEN: int = 128
 
 # ---------------------------------------------------------------------------
 # AP-bin configuration
@@ -120,6 +127,14 @@ _RECENT_SECTION_ERRORS: deque[tuple[float, str, int, str, str]] = deque(
     maxlen=DEFAULT_BUFFER_MAXLEN
 )
 
+#: Per-``(plane, ap_bin)`` rolling buffers of ``abs_err_pct``. Each bin keeps
+#: its own window so a bin's sigma reflects only that coordinate range's recent
+#: accuracy, independent of how often the curriculum samples other bins. Drives
+#: the per-bin sigma path (:meth:`AdaptiveRewardSchedule.current_for_bin`); the
+#: flat ``_RECENT_ERRORS`` buffer still drives the plane-global path and the
+#: curriculum's :meth:`per_bin_difficulty`.
+_BIN_ERRORS: dict[tuple[str, int], deque[float]] = {}
+
 
 def record_error(
     abs_err_mm: float,
@@ -144,6 +159,11 @@ def record_error(
     bin_idx = int(ap_bin) if ap_bin is not None else 0
     plane_str = str(plane)
     _RECENT_ERRORS.append((abs_err_pct, plane_str, bin_idx))
+    bin_buf = _BIN_ERRORS.get((plane_str, bin_idx))
+    if bin_buf is None:
+        bin_buf = deque(maxlen=DEFAULT_BIN_BUFFER_MAXLEN)
+        _BIN_ERRORS[(plane_str, bin_idx)] = bin_buf
+    bin_buf.append(abs_err_pct)
     if dataset is not None and section_id is not None:
         _RECENT_SECTION_ERRORS.append((
             abs_err_pct,
@@ -165,9 +185,10 @@ def recent_section_errors() -> list[tuple[float, str, int, str, str]]:
 
 
 def clear_recent_errors() -> None:
-    """Empty the rolling buffer. Tests use this for isolation between cases."""
+    """Empty the rolling buffers. Tests use this for isolation between cases."""
     _RECENT_ERRORS.clear()
     _RECENT_SECTION_ERRORS.clear()
+    _BIN_ERRORS.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -199,6 +220,8 @@ class AdaptiveRewardSchedule:
         min_observations: int = DEFAULT_MIN_OBSERVATIONS,
         static_fallback: tuple[float, float] = DEFAULT_STATIC_FALLBACK,
         max_cutoff_frac: float = DEFAULT_MAX_CUTOFF_FRAC,
+        per_bin: bool = False,
+        min_bin_observations: int = DEFAULT_MIN_BIN_OBSERVATIONS,
     ) -> None:
         # Validate inputs to preserve the original contract.
         if min_sigma_frac <= 0:
@@ -217,6 +240,10 @@ class AdaptiveRewardSchedule:
             raise ValueError(f"cutoff_quantile must be in [0, 1], got {cutoff_quantile}")
         if min_observations < 1:
             raise ValueError(f"min_observations must be >= 1, got {min_observations}")
+        if min_bin_observations < 1:
+            raise ValueError(
+                f"min_bin_observations must be >= 1, got {min_bin_observations}"
+            )
         fb_sigma, fb_cutoff = static_fallback
         if fb_sigma <= 0 or fb_cutoff <= 0:
             raise ValueError(f"static_fallback components must be positive, got {static_fallback}")
@@ -236,6 +263,22 @@ class AdaptiveRewardSchedule:
             sigma_clamp=(self.min_sigma_frac, self.max_sigma_frac),
             cutoff_clamp=(0.0, self.max_cutoff_frac),
             warmup_min_observations=self.min_observations,
+            warmup_sigma_frac=float(fb_sigma),
+            warmup_cutoff_frac=float(fb_cutoff),
+        )
+
+        # Per-bin schedule: identical quantiles + clamps (so the min_sigma_frac
+        # floor — the per-bin "peak" — and max ceiling still apply), but a
+        # smaller warmup so a single AP bin's sparser history can drive its own
+        # sigma. Only consulted when ``per_bin`` is enabled.
+        self.per_bin = bool(per_bin)
+        self.min_bin_observations = int(min_bin_observations)
+        self._bin_schedule = _AdaptiveSchedule(
+            sigma_quantile=self.sigma_quantile,
+            cutoff_quantile=self.cutoff_quantile,
+            sigma_clamp=(self.min_sigma_frac, self.max_sigma_frac),
+            cutoff_clamp=(0.0, self.max_cutoff_frac),
+            warmup_min_observations=self.min_bin_observations,
             warmup_sigma_frac=float(fb_sigma),
             warmup_cutoff_frac=float(fb_cutoff),
         )
@@ -260,6 +303,30 @@ class AdaptiveRewardSchedule:
             (abs_err_pct, 1.0, p, ap_bin) for abs_err_pct, p, ap_bin in _RECENT_ERRORS
         ]
         return self._schedule.compute(adapted, plane=plane)
+
+    def current_for_bin(self, plane: str, ap_bin: int) -> tuple[float, float]:
+        """Return ``(sigma_frac, cutoff_frac)`` for one ``(plane, ap_bin)``.
+
+        When ``per_bin`` is enabled and the bin holds at least
+        ``min_bin_observations`` observations in its own rolling buffer, the
+        schedule is derived from *that bin's* error history — so a coordinate
+        range the policy has mastered tightens (small sigma, strict bell, still
+        a live gradient to refine) while a range it's weak at stays lenient.
+        The min_sigma_frac clamp keeps the tightening from running past a fixed
+        precision floor — the per-bin "peak."
+
+        Bins below the per-bin warmup, and every bin when ``per_bin`` is
+        disabled, fall back to the (denser) plane-global :meth:`current` value,
+        so behaviour is byte-identical to the legacy per-plane path until a bin
+        has earned its own signal.
+        """
+        if not self.per_bin:
+            return self.current(plane=plane or None)
+        bin_buf = _BIN_ERRORS.get((str(plane), int(ap_bin)))
+        if bin_buf is None or len(bin_buf) < self.min_bin_observations:
+            return self.current(plane=plane or None)
+        adapted = [(err_pct, 1.0, plane) for err_pct in bin_buf]
+        return self._bin_schedule.compute(adapted)
 
     def per_bin_difficulty(self, plane: str, ap_bin: int) -> float | None:
         """Mean ``abs_err_pct`` across observations matching ``(plane, ap_bin)``.
@@ -367,17 +434,19 @@ def make_adaptive_terminal_reward(
         n = len(comps)
         planes = plane if plane is not None else [""] * n
 
-        # Per-plane schedule: cache the (sigma, cutoff) per unique plane in
-        # this batch so the bell scoring path doesn't re-sort the buffer
-        # for every row.
-        schedule_cache: dict[str, tuple[float, float]] = {}
+        # Per-(plane, ap_bin) schedule cache: one (sigma, cutoff) per unique
+        # (plane, bin) seen in this batch so the bell scoring path doesn't
+        # re-sort the buffer for every row. When the schedule's per_bin is off
+        # this collapses to the legacy per-plane value (same for every bin).
+        schedule_cache: dict[tuple[str, int], tuple[float, float]] = {}
 
-        def _schedule_for(row_plane: str) -> tuple[float, float]:
-            cached = schedule_cache.get(row_plane)
+        def _schedule_for(row_plane: str, row_bin: int) -> tuple[float, float]:
+            key = (row_plane, row_bin)
+            cached = schedule_cache.get(key)
             if cached is not None:
                 return cached
-            params = sched.current(plane=row_plane or None)
-            schedule_cache[row_plane] = params
+            params = sched.current_for_bin(row_plane, row_bin)
+            schedule_cache[key] = params
             return params
 
         out: list[float] = []
@@ -404,7 +473,7 @@ def make_adaptive_terminal_reward(
 
             abs_err = abs(predicted - gt_f)
             record_error(abs_err, axis_span_mm, plane_str, ap_bin)
-            sigma_frac, cutoff_frac = _schedule_for(plane_str)
+            sigma_frac, cutoff_frac = _schedule_for(plane_str, ap_bin)
             out.append(
                 normalized_bell_reward(
                     predicted - gt_f,

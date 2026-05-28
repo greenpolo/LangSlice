@@ -561,3 +561,129 @@ def test_adaptive_reward_falls_back_when_metadata_columns_missing() -> None:
     assert len(snap) == 1
     _, plane, _ = snap[0]
     assert plane == ""
+
+
+# --- per-bin adaptive sigma (chase-the-peak per coordinate range) ----------
+
+
+def test_current_for_bin_discriminates_accurate_vs_inaccurate_bin() -> None:
+    """With per_bin enabled, each AP bin derives sigma from its OWN error
+    history: a bin the model is accurate at tightens while a bin it's weak at
+    stays lenient — even within the same plane. Per-plane sigma can't do this.
+    """
+    sched = AdaptiveRewardSchedule(
+        per_bin=True,
+        min_bin_observations=10,
+        sigma_quantile=0.5,
+        cutoff_quantile=0.95,
+        min_sigma_frac=1e-9,
+        max_sigma_frac=10.0,
+        max_cutoff_frac=10.0,
+    )
+    for _ in range(20):
+        record_error(0.04, 1.0, "coronal", 5)  # accurate bin: 4% errors
+    for _ in range(20):
+        record_error(0.20, 1.0, "coronal", 15)  # weak bin: 20% errors
+    sigma_good, _ = sched.current_for_bin("coronal", 5)
+    sigma_bad, _ = sched.current_for_bin("coronal", 15)
+    assert sigma_good == pytest.approx(0.04)
+    assert sigma_bad == pytest.approx(0.20)
+    assert sigma_good < sigma_bad
+
+
+def test_current_for_bin_cold_bin_falls_back_to_plane_global() -> None:
+    """A bin below min_bin_observations uses the plane-global sigma rather
+    than a noisy 1-2 observation estimate."""
+    sched = AdaptiveRewardSchedule(
+        per_bin=True,
+        min_bin_observations=10,
+        min_observations=10,
+        sigma_quantile=0.5,
+        cutoff_quantile=0.95,
+        min_sigma_frac=1e-9,
+        max_sigma_frac=10.0,
+        max_cutoff_frac=10.0,
+    )
+    for _ in range(20):
+        record_error(0.08, 1.0, "coronal", 5)
+    # bin 7 has only 2 observations — below the per-bin warmup.
+    record_error(0.01, 1.0, "coronal", 7)
+    record_error(0.02, 1.0, "coronal", 7)
+    assert sched.current_for_bin("coronal", 7) == sched.current(plane="coronal")
+
+
+def test_current_for_bin_delegates_to_plane_when_per_bin_disabled() -> None:
+    """per_bin=False preserves the legacy per-plane behavior for every bin."""
+    sched = AdaptiveRewardSchedule(
+        per_bin=False,
+        min_observations=10,
+        sigma_quantile=0.5,
+        cutoff_quantile=0.95,
+        min_sigma_frac=1e-9,
+        max_sigma_frac=10.0,
+        max_cutoff_frac=10.0,
+    )
+    for _ in range(20):
+        record_error(0.04, 1.0, "coronal", 5)
+    for _ in range(20):
+        record_error(0.20, 1.0, "coronal", 15)
+    assert sched.current_for_bin("coronal", 5) == sched.current(plane="coronal")
+    assert sched.current_for_bin("coronal", 15) == sched.current(plane="coronal")
+
+
+def test_current_for_bin_clamps_to_min_sigma_floor() -> None:
+    """A mastered bin's sigma floors at min_sigma_frac — the fixed precision
+    'peak' the bin chases, instead of shrinking toward zero (and chasing
+    label noise)."""
+    sched = AdaptiveRewardSchedule(
+        per_bin=True,
+        min_bin_observations=10,
+        sigma_quantile=0.5,
+        min_sigma_frac=0.02,
+        max_sigma_frac=0.15,
+        max_cutoff_frac=0.25,
+    )
+    for _ in range(20):
+        record_error(0.001, 1.0, "coronal", 5)  # near-perfect: 0.1% errors
+    sigma, _ = sched.current_for_bin("coronal", 5)
+    assert sigma == pytest.approx(0.02)
+
+
+def test_adaptive_reward_scores_same_error_stricter_in_accurate_bin() -> None:
+    """End-to-end: the same absolute error scores lower in a bin the model
+    has mastered (tight sigma) than in a bin it's weak at (loose sigma)."""
+    sched = AdaptiveRewardSchedule(
+        per_bin=True,
+        min_bin_observations=10,
+        sigma_quantile=0.5,
+        cutoff_quantile=0.95,
+        min_sigma_frac=1e-9,
+        max_sigma_frac=10.0,
+        max_cutoff_frac=10.0,
+    )
+    good_bin = compute_ap_bin(2.5, (0.0, 10.0))
+    bad_bin = compute_ap_bin(7.5, (0.0, 10.0))
+    for _ in range(20):
+        record_error(0.02, 1.0, "coronal", good_bin)
+    for _ in range(20):
+        record_error(0.20, 1.0, "coronal", bad_bin)
+    fn = make_adaptive_terminal_reward(schedule=sched)
+    # 0.3 mm error = 3% of the 10 mm axis, applied in each bin.
+    r_good = fn(
+        completions=["<|tool_call>call:submit_estimate{position_mm:2.8}<tool_call|>"],
+        ground_truth_mm=[2.5],
+        valid_range_mm=[(0.0, 10.0)],
+        plane=["coronal"],
+    )[0]
+    r_bad = fn(
+        completions=["<|tool_call>call:submit_estimate{position_mm:7.8}<tool_call|>"],
+        ground_truth_mm=[7.5],
+        valid_range_mm=[(0.0, 10.0)],
+        plane=["coronal"],
+    )[0]
+    assert r_good < r_bad
+
+
+def test_per_bin_invalid_min_bin_observations_raises() -> None:
+    with pytest.raises(ValueError, match="min_bin_observations must be >= 1"):
+        AdaptiveRewardSchedule(per_bin=True, min_bin_observations=0)

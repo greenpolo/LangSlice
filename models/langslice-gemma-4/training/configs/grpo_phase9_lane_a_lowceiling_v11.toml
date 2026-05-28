@@ -1,0 +1,111 @@
+# Phase 9 v11 — Lane A single-turn GRPO, LOWERED REWARD CEILING.
+#
+# Purpose: a one-variable diagnostic that is also a fix. It tests the premise
+# behind the whole plateau diagnosis before we invest in an adaptive ratchet.
+#
+# Background — why v9/v10 plateaued:
+#   The adaptive bell width is sigma = clamp(median recent error, min, max)
+#   (schedule.py, sigma_quantile=0.5). In the UNCLAMPED band the reward is a
+#   function of err/median only — i.e. SCALE-INVARIANT: if the model halves all
+#   its errors, sigma halves with them and every reward is unchanged. So once
+#   the model's median error fell below max_sigma_frac=0.15 (~v1.0, ~9% of
+#   axis), sigma unclamped and started tracking the model, the reward stopped
+#   rewarding absolute improvement, and training went to lateral churn. The
+#   early 18%->9% "doubling" happened only because sigma was PINNED at the 0.15
+#   ceiling back then (an absolute reference); crossing below it killed the
+#   gradient. v10's per-bin change adjusted the 0.02 floor, which only bites
+#   below ~2% — the model lives at ~9%, so it did nothing.
+#
+# The test:
+#   Re-impose an absolute reference INSIDE the operating band by lowering the
+#   ceiling below the model's current error. Identical to the v1.0 recipe
+#   (grpo_phase9_lane_a_tool_call_r64_v4.toml) EXCEPT:
+#     - [adaptive] max_sigma_frac 0.15 -> 0.06   (the real lever)
+#     - [reward]   sigma_frac      0.10 -> 0.06   (cold-start fallback matched
+#                  to the ceiling so the first ~3 steps before the rolling
+#                  buffer fills aren't looser than steady state)
+#   Everything else byte-identical to v4 so this is a clean single variable.
+#
+# Predicted behaviour (this is the confirmation criterion):
+#   sigma pins at 0.06 while median error > 6%, so the reward is absolute again
+#   and the model should DESCEND from ~9% toward ~6%, then RE-PLATEAU at the new
+#   ceiling (once median < 6%, sigma unclamps and self-normalizes again). A
+#   downward trend over ~50-100 steps past v1.0 (cum-step ~350-400) confirms the
+#   self-normalization diagnosis. If it does NOT move, the diagnosis is wrong —
+#   STOP and inspect telemetry before building any ratchet.
+#
+# To go further than ~6% you lower the ceiling again (manual ratchet), and only
+# THEN automate it as the mastery-gated per-bin precision ratchet.
+#
+# Launch (full-state resume from v7 ckpt-300 = v1.0; KEEP max_steps=2224 so the
+# LR schedule isn't compressed — see _local/scripts/launch_phase9_lane_a_v11_lowceiling.sh):
+#   bash _local/scripts/launch_phase9_lane_a_v11_lowceiling.sh
+# Stop + eval around checkpoint-350 / checkpoint-400.
+
+[grpo]
+chat_template_kwargs = { enable_thinking = false }
+generation_kwargs = { stop_strings = ["<tool_call|>", "<end_of_turn>"] }
+submit_estimate_stop_criterion = true
+learning_rate = 1e-6
+num_generations = 3
+generation_batch_size = 3
+per_device_train_batch_size = 1
+gradient_accumulation_steps = 8
+max_completion_length = 512
+dataloader_num_workers = 16
+dataloader_pin_memory = true
+dataloader_persistent_workers = true
+dataloader_prefetch_factor = 4
+max_grad_norm = 0.1
+importance_sampling_level = "sequence"
+loss_type = "dapo"
+mask_truncated_completions = false
+scale_rewards = "batch"
+temperature = 1.5
+top_p = 1.0
+optim = "adamw_8bit"
+log_completions = true
+logging_steps = 1
+save_steps = 50
+# Kept at the v4 full-epoch value ON PURPOSE: under --resume-from-checkpoint the
+# LR scheduler is restored at global_step=300; a smaller max_steps would put
+# step 300 deep in the decay and starve the run of learning rate. Stop manually
+# at cum-step ~350-400.
+max_steps = 2224
+report_to = "none"
+load_in_4bit = false
+max_seq_length = 8192
+
+[lora]
+finetune_vision_layers = false
+finetune_language_layers = true
+finetune_attention_modules = true
+finetune_mlp_modules = true
+r = 64
+lora_alpha = 8
+use_rslora = true
+use_gradient_checkpointing = "unsloth"
+
+[data]
+eval_holdout_every = 5
+curriculum_round = 0
+
+[reward]
+cutoff_frac = 0.25
+# v4 had 0.10; matched to the new max_sigma_frac so the cold-start fallback
+# (first few steps before the rolling buffer reaches min_observations=50) is
+# not looser than the steady-state ceiling.
+sigma_frac = 0.06
+format_penalty = -0.3
+out_of_range_reward = 0.0
+
+[adaptive]
+target_reward = 0.3
+eta = 0.03
+d_min = 0.2
+# THE v11 change: ceiling lowered 0.15 -> 0.06 to re-impose an absolute reward
+# reference inside the model's ~9% operating band. min_sigma_frac left at the
+# default 0.005 (does not bind here). per_bin left off (v4 baseline).
+max_sigma_frac = 0.06
+min_visits_per_bin = 20
+quota_slots_per_batch = 2
