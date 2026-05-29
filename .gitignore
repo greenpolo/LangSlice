@@ -127,5 +127,10 @@ web-demo/_dbg_*.png
 # Local litert-lm spike venv (not portable, large)
 _spike_litert_venv/
 
+# microscope uv package: local env + render outputs (never committed)
+models/synthdata/microscope/.venv/
+models/synthdata/microscope/out/
+models/synthdata/microscope/src/microscope/out/
+
 # Litert-lm sidecar binaries (desktop Tauri build only; judges fetch themselves)
 tauri-gui/src-tauri/binaries/

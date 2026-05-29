@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "microscope"
+version = "0.0.1"
+description = "Physically-based DAPI microscopy simulation (microsim truth -> Keyence BZ-X optics) for synthetic brain-slice histology."
+requires-python = ">=3.10"
+# Base deps cover the CPU path (truth building + the white-matter demo). numpy is
+# pinned <2 because cupy 13 / zarr 2 / microsim need the 1.x ABI (env had 1.26.4).
+dependencies = [
+    "microsim==0.0.12.post0",
+    "numpy<2",
+    "scipy",
+    "matplotlib",
+    "pillow",
+    "fpbase",
+]
+
+[project.optional-dependencies]
+# GPU renders (render_frame / render_large_patch import cupy at module top level);
+# needs the machine's CUDA-12 runtime.
+gpu = ["cupy-cuda12x==13.6.0"]
+# Only to REGENERATE the COSEM nucleus-shape bank via cosem_shapes.py.
+cosem = ["s3fs", "zarr<3", "xarray", "xarray-datatree"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+microscope = ["data/*", "assets/*"]
