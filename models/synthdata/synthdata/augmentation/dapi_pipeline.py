@@ -22,7 +22,7 @@ from __future__ import annotations
 import numpy as np
 
 from .damage_pipeline import apply_damage_layer
-from .density import atlas_grayscale_density_map
+from .density import apply_region_density_variance, atlas_grayscale_density_map
 from .transforms.base import TransformContext
 from .transforms.texture import (
     DAPIBoundaryHighlights,
@@ -71,6 +71,8 @@ def render_dapi_section(
     pixel_size_um: float,
     gamma_range: tuple[float, float] = (0.9, 2.0),
     floor_range: tuple[float, float] = (0.10, 0.20),
+    density_variance: float = 0.0,
+    exposure: float = 1.0,
     apply_damage: bool = True,
     damage_intensity: str = "medium",
     apply_geometry_warp: bool = True,
@@ -87,6 +89,8 @@ def render_dapi_section(
         pixel_size_um: Render resolution in µm/pixel.
         gamma_range: Range from which to sample the atlas-grayscale gamma.
         floor_range: Range from which to sample the density floor.
+        exposure: Final multiplicative exposure/brightness gain applied after
+            brightness-contrast (1.0 = unchanged; >1 brighter, saturating at 1.0).
         apply_damage: When True (default), apply the damage/realism layer as a
             final post-processing stage after all signal rendering.
         damage_intensity: ``"light"`` / ``"medium"`` / ``"heavy"``; passed to
@@ -113,6 +117,10 @@ def render_dapi_section(
         gamma=gamma,
         floor=floor,
     )
+    if density_variance > 0.0:
+        density = apply_region_density_variance(
+            density, annotation_slice, rng=rng, strength=density_variance
+        )
 
     ctx = TransformContext(
         modality="dapi",
@@ -133,6 +141,8 @@ def render_dapi_section(
 
     canvas = _apply_tone_shift(canvas, rng)
     canvas = _apply_brightness_contrast(canvas, rng)
+    if exposure != 1.0:
+        canvas = np.clip(canvas * float(exposure), 0.0, 1.0)
     if apply_damage:
         canvas = apply_damage_layer(
             canvas,

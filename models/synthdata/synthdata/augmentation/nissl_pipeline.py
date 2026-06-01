@@ -19,7 +19,11 @@ from __future__ import annotations
 import numpy as np
 
 from .damage_pipeline import apply_damage_layer
-from .density import atlas_grayscale_density_map, shade_substrate_by_atlas
+from .density import (
+    apply_region_density_variance,
+    atlas_grayscale_density_map,
+    shade_substrate_by_atlas,
+)
 from .transforms.base import TransformContext
 from .transforms.texture import (
     NisslGrayMatterCellBodies,
@@ -96,6 +100,7 @@ def render_nissl_section(
     pixel_size_um: float,
     gamma_range: tuple[float, float] = (0.9, 1.8),
     floor_range: tuple[float, float] = (0.10, 0.20),
+    density_variance: float = 0.0,
     cream_base: tuple[float, float, float] | None = None,
     apply_damage: bool = True,
     damage_intensity: str = "medium",
@@ -139,6 +144,10 @@ def render_nissl_section(
         gamma=gamma,
         floor=floor,
     )
+    if density_variance > 0.0:
+        density = apply_region_density_variance(
+            density, annotation_slice, rng=rng, strength=density_variance
+        )
 
     ctx = TransformContext(
         modality="nissl",

@@ -37,23 +37,33 @@ def _get_position_range(atlas: object) -> tuple[float, float]:
     return get_position_range_mm(atlas)  # type: ignore[arg-type]
 
 
-def _atlas_slice_float32(atlas: object, ap_mm: float) -> tuple[np.ndarray, np.ndarray]:
+def _atlas_slice_float32(
+    atlas: object, ap_mm: float, density_source: str = "template"
+) -> tuple[np.ndarray, np.ndarray]:
     """Return (reference_grayscale_image, annotation_slice).
 
-    reference_grayscale_image: HWC float32 [0, 1] — Allen CCFv3 average grayscale
-        anatomy template.
+    reference_grayscale_image: HWC float32 [0, 1] — the grayscale fed to the
+        density-modulation step. ``density_source="template"`` (default) uses the
+        Allen CCFv3 average template; ``"nissl"`` uses the aligned ``ara_nissl``
+        volume (real cytoarchitecture), sliced on the same plane as the annotation.
     annotation_slice: HW int32 — region IDs (used by density-aware transforms).
     """
     from langslice_harness.atlas.core import get_reference_slice, position_mm_to_index
     from langslice_harness.atlas.space import atlas_space_context, slice_axis_index
 
-    img_pil = get_reference_slice(atlas, ap_mm).convert("RGB")  # type: ignore[arg-type]
-    img = np.array(img_pil, dtype=np.float32) / 255.0
-
     ctx = atlas_space_context(atlas)  # type: ignore[arg-type]
     axis = slice_axis_index(ctx, "coronal")
     idx = position_mm_to_index(atlas, ap_mm)  # type: ignore[arg-type]
     ann = np.take(np.asarray(atlas.annotation), idx, axis=axis).astype(np.int32)  # type: ignore[union-attr]
+
+    if density_source == "nissl":
+        from augmentation.nissl_source import nissl_slice
+
+        gray = nissl_slice(atlas, idx, axis)  # HW float32 [0, 1], annotation-aligned
+        img = np.repeat(gray[:, :, None], 3, axis=2).astype(np.float32)
+    else:
+        img_pil = get_reference_slice(atlas, ap_mm).convert("RGB")  # type: ignore[arg-type]
+        img = np.array(img_pil, dtype=np.float32) / 255.0
 
     return img, ann
 
@@ -120,6 +130,7 @@ def _augment(
     modality: str,
     seed: int,
     position_mm: float,
+    exposure: float = 1.0,
     plane: str = "coronal",
 ) -> np.ndarray:
     from augmentation.brightfield_pipeline import render_brightfield_section
@@ -139,6 +150,7 @@ def _augment(
             pixel_size_um=pixel_size_um,
             plane=plane,
             position_mm=position_mm,
+            exposure=exposure,
         )
     if modality == "nissl":
         return render_nissl_section(
@@ -206,8 +218,8 @@ def _cmd_render_grid(args: argparse.Namespace) -> int:
 
         for i, ap_mm in enumerate(_progress_iter(ap_positions, f"  {modality}")):
             cell_seed = int(rng.integers(0, 2**31))
-            img, ann = _atlas_slice_float32(atlas, ap_mm)
-            aug = _augment(img, ann, atlas, modality, cell_seed, position_mm=ap_mm)
+            img, ann = _atlas_slice_float32(atlas, ap_mm, density_source=args.density_source)
+            aug = _augment(img, ann, atlas, modality, cell_seed, position_mm=ap_mm, exposure=args.exposure)
             images.append(aug)
             manifest_cells.append({"index": i, "ap_mm": round(ap_mm, 4), "seed": cell_seed})
 
@@ -218,6 +230,7 @@ def _cmd_render_grid(args: argparse.Namespace) -> int:
         manifest = {
             "modality": modality,
             "atlas": args.atlas,
+            "density_source": args.density_source,
             "count": count,
             "seed": args.seed,
             "ncols": ncols,
@@ -250,7 +263,7 @@ def _cmd_generate(args: argparse.Namespace) -> int:
     for idx, ap_mm in _progress_iter(items, f"generate/{modality}"):
         cell_seed = int(rng.integers(0, 2**31))
         img, ann = _atlas_slice_float32(atlas, ap_mm)
-        aug = _augment(img, ann, atlas, modality, cell_seed, position_mm=ap_mm)
+        aug = _augment(img, ann, atlas, modality, cell_seed, position_mm=ap_mm, exposure=args.exposure)
         out_path = out_dir / f"{modality}_{idx:05d}.png"
         _save_float32(aug, out_path)
 
@@ -271,7 +284,7 @@ def _cmd_inspect(args: argparse.Namespace) -> int:
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     img, ann = _atlas_slice_float32(atlas, ap_mm)
-    aug = _augment(img, ann, atlas, modality, args.seed, position_mm=ap_mm)
+    aug = _augment(img, ann, atlas, modality, args.seed, position_mm=ap_mm, exposure=args.exposure)
 
     side_by_side = np.concatenate([img, aug], axis=1)
     _save_float32(side_by_side, out_path)
@@ -304,6 +317,18 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     rg.add_argument("--atlas", default="allen_mouse_25um", help="BrainGlobe atlas name")
     rg.add_argument(
+        "--density-source",
+        choices=["template", "nissl"],
+        default="template",
+        help="Grayscale source for cell-density modulation (nissl = aligned ara_nissl)",
+    )
+    rg.add_argument(
+        "--exposure",
+        type=float,
+        default=1.0,
+        help="DAPI exposure/brightness gain (1.0 = default; >1 brighter)",
+    )
+    rg.add_argument(
         "--modalities",
         nargs="+",
         default=list(_MODALITIES),
@@ -321,6 +346,18 @@ def _build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     gen.add_argument("--atlas", default="allen_mouse_25um", help="BrainGlobe atlas name")
+    gen.add_argument(
+        "--density-source",
+        choices=["template", "nissl"],
+        default="template",
+        help="Grayscale source for cell-density modulation (nissl = aligned ara_nissl)",
+    )
+    gen.add_argument(
+        "--exposure",
+        type=float,
+        default=1.0,
+        help="DAPI exposure/brightness gain (1.0 = default; >1 brighter)",
+    )
     gen.add_argument("--modality", required=True, choices=list(_MODALITIES), help="Target modality")
     gen.add_argument("--count", type=int, default=1000, help="Number of images to generate")
     gen.add_argument("--out", required=True, help="Output directory")
@@ -332,6 +369,18 @@ def _build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     ins.add_argument("--atlas", default="allen_mouse_25um", help="BrainGlobe atlas name")
+    ins.add_argument(
+        "--density-source",
+        choices=["template", "nissl"],
+        default="template",
+        help="Grayscale source for cell-density modulation (nissl = aligned ara_nissl)",
+    )
+    ins.add_argument(
+        "--exposure",
+        type=float,
+        default=1.0,
+        help="DAPI exposure/brightness gain (1.0 = default; >1 brighter)",
+    )
     ins.add_argument("--ap-mm", type=float, required=True, help="AP position in mm")
     ins.add_argument("--modality", required=True, choices=list(_MODALITIES), help="Target modality")
     ins.add_argument("--out", required=True, help="Output PNG path")
