@@ -158,6 +158,73 @@ def atlas_grayscale_density_map(
     return density.astype(np.float32)
 
 
+def apply_region_density_variance(
+    density_map: np.ndarray,
+    annotation_slice: np.ndarray,
+    *,
+    rng: np.random.Generator,
+    strength: float,
+    clamp_sigmas: float = 3.0,
+) -> np.ndarray:
+    """Per-image, per-region multiplicative jitter of a density map.
+
+    Borrowed mechanism from SiDoLa-NS's ``FIVCellDensityVarianceFactor`` (npj
+    Syst Biol Appl 2026): each anatomical region's relative cell density is
+    rolled independently on every rendered frame, so a network cannot shortcut
+    "this region ⇒ exactly this density" — it has to actually read the tissue.
+    SiDoLa rolls the per-region factor over a deliberately extreme [0.2, 4.0]
+    (≈20× swing) because they train *segmentation* detectors; for photoreal
+    AP-estimation tissue we want a small fraction of that — natural section-to-
+    section variation, not chaos. ``strength`` is the log-normal sigma of the
+    per-region factor, e.g. ``0.14`` ⇒ ~68% of regions land within ±15%.
+
+    Label-safe: density is only scaled *within* existing region masks — region
+    boundaries, the annotation, and the AP label are never touched. The map is
+    renormalized to preserve its pre-jitter tissue mean, so this is a pure
+    cross-region *redistribution* with no global brightness/exposure drift
+    (cell count is fixed upstream by cells-per-mm²; this only shifts where
+    cells are relatively concentrated).
+
+    Args:
+        density_map: HW float32 in [0, 1]; tissue pixels are > 0
+            (see :func:`atlas_grayscale_density_map`).
+        annotation_slice: HW integer region-ID array aligned to ``density_map``.
+        rng: NumPy Generator; one draw per region ID in sorted-ID order
+            (deterministic for a given seed). ``strength <= 0`` draws nothing.
+        strength: log-normal sigma of the per-region factor. ``<= 0`` is a
+            no-op returning the input unchanged (default pipeline behavior).
+        clamp_sigmas: clamp each factor to ``exp(±clamp_sigmas * strength)`` to
+            reject rare extreme draws.
+
+    Returns:
+        HW float32 in [0, 1].
+    """
+    if strength <= 0.0:
+        return density_map
+
+    out = density_map.astype(np.float32, copy=True)
+    tissue = out > 0.0
+    if not tissue.any():
+        return out
+
+    pre_mean = float(out[tissue].mean())
+    lo = float(np.exp(-clamp_sigmas * strength))
+    hi = float(np.exp(clamp_sigmas * strength))
+
+    region_ids = np.unique(annotation_slice[tissue])
+    region_ids = region_ids[region_ids > 0]
+    for rid in region_ids:
+        factor = float(np.clip(np.exp(rng.normal(0.0, strength)), lo, hi))
+        out[annotation_slice == int(rid)] *= factor
+
+    # Preserve the pre-jitter tissue mean → pure redistribution, no global drift.
+    post_mean = float(out[tissue].mean())
+    if post_mean > 0.0:
+        out[tissue] *= pre_mean / post_mean
+
+    return np.clip(out, 0.0, 1.0).astype(np.float32)
+
+
 def region_density_map(
     annotation_slice: np.ndarray,
     modality: str,
