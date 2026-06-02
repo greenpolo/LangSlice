@@ -1,5 +1,6 @@
 import importlib
 import logging
+import os
 from collections.abc import Callable, Sequence
 from functools import lru_cache
 from typing import Any, Protocol, cast
@@ -136,10 +137,30 @@ def load_atlas(name: str) -> BrainGlobeAtlas:
     that scroll across many per-age developmental atlases in one session.
     """
     atlas_name = canonicalize_atlas_name(name)
+    # When the GIN version server is unreachable, BrainGlobe blocks for minutes
+    # (no-timeout HTTP, 5 retries) on every load: the latest-version check for
+    # cached atlases, and remote_version resolution for uncached ones. Setting
+    # LANGSLICE_ATLAS_SKIP_LATEST_CHECK enables offline mode — cached atlases
+    # load without phoning home, and uncached atlases fail fast instead of
+    # hanging on a download attempt.
+    skip_latest = os.environ.get("LANGSLICE_ATLAS_SKIP_LATEST_CHECK") not in (None, "", "0")
     try:
         module = importlib.import_module("brainglobe_atlasapi")
-        brain_globe_atlas = cast(Callable[[str], BrainGlobeAtlas], module.BrainGlobeAtlas)
-        atlas = brain_globe_atlas(atlas_name)
+        if skip_latest:
+            from brainglobe_atlasapi import config as bg_config
+
+            bg_dir = bg_config.get_brainglobe_dir()
+            if not list(bg_dir.glob(f"{atlas_name}_v*")):
+                raise FileNotFoundError(
+                    f"atlas not present in local cache {bg_dir} "
+                    f"(offline mode; GIN download skipped)"
+                )
+        brain_globe_atlas = cast(Callable[..., BrainGlobeAtlas], module.BrainGlobeAtlas)
+        atlas = (
+            brain_globe_atlas(atlas_name, check_latest=False)
+            if skip_latest
+            else brain_globe_atlas(atlas_name)
+        )
     except Exception as exc:  # pragma: no cover - passthrough from external library
         raise ValueError(f"Atlas '{atlas_name}' not found or failed to load: {exc}") from exc
     return atlas

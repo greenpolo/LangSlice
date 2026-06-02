@@ -211,7 +211,13 @@ def rewrite_completions_with_eos_after_submit_close(
     left untouched (TRL will still mask them via ``mask_truncated_completions``
     -- which is correct, since the model never produced a final answer).
 
-    Mutates and returns ``prompt_completion_ids`` for caller convenience.
+    Returns the (possibly cloned) tensor. TRL/Unsloth run ``model.generate``
+    under ``torch.inference_mode()``, so the ids it returns are an *inference
+    tensor* that cannot be mutated in place outside inference mode. When that's
+    the case we clone to a normal tensor first and mutate the clone, so the
+    caller MUST use the return value rather than rely on in-place mutation.
+    (For an ordinary tensor the original is still mutated in place and the same
+    object is returned, preserving the previous contract.)
     """
     import torch  # local import
 
@@ -227,6 +233,14 @@ def rewrite_completions_with_eos_after_submit_close(
     total_len = prompt_completion_ids.size(1)
     if prompt_length >= total_len:
         return prompt_completion_ids
+
+    # generate() output is an inference tensor (created under
+    # torch.inference_mode()); in-place writes below would raise
+    # "Inplace update to inference tensor outside InferenceMode is not
+    # allowed". Clone to a normal tensor first and mutate the clone -- the
+    # caller uses the returned value.
+    if torch.is_inference(prompt_completion_ids):
+        prompt_completion_ids = prompt_completion_ids.clone()
 
     completion_slice = prompt_completion_ids[:, prompt_length:]
     completion_len = completion_slice.size(1)
@@ -500,8 +514,20 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    "merged checkpoint OR a PEFT adapter directory; the latter "
                    "is loaded on top of the adapter's recorded base model.")
     p.add_argument("--resume-from-adapter", type=Path, default=None,
-                   help="Optional path to a previously-saved RL LoRA adapter "
-                   "to resume training.")
+                   help="Warm-start: load a previously-saved RL LoRA adapter's "
+                   "WEIGHTS ONLY onto a fresh trainer. Optimizer/LR-scheduler/"
+                   "RNG/global_step all reset, and the AdaRFT curriculum "
+                   "re-explores from its initial T. Use for the first RL launch "
+                   "off an SFT/base adapter, or a deliberate warm restart.")
+    p.add_argument("--resume-from-checkpoint", type=Path, default=None,
+                   help="Full continuation: resume a prior GRPO run from a HF "
+                   "Trainer checkpoint directory (containing adapter_model."
+                   "safetensors + optimizer.pt + scheduler.pt + rng_state.pth + "
+                   "trainer_state.json). Restores optimizer/LR-scheduler/RNG and "
+                   "continues at the saved global_step. Mutually exclusive with "
+                   "--resume-from-adapter. NOTE: the AdaRFT curriculum sampler "
+                   "state (T/ladder/histogram) is NOT stored in the checkpoint "
+                   "and re-initializes on resume.")
     p.add_argument("--output-dir", type=Path, required=True,
                    help="Where to save adapter + logs.")
     p.add_argument("--repo-root", type=Path, default=Path("."),
@@ -726,6 +752,13 @@ _ADAPTIVE_DEFAULTS: dict[str, Any] = {
     "max_cutoff_frac": 0.25,
     "min_observations": 50,
     "persist_difficulty_every_n_ticks": 50,
+    # Per-bin adaptive sigma: when True, each AP bin derives its bell width
+    # from its own recent error history (a range the policy has mastered
+    # tightens; a range it's weak at stays lenient) instead of one sigma per
+    # plane. ``min_bin_observations`` is the per-bin warmup before a bin trusts
+    # its own signal (else it falls back to the plane-global sigma).
+    "per_bin": False,
+    "min_bin_observations": 12,
 }
 
 
@@ -763,6 +796,13 @@ def _enforce_arg_mutex(
     incompatible with "--curriculum-weights"). Doing the check here also
     keeps the ``--help`` output readable.
     """
+    if args.resume_from_adapter is not None and args.resume_from_checkpoint is not None:
+        parser.error(
+            "--resume-from-adapter and --resume-from-checkpoint are mutually "
+            "exclusive: the former warm-starts a fresh trainer from adapter "
+            "weights only, the latter continues a prior run with full "
+            "optimizer/scheduler/step state. Pick one."
+        )
     if args.curriculum_mode == "adaptive" and args.curriculum_weights is not None:
         parser.error(
             "--curriculum-mode adaptive is incompatible with --curriculum-weights "
@@ -844,10 +884,14 @@ def _resolve_adaptive_cfg(
         "min_visits_per_bin",
         "quota_slots_per_batch",
         "min_observations",
+        "min_bin_observations",
         "persist_difficulty_every_n_ticks",
     }
+    bool_keys = {"per_bin"}
     for k, v in list(out.items()):
-        if k in int_keys:
+        if k in bool_keys:
+            out[k] = bool(v)
+        elif k in int_keys:
             out[k] = int(v)
         else:
             out[k] = float(v)
@@ -876,6 +920,20 @@ def main(argv: list[str] | None = None) -> None:
     )
 
     args = _parse_args(argv)
+
+    # Flag (or, with LANGSLICE_STRICT_FAST_IO=1, refuse) hot training I/O paths
+    # that resolve onto the slow Windows/9p bind instead of the fast WSL2 ext4
+    # volume (out/cache_fast). No-op off-Linux / when the mount table is unknown.
+    from langslice_training.utils.fast_io import warn_if_slow_io
+
+    warn_if_slow_io(
+        {
+            "--output-dir": getattr(args, "output_dir", None),
+            "--atlas-embedding-cache": getattr(args, "atlas_embedding_cache", None),
+            "--query-embedding-cache": getattr(args, "query_embedding_cache", None),
+        }
+    )
+
     config = _load_config(args.config)
 
     grpo_cfg = dict(config.get("grpo", {}))
@@ -1011,6 +1069,8 @@ def main(argv: list[str] | None = None) -> None:
             sigma_quantile=adaptive_cfg["sigma_quantile"],
             cutoff_quantile=adaptive_cfg["cutoff_quantile"],
             min_observations=adaptive_cfg["min_observations"],
+            per_bin=adaptive_cfg["per_bin"],
+            min_bin_observations=adaptive_cfg["min_bin_observations"],
             static_fallback=(
                 float(reward_cfg.get("sigma_frac", 0.05)),
                 float(reward_cfg.get("cutoff_frac", 0.15)),
@@ -1023,10 +1083,11 @@ def main(argv: list[str] | None = None) -> None:
         )
         logger.info(
             "Adaptive reward enabled: sigma_frac in [%.4f, %.4f], "
-            "sigma q=%.2f, cutoff q=%.2f, warmup=%d.",
+            "sigma q=%.2f, cutoff q=%.2f, warmup=%d, per_bin=%s (bin_warmup=%d).",
             adaptive_cfg["min_sigma_frac"], adaptive_cfg["max_sigma_frac"],
             adaptive_cfg["sigma_quantile"], adaptive_cfg["cutoff_quantile"],
             adaptive_cfg["min_observations"],
+            adaptive_cfg["per_bin"], adaptive_cfg["min_bin_observations"],
         )
     else:
         reward_fn = make_terminal_reward(
@@ -1184,12 +1245,19 @@ def main(argv: list[str] | None = None) -> None:
         fast_inference=False,  # Gemma 4 GRPO requires Unsloth-native generation.
     )
 
-    if args.resume_from_adapter is not None:
+    # Both resume paths point at a LoRA adapter directory; --resume-from-checkpoint
+    # additionally carries optimizer/scheduler/RNG/step state that HF's
+    # Trainer.train(resume_from_checkpoint=...) restores below. The adapter
+    # structure + weights must exist on the model *before* that restore, so we
+    # load it here for either flag. (The two are mutually exclusive — enforced
+    # in _enforce_arg_mutex — so at most one is set.)
+    _resume_adapter_dir = args.resume_from_checkpoint or args.resume_from_adapter
+    if _resume_adapter_dir is not None:
         from peft import PeftModel  # noqa: PLC0415
 
-        logger.info("Resuming trainable LoRA adapter from %s", args.resume_from_adapter)
+        logger.info("Loading trainable LoRA adapter from %s", _resume_adapter_dir)
         model = PeftModel.from_pretrained(
-            model, str(args.resume_from_adapter), is_trainable=True,
+            model, str(_resume_adapter_dir), is_trainable=True,
         )
     elif sft_adapter_base is not None:
         from peft import PeftModel  # noqa: PLC0415
@@ -1364,7 +1432,7 @@ def main(argv: list[str] | None = None) -> None:
 
             if _install_criterion and _prompt_length is not None:
                 try:
-                    rewrite_completions_with_eos_after_submit_close(
+                    out = rewrite_completions_with_eos_after_submit_close(
                         out, prompt_length=_prompt_length, tokenizer=_tok,
                     )
                 except (RuntimeError, AttributeError, ValueError) as exc:
@@ -1383,7 +1451,16 @@ def main(argv: list[str] | None = None) -> None:
             _stop_strings, _use_submit_stop,
         )
 
-    trainer.train()
+    if args.resume_from_checkpoint is not None:
+        logger.info(
+            "Full-state resume from checkpoint %s: restoring optimizer / "
+            "LR-scheduler / RNG / global_step. (AdaRFT curriculum state is not "
+            "persisted in the checkpoint and re-initializes.)",
+            args.resume_from_checkpoint,
+        )
+        trainer.train(resume_from_checkpoint=str(args.resume_from_checkpoint))
+    else:
+        trainer.train()
     trainer.save_model(str(args.output_dir))
     logger.info("Saved adapter to %s", args.output_dir)
 
