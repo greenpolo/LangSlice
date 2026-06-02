@@ -42,7 +42,7 @@ iSFT is retired as a public LangSlice product/pipeline; there is no public iSFT 
 
 ## Directory Layout
 
-- `data/` - slice extraction, augmentation pipeline, bucket-specific generators.
+- `data/` - landmark tables (landmark loader + per-atlas region map) and the distilled SFT corpus.
 - `training/` - Unsloth QLoRA configs and runners.
 - `models/training-core/langslice_training/rl/single_turn/` - single-turn RL environment, dataset, reward, and eval tooling.
 - `inference/` - local agent-loop runner using the fine-tuned model.
@@ -52,4 +52,4 @@ iSFT is retired as a public LangSlice product/pipeline; there is no public iSFT 
 
 - Preferred launch commands: `langslice-gemma-sft` and `langslice-gemma-rl`.
 - During transition, training/data imports can resolve from shared package roots when present:
-  `models/langslice-traces`, `models/synthdata`, `models/training-core`, `models/data`.
+  `models/langslice-traces`, `models/training-core`, `models/data`.

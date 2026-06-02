@@ -35,7 +35,6 @@ still `langslice`, but Python imports should use `langslice_harness.*`.
   - `training/iSFT/` -- expert-iteration SFT driver (active pivot)
   - `training/configs/` -- TOML configs (`sft_default`, `grpo_pilot`, `grpo_phase_b`)
   - `data/sft_examples.jsonl` -- single-slice langslice-native trace corpus
-  - `data/augmentation/` -- stain-specific procedural augmentation pipelines
 - `tauri-gui/` -- Tauri desktop app
 - `tests/` -- pytest coverage
 - `docs/` and `README.md` -- maintained documentation

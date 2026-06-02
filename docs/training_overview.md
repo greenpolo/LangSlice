@@ -9,7 +9,7 @@ checkpoints, and private run logs are local-only.
 - `models/training-core/langslice_training/rl/single_turn/` - active single-turn RL trainer.
 - `models/training-core/langslice_training/` - shared reusable training code.
 - `models/langslice-traces/langslice_traces/` - trace generation and rendering primitives.
-- `models/synthdata/synthdata/` - augmentation and synthetic-data utilities.
+- `models/training-core/langslice_training/corpus/` - synthetic trace-corpus generation and atlas region-description.
 - `models/data/langslice_data/` - public manifest/QC tooling and fixtures.
 
 ## Entrypoints

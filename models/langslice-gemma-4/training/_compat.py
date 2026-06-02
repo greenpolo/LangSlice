@@ -21,7 +21,6 @@ def add_transition_roots() -> None:
     root = repo_root()
     candidates = [
         root / "models" / "langslice-traces",
-        root / "models" / "synthdata",
         root / "models" / "training-core",
         root / "models" / "data",
         root / "models" / "langslice-gemma-4" / "training",

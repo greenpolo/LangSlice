@@ -22,7 +22,7 @@ session handoffs.
 - `tauri-gui/` - desktop GUI.
 - `web-demo/` - static browser demo.
 - `models/langslice-gemma-4/` - Gemma 4 E4B fine-tuning project.
-- `models/langslice-traces/`, `models/synthdata/`, `models/training-core/`, `models/data/` - shared model/data packages.
+- `models/langslice-traces/`, `models/training-core/`, `models/data/` - shared model/data packages.
 - `tests/` - pytest coverage.
 - `docs/` - public documentation.
 

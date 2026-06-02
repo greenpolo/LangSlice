@@ -20,7 +20,15 @@ from langslice_harness.atlas.space import atlas_space_context, slice_axis_index
 _UNAVAILABLE = "Visible clues: atlas signature unavailable."
 _DEFAULT_OFFSETS_MM = (-0.50, -0.25, 0.25, 0.50)
 _DEFAULT_TOP_K = 16
-_GEMMA_DATA_DIR = Path(__file__).resolve().parents[2] / "data"
+# Landmark priority tables live in the Gemma-4 data dir. This module was
+# relocated here from models/synthdata/synthdata/; anchor on the repo root
+# (parents[4] = repo root from langslice_training/corpus/) so the path holds.
+_GEMMA_DATA_DIR = (
+    Path(__file__).resolve().parents[4]
+    / "models"
+    / "langslice-gemma-4"
+    / "data"
+)
 
 
 @dataclass(frozen=True)

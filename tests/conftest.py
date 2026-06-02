@@ -7,7 +7,6 @@ including some hyphenated folders. The shared bootstrap keeps direct
 from __future__ import annotations
 
 import sys
-from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -92,43 +91,3 @@ def hw_annotation_int32() -> np.ndarray:
     ann[: h // 2, :] = 315  # grey-like
     ann[3 * h // 4 :, :] = 1009  # fiber-tract-like
     return ann
-
-
-@pytest.fixture
-def transform_ctx():
-    from augmentation.transforms.base import TransformContext
-
-    return TransformContext(
-        modality="dapi",
-        annotation_slice=None,
-        density_map=None,
-        tissue_mask=None,
-        pixel_size_um=25.0,
-    )
-
-
-def ctx_with(
-    ctx,
-    *,
-    modality: str | None = None,
-    annotation_slice: np.ndarray | None | object = None,
-    density_map: np.ndarray | None | object = None,
-    tissue_mask: np.ndarray | None | object = None,
-    pixel_size_um: float | None = None,
-    tissue_class_masks: dict[str, np.ndarray] | None | object = None,
-):
-    """Small helper to derive a TransformContext with targeted overrides."""
-    fields = {}
-    if modality is not None:
-        fields["modality"] = modality
-    if annotation_slice is not None:
-        fields["annotation_slice"] = annotation_slice  # type: ignore[assignment]
-    if density_map is not None:
-        fields["density_map"] = density_map  # type: ignore[assignment]
-    if tissue_mask is not None:
-        fields["tissue_mask"] = tissue_mask  # type: ignore[assignment]
-    if pixel_size_um is not None:
-        fields["pixel_size_um"] = pixel_size_um
-    if tissue_class_masks is not None:
-        fields["tissue_class_masks"] = tissue_class_masks  # type: ignore[assignment]
-    return replace(ctx, **fields)
