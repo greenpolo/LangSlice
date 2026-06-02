@@ -30,7 +30,6 @@ Numbers above are copied from tracked training docs and should be refreshed when
 - iSFT is retired as a public product/pipeline and has no public launcher.
 - Transition shims prefer shared packages when available under:
   - `models/langslice-traces/langslice_traces`
-  - `models/synthdata/synthdata`
   - `models/training-core/langslice_training`
   - `models/data/langslice_data`
 

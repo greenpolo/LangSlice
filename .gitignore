@@ -68,15 +68,6 @@ models/langslice-traces/**/cache/
 models/langslice-traces/**/caches/
 models/langslice-traces/**/runs/
 models/langslice-traces/**/generated/
-models/synthdata/**/checkpoints/
-models/synthdata/**/cache/
-models/synthdata/**/caches/
-models/synthdata/**/generated/
-models/synthdata/**/corpora/
-models/synthdata/**/augmentation/exemplars/**
-!models/synthdata/**/augmentation/exemplars/README.md
-models/synthdata/**/augmentation/GT_Textures/
-models/synthdata/**/augmentation/vendored_docs/
 models/training-core/**/checkpoints/
 models/training-core/**/cache/
 models/training-core/**/caches/
@@ -87,16 +78,6 @@ models/data/**/caches/
 models/data/**/generated/
 models/data/**/manifest_rows/
 models/data/manifest/**
-
-# Augmentation exemplar crops (style references) — only README is tracked
-models/langslice-gemma-4/data/augmentation/exemplars/**
-!models/langslice-gemma-4/data/augmentation/exemplars/README.md
-
-# Augmentation reference textures (DAPI/Damage exemplar JPGs) — keep local
-models/langslice-gemma-4/data/augmentation/GT_Textures/
-
-# Vendored upstream docs/source (deeptrack2, microsim) — reference material, not ours
-models/langslice-gemma-4/data/augmentation/vendored_docs/
 
 # Docker training infrastructure (kept local for now)
 docker/
@@ -126,11 +107,6 @@ web-demo/_dbg_*.png
 
 # Local litert-lm spike venv (not portable, large)
 _spike_litert_venv/
-
-# microscope uv package: local env + render outputs (never committed)
-models/synthdata/microscope/.venv/
-models/synthdata/microscope/out/
-models/synthdata/microscope/src/microscope/out/
 
 # Litert-lm sidecar binaries (desktop Tauri build only; judges fetch themselves)
 tauri-gui/src-tauri/binaries/

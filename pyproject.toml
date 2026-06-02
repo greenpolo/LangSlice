@@ -46,13 +46,12 @@ testpaths = ["tests"]
 python_files = ["test_*.py", "*_test.py"]
 addopts = "-ra -m 'not slow and not legacy_local'"
 markers = [
-    "slow: integration tests that load real atlases or render larger synthetic assets",
+    "slow: integration tests that load real atlases",
     "legacy_local: archived local-maintenance tests kept out of the default suite",
 ]
 pythonpath = [
     "src",
     "models/langslice-traces",
-    "models/synthdata",
     "models/training-core",
     "models/data",
     "models/langslice-gemma-4/data",
@@ -67,10 +66,8 @@ include = [
     "tests/test_*.py",
     "tests/*_test.py",
     "models/langslice-traces/**/*.py",
-    "models/synthdata/**/*.py",
     "models/training-core/**/*.py",
     "models/data/**/*.py",
-    "models/langslice-gemma-4/data/augmentation/**/*.py",
     "models/langslice-gemma-4/training/sft/**/*.py",
 ]
 
@@ -82,7 +79,6 @@ include = ["src/langslice_harness"]
 extraPaths = [
     "src",
     "models/langslice-traces",
-    "models/synthdata",
     "models/training-core",
     "models/data",
     "models/langslice-gemma-4/data",

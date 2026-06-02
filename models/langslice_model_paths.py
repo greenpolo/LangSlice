@@ -20,7 +20,6 @@ def model_python_roots(repo_root: Path, *, existing_only: bool = True) -> list[P
     """Return import roots for shared model packages and compatibility shims."""
     roots = [
         repo_root / "models" / "langslice-traces",
-        repo_root / "models" / "synthdata",
         repo_root / "models" / "training-core",
         repo_root / "models" / "data",
         repo_root / "models" / "langslice-gemma-4" / "data",

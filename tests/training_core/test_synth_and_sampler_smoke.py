@@ -1,10 +1,10 @@
 """Smoke tests for code that lost dedicated unit tests in the
 training-core cleanup (2026-05-22):
 
-- ``synthdata.sft_corpus.generate_synthetic_rows`` (formerly tested by the
-  deleted ``test_synth_corpus.py``, ~822 lines).
-- ``synthdata.atlas_signature.compose_visible_clues`` (formerly tested by
-  the deleted ``test_atlas_signature.py``, ~214 lines).
+- ``langslice_training.corpus.sft_corpus.generate_synthetic_rows`` (formerly
+  tested by the deleted ``test_synth_corpus.py``, ~822 lines).
+- ``langslice_training.corpus.atlas_signature.compose_visible_clues``
+  (formerly tested by the deleted ``test_atlas_signature.py``, ~214 lines).
 - ``sft.train_sft.ShapeBucketBatchSampler`` (half-tested by the deleted
   ``test_bucketed_sampler_and_double_lora.py``; the iSFT half went away
   with iSFT but this sampler is still load-bearing for PDBS=4 training).
@@ -21,7 +21,7 @@ import types
 
 def test_compose_visible_clues_returns_fallback_for_unknown_atlas() -> None:
     """Unknown atlas → graceful fallback, no exception."""
-    from synthdata.atlas_signature import compose_visible_clues
+    from langslice_training.corpus.atlas_signature import compose_visible_clues
 
     result = compose_visible_clues("nonexistent_atlas_xyz", "coronal", 5.0)
     assert "atlas signature unavailable" in result
@@ -29,7 +29,7 @@ def test_compose_visible_clues_returns_fallback_for_unknown_atlas() -> None:
 
 def test_generate_synthetic_rows_emits_one_row_per_spec_in_region_dump_mode() -> None:
     """region_dump mode (default) emits exactly one row per SectionSpec."""
-    from synthdata.sft_corpus import SectionSpec, generate_synthetic_rows
+    from langslice_training.corpus.sft_corpus import SectionSpec, generate_synthetic_rows
 
     specs = [
         SectionSpec(

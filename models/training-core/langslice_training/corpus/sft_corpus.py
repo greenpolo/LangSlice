@@ -421,7 +421,9 @@ def _compose_thinking_signature(
 ) -> str:
     """Return compact thinking text grounded in visible-clues signatures."""
     try:
-        from synthdata.atlas_signature import compose_visible_clues  # noqa: PLC0415
+        from langslice_training.corpus.atlas_signature import (  # noqa: PLC0415
+            compose_visible_clues,
+        )
     except Exception:  # noqa: BLE001
         return _THINKING_FALLBACK
 

@@ -67,7 +67,6 @@ Full CLI: `langslice --help`. Pipeline detail: [`docs/index.md`](./docs/index.md
 LangSlice is migrating training/data helpers into shared packages under `models/`:
 
 - `models/langslice-traces/langslice_traces`
-- `models/synthdata/synthdata`
 - `models/training-core/langslice_training`
 - `models/data/langslice_data`
 

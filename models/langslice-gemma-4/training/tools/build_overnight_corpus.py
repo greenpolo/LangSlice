@@ -43,10 +43,14 @@ def _find_repo_root() -> Path:
 
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = _find_repo_root()
-SYNTHDATA_ROOT = REPO_ROOT / "models" / "synthdata"
+TRAINING_CORE_ROOT = REPO_ROOT / "models" / "training-core"
+LANGSLICE_TRACES_ROOT = REPO_ROOT / "models" / "langslice-traces"
 
-# Add synthdata + src roots for local package imports.
-sys.path.insert(0, str(SYNTHDATA_ROOT))
+# Add training-core + langslice-traces + src roots for local package imports.
+# langslice-traces is required because the corpus generator lazily imports
+# langslice_traces.generator/schema at row-build time (also inside spawn workers).
+sys.path.insert(0, str(TRAINING_CORE_ROOT))
+sys.path.insert(0, str(LANGSLICE_TRACES_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -64,10 +68,11 @@ def _generate_chunk(args_tuple):
     """
     chunk_id, specs_chunk, seed, mt_floor, atlas_grid_cache_dir, max_total_images, mode = args_tuple
 
-    sys.path.insert(0, str(SYNTHDATA_ROOT))
+    sys.path.insert(0, str(TRAINING_CORE_ROOT))
+    sys.path.insert(0, str(LANGSLICE_TRACES_ROOT))
     sys.path.insert(0, str(REPO_ROOT / "src"))
 
-    from synthdata.sft_corpus import generate_synthetic_rows
+    from langslice_training.corpus.sft_corpus import generate_synthetic_rows
 
     worker_rng = random.Random(seed)
     t0 = time.monotonic()
@@ -190,8 +195,9 @@ def main() -> int:
             "Number of worker processes for parallel synth-row generation. "
             "Defaults to half the logical CPU count (skip hyperthreaded siblings). "
             "Set to 1 to disable the pool entirely. Each worker re-imports "
-            "synthdata.sft_corpus and rebuilds its own atlas-grid cache on first "
-            "use per (atlas, plane), so worker startup adds ~5-10 sec/worker; "
+            "langslice_training.corpus.sft_corpus and rebuilds its own atlas-grid "
+            "cache on first use per (atlas, plane), so worker startup adds "
+            "~5-10 sec/worker; "
             "amortizes well above ~500 specs per worker."
         ),
     )
@@ -216,7 +222,7 @@ def main() -> int:
         logger.info("Distilled plane mix: %s", dict(distilled_planes))
 
     # ---- 2. Build synth specs from allocation manifest --------------------
-    from synthdata.sft_corpus import (
+    from langslice_training.corpus.sft_corpus import (
         generate_synthetic_rows,
         load_specs_from_allocation,
     )

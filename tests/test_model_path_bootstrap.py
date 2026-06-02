@@ -11,7 +11,6 @@ def test_model_python_roots_prefers_shared_hub_paths() -> None:
 
     assert model_python_roots(repo_root, existing_only=False) == [
         repo_root / "models" / "langslice-traces",
-        repo_root / "models" / "synthdata",
         repo_root / "models" / "training-core",
         repo_root / "models" / "data",
         repo_root / "models" / "langslice-gemma-4" / "data",
