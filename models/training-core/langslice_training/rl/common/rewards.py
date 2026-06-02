@@ -57,6 +57,51 @@ def normalized_bell_reward(
     return (raw - floor) / (1.0 - floor)
 
 
+#: Fixed bell-free scale for :func:`normalized_distance_reward`. A fraction of
+#: the axis span, NOT the median of recent errors — this is the whole point:
+#: an *absolute* reference so halving the error always raises the reward.
+DEFAULT_DISTANCE_SCALE_FRAC: float = 0.30
+
+
+def normalized_distance_reward(
+    error_mm: float,
+    *,
+    axis_span_mm: float,
+    scale_frac: float = DEFAULT_DISTANCE_SCALE_FRAC,
+) -> float:
+    """Dense, monotone, fixed-scale reward on fractional axis error.
+
+    Contrast with :func:`normalized_bell_reward`, whose width tracks the median
+    recent error (scale-invariant: once the policy is in-band, the reward
+    depends only on ``error / median(error)``, so halving the error leaves the
+    reward unchanged and the policy has a fixed point). Here the scale is a
+    FIXED fraction of the axis, so the reward is an absolute reference and
+    improvement is always rewarded.
+
+        err_frac = min(|error_mm| / axis_span_mm, 1.0)
+        reward   = exp(-err_frac / scale_frac)            in (0, 1]
+
+    The exponential is strictly monotone in ``|error|`` with **no hard
+    cutoff**, so within a GRPO group the closer rollout always scores strictly
+    higher than a farther one. That preserves within-group reward variance
+    everywhere in the operating band — including the hard mid-brain range,
+    where a truncated Gaussian goes flat (peak *and* tail) and collapses the
+    advantage to ~0. Reward is 1.0 at zero error and ``1/e ≈ 0.368`` at
+    ``err_frac == scale_frac``.
+
+    Out-of-range predictions are scored by continuing the same curve at the
+    clamped error (``err_frac`` capped at 1.0), so they still rank by
+    closeness instead of all collapsing onto a flat out-of-range constant.
+    """
+    _validate_positive("axis_span_mm", axis_span_mm)
+    _validate_positive("scale_frac", scale_frac)
+
+    err_frac = abs(float(error_mm)) / float(axis_span_mm)
+    if err_frac > 1.0:
+        err_frac = 1.0
+    return math.exp(-err_frac / float(scale_frac))
+
+
 def make_position_reward(
     *,
     cutoff_frac: float = DEFAULT_CUTOFF_FRAC,

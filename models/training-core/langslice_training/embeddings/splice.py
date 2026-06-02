@@ -120,6 +120,18 @@ def install_atlas_splice(
         cached_pc: torch.Tensor | None = getattr(inner, _CACHED_PATCH_COUNTS_ATTR, None)
 
         if mask is None or cached_flat is None or cached_pc is None or not bool(mask.any().item()):
+            # One-shot diagnostic: confirm whether images reach the generate /
+            # eval path at all (a text-only rollout never calls this with real
+            # pixels). Logs pixel_values shape the first time the fall-through
+            # fires; harmless and fires at most once.
+            if not getattr(inner, "_atlas_splice_logged_fallthrough", False):
+                logger.warning(
+                    "atlas splice FALL-THROUGH (generate/eval): pixel_values=%s "
+                    "image_position_ids=%s",
+                    None if pixel_values is None else tuple(pixel_values.shape),
+                    None if image_position_ids is None else tuple(image_position_ids.shape),
+                )
+                inner._atlas_splice_logged_fallthrough = True
             with _vision_ctx():
                 return original_get_image_features(
                     pixel_values, image_position_ids=image_position_ids, **kwargs
