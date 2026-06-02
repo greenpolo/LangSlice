@@ -55,6 +55,7 @@ from langslice_training.rl.single_turn.rewards import (
     DEFAULT_FORMAT_PENALTY,
     DEFAULT_OUT_OF_RANGE_REWARD,
     _extract_completion_text,
+    _maybe_dump_completion,
     parse_position_mm,
 )
 from langslice_training.rl.single_turn.rewards import (
@@ -458,30 +459,37 @@ def make_adaptive_terminal_reward(
             ap_bin = compute_ap_bin(gt_f, (pos_lo, pos_hi))
 
             text = _extract_completion_text(completion)
+            predicted: float | None = None
+            parse_err: str | None = None
             try:
                 predicted = parse_position_mm(text)
-            except _ParseError:
+            except _ParseError as exc:
+                parse_err = str(exc)
                 record_error(axis_span_mm, axis_span_mm, plane_str, ap_bin)
-                out.append(float(format_penalty))
-                continue
-
-            if predicted < pos_lo or predicted > pos_hi:
-                oor_abs_err = min(abs(predicted - gt_f), axis_span_mm)
-                record_error(oor_abs_err, axis_span_mm, plane_str, ap_bin)
-                out.append(float(out_of_range_reward))
-                continue
-
-            abs_err = abs(predicted - gt_f)
-            record_error(abs_err, axis_span_mm, plane_str, ap_bin)
-            sigma_frac, cutoff_frac = _schedule_for(plane_str, ap_bin)
-            out.append(
-                normalized_bell_reward(
-                    predicted - gt_f,
-                    axis_span_mm=axis_span_mm,
-                    cutoff_frac=cutoff_frac,
-                    sigma_frac=sigma_frac,
-                )
+                reward = float(format_penalty)
+            else:
+                if predicted < pos_lo or predicted > pos_hi:
+                    oor_abs_err = min(abs(predicted - gt_f), axis_span_mm)
+                    record_error(oor_abs_err, axis_span_mm, plane_str, ap_bin)
+                    reward = float(out_of_range_reward)
+                else:
+                    abs_err = abs(predicted - gt_f)
+                    record_error(abs_err, axis_span_mm, plane_str, ap_bin)
+                    sigma_frac, cutoff_frac = _schedule_for(plane_str, ap_bin)
+                    reward = normalized_bell_reward(
+                        predicted - gt_f,
+                        axis_span_mm=axis_span_mm,
+                        cutoff_frac=cutoff_frac,
+                        sigma_frac=sigma_frac,
+                    )
+            _maybe_dump_completion(
+                text=text,
+                predicted=predicted,
+                parse_err=parse_err,
+                reward=reward,
+                ground_truth_mm=gt_f,
             )
+            out.append(reward)
         return out
 
     adaptive_terminal_reward.__name__ = "adaptive_terminal_reward"

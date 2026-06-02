@@ -27,7 +27,9 @@ numerics, ``<|"|>`` escape tokens around strings, ``<tool_call|>`` or
 
 from __future__ import annotations
 
+import json
 import math
+import os
 import re
 from typing import Any
 
@@ -57,6 +59,43 @@ _GEMMA4_BARE_CALL_RE = re.compile(r"call:(\w+)\{", re.DOTALL)
 # format_argument macro (numbers don't get the `<|"|>` string-escape).
 _POSITION_MM_RE = re.compile(r"position_mm\s*:\s*([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)")
 _SUBMIT_TOOL_NAME: str = "submit_estimate"
+
+
+# --- Diagnostic (env-gated, observational only) -------------------------------
+# Set LANGSLICE_RL_DUMP_COMPLETIONS=/path/to/dump.jsonl to append one JSON record
+# per scored completion (raw text + parse outcome + reward + sentinel flags). No
+# behavior change — purely for inspecting what the policy actually emits during
+# rollouts (TRL's table logger mangles the strings). Leave unset in real runs.
+_DUMP_PATH: str | None = os.environ.get("LANGSLICE_RL_DUMP_COMPLETIONS") or None
+
+
+def _maybe_dump_completion(
+    *,
+    text: str,
+    predicted: float | None,
+    parse_err: str | None,
+    reward: float,
+    ground_truth_mm: float,
+) -> None:
+    if not _DUMP_PATH:
+        return
+    try:
+        record = {
+            "reward": round(float(reward), 4),
+            "parsed_mm": predicted,
+            "gt_mm": round(float(ground_truth_mm), 3),
+            "parse_err": parse_err,
+            "len_chars": len(text),
+            "has_open": "<|tool_call>" in text,
+            "has_close": ("<tool_call|>" in text) or ("<turn|>" in text),
+            "has_call": "call:submit_estimate" in text,
+            "has_pos": "position_mm" in text,
+            "text": text,
+        }
+        with open(_DUMP_PATH, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except Exception:  # noqa: BLE001 — diagnostics must never break training
+        pass
 
 
 class _ParseError(Exception):
@@ -152,20 +191,33 @@ def score_completion(
 ) -> float:
     """Score one completion against its row's ground truth."""
     text = _extract_completion_text(completion)
+    predicted: float | None = None
+    parse_err: str | None = None
     try:
         predicted = parse_position_mm(text)
-    except _ParseError:
-        return float(format_penalty)
-    pos_lo, pos_hi = float(valid_range_mm[0]), float(valid_range_mm[1])
-    if predicted < pos_lo or predicted > pos_hi:
-        return float(out_of_range_reward)
-    axis_span_mm = pos_hi - pos_lo
-    return normalized_bell_reward(
-        predicted - float(ground_truth_mm),
-        axis_span_mm=axis_span_mm,
-        cutoff_frac=cutoff_frac,
-        sigma_frac=sigma_frac,
+    except _ParseError as exc:
+        parse_err = str(exc)
+        reward = float(format_penalty)
+    else:
+        pos_lo, pos_hi = float(valid_range_mm[0]), float(valid_range_mm[1])
+        if predicted < pos_lo or predicted > pos_hi:
+            reward = float(out_of_range_reward)
+        else:
+            axis_span_mm = pos_hi - pos_lo
+            reward = normalized_bell_reward(
+                predicted - float(ground_truth_mm),
+                axis_span_mm=axis_span_mm,
+                cutoff_frac=cutoff_frac,
+                sigma_frac=sigma_frac,
+            )
+    _maybe_dump_completion(
+        text=text,
+        predicted=predicted,
+        parse_err=parse_err,
+        reward=reward,
+        ground_truth_mm=ground_truth_mm,
     )
+    return reward
 
 
 def make_terminal_reward(

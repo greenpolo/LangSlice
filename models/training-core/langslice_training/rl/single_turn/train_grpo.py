@@ -898,6 +898,78 @@ def _resolve_adaptive_cfg(
     return out
 
 
+def _install_trl_tool_role_prompt_compat() -> None:
+    """Backport TRL PR #4300 (tool-role generation prompts) onto TRL < 1.0.
+
+    Our single-turn rollouts hand GRPO a ``prompt`` whose final message has
+    role ``"tool"`` (the pre-rendered ``fetch_atlas`` result); the policy is
+    expected to generate the next assistant turn (``submit_estimate``). TRL
+    0.23.1's ``apply_chat_template`` only accepts a prompt ending in ``"user"``
+    or ``"assistant"`` and raises ``ValueError: Invalid role in the last
+    message: tool`` for anything else. TRL >= 1.0 (PR #4300) treats a trailing
+    ``"tool"`` message exactly like ``"user"`` (i.e. ``add_generation_prompt``).
+    This shim restores that behaviour by intercepting only the tool-terminated,
+    prompt-only example our dataset emits and delegating every other shape to
+    the original function. ``maybe_apply_chat_template`` resolves
+    ``apply_chat_template`` via the module global, so patching the attribute is
+    picked up by TRL's own call sites. Idempotent; a no-op on TRL >= 1.0.
+    """
+    import trl  # noqa: PLC0415
+    import trl.data_utils as _du  # noqa: PLC0415
+
+    # Tool-role generation prompts are native in TRL >= 1.0 (PR #4300 — the line
+    # that produced v1.0). Only backport onto older TRL (0.23.x) that lacks it;
+    # standing down on >= 1.0 keeps v1.0's exact native rendering.
+    try:
+        if int(str(trl.__version__).split(".", 1)[0]) >= 1:
+            return
+    except (ValueError, AttributeError):
+        pass
+
+    if getattr(_du.apply_chat_template, "_langslice_tool_compat", False):
+        return
+
+    _orig_apply_chat_template = _du.apply_chat_template
+    _other_keys = {"chosen", "rejected", "completion", "messages", "label"}
+
+    def _apply_chat_template_tool_compat(
+        example: dict[str, Any],
+        tokenizer: Any,
+        tools: Any = None,
+        **template_kwargs: Any,
+    ) -> dict[str, Any]:
+        prompt = example.get("prompt") if isinstance(example, dict) else None
+        if (
+            isinstance(prompt, list)
+            and prompt
+            and isinstance(prompt[-1], dict)
+            and prompt[-1].get("role") == "tool"
+            and not (_other_keys & set(example))
+        ):
+            # Same call the "user" branch of TRL's apply_chat_template makes,
+            # but reached for a trailing "tool" message. The original messages
+            # (role still "tool") are passed through unchanged so the Gemma
+            # chat template renders the tool response correctly; only TRL's
+            # user/assistant gate is bypassed.
+            rendered = tokenizer.apply_chat_template(
+                prompt,
+                tools=tools,
+                continue_final_message=False,
+                tokenize=False,
+                add_generation_prompt=True,
+                **template_kwargs,
+            )
+            return {**example, "prompt": rendered}
+        return _orig_apply_chat_template(example, tokenizer, tools=tools, **template_kwargs)
+
+    _apply_chat_template_tool_compat._langslice_tool_compat = True  # type: ignore[attr-defined]
+    _du.apply_chat_template = _apply_chat_template_tool_compat
+    logger.info(
+        "Installed TRL tool-role prompt-compat shim (trailing role='tool' -> "
+        "add_generation_prompt=True; backport of TRL PR #4300 for TRL < 1.0)."
+    )
+
+
 def main(argv: list[str] | None = None) -> None:
     # Ensure stdout sees INFO-level logs even when invoked via the
     # wrapper launchers (which do NOT reach the
@@ -943,6 +1015,30 @@ def main(argv: list[str] | None = None) -> None:
     data_cfg = dict(config.get("data", {}))
     reward_cfg = dict(config.get("reward", {}))
     adaptive_cfg = _resolve_adaptive_cfg(args, dict(config.get("adaptive", {})))
+
+    # Self-documenting run card: snapshot the fully-resolved config + lineage into
+    # the output dir at launch. Best-effort — wrapped so a logging hiccup (or a
+    # missing module) can never abort the run.
+    try:
+        from langslice_training.run_logging import write_run_card
+
+        write_run_card(
+            output_dir=args.output_dir,
+            kind="grpo",
+            config_path=args.config,
+            resolved={
+                "grpo": grpo_cfg,
+                "lora": lora_cfg,
+                "data": data_cfg,
+                "reward": reward_cfg,
+                "adaptive": adaptive_cfg,
+            },
+            cli_args=vars(args),
+            base_model=getattr(args, "sft_model", None) or grpo_cfg.get("base_model"),
+            dataset=getattr(args, "data_source", None),
+        )
+    except Exception as _rc_exc:  # noqa: BLE001 — logging must never break training
+        print(f"[langslice-grpo] run-card write skipped: {_rc_exc!r}")
 
     # ---- Mode flags (resolved up front so the rest of main reads cleanly) ----
     use_static_weights = args.curriculum_mode == "static_weights"
@@ -1308,8 +1404,36 @@ def main(argv: list[str] | None = None) -> None:
     # below; default True.
     _use_submit_stop = bool(grpo_cfg.pop("submit_estimate_stop_criterion", True))
 
+    # Our rollouts end on a role="tool" message (the pre-rendered fetch_atlas
+    # result); TRL 0.23.1 raises on that, TRL >= 1.0 accepts it. Install the
+    # compat shim before any prompt is templated (no-op on TRL >= 1.0).
+    _install_trl_tool_role_prompt_compat()
+
+    # Unsloth's compiled GRPO trainer derives the per-token-logps row-chunk count
+    # as ``total_rows // autotune_rows_per_chunk`` with NO max(1, ...) guard
+    # (UnslothGRPOTrainer._get_per_token_logps_and_entropies). For a small
+    # generation batch (generation_batch_size=3) and Gemma 4's large vocab the
+    # autotuned rows-per-chunk exceeds total_rows, so that floor-divide is 0 and
+    # ``torch.chunk(..., chunks=0)`` raises "chunks ... got: 0". Setting the field
+    # explicitly routes both the logps and loss paths to their safe branches
+    # (``B = unsloth_grpo_mini_batch``, capped at total_rows by torch.chunk).
+    # B=1 (one row-chunk) matches what the *guarded* loss-path autotune already
+    # picks for our batch (max(1, total_rows//big)); logit-memory is bounded by
+    # ``unsloth_logit_chunk_multiplier`` independently, so this does not raise VRAM.
+    # Set on the instance *after* construction to bypass both the MRO filter
+    # (vanilla trl.GRPOConfig lacks the field) and Unsloth's config-init gate; the
+    # runtime only ever reads ``self.args.unsloth_grpo_mini_batch``.
+    _unsloth_mini_batch = grpo_cfg.pop("unsloth_grpo_mini_batch", 1)
+
     grpo_cfg = _filter_grpo_config_for_installed_trl(GRPOConfig, grpo_cfg)
     training_args = GRPOConfig(output_dir=str(args.output_dir), seed=args.seed, **grpo_cfg)
+    if _unsloth_mini_batch is not None:
+        _gen_batch = int(getattr(training_args, "generation_batch_size", None)
+                         or training_args.num_generations or 1)
+        training_args.unsloth_grpo_mini_batch = max(1, min(int(_unsloth_mini_batch), _gen_batch))
+        logger.info("Set unsloth_grpo_mini_batch=%s (gen_batch=%s) to bypass "
+                    "Unsloth's B=0 row-chunk autotune crash",
+                    training_args.unsloth_grpo_mini_batch, _gen_batch)
 
     trainer_kwargs: dict[str, Any] = {
         "model": model,

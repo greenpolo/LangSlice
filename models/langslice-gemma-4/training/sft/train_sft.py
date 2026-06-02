@@ -465,6 +465,24 @@ def _train(args, config, train_ds, eval_ds, cache, seed: int) -> None:
     lora_cfg = dict(config["lora"])
     max_seq_length = int(sft_cfg.get("max_seq_length", 16384))
 
+    # Self-documenting run card: snapshot the fully-resolved config + lineage into
+    # the output dir at launch. Best-effort — wrapped so a logging hiccup (or a
+    # missing module) can never abort the run.
+    try:
+        from langslice_training.run_logging import write_run_card
+
+        write_run_card(
+            output_dir=args.output_dir,
+            kind="sft",
+            config_path=args.config,
+            resolved={"sft": sft_cfg, "lora": lora_cfg, "data": dict(config.get("data", {}))},
+            cli_args=vars(args),
+            base_model=sft_cfg.get("base_model"),
+            dataset=str(getattr(args, "dataset", None)),
+        )
+    except Exception as _rc_exc:  # noqa: BLE001 — logging must never break training
+        print(f"[langslice-sft] run-card write skipped: {_rc_exc!r}")
+
     # Lazy imports — keep dataset/render/collate unit tests cheap
     # VRAM micro-optimizations — must be set BEFORE Unsloth/torch initialize
     # the CUDA backend.

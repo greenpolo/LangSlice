@@ -1,25 +1,19 @@
-# Expert-iteration SFT configuration.
-# Used by `iSFT.iterate.py` per-round SFT retrain.
-# Differs from sft_default.toml in: base_model points at the merged-bf16
-# anchor (instead of bare unsloth/gemma-4-E4B-it). This avoids the
-# double-LoRA-application bug where an --initial-adapter trained from
-# bare unsloth gets re-applied on top of an already-merged base.
+# Vision-ON SFT configuration (2026-05-12 experiment, PARKED).
+# Trains the vision tower alongside the language LoRA (r=32, use_rslora,
+# finetune_vision_layers=true), vs the frozen-vision default in sft_default.toml.
+# NOTE: the vision-on pivot regressed on all three planes vs the frozen-vision
+# baseline (see memory project_vision_on_pivot_2026_05_12_regression); retained as
+# a validated VRAM/throughput recipe and the default config for sft_vram_smoke.ps1,
+# NOT as a production training path.
 #
-# Math: with base_model = merged-bf16 anchor:
-#   train_sft loads merged-bf16 (= base + prior SFT baked in)
-#   FastVisionModel.get_peft_model adds a FRESH r=16 LoRA on top
-#   Training updates ONLY the fresh LoRA -> output adapter = pure delta
-#   vLLM merge or hot-swap onto merged-bf16 = base + prior + delta. ✓
-#
-# Don't pass --initial-adapter when using this config — the prior SFT
-# weights are already in the base via the merged-bf16, and adding an
-# initial-adapter on top would re-introduce the double-application bug.
+# base_model points at a pre-merged bf16 checkpoint (instead of bare
+# unsloth/gemma-4-E4B-it) so a FRESH LoRA trains on top of already-baked-in
+# weights — the output adapter is a pure delta. Don't pass --initial-adapter
+# with this config (the prior weights are already in the merged base).
 
 [sft]
-# Loaded from the langslice-models-fast named volume, mounted at /models:ro
-# in the training service (see docker-compose.training.yml). This is the
-# same volume vLLM uses, populated via _local/iSFT/copy-volume-override.yml.
-# Avoids the ~90 sec/step slowdown caused by loading from the slow
+# Loaded from the langslice-models-fast named volume, mounted at /models:ro.
+# ext4-backed; avoids the ~90 sec/step slowdown of loading from the slow
 # Windows-NTFS-via-WSL2 bind mount.
 base_model = "/models/sft-base"
 load_in_4bit = true

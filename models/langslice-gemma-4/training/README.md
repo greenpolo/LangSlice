@@ -19,8 +19,8 @@ predicts where in the atlas (mm coord) it sits. Hackathon deadline is
 | Pre-SFT base (`unsloth/gemma-4-E4B-it`) | 1.31mm | 2.57mm | 0.0% | shockingly competitive |
 | `out/rlvr/stage1-n8-overnight` (300-step GRPO) | n/a | 15.26mm (small bench) | 55% | **regressed**, archived |
 
-The SFT-merged-bf16 is the **anchor checkpoint** all expert-iteration rounds
-should resume from. Don't overwrite it.
+The SFT-merged-bf16 is the **anchor checkpoint** to resume further SFT from
+(e.g. the vision-on experiment config). Don't overwrite it.
 
 ## Pipeline directory layout
 
@@ -48,11 +48,10 @@ status. Public training entrypoints are `langslice-gemma-sft` and
    base** on slicebench: 55% failure rate, MAE 15mm (vs 2.88mm). Pivoted away.
 3. **Current training surface**: shared training-core modules behind
    `langslice-gemma-sft` and `langslice-gemma-rl`.
-4. First expert-iteration smoke (option C: fresh-LoRA on small corpus)
-   regressed the model to MAE 15mm. Diagnosed: fresh LoRA + 180 slices ×
-   63 steps = under-trained adapter. **Option D fix shipped**:
-   `--initial-adapter` flag in `sft.train_sft` resumes training of an
-   existing PEFT adapter rather than attaching a fresh one.
+4. **Iterative SFT (expert iteration) was explored and RETIRED** (2026-05-28).
+   Future SFT is bulk (distilled-Gemini or synthetic corpora), not iterative.
+   The driver and its per-round config are gone; bulk SFT uses
+   `sft_default.toml` (frozen vision) via `langslice-gemma-sft`.
 
 ## How to run the active pipeline
 
