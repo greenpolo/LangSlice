@@ -374,6 +374,20 @@ def main(argv: list[str] | None = None) -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
     args = _parse_args(argv)
+
+    # Flag (or, with LANGSLICE_STRICT_FAST_IO=1, refuse) hot training I/O paths
+    # that resolve onto the slow Windows/9p bind instead of the fast WSL2 ext4
+    # volume (out/cache_fast). No-op off-Linux / when the mount table is unknown.
+    from langslice_training.utils.fast_io import warn_if_slow_io
+
+    warn_if_slow_io(
+        {
+            "--output-dir": getattr(args, "output_dir", None),
+            "--atlas-embedding-cache": getattr(args, "atlas_embedding_cache", None),
+            "--query-embedding-cache": getattr(args, "query_embedding_cache", None),
+        }
+    )
+
     args.test_images_root = _resolve_test_images_root(args.test_images_root)
     config = _load_config(args.config)
     seed = args.seed if args.seed is not None else int(config["sft"].get("seed", 0))

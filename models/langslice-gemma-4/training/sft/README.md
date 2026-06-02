@@ -13,7 +13,7 @@ cd models/langslice-gemma-4/training
 python -m sft.train_sft `
   --config configs/sft_default.toml `
   --dataset ../../../models/langslice-gemma-4/data/sft_examples.jsonl `
-  --output-dir ../../../out/sft/run0
+  --output-dir ../../../out/cache_fast/sft/run0
 ```
 
 So the data-side handoff should be:

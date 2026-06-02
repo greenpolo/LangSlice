@@ -131,6 +131,7 @@ def load_bench(name: str) -> list[EvalRow]:
         by_plane.setdefault(brain["plane"], []).append(brain)
 
     rows: list[EvalRow] = []
+    skipped_atlases: set[str] = set()
     for plane, brains in by_plane.items():
         active_eval = _load_active_allocation(plane, "eval")
 
@@ -159,6 +160,13 @@ def load_bench(name: str) -> list[EvalRow]:
                     continue
 
                 atlas_name = shard_row["atlas"]
+                try:
+                    extent_mm = _plane_extent_mm(atlas_name, plane)
+                except Exception as exc:
+                    if atlas_name not in skipped_atlases:
+                        skipped_atlases.add(atlas_name)
+                        print(f"WARN: atlas {atlas_name!r} unavailable ({exc}); skipping its rows")
+                    continue
                 row = EvalRow(
                     section_id=section_id,
                     dataset=dataset,
@@ -171,7 +179,7 @@ def load_bench(name: str) -> list[EvalRow]:
                     species=shard_row.get("species", brain_meta[(dataset, shard_row["subject_id"])].get("species", "unknown")),
                     staining=shard_row.get("staining") or brain_meta[(dataset, shard_row["subject_id"])].get("staining"),
                     imaging=shard_row.get("imaging") or brain_meta[(dataset, shard_row["subject_id"])].get("imaging"),
-                    plane_extent_mm=_plane_extent_mm(atlas_name, plane),
+                    plane_extent_mm=extent_mm,
                 )
                 rows_by_brain.setdefault((dataset, shard_row["subject_id"]), []).append(row)
 
