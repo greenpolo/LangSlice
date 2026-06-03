@@ -16,8 +16,8 @@
 </p>
 
 > [!WARNING]
-> LangSlice is in-development. Some atlases may produce mixed results.
-> Horizontal and sagittal orientations are possible, but results may vary.
+> LangSlice is in-development. Some atlases may produce mixed results; and
+> horizontal and sagittal orientations haven't yet been thoroughly tested.
 > LangSlice does not offer manual registration methods — it is meant to be
 > used in combination with other registration software (ABBA, QUINT,
 > PyNutil, BrainGlobe ecosystem, etc.). Export functions to these tools
@@ -62,9 +62,9 @@ langslice register slice.png --position 3.9
 
 Full CLI: `langslice --help`. Pipeline detail: [`docs/index.md`](./docs/index.md).
 
-## Model Hub Transition
+## Model Hub 
 
-LangSlice is migrating training/data helpers into shared packages under `models/`:
+LangSlice hosts training/data helpers in shared packages under `models/`:
 
 - `models/langslice-traces/langslice_traces`
 - `models/training-core/langslice_training`
