@@ -18,6 +18,7 @@ from __future__ import annotations
 import inspect
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -584,7 +585,9 @@ def test_resume_from_adapter_attaches_trainable_peft_adapter() -> None:
     fake_trl = MagicMock()
     fake_trainer = MagicMock()
     fake_trl.GRPOTrainer.return_value = fake_trainer
-    fake_trl.GRPOConfig.side_effect = lambda **kw: kw  # passthrough
+    fake_trl.GRPOConfig.side_effect = lambda **kw: SimpleNamespace(
+        **{"num_generations": 1, "generation_batch_size": None, **kw}
+    )  # passthrough
     fake_torch = MagicMock()
     fake_torch_dynamo = MagicMock()
     fake_torch_dynamo.config = MagicMock()
@@ -677,7 +680,9 @@ def test_no_resume_calls_get_peft_model() -> None:
     fake_trl = MagicMock()
     fake_trainer = MagicMock()
     fake_trl.GRPOTrainer.return_value = fake_trainer
-    fake_trl.GRPOConfig.side_effect = lambda **kw: kw
+    fake_trl.GRPOConfig.side_effect = lambda **kw: SimpleNamespace(
+        **{"num_generations": 1, "generation_batch_size": None, **kw}
+    )
     fake_torch = MagicMock()
     fake_torch_dynamo = MagicMock()
     fake_torch_dynamo.config = MagicMock()
@@ -766,7 +771,9 @@ def test_sft_adapter_model_loads_base_then_attaches_trainable_adapter(
     fake_trl = MagicMock()
     fake_trainer = MagicMock()
     fake_trl.GRPOTrainer.return_value = fake_trainer
-    fake_trl.GRPOConfig.side_effect = lambda **kw: kw
+    fake_trl.GRPOConfig.side_effect = lambda **kw: SimpleNamespace(
+        **{"num_generations": 1, "generation_batch_size": None, **kw}
+    )
     fake_torch = MagicMock()
     fake_torch_dynamo = MagicMock()
     fake_torch_dynamo.config = MagicMock()
@@ -862,7 +869,7 @@ def test_train_grpo_passes_stop_tool_names_to_grpo_config() -> None:
 
     def capture_config(**kwargs):
         captured_config_kwargs.update(kwargs)
-        return kwargs
+        return SimpleNamespace(**{"num_generations": 1, "generation_batch_size": None, **kwargs})
 
     fake_trl.GRPOConfig.side_effect = capture_config
     fake_trl.GRPOTrainer.return_value = MagicMock()
