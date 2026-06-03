@@ -14,9 +14,6 @@ __pycache__/
 *.egg-info/
 .vscode/
 
-# Agent knowledge-base files
-AGENTS.md
-
 # Windows NUL artifact
 nul
 
