@@ -915,7 +915,6 @@ def _install_trl_tool_role_prompt_compat() -> None:
     picked up by TRL's own call sites. Idempotent; a no-op on TRL >= 1.0.
     """
     import trl  # noqa: PLC0415
-    import trl.data_utils as _du  # noqa: PLC0415
 
     # Tool-role generation prompts are native in TRL >= 1.0 (PR #4300 — the line
     # that produced v1.0). Only backport onto older TRL (0.23.x) that lacks it;
@@ -925,6 +924,13 @@ def _install_trl_tool_role_prompt_compat() -> None:
             return
     except (ValueError, AttributeError):
         pass
+
+    # Resolved lazily so a mocked or absent ``trl`` (e.g. unit tests that stub
+    # ``sys.modules["trl"]``) degrades to a no-op instead of raising at import.
+    try:
+        import trl.data_utils as _du  # noqa: PLC0415
+    except ImportError:
+        return
 
     if getattr(_du.apply_chat_template, "_langslice_tool_compat", False):
         return
