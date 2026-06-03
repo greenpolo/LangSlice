@@ -41,6 +41,13 @@ archive/*.md
 debug_runs/
 test_runs/
 eval_outputs/
+new-debug/
+_logs/
+openspec/
+.ruff_cache/
+
+# Session handoff / scratch docs (AI-generated; keep local, never ship)
+HANDOFF*.md
 
 # Large binary data
 *.nii
