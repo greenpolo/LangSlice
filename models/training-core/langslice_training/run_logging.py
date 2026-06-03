@@ -76,10 +76,15 @@ def write_run_card(
             "base_model": base_model,
             "dataset": dataset,
             "cli_args": {k: _jsonable(v) for k, v in cli_args.items()},
-            "resolved_config": {s: {k: _jsonable(v) for k, v in d.items()} for s, d in resolved.items()},
-            "extra": extra or {},
+            "resolved_config": {
+                s: {k: _jsonable(v) for k, v in d.items()} for s, d in resolved.items()
+            },
+            "extra": _jsonable(extra or {}),
         }
-        (out / "run_card.json").write_text(json.dumps(card, indent=2), encoding="utf-8")
+        # default=str is a final guard so a stray Path/object can never break the write.
+        (out / "run_card.json").write_text(
+            json.dumps(card, indent=2, default=str), encoding="utf-8"
+        )
         (out / "RUN.md").write_text(_render_md(card), encoding="utf-8")
         print(f"[run_logging] wrote run card → {out / 'run_card.json'}", file=sys.stderr)
         return card
