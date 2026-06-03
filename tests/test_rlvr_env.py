@@ -559,7 +559,7 @@ def test_grpo_default_config_has_stop_tool_names() -> None:
 # --- adapter resume smoke test (P2(g) + P4) --------------------------------
 
 
-def test_resume_from_adapter_attaches_trainable_peft_adapter() -> None:
+def test_resume_from_adapter_attaches_trainable_peft_adapter(tmp_path: Path) -> None:
     """Phase B: --resume-from-adapter attaches the adapter to the SFT base."""
     import sys  # noqa: PLC0415
 
@@ -594,7 +594,7 @@ def test_resume_from_adapter_attaches_trainable_peft_adapter() -> None:
 
     sft_path = Path("fake/sft")
     adapter_path = Path("fake/phase_a")
-    output_path = Path("fake/phase_b")
+    output_path = tmp_path / "phase_b"
 
     # Stub all the heavy training prep so we never hit BrainGlobe / disk.
     fake_grid = MagicMock()
@@ -666,7 +666,7 @@ def test_resume_from_adapter_attaches_trainable_peft_adapter() -> None:
     fake_trainer.train.assert_called_once()
 
 
-def test_no_resume_calls_get_peft_model() -> None:
+def test_no_resume_calls_get_peft_model(tmp_path: Path) -> None:
     """Without --resume-from-adapter, the driver must wrap the model in PEFT."""
     import sys  # noqa: PLC0415
 
@@ -725,7 +725,7 @@ def test_no_resume_calls_get_peft_model() -> None:
                 "--sft-model",
                 str(sft_path),
                 "--output-dir",
-                "fake/out",
+                str(tmp_path / "out"),
                 "--curriculum-mode",
                 "none",
                 "--reward-mode",
@@ -823,7 +823,7 @@ def test_sft_adapter_model_loads_base_then_attaches_trainable_adapter(
                 "--sft-model",
                 str(sft_path),
                 "--output-dir",
-                "fake/out",
+                str(tmp_path / "out"),
                 "--curriculum-mode",
                 "none",
                 "--reward-mode",
@@ -848,7 +848,7 @@ def test_sft_adapter_model_loads_base_then_attaches_trainable_adapter(
     assert fake_trl.GRPOTrainer.call_args.kwargs["model"] is sft_model
 
 
-def test_train_grpo_passes_stop_tool_names_to_grpo_config() -> None:
+def test_train_grpo_passes_stop_tool_names_to_grpo_config(tmp_path: Path) -> None:
     """The GRPOConfig built by main() must carry stop_tool_names from the TOML."""
     import sys  # noqa: PLC0415
 
@@ -918,7 +918,7 @@ def test_train_grpo_passes_stop_tool_names_to_grpo_config() -> None:
                 "--sft-model",
                 str(sft_path),
                 "--output-dir",
-                "fake/out",
+                str(tmp_path / "out"),
                 "--curriculum-mode",
                 "none",
                 "--reward-mode",
