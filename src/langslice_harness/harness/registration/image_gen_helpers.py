@@ -496,24 +496,33 @@ def _extract_visualign_markers(
     return markers
 
 
-_SEGMENTATION_PROMPT = (
-    "Deform the colored region map (Image 1) to match the shape of the "
-    "real brain tissue in Image 3.\n"
-    "\n"
-    "IMAGE 1: A colored brain atlas region map. Each anatomical region "
-    "is a unique solid color.\n"
-    "IMAGE 2: A grayscale atlas reference showing the same brain anatomy.\n"
-    "IMAGE 3: A real histology photograph of a mouse brain coronal section.\n"
-    "\n"
-    "Warp each colored region in Image 1 so it aligns with the "
-    "corresponding anatomy visible in Image 3. The atlas is symmetric "
-    "and idealized; the real tissue is asymmetric, stretched, and may "
-    "have tears or damage. Use Image 2 to identify how atlas structures "
-    "correspond to features in the histology.\n"
-    "\n"
-    "Preserve the exact colors from Image 1. Where tissue is damaged "
-    "or missing in Image 3, fill in the expected atlas regions. Reflect "
-    "the natural left-right asymmetry of this individual brain section.\n"
-    "\n"
-    "Output only the deformed colored regions on a black background."
-)
+_SECTION_PHRASE_BY_PLANE: dict[Plane, str] = {
+    "coronal": "mouse brain coronal section",
+    "sagittal": "mouse brain sagittal section",
+    "horizontal": "mouse brain horizontal section",
+}
+
+
+def _segmentation_prompt_for_plane(plane: Plane = "coronal") -> str:
+    section_phrase = _SECTION_PHRASE_BY_PLANE.get(plane, _SECTION_PHRASE_BY_PLANE["coronal"])
+    return (
+        "Deform the colored region map (Image 1) to match the shape of the "
+        "real brain tissue in Image 3.\n"
+        "\n"
+        "IMAGE 1: A colored brain atlas region map. Each anatomical region "
+        "is a unique solid color.\n"
+        "IMAGE 2: A grayscale atlas reference showing the same brain anatomy.\n"
+        f"IMAGE 3: A real histology photograph of a {section_phrase}.\n"
+        "\n"
+        "Warp each colored region in Image 1 so it aligns with the "
+        "corresponding anatomy visible in Image 3. The atlas is symmetric "
+        "and idealized; the real tissue is asymmetric, stretched, and may "
+        "have tears or damage. Use Image 2 to identify how atlas structures "
+        "correspond to features in the histology.\n"
+        "\n"
+        "Preserve the exact colors from Image 1. Where tissue is damaged "
+        "or missing in Image 3, fill in the expected atlas regions. Reflect "
+        "the natural left-right asymmetry of this individual brain section.\n"
+        "\n"
+        "Output only the deformed colored regions on a black background."
+    )
