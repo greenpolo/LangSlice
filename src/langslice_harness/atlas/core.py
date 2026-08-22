@@ -12,6 +12,7 @@ from scipy.ndimage import gaussian_filter1d
 
 from langslice_harness.atlas.space import (
     Plane,
+    _shape3d,
     atlas_space_context,
     slice_axis_index,
 )
@@ -43,13 +44,6 @@ class _AtlasLike(Protocol):
     metadata: dict[str, object]
 
 
-def _shape3d(volume: np.ndarray) -> tuple[int, int, int]:
-    shape = cast(tuple[int, ...], volume.shape)
-    if len(shape) != 3:
-        raise ValueError(f"Expected a 3D atlas volume, got shape={shape}")
-    return shape[0], shape[1], shape[2]
-
-
 def _safe_index(axis_name: str, index: int, upper_bound: int) -> int:
     if index < 0 or index >= upper_bound:
         raise ValueError(f"{axis_name} index {index} out of range [0, {upper_bound - 1}]")
@@ -57,24 +51,8 @@ def _safe_index(axis_name: str, index: int, upper_bound: int) -> int:
 
 
 def _as_scalar_int(value: object) -> int | None:
-    if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, (int, np.integer)):
-        return int(value)
-    if isinstance(value, float):
-        return int(value)
-    if isinstance(value, str):
-        try:
-            return int(value)
-        except ValueError:
-            return None
-    if np.isscalar(value):
-        try:
-            return int(np.asarray(value).item())
-        except (TypeError, ValueError):
-            return None
     try:
-        return int(str(value))
+        return int(value)  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return None
 
@@ -117,8 +95,7 @@ def _lookup_structure_record(atlas: _AtlasLike, structure_id: int) -> dict[str, 
     return {"acronym": "", "name": ""}
 
 
-class BrainGlobeAtlas(_AtlasLike, Protocol):
-    pass
+BrainGlobeAtlas = _AtlasLike
 
 
 def canonicalize_atlas_name(name: str) -> str:
@@ -211,6 +188,15 @@ def get_position_range_mm(
     return 0.0, (n_slices - 1) * res_mm
 
 
+def _resolve_idx_axis(
+    atlas: _AtlasLike, position_mm: float, plane: Plane
+) -> tuple[int, int]:
+    """Resolve the slice index and slice-normal axis for a position/plane pair."""
+    idx = position_mm_to_index(atlas, position_mm, plane=plane)
+    axis = slice_axis_index(atlas_space_context(atlas), plane)
+    return idx, axis
+
+
 def _normalize_to_uint8(arr: np.ndarray) -> np.ndarray:
     """Normalize array to uint8 [0, 255]."""
     if arr.size == 0:
@@ -239,8 +225,7 @@ def get_reference_slice(
     atlas: _AtlasLike, position_mm: float, *, plane: Plane = "coronal"
 ) -> Image.Image:
     """Get a reference slice along the chosen plane as grayscale PIL image."""
-    idx = position_mm_to_index(atlas, position_mm, plane=plane)
-    axis = slice_axis_index(atlas_space_context(atlas), plane)
+    idx, axis = _resolve_idx_axis(atlas, position_mm, plane)
     reference_slice = np.take(np.asarray(atlas.reference), idx, axis=axis)
     reference_slice = orient_slice_for_display(reference_slice, plane)
     normalized = _normalize_to_uint8(reference_slice)
@@ -270,8 +255,7 @@ def get_boundary_slice(
     atlas: _AtlasLike, position_mm: float, *, plane: Plane = "coronal"
 ) -> Image.Image:
     """Get annotation boundaries along the chosen plane as grayscale PIL image."""
-    idx = position_mm_to_index(atlas, position_mm, plane=plane)
-    axis = slice_axis_index(atlas_space_context(atlas), plane)
+    idx, axis = _resolve_idx_axis(atlas, position_mm, plane)
     annotation_slice = np.take(np.asarray(atlas.annotation), idx, axis=axis)
     edges = _annotation_to_boundaries(annotation_slice)
     edges = orient_slice_for_display(edges, plane)
@@ -289,8 +273,7 @@ def get_composite_slice(
     if not 0.0 <= opacity <= 1.0:
         raise ValueError(f"opacity must be in [0, 1], got {opacity}")
 
-    idx = position_mm_to_index(atlas, position_mm, plane=plane)
-    axis = slice_axis_index(atlas_space_context(atlas), plane)
+    idx, axis = _resolve_idx_axis(atlas, position_mm, plane)
     ref_slice = np.take(np.asarray(atlas.reference), idx, axis=axis)
     ref_slice = orient_slice_for_display(ref_slice, plane)
     ref_norm = _normalize_to_uint8(ref_slice)
@@ -315,8 +298,7 @@ def get_colored_region_slice(
 
     Uses the official BrainGlobe atlas region colors.
     """
-    idx = position_mm_to_index(atlas, position_mm, plane=plane)
-    axis = slice_axis_index(atlas_space_context(atlas), plane)
+    idx, axis = _resolve_idx_axis(atlas, position_mm, plane)
     annotation_slice = np.take(np.asarray(atlas.annotation), idx, axis=axis)
     annotation_slice = orient_slice_for_display(annotation_slice, plane)
     h, w = cast(tuple[int, int], annotation_slice.shape)
@@ -350,8 +332,7 @@ def get_smoothed_boundary_slice(
 
     Vector contours are smoothed before rasterization.
     """
-    idx = position_mm_to_index(atlas, position_mm, plane=plane)
-    axis = slice_axis_index(atlas_space_context(atlas), plane)
+    idx, axis = _resolve_idx_axis(atlas, position_mm, plane)
     annotation_slice = np.take(np.asarray(atlas.annotation), idx, axis=axis)
     annotation_slice = orient_slice_for_display(annotation_slice, plane)
 
@@ -415,9 +396,8 @@ def get_additional_reference_slice(
             f"Unknown additional reference '{reference_name}'. Available: {available}"
         ) from exc
 
-    _, _, _ = _shape3d(ref_volume)
-    idx = position_mm_to_index(atlas, position_mm, plane=plane)
-    axis = slice_axis_index(atlas_space_context(atlas), plane)
+    _shape3d(ref_volume)
+    idx, axis = _resolve_idx_axis(atlas, position_mm, plane)
     if idx >= ref_volume.shape[axis]:
         raise ValueError(
             f"Reference '{reference_name}' only has {ref_volume.shape[axis]} slices "
@@ -432,27 +412,25 @@ def get_additional_reference_slice(
 
 def get_structure_hierarchy(atlas: _AtlasLike, structure: int | str) -> dict[str, object]:
     """Return ancestor and descendant acronyms for a structure."""
-    ancestors_fn = getattr(atlas, "get_structure_ancestors", None)
-    descendants_fn = getattr(atlas, "get_structure_descendants", None)
+    results: dict[str, list[str]] = {}
+    fn_names = {
+        "ancestors": "get_structure_ancestors",
+        "descendants": "get_structure_descendants",
+    }
+    for key, fn_name in fn_names.items():
+        fn = getattr(atlas, fn_name, None)
+        values: list[str] = []
+        if callable(fn):
+            try:
+                raw = fn(structure)
+                if isinstance(raw, Sequence) and not isinstance(raw, (str, bytes)):
+                    values = [str(item) for item in raw]
+            except Exception:
+                values = []
+        results[key] = values
 
-    ancestors: list[str] = []
-    descendants: list[str] = []
-
-    if callable(ancestors_fn):
-        try:
-            raw = ancestors_fn(structure)
-            if isinstance(raw, Sequence) and not isinstance(raw, (str, bytes)):
-                ancestors = [str(item) for item in raw]
-        except Exception:
-            ancestors = []
-
-    if callable(descendants_fn):
-        try:
-            raw = descendants_fn(structure)
-            if isinstance(raw, Sequence) and not isinstance(raw, (str, bytes)):
-                descendants = [str(item) for item in raw]
-        except Exception:
-            descendants = []
+    ancestors = results["ancestors"]
+    descendants = results["descendants"]
 
     return {
         "structure": structure,
@@ -479,10 +457,9 @@ def get_structure_mask_slice(
         )
 
     mask_volume = np.asarray(get_mask_fn(structure))
-    _, _, _ = _shape3d(mask_volume)
+    _shape3d(mask_volume)
 
-    idx = position_mm_to_index(atlas, position_mm, plane=plane)
-    axis = slice_axis_index(atlas_space_context(atlas), plane)
+    idx, axis = _resolve_idx_axis(atlas, position_mm, plane)
     if idx >= mask_volume.shape[axis]:
         raise ValueError(
             f"Structure mask has {mask_volume.shape[axis]} slices along plane "
@@ -505,8 +482,7 @@ def get_slice_region_metadata(
     ``area_fraction``, and ``centroid_normalized`` ([y, x] in 0–1000 range).
     Background (structure ID 0) is excluded.
     """
-    idx = position_mm_to_index(atlas, position_mm, plane=plane)
-    axis = slice_axis_index(atlas_space_context(atlas), plane)
+    idx, axis = _resolve_idx_axis(atlas, position_mm, plane)
     ann = np.take(np.asarray(atlas.annotation), idx, axis=axis)
     h, w = cast(tuple[int, int], ann.shape)
 
@@ -663,7 +639,6 @@ def get_atlas_info(atlas: _AtlasLike) -> dict[str, object]:
             "min": min_pos,
             "max": max_pos,
         },
-        "n_coronal_slices": shape[0],
         "species": atlas.metadata.get("species", "unknown"),
         "citation": atlas.metadata.get("citation", ""),
         "local_version": _normalize_version(getattr(atlas, "local_version", None)),
@@ -684,11 +659,6 @@ def get_in_plane_long_edge(atlas: _AtlasLike, *, plane: Plane = "coronal") -> in
     in_plane_axes = [a for a in range(3) if a != normal_axis]
     shape = context.shape
     return max(shape[in_plane_axes[0]], shape[in_plane_axes[1]])
-
-
-def get_coronal_long_edge(atlas: _AtlasLike) -> int:
-    """Backwards-compatible alias for ``get_in_plane_long_edge(atlas, plane='coronal')``."""
-    return get_in_plane_long_edge(atlas, plane="coronal")
 
 
 def list_downloaded_atlases() -> list[str]:

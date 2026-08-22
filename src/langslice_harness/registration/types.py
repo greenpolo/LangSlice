@@ -159,35 +159,6 @@ class AffineResult:
         self.source_size = (int(self.source_size[0]), int(self.source_size[1]))
         self.output_size = (int(self.output_size[0]), int(self.output_size[1]))
 
-    @classmethod
-    def from_legacy_params(
-        cls,
-        *,
-        image_width: int,
-        image_height: int,
-        rotation_deg: float,
-        translate_x_pct: float,
-        translate_y_pct: float,
-        backend: str,
-        reasoning: str,
-        provenance: dict[str, Any] | None = None,
-    ) -> AffineResult:
-        """Construct a matrix-first result from the old reduced parameters."""
-        return cls(
-            matrix=affine_matrix_from_legacy_params(
-                image_width=image_width,
-                image_height=image_height,
-                rotation_deg=rotation_deg,
-                translate_x_pct=translate_x_pct,
-                translate_y_pct=translate_y_pct,
-            ),
-            source_size=(image_width, image_height),
-            output_size=(image_width, image_height),
-            backend=backend,
-            reasoning=reasoning,
-            provenance=provenance or {},
-        )
-
     @property
     def rotation_deg(self) -> float:
         return decompose_affine_matrix(self.matrix)["rotation_deg"]
@@ -213,27 +184,6 @@ class AffineResult:
     @property
     def output_height(self) -> int:
         return self.output_size[1]
-
-    @property
-    def rotation(self) -> float:
-        """Compatibility alias for the old GUI display path."""
-        return self.rotation_deg
-
-    @property
-    def translateX(self) -> float:
-        """Compatibility alias expressed as percentage of the source width."""
-        width = self.source_size[0]
-        if width <= 0:
-            return 0.0
-        return (self.translation_px[0] / float(width)) * 100.0
-
-    @property
-    def translateY(self) -> float:
-        """Compatibility alias expressed as percentage of the source height."""
-        height = self.source_size[1]
-        if height <= 0:
-            return 0.0
-        return (self.translation_px[1] / float(height)) * 100.0
 
 
 @dataclass(frozen=True)
@@ -269,8 +219,6 @@ class RegistrationAnnotationSession:
 
     workflow: str
     target_count: int | None = None
-    border_count: int | None = None
-    interior_count: int | None = None
     atlas_annotations: list[LandmarkAnnotation] = field(default_factory=list)
     slice_annotations: list[LandmarkAnnotation] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -312,62 +260,6 @@ class RegistrationResult:
     nonlinear_result: NonlinearResult
     debug_dir: str | None = None
     annotation_session: RegistrationAnnotationSession | None = None
-
-
-def build_annotation_session_from_correspondences(
-    correspondences: Sequence[RegistrationCorrespondence],
-    *,
-    workflow: str = "image_gen_registration",
-    target_count: int | None = None,
-    metadata: dict[str, Any] | None = None,
-) -> RegistrationAnnotationSession:
-    """Project final correspondences into an annotation session."""
-    atlas_annotations: list[LandmarkAnnotation] = []
-    slice_annotations: list[LandmarkAnnotation] = []
-
-    for corr in correspondences:
-        atlas_annotations.append(
-            LandmarkAnnotation(
-                image_role="atlas",
-                pixel_xy=(float(corr.atlas_xy[0]), float(corr.atlas_xy[1])),
-                label=str(corr.label),
-                normalized_yx=corr.atlas_normalized_yx,
-                feature_description=str(corr.rationale),
-            )
-        )
-        slice_annotations.append(
-            LandmarkAnnotation(
-                image_role="slice",
-                pixel_xy=(float(corr.slice_xy[0]), float(corr.slice_xy[1])),
-                label=str(corr.label),
-                normalized_yx=corr.slice_normalized_yx,
-                feature_description=str(corr.rationale),
-            )
-        )
-
-    return RegistrationAnnotationSession(
-        workflow=str(workflow),
-        target_count=target_count if target_count is not None else len(correspondences),
-        atlas_annotations=atlas_annotations,
-        slice_annotations=slice_annotations,
-        metadata=dict(metadata or {}),
-    )
-
-
-def get_session_marker_points(
-    session: RegistrationAnnotationSession | None,
-    *,
-    image_role: str,
-) -> list[tuple[float, float, str]]:
-    """Return `(x, y, label)` markers for one image role."""
-    if session is None:
-        return []
-    annotations = session.slice_annotations if image_role == "slice" else session.atlas_annotations
-    return [
-        (float(annotation.pixel_xy[0]), float(annotation.pixel_xy[1]), str(annotation.label))
-        for annotation in annotations
-        if annotation.status != "not_visible"
-    ]
 
 
 def render_landmark_annotations(

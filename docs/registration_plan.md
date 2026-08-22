@@ -4,9 +4,7 @@ Registration has one active method: image-gen registration.
 
 ## Active Files
 
-- `src/langslice_harness/registration/core.py` -- public wrapper.
 - `src/langslice_harness/registration/runtime.py` -- orchestration and debug artifacts.
-- `src/langslice_harness/registration/solver.py` -- deterministic affine/TPS helpers retained for export math and tests.
 - `src/langslice_harness/registration/types.py` -- result and annotation data classes.
 - `src/langslice_harness/harness/registration/image_gen_registration.py` -- candidate pipeline.
 - `src/langslice_harness/harness/registration/providers.py` -- image generation provider adapters.

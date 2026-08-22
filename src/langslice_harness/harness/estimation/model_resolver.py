@@ -6,6 +6,8 @@ import os
 from collections.abc import Callable
 from typing import Any
 
+from google.genai import types
+
 _PROXY_PREFIX = "litellm-proxy:"
 _OPENROUTER_PREFIX = "openrouter:"
 _OLLAMA_PREFIX = "ollama:"
@@ -30,6 +32,13 @@ def _env(name: str, default: str | None = None) -> str | None:
         return default
     cleaned = value.strip()
     return cleaned or default
+
+
+def _env_float(name: str) -> float | None:
+    value = _env(name)
+    if value is None:
+        return None
+    return float(value)
 
 
 def _env_bool(name: str) -> bool | None:
@@ -65,6 +74,22 @@ def _missing_litellm_error() -> RuntimeError:
         "LiteLLM support requires the litellm package. Install the project "
         "with LiteLLM support before using 'litellm-proxy:', 'openrouter:', "
         "or 'ollama:' model strings."
+    )
+
+
+def is_native_gemini_string(model: str | object) -> bool:
+    """Return True if *model* is a bare Gemini model string (not a wrapper)."""
+    if not isinstance(model, str):
+        return False
+    lowered = model.strip().lower()
+    return lowered.startswith("gemini-") or lowered.startswith("models/gemini-")
+
+
+def native_gemini_http_options() -> types.HttpOptions:
+    """Retry config matched to the legacy /main loop's 4 total Gemini attempts."""
+    return types.HttpOptions(
+        # ``attempts`` includes the original request.
+        retry_options=types.HttpRetryOptions(initial_delay=1, attempts=5)
     )
 
 

@@ -7,21 +7,6 @@ from typing import Any, cast
 import langslice_harness.vlm_config as vlm_config
 
 
-def test_feature_flags_for_ai_studio(monkeypatch) -> None:
-    monkeypatch.setenv("LANGSLICE_GENAI_BACKEND", "ai_studio")
-    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-    monkeypatch.setenv("LANGSLICE_GENAI_COUNT_TOKENS", "1")
-    monkeypatch.setenv("LANGSLICE_GENAI_AP_USE_FILE_API", "1")
-    monkeypatch.setenv("LANGSLICE_GENAI_AP_USE_CONTEXT_CACHE", "1")
-
-    flags = vlm_config.feature_flags()
-    assert flags["count_tokens_enabled"] is True
-    assert flags["ap_use_file_api"] is True
-    assert flags["ap_use_context_cache"] is True
-    assert flags["supports_file_api"] is True
-    assert flags["supports_batch_api"] is True
-
-
 def test_set_temperature_updates_runtime_value() -> None:
     original = vlm_config.TEMPERATURE
     try:
@@ -33,23 +18,6 @@ def test_set_temperature_updates_runtime_value() -> None:
         assert vlm_config.TEMPERATURE == 0.0
     finally:
         vlm_config.set_temperature(original)
-
-
-def test_set_code_execution_updates_runtime_value() -> None:
-    original = vlm_config.CODE_EXECUTION_ENABLED
-    try:
-        vlm_config.set_code_execution_enabled(False)
-        assert vlm_config.CODE_EXECUTION_ENABLED is False
-        vlm_config.set_code_execution_enabled(True)
-        assert vlm_config.CODE_EXECUTION_ENABLED is True
-    finally:
-        vlm_config.set_code_execution_enabled(original)
-
-
-def test_supports_code_execution_only_for_supported_models() -> None:
-    assert vlm_config.supports_code_execution("gemini-3-flash-preview") is True
-    assert vlm_config.supports_code_execution("gemini-3.1-pro-preview") is False
-    assert vlm_config.supports_code_execution(None) is False
 
 
 def test_image_generation_model_detection() -> None:

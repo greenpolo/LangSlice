@@ -49,12 +49,16 @@ def test_quint_export_smoke_payload() -> None:
 
 
 def test_affine_result_constructor_smoke() -> None:
-    result = AffineResult.from_legacy_params(
-        image_width=1024,
-        image_height=670,
-        rotation_deg=2.5,
-        translate_x_pct=1.0,
-        translate_y_pct=-0.5,
+    result = AffineResult(
+        matrix=affine_matrix_from_legacy_params(
+            image_width=1024,
+            image_height=670,
+            rotation_deg=2.5,
+            translate_x_pct=1.0,
+            translate_y_pct=-0.5,
+        ),
+        source_size=(1024, 670),
+        output_size=(1024, 670),
         backend="test",
         reasoning="synthetic",
     )

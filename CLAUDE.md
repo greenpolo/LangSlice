@@ -1,24 +1,25 @@
 # LangSlice Project Guide
 
-LangSlice is an ADK-based Python harness plus a Tauri desktop app for
-registering histology slice images to BrainGlobe atlases. CLI command is
-`langslice`; Python imports use `langslice_harness.*`.
+LangSlice is an ADK-based Python harness for registering histology slice
+images to BrainGlobe atlases using vision-language models and frontier
+image-generation models. CLI command is `langslice`; Python imports use
+`langslice_harness.*`.
 
-`CLAUDE.md` is a verbatim copy of this file. Edit one, mirror to the other.
+`AGENTS.md` is a verbatim copy of this file. Edit one, mirror to the other
+(`cp CLAUDE.md AGENTS.md`).
 
 Speak to the user in conceptual and strategic terms, rather than in code, function definitions, or syntactical details. The user is not a software engineer. You should defer to your own knowledge with respect to software-engineering best practices. 
 
 ## Before writing code (READ THIS FIRST)
 
 LangSlice moves fast and depends on libraries that move fast (Unsloth, TRL,
-vLLM, transformers, PEFT, ADK, Gemini SDK). Three subagents are configured
-to keep that velocity from costing you correctness.
+vLLM, transformers, PEFT, ADK, the Gemini and OpenAI SDKs). Lean on subagents
+so that velocity doesn't cost correctness.
 
 ### 1. Explore the codebase before editing — `Explore` subagent
 
 For anything beyond a single-file tweak, dispatch the **`Explore`** subagent
-(profile in `.claude/agents/Explore.md`, runs on Haiku, read-only:
-Read/Grep/Glob) to map call sites before changing them. Good Explore
+(read-only: Read/Grep/Glob) to map call sites before changing them. Good
 queries:
 
 - "Where is `function_name` defined? Where is it called from?"
@@ -26,58 +27,41 @@ queries:
 - "Find the entry point for the `register` CLI command."
 - "List all TOML configs under `models/langslice-gemma-4/training/configs/`."
 
-Don't speculate about paths or call shapes from memory — paths and module
-layouts have churned (see `[project_training_core_consolidation_2026_05_22]`
-in auto-memory). Memory is a hint; the filesystem is ground truth.
+Don't speculate about paths or call shapes from memory — module layouts have
+churned. Memory is a hint; the filesystem is ground truth.
 
-**Skip Explore when:** the path is already known and you just need to Read
-it; the answer is a one-shot Grep that's faster inline; the question is
-about an external library (dispatch Librarian instead).
+**Skip Explore when:** the path is already known and you just need to Read it;
+the answer is a one-shot Grep that's faster inline; the question is about an
+external library (use a research agent instead).
 
-### 2. Verify external knowledge — `Librarian` subagent
+### 2. Verify external knowledge — `research` / `search` subagents
 
 For anything library-, SDK-, model-, or API-shaped — especially AI/ML —
-dispatch the **`Librarian`** subagent (profile in `.claude/agents/Librarian.md`,
-runs on Sonnet) to fetch current docs and concrete implementation examples.
-Training-data cutoffs lag; model IDs, SDK defaults, and library APIs change
-quarterly.
+dispatch the **`research`** subagent (deep: reads docs and repos, has Context7
+via `mcp__plugin_context7_context7__*` plus web search) or **`search`** (quick
+factual lookup) to fetch current facts. Training-data cutoffs lag; model IDs,
+SDK defaults, and library APIs change quarterly.
 
-Librarian's toolkit:
-
-- **Context7** for library/framework/SDK/API docs:
-  `mcp__context7__resolve-library-id`, then `mcp__context7__query-docs`. Use
-  even for well-known libraries (React, PyTorch, HuggingFace, Anthropic SDK,
-  Gemini SDK) — catches API drift your training data doesn't.
-- **Exa** for web search and changelog hunting:
-  `mcp__exa__web_search_exa`, `mcp__exa__web_fetch_exa`. Prefer Exa over
-  generic web-search paths.
-- `WebFetch` / `WebSearch` as fallback for explicit URLs.
-
-Verify before writing code that depends on: model IDs (Gemini, Claude, Gemma
-variants), SDK class/method shapes, training-library knobs (TRL GRPO args,
-Unsloth flags, vLLM serving flags), atlas/data tooling (BrainGlobe,
-SimpleITK, Elastix). Several painful debugging sessions are recorded under
+Verify before writing code that depends on: model IDs (Gemini, GPT, Gemma,
+Claude variants), SDK class/method shapes, training-library knobs (TRL GRPO
+args, Unsloth flags, vLLM serving flags), atlas/data tooling (BrainGlobe,
+SimpleITK, Elastix). Several painful debugging sessions live under
 `[reference_unsloth_*]` and `[reference_gemma4_*]` in auto-memory — failure
 modes a docs check would have prevented.
 
-**Skip Librarian when:** refactoring local code; writing one-off scripts;
-debugging business logic; questions about general programming concepts that
-don't depend on a specific library version.
+**Skip research when:** refactoring local code; writing one-off scripts;
+debugging business logic; general programming concepts that don't depend on a
+specific library version.
 
-### 3. Delegating bigger work — `general-purpose` (Opus)
+### 3. Delegating bigger work — `general-purpose`
 
-For multi-step work that needs synthesis rather than just retrieval —
-executing a slice of a written plan, tracing a pipeline end-to-end, auditing
-cross-package consistency, or any open-ended agentic task — dispatch the
-built-in **`general-purpose`** subagent (Opus). Main-thread Claude stays
-planner/reviewer; verify diffs the subagent produces before integrating.
+For multi-step work that needs synthesis rather than retrieval — executing a
+slice of a written plan, tracing a pipeline end-to-end, auditing cross-package
+consistency — dispatch the **`general-purpose`** subagent. Main-thread Claude
+stays planner/reviewer; verify diffs the subagent produces before integrating.
 
-`codex:codex-rescue` remains available for second-opinion diagnoses or
-stuck-state rescue when the general-purpose pass isn't getting unstuck.
-
-**Skip general-purpose when:** the task is pure code lookup (Explore is
-faster) or pure docs/API verification (Librarian is faster). Don't reach for
-Opus when Haiku/Sonnet can answer.
+**Skip general-purpose when:** the task is pure code lookup (Explore is faster)
+or pure docs/API verification (a research agent is faster).
 
 ## Active paths
 
@@ -190,7 +174,7 @@ If you don't know which role you are, stop and ask the user.
 
 ### CLIs
 
-```powershell
+```bash
 # GT-fix: edit upstream or overrides/<plane>/<dataset>.json, then:
 python _local/eval/rebuild_shard.py <plane>/<dataset>                  # dry-run, exits 1 on diff
 python _local/eval/rebuild_shard.py <plane>/<dataset> --accept-diff N  # commit; N must match exactly
@@ -238,18 +222,18 @@ Gemini run folders directly — corpus assembly is upstream.
 
 ### Launchers
 
-```powershell
+```bash
 # SFT (canonical)
-langslice-gemma-sft `
-  --config models/langslice-gemma-4/training/configs/sft_default.toml `
-  --dataset models/langslice-gemma-4/data/sft_examples.jsonl `
+langslice-gemma-sft \
+  --config models/langslice-gemma-4/training/configs/sft_default.toml \
+  --dataset models/langslice-gemma-4/data/sft_examples.jsonl \
   --output-dir out/cache_fast/sft/run0
 
 # Add --dry-run to validate JSONL structure without loading Gemma.
 
 # Single-turn GRPO RL (canonical)
-langslice-gemma-rl `
-  --config models/langslice-gemma-4/training/configs/grpo_lane_a_default.toml `
+langslice-gemma-rl \
+  --config models/langslice-gemma-4/training/configs/grpo_lane_a_default.toml \
   --output-dir out/cache_fast/rl/run0
 ```
 
@@ -263,16 +247,17 @@ debugging sessions are recorded under `[reference_unsloth_*]` and
 `[reference_gemma4_*]` in auto-memory — those are the failure modes a docs
 check would have prevented.
 
-## Verify after edits
+## Environment & verify after edits
 
-```powershell
+Linux + bash. The project env is a **uv** venv at `.venv` (Python 3.11).
+Activate with `source .venv/bin/activate`, or prefix commands with
+`uv run`. (Rebuild: `uv venv --python 3.11 .venv && uv pip install -e ".[dev]"`.)
+
+```bash
+source .venv/bin/activate
 python -m pytest
 python -m ruff check .
 python -m basedpyright
 python -m langslice_harness version
 langslice version
-# When GUI TypeScript changes:
-pnpm build      # from tauri-gui/
-# When Rust/Tauri changes:
-cargo check     # from tauri-gui/src-tauri/
 ```

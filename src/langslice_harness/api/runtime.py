@@ -135,6 +135,8 @@ def run_estimate(request: EstimateRequest, emit: EngineEmit | None = None) -> Es
                 on_progress=on_progress,
                 model_name=model_name,
                 debug_dir=debug_dir,
+                show_borders=request.show_borders,
+                send_individually=not request.grid,
             )
         else:
             result = estimate_position(
@@ -149,6 +151,8 @@ def run_estimate(request: EstimateRequest, emit: EngineEmit | None = None) -> Es
                 temperature=request.temperature,
                 apply_clahe=False,
                 debug_dir=debug_dir,
+                show_borders=request.show_borders,
+                send_individually=not request.grid,
             )
 
         return EstimateResult(
@@ -163,11 +167,12 @@ def run_register(request: RegisterRequest, emit: EngineEmit | None = None) -> Re
         from PIL import Image
 
         from langslice_harness.image_prep import (
+            DEFAULT_VLM_MAX_LONG_EDGE,
             adaptive_preprocess,
             normalize_image,
             prepare_image_for_vlm,
         )
-        from langslice_harness.registration.core import estimate_registration_runtime
+        from langslice_harness.registration.runtime import estimate_registration
         from langslice_harness.registration.types import annotation_session_to_dict
 
         if request.endpoint:
@@ -180,7 +185,10 @@ def run_register(request: RegisterRequest, emit: EngineEmit | None = None) -> Re
 
         _progress(emit, f"Loading image: {request.image_path}", stage="register")
         raw_image = Image.open(request.image_path)
-        image = prepare_image_for_vlm(normalize_image(raw_image)).image
+        image = prepare_image_for_vlm(
+            normalize_image(raw_image),
+            max_long_edge=request.vlm_resolution or DEFAULT_VLM_MAX_LONG_EDGE,
+        ).image
         if request.preprocess == "auto":
             image = adaptive_preprocess(image)
 
@@ -206,16 +214,19 @@ def run_register(request: RegisterRequest, emit: EngineEmit | None = None) -> Re
         def on_progress(message: str) -> None:
             _progress(emit, message, stage="register")
 
-        result = estimate_registration_runtime(
+        result = estimate_registration(
             image=image,
             atlas_name=request.atlas,
             position_mm=request.position_mm,
             plane=request.plane,
+            registration_mode=request.registration_mode,
             on_progress=on_progress,
             debug_dir=debug_dir,
             provider=request.provider,
             image_model=image_model,
+            openai_image_route=request.openai_image_route,
             review_model=review_model,
+            max_candidates=request.max_candidates,
         )
         affine = result.affine_result
         session_dict = annotation_session_to_dict(result.annotation_session)

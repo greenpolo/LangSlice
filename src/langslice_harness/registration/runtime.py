@@ -26,11 +26,8 @@ from langslice_harness.harness.registration.types import (
     candidate_to_registration_result,
 )
 from langslice_harness.registration.types import (
-    RegistrationAnnotationSession,
-    RegistrationCorrespondence,
     RegistrationResult,
     annotation_session_to_dict,
-    build_annotation_session_from_correspondences,
     render_landmark_annotations,
 )
 
@@ -69,9 +66,11 @@ def _write_debug_artifacts(
     run_dir.mkdir(parents=True, exist_ok=True)
     _save_image(run_dir / "slice.png", slice_image)
     _save_image(run_dir / "atlas.png", atlas_image)
-    session = result.annotation_session or build_annotation_session_from_correspondences(
-        result.accepted_correspondences
-    )
+    # The dense image-gen registration path always populates
+    # annotation_session (RegistrationCandidate.annotation_session is
+    # required, non-Optional) — no fallback construction needed.
+    assert result.annotation_session is not None
+    session = result.annotation_session
     _save_image(
         run_dir / "slice_markers.png",
         render_landmark_annotations(slice_image, session.slice_annotations),
@@ -162,8 +161,6 @@ def _run_dense_registration(
     selected_mode: str,
     atlas_image: Image.Image,
     debug_dir: str | None,
-    on_correspondences: Callable[[list[RegistrationCorrespondence]], None] | None,
-    on_annotation_session: Callable[[RegistrationAnnotationSession], None] | None,
     on_progress: Callable[[str], None] | None,
     on_trace: Callable[[dict[str, object]], None] | None,
     provider: str,
@@ -211,16 +208,12 @@ def _run_dense_registration(
             review_model=candidate_review_model,
         )
 
-    if on_correspondences is not None:
-        on_correspondences([])
     result = candidate_to_registration_result(candidate, image.size, debug_dir=runtime_debug_dir)
     session = result.annotation_session
     if session is None:
         raise RegistrationFailure(
             "Dense registration candidate did not produce an annotation session."
         )
-    if on_annotation_session is not None:
-        on_annotation_session(session)
 
     if dense_debug_root is not None:
         assert runtime_debug_dir is not None
@@ -297,8 +290,6 @@ def estimate_registration(
     position_mm: float,
     plane: Plane = "coronal",
     registration_mode: str = "direct",
-    on_correspondences: Callable[[list[RegistrationCorrespondence]], None] | None = None,
-    on_annotation_session: Callable[[RegistrationAnnotationSession], None] | None = None,
     on_progress: Callable[[str], None] | None = None,
     on_trace: Callable[[dict[str, object]], None] | None = None,
     debug_dir: str | None = None,
@@ -319,7 +310,7 @@ def estimate_registration(
             f"Unsupported registration_mode {registration_mode!r}; expected 'direct' or 'agentic'."
         )
 
-    return _run_dense_registration(
+    result = _run_dense_registration(
         image,
         atlas_name=atlas_name,
         position_mm=position_mm,
@@ -327,8 +318,6 @@ def estimate_registration(
         selected_mode=selected_mode,
         atlas_image=atlas_image,
         debug_dir=debug_dir,
-        on_correspondences=on_correspondences,
-        on_annotation_session=on_annotation_session,
         on_progress=on_progress,
         on_trace=on_trace,
         provider=provider,
@@ -338,3 +327,11 @@ def estimate_registration(
         review_model=review_model,
         max_candidates=max_candidates,
     )
+    _progress(
+        on_progress,
+        "Registration outputs derived: "
+        f"rot={result.affine_result.rotation_deg:.2f} deg, "
+        f"scale=({result.affine_result.scale[0]:.3f}, {result.affine_result.scale[1]:.3f}), "
+        f"shear={result.affine_result.shear:.3f}",
+    )
+    return result

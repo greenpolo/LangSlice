@@ -51,7 +51,7 @@ def test_run_register_surfaces_artifact_paths_from_metadata(monkeypatch) -> None
     )
 
     monkeypatch.setattr(
-        "langslice_harness.registration.core.estimate_registration_runtime",
+        "langslice_harness.registration.runtime.estimate_registration",
         lambda **_kwargs: fake_result,
     )
     monkeypatch.setattr(
@@ -182,7 +182,7 @@ def test_run_register_restores_runtime_globals_after_exception(monkeypatch) -> N
     monkeypatch.setenv("LANGSLICE_ENDPOINT", "http://prior-endpoint")
     monkeypatch.setenv("LANGSLICE_VLM_DEBUG_DIR", "prior-debug")
     monkeypatch.setattr(
-        "langslice_harness.registration.core.estimate_registration_runtime",
+        "langslice_harness.registration.runtime.estimate_registration",
         lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("register failed")),
     )
     monkeypatch.setattr(
@@ -230,7 +230,7 @@ def test_run_register_restores_runtime_globals_after_success(monkeypatch) -> Non
         annotation_session=SimpleNamespace(metadata={}),
     )
     monkeypatch.setattr(
-        "langslice_harness.registration.core.estimate_registration_runtime",
+        "langslice_harness.registration.runtime.estimate_registration",
         lambda **_kwargs: fake_result,
     )
     monkeypatch.setattr(

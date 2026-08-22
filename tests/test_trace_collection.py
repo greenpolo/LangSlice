@@ -5,7 +5,6 @@ from pathlib import Path
 
 from langslice_harness.harness.estimation.trace_collection import (
     AgentTraceRecorder,
-    TracePricing,
     categorize_trace,
     collect_manifest_traces,
     estimate_cost_usd,
@@ -49,7 +48,7 @@ def test_load_manifest_accepts_single_and_group_records(tmp_path: Path):
 
 
 def test_estimate_cost_counts_thinking_as_output():
-    pricing = TracePricing(input_per_million=2.0, output_per_million=12.0)
+    pricing = {"input_per_million": 2.0, "output_per_million": 12.0}
     usage = {
         "prompt_token_count": 1_000_000,
         "candidates_token_count": 100_000,

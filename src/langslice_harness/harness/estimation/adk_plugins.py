@@ -19,7 +19,6 @@ from google.genai import types
 from PIL import Image
 
 MULTIMODAL_PARTS_RESULT_KEY = "_langslice_multimodal_parts"
-_MULTIMODAL_TOOL_HISTORY_KEY = "temp:LANGSLICE_MULTIMODAL_TOOL_HISTORY"
 _MULTIMODAL_TOOL_PARTS_BY_CALL_KEY = "temp:LANGSLICE_MULTIMODAL_TOOL_PARTS_BY_CALL"
 
 
@@ -112,16 +111,6 @@ class PersistentMultimodalToolResultsPlugin(BasePlugin):
                 tool_context.state[_MULTIMODAL_TOOL_PARTS_BY_CALL_KEY] = parts_by_call
             return public_result
 
-        # Backward-compatible path for older tools/tests that return raw Parts.
-        parts = _as_part_list(result)
-        if parts is not None:
-            history = _coerce_part_history(
-                tool_context.state.get(_MULTIMODAL_TOOL_HISTORY_KEY, [])
-            )
-            history.extend(parts)
-            tool_context.state[_MULTIMODAL_TOOL_HISTORY_KEY] = history
-            return {"status": "ok"}
-
         return result
 
     async def before_model_callback(
@@ -159,15 +148,6 @@ class PersistentMultimodalToolResultsPlugin(BasePlugin):
                     parts_by_call.pop(call_id, None)
                 callback_context.state[_MULTIMODAL_TOOL_PARTS_BY_CALL_KEY] = parts_by_call
 
-        history = _coerce_part_history(
-            callback_context.state.get(_MULTIMODAL_TOOL_HISTORY_KEY, [])
-        )
-        if history and llm_request.contents:
-            parts = llm_request.contents[-1].parts
-            if parts is None:
-                llm_request.contents[-1].parts = history
-            else:
-                parts.extend(history)
         return None
 
 

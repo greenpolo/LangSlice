@@ -8,19 +8,16 @@ from google.adk.agents import LlmAgent
 from google.genai import types
 
 from langslice_harness.atlas.space import Plane
+from langslice_harness.harness.estimation.model_resolver import (
+    is_native_gemini_string,
+    native_gemini_http_options,
+)
 from langslice_harness.harness.estimation.prompts import build_group_prompt
 from langslice_harness.harness.estimation.tools import (
     fetch_atlas,
     submit_group_estimate,
 )
 from langslice_harness.harness.estimation.validators import gate_submit_tool
-
-
-def _is_native_gemini_string(model: str | object) -> bool:
-    if not isinstance(model, str):
-        return False
-    lowered = model.strip().lower()
-    return lowered.startswith("gemini-") or lowered.startswith("models/gemini-")
 
 
 def build_group_agent(
@@ -46,12 +43,8 @@ def build_group_agent(
     if thinking_config is not None:
         config_kwargs["thinking_config"] = thinking_config
     config_kwargs["media_resolution"] = media_resolution
-    if _is_native_gemini_string(model):
-        config_kwargs["http_options"] = types.HttpOptions(
-            # ``attempts`` includes the original request. Match or exceed the
-            # legacy /main loop's 4 total attempts for transient Gemini 429s.
-            retry_options=types.HttpRetryOptions(initial_delay=1, attempts=5)
-        )
+    if is_native_gemini_string(model):
+        config_kwargs["http_options"] = native_gemini_http_options()
 
     return LlmAgent(
         model=model,  # type: ignore[arg-type]

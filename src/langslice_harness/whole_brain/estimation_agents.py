@@ -13,7 +13,7 @@ from collections.abc import Callable
 
 from PIL import Image
 
-from langslice_harness.atlas.core import get_coronal_long_edge, get_position_range_mm, load_atlas
+from langslice_harness.atlas.core import get_in_plane_long_edge, get_position_range_mm, load_atlas
 from langslice_harness.harness.estimation._types import APResult
 from langslice_harness.harness.estimation.image_gen import estimate_position_image_gen
 from langslice_harness.image_prep import adaptive_preprocess, normalize_image, prepare_image_for_vlm
@@ -59,7 +59,7 @@ async def run_anchor_estimation(
     these critical anchor positions.
     """
     atlas = load_atlas(atlas_name)
-    atlas_long_edge = get_coronal_long_edge(atlas)
+    atlas_long_edge = get_in_plane_long_edge(atlas, plane="coronal")
     image = _prepare_slice(image_path, max_long_edge=atlas_long_edge)
 
     # Use Pro model for anchors unless explicitly overridden
@@ -154,7 +154,7 @@ async def run_slice_estimation(
     improved).
     """
     atlas = load_atlas(atlas_name)
-    atlas_long_edge = get_coronal_long_edge(atlas)
+    atlas_long_edge = get_in_plane_long_edge(atlas, plane="coronal")
     image = _prepare_slice(image_path, max_long_edge=atlas_long_edge)
 
     if atlas_range is None:

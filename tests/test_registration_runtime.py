@@ -4,34 +4,18 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import numpy as np
 from PIL import Image
 
 import langslice_harness.cli as cli
-import langslice_harness.registration.core as registration_core
 import langslice_harness.registration.runtime as runtime
 from langslice_harness.harness.registration.types import RegistrationCandidate
-from langslice_harness.registration import (
-    AffineResult,
-    NonlinearResult,
-    RegistrationResult,
-    estimate_registration_runtime,
-)
-from langslice_harness.registration import (
-    RegistrationCorrespondence as CoreRegistrationCorrespondence,
-)
-from langslice_harness.registration.types import (
-    RegistrationAnnotationSession,
-    RegistrationCorrespondence,
-)
+from langslice_harness.registration.types import RegistrationAnnotationSession
 
 
 def test_registration_runtime_direct_image_gen_registration_uses_dense_candidate(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    correspondences_called: list[list[RegistrationCorrespondence]] = []
-    annotation_sessions: list[RegistrationAnnotationSession] = []
     progress_messages: list[str] = []
     trace_events: list[dict[str, object]] = []
     generator_calls: dict[str, object] = {}
@@ -93,8 +77,6 @@ def test_registration_runtime_direct_image_gen_registration_uses_dense_candidate
         image_model="direct-image-model",
         openai_image_route="responses",
         review_model=object(),
-        on_correspondences=correspondences_called.append,
-        on_annotation_session=annotation_sessions.append,
         on_progress=progress_messages.append,
         on_trace=trace_events.append,
         debug_dir=str(tmp_path),
@@ -105,12 +87,6 @@ def test_registration_runtime_direct_image_gen_registration_uses_dense_candidate
     assert generator_calls["openai_image_route"] == "responses"
     assert generator_calls["review_model"] is None
     assert generator_calls["debug_dir"] == str(tmp_path)
-    assert correspondences_called == [[]]
-    assert len(annotation_sessions) == 1
-    assert annotation_sessions[0].metadata["visualign_markers"] == [
-        [10.0, 11.0],
-        [12.0, 13.0],
-    ]
     assert result.correspondences == []
     assert result.accepted_correspondences == []
     assert result.annotation_session is not None
@@ -184,8 +160,6 @@ def test_registration_runtime_agentic_image_gen_registration_uses_review_session
     monkeypatch,
 ) -> None:
     review_calls: list[dict[str, object]] = []
-    correspondences_calls: list[list[RegistrationCorrespondence]] = []
-    annotation_sessions: list[RegistrationAnnotationSession] = []
     progress_messages: list[str] = []
     trace_events: list[dict[str, object]] = []
 
@@ -225,8 +199,6 @@ def test_registration_runtime_agentic_image_gen_registration_uses_review_session
         openai_image_route="responses",
         review_model="agentic-review-model",
         max_candidates=2,
-        on_correspondences=correspondences_calls.append,
-        on_annotation_session=annotation_sessions.append,
         on_progress=progress_messages.append,
         on_trace=trace_events.append,
     )
@@ -241,91 +213,20 @@ def test_registration_runtime_agentic_image_gen_registration_uses_review_session
     assert review_calls[0]["position_mm"] == 1.0
     assert review_calls[0]["on_progress"] is not None
     assert review_calls[0]["on_trace"] is not None
-    assert correspondences_calls == [[]]
-    assert len(annotation_sessions) == 1
-    assert annotation_sessions[0].metadata["visualign_markers"] == [
+    assert result.correspondences == []
+    assert result.accepted_correspondences == []
+    assert result.annotation_session is not None
+    assert result.annotation_session.metadata["visualign_markers"] == [
         [5.0, 6.0],
         [7.0, 8.0],
         [9.0, 10.0],
     ]
-    assert result.correspondences == []
-    assert result.accepted_correspondences == []
-    assert result.annotation_session is not None
     assert result.annotation_session.metadata["n_markers"] == 3
     assert result.annotation_session.metadata["candidate_metadata"] == {
         "source": "agentic-review",
     }
     assert progress_messages
     assert trace_events
-
-
-def _fake_core_registration_runtime(**kwargs: object) -> RegistrationResult:
-    image_obj = kwargs["image"]
-    assert isinstance(image_obj, Image.Image)
-    assert kwargs.get("on_correspondences") is None
-    assert kwargs.get("on_trace") is None
-    assert kwargs.get("debug_dir") is None
-    affine = AffineResult(
-        matrix=np.array(
-            [[1.0, 0.0, 3.0], [0.0, 1.0, -2.0], [0.0, 0.0, 1.0]],
-            dtype=np.float64,
-        ),
-        source_size=(image_obj.width, image_obj.height),
-        output_size=(140, 100),
-        backend="landmark_affine",
-        reasoning="runtime affine",
-    )
-    nonlinear = NonlinearResult(
-        atlas_points=np.array(
-            [
-                [0.0, 0.0],
-                [10.0, 5.0],
-                [20.0, 8.0],
-                [15.0, 18.0],
-                [4.0, 16.0],
-                [11.0, 10.0],
-            ]
-        ),
-        slice_points=np.array(
-            [
-                [1.0, 2.0],
-                [12.0, 7.0],
-                [24.0, 12.0],
-                [18.0, 21.0],
-                [6.0, 17.0],
-                [14.0, 12.0],
-            ]
-        ),
-        smoothing=1.0,
-        backend="tps",
-        reasoning="runtime nonlinear",
-        output_size=(140, 100),
-    )
-    corr = CoreRegistrationCorrespondence(
-        slice_xy=(1.0, 2.0), atlas_xy=(0.0, 0.0), label="test", confidence="high"
-    )
-    return RegistrationResult(
-        correspondences=[corr],
-        accepted_correspondences=[corr],
-        affine_result=affine,
-        nonlinear_result=nonlinear,
-    )
-
-
-def test_estimate_registration_runtime_orchestration(monkeypatch) -> None:
-    image = Image.new("L", (120, 90), color=0)
-    monkeypatch.setattr(
-        registration_core,
-        "estimate_registration",
-        _fake_core_registration_runtime,
-    )
-    full_result = estimate_registration_runtime(
-        image=image,
-        atlas_name="allen_mouse_25um",
-        position_mm=1.2,
-    )
-    assert full_result.affine_result.backend == "landmark_affine"
-    assert full_result.nonlinear_result.backend == "tps"
 
 
 def test_resolve_register_models_defaults_review_to_effective_model() -> None:

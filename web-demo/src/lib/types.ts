@@ -1,8 +1,21 @@
 // Barrel re-export so other modules can grab these from `lib/types`. The
 // source of truth lives in `localEngines.ts` (probe impl owns the shape).
 export type { LocalEngineStatus, LocalModel, CustomEndpoint } from "./localEngines";
-export type { WebDemoSupportedEngineMethod } from "./engineTypes";
-export { WEB_DEMO_SUPPORTED_ENGINE_METHODS } from "./engineTypes";
+
+/** Engine methods the web demo actually calls. Was generated from the
+ * Python engine schema; hand-maintained now that the typegen chain is gone. */
+export type WebDemoSupportedEngineMethod =
+  | "version"
+  | "estimate.run"
+  | "quick_affine.run"
+  | "register.run";
+
+export const WEB_DEMO_SUPPORTED_ENGINE_METHODS: readonly WebDemoSupportedEngineMethod[] = [
+  "version",
+  "estimate.run",
+  "quick_affine.run",
+  "register.run",
+] as const;
 
 /** Matches Rust AtlasMetadata */
 export interface AtlasMetadata {

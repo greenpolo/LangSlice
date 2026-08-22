@@ -75,7 +75,7 @@ def test_run_anchor_estimation_midpoint_fallback():
         ),
         patch(f"{_ESTIMATION_AGENTS}._prepare_slice", return_value=_FAKE_IMAGE),
         patch(f"{_ESTIMATION_AGENTS}.load_atlas"),
-        patch(f"{_ESTIMATION_AGENTS}.get_coronal_long_edge", return_value=528),
+        patch(f"{_ESTIMATION_AGENTS}.get_in_plane_long_edge", return_value=528),
         patch(
             f"{_ESTIMATION_AGENTS}.get_position_range_mm",
             return_value=(0.0, 13.175),
@@ -105,7 +105,7 @@ def test_run_anchor_estimation_both_stages_fail():
         ),
         patch(f"{_ESTIMATION_AGENTS}._prepare_slice", return_value=_FAKE_IMAGE),
         patch(f"{_ESTIMATION_AGENTS}.load_atlas"),
-        patch(f"{_ESTIMATION_AGENTS}.get_coronal_long_edge", return_value=528),
+        patch(f"{_ESTIMATION_AGENTS}.get_in_plane_long_edge", return_value=528),
         patch(
             f"{_ESTIMATION_AGENTS}.get_position_range_mm",
             return_value=(0.0, 13.175),

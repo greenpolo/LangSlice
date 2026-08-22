@@ -92,6 +92,8 @@ class EstimateRequest(EngineBaseModel):
     endpoint: str | None = None
     output_dir: str | None = None
     workflow: Workflow | None = None
+    show_borders: bool = False
+    grid: bool = False
 
 
 class EstimateResult(EngineBaseModel):
@@ -116,6 +118,10 @@ class RegisterRequest(EngineBaseModel):
     output_dir: str | None = None
     max_iterations: int = 20
     media_resolution: str | None = None
+    registration_mode: str = "direct"
+    max_candidates: int = 3
+    openai_image_route: str = "images"
+    vlm_resolution: int | None = None
 
 
 class RegisterResult(EngineBaseModel):
