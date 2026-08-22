@@ -15,7 +15,6 @@ from langslice_harness.agent_trace import image_part_from_pil, json_part, runtim
 from langslice_harness.atlas import get_reference_slice, load_atlas
 from langslice_harness.atlas.space import Plane
 from langslice_harness.harness.registration.image_gen_helpers import (
-    _SEGMENTATION_PROMPT,
     _build_atlas_root_mask,
     _classify_pixels_to_region_ids,
     _extract_borders_from_classified,
@@ -23,6 +22,7 @@ from langslice_harness.harness.registration.image_gen_helpers import (
     _generate_colored_region_slice,
     _register_colored_images,
     _run_inverse_warp_for_slice,
+    _segmentation_prompt_for_plane,
     _upscale_to_min_long_edge,
     _warp_atlas_rgb,
 )
@@ -52,11 +52,12 @@ def _resize_if_needed(image: Image.Image, size: tuple[int, int]) -> Image.Image:
     return image.convert("RGB").resize(size, resample=Image.Resampling.LANCZOS)
 
 
-def _segmentation_prompt(prompt_revision: str | None) -> str:
+def _segmentation_prompt(prompt_revision: str | None, *, plane: Plane = "coronal") -> str:
+    base_prompt = _segmentation_prompt_for_plane(plane)
     if not prompt_revision:
-        return _SEGMENTATION_PROMPT
+        return base_prompt
     return (
-        f"{_SEGMENTATION_PROMPT}\n\n"
+        f"{base_prompt}\n\n"
         "Revision guidance:\n"
         f"{prompt_revision.strip()}"
     )
@@ -177,7 +178,7 @@ def generate_registration_candidate(
     )
     slice_image = _resize_if_needed(image, target_size)
 
-    prompt = _segmentation_prompt(prompt_revision)
+    prompt = _segmentation_prompt(prompt_revision, plane=plane)
     request_metadata: dict[str, Any] = {
         "workflow": "image_gen_registration",
         "candidate_id": candidate_id,
