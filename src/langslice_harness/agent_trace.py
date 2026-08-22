@@ -97,47 +97,6 @@ def make_event(
     }
 
 
-def stage_event(stage: str, title: str, summary: str | None = None) -> dict[str, object]:
-    return make_event(
-        event_type="stage",
-        stage=stage,
-        role="system",
-        title=title,
-        summary=summary,
-    )
-
-
-def status_event(stage: str, message: str) -> dict[str, object]:
-    return make_event(
-        event_type="status",
-        stage=stage,
-        role="runtime",
-        title=message,
-    )
-
-
-def tool_call_event(
-    *,
-    stage: str,
-    tool_name: str,
-    args: dict[str, object],
-    iteration: int | None = None,
-) -> dict[str, object]:
-    title = f"Tool Call: {tool_name}"
-    metadata: dict[str, object] = {"tool_name": tool_name, "args": args}
-    if iteration is not None:
-        metadata["iteration"] = iteration
-    return make_event(
-        event_type="tool_call",
-        stage=stage,
-        role="model",
-        title=title,
-        summary=None if not args else ", ".join(f"{key}={value}" for key, value in args.items()),
-        parts=[json_part(args, label="Arguments")],
-        metadata=metadata,
-    )
-
-
 def tool_result_event(
     *,
     stage: str,

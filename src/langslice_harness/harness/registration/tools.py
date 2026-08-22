@@ -49,8 +49,7 @@ def _png_bytes(image: Image.Image) -> bytes:
     return buffer.getvalue()
 
 
-def _image_part(image: Image.Image, *, label: str) -> types.Part:
-    del label
+def _image_part(image: Image.Image) -> types.Part:
     return types.Part.from_bytes(mime_type="image/png", data=_png_bytes(image))
 
 
@@ -141,7 +140,7 @@ async def _save_candidate_artifacts(
         _ARTIFACT_BORDER_OVERLAY: candidate.warped_border_overlay,
     }
     for role, image in artifacts.items():
-        part = _image_part(image, label=role.replace("_", " ").title())
+        part = _image_part(image)
         await tool_context.save_artifact(filename=artifact_names[role], artifact=part)
     return artifact_names
 
@@ -222,12 +221,9 @@ async def _generate_registration_candidate_impl(
                 f"provider={record['provider']}, model={record['model']}, route={record['route']}"
             )
         ),
-        _image_part(generated.generated_segmentation, label="Model-generated segmentation"),
-        _image_part(generated.warped_atlas, label="Elastix-warped atlas"),
-        _image_part(
-            generated.warped_border_overlay,
-            label="Warped atlas borders over histology slice",
-        ),
+        _image_part(generated.generated_segmentation),
+        _image_part(generated.warped_atlas),
+        _image_part(generated.warped_border_overlay),
         types.Part.from_text(text=format_json(record)),
     ]
 
@@ -268,16 +264,6 @@ def make_generate_registration_candidate_tool(
         )
 
     return generate_registration_candidate
-
-
-async def generate_registration_candidate(
-    prompt_revision: str | None = None,
-    tool_context: Any = None,
-) -> dict[str, Any]:
-    return await _generate_registration_candidate_impl(
-        prompt_revision=prompt_revision,
-        tool_context=tool_context,
-    )
 
 
 async def confirm_registration(

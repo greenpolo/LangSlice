@@ -14,7 +14,6 @@ import langslice_harness.harness.registration.tools as registration_tools
 import langslice_harness.registration.runtime as registration_runtime
 from langslice_harness.harness.registration.runner import run_registration_review_session
 from langslice_harness.harness.registration.tools import (
-    generate_registration_candidate,
     make_generate_registration_candidate_tool,
 )
 from langslice_harness.harness.registration.types import RegistrationCandidate
@@ -308,7 +307,7 @@ def _install_fake_runner(
             captured_kwargs.update(kwargs)
         return SimpleNamespace(
             tools=[
-                registration_tools.generate_registration_candidate,
+                make_generate_registration_candidate_tool(),
                 registration_tools.confirm_registration,
             ],
             flow_script=flow_script,
@@ -638,7 +637,8 @@ def test_generate_registration_candidate_rejects_fourth_attempt() -> None:
         session_id="",
     )
 
-    result = asyncio.run(generate_registration_candidate(tool_context=context))
+    generate_tool = make_generate_registration_candidate_tool()
+    result = asyncio.run(generate_tool(tool_context=context))
 
     assert result == {
         "status": "error",

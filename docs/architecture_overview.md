@@ -8,7 +8,7 @@ LangSlice is organized around one installable Python harness package,
 - `src/langslice_harness/atlas/` -- BrainGlobe atlas loading, coordinate conversion, and slice extraction.
 - `src/langslice_harness/harness/estimation/` -- ADK slice-position estimation agents, prompts, tools, validators, plugins, and runners.
 - `src/langslice_harness/harness/estimation/image_gen.py` -- image-gen position estimation.
-- `src/langslice_harness/registration/` -- public registration wrapper, runtime, solver, and result types.
+- `src/langslice_harness/registration/` -- public registration runtime and result types.
 - `src/langslice_harness/harness/registration/` -- image-gen registration candidate generation and optional ADK review.
 - `src/langslice_harness/whole_brain/` -- multi-slice position estimation pipeline.
 - `src/langslice_harness/image_prep.py` -- image normalization, metadata detection, and downsampling.
@@ -22,13 +22,9 @@ The CLI command remains `langslice`, but the Python import package is
 ## Engine Contract
 
 The Python harness is the source of truth for LangSlice runtime behavior. The
-engine contract is defined with Pydantic models and exported to JSON Schema plus
-generated TypeScript types:
-
-```bash
-python scripts/generate_engine_contract.py
-langslice schema --out docs/engine_schema.json
-```
+engine contract is defined with Pydantic models in `src/langslice_harness/api/models.py`;
+frontend TypeScript types for the fields each client actually uses are hand-maintained
+alongside them (see `tauri-gui/src/lib/types.ts`, `web-demo/src/lib/types.ts`).
 
 `langslice serve --stdio` runs the newline-delimited JSON engine service. It
 accepts request envelopes such as `version`, `estimate.run`, `register.run`,

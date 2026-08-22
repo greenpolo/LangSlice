@@ -1,9 +1,9 @@
-"""Test the in-plane long-edge helper (coronal alias kept for back-compat)."""
+"""Test the in-plane long-edge helper."""
 from unittest.mock import MagicMock
 
 import numpy as np
 
-from langslice_harness.atlas.core import get_coronal_long_edge, get_in_plane_long_edge
+from langslice_harness.atlas.core import get_in_plane_long_edge
 
 
 def _mock_atlas(shape: tuple[int, int, int]) -> MagicMock:
@@ -17,12 +17,12 @@ def _mock_atlas(shape: tuple[int, int, int]) -> MagicMock:
 
 def test_coronal_long_edge_returns_max_of_dv_ml():
     atlas = _mock_atlas((100, 320, 528))  # AP=100, DV=320, ML=528
-    assert get_coronal_long_edge(atlas) == 528
+    assert get_in_plane_long_edge(atlas, plane="coronal") == 528
 
 
 def test_coronal_long_edge_tall_atlas():
     atlas = _mock_atlas((200, 600, 400))  # DV=600 > ML=400
-    assert get_coronal_long_edge(atlas) == 600
+    assert get_in_plane_long_edge(atlas, plane="coronal") == 600
 
 
 def test_in_plane_long_edge_sagittal_picks_ap_or_dv():

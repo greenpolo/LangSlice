@@ -12,7 +12,6 @@ dependencies = [
     "google-adk",
     "pydantic>=2",
     "litellm>=1.83.3",
-    "backoff>=2.2.1",
     "openai",
     "brainglobe-atlasapi",
     "brainglobe-space",

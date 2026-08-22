@@ -13,7 +13,6 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_MODEL_NAME = "gemini-3-flash-preview"
 _DEFAULT_THINKING_LEVEL = "MEDIUM"
-_DEFAULT_CODE_EXECUTION_ENABLED = True
 _DEFAULT_TEMPERATURE: float = 1.0
 
 
@@ -26,14 +25,13 @@ class _RuntimeConfig:
     """
 
     __slots__ = (
-        "model_name", "thinking_level", "code_execution_enabled",
+        "model_name", "thinking_level",
         "temperature", "_thinking_overridden",
     )
 
     def __init__(self) -> None:
         self.model_name: str = _DEFAULT_MODEL_NAME
         self.thinking_level: str = _DEFAULT_THINKING_LEVEL
-        self.code_execution_enabled: bool = _DEFAULT_CODE_EXECUTION_ENABLED
         self.temperature: float = _DEFAULT_TEMPERATURE
         self._thinking_overridden: bool = False
 
@@ -47,10 +45,6 @@ AVAILABLE_THINKING_LEVELS: list[tuple[str, str]] = [
     ("High", "HIGH"),
 ]
 
-_ENV_COUNT_TOKENS = "LANGSLICE_GENAI_COUNT_TOKENS"
-_ENV_AP_USE_FILE_API = "LANGSLICE_GENAI_AP_USE_FILE_API"
-_ENV_AP_USE_CONTEXT_CACHE = "LANGSLICE_GENAI_AP_USE_CONTEXT_CACHE"
-_ENV_AP_CACHE_TTL = "LANGSLICE_GENAI_AP_CACHE_TTL"
 _ENV_FILE_POLL_TIMEOUT_S = "LANGSLICE_GENAI_FILE_POLL_TIMEOUT_S"
 _ENV_TEMPERATURE = "LANGSLICE_GENAI_TEMPERATURE"
 
@@ -62,10 +56,6 @@ AVAILABLE_MODELS: list[str] = [
     "gemma-4-31b-it",
     "gemma-4-26b-a4b-it",
 ]
-
-CODE_EXECUTION_MODELS: set[str] = {
-    "gemini-3-flash-preview",
-}
 
 GEMMA_MODELS: set[str] = {
     "gemma-4-31b-it",
@@ -111,12 +101,6 @@ def set_temperature(value: float) -> None:
     clamped = max(0.0, min(2.0, float(value)))
     _runtime.temperature = clamped
     logger.info("Temperature changed to: %.2f", clamped)
-
-
-def set_code_execution_enabled(enabled: bool) -> None:
-    """Set whether Gemini code execution should be enabled when supported."""
-    _runtime.code_execution_enabled = bool(enabled)
-    logger.info("Code execution enabled: %s", bool(enabled))
 
 
 def is_gemma_model(model_name: str | None) -> bool:
@@ -183,13 +167,6 @@ def supports_image_model_thinking(model_name: str | None) -> bool:
     return str(model_name).strip() in IMAGE_MODEL_THINKING_MODELS
 
 
-def supports_code_execution(model_name: str | None) -> bool:
-    """Return True when the selected model supports Gemini code execution."""
-    if model_name is None:
-        return False
-    return str(model_name).strip() in CODE_EXECUTION_MODELS
-
-
 _BACKEND_AI_STUDIO = "ai_studio"
 _BACKEND_VERTEX_API_KEY = "vertex_api_key"
 _BACKEND_VERTEX_ADC = "vertex_adc"
@@ -220,26 +197,9 @@ class _GenAIFilesProtocol(Protocol):
     def delete(self, *, name: str, config: object | None = None) -> object: ...
 
 
-class _GenAICachesProtocol(Protocol):
-    def create(self, *, model: str, config: object | None = None) -> object: ...
-
-    def delete(self, *, name: str, config: object | None = None) -> object: ...
-
-
-class _GenAIInteractionsProtocol(Protocol):
-    def create(self, **kwargs: object) -> object: ...
-
-
-class _GenAIBatchesProtocol(Protocol):
-    def create(self, *, model: str, src: object, config: object | None = None) -> object: ...
-
-
 class GenAIClientProtocol(Protocol):
     models: _GenAIModelsProtocol
     files: _GenAIFilesProtocol
-    caches: _GenAICachesProtocol
-    interactions: _GenAIInteractionsProtocol
-    batches: _GenAIBatchesProtocol
 
     def close(self) -> None: ...
 
@@ -302,22 +262,6 @@ def get_backend() -> str:
     return normalized
 
 
-def count_tokens_enabled() -> bool:
-    return _env_bool(_ENV_COUNT_TOKENS)
-
-
-def ap_use_file_api() -> bool:
-    return _env_bool(_ENV_AP_USE_FILE_API)
-
-
-def ap_use_context_cache() -> bool:
-    return _env_bool(_ENV_AP_USE_CONTEXT_CACHE)
-
-
-def ap_cache_ttl() -> str:
-    return _env(_ENV_AP_CACHE_TTL) or "3600s"
-
-
 def file_poll_timeout_s() -> float:
     return _env_float(_ENV_FILE_POLL_TIMEOUT_S, 10.0)
 
@@ -332,25 +276,6 @@ _runtime.temperature = configured_temperature()
 
 def supports_file_api() -> bool:
     return get_backend() == _BACKEND_AI_STUDIO
-
-
-def supports_batch_api() -> bool:
-    backend = get_backend()
-    return backend in (_BACKEND_AI_STUDIO, _BACKEND_VERTEX_ADC)
-
-
-def feature_flags() -> dict[str, Any]:
-    return {
-        "count_tokens_enabled": count_tokens_enabled(),
-        "ap_use_file_api": ap_use_file_api(),
-        "ap_use_context_cache": ap_use_context_cache(),
-        "supports_file_api": supports_file_api(),
-        "supports_batch_api": supports_batch_api(),
-        "ap_cache_ttl": ap_cache_ttl(),
-        "file_poll_timeout_s": file_poll_timeout_s(),
-        "temperature": configured_temperature(),
-        "backend": get_backend(),
-    }
 
 
 def get_api_key() -> str:
@@ -438,29 +363,6 @@ def get_client() -> GenAIClientProtocol:
     return _client_instance
 
 
-def create_batch_client() -> GenAIClientProtocol:
-    """Create a dedicated v1 Vertex client for Batch API usage."""
-    if not supports_batch_api():
-        raise RuntimeError("Batch API is only supported with Vertex backends.")
-
-    genai_module = importlib.import_module("google.genai")
-    types_module = importlib.import_module("google.genai.types")
-    client_cls = cast(Callable[..., GenAIClientProtocol], genai_module.Client)
-    http_options_cls = cast(Callable[..., object], types_module.HttpOptions)
-    http_options = http_options_cls(api_version="v1")
-    backend = get_backend()
-
-    if backend == _BACKEND_VERTEX_API_KEY:
-        return client_cls(vertexai=True, api_key=get_api_key(), http_options=http_options)
-
-    return client_cls(
-        vertexai=True,
-        project=_vertex_project(),
-        location=_vertex_location(),
-        http_options=http_options,
-    )
-
-
 atexit.register(close_client)
 
 
@@ -473,13 +375,11 @@ atexit.register(close_client)
 if TYPE_CHECKING:
     MODEL_NAME: str
     THINKING_LEVEL: str
-    CODE_EXECUTION_ENABLED: bool
     TEMPERATURE: float
 
 _RUNTIME_ATTRS = {
     "MODEL_NAME": "model_name",
     "THINKING_LEVEL": "thinking_level",
-    "CODE_EXECUTION_ENABLED": "code_execution_enabled",
     "TEMPERATURE": "temperature",
 }
 
@@ -512,8 +412,6 @@ class _RuntimeConfigModule(types.ModuleType):
         runtime = cast(Any, types.ModuleType.__getattribute__(self, "_runtime"))
         if name == "TEMPERATURE":
             setattr(runtime, attr, float(cast(Any, value)))
-        elif name == "CODE_EXECUTION_ENABLED":
-            setattr(runtime, attr, bool(value))
         elif name == "THINKING_LEVEL":
             setattr(runtime, attr, str(value))
             runtime._thinking_overridden = True

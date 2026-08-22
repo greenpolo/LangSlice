@@ -104,21 +104,9 @@ def _add_register_parser(subparsers: argparse._SubParsersAction) -> None:
 def _run_register(args: argparse.Namespace) -> None:
     import json
     import os
-    from datetime import datetime
-    from pathlib import Path
 
-    from PIL import Image
-
-    from langslice_harness.image_prep import (
-        adaptive_preprocess,
-        normalize_image,
-        prepare_image_for_vlm,
-    )
-    from langslice_harness.registration.core import estimate_registration_runtime
-    from langslice_harness.registration.types import (
-        annotation_session_to_dict,
-        build_annotation_session_from_correspondences,
-    )
+    from langslice_harness.api.models import RegisterRequest
+    from langslice_harness.api.runtime import run_register
 
     # Optional endpoint override: when the GUI picks a local-engine model
     # from the Estimate dropdown it passes --endpoint here. The harness's
@@ -140,7 +128,11 @@ def _run_register(args: argparse.Namespace) -> None:
 
         default_image_model = args.image_model or args.model or vlm_config.MODEL_NAME
         default_review_model = args.model or vlm_config.MODEL_NAME
-        # Configure model before anything touches the client.
+        # Configure model before anything touches the client. This is a
+        # one-shot CLI process, so mutating the global runtime config here
+        # (unlike api.runtime.run_register, which is called from the
+        # long-lived `serve --stdio` engine and must not leak state across
+        # requests) is harmless.
         if default_image_model:
             vlm_config.set_model_name(default_image_model)
         if args.temperature is not None:
@@ -157,143 +149,89 @@ def _run_register(args: argparse.Namespace) -> None:
         review_model=args.review_model,
     )
 
-    # Load and downscale image.
-    print(f"Loading {args.image} ...")
-    raw_image = Image.open(args.image)
-    canonical = normalize_image(raw_image)
-    original_size = canonical.size
-    prep = prepare_image_for_vlm(canonical, max_long_edge=args.vlm_resolution)
-    image = prep.image
-    print(
-        f"  Original: {original_size[0]}x{original_size[1]} -> "
-        f"VLM input: {image.size[0]}x{image.size[1]}  "
-        f"(scale={prep.scale_factor:.3f}, max_edge={args.vlm_resolution})"
-    )
-    if getattr(args, "clahe", False):
-        image = adaptive_preprocess(image)
-        print("  CLAHE: adaptive per-channel + DAPI-weighted grayscale (70/15/15 B/R/G)")
-
-    # Set up output directory.
-    if args.out:
-        out_dir = Path(args.out)
-    else:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        out_dir = Path("langslice_output") / f"{timestamp}_{args.atlas}"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    debug_dir = str(out_dir)
+    out_dir = _register_output_dir(args.out, args.atlas)
 
     print(f"Atlas: {args.atlas}  Plane: {args.plane}  Position: {args.position:.2f} mm")
     print(f"Registration: image-gen  Model: {effective_model}  Provider: {args.provider}")
     print(f"Output: {out_dir}")
     print()
 
-    def on_progress(msg: str) -> None:
-        print(f"  {msg}")
+    def emit(event: object) -> None:
+        print(f"  {getattr(event, 'message', event)}")
 
-    # Run registration.
-    result = estimate_registration_runtime(
-        image=image,
-        atlas_name=args.atlas,
+    request = RegisterRequest(
+        image_path=args.image,
+        atlas=args.atlas,
         position_mm=args.position,
         plane=args.plane,
-        registration_mode=args.registration_mode,
-        on_progress=on_progress,
-        debug_dir=debug_dir,
-        provider=args.provider,
         image_model=image_model,
-        openai_image_route=args.openai_image_route,
         review_model=review_model,
+        preprocess="auto" if getattr(args, "clahe", False) else "none",
+        provider=args.provider,
+        output_dir=str(out_dir),
+        registration_mode=args.registration_mode,
+        openai_image_route=args.openai_image_route,
         max_candidates=args.max_candidates,
+        vlm_resolution=args.vlm_resolution,
     )
+    result = run_register(request, emit=emit)
+
+    session_dict = result.annotation_session or {}
+    metadata_raw = session_dict.get("metadata", {})
+    metadata: dict[str, object] = metadata_raw if isinstance(metadata_raw, dict) else {}
+    dense_marker_count = metadata.get("n_markers")
+    candidate_metadata = metadata.get("candidate_metadata")
 
     # Summary.
-    affine = result.affine_result
-    tx, ty = affine.translation_px
-    sx, sy = affine.scale
     print()
     print("Registration complete")
-    print(f"  Accepted pairs: {len(result.accepted_correspondences)}")
-    dense_marker_count = None
-    candidate_metadata = None
-    if result.annotation_session is not None:
-        dense_marker_count = result.annotation_session.metadata.get("n_markers")
-        candidate_metadata = result.annotation_session.metadata.get("candidate_metadata")
+    print(f"  Accepted pairs: {result.accepted_correspondence_count}")
     if dense_marker_count is not None:
         print(f"  Dense markers: {dense_marker_count}")
-    print(f"  Rotation: {affine.rotation_deg:.2f} deg")
-    print(f"  Translation: ({tx:.1f}, {ty:.1f}) px")
-    print(f"  Scale: ({sx:.3f}, {sy:.3f})")
-    print(f"  Shear: {affine.shear:.3f}")
-    mean_res = affine.provenance.get("mean_residual_px")
-    max_res = affine.provenance.get("max_residual_px")
-    if mean_res is not None:
-        print(f"  Mean residual: {float(mean_res):.1f} px  Max: {float(max_res or 0):.1f} px")
+    print(f"  Rotation: {result.rotation_deg:.2f} deg")
+    print(f"  Translation: ({result.translation_px[0]:.1f}, {result.translation_px[1]:.1f}) px")
+    print(f"  Scale: ({result.scale[0]:.3f}, {result.scale[1]:.3f})")
+    print(f"  Shear: {result.shear:.3f}")
     print(f"  Artifacts: {out_dir}")
 
     if args.json:
-        session = result.annotation_session or build_annotation_session_from_correspondences(
-            result.accepted_correspondences
-        )
-        # Surface forward + inverse warp artifact paths at the top level so
-        # callers (CLI consumers, the Tauri GUI) don't have to dig into
-        # candidate_metadata. These mirror the keys stamped into
-        # session_metadata / candidate_metadata by the image-gen pipeline.
-        session_meta = result.annotation_session.metadata if result.annotation_session else {}
-        artifact_path_keys = (
-            "warped_atlas_path",
-            "warped_border_overlay_path",
-            "generated_segmentation_path",
-            "generated_border_overlay_path",
-            "slice_warped_to_atlas_path",
-            "slice_atlas_border_overlay_path",
-        )
-        artifact_paths: dict[str, str | None] = {}
-        for key in artifact_path_keys:
-            value = session_meta.get(key)
-            if value is None and isinstance(candidate_metadata, dict):
-                value = candidate_metadata.get(key)
-            artifact_paths[key] = value if isinstance(value, str) else None
-
-        # Hoist inverse_warp_status to the top-level payload so GUI/CLI
-        # consumers can detect inverse-warp failures without digging into
-        # annotation_session.metadata. "ok" on success, "failed: ..." on
-        # failure, None if the workflow didn't run an inverse warp.
-        inverse_warp_status_value = session_meta.get("inverse_warp_status")
-        if inverse_warp_status_value is None and isinstance(candidate_metadata, dict):
-            inverse_warp_status_value = candidate_metadata.get("inverse_warp_status")
-        inverse_warp_status: str | None = (
-            inverse_warp_status_value
-            if isinstance(inverse_warp_status_value, str)
-            else None
-        )
-
+        # Flat artifact-path keys (and inverse_warp_status) at the top level
+        # so callers (CLI consumers, the Tauri GUI export path) don't have
+        # to dig into annotation_session metadata.
         payload = {
-            "accepted_correspondences": [
-                {
-                    "label": c.label,
-                    "slice_xy": list(c.slice_xy),
-                    "atlas_xy": list(c.atlas_xy),
-                    "confidence": c.confidence,
-                    "rationale": c.rationale,
-                }
-                for c in result.accepted_correspondences
-            ],
+            "accepted_correspondences": [],
             "dense_marker_count": dense_marker_count,
             "candidate_metadata": candidate_metadata,
             "affine": {
-                "backend": affine.backend,
-                "rotation_deg": affine.rotation_deg,
-                "translation_px": list(affine.translation_px),
-                "scale": list(affine.scale),
-                "shear": affine.shear,
-                "provenance": affine.provenance,
+                "rotation_deg": result.rotation_deg,
+                "translation_px": list(result.translation_px),
+                "scale": list(result.scale),
+                "shear": result.shear,
             },
-            "annotation_session": annotation_session_to_dict(session),
-            "inverse_warp_status": inverse_warp_status,
-            **artifact_paths,
+            "annotation_session": result.annotation_session,
+            "inverse_warp_status": result.inverse_warp_status,
+            "warped_atlas_path": result.warped_atlas_path,
+            "warped_border_overlay_path": result.warped_border_overlay_path,
+            "generated_segmentation_path": result.generated_segmentation_path,
+            "generated_border_overlay_path": result.generated_border_overlay_path,
+            "slice_warped_to_atlas_path": result.slice_warped_to_atlas_path,
+            "slice_atlas_border_overlay_path": result.slice_atlas_border_overlay_path,
         }
         print()
         print(json.dumps(payload, indent=2))
+
+
+def _register_output_dir(out: str | None, atlas: str):
+    from datetime import datetime
+    from pathlib import Path
+
+    if out:
+        out_dir = Path(out)
+    else:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        out_dir = Path("langslice_output") / f"{timestamp}_{atlas}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    return out_dir
 
 
 def _add_estimate_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -737,50 +675,10 @@ def _run_estimate_brain(args: argparse.Namespace) -> None:
 
 def _run_estimate(args: argparse.Namespace) -> None:
     import json
-    import os
-    from pathlib import Path
-
-    from PIL import Image
-
-    from langslice_harness.image_prep import normalize_image, prepare_image_for_vlm
-
-    # Optional endpoint override (see _run_register for context).
-    if args.endpoint:
-        os.environ["LANGSLICE_ENDPOINT"] = args.endpoint
-
-    # Load and downscale image.
-    print(f"Loading {args.image} ...")
-    raw_image = Image.open(args.image)
-    canonical = normalize_image(raw_image)
-    original_size = canonical.size
-    prep = prepare_image_for_vlm(canonical)
-    image = prep.image
-    if args.preprocess == "auto":
-        from langslice_harness.image_prep import adaptive_preprocess
-        image = adaptive_preprocess(image)
-        preprocess_label = "adaptive (CLAHE + brightness)"
-    else:
-        preprocess_label = "none"
-    print(
-        f"  Original: {original_size[0]}x{original_size[1]} -> "
-        f"VLM input: {image.size[0]}x{image.size[1]}  "
-        f"(scale={prep.scale_factor:.3f}, preprocess={preprocess_label})"
-    )
-
-    # Set up output directory.
-    debug_dir = None
-    if args.out:
-        out_dir = Path(args.out)
-        out_dir.mkdir(parents=True, exist_ok=True)
-        debug_dir = str(out_dir)
-        os.environ["LANGSLICE_VLM_DEBUG_DIR"] = debug_dir
-
-    def on_progress(msg: str) -> None:
-        print(f"  {msg}")
 
     import langslice_harness.vlm_config as vlm_config
-    from langslice_harness.estimation import estimate_position
-    from langslice_harness.harness.estimation.image_gen import estimate_position_image_gen
+    from langslice_harness.api.models import EstimateRequest
+    from langslice_harness.api.runtime import run_estimate
 
     if args.provider == "openai":
         import langslice_harness.openai_config as openai_config
@@ -790,20 +688,6 @@ def _run_estimate(args: argparse.Namespace) -> None:
     else:
         effective_model = args.model or vlm_config.MODEL_NAME
         provider_label = "google"
-        if args.temperature is not None:
-            vlm_config.set_temperature(args.temperature)
-        if args.thinking:
-            vlm_config.set_thinking_level(args.thinking)
-
-    print(f"Atlas: {args.atlas}  Plane: {args.plane}")
-    print(
-        f"Model: {effective_model}  Provider: {provider_label}  "
-        f"Thinking: {vlm_config.THINKING_LEVEL}  Temp: {vlm_config.TEMPERATURE}"
-    )
-    print(f"Max iterations: {args.max_iterations}")
-    if debug_dir:
-        print(f"Output: {debug_dir}")
-    print()
 
     workflow = args.workflow
     if workflow is None:
@@ -812,8 +696,19 @@ def _run_estimate(args: argparse.Namespace) -> None:
             if provider_label == "google" and vlm_config.is_image_generation_model(effective_model)
             else "tool_use"
         )
-    print(f"Workflow: {workflow}")
 
+    print(f"Atlas: {args.atlas}  Plane: {args.plane}")
+    print(f"Model: {effective_model}  Provider: {provider_label}")
+    print(f"Max iterations: {args.max_iterations}")
+    if args.out:
+        print(f"Output: {args.out}")
+    print(f"Workflow: {workflow}")
+    print()
+
+    # Same guard image_gen enforces internally, kept here too so the CLI's
+    # SystemExit + message stay exactly as before (image_gen AP estimation
+    # is a fixed-plane zoom pipeline with no plane parameter at all --
+    # unlike registration, it has not been parameterized by plane).
     if workflow == "image_gen":
         if provider_label != "google":
             raise SystemExit(
@@ -825,31 +720,28 @@ def _run_estimate(args: argparse.Namespace) -> None:
                 f"image_gen workflow is currently coronal-only (got plane={args.plane!r}). "
                 "Use --workflow tool_use for sagittal/horizontal estimation."
             )
-        result = estimate_position_image_gen(
-            image=image,
-            atlas_name=args.atlas,
-            on_progress=on_progress,
-            model_name=effective_model,
-            show_borders=args.borders,
-            send_individually=not args.grid,
-            debug_dir=debug_dir,
-        )
-    else:
-        result = estimate_position(
-            image=image,
-            atlas_name=args.atlas,
-            plane=args.plane,
-            on_progress=on_progress,
-            max_iterations=args.max_iterations,
-            media_resolution=args.media_resolution,
-            model_name=effective_model,
-            thinking=args.thinking,
-            temperature=args.temperature,
-            apply_clahe=False,
-            debug_dir=debug_dir,
-            show_borders=args.borders,
-            send_individually=not args.grid,
-        )
+
+    def emit(event: object) -> None:
+        print(f"  {getattr(event, 'message', event)}")
+
+    request = EstimateRequest(
+        image_path=args.image,
+        atlas=args.atlas,
+        plane=args.plane,
+        model=args.model,
+        thinking=args.thinking,
+        temperature=args.temperature,
+        media_resolution=args.media_resolution,
+        max_iterations=args.max_iterations,
+        preprocess=args.preprocess,
+        provider=args.provider,
+        endpoint=args.endpoint,
+        output_dir=args.out,
+        workflow=workflow,
+        show_borders=args.borders,
+        grid=args.grid,
+    )
+    result = run_estimate(request, emit=emit)
 
     # Summary.
     print()
@@ -869,57 +761,12 @@ def _run_estimate(args: argparse.Namespace) -> None:
         print(json.dumps(payload, indent=2))
 
 
-def _add_ollama_parser(subparsers: argparse._SubParsersAction) -> None:
-    oll = subparsers.add_parser(
-        "ollama",
-        help="Manage local Ollama models",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    oll.add_argument(
-        "--host",
-        default="http://localhost:11434",
-        help="Ollama server URL",
-    )
-    oll_sub = oll.add_subparsers(dest="ollama_command")
-
-    oll_sub.add_parser("status", help="Check if Ollama is running")
-    oll_sub.add_parser("list", help="List installed models")
-
-    pull_p = oll_sub.add_parser("pull", help="Download a model")
-    pull_p.add_argument("model", help="Model name (e.g. gemma4:31b)")
-
-    rm_p = oll_sub.add_parser("remove", help="Delete a model")
-    rm_p.add_argument("model", help="Model name to delete")
-
-
-def _run_ollama(args: argparse.Namespace) -> None:
-    from langslice_harness.ollama import cli_list, cli_pull, cli_remove, cli_status
-
-    host = args.host
-    cmd = args.ollama_command
-
-    if cmd == "status":
-        cli_status(host)
-    elif cmd == "list":
-        cli_list(host)
-    elif cmd == "pull":
-        cli_pull(host, args.model)
-    elif cmd == "remove":
-        cli_remove(host, args.model)
-    else:
-        print("Usage: langslice ollama {status,list,pull,remove}")
-        sys.exit(1)
-
-
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="langslice",
         description="VLM-based brain slice registration using Gemini and BrainGlobe atlases",
     )
     subparsers = parser.add_subparsers(dest="command")
-
-    # langslice gui
-    subparsers.add_parser("gui", help="Launch the Tauri desktop application")
 
     # langslice version
     subparsers.add_parser("version", help="Print version info")
@@ -939,17 +786,11 @@ def _build_parser() -> argparse.ArgumentParser:
     # langslice estimate-brain
     _add_estimate_brain_parser(subparsers)
 
-    # langslice ollama
-    _add_ollama_parser(subparsers)
-
     # langslice quick-affine
     _add_quick_affine_parser(subparsers)
 
     # langslice serve
     _add_serve_parser(subparsers)
-
-    # langslice schema
-    _add_schema_parser(subparsers)
 
     return parser
 
@@ -1010,22 +851,6 @@ def _add_serve_parser(subparsers: argparse._SubParsersAction) -> None:
     )
 
 
-def _add_schema_parser(subparsers: argparse._SubParsersAction) -> None:
-    p = subparsers.add_parser(
-        "schema",
-        help="Regenerate engine schema + TypeScript contracts",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    p.add_argument(
-        "--out",
-        default="docs/engine_schema.json",
-        help=(
-            "Output path for schema bundle JSON. TypeScript contracts are also "
-            "regenerated at their standard frontend paths."
-        ),
-    )
-
-
 def _run_serve(args: argparse.Namespace) -> None:
     if not args.stdio:
         raise SystemExit("serve currently requires --stdio")
@@ -1034,33 +859,11 @@ def _run_serve(args: argparse.Namespace) -> None:
     raise SystemExit(run_stdio())
 
 
-def _run_schema(args: argparse.Namespace) -> None:
-    from pathlib import Path
-
-    from langslice_harness.api.typegen import write_contract_outputs
-
-    schema_path, ts_paths = write_contract_outputs(
-        project_root=Path.cwd(),
-        schema_path=Path(args.out),
-    )
-    print(f"Wrote schema bundle to {schema_path}")
-    for ts_path in ts_paths:
-        print(f"Wrote TypeScript contract to {ts_path}")
-
-
 def main(argv: list[str] | None = None):
     parser = _build_parser()
     args = parser.parse_args(argv)
 
-    if args.command == "gui":
-        print("The PySide6 GUI has been replaced by the Tauri desktop app.")
-        print("To launch the Tauri GUI:")
-        print("  cd tauri-gui && pnpm tauri dev")
-        print()
-        print("For headless operation, use the CLI commands:")
-        print("  langslice estimate <image>")
-        print("  langslice register <image> --position <mm>")
-    elif args.command == "version":
+    if args.command == "version":
         print(f"langslice {langslice_harness.__version__}")
     elif args.command == "register":
         _run_register(args)
@@ -1074,12 +877,8 @@ def main(argv: list[str] | None = None):
         _run_collect_traces(args)
     elif args.command == "estimate-brain":
         _run_estimate_brain(args)
-    elif args.command == "ollama":
-        _run_ollama(args)
     elif args.command == "serve":
         _run_serve(args)
-    elif args.command == "schema":
-        _run_schema(args)
     else:
         parser.print_help()
         sys.exit(1)

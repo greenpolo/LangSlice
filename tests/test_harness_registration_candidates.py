@@ -533,7 +533,7 @@ def test_register_cli_json_payload_includes_inverse_warp_paths(monkeypatch, tmp_
     import json
 
     import langslice_harness.cli as cli
-    import langslice_harness.registration.core as registration_core
+    import langslice_harness.registration.runtime as registration_runtime
     from langslice_harness.registration.types import (
         AffineResult,
         NonlinearResult,
@@ -601,12 +601,10 @@ def test_register_cli_json_payload_includes_inverse_warp_paths(monkeypatch, tmp_
             annotation_session=session,
         )
 
+    # api.runtime.run_register imports this as a local symbol; patch the
+    # source module so the local re-import picks up the fake.
     monkeypatch.setattr(
-        cli, "estimate_registration_runtime", fake_runtime, raising=False
-    )
-    # The cli imports it as a local symbol; patch the source module too.
-    monkeypatch.setattr(
-        registration_core, "estimate_registration_runtime", fake_runtime, raising=False
+        registration_runtime, "estimate_registration", fake_runtime, raising=False
     )
 
     slice_path = tmp_path / "slice.png"
@@ -716,7 +714,7 @@ def test_register_cli_json_payload_surfaces_inverse_warp_failure(
     import json
 
     import langslice_harness.cli as cli
-    import langslice_harness.registration.core as registration_core
+    import langslice_harness.registration.runtime as registration_runtime
     from langslice_harness.registration.types import (
         AffineResult,
         NonlinearResult,
@@ -784,10 +782,7 @@ def test_register_cli_json_payload_surfaces_inverse_warp_failure(
         )
 
     monkeypatch.setattr(
-        cli, "estimate_registration_runtime", fake_runtime, raising=False
-    )
-    monkeypatch.setattr(
-        registration_core, "estimate_registration_runtime", fake_runtime, raising=False
+        registration_runtime, "estimate_registration", fake_runtime, raising=False
     )
 
     slice_path = tmp_path / "slice.png"

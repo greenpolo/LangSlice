@@ -81,15 +81,6 @@ GroupRunner = Callable[..., Awaitable[Any]]
 
 
 @dataclass(frozen=True)
-class TracePricing:
-    """Per-million token pricing used for rough collection cost estimates."""
-
-    input_per_million: float
-    output_per_million: float
-    cached_input_per_million: float = 0.0
-
-
-@dataclass(frozen=True)
 class TraceManifestRow:
     """One single-slice or grouped trace collection job."""
 
@@ -104,11 +95,11 @@ class TraceManifestRow:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
-GEMINI_31_PRO_PREVIEW_PRICING = TracePricing(
-    input_per_million=2.0,
-    output_per_million=12.0,
-    cached_input_per_million=0.20,
-)
+GEMINI_31_PRO_PREVIEW_PRICING: dict[str, float] = {
+    "input_per_million": 2.0,
+    "output_per_million": 12.0,
+    "cached_input_per_million": 0.20,
+}
 
 _PRIVATE_RESULT_KEYS = {"_langslice_multimodal_parts"}
 _USAGE_FIELDS = (
@@ -410,7 +401,7 @@ def load_manifest(path: str | Path) -> list[TraceManifestRow]:
 
 
 def estimate_cost_usd(
-    usage: Mapping[str, int | float | str | bool], pricing: TracePricing
+    usage: Mapping[str, int | float | str | bool], pricing: Mapping[str, float]
 ) -> float:
     """Estimate call cost, counting Gemini thinking tokens as output tokens."""
 
@@ -422,9 +413,9 @@ def estimate_cost_usd(
 
     billable_input = max(0.0, prompt + tool_prompt - cached)
     cost = (
-        billable_input * pricing.input_per_million
-        + cached * pricing.cached_input_per_million
-        + (output + thoughts) * pricing.output_per_million
+        billable_input * pricing["input_per_million"]
+        + cached * pricing.get("cached_input_per_million", 0.0)
+        + (output + thoughts) * pricing["output_per_million"]
     ) / 1_000_000.0
     return round(cost, 6)
 

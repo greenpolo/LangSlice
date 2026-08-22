@@ -30,7 +30,6 @@ def run_with_progress_heartbeat(
     *,
     request_label: str,
     on_progress: Callable[[str], None] | None = None,
-    heartbeat_interval_s: float = HEARTBEAT_INTERVAL_S,
 ) -> Any:
     """Run *fn* while emitting periodic heartbeat messages via *on_progress*."""
     started_at = time.perf_counter()
@@ -39,10 +38,10 @@ def run_with_progress_heartbeat(
 
     if on_progress:
         on_progress(f"{request_label}: request started")
-        if heartbeat_interval_s > 0:
+        if HEARTBEAT_INTERVAL_S > 0:
 
             def _heartbeat_loop() -> None:
-                while not stop_event.wait(heartbeat_interval_s):
+                while not stop_event.wait(HEARTBEAT_INTERVAL_S):
                     elapsed_s = time.perf_counter() - started_at
                     on_progress(
                         f"{request_label}: still waiting for Gemini "
@@ -78,16 +77,14 @@ def retry_with_backoff(
     *,
     request_label: str,
     on_progress: Callable[[str], None] | None = None,
-    max_retries: int = MAX_RETRIES,
-    initial_backoff_s: float = INITIAL_BACKOFF_S,
 ) -> Any:
     """Call *fn* with exponential backoff on retryable Gemini API errors.
 
     Wraps each attempt in :func:`run_with_progress_heartbeat`.
     """
     last_exc: Exception | None = None
-    for attempt in range(max_retries + 1):
-        attempt_label = f"{request_label} (attempt {attempt + 1}/{max_retries + 1})"
+    for attempt in range(MAX_RETRIES + 1):
+        attempt_label = f"{request_label} (attempt {attempt + 1}/{MAX_RETRIES + 1})"
         try:
             return run_with_progress_heartbeat(
                 fn,
@@ -99,12 +96,12 @@ def retry_with_backoff(
             # Check for retryable HTTP status code
             status = getattr(exc, "status_code", None) or getattr(exc, "code", None)
             if isinstance(status, int) and status in RETRYABLE_STATUS_CODES:
-                if attempt < max_retries:
-                    delay = initial_backoff_s * (2**attempt)
+                if attempt < MAX_RETRIES:
+                    delay = INITIAL_BACKOFF_S * (2**attempt)
                     msg = (
                         f"Gemini API error (status {status}), "
                         f"retrying in {delay:.1f}s "
-                        f"(attempt {attempt + 1}/{max_retries})"
+                        f"(attempt {attempt + 1}/{MAX_RETRIES})"
                     )
                     logger.warning(msg)
                     if on_progress:
@@ -114,12 +111,12 @@ def retry_with_backoff(
             # Also retry on generic connection / timeout errors
             exc_name = type(exc).__name__.lower()
             if any(kw in exc_name for kw in ("timeout", "connection", "transport")):
-                if attempt < max_retries:
-                    delay = initial_backoff_s * (2**attempt)
+                if attempt < MAX_RETRIES:
+                    delay = INITIAL_BACKOFF_S * (2**attempt)
                     msg = (
                         f"Transient error ({type(exc).__name__}), "
                         f"retrying in {delay:.1f}s "
-                        f"(attempt {attempt + 1}/{max_retries})"
+                        f"(attempt {attempt + 1}/{MAX_RETRIES})"
                     )
                     logger.warning(msg)
                     if on_progress:
