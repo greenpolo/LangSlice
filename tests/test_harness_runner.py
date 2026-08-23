@@ -8,15 +8,15 @@ from google.adk.models.llm_response import LlmResponse
 from google.genai import types
 from PIL import Image
 
-from langslice_harness.harness.estimation._types import MultiSliceResult, PositionResult
-from langslice_harness.harness.estimation.group import build_group_agent
-from langslice_harness.harness.estimation.runner import (
+from langslice.linear._types import MultiSliceResult, PositionResult
+from langslice.linear.group import build_group_agent
+from langslice.linear.runner import (
     _prepare_target_payloads,
     run_group_session,
     run_single_slice_session,
 )
-from langslice_harness.harness.estimation.single_slice import build_single_slice_agent
-from langslice_harness.harness.estimation.validators import gate_submit_tool
+from langslice.linear.single_slice import build_single_slice_agent
+from langslice.linear.validators import gate_submit_tool
 
 
 def _count_inline_images(contents: list[types.Content]) -> int:
@@ -86,7 +86,7 @@ def test_prepare_target_payloads_keeps_display_payload_only(monkeypatch):
     def _raise_if_called():
         raise AssertionError("inline target preparation should not create a Gemini client")
 
-    monkeypatch.setattr("langslice_harness.vlm_config.get_client", _raise_if_called)
+    monkeypatch.setattr("langslice.providers.vlm_config.get_client", _raise_if_called)
 
     payloads, uploaded_files = _prepare_target_payloads(
         [Image.new("RGB", (1200, 800), color=128)],
@@ -337,9 +337,9 @@ def test_single_runner_uses_file_api_target_for_native_gemini(monkeypatch):
         "new_llm",
         staticmethod(lambda model: CaptureInitialTransportLlm(model=model)),
     )
-    monkeypatch.setattr("langslice_harness.vlm_config.supports_file_api", lambda: True)
-    monkeypatch.setattr("langslice_harness.vlm_config.file_poll_timeout_s", lambda: 0.01)
-    monkeypatch.setattr("langslice_harness.vlm_config.get_client", lambda: fake_client)
+    monkeypatch.setattr("langslice.providers.vlm_config.supports_file_api", lambda: True)
+    monkeypatch.setattr("langslice.providers.vlm_config.file_poll_timeout_s", lambda: 0.01)
+    monkeypatch.setattr("langslice.providers.vlm_config.get_client", lambda: fake_client)
 
     result = asyncio.run(
         run_single_slice_session(
@@ -385,12 +385,12 @@ def test_single_runner_uses_file_api_target_for_native_gemma(monkeypatch):
             )
 
     monkeypatch.setattr(
-        "langslice_harness.harness.estimation.model_resolver._load_adk_gemma_class",
+        "langslice.adk.model_resolver._load_adk_gemma_class",
         lambda: CaptureInitialTransportLlm,
     )
-    monkeypatch.setattr("langslice_harness.vlm_config.supports_file_api", lambda: True)
-    monkeypatch.setattr("langslice_harness.vlm_config.file_poll_timeout_s", lambda: 0.01)
-    monkeypatch.setattr("langslice_harness.vlm_config.get_client", lambda: fake_client)
+    monkeypatch.setattr("langslice.providers.vlm_config.supports_file_api", lambda: True)
+    monkeypatch.setattr("langslice.providers.vlm_config.file_poll_timeout_s", lambda: 0.01)
+    monkeypatch.setattr("langslice.providers.vlm_config.get_client", lambda: fake_client)
 
     result = asyncio.run(
         run_single_slice_session(
@@ -634,9 +634,9 @@ def test_group_runner_uses_file_api_targets_for_native_gemini(monkeypatch):
         "new_llm",
         staticmethod(lambda model: CaptureInitialGroupTransportLlm(model=model)),
     )
-    monkeypatch.setattr("langslice_harness.vlm_config.supports_file_api", lambda: True)
-    monkeypatch.setattr("langslice_harness.vlm_config.file_poll_timeout_s", lambda: 0.01)
-    monkeypatch.setattr("langslice_harness.vlm_config.get_client", lambda: fake_client)
+    monkeypatch.setattr("langslice.providers.vlm_config.supports_file_api", lambda: True)
+    monkeypatch.setattr("langslice.providers.vlm_config.file_poll_timeout_s", lambda: 0.01)
+    monkeypatch.setattr("langslice.providers.vlm_config.get_client", lambda: fake_client)
 
     result = asyncio.run(
         run_group_session(
@@ -688,7 +688,7 @@ def test_model_object_target_transport_stays_inline(monkeypatch):
     def _raise_if_called():
         raise AssertionError("local/model-object path should not create a Gemini client")
 
-    monkeypatch.setattr("langslice_harness.vlm_config.get_client", _raise_if_called)
+    monkeypatch.setattr("langslice.providers.vlm_config.get_client", _raise_if_called)
 
     result = asyncio.run(
         run_single_slice_session(

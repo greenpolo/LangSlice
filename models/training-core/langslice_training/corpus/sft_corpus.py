@@ -43,7 +43,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 # Single source of truth for manifest→brainglobe atlas-name aliases.
-from langslice_harness.atlas.core import _ATLAS_ALIASES as _BG_ATLAS_ALIASES
+from langslice.atlas.core import _ATLAS_ALIASES as _BG_ATLAS_ALIASES
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -100,7 +100,7 @@ def _region_paths_at_position(
     """
     import numpy as np  # noqa: PLC0415
 
-    from langslice_harness.atlas.space import (  # noqa: PLC0415
+    from langslice.space import (  # noqa: PLC0415
         atlas_space_context,
         slice_axis_index,
     )

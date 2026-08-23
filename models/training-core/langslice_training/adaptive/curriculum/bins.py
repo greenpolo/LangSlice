@@ -34,16 +34,16 @@ _PLANE_EXTENT_CACHE: dict[tuple[str, str], float] = {}
 def _plane_extent_mm(atlas_name: str, plane: str) -> float:
     """Return ``pos_hi - pos_lo`` for ``(atlas_name, plane)``, cached.
 
-    Loads the BrainGlobe atlas via ``langslice_harness.atlas.core.load_atlas``
+    Loads the BrainGlobe atlas via ``langslice.atlas.core.load_atlas``
     once per pair and computes extent from
-    :func:`langslice_harness.atlas.core.get_position_range_mm`.
+    :func:`langslice.atlas.core.get_position_range_mm`.
     """
     key = (atlas_name, plane)
     cached = _PLANE_EXTENT_CACHE.get(key)
     if cached is not None:
         return cached
 
-    from langslice_harness.atlas.core import (
+    from langslice.atlas.core import (
         get_position_range_mm,
         load_atlas,
     )

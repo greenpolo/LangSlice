@@ -39,7 +39,7 @@ from langslice_data.manifest.allocations import (  # noqa: E402
     ALLOCATIONS_ROOT as _DEFAULT_ALLOCATIONS_ROOT,
 )
 
-from langslice_harness.atlas.core import (  # noqa: E402
+from langslice.atlas.core import (  # noqa: E402
     get_composite_slice,
     get_reference_slice,
     load_atlas,
@@ -1327,7 +1327,7 @@ def load_sft_estimates_best_per_id(sft_dir: Path) -> dict[str, dict]:
     the best trace we have for each id.
     """
     try:
-        from langslice_harness.harness.estimation.trace_collection import (
+        from langslice.linear.trace_collection import (
             canonicalize_positions,
             plane_rescue_threshold_mm,
             plane_tolerance_mm,
@@ -2488,7 +2488,7 @@ def prewarm_atlases(rows: list[dict]) -> threading.Thread:
     Cold disk-load of a BrainGlobe NIFTI volume can be 30-60s per atlas; with
     ~30 unique atlases in a session that's a half-hour of UI stalls if each
     one loads on first navigation. This thread populates the
-    `langslice_harness.atlas.core.load_atlas` lru_cache up front, ordered by
+    `langslice.atlas.core.load_atlas` lru_cache up front, ordered by
     how many rows reference each atlas (most-used first).
     """
     counts: dict[str, int] = {}

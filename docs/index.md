@@ -8,7 +8,7 @@ session handoffs.
 
 - [README](https://github.com/greenpolo/LangSlice#readme) - setup, quickstart, and high-level project behavior.
 - [`architecture_overview.md`](architecture_overview.md) - package boundaries, major modules, and end-to-end control flow.
-- [`current_workflow.md`](current_workflow.md) - current CLI and Tauri GUI workflows.
+- [`current_workflow.md`](current_workflow.md) - current CLI workflows.
 - [`training_overview.md`](training_overview.md) - public training layout, entrypoints, and local-data policy.
 
 ## Runtime References
@@ -17,11 +17,12 @@ session handoffs.
 
 ## Repository Map
 
-- `src/langslice_harness/` - installable Python harness and `langslice` CLI.
-- `tauri-gui/` - desktop GUI.
-- `web-demo/` - static browser demo.
+- `src/langslice/` - installable Python package and `langslice` CLI.
+  - `linear/` - slice-position estimation.
+  - `nonlinear/` - generative-image registration.
 - `models/langslice-gemma-4/` - Gemma 4 E4B fine-tuning project.
 - `models/langslice-traces/`, `models/training-core/`, `models/data/` - shared model/data packages.
+- `slicebench/` - self-contained position-estimation benchmark.
 - `tests/` - pytest coverage.
 - `docs/` - public documentation.
 

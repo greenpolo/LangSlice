@@ -11,7 +11,7 @@ Last refreshed: 2026-05-07.
 
 from __future__ import annotations
 
-from langslice_harness.harness.estimation.trace_collection import TracePricing
+from langslice.linear.trace_collection import TracePricing
 
 # Gemini 3 Flash Preview — placeholder pricing (Google hasn't published official
 # rates as of 2026-05). Modeled after Gemini 2.5 Flash ($0.30 / $2.50). Update

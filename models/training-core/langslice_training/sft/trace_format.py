@@ -31,8 +31,8 @@ from langslice_traces.quality import classify_quality as _classify_quality
 from langslice_traces.schema import Plane
 from langslice_traces.trace_ops import trim_trace as _trim_trace
 
-from langslice_harness.atlas.core import get_in_plane_long_edge, load_atlas
-from langslice_harness.harness.estimation.trace_collection import (
+from langslice.atlas.core import get_in_plane_long_edge, load_atlas
+from langslice.linear.trace_collection import (
     plane_rescue_threshold_mm,
     plane_tolerance_mm,
 )

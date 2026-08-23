@@ -151,7 +151,7 @@ def _build_fetch_atlas_tool_response_text(positions_mm: Sequence[float]) -> str:
     """Mirror the production ``fetch_atlas`` tool result text.
 
     Format taken verbatim from
-    ``langslice_harness.harness.estimation.tools.fetch_atlas`` so the
+    ``langslice.linear.tools.fetch_atlas`` so the
     training prefix is byte-identical to what the ADK harness emits at
     inference. The text precedes the atlas images in the tool message.
     """

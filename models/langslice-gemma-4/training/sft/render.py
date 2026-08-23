@@ -11,28 +11,28 @@ from typing import Any
 
 from PIL import Image
 
-# langslice_harness lives at <repo>/src — make it importable when this module
+# langslice lives at <repo>/src — make it importable when this module
 # is run from inside the gemma-4 training directory (e.g. `python -m sft.train_sft`).
 # pytest already injects `src` via `pyproject.toml::tool.pytest.ini_options.pythonpath`,
 # so this is defensive for direct script invocation.
 _REPO_SRC = Path(__file__).resolve().parents[4] / "src"
-assert _REPO_SRC.name == "src" and (_REPO_SRC / "langslice_harness").is_dir(), _REPO_SRC
+assert _REPO_SRC.name == "src" and (_REPO_SRC / "langslice").is_dir(), _REPO_SRC
 if str(_REPO_SRC) not in sys.path:
     sys.path.insert(0, str(_REPO_SRC))
 
-from langslice_harness.atlas.core import (  # noqa: E402
+from langslice.atlas.core import (  # noqa: E402
     get_in_plane_long_edge,
     get_position_range_mm,
     load_atlas,
     species_from_atlas_name,
 )
-from langslice_harness.atlas.space import Plane  # noqa: E402
-from langslice_harness.harness.estimation.prompts import build_single_slice_prompt  # noqa: E402
-from langslice_harness.image_prep import (  # noqa: E402
+from langslice.image_prep import (  # noqa: E402
     adaptive_preprocess,
     normalize_image,
     prepare_image_for_vlm,
 )
+from langslice.linear.prompts import build_single_slice_prompt  # noqa: E402
+from langslice.space import Plane  # noqa: E402
 
 from .dataset import Example  # noqa: E402
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 
 def test_collect_traces_cli_calls_collector(monkeypatch, tmp_path):
-    from langslice_harness import cli
+    from langslice import cli
 
     captured = {}
 
@@ -11,7 +11,7 @@ def test_collect_traces_cli_calls_collector(monkeypatch, tmp_path):
         return [{"id": "row-1"}]
 
     monkeypatch.setattr(
-        "langslice_harness.harness.estimation.trace_collection.collect_manifest_traces",
+        "langslice.linear.trace_collection.collect_manifest_traces",
         fake_collect_manifest_traces,
     )
     manifest = tmp_path / "manifest.jsonl"

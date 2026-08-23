@@ -181,7 +181,7 @@ def test_classify_quality_matches_original():
 def test_plane_tolerance_mm_matches_original():
     from langslice_traces import plane_tolerance_mm as new_plane_tolerance_mm
 
-    from langslice_harness.harness.estimation.trace_collection import (
+    from langslice.linear.trace_collection import (
         plane_tolerance_mm as orig_plane_tolerance_mm,
     )
 
@@ -202,7 +202,7 @@ def test_plane_tolerance_mm_matches_original():
 def test_plane_rescue_threshold_mm_matches_original():
     from langslice_traces import plane_rescue_threshold_mm as new_plane_rescue
 
-    from langslice_harness.harness.estimation.trace_collection import (
+    from langslice.linear.trace_collection import (
         plane_rescue_threshold_mm as orig_plane_rescue,
     )
 
@@ -223,7 +223,7 @@ def test_plane_rescue_threshold_mm_matches_original():
 def test_canonicalize_positions_matches_original():
     from langslice_traces import canonicalize_positions as new_canon
 
-    from langslice_harness.harness.estimation.trace_collection import (
+    from langslice.linear.trace_collection import (
         canonicalize_positions as orig_canon,
     )
 
@@ -255,7 +255,7 @@ def test_canonicalize_positions_matches_original():
 def test_categorize_trace_matches_original():
     from langslice_traces import categorize_trace as new_categorize
 
-    from langslice_harness.harness.estimation.trace_collection import (
+    from langslice.linear.trace_collection import (
         categorize_trace as orig_categorize,
     )
 
@@ -279,7 +279,7 @@ def test_categorize_trace_matches_original():
 def test_parse_manifest_record_matches_original():
     from langslice_traces import parse_manifest_record as new_parse
 
-    from langslice_harness.harness.estimation.trace_collection import (
+    from langslice.linear.trace_collection import (
         parse_manifest_record as orig_parse,
     )
 
@@ -312,7 +312,7 @@ def test_parse_manifest_record_matches_original():
 def test_prepare_image_for_vlm_matches_original():
     from langslice_traces import prepare_image_for_vlm as new_prepare
 
-    from langslice_harness.image_prep import (
+    from langslice.image_prep import (
         prepare_image_for_vlm as orig_prepare,
     )
 
@@ -332,7 +332,7 @@ def test_prepare_image_for_vlm_matches_original():
 def test_normalize_image_matches_original():
     from langslice_traces import normalize_image as new_normalize
 
-    from langslice_harness.image_prep import normalize_image as orig_normalize
+    from langslice.image_prep import normalize_image as orig_normalize
 
     # RGB pass-through
     rgb = Image.new("RGB", (32, 32), (100, 150, 200))
@@ -360,7 +360,7 @@ def test_normalize_image_matches_original():
 def test_adaptive_preprocess_matches_original():
     from langslice_traces import adaptive_preprocess as new_adaptive
 
-    from langslice_harness.image_prep import (
+    from langslice.image_prep import (
         adaptive_preprocess as orig_adaptive,
     )
 

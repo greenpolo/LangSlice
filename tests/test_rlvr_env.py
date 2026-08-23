@@ -104,7 +104,7 @@ def test_only_three_tools_exposed() -> None:
 def test_tool_signatures_match_production_shape() -> None:
     """All three tools accept the prod-shape kwargs (positions/position_mm,
     reasoning, optional tool_context). Production tools live in
-    ``src/langslice_harness/harness/estimation/tools.py``.
+    ``src/langslice/linear/tools.py``.
     """
     sig_fetch = inspect.signature(LangSliceEstimateEnv.fetch_atlas)
     assert list(sig_fetch.parameters) == ["self", "positions_mm", "tool_context"]

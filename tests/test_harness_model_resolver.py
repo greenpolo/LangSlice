@@ -6,8 +6,8 @@ from google.adk.models.llm_response import LlmResponse
 from google.genai import types
 from PIL import Image
 
-from langslice_harness.harness.estimation import model_resolver
-from langslice_harness.harness.estimation.runner import run_single_slice_session
+from langslice.adk import model_resolver
+from langslice.linear.runner import run_single_slice_session
 
 
 class _FakeLiteLlm:
@@ -78,7 +78,7 @@ def test_resolve_litellm_proxy_model_uses_proxy_alias(monkeypatch):
     def _raise_if_called():
         raise AssertionError("LiteLLM proxy path should not create a Gemini client")
 
-    monkeypatch.setattr("langslice_harness.vlm_config.get_client", _raise_if_called)
+    monkeypatch.setattr("langslice.providers.vlm_config.get_client", _raise_if_called)
 
     asyncio.run(
         run_single_slice_session(
@@ -158,7 +158,7 @@ def test_resolve_ollama_model_uses_local_ollama_chat(monkeypatch):
     def _raise_if_called():
         raise AssertionError("Ollama path should not create a Gemini client")
 
-    monkeypatch.setattr("langslice_harness.vlm_config.get_client", _raise_if_called)
+    monkeypatch.setattr("langslice.providers.vlm_config.get_client", _raise_if_called)
 
     asyncio.run(
         run_single_slice_session(

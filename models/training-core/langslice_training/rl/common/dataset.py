@@ -6,7 +6,7 @@ and the metadata that the env consumes (``atlas_name``, ``plane``,
 ``valid_range_mm``, ``ground_truth_positions_mm``, ``kind``, ``subject_id``).
 
 System prompts come verbatim from
-``langslice_harness.harness.estimation.prompts`` so any prompt change in
+``langslice.linear.prompts`` so any prompt change in
 production is automatically picked up here.
 """
 
@@ -29,7 +29,7 @@ Plane = Literal["coronal", "sagittal", "horizontal"]
 
 def canonicalize_atlas_name(atlas_name: str) -> str:
     try:
-        from langslice_harness.atlas.core import canonicalize_atlas_name as _canonicalize
+        from langslice.atlas.core import canonicalize_atlas_name as _canonicalize
     except ModuleNotFoundError:
         return atlas_name
 
@@ -37,55 +37,55 @@ def canonicalize_atlas_name(atlas_name: str) -> str:
 
 
 def get_position_range_mm(atlas, *, plane: Plane):  # noqa: ANN001
-    from langslice_harness.atlas.core import get_position_range_mm as _range_mm
+    from langslice.atlas.core import get_position_range_mm as _range_mm
 
     return _range_mm(atlas, plane=plane)
 
 
 def load_atlas(atlas_name: str):
-    from langslice_harness.atlas.core import load_atlas as _load_atlas
+    from langslice.atlas.core import load_atlas as _load_atlas
 
     return _load_atlas(atlas_name)
 
 
 def species_from_atlas_name(atlas_name: str) -> str:
-    from langslice_harness.atlas.core import species_from_atlas_name as _species
+    from langslice.atlas.core import species_from_atlas_name as _species
 
     return _species(atlas_name)
 
 
 def get_in_plane_long_edge(atlas, *, plane: Plane) -> int:  # noqa: ANN001
-    from langslice_harness.atlas.core import get_in_plane_long_edge as _long_edge
+    from langslice.atlas.core import get_in_plane_long_edge as _long_edge
 
     return _long_edge(atlas, plane=plane)
 
 
 def _normalize_image(image: Image.Image) -> Image.Image:
-    from langslice_harness.image_prep import normalize_image as _normalize
+    from langslice.image_prep import normalize_image as _normalize
 
     return _normalize(image)
 
 
 def _prepare_image_for_vlm(image: Image.Image, *, max_long_edge: int) -> Image.Image:
-    from langslice_harness.image_prep import prepare_image_for_vlm as _prepare
+    from langslice.image_prep import prepare_image_for_vlm as _prepare
 
     return _prepare(image, max_long_edge=max_long_edge).image
 
 
 def _adaptive_preprocess(image: Image.Image) -> Image.Image:
-    from langslice_harness.image_prep import adaptive_preprocess as _adapt
+    from langslice.image_prep import adaptive_preprocess as _adapt
 
     return _adapt(image)
 
 
 def build_group_prompt(**kwargs: Any) -> str:
-    from langslice_harness.harness.estimation.prompts import build_group_prompt as _build
+    from langslice.linear.prompts import build_group_prompt as _build
 
     return _build(**kwargs)
 
 
 def build_single_slice_prompt(**kwargs: Any) -> str:
-    from langslice_harness.harness.estimation.prompts import build_single_slice_prompt as _build
+    from langslice.linear.prompts import build_single_slice_prompt as _build
 
     return _build(**kwargs)
 

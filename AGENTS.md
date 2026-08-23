@@ -3,7 +3,7 @@
 LangSlice is an ADK-based Python harness for registering histology slice
 images to BrainGlobe atlases using vision-language models and frontier
 image-generation models. CLI command is `langslice`; Python imports use
-`langslice_harness.*`.
+`langslice.*` (package lives at `src/langslice/`).
 
 `AGENTS.md` is a verbatim copy of this file. Edit one, mirror to the other
 (`cp CLAUDE.md AGENTS.md`).
@@ -65,26 +65,38 @@ or pure docs/API verification (a research agent is faster).
 
 ## Active paths
 
-### Runtime (`src/langslice_harness/`)
+### Runtime (`src/langslice/`)
 
-- `cli.py` — CLI entry for `version`, `gui`, `register`, `estimate`,
-  `estimate-group`, `estimate-brain`, `collect-traces`, `quick-affine`,
-  `serve`, `schema`, `ollama`
-- `vlm_config.py` — Gemini backend selection and runtime settings
-- `openai_config.py` — OpenAI-compatible model settings
-- `atlas/` — BrainGlobe loading, AP coordinate helpers, slice extraction,
-  colored region maps, borders; orientation assumptions live in `atlas/space.py`
-- `harness/estimation/` — ADK AP-estimation agents, prompts, tools, validators,
-  runners
-- `estimation/` — public AP-estimation exports + shared helpers
-- `harness/registration/` — image-gen registration candidates, provider
-  adapters, optional ADK review loop
-- `registration/` — public registration wrapper, runtime, solver helpers,
-  result types
-- `whole_brain/` — multi-slice whole-brain AP estimation
+Two methods live as sibling subpackages with no dependency on each other:
+
+- `linear/` — slice-position estimation. ADK agents, prompts, tools,
+  validators, session/runner plumbing, trace collection, and
+  `linear/whole_brain/` for multi-slice whole-brain estimation.
+- `nonlinear/` — generative-image registration: candidate generation, image
+  provider adapters, Elastix runtime, optional ADK review loop, affine and
+  nonlinear result types, and `quick_affine.py` (silhouette affine preview;
+  note the CLI groups `quick-affine` under `linear`). It runs after a linear
+  placement step, whether that step is `langslice linear ...` or the user's
+  own tool (in ABBA/QUINT workflows, linear placement happens first and
+  LangSlice-nonlinear replaces the manual spline/BigWarp deformation step).
+
+Shared, top-level:
+
+- `atlas/` — BrainGlobe loading, position helpers, slice extraction, colored
+  region maps, borders
+- `space.py` — coordinate and orientation conventions
 - `image_prep.py` — image normalization, pixel-size detection, VLM downsampling
 - `export.py` — QUINT/ABBA-compatible JSON export
-- `api/`, `comfyui/`, `ml/` — auxiliary surfaces (REST, ComfyUI nodes, ML helpers)
+- `providers/` — model access (`vlm_config.py` for Gemini backends,
+  `openai_config.py` for OpenAI-compatible backends)
+- `adk/` — ADK harness helpers (`plugins.py`, `model_resolver.py`,
+  `sdk_helpers.py`)
+- `api/` — Pydantic engine contract, runtime wrappers, and the stdio service
+  behind `langslice serve`
+- `cli.py` — CLI entry: `langslice linear {estimate, estimate-group,
+  estimate-brain, quick-affine}`, `langslice nonlinear {register}`, and
+  top-level `version`, `serve`, `collect-traces`
+- `retry.py`, `agent_trace.py` — retry/heartbeat and structured trace helpers
 - `training_launchers.py` — exposes `langslice-gemma-sft` and
   `langslice-gemma-rl` console scripts
 
@@ -110,27 +122,28 @@ or pure docs/API verification (a research agent is faster).
 
 ### Other top-level
 
-- `tauri-gui/` — Tauri desktop app (TypeScript + Rust)
-- `tests/` — pytest coverage (mirrors `src/langslice_harness/` layout)
+- `tests/` — pytest coverage (mirrors `src/langslice/` layout)
+- `slicebench/` — self-contained position-estimation benchmark
 - `docs/`, `README.md` — maintained documentation
 
 ## Runtime facts
 
-- Main pipeline: `AP estimate → image-gen registration → Elastix B-spline →
-  VisuAlign markers → export`.
+- Main pipeline: `position estimate (linear) → image-gen registration
+  (nonlinear) → Elastix B-spline → VisuAlign markers → export`.
+- `linear` and `nonlinear` are independent; `nonlinear` accepts a position
+  from any source, not just `langslice linear`.
 - Registration has one active path (image-gen); can run directly or with an
   optional ADK review loop. The review loop receives the generated atlas
   target, the Elastix-warped atlas, and the warped-atlas border overlay.
-- AP coordinates are atlas-native millimeters from the anterior edge of the
-  volume.
-- Atlas orientation assumptions are centralized in
-  `src/langslice_harness/atlas/space.py` and currently require coronal layout
-  with AP/DV/ML on axes `0/1/2`.
+- Positions are atlas-native millimeters from the anterior edge of the volume.
+- Atlas orientation assumptions are centralized in `src/langslice/space.py`,
+  which derives AP/DV/ML axis indices from the atlas orientation via
+  `brainglobe_space` and requires the AP axis to increase anterior→posterior.
 - Optional debug traces are written only when `LANGSLICE_VLM_DEBUG_DIR` is set.
 
 ## Boundaries
 
-- Active surface: `src/langslice_harness/`, `models/`, `tauri-gui/`, `tests/`,
+- Active surface: `src/langslice/`, `models/`, `slicebench/`, `tests/`,
   `docs/`, `README.md`.
 - Local-only (do not ship, do not document publicly): `_local/`, `references/`,
   generated outputs, `out/`, `archive/`.
@@ -258,6 +271,6 @@ source .venv/bin/activate
 python -m pytest
 python -m ruff check .
 python -m basedpyright
-python -m langslice_harness version
+python -m langslice version
 langslice version
 ```

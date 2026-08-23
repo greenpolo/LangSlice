@@ -9,16 +9,15 @@ from typing import Any, ClassVar
 import pytest
 from PIL import Image
 
-import langslice_harness.harness.registration.runner as registration_runner
-import langslice_harness.harness.registration.tools as registration_tools
-import langslice_harness.registration.runtime as registration_runtime
-from langslice_harness.harness.registration.runner import run_registration_review_session
-from langslice_harness.harness.registration.tools import (
+import langslice.nonlinear.runner as registration_runner
+import langslice.nonlinear.runtime as registration_runtime
+import langslice.nonlinear.tools as registration_tools
+from langslice.nonlinear.runner import run_registration_review_session
+from langslice.nonlinear.runtime import RegistrationFailure
+from langslice.nonlinear.tools import (
     make_generate_registration_candidate_tool,
 )
-from langslice_harness.harness.registration.types import RegistrationCandidate
-from langslice_harness.registration.runtime import RegistrationFailure
-from langslice_harness.registration.types import RegistrationAnnotationSession
+from langslice.nonlinear.types import RegistrationAnnotationSession, RegistrationCandidate
 
 
 def _make_candidate(

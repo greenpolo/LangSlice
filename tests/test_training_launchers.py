@@ -4,7 +4,7 @@ import pathlib
 
 import tomllib
 
-import langslice_harness.training_launchers as training_launchers
+import langslice.training_launchers as training_launchers
 
 
 def test_pyproject_training_scripts_are_model_scoped() -> None:
@@ -12,8 +12,8 @@ def test_pyproject_training_scripts_are_model_scoped() -> None:
     data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
     scripts = data["project"]["scripts"]
 
-    assert scripts["langslice-gemma-sft"] == "langslice_harness.training_launchers:gemma_sft"
-    assert scripts["langslice-gemma-rl"] == "langslice_harness.training_launchers:gemma_rl"
+    assert scripts["langslice-gemma-sft"] == "langslice.training_launchers:gemma_sft"
+    assert scripts["langslice-gemma-rl"] == "langslice.training_launchers:gemma_rl"
     assert "langslice-sft-train" not in scripts
     assert "langslice-single-turn-rl" not in scripts
     assert "langslice-isft" not in scripts

@@ -45,7 +45,7 @@ def pytest_collect_file(file_path: Path, parent: pytest.Collector) -> None:
 
 @pytest.fixture(scope="module")
 def atlas() -> object:
-    from langslice_harness.atlas.core import load_atlas
+    from langslice.atlas.core import load_atlas
 
     return load_atlas("allen_mouse_25um")
 
@@ -53,8 +53,8 @@ def atlas() -> object:
 @pytest.fixture(scope="module")
 def atlas_slice_inputs(atlas: object) -> tuple[np.ndarray, np.ndarray]:
     """(ref_uint8_HW, ann_int32_HW) at AP=5.335mm for the 25um Allen atlas."""
-    from langslice_harness.atlas.core import get_reference_slice, position_mm_to_index
-    from langslice_harness.atlas.space import atlas_space_context, slice_axis_index
+    from langslice.atlas.core import get_reference_slice, position_mm_to_index
+    from langslice.space import atlas_space_context, slice_axis_index
 
     pil = get_reference_slice(atlas, 5.335).convert("L")
     ref = np.asarray(pil, dtype=np.uint8)

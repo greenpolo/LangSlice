@@ -6,10 +6,9 @@ from pathlib import Path
 
 from PIL import Image
 
-import langslice_harness.cli as cli
-import langslice_harness.registration.runtime as runtime
-from langslice_harness.harness.registration.types import RegistrationCandidate
-from langslice_harness.registration.types import RegistrationAnnotationSession
+import langslice.cli as cli
+import langslice.nonlinear.runtime as runtime
+from langslice.nonlinear.types import RegistrationAnnotationSession, RegistrationCandidate
 
 
 def test_registration_runtime_direct_image_gen_registration_uses_dense_candidate(

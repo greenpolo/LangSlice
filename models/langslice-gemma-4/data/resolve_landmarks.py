@@ -21,7 +21,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from langslice_harness.atlas.core import load_atlas  # noqa: E402
+from langslice.atlas.core import load_atlas  # noqa: E402
 
 _LANDMARKS_PATH = Path(__file__).resolve().parent / "landmarks.json"
 

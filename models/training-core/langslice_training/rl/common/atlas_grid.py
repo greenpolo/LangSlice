@@ -6,7 +6,7 @@ training set, render reference slices on a fixed 0.05 mm grid across the valid
 range and stash the resulting PIL images in memory. fetch_atlas then turns into
 a dictionary lookup with a small position-quantization step.
 
-Reuses ``langslice_harness.atlas`` for slice extraction; does not reimplement.
+Reuses ``langslice.atlas`` for slice extraction; does not reimplement.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ Plane = Literal["coronal", "sagittal", "horizontal"]
 
 def canonicalize_atlas_name(atlas_name: str) -> str:
     try:
-        from langslice_harness.atlas.core import canonicalize_atlas_name as _canonicalize
+        from langslice.atlas.core import canonicalize_atlas_name as _canonicalize
     except ModuleNotFoundError:
         return atlas_name
 
@@ -30,19 +30,19 @@ def canonicalize_atlas_name(atlas_name: str) -> str:
 
 
 def load_atlas(atlas_name: str):
-    from langslice_harness.atlas.core import load_atlas as _load_atlas
+    from langslice.atlas.core import load_atlas as _load_atlas
 
     return _load_atlas(atlas_name)
 
 
 def get_position_range_mm(atlas, *, plane: Plane):  # noqa: ANN001
-    from langslice_harness.atlas.core import get_position_range_mm as _range_mm
+    from langslice.atlas.core import get_position_range_mm as _range_mm
 
     return _range_mm(atlas, plane=plane)
 
 
 def get_reference_slice(atlas, position_mm: float, *, plane: Plane):  # noqa: ANN001
-    from langslice_harness.atlas.core import get_reference_slice as _reference_slice
+    from langslice.atlas.core import get_reference_slice as _reference_slice
 
     return _reference_slice(atlas, position_mm, plane=plane)
 

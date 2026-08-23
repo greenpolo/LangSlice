@@ -7,11 +7,11 @@ from typing import Any, cast
 import numpy as np
 from PIL import Image
 
-from langslice_harness.harness.registration.types import GeneratedSegmentation
+from langslice.nonlinear.types import GeneratedSegmentation
 
 
 def _candidates():
-    from langslice_harness.harness.registration import image_gen_registration
+    from langslice.nonlinear import image_gen_registration
 
     return image_gen_registration
 
@@ -275,7 +275,7 @@ def test_build_atlas_root_mask_produces_binary_alpha_at_target_size(monkeypatch)
     requested plane, marks non-zero structure IDs as opaque (255) and zeros
     as transparent (0), and NEAREST-resizes to *target_size* so alpha stays
     binary -- bilinear interpolation would halo the 3D-viewer silhouette."""
-    from langslice_harness.harness.registration import image_gen_helpers
+    from langslice.nonlinear import image_gen_helpers
 
     # Annotation slab: top half has tissue (non-zero IDs), bottom half is bg.
     annotation = np.array(
@@ -433,7 +433,7 @@ def test_warp_slice_to_atlas_runs_fixed_to_fixed_inverse_pattern(monkeypatch):
     """`_warp_slice_to_atlas` must call elastix with fixed=moving plus the
     forward transform file as initial guess, then run transformix per RGB
     channel of the slice. Matches the canonical itk-elastix Example 11."""
-    from langslice_harness.harness.registration import image_gen_helpers
+    from langslice.nonlinear import image_gen_helpers
 
     recorder: dict[str, Any] = {}
     fake_itk = _make_fake_itk_module(recorder=recorder)
@@ -480,7 +480,7 @@ def test_run_inverse_warp_for_slice_writes_forward_transform_to_disk(monkeypatch
     """`_run_inverse_warp_for_slice` should serialize the forward transform to
     a temp file before delegating to `_warp_slice_to_atlas` -- ITKElastix's
     Python binding only accepts the forward transform as a file path."""
-    from langslice_harness.harness.registration import image_gen_helpers
+    from langslice.nonlinear import image_gen_helpers
 
     recorder: dict[str, Any] = {}
     fake_itk = _make_fake_itk_module(recorder=recorder)
@@ -532,9 +532,9 @@ def test_register_cli_json_payload_includes_inverse_warp_paths(monkeypatch, tmp_
     import argparse
     import json
 
-    import langslice_harness.cli as cli
-    import langslice_harness.registration.runtime as registration_runtime
-    from langslice_harness.registration.types import (
+    import langslice.cli as cli
+    import langslice.nonlinear.runtime as registration_runtime
+    from langslice.nonlinear.types import (
         AffineResult,
         NonlinearResult,
         RegistrationAnnotationSession,
@@ -713,9 +713,9 @@ def test_register_cli_json_payload_surfaces_inverse_warp_failure(
     import argparse
     import json
 
-    import langslice_harness.cli as cli
-    import langslice_harness.registration.runtime as registration_runtime
-    from langslice_harness.registration.types import (
+    import langslice.cli as cli
+    import langslice.nonlinear.runtime as registration_runtime
+    from langslice.nonlinear.types import (
         AffineResult,
         NonlinearResult,
         RegistrationAnnotationSession,

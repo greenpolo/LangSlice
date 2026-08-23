@@ -162,7 +162,7 @@ def test_system_prompt_is_production_single_slice_prompt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The system prompt now delegates to
-    ``langslice_harness.harness.estimation.prompts.build_single_slice_prompt``
+    ``langslice.linear.prompts.build_single_slice_prompt``
     — same instruction slicebench feeds the model at eval time."""
     state = _make_state(valid_range_mm=(0.5, 12.7))
     row = _make_row(state, monkeypatch)

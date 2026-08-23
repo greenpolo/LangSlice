@@ -1,8 +1,7 @@
 """Wiring tests for synchronous estimation compat shims.
 
-These tests confirm the shims:
-- Exist at both the harness and legacy import paths.
-- Convert legacy units/kwargs into the ADK runner call shape.
+These tests confirm the shims convert legacy units/kwargs into the ADK runner
+call shape.
 
 The runner is monkeypatched; this is pure wiring. End-to-end paths live in
 ``tests/test_harness_runner.py``.
@@ -14,7 +13,7 @@ from typing import Any
 
 from PIL import Image
 
-from langslice_harness.harness.estimation._types import MultiSliceResult, PositionResult
+from langslice.linear._types import MultiSliceResult, PositionResult
 
 
 def _fake_run_single_slice_session_factory(captured: dict[str, Any]):
@@ -40,21 +39,13 @@ def _fake_run_group_session_factory(captured: dict[str, Any]):
 # --- estimate_position shim ---
 
 
-def test_estimate_position_exposed_on_legacy_shim():
-    """The legacy ``langslice_harness.estimation`` re-exports the harness shim."""
-    from langslice_harness.estimation import estimate_position as legacy
-    from langslice_harness.harness.estimation import estimate_position as harness
-
-    assert legacy is harness
-
-
 def test_estimate_position_forwards_supported_legacy_kwargs(monkeypatch):
     """Legacy single-slice kwargs should reach the ADK runner when supported."""
-    from langslice_harness.harness.estimation import estimate_position
+    from langslice.linear import estimate_position
 
     captured: dict[str, Any] = {}
     monkeypatch.setattr(
-        "langslice_harness.harness.estimation.runner.run_single_slice_session",
+        "langslice.linear.runner.run_single_slice_session",
         _fake_run_single_slice_session_factory(captured),
     )
 
@@ -97,12 +88,12 @@ def test_estimate_position_forwards_supported_legacy_kwargs(monkeypatch):
 
 def test_estimate_position_uses_vlm_config_defaults(monkeypatch):
     """CLI-set Gemini config should be honored even without explicit kwargs."""
-    from langslice_harness import vlm_config
-    from langslice_harness.harness.estimation import estimate_position
+    from langslice.linear import estimate_position
+    from langslice.providers import vlm_config
 
     captured: dict[str, Any] = {}
     monkeypatch.setattr(
-        "langslice_harness.harness.estimation.runner.run_single_slice_session",
+        "langslice.linear.runner.run_single_slice_session",
         _fake_run_single_slice_session_factory(captured),
     )
     original_model = vlm_config.MODEL_NAME
@@ -128,22 +119,13 @@ def test_estimate_position_uses_vlm_config_defaults(monkeypatch):
 # --- estimate_group shim ---
 
 
-def test_estimate_group_exposed_on_legacy_shim():
-    """The legacy ``langslice_harness.estimation`` re-exports the harness shim."""
-    from langslice_harness.estimation import estimate_group as legacy
-    from langslice_harness.harness.estimation import estimate_group as harness
-
-    # Same underlying function object — re-export, not a wrapper.
-    assert legacy is harness
-
-
 def test_estimate_group_converts_interval_um_to_mm(monkeypatch):
     """Legacy micron interval → runner millimetre interval."""
-    from langslice_harness.harness.estimation import estimate_group
+    from langslice.linear import estimate_group
 
     captured: dict[str, Any] = {}
     monkeypatch.setattr(
-        "langslice_harness.harness.estimation.runner.run_group_session",
+        "langslice.linear.runner.run_group_session",
         _fake_run_group_session_factory(captured),
     )
 
@@ -165,11 +147,11 @@ def test_estimate_group_converts_interval_um_to_mm(monkeypatch):
 
 def test_estimate_group_forwards_model_name_as_model(monkeypatch):
     """Legacy ``model_name`` kwarg → runner ``model`` kwarg."""
-    from langslice_harness.harness.estimation import estimate_group
+    from langslice.linear import estimate_group
 
     captured: dict[str, Any] = {}
     monkeypatch.setattr(
-        "langslice_harness.harness.estimation.runner.run_group_session",
+        "langslice.linear.runner.run_group_session",
         _fake_run_group_session_factory(captured),
     )
 
@@ -189,11 +171,11 @@ def test_estimate_group_forwards_model_name_as_model(monkeypatch):
 
 def test_estimate_group_forwards_supported_legacy_kwargs(monkeypatch):
     """Legacy kwargs that the ADK runner understands are preserved."""
-    from langslice_harness.harness.estimation import estimate_group
+    from langslice.linear import estimate_group
 
     captured: dict[str, Any] = {}
     monkeypatch.setattr(
-        "langslice_harness.harness.estimation.runner.run_group_session",
+        "langslice.linear.runner.run_group_session",
         _fake_run_group_session_factory(captured),
     )
 
@@ -232,11 +214,11 @@ def test_estimate_group_forwards_supported_legacy_kwargs(monkeypatch):
 
 def test_estimate_group_positional_interval_um(monkeypatch):
     """Legacy positional call shape still works: images, atlas_name, interval_um."""
-    from langslice_harness.harness.estimation import estimate_group
+    from langslice.linear import estimate_group
 
     captured: dict[str, Any] = {}
     monkeypatch.setattr(
-        "langslice_harness.harness.estimation.runner.run_group_session",
+        "langslice.linear.runner.run_group_session",
         _fake_run_group_session_factory(captured),
     )
 

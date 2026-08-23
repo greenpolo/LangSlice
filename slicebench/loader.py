@@ -19,7 +19,7 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Iterator
 
-from langslice_harness.atlas.core import get_position_range_mm, load_atlas
+from langslice.atlas.core import get_position_range_mm, load_atlas
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SLICEBENCH_ROOT = Path(__file__).resolve().parent

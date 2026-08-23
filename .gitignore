@@ -100,20 +100,15 @@ out/
 unsloth_compiled_cache/
 models/langslice-gemma-4/training/unsloth_compiled_cache/
 last_launch_dir.txt
-tauri-gui/src-tauri/langslice_output/
 _live_*
 _deployed_*.png
 _3d_view_*.png
-web-demo/_dbg_*.png
 /C*/
 /LabSoftwareLangSlicetmppytest-basetemp/
 /pytest-basetemp/
 
 # Local litert-lm spike venv (not portable, large)
 _spike_litert_venv/
-
-# Litert-lm sidecar binaries (desktop Tauri build only; judges fetch themselves)
-tauri-gui/src-tauri/binaries/
 
 # uv project venv (Python 3.11, base harness)
 .venv/

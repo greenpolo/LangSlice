@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from langslice_harness.atlas.core import get_position_range_mm, load_atlas
+from langslice.atlas.core import get_position_range_mm, load_atlas
 
 from .constants import RESCUE_PCT, TOLERANCE_FLOOR_MM, TOLERANCE_PCT
 
