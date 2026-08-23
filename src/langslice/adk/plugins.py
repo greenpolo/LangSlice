@@ -16,6 +16,56 @@ from google.adk.plugins.base_plugin import BasePlugin
 from google.genai import types
 from PIL import Image
 
+# Roughly two sweeps' worth of atlas images (median observed sweep is 5-6).
+DEFAULT_KEEP_LAST_TOOL_IMAGES = 12
+
+
+def trim_stale_tool_images(
+    contents: list[types.Content], *, keep_last: int = DEFAULT_KEEP_LAST_TOOL_IMAGES
+) -> list[types.Content]:
+    """Drop tool-returned images from all but the most recent tool calls.
+
+    Without this, every atlas sweep is replayed to the model on every later
+    turn (~2.75x prompt-token redundancy measured over real runs). The JSON
+    tool results still name every fetched position, and the model can
+    re-fetch any position it wants to see again, so only the newest calls
+    keep their pixels: walking newest-to-oldest, media is kept while the
+    running total stays within *keep_last* (the newest call is always kept),
+    and every call older than the first drop is dropped too. User-message
+    images (the histology slice) are never touched.
+    """
+    media_sites = [
+        (ci, pi, len(part.function_response.parts))
+        for ci, content in enumerate(contents)
+        for pi, part in enumerate(content.parts or [])
+        if part.function_response is not None and part.function_response.parts
+    ]
+    kept = 0
+    dropping = False
+    drop: list[tuple[int, int]] = []
+    for ci, pi, n in reversed(media_sites):
+        if dropping or (kept and kept + n > keep_last):
+            dropping = True
+            drop.append((ci, pi))
+        else:
+            kept += n
+    if not drop:
+        return contents
+    out = list(contents)
+    for ci, pi in drop:
+        parts = list(out[ci].parts or [])
+        stale = parts[pi]
+        assert stale.function_response is not None
+        parts[pi] = stale.model_copy(
+            update={
+                "function_response": stale.function_response.model_copy(
+                    update={"parts": None}
+                )
+            }
+        )
+        out[ci] = out[ci].model_copy(update={"parts": parts})
+    return out
+
 
 class ModelCallPacingPlugin(BasePlugin):
     """Sleep before each ADK model request for eval quota pacing."""
