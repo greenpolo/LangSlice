@@ -88,15 +88,17 @@ Shared, top-level:
 - `image_prep.py` — image normalization, pixel-size detection, VLM downsampling
 - `export.py` — QUINT/ABBA-compatible JSON export
 - `providers/` — model access (`vlm_config.py` for Gemini backends,
-  `openai_config.py` for OpenAI-compatible backends)
+  `openai_config.py` for OpenAI-compatible backends, `chatgpt.py` for the
+  ChatGPT-subscription backend: `langslice login`, the `chatgpt/*` ADK model,
+  and `gpt-image-2` image generation)
 - `adk/` — ADK harness helpers (`plugins.py`, `model_resolver.py`,
   `sdk_helpers.py`)
 - `api/` — Pydantic engine contract, runtime wrappers, and the stdio service
   behind `langslice serve`
 - `cli.py` — CLI entry: `langslice linear {estimate, estimate-group,
   estimate-brain, quick-affine}`, `langslice nonlinear {register}`, and
-  top-level `version`, `serve`, `collect-traces`
-- `retry.py`, `agent_trace.py` — retry/heartbeat and structured trace helpers
+  top-level `version`, `login`, `serve`, `collect-traces`
+- `agent_trace.py` — structured trace helpers
 - `training_launchers.py` — exposes `langslice-gemma-sft` and
   `langslice-gemma-rl` console scripts
 

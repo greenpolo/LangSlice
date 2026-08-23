@@ -20,14 +20,23 @@ from langslice.linear.validators import gate_submit_tool
 
 
 def _count_inline_images(contents: list[types.Content]) -> int:
+    """Count decodable inline images, including ADK native media tool results.
+
+    Tool-returned images ride inside ``function_response.parts`` rather than as
+    sibling content parts, so both places have to be walked.
+    """
     count = 0
     for content in contents:
         for part in content.parts or []:
-            inline = getattr(part, "inline_data", None)
-            data = getattr(inline, "data", None) if inline is not None else None
-            if data:
-                Image.open(io.BytesIO(data)).load()
-                count += 1
+            candidates: list[object] = [part]
+            function_response = getattr(part, "function_response", None)
+            candidates.extend(getattr(function_response, "parts", None) or [])
+            for candidate in candidates:
+                inline = getattr(candidate, "inline_data", None)
+                data = getattr(inline, "data", None) if inline is not None else None
+                if data:
+                    Image.open(io.BytesIO(data)).load()
+                    count += 1
     return count
 
 

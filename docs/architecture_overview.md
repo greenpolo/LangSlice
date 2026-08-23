@@ -52,9 +52,10 @@ returns either result or error envelopes.
 
 Single-slice and group position estimation run through ADK. The agent can fetch atlas
 images and must submit a structured estimate. Native Gemini requests can use the
-File API for target images, and a persistent multimodal plugin keeps fetched
-atlas images visible across turns. This is the only estimation path, and it
-supports all planes (coronal, sagittal, horizontal).
+File API for target images, and fetched atlas images are returned as ADK native
+media tool results, so they persist in session history and stay visible on
+every later turn. This is the only estimation path, and it supports all planes
+(coronal, sagittal, horizontal).
 
 ## Linear: Whole-Brain Estimation
 

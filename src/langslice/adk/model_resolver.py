@@ -8,6 +8,7 @@ from typing import Any
 
 from google.genai import types
 
+_CHATGPT_PREFIX = "chatgpt/"
 _PROXY_PREFIX = "litellm-proxy:"
 _OPENROUTER_PREFIX = "openrouter:"
 _OLLAMA_PREFIX = "ollama:"
@@ -77,19 +78,20 @@ def _missing_litellm_error() -> RuntimeError:
     )
 
 
-def is_native_gemini_string(model: str | object) -> bool:
-    """Return True if *model* is a bare Gemini model string (not a wrapper)."""
-    if not isinstance(model, str):
-        return False
-    lowered = model.strip().lower()
-    return lowered.startswith("gemini-") or lowered.startswith("models/gemini-")
+def default_http_options() -> types.HttpOptions:
+    """Transport retry + wall-clock timeout for model calls.
 
-
-def native_gemini_http_options() -> types.HttpOptions:
-    """Retry config matched to the legacy /main loop's 4 total Gemini attempts."""
+    Passed unconditionally on ``GenerateContentConfig``: the native genai
+    client (Gemini and ADK ``Gemma``) honors it directly, and ADK's LiteLlm
+    wrapper maps ``timeout``/``retry_options.attempts`` onto LiteLLM's
+    ``timeout``/``num_retries`` since google-adk 2.7. Backends that ignore it
+    (e.g. ChatGptLlm) are unaffected.
+    """
     return types.HttpOptions(
+        # ``timeout`` is milliseconds; generous ceiling for image-heavy calls.
+        timeout=300_000,
         # ``attempts`` includes the original request.
-        retry_options=types.HttpRetryOptions(initial_delay=1, attempts=5)
+        retry_options=types.HttpRetryOptions(initial_delay=1, attempts=5),
     )
 
 
@@ -124,6 +126,17 @@ def resolve_adk_model(model: str | object) -> str | object:
         return litellm_cls(model=f"openai/{stripped}", **endpoint_kwargs)
 
     lowered = stripped.lower()
+
+    # ChatGPT-subscription backend (Codex Responses). No API key: the token
+    # comes from `langslice login` or the Codex CLI.
+    if lowered.startswith(_CHATGPT_PREFIX):
+        model_id = stripped[len(_CHATGPT_PREFIX):].strip()
+        if not model_id:
+            raise ValueError("chatgpt model strings require a model id after '/'")
+        from langslice.providers.chatgpt import ChatGptLlm
+
+        return ChatGptLlm(model=model_id)
+
     if lowered.startswith("gemma-") or lowered.startswith(f"{_MODELS_PREFIX}gemma-"):
         model_id = stripped
         if model_id.lower().startswith(_MODELS_PREFIX):

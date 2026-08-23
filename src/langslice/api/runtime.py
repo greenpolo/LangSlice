@@ -165,7 +165,7 @@ def run_register(request: RegisterRequest, emit: EngineEmit | None = None) -> Re
         if request.preprocess == "auto":
             image = adaptive_preprocess(image)
 
-        if request.provider == "openai":
+        if request.provider in {"openai", "chatgpt"}:
             import langslice.providers.openai_config as openai_config
 
             image_model = (

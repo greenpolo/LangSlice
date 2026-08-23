@@ -12,7 +12,6 @@ from google.genai import types
 from PIL import Image
 
 from langslice.adk.model_resolver import resolve_adk_model
-from langslice.adk.plugins import PersistentMultimodalToolResultsPlugin
 from langslice.nonlinear.agent import build_registration_review_agent
 from langslice.nonlinear.tools import _HARDCAP_MAX_CANDIDATES
 from langslice.nonlinear.types import RegistrationAnnotationSession, RegistrationCandidate
@@ -165,11 +164,9 @@ async def run_registration_review_session(
         on_progress=on_progress,
         on_trace=on_trace,
     )
-    app = App(
-        name=_APP_NAME,
-        root_agent=agent,
-        plugins=[PersistentMultimodalToolResultsPlugin(persistent=True)],
-    )
+    # Candidate previews ride along on the function-response event (ADK 2.7+
+    # native media tool results) and stay visible on later review turns.
+    app = App(name=_APP_NAME, root_agent=agent, plugins=[])
     runner = InMemoryRunner(app=app)
     assert runner.artifact_service is not None
     assert runner.session_service is not None

@@ -86,8 +86,11 @@ def _add_register_parser(subparsers: argparse._SubParsersAction) -> None:
     reg.add_argument(
         "--provider",
         default="google",
-        choices=["google", "openai"],
-        help="Model provider: 'google' for Gemini, 'openai' for OpenAI-compatible (Ollama, etc.)",
+        choices=["google", "openai", "chatgpt"],
+        help=(
+            "Model provider: 'google' for Gemini, 'openai' for OpenAI-compatible "
+            "(Ollama, etc.), 'chatgpt' for a ChatGPT subscription (`langslice login`)"
+        ),
     )
     reg.add_argument(
         "--endpoint",
@@ -116,7 +119,7 @@ def _run_register(args: argparse.Namespace) -> None:
 
     image_model_arg = args.image_model
 
-    if args.provider == "openai":
+    if args.provider in {"openai", "chatgpt"}:
         import langslice.providers.openai_config as openai_config
 
         default_image_model = args.image_model or openai_config.get_openai_image_model()
@@ -727,6 +730,12 @@ def _build_parser() -> argparse.ArgumentParser:
     # langslice version
     subparsers.add_parser("version", help="Print version info")
 
+    # langslice login
+    subparsers.add_parser(
+        "login",
+        help="Sign in with ChatGPT (OAuth) so LangSlice can use your subscription",
+    )
+
     # langslice linear <cmd> — position / affine estimation
     linear = subparsers.add_parser(
         "linear",
@@ -830,6 +839,10 @@ def main(argv: list[str] | None = None):
 
     if command == "version":
         print(f"langslice {langslice.__version__}")
+    elif command == "login":
+        from langslice.providers.chatgpt import login
+
+        print(f"Signed in. Credentials saved to {login()}")
     elif command == "register":
         _run_register(args)
     elif command == "quick-affine":

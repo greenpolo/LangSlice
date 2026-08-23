@@ -10,8 +10,7 @@ from typing import Any, cast
 from google.genai import types
 from PIL import Image
 
-from langslice.adk.plugins import MULTIMODAL_PARTS_RESULT_KEY
-from langslice.agent_trace import format_json
+from langslice.adk import TOOL_MEDIA_PARTS_KEY
 from langslice.nonlinear.image_gen_registration import (
     generate_registration_candidate as _generate_registration_candidate_pipeline,
 )
@@ -144,12 +143,6 @@ async def _save_candidate_artifacts(
     return artifact_names
 
 
-def _with_multimodal_parts(result: dict[str, Any], parts: list[types.Part]) -> dict[str, Any]:
-    out = dict(result)
-    out[MULTIMODAL_PARTS_RESULT_KEY] = parts
-    return out
-
-
 async def _generate_registration_candidate_impl(
     *,
     prompt_revision: str | None = None,
@@ -213,35 +206,28 @@ async def _generate_registration_candidate_impl(
     if active_prompt_revision is not None:
         state[_STATE_LAST_PROMPT_REVISION_KEY] = active_prompt_revision
 
-    generated_parts = [
-        types.Part.from_text(
-            text=(
-                f"Candidate {candidate_id}: {record['markers_count']} markers, "
-                f"provider={record['provider']}, model={record['model']}, route={record['route']}"
-            )
-        ),
-        _image_part(generated.generated_segmentation),
-        _image_part(generated.warped_atlas),
-        _image_part(generated.warped_border_overlay),
-        types.Part.from_text(text=format_json(record)),
-    ]
-
-    return _with_multimodal_parts(
-        {
-            "status": "ok",
-            "candidate_id": candidate_id,
-            "markers_count": record["markers_count"],
-            "provider": record["provider"],
-            "model": record["model"],
-            "route": record["route"],
-            "artifact_names": artifact_names,
-            "previous_candidate_id": previous_candidate_id,
-            "prompt_revision": active_prompt_revision,
-            "candidate_metadata": copy.deepcopy(record["candidate_metadata"]),
-            "annotation_session": copy.deepcopy(record["annotation_session"]),
-        },
-        generated_parts,
-    )
+    # Image order is load-bearing: ADK attaches these as unlabelled media
+    # parts, so `image_order` is the model's only key to which is which.
+    image_order = [_ARTIFACT_SEGMENTATION, _ARTIFACT_WARPED_ATLAS, _ARTIFACT_BORDER_OVERLAY]
+    return {
+        "status": "ok",
+        "candidate_id": candidate_id,
+        "markers_count": record["markers_count"],
+        "provider": record["provider"],
+        "model": record["model"],
+        "route": record["route"],
+        "artifact_names": artifact_names,
+        "previous_candidate_id": previous_candidate_id,
+        "prompt_revision": active_prompt_revision,
+        "candidate_metadata": copy.deepcopy(record["candidate_metadata"]),
+        "annotation_session": copy.deepcopy(record["annotation_session"]),
+        "image_order": image_order,
+        TOOL_MEDIA_PARTS_KEY: [
+            _image_part(generated.generated_segmentation),
+            _image_part(generated.warped_atlas),
+            _image_part(generated.warped_border_overlay),
+        ],
+    }
 
 
 def make_generate_registration_candidate_tool(

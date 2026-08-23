@@ -8,8 +8,7 @@ from google.adk.agents import LlmAgent
 from google.genai import types
 
 from langslice.adk.model_resolver import (
-    is_native_gemini_string,
-    native_gemini_http_options,
+    default_http_options,
 )
 from langslice.linear.prompts import build_single_slice_prompt
 from langslice.linear.tools import (
@@ -58,8 +57,7 @@ def build_single_slice_agent(
     if thinking_config is not None:
         config_kwargs["thinking_config"] = thinking_config
     config_kwargs["media_resolution"] = media_resolution
-    if is_native_gemini_string(model):
-        config_kwargs["http_options"] = native_gemini_http_options()
+    config_kwargs["http_options"] = default_http_options()
 
     instruction = build_single_slice_prompt(
         atlas_name=atlas_name, plane=plane,

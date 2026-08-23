@@ -101,6 +101,8 @@ async def run_brain_estimation(
 
         for r in results:
             if isinstance(r, BaseException):
+                if not isinstance(r, Exception):
+                    raise r  # CancelledError/KeyboardInterrupt must propagate
                 raise RuntimeError(f"Anchor estimation failed: {r}") from r
             idx, ap_result = r
             slices[idx] = SlicePosition(
@@ -158,6 +160,8 @@ async def run_brain_estimation(
 
         for r in results:
             if isinstance(r, BaseException):
+                if not isinstance(r, Exception):
+                    raise r  # CancelledError/KeyboardInterrupt must propagate
                 logger.warning("Slice estimation failed: %s", r)
                 continue
             idx, ap_result = r

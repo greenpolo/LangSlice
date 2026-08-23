@@ -13,142 +13,8 @@ from google.adk.agents.callback_context import CallbackContext
 from google.adk.models.llm_request import LlmRequest
 from google.adk.models.llm_response import LlmResponse
 from google.adk.plugins.base_plugin import BasePlugin
-from google.adk.tools.base_tool import BaseTool
-from google.adk.tools.tool_context import ToolContext
 from google.genai import types
 from PIL import Image
-
-MULTIMODAL_PARTS_RESULT_KEY = "_langslice_multimodal_parts"
-_MULTIMODAL_TOOL_PARTS_BY_CALL_KEY = "temp:LANGSLICE_MULTIMODAL_TOOL_PARTS_BY_CALL"
-
-
-def _as_part_list(result: Any) -> list[types.Part] | None:
-    if isinstance(result, types.Part):
-        return [result]
-    if (
-        isinstance(result, list)
-        and result
-        and all(isinstance(part, types.Part) for part in result)
-    ):
-        return list(result)
-    return None
-
-
-def _coerce_part_history(history: Any) -> list[types.Part]:
-    """Normalize session-state history back to concrete ``types.Part`` objects.
-
-    ADK session state may serialize pydantic ``Part`` instances into plain
-    dictionaries between callbacks. Model requests must receive real Part
-    objects, not dicts, because downstream SDK code accesses attributes such as
-    ``part.inline_data``.
-    """
-    if not isinstance(history, list):
-        return []
-    parts: list[types.Part] = []
-    for item in history:
-        if isinstance(item, types.Part):
-            parts.append(item)
-        elif isinstance(item, dict):
-            parts.append(types.Part.model_validate(item))
-    return parts
-
-
-def _coerce_part_map(history: Any) -> dict[str, list[types.Part]]:
-    """Normalize a call-id keyed part map restored from ADK session state."""
-    if not isinstance(history, dict):
-        return {}
-    out: dict[str, list[types.Part]] = {}
-    for key, value in history.items():
-        parts = _coerce_part_history(value)
-        if parts:
-            out[str(key)] = parts
-    return out
-
-
-class PersistentMultimodalToolResultsPlugin(BasePlugin):
-    """Inject multimodal tool artifacts into later model requests.
-
-    LangSlice tools return ordinary dictionary function responses, plus a
-    private ``MULTIMODAL_PARTS_RESULT_KEY`` entry containing the image/text parts
-    the model should see. This plugin removes the private entry before ADK
-    builds the function_response, stores the parts keyed by function-call id,
-    and appends them immediately after that function_response on model requests.
-    Persistent mode mirrors the legacy non-ADK loop by replaying earlier atlas
-    sweeps on every later turn.
-    """
-
-    def __init__(
-        self,
-        *,
-        persistent: bool = True,
-        name: str = "langslice_persistent_multimodal_tool_results",
-    ):
-        super().__init__(name)
-        self.persistent = persistent
-
-    async def after_tool_callback(
-        self,
-        *,
-        tool: BaseTool,
-        tool_args: dict[str, Any],
-        tool_context: ToolContext,
-        result: Any,
-    ) -> Any | None:
-        del tool_args
-        if isinstance(result, dict) and MULTIMODAL_PARTS_RESULT_KEY in result:
-            parts = _as_part_list(result.get(MULTIMODAL_PARTS_RESULT_KEY))
-            public_result = dict(result)
-            public_result.pop(MULTIMODAL_PARTS_RESULT_KEY, None)
-            if parts is not None:
-                parts_by_call = _coerce_part_map(
-                    tool_context.state.get(_MULTIMODAL_TOOL_PARTS_BY_CALL_KEY, {})
-                )
-                call_id = str(
-                    getattr(tool_context, "function_call_id", None)
-                    or f"{tool.name}:{len(parts_by_call) + 1}"
-                )
-                parts_by_call[call_id] = parts
-                tool_context.state[_MULTIMODAL_TOOL_PARTS_BY_CALL_KEY] = parts_by_call
-            return public_result
-
-        return result
-
-    async def before_model_callback(
-        self, *, callback_context: CallbackContext, llm_request: LlmRequest
-    ) -> LlmResponse | None:
-        parts_by_call = _coerce_part_map(
-            callback_context.state.get(_MULTIMODAL_TOOL_PARTS_BY_CALL_KEY, {})
-        )
-        consumed: set[str] = set()
-        if parts_by_call and llm_request.contents:
-            for content in llm_request.contents:
-                if not content.parts:
-                    continue
-                modified_parts: list[types.Part] = []
-                for part in content.parts:
-                    modified_parts.append(part)
-                    function_response = getattr(part, "function_response", None)
-                    if function_response is None:
-                        continue
-                    call_id = str(getattr(function_response, "id", "") or "")
-                    if call_id and call_id in parts_by_call:
-                        modified_parts.extend(parts_by_call[call_id])
-                        consumed.add(call_id)
-                content.parts = modified_parts
-            unmatched = [call_id for call_id in parts_by_call if call_id not in consumed]
-            if unmatched:
-                tail = llm_request.contents[-1]
-                if tail.parts is None:
-                    tail.parts = []
-                for call_id in unmatched:
-                    tail.parts.extend(parts_by_call[call_id])
-                consumed.update(unmatched)
-            if not self.persistent and consumed:
-                for call_id in consumed:
-                    parts_by_call.pop(call_id, None)
-                callback_context.state[_MULTIMODAL_TOOL_PARTS_BY_CALL_KEY] = parts_by_call
-
-        return None
 
 
 class ModelCallPacingPlugin(BasePlugin):
@@ -210,11 +76,15 @@ def _part_summary(part: types.Part) -> dict[str, Any]:
     function_response = getattr(part, "function_response", None)
     if function_response is not None:
         response = getattr(function_response, "response", None) or {}
+        # ADK 2.7+ carries tool-returned media here, not as sibling content
+        # parts, so count it or the capture hides the images entirely.
+        media_parts = getattr(function_response, "parts", None) or []
         return {
             "kind": "function_response",
             "name": getattr(function_response, "name", None),
             "id": getattr(function_response, "id", None),
             "response_keys": sorted(response.keys()) if isinstance(response, dict) else [],
+            "media_part_count": len(media_parts),
         }
 
     text = getattr(part, "text", None)

@@ -1,14 +1,15 @@
 """Position-estimation tools, wired as plain Python functions for ADK auto-wrapping.
 
-On success, `fetch_atlas` returns a normal dictionary function response plus
-a private list of ``types.Part`` image/text payloads.
-``PersistentMultimodalToolResultsPlugin`` removes that private payload before
-ADK builds the function response, then injects the real image parts into the
-next model request.
+On success, `fetch_atlas` returns a normal dictionary function response whose
+``TOOL_MEDIA_PARTS_KEY`` entry holds a flat list of image ``types.Part``s. ADK
+2.7+ moves those into the function-response Event's media parts (persisted in
+session history, so earlier atlas sweeps stay visible on later turns) and drops
+the key from the JSON the model reads. Everything the model needs in words --
+positions, artifact keys, image order -- therefore lives in ordinary JSON
+fields, not in text Parts, which ADK would leave behind as JSON noise.
 
-Error paths still return dicts (``{"status": "error", "error": ...}``); the
-plugin passes them through unchanged, so dict errors reach the model as
-ordinary function responses.
+Error paths return plain dicts (``{"status": "error", "error": ...}``) with no
+media, so they reach the model as ordinary function responses.
 
 Fetched atlas images are also saved as artifacts via
 ``tool_context.save_artifact`` for debugging and request replay.
@@ -22,7 +23,7 @@ from typing import Any
 from google.genai import types
 from PIL import Image
 
-from langslice.adk.plugins import MULTIMODAL_PARTS_RESULT_KEY
+from langslice.adk import TOOL_MEDIA_PARTS_KEY
 from langslice.atlas.core import (
     get_reference_slice,
     load_atlas,
@@ -94,14 +95,6 @@ def _image_to_part(img: Image.Image) -> types.Part:
     )
 
 
-def _with_multimodal_parts(
-    response: dict[str, Any], parts: list[types.Part]
-) -> dict[str, Any]:
-    out = dict(response)
-    out[MULTIMODAL_PARTS_RESULT_KEY] = parts
-    return out
-
-
 async def fetch_atlas(
     positions_mm: list[float], tool_context: Any
 ) -> dict[str, Any]:
@@ -112,9 +105,9 @@ async def fetch_atlas(
     saved as an artifact keyed 'atlas:<mm:.2f>'.
 
     Returns:
-        On success, a structured function response with status/positions plus
-        private multimodal parts. The plugin surfaces those parts as real
-        inline images on later model turns.
+        On success, status/positions/atlas keys plus the atlas images, attached
+        in the same order as ``positions_mm``. The images stay visible to the
+        model on every later turn.
         On failure, ``{"status": "error", "error": "BAD_ARGS" | "EMPTY_RESULT"}``.
     """
     state = tool_context.state
@@ -148,35 +141,20 @@ async def fetch_atlas(
     if _is_narrow_sweep(positions):
         state["saw_narrow_sweep"] = True
 
-    out_parts: list[types.Part] = [
-        types.Part.from_text(
-            text=(
-                f"Fetched {len(positions)} atlas section"
-                f"{'s' if len(positions) != 1 else ''} at: "
-                + ", ".join(descriptions)
-                + "."
-            )
-        )
-    ]
-    for pos, img_part in zip(positions, image_parts, strict=True):
-        out_parts.append(
-            types.Part.from_text(
-                text=f"Atlas at {pos:.2f} mm (key='{atlas_key(pos)}'):"
-            )
-        )
-        out_parts.append(img_part)
-    return _with_multimodal_parts(
-        {
-            "status": "ok",
-            "positions_mm": [round(float(pos), 2) for pos in positions],
-            "description": (
-                f"Fetched {len(positions)} atlas section"
-                f"{'s' if len(positions) != 1 else ''}: "
-                + ", ".join(descriptions)
-            ),
-        },
-        out_parts,
-    )
+    plural = "s" if len(positions) != 1 else ""
+    return {
+        "status": "ok",
+        "positions_mm": [round(float(pos), 2) for pos in positions],
+        "atlas_keys": [atlas_key(pos) for pos in positions],
+        # The attached images are unlabelled, so the ordering note is the
+        # model's only way to tie an image to its position.
+        "description": (
+            f"Fetched {len(positions)} atlas section{plural}: "
+            + ", ".join(descriptions)
+            + ". The attached atlas images appear in that same order."
+        ),
+        TOOL_MEDIA_PARTS_KEY: image_parts,
+    }
 
 
 def submit_estimate(

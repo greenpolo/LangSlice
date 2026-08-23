@@ -13,6 +13,7 @@ from typing import Any, Literal, cast
 from google.adk.plugins.base_plugin import BasePlugin
 from PIL import Image
 
+from langslice.adk import TOOL_MEDIA_PARTS_KEY
 from langslice.atlas.core import get_position_range_mm, load_atlas
 from langslice.space import Plane
 
@@ -101,7 +102,10 @@ GEMINI_31_PRO_PREVIEW_PRICING: dict[str, float] = {
     "cached_input_per_million": 0.20,
 }
 
-_PRIVATE_RESULT_KEYS = {"_langslice_multimodal_parts"}
+# after_tool_callback sees the raw tool result, before ADK lifts the media
+# Parts out of it, so the recorder can save the images and must then drop the
+# key itself to keep the recorded JSON identical to what the model reads.
+_PRIVATE_RESULT_KEYS = {TOOL_MEDIA_PARTS_KEY}
 _USAGE_FIELDS = (
     "prompt_token_count",
     "candidates_token_count",
@@ -255,7 +259,7 @@ class AgentTraceRecorder(BasePlugin):
     ) -> list[dict[str, str]]:
         if self.tool_artifact_dir is None:
             return []
-        parts = result.get("_langslice_multimodal_parts")
+        parts = result.get(TOOL_MEDIA_PARTS_KEY)
         if not isinstance(parts, list):
             return []
 

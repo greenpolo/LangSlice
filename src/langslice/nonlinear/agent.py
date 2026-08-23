@@ -7,17 +7,11 @@ from typing import Any
 from google.adk.agents import LlmAgent
 from google.genai import types
 
+from langslice.adk.model_resolver import default_http_options
 from langslice.nonlinear.tools import (
     confirm_registration,
     make_generate_registration_candidate_tool,
 )
-
-
-def _is_native_gemini_string(model: str | object) -> bool:
-    if not isinstance(model, str):
-        return False
-    lowered = model.strip().lower()
-    return lowered.startswith("gemini-") or lowered.startswith("models/gemini-")
 
 
 def build_registration_review_agent(
@@ -43,10 +37,7 @@ def build_registration_review_agent(
     }
     if thinking_config is not None:
         config_kwargs["thinking_config"] = thinking_config
-    if _is_native_gemini_string(model):
-        config_kwargs["http_options"] = types.HttpOptions(
-            retry_options=types.HttpRetryOptions(initial_delay=1, attempts=5)
-        )
+    config_kwargs["http_options"] = default_http_options()
 
     instruction = (
         f"You are reviewing an image-gen registration for {atlas_name} "

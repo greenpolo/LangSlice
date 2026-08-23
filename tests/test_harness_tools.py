@@ -5,7 +5,7 @@ import pytest
 from google.genai import types
 from PIL import Image
 
-from langslice.adk.plugins import MULTIMODAL_PARTS_RESULT_KEY
+from langslice.adk import TOOL_MEDIA_PARTS_KEY
 from langslice.linear.session import atlas_key, build_initial_state
 from langslice.linear.tools import (
     _clamp_and_dedupe_positions,
@@ -19,30 +19,14 @@ from langslice.linear.tools import (
 )
 
 
-def _image_part_bytes(part: types.Part) -> bytes:
-    assert part.inline_data is not None and part.inline_data.data is not None
-    return part.inline_data.data
-
-
 def _is_image_part(part: object) -> bool:
     inline = getattr(part, "inline_data", None)
     return inline is not None and getattr(inline, "data", None) is not None
 
 
-def _is_text_part(part: object) -> bool:
-    text = getattr(part, "text", None)
-    return isinstance(text, str) and text != ""
-
-
-def _text_of(part: types.Part) -> str:
-    """Narrow ``Part.text`` to ``str`` for assertions — basedpyright treats it as ``str | None``."""
-    assert part.text is not None
-    return part.text
-
-
-def _multimodal_parts(result: object) -> list[types.Part]:
+def _media_parts(result: object) -> list[types.Part]:
     assert isinstance(result, dict)
-    parts = result[MULTIMODAL_PARTS_RESULT_KEY]
+    parts = result[TOOL_MEDIA_PARTS_KEY]
     assert isinstance(parts, list)
     assert all(isinstance(part, types.Part) for part in parts)
     return parts
@@ -94,7 +78,7 @@ def _fake_tool_context(state: dict) -> MagicMock:
     return ctx
 
 
-def test_fetch_atlas_returns_labeled_parts_and_updates_state():
+def test_fetch_atlas_returns_media_parts_and_updates_state():
     state = build_initial_state(
         atlas_name="allen_mouse_25um", plane="coronal",
         pos_lo=0.0, pos_hi=13.2, n_slices=1,
@@ -105,18 +89,16 @@ def test_fetch_atlas_returns_labeled_parts_and_updates_state():
     assert isinstance(result, dict)
     assert result["status"] == "ok"
     assert result["positions_mm"] == [2.0, 5.0, 8.0]
-    assert "3 atlas sections" in str(result["description"])
-    parts = _multimodal_parts(result)
-    # Multimodal payload is header text + 3x (label_text, image_part).
-    assert len(parts) == 1 + 2 * 3
-    assert _is_text_part(parts[0])
-    assert "3 atlas sections" in _text_of(parts[0])
-    for i in range(3):
-        assert _is_text_part(parts[1 + 2 * i])
-        assert _is_image_part(parts[2 + 2 * i])
-    joined = " ".join(_text_of(p) for p in parts if _is_text_part(p))
+    assert result["atlas_keys"] == [atlas_key(2.0), atlas_key(5.0), atlas_key(8.0)]
+    description = str(result["description"])
+    assert "3 atlas sections" in description
     for pos in (2.0, 5.0, 8.0):
-        assert f"{pos:.2f} mm" in joined
+        assert f"{pos:.2f} mm" in description
+    # Media payload is a flat, image-only list -- one part per position, in
+    # order. Text Parts here would leak into the JSON the model reads.
+    parts = _media_parts(result)
+    assert len(parts) == 3
+    assert all(_is_image_part(part) for part in parts)
     assert state["saw_broad_sweep"] is True
     assert state["images_fetched"] == 3
     assert ctx.save_artifact.call_count == 3
