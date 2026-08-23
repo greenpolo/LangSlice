@@ -7,7 +7,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 Plane = Literal["coronal", "sagittal", "horizontal"]
-Provider = Literal["google", "openai"]
+Provider = Literal["google", "openai", "chatgpt"]
 PreprocessMode = Literal["none", "auto"]
 EngineMethod = Literal[
     "version",

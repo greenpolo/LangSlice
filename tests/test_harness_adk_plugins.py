@@ -1,100 +1,87 @@
 import asyncio
-from typing import Any, cast
 
+from google.adk.flows.llm_flows.functions import (
+    _build_function_response_content,
+    _extract_multimodal_parts,
+)
 from google.adk.models.llm_request import LlmRequest
 from google.genai import types
 
-from langslice.adk.plugins import (
-    _MULTIMODAL_TOOL_PARTS_BY_CALL_KEY,
-    MULTIMODAL_PARTS_RESULT_KEY,
-    ModelCallPacingPlugin,
-    PersistentMultimodalToolResultsPlugin,
-    RequestCapturePlugin,
-    _coerce_part_history,
-    _coerce_part_map,
-)
+from langslice.adk import TOOL_MEDIA_PARTS_KEY
+from langslice.adk.plugins import ModelCallPacingPlugin, RequestCapturePlugin
 
 
-def test_coerce_part_history_restores_serialized_parts():
-    part = types.Part.from_bytes(mime_type="image/jpeg", data=b"fake-jpeg")
-    serialized = part.model_dump(by_alias=True)
-
-    coerced = _coerce_part_history([serialized])
-
-    assert len(coerced) == 1
-    assert isinstance(coerced[0], types.Part)
-    assert coerced[0].inline_data is not None
-    assert coerced[0].inline_data.data == b"fake-jpeg"
+class _FakeTool:
+    name = "fetch_atlas"
+    response_scheduling = None
 
 
-def test_coerce_part_map_restores_serialized_parts():
-    part = types.Part.from_bytes(mime_type="image/jpeg", data=b"fake-jpeg")
-    serialized = part.model_dump(by_alias=True)
+def test_langslice_tool_shape_reaches_adk_native_media_extraction():
+    """Pin our tool return shape against ADK's real extraction.
 
-    coerced = _coerce_part_map({"call-1": [serialized]})
+    ADK only looks one container deep, so a flat list of Parts under a dict key
+    is the deepest nesting that works. If a future ADK release changes that
+    rule, this fails instead of silently sending the model image-free tool
+    results.
+    """
+    image_parts = [
+        types.Part.from_bytes(mime_type="image/jpeg", data=b"jpeg-one"),
+        types.Part.from_bytes(mime_type="image/jpeg", data=b"jpeg-two"),
+    ]
+    tool_result = {
+        "status": "ok",
+        "positions_mm": [4.0, 6.0],
+        "atlas_keys": ["atlas:4.00", "atlas:6.00"],
+        "description": "Fetched 2 atlas sections",
+        TOOL_MEDIA_PARTS_KEY: image_parts,
+    }
 
-    assert list(coerced) == ["call-1"]
-    assert coerced["call-1"][0].inline_data is not None
+    remaining, response_parts = _extract_multimodal_parts(tool_result)
+
+    assert response_parts is not None
+    assert [part.inline_data.data for part in response_parts if part.inline_data] == [
+        b"jpeg-one",
+        b"jpeg-two",
+    ]
+    # The media key is consumed entirely; the model reads clean JSON.
+    assert remaining == {
+        "status": "ok",
+        "positions_mm": [4.0, 6.0],
+        "atlas_keys": ["atlas:4.00", "atlas:6.00"],
+        "description": "Fetched 2 atlas sections",
+    }
 
 
-def test_persistent_plugin_strips_private_parts_and_injects_after_function_response():
-    image_part = types.Part.from_bytes(mime_type="image/jpeg", data=b"fake-jpeg")
-    text_part = types.Part.from_text(text="Atlas at 5.00 mm:")
-    plugin = PersistentMultimodalToolResultsPlugin()
-    tool = cast(Any, type("Tool", (), {"name": "fetch_atlas"})())
-    tool_context = cast(Any, type("ToolContext", (), {
-        "state": {},
-        "function_call_id": "call-1",
-    })())
-
-    public = asyncio.run(
-        plugin.after_tool_callback(
-            tool=tool,
-            tool_args={},
-            tool_context=tool_context,
-            result={
-                "status": "ok",
-                "positions_mm": [5.0],
-                MULTIMODAL_PARTS_RESULT_KEY: [text_part, image_part],
-            },
-        )
+def test_native_media_parts_ride_on_the_function_response_part():
+    image_part = types.Part.from_bytes(mime_type="image/jpeg", data=b"jpeg-one")
+    content = _build_function_response_content(
+        _FakeTool(),  # type: ignore[arg-type]
+        {"status": "ok", TOOL_MEDIA_PARTS_KEY: [image_part]},
+        "call-1",
     )
 
-    assert public == {"status": "ok", "positions_mm": [5.0]}
-    assert _MULTIMODAL_TOOL_PARTS_BY_CALL_KEY in tool_context.state
-
-    request = LlmRequest(
-        model="capture-model",
-        contents=[
-            types.Content(
-                role="user",
-                parts=[
-                    types.Part.from_function_response(
-                        name="fetch_atlas",
-                        response={"status": "ok", "positions_mm": [5.0]},
-                    )
-                ],
-            )
-        ],
-    )
-    parts = request.contents[0].parts
-    assert parts is not None
+    parts = content.parts or []
+    # One function_response part carrying the image; no sibling image part, so
+    # nothing double-injects it.
+    assert len(parts) == 1
     function_response = parts[0].function_response
     assert function_response is not None
-    function_response.id = "call-1"
-    callback_context = cast(Any, type("CallbackContext", (), {"state": tool_context.state})())
+    assert function_response.response == {"status": "ok"}
+    media = function_response.parts or []
+    assert len(media) == 1
+    assert media[0].inline_data is not None
+    assert media[0].inline_data.data == b"jpeg-one"
 
-    asyncio.run(
-        plugin.before_model_callback(
-            callback_context=callback_context,  # type: ignore[arg-type]
-            llm_request=request,
-        )
+
+def test_text_parts_would_leak_into_the_json_result():
+    """Why tool text lives in JSON fields, not in Parts: ADK keeps text Parts."""
+    remaining, response_parts = _extract_multimodal_parts(
+        {"status": "ok", TOOL_MEDIA_PARTS_KEY: [types.Part.from_text(text="Atlas at 4.00 mm:")]}
     )
 
-    injected = request.contents[0].parts or []
-    assert [part.function_response is not None for part in injected] == [True, False, False]
-    assert injected[1].text == "Atlas at 5.00 mm:"
-    assert injected[2].inline_data is not None
+    assert response_parts is None
+    assert isinstance(remaining, dict)
+    assert TOOL_MEDIA_PARTS_KEY in remaining
 
 
 def test_model_call_pacing_plugin_accepts_zero_delay():
@@ -130,3 +117,26 @@ def test_request_capture_plugin_redacts_inline_image_bytes(tmp_path):
     assert "inline_data" in text
     assert "byte_count" in text
     assert "image/jpeg" in text
+
+
+def test_request_capture_plugin_counts_function_response_media(tmp_path):
+    content = _build_function_response_content(
+        _FakeTool(),  # type: ignore[arg-type]
+        {
+            "status": "ok",
+            TOOL_MEDIA_PARTS_KEY: [
+                types.Part.from_bytes(mime_type="image/jpeg", data=b"jpeg-one")
+            ],
+        },
+        "call-1",
+    )
+    request = LlmRequest(model="capture-model", contents=[content])
+    plugin = RequestCapturePlugin(tmp_path, run_label="fr")
+
+    asyncio.run(
+        plugin.before_model_callback(callback_context=None, llm_request=request)  # type: ignore[arg-type]
+    )
+
+    text = next(iter(tmp_path.glob("fr_*.json"))).read_text(encoding="utf-8")
+    assert '"media_part_count": 1' in text
+    assert "jpeg-one" not in text

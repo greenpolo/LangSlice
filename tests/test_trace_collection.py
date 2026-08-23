@@ -195,6 +195,8 @@ def test_agent_trace_recorder_captures_visible_text_thoughts_and_tool_calls():
 def test_agent_trace_recorder_persists_multimodal_tool_images(tmp_path: Path):
     from google.genai import types
 
+    from langslice.adk import TOOL_MEDIA_PARTS_KEY
+
     recorder = AgentTraceRecorder(tool_artifact_dir=tmp_path / "tool_images")
     image_part = types.Part.from_bytes(
         mime_type="image/jpeg",
@@ -207,10 +209,7 @@ def test_agent_trace_recorder_persists_multimodal_tool_images(tmp_path: Path):
         result={
             "status": "ok",
             "positions_mm": [4.0],
-            "_langslice_multimodal_parts": [
-                types.Part.from_text(text="Atlas at 4.00 mm:"),
-                image_part,
-            ],
+            TOOL_MEDIA_PARTS_KEY: [image_part],
         },
     )
 
@@ -227,7 +226,10 @@ def test_agent_trace_recorder_persists_multimodal_tool_images(tmp_path: Path):
     assert saved.read_bytes() == b"fake-jpeg-bytes"
 
 
-def test_agent_trace_recorder_captures_tool_results_without_private_parts():
+def test_agent_trace_recorder_captures_tool_results_without_media_parts():
+    """The recorded JSON must match what ADK leaves for the model: no media key."""
+    from langslice.adk import TOOL_MEDIA_PARTS_KEY
+
     recorder = AgentTraceRecorder()
 
     recorder.record_tool_result(
@@ -236,14 +238,14 @@ def test_agent_trace_recorder_captures_tool_results_without_private_parts():
         result={
             "status": "ok",
             "positions_mm": [4.0, 6.0, 8.0],
-            "_langslice_multimodal_parts": ["private"],
+            TOOL_MEDIA_PARTS_KEY: ["not-a-part"],
         },
     )
 
     event = recorder.raw_events[0]
     assert event["role"] == "tool"
     assert event["name"] == "fetch_atlas"
-    assert "_langslice_multimodal_parts" not in event["response"]
+    assert TOOL_MEDIA_PARTS_KEY not in event["response"]
 
 
 def test_collect_manifest_traces_writes_raw_sft_and_summary(tmp_path: Path):

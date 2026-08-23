@@ -22,7 +22,12 @@ _VALID_REQUEST_ROUTES = {
     "google_genai",
     "openai_images",
     "openai_responses_image_generation",
+    "chatgpt_responses_image_generation",
 }
+
+# gpt-image-2 renders at these aspect ratios only.
+_CHATGPT_IMAGE_SIZES = ((1024, 1024), (1536, 1024), (1024, 1536))
+_CHATGPT_QUALITIES = {"low", "medium", "high"}
 
 
 @dataclass
@@ -259,6 +264,45 @@ def _generate_openai_responses_segmentation(
     )
 
 
+def _chatgpt_image_size(image: Image.Image) -> str:
+    """Pick the gpt-image-2 size whose aspect ratio is closest to *image*."""
+    width, height = image.size
+    aspect = width / height if height else 1.0
+    best = min(_CHATGPT_IMAGE_SIZES, key=lambda wh: abs(wh[0] / wh[1] - aspect))
+    return f"{best[0]}x{best[1]}"
+
+
+def _generate_chatgpt_segmentation(
+    request: SegmentationGenerationRequest,
+) -> GeneratedSegmentation:
+    from langslice.providers import chatgpt
+
+    model = request.model or chatgpt.DEFAULT_IMAGE_MODEL
+    quality = (request.thinking_level or "high").lower()
+    png_bytes = chatgpt.generate_image(
+        request.prompt,
+        [
+            _image_to_data_url(request.colored_regions),
+            _image_to_data_url(request.reference_slice),
+            _image_to_data_url(request.slice_image),
+        ],
+        size=_chatgpt_image_size(request.slice_image),
+        quality=quality if quality in _CHATGPT_QUALITIES else "high",
+        image_model=model,
+    )
+
+    image = Image.open(io.BytesIO(png_bytes))
+    image.load()
+    route = "chatgpt_responses_image_generation"
+    return GeneratedSegmentation(
+        image=image.convert("RGB"),
+        provider="chatgpt",
+        model=model,
+        route=route,
+        metadata=_build_metadata(request, provider="chatgpt", route=route),
+    )
+
+
 def generate_warped_segmentation_image(
     request: SegmentationGenerationRequest,
 ) -> GeneratedSegmentation:
@@ -267,6 +311,9 @@ def generate_warped_segmentation_image(
 
     if provider == "google":
         return _generate_google_segmentation(request)
+
+    if provider == "chatgpt":
+        return _generate_chatgpt_segmentation(request)
 
     if provider in {"openai", "flux", "openai-compatible", "openai_compatible"}:
         if provider == "openai":

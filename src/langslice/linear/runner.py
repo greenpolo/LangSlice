@@ -21,7 +21,6 @@ from langslice.adk.model_resolver import (
 )
 from langslice.adk.plugins import (
     ModelCallPacingPlugin,
-    PersistentMultimodalToolResultsPlugin,
     RequestCapturePlugin,
 )
 from langslice.atlas.core import (
@@ -134,7 +133,6 @@ def _build_plugins(
     plugins: list[BasePlugin] = []
     if trace_recorder is not None:
         plugins.append(trace_recorder)
-    plugins.append(PersistentMultimodalToolResultsPlugin(persistent=True))
     model_call_delay_s = _env_float("LANGSLICE_ADK_MODEL_CALL_DELAY_S")
     if model_call_delay_s is not None and model_call_delay_s > 0:
         plugins.append(ModelCallPacingPlugin(model_call_delay_s))
@@ -332,9 +330,9 @@ async def _run_estimation_session(
     species_val = species or str(atlas.metadata.get("species", "mouse"))
     agent = build_agent(species_val, pos_lo, pos_hi, agent_model, thinking_cfg)
 
-    # The plugin keeps structured tool responses intact while injecting the
-    # returned image artifacts into the request, matching the legacy loop's
-    # persistent multimodal history.
+    # Atlas images returned by `fetch_atlas` ride along on the function-response
+    # event (ADK 2.7+ native media tool results), so session history replays
+    # every earlier sweep to the model without any plugin.
     app = App(
         name=_APP_NAME,
         root_agent=agent,

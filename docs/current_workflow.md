@@ -7,7 +7,7 @@ The CLI is grouped by method:
 ```bash
 langslice linear    {estimate, estimate-group, estimate-brain, quick-affine}
 langslice nonlinear {register}
-langslice           {version, serve, collect-traces}
+langslice           {version, login, serve, collect-traces}
 ```
 
 `linear` and `nonlinear` are independent. `nonlinear register` takes a slice
@@ -71,6 +71,29 @@ Provider routing is explicit, not inferred from the model name:
   picks the Images API (`images`, default) or the Responses API (`responses`),
   and `--endpoint` points it at a non-OpenAI base URL. The default
   OpenAI-compatible image model is `gpt-image-2`.
+- `--provider chatgpt` uses a ChatGPT subscription instead of an API key: it
+  sends `gpt-image-2` requests through the Codex Responses backend with the
+  token stored by `langslice login`. Reference images are the colored region
+  map, the atlas reference slice, and the histology slice; the output size is
+  the `gpt-image-2` aspect ratio closest to the slice.
+
+## Sign In With ChatGPT
+
+```bash
+langslice login
+```
+
+Runs the OAuth (PKCE) "Sign in with ChatGPT" flow in a browser, with a callback
+on `localhost:1455`, and writes the token to `~/.langslice/openai_auth.json`
+(mode 600). Access tokens are refreshed automatically; an existing Codex CLI
+login (`~/.codex/auth.json` or its keyring entry) is used as a fallback.
+
+Once signed in, no API key is needed for either model surface:
+
+- chat/vision/tool-use agents accept `chatgpt/<model>` model strings, e.g.
+  `--model chatgpt/gpt-5.6-luna`, served by the ADK backend in
+  `src/langslice/providers/chatgpt.py`;
+- image-gen registration accepts `--provider chatgpt`.
 
 ## Engine Service
 
