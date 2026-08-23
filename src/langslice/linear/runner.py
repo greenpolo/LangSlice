@@ -10,6 +10,7 @@ from typing import Any
 
 from google.adk.apps.app import App
 from google.adk.plugins.base_plugin import BasePlugin
+from google.adk.plugins.context_filter_plugin import ContextFilterPlugin
 from google.adk.runners import InMemoryRunner
 from google.genai import types
 from PIL import Image
@@ -22,6 +23,7 @@ from langslice.adk.model_resolver import (
 from langslice.adk.plugins import (
     ModelCallPacingPlugin,
     RequestCapturePlugin,
+    trim_stale_tool_images,
 )
 from langslice.atlas.core import (
     get_in_plane_long_edge,
@@ -133,6 +135,7 @@ def _build_plugins(
     plugins: list[BasePlugin] = []
     if trace_recorder is not None:
         plugins.append(trace_recorder)
+    plugins.append(ContextFilterPlugin(custom_filter=trim_stale_tool_images))
     model_call_delay_s = _env_float("LANGSLICE_ADK_MODEL_CALL_DELAY_S")
     if model_call_delay_s is not None and model_call_delay_s > 0:
         plugins.append(ModelCallPacingPlugin(model_call_delay_s))

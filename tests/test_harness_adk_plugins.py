@@ -8,7 +8,11 @@ from google.adk.models.llm_request import LlmRequest
 from google.genai import types
 
 from langslice.adk import TOOL_MEDIA_PARTS_KEY
-from langslice.adk.plugins import ModelCallPacingPlugin, RequestCapturePlugin
+from langslice.adk.plugins import (
+    ModelCallPacingPlugin,
+    RequestCapturePlugin,
+    trim_stale_tool_images,
+)
 
 
 class _FakeTool:
@@ -140,3 +144,77 @@ def test_request_capture_plugin_counts_function_response_media(tmp_path):
     text = next(iter(tmp_path.glob("fr_*.json"))).read_text(encoding="utf-8")
     assert '"media_part_count": 1' in text
     assert "jpeg-one" not in text
+
+
+def _media_part(n: int) -> types.Part:
+    frp = [
+        types.FunctionResponsePart(
+            inline_data=types.Blob(mime_type="image/jpeg", data=b"x" * 8)
+        )
+        for _ in range(n)
+    ]
+    return types.Part(
+        function_response=types.FunctionResponse(
+            name="fetch_atlas", response={"status": "ok"}, parts=frp
+        )
+    )
+
+
+def _tool_turn(n_images: int) -> types.Content:
+    return types.Content(role="user", parts=[_media_part(n_images)])
+
+
+def test_trim_keeps_newest_tool_images_and_user_images():
+    histology = types.Content(
+        role="user",
+        parts=[types.Part.from_bytes(mime_type="image/jpeg", data=b"slice")],
+    )
+    contents = [histology, _tool_turn(6), _tool_turn(6), _tool_turn(6)]
+    out = trim_stale_tool_images(contents, keep_last=12)
+
+    def n_media(c: types.Content) -> int:
+        return sum(
+            len(p.function_response.parts or [])
+            for p in (c.parts or [])
+            if p.function_response is not None
+        )
+
+    # Oldest tool call stripped, newest two kept, histology untouched.
+    assert [n_media(c) for c in out[1:]] == [0, 6, 6]
+    assert out[0].parts is not None and out[0].parts[0].inline_data is not None
+    # JSON result survives on the stripped call.
+    stripped = out[1].parts
+    assert stripped is not None
+    fr = stripped[0].function_response
+    assert fr is not None and fr.response == {"status": "ok"}
+    # Input list and its contents are not mutated.
+    assert sum(n_media(c) for c in contents[1:]) == 18
+
+
+def test_trim_noop_under_budget_and_always_keeps_newest():
+    contents = [_tool_turn(5), _tool_turn(5)]
+    assert trim_stale_tool_images(contents, keep_last=12) is contents
+    # A single oversized newest call is still kept in full.
+    big = [_tool_turn(6), _tool_turn(20)]
+    out = trim_stale_tool_images(big, keep_last=12)
+    parts = out[1].parts
+    assert parts is not None
+    fr1 = parts[0].function_response
+    assert fr1 is not None and len(fr1.parts or []) == 20
+    parts0 = out[0].parts
+    assert parts0 is not None
+    fr0 = parts0[0].function_response
+    assert fr0 is not None and not (fr0.parts or [])
+
+
+def test_trim_drop_is_monotone_no_holes():
+    # Once an old call is dropped, even older small calls are dropped too.
+    contents = [_tool_turn(2), _tool_turn(5), _tool_turn(10)]
+    out = trim_stale_tool_images(contents, keep_last=12)
+    kept = [
+        len(p.function_response.parts or [])
+        for c in out
+        for p in (c.parts or [])
+        if p.function_response is not None
+    ]
+    assert kept == [0, 0, 10]
