@@ -7,7 +7,6 @@ LangSlice is organized around one installable Python harness package,
 
 - `src/langslice_harness/atlas/` -- BrainGlobe atlas loading, coordinate conversion, and slice extraction.
 - `src/langslice_harness/harness/estimation/` -- ADK slice-position estimation agents, prompts, tools, validators, plugins, and runners.
-- `src/langslice_harness/harness/estimation/image_gen.py` -- image-gen position estimation.
 - `src/langslice_harness/registration/` -- public registration runtime and result types.
 - `src/langslice_harness/harness/registration/` -- image-gen registration candidate generation and optional ADK review.
 - `src/langslice_harness/whole_brain/` -- multi-slice position estimation pipeline.
@@ -36,10 +35,10 @@ returns either result or error envelopes.
 Single-slice and group position estimation run through ADK. The agent can fetch atlas
 images and must submit a structured estimate. Native Gemini requests can use the
 File API for target images, and a persistent multimodal plugin keeps fetched
-atlas images visible across turns.
-
-Image-gen position estimation is available for visual sweep/zoom style estimation and
-is used by the whole-brain pipeline.
+atlas images visible across turns. This is the only estimation path -- there is
+no image-gen sweep/zoom alternative -- and it supports all planes (coronal,
+sagittal, horizontal), unlike the removed image-gen estimator which was
+coronal-only.
 
 ## Image-Gen Registration
 
@@ -57,9 +56,10 @@ inspect up to three candidates before confirming one.
 
 ## Whole-Brain Estimation
 
-Whole-brain estimation discovers a folder of slices, estimates anchor slices,
-interpolates positions for non-anchor slices, runs windowed image-gen estimation,
-and fits a constrained monotonic position curve.
+Whole-brain estimation discovers a folder of slices, estimates anchor slices with
+the tool-use estimator, interpolates positions for non-anchor slices, estimates
+each non-anchor slice independently over the full atlas range with the same
+tool-use estimator, and fits a constrained monotonic position curve.
 
 ## Desktop App
 

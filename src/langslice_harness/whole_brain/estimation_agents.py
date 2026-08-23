@@ -1,217 +1,84 @@
-"""Async wrappers around existing AP estimators.
+"""Async wrappers around the single-slice tool-use AP estimator.
 
-These functions run the existing synchronous estimator code on a thread
-via ``asyncio.to_thread()`` so the pipeline can execute multiple slices
-concurrently.
+These run the synchronous :func:`estimate_position` agent on a thread via
+``asyncio.to_thread()`` so the pipeline can estimate multiple slices
+concurrently. Each call is an independent full-atlas tool-use estimate; the
+estimator handles its own image normalization (normalize -> downscale ->
+CLAHE) internally, so callers pass the raw slice image.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable
 
 from PIL import Image
 
-from langslice_harness.atlas.core import get_in_plane_long_edge, get_position_range_mm, load_atlas
-from langslice_harness.harness.estimation._types import APResult
-from langslice_harness.harness.estimation.image_gen import estimate_position_image_gen
-from langslice_harness.image_prep import adaptive_preprocess, normalize_image, prepare_image_for_vlm
-from langslice_harness.whole_brain.window import compute_search_bounds
-
-# Pro model for anchor estimation — stronger visual reasoning improves the
-# critical anchor positions that the rest of the pipeline depends on.
-# Non-anchor estimation stays on the default (Flash) for speed.
-_ANCHOR_DEFAULT_MODEL = "gemini-3.1-pro-preview"
+from langslice_harness.atlas.core import get_position_range_mm, load_atlas
+from langslice_harness.estimation import APResult, estimate_position
 
 logger = logging.getLogger(__name__)
 
 
-def _prepare_slice(image_path: str, *, max_long_edge: int = 2048) -> Image.Image:
-    """Load and preprocess a slice image, matching the estimation pipeline."""
-    raw = Image.open(image_path).convert("RGB")
-    canonical = normalize_image(raw)
-    downscaled = prepare_image_for_vlm(canonical, max_long_edge=max_long_edge).image
-    return adaptive_preprocess(downscaled)
+def _load_slice(image_path: str) -> Image.Image:
+    """Load a slice image as RGB; the estimator handles preprocessing."""
+    return Image.open(image_path).convert("RGB")
 
 
 async def run_anchor_estimation(
     *,
     image_path: str,
     atlas_name: str,
-    coarse_model: str | None = None,
-    fine_model: str | None = None,
-    on_progress: Callable[[str], None] | None = None,
-    debug_dir: str | None = None,
+    model_name: str | None = None,
 ) -> APResult:
-    """Two-stage anchor estimation: image-gen 2-pass coarse then fine pass.
+    """Estimate an anchor slice's AP position with the tool-use agent.
 
-    Stage A: Image-gen broad→neighborhood scan (2 passes) to find the
-    general AP region.  More deterministic than tool-use for coarse
-    estimation (validated in hyp 018: anchor 3 coarse 0.298mm off GT
-    vs tool-use 0.6-1.6mm).
-    Stage B: Nano-banana fine pass centered on the coarse result refines to
-    ~0.05mm precision within ±0.5mm bounds.
-
-    Falls back to atlas midpoint if both stages fail (3-tier fallback).
-
-    Uses gemini-3.1-pro-preview by default for stronger visual reasoning on
-    these critical anchor positions.
+    Falls back to the atlas midpoint if the agent errors, since interpolation
+    and the isotonic fit lean on anchor positions being present.
     """
-    atlas = load_atlas(atlas_name)
-    atlas_long_edge = get_in_plane_long_edge(atlas, plane="coronal")
-    image = _prepare_slice(image_path, max_long_edge=atlas_long_edge)
-
-    # Use Pro model for anchors unless explicitly overridden
-    effective_coarse_model = coarse_model or _ANCHOR_DEFAULT_MODEL
-    effective_fine_model = fine_model or _ANCHOR_DEFAULT_MODEL
-
-    # Stage A: image-gen 2-pass coarse (broad + neighborhood only)
-    coarse_mm: float
+    image = _load_slice(image_path)
     try:
-        coarse = await asyncio.to_thread(
-            estimate_position_image_gen,
+        result = await asyncio.to_thread(
+            estimate_position,
             image,
             atlas_name,
-            on_progress=on_progress,
-            debug_dir=debug_dir,
-            model_name=effective_coarse_model,
-            send_individually=True,
-            max_passes=2,
+            model_name=model_name,
         )
-        coarse_mm = coarse.position_mm
-        logger.info("Anchor coarse (image-gen 2-pass, %s): %.3fmm (%s)",
-                    effective_coarse_model, coarse_mm, image_path)
+        logger.info("Anchor (tool-use): %.3fmm (%s)", result.position_mm, image_path)
+        return result
     except Exception:
-        # Fallback: atlas midpoint (zero API cost)
+        atlas = load_atlas(atlas_name)
         lo, hi = get_position_range_mm(atlas)
-        coarse_mm = (lo + hi) / 2.0
+        mid = (lo + hi) / 2.0
         logger.warning(
-            "Anchor Stage A failed, using atlas midpoint %.3fmm (%s)",
-            coarse_mm, image_path,
+            "Anchor estimation failed, using atlas midpoint %.3fmm (%s)",
+            mid,
+            image_path,
         )
-
-    # Stage B: nano-banana fine pass centered on coarse result.
-    # ±0.5mm bounds keep the fine pass from drifting too far while still
-    # being wide enough for all coarse estimates observed with image-gen
-    # 2-pass (max coarse error ~0.4mm in hyp 018).
-    _ANCHOR_FINE_HALF_MM = 0.5
-    fine_lo = coarse_mm - _ANCHOR_FINE_HALF_MM
-    fine_hi = coarse_mm + _ANCHOR_FINE_HALF_MM
-    try:
-        fine = await asyncio.to_thread(
-            estimate_position_image_gen,
-            image,
-            atlas_name,
-            on_progress=on_progress,
-            debug_dir=debug_dir,
-            model_name=effective_fine_model,
-            send_individually=True,
-            center_mm=coarse_mm,
-            bounds=(fine_lo, fine_hi),
+        return APResult(
+            position_mm=mid,
+            reasoning="Anchor estimation failed; fell back to atlas midpoint.",
         )
-        logger.info("Anchor fine (%s): %.3fmm (drift %.3fmm) (%s)",
-                    effective_fine_model,
-                    fine.position_mm,
-                    abs(fine.position_mm - coarse_mm),
-                    image_path)
-        return fine
-    except Exception:
-        logger.warning(
-            "Anchor Stage B failed, returning coarse %.3fmm (%s)",
-            coarse_mm, image_path,
-        )
-        return APResult(position_mm=coarse_mm, reasoning="Stage B failed, coarse only")
 
 
 async def run_slice_estimation(
     *,
     image_path: str,
     atlas_name: str,
-    center_mm: float,
-    atlas_range: tuple[float, float] | None = None,
-    window_half_mm: float = 3.0,
-    slices_per_pass: int = 17,
-    edge_anchor_mm: float | None = None,
-    edge_side: str | None = None,
     model_name: str | None = None,
-    on_progress: Callable[[str], None] | None = None,
-    debug_dir: str | None = None,
 ) -> APResult:
-    """Run 2-pass nano-banana estimation with confirmation pass for a non-anchor slice.
+    """Estimate a non-anchor slice's AP position with the tool-use agent.
 
-    The broad scan is skipped; the search starts in a neighborhood around
-    *center_mm* (derived from anchor interpolation).  The window is wide
-    enough (~±3 mm) for the model to correct a bad interpolation.
-
-    Using 17 slices per pass (vs the default 13) gives finer neighborhood
-    resolution and a wider fine-pass range (0.8 mm vs 0.6 mm), improving
-    precision for near-miss estimates.
-
-    After the main 2-pass estimation, a single confirmation pass (9 slices,
-    ±0.25mm, ~0.06mm spacing) refines the result. This pushes near-threshold
-    estimates below 0.1mm error (validated in hyp 015: 6/8 targeted cases
-    improved).
+    Each slice is estimated independently over the full atlas. The pipeline's
+    interpolated position is used only as an outlier reference afterwards
+    (Phase 3.5), not as a search prior.
     """
-    atlas = load_atlas(atlas_name)
-    atlas_long_edge = get_in_plane_long_edge(atlas, plane="coronal")
-    image = _prepare_slice(image_path, max_long_edge=atlas_long_edge)
-
-    if atlas_range is None:
-        bounds = (center_mm - window_half_mm, center_mm + window_half_mm)
-    else:
-        bounds = compute_search_bounds(
-            center_mm=center_mm,
-            atlas_range=atlas_range,
-            window_half_mm=window_half_mm,
-            edge_anchor_mm=edge_anchor_mm,
-            edge_side=edge_side,
-        )
-
+    image = _load_slice(image_path)
     result = await asyncio.to_thread(
-        estimate_position_image_gen,
+        estimate_position,
         image,
         atlas_name,
-        on_progress=on_progress,
-        debug_dir=debug_dir,
         model_name=model_name,
-        send_individually=True,
-        center_mm=center_mm,
-        bounds=bounds,
-        slices_per_pass=slices_per_pass,
-        fine_resolution_mm=0.10,
     )
-
-    # Confirmation pass: single ultra-fine pass centered on the initial result.
-    # 9 slices over ±0.25mm gives ~0.06mm spacing — finer than the main fine
-    # pass (0.10mm).  This reliably pushes near-threshold estimates below
-    # 0.1mm error without degrading already-accurate ones.
-    _CONFIRM_HALF_MM = 0.25
-    confirm_center = result.position_mm
-    try:
-        confirmed = await asyncio.to_thread(
-            estimate_position_image_gen,
-            image,
-            atlas_name,
-            on_progress=on_progress,
-            debug_dir=debug_dir,
-            model_name=model_name,
-            send_individually=True,
-            center_mm=confirm_center,
-            bounds=(confirm_center - _CONFIRM_HALF_MM, confirm_center + _CONFIRM_HALF_MM),
-            slices_per_pass=9,
-            max_passes=1,
-        )
-        logger.info(
-            "Slice confirmation: %.3f → %.3fmm (shift %.3fmm) (%s)",
-            confirm_center, confirmed.position_mm,
-            abs(confirmed.position_mm - confirm_center),
-            image_path,
-        )
-        return confirmed
-    except Exception:
-        logger.warning(
-            "Confirmation pass failed, returning initial %.3fmm (%s)",
-            confirm_center, image_path,
-        )
-        return result
+    logger.info("Slice (tool-use): %.3fmm (%s)", result.position_mm, image_path)
+    return result

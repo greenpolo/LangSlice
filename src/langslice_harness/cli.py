@@ -248,12 +248,6 @@ def _add_estimate_parser(subparsers: argparse._SubParsersAction) -> None:
         choices=["coronal", "sagittal", "horizontal"],
         help=_PLANE_HELP,
     )
-    est.add_argument(
-        "--workflow",
-        default=None,
-        choices=["tool_use", "image_gen"],
-        help="AP estimation workflow. Default: auto-select based on model.",
-    )
     est.add_argument("--model", default=None, help="Gemini model name")
     est.add_argument(
         "--thinking",
@@ -288,21 +282,11 @@ def _add_estimate_parser(subparsers: argparse._SubParsersAction) -> None:
         "'none' sends the raw image",
     )
     est.add_argument(
-        "--borders",
-        action="store_true",
-        help="Enable atlas region borders (off by default)",
-    )
-    est.add_argument(
         "--out",
         default=None,
         help="Output directory for debug artifacts",
     )
     est.add_argument("--json", action="store_true", help="Print result JSON to stdout")
-    est.add_argument(
-        "--grid",
-        action="store_true",
-        help="Send atlas slices as a composite grid instead of individually (default: individual)",
-    )
     est.add_argument(
         "--provider",
         default="google",
@@ -611,6 +595,7 @@ def _add_estimate_brain_parser(subparsers: argparse._SubParsersAction) -> None:
     p.add_argument("--interval", type=int, default=200, help="Average slice interval in microns")
     p.add_argument("--anchors", type=int, default=4, help="Number of anchor agents")
     p.add_argument("--parallel", type=int, default=4, help="Max concurrent Gemini calls")
+    p.add_argument("--model", default=None, help="Gemini model name for all estimation calls")
     p.add_argument(
         "--z-axis",
         choices=["AP", "PA"],
@@ -636,6 +621,7 @@ def _run_estimate_brain(args: argparse.Namespace) -> None:
         n_anchors=args.anchors,
         max_parallel=args.parallel,
         z_axis=args.z_axis,
+        model=args.model,
     )
 
     # Cost estimate
@@ -644,9 +630,9 @@ def _run_estimate_brain(args: argparse.Namespace) -> None:
     print("\nBrain estimation plan:")
     print(f"  {n_images} slices, {config.n_anchors} anchors")
     print()
-    print(f"  Phase 1:  {config.n_anchors} anchor estimations (coarse + nano-banana fine)")
+    print(f"  Phase 1:  {config.n_anchors} anchor estimations (tool-use)")
     print("  Phase 2:  interpolation")
-    print(f"  Phase 3:  {n_non_anchors} non-anchor estimations (2-pass nano-banana)")
+    print(f"  Phase 3:  {n_non_anchors} non-anchor estimations (tool-use)")
     print("  Phase 4:  isotonic regression (Huber loss)")
     print(f"  --parallel {config.max_parallel}")
     print()
@@ -689,37 +675,12 @@ def _run_estimate(args: argparse.Namespace) -> None:
         effective_model = args.model or vlm_config.MODEL_NAME
         provider_label = "google"
 
-    workflow = args.workflow
-    if workflow is None:
-        workflow = (
-            "image_gen"
-            if provider_label == "google" and vlm_config.is_image_generation_model(effective_model)
-            else "tool_use"
-        )
-
     print(f"Atlas: {args.atlas}  Plane: {args.plane}")
     print(f"Model: {effective_model}  Provider: {provider_label}")
     print(f"Max iterations: {args.max_iterations}")
     if args.out:
         print(f"Output: {args.out}")
-    print(f"Workflow: {workflow}")
     print()
-
-    # Same guard image_gen enforces internally, kept here too so the CLI's
-    # SystemExit + message stay exactly as before (image_gen AP estimation
-    # is a fixed-plane zoom pipeline with no plane parameter at all --
-    # unlike registration, it has not been parameterized by plane).
-    if workflow == "image_gen":
-        if provider_label != "google":
-            raise SystemExit(
-                "OpenAI AP image-gen is not available in the active harness; use the "
-                "ADK tool_use workflow with an OpenAI-compatible model instead."
-            )
-        if args.plane != "coronal":
-            raise SystemExit(
-                f"image_gen workflow is currently coronal-only (got plane={args.plane!r}). "
-                "Use --workflow tool_use for sagittal/horizontal estimation."
-            )
 
     def emit(event: object) -> None:
         print(f"  {getattr(event, 'message', event)}")
@@ -737,9 +698,6 @@ def _run_estimate(args: argparse.Namespace) -> None:
         provider=args.provider,
         endpoint=args.endpoint,
         output_dir=args.out,
-        workflow=workflow,
-        show_borders=args.borders,
-        grid=args.grid,
     )
     result = run_estimate(request, emit=emit)
 
