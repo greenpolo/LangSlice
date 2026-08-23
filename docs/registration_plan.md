@@ -1,14 +1,17 @@
 # Registration pipeline
 
-Registration has one active method: image-gen registration.
+Registration has one active method: image-gen registration. It lives in
+`src/langslice/nonlinear/` and runs after a slice position is known, from
+`langslice linear ...` or from any other placement step.
 
 ## Active Files
 
-- `src/langslice_harness/registration/runtime.py` -- orchestration and debug artifacts.
-- `src/langslice_harness/registration/types.py` -- result and annotation data classes.
-- `src/langslice_harness/harness/registration/image_gen_registration.py` -- candidate pipeline.
-- `src/langslice_harness/harness/registration/providers.py` -- image generation provider adapters.
-- `src/langslice_harness/harness/registration/runner.py` -- optional ADK review loop.
+- `src/langslice/nonlinear/runtime.py` -- orchestration and debug artifacts.
+- `src/langslice/nonlinear/types.py` -- affine/nonlinear result and annotation data classes.
+- `src/langslice/nonlinear/image_gen_registration.py` -- candidate pipeline.
+- `src/langslice/nonlinear/providers.py` -- image generation provider adapters.
+- `src/langslice/nonlinear/runner.py` -- optional ADK review loop.
+- `src/langslice/nonlinear/quick_affine.py` -- silhouette-based affine preview.
 
 ## Pipeline
 

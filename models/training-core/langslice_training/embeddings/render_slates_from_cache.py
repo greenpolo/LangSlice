@@ -11,7 +11,7 @@ This script restores the JPGs by:
 1. Walking ``out/atlas_embeddings/*.pt``.
 2. For each cache, extracting the atlas name + plane + per-key positions.
 3. Rendering each position via ``rlvr.atlas_grid.get_reference_slice``
-   (which goes through ``langslice_harness.atlas.core`` and the cached
+   (which goes through ``langslice.atlas.core`` and the cached
    BrainGlobe atlas).
 4. Saving to ``data/atlas/<atlas>/<plane>/<basename>`` with the same
    basename the cache uses, so SigLIP cache hits at training time.

@@ -49,8 +49,8 @@ _SRC_DIR = _REPO_ROOT / "src"
 if _SRC_DIR.is_dir() and str(_SRC_DIR) not in sys.path:
     sys.path.insert(0, str(_SRC_DIR))
 
-from langslice_harness.atlas import load_atlas  # noqa: E402
-from langslice_harness.harness.registration.image_gen_helpers import (  # noqa: E402
+from langslice.atlas import load_atlas  # noqa: E402
+from langslice.nonlinear.image_gen_helpers import (  # noqa: E402
     _build_atlas_root_mask,
     _classify_pixels_to_region_ids,
     _extract_borders_from_classified,

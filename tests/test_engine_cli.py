@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-import langslice_harness.cli as cli
+import langslice.cli as cli
 
 
 def test_parser_supports_serve_command() -> None:

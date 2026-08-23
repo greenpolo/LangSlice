@@ -2,7 +2,7 @@
 
 from PIL import Image
 
-from langslice_harness.image_prep import prepare_image_for_vlm
+from langslice.image_prep import prepare_image_for_vlm
 
 
 def test_prepare_image_for_vlm_downsamples_and_tracks_pixel_size() -> None:

@@ -3,7 +3,7 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "langslice-harness"
+name = "langslice"
 version = "0.1.0"
 description = "ADK harness for brain slice registration using image generation and BrainGlobe atlases"
 requires-python = ">=3.10"
@@ -25,9 +25,9 @@ dependencies = [
 ]
 
 [project.scripts]
-langslice = "langslice_harness.cli:main"
-langslice-gemma-rl = "langslice_harness.training_launchers:gemma_rl"
-langslice-gemma-sft = "langslice_harness.training_launchers:gemma_sft"
+langslice = "langslice.cli:main"
+langslice-gemma-rl = "langslice.training_launchers:gemma_rl"
+langslice-gemma-sft = "langslice.training_launchers:gemma_sft"
 
 [project.optional-dependencies]
 dev = [
@@ -38,7 +38,7 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["langslice_harness*"]
+include = ["langslice*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -61,7 +61,7 @@ pythonpath = [
 target-version = "py310"
 line-length = 100
 include = [
-    "src/langslice_harness/**/*.py",
+    "src/langslice/**/*.py",
     "tests/test_*.py",
     "tests/*_test.py",
     "models/langslice-traces/**/*.py",
@@ -74,7 +74,7 @@ include = [
 select = ["E", "F", "I", "B", "UP"]
 
 [tool.pyright]
-include = ["src/langslice_harness"]
+include = ["src/langslice"]
 extraPaths = [
     "src",
     "models/langslice-traces",

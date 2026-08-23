@@ -168,7 +168,7 @@ def _atlas_valid_range_mm(atlas_name: str, plane: Plane) -> tuple[float, float]:
         return cached
     # Local import — keeps the module importable in unit tests that don't
     # have BrainGlobe atlases on disk.
-    from langslice_harness.atlas.core import (  # noqa: PLC0415
+    from langslice.atlas.core import (  # noqa: PLC0415
         get_position_range_mm,
         load_atlas,
     )

@@ -1,4 +1,4 @@
-from langslice_harness.harness.estimation.prompts import (
+from langslice.linear.prompts import (
     build_group_prompt,
     build_single_slice_prompt,
 )

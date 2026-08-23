@@ -3,7 +3,7 @@
 The trainer auto-exposes any public method (no leading ``_``, name != ``reset``)
 as a tool to the model. We deliberately keep only three tools — ``fetch_atlas``,
 ``submit_estimate``, ``submit_group_estimate`` — to mirror the production ADK
-harness in ``src/langslice_harness/harness/estimation/tools.py`` so a trained
+harness in ``src/langslice/linear/tools.py`` so a trained
 adapter is wire-compatible at inference.
 
 Tool signature shapes match production exactly:
@@ -34,7 +34,7 @@ from langslice_training.rl.common.atlas_grid import AtlasGrid
 EstimationKind = Literal["single", "group"]
 Plane = Literal["coronal", "sagittal", "horizontal"]
 
-# Mirror the production tool's contract — see harness/estimation/tools.py.
+# Mirror the production tool's contract — see linear/tools.py.
 DEDUPE_TOL_MM: float = 0.02
 MAX_POSITIONS_PER_FETCH: int = 8
 

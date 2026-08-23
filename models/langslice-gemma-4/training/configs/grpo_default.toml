@@ -17,7 +17,7 @@ max_completion_length = 2048
 max_tool_calling_iterations = 12
 # Either submit tool terminates the rollout immediately (TRL PR #5390),
 # mirroring the production ADK escalate=True semantics in
-# src/langslice_harness/harness/estimation/tools.py:176/188.
+# src/langslice/linear/tools.py:176/188.
 stop_tool_names = ["submit_estimate", "submit_group_estimate"]
 max_grad_norm = 0.1
 importance_sampling_level = "sequence"   # GSPO

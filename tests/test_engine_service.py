@@ -6,9 +6,9 @@ from typing import Any, cast
 
 import pytest
 
-from langslice_harness.api import runtime
-from langslice_harness.api.models import EngineLogEvent, EngineRequest, EstimateResult
-from langslice_harness.api.service import handle_request, run_stdio
+from langslice.api import runtime
+from langslice.api.models import EngineLogEvent, EngineRequest, EstimateResult
+from langslice.api.service import handle_request, run_stdio
 
 
 def _run_lines(*lines: str) -> list[dict[str, object]]:

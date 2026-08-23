@@ -56,7 +56,7 @@ jobs:
           pip install -e ".[dev]"
 
       # Curated harness-only test subset. These import only the
-      # langslice-harness package (and its declared deps); they do not need
+      # langslice package (and its declared deps); they do not need
       # torch / transformers / trl / unsloth, do not download an atlas, and
       # do not call any cloud API. Expand this list as more tests become
       # CI-safe.

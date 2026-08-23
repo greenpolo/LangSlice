@@ -1,46 +1,69 @@
 # Architecture Overview
 
-LangSlice is organized around one installable Python harness package,
-`langslice_harness`, plus a Tauri desktop app and model projects.
+LangSlice is one installable Python package, `langslice`, plus model projects
+under `models/`.
 
 ## Package Layout
 
-- `src/langslice_harness/atlas/` -- BrainGlobe atlas loading, coordinate conversion, and slice extraction.
-- `src/langslice_harness/harness/estimation/` -- ADK slice-position estimation agents, prompts, tools, validators, plugins, and runners.
-- `src/langslice_harness/registration/` -- public registration runtime and result types.
-- `src/langslice_harness/harness/registration/` -- image-gen registration candidate generation and optional ADK review.
-- `src/langslice_harness/whole_brain/` -- multi-slice position estimation pipeline.
-- `src/langslice_harness/image_prep.py` -- image normalization, metadata detection, and downsampling.
-- `src/langslice_harness/export.py` -- QUINT/ABBA-compatible JSON export.
-- `src/langslice_harness/api/` -- Pydantic engine contract, runtime wrappers,
-  schema export, and stdio service used by non-Python clients.
+The two registration methods are sibling subpackages with no dependency on each
+other:
 
-The CLI command remains `langslice`, but the Python import package is
-`langslice_harness`.
+- `src/langslice/linear/` -- slice-position estimation: ADK agents, prompts,
+  tools, validators, runners, and trace collection.
+- `src/langslice/linear/whole_brain/` -- multi-slice whole-brain position
+  estimation pipeline.
+- `src/langslice/nonlinear/` -- generative-image registration: candidate
+  generation, image provider adapters, Elastix runtime, optional ADK review,
+  affine/nonlinear result types, and the silhouette-based `quick_affine`
+  preview.
+
+The remaining top-level modules are shared by both:
+
+- `src/langslice/atlas/` -- BrainGlobe atlas loading, slice extraction, and
+  colored region maps.
+- `src/langslice/space.py` -- coordinate and orientation conventions.
+- `src/langslice/image_prep.py` -- image normalization, metadata detection, and downsampling.
+- `src/langslice/export.py` -- QUINT/ABBA-compatible JSON export.
+- `src/langslice/providers/` -- Gemini and OpenAI-compatible model configuration.
+- `src/langslice/adk/` -- ADK plugins, model resolution, and SDK helpers.
+- `src/langslice/api/` -- Pydantic engine contract, runtime wrappers, and the
+  stdio service used by non-Python clients.
+- `src/langslice/cli.py` -- the `langslice` command.
+
+## Where The Methods Fit
+
+`linear` and `nonlinear` can be used separately. `nonlinear` takes a slice
+position as input and does not care where that position came from, so it can
+follow `langslice linear estimate` or a placement made in another tool. In
+QUINT/ABBA-style workflows, linear placement happens first in the host tool and
+LangSlice-nonlinear stands in for the manual spline/BigWarp deformation step.
 
 ## Engine Contract
 
-The Python harness is the source of truth for LangSlice runtime behavior. The
-engine contract is defined with Pydantic models in `src/langslice_harness/api/models.py`;
-frontend TypeScript types for the fields each client actually uses are hand-maintained
-alongside them (see `tauri-gui/src/lib/types.ts`, `web-demo/src/lib/types.ts`).
+The Python package is the source of truth for LangSlice runtime behavior. The
+engine contract is defined with Pydantic models in `src/langslice/api/models.py`.
 
 `langslice serve --stdio` runs the newline-delimited JSON engine service. It
 accepts request envelopes such as `version`, `estimate.run`, `register.run`,
 `quick_affine.run`, and `export.run`, emits progress/log event envelopes, and
 returns either result or error envelopes.
 
-## Position Estimation
+## Linear: Position Estimation
 
 Single-slice and group position estimation run through ADK. The agent can fetch atlas
 images and must submit a structured estimate. Native Gemini requests can use the
 File API for target images, and a persistent multimodal plugin keeps fetched
-atlas images visible across turns. This is the only estimation path -- there is
-no image-gen sweep/zoom alternative -- and it supports all planes (coronal,
-sagittal, horizontal), unlike the removed image-gen estimator which was
-coronal-only.
+atlas images visible across turns. This is the only estimation path, and it
+supports all planes (coronal, sagittal, horizontal).
 
-## Image-Gen Registration
+## Linear: Whole-Brain Estimation
+
+Whole-brain estimation discovers a folder of slices, estimates anchor slices with
+the tool-use estimator, interpolates positions for non-anchor slices, estimates
+each non-anchor slice independently over the full atlas range with the same
+tool-use estimator, and fits a constrained monotonic position curve.
+
+## Nonlinear: Image-Gen Registration
 
 Registration has one active method: image-gen registration.
 
@@ -53,27 +76,6 @@ Registration has one active method: image-gen registration.
 
 Direct mode returns the first candidate. Agentic mode lets an ADK review agent
 inspect up to three candidates before confirming one.
-
-## Whole-Brain Estimation
-
-Whole-brain estimation discovers a folder of slices, estimates anchor slices with
-the tool-use estimator, interpolates positions for non-anchor slices, estimates
-each non-anchor slice independently over the full atlas range with the same
-tool-use estimator, and fits a constrained monotonic position curve.
-
-## Desktop App
-
-`tauri-gui/` contains the Rust backend and React frontend. The GUI invokes the
-Python engine protocol for position estimation, registration, and quick-affine
-preview. Export remains on the legacy `langslice register --out ...` path until
-the engine contract grows an affine-aware export request. The Rust side handles
-atlas loading, reslicing, mesh serving, image thumbnails, and process lifecycle.
-
-## Web Demo
-
-`web-demo/` is a static browser demo with a deliberately limited runtime. It
-keeps generated TypeScript engine contract types and declares the subset of
-engine methods it supports, but Python remains the canonical runtime.
 
 ## Debugging
 

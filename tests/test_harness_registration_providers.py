@@ -8,11 +8,11 @@ from typing import Any, cast
 import pytest
 from PIL import Image
 
-from langslice_harness.harness.registration.types import GeneratedSegmentation
+from langslice.nonlinear.types import GeneratedSegmentation
 
 
 def _providers():
-    from langslice_harness.harness.registration import providers
+    from langslice.nonlinear import providers
 
     return providers
 

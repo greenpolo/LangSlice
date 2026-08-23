@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from langslice_harness.harness.estimation.trace_collection import (
+from langslice.linear.trace_collection import (
     AgentTraceRecorder,
     categorize_trace,
     collect_manifest_traces,
@@ -249,7 +249,7 @@ def test_agent_trace_recorder_captures_tool_results_without_private_parts():
 def test_collect_manifest_traces_writes_raw_sft_and_summary(tmp_path: Path):
     from PIL import Image
 
-    from langslice_harness.harness.estimation._types import PositionResult
+    from langslice.linear._types import PositionResult
 
     image_path = tmp_path / "slice.png"
     Image.new("RGB", (24, 24), color=128).save(image_path)
@@ -324,7 +324,7 @@ def test_collect_manifest_traces_writes_raw_sft_and_summary(tmp_path: Path):
 def test_runner_sessions_accept_trace_collection_kwargs():
     import inspect
 
-    from langslice_harness.harness.estimation.runner import (
+    from langslice.linear.runner import (
         run_group_session,
         run_single_slice_session,
     )

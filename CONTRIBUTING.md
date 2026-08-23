@@ -19,11 +19,13 @@ For pipeline questions and discussion with the broader community, the
 ```bash
 git clone https://github.com/greenpolo/LangSlice.git
 cd LangSlice
-python -m venv .venv
-.venv/Scripts/activate          # Windows
-# source .venv/bin/activate     # macOS / Linux
-pip install -e ".[dev]"
+uv venv --python 3.11 .venv
+source .venv/bin/activate       # macOS / Linux
+# .venv\Scripts\activate        # Windows
+uv pip install -e ".[dev]"
 ```
+
+Plain `python -m venv .venv` + `pip install -e ".[dev]"` works too.
 
 ## Verifying changes
 
@@ -33,11 +35,8 @@ Before opening a PR, please run:
 python -m ruff check .
 python -m basedpyright
 python -m pytest
-python -m langslice_harness version
+python -m langslice version
 ```
-
-If you change the desktop GUI, also run `pnpm build` from `tauri-gui/`
-and `cargo check` from `tauri-gui/src-tauri/`.
 
 ## Pull requests
 

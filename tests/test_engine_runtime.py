@@ -7,21 +7,21 @@ from types import SimpleNamespace
 import pytest
 from PIL import Image
 
-from langslice_harness.api import runtime
-from langslice_harness.api.models import EstimateRequest, RegisterRequest
+from langslice.api import runtime
+from langslice.api.models import EstimateRequest, RegisterRequest
 
 
 def _stub_image_prep(monkeypatch) -> None:  # noqa: ANN001
     monkeypatch.setattr("PIL.Image.open", lambda _p: Image.new("RGB", (32, 24), "white"))
-    monkeypatch.setattr("langslice_harness.image_prep.normalize_image", lambda img: img)
+    monkeypatch.setattr("langslice.image_prep.normalize_image", lambda img: img)
     monkeypatch.setattr(
-        "langslice_harness.image_prep.prepare_image_for_vlm",
+        "langslice.image_prep.prepare_image_for_vlm",
         lambda img, **_kwargs: SimpleNamespace(image=img),
     )
 
 
 def _stub_vlm_mutators(monkeypatch) -> None:  # noqa: ANN001
-    import langslice_harness.vlm_config as vlm_config
+    import langslice.providers.vlm_config as vlm_config
 
     def set_temp(value: float) -> None:
         vlm_config.TEMPERATURE = value
@@ -29,13 +29,13 @@ def _stub_vlm_mutators(monkeypatch) -> None:  # noqa: ANN001
     def set_thinking(value: str) -> None:
         vlm_config.THINKING_LEVEL = value
 
-    monkeypatch.setattr("langslice_harness.vlm_config.set_temperature", set_temp)
-    monkeypatch.setattr("langslice_harness.vlm_config.set_thinking_level", set_thinking)
+    monkeypatch.setattr("langslice.providers.vlm_config.set_temperature", set_temp)
+    monkeypatch.setattr("langslice.providers.vlm_config.set_thinking_level", set_thinking)
 
 
 def test_run_register_surfaces_artifact_paths_from_metadata(monkeypatch) -> None:  # noqa: ANN001
     _stub_image_prep(monkeypatch)
-    monkeypatch.setattr("langslice_harness.vlm_config.MODEL_NAME", "fake-model")
+    monkeypatch.setattr("langslice.providers.vlm_config.MODEL_NAME", "fake-model")
 
     fake_affine = SimpleNamespace(
         rotation_deg=1.5,
@@ -51,11 +51,11 @@ def test_run_register_surfaces_artifact_paths_from_metadata(monkeypatch) -> None
     )
 
     monkeypatch.setattr(
-        "langslice_harness.registration.runtime.estimate_registration",
+        "langslice.nonlinear.runtime.estimate_registration",
         lambda **_kwargs: fake_result,
     )
     monkeypatch.setattr(
-        "langslice_harness.registration.types.annotation_session_to_dict",
+        "langslice.nonlinear.types.annotation_session_to_dict",
         lambda _session: {
             "metadata": {
                 "warped_atlas_path": "/tmp/warped_atlas.png",
@@ -88,13 +88,13 @@ def test_run_register_surfaces_artifact_paths_from_metadata(monkeypatch) -> None
 
 def test_run_estimate_tool_use_forwards_on_progress_to_estimator(monkeypatch) -> None:  # noqa: ANN001
     _stub_image_prep(monkeypatch)
-    monkeypatch.setattr("langslice_harness.vlm_config.MODEL_NAME", "fake-model")
+    monkeypatch.setattr("langslice.providers.vlm_config.MODEL_NAME", "fake-model")
 
     def fake_estimate_position(**kwargs):  # noqa: ANN003
         kwargs["on_progress"]("tool-use progress")
         return SimpleNamespace(position_mm=1.0, reasoning="ok", debug_dir=None)
 
-    monkeypatch.setattr("langslice_harness.estimation.estimate_position", fake_estimate_position)
+    monkeypatch.setattr("langslice.linear.estimate_position", fake_estimate_position)
 
     events = []
     request = EstimateRequest(
@@ -108,14 +108,14 @@ def test_run_estimate_tool_use_forwards_on_progress_to_estimator(monkeypatch) ->
 
 def test_run_estimate_restores_runtime_globals_after_success(monkeypatch) -> None:  # noqa: ANN001
     _stub_image_prep(monkeypatch)
-    monkeypatch.setattr("langslice_harness.vlm_config.MODEL_NAME", "fake-model")
-    monkeypatch.setattr("langslice_harness.vlm_config.TEMPERATURE", 0.7)
-    monkeypatch.setattr("langslice_harness.vlm_config.THINKING_LEVEL", "HIGH")
+    monkeypatch.setattr("langslice.providers.vlm_config.MODEL_NAME", "fake-model")
+    monkeypatch.setattr("langslice.providers.vlm_config.TEMPERATURE", 0.7)
+    monkeypatch.setattr("langslice.providers.vlm_config.THINKING_LEVEL", "HIGH")
     _stub_vlm_mutators(monkeypatch)
     monkeypatch.setenv("LANGSLICE_ENDPOINT", "http://prior-endpoint")
     monkeypatch.setenv("LANGSLICE_VLM_DEBUG_DIR", "prior-debug")
     monkeypatch.setattr(
-        "langslice_harness.estimation.estimate_position",
+        "langslice.linear.estimate_position",
         lambda **_kwargs: SimpleNamespace(position_mm=1.0, reasoning="ok", debug_dir=None),
     )
 
@@ -130,7 +130,7 @@ def test_run_estimate_restores_runtime_globals_after_success(monkeypatch) -> Non
     runtime.run_estimate(request)
     assert os.environ["LANGSLICE_ENDPOINT"] == "http://prior-endpoint"
     assert os.environ["LANGSLICE_VLM_DEBUG_DIR"] == "prior-debug"
-    import langslice_harness.vlm_config as vlm_config
+    import langslice.providers.vlm_config as vlm_config
 
     assert vlm_config.TEMPERATURE == 0.7
     assert vlm_config.THINKING_LEVEL == "HIGH"
@@ -138,9 +138,9 @@ def test_run_estimate_restores_runtime_globals_after_success(monkeypatch) -> Non
 
 def test_run_estimate_restores_runtime_globals_after_exception(monkeypatch) -> None:  # noqa: ANN001
     _stub_image_prep(monkeypatch)
-    monkeypatch.setattr("langslice_harness.vlm_config.MODEL_NAME", "fake-model")
-    monkeypatch.setattr("langslice_harness.vlm_config.TEMPERATURE", 0.7)
-    monkeypatch.setattr("langslice_harness.vlm_config.THINKING_LEVEL", "HIGH")
+    monkeypatch.setattr("langslice.providers.vlm_config.MODEL_NAME", "fake-model")
+    monkeypatch.setattr("langslice.providers.vlm_config.TEMPERATURE", 0.7)
+    monkeypatch.setattr("langslice.providers.vlm_config.THINKING_LEVEL", "HIGH")
     _stub_vlm_mutators(monkeypatch)
     monkeypatch.setenv("LANGSLICE_ENDPOINT", "http://prior-endpoint")
     monkeypatch.setenv("LANGSLICE_VLM_DEBUG_DIR", "prior-debug")
@@ -148,7 +148,7 @@ def test_run_estimate_restores_runtime_globals_after_exception(monkeypatch) -> N
     def boom(**_kwargs):  # noqa: ANN003
         raise RuntimeError("estimate failed")
 
-    monkeypatch.setattr("langslice_harness.estimation.estimate_position", boom)
+    monkeypatch.setattr("langslice.linear.estimate_position", boom)
     request = EstimateRequest(
         image_path="slice.png",
         atlas="allen_mouse_25um",
@@ -161,7 +161,7 @@ def test_run_estimate_restores_runtime_globals_after_exception(monkeypatch) -> N
         runtime.run_estimate(request)
     assert os.environ["LANGSLICE_ENDPOINT"] == "http://prior-endpoint"
     assert os.environ["LANGSLICE_VLM_DEBUG_DIR"] == "prior-debug"
-    import langslice_harness.vlm_config as vlm_config
+    import langslice.providers.vlm_config as vlm_config
 
     assert vlm_config.TEMPERATURE == 0.7
     assert vlm_config.THINKING_LEVEL == "HIGH"
@@ -169,18 +169,18 @@ def test_run_estimate_restores_runtime_globals_after_exception(monkeypatch) -> N
 
 def test_run_register_restores_runtime_globals_after_exception(monkeypatch) -> None:  # noqa: ANN001
     _stub_image_prep(monkeypatch)
-    monkeypatch.setattr("langslice_harness.vlm_config.MODEL_NAME", "fake-model")
-    monkeypatch.setattr("langslice_harness.vlm_config.TEMPERATURE", 0.7)
-    monkeypatch.setattr("langslice_harness.vlm_config.THINKING_LEVEL", "HIGH")
+    monkeypatch.setattr("langslice.providers.vlm_config.MODEL_NAME", "fake-model")
+    monkeypatch.setattr("langslice.providers.vlm_config.TEMPERATURE", 0.7)
+    monkeypatch.setattr("langslice.providers.vlm_config.THINKING_LEVEL", "HIGH")
     _stub_vlm_mutators(monkeypatch)
     monkeypatch.setenv("LANGSLICE_ENDPOINT", "http://prior-endpoint")
     monkeypatch.setenv("LANGSLICE_VLM_DEBUG_DIR", "prior-debug")
     monkeypatch.setattr(
-        "langslice_harness.registration.runtime.estimate_registration",
+        "langslice.nonlinear.runtime.estimate_registration",
         lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("register failed")),
     )
     monkeypatch.setattr(
-        "langslice_harness.registration.types.annotation_session_to_dict",
+        "langslice.nonlinear.types.annotation_session_to_dict",
         lambda _session: {"metadata": {}},
     )
     request = RegisterRequest(
@@ -196,7 +196,7 @@ def test_run_register_restores_runtime_globals_after_exception(monkeypatch) -> N
         runtime.run_register(request)
     assert os.environ["LANGSLICE_ENDPOINT"] == "http://prior-endpoint"
     assert os.environ["LANGSLICE_VLM_DEBUG_DIR"] == "prior-debug"
-    import langslice_harness.vlm_config as vlm_config
+    import langslice.providers.vlm_config as vlm_config
 
     assert vlm_config.TEMPERATURE == 0.7
     assert vlm_config.THINKING_LEVEL == "HIGH"
@@ -204,9 +204,9 @@ def test_run_register_restores_runtime_globals_after_exception(monkeypatch) -> N
 
 def test_run_register_restores_runtime_globals_after_success(monkeypatch) -> None:  # noqa: ANN001
     _stub_image_prep(monkeypatch)
-    monkeypatch.setattr("langslice_harness.vlm_config.MODEL_NAME", "fake-model")
-    monkeypatch.setattr("langslice_harness.vlm_config.TEMPERATURE", 0.7)
-    monkeypatch.setattr("langslice_harness.vlm_config.THINKING_LEVEL", "HIGH")
+    monkeypatch.setattr("langslice.providers.vlm_config.MODEL_NAME", "fake-model")
+    monkeypatch.setattr("langslice.providers.vlm_config.TEMPERATURE", 0.7)
+    monkeypatch.setattr("langslice.providers.vlm_config.THINKING_LEVEL", "HIGH")
     _stub_vlm_mutators(monkeypatch)
     monkeypatch.setenv("LANGSLICE_ENDPOINT", "http://prior-endpoint")
     monkeypatch.setenv("LANGSLICE_VLM_DEBUG_DIR", "prior-debug")
@@ -224,11 +224,11 @@ def test_run_register_restores_runtime_globals_after_success(monkeypatch) -> Non
         annotation_session=SimpleNamespace(metadata={}),
     )
     monkeypatch.setattr(
-        "langslice_harness.registration.runtime.estimate_registration",
+        "langslice.nonlinear.runtime.estimate_registration",
         lambda **_kwargs: fake_result,
     )
     monkeypatch.setattr(
-        "langslice_harness.registration.types.annotation_session_to_dict",
+        "langslice.nonlinear.types.annotation_session_to_dict",
         lambda _session: {"metadata": {}},
     )
 
@@ -244,7 +244,7 @@ def test_run_register_restores_runtime_globals_after_success(monkeypatch) -> Non
     runtime.run_register(request)
     assert os.environ["LANGSLICE_ENDPOINT"] == "http://prior-endpoint"
     assert os.environ["LANGSLICE_VLM_DEBUG_DIR"] == "prior-debug"
-    import langslice_harness.vlm_config as vlm_config
+    import langslice.providers.vlm_config as vlm_config
 
     assert vlm_config.TEMPERATURE == 0.7
     assert vlm_config.THINKING_LEVEL == "HIGH"
@@ -253,16 +253,16 @@ def test_run_register_restores_runtime_globals_after_success(monkeypatch) -> Non
 def test_run_estimate_never_imports_image_gen_module(monkeypatch) -> None:  # noqa: ANN001
     """The image-gen estimation module is gone; estimate always uses tool-use."""
     _stub_image_prep(monkeypatch)
-    monkeypatch.setattr("langslice_harness.vlm_config.MODEL_NAME", "fake-model")
+    monkeypatch.setattr("langslice.providers.vlm_config.MODEL_NAME", "fake-model")
     monkeypatch.setattr(
-        "langslice_harness.estimation.estimate_position",
+        "langslice.linear.estimate_position",
         lambda **_kwargs: SimpleNamespace(position_mm=1.0, reasoning="ok", debug_dir=None),
     )
 
     original_import = builtins.__import__
 
     def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):  # noqa: ANN001, A002
-        if name == "langslice_harness.harness.estimation.image_gen":
+        if name == "langslice.linear.image_gen":
             raise AssertionError("image_gen module no longer exists")
         return original_import(name, globals, locals, fromlist, level)
 

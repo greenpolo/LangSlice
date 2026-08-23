@@ -50,15 +50,26 @@ conda env create -f environment.yml
 conda activate langslice
 pip install -e .
 cp .env.example .env  # add AI Studio / Vertex / OpenAI keys
+
+# Optional: pre-download an atlas (~500 MB) into ~/.brainglobe/
+python -c "from brainglobe_atlasapi import BrainGlobeAtlas; BrainGlobeAtlas('allen_mouse_25um')"
 ```
+
+The CLI is grouped by method — `linear` for position estimation and affine
+anchoring, `nonlinear` for generative-image registration:
 
 ```bash
-# Position estimation
-langslice estimate slice.png
+# Linear: position estimation
+langslice linear estimate slice.png
 
-# End-to-end registration at a known atlas position
-langslice register slice.png --position 3.9
+# Nonlinear: registration at a known atlas position
+langslice nonlinear register slice.png --position 3.9
 ```
+
+The two are independent. `nonlinear register` takes the position as an
+argument, so it can follow `langslice linear estimate` or a placement made in
+another tool — in QUINT/ABBA-style workflows it stands in for the manual
+spline/BigWarp deformation step.
 
 Full CLI: `langslice --help`. Pipeline detail: [`docs/index.md`](./docs/index.md).
 
@@ -81,7 +92,6 @@ Public model-card metadata for the released variant is in
 - [**Documentation**](https://langslice.readthedocs.io) — full pipeline + harness internals
 - [**langslice-gemma-4-E4B**](https://huggingface.co/greenpolo/langslice-gemma-4-E4B) — the v1.0 fine-tune
 - [**SliceBench**](./slicebench) — self-contained position-estimation benchmark
-- [`tauri-gui/`](./tauri-gui) — desktop app
 
 ## Citation
 

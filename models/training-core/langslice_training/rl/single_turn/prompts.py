@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from langslice_harness.harness.estimation.prompts import build_single_slice_prompt
+from langslice.linear.prompts import build_single_slice_prompt
 
 Plane = Literal["coronal", "sagittal", "horizontal"]
 

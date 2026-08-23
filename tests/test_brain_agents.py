@@ -5,14 +5,14 @@ from unittest.mock import patch
 
 from PIL import Image
 
-from langslice_harness.estimation import APResult
-from langslice_harness.whole_brain.estimation_agents import (
+from langslice.linear import APResult
+from langslice.linear.whole_brain.estimation_agents import (
     run_anchor_estimation,
     run_slice_estimation,
 )
 
 _FAKE_IMAGE = Image.new("RGB", (64, 64), (128, 128, 128))
-_ESTIMATION_AGENTS = "langslice_harness.whole_brain.estimation_agents"
+_ESTIMATION_AGENTS = "langslice.linear.whole_brain.estimation_agents"
 
 
 def test_run_anchor_estimation_default_model_none():

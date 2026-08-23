@@ -18,24 +18,24 @@ from typing import Any
 
 from PIL import Image
 
-# langslice_harness lives at <repo>/src — make it importable even when this
+# langslice lives at <repo>/src — make it importable even when this
 # module is imported from outside the repo's src/ directory. pytest already
 # injects `src` via pyproject.toml::tool.pytest.ini_options.pythonpath, so
 # this is defensive for direct script invocation.
 # parents[0]=renderers, parents[1]=langslice_traces, parents[2]=training,
 # parents[3]=langslice-gemma-4, parents[4]=models, parents[5]=repo root.
 _REPO_SRC = Path(__file__).resolve().parents[5] / "src"
-assert _REPO_SRC.name == "src" and (_REPO_SRC / "langslice_harness").is_dir(), _REPO_SRC
+assert _REPO_SRC.name == "src" and (_REPO_SRC / "langslice").is_dir(), _REPO_SRC
 if str(_REPO_SRC) not in sys.path:
     sys.path.insert(0, str(_REPO_SRC))
 
-from langslice_harness.atlas.core import (  # noqa: E402
+from langslice.atlas.core import (  # noqa: E402
     get_position_range_mm,
     load_atlas,
     species_from_atlas_name,
 )
-from langslice_harness.atlas.space import Plane  # noqa: E402
-from langslice_harness.harness.estimation.prompts import build_single_slice_prompt  # noqa: E402
+from langslice.space import Plane  # noqa: E402
+from langslice.linear.prompts import build_single_slice_prompt  # noqa: E402
 
 
 @dataclass(frozen=True)

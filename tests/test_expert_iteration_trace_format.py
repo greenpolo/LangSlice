@@ -2,7 +2,7 @@
 
 Uses a small mocked ADK event log fixture and on-disk dummy atlas image
 artifacts; does NOT require the model or live atlas data. We do touch
-``langslice_harness.atlas.core.load_atlas`` indirectly (via plane_tolerance_mm
+``langslice.atlas.core.load_atlas`` indirectly (via plane_tolerance_mm
 + get_in_plane_long_edge), so the BrainGlobe atlas registry must resolve
 ``allen_mouse_25um`` — that's a project invariant; the same atlas is used
 across the SFT/RLVR test suites.

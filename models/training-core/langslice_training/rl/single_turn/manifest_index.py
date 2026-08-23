@@ -109,7 +109,7 @@ def _load_qc_app_module() -> Any:
         repo_root = here.parents[0]
     qc_app_path = _resolve_qc_app_path(repo_root)
 
-    # Make sure ``langslice_harness`` (used by the QC app at import time) is
+    # Make sure ``langslice`` (used by the QC app at import time) is
     # importable; the canonical layout puts it under ``<repo>/src``.
     src_dir = repo_root / "src"
     if str(src_dir) not in sys.path:

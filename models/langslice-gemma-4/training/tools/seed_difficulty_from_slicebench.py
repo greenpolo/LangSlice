@@ -127,7 +127,7 @@ _ATLAS_EXTENT_CACHE: dict[tuple[str, str], float] = {}
 def _axis_extent_mm(atlas_name: str, plane: str) -> float:
     """Return ``pos_hi - pos_lo`` for ``(atlas, plane)``, cached.
 
-    Lazy-imports ``langslice_harness.atlas.core`` so unit tests can monkeypatch
+    Lazy-imports ``langslice.atlas.core`` so unit tests can monkeypatch
     this function without needing a BrainGlobe atlas on disk.
     """
     key = (atlas_name, plane)
@@ -138,7 +138,7 @@ def _axis_extent_mm(atlas_name: str, plane: str) -> float:
     # have BrainGlobe atlases on disk (mirrors the pattern used by
     # ``single_turn_rl.terminal_states._atlas_valid_range_mm`` and
     # ``curriculum.bins._plane_extent_mm``).
-    from langslice_harness.atlas.core import (  # noqa: PLC0415
+    from langslice.atlas.core import (  # noqa: PLC0415
         get_position_range_mm,
         load_atlas,
     )

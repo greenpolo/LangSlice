@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-import langslice_harness.vlm_config as vlm_config
+import langslice.providers.vlm_config as vlm_config
 
 
 def test_set_temperature_updates_runtime_value() -> None:
@@ -32,7 +32,7 @@ def test_set_thinking_level_updates_runtime_value() -> None:
 
 
 def test_is_gemma_model_detects_gemma_4():
-    from langslice_harness.vlm_config import is_gemma_model
+    from langslice.providers.vlm_config import is_gemma_model
 
     assert is_gemma_model("gemma-4-31b-it") is True
     assert is_gemma_model("gemma-4-26b-a4b-it") is True
@@ -42,7 +42,7 @@ def test_is_gemma_model_detects_gemma_4():
 
 
 def test_build_thinking_config_gemma_maps_to_high_or_none():
-    from langslice_harness.vlm_config import build_thinking_config
+    from langslice.providers.vlm_config import build_thinking_config
 
     cfg = build_thinking_config("gemma-4-31b-it", "HIGH")
     assert cfg is not None
@@ -55,14 +55,14 @@ def test_build_thinking_config_gemma_maps_to_high_or_none():
 
 
 def test_build_thinking_config_gemini_passes_through():
-    from langslice_harness.vlm_config import build_thinking_config
+    from langslice.providers.vlm_config import build_thinking_config
 
     cfg = build_thinking_config("gemini-3-flash-preview", "LOW")
     assert cfg is not None
 
 
 def test_build_thinking_config_can_request_thought_summaries():
-    from langslice_harness.vlm_config import build_thinking_config
+    from langslice.providers.vlm_config import build_thinking_config
 
     cfg = build_thinking_config(
         "gemini-3.1-pro-preview",

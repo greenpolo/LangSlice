@@ -57,8 +57,8 @@ _route_api_key(_pre_args.api_key_var)
 
 from PIL import Image
 
-from langslice_harness.harness.estimation.runner import run_single_slice_session
-from langslice_harness.harness.estimation.trace_collection import (
+from langslice.linear.runner import run_single_slice_session
+from langslice.linear.trace_collection import (
     AgentTraceRecorder,
     estimate_cost_usd,
 )
@@ -356,7 +356,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--model", required=True,
         help=(
-            "Model identifier; resolves through langslice_harness.model_resolver. "
+            "Model identifier; resolves through langslice.model_resolver. "
             "Examples: gemini-3-flash-preview, gemma-4-31b-it, gemma-4-26b-a4b-it, "
             "litellm-proxy:<alias> (for llama.cpp)."
         ),

@@ -1,13 +1,25 @@
 # CLI usage
 
-This page describes the active CLI and Tauri GUI workflows.
+This page describes the active CLI workflows.
 
-## Position Estimation
+The CLI is grouped by method:
 
 ```bash
-langslice estimate <image> [--atlas ...] [--model ...] [--plane ...]
-langslice estimate-group <img1> <img2> ... [--interval 200] [--atlas ...]
-langslice estimate-brain <image_folder> [--atlas ...] [--anchors ...] [--model ...]
+langslice linear    {estimate, estimate-group, estimate-brain, quick-affine}
+langslice nonlinear {register}
+langslice           {version, serve, collect-traces}
+```
+
+`linear` and `nonlinear` are independent. `nonlinear register` takes a slice
+position as an argument and does not care where it came from, so it can follow
+`langslice linear estimate` or a placement made in another tool.
+
+## Linear: Position Estimation
+
+```bash
+langslice linear estimate <image> [--atlas ...] [--model ...] [--plane ...]
+langslice linear estimate-group <img1> <img2> ... [--interval 200] [--atlas ...]
+langslice linear estimate-brain <image_folder> [--atlas ...] [--anchors ...] [--model ...]
 ```
 
 Single-slice and group position estimation run through the ADK harness -- the
@@ -21,13 +33,24 @@ atlas range, and fits a constrained monotonic position curve. A single
 `--model` flag configures the model used for both anchor and non-anchor
 estimation.
 
-## Image-Gen Registration
+## Linear: Quick Affine
 
 ```bash
-langslice register <image> --position <mm> [--registration-mode direct|agentic] [--image-model ...] [--review-model ...] [--max-candidates 3] [--out ...]
+langslice linear quick-affine <image> --position <mm> [--atlas ...] [--plane ...] [--out ...]
 ```
 
-Registration has one active method: image-gen registration.
+An affine-only preview that aligns the tissue silhouette to the atlas silhouette
+at a known position. No image generation, no B-spline.
+
+## Nonlinear: Image-Gen Registration
+
+```bash
+langslice nonlinear register <image> --position <mm> [--registration-mode direct|agentic] [--image-model ...] [--review-model ...] [--max-candidates 3] [--out ...]
+```
+
+Registration has one active method: image-gen registration. In QUINT/ABBA-style
+workflows, linear placement happens in the host tool and this step stands in for
+the manual spline/BigWarp deformation.
 
 1. Load, normalize, and downsample the histology slice.
 2. Generate atlas inputs at the requested atlas position.
@@ -41,42 +64,27 @@ Modes:
 - `direct` generates one candidate and returns it.
 - `agentic` lets an ADK review agent inspect up to three candidates before confirming one.
 
-Provider routing:
+Provider routing is explicit, not inferred from the model name:
 
-- Google image models use the Google provider adapter.
-- `gpt-image-2` uses the OpenAI Images API by default.
-- Flux models use the OpenAI-compatible Images API path.
+- `--provider google` (default) uses the Google/Gemini image adapter.
+- `--provider openai` uses the OpenAI-compatible path. `--openai-image-route`
+  picks the Images API (`images`, default) or the Responses API (`responses`),
+  and `--endpoint` points it at a non-OpenAI base URL. The default
+  OpenAI-compatible image model is `gpt-image-2`.
 
-## Tauri GUI
+## Engine Service
 
-The desktop app lives in `tauri-gui/`. For position estimation, registration,
-and quick-affine preview, Rust sends one request to the Python engine service
+Non-Python clients drive the same pipeline over a newline-delimited JSON
 protocol:
 
 ```bash
 langslice serve --stdio
 ```
 
-The service streams progress/log events and returns typed JSON result or error
-envelopes. In the developer checkout, the Rust bridge uses the local `src/`
-package so the app exercises the worktree code. Export still shells out through
-the legacy `langslice register --out ... --json` path until the engine API has
-an affine-aware export request. Rust continues to handle atlas loading,
-reslicing, mesh serving, local engine management, and image thumbnail caching.
-
-## Engine Contract Artifacts
-
-The engine API is defined in Python Pydantic models and mirrored into generated
-frontend types:
-
-```bash
-python scripts/generate_engine_contract.py
-langslice schema --out docs/engine_schema.json
-```
-
-The generated TypeScript contract is written to both `tauri-gui/src/lib/` and
-`web-demo/src/lib/`. The web demo declares only its supported subset of engine
-methods.
+The service accepts `version`, `estimate.run`, `register.run`,
+`quick_affine.run`, and `export.run` request envelopes, streams progress/log
+events, and returns typed JSON result or error envelopes. The contract is
+defined by the Pydantic models in `src/langslice/api/models.py`.
 
 ## Debug And Request Capture
 

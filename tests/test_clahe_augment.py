@@ -1,7 +1,7 @@
 """Tests for the --clahe-augment-fraction training augmentation knob.
 
 CLAHE augmentation closes the train/inference preprocessing gap: production
-applies langslice_harness.image_prep.adaptive_preprocess to every slice;
+applies langslice.image_prep.adaptive_preprocess to every slice;
 training did not. The flag opt-in re-applies the same helper to a configurable
 random fraction of training rows, and forces the per-row slice image to skip
 the precomputed query embedding cache so the live SigLIP forward sees the

@@ -10,12 +10,12 @@ from typing import Any, cast
 import numpy as np
 from scipy import ndimage
 
-from langslice_harness.atlas.core import (
+from langslice.atlas.core import (
     _lookup_structure_record,
     load_atlas,
     position_mm_to_index,
 )
-from langslice_harness.atlas.space import atlas_space_context, slice_axis_index
+from langslice.space import atlas_space_context, slice_axis_index
 
 _UNAVAILABLE = "Visible clues: atlas signature unavailable."
 _DEFAULT_OFFSETS_MM = (-0.50, -0.25, 0.25, 0.50)

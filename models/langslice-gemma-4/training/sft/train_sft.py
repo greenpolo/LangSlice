@@ -123,7 +123,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=(
             "Fraction in [0.0, 1.0] of training rows that get CLAHE applied to "
             "their slice image at __getitem__ time (independent coin per call). "
-            "Mirrors production preprocessing (langslice_harness.image_prep."
+            "Mirrors production preprocessing (langslice.image_prep."
             "adaptive_preprocess) to close the train/inference preprocessing "
             "gap. CLAHE rows bypass the query embedding cache for their slice "
             "image so the live SigLIP forward sees the CLAHE'd pixels; atlas "

@@ -102,7 +102,7 @@ python slicebench/run.py --model <id> --bench {small,large} --out <dir> [--concu
 ```
 
 - `--model` — passed straight through
-  `langslice_harness.harness.estimation.model_resolver`. Native Gemini strings
+  `langslice.adk.model_resolver`. Native Gemini strings
   work directly (`gemini-3-flash-preview`); the Gemma family routes through
   the ADK `Gemma` wrapper; local llama.cpp / openrouter / ollama via their
   respective prefixes.
