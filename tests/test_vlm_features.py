@@ -20,11 +20,6 @@ def test_set_temperature_updates_runtime_value() -> None:
         vlm_config.set_temperature(original)
 
 
-def test_image_generation_model_detection() -> None:
-    assert vlm_config.is_image_generation_model("gemini-3-pro-image-preview") is True
-    assert vlm_config.is_image_generation_model("gemini-3-flash-preview") is False
-
-
 def test_set_thinking_level_updates_runtime_value() -> None:
     original = vlm_config.THINKING_LEVEL
     try:

@@ -62,15 +62,6 @@ GEMMA_MODELS: set[str] = {
     "gemma-4-26b-a4b-it",
 }
 
-IMAGE_GENERATION_MODELS: set[str] = {
-    "gemini-3-pro-image-preview",
-    "gemini-3.1-flash-image-preview",
-}
-
-IMAGE_MODEL_THINKING_MODELS: set[str] = {
-    "gemini-3.1-flash-image-preview",
-}
-
 def set_model_name(name: str) -> None:
     """Set active model name at runtime for subsequent requests."""
     _runtime.model_name = name
@@ -151,20 +142,6 @@ def build_thinking_config(
     return types_mod.ThinkingConfig(
         thinking_level=thinking_level, include_thoughts=include_thoughts
     )
-
-
-def is_image_generation_model(model_name: str | None) -> bool:
-    """Return True when *model_name* targets an image-generation Gemini model."""
-    if model_name is None:
-        return False
-    return str(model_name).strip() in IMAGE_GENERATION_MODELS
-
-
-def supports_image_model_thinking(model_name: str | None) -> bool:
-    """Return True when the image-gen model supports thinking_config."""
-    if model_name is None:
-        return False
-    return str(model_name).strip() in IMAGE_MODEL_THINKING_MODELS
 
 
 _BACKEND_AI_STUDIO = "ai_studio"

@@ -37,9 +37,11 @@ async def run_brain_estimation(
     """Main entry point: run the full whole-brain AP estimation pipeline.
 
     Phases:
-      1. Anchor estimation (3-pass nano-banana, full atlas range).
-      2. Interpolation to derive center positions for remaining slices.
-      3. Parallel estimation of all non-anchor slices (2-pass nano-banana).
+      1. Anchor estimation (tool-use agent, full atlas range).
+      2. Interpolation to derive reference positions for remaining slices.
+      3. Parallel estimation of all non-anchor slices (tool-use agent, full
+         atlas range -- interpolated positions are not used as a search
+         prior, only as an outlier reference in Phase 3.5).
       4. Isotonic regression across all estimates with spacing priors.
     """
 
@@ -90,8 +92,7 @@ async def run_brain_estimation(
                 result = await run_anchor_estimation(
                     image_path=image_paths[idx],
                     atlas_name=config.atlas_name,
-                    coarse_model=config.coarse_model,
-                    fine_model=config.fine_model,
+                    model_name=config.model,
                 )
                 return idx, result
 
@@ -142,28 +143,13 @@ async def run_brain_estimation(
     if non_anchor_indices:
         _progress(f"Phase 3: estimating {len(non_anchor_indices)} slices")
         sem = asyncio.Semaphore(config.max_parallel)
-        first_anchor_idx = anchor_indices[0]
-        last_anchor_idx = anchor_indices[-1]
 
         async def _run_estimate(idx: int) -> tuple[int, APResult]:
             async with sem:
-                edge_anchor_mm: float | None = None
-                edge_side: str | None = None
-                if slices[idx].source == "extrapolated":
-                    if idx < first_anchor_idx:
-                        edge_anchor_mm = slices[first_anchor_idx].position_mm
-                        edge_side = "leading"
-                    elif idx > last_anchor_idx:
-                        edge_anchor_mm = slices[last_anchor_idx].position_mm
-                        edge_side = "trailing"
                 result = await run_slice_estimation(
                     image_path=image_paths[idx],
                     atlas_name=config.atlas_name,
-                    center_mm=slices[idx].position_mm,
-                    atlas_range=atlas_range,
-                    edge_anchor_mm=edge_anchor_mm,
-                    edge_side=edge_side,
-                    model_name=config.fine_model,
+                    model_name=config.model,
                 )
                 return idx, result
 
@@ -188,16 +174,12 @@ async def run_brain_estimation(
         save_checkpoint(cp_path, config, slices)
         _progress(f"Phase 3 complete: {n_estimated} estimated")
 
-    # --- Phase 3.5: Re-estimate outlier slices with anchor pipeline ---
-    # Identify non-anchor slices whose Phase 3 VLM estimate deviates
-    # significantly from the Phase 2 interpolated position.  Large deviations
-    # indicate the Flash model misjudged the slice — re-estimating with the
-    # anchor pipeline (Pro model, full atlas range, 2-stage coarse+fine)
-    # produces anchor-quality accuracy for these problem slices.
-    #
-    # Unlike hyp 002 (Pro with constrained windows → mixed), this uses the
-    # FULL atlas range, which is the key factor in Pro's 4-14x anchor
-    # accuracy advantage.
+    # --- Phase 3.5: Re-estimate outlier slices ---
+    # Identify non-anchor slices whose Phase 3 estimate deviates significantly
+    # from the Phase 2 interpolated position. This is a simple retry over the
+    # full atlas range with the same model and no search prior -- it gives
+    # the estimator a second independent attempt at slices where the first
+    # pass and the interpolated position disagree by a lot.
     _OUTLIER_DEVIATION_MM = 0.4
     outlier_indices: list[int] = []
     for i in non_anchor_indices:
@@ -214,8 +196,7 @@ async def run_brain_estimation(
 
     if outlier_indices:
         _progress(
-            f"Phase 3.5: re-estimating {len(outlier_indices)} outlier slices "
-            f"with anchor pipeline (Pro model, full atlas range)"
+            f"Phase 3.5: re-estimating {len(outlier_indices)} outlier slices"
         )
         n_reestimated = 0
         for idx in outlier_indices:
@@ -230,8 +211,7 @@ async def run_brain_estimation(
                 reest = await run_anchor_estimation(
                     image_path=image_paths[idx],
                     atlas_name=config.atlas_name,
-                    coarse_model=config.coarse_model,
-                    fine_model=config.fine_model,
+                    model_name=config.model,
                 )
                 slices[idx] = SlicePosition(
                     slices[idx].filename,
@@ -294,8 +274,8 @@ def _fit_isotonic(
     monotonicity constraints (minimum spacing of *thickness_mm*).
 
     Anchor estimates receive *anchor_weight* times the data-fidelity
-    penalty of non-anchor slices, reflecting their higher reliability
-    from two-stage (coarse + fine) estimation.
+    penalty of non-anchor slices, reflecting their role as fixed reference
+    points that interpolation and outlier detection depend on.
 
     The Huber loss is quadratic for small residuals and linear for large
     ones, so accurate estimates are preserved while outliers are tamed.
@@ -321,7 +301,7 @@ def _fit_isotonic(
     if n <= 1:
         return list(slices)
 
-    # Per-slice weights: anchors are more reliable (two-stage estimation)
+    # Per-slice weights: anchors are treated as more reliable reference points
     weights = np.array(
         [anchor_weight if s.source == "anchor" else 1.0 for s in slices],
         dtype=np.float64,

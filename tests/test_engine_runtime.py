@@ -89,7 +89,6 @@ def test_run_register_surfaces_artifact_paths_from_metadata(monkeypatch) -> None
 def test_run_estimate_tool_use_forwards_on_progress_to_estimator(monkeypatch) -> None:  # noqa: ANN001
     _stub_image_prep(monkeypatch)
     monkeypatch.setattr("langslice_harness.vlm_config.MODEL_NAME", "fake-model")
-    monkeypatch.setattr("langslice_harness.vlm_config.is_image_generation_model", lambda _m: False)
 
     def fake_estimate_position(**kwargs):  # noqa: ANN003
         kwargs["on_progress"]("tool-use progress")
@@ -101,7 +100,6 @@ def test_run_estimate_tool_use_forwards_on_progress_to_estimator(monkeypatch) ->
     request = EstimateRequest(
         image_path="slice.png",
         atlas="allen_mouse_25um",
-        workflow="tool_use",
     )
     runtime.run_estimate(request, emit=events.append)
     progress_messages = [event.message for event in events if event.kind == "progress"]
@@ -113,7 +111,6 @@ def test_run_estimate_restores_runtime_globals_after_success(monkeypatch) -> Non
     monkeypatch.setattr("langslice_harness.vlm_config.MODEL_NAME", "fake-model")
     monkeypatch.setattr("langslice_harness.vlm_config.TEMPERATURE", 0.7)
     monkeypatch.setattr("langslice_harness.vlm_config.THINKING_LEVEL", "HIGH")
-    monkeypatch.setattr("langslice_harness.vlm_config.is_image_generation_model", lambda _m: False)
     _stub_vlm_mutators(monkeypatch)
     monkeypatch.setenv("LANGSLICE_ENDPOINT", "http://prior-endpoint")
     monkeypatch.setenv("LANGSLICE_VLM_DEBUG_DIR", "prior-debug")
@@ -125,7 +122,6 @@ def test_run_estimate_restores_runtime_globals_after_success(monkeypatch) -> Non
     request = EstimateRequest(
         image_path="slice.png",
         atlas="allen_mouse_25um",
-        workflow="tool_use",
         endpoint="http://new-endpoint",
         output_dir="new-debug",
         temperature=0.1,
@@ -145,7 +141,6 @@ def test_run_estimate_restores_runtime_globals_after_exception(monkeypatch) -> N
     monkeypatch.setattr("langslice_harness.vlm_config.MODEL_NAME", "fake-model")
     monkeypatch.setattr("langslice_harness.vlm_config.TEMPERATURE", 0.7)
     monkeypatch.setattr("langslice_harness.vlm_config.THINKING_LEVEL", "HIGH")
-    monkeypatch.setattr("langslice_harness.vlm_config.is_image_generation_model", lambda _m: False)
     _stub_vlm_mutators(monkeypatch)
     monkeypatch.setenv("LANGSLICE_ENDPOINT", "http://prior-endpoint")
     monkeypatch.setenv("LANGSLICE_VLM_DEBUG_DIR", "prior-debug")
@@ -157,7 +152,6 @@ def test_run_estimate_restores_runtime_globals_after_exception(monkeypatch) -> N
     request = EstimateRequest(
         image_path="slice.png",
         atlas="allen_mouse_25um",
-        workflow="tool_use",
         endpoint="http://new-endpoint",
         output_dir="new-debug",
         temperature=0.1,
@@ -256,10 +250,10 @@ def test_run_register_restores_runtime_globals_after_success(monkeypatch) -> Non
     assert vlm_config.THINKING_LEVEL == "HIGH"
 
 
-def test_run_estimate_tool_use_does_not_import_image_gen_module(monkeypatch) -> None:  # noqa: ANN001
+def test_run_estimate_never_imports_image_gen_module(monkeypatch) -> None:  # noqa: ANN001
+    """The image-gen estimation module is gone; estimate always uses tool-use."""
     _stub_image_prep(monkeypatch)
     monkeypatch.setattr("langslice_harness.vlm_config.MODEL_NAME", "fake-model")
-    monkeypatch.setattr("langslice_harness.vlm_config.is_image_generation_model", lambda _m: False)
     monkeypatch.setattr(
         "langslice_harness.estimation.estimate_position",
         lambda **_kwargs: SimpleNamespace(position_mm=1.0, reasoning="ok", debug_dir=None),
@@ -269,14 +263,13 @@ def test_run_estimate_tool_use_does_not_import_image_gen_module(monkeypatch) -> 
 
     def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):  # noqa: ANN001, A002
         if name == "langslice_harness.harness.estimation.image_gen":
-            raise AssertionError("image_gen import should not happen in tool_use workflow")
+            raise AssertionError("image_gen module no longer exists")
         return original_import(name, globals, locals, fromlist, level)
 
     monkeypatch.setattr(builtins, "__import__", guarded_import)
     request = EstimateRequest(
         image_path="slice.png",
         atlas="allen_mouse_25um",
-        workflow="tool_use",
     )
     result = runtime.run_estimate(request)
     assert result.position_mm == 1.0

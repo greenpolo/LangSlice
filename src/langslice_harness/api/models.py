@@ -9,7 +9,6 @@ from pydantic import BaseModel, ConfigDict, Field
 Plane = Literal["coronal", "sagittal", "horizontal"]
 Provider = Literal["google", "openai"]
 PreprocessMode = Literal["none", "auto"]
-Workflow = Literal["tool_use", "image_gen"]
 EngineMethod = Literal[
     "version",
     "estimate.run",
@@ -91,9 +90,6 @@ class EstimateRequest(EngineBaseModel):
     provider: Provider = "google"
     endpoint: str | None = None
     output_dir: str | None = None
-    workflow: Workflow | None = None
-    show_borders: bool = False
-    grid: bool = False
 
 
 class EstimateResult(EngineBaseModel):

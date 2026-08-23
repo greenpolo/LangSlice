@@ -17,8 +17,7 @@ class BrainEstimationConfig:
     n_anchors: int
     max_parallel: int
     z_axis: str  # "AP" | "PA"
-    coarse_model: str | None = None  # Model for anchor estimation (full range)
-    fine_model: str | None = None  # Model for non-anchor estimation (windowed)
+    model: str | None = None  # Model for both anchor and non-anchor estimation
 
     @property
     def thickness_mm(self) -> float:

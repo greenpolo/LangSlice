@@ -5,18 +5,21 @@ This page describes the active CLI and Tauri GUI workflows.
 ## Position Estimation
 
 ```bash
-langslice estimate <image> [--atlas ...] [--model ...] [--workflow ...]
+langslice estimate <image> [--atlas ...] [--model ...] [--plane ...]
 langslice estimate-group <img1> <img2> ... [--interval 200] [--atlas ...]
-langslice estimate-brain <image_folder> [--atlas ...] [--anchors ...]
+langslice estimate-brain <image_folder> [--atlas ...] [--anchors ...] [--model ...]
 ```
 
-Single-slice and group position estimation run through the ADK harness. The agent
-surface is intentionally small: `fetch_atlas`, `submit_estimate`, and
-`submit_group_estimate`.
+Single-slice and group position estimation run through the ADK harness -- the
+only estimation path. The agent surface is intentionally small: `fetch_atlas`,
+`submit_estimate`, and `submit_group_estimate`.
 
-Whole-brain estimation discovers a folder of slices, estimates anchor slices,
-interpolates center positions, runs windowed image-gen estimation for the
-remaining slices, and fits a constrained monotonic position curve.
+Whole-brain estimation discovers a folder of slices, estimates anchor slices
+with the tool-use estimator, interpolates center positions, estimates the
+remaining slices independently with the same tool-use estimator over the full
+atlas range, and fits a constrained monotonic position curve. A single
+`--model` flag configures the model used for both anchor and non-anchor
+estimation.
 
 ## Image-Gen Registration
 

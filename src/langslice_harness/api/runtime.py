@@ -109,51 +109,24 @@ def run_estimate(request: EstimateRequest, emit: EngineEmit | None = None) -> Es
             if request.thinking is not None:
                 vlm_config.set_thinking_level(request.thinking)
 
-        workflow = request.workflow
-        if workflow is None:
-            workflow = (
-                "image_gen"
-                if request.provider == "google" and vlm_config.is_image_generation_model(model_name)
-                else "tool_use"
-            )
-
-        _log(emit, f"Running estimate workflow={workflow} provider={request.provider}")
+        _log(emit, f"Running estimate provider={request.provider}")
 
         def on_progress(message: str) -> None:
             _progress(emit, message, stage="estimate")
 
-        if workflow == "image_gen":
-            if request.provider != "google":
-                raise ValueError("image_gen workflow is only available for google provider")
-            if request.plane != "coronal":
-                raise ValueError("image_gen workflow currently supports only coronal plane")
-            from langslice_harness.harness.estimation.image_gen import estimate_position_image_gen
-
-            result = estimate_position_image_gen(
-                image=image,
-                atlas_name=request.atlas,
-                on_progress=on_progress,
-                model_name=model_name,
-                debug_dir=debug_dir,
-                show_borders=request.show_borders,
-                send_individually=not request.grid,
-            )
-        else:
-            result = estimate_position(
-                image=image,
-                atlas_name=request.atlas,
-                plane=request.plane,
-                on_progress=on_progress,
-                model_name=model_name,
-                max_iterations=request.max_iterations,
-                media_resolution=request.media_resolution,
-                thinking=request.thinking,
-                temperature=request.temperature,
-                apply_clahe=False,
-                debug_dir=debug_dir,
-                show_borders=request.show_borders,
-                send_individually=not request.grid,
-            )
+        result = estimate_position(
+            image=image,
+            atlas_name=request.atlas,
+            plane=request.plane,
+            on_progress=on_progress,
+            model_name=model_name,
+            max_iterations=request.max_iterations,
+            media_resolution=request.media_resolution,
+            thinking=request.thinking,
+            temperature=request.temperature,
+            apply_clahe=False,
+            debug_dir=debug_dir,
+        )
 
         return EstimateResult(
             position_mm=float(result.position_mm),
