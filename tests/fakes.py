@@ -51,13 +51,93 @@ class EllipseAtlas:
     resolution = (1000.0, 1000.0, 1000.0)
     metadata = {"species": "mouse"}
 
+    #: Id of the one structure the ellipse is made of.
+    BODY_ID = 2
+
+    #: A two-node structure tree, so the whole-brain end-anchor gate has
+    #: something to resolve ``EL`` against.
+    structures = {
+        1: {"id": 1, "acronym": "root", "name": "root", "structure_id_path": [1]},
+        BODY_ID: {
+            "id": BODY_ID,
+            "acronym": "EL",
+            "name": "Ellipse body",
+            "structure_id_path": [1, BODY_ID],
+        },
+    }
+
     def __init__(
         self, *, height: int = 96, width: int = 128, axes: tuple[int, int] = (46, 30)
     ):
         plane = np.zeros((height, width), dtype=np.uint8)
-        cv2.ellipse(plane, (width // 2, height // 2), axes, 0, 0, 360, 1, -1)
+        cv2.ellipse(
+            plane, (width // 2, height // 2), axes, 0, 0, 360, self.BODY_ID, -1
+        )
         self.annotation = np.repeat(plane[None, :, :], 20, axis=0)
-        self.reference = self.annotation * 200
+        self.reference = (self.annotation > 0).astype(np.uint8) * 200
+
+
+class SlabAtlas:
+    """A 20-slice, 1 mm-per-voxel atlas whose structures sit in known slabs.
+
+    The landmark helpers read the annotation volume and the structure tree and
+    nothing else, so this is the whole world they need: a ``root`` shell of
+    tissue on every slice plus three structures occupying known index ranges,
+    two of them siblings under one parent so descendant roll-up has something
+    to roll up.
+
+    Names are deliberately generic — nothing in ``langslice.atlas.landmarks``
+    may special-case an acronym.
+
+    ``annotation`` counts its reads so tests can prove the presence scan is
+    cached.
+    """
+
+    atlas_name = "fake_slab_1mm"
+    orientation = "asr"
+    resolution = (1000.0, 1000.0, 1000.0)
+    metadata = {"species": "mouse"}
+
+    #: id, acronym, name, structure_id_path, first index, last index, rows
+    LAYOUT = (
+        (3, "FA", "Forebrain area A", (1, 2, 3), 2, 6, (3, 5)),
+        (4, "FB", "Forebrain area B", (1, 2, 4), 5, 9, (5, 9)),
+        (5, "HB", "Hindbrain", (1, 5), 12, 18, (3, 8)),
+    )
+    #: Structures with no voxels of their own, to exercise roll-up.
+    CONTAINERS = ((1, "root", "root", (1,)), (2, "FOR", "Forebrain", (1, 2)))
+
+    def __init__(self, *, n_slices: int = 20, height: int = 12, width: int = 16):
+        annotation = np.zeros((n_slices, height, width), dtype=np.int32)
+        annotation[:, 2 : height - 2, 2 : width - 2] = 1  # tissue on every slice
+        for sid, _, _, _, first, last, (row0, row1) in self.LAYOUT:
+            annotation[first : last + 1, row0:row1, 3 : width - 3] = sid
+        self._annotation = annotation
+        self.reference = (annotation > 0).astype(np.uint8) * 200
+        self.structures: dict[int, dict[str, Any]] = {
+            sid: {
+                "id": sid,
+                "acronym": acronym,
+                "name": name,
+                "structure_id_path": list(path),
+                "rgb_triplet": [128, 128, 128],
+            }
+            for sid, acronym, name, path in self.CONTAINERS
+        }
+        for sid, acronym, name, path, *_ in self.LAYOUT:
+            self.structures[sid] = {
+                "id": sid,
+                "acronym": acronym,
+                "name": name,
+                "structure_id_path": list(path),
+                "rgb_triplet": [200, 100, 50],
+            }
+        self.annotation_reads = 0
+
+    @property
+    def annotation(self) -> np.ndarray:
+        self.annotation_reads += 1
+        return self._annotation
 
 
 def ellipse_section(
@@ -147,10 +227,13 @@ class _CleanStackLlm(BaseLlm):
 
     ``positions`` (id -> mm) is the positioning step's script: the stack now
     reaches that step unplaced, so the fake writes those positions with
-    ``set_positions`` on its first turn and submits on the next.
+    ``set_positions`` on its first turn and submits on the next. The end
+    anchors ``submit_positions`` requires are derived from the same dict — its
+    first and last ids — naming ``anchor_structure``.
     """
 
     positions: dict[str, float] | None = None
+    anchor_structure: str = "EL"
 
     async def generate_content_async(
         self, llm_request: LlmRequest, stream: bool = False
@@ -175,10 +258,15 @@ class _CleanStackLlm(BaseLlm):
             name = next(
                 (tool for tool in _CLEAN_STACK_SUBMISSIONS if tool in available), None
             )
+            args = dict(_CLEAN_STACK_SUBMISSIONS[name]) if name is not None else {}
+            if name == "submit_positions":
+                ids = list(self.positions or {})
+                args["end_anchors"] = [
+                    {"id": slice_id, "structure": self.anchor_structure, "note": "seen"}
+                    for slice_id in (dict.fromkeys([ids[0], ids[-1]]) if ids else ())
+                ]
             part = (
-                types.Part.from_function_call(
-                    name=name, args=_CLEAN_STACK_SUBMISSIONS[name]
-                )
+                types.Part.from_function_call(name=name, args=args)
                 if name is not None
                 else types.Part.from_text(text="Nothing to submit.")
             )

@@ -3,6 +3,10 @@
 No live model calls: the agent step is driven by a scripted fake BaseLlm
 swapped in through ``LLMRegistry.new_llm``, and the single-slice estimation
 worker is monkeypatched.
+
+The stack is placed against ``SlabAtlas`` (tests/fakes.py) — 20 slices at
+1 mm, structures in known index ranges — because ``submit_positions`` now
+checks its end anchors against a real annotation volume.
 """
 
 import asyncio
@@ -15,6 +19,7 @@ from google.adk.models.llm_response import LlmResponse
 from google.genai import types
 from PIL import Image
 
+from langslice.atlas import landmarks
 from langslice.linear import APResult
 from langslice.linear.whole_brain.engine import build_context
 from langslice.linear.whole_brain.nodes import ingest, position
@@ -26,21 +31,26 @@ from langslice.linear.whole_brain.position import (
     interval_table,
 )
 from langslice.linear.whole_brain.state import BrainConfig, StackState
+from tests.fakes import SlabAtlas
 
 _POSITION = "langslice.linear.whole_brain.position.run_slice_estimation"
 _RANGE = {"pos_lo": 0.0, "pos_hi": 13.18}
 
+#: One instance for the module: the landmark caches key on the atlas name, and
+#: rebuilding the volume per tool call buys nothing.
+_ATLAS = SlabAtlas()
 
-class _FakeVolume:
-    shape = (528, 320, 456)
+#: A structure that exists over indices 2-6 of _ATLAS, i.e. 2.0-6.0 mm.
+_ANCHOR_STRUCTURE = "FA"
 
 
-class _FakeAtlas:
-    atlas_name = "fake_mouse_25um"
-    orientation = "asr"
-    reference = _FakeVolume()
-    resolution = (25.0, 25.0, 25.0)
-    metadata = {"species": "mouse"}
+@pytest.fixture(autouse=True)
+def _clear_landmark_caches():
+    landmarks._PRESENCE_CACHE.clear()
+    landmarks._STRUCTURE_CACHE.clear()
+    yield
+    landmarks._PRESENCE_CACHE.clear()
+    landmarks._STRUCTURE_CACHE.clear()
 
 
 class _Actions:
@@ -52,11 +62,22 @@ class _ToolContext:
         self.actions = _Actions()
 
 
+def _anchors(state: StackState, structure: str = _ANCHOR_STRUCTURE):
+    """Valid end anchors for *state*: first and last section, one structure."""
+    ordered = state.in_order()
+    return [
+        {"id": ordered[0].id, "structure": structure, "note": "seen at this end"},
+        {"id": ordered[-1].id, "structure": structure, "note": "seen at this end"},
+    ]
+
+
 def _stack(folder: Path, n: int = 6, *, placed: bool = True, **kwargs):
     """An ingested stack, optionally with a ladder of positions already on it.
 
     The unplaced form (``placed=False``) is what the positioning step actually
-    receives now: the seed node no longer places anything.
+    receives now: the seed node no longer places anything. When placed, every
+    section sits inside ``_ANCHOR_STRUCTURE``'s span so the end-anchor gate
+    passes by default and each test can break exactly one thing.
     """
     for index in range(n):
         Image.new("RGB", (40, 30), (10 * index, 60, 120)).save(
@@ -65,13 +86,13 @@ def _stack(folder: Path, n: int = 6, *, placed: bool = True, **kwargs):
     ctx = build_context(
         BrainConfig(image_folder=str(folder), **kwargs),
         emit=lambda _m: None,
-        atlas_loader=lambda _name: _FakeAtlas(),
+        atlas_loader=lambda _name: _ATLAS,
     )
     state = StackState()
     asyncio.run(ingest(state, ctx))
     if placed:
         for index, record in enumerate(state.in_order()):
-            record.position_mm = 1.0 + 0.5 * index
+            record.position_mm = 2.0 + 0.5 * index
             record.position_source = "refined"
     return state, ctx
 
@@ -113,12 +134,58 @@ def test_set_positions_writes_a_batch_and_returns_the_interval_table(tmp_path: P
     assert first.confidence == "high"
     # An untouched section keeps whatever position it already had.
     second = state.by_id("slice_02.png")
-    assert second is not None and second.position_mm == pytest.approx(2.0)
+    assert second is not None and second.position_mm == pytest.approx(3.0)
 
     table = result["interval_table"]
-    assert [row["id"] for row in table] == [s.id for s in state.in_order()]
-    assert table[0]["delta_to_next_mm"] == pytest.approx(0.3)
-    assert table[-1]["delta_to_next_mm"] is None
+    rows = table["rows"]
+    assert [row["id"] for row in rows] == [s.id for s in state.in_order()]
+    assert rows[0]["delta_to_next_mm"] == pytest.approx(0.3)
+    assert rows[-1]["delta_to_next_mm"] is None
+
+
+def test_interval_table_reports_the_implied_interval_beside_the_nominal(
+    tmp_path: Path,
+):
+    """The nominal is the protocol; the implied is what the positions say."""
+    state, _ctx = _stack(tmp_path, n=5)
+    for index, record in enumerate(state.in_order()):
+        record.position_mm = 2.0 + 0.3 * index  # realized spacing > nominal 0.2
+
+    table = interval_table(state)
+
+    assert table["nominal_interval_mm"] == pytest.approx(0.2)
+    assert table["implied_interval_mm"] == pytest.approx(0.3)
+    assert table["implied_by_stretch"] == [
+        {
+            "from_index": 0,
+            "to_index": 4,
+            "sections": 5,
+            "implied_interval_mm": pytest.approx(0.3),
+        }
+    ]
+    assert "LARGER" in table["legend"]
+
+
+def test_interval_table_reports_each_placed_stretch_separately(tmp_path: Path):
+    state, _ctx = _stack(tmp_path, n=6)
+    for index, record in enumerate(state.in_order()):
+        record.position_mm = 2.0 + 0.3 * index
+    state.in_order()[2].position_mm = None  # split the stack in two
+
+    stretches = interval_table(state)["implied_by_stretch"]
+
+    assert [(s["from_index"], s["to_index"]) for s in stretches] == [(0, 1), (3, 5)]
+    assert all(s["implied_interval_mm"] == pytest.approx(0.3) for s in stretches)
+
+
+def test_interval_table_has_no_implied_interval_without_positions(tmp_path: Path):
+    state, _ctx = _stack(tmp_path, placed=False)
+
+    table = interval_table(state)
+
+    assert table["implied_interval_mm"] is None
+    assert table["implied_by_stretch"] == []
+    assert table["nominal_interval_mm"] == pytest.approx(0.2)
 
 
 def test_set_positions_clamps_out_of_range_values(tmp_path: Path):
@@ -186,13 +253,13 @@ def test_estimate_slices_reports_a_batch_without_writing(tmp_path: Path, monkeyp
     estimates = {entry["id"]: entry for entry in result["estimates"]}
     assert estimates["slice_03.png"]["position_mm"] == pytest.approx(7.5)
     assert "slice_03.png" in estimates["slice_03.png"]["reasoning"]
-    assert estimates["slice_03.png"]["current_position_mm"] == pytest.approx(2.5)
+    assert estimates["slice_03.png"]["current_position_mm"] == pytest.approx(3.5)
     assert "Nothing was written" in result["note"]
 
     # Not written: the agent judges the numbers, then calls set_positions.
     record = state.by_id("slice_03.png")
     assert record is not None
-    assert record.position_mm == pytest.approx(2.5)
+    assert record.position_mm == pytest.approx(3.5)
 
 
 def test_estimate_slices_caps_the_batch(tmp_path: Path, monkeypatch):
@@ -267,12 +334,46 @@ def test_interpolate_between_suggests_without_writing(tmp_path: Path):
     assert rows["slice_03.png"]["position_mm"] == pytest.approx(3.0)
     assert rows["slice_01.png"]["source"] == "fixed"
     assert rows["slice_02.png"]["source"] == "interpolated"
-    # Outside them it steps by the nominal interval.
-    assert rows["slice_00.png"]["position_mm"] == pytest.approx(1.8)
-    assert rows["slice_05.png"]["position_mm"] == pytest.approx(3.7)
+    # Outside them it steps by the interval the fixed points IMPLY (0.5),
+    # never by the nominal one (0.2).
+    assert rows["slice_00.png"]["position_mm"] == pytest.approx(1.5)
+    assert rows["slice_05.png"]["position_mm"] == pytest.approx(4.0)
+    assert result["implied_interval_mm"] == pytest.approx(0.5)
+    assert result["nominal_interval_mm"] == pytest.approx(0.2)
 
     # Nothing written.
     assert all(s.position_mm is None for s in state.slices)
+
+
+def test_interpolate_between_never_extrapolates_at_the_nominal_interval(
+    tmp_path: Path,
+):
+    """The compression failure mode: ends pulled in to match the protocol."""
+    state, ctx = _stack(tmp_path, n=6, placed=False)
+    interpolate_between = _tool(_box(state, ctx), "interpolate_between")
+
+    result = interpolate_between(
+        [
+            {"id": "slice_02.png", "position_mm": 4.0},
+            {"id": "slice_03.png", "position_mm": 5.0},
+        ]
+    )
+
+    rows = {row["id"]: row["position_mm"] for row in result["suggestions"]}
+    assert result["implied_interval_mm"] == pytest.approx(1.0)
+    assert rows["slice_00.png"] == pytest.approx(2.0)  # not 4.0 - 2 * 0.2
+    assert rows["slice_05.png"] == pytest.approx(7.0)  # not 5.0 + 2 * 0.2
+
+
+def test_interpolate_between_refuses_a_single_fixed_point(tmp_path: Path):
+    state, ctx = _stack(tmp_path, placed=False)
+    interpolate_between = _tool(_box(state, ctx), "interpolate_between")
+
+    result = interpolate_between([{"id": "slice_02.png", "position_mm": 4.0}])
+
+    assert result["error"] == "ONE_FIXED_POINT"
+    assert "one fixed point cannot place the stack" in result["message"]
+    assert "fix a second point near the other end" in result["message"]
 
 
 def test_interpolate_between_follows_a_reversed_stack(tmp_path: Path):
@@ -331,7 +432,9 @@ def test_get_advisories_returns_spacing_signals(tmp_path: Path):
 
     assert advisories["status"] == "ok"
     assert "verify" in advisories["advisory"]
-    assert len(advisories["interval_table"]) == len(state.slices)
+    assert len(advisories["interval_table"]["rows"]) == len(state.slices)
+    assert advisories["interval_table"]["implied_interval_mm"] == pytest.approx(0.5)
+    assert advisories["interval_table"]["nominal_interval_mm"] == pytest.approx(0.2)
 
     fit = advisories["monotone_fit"]
     assert fit["status"] == "ok"
@@ -343,7 +446,10 @@ def test_get_advisories_degrades_on_an_unplaced_stack(tmp_path: Path):
     advisories = _tool(_box(state, ctx), "get_advisories")()
 
     assert advisories["monotone_fit"]["status"] == "unavailable"
-    assert all(row["position_mm"] is None for row in advisories["interval_table"])
+    assert all(
+        row["position_mm"] is None
+        for row in advisories["interval_table"]["rows"]
+    )
 
 
 def test_interval_table_tolerates_missing_positions(tmp_path: Path):
@@ -351,7 +457,7 @@ def test_interval_table_tolerates_missing_positions(tmp_path: Path):
     del ctx
     state.in_order()[1].position_mm = None
 
-    rows = interval_table(state)
+    rows = interval_table(state)["rows"]
 
     assert rows[0]["delta_to_next_mm"] is None
     assert rows[1]["position_mm"] is None
@@ -363,11 +469,16 @@ def test_interval_table_tolerates_missing_positions(tmp_path: Path):
 def test_submit_positions_rejects_an_incomplete_stack(tmp_path: Path):
     state, ctx = _stack(tmp_path)
     box = _box(state, ctx)
+    anchors = _anchors(state)
     state.in_order()[2].position_mm = None
     tool_context = _ToolContext()
 
     result = _tool(box, "submit_positions")(
-        interval_breaks=[], notes=[], summary="done", tool_context=tool_context
+        interval_breaks=[],
+        notes=[],
+        summary="done",
+        end_anchors=anchors,
+        tool_context=tool_context,
     )
 
     assert result["error"] == "MISSING_POSITIONS"
@@ -385,6 +496,7 @@ def test_submit_positions_escalates_and_captures_findings(tmp_path: Path):
         interval_breaks=[3],
         notes=["sections 3-4 jump two intervals"],
         summary="Verified both key sections; one gap.",
+        end_anchors=_anchors(state),
         tool_context=tool_context,
     )
 
@@ -392,6 +504,162 @@ def test_submit_positions_escalates_and_captures_findings(tmp_path: Path):
     assert tool_context.actions.escalate is True
     assert box.submission["interval_breaks"] == [3]
     assert box.submission["notes"] == ["sections 3-4 jump two intervals"]
+    assert [entry["structure"] for entry in box.submission["end_anchors"]] == [
+        _ANCHOR_STRUCTURE,
+        _ANCHOR_STRUCTURE,
+    ]
+
+
+# --- the end-anchor gate --------------------------------------------------
+
+
+def _submit(box, state, anchors, tool_context=None):
+    return _tool(box, "submit_positions")(
+        interval_breaks=[],
+        notes=[],
+        summary="done",
+        end_anchors=anchors,
+        tool_context=tool_context or _ToolContext(),
+    )
+
+
+def test_submit_refuses_a_placement_the_atlas_rules_out(tmp_path: Path):
+    """FA exists over 2.0-6.0 mm; a section at 12 mm cannot show it."""
+    state, ctx = _stack(tmp_path)
+    box = _box(state, ctx)
+    for record in state.in_order():
+        record.position_mm = 12.0 + 0.5 * record.index_corrected
+    tool_context = _ToolContext()
+
+    result = _submit(box, state, _anchors(state), tool_context)
+
+    assert result["error"] == "END_ANCHOR_FAILED"
+    failure = result["failures"][0]
+    assert failure["error"] == "OUTSIDE_STRUCTURE_SPAN"
+    assert failure["structure"] == "FA"
+    assert failure["atlas_span_mm"] == [2.0, 6.0]
+    assert failure["position_mm"] == pytest.approx(12.0)
+    # The span the model has to reconcile with is IN the message it reads.
+    assert "2.000 to 6.000 mm" in failure["reason"]
+    assert "12.000 mm" in failure["reason"]
+    # Refused, not escalated: the agent has to fix it.
+    assert tool_context.actions.escalate is False
+    assert not box.submission
+
+
+def test_submit_refuses_an_unresolvable_structure_and_names_near_misses(
+    tmp_path: Path,
+):
+    state, ctx = _stack(tmp_path)
+    box = _box(state, ctx)
+    anchors = _anchors(state)
+    anchors[0]["structure"] = "forebrain area"  # ambiguous: FA and FB
+
+    result = _submit(box, state, anchors)
+
+    assert result["error"] == "END_ANCHOR_FAILED"
+    failure = result["failures"][0]
+    assert failure["error"] == "UNKNOWN_STRUCTURE"
+    assert set(failure["near_misses"]) == {"FA", "FB"}
+    assert not box.submission
+
+
+def test_submit_refuses_when_an_end_anchor_is_missing(tmp_path: Path):
+    state, ctx = _stack(tmp_path)
+    box = _box(state, ctx)
+    ordered = state.in_order()
+
+    result = _submit(box, state, _anchors(state)[:1])
+
+    assert result["error"] == "END_ANCHORS_REQUIRED"
+    assert result["required_ids"] == [ordered[0].id, ordered[-1].id]
+    assert ordered[-1].id in result["message"]
+    assert not box.submission
+
+    # Anchoring the same end twice is not two ends either.
+    inner = _anchors(state)
+    inner[1]["id"] = ordered[0].id
+    assert _submit(box, state, inner)["error"] == "END_ANCHORS_REQUIRED"
+    # ...nor is anchoring a section in the middle.
+    middle = _anchors(state)
+    middle[1]["id"] = ordered[2].id
+    assert _submit(box, state, middle)["error"] == "END_ANCHORS_REQUIRED"
+
+
+def test_submit_accepts_an_anchor_within_a_thickness_of_the_span(tmp_path: Path):
+    """The tolerance is one section thickness, not zero."""
+    state, ctx = _stack(tmp_path)
+    box = _box(state, ctx)
+    ordered = state.in_order()
+    ordered[0].position_mm = 2.0 - state.thickness_mm / 2  # just outside FA
+    ordered[-1].position_mm = 6.0
+
+    assert _submit(box, state, _anchors(state))["status"] == "ok"
+
+
+def test_submit_survives_an_atlas_that_cannot_answer(tmp_path: Path):
+    """A broken atlas must not deadlock the run — but it is on the record."""
+    state, ctx = _stack(tmp_path)
+    ctx.atlas_loader = lambda _name: object()
+    box = _box(state, ctx)
+    tool_context = _ToolContext()
+
+    result = _submit(box, state, _anchors(state), tool_context)
+
+    assert result["status"] == "ok"
+    assert tool_context.actions.escalate is True
+    assert any(
+        "end-anchor check skipped" in note for note in box.submission["notes"]
+    )
+
+
+# --- the landmark tools ---------------------------------------------------
+
+
+def test_atlas_structures_at_reports_what_the_annotation_carries(tmp_path: Path):
+    state, ctx = _stack(tmp_path)
+    atlas_structures_at = _tool(_box(state, ctx), "atlas_structures_at")
+
+    result = atlas_structures_at([6.0, 15.0])
+
+    assert result["status"] == "ok"
+    first, second = result["levels"]
+    assert first["position_mm"] == pytest.approx(6.0)
+    assert [entry["acronym"] for entry in first["structures"]] == ["FB", "FA"]
+    assert [entry["acronym"] for entry in second["structures"]] == ["HB"]
+
+
+def test_atlas_structures_at_clamps_and_caps(tmp_path: Path):
+    state, ctx = _stack(tmp_path)
+    atlas_structures_at = _tool(_box(state, ctx), "atlas_structures_at")
+
+    assert atlas_structures_at([])["error"] == "BAD_ARGS"
+    assert atlas_structures_at([-5.0])["levels"][0]["position_mm"] == 0.0
+    assert len(atlas_structures_at([1.0] * 12)["levels"]) == 8
+
+
+def test_structure_range_reports_spans_and_near_misses(tmp_path: Path):
+    state, ctx = _stack(tmp_path)
+    structure_range = _tool(_box(state, ctx), "structure_range")
+
+    result = structure_range(["FA", "FOR", "ghost"])
+
+    by_query = {entry["query"]: entry for entry in result["ranges"]}
+    assert (by_query["FA"]["first_mm"], by_query["FA"]["last_mm"]) == (2.0, 6.0)
+    # A parent's span rolls its descendants up.
+    assert (by_query["FOR"]["first_mm"], by_query["FOR"]["last_mm"]) == (2.0, 9.0)
+    assert by_query["ghost"]["error"] == "UNKNOWN_STRUCTURE"
+    assert "near_misses" in by_query["ghost"]
+
+
+def test_structure_range_caps_the_batch(tmp_path: Path):
+    state, ctx = _stack(tmp_path)
+    structure_range = _tool(_box(state, ctx), "structure_range")
+
+    assert structure_range([])["error"] == "BAD_ARGS"
+    result = structure_range(["FA"] * 12)
+    assert len(result["ranges"]) == 10
+    assert len(result["skipped"]) == 2
 
 
 # --- prompt + seed message ------------------------------------------------
@@ -419,6 +687,36 @@ def test_prompt_offers_a_strategy_menu_instead_of_prescribing_one(tmp_path: Path
     assert "the stack is unplaced" in prompt
     assert "[4]" in prompt  # the survey's interval-break flags
     assert "0.200 mm" in prompt
+
+
+def test_prompt_sends_both_ends_to_the_atlas_for_verification(tmp_path: Path):
+    state, _ctx = _stack(tmp_path, placed=False)
+
+    prompt = build_position_prompt(
+        state=state, species="mouse", pos_lo=0.0, pos_hi=13.18
+    )
+
+    assert "structure_range" in prompt
+    assert "atlas_structures_at" in prompt
+    assert "NAME a structure you can actually SEE" in prompt
+    assert "contradicts a structure's existence range is WRONG" in prompt
+
+
+def test_prompt_demotes_the_nominal_interval(tmp_path: Path):
+    state, _ctx = _stack(tmp_path, placed=False)
+
+    prompt = build_position_prompt(
+        state=state, species="mouse", pos_lo=0.0, pos_hi=13.18
+    )
+
+    # Two-sided rule 4: spacing can be larger, and an exact ladder is a smell.
+    assert "expect the REALIZED mean spacing to be >= this" in prompt
+    assert "usually LARGER than the nominal" in prompt
+    assert "matches the nominal interval EXACTLY end to end is a warning sign" in (
+        prompt
+    )
+    # Rule 2's counterweight: a consistent disagreement indicts the ladder.
+    assert "it is the ladder's absolute placement that is suspect" in prompt
 
 
 def test_prompt_stays_atlas_agnostic(tmp_path: Path):
@@ -494,6 +792,18 @@ class _ScriptedPositionLlm(BaseLlm):
                     "interval_breaks": [3],
                     "notes": ["one section missing before index 3"],
                     "summary": "Moved one section; found a gap.",
+                    "end_anchors": [
+                        {
+                            "id": "slice_00.png",
+                            "structure": "FA",
+                            "note": "area A fills the section",
+                        },
+                        {
+                            "id": "slice_05.png",
+                            "structure": "FA",
+                            "note": "area A still present",
+                        },
+                    ],
                 },
             )
         yield LlmResponse(
@@ -526,8 +836,8 @@ class _StrategyLlm(BaseLlm):
                 "set_positions",
                 {
                     "entries": [
-                        {"id": "slice_01.png", "position_mm": 0.5},
-                        {"id": "slice_04.png", "position_mm": 2.0},
+                        {"id": "slice_01.png", "position_mm": 2.5},
+                        {"id": "slice_04.png", "position_mm": 4.0},
                     ]
                 },
             ),
@@ -535,16 +845,17 @@ class _StrategyLlm(BaseLlm):
                 "interpolate_between",
                 {
                     "fixed": [
-                        {"id": "slice_01.png", "position_mm": 0.5},
-                        {"id": "slice_04.png", "position_mm": 2.0},
+                        {"id": "slice_01.png", "position_mm": 2.5},
+                        {"id": "slice_04.png", "position_mm": 4.0},
                     ]
                 },
             ),
+            ("structure_range", {"acronyms": ["FA"]}),
             (
                 "set_positions",
                 {
                     "entries": [
-                        {"id": f"slice_{i:02d}.png", "position_mm": 0.5 + 0.5 * (i - 1)}
+                        {"id": f"slice_{i:02d}.png", "position_mm": 2.0 + 0.5 * i}
                         for i in range(6)
                     ]
                 },
@@ -555,6 +866,18 @@ class _StrategyLlm(BaseLlm):
                     "interval_breaks": [],
                     "notes": ["strategy A: two key sections, rest interpolated"],
                     "summary": "Placed the stack from two verified key sections.",
+                    "end_anchors": [
+                        {
+                            "id": "slice_00.png",
+                            "structure": "FA",
+                            "note": "area A across the whole section",
+                        },
+                        {
+                            "id": "slice_05.png",
+                            "structure": "FA",
+                            "note": "area A still present, smaller",
+                        },
+                    ],
                 },
             ),
         ]
@@ -619,9 +942,11 @@ def test_position_node_places_an_unplaced_stack_with_the_new_tools(
     # The agent chose which sections to estimate; nothing upstream did.
     assert [call["id"] for call in calls] == ["slice_01.png", "slice_04.png"]
     positions = [s.position_mm for s in state.in_order()]
-    assert positions == pytest.approx([0.0, 0.5, 1.0, 1.5, 2.0, 2.5])
+    assert positions == pytest.approx([2.0, 2.5, 3.0, 3.5, 4.0, 4.5])
     assert all(s.position_source == "refined" for s in state.slices)
     assert any("strategy A" in note for note in state.notes)
+    # The end anchors it submitted are on the record, not just in the gate.
+    assert any("end anchor slice_00.png = FA" in note for note in state.notes)
 
 
 def test_position_node_keeps_partial_work_when_the_budget_runs_out(
@@ -641,6 +966,6 @@ def test_position_node_is_a_no_op_on_an_empty_stack(tmp_path: Path):
     ctx = build_context(
         BrainConfig(image_folder=str(tmp_path)),
         emit=lambda _m: None,
-        atlas_loader=lambda _name: _FakeAtlas(),
+        atlas_loader=lambda _name: _ATLAS,
     )
     assert asyncio.run(position(StackState(), ctx)) == ""

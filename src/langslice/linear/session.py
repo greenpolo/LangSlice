@@ -32,9 +32,16 @@ def build_initial_state(
     interval_mm: float,
     thickness_um: int,
     max_iterations: int,
+    frame_atlas: bool = False,
 ) -> dict[str, Any]:
-    """Return the initial `tool_context.state` dict for a run."""
+    """Return the initial `tool_context.state` dict for a run.
+
+    *frame_atlas* makes ``fetch_atlas`` crop each atlas section to its tissue
+    plus a small margin. The whole-brain steps set it because they show
+    tissue-framed histology alongside; the single-slice worker does not.
+    """
     return {
+        "frame_atlas": bool(frame_atlas),
         "atlas": atlas_name,
         "plane": plane,
         "axis_label": axis_label_for(plane),

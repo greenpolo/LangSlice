@@ -24,6 +24,7 @@ from PIL import Image
 from langslice.adk import TOOL_MEDIA_PARTS_KEY
 from langslice.image_prep import (
     adaptive_preprocess,
+    crop_to_tissue,
     normalize_image,
     prepare_image_for_vlm,
 )
@@ -58,7 +59,11 @@ def split_known_ids(state: StackState, slice_ids: list[str]) -> tuple[list[str],
 
 
 def render_slice(
-    ctx: EngineContext, record: SliceState, *, long_edge: int = VIEW_LONG_EDGE
+    ctx: EngineContext,
+    record: SliceState,
+    *,
+    long_edge: int = VIEW_LONG_EDGE,
+    frame: bool = False,
 ) -> Image.Image:
     """One section as the engine sees it: normalized, downsampled, enhanced, flipped.
 
@@ -71,10 +76,16 @@ def render_slice(
     the atlas instead of like a black field. Display only: the user's file is
     never touched.
 
+    *frame* crops to the tissue plus a small margin before the resize, so the
+    section fills its frame about as much as a cropped atlas render does. It is
+    off by default because it changes the image's coordinate frame: only the
+    paths that SHOW a section to a model set it, never the ``transforms`` step,
+    whose affine is normalized against the render it was fitted on.
+
     Renders are cached on *ctx* (see :attr:`EngineContext.render_cache`), so
     the returned image is shared: read it, never mutate it in place.
     """
-    key = (record.id, record.flip, long_edge, ctx.config.preprocess)
+    key = (record.id, record.flip, long_edge, ctx.config.preprocess, frame)
     cached = ctx.render_cache.get(key)
     if cached is not None:
         return cached
@@ -83,6 +94,8 @@ def render_slice(
         # Detach from the file handle: prepare_image_for_vlm can hand back the
         # very object it was given when no resize is needed.
         source = normalize_image(handle.copy())
+    if frame:
+        source = crop_to_tissue(source)
     prepped = prepare_image_for_vlm(source, max_long_edge=long_edge).image
     if ctx.config.preprocess == "auto":
         prepped = adaptive_preprocess(prepped)
@@ -123,7 +136,7 @@ def make_view_slices(
         for slice_id in wanted:
             record = state.by_id(slice_id)
             assert record is not None
-            parts.append(_image_to_part(render_slice(ctx, record)))
+            parts.append(_image_to_part(render_slice(ctx, record, frame=True)))
 
         return {
             "status": "ok",
@@ -190,6 +203,9 @@ def stack_image_parts(
     neighbouring sections share patch boundaries. A labelled sequence at a
     modest resolution reads better than a big sheet, and the label is what
     binds each set of pixels to a filename the model can quote back.
+
+    Sections are framed to their tissue (see :func:`render_slice`), matching the
+    framing of the atlas sections the agent fetches to compare them against.
     """
     parts: list[types.Part] = [
         types.Part.from_text(
@@ -207,7 +223,9 @@ def stack_image_parts(
         if flags:
             label += f"  [{'; '.join(flags)}]"
         parts.append(types.Part.from_text(text=label))
-        parts.append(_image_to_part(render_slice(ctx, record, long_edge=long_edge)))
+        parts.append(
+            _image_to_part(render_slice(ctx, record, long_edge=long_edge, frame=True))
+        )
     return parts
 
 
@@ -254,6 +272,9 @@ async def run_agent_session(
             interval_mm=state.interval_mm,
             thickness_um=int(round(state.thickness_mm * 1000)),
             max_iterations=max_iterations,
+            # Whole-brain sections are shown tissue-framed; frame the atlas the
+            # same way so apparent scale is not a cue.
+            frame_atlas=True,
         ),
     )
 

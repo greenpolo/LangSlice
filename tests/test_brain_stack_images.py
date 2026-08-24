@@ -41,17 +41,41 @@ class _FakeAtlas:
 
 
 def _marked_section(size: tuple[int, int] = (120, 90)) -> Image.Image:
-    """Dim tissue with a bright block on the LEFT — a mirror marker."""
+    """Dim tissue inset in a dark field, bright block on its LEFT — a mirror marker.
+
+    Shaped like a real section rather than a half-and-half canvas: the
+    whole-brain visual path frames sections to their tissue before sending
+    them, and an image whose two halves are equally plausible as foreground
+    has no bounding box to find.
+    """
     width, height = size
-    arr = np.full((height, width, 3), 30, dtype=np.uint8)
-    arr[:, : width // 3] = 230
+    arr = np.full((height, width, 3), 8, dtype=np.uint8)
+    x0, x1 = width // 6, width - width // 6
+    y0, y1 = height // 6, height - height // 6
+    arr[y0:y1, x0:x1] = 60
+    arr[y0:y1, x0 : x0 + (x1 - x0) // 3] = 250
     return Image.fromarray(arr, mode="RGB")
 
 
-def _stack(folder: Path, n: int = 3, **kwargs) -> tuple[StackState, EngineContext]:
+def _small_tissue_section(size: tuple[int, int] = (240, 180)) -> Image.Image:
+    """A section adrift in its scan: tissue covers about a tenth of the frame."""
+    width, height = size
+    arr = np.full((height, width, 3), 235, dtype=np.uint8)
+    arr[30:80, 40:120] = 25
+    return Image.fromarray(arr, mode="RGB")
+
+
+def _tissue_fill(image: Image.Image, background: int = 235) -> float:
+    arr = np.asarray(image.convert("L"), dtype=np.int16)
+    return float((np.abs(arr - background) > 30).mean())
+
+
+def _stack(
+    folder: Path, n: int = 3, *, section=_marked_section, **kwargs
+) -> tuple[StackState, EngineContext]:
     folder.mkdir(parents=True, exist_ok=True)
     for index in range(n):
-        _marked_section().save(folder / f"slice_{index:02d}.png")
+        section().save(folder / f"slice_{index:02d}.png")
     ctx = build_context(
         BrainConfig(image_folder=str(folder), preprocess="none", **kwargs),
         emit=lambda _m: None,
@@ -130,6 +154,45 @@ def test_long_edge_bounds_the_image_the_model_gets(tmp_path: Path):
     # The synthetic section is smaller than the default, so it is not upscaled.
     assert max(default.size) <= SEED_IMAGE_LONG_EDGE
     assert max(small.size) == 48
+
+
+# --- framing -------------------------------------------------------------
+
+
+def test_sections_reach_the_model_framed_to_their_tissue(tmp_path: Path):
+    """Apparent scale is a cue: a section adrift in its scan is cropped first."""
+    state, ctx = _stack(tmp_path, n=1, section=_small_tissue_section)
+    record = state.in_order()[0]
+
+    framed = _decode(_image_parts(stack_image_parts(state, ctx))[0])
+    unframed = render_slice(ctx, record, long_edge=SEED_IMAGE_LONG_EDGE)
+
+    assert _tissue_fill(unframed) < 0.15
+    assert _tissue_fill(framed) > 0.6
+
+
+def test_view_slices_frames_the_sections_it_zooms_into(tmp_path: Path):
+    state, ctx = _stack(tmp_path, n=1, section=_small_tissue_section)
+    view_slices = _step_common.make_view_slices(state, ctx)
+
+    result = view_slices(["slice_00.png"])
+
+    image = _decode(result[_step_common.TOOL_MEDIA_PARTS_KEY][0])
+    assert _tissue_fill(image) > 0.6
+
+
+def test_the_geometry_path_is_not_framed(tmp_path: Path):
+    """The transforms step fits an affine against this render; cropping it
+    would silently move the coordinate frame the affine is normalized in."""
+    state, ctx = _stack(tmp_path, n=1, section=_small_tissue_section)
+    record = state.in_order()[0]
+
+    plain = render_slice(ctx, record, long_edge=SEED_IMAGE_LONG_EDGE)
+    framed = render_slice(ctx, record, long_edge=SEED_IMAGE_LONG_EDGE, frame=True)
+
+    assert plain.size == _small_tissue_section().size  # untouched framing
+    assert framed.size != plain.size
+    assert plain is not framed  # different cache keys, not one shared render
 
 
 # --- seed messages -------------------------------------------------------

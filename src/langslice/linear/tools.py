@@ -26,8 +26,10 @@ from PIL import Image
 from langslice.adk import TOOL_MEDIA_PARTS_KEY
 from langslice.atlas.core import (
     get_reference_slice,
+    get_root_mask,
     load_atlas,
 )
+from langslice.image_prep import crop_to_mask
 from langslice.linear.session import (
     ARTIFACT_ATLAS_PREFIX,
     atlas_key,
@@ -95,6 +97,23 @@ def _image_to_part(img: Image.Image) -> types.Part:
     )
 
 
+def _framed_atlas_slice(
+    atlas: Any, image: Image.Image, position_mm: float, plane: Any
+) -> Image.Image:
+    """Crop an atlas render to its brain plus a margin (see ``frame_atlas``).
+
+    The silhouette comes from the ANNOTATION, not from the render's non-zero
+    pixels: reference volumes carry faint background noise that would put the
+    bounding box back at the canvas edges. Falls back to the untouched render
+    if the atlas cannot produce a mask.
+    """
+    try:
+        mask = get_root_mask(atlas, position_mm, image.size, plane=plane)
+    except Exception:
+        return image
+    return crop_to_mask(image, mask > 0)
+
+
 async def fetch_atlas(
     positions_mm: list[float], tool_context: Any
 ) -> dict[str, Any]:
@@ -125,10 +144,13 @@ async def fetch_atlas(
         return {"status": "error", "error": "EMPTY_RESULT"}
 
     atlas = load_atlas(atlas_name)
+    frame_atlas = bool(state.get("frame_atlas"))
     image_parts: list[types.Part] = []
     descriptions: list[str] = []
     for pos in positions:
         img = get_reference_slice(atlas, pos, plane=plane)
+        if frame_atlas:
+            img = _framed_atlas_slice(atlas, img, pos, plane)
         part = _image_to_part(img)
         image_parts.append(part)
         await tool_context.save_artifact(filename=atlas_key(pos), artifact=part)

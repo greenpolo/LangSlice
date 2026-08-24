@@ -100,6 +100,87 @@ def adaptive_preprocess(
     return Image.fromarray(gray_rgb)
 
 
+#: Margin left around the foreground when framing, as a fraction of the
+#: foreground's long side.
+FRAME_MARGIN = 0.06
+
+#: Long edge of the proxy the tissue silhouette is measured on. Otsu at full
+#: whole-slide resolution costs seconds and buys nothing: a bounding box is a
+#: bounding box.
+_FRAME_PROXY_EDGE = 256
+
+
+def crop_to_mask(
+    image: Image.Image, mask: np.ndarray, *, margin: float = FRAME_MARGIN
+) -> Image.Image:
+    """Crop *image* to *mask*'s bounding box plus *margin*.
+
+    *mask* may be measured at any resolution; its coordinates are scaled onto
+    *image*. Returns *image* untouched when the mask is empty or the resulting
+    box is degenerate.
+    """
+    ys, xs = np.nonzero(mask)
+    if ys.size == 0:
+        return image
+    height, width = mask.shape[:2]
+    scale_x, scale_y = image.width / float(width), image.height / float(height)
+    x0, x1 = float(xs.min()) * scale_x, (float(xs.max()) + 1.0) * scale_x
+    y0, y1 = float(ys.min()) * scale_y, (float(ys.max()) + 1.0) * scale_y
+    # One padding distance for both axes so framing cannot change the apparent
+    # aspect ratio of the tissue.
+    pad = margin * max(x1 - x0, y1 - y0)
+    box = (
+        max(0, int(x0 - pad)),
+        max(0, int(y0 - pad)),
+        min(image.width, int(round(x1 + pad))),
+        min(image.height, int(round(y1 + pad))),
+    )
+    if box[2] - box[0] < 2 or box[3] - box[1] < 2:
+        return image
+    return image.crop(box)
+
+
+def crop_to_tissue(image: Image.Image, *, margin: float = FRAME_MARGIN) -> Image.Image:
+    """Crop a histology section to its tissue plus a margin.
+
+    Framing, not enhancement: histology arrives filling most of its frame while
+    a fixed-canvas atlas render leaves the brain small and centred, and that
+    difference in apparent scale is itself a cue a model will read as anatomy.
+    Cropping both to their foreground makes the two comparable.
+
+    Foreground is "different from the background", with the background level
+    read off the frame's own border — which works for dark-on-light brightfield
+    and light-on-dark fluorescence alike, and (unlike an Otsu split) will not
+    mistake a dim half of the tissue for background. Falls back to the
+    untouched image when the result would be degenerate.
+    """
+    proxy = image.convert("L")
+    long_edge = max(proxy.size)
+    if long_edge > _FRAME_PROXY_EDGE:
+        scale = _FRAME_PROXY_EDGE / float(long_edge)
+        proxy = proxy.resize(
+            (max(1, round(proxy.width * scale)), max(1, round(proxy.height * scale))),
+            Image.Resampling.BILINEAR,
+        )
+    arr = np.asarray(proxy, dtype=np.float32)
+    if arr.size == 0:
+        return image
+    border = np.concatenate(
+        [arr[0, :], arr[-1, :], arr[:, 0], arr[:, -1]]
+    )
+    background = float(np.median(border))
+    spread = max(float(arr.max()) - float(arr.min()), 1.0)
+    # ponytail: plain distance-from-background, so a speck of debris widens the
+    # box. Cropping WIDE is harmless (that is today's behaviour); cropping into
+    # the tissue would not be. Add a connected-component pass if debris ever
+    # costs real framing.
+    mask = np.abs(arr - background) > max(8.0, 0.12 * spread)
+    covered = float(mask.mean())
+    if covered < 0.005 or covered > 0.98:
+        return image
+    return crop_to_mask(image, mask, margin=margin)
+
+
 def prepare_image_for_vlm(
     image: Image.Image,
     *,

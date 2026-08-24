@@ -87,14 +87,22 @@ Two methods live as sibling subpackages with no dependency on each other:
   unplaced; `position.py` is the agent pass that owns placement AND the choice
   of placement strategy — its prompt is an atlas-agnostic menu (key sections +
   `interpolate_between`, full coverage via `estimate_slices`, or a mix), not a
-  prescription; `transforms.py` proposes one in-plane
+  prescription. Its one external check is the annotation: `atlas_structures_at`
+  / `structure_range` wrap `atlas/landmarks.py`, and `submit_positions` refuses
+  a submission unless its two `end_anchors` (a structure seen at each END of
+  the stack) contain that section's position in their atlas span. Spacing is
+  reported as implied-vs-nominal everywhere, and extrapolation never falls back
+  to the nominal interval; `transforms.py` proposes one in-plane
   alignment per section — the shared silhouette affine (plain code) for intact
   sections, a per-section interactive agent loop (preview → look → adjust →
   submit) for damaged ones; `review.py` is the final whole-stack consistency
   agent and can route back to `position` once. `_step_common.py` holds what the
   agent steps share (`render_slice`, `view_slices`, manifest, ADK session
   loop); `render_slice` also applies the display-only fluorescence
-  preprocessing (`--preprocess auto|none`, `BrainConfig.preprocess`).
+  preprocessing (`--preprocess auto|none`, `BrainConfig.preprocess`) and, for
+  the paths that SHOW a section to a model (`frame=True`), the tissue crop that
+  matches the framing of fetched atlas sections — never for the affine-fitting
+  path, whose coordinates the crop would move.
   `--stop-after NODE` runs one step and checkpoints; `--rerun-from
   {position,transforms,review}` rewinds an existing checkpoint's node and
   everything downstream of it (`engine.rewind_state`), then resumes — for
@@ -110,14 +118,20 @@ Two methods live as sibling subpackages with no dependency on each other:
 Shared, top-level:
 
 - `atlas/` — BrainGlobe loading, position helpers, slice extraction, colored
-  region maps, borders
+  region maps, borders, plus `landmarks.py`: what the annotation says exists at
+  a level (`structures_at`) and the slicing-axis span over which a structure
+  exists (`axis_range_of`, descendants rolled up, presence scan cached per
+  atlas+plane). Generic over the structure tree — no acronym is special-cased
 - `space.py` — coordinate and orientation conventions
 - `affine.py` — shared in-plane affine core: the silhouette (moments) fit of a
   section onto an atlas section, plus the rotation/scale/translate matrix
   builder and the normalized 6-number parameter convention. Used by both
   `linear/whole_brain/transforms.py` and `nonlinear/quick_affine.py`; belongs
   to neither
-- `image_prep.py` — image normalization, pixel-size detection, VLM downsampling
+- `image_prep.py` — image normalization, pixel-size detection, VLM
+  downsampling, and foreground framing (`crop_to_tissue`, `crop_to_mask`), used
+  by the whole-brain visual path so histology and atlas sections fill their
+  frames comparably
 - `export.py` — QUINT/ABBA-compatible JSON export
 - `providers/` — model access (`vlm_config.py` for Gemini backends,
   `openai_config.py` for OpenAI-compatible backends, `chatgpt.py` for the
