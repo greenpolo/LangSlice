@@ -48,7 +48,7 @@ class BrainConfig:
     #: end-anchor gate they back. False strips both the tools and every
     #: mention of them from the prompt, reverting to a visual end check —
     #: an ablation switch, not a normal deployment knob.
-    landmark_tools: bool = True
+    landmark_tools: bool = False
 
     @property
     def thickness_mm(self) -> float:

@@ -106,6 +106,7 @@ def _stack(folder: Path, n: int = 6, *, placed: bool = True, **kwargs):
         Image.new("RGB", (40, 30), (10 * index, 60, 120)).save(
             folder / f"slice_{index:02d}.png"
         )
+    kwargs.setdefault("landmark_tools", True)
     ctx = build_context(
         BrainConfig(image_folder=str(folder), **kwargs),
         emit=lambda _m: None,

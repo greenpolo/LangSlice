@@ -437,10 +437,10 @@ def _add_estimate_brain_parser(subparsers: argparse._SubParsersAction) -> None:
     p.add_argument(
         "--landmark-tools",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=False,
         help="Give the positioning step atlas-annotation landmark tools and "
-        "its end-anchor submission gate (--no-landmark-tools strips both, "
-        "an ablation switch)",
+        "its end-anchor submission gate (off by default: benchmarked worse "
+        "on both test brains; the direction guard is a code check now)",
     )
     p.add_argument(
         "--out",
