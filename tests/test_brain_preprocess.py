@@ -1,7 +1,8 @@
 """Fluorescence preprocessing in the whole-brain visual path.
 
-Everything an agent looks at goes through ``render_slice``: the per-slice
-``view_slices`` images, the contact sheet, and the transform-step previews.
+Everything an agent looks at goes through ``render_slice``: the per-section
+seed-message images, the per-slice ``view_slices`` images, the (human-facing)
+contact sheet, and the transform-step previews.
 With ``preprocess="auto"`` (the default) that render runs
 :func:`langslice.image_prep.adaptive_preprocess` — per-channel CLAHE plus a
 DAPI-weighted grayscale blend — so a dim fluorescent section reads like the

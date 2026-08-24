@@ -32,15 +32,22 @@ per-node cycle limits.
 
 - `ingest` discovers the folder (natural sort), loads the atlas, builds the
   stack state, and writes a labelled contact sheet next to the checkpoint.
-- `survey` is one agent pass over the whole stack: it is shown the contact
-  sheet plus a manifest and triages damage, hemisphere flips, section order
-  and interval breaks in a single pass. Its tools (`view_slices`,
+  The sheet is for the user: no model is shown it. Every agent step gets the
+  stack as a labelled sequence of per-section images instead (a thumbnail grid
+  splits one vision-encoder patch budget across every section at once, and
+  individual images -- even small ones -- read better).
+- `survey` is one agent pass over the whole stack: it is shown every section
+  as its own image in corrected order, each preceded by an
+  `<index>: <filename>` label, plus the same stack as a text manifest, and
+  triages damage, hemisphere flips, section order and interval breaks in a
+  single pass. Its tools (`view_slices`,
   `fetch_atlas`, `flip_slices`, `reorder_slices`, `mark_damaged`,
   `submit_survey`) record corrections as data on the stack state. Under
   `--keep-order` (the default) `reorder_slices` refuses and the agent reports
   ordering problems in its notes instead.
-- `fix` re-renders the contact sheet from the corrected stack and sends it
-  back to `survey` for one verification pass. A clean survey skips `fix`.
+- `fix` rebuilds the contact sheet from the corrected stack and sends the
+  stack back to `survey` for one verification pass, re-rendered as corrected.
+  A clean survey skips `fix`.
 - `seed` runs whatever automatic seeder is available — today, none. DeepSlice
   would place a whole coronal mouse stack in one shot, but it is an optional
   extra that is not installed, so the node writes a note and passes the stack
@@ -93,8 +100,9 @@ angles, per-slice transforms -- is a proposal recorded as data. The user's
 image files are never modified.
 
 `--preprocess auto` (the default) runs adaptive CLAHE plus a DAPI-weighted
-grayscale blend on every section the engine renders -- the contact sheet, the
-`view_slices` images, the transform previews and the silhouette fit -- so dim
+grayscale blend on every section the engine renders -- the per-section stack
+images, the `view_slices` images, the contact sheet, the transform previews
+and the silhouette fit -- so dim
 fluorescence reads like the atlas instead of like a black field.
 `--preprocess none` shows the raw sections. Either way this is display only:
 the enhanced pixels are never written back to the user's files, and the

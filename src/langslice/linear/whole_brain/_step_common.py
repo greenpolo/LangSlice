@@ -2,11 +2,11 @@
 review).
 
 Every agent step looks at the same stack the same way: sections rendered
-through the corrected view (``render_slice``, ``view_slices``), a text manifest
-of the stack, and the same ADK session loop (create session, run turns, nudge
-when the model answers in prose, stop when the step's submit tool has
-escalated). Only the tools, the prompt and the seed message differ, so those
-stay with the step.
+through the corrected view (``render_slice``, ``view_slices``,
+``stack_image_parts``), a text manifest of the stack, and the same ADK session
+loop (create session, run turns, nudge when the model answers in prose, stop
+when the step's submit tool has escalated). Only the tools, the prompt and the
+seed message differ, so those stay with the step.
 """
 
 from __future__ import annotations
@@ -38,9 +38,13 @@ logger = logging.getLogger(__name__)
 
 #: Sections one ``view_slices`` call may return.
 MAX_VIEW_SLICES = 8
-#: Long edge for ``view_slices`` images: enough to zoom past the 256 px
-#: contact-sheet thumbnails without paying full-resolution tokens.
+#: Long edge for ``view_slices`` images: enough to zoom past the seed-message
+#: stack images without paying full-resolution tokens.
 VIEW_LONG_EDGE = 1024
+#: Long edge for the per-section images in a step's seed message. Small on
+#: purpose: the whole stack (40-odd sections) rides in one user message and
+#: stays in context for the whole session.
+SEED_IMAGE_LONG_EDGE = 512
 
 
 def split_known_ids(state: StackState, slice_ids: list[str]) -> tuple[list[str], list[str]]:
@@ -65,18 +69,25 @@ def render_slice(
     CLAHE plus a DAPI-weighted grayscale blend — so dim fluorescence reads like
     the atlas instead of like a black field. Display only: the user's file is
     never touched.
+
+    Renders are cached on *ctx* (see :attr:`EngineContext.render_cache`), so
+    the returned image is shared: read it, never mutate it in place.
     """
+    key = (record.id, record.flip, long_edge, ctx.config.preprocess)
+    cached = ctx.render_cache.get(key)
+    if cached is not None:
+        return cached
+
     with Image.open(ctx.image_path(record.id)) as handle:
         # Detach from the file handle: prepare_image_for_vlm can hand back the
         # very object it was given when no resize is needed.
         source = normalize_image(handle.copy())
     prepped = prepare_image_for_vlm(source, max_long_edge=long_edge).image
     if ctx.config.preprocess == "auto":
-        # ponytail: no cache — CLAHE on a <=1024 px render is milliseconds,
-        # cache it per (id, long_edge) if a big stack ever shows up slow.
         prepped = adaptive_preprocess(prepped)
     if record.flip:
         prepped = prepped.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+    ctx.render_cache[key] = prepped
     return prepped
 
 
@@ -88,9 +99,9 @@ def make_view_slices(
     def view_slices(slice_ids: list[str]) -> dict[str, Any]:
         """Look at up to 8 named sections at higher resolution.
 
-        Use this whenever the contact-sheet thumbnails are too small to judge
-        damage, a notch, a hemisphere flip, or which atlas level a section
-        matches. Sections are rendered through the current corrected state: a
+        Use this whenever the stack images you were given are too small to
+        judge damage, a notch, a hemisphere flip, or which atlas level a
+        section matches. Sections are rendered through the corrected state: a
         section that has been flipped comes back mirrored, i.e. as it will be
         used.
 
@@ -130,6 +141,18 @@ def make_view_slices(
     return view_slices
 
 
+def slice_flags(record: SliceState) -> list[str]:
+    """The section's current corrections, as short human-readable flags."""
+    flags: list[str] = []
+    if record.flip:
+        flags.append("flipped")
+    if record.damaged:
+        flags.append(
+            f"damaged: {record.damage_note}" if record.damage_note else "damaged"
+        )
+    return flags
+
+
 def build_stack_manifest(state: StackState, *, with_positions: bool = False) -> str:
     """One line per section in corrected order, with its current flags.
 
@@ -138,13 +161,7 @@ def build_stack_manifest(state: StackState, *, with_positions: bool = False) -> 
     """
     lines: list[str] = []
     for record in state.in_order():
-        flags: list[str] = []
-        if record.flip:
-            flags.append("flipped")
-        if record.damaged:
-            flags.append(
-                f"damaged: {record.damage_note}" if record.damage_note else "damaged"
-            )
+        flags = slice_flags(record)
         suffix = f"  [{'; '.join(flags)}]" if flags else ""
         position = ""
         if with_positions and record.position_mm is None:
@@ -158,21 +175,39 @@ def build_stack_manifest(state: StackState, *, with_positions: bool = False) -> 
     return "\n".join(lines)
 
 
-def contact_sheet_parts(state: StackState) -> list[types.Part]:
-    """The contact sheet as a labelled text+image pair, or nothing if absent."""
-    if not state.contact_sheet:
-        return []
-    with open(state.contact_sheet, "rb") as handle:
-        image = types.Part.from_bytes(mime_type="image/png", data=handle.read())
-    return [
+def stack_image_parts(
+    state: StackState, ctx: EngineContext, *, long_edge: int = SEED_IMAGE_LONG_EDGE
+) -> list[types.Part]:
+    """The whole stack as labelled text+image pairs, in corrected order.
+
+    Each section gets a one-line label — ``"<corrected index>: <filename>"``
+    plus any flags — immediately followed by its own image, rendered through
+    :func:`render_slice` so preprocessing and flips are already applied.
+
+    One image per section rather than one thumbnail grid: a grid splits a fixed
+    vision-encoder patch budget across every section at once and lets
+    neighbouring sections share patch boundaries. A labelled sequence at a
+    modest resolution reads better than a big sheet, and the label is what
+    binds each set of pixels to a filename the model can quote back.
+    """
+    parts: list[types.Part] = [
         types.Part.from_text(
             text=(
-                "Contact sheet of the whole stack in its current corrected "
-                "order; each thumbnail is labelled '<index>: <filename>'."
+                f"The {len(state.slices)} sections of the stack follow, in "
+                "their current corrected order, one image each. Every image is "
+                "preceded by its label '<index>: <filename>' and is rendered "
+                "with any flips already applied."
             )
-        ),
-        image,
+        )
     ]
+    for record in state.in_order():
+        flags = slice_flags(record)
+        label = f"{record.index_corrected}: {record.id}"
+        if flags:
+            label += f"  [{'; '.join(flags)}]"
+        parts.append(types.Part.from_text(text=label))
+        parts.append(_image_to_part(render_slice(ctx, record, long_edge=long_edge)))
+    return parts
 
 
 async def run_agent_session(

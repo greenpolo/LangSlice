@@ -22,9 +22,9 @@ from google.genai import types
 from langslice.adk.model_resolver import default_http_options, resolve_adk_model
 from langslice.linear.tools import fetch_atlas
 from langslice.linear.whole_brain._step_common import (
-    contact_sheet_parts,
     make_view_slices,
     run_agent_session,
+    stack_image_parts,
 )
 from langslice.linear.whole_brain.engine import EngineContext
 from langslice.linear.whole_brain.position import spacing_advisories
@@ -234,10 +234,10 @@ def build_review_prompt(*, state: StackState, species: str) -> str:
     )
 
 
-def build_review_seed_message(state: StackState) -> types.Content:
-    """Contact sheet + full manifest + advisory spacing signals."""
+def build_review_seed_message(state: StackState, ctx: EngineContext) -> types.Content:
+    """Per-section images + full manifest + advisory spacing signals."""
     advisories = spacing_advisories(state)
-    parts: list[types.Part] = contact_sheet_parts(state)
+    parts: list[types.Part] = stack_image_parts(state, ctx)
     parts.append(
         types.Part.from_text(
             text=(
@@ -314,7 +314,7 @@ async def run_review_session(
         state=state,
         pos_lo=pos_lo,
         pos_hi=pos_hi,
-        seed_message=build_review_seed_message(state),
+        seed_message=build_review_seed_message(state, ctx),
         done=lambda: bool(box.submission),
         nudge_no_tool=_NUDGE_NO_TOOL,
         nudge_continue=_NUDGE_CONTINUE,

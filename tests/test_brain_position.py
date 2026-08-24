@@ -446,11 +446,11 @@ def test_prompt_notes_positions_that_are_already_on_the_stack(tmp_path: Path):
 
 
 def test_seed_message_renders_unplaced_sections(tmp_path: Path):
-    state, _ctx = _stack(tmp_path, placed=False)
+    state, ctx = _stack(tmp_path, placed=False)
     state.notes.append("seed: no automatic seeding available")
 
     text = "\n".join(
-        part.text or "" for part in build_position_seed_message(state).parts or []
+        part.text or "" for part in build_position_seed_message(state, ctx).parts or []
     )
 
     assert text.count("unplaced") >= len(state.slices)

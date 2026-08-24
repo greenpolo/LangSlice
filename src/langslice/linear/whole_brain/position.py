@@ -28,10 +28,10 @@ from langslice.adk.model_resolver import default_http_options, resolve_adk_model
 from langslice.linear.tools import fetch_atlas
 from langslice.linear.whole_brain._step_common import (
     build_stack_manifest,
-    contact_sheet_parts,
     make_view_slices,
     run_agent_session,
     split_known_ids,
+    stack_image_parts,
 )
 from langslice.linear.whole_brain.engine import EngineContext
 from langslice.linear.whole_brain.estimation_agents import run_slice_estimation
@@ -608,8 +608,10 @@ def build_position_prompt(
     )
 
 
-def build_position_seed_message(state: StackState, *, note_limit: int = 12) -> types.Content:
-    """Contact sheet + stack manifest: what the positioning step starts from.
+def build_position_seed_message(
+    state: StackState, ctx: EngineContext, *, note_limit: int = 12
+) -> types.Content:
+    """Per-section images + stack manifest: what the positioning step starts from.
 
     Sections with no position yet read as "unplaced" in the manifest — the
     normal case, since nothing upstream places them.
@@ -620,7 +622,7 @@ def build_position_seed_message(state: StackState, *, note_limit: int = 12) -> t
     """
     recent = state.notes[-note_limit:]
     notes_block = "\n".join(f"- {note}" for note in recent) if recent else "- (none)"
-    parts: list[types.Part] = contact_sheet_parts(state)
+    parts: list[types.Part] = stack_image_parts(state, ctx)
     parts.append(
         types.Part.from_text(
             text=(
@@ -703,7 +705,7 @@ async def run_position_session(
         state=state,
         pos_lo=pos_lo,
         pos_hi=pos_hi,
-        seed_message=build_position_seed_message(state),
+        seed_message=build_position_seed_message(state, ctx),
         done=lambda: bool(box.submission),
         nudge_no_tool=_NUDGE_NO_TOOL,
         nudge_continue=_NUDGE_CONTINUE,
