@@ -84,13 +84,18 @@ def build_group_prompt(
     interval_mm: float,
     thickness_um: int,
 ) -> str:
-    """Multi-slice group system instruction.
+    """Multi-slice group system instruction — training-only.
 
-    Restores the legacy ``ap_multi_slice.py`` prompt structure that drove the
-    pre-ADK 0.19 mm M01 baseline: explicit first-response contract (landmarks
-    on Slice 1 AND Slice N + broad sweep simultaneously), VERIFY step after
-    the broad sweep, and an "interval is approximate" caveat so the model
-    does not over-constrain on the nominal spacing.
+    The production group estimator is gone (whole-brain work runs through
+    ``langslice.linear.whole_brain``). This builder survives for the group
+    RLVR task in ``models/training-core``, whose environment defines its own
+    ``submit_group_estimate`` tool; nothing in ``langslice.linear`` calls it.
+
+    Structure mirrors the legacy ``ap_multi_slice.py`` prompt: explicit
+    first-response contract (landmarks on Slice 1 AND Slice N + broad sweep
+    simultaneously), VERIFY step after the broad sweep, and an "interval is
+    approximate" caveat so the model does not over-constrain on the nominal
+    spacing.
     """
     axis = _PLANE_AXIS_LABEL[plane]
     boilerplate = _PLANE_BOILERPLATE[plane]

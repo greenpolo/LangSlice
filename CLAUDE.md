@@ -69,9 +69,14 @@ or pure docs/API verification (a research agent is faster).
 
 Two methods live as sibling subpackages with no dependency on each other:
 
-- `linear/` — slice-position estimation. ADK agents, prompts, tools,
-  validators, session/runner plumbing, trace collection, and
-  `linear/whole_brain/` for multi-slice whole-brain estimation.
+- `linear/` — slice-position estimation. Single-slice ADK agent, prompts,
+  tools, validators, session/runner plumbing, trace collection, and
+  `linear/whole_brain/` — the whole-brain engine: a node graph
+  (`ingest → survey → fix → seed → position → transforms → review → emit`)
+  over one `StackState`, with bounded loop-back edges, a JSON checkpoint
+  after every node, and results in the same shape as the checkpoint.
+  Flips and reorders are recorded as data on the state; user image files are
+  never modified. The agent steps between `ingest` and `emit` are stubs.
 - `nonlinear/` — generative-image registration: candidate generation, image
   provider adapters, Elastix runtime, optional ADK review loop, affine and
   nonlinear result types, and `quick_affine.py` (silhouette affine preview;
@@ -95,9 +100,9 @@ Shared, top-level:
   `sdk_helpers.py`)
 - `api/` — Pydantic engine contract, runtime wrappers, and the stdio service
   behind `langslice serve`
-- `cli.py` — CLI entry: `langslice linear {estimate, estimate-group,
-  estimate-brain, quick-affine}`, `langslice nonlinear {register}`, and
-  top-level `version`, `login`, `serve`, `collect-traces`
+- `cli.py` — CLI entry: `langslice linear {estimate, estimate-brain,
+  quick-affine}`, `langslice nonlinear {register}`, and top-level `version`,
+  `login`, `serve`, `collect-traces`
 - `agent_trace.py` — structured trace helpers
 - `training_launchers.py` — exposes `langslice-gemma-sft` and
   `langslice-gemma-rl` console scripts

@@ -8,15 +8,11 @@ from google.adk.models.llm_response import LlmResponse
 from google.genai import types
 from PIL import Image
 
-from langslice.linear._types import MultiSliceResult, PositionResult
-from langslice.linear.group import build_group_agent
 from langslice.linear.runner import (
     _prepare_target_payloads,
-    run_group_session,
     run_single_slice_session,
 )
 from langslice.linear.single_slice import build_single_slice_agent
-from langslice.linear.validators import gate_submit_tool
 
 
 def _count_inline_images(contents: list[types.Content]) -> int:
@@ -138,21 +134,6 @@ def test_build_single_slice_agent_sets_native_gemini_retry_options():
     assert config.http_options.retry_options.attempts == 5
 
 
-def test_build_group_agent_registers_estimation_tools_only_and_callback():
-    agent = build_group_agent(
-        atlas_name="allen_mouse_25um", plane="coronal",
-        species="mouse", pos_lo=0.0, pos_hi=13.2,
-        n_slices=4, interval_mm=0.200, thickness_um=50,
-        model="gemini-3-flash-preview",
-    )
-    assert agent.name == "group_position_estimator"
-    assert len(agent.tools) == 2
-    tool_names = {getattr(t, "__name__", None) or getattr(t, "name", None) for t in agent.tools}
-    assert tool_names == {"fetch_atlas", "submit_group_estimate"}
-    assert agent.before_tool_callback is gate_submit_tool
-    assert agent.instruction  # non-empty prompt
-
-
 def test_run_single_slice_session_happy_path(monkeypatch):
     """Runner completes when the model follows broad -> narrow -> submit."""
     try:
@@ -180,53 +161,7 @@ def test_run_single_slice_session_happy_path(monkeypatch):
     assert 0.0 <= result.position_mm <= 13.2
 
 
-def test_run_group_session_drives_fake_to_completion(monkeypatch):
-    """Runner completes when the group model follows broad -> narrow -> submit_group."""
-    try:
-        from tests.fakes import install_fake_adk_group_model_scripted_submit
-    except NotImplementedError as exc:
-        pytest.skip(f"ADK fake-model seam unavailable: {exc}")
-    try:
-        install_fake_adk_group_model_scripted_submit(
-            monkeypatch, n_slices=4, interval_mm=0.2,
-        )
-    except NotImplementedError as exc:
-        pytest.skip(f"ADK fake-model seam unavailable: {exc}")
-
-    # Blank images keep CLAHE a no-op and avoid any OpenCV dependency in tests.
-    images = [Image.new("L", (256, 256), color=128) for _ in range(4)]
-    result = asyncio.run(
-        run_group_session(
-            images=images,
-            atlas_name="allen_mouse_25um",
-            interval_mm=0.2,
-            thickness_um=50,
-            plane="coronal",
-            model="gemini-3-flash-preview",
-            max_iterations=12,
-            max_retries=1,
-            apply_clahe=False,
-            target_transport="inline",
-        )
-    )
-
-    assert isinstance(result, MultiSliceResult)
-    assert len(result.positions) == 4
-    for pos in result.positions:
-        assert isinstance(pos, PositionResult)
-        assert 0.0 <= pos.position_mm <= 15.0  # loose sanity on atlas range
-    # Monotonic, matching the scripted centre of 6.0 mm with 0.2 mm spacing.
-    position_values = [p.position_mm for p in result.positions]
-    assert position_values == sorted(position_values)
-    assert all(abs(p - 6.0) <= 1.0 for p in position_values)
-    # Reasoning text is the one propagated from the scripted fake — confirms
-    # the runner reached submit rather than falling back to midpoint.
-    lowered = result.group_reasoning.lower()
-    assert "broad" in lowered and "narrow" in lowered
-    assert "fell back" not in lowered
-
-
-def test_group_runner_replays_all_multimodal_tool_images(monkeypatch):
+def test_runner_replays_all_multimodal_tool_images(monkeypatch):
     """Atlas images from earlier tool calls remain visible on later turns."""
 
     captured_image_counts: list[int] = []
@@ -257,9 +192,9 @@ def test_group_runner_replays_all_multimodal_tool_images(monkeypatch):
                 )
             else:
                 call = types.Part.from_function_call(
-                    name="submit_group_estimate",
+                    name="submit_estimate",
                     args={
-                        "positions_mm": [5.7, 5.871],
+                        "position_mm": 5.7,
                         "reasoning": "Both broad and narrow atlas sweeps are visible.",
                     },
                 )
@@ -278,13 +213,10 @@ def test_group_runner_replays_all_multimodal_tool_images(monkeypatch):
         staticmethod(lambda model: CaptureMultimodalHistoryLlm(model=model)),
     )
 
-    images = [Image.new("L", (256, 256), color=128) for _ in range(2)]
     result = asyncio.run(
-        run_group_session(
-            images=images,
+        run_single_slice_session(
+            image=Image.new("L", (256, 256), color=128),
             atlas_name="allen_mouse_25um",
-            interval_mm=0.171,
-            thickness_um=50,
             plane="coronal",
             model="gemini-3-flash-preview",
             max_iterations=6,
@@ -294,8 +226,8 @@ def test_group_runner_replays_all_multimodal_tool_images(monkeypatch):
         )
     )
 
-    assert [p.position_mm for p in result.positions] == [5.7, 5.871]
-    assert captured_image_counts == [2, 5, 8]
+    assert result.position_mm == 5.7
+    assert captured_image_counts == [1, 4, 7]
 
 
 def test_single_runner_uses_file_api_target_for_native_gemini(monkeypatch):
@@ -593,82 +525,6 @@ def test_single_runner_long_no_tool_turn_gets_main_style_nudge(monkeypatch):
     assert saw_thought_nudge is True
     assert result.position_mm == 6.0
     assert result.reasoning == "thought nudge worked"
-
-
-def test_group_runner_uses_file_api_targets_for_native_gemini(monkeypatch):
-    """Native Gemini group sessions should upload each target once."""
-
-    captured_first_request: list[types.Content] = []
-    fake_client = _FakeGeminiClient()
-
-    class CaptureInitialGroupTransportLlm(BaseLlm):
-        async def generate_content_async(
-            self, llm_request, stream: bool = False
-        ) -> AsyncGenerator[LlmResponse, None]:
-            del stream
-            contents = list(llm_request.contents or [])
-            if not captured_first_request:
-                captured_first_request.extend(contents)
-            n_function_responses = sum(
-                1
-                for content in contents
-                for part in (content.parts or [])
-                if getattr(part, "function_response", None) is not None
-            )
-            if n_function_responses == 0:
-                call = types.Part.from_function_call(
-                    name="fetch_atlas",
-                    args={"positions_mm": [4.0, 5.0, 6.0]},
-                )
-            elif n_function_responses == 1:
-                call = types.Part.from_function_call(
-                    name="fetch_atlas",
-                    args={"positions_mm": [5.8, 6.0, 6.2]},
-                )
-            else:
-                call = types.Part.from_function_call(
-                    name="submit_group_estimate",
-                    args={"positions_mm": [5.9, 6.1], "reasoning": "done"},
-                )
-            yield LlmResponse(
-                content=types.Content(role="model", parts=[call]),
-                partial=False,
-                turn_complete=True,
-            )
-
-    from google.adk.models.registry import LLMRegistry
-
-    monkeypatch.setattr(
-        LLMRegistry,
-        "new_llm",
-        staticmethod(lambda model: CaptureInitialGroupTransportLlm(model=model)),
-    )
-    monkeypatch.setattr("langslice.providers.vlm_config.supports_file_api", lambda: True)
-    monkeypatch.setattr("langslice.providers.vlm_config.file_poll_timeout_s", lambda: 0.01)
-    monkeypatch.setattr("langslice.providers.vlm_config.get_client", lambda: fake_client)
-
-    result = asyncio.run(
-        run_group_session(
-            images=[
-                Image.new("RGB", (256, 256), color=128),
-                Image.new("RGB", (256, 256), color=128),
-            ],
-            atlas_name="allen_mouse_25um",
-            interval_mm=0.2,
-            thickness_um=50,
-            plane="coronal",
-            model="gemini-3-flash-preview",
-            max_iterations=8,
-            max_retries=1,
-            apply_clahe=False,
-        )
-    )
-
-    assert [p.position_mm for p in result.positions] == [5.9, 6.1]
-    assert len(fake_client.files.uploaded) == 2
-    assert fake_client.files.deleted == ["files/target-1", "files/target-2"]
-    assert _count_file_images(captured_first_request) == 2
-    assert _count_inline_images(captured_first_request) == 0
 
 
 def test_model_object_target_transport_stays_inline(monkeypatch):

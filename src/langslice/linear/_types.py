@@ -18,14 +18,5 @@ class PositionResult:
     debug_dir: str | None = None
 
 
-@dataclass
-class MultiSliceResult:
-    """Result from multi-slice group estimation."""
-
-    positions: list[PositionResult]
-    group_reasoning: str
-    debug_dir: str | None = None
-
-
-# Shared alias used by whole-brain AP estimation code.
+# Shared alias used by whole-brain estimation code.
 APResult = PositionResult

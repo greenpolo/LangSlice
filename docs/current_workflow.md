@@ -5,7 +5,7 @@ This page describes the active CLI workflows.
 The CLI is grouped by method:
 
 ```bash
-langslice linear    {estimate, estimate-group, estimate-brain, quick-affine}
+langslice linear    {estimate, estimate-brain, quick-affine}
 langslice nonlinear {register}
 langslice           {version, login, serve, collect-traces}
 ```
@@ -18,20 +18,32 @@ position as an argument and does not care where it came from, so it can follow
 
 ```bash
 langslice linear estimate <image> [--atlas ...] [--model ...] [--plane ...]
-langslice linear estimate-group <img1> <img2> ... [--interval 200] [--atlas ...]
-langslice linear estimate-brain <image_folder> [--atlas ...] [--anchors ...] [--model ...]
+langslice linear estimate-brain <image_folder> [--atlas ...] [--plane ...] [--interval 200] [--thickness 50] [--keep-order|--no-keep-order] [--model ...] [--out ...] [--resume|--fresh]
 ```
 
-Single-slice and group position estimation run through the ADK harness -- the
-only estimation path. The agent surface is intentionally small: `fetch_atlas`,
-`submit_estimate`, and `submit_group_estimate`.
+Single-slice estimation runs through the ADK harness. The agent surface is
+intentionally small: `fetch_atlas` and `submit_estimate`.
 
-Whole-brain estimation discovers a folder of slices, estimates anchor slices
-with the tool-use estimator, interpolates center positions, estimates the
-remaining slices independently with the same tool-use estimator over the full
-atlas range, and fits a constrained monotonic position curve. A single
-`--model` flag configures the model used for both anchor and non-anchor
-estimation.
+Whole-brain estimation runs the node engine in
+`src/langslice/linear/whole_brain/`. The graph is
+`ingest → survey → fix → seed → position → transforms → review → emit`;
+`fix` can route back to `survey` and `review` back to `position`, with
+per-node cycle limits.
+
+- `ingest` discovers the folder (natural sort), loads the atlas, builds the
+  stack state, and writes a labelled contact sheet next to the checkpoint.
+- `emit` writes the results JSON (default `<image_folder>/brain_results.json`,
+  or `--out`).
+- The steps in between are agent work and currently ship as stubs that pass
+  through.
+
+Everything the engine produces -- corrected order, flips, positions, oblique
+angles, per-slice transforms -- is a proposal recorded as data. The user's
+image files are never modified.
+
+State is checkpointed to `<image_folder>/brain_estimate.json` after every
+node, in the same shape as the results file. `--resume` (default) skips nodes
+the checkpoint lists as complete; `--fresh` re-runs the whole graph.
 
 ## Linear: Quick Affine
 

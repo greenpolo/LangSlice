@@ -35,8 +35,7 @@ from langslice.image_prep import (
     normalize_image,
     prepare_image_for_vlm,
 )
-from langslice.linear._types import MultiSliceResult, PositionResult
-from langslice.linear.group import build_group_agent
+from langslice.linear._types import PositionResult
 from langslice.linear.session import (
     ARTIFACT_TARGET,
     build_initial_state,
@@ -51,7 +50,6 @@ _APP_NAME = "langslice"
 _USER_ID = "langslice-user"
 
 _DEFAULT_MAX_ITERATIONS_SINGLE = 20
-_DEFAULT_MAX_ITERATIONS_GROUP = 25
 _DEFAULT_MAX_RETRIES = 2
 _THOUGHT_LEAK_CANDIDATE_TOKEN_THRESHOLD = 1000
 
@@ -300,12 +298,12 @@ async def _run_estimation_session(
     build_result: Callable[[dict[str, Any]], Any],
     build_fallback: Callable[[float, float], Any],
 ) -> Any:
-    """Shared attempt/retry/nudge loop behind both public session runners.
+    """Shared attempt/retry/nudge loop behind the public session runner.
 
-    Single- and group-slice sessions differ only in agent construction, the
-    initial user message, and how a submitted/fallback result is shaped; the
-    atlas setup, plugin wiring, retry loop, tool-call counting, thought-leak
-    detection, and nudge-on-stall logic are identical and live here.
+    Callers supply agent construction, the initial user message, and how a
+    submitted/fallback result is shaped; the atlas setup, plugin wiring,
+    retry loop, tool-call counting, thought-leak detection, and
+    nudge-on-stall logic live here.
     """
     atlas = load_atlas(atlas_name)
     pos_lo, pos_hi = get_position_range_mm(atlas, plane=plane)
@@ -368,7 +366,7 @@ async def _run_estimation_session(
         target_transport=target_transport,
     )
     # Single-slice sessions seed one artifact under the shared ARTIFACT_TARGET
-    # key; group sessions seed one per slice under 'target:<N>'.
+    # key; multi-image sessions seed one per slice under 'target:<N>'.
     artifact_specs: list[tuple[str, _TargetPayload]] = (
         [(ARTIFACT_TARGET, target_payloads[0])]
         if run_label == "single_slice"
@@ -571,8 +569,8 @@ async def run_single_slice_session(
         )
 
     def _build_fallback(pos_lo: float, pos_hi: float) -> PositionResult:
-        # Fallback: atlas midpoint. Keep this phrase aligned with group
-        # fallback handling and eval fallback detection.
+        # Fallback: atlas midpoint. Keep this phrase aligned with eval
+        # fallback detection.
         mid = (pos_lo + pos_hi) / 2.0
         logger.warning(
             "All %d retries exhausted; falling back to %.2f mm midpoint.",
@@ -606,131 +604,6 @@ async def run_single_slice_session(
         n_slices=1,
         interval_mm=0.0,
         thickness_um=50,
-        build_agent=_build_agent,
-        build_new_message=_build_new_message,
-        build_result=_build_result,
-        build_fallback=_build_fallback,
-    )
-
-
-async def run_group_session(
-    *,
-    images: list[Image.Image],
-    atlas_name: str,
-    interval_mm: float,
-    thickness_um: int = 50,
-    plane: Plane = "coronal",
-    model: str | object = "gemini-3-flash-preview",
-    species: str | None = None,
-    max_iterations: int = _DEFAULT_MAX_ITERATIONS_GROUP,
-    max_retries: int = _DEFAULT_MAX_RETRIES,
-    temperature: float = 1.0,
-    thinking_level: str = "MEDIUM",
-    media_resolution: str | None = "medium",
-    apply_clahe: bool = True,
-    target_transport: str = "auto",
-    trace_recorder: BasePlugin | None = None,
-    include_thought_summaries: bool = False,
-) -> MultiSliceResult:
-    """Drive a multi-slice group position-estimation session to completion.
-
-    Seeds each target image as a distinct ``target:<N>`` artifact, runs the
-    ADK group agent, counts function-call events against ``max_iterations``,
-    and retries with a fresh session up to ``max_retries`` times if the agent
-    does not submit. Falls back to ``n_slices`` positions centered on the
-    atlas midpoint with the requested ``interval_mm`` spacing if all retries
-    are exhausted.
-    """
-    n_slices = len(images)
-    if not 2 <= n_slices <= 8:
-        raise ValueError(f"Expected 2-8 slices, got {n_slices}")
-
-    def _build_agent(
-        species_val: str, pos_lo: float, pos_hi: float, agent_model: object,
-        thinking_cfg: object | None,
-    ) -> Any:
-        return build_group_agent(
-            atlas_name=atlas_name,
-            plane=plane,
-            species=species_val,
-            pos_lo=pos_lo,
-            pos_hi=pos_hi,
-            n_slices=n_slices,
-            interval_mm=interval_mm,
-            thickness_um=thickness_um,
-            model=agent_model,
-            temperature=temperature,
-            media_resolution=_normalize_media_resolution(media_resolution),
-            thinking_config=thinking_cfg,
-        )
-
-    def _build_new_message(target_payloads: list[_TargetPayload]) -> types.Content:
-        parts: list[types.Part] = []
-        for i, payload in enumerate(target_payloads):
-            parts.append(
-                types.Part.from_text(
-                    text=f"Slice {i + 1} (artifact: '{target_key(i + 1)}'):"
-                )
-            )
-            parts.append(payload.request_part)
-        parts.append(types.Part.from_text(text="Determine the position of each slice."))
-        return types.Content(role="user", parts=parts)
-
-    def _build_result(result: dict[str, Any]) -> MultiSliceResult:
-        reasoning = str(result["reasoning"])
-        positions = [
-            PositionResult(position_mm=float(p), reasoning=reasoning)
-            for p in result["positions_mm"]
-        ]
-        return MultiSliceResult(positions=positions, group_reasoning=reasoning)
-
-    def _build_fallback(pos_lo: float, pos_hi: float) -> MultiSliceResult:
-        # Fallback: center the group around the atlas midpoint with requested
-        # interval spacing, clamped to the atlas range. Keep the reasoning
-        # phrase aligned with run_single_slice_session for consistent traces.
-        mid = (pos_lo + pos_hi) / 2.0
-        span = (n_slices - 1) * interval_mm
-        start = mid - span / 2.0
-        fallback_positions = [
-            max(pos_lo, min(pos_hi, start + i * interval_mm)) for i in range(n_slices)
-        ]
-        logger.warning(
-            "All %d retries exhausted; falling back to %d positions centered at %.2f mm.",
-            max_retries,
-            n_slices,
-            mid,
-        )
-        fallback_reasoning = (
-            "Model did not submit within iteration+retry budget; "
-            "fell back to atlas midpoint."
-        )
-        return MultiSliceResult(
-            positions=[
-                PositionResult(position_mm=p, reasoning=fallback_reasoning)
-                for p in fallback_positions
-            ],
-            group_reasoning=fallback_reasoning,
-        )
-
-    return await _run_estimation_session(
-        images=images,
-        atlas_name=atlas_name,
-        plane=plane,
-        model=model,
-        species=species,
-        max_iterations=max_iterations,
-        max_retries=max_retries,
-        thinking_level=thinking_level,
-        apply_clahe=apply_clahe,
-        target_transport=target_transport,
-        trace_recorder=trace_recorder,
-        include_thought_summaries=include_thought_summaries,
-        run_label="group",
-        session_id_prefix="group_attempt_",
-        submit_tool_name="submit_group_estimate",
-        n_slices=n_slices,
-        interval_mm=interval_mm,
-        thickness_um=thickness_um,
         build_agent=_build_agent,
         build_new_message=_build_new_message,
         build_result=_build_result,
