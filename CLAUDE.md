@@ -90,7 +90,15 @@ Two methods live as sibling subpackages with no dependency on each other:
   prescription. Its one external check is the annotation: `atlas_structures_at`
   / `structure_range` wrap `atlas/landmarks.py`, and `submit_positions` refuses
   a submission unless its two `end_anchors` (a structure seen at each END of
-  the stack) contain that section's position in their atlas span. Spacing is
+  the stack) contain that section's position in their atlas span AND that
+  structure's own span is narrow — `MAX_ANCHOR_SPAN_FRACTION` (25%) of the
+  atlas's full slicing-axis extent, refused as `STRUCTURE_TOO_BROAD`
+  otherwise, so a structure present almost everywhere (cortex, say) cannot
+  "prove" a placement. Both landmark tools and the end-anchor gate are gated
+  by `BrainConfig.landmark_tools` (default on; CLI
+  `--landmark-tools`/`--no-landmark-tools`), an ablation switch that off,
+  drops the tools, the `end_anchors` argument, and every mention of landmarks
+  from the prompt, reverting to the pre-gate visual end check. Spacing is
   reported as implied-vs-nominal everywhere, and extrapolation never falls back
   to the nominal interval; `transforms.py` proposes one in-plane
   alignment per section — the shared silhouette affine (plain code) for intact
