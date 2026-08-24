@@ -48,6 +48,23 @@ def _parse_atlas_key(source: str) -> float:
         raise ValueError(f"Bad atlas position in {source!r}") from exc
 
 
+#: Atlas sections one ``fetch_atlas`` call may return. Anything past this is
+#: dropped — silently, once, which cost a benchmark run the three posterior
+#: levels it thought it had looked at. It is now reported back.
+MAX_FETCH_POSITIONS = 8
+
+
+def _as_floats(values: list[Any]) -> list[float]:
+    """Model output is a trust boundary: keep the numbers, skip the rest."""
+    out: list[float] = []
+    for value in values:
+        try:
+            out.append(round(float(value), 2))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
 def _is_broad_sweep(positions: list[float]) -> bool:
     return len(positions) >= 3
 
@@ -117,7 +134,11 @@ def _framed_atlas_slice(
 async def fetch_atlas(
     positions_mm: list[float], tool_context: Any
 ) -> dict[str, Any]:
-    """Fetch 1-8 atlas sections along the session's slicing plane.
+    """Fetch atlas sections along the session's slicing plane, at most 8 per call.
+
+    Ask for more than 8 and only the first 8 are fetched; the rest come back
+    under ``dropped_positions_mm`` with ``truncated: true`` — call again for
+    them rather than assuming you saw them.
 
     Positions outside the valid range are clamped. Duplicate positions within
     0.02 mm of an already-requested one are coalesced. Each returned slice is
@@ -138,8 +159,11 @@ async def fetch_atlas(
     plane = state["plane"]
     atlas_name = state["atlas"]
 
-    capped = list(positions_mm)[:8]
-    positions = _clamp_and_dedupe_positions(capped, pos_lo=pos_lo, pos_hi=pos_hi)
+    requested = list(positions_mm)
+    dropped = _as_floats(requested[MAX_FETCH_POSITIONS:])
+    positions = _clamp_and_dedupe_positions(
+        requested[:MAX_FETCH_POSITIONS], pos_lo=pos_lo, pos_hi=pos_hi
+    )
     if not positions:
         return {"status": "error", "error": "EMPTY_RESULT"}
 
@@ -164,7 +188,7 @@ async def fetch_atlas(
         state["saw_narrow_sweep"] = True
 
     plural = "s" if len(positions) != 1 else ""
-    return {
+    result: dict[str, Any] = {
         "status": "ok",
         "positions_mm": [round(float(pos), 2) for pos in positions],
         "atlas_keys": [atlas_key(pos) for pos in positions],
@@ -177,6 +201,16 @@ async def fetch_atlas(
         ),
         TOOL_MEDIA_PARTS_KEY: image_parts,
     }
+    if dropped:
+        result["truncated"] = True
+        result["dropped_positions_mm"] = dropped
+        result["description"] += (
+            f" You asked for {len(requested)} positions; only the first "
+            f"{MAX_FETCH_POSITIONS} were fetched. NOT fetched, and not shown "
+            "to you: " + ", ".join(f"{pos:.2f} mm" for pos in dropped)
+            + ". Call fetch_atlas again for those."
+        )
+    return result
 
 
 def submit_estimate(

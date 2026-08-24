@@ -220,9 +220,12 @@ def rewind_state(state: StackState, node: str) -> None:
       ``flag_slice`` caveats carry no fixed prefix, so they are not tracked
       here and are not removed.
 
-    Survey outputs (flips, damage, corrected order, ``axis_directions``) and
-    ``state.notes`` are never touched — provenance for those is not tracked
-    per-node, so clearing them would be a guess.
+    Notes written BY a rewound node go too: every node prefixes its notes with
+    its own name (``"position: ..."``), and leaving them behind seeds the
+    "fresh" pass with the numbers the last pass wrote — a rewound run then
+    anchors on the ladder it was supposed to redo. ``ingest``/``survey``/
+    ``fix``/``seed`` notes stay, as do survey outputs (flips, damage,
+    corrected order, ``axis_directions``): those are not being redone.
 
     Does not checkpoint; callers persist the result themselves.
     """
@@ -252,6 +255,8 @@ def rewind_state(state: StackState, node: str) -> None:
             record.interactive_transform = None
             record.caveats = [c for c in record.caveats if not c.startswith(stale_prefixes)]
 
+    stale_notes = tuple(f"{name}:" for name in cleared)
+    state.notes = [note for note in state.notes if not note.startswith(stale_notes)]
     state.notes.append(f"rewound from '{node}' for a fresh pass")
 
 

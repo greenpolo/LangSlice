@@ -164,6 +164,35 @@ def test_fetch_atlas_framing_is_off_by_default():
     ).size
 
 
+def test_fetch_atlas_says_so_when_it_truncates():
+    """Silent truncation cost a run three posterior levels it never saw."""
+    state = build_initial_state(
+        atlas_name="allen_mouse_25um", plane="coronal",
+        pos_lo=0.0, pos_hi=13.2, n_slices=1,
+        interval_mm=0.0, thickness_um=50, max_iterations=20,
+    )
+    requested = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0]
+
+    result = asyncio.run(
+        fetch_atlas(positions_mm=requested, tool_context=_fake_tool_context(state))
+    )
+
+    assert isinstance(result, dict)
+    assert result["status"] == "ok"
+    assert result["positions_mm"] == requested[:8]
+    assert len(_media_parts(result)) == 8
+    assert result["truncated"] is True
+    assert result["dropped_positions_mm"] == [9.0, 10.0, 11.0]
+    assert "9.00 mm, 10.00 mm, 11.00 mm" in str(result["description"])
+
+    # A call within the cap says nothing about truncation at all.
+    within = asyncio.run(
+        fetch_atlas(positions_mm=[2.0], tool_context=_fake_tool_context(state))
+    )
+    assert isinstance(within, dict)
+    assert "truncated" not in within
+
+
 def test_fetch_atlas_rejects_empty_positions():
     state = build_initial_state(
         atlas_name="allen_mouse_25um", plane="coronal",

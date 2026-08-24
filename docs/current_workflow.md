@@ -22,7 +22,14 @@ langslice linear estimate-brain <image_folder> [--atlas ...] [--plane ...] [--in
 ```
 
 Single-slice estimation runs through the ADK harness. The agent surface is
-intentionally small: `fetch_atlas` and `submit_estimate`.
+intentionally small: `fetch_atlas` and `submit_estimate`. `fetch_atlas` returns
+at most 8 sections per call; ask for more and the extras come back listed under
+`dropped_positions_mm` with `truncated: true`, never silently missing. Atlas
+images from older tool calls are trimmed out of the model's context as it goes
+(`langslice.adk.plugins.trim_stale_tool_images`): the JSON naming every fetched
+position stays, and the pixels of the newest calls stay — three full sweeps'
+worth, and always at least the two newest calls whatever their size, so two
+sweeps can always be compared against each other.
 
 Whole-brain estimation runs the node engine in
 `src/langslice/linear/whole_brain/`. The graph is
@@ -41,9 +48,12 @@ per-node cycle limits.
   fill their frames about equally: histology arrives filling most of its scan
   while a fixed-canvas atlas render leaves an anterior brain small and centred,
   and that difference in apparent scale is itself a cue. Histology foreground
-  is "far from the border's background level"; the atlas silhouette comes from
-  the annotation (a reference volume's faint background noise would defeat a
-  non-zero test). The geometry path is deliberately excluded: the `transforms`
+  is "far from the border's background level", cropped to the LARGEST connected
+  blob so a neighbouring fragment or a speck of debris on the slide cannot drag
+  the frame open around both and shrink the section to a corner of it; the atlas
+  silhouette comes from the annotation (a reference volume's faint background
+  noise would defeat a non-zero test). The geometry path is deliberately
+  excluded: the `transforms`
   step fits its affine on the uncropped render, since the six numbers it hands
   back are normalized against that frame.
 - `survey` is one agent pass over the whole stack: it is shown every section
@@ -77,15 +87,22 @@ per-node cycle limits.
   is the ladder's absolute placement that is suspect; anchor only where the
   atlas level is identifiable at a glance; verify both ends of the stack
   against the atlas annotation before submitting, because a plausible ladder
-  hung at the wrong absolute position looks consistent from the inside; and the
-  realized section spacing is usually LARGER than the nominal cutting interval,
-  so a ladder matching the nominal interval exactly is a warning sign, not a
-  success.
+  hung at the wrong absolute position looks consistent from the inside; when an
+  end IS off, both ends off in the SAME direction means the ladder needs a rigid
+  shift, not a spacing change (only ends off in OPPOSITE directions indict the
+  spacing); and the realized section spacing is usually LARGER than the nominal
+  cutting interval, so a ladder matching the nominal interval exactly is a
+  warning sign, not a success — while a ladder implying far MORE than nominal
+  (about 1.3x or above) is the opposite warning, a stack stretched to reach
+  something it may not contain.
   Tools: `view_slices`, `fetch_atlas`, `atlas_structures_at` (what the atlas
   annotation carries at up to 8 levels, by in-plane area share),
   `structure_range` (the slicing-axis span over which up to 10 named structures
   exist, descendants included — the check that does not come from the agent's
-  own arithmetic), `estimate_slices` (up to 8 named sections per call, each a
+  own arithmetic; each hit reports the `name` the query actually resolved to
+  plus up to three `also_matches` acronyms it could have meant instead, so a
+  short acronym cannot resolve to the wrong structure unnoticed),
+  `estimate_slices` (up to 8 named sections per call, each a
   full single-slice sweep, run one after another and reported but not written),
   `interpolate_between` (fixed points in, one suggestion per section out, not
   written; beyond the outermost fixed points it steps at the interval those
@@ -95,28 +112,45 @@ per-node cycle limits.
   monotone-fit suggestion, both explicitly advisory) and `submit_positions`.
   The interval table reports the implied mean interval — per contiguous placed
   stretch and overall — next to the nominal one, with a legend saying which of
-  the two is evidence. `submit_positions` is rejected unless every section has
-  a position AND its two `end_anchors` hold: one entry per END of the corrected
-  order naming a structure visible in that section, whose atlas existence range
-  (`langslice.atlas.landmarks.axis_range_of`) must contain that section's
-  submitted position, within one slice thickness, AND whose own span covers no
-  more than `MAX_ANCHOR_SPAN_FRACTION` (25%) of the atlas's full slicing-axis
-  extent — a structure present almost everywhere (cortex, say) "proves" any
-  placement and is refused as `STRUCTURE_TOO_BROAD` before its span is even
-  checked against the position. A refused anchor comes back with the
-  structure's actual span (and, for a too-broad one, `span_fraction`) against
-  the proposed position and does not escalate — the agent fixes the placement
-  or names a truthful, specific landmark. The accepted anchors are recorded in
-  the run notes. Oblique-angle estimation is not part of this step yet.
+  the two is evidence and reading the comparison BOTH ways: implied below
+  nominal means the stack is compressed, implied far above it (about 1.3x)
+  means it may have been stretched or those sections really are missing, and
+  ends that disagree with the atlas in the same direction call for a rigid
+  shift rather than a spacing change. `submit_positions` is rejected unless
+  every section has a position, its reported `interval_breaks` are visible in
+  the positions it wrote, AND its two `end_anchors` hold:
+  - `interval_breaks` — each reported index names the section AFTER a gap, and
+    the written interval at that neighbour pair must be more than 1.5x the
+    stack's own median written spacing. An index whose own numbers show
+    ordinary spacing is refused as `INTERVAL_BREAKS_UNSUPPORTED`, naming the
+    interval actually written there, so a break cannot travel downstream as a
+    finding the placement does not contain.
+  - `end_anchors` — one entry per END of the corrected order naming a structure
+    visible in that section, whose atlas existence range
+    (`langslice.atlas.landmarks.axis_range_of`) must contain that section's
+    submitted position, within one slice thickness, AND whose own span covers no
+    more than `MAX_ANCHOR_SPAN_FRACTION` (8%) of the atlas's full slicing-axis
+    extent — a structure present almost everywhere (cortex, say) "proves" any
+    placement and is refused as `STRUCTURE_TOO_BROAD` before its span is even
+    checked against the position. The cap is deliberately tight: at a quarter of
+    the axis a mouse-atlas anchor could still be 3 mm wide, wider than the
+    errors the gate exists to catch (310 of the 839 annotated Allen structures
+    still qualify). A refused anchor comes back with the structure's actual
+    span (and, for a too-broad one, `span_fraction`) against the proposed
+    position and does not escalate — the agent fixes the placement or names a
+    truthful, specific landmark. The accepted anchors are recorded in the run
+    notes.
+
+  Oblique-angle estimation is not part of this step yet.
 
   All of the above — the two landmark tools and the end-anchor gate — are
   gated by `BrainConfig.landmark_tools` (default on; CLI
   `--landmark-tools`/`--no-landmark-tools`), an ablation switch for
   experiments, not a normal deployment knob. Off, `atlas_structures_at` and
   `structure_range` are not registered, `submit_positions` takes no
-  `end_anchors` argument and only checks that every section has a position
-  (its pre-gate shape), and the prompt drops every mention of the landmark
-  tools in favor of the older "verify both ends visually" wording.
+  `end_anchors` argument (the interval-break check still runs), and the prompt
+  drops every mention of the landmark tools in favor of the older "verify both
+  ends visually" wording.
 - `transforms` proposes one in-plane alignment per section, on two routes.
   Intact sections take the plain-code route: the shared silhouette affine
   (`src/langslice/affine.py`) against the atlas section their position names,
@@ -159,7 +193,10 @@ just before that node and resumes from there, so a single step can be
 re-benchmarked without re-running (and re-paying for) the agent steps ahead of
 it. It clears that node's own output plus everything derived from it --
 `position` also clears `transforms`, since the transform step reads
-positions -- but leaves `survey`'s findings (order, flips, damage) untouched:
+positions -- including the run notes those steps wrote (every note is prefixed
+with the node that wrote it), so a rewound pass does not start by reading the
+ladder it is meant to redo. It leaves `survey`'s findings (order, flips,
+damage) and the earlier steps' notes untouched:
 those are not cheaply reproducible, so rewinding `survey`/`fix`/`seed` is not
 supported. Requires a checkpoint to already exist; mutually exclusive with
 `--fresh`; composes with `--stop-after` to run exactly one rewound node and

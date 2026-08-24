@@ -67,6 +67,20 @@ def test_crop_to_tissue_keeps_a_dim_interior(monkeypatch) -> None:
     assert framed.height >= 110
 
 
+def test_crop_to_tissue_ignores_debris_beside_the_section() -> None:
+    """A neighbouring fragment must not drag the frame open around both."""
+    canvas = np.full((400, 400, 3), 240, dtype=np.uint8)
+    cv2.ellipse(canvas, (120, 120), (60, 45), 0, 0, 360, (30, 30, 30), -1)
+    cv2.circle(canvas, (360, 370), 12, (30, 30, 30), -1)  # a far-away speck
+    slide = Image.fromarray(canvas, mode="RGB")
+
+    framed = crop_to_tissue(slide)
+
+    # The box is the section's, not the section-plus-speck bounding box.
+    assert framed.width < 200 and framed.height < 200
+    assert _fill(framed, background=240) > 0.45
+
+
 def test_crop_to_tissue_leaves_a_frame_it_cannot_read() -> None:
     uniform = Image.new("RGB", (100, 80), (120, 120, 120))
     assert crop_to_tissue(uniform).size == uniform.size

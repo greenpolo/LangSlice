@@ -91,15 +91,21 @@ Two methods live as sibling subpackages with no dependency on each other:
   / `structure_range` wrap `atlas/landmarks.py`, and `submit_positions` refuses
   a submission unless its two `end_anchors` (a structure seen at each END of
   the stack) contain that section's position in their atlas span AND that
-  structure's own span is narrow — `MAX_ANCHOR_SPAN_FRACTION` (25%) of the
+  structure's own span is narrow — `MAX_ANCHOR_SPAN_FRACTION` (8%) of the
   atlas's full slicing-axis extent, refused as `STRUCTURE_TOO_BROAD`
   otherwise, so a structure present almost everywhere (cortex, say) cannot
-  "prove" a placement. Both landmark tools and the end-anchor gate are gated
+  "prove" a placement. It also refuses `interval_breaks` the agent's own
+  written positions do not show (the interval there must exceed 1.5x the
+  stack's median written spacing). Both landmark tools and the end-anchor gate
+  are gated
   by `BrainConfig.landmark_tools` (default on; CLI
   `--landmark-tools`/`--no-landmark-tools`), an ablation switch that off,
   drops the tools, the `end_anchors` argument, and every mention of landmarks
   from the prompt, reverting to the pre-gate visual end check. Spacing is
-  reported as implied-vs-nominal everywhere, and extrapolation never falls back
+  reported as implied-vs-nominal everywhere, two-sided (implied below nominal =
+  compressed; far above = stretched or sections truly lost) and with the
+  offset-vs-scale rule (both ends off the same way = rigid shift, not a spacing
+  change), and extrapolation never falls back
   to the nominal interval; `transforms.py` proposes one in-plane
   alignment per section — the shared silhouette affine (plain code) for intact
   sections, a per-section interactive agent loop (preview → look → adjust →
@@ -113,8 +119,10 @@ Two methods live as sibling subpackages with no dependency on each other:
   path, whose coordinates the crop would move.
   `--stop-after NODE` runs one step and checkpoints; `--rerun-from
   {position,transforms,review}` rewinds an existing checkpoint's node and
-  everything downstream of it (`engine.rewind_state`), then resumes — for
-  re-benchmarking one step without re-paying for the agent steps ahead of it.
+  everything downstream of it (`engine.rewind_state`), notes those steps wrote
+  included, then resumes — for re-benchmarking one step without re-paying for
+  the agent steps ahead of it, and without seeding the fresh pass with the
+  rejected one's numbers.
 - `nonlinear/` — generative-image registration: candidate generation, image
   provider adapters, Elastix runtime, optional ADK review loop, affine and
   nonlinear result types, and `quick_affine.py` (silhouette affine preview;
@@ -139,7 +147,8 @@ Shared, top-level:
 - `image_prep.py` — image normalization, pixel-size detection, VLM
   downsampling, and foreground framing (`crop_to_tissue`, `crop_to_mask`), used
   by the whole-brain visual path so histology and atlas sections fill their
-  frames comparably
+  frames comparably. Tissue framing crops to the LARGEST connected blob, so a
+  fragment or a speck elsewhere on the slide cannot widen the box
 - `export.py` — QUINT/ABBA-compatible JSON export
 - `providers/` — model access (`vlm_config.py` for Gemini backends,
   `openai_config.py` for OpenAI-compatible backends, `chatgpt.py` for the

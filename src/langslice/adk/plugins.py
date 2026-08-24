@@ -16,8 +16,15 @@ from google.adk.plugins.base_plugin import BasePlugin
 from google.genai import types
 from PIL import Image
 
-# Roughly two sweeps' worth of atlas images (median observed sweep is 5-6).
-DEFAULT_KEEP_LAST_TOOL_IMAGES = 12
+# Three full sweeps' worth of atlas images (a full sweep is up to 8). At 12
+# two consecutive full sweeps already blew the budget, leaving the model
+# comparing candidates with only the newest call's pixels in front of it.
+DEFAULT_KEEP_LAST_TOOL_IMAGES = 24
+
+#: Media-bearing tool calls kept whatever the budget says. Two, so the model
+#: can always compare its newest sweep against the one before it — a single
+#: oversized sweep must not evict every other atlas image in context.
+MIN_KEEP_TOOL_CALLS = 2
 
 
 def trim_stale_tool_images(
@@ -29,10 +36,11 @@ def trim_stale_tool_images(
     turn (~2.75x prompt-token redundancy measured over real runs). The JSON
     tool results still name every fetched position, and the model can
     re-fetch any position it wants to see again, so only the newest calls
-    keep their pixels: walking newest-to-oldest, media is kept while the
-    running total stays within *keep_last* (the newest call is always kept),
-    and every call older than the first drop is dropped too. User-message
-    images (the histology slice) are never touched.
+    keep their pixels: walking newest-to-oldest, the newest
+    :data:`MIN_KEEP_TOOL_CALLS` calls are kept whatever their size, further
+    media is kept while the running total stays within *keep_last*, and every
+    call older than the first drop is dropped too. User-message images (the
+    histology slice) are never touched.
     """
     media_sites = [
         (ci, pi, len(part.function_response.parts))
@@ -43,8 +51,8 @@ def trim_stale_tool_images(
     kept = 0
     dropping = False
     drop: list[tuple[int, int]] = []
-    for ci, pi, n in reversed(media_sites):
-        if dropping or (kept and kept + n > keep_last):
+    for rank, (ci, pi, n) in enumerate(reversed(media_sites)):
+        if rank >= MIN_KEEP_TOOL_CALLS and (dropping or kept + n > keep_last):
             dropping = True
             drop.append((ci, pi))
         else:

@@ -115,11 +115,23 @@ def find_structure(atlas: BrainGlobeAtlas, query: str) -> dict[str, Any] | None:
 
 
 def near_misses(atlas: BrainGlobeAtlas, query: str, limit: int = 5) -> list[str]:
-    """Acronyms a failed :func:`find_structure` lookup was probably reaching for."""
+    """Acronyms a :func:`find_structure` lookup was probably reaching for.
+
+    Ranked: acronyms that START with the query first (shortest first, so the
+    query itself leads), then structures whose NAME contains it, then fuzzy
+    matches. Acronyms lead because that is how anatomists type: a query of
+    "SC" means the superior colliculus family, not every structure whose name
+    happens to contain the letters s-c.
+    """
     wanted = str(query or "").strip().lower()
     records = list(_structure_records(atlas).values())
-    # Ambiguous name substrings first: those are the ones the caller nearly had.
-    suggestions = [r["acronym"] for r in records if wanted and wanted in r["name"].lower()]
+    if not wanted:
+        return []
+    suggestions = sorted(
+        (r["acronym"] for r in records if r["acronym"].lower().startswith(wanted)),
+        key=lambda acronym: (len(acronym), acronym),
+    )
+    suggestions += [r["acronym"] for r in records if wanted in r["name"].lower()]
     suggestions += difflib.get_close_matches(
         wanted, [r["acronym"].lower() for r in records], n=limit, cutoff=0.6
     )
