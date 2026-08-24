@@ -95,7 +95,10 @@ Two methods live as sibling subpackages with no dependency on each other:
   agent steps share (`render_slice`, `view_slices`, manifest, ADK session
   loop); `render_slice` also applies the display-only fluorescence
   preprocessing (`--preprocess auto|none`, `BrainConfig.preprocess`).
-  `--stop-after NODE` runs one step and checkpoints.
+  `--stop-after NODE` runs one step and checkpoints; `--rerun-from
+  {position,transforms,review}` rewinds an existing checkpoint's node and
+  everything downstream of it (`engine.rewind_state`), then resumes — for
+  re-benchmarking one step without re-paying for the agent steps ahead of it.
 - `nonlinear/` — generative-image registration: candidate generation, image
   provider adapters, Elastix runtime, optional ADK review loop, affine and
   nonlinear result types, and `quick_affine.py` (silhouette affine preview;
