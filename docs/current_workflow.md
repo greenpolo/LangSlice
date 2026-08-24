@@ -18,7 +18,7 @@ position as an argument and does not care where it came from, so it can follow
 
 ```bash
 langslice linear estimate <image> [--atlas ...] [--model ...] [--plane ...]
-langslice linear estimate-brain <image_folder> [--atlas ...] [--plane ...] [--interval 200] [--thickness 50] [--keep-order|--no-keep-order] [--model ...] [--preprocess auto|none] [--out ...] [--resume|--fresh|--rerun-from NODE] [--stop-after NODE]
+langslice linear estimate-brain <image_folder> [--atlas ...] [--plane ...] [--interval 200] [--thickness 50] [--keep-order|--no-keep-order] [--model ...] [--preprocess auto|none] [--landmark-tools|--no-landmark-tools] [--out ...] [--resume|--fresh|--rerun-from NODE] [--stop-after NODE]
 ```
 
 Single-slice estimation runs through the ADK harness. The agent surface is
@@ -99,11 +99,24 @@ per-node cycle limits.
   a position AND its two `end_anchors` hold: one entry per END of the corrected
   order naming a structure visible in that section, whose atlas existence range
   (`langslice.atlas.landmarks.axis_range_of`) must contain that section's
-  submitted position, within one slice thickness. A refused anchor comes back
-  with the structure's actual span against the proposed position and does not
-  escalate — the agent fixes the placement or names a truthful landmark. The
-  accepted anchors are recorded in the run notes. Oblique-angle estimation is
-  not part of this step yet.
+  submitted position, within one slice thickness, AND whose own span covers no
+  more than `MAX_ANCHOR_SPAN_FRACTION` (25%) of the atlas's full slicing-axis
+  extent — a structure present almost everywhere (cortex, say) "proves" any
+  placement and is refused as `STRUCTURE_TOO_BROAD` before its span is even
+  checked against the position. A refused anchor comes back with the
+  structure's actual span (and, for a too-broad one, `span_fraction`) against
+  the proposed position and does not escalate — the agent fixes the placement
+  or names a truthful, specific landmark. The accepted anchors are recorded in
+  the run notes. Oblique-angle estimation is not part of this step yet.
+
+  All of the above — the two landmark tools and the end-anchor gate — are
+  gated by `BrainConfig.landmark_tools` (default on; CLI
+  `--landmark-tools`/`--no-landmark-tools`), an ablation switch for
+  experiments, not a normal deployment knob. Off, `atlas_structures_at` and
+  `structure_range` are not registered, `submit_positions` takes no
+  `end_anchors` argument and only checks that every section has a position
+  (its pre-gate shape), and the prompt drops every mention of the landmark
+  tools in favor of the older "verify both ends visually" wording.
 - `transforms` proposes one in-plane alignment per section, on two routes.
   Intact sections take the plain-code route: the shared silhouette affine
   (`src/langslice/affine.py`) against the atlas section their position names,

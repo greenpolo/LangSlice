@@ -66,6 +66,12 @@ MAX_STRUCTURE_LEVELS = 8
 #: Structures one ``structure_range`` call may look up.
 MAX_STRUCTURE_QUERIES = 10
 
+#: An end anchor's structure must span no more than this fraction of the
+#: atlas's full slicing-axis extent. A structure that runs most of the
+#: brain's length (cortex, say) is "present" almost everywhere and so proves
+#: nothing about where a section sits — it is gameable by construction.
+MAX_ANCHOR_SPAN_FRACTION = 0.25
+
 DEFAULT_POSITION_MODEL = "gemini-3-flash-preview"
 
 _RUN_LABEL = "whole_brain_position"
@@ -76,18 +82,29 @@ _PLANE_AXIS_LABEL: dict[str, str] = {
     "horizontal": "DV",
 }
 
-_NUDGE_NO_TOOL = (
+_NUDGE_NO_TOOL_ON = (
     "You did not call a tool. Do not answer in prose: compare sections against "
     "the atlas with `view_slices` and `fetch_atlas`, check what the atlas says "
     "is there with `atlas_structures_at` and `structure_range`, estimate "
     "sections with `estimate_slices`, write positions with `set_positions`, "
     "and finish with `submit_positions`."
 )
-_NUDGE_CONTINUE = (
+_NUDGE_NO_TOOL_OFF = (
+    "You did not call a tool. Do not answer in prose: compare sections against "
+    "the atlas with `view_slices` and `fetch_atlas`, estimate sections with "
+    "`estimate_slices`, write positions with `set_positions`, and finish with "
+    "`submit_positions`."
+)
+_NUDGE_CONTINUE_ON = (
     "Please continue placing the stack. Check anything still unresolved, write "
     "the positions you have settled on with `set_positions`, verify both ends "
     "against the atlas with `structure_range`, then call `submit_positions` "
     "with an end anchor for the first and last section."
+)
+_NUDGE_CONTINUE_OFF = (
+    "Please continue placing the stack. Check anything still unresolved, write "
+    "the positions you have settled on with `set_positions`, then call "
+    "`submit_positions`."
 )
 
 
@@ -268,7 +285,7 @@ def _monotone_suggestion(state: StackState) -> dict[str, Any]:
 
 
 def check_end_anchors(
-    state: StackState, atlas: Any, anchors: Any
+    state: StackState, atlas: Any, anchors: Any, *, axis_extent_mm: float
 ) -> dict[str, Any] | None:
     """Check the two end anchors against the atlas annotation.
 
@@ -276,7 +293,12 @@ def check_end_anchors(
     should hand back. This is the one check in the whole positioning step that
     is not the agent marking its own homework: the structure the agent names
     has an existence range in the annotation volume, and a section placed
-    outside that range is placed wrong.
+    outside that range is placed wrong — provided the structure is narrow
+    enough to mean anything (see :data:`MAX_ANCHOR_SPAN_FRACTION`).
+
+    ``axis_extent_mm`` is the atlas's full extent along the slicing axis
+    (``pos_hi - pos_lo``), the yardstick a structure's own span is judged
+    against.
     """
     if not structure_count(atlas):
         # No structure tree: nothing here can answer, and refusing every
@@ -349,6 +371,24 @@ def check_end_anchors(
             )
             continue
         lo, hi = span
+        span_fraction = (hi - lo) / axis_extent_mm if axis_extent_mm > 0 else 0.0
+        if span_fraction > MAX_ANCHOR_SPAN_FRACTION:
+            failures.append(
+                {
+                    "id": slice_id,
+                    "structure": structure["acronym"],
+                    "structure_name": structure["name"],
+                    "span_mm": [round(lo, 3), round(hi, 3)],
+                    "span_fraction": round(span_fraction, 2),
+                    "error": "STRUCTURE_TOO_BROAD",
+                    "reason": (
+                        f"{structure['acronym']} spans {span_fraction * 100:.0f}% "
+                        "of the slicing axis — it cannot localize a section. "
+                        "Name a structure specific to this level."
+                    ),
+                }
+            )
+            continue
         if not (lo - tolerance <= position <= hi + tolerance):
             failures.append(
                 {
@@ -385,6 +425,23 @@ def check_end_anchors(
     }
 
 
+def _missing_positions_error(state: StackState) -> dict[str, Any] | None:
+    """``None`` when every section has a position, else the rejection dict."""
+    missing = [record.id for record in state.in_order() if record.position_mm is None]
+    if not missing:
+        return None
+    return {
+        "status": "error",
+        "error": "MISSING_POSITIONS",
+        "missing_ids": missing,
+        "message": (
+            f"{len(missing)} section(s) still have no position. Every "
+            "section needs one, damaged sections included: write them "
+            "with `set_positions`, then submit again."
+        ),
+    }
+
+
 # --- tools ---------------------------------------------------------------
 
 
@@ -393,6 +450,7 @@ def build_position_tools(
 ) -> PositionToolBox:
     """Build the positioning tool set, closed over *state* (the working copy)."""
     box = PositionToolBox()
+    landmark_tools = bool(ctx.config.landmark_tools)
 
     view_slices = make_view_slices(state, ctx)
     plane: Plane = state.plane  # type: ignore[assignment]
@@ -400,145 +458,147 @@ def build_position_tools(
     def _atlas() -> Any:
         return ctx.atlas_loader(state.atlas or ctx.config.atlas)
 
-    def atlas_structures_at(positions_mm: list[float]) -> dict[str, Any]:
-        """What the ATLAS says is present at up to 8 levels along the slicing axis.
+    if landmark_tools:
 
-        Read straight out of the atlas annotation volume — not a model opinion
-        and not arithmetic over your own writes. Use it two ways: to check what
-        anatomy should be there at a level you are considering, and to find
-        where a structure you can SEE in the tissue can and cannot be.
+        def atlas_structures_at(positions_mm: list[float]) -> dict[str, Any]:
+            """What the ATLAS says is present at up to 8 levels along the slicing axis.
 
-        Args:
-            positions_mm: Positions along the slicing axis (max 8 per call).
+            Read straight out of the atlas annotation volume — not a model opinion
+            and not arithmetic over your own writes. Use it two ways: to check what
+            anatomy should be there at a level you are considering, and to find
+            where a structure you can SEE in the tissue can and cannot be.
 
-        Returns:
-            One entry per level: the structures present, largest in-plane area
-            share first.
-        """
-        if not positions_mm:
-            return {"status": "error", "error": "BAD_ARGS"}
-        try:
-            atlas = _atlas()
-        except Exception as exc:
-            logger.warning("position: atlas unavailable for structures: %s", exc)
-            return {
-                "status": "error",
-                "error": "ATLAS_UNAVAILABLE",
-                "message": str(exc),
-            }
+            Args:
+                positions_mm: Positions along the slicing axis (max 8 per call).
 
-        levels: list[dict[str, Any]] = []
-        for raw in list(positions_mm)[:MAX_STRUCTURE_LEVELS]:
+            Returns:
+                One entry per level: the structures present, largest in-plane area
+                share first.
+            """
+            if not positions_mm:
+                return {"status": "error", "error": "BAD_ARGS"}
             try:
-                position = min(pos_hi, max(pos_lo, float(raw)))
-            except (TypeError, ValueError):
-                levels.append({"requested": str(raw), "error": "NOT_A_NUMBER"})
-                continue
-            try:
-                found = structures_at(atlas, position, plane)
+                atlas = _atlas()
             except Exception as exc:
+                logger.warning("position: atlas unavailable for structures: %s", exc)
+                return {
+                    "status": "error",
+                    "error": "ATLAS_UNAVAILABLE",
+                    "message": str(exc),
+                }
+
+            levels: list[dict[str, Any]] = []
+            for raw in list(positions_mm)[:MAX_STRUCTURE_LEVELS]:
+                try:
+                    position = min(pos_hi, max(pos_lo, float(raw)))
+                except (TypeError, ValueError):
+                    levels.append({"requested": str(raw), "error": "NOT_A_NUMBER"})
+                    continue
+                try:
+                    found = structures_at(atlas, position, plane)
+                except Exception as exc:
+                    levels.append(
+                        {
+                            "position_mm": round(position, 3),
+                            "error": "LOOKUP_FAILED",
+                            "message": str(exc),
+                        }
+                    )
+                    continue
                 levels.append(
-                    {
-                        "position_mm": round(position, 3),
-                        "error": "LOOKUP_FAILED",
-                        "message": str(exc),
-                    }
+                    {"position_mm": round(position, 3), "structures": found}
                 )
-                continue
-            levels.append(
-                {"position_mm": round(position, 3), "structures": found}
-            )
-        return {
-            "status": "ok",
-            "levels": levels,
-            "note": (
-                "Structures the atlas annotation carries at each level, by "
-                "share of the section's tissue area. Anything you SEE that "
-                "this list rules out means the level is wrong."
-            ),
-        }
-
-    def structure_range(acronyms: list[str]) -> dict[str, Any]:
-        """Where along the slicing axis each named structure exists, at all.
-
-        The span covers the structure and everything under it in the atlas
-        hierarchy. A section placed outside a span cannot contain that
-        structure — this is how you check an absolute placement against
-        something other than your own spacing arithmetic.
-
-        Args:
-            acronyms: Structure acronyms, or full structure names (max 10 per
-                call). Case-insensitive; a unique name substring also works.
-
-        Returns:
-            One entry per query: the resolved structure and its
-            ``first_mm``/``last_mm`` span, or an error entry naming the
-            closest structures the atlas does have.
-        """
-        if not acronyms:
-            return {"status": "error", "error": "BAD_ARGS"}
-        try:
-            atlas = _atlas()
-        except Exception as exc:
-            logger.warning("position: atlas unavailable for ranges: %s", exc)
             return {
-                "status": "error",
-                "error": "ATLAS_UNAVAILABLE",
-                "message": str(exc),
+                "status": "ok",
+                "levels": levels,
+                "note": (
+                    "Structures the atlas annotation carries at each level, by "
+                    "share of the section's tissue area. Anything you SEE that "
+                    "this list rules out means the level is wrong."
+                ),
             }
 
-        ranges: list[dict[str, Any]] = []
-        for raw in list(acronyms)[:MAX_STRUCTURE_QUERIES]:
-            query = str(raw).strip()
-            structure = find_structure(atlas, query) if query else None
-            if structure is None:
-                ranges.append(
-                    {
-                        "query": query,
-                        "error": "UNKNOWN_STRUCTURE",
-                        "near_misses": near_misses(atlas, query) if query else [],
-                    }
-                )
-                continue
+        def structure_range(acronyms: list[str]) -> dict[str, Any]:
+            """Where along the slicing axis each named structure exists, at all.
+
+            The span covers the structure and everything under it in the atlas
+            hierarchy. A section placed outside a span cannot contain that
+            structure — this is how you check an absolute placement against
+            something other than your own spacing arithmetic.
+
+            Args:
+                acronyms: Structure acronyms, or full structure names (max 10 per
+                    call). Case-insensitive; a unique name substring also works.
+
+            Returns:
+                One entry per query: the resolved structure and its
+                ``first_mm``/``last_mm`` span, or an error entry naming the
+                closest structures the atlas does have.
+            """
+            if not acronyms:
+                return {"status": "error", "error": "BAD_ARGS"}
             try:
-                span = axis_range_of(atlas, structure["acronym"], plane)
+                atlas = _atlas()
             except Exception as exc:
-                ranges.append(
-                    {
-                        "query": query,
-                        "error": "LOOKUP_FAILED",
-                        "message": str(exc),
-                    }
-                )
-                continue
-            if span is None:
+                logger.warning("position: atlas unavailable for ranges: %s", exc)
+                return {
+                    "status": "error",
+                    "error": "ATLAS_UNAVAILABLE",
+                    "message": str(exc),
+                }
+
+            ranges: list[dict[str, Any]] = []
+            for raw in list(acronyms)[:MAX_STRUCTURE_QUERIES]:
+                query = str(raw).strip()
+                structure = find_structure(atlas, query) if query else None
+                if structure is None:
+                    ranges.append(
+                        {
+                            "query": query,
+                            "error": "UNKNOWN_STRUCTURE",
+                            "near_misses": near_misses(atlas, query) if query else [],
+                        }
+                    )
+                    continue
+                try:
+                    span = axis_range_of(atlas, structure["acronym"], plane)
+                except Exception as exc:
+                    ranges.append(
+                        {
+                            "query": query,
+                            "error": "LOOKUP_FAILED",
+                            "message": str(exc),
+                        }
+                    )
+                    continue
+                if span is None:
+                    ranges.append(
+                        {
+                            "query": query,
+                            "acronym": structure["acronym"],
+                            "name": structure["name"],
+                            "error": "STRUCTURE_NOT_ANNOTATED",
+                        }
+                    )
+                    continue
                 ranges.append(
                     {
                         "query": query,
                         "acronym": structure["acronym"],
                         "name": structure["name"],
-                        "error": "STRUCTURE_NOT_ANNOTATED",
+                        "first_mm": round(span[0], 3),
+                        "last_mm": round(span[1], 3),
                     }
                 )
-                continue
-            ranges.append(
-                {
-                    "query": query,
-                    "acronym": structure["acronym"],
-                    "name": structure["name"],
-                    "first_mm": round(span[0], 3),
-                    "last_mm": round(span[1], 3),
-                }
-            )
-        return {
-            "status": "ok",
-            "ranges": ranges,
-            "skipped": [str(a) for a in list(acronyms)[MAX_STRUCTURE_QUERIES:]],
-            "note": (
-                "Spans include the structure's descendants, in atlas-native mm "
-                "along the slicing axis."
-            ),
-        }
+            return {
+                "status": "ok",
+                "ranges": ranges,
+                "skipped": [str(a) for a in list(acronyms)[MAX_STRUCTURE_QUERIES:]],
+                "note": (
+                    "Spans include the structure's descendants, in atlas-native mm "
+                    "along the slicing axis."
+                ),
+            }
 
     def set_positions(entries: list[dict[str, Any]]) -> dict[str, Any]:
         """Write positions for one or more sections. Batch: one call, many sections.
@@ -798,98 +858,142 @@ def build_position_tools(
         """
         return spacing_advisories(state)
 
-    def submit_positions(
-        interval_breaks: list[int],
-        notes: list[str],
-        summary: str,
-        end_anchors: list[dict[str, Any]],
-        tool_context: Any = None,
-    ) -> dict[str, Any]:
-        """Finish the positioning step. Call this exactly once, last.
+    if landmark_tools:
 
-        Every section must have a position first, damaged sections included,
-        and both ends of the stack must be anchored to real anatomy — the call
-        is rejected otherwise.
+        def submit_positions(  # pyright: ignore[reportRedeclaration]
+            interval_breaks: list[int],
+            notes: list[str],
+            summary: str,
+            end_anchors: list[dict[str, Any]],
+            tool_context: Any = None,
+        ) -> dict[str, Any]:
+            """Finish the positioning step. Call this exactly once, last.
 
-        Args:
-            interval_breaks: Corrected indices where the spacing between
-                neighbouring sections breaks the nominal interval — the index
-                of the section AFTER the gap. Empty if the stack is regular.
-            notes: Short observations worth carrying forward.
-            summary: One or two sentences on what you changed and why.
-            end_anchors: Exactly two entries, one for the FIRST and one for the
-                LAST section of the corrected order:
-                ``[{"id": "<filename>", "structure": "<acronym>", "note":
-                "<what you saw>"}]``. The structure must be one you can SEE in
-                that section, and the atlas must agree it exists where you have
-                placed it — checked here against the annotation volume, so a
-                placement that contradicts the structure's range is refused.
-        """
-        missing = [
-            record.id for record in state.in_order() if record.position_mm is None
-        ]
-        if missing:
-            return {
-                "status": "error",
-                "error": "MISSING_POSITIONS",
-                "missing_ids": missing,
-                "message": (
-                    f"{len(missing)} section(s) still have no position. Every "
-                    "section needs one, damaged sections included: write them "
-                    "with `set_positions`, then submit again."
-                ),
-            }
+            Every section must have a position first, damaged sections
+            included, and both ends of the stack must be anchored to real
+            anatomy — the call is rejected otherwise.
 
-        anchor_note = ""
-        if state.slices:
-            try:
-                failure = check_end_anchors(state, _atlas(), end_anchors)
-            except Exception as exc:
-                # The atlas itself is unusable (no annotation, failed load).
-                # Refusing forever would deadlock the run, so let it through
-                # and say so in the record.
-                logger.warning("position: end-anchor check unavailable: %s", exc)
-                failure = None
-                anchor_note = f"end-anchor check skipped: {exc}"
-            if failure is not None:
-                return failure
+            Args:
+                interval_breaks: Corrected indices where the spacing between
+                    neighbouring sections breaks the nominal interval — the
+                    index of the section AFTER the gap. Empty if the stack is
+                    regular.
+                notes: Short observations worth carrying forward.
+                summary: One or two sentences on what you changed and why.
+                end_anchors: Exactly two entries, one for the FIRST and one
+                    for the LAST section of the corrected order:
+                    ``[{"id": "<filename>", "structure": "<acronym>", "note":
+                    "<what you saw>"}]``. The structure must be one you can
+                    SEE in that section, must exist over only a SHORT span of
+                    the slicing axis, and the atlas must agree it exists where
+                    you have placed it — checked here against the annotation
+                    volume, so a placement that contradicts the structure's
+                    range, or a structure too broad to localize anything, is
+                    refused.
+            """
+            missing_error = _missing_positions_error(state)
+            if missing_error is not None:
+                return missing_error
 
-        # Model output is a trust boundary: a malformed submission must not
-        # take the run down.
-        submitted_notes = (
-            [str(note) for note in notes] if isinstance(notes, (list, tuple)) else []
-        )
-        if anchor_note:
-            submitted_notes.append(anchor_note)
-        box.submission.update(
-            {
-                "interval_breaks": (
-                    list(interval_breaks)
-                    if isinstance(interval_breaks, (list, tuple))
-                    else []
-                ),
-                "notes": submitted_notes,
-                "summary": str(summary or ""),
-                "end_anchors": [
-                    {
-                        "id": str(entry.get("id", "")),
-                        "structure": str(entry.get("structure", "")),
-                        "note": str(entry.get("note", "")),
-                    }
-                    for entry in end_anchors
-                    if isinstance(entry, dict)
-                ],
-            }
-        )
-        if tool_context is not None:
-            tool_context.actions.escalate = True
-        return {"status": "ok", "positioned": len(state.slices)}
+            anchor_note = ""
+            if state.slices:
+                try:
+                    failure = check_end_anchors(
+                        state, _atlas(), end_anchors, axis_extent_mm=pos_hi - pos_lo
+                    )
+                except Exception as exc:
+                    # The atlas itself is unusable (no annotation, failed
+                    # load). Refusing forever would deadlock the run, so let
+                    # it through and say so in the record.
+                    logger.warning("position: end-anchor check unavailable: %s", exc)
+                    failure = None
+                    anchor_note = f"end-anchor check skipped: {exc}"
+                if failure is not None:
+                    return failure
+
+            # Model output is a trust boundary: a malformed submission must
+            # not take the run down.
+            submitted_notes = (
+                [str(note) for note in notes]
+                if isinstance(notes, (list, tuple))
+                else []
+            )
+            if anchor_note:
+                submitted_notes.append(anchor_note)
+            box.submission.update(
+                {
+                    "interval_breaks": (
+                        list(interval_breaks)
+                        if isinstance(interval_breaks, (list, tuple))
+                        else []
+                    ),
+                    "notes": submitted_notes,
+                    "summary": str(summary or ""),
+                    "end_anchors": [
+                        {
+                            "id": str(entry.get("id", "")),
+                            "structure": str(entry.get("structure", "")),
+                            "note": str(entry.get("note", "")),
+                        }
+                        for entry in end_anchors
+                        if isinstance(entry, dict)
+                    ],
+                }
+            )
+            if tool_context is not None:
+                tool_context.actions.escalate = True
+            return {"status": "ok", "positioned": len(state.slices)}
+
+    else:
+
+        def submit_positions(
+            interval_breaks: list[int],
+            notes: list[str],
+            summary: str,
+            tool_context: Any = None,
+        ) -> dict[str, Any]:
+            """Finish the positioning step. Call this exactly once, last.
+
+            Every section must have a position first, damaged sections
+            included — the call is rejected if any is missing.
+
+            Args:
+                interval_breaks: Corrected indices where the spacing between
+                    neighbouring sections breaks the nominal interval — the
+                    index of the section AFTER the gap. Empty if the stack is
+                    regular.
+                notes: Short observations worth carrying forward.
+                summary: One or two sentences on what you changed and why.
+            """
+            missing_error = _missing_positions_error(state)
+            if missing_error is not None:
+                return missing_error
+
+            # Model output is a trust boundary: a malformed submission must
+            # not take the run down.
+            box.submission.update(
+                {
+                    "interval_breaks": (
+                        list(interval_breaks)
+                        if isinstance(interval_breaks, (list, tuple))
+                        else []
+                    ),
+                    "notes": (
+                        [str(note) for note in notes]
+                        if isinstance(notes, (list, tuple))
+                        else []
+                    ),
+                    "summary": str(summary or ""),
+                }
+            )
+            if tool_context is not None:
+                tool_context.actions.escalate = True
+            return {"status": "ok", "positioned": len(state.slices)}
 
     box.tools = [
         view_slices,
         fetch_atlas,
-        atlas_structures_at,
-        structure_range,
+        *([atlas_structures_at, structure_range] if landmark_tools else []),
         estimate_slices,
         interpolate_between,
         set_positions,
@@ -903,7 +1007,12 @@ def build_position_tools(
 
 
 def build_position_prompt(
-    *, state: StackState, species: str, pos_lo: float, pos_hi: float
+    *,
+    state: StackState,
+    species: str,
+    pos_lo: float,
+    pos_hi: float,
+    landmark_tools: bool = True,
 ) -> str:
     """System instruction for the positioning agent, plane-aware.
 
@@ -911,6 +1020,11 @@ def build_position_prompt(
     absolute position, because the same prompt runs against every BrainGlobe
     atlas, species and plane. What it does carry is a MENU of strategies and
     the failure modes that bite whichever one the agent picks.
+
+    ``landmark_tools=False`` (an ablation switch, see
+    :attr:`~langslice.linear.whole_brain.state.BrainConfig.landmark_tools`)
+    drops every mention of `atlas_structures_at`/`structure_range` and the
+    end-anchor gate, falling back to a plain visual end check.
     """
     plane = state.plane
     axis = _PLANE_AXIS_LABEL.get(plane, "AP")
@@ -936,6 +1050,78 @@ def build_position_prompt(
         if damaged
         else ""
     )
+
+    if landmark_tools:
+        rule2_tail = (
+            "difference. BUT: when MANY independent estimates disagree with "
+            "your tidy ladder by a CONSISTENT amount and in the same "
+            "direction, it is the ladder's absolute placement that is "
+            "suspect, not the estimates. That pattern is what a compressed "
+            "or offset stack looks like from the inside — check it with "
+            "`atlas_structures_at` and `structure_range` before discarding a "
+            "single estimate.\n\n"
+        )
+        rule3 = (
+            "3. CHECK BOTH ENDS BEFORE YOU SUBMIT — AGAINST THE ATLAS, NOT "
+            "AGAINST YOUR OWN ARITHMETIC. A ladder with plausible spacing "
+            "hung at the wrong absolute position is perfectly consistent "
+            "from the inside: every interval looks right and every section "
+            "still sits wrong. The only way out of that loop is evidence "
+            "from outside it. For the FIRST and the LAST section of the "
+            "corrected order: NAME a structure you can actually SEE in that "
+            "section — one that exists only over a SHORT span of the "
+            "slicing axis, so its presence actually pins the section down. "
+            "A structure that runs most of the brain's length proves "
+            "nothing, since it is present almost everywhere: "
+            "`submit_positions` refuses any anchor spanning more than a "
+            "quarter of the atlas's slicing axis. Call "
+            "`structure_range` on your candidate, and check both that its "
+            "span is short and that the position you have written falls "
+            "inside it. `atlas_structures_at` goes the other way — it tells "
+            "you what the atlas says is there at a level you are "
+            "considering. A placement that contradicts a structure's "
+            "existence range is WRONG, full stop; move the section or pick a "
+            "landmark you can defend, never a structure you have not looked "
+            "for. `submit_positions` asks for both end anchors and "
+            "re-checks them, and refuses the submission when they do not "
+            "hold.\n\n"
+        )
+        rule6 = (
+            "6. THE ARITHMETIC IS ADVICE; THE ATLAS IS EVIDENCE. "
+            "`interpolate_between` and `get_advisories` compute from numbers "
+            "that have never seen an image and know nothing about missing "
+            "sections. Use them to find suspicious stretches, never as the "
+            "answer. `atlas_structures_at` and `structure_range` are the "
+            "other kind of tool: they read the atlas annotation itself, so "
+            "they can contradict you. Let them.\n\n"
+        )
+        closing = (
+            "Finish with `submit_positions`. It is rejected unless every "
+            "section in the stack has a position (damaged sections "
+            "included) AND both end anchors hold up against the atlas."
+        )
+    else:
+        rule2_tail = "difference.\n\n"
+        rule3 = (
+            "3. CHECK BOTH ENDS BEFORE YOU SUBMIT. A ladder with plausible "
+            "spacing hung at the wrong absolute position is perfectly "
+            "consistent from the inside — every interval looks right and "
+            "every section still sits wrong. The ends are where that shows: "
+            "verify the first and the last section of the stack against the "
+            "atlas independently, and if either one does not match, the "
+            "whole placement is offset, not just that section.\n\n"
+        )
+        rule6 = (
+            "6. THE ARITHMETIC IS ADVICE. `interpolate_between` and "
+            "`get_advisories` compute from numbers that have never seen an "
+            "image and know nothing about missing sections. Use them to "
+            "find suspicious stretches, never as the answer.\n\n"
+        )
+        closing = (
+            "Finish with `submit_positions`. It is rejected unless every "
+            "section in the stack has a position, damaged sections "
+            "included."
+        )
 
     return (
         f"You are an expert neuroanatomist placing a stack of "
@@ -988,27 +1174,8 @@ def build_position_prompt(
         f"at that placement too. Then discard the estimate that does not hold "
         f"up. Never resolve the conflict by sliding a self-consistent set of "
         f"sections to match a minority reading, and never split the "
-        f"difference. BUT: when MANY independent estimates disagree with your "
-        f"tidy ladder by a CONSISTENT amount and in the same direction, it is "
-        f"the ladder's absolute placement that is suspect, not the estimates. "
-        f"That pattern is what a compressed or offset stack looks like from "
-        f"the inside — check it with `atlas_structures_at` and "
-        f"`structure_range` before discarding a single estimate.\n\n"
-        f"3. CHECK BOTH ENDS BEFORE YOU SUBMIT — AGAINST THE ATLAS, NOT "
-        f"AGAINST YOUR OWN ARITHMETIC. A ladder with plausible spacing hung at "
-        f"the wrong absolute position is perfectly consistent from the inside: "
-        f"every interval looks right and every section still sits wrong. The "
-        f"only way out of that loop is evidence from outside it. For the FIRST "
-        f"and the LAST section of the corrected order: NAME a structure you "
-        f"can actually SEE in that section, call `structure_range` on it, and "
-        f"check that the position you have written falls inside the span the "
-        f"atlas reports. `atlas_structures_at` goes the other way — it tells "
-        f"you what the atlas says is there at a level you are considering. A "
-        f"placement that contradicts a structure's existence range is WRONG, "
-        f"full stop; move the section or pick a landmark you can defend, never "
-        f"a structure you have not looked for. `submit_positions` asks for "
-        f"both end anchors and re-checks them, and refuses the submission when "
-        f"they do not hold.\n\n"
+        f"{rule2_tail}"
+        f"{rule3}"
         f"4. THE SPACING IS NOT THE NOMINAL INTERVAL, IN EITHER DIRECTION. A "
         f"consistent slicing interval does NOT mean no sections are missing: "
         f"sections get lost, torn or skipped during collection, and the "
@@ -1027,16 +1194,8 @@ def build_position_prompt(
         f"5. WRITE IN BATCHES. `set_positions` takes many sections in one call "
         f"and hands back the resulting neighbour-interval table, so you see "
         f"immediately what your edit did to the spacing.\n\n"
-        f"6. THE ARITHMETIC IS ADVICE; THE ATLAS IS EVIDENCE. "
-        f"`interpolate_between` and `get_advisories` compute from numbers that "
-        f"have never seen an image and know nothing about missing sections. "
-        f"Use them to find suspicious stretches, never as the answer. "
-        f"`atlas_structures_at` and `structure_range` are the other kind of "
-        f"tool: they read the atlas annotation itself, so they can contradict "
-        f"you. Let them.\n\n"
-        f"Finish with `submit_positions`. It is rejected unless every section "
-        f"in the stack has a position (damaged sections included) AND both end "
-        f"anchors hold up against the atlas."
+        f"{rule6}"
+        f"{closing}"
     )
 
 
@@ -1055,6 +1214,17 @@ def build_position_seed_message(
     recent = state.notes[-note_limit:]
     notes_block = "\n".join(f"- {note}" for note in recent) if recent else "- (none)"
     parts: list[types.Part] = stack_image_parts(state, ctx)
+    closing = (
+        "Decide how you want to place this stack, work through it with "
+        "the tools, write positions with `set_positions`, verify the "
+        "first and last section against the atlas with "
+        "`structure_range`, then call `submit_positions` with an end "
+        "anchor for each of them."
+        if ctx.config.landmark_tools
+        else "Decide how you want to place this stack, work through it with "
+        "the tools, write positions with `set_positions`, then call "
+        "`submit_positions`."
+    )
     parts.append(
         types.Part.from_text(
             text=(
@@ -1064,11 +1234,7 @@ def build_position_seed_message(
                 f"{build_stack_manifest(state, with_positions=True)}\n\n"
                 f"Run notes so far (a 'review:' note means an earlier pass "
                 f"sent this stack back — read it first):\n{notes_block}\n\n"
-                "Decide how you want to place this stack, work through it with "
-                "the tools, write positions with `set_positions`, verify the "
-                "first and last section against the atlas with "
-                "`structure_range`, then call `submit_positions` with an end "
-                "anchor for each of them."
+                f"{closing}"
             )
         )
     )
@@ -1087,6 +1253,7 @@ def build_position_agent(
     pos_hi: float,
     model: str | object = DEFAULT_POSITION_MODEL,
     media_resolution: str = "MEDIA_RESOLUTION_MEDIUM",
+    landmark_tools: bool = True,
 ) -> LlmAgent:
     """Construct the positioning LlmAgent."""
     # Same shape as build_survey_agent: kwargs dict so the enum-typed
@@ -1103,7 +1270,11 @@ def build_position_agent(
         model=resolve_adk_model(model),  # type: ignore[arg-type]
         name="whole_brain_position",
         instruction=build_position_prompt(
-            state=state, species=species, pos_lo=pos_lo, pos_hi=pos_hi
+            state=state,
+            species=species,
+            pos_lo=pos_lo,
+            pos_hi=pos_hi,
+            landmark_tools=landmark_tools,
         ),
         tools=tools,
         generate_content_config=types.GenerateContentConfig(**config_kwargs),
@@ -1124,6 +1295,7 @@ async def run_position_session(
     The tools mutate *state* as they are called, so accepted positions survive
     even when the agent never reaches ``submit_positions``.
     """
+    landmark_tools = bool(ctx.config.landmark_tools)
     box = build_position_tools(state, ctx, pos_lo=pos_lo, pos_hi=pos_hi)
     agent = build_position_agent(
         state=state,
@@ -1132,6 +1304,7 @@ async def run_position_session(
         pos_lo=pos_lo,
         pos_hi=pos_hi,
         model=ctx.model or DEFAULT_POSITION_MODEL,
+        landmark_tools=landmark_tools,
     )
 
     tool_calls, turns = await run_agent_session(
@@ -1141,8 +1314,10 @@ async def run_position_session(
         pos_hi=pos_hi,
         seed_message=build_position_seed_message(state, ctx),
         done=lambda: bool(box.submission),
-        nudge_no_tool=_NUDGE_NO_TOOL,
-        nudge_continue=_NUDGE_CONTINUE,
+        nudge_no_tool=_NUDGE_NO_TOOL_ON if landmark_tools else _NUDGE_NO_TOOL_OFF,
+        nudge_continue=(
+            _NUDGE_CONTINUE_ON if landmark_tools else _NUDGE_CONTINUE_OFF
+        ),
         max_iterations=max_iterations,
         run_label=_RUN_LABEL,
     )
