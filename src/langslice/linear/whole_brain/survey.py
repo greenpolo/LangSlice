@@ -26,10 +26,10 @@ from langslice.adk.model_resolver import default_http_options, resolve_adk_model
 from langslice.linear.tools import fetch_atlas
 from langslice.linear.whole_brain._step_common import (
     build_stack_manifest,
-    contact_sheet_parts,
     make_view_slices,
     run_agent_session,
     split_known_ids,
+    stack_image_parts,
 )
 from langslice.linear.whole_brain.engine import EngineContext
 from langslice.linear.whole_brain.state import StackState
@@ -331,11 +331,11 @@ def build_survey_prompt(
         f"center-to-center; slice thickness {state.thickness_mm:.3f} mm\n"
         f"- {order_rule}\n"
         f"{known_directions}\n"
-        f"You are shown a contact sheet of the whole stack in its current "
-        f"corrected order (each thumbnail is labelled "
-        f"'<index>: <filename>') plus the same stack as a text manifest. "
-        f"The filenames are context for the intended order — they usually "
-        f"encode the order the sections were cut.\n\n"
+        f"You are shown every section of the stack as its own image, in the "
+        f"current corrected order, each one preceded by a text line "
+        f"'<index>: <filename>' that names it, plus the same stack as a text "
+        f"manifest. The filenames are context for the intended order — they "
+        f"usually encode the order the sections were cut.\n\n"
         f"In ONE pass, triage the stack for four things at once:\n\n"
         f"1. DAMAGE. 'Damaged' has an operational definition here: anything "
         f"that would make an automatic affine (outline-based) registration "
@@ -380,24 +380,24 @@ def build_survey_prompt(
         f"gives you reference sections to compare against if the direction "
         f"is not obvious from the stack alone.\n\n"
         f"HOW TO WORK:\n"
-        f"- Start from the contact sheet. Call `view_slices` (up to 8 "
-        f"sections per call) on anything the thumbnails are too small to "
-        f"judge.\n"
+        f"- Start from the stack images. Call `view_slices` (up to 8 sections "
+        f"per call) for a closer look at anything you cannot judge at that "
+        f"size.\n"
         f"- Batch your corrections: one `flip_slices` call with every "
         f"mirrored id, one `reorder_slices` call with the full corrected "
         f"order, one `mark_damaged` call with every damaged section.\n"
         f"- Corrections are recorded as data; the user's image files are "
         f"never modified.\n"
         f"- Finish with `submit_survey`. Set clean=false if you applied any "
-        f"correction in this pass (you will get one re-check pass with a "
-        f"refreshed contact sheet); clean=true only if the stack needed "
+        f"correction in this pass (you will get one re-check pass, with the "
+        f"stack re-rendered as corrected); clean=true only if the stack needed "
         f"nothing."
     )
 
 
-def build_seed_message(state: StackState) -> types.Content:
-    """Contact sheet + manifest: everything the survey starts from."""
-    parts: list[types.Part] = contact_sheet_parts(state)
+def build_seed_message(state: StackState, ctx: EngineContext) -> types.Content:
+    """Labelled per-section images + manifest: what the survey starts from."""
+    parts: list[types.Part] = stack_image_parts(state, ctx)
     parts.append(
         types.Part.from_text(
             text=(
@@ -476,7 +476,7 @@ async def run_survey_session(
         state=state,
         pos_lo=pos_lo,
         pos_hi=pos_hi,
-        seed_message=build_seed_message(state),
+        seed_message=build_seed_message(state, ctx),
         done=lambda: bool(box.submission),
         nudge_no_tool=_NUDGE_NO_TOOL,
         nudge_continue=_NUDGE_CONTINUE,

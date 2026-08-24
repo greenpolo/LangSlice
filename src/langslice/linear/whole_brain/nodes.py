@@ -69,6 +69,13 @@ def build_contact_sheet(
     Thumbnails come from :func:`render_slice`, so the sheet shows the corrected
     view — ``index_corrected`` order, flips mirrored, the same preprocessing the
     per-slice views use. Labels are ``<corrected index>: <filename>``.
+
+    Human-facing only. No model ever sees this sheet: the agent steps get the
+    stack as a labelled sequence of per-section images
+    (:func:`~langslice.linear.whole_brain._step_common.stack_image_parts`),
+    because a grid splits one vision-encoder patch budget across every section
+    at once. The sheet stays because it is the artifact a person opens to see
+    what the engine did, and the checkpoint records its path.
     """
     ordered = state.in_order()
     if not ordered:
@@ -151,13 +158,14 @@ async def ingest(state: StackState, ctx: EngineContext) -> str:
 async def survey(state: StackState, ctx: EngineContext) -> str:
     """Fused stack review: order, hemisphere flips, damage, gaps.
 
-    Reads: ``contact_sheet`` plus per-slice images on demand, ``keep_order``,
-    filenames as ordering context.
+    Reads: every section as its own labelled image, plus higher-resolution
+    per-slice views on demand, ``keep_order``, filenames as ordering context.
     Writes: the agent's tools apply corrections directly — ``index_corrected``,
     ``flip``, ``damaged``/``damage_note`` — and the submission adds
     ``axis_directions``, ``interval_breaks`` and notes.
-    Routes: "fix" when this pass corrected something (fix re-renders the stack
-    and sends it back for one re-check), "seed" when the stack is clean.
+    Routes: "fix" when this pass corrected something (fix rebuilds the contact
+    sheet and sends the stack back for one re-check, re-rendered as corrected),
+    "seed" when the stack is clean.
     """
     pos_lo, pos_hi = _atlas_range(state, ctx)
     outcome = await run_survey_session(
@@ -192,7 +200,7 @@ async def survey(state: StackState, ctx: EngineContext) -> str:
             f"survey: {note}" for note in findings.get("notes") or [] if str(note).strip()
         )
         # An agent that applied corrections and still called itself clean gets
-        # the re-check anyway: the contact sheet it looked at is now stale.
+        # the re-check anyway: the stack it looked at is now stale.
         clean = bool(findings.get("clean")) and not outcome.corrections_applied
 
     flipped = sum(1 for s in state.slices if s.flip)
@@ -217,8 +225,9 @@ async def survey(state: StackState, ctx: EngineContext) -> str:
 async def fix(state: StackState, ctx: EngineContext) -> str:
     """Re-render the corrected stack for a second look. Plain code, no model.
 
-    The survey's tools already applied its corrections to state, so all that
-    is left is a contact sheet that shows the stack as it now stands.
+    The survey's tools already applied its corrections to state, and the next
+    survey pass renders its own per-section images from that state, so all this
+    node does is refresh the human-facing contact sheet and route back.
     Routes: "survey" to re-check, until the stack is clean or the survey cycle
     limit is hit (the engine then falls through to seed).
     """
@@ -274,7 +283,7 @@ async def position(state: StackState, ctx: EngineContext) -> str:
     usually starts from an unplaced stack.
 
     Reads: any positions already on the stack, ``interval_mm``/``thickness_mm``,
-    the contact sheet, advisory spacing signals from
+    every section as its own labelled image, advisory spacing signals from
     :mod:`langslice.linear.whole_brain.signals`, and single-slice estimation via
     :func:`langslice.linear.whole_brain.estimation_agents.run_slice_estimation`.
     Writes: ``position_mm`` + ``position_source`` ("refined"), ``confidence``,

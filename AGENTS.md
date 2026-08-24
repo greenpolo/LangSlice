@@ -76,9 +76,13 @@ Two methods live as sibling subpackages with no dependency on each other:
   over one `StackState`, with bounded loop-back edges, a JSON checkpoint
   after every node, and results in the same shape as the checkpoint.
   Flips and reorders are recorded as data on the state; user image files are
-  never modified. `survey.py` is the stack-triage agent (damage, hemisphere
-  flips, order, interval breaks in one pass) and `fix` re-renders the contact
-  sheet for a re-check; `seed` runs an automatic seeder if one is installed
+  never modified. Every agent step is seeded with the whole stack as a
+  labelled sequence of per-section images (`_step_common.stack_image_parts`),
+  not a thumbnail grid; the contact sheet is still written next to the
+  checkpoint but is a human-facing artifact only. `survey.py` is the
+  stack-triage agent (damage, hemisphere flips, order, interval breaks in one
+  pass) and `fix` rebuilds the sheet and routes back for a re-check;
+  `seed` runs an automatic seeder if one is installed
   (only `deepslice.py`, which is not) and otherwise passes the stack through
   unplaced; `position.py` is the agent pass that owns placement AND the choice
   of placement strategy — its prompt is an atlas-agnostic menu (key sections +

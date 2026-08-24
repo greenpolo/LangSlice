@@ -14,7 +14,7 @@ from google.adk.models.llm_response import LlmResponse
 from google.genai import types
 from PIL import Image
 
-from langslice.linear.whole_brain.engine import build_context
+from langslice.linear.whole_brain.engine import EngineContext, build_context
 from langslice.linear.whole_brain.nodes import ingest, review
 from langslice.linear.whole_brain.position import build_position_seed_message
 from langslice.linear.whole_brain.review import (
@@ -47,7 +47,7 @@ class _ToolContext:
         self.actions = _Actions()
 
 
-def _reviewed(folder: Path, n: int = 4) -> tuple[StackState, object]:
+def _reviewed(folder: Path, n: int = 4) -> tuple[StackState, EngineContext]:
     """A stack that has been through positioning and transforms."""
     for index in range(n):
         Image.new("RGB", (40, 30), (10 * index, 60, 120)).save(
@@ -94,10 +94,12 @@ def test_review_manifest_shows_positions_flags_and_transforms(tmp_path: Path):
 
 
 def test_review_seed_carries_the_manifest_advisories_and_notes(tmp_path: Path):
-    state, _ctx = _reviewed(tmp_path)
+    state, ctx = _reviewed(tmp_path)
     state.notes.append("position: one section was moved 0.4 mm")
 
-    text = "".join(part.text or "" for part in build_review_seed_message(state).parts)
+    text = "".join(
+        part.text or "" for part in build_review_seed_message(state, ctx).parts or []
+    )
 
     assert "slice_00.png" in text
     assert "neighbour intervals" in text
@@ -263,7 +265,7 @@ def test_review_node_routes_back_to_position_and_leaves_its_notes_behind(
     )
     # And the positioning step's next pass actually reads them.
     seed = "".join(
-        part.text or "" for part in build_position_seed_message(state).parts
+        part.text or "" for part in build_position_seed_message(state, ctx).parts or []
     )
     assert "review: spacing after slice_01 is too wide" in seed
 
