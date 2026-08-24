@@ -88,7 +88,12 @@ class ModelCallPacingPlugin(BasePlugin):
         return None
 
 
-def _part_summary(part: types.Part) -> dict[str, Any]:
+def part_summary(part: types.Part) -> dict[str, Any]:
+    """Describe a part without copying its payload (media stays out of traces).
+
+    Also used by the whole-brain session tracer, which passes
+    ``FunctionResponsePart``s here — same duck-typed attributes.
+    """
     inline = getattr(part, "inline_data", None)
     if inline is not None:
         data = getattr(inline, "data", None)
@@ -176,7 +181,7 @@ class RequestCapturePlugin(BasePlugin):
             "contents": [
                 {
                     "role": getattr(content, "role", None),
-                    "parts": [_part_summary(part) for part in (content.parts or [])],
+                    "parts": [part_summary(part) for part in (content.parts or [])],
                 }
                 for content in (llm_request.contents or [])
             ],

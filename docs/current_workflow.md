@@ -205,3 +205,26 @@ defined by the Pydantic models in `src/langslice/api/models.py`.
 
 Set `LANGSLICE_VLM_DEBUG_DIR` to save run artifacts. For ADK estimation request auditing,
 set `LANGSLICE_ADK_CAPTURE_REQUESTS_DIR` to write redacted JSONL request captures.
+
+### Whole-brain agent traces
+
+`langslice linear estimate-brain --trace-dir PATH` (or `LANGSLICE_TRACE_DIR`;
+the flag wins) writes one JSONL file per agent session —
+`<trace_dir>/<run_label>_<8 hex>.jsonl`, e.g. `whole_brain_survey_1a2b3c4d.jsonl`,
+`whole_brain_position_*`, `whole_brain_review_*`,
+`whole_brain_transform_003_*` — with one record per event:
+
+| `kind` | contents |
+| --- | --- |
+| `session` | run label, agent name, model name, full system instruction (first line) |
+| `seed` | the step's seed message: text verbatim, images as descriptors labelled with the text above them |
+| `model` | one model turn: its text, any thought summary, every function call with full JSON arguments |
+| `tool_result` | the complete tool payload the model reads, plus descriptors for media riding on the response |
+| `nudge` | a nudge the driver actually sent |
+| `summary` | tool-call count, turn count, whether the step submitted (last line) |
+
+Unlike the request captures above, this records values, not shapes: full text,
+full tool arguments, full tool responses. Images are always descriptors (mime
+type, byte count, pixel size) — never bytes — so a trace stays small. Nothing
+but content, the prompt and a model name is read, so no credentials are
+written. Unset, the recorder is never constructed.

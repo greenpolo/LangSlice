@@ -440,6 +440,14 @@ def _add_estimate_brain_parser(subparsers: argparse._SubParsersAction) -> None:
         help="Results JSON path. Default: <image_folder>/brain_results.json",
     )
     p.add_argument(
+        "--trace-dir",
+        default=None,
+        metavar="PATH",
+        help="Write a full-content JSONL trace of every agent session here "
+        "(what the agent was shown, said, called, and got back). Overrides "
+        "LANGSLICE_TRACE_DIR",
+    )
+    p.add_argument(
         "--resume",
         dest="resume",
         action="store_true",
@@ -487,6 +495,10 @@ def _run_estimate_brain(args: argparse.Namespace) -> None:
         save_checkpoint,
     )
     from langslice.linear.whole_brain.engine import rewind_state
+    from langslice.linear.whole_brain.trace import TRACE_DIR_ENV
+
+    if args.trace_dir:
+        os.environ[TRACE_DIR_ENV] = args.trace_dir
 
     config = BrainConfig(
         image_folder=args.image_folder,
@@ -518,6 +530,8 @@ def _run_estimate_brain(args: argparse.Namespace) -> None:
     print(f"Interval: {config.interval_um}um  Thickness: {config.thickness_um}um")
     print(f"Folder: {config.image_folder}  Resume: {config.resume}")
     print(f"Preprocess: {config.preprocess}")
+    if os.environ.get(TRACE_DIR_ENV):
+        print(f"Agent traces: {os.environ[TRACE_DIR_ENV]}")
     print()
 
     state = asyncio.run(run_brain(config, emit=print, stop_after=args.stop_after))
