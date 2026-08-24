@@ -14,7 +14,7 @@ from PIL import Image
 from scipy.ndimage import gaussian_filter1d
 
 from langslice.atlas import position_mm_to_index
-from langslice.atlas.core import orient_slice_for_display
+from langslice.atlas.core import get_root_mask, orient_slice_for_display
 from langslice.space import (
     Plane,
     atlas_space_context,
@@ -229,39 +229,10 @@ def _warp_atlas_rgb(atlas_rgb: np.ndarray, result_transform: Any) -> np.ndarray:
     return np.stack(warped_channels, axis=-1)
 
 
-def _build_atlas_root_mask(
-    atlas: Any,
-    position_mm: float,
-    target_size: tuple[int, int],
-    *,
-    plane: Plane = "coronal",
-) -> np.ndarray:
-    """Build a binary alpha mask from the atlas root structure at *position_mm*.
-
-    Marks pixels with non-zero annotation IDs as opaque (255) and the
-    out-of-tissue background (annotation==0) as transparent (0). The mask is
-    NEAREST-resized to *target_size* so alpha stays binary — bilinear
-    interpolation would produce a halo around the brain silhouette in the 3D
-    viewer.
-
-    Args:
-        atlas: BrainGlobe-style atlas exposing ``.annotation``.
-        position_mm: AP/ML/DV position (per *plane*) at which to slice.
-        target_size: ``(width, height)`` of the desired mask, matching the
-            warped-slice RGB image it will be paired with.
-        plane: Slicing plane; passed to ``position_mm_to_index`` and
-            ``slice_axis_index`` so the slab axis lines up with the rest of
-            the registration pipeline.
-    """
-    idx = position_mm_to_index(atlas, position_mm, plane=plane)
-    axis = slice_axis_index(atlas_space_context(atlas), plane)
-    annotation_slice = np.asarray(np.take(atlas.annotation, idx, axis=axis))
-    annotation_slice = orient_slice_for_display(annotation_slice, plane)
-    mask = (annotation_slice != 0).astype(np.uint8) * 255
-    mask_img = Image.fromarray(mask, mode="L").resize(
-        target_size, resample=Image.Resampling.NEAREST
-    )
-    return np.asarray(mask_img, dtype=np.uint8)
+#: The atlas silhouette mask now lives with the other atlas slice accessors.
+#: Kept under its old name because the registration modules — and their
+#: monkeypatching tests — import it from here.
+_build_atlas_root_mask = get_root_mask
 
 
 def _format_elastix_param_value(value: str) -> str:

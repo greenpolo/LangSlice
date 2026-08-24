@@ -60,9 +60,21 @@ per-node cycle limits.
   interpolation residuals, monotone-fit suggestion, all explicitly advisory)
   and `submit_positions`, which is rejected unless every section has a
   position. Oblique-angle estimation is not part of this step yet.
+- `transforms` proposes one in-plane alignment per section, on two routes.
+  Intact sections take the plain-code route: the shared silhouette affine
+  (`src/langslice/affine.py`) against the atlas section their position names,
+  recorded as six normalized numbers on `slice.affine`. Damaged sections take
+  an interactive agent loop, one session per section: `preview_transform`
+  renders the section under a candidate rotation/scale/translation over its
+  atlas section (side by side plus a magenta/green overlay), the agent looks,
+  adjusts and repeats, then `submit_transform` records the five parameters on
+  `slice.interactive_transform`. A failed fit is a caveat, never a failed run.
+- `review` is the last agent pass: the whole finished stack, its manifest, and
+  the advisory spacing signals. It can attach caveats (`flag_slice`) and, once,
+  send the stack back to `position` with notes the next pass reads. A review
+  that runs out of turns approves with a note -- it can never block hand-back.
 - `emit` writes the results JSON (default `<image_folder>/brain_results.json`,
   or `--out`).
-- `transforms` and `review` are still stubs that pass through.
 
 `--stop-after NODE` runs the graph up to and including that node, writes the
 checkpoint and stops; re-running continues from there. It is how a single step
@@ -83,7 +95,9 @@ langslice linear quick-affine <image> --position <mm> [--atlas ...] [--plane ...
 ```
 
 An affine-only preview that aligns the tissue silhouette to the atlas silhouette
-at a known position. No image generation, no B-spline.
+at a known position, using the shared affine core (`src/langslice/affine.py`)
+that the whole-brain transform step also runs on. No image generation, no
+B-spline.
 
 ## Nonlinear: Image-Gen Registration
 

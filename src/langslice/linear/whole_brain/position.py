@@ -36,9 +36,9 @@ from langslice.linear.whole_brain.engine import EngineContext
 from langslice.linear.whole_brain.estimation_agents import run_slice_estimation
 from langslice.linear.whole_brain.signals import interpolate_positions, monotone_fit
 from langslice.linear.whole_brain.state import (
-    CONFIDENCE_LEVELS,
     SliceState,
     StackState,
+    apply_confidence,
 )
 
 logger = logging.getLogger(__name__)
@@ -160,6 +160,24 @@ def _interpolation_residuals(state: StackState) -> dict[str, Any]:
     return {"status": "ok", "rows": rows}
 
 
+def spacing_advisories(state: StackState) -> dict[str, Any]:
+    """The three arithmetic spacing views of the stack, as one dict.
+
+    Shared with the review step: both show the agent the same numbers, and
+    both label them advisory — nothing here has looked at an image.
+    """
+    return {
+        "status": "ok",
+        "advisory": (
+            "Suggestions computed from the current numbers only. Nothing here "
+            "has looked at a section image; verify before acting."
+        ),
+        "interval_table": interval_table(state),
+        "interpolation_residuals": _interpolation_residuals(state),
+        "monotone_fit": _monotone_suggestion(state),
+    }
+
+
 def _monotone_suggestion(state: StackState) -> dict[str, Any]:
     """A monotone, minimum-spacing curve through the current positions."""
     ordered = _positioned(state.in_order())
@@ -250,9 +268,7 @@ def build_position_tools(
                 )
             record.position_mm = value
             record.position_source = "refined"
-            confidence = str(entry.get("confidence", "")).strip().lower()
-            if confidence in CONFIDENCE_LEVELS:
-                record.confidence = confidence
+            apply_confidence(record, entry.get("confidence"))
             written.append({"id": record.id, "position_mm": round(value, 3)})
             box.written.append(record.id)
 
@@ -333,16 +349,7 @@ def build_position_tools(
             what interpolating between the anchor sections would predict, and a
             monotone minimum-spacing curve fitted through the current positions.
         """
-        return {
-            "status": "ok",
-            "advisory": (
-                "Suggestions computed from the current numbers only. Nothing "
-                "here has looked at a section image; verify before acting."
-            ),
-            "interval_table": interval_table(state),
-            "interpolation_residuals": _interpolation_residuals(state),
-            "monotone_fit": _monotone_suggestion(state),
-        }
+        return spacing_advisories(state)
 
     def submit_positions(
         interval_breaks: list[int],
@@ -484,8 +491,15 @@ def build_position_prompt(
     )
 
 
-def build_position_seed_message(state: StackState) -> types.Content:
-    """Contact sheet + positioned manifest: what the positioning step starts from."""
+def build_position_seed_message(state: StackState, *, note_limit: int = 12) -> types.Content:
+    """Contact sheet + positioned manifest: what the positioning step starts from.
+
+    The recent run notes ride along because this step is also the loop-back
+    target: when the review step refuses a stack it writes what is wrong into
+    the notes, and this is where the next pass reads it.
+    """
+    recent = state.notes[-note_limit:]
+    notes_block = "\n".join(f"- {note}" for note in recent) if recent else "- (none)"
     parts: list[types.Part] = contact_sheet_parts(state)
     parts.append(
         types.Part.from_text(
@@ -493,6 +507,8 @@ def build_position_seed_message(state: StackState) -> types.Content:
                 "Stack manifest (corrected index, filename, current position "
                 "and where it came from, current flags):\n"
                 f"{build_stack_manifest(state, with_positions=True)}\n\n"
+                f"Run notes so far (a 'review:' note means an earlier pass "
+                f"sent this stack back — read it first):\n{notes_block}\n\n"
                 "Verify the key ('anchor') sections against the atlas, hunt "
                 "for breaks in the interval between them, correct positions "
                 "with `set_positions`, then call `submit_positions`."

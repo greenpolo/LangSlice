@@ -11,8 +11,8 @@ other:
 - `src/langslice/linear/` -- slice-position estimation: the single-slice ADK
   agent, prompts, tools, validators, runners, and trace collection.
 - `src/langslice/linear/whole_brain/` -- the whole-brain estimation engine:
-  stack state, JSON checkpoint, node graph, the stack-survey agent, and
-  advisory spacing signals.
+  stack state, JSON checkpoint, node graph, the survey, positioning, transform
+  and review agents, and advisory spacing signals.
 - `src/langslice/nonlinear/` -- generative-image registration: candidate
   generation, image provider adapters, Elastix runtime, optional ADK review,
   affine/nonlinear result types, and the silhouette-based `quick_affine`
@@ -23,6 +23,11 @@ The remaining top-level modules are shared by both:
 - `src/langslice/atlas/` -- BrainGlobe atlas loading, slice extraction, and
   colored region maps.
 - `src/langslice/space.py` -- coordinate and orientation conventions.
+- `src/langslice/affine.py` -- the shared in-plane affine core: the silhouette
+  (image-moments) fit of a section onto an atlas section, the
+  rotation/scale/translate matrix builder, and the normalized six-number
+  parameter convention. Used by the whole-brain transform step and by
+  `quick_affine`.
 - `src/langslice/image_prep.py` -- image normalization, metadata detection, and downsampling.
 - `src/langslice/export.py` -- QUINT/ABBA-compatible JSON export.
 - `src/langslice/providers/` -- Gemini and OpenAI-compatible model configuration.
@@ -66,8 +71,7 @@ Nodes are plain async Python functions that return the name of the next node
 (`""` for the default successor); backward edges (`fix → survey`,
 `position → position`, `review → position`) are bounded per node.
 
-`ingest`, `survey`, `fix`, `seed`, `position` and `emit` are complete;
-`transforms` and `review` are still stubs.
+All eight nodes are implemented.
 The engine writes a JSON checkpoint after every node and the results file
 uses the same schema, so the CLI, the checkpoint, and any host adapter read
 one shape. Corrections (order, flips), positions, oblique angles, and

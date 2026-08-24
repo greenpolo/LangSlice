@@ -108,21 +108,29 @@ def test_emit_writes_the_state_serialization(tmp_path: Path):
 
 
 def test_run_brain_end_to_end_then_resume(tmp_path: Path, monkeypatch):
-    from tests.fakes import install_fake_adk_model_clean_stack
+    from tests.fakes import (
+        EllipseAtlas,
+        ellipse_section,
+        install_fake_adk_model_clean_stack,
+    )
 
-    # survey and position are real agents now; script them to submit at once,
-    # and stub the single-slice worker seed uses for its anchor estimates.
+    # Every agent step is real now; script them to submit at once, and stub the
+    # single-slice worker seed uses for its anchor estimates. The transform
+    # step's affine runs for real against the synthetic ellipse atlas.
     install_fake_adk_model_clean_stack(monkeypatch)
     monkeypatch.setattr(
         "langslice.linear.whole_brain.seeding.run_slice_estimation",
         _fake_anchor_estimate,
     )
-    _make_stack(tmp_path)
+    names = _make_stack(tmp_path)
+    for index, name in enumerate(names):
+        ellipse_section(angle=4.0 * index).save(tmp_path / name)
+    ellipse_atlas = EllipseAtlas()
     messages: list[str] = []
     config = _config(tmp_path, out=str(tmp_path / "results.json"))
 
     state = asyncio.run(
-        run_brain(config, emit=messages.append, atlas_loader=_fake_atlas_loader)
+        run_brain(config, emit=messages.append, atlas_loader=lambda _n: ellipse_atlas)
     )
 
     assert state.completed_nodes == [
@@ -133,20 +141,22 @@ def test_run_brain_end_to_end_then_resume(tmp_path: Path, monkeypatch):
     results = json.loads((tmp_path / "results.json").read_text())
     assert results["slices"] == checkpoint["slices"]
     assert (tmp_path / "contact_sheet.png").exists()
-    # Every section leaves the graph positioned.
+    # Every section leaves the graph positioned and with a transform proposal.
     assert all(s.position_mm is not None for s in state.slices)
-    # transforms and review are still stubs; fix was skipped.
-    assert sum("not implemented" in m for m in messages) == 2
-    assert any("skipping 'fix'" in m for m in messages)
+    assert all(s.affine is not None and len(s.affine) == 6 for s in state.slices)
+    assert any("5 affine fit(s)" in note for note in state.notes)
+    assert any("review: Stack is consistent end to end." in n for n in state.notes)
+    assert any("skipping 'fix'" in m for m in messages)  # the stack came back clean
 
     # Second run resumes: every node is already complete, nothing re-runs.
     resumed_messages: list[str] = []
     resumed = asyncio.run(
-        run_brain(config, emit=resumed_messages.append, atlas_loader=_fake_atlas_loader)
+        run_brain(
+            config, emit=resumed_messages.append, atlas_loader=lambda _n: ellipse_atlas
+        )
     )
     assert resumed.completed_nodes == state.completed_nodes
     assert sum("already complete" in m for m in resumed_messages) == 8
-    assert not any("not implemented" in m for m in resumed_messages)
 
     # --fresh re-runs the whole graph.
     fresh_messages: list[str] = []
@@ -154,7 +164,7 @@ def test_run_brain_end_to_end_then_resume(tmp_path: Path, monkeypatch):
         run_brain(
             _config(tmp_path, out=str(tmp_path / "results.json"), resume=False),
             emit=fresh_messages.append,
-            atlas_loader=_fake_atlas_loader,
+            atlas_loader=lambda _n: ellipse_atlas,
         )
     )
     assert not any("already complete" in m for m in fresh_messages)

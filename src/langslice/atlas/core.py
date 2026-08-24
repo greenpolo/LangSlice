@@ -262,6 +262,37 @@ def get_boundary_slice(
     return Image.fromarray(edges, mode="L")
 
 
+def get_root_mask(
+    atlas: _AtlasLike,
+    position_mm: float,
+    target_size: tuple[int, int],
+    *,
+    plane: Plane = "coronal",
+) -> np.ndarray:
+    """Binary tissue silhouette of the atlas at *position_mm*, at *target_size*.
+
+    Pixels with a non-zero annotation id are opaque (255), the out-of-tissue
+    background (annotation == 0) transparent (0). Resized NEAREST so the mask
+    stays binary — bilinear interpolation would leave a halo around the brain
+    silhouette.
+
+    Args:
+        atlas: BrainGlobe-style atlas exposing ``.annotation``.
+        position_mm: AP/ML/DV position (per *plane*) at which to slice.
+        target_size: ``(width, height)`` of the desired mask.
+        plane: Slicing plane, resolved the same way as every other accessor
+            here so the slab axis lines up across the pipeline.
+    """
+    idx, axis = _resolve_idx_axis(atlas, position_mm, plane)
+    annotation_slice = np.asarray(np.take(atlas.annotation, idx, axis=axis))
+    annotation_slice = orient_slice_for_display(annotation_slice, plane)
+    mask = (annotation_slice != 0).astype(np.uint8) * 255
+    mask_img = Image.fromarray(mask, mode="L").resize(
+        target_size, resample=Image.Resampling.NEAREST
+    )
+    return np.asarray(mask_img, dtype=np.uint8)
+
+
 def get_composite_slice(
     atlas: _AtlasLike,
     position_mm: float,
