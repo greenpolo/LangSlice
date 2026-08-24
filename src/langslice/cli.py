@@ -305,68 +305,6 @@ def _add_estimate_parser(subparsers: argparse._SubParsersAction) -> None:
     )
 
 
-def _add_estimate_group_parser(subparsers: argparse._SubParsersAction) -> None:
-    p = subparsers.add_parser(
-        "estimate-group",
-        help="Estimate AP positions for a group of consecutive brain slices",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    p.add_argument(
-        "images",
-        nargs="+",
-        help="Slice images in anterior-to-posterior order (2-8 images)",
-    )
-    p.add_argument("--atlas", default="allen_mouse_25um", help="BrainGlobe atlas name")
-    p.add_argument(
-        "--interval", type=int, default=200, help="Section interval in microns (center-to-center)"
-    )
-    p.add_argument("--thickness", type=int, default=50, help="Slice thickness in microns")
-    p.add_argument("--model", default=None, help="Gemini model name")
-    p.add_argument(
-        "--thinking",
-        default=None,
-        choices=["MINIMAL", "LOW", "MEDIUM", "HIGH"],
-        help="Gemini thinking level",
-    )
-    p.add_argument("--temperature", type=float, default=None, help="Generation temperature")
-    p.add_argument(
-        "--media-resolution",
-        default="medium",
-        choices=["low", "medium", "high", "ultra_high"],
-        help="Gemini media resolution for input images",
-    )
-    p.add_argument(
-        "--max-iterations",
-        type=int,
-        default=25,
-        help="Max tool-loop iterations",
-    )
-    p.add_argument(
-        "--preprocess",
-        default="auto",
-        choices=["auto", "none"],
-        help="Image preprocessing: 'auto' applies adaptive CLAHE + brightness normalization",
-    )
-    p.add_argument(
-        "--borders",
-        action="store_true",
-        help="Enable atlas region borders (off by default)",
-    )
-    p.add_argument(
-        "--grid",
-        action="store_true",
-        help="Send atlas slices as a composite grid instead of individually (default: individual)",
-    )
-    p.add_argument("--out", default=None, help="Output directory for debug artifacts")
-    p.add_argument("--json", action="store_true", help="Print result JSON to stdout")
-    p.add_argument(
-        "--provider",
-        default="google",
-        choices=["google", "openai"],
-        help="Model provider: 'google' for Gemini, 'openai' for OpenAI-compatible (Ollama, etc.)",
-    )
-
-
 def _add_collect_traces_parser(subparsers: argparse._SubParsersAction) -> None:
     p = subparsers.add_parser(
         "collect-traces",
@@ -393,7 +331,7 @@ def _add_collect_traces_parser(subparsers: argparse._SubParsersAction) -> None:
     p.add_argument(
         "--kind",
         default="all",
-        choices=["all", "single", "group"],
+        choices=["all", "single"],
         help="Run only one manifest kind",
     )
     p.add_argument("--resume", action="store_true", help="Skip runs with existing raw traces")
@@ -465,199 +403,80 @@ def _run_collect_traces(args: argparse.Namespace) -> None:
     print(f"  Output: {Path(args.out)}")
 
 
-def _run_estimate_group(args: argparse.Namespace) -> None:
-    import json
-    from pathlib import Path
-
-    from PIL import Image
-
-    from langslice.image_prep import (
-        adaptive_preprocess,
-        normalize_image,
-        prepare_image_for_vlm,
-    )
-
-    # Load and preprocess images: normalize → downscale → CLAHE
-    # (same order as single-slice CLI for experimental consistency).
-    images: list[Image.Image] = []
-    for path in args.images:
-        raw = Image.open(path)
-        canonical = normalize_image(raw)
-        original_size = canonical.size
-        prep = prepare_image_for_vlm(canonical)
-        img = prep.image
-        if args.preprocess == "auto":
-            img = adaptive_preprocess(img)
-        images.append(img)
-        print(
-            f"  Loaded {path}: {original_size[0]}x{original_size[1]} -> "
-            f"{img.size[0]}x{img.size[1]}px (scale={prep.scale_factor:.3f})"
-        )
-
-    n = len(images)
-    if not 2 <= n <= 8:
-        print(f"Error: expected 2-8 images, got {n}")
-        sys.exit(1)
-
-    interval_mm = args.interval / 1000.0
-    total_span = (n - 1) * interval_mm
-
-    print("\nGroup estimation:")
-    print(f"  {n} slices, interval {args.interval}\u00b5m ({interval_mm:.3f}mm)")
-    print(f"  Expected span: {total_span:.2f}mm")
-    print(f"  Atlas: {args.atlas}")
-    print(f"  Max iterations: {args.max_iterations}")
-
-    debug_dir = None
-    if args.out:
-        out_dir = Path(args.out)
-        out_dir.mkdir(parents=True, exist_ok=True)
-        debug_dir = str(out_dir)
-
-    def on_progress(msg: str) -> None:
-        print(f"  {msg}")
-
-    import langslice.providers.vlm_config as vlm_config
-    from langslice.linear import estimate_group
-
-    if args.provider == "openai":
-        import langslice.providers.openai_config as openai_config
-
-        effective_model = args.model or openai_config.get_openai_model()
-        provider_label = "openai"
-    else:
-        effective_model = args.model or vlm_config.MODEL_NAME
-        provider_label = "google"
-        if args.temperature is not None:
-            vlm_config.set_temperature(args.temperature)
-        if args.thinking:
-            vlm_config.set_thinking_level(args.thinking)
-
-    print(f"  Model: {effective_model}  Provider: {provider_label}")
-    print()
-
-    result = estimate_group(
-        images=images,
-        atlas_name=args.atlas,
-        interval_um=args.interval,
-        thickness_um=args.thickness,
-        max_iterations=args.max_iterations,
-        media_resolution=args.media_resolution,
-        model_name=effective_model,
-        show_borders=args.borders,
-        send_individually=not args.grid,
-        on_progress=on_progress,
-        debug_dir=debug_dir,
-    )
-
-    # Summary.
-    print()
-    print("Group estimation complete:")
-    for i, ap in enumerate(result.positions):
-        print(f"  Slice {i + 1}: {ap.position_mm:.3f} mm")
-    if len(result.positions) > 1:
-        intervals = [
-            abs(result.positions[i + 1].position_mm - result.positions[i].position_mm)
-            for i in range(len(result.positions) - 1)
-        ]
-        mean_interval = sum(intervals) / len(intervals)
-        print(f"  Mean interval: {mean_interval:.3f} mm (expected: {interval_mm:.3f} mm)")
-    print(f"  Reasoning: {result.group_reasoning}")
-    if result.debug_dir:
-        print(f"  Artifacts: {result.debug_dir}")
-
-    if args.json:
-        payload = {
-            "slices": [
-                {
-                    "slice_index": i + 1,
-                    "image": args.images[i],
-                    "position_mm": ap.position_mm,
-                }
-                for i, ap in enumerate(result.positions)
-            ],
-            "group_reasoning": result.group_reasoning,
-            "interval_um": args.interval,
-            "thickness_um": args.thickness,
-        }
-        print()
-        print(json.dumps(payload, indent=2))
-
-
 def _add_estimate_brain_parser(subparsers: argparse._SubParsersAction) -> None:
     p = subparsers.add_parser(
         "estimate-brain",
-        help="Estimate AP positions for a folder of brain slices",
+        help="Run the whole-brain estimation engine on a folder of slices",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument("image_folder", help="Folder containing slice images")
     p.add_argument("--atlas", default="allen_mouse_25um", help="BrainGlobe atlas name")
-    p.add_argument("--thickness", type=int, default=50, help="Slice thickness in microns")
-    p.add_argument("--interval", type=int, default=200, help="Average slice interval in microns")
-    p.add_argument("--anchors", type=int, default=4, help="Number of anchor agents")
-    p.add_argument("--parallel", type=int, default=4, help="Max concurrent Gemini calls")
-    p.add_argument("--model", default=None, help="Gemini model name for all estimation calls")
     p.add_argument(
-        "--z-axis",
-        choices=["AP", "PA"],
-        default="AP",
-        help="Z-axis orientation of the slice series",
+        "--plane",
+        default="coronal",
+        choices=["coronal", "sagittal", "horizontal"],
+        help=_PLANE_HELP,
     )
-    p.add_argument("--out", help="Output JSON path (default: <folder>/brain_estimate.json)")
+    p.add_argument("--thickness", type=int, default=50, help="Slice thickness in microns")
+    p.add_argument("--interval", type=int, default=200, help="Section interval in microns")
+    p.add_argument(
+        "--keep-order",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Trust the discovered slice order (--no-keep-order lets the engine reorder)",
+    )
+    p.add_argument("--model", default=None, help="Model name for the engine's agent steps")
+    p.add_argument(
+        "--out",
+        default=None,
+        help="Results JSON path. Default: <image_folder>/brain_results.json",
+    )
+    p.add_argument(
+        "--resume",
+        dest="resume",
+        action="store_true",
+        default=True,
+        help="Resume from the folder checkpoint, skipping completed nodes",
+    )
+    p.add_argument(
+        "--fresh",
+        dest="resume",
+        action="store_false",
+        help="Ignore any existing checkpoint and start over",
+    )
 
 
 def _run_estimate_brain(args: argparse.Namespace) -> None:
     import asyncio
-    import json
 
-    from langslice.linear.whole_brain.discovery import discover_slices
-    from langslice.linear.whole_brain.pipeline import run_brain_estimation
-    from langslice.linear.whole_brain.types import BrainEstimationConfig
+    from langslice.linear.whole_brain import BrainConfig, run_brain
 
-    config = BrainEstimationConfig(
+    config = BrainConfig(
         image_folder=args.image_folder,
-        atlas_name=args.atlas,
+        atlas=args.atlas,
+        plane=args.plane,
         thickness_um=args.thickness,
         interval_um=args.interval,
-        n_anchors=args.anchors,
-        max_parallel=args.parallel,
-        z_axis=args.z_axis,
+        keep_order=args.keep_order,
         model=args.model,
+        out=args.out,
+        resume=args.resume,
     )
 
-    # Cost estimate
-    n_images = len(discover_slices(config.image_folder))
-    n_non_anchors = n_images - config.n_anchors
-    print("\nBrain estimation plan:")
-    print(f"  {n_images} slices, {config.n_anchors} anchors")
-    print()
-    print(f"  Phase 1:  {config.n_anchors} anchor estimations (tool-use)")
-    print("  Phase 2:  interpolation")
-    print(f"  Phase 3:  {n_non_anchors} non-anchor estimations (tool-use)")
-    print("  Phase 4:  isotonic regression (Huber loss)")
-    print(f"  --parallel {config.max_parallel}")
+    print(f"Atlas: {config.atlas}  Plane: {config.plane}")
+    print(f"Interval: {config.interval_um}um  Thickness: {config.thickness_um}um")
+    print(f"Folder: {config.image_folder}  Resume: {config.resume}")
     print()
 
-    def on_progress(msg: str) -> None:
-        print(msg)
+    state = asyncio.run(run_brain(config, emit=print))
 
-    result = asyncio.run(
-        run_brain_estimation(
-            config,
-            checkpoint_path=args.out,
-            on_progress=on_progress,
-        )
-    )
-
-    import os
-    out_path = args.out or os.path.join(args.image_folder, "brain_estimate.json")
-    with open(out_path, "w") as f:
-        json.dump(result.to_dict(), f, indent=2)
-
-    print(f"\nResults saved to {out_path}")
-    print(f"  {result.summary.n_slices} slices, {result.summary.n_anchors} anchors")
-    print(f"  Mean interval: {result.summary.mean_interval_mm:.3f}mm")
-    print(f"  Std interval:  {result.summary.std_interval_mm:.3f}mm")
+    positioned = [s for s in state.slices if s.position_mm is not None]
+    print()
+    print("Whole-brain estimation complete")
+    print(f"  Slices: {len(state.slices)}  Positioned: {len(positioned)}")
+    print(f"  Nodes run: {', '.join(state.completed_nodes)}")
+    if state.contact_sheet:
+        print(f"  Contact sheet: {state.contact_sheet}")
 
 
 def _run_estimate(args: argparse.Namespace) -> None:
@@ -743,7 +562,6 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     linear_sub = linear.add_subparsers(dest="subcommand", required=True)
     _add_estimate_parser(linear_sub)
-    _add_estimate_group_parser(linear_sub)
     _add_estimate_brain_parser(linear_sub)
     _add_quick_affine_parser(linear_sub)
 
@@ -849,8 +667,6 @@ def main(argv: list[str] | None = None):
         _run_quick_affine(args)
     elif command == "estimate":
         _run_estimate(args)
-    elif command == "estimate-group":
-        _run_estimate_group(args)
     elif command == "collect-traces":
         _run_collect_traces(args)
     elif command == "estimate-brain":

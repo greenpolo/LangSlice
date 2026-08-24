@@ -41,3 +41,11 @@ def test_discover_mixed_extensions(tmp_path: Path):
         (tmp_path / name).write_bytes(b"fake")
     result = discover_slices(str(tmp_path))
     assert len(result) == 5
+
+
+def test_discover_skips_the_engines_own_contact_sheet(tmp_path: Path):
+    """The contact sheet is written into the image folder; it is not an input."""
+    (tmp_path / "slice_01.png").write_bytes(b"fake")
+    (tmp_path / "contact_sheet.png").write_bytes(b"fake")
+    result = discover_slices(str(tmp_path))
+    assert [os.path.basename(r) for r in result] == ["slice_01.png"]

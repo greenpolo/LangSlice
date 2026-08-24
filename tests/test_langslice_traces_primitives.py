@@ -301,7 +301,8 @@ def test_parse_manifest_record_matches_original():
     assert orig_row.atlas == new_row.atlas
     assert orig_row.plane == new_row.plane
     assert orig_row.truth_positions_mm == new_row.truth_positions_mm
-    assert orig_row.interval_um == new_row.interval_um
+    # interval_um is group-only; the harness row dropped it with the group
+    # trace path, while the langslice_traces copy still carries it.
     assert orig_row.thickness_um == new_row.thickness_um
     assert orig_row.metadata == new_row.metadata
 

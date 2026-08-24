@@ -1,61 +1,59 @@
+"""Checkpoint save/load."""
+
 import json
 from pathlib import Path
 
-from langslice.linear.whole_brain.checkpoint import load_checkpoint, save_checkpoint
-from langslice.linear.whole_brain.types import BrainEstimationConfig, SlicePosition
+from langslice.linear.whole_brain.checkpoint import (
+    default_checkpoint_path,
+    load_checkpoint,
+    save_checkpoint,
+)
+from langslice.linear.whole_brain.state import SliceState, StackState
 
 
-def _cfg() -> BrainEstimationConfig:
-    return BrainEstimationConfig(
-        image_folder="/tmp",
-        atlas_name="allen_mouse_25um",
-        thickness_um=50,
-        interval_um=200,
-        n_anchors=2,
-        max_parallel=4,
-        z_axis="AP",
+def _state() -> StackState:
+    return StackState(
+        atlas="allen_mouse_25um",
+        interval_mm=0.2,
+        slices=[
+            SliceState(id="a.tif", index_original=0, index_corrected=0, position_mm=1.0),
+            SliceState(id="b.tif", index_original=1, index_corrected=1),
+        ],
+        completed_nodes=["ingest"],
     )
 
 
+def test_default_path_lives_beside_the_images(tmp_path: Path):
+    assert default_checkpoint_path(str(tmp_path)) == str(tmp_path / "brain_estimate.json")
+
+
 def test_save_and_load_roundtrip(tmp_path: Path):
-    path = str(tmp_path / "checkpoint.json")
-    slices = [
-        SlicePosition("a.tif", 0, 1.0, "anchor", True),
-        SlicePosition("b.tif", 1, 1.2, "interpolated", False),
-    ]
-    save_checkpoint(path, _cfg(), slices)
-    loaded_slices = load_checkpoint(path)
-    assert len(loaded_slices) == 2
-    assert loaded_slices[0].filename == "a.tif"
-    assert loaded_slices[0].position_mm == 1.0
-    assert loaded_slices[0].locked is True
-    assert loaded_slices[1].locked is False
+    path = str(tmp_path / "brain_estimate.json")
+    save_checkpoint(_state(), path)
+    loaded = load_checkpoint(path)
+    assert loaded == _state()
 
 
-def test_incremental_save(tmp_path: Path):
-    """Saving again with updated slices overwrites the file."""
-    path = str(tmp_path / "checkpoint.json")
-    slices = [SlicePosition("a.tif", 0, 1.0, "anchor", True)]
-    save_checkpoint(path, _cfg(), slices)
-
-    slices.append(SlicePosition("b.tif", 1, 1.2, "refined", True))
-    save_checkpoint(path, _cfg(), slices)
+def test_save_overwrites_and_leaves_no_temp_files(tmp_path: Path):
+    path = str(tmp_path / "brain_estimate.json")
+    state = _state()
+    save_checkpoint(state, path)
+    state.mark_complete("survey")
+    save_checkpoint(state, path)
 
     loaded = load_checkpoint(path)
-    assert len(loaded) == 2
+    assert loaded is not None
+    assert loaded.completed_nodes == ["ingest", "survey"]
+    assert [p.name for p in tmp_path.iterdir()] == ["brain_estimate.json"]
 
 
-def test_load_nonexistent_returns_empty(tmp_path: Path):
-    path = str(tmp_path / "nonexistent.json")
-    loaded = load_checkpoint(path)
-    assert loaded == []
+def test_load_missing_returns_none(tmp_path: Path):
+    assert load_checkpoint(str(tmp_path / "nope.json")) is None
 
 
 def test_checkpoint_json_is_human_readable(tmp_path: Path):
-    path = str(tmp_path / "checkpoint.json")
-    slices = [SlicePosition("a.tif", 0, 1.0, "anchor", True)]
-    save_checkpoint(path, _cfg(), slices)
-    with open(path) as f:
-        data = json.load(f)
-    assert "slices" in data
-    assert data["slices"][0]["filename"] == "a.tif"
+    path = str(tmp_path / "brain_estimate.json")
+    save_checkpoint(_state(), path)
+    data = json.loads(Path(path).read_text())
+    assert data["slices"][0]["id"] == "a.tif"
+    assert data["completed_nodes"] == ["ingest"]

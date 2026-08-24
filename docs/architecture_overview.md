@@ -8,10 +8,10 @@ under `models/`.
 The two registration methods are sibling subpackages with no dependency on each
 other:
 
-- `src/langslice/linear/` -- slice-position estimation: ADK agents, prompts,
-  tools, validators, runners, and trace collection.
-- `src/langslice/linear/whole_brain/` -- multi-slice whole-brain position
-  estimation pipeline.
+- `src/langslice/linear/` -- slice-position estimation: the single-slice ADK
+  agent, prompts, tools, validators, runners, and trace collection.
+- `src/langslice/linear/whole_brain/` -- the whole-brain estimation engine:
+  stack state, JSON checkpoint, node graph, and advisory spacing signals.
 - `src/langslice/nonlinear/` -- generative-image registration: candidate
   generation, image provider adapters, Elastix runtime, optional ADK review,
   affine/nonlinear result types, and the silhouette-based `quick_affine`
@@ -50,7 +50,7 @@ returns either result or error envelopes.
 
 ## Linear: Position Estimation
 
-Single-slice and group position estimation run through ADK. The agent can fetch atlas
+Single-slice position estimation runs through ADK. The agent can fetch atlas
 images and must submit a structured estimate. Native Gemini requests can use the
 File API for target images, and fetched atlas images are returned as ADK native
 media tool results, so they persist in session history and stay visible on
@@ -59,10 +59,22 @@ every later turn. This is the only estimation path, and it supports all planes
 
 ## Linear: Whole-Brain Estimation
 
-Whole-brain estimation discovers a folder of slices, estimates anchor slices with
-the tool-use estimator, interpolates positions for non-anchor slices, estimates
-each non-anchor slice independently over the full atlas range with the same
-tool-use estimator, and fits a constrained monotonic position curve.
+Whole-brain estimation is a node engine over one `StackState`:
+`ingest → survey → fix → seed → position → transforms → review → emit`.
+Nodes are plain async Python functions that return the name of the next node
+(`""` for the default successor); backward edges (`fix → survey`,
+`position → position`, `review → position`) are bounded per node.
+
+`ingest` and `emit` are complete; the agent steps between them are stubs.
+The engine writes a JSON checkpoint after every node and the results file
+uses the same schema, so the CLI, the checkpoint, and any host adapter read
+one shape. Corrections (order, flips), positions, oblique angles, and
+per-slice transforms are proposals -- the host applies them, and the user's
+image files are never modified.
+
+`signals.py` holds the interval interpolation and monotone-spacing fit that
+the old pipeline applied silently; they are now advisory functions the
+positioning and review steps can consult.
 
 ## Nonlinear: Image-Gen Registration
 

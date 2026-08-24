@@ -17,7 +17,7 @@ from langslice.adk import TOOL_MEDIA_PARTS_KEY
 from langslice.atlas.core import get_position_range_mm, load_atlas
 from langslice.space import Plane
 
-TraceKind = Literal["single", "group"]
+TraceKind = Literal["single"]
 
 
 # Position-estimation tolerance is plane-relative (a fraction of the atlas
@@ -78,12 +78,11 @@ def canonicalize_positions(
     return [min(float(p), hi - float(p)) for p in positions]
 SftExportMode = Literal["deployment", "rationale", "both"]
 SingleRunner = Callable[..., Awaitable[Any]]
-GroupRunner = Callable[..., Awaitable[Any]]
 
 
 @dataclass(frozen=True)
 class TraceManifestRow:
-    """One single-slice or grouped trace collection job."""
+    """One single-slice trace collection job."""
 
     id: str
     kind: TraceKind
@@ -91,7 +90,6 @@ class TraceManifestRow:
     atlas: str
     plane: Plane
     truth_positions_mm: list[float]
-    interval_um: int | None = None
     thickness_um: int = 50
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -310,18 +308,6 @@ def _require_float(data: dict[str, Any], key: str) -> float:
     return float(value)
 
 
-def _require_float_list(data: dict[str, Any], key: str) -> list[float]:
-    value = data.get(key)
-    if not isinstance(value, list) or not value:
-        raise ValueError(f"Manifest record requires non-empty list field {key!r}")
-    out: list[float] = []
-    for item in value:
-        if not isinstance(item, (int, float)):
-            raise ValueError(f"Manifest field {key!r} must contain only numbers")
-        out.append(float(item))
-    return out
-
-
 def _optional_int(data: dict[str, Any], key: str, default: int | None = None) -> int | None:
     value = data.get(key, default)
     if value is None:
@@ -345,35 +331,17 @@ def parse_manifest_record(data: dict[str, Any]) -> TraceManifestRow:
 
     record_id = _require_str(data, "id")
     kind = _require_str(data, "kind")
-    if kind not in {"single", "group"}:
+    if kind != "single":
         raise ValueError(f"Manifest record {record_id!r} has unsupported kind {kind!r}")
 
     atlas = _require_str(data, "atlas")
     plane = _parse_plane(_require_str(data, "plane"))
-    if kind == "single":
-        image = _require_str(data, "image")
-        truth_positions = [_require_float(data, "position_mm")]
-        images = [image]
-        interval_um = None
-    else:
-        raw_images = data.get("images")
-        if not isinstance(raw_images, list) or not raw_images:
-            raise ValueError(f"Manifest record {record_id!r} requires non-empty images")
-        if not all(isinstance(item, str) and item for item in raw_images):
-            raise ValueError(f"Manifest record {record_id!r} images must be strings")
-        images = list(raw_images)
-        truth_positions = _require_float_list(data, "positions_mm")
-        if len(images) != len(truth_positions):
-            raise ValueError(
-                f"Manifest record {record_id!r} image/position length mismatch"
-            )
-        interval_um = _optional_int(data, "interval_um")
-        if interval_um is None:
-            raise ValueError(f"Manifest record {record_id!r} requires interval_um")
+    images = [_require_str(data, "image")]
+    truth_positions = [_require_float(data, "position_mm")]
 
     known = {
-        "id", "kind", "image", "images", "atlas", "plane", "position_mm",
-        "positions_mm", "interval_um", "thickness_um", "metadata",
+        "id", "kind", "image", "atlas", "plane", "position_mm",
+        "thickness_um", "metadata",
     }
     thickness_um = _optional_int(data, "thickness_um", 50)
     return TraceManifestRow(
@@ -383,7 +351,6 @@ def parse_manifest_record(data: dict[str, Any]) -> TraceManifestRow:
         atlas=atlas,
         plane=plane,
         truth_positions_mm=truth_positions,
-        interval_um=interval_um,
         thickness_um=50 if thickness_um is None else thickness_um,
         metadata=_metadata(data, known),
     )
@@ -546,17 +513,10 @@ def build_sft_user_message(
     axis_label = {"coronal": "AP", "sagittal": "ML", "horizontal": "DV"}.get(
         row.plane, "position"
     )
-    if row.kind == "single":
-        text = (
-            f"Determine this {row.plane} slice's {axis_label} position in "
-            f"the {row.atlas} atlas."
-        )
-    else:
-        text = (
-            f"Determine each {row.plane} slice's {axis_label} position in "
-            f"the {row.atlas} atlas. The images are ordered along the "
-            f"{axis_label} axis."
-        )
+    text = (
+        f"Determine this {row.plane} slice's {axis_label} position in "
+        f"the {row.atlas} atlas."
+    )
     return {
         "role": "user",
         "content": [{"type": "text", "text": text}, *target_artifacts],
@@ -638,20 +598,9 @@ def _load_images(paths: list[str]) -> list[Image.Image]:
     return [Image.open(path).copy() for path in paths]
 
 
-def _submitted_positions(result: Any, kind: TraceKind) -> list[float] | None:
-    if kind == "single":
-        position = getattr(result, "position_mm", None)
-        return [float(position)] if isinstance(position, (int, float)) else None
-    positions = getattr(result, "positions", None)
-    if not isinstance(positions, list):
-        return None
-    out: list[float] = []
-    for item in positions:
-        position = getattr(item, "position_mm", None)
-        if not isinstance(position, (int, float)):
-            return None
-        out.append(float(position))
-    return out
+def _submitted_positions(result: Any) -> list[float] | None:
+    position = getattr(result, "position_mm", None)
+    return [float(position)] if isinstance(position, (int, float)) else None
 
 
 def _fetched_positions(events: list[dict[str, Any]]) -> list[float]:
@@ -723,15 +672,10 @@ async def _collect_manifest_traces_async(
     kind_filter: TraceKind | None,
     resume: bool,
     single_runner: SingleRunner | None,
-    group_runner: GroupRunner | None,
 ) -> list[dict[str, Any]]:
-    from langslice.linear.runner import (
-        run_group_session,
-        run_single_slice_session,
-    )
+    from langslice.linear.runner import run_single_slice_session
 
     resolved_single = single_runner or run_single_slice_session
-    resolved_group = group_runner or run_group_session
     rows = load_manifest(manifest_path)
     if kind_filter is not None:
         rows = [row for row in rows if row.kind == kind_filter]
@@ -762,21 +706,12 @@ async def _collect_manifest_traces_async(
             "include_thought_summaries": include_thought_summaries,
             "trace_recorder": recorder,
         }
-        if row.kind == "single":
-            result = await resolved_single(image=images[0], **common_kwargs)
-        else:
-            result = await resolved_group(
-                images=images,
-                interval_mm=float(row.interval_um or 0) / 1000.0,
-                thickness_um=row.thickness_um,
-                **common_kwargs,
-            )
+        result = await resolved_single(image=images[0], **common_kwargs)
 
-        submitted = _submitted_positions(result, row.kind)
-        fallback = submitted is None or any(
-            "fell back" in str(getattr(item, "reasoning", "")).lower()
-            for item in (getattr(result, "positions", None) or [result])
-        )
+        submitted = _submitted_positions(result)
+        fallback = submitted is None or "fell back" in str(
+            getattr(result, "reasoning", "")
+        ).lower()
         truth_canonical = canonicalize_positions(
             row.truth_positions_mm, row.atlas, row.plane
         )
@@ -804,7 +739,6 @@ async def _collect_manifest_traces_async(
             "atlas": row.atlas,
             "plane": row.plane,
             "truth_positions_mm": row.truth_positions_mm,
-            "interval_um": row.interval_um,
             "thickness_um": row.thickness_um,
             "metadata": row.metadata,
         }
@@ -886,7 +820,6 @@ def collect_manifest_traces(
     kind_filter: TraceKind | None = None,
     resume: bool = False,
     single_runner: SingleRunner | None = None,
-    group_runner: GroupRunner | None = None,
 ) -> list[dict[str, Any]]:
     """Run a manifest-driven trace collection batch."""
 
@@ -904,5 +837,4 @@ def collect_manifest_traces(
         kind_filter=kind_filter,
         resume=resume,
         single_runner=single_runner,
-        group_runner=group_runner,
     ))

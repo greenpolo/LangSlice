@@ -9,6 +9,10 @@ _IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".tif", ".tiff"}
 
 _NATURAL_SORT_RE = re.compile(r"(\d+)")
 
+#: Engine output written into the image folder — an image, but never an input.
+CONTACT_SHEET_FILENAME = "contact_sheet.png"
+_GENERATED_NAMES = {CONTACT_SHEET_FILENAME}
+
 
 def _natural_sort_key(path: str) -> list[str | int]:
     """Sort key that orders embedded numbers numerically."""
@@ -26,12 +30,12 @@ def discover_slices(folder: str) -> list[str]:
     """Return absolute paths to slice images in *folder*, naturally sorted.
 
     Scans for files with extensions: .png, .jpg, .jpeg, .tif, .tiff.
-    Non-image files are silently skipped.
+    Non-image files and the engine's own image outputs are silently skipped.
     """
     hits: list[str] = []
     for entry in os.listdir(folder):
         ext = os.path.splitext(entry)[1].lower()
-        if ext in _IMAGE_EXTENSIONS:
+        if ext in _IMAGE_EXTENSIONS and entry not in _GENERATED_NAMES:
             hits.append(os.path.join(folder, entry))
     hits.sort(key=_natural_sort_key)
     return hits

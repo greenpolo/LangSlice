@@ -13,25 +13,13 @@ from typing import Any
 
 from PIL import Image
 
-from langslice.linear._types import MultiSliceResult, PositionResult
+from langslice.linear._types import PositionResult
 
 
 def _fake_run_single_slice_session_factory(captured: dict[str, Any]):
     async def _fake(**kwargs: Any) -> PositionResult:
         captured.update(kwargs)
         return PositionResult(position_mm=6.0, reasoning="fake shim test")
-
-    return _fake
-
-
-def _fake_run_group_session_factory(captured: dict[str, Any]):
-    async def _fake(**kwargs: Any) -> MultiSliceResult:
-        captured.update(kwargs)
-        n = len(kwargs["images"])
-        return MultiSliceResult(
-            positions=[PositionResult(position_mm=float(i), reasoning="fake") for i in range(n)],
-            group_reasoning="fake shim test",
-        )
 
     return _fake
 
@@ -114,116 +102,3 @@ def test_estimate_position_uses_vlm_config_defaults(monkeypatch):
     assert captured["model"] == "gemini-configured"
     assert captured["thinking_level"] == "HIGH"
     assert captured["temperature"] == 0.4
-
-
-# --- estimate_group shim ---
-
-
-def test_estimate_group_converts_interval_um_to_mm(monkeypatch):
-    """Legacy micron interval → runner millimetre interval."""
-    from langslice.linear import estimate_group
-
-    captured: dict[str, Any] = {}
-    monkeypatch.setattr(
-        "langslice.linear.runner.run_group_session",
-        _fake_run_group_session_factory(captured),
-    )
-
-    images = [Image.new("L", (16, 16), color=128) for _ in range(3)]
-    result = estimate_group(
-        images=images,
-        atlas_name="allen_mouse_25um",
-        interval_um=200,
-        thickness_um=50,
-    )
-    assert isinstance(result, MultiSliceResult)
-    assert captured["interval_mm"] == 0.200
-    assert captured["atlas_name"] == "allen_mouse_25um"
-    assert captured["thickness_um"] == 50
-    assert captured["plane"] == "coronal"
-    # model_name=None should NOT be forwarded — runner owns its own default.
-    assert "model" not in captured
-
-
-def test_estimate_group_forwards_model_name_as_model(monkeypatch):
-    """Legacy ``model_name`` kwarg → runner ``model`` kwarg."""
-    from langslice.linear import estimate_group
-
-    captured: dict[str, Any] = {}
-    monkeypatch.setattr(
-        "langslice.linear.runner.run_group_session",
-        _fake_run_group_session_factory(captured),
-    )
-
-    images = [Image.new("L", (16, 16), color=128) for _ in range(2)]
-    estimate_group(
-        images=images,
-        atlas_name="allen_mouse_25um",
-        interval_um=150,
-        thickness_um=50,
-        model_name="gemini-3-flash-preview",
-        max_iterations=12,
-    )
-    assert captured["model"] == "gemini-3-flash-preview"
-    assert captured["max_iterations"] == 12
-    assert captured["interval_mm"] == 0.150
-
-
-def test_estimate_group_forwards_supported_legacy_kwargs(monkeypatch):
-    """Legacy kwargs that the ADK runner understands are preserved."""
-    from langslice.linear import estimate_group
-
-    captured: dict[str, Any] = {}
-    monkeypatch.setattr(
-        "langslice.linear.runner.run_group_session",
-        _fake_run_group_session_factory(captured),
-    )
-
-    images = [Image.new("L", (16, 16), color=128) for _ in range(4)]
-
-    def dummy_progress(msg: str) -> None:
-        pass
-
-    result = estimate_group(
-        images=images,
-        atlas_name="allen_mouse_25um",
-        interval_um=250,
-        thickness_um=50,
-        model_name=None,
-        max_iterations=25,
-        send_individually=True,
-        on_progress=dummy_progress,
-        media_resolution="medium",
-        show_borders=False,
-        debug_dir="/tmp/does-not-exist",
-        some_future_kwarg="whatever",
-    )
-    assert isinstance(result, MultiSliceResult)
-    assert captured["media_resolution"] == "medium"
-
-    for key in (
-        "send_individually",
-        "on_progress",
-        "show_borders",
-        "debug_dir",
-        "some_future_kwarg",
-        "model_name",
-    ):
-        assert key not in captured, f"{key} unexpectedly forwarded to runner"
-
-
-def test_estimate_group_positional_interval_um(monkeypatch):
-    """Legacy positional call shape still works: images, atlas_name, interval_um."""
-    from langslice.linear import estimate_group
-
-    captured: dict[str, Any] = {}
-    monkeypatch.setattr(
-        "langslice.linear.runner.run_group_session",
-        _fake_run_group_session_factory(captured),
-    )
-
-    images = [Image.new("L", (16, 16), color=128) for _ in range(2)]
-    estimate_group(images, "allen_mouse_25um", 200)
-    assert captured["interval_mm"] == 0.200
-    assert captured["atlas_name"] == "allen_mouse_25um"
-

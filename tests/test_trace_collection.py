@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from langslice.linear.trace_collection import (
     AgentTraceRecorder,
     categorize_trace,
@@ -13,38 +15,43 @@ from langslice.linear.trace_collection import (
 )
 
 
-def test_load_manifest_accepts_single_and_group_records(tmp_path: Path):
+def test_load_manifest_accepts_single_records(tmp_path: Path):
     manifest = tmp_path / "manifest.jsonl"
     manifest.write_text(
-        "\n".join([
-            json.dumps({
-                "id": "single-1",
-                "kind": "single",
-                "image": "slice.png",
-                "atlas": "allen_mouse_25um",
-                "plane": "coronal",
-                "position_mm": 6.2,
-            }),
-            json.dumps({
-                "id": "group-1",
-                "kind": "group",
-                "images": ["a.png", "b.png"],
-                "atlas": "allen_mouse_25um",
-                "plane": "coronal",
-                "positions_mm": [6.0, 6.2],
-                "interval_um": 200,
-                "thickness_um": 50,
-            }),
-        ]),
+        json.dumps({
+            "id": "single-1",
+            "kind": "single",
+            "image": "slice.png",
+            "atlas": "allen_mouse_25um",
+            "plane": "coronal",
+            "position_mm": 6.2,
+        }),
         encoding="utf-8",
     )
 
     rows = load_manifest(manifest)
 
-    assert [row.id for row in rows] == ["single-1", "group-1"]
+    assert [row.id for row in rows] == ["single-1"]
     assert rows[0].truth_positions_mm == [6.2]
-    assert rows[1].truth_positions_mm == [6.0, 6.2]
-    assert rows[1].interval_um == 200
+    assert rows[0].images == ["slice.png"]
+
+
+def test_load_manifest_rejects_group_records(tmp_path: Path):
+    manifest = tmp_path / "manifest.jsonl"
+    manifest.write_text(
+        json.dumps({
+            "id": "group-1",
+            "kind": "group",
+            "images": ["a.png", "b.png"],
+            "atlas": "allen_mouse_25um",
+            "plane": "coronal",
+            "positions_mm": [6.0, 6.2],
+        }),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="unsupported kind"):
+        load_manifest(manifest)
 
 
 def test_estimate_cost_counts_thinking_as_output():
@@ -326,15 +333,9 @@ def test_collect_manifest_traces_writes_raw_sft_and_summary(tmp_path: Path):
 def test_runner_sessions_accept_trace_collection_kwargs():
     import inspect
 
-    from langslice.linear.runner import (
-        run_group_session,
-        run_single_slice_session,
-    )
+    from langslice.linear.runner import run_single_slice_session
 
     single_params = inspect.signature(run_single_slice_session).parameters
-    group_params = inspect.signature(run_group_session).parameters
 
     assert "trace_recorder" in single_params
     assert "include_thought_summaries" in single_params
-    assert "trace_recorder" in group_params
-    assert "include_thought_summaries" in group_params

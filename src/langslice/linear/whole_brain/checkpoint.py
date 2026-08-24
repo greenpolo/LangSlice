@@ -1,59 +1,46 @@
-"""Incremental JSON checkpoint for whole-brain estimation."""
+"""JSON checkpoint for whole-brain estimation — the record of truth.
+
+The engine writes the full :class:`StackState` after every node, atomically
+(temp file + rename) so a crash mid-write cannot leave a truncated file.
+Resume = load the checkpoint and skip the nodes it lists as complete.
+"""
 
 from __future__ import annotations
 
 import json
 import os
+import tempfile
 
-from langslice.linear.whole_brain.types import BrainEstimationConfig, SlicePosition
+from langslice.linear.whole_brain.state import StackState
 
-
-def save_checkpoint(
-    path: str,
-    config: BrainEstimationConfig,
-    slices: list[SlicePosition],
-) -> None:
-    """Write current state to a JSON file (overwrites)."""
-    data = {
-        "atlas": config.atlas_name,
-        "thickness_um": config.thickness_um,
-        "interval_um": config.interval_um,
-        "z_axis": config.z_axis,
-        "slices": [
-            {
-                "filename": s.filename,
-                "index": s.index,
-                "position_mm": round(s.position_mm, 4),
-                "source": s.source,
-                "locked": s.locked,
-                "raw_position_mm": round(s.raw_position_mm, 4)
-                if s.raw_position_mm is not None
-                else None,
-            }
-            for s in slices
-        ],
-    }
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
+CHECKPOINT_FILENAME = "brain_estimate.json"
 
 
-def load_checkpoint(path: str) -> list[SlicePosition]:
-    """Load slice positions from a checkpoint file.
+def default_checkpoint_path(image_folder: str) -> str:
+    """``<image_folder>/brain_estimate.json``."""
+    return os.path.join(image_folder, CHECKPOINT_FILENAME)
 
-    Returns an empty list if the file does not exist.
-    """
+
+def save_checkpoint(state: StackState, path: str) -> None:
+    """Write *state* to *path* atomically."""
+    directory = os.path.dirname(os.path.abspath(path))
+    os.makedirs(directory, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(dir=directory, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(state.to_dict(), handle, indent=2)
+        # mkstemp creates 0600; a checkpoint is an ordinary output file.
+        os.chmod(tmp_path, 0o644)
+        os.replace(tmp_path, path)
+    except BaseException:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        raise
+
+
+def load_checkpoint(path: str) -> StackState | None:
+    """Load a checkpoint, or ``None`` if there isn't one at *path*."""
     if not os.path.exists(path):
-        return []
-    with open(path, encoding="utf-8") as f:
-        data = json.load(f)
-    return [
-        SlicePosition(
-            filename=s["filename"],
-            index=s["index"],
-            position_mm=s["position_mm"],
-            source=s["source"],
-            locked=s["locked"],
-            raw_position_mm=s.get("raw_position_mm"),
-        )
-        for s in data["slices"]
-    ]
+        return None
+    with open(path, encoding="utf-8") as handle:
+        return StackState.from_dict(json.load(handle))
