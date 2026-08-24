@@ -35,13 +35,13 @@ def _fake_atlas() -> SimpleNamespace:
         ],
         dtype=np.int32,
     )
-    reference = np.array([[[10, 20, 30, 40], [50, 60, 70, 80], [90, 100, 110, 120]]])
+    template = np.array([[[10, 20, 30, 40], [50, 60, 70, 80], [90, 100, 110, 120]]])
     structures = {
         1: {"rgb_triplet": [255, 0, 0], "name": "region 1"},
         2: {"rgb_triplet": [0, 255, 0], "name": "region 2"},
         3: {"rgb_triplet": [0, 0, 255], "name": "region 3"},
     }
-    return SimpleNamespace(annotation=annotation, reference=reference, structures=structures)
+    return SimpleNamespace(annotation=annotation, template=template, structures=structures)
 
 
 def _install_pipeline_fakes(monkeypatch, tmp_path: Path | None = None) -> dict[str, Any]:

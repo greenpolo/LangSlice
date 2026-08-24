@@ -9,7 +9,7 @@ from langslice.atlas.core import get_in_plane_long_edge
 def _mock_atlas(shape: tuple[int, int, int]) -> MagicMock:
     """Build a minimal atlas mock with AP/DV/ML on axes 0/1/2 (Allen-style)."""
     atlas = MagicMock()
-    atlas.reference = np.zeros(shape, dtype=np.uint8)
+    atlas.template = np.zeros(shape, dtype=np.uint8)
     atlas.orientation = "asl"  # anterior, superior (top=dorsal), left
     atlas.resolution = (25.0, 25.0, 25.0)
     return atlas

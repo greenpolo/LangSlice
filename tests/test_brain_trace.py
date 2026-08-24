@@ -74,7 +74,7 @@ class _FakeVolume:
 class _FakeAtlas:
     atlas_name = "fake_mouse_25um"
     orientation = "asr"
-    reference = _FakeVolume()
+    template = _FakeVolume()
     resolution = (25.0, 25.0, 25.0)
     metadata = {"species": "mouse"}
 

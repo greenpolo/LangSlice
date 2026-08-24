@@ -72,10 +72,10 @@ class _TinyAsrAtlas:
     metadata = {}
 
     def __init__(self) -> None:
-        self.reference = np.zeros((5, 3, 4), dtype=np.uint8)
-        for ap_idx in range(self.reference.shape[0]):
-            self.reference[ap_idx, :, :] = ap_idx + 1
-        self.annotation = self.reference
+        self.template = np.zeros((5, 3, 4), dtype=np.uint8)
+        for ap_idx in range(self.template.shape[0]):
+            self.template[ap_idx, :, :] = ap_idx + 1
+        self.annotation = self.template
 
 
 def test_sagittal_reference_slice_displays_ap_left_to_right():

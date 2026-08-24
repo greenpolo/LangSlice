@@ -394,10 +394,41 @@ def check_interval_breaks(state: StackState, breaks: Any) -> dict[str, Any] | No
     }
 
 
+def _direction_error(state: StackState) -> dict[str, Any] | None:
+    """Written positions must run in the stack's known axis direction.
+
+    The corrected order is (by construction) the direction named in
+    ``state.axis_directions``; a submission whose positions trend the other
+    way has reversed the stack. Compares the first and last placed sections.
+    """
+    if not state.axis_directions:
+        return None
+    placed = [s for s in state.in_order() if s.position_mm is not None]
+    if len(placed) < 2:
+        return None
+    first, last = placed[0], placed[-1]
+    assert first.position_mm is not None and last.position_mm is not None
+    if last.position_mm >= first.position_mm:
+        return None
+    pairs = ", ".join(f"{k}: {v}" for k, v in state.axis_directions.items())
+    return {
+        "status": "error",
+        "error": "DIRECTION_REVERSED",
+        "message": (
+            f"The stack direction is {pairs}: along the corrected order, "
+            f"positions increase. Written positions run from "
+            f"{first.position_mm:.3f} mm ({first.id}) down to "
+            f"{last.position_mm:.3f} mm ({last.id})."
+        ),
+    }
+
+
 def _submission_errors(state: StackState, interval_breaks: Any) -> dict[str, Any] | None:
     """The checks both ``submit_positions`` variants run, in order."""
-    return _missing_positions_error(state) or check_interval_breaks(
-        state, interval_breaks
+    return (
+        _missing_positions_error(state)
+        or _direction_error(state)
+        or check_interval_breaks(state, interval_breaks)
     )
 
 
@@ -917,6 +948,13 @@ def build_position_prompt(
         else "- The corrected order shown is the survey step's, which was free "
         "to reorder the stack.\n"
     )
+    direction_line = ""
+    if state.axis_directions:
+        pairs = ", ".join(f"{k}: {v}" for k, v in state.axis_directions.items())
+        direction_line = (
+            f"- Stack direction along the slicing axis: {pairs}. Positions "
+            "along the corrected order run in that direction.\n"
+        )
 
     landmark_tool_lines = (
         "- `atlas_structures_at`: the structures the atlas annotation carries "
@@ -955,6 +993,7 @@ def build_position_prompt(
         f"{state.interval_mm:.3f} mm center-to-center, section thickness "
         f"{state.thickness_mm:.3f} mm.\n"
         f"{order_line}"
+        f"{direction_line}"
         f"{placed_line}"
         f"{breaks_line}"
         f"{damaged_line}"

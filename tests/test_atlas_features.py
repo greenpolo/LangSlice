@@ -28,7 +28,7 @@ class FakeAtlas:
     remote_version: tuple[int, int]
 
     def __init__(self) -> None:
-        self.reference = np.arange(4 * 4 * 4, dtype=np.uint16).reshape(4, 4, 4)
+        self.template = np.arange(4 * 4 * 4, dtype=np.uint16).reshape(4, 4, 4)
         self.annotation = np.zeros((4, 4, 4), dtype=np.uint32)
         self.annotation[:, :, :2] = 2
         self.annotation[:, :, 2:] = 3
@@ -50,7 +50,7 @@ class FakeAtlas:
             },
         }
         self.additional_references = {
-            "nissl": (self.reference * 2).astype(np.uint16),
+            "nissl": (self.template * 2).astype(np.uint16),
         }
         self.local_version = (1, 0)
         self.remote_version = (1, 0)

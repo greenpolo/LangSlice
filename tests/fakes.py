@@ -102,7 +102,7 @@ class EllipseAtlas:
         ):
             core = self.annotation[first : last + 1]
             core[core > 0] = structure_id
-        self.reference = (self.annotation > 0).astype(np.uint8) * 200
+        self.template = (self.annotation > 0).astype(np.uint8) * 200
 
 
 class SlabAtlas:
@@ -151,7 +151,7 @@ class SlabAtlas:
         for sid, _, _, _, first, last, (row0, row1) in self.LAYOUT:
             annotation[first : last + 1, row0:row1, 3 : width - 3] = sid
         self._annotation = annotation
-        self.reference = (annotation > 0).astype(np.uint8) * 200
+        self.template = (annotation > 0).astype(np.uint8) * 200
         self.structures: dict[int, dict[str, Any]] = {
             sid: {
                 "id": sid,

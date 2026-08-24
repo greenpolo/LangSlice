@@ -38,7 +38,7 @@ def species_from_atlas_name(atlas_name: str) -> str:
 class _AtlasLike(Protocol):
     atlas_name: str
     orientation: str
-    reference: np.ndarray
+    template: np.ndarray
     annotation: np.ndarray
     resolution: Sequence[float]
     metadata: dict[str, object]
@@ -226,7 +226,7 @@ def get_reference_slice(
 ) -> Image.Image:
     """Get a reference slice along the chosen plane as grayscale PIL image."""
     idx, axis = _resolve_idx_axis(atlas, position_mm, plane)
-    reference_slice = np.take(np.asarray(atlas.reference), idx, axis=axis)
+    reference_slice = np.take(np.asarray(atlas.template), idx, axis=axis)
     reference_slice = orient_slice_for_display(reference_slice, plane)
     normalized = _normalize_to_uint8(reference_slice)
     return Image.fromarray(normalized, mode="L")
@@ -305,7 +305,7 @@ def get_composite_slice(
         raise ValueError(f"opacity must be in [0, 1], got {opacity}")
 
     idx, axis = _resolve_idx_axis(atlas, position_mm, plane)
-    ref_slice = np.take(np.asarray(atlas.reference), idx, axis=axis)
+    ref_slice = np.take(np.asarray(atlas.template), idx, axis=axis)
     ref_slice = orient_slice_for_display(ref_slice, plane)
     ref_norm = _normalize_to_uint8(ref_slice)
     ref_rgb = np.stack([ref_norm, ref_norm, ref_norm], axis=-1).astype(np.float32)
@@ -648,7 +648,7 @@ def get_atlas_info(atlas: _AtlasLike) -> dict[str, object]:
     min_pos, max_pos = get_position_range_mm(atlas)
     resolution_mm = [float(r) / 1000.0 for r in atlas.resolution]
 
-    shape = cast(tuple[int, ...], atlas.reference.shape)
+    shape = cast(tuple[int, ...], atlas.template.shape)
 
     check_latest_version = getattr(atlas, "check_latest_version", None)
     is_latest: bool | None = None
