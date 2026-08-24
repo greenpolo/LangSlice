@@ -81,10 +81,13 @@ Two methods live as sibling subpackages with no dependency on each other:
   sheet for a re-check; `seeding.py` anchors a few sections with the
   single-slice worker and interpolates the rest (`deepslice.py` is the
   not-yet-installed optional alternative); `position.py` is the second agent
-  pass that refines those positions; `_step_common.py` holds what the two
-  agent steps share (`view_slices`, manifest, ADK session loop). `transforms`
-  and `review` are still stubs. `--stop-after NODE` runs one step and
-  checkpoints.
+  pass that refines those positions; `transforms.py` proposes one in-plane
+  alignment per section — the shared silhouette affine (plain code) for intact
+  sections, a per-section interactive agent loop (preview → look → adjust →
+  submit) for damaged ones; `review.py` is the final whole-stack consistency
+  agent and can route back to `position` once. `_step_common.py` holds what the
+  agent steps share (`render_slice`, `view_slices`, manifest, ADK session
+  loop). `--stop-after NODE` runs one step and checkpoints.
 - `nonlinear/` — generative-image registration: candidate generation, image
   provider adapters, Elastix runtime, optional ADK review loop, affine and
   nonlinear result types, and `quick_affine.py` (silhouette affine preview;
@@ -98,6 +101,11 @@ Shared, top-level:
 - `atlas/` — BrainGlobe loading, position helpers, slice extraction, colored
   region maps, borders
 - `space.py` — coordinate and orientation conventions
+- `affine.py` — shared in-plane affine core: the silhouette (moments) fit of a
+  section onto an atlas section, plus the rotation/scale/translate matrix
+  builder and the normalized 6-number parameter convention. Used by both
+  `linear/whole_brain/transforms.py` and `nonlinear/quick_affine.py`; belongs
+  to neither
 - `image_prep.py` — image normalization, pixel-size detection, VLM downsampling
 - `export.py` — QUINT/ABBA-compatible JSON export
 - `providers/` — model access (`vlm_config.py` for Gemini backends,

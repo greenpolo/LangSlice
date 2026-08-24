@@ -1,4 +1,13 @@
-"""Test doubles for ADK LlmAgent model invocations.
+"""Test doubles: ADK LlmAgent model invocations, plus a synthetic atlas.
+
+## Synthetic atlas
+
+``EllipseAtlas``/``ellipse_section`` are the smallest pair of shapes the
+silhouette affine can actually register — one ellipse of tissue in a 20-slice,
+1 mm-per-voxel volume, and a section holding another. Small enough to build in
+a test, real enough that the moments fit has something to fit.
+
+## ADK model doubles
 
 The ADK `BaseLlm` abstraction (``google.adk.models.BaseLlm``) exposes a single
 entry point for a model turn: ``generate_content_async(llm_request, stream)``.
@@ -21,10 +30,48 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator
 from typing import Any
 
+import cv2
+import numpy as np
 from google.adk.models import BaseLlm
 from google.adk.models.llm_request import LlmRequest
 from google.adk.models.llm_response import LlmResponse
 from google.genai import types
+from PIL import Image
+
+
+class EllipseAtlas:
+    """A 20-slice atlas, 1 mm per voxel, whose tissue is one ellipse.
+
+    1 mm voxels keep the volume tiny while leaving positions in the same
+    0-19 mm ballpark the real coronal atlases use.
+    """
+
+    atlas_name = "fake_ellipse_1mm"
+    orientation = "asr"
+    resolution = (1000.0, 1000.0, 1000.0)
+    metadata = {"species": "mouse"}
+
+    def __init__(
+        self, *, height: int = 96, width: int = 128, axes: tuple[int, int] = (46, 30)
+    ):
+        plane = np.zeros((height, width), dtype=np.uint8)
+        cv2.ellipse(plane, (width // 2, height // 2), axes, 0, 0, 360, 1, -1)
+        self.annotation = np.repeat(plane[None, :, :], 20, axis=0)
+        self.reference = self.annotation * 200
+
+
+def ellipse_section(
+    size: tuple[int, int] = (200, 160),
+    axes: tuple[int, int] = (70, 40),
+    angle: float = 0.0,
+) -> Image.Image:
+    """Dark tissue ellipse on a light field, like a scanned section."""
+    width, height = size
+    canvas = np.full((height, width, 3), 240, dtype=np.uint8)
+    cv2.ellipse(
+        canvas, (width // 2, height // 2), axes, angle, 0, 360, (30, 30, 30), -1
+    )
+    return Image.fromarray(canvas, mode="RGB")
 
 
 class _ScriptedSubmitLlm(BaseLlm):
@@ -83,6 +130,11 @@ _CLEAN_STACK_SUBMISSIONS: dict[str, dict[str, Any]] = {
         "interval_breaks": [],
         "notes": [],
         "summary": "Seeded positions check out.",
+    },
+    "submit_review": {
+        "approved": True,
+        "notes": [],
+        "summary": "Stack is consistent end to end.",
     },
 }
 

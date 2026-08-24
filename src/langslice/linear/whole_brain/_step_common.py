@@ -1,10 +1,12 @@
-"""Pieces shared by the whole-brain agent steps (survey, position).
+"""Pieces shared by the whole-brain agent steps (survey, position, transforms,
+review).
 
-Both agent steps look at the same stack the same way: a ``view_slices`` tool
-that renders through the corrected view, a text manifest of the stack, and the
-same ADK session loop (create session, run turns, nudge when the model answers
-in prose, stop when the step's submit tool has escalated). Only the tools, the
-prompt and the seed message differ, so those stay with the step.
+Every agent step looks at the same stack the same way: sections rendered
+through the corrected view (``render_slice``, ``view_slices``), a text manifest
+of the stack, and the same ADK session loop (create session, run turns, nudge
+when the model answers in prose, stop when the step's submit tool has
+escalated). Only the tools, the prompt and the seed message differ, so those
+stay with the step.
 """
 
 from __future__ import annotations
@@ -25,7 +27,7 @@ from langslice.linear.runner import _APP_NAME, _USER_ID, _build_plugins
 from langslice.linear.session import build_initial_state
 from langslice.linear.tools import _image_to_part
 from langslice.linear.whole_brain.engine import EngineContext
-from langslice.linear.whole_brain.state import StackState
+from langslice.linear.whole_brain.state import SliceState, StackState
 from langslice.space import Plane
 
 logger = logging.getLogger(__name__)
@@ -44,6 +46,24 @@ def split_known_ids(state: StackState, slice_ids: list[str]) -> tuple[list[str],
         [sid for sid in slice_ids if sid in known],
         [sid for sid in slice_ids if sid not in known],
     )
+
+
+def render_slice(
+    ctx: EngineContext, record: SliceState, *, long_edge: int = VIEW_LONG_EDGE
+) -> Image.Image:
+    """One section as the engine sees it: normalized, downsampled, flip applied.
+
+    Every step that shows or measures a section goes through here, so the
+    pixels the agent judges are the pixels the transform step fits against.
+    """
+    with Image.open(ctx.image_path(record.id)) as handle:
+        # Detach from the file handle: prepare_image_for_vlm can hand back the
+        # very object it was given when no resize is needed.
+        source = normalize_image(handle.copy())
+    prepped = prepare_image_for_vlm(source, max_long_edge=long_edge).image
+    if record.flip:
+        prepped = prepped.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+    return prepped
 
 
 def make_view_slices(
@@ -77,14 +97,7 @@ def make_view_slices(
         for slice_id in wanted:
             record = state.by_id(slice_id)
             assert record is not None
-            with Image.open(ctx.image_path(slice_id)) as handle:
-                # Detach from the file handle: prepare_image_for_vlm can hand
-                # back the very object it was given when no resize is needed.
-                source = normalize_image(handle.copy())
-            prepped = prepare_image_for_vlm(source, max_long_edge=VIEW_LONG_EDGE).image
-            if record.flip:
-                prepped = prepped.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
-            parts.append(_image_to_part(prepped))
+            parts.append(_image_to_part(render_slice(ctx, record)))
 
         return {
             "status": "ok",

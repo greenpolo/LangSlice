@@ -274,7 +274,12 @@ def test_build_atlas_root_mask_produces_binary_alpha_at_target_size(monkeypatch)
     """`_build_atlas_root_mask` slices annotation at the AP index for the
     requested plane, marks non-zero structure IDs as opaque (255) and zeros
     as transparent (0), and NEAREST-resizes to *target_size* so alpha stays
-    binary -- bilinear interpolation would halo the 3D-viewer silhouette."""
+    binary -- bilinear interpolation would halo the 3D-viewer silhouette.
+
+    The implementation now lives in `langslice.atlas.core.get_root_mask` (it is
+    an atlas accessor, and the whole-brain transform step needs it too); the
+    name here is an alias, so this exercises both."""
+    from langslice.atlas import core as atlas_core
     from langslice.nonlinear import image_gen_helpers
 
     # Annotation slab: top half has tissue (non-zero IDs), bottom half is bg.
@@ -292,17 +297,11 @@ def test_build_atlas_root_mask_produces_binary_alpha_at_target_size(monkeypatch)
     atlas = SimpleNamespace(annotation=annotation)
 
     monkeypatch.setattr(
-        image_gen_helpers, "position_mm_to_index", lambda a, p, plane="coronal": 0
+        atlas_core, "position_mm_to_index", lambda a, p, plane="coronal": 0
     )
-    monkeypatch.setattr(
-        image_gen_helpers, "slice_axis_index", lambda ctx, plane: 0
-    )
-    monkeypatch.setattr(
-        image_gen_helpers, "atlas_space_context", lambda a: SimpleNamespace()
-    )
-    monkeypatch.setattr(
-        image_gen_helpers, "orient_slice_for_display", lambda a, plane: a
-    )
+    monkeypatch.setattr(atlas_core, "slice_axis_index", lambda ctx, plane: 0)
+    monkeypatch.setattr(atlas_core, "atlas_space_context", lambda a: SimpleNamespace())
+    monkeypatch.setattr(atlas_core, "orient_slice_for_display", lambda a, plane: a)
 
     target_size = (8, 8)  # (W, H) per PIL convention
     mask = image_gen_helpers._build_atlas_root_mask(

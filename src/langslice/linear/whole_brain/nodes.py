@@ -1,11 +1,10 @@
 """The eight nodes of the whole-brain graph.
 
-Everything up to ``position`` is implemented, plus ``emit``; ``transforms``
-and ``review`` are still stubs that log, mark themselves complete and fall
-through to their default successor. Their docstrings are the contract a later
-implementation has to satisfy — what it reads from
-:class:`~langslice.linear.whole_brain.state.StackState` and what it writes
-back.
+Each node's docstring is its contract: what it reads from
+:class:`~langslice.linear.whole_brain.state.StackState`, what it writes back,
+and where it can route. The work itself lives beside them — ``survey.py``,
+``seeding.py``, ``position.py``, ``transforms.py``, ``review.py`` — so a node
+stays a routing decision plus its bookkeeping.
 
 Every node signature is ``async (state, ctx) -> next_node_name``; return ""
 for the default successor.
@@ -29,9 +28,14 @@ from langslice.linear.whole_brain.discovery import (
 )
 from langslice.linear.whole_brain.engine import EngineContext, Node
 from langslice.linear.whole_brain.position import run_position_session
+from langslice.linear.whole_brain.review import run_review_session
 from langslice.linear.whole_brain.seeding import seed_positions
 from langslice.linear.whole_brain.state import SliceState, StackState
 from langslice.linear.whole_brain.survey import run_survey_session
+from langslice.linear.whole_brain.transforms import (
+    run_affine_pass,
+    run_interactive_transforms,
+)
 from langslice.space import Plane
 
 logger = logging.getLogger(__name__)
@@ -331,30 +335,82 @@ async def position(state: StackState, ctx: EngineContext) -> str:
 
 
 async def transforms(state: StackState, ctx: EngineContext) -> str:
-    """Per-slice fan-out: affine for intact slices, interactive for damaged. STUB.
+    """Per-slice fan-out: affine for intact slices, interactive for damaged.
 
     Reads: per-slice ``position_mm``, ``damaged``, ``flip``.
-    Writes: ``affine`` (Elastix parameters, proposed not applied) for intact
-    slices; ``interactive_transform`` (rotation_deg, scale_x, scale_y,
-    translate_x, translate_y) for damaged ones; ``caveats`` where the fit is
-    weak.
-    Routes: "" (review).
+    Writes: ``affine`` (silhouette-fit parameters, proposed not applied) for
+    intact slices; ``interactive_transform`` (rotation_deg, scale_x, scale_y,
+    translate_x, translate_y) for damaged ones; ``caveats`` where a fit failed
+    or came out weak.
+    Routes: "" (review). A failed transform is never fatal — the section keeps
+    its position and carries a caveat.
     """
-    ctx.progress("[transforms] not implemented (stub): no transforms proposed")
+    if not state.slices:
+        return ""
+    fitted, failed = run_affine_pass(state, ctx)
+
+    pos_lo, pos_hi = _atlas_range(state, ctx)
+    interactive, empty = await run_interactive_transforms(
+        state, ctx, pos_lo=pos_lo, pos_hi=pos_hi
+    )
+
+    state.notes.append(
+        f"transforms: {fitted} affine fit(s), {failed} affine failure(s), "
+        f"{interactive} interactive transform(s)"
+    )
+    ctx.progress(
+        f"[transforms] {fitted} intact section(s) fitted"
+        + (f", {failed} failed" if failed else "")
+        + f"; {interactive} damaged section(s) aligned interactively"
+        + (f", {empty} without a transform" if empty else "")
+    )
     return ""
 
 
 async def review(state: StackState, ctx: EngineContext) -> str:
-    """Whole-stack consistency pass. STUB.
+    """Whole-stack consistency pass: the last look before hand-back.
 
-    Reads: the full positioned, transformed stack plus the advisory monotone
-    fit from :func:`langslice.linear.whole_brain.signals.monotone_fit`.
+    Reads: the full positioned, transformed stack plus the advisory spacing
+    signals (interval table, interpolation residuals, monotone fit).
     Writes: ``confidence``, ``caveats``, ``notes``.
-    Routes: "position" once if the stack is inconsistent, else "" (emit).
-    The stub falls through to emit.
+    Routes: "position" when the agent refuses the stack (the engine bounds
+    that loop; on refusal it falls through), else "" (emit). A pass that runs
+    out of turns approves — review can add caveats, never block hand-back.
     """
-    ctx.progress("[review] not implemented (stub): stack accepted as-is")
-    return ""
+    if not state.slices:
+        return ""
+    pos_lo, pos_hi = _atlas_range(state, ctx)
+    outcome = await run_review_session(
+        state=state,
+        ctx=ctx,
+        species=_species(state, ctx),
+        pos_lo=pos_lo,
+        pos_hi=pos_hi,
+    )
+
+    findings = outcome.findings
+    if findings is None:
+        state.notes.append(
+            f"review: incomplete — no verdict within {outcome.turns} turns; "
+            "stack handed back as it stands"
+        )
+        approved = True
+    else:
+        approved = bool(findings.get("approved"))
+        summary = str(findings.get("summary", "")).strip()
+        if summary:
+            state.notes.append(f"review: {summary}")
+        # Notes are how a refusal reaches the next positioning pass: its seed
+        # message reads them back out of state.
+        state.notes.extend(
+            f"review: {note}" for note in findings.get("notes") or [] if str(note).strip()
+        )
+
+    ctx.progress(
+        f"[review] {outcome.tool_calls} tool calls; {outcome.flagged} section(s) "
+        f"flagged; {'approved' if approved else 'sent back to position'}"
+    )
+    return "" if approved else "position"
 
 
 async def emit(state: StackState, ctx: EngineContext) -> str:

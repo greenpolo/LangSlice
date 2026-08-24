@@ -54,6 +54,32 @@ class SliceState:
 
     Nothing here is applied to the image on disk — positions, flips, angles
     and transforms are proposals the host applies with its own machinery.
+
+    The two transform fields are the two routes of the ``transforms`` step,
+    and a section carries at most one of them:
+
+    ``affine``
+        Intact sections. Six numbers, row-major ``[a, b, tx, c, d, ty]``,
+        the 2x3 in-plane affine that maps the section onto its atlas section::
+
+            x_atlas = a*x + b*y + tx
+            y_atlas = c*x + d*y + ty
+
+        Coordinates are NORMALIZED — x as a fraction of image width, y as a
+        fraction of image height — so the same six numbers apply at any
+        resolution. Produced by
+        :func:`langslice.affine.silhouette_affine`, expressed by
+        :func:`langslice.affine.normalized_affine`.
+    ``interactive_transform``
+        Damaged sections, where the closed-form silhouette fit has nothing to
+        bite on. The five knobs the interactive agent proposed:
+        ``rotation_deg`` (counter-clockwise on screen, about the image
+        centre), ``scale_x``/``scale_y`` (multipliers, applied before the
+        rotation), ``translate_x``/``translate_y`` (fractions of image
+        width/height, positive = right/down). Compose them into the same 2x3
+        with :func:`langslice.affine.affine_matrix`.
+
+    Both describe the section as the engine sees it, i.e. AFTER ``flip``.
     """
 
     id: str
@@ -68,6 +94,21 @@ class SliceState:
     interactive_transform: dict[str, float] | None = None
     confidence: str = ""
     caveats: list[str] = field(default_factory=list)
+
+
+def apply_confidence(record: SliceState, value: object) -> bool:
+    """Set *record*'s confidence from model output; ignore anything else.
+
+    Every agent step takes an optional confidence alongside whatever else it
+    writes, and "the model left it out" must not read as "the model said no
+    confidence" — an omitted or unrecognised value leaves the current one
+    standing. Returns whether it was applied.
+    """
+    level = str(value or "").strip().lower()
+    if not level or level not in CONFIDENCE_LEVELS:
+        return False
+    record.confidence = level
+    return True
 
 
 @dataclass
