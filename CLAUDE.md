@@ -174,6 +174,10 @@ Shared, top-level:
   which derives AP/DV/ML axis indices from the atlas orientation via
   `brainglobe_space` and requires the AP axis to increase anterior→posterior.
 - Optional debug traces are written only when `LANGSLICE_VLM_DEBUG_DIR` is set.
+- Whole-brain agent sessions write a full-content JSONL trace (what the agent
+  was shown, said, called, and got back; images as descriptors, never bytes)
+  only when `LANGSLICE_TRACE_DIR` is set — `langslice linear estimate-brain
+  --trace-dir PATH` sets it for one run. See `docs/current_workflow.md`.
 
 ## Boundaries
 

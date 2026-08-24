@@ -32,6 +32,7 @@ from langslice.linear.session import build_initial_state
 from langslice.linear.tools import _image_to_part
 from langslice.linear.whole_brain.engine import EngineContext
 from langslice.linear.whole_brain.state import SliceState, StackState
+from langslice.linear.whole_brain.trace import open_trace
 from langslice.space import Plane
 
 logger = logging.getLogger(__name__)
@@ -228,7 +229,12 @@ async def run_agent_session(
     Ends when *done* reports the step's submit tool has fired, or when the
     turn/tool-call budget runs out. Tools mutate the state as they are called,
     so a pass that never submits still leaves its writes behind.
+
+    With ``LANGSLICE_TRACE_DIR`` set, everything the agent is shown, says, calls
+    and gets back is appended to a JSONL trace named after *run_label* (see
+    :mod:`langslice.linear.whole_brain.trace`).
     """
+    trace = open_trace(run_label, agent=agent)
     app = App(name=_APP_NAME, root_agent=agent, plugins=_build_plugins(run_label))
     runner = InMemoryRunner(app=app)
     assert runner.session_service is not None
@@ -252,14 +258,23 @@ async def run_agent_session(
     )
 
     message = seed_message
+    if trace is not None:
+        trace.seed(seed_message)
+    # The nudge is traced where it is sent, not where it is written: the last
+    # one built before the budget runs out never reaches the model.
+    nudge: str | None = None
     tool_calls = 0
     turns = 0
     while turns < max_iterations and not done():
         turns += 1
+        if trace is not None and nudge is not None:
+            trace.nudge(nudge, turn=turns)
         saw_tool_call = False
         async for event in runner.run_async(
             user_id=_USER_ID, session_id=run_label, new_message=message
         ):
+            if trace is not None:
+                trace.event(event, turn=turns)
             calls = event.get_function_calls() or []
             if calls:
                 saw_tool_call = True
@@ -280,13 +295,9 @@ async def run_agent_session(
                 "%s hit max_iterations=%d; ending pass", run_label, max_iterations
             )
             break
-        message = types.Content(
-            role="user",
-            parts=[
-                types.Part.from_text(
-                    text=nudge_continue if saw_tool_call else nudge_no_tool
-                )
-            ],
-        )
+        nudge = nudge_continue if saw_tool_call else nudge_no_tool
+        message = types.Content(role="user", parts=[types.Part.from_text(text=nudge)])
 
+    if trace is not None:
+        trace.summary(tool_calls=tool_calls, turns=turns, submitted=done())
     return tool_calls, turns
