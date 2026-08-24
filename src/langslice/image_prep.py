@@ -140,6 +140,31 @@ def crop_to_mask(
     return image.crop(box)
 
 
+def _largest_component(mask: np.ndarray) -> np.ndarray:
+    """The biggest connected blob in *mask*, or *mask* itself if labeling fails.
+
+    A slide carries more than the section: a neighbouring fragment, a dust
+    speck, a pen mark. The global bounding box stretches around all of it and
+    the section comes back rendered at a fraction of the frame — the worst
+    framing in a benchmark run was also its worst position.
+    """
+    # ponytail: biggest blob wins, so a section torn clean in two keeps only
+    # the larger half. Dilate before labeling if that ever costs more than
+    # debris does.
+    import cv2
+
+    try:
+        count, labels, stats, _ = cv2.connectedComponentsWithStats(
+            mask.astype(np.uint8), connectivity=8
+        )
+        if count <= 2:  # background plus at most one blob: nothing to choose
+            return mask
+        biggest = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+        return labels == biggest
+    except Exception:  # a labeling failure must not cost us the framing
+        return mask
+
+
 def crop_to_tissue(image: Image.Image, *, margin: float = FRAME_MARGIN) -> Image.Image:
     """Crop a histology section to its tissue plus a margin.
 
@@ -151,8 +176,10 @@ def crop_to_tissue(image: Image.Image, *, margin: float = FRAME_MARGIN) -> Image
     Foreground is "different from the background", with the background level
     read off the frame's own border — which works for dark-on-light brightfield
     and light-on-dark fluorescence alike, and (unlike an Otsu split) will not
-    mistake a dim half of the tissue for background. Falls back to the
-    untouched image when the result would be degenerate.
+    mistake a dim half of the tissue for background. The box is then taken
+    around the LARGEST connected blob only, so a neighbouring fragment or a
+    speck of debris cannot drag the frame open. Falls back to the untouched
+    image when the result would be degenerate.
     """
     proxy = image.convert("L")
     long_edge = max(proxy.size)
@@ -170,15 +197,11 @@ def crop_to_tissue(image: Image.Image, *, margin: float = FRAME_MARGIN) -> Image
     )
     background = float(np.median(border))
     spread = max(float(arr.max()) - float(arr.min()), 1.0)
-    # ponytail: plain distance-from-background, so a speck of debris widens the
-    # box. Cropping WIDE is harmless (that is today's behaviour); cropping into
-    # the tissue would not be. Add a connected-component pass if debris ever
-    # costs real framing.
     mask = np.abs(arr - background) > max(8.0, 0.12 * spread)
     covered = float(mask.mean())
     if covered < 0.005 or covered > 0.98:
         return image
-    return crop_to_mask(image, mask, margin=margin)
+    return crop_to_mask(image, _largest_component(mask), margin=margin)
 
 
 def prepare_image_for_vlm(

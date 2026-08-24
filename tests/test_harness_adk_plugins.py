@@ -9,6 +9,7 @@ from google.genai import types
 
 from langslice.adk import TOOL_MEDIA_PARTS_KEY
 from langslice.adk.plugins import (
+    DEFAULT_KEEP_LAST_TOOL_IMAGES,
     ModelCallPacingPlugin,
     RequestCapturePlugin,
     trim_stale_tool_images,
@@ -191,30 +192,45 @@ def test_trim_keeps_newest_tool_images_and_user_images():
     assert sum(n_media(c) for c in contents[1:]) == 18
 
 
+def _kept(contents: list[types.Content]) -> list[int]:
+    return [
+        len(p.function_response.parts or [])
+        for c in contents
+        for p in (c.parts or [])
+        if p.function_response is not None
+    ]
+
+
 def test_trim_noop_under_budget_and_always_keeps_newest():
     contents = [_tool_turn(5), _tool_turn(5)]
     assert trim_stale_tool_images(contents, keep_last=12) is contents
     # A single oversized newest call is still kept in full.
-    big = [_tool_turn(6), _tool_turn(20)]
-    out = trim_stale_tool_images(big, keep_last=12)
-    parts = out[1].parts
-    assert parts is not None
-    fr1 = parts[0].function_response
-    assert fr1 is not None and len(fr1.parts or []) == 20
-    parts0 = out[0].parts
-    assert parts0 is not None
-    fr0 = parts0[0].function_response
-    assert fr0 is not None and not (fr0.parts or [])
+    big = [_tool_turn(6), _tool_turn(6), _tool_turn(20)]
+    assert _kept(trim_stale_tool_images(big, keep_last=12)) == [0, 6, 20]
+
+
+def test_trim_always_keeps_the_two_newest_calls_over_budget():
+    """Two full sweeps must stay comparable however big they are.
+
+    The 12-image budget plus a one-call floor left an agent with only its
+    newest sweep in view: it could not compare candidate levels at all.
+    """
+    contents = [_tool_turn(8), _tool_turn(8), _tool_turn(8)]
+
+    out = trim_stale_tool_images(contents, keep_last=4)
+
+    assert _kept(out) == [0, 8, 8]
+
+
+def test_trim_default_budget_holds_three_full_sweeps():
+    assert DEFAULT_KEEP_LAST_TOOL_IMAGES == 24
+    contents = [_tool_turn(8), _tool_turn(8), _tool_turn(8)]
+    assert trim_stale_tool_images(contents) is contents
+    # A fourth sweep pushes the oldest out, the rest stay.
+    assert _kept(trim_stale_tool_images([*contents, _tool_turn(8)])) == [0, 8, 8, 8]
 
 
 def test_trim_drop_is_monotone_no_holes():
     # Once an old call is dropped, even older small calls are dropped too.
-    contents = [_tool_turn(2), _tool_turn(5), _tool_turn(10)]
-    out = trim_stale_tool_images(contents, keep_last=12)
-    kept = [
-        len(p.function_response.parts or [])
-        for c in out
-        for p in (c.parts or [])
-        if p.function_response is not None
-    ]
-    assert kept == [0, 0, 10]
+    contents = [_tool_turn(2), _tool_turn(2), _tool_turn(5), _tool_turn(10)]
+    assert _kept(trim_stale_tool_images(contents, keep_last=12)) == [0, 0, 5, 10]

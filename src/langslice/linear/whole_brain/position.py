@@ -69,8 +69,15 @@ MAX_STRUCTURE_QUERIES = 10
 #: An end anchor's structure must span no more than this fraction of the
 #: atlas's full slicing-axis extent. A structure that runs most of the
 #: brain's length (cortex, say) is "present" almost everywhere and so proves
-#: nothing about where a section sits — it is gameable by construction.
-MAX_ANCHOR_SPAN_FRACTION = 0.25
+#: nothing about where a section sits — it is gameable by construction. Kept
+#: tight on purpose: at 25% a mouse-atlas anchor could still be 3 mm wide,
+#: wider than the placement errors the gate exists to catch.
+MAX_ANCHOR_SPAN_FRACTION = 0.08
+
+#: A reported interval break must be at least this much wider than the
+#: stack's own median written spacing. Below it, the "break" is not in the
+#: numbers the agent itself wrote, and reporting it downstream is fiction.
+INTERVAL_BREAK_MIN_RATIO = 1.5
 
 DEFAULT_POSITION_MODEL = "gemini-3-flash-preview"
 
@@ -140,15 +147,24 @@ class PositionToolBox:
 
 
 #: Legend carried with every interval table. The nominal interval is the one
-#: number in the run that is NOT evidence, and a stack placed to match it
-#: exactly is the failure this line is here to name.
+#: number in the run that is NOT evidence, and BOTH ways of disagreeing with
+#: it are failures worth naming: a one-sided legend that only warned about
+#: compression was read as licence to stretch a stack by 22%.
 INTERVAL_LEGEND = (
     "nominal_interval_mm is the cutting protocol, not a measurement; "
     "implied_interval_mm is what your own placed positions say the spacing "
-    "actually is. The realized mean is usually LARGER than nominal, because "
-    "sections get lost, torn or skipped during collection. A ladder that "
-    "matches the nominal interval exactly while your verified anchors imply "
-    "larger spacing means the stack is COMPRESSED: the ends are wrong."
+    "actually is. Read the comparison in BOTH directions. Implied BELOW "
+    "nominal: sections cannot sit closer together than they were cut, so the "
+    "stack is COMPRESSED and its ends have been pulled inward. Implied a "
+    "little ABOVE nominal: normal and expected, because sections get lost, "
+    "torn or skipped during collection. Implied FAR above nominal (more than "
+    "about 1.3x) is the opposite warning, not a confirmation: either the "
+    "stack has been STRETCHED to reach something it does not really contain, "
+    "or that many sections really are missing — verify against the atlas "
+    "before believing it. OFFSET IS NOT SCALE: when BOTH ends of the stack "
+    "disagree with the atlas in the SAME direction, the placement needs a "
+    "rigid SHIFT and the spacing is fine; only ends that disagree in "
+    "OPPOSITE directions mean the spacing itself is wrong."
 )
 
 
@@ -383,8 +399,11 @@ def check_end_anchors(
                     "error": "STRUCTURE_TOO_BROAD",
                     "reason": (
                         f"{structure['acronym']} spans {span_fraction * 100:.0f}% "
-                        "of the slicing axis — it cannot localize a section. "
-                        "Name a structure specific to this level."
+                        f"of the slicing axis ({hi - lo:.2f} mm), more than the "
+                        f"{MAX_ANCHOR_SPAN_FRACTION * 100:.0f}% an end anchor "
+                        "may cover — a structure that wide cannot localize a "
+                        "section any better than the error you are trying to "
+                        "find. Name a structure specific to this level."
                     ),
                 }
             )
@@ -440,6 +459,103 @@ def _missing_positions_error(state: StackState) -> dict[str, Any] | None:
             "with `set_positions`, then submit again."
         ),
     }
+
+
+def check_interval_breaks(state: StackState, breaks: Any) -> dict[str, Any] | None:
+    """Check reported interval breaks against the spacing the agent WROTE.
+
+    A break at corrected index *i* claims the gap between section *i-1* and
+    section *i* is larger than the rest of the stack's. That claim is checkable
+    without an image: the positions on the state are the agent's own, and a
+    "break" where its own numbers show ordinary spacing is a report of
+    something that is not there — it travels downstream as a real finding.
+    Refused, not warned, for the same reason the end anchors are.
+
+    Returns ``None`` when every reported index holds (or when the stack is too
+    short to have a median spacing), else the error dict ``submit_positions``
+    hands back. Call it after :func:`_missing_positions_error`, so every
+    section is known to carry a position.
+    """
+    indices: list[int] = []
+    for raw in breaks if isinstance(breaks, (list, tuple)) else []:
+        try:
+            indices.append(int(raw))
+        except (TypeError, ValueError):
+            continue
+    if not indices:
+        return None
+
+    ordered = state.in_order()
+    deltas = [
+        abs(float(b.position_mm) - float(a.position_mm))  # type: ignore[arg-type]
+        for a, b in zip(ordered, ordered[1:], strict=False)
+        if a.position_mm is not None and b.position_mm is not None
+    ]
+    if not deltas:
+        return None
+    median = float(sorted(deltas)[len(deltas) // 2])
+    threshold = median * INTERVAL_BREAK_MIN_RATIO
+
+    failures: list[dict[str, Any]] = []
+    for index in sorted(set(indices)):
+        position = next(
+            (i for i, r in enumerate(ordered) if r.index_corrected == index), None
+        )
+        if position is None or position == 0:
+            failures.append(
+                {
+                    "index": index,
+                    "error": "NOT_A_GAP",
+                    "reason": (
+                        f"corrected index {index} is not a section with a "
+                        "section before it, so there is no interval there. A "
+                        "break index is the index of the section AFTER the gap."
+                    ),
+                }
+            )
+            continue
+        before, after = ordered[position - 1], ordered[position]
+        written = abs(float(after.position_mm) - float(before.position_mm))  # type: ignore[arg-type]
+        if written > threshold:
+            continue
+        failures.append(
+            {
+                "index": index,
+                "error": "NOT_A_GAP",
+                "written_interval_mm": round(written, 3),
+                "median_interval_mm": round(median, 3),
+                "between": [before.id, after.id],
+                "reason": (
+                    f"you placed {before.id} and {after.id} {written:.3f} mm "
+                    f"apart, against a median written spacing of "
+                    f"{median:.3f} mm. That is not a break. Either move the "
+                    "sections so the positions show the gap you saw, or drop "
+                    f"index {index} from interval_breaks."
+                ),
+            }
+        )
+
+    if not failures:
+        return None
+    return {
+        "status": "error",
+        "error": "INTERVAL_BREAKS_UNSUPPORTED",
+        "failures": failures,
+        "message": (
+            f"{len(failures)} of your reported interval breaks are not in the "
+            "positions you wrote, so nothing was submitted. A break is a "
+            "claim about the spacing on THIS stack: report only the indices "
+            f"where your own written interval is more than "
+            f"{INTERVAL_BREAK_MIN_RATIO:g}x the stack's median."
+        ),
+    }
+
+
+def _submission_errors(state: StackState, interval_breaks: Any) -> dict[str, Any] | None:
+    """The checks both ``submit_positions`` variants run, in order."""
+    return _missing_positions_error(state) or check_interval_breaks(
+        state, interval_breaks
+    )
 
 
 # --- tools ---------------------------------------------------------------
@@ -581,22 +697,35 @@ def build_position_tools(
                         }
                     )
                     continue
-                ranges.append(
-                    {
-                        "query": query,
-                        "acronym": structure["acronym"],
-                        "name": structure["name"],
-                        "first_mm": round(span[0], 3),
-                        "last_mm": round(span[1], 3),
-                    }
-                )
+                entry: dict[str, Any] = {
+                    "query": query,
+                    "acronym": structure["acronym"],
+                    "name": structure["name"],
+                    "first_mm": round(span[0], 3),
+                    "last_mm": round(span[1], 3),
+                }
+                # A short acronym resolves silently to ONE structure, which
+                # may not be the one meant ("MED" is a thalamic nucleus in one
+                # atlas and the start of "medulla" in a reader's head). Name
+                # the other candidates so a wrong resolution is visible.
+                others = [
+                    acronym
+                    for acronym in near_misses(atlas, query, limit=4)
+                    if acronym != structure["acronym"]
+                ][:3]
+                if others:
+                    entry["also_matches"] = others
+                ranges.append(entry)
             return {
                 "status": "ok",
                 "ranges": ranges,
                 "skipped": [str(a) for a in list(acronyms)[MAX_STRUCTURE_QUERIES:]],
                 "note": (
                     "Spans include the structure's descendants, in atlas-native mm "
-                    "along the slicing axis."
+                    "along the slicing axis. `name` is the structure your query "
+                    "actually resolved to — read it. `also_matches` lists other "
+                    "structures your query could have meant; if one of those is "
+                    "what you saw, query it by its own acronym."
                 ),
             }
 
@@ -877,7 +1006,10 @@ def build_position_tools(
                 interval_breaks: Corrected indices where the spacing between
                     neighbouring sections breaks the nominal interval — the
                     index of the section AFTER the gap. Empty if the stack is
-                    regular.
+                    regular. Checked against the positions you wrote: an index
+                    whose written interval is not clearly wider than the
+                    stack's median is refused, so report a break only where
+                    your own numbers show it.
                 notes: Short observations worth carrying forward.
                 summary: One or two sentences on what you changed and why.
                 end_anchors: Exactly two entries, one for the FIRST and one
@@ -891,9 +1023,9 @@ def build_position_tools(
                     range, or a structure too broad to localize anything, is
                     refused.
             """
-            missing_error = _missing_positions_error(state)
-            if missing_error is not None:
-                return missing_error
+            refusal = _submission_errors(state, interval_breaks)
+            if refusal is not None:
+                return refusal
 
             anchor_note = ""
             if state.slices:
@@ -961,13 +1093,16 @@ def build_position_tools(
                 interval_breaks: Corrected indices where the spacing between
                     neighbouring sections breaks the nominal interval — the
                     index of the section AFTER the gap. Empty if the stack is
-                    regular.
+                    regular. Checked against the positions you wrote: an index
+                    whose written interval is not clearly wider than the
+                    stack's median is refused, so report a break only where
+                    your own numbers show it.
                 notes: Short observations worth carrying forward.
                 summary: One or two sentences on what you changed and why.
             """
-            missing_error = _missing_positions_error(state)
-            if missing_error is not None:
-                return missing_error
+            refusal = _submission_errors(state, interval_breaks)
+            if refusal is not None:
+                return refusal
 
             # Model output is a trust boundary: a malformed submission must
             # not take the run down.
@@ -1073,8 +1208,9 @@ def build_position_prompt(
             "slicing axis, so its presence actually pins the section down. "
             "A structure that runs most of the brain's length proves "
             "nothing, since it is present almost everywhere: "
-            "`submit_positions` refuses any anchor spanning more than a "
-            "quarter of the atlas's slicing axis. Call "
+            "`submit_positions` refuses any anchor spanning more than "
+            f"{MAX_ANCHOR_SPAN_FRACTION * 100:.0f}% of the atlas's slicing "
+            "axis. Call "
             "`structure_range` on your candidate, and check both that its "
             "span is short and that the position you have written falls "
             "inside it. `atlas_structures_at` goes the other way — it tells "
@@ -1084,7 +1220,12 @@ def build_position_prompt(
             "landmark you can defend, never a structure you have not looked "
             "for. `submit_positions` asks for both end anchors and "
             "re-checks them, and refuses the submission when they do not "
-            "hold.\n\n"
+            "hold. AND WHEN AN END IS OFF, ASK WHICH KIND OF WRONG IT IS: if "
+            "BOTH ends are off in the SAME direction, the ladder needs a "
+            "rigid SHIFT and its spacing is fine — moving one end while the "
+            "other already matches STRETCHES the stack and ruins every "
+            "section in between. Only ends that are off in OPPOSITE "
+            "directions mean the spacing itself is wrong.\n\n"
         )
         rule6 = (
             "6. THE ARITHMETIC IS ADVICE; THE ATLAS IS EVIDENCE. "
@@ -1109,7 +1250,13 @@ def build_position_prompt(
             "every section still sits wrong. The ends are where that shows: "
             "verify the first and the last section of the stack against the "
             "atlas independently, and if either one does not match, the "
-            "whole placement is offset, not just that section.\n\n"
+            "whole placement is offset, not just that section. ASK WHICH "
+            "KIND OF WRONG IT IS: if BOTH ends are off in the SAME "
+            "direction, the ladder needs a rigid SHIFT and its spacing is "
+            "fine — moving one end while the other already matches STRETCHES "
+            "the stack and ruins every section in between. Only ends that "
+            "are off in OPPOSITE directions mean the spacing itself is "
+            "wrong.\n\n"
         )
         rule6 = (
             "6. THE ARITHMETIC IS ADVICE. `interpolate_between` and "
@@ -1187,10 +1334,17 @@ def build_position_prompt(
         f"has been compressed onto the protocol and its ends pulled inward. "
         f"The interval table shows the implied interval next to the nominal "
         f"one: when your anchors imply larger spacing than your ladder uses, "
-        f"believe the anchors. Where the anatomy advances faster than the "
+        f"believe the anchors. But an implied interval FAR above the nominal "
+        f"one — more than about 1.3x — is the opposite warning and not a "
+        f"confirmation: either the stack has been stretched to reach "
+        f"something it does not contain, or that many sections really are "
+        f"missing, and only the atlas can tell you which. Where the anatomy "
+        f"advances faster than the "
         f"suggestion says, sections are missing and any interpolation across "
         f"that stretch is wrong — investigate it, reposition it, and report "
-        f"every break you confirm in `submit_positions`.\n\n"
+        f"every break you confirm in `submit_positions`, which accepts a "
+        f"break index only where the positions you wrote really do show a "
+        f"wider-than-usual interval.\n\n"
         f"5. WRITE IN BATCHES. `set_positions` takes many sections in one call "
         f"and hands back the resulting neighbour-interval table, so you see "
         f"immediately what your edit did to the spacing.\n\n"

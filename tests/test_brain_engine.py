@@ -176,7 +176,14 @@ def _completed_state() -> StackState:
         thickness_mm=0.05,
         keep_order=False,
         interval_breaks=[3, 7],
-        notes=["ingest: 2 slices", "survey: clean", "position: done"],
+        notes=[
+            "ingest: 2 slices",
+            "survey: clean",
+            "seed: no automatic seeding available",
+            "position: ladder is 1.05, 1.25, 1.45 mm",
+            "transforms: 2 affine fit(s)",
+            "review: approved",
+        ],
         contact_sheet="/tmp/brain/contact_sheet.png",
         slices=[
             SliceState(
@@ -254,7 +261,31 @@ def test_rewind_preserves_survey_outputs():
     assert s2 is not None
     assert s2.index_corrected == 0
     assert state.axis_directions == {"ap": "anterior_to_posterior"}
-    assert state.notes[:3] == ["ingest: 2 slices", "survey: clean", "position: done"]
+    assert state.notes[:3] == [
+        "ingest: 2 slices",
+        "survey: clean",
+        "seed: no automatic seeding available",
+    ]
+
+
+def test_rewind_drops_the_rewound_steps_own_notes():
+    """The rejected pass's ladder must not seed the fresh one."""
+    state = _completed_state()
+    rewind_state(state, "position")
+
+    assert state.notes == [
+        "ingest: 2 slices",
+        "survey: clean",
+        "seed: no automatic seeding available",
+        "rewound from 'position' for a fresh pass",
+    ]
+
+    # Rewinding a later node leaves the earlier steps' notes in place.
+    later = _completed_state()
+    rewind_state(later, "review")
+    assert any(note.startswith("position:") for note in later.notes)
+    assert any(note.startswith("transforms:") for note in later.notes)
+    assert not any(note.startswith("review:") for note in later.notes)
 
 
 def test_rewind_transforms_leaves_position_alone():

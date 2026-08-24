@@ -106,6 +106,48 @@ def test_find_structure_accepts_acronym_name_and_unique_substring(atlas: Any):
 def test_near_misses_names_the_candidates(atlas: Any):
     assert set(landmarks.near_misses(atlas, "forebrain area")) == {"FA", "FB"}
     assert landmarks.near_misses(atlas, "hb") == ["HB"]
+    assert landmarks.near_misses(atlas, "") == []
+
+
+class _AcronymFamilyAtlas:
+    """Both matching patterns at once: an acronym family and a name substring.
+
+    "SC" prefixes a family of acronyms AND appears inside the NAME of an
+    unrelated one ("visceral"). Ranking names first buried the family the
+    query was obviously reaching for.
+    """
+
+    atlas_name = "fake_acronym_family"
+    structures = {  # noqa: RUF012 - a fixture, not a mutable default
+        1: {"id": 1, "acronym": "root", "name": "root", "structure_id_path": [1]},
+        2: {"id": 2, "acronym": "VISC", "name": "Visceral area", "structure_id_path": [1, 2]},
+        3: {
+            "id": 3,
+            "acronym": "VISC1",
+            "name": "Visceral area, layer 1",
+            "structure_id_path": [1, 2, 3],
+        },
+        4: {
+            "id": 4,
+            "acronym": "SCm",
+            "name": "Superior colliculus, motor related",
+            "structure_id_path": [1, 4],
+        },
+        5: {
+            "id": 5,
+            "acronym": "SCig",
+            "name": "Superior colliculus, intermediate gray",
+            "structure_id_path": [1, 4, 5],
+        },
+    }
+
+
+def test_near_misses_ranks_acronym_matches_above_name_substrings():
+    found = landmarks.near_misses(_AcronymFamilyAtlas(), "SC")  # type: ignore[arg-type]
+
+    # The acronym family leads, shortest first; the "visceral" name hits trail.
+    assert found[:2] == ["SCm", "SCig"]
+    assert set(found[2:]) == {"VISC", "VISC1"}
 
 
 def test_descendant_ids_include_the_structure_itself(atlas: Any):

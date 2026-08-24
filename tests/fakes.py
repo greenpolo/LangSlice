@@ -53,15 +53,16 @@ class EllipseAtlas:
 
     #: Id of the one structure the ellipse is made of.
     BODY_ID = 2
-    #: A narrow relabelling of the SAME tissue over indices 2-6 only — the
-    #: end-anchor gate needs a structure specific enough to localize a
-    #: section; ``EL`` itself exists on every slice and is too broad to
-    #: anchor anything.
-    CORE_ID = 3
-    CORE_FIRST, CORE_LAST = 2, 6
+    #: Two narrow relabellings of the SAME tissue, one per END of the stack
+    #: the fakes place (2.0-6.0 mm). The end-anchor gate needs a structure
+    #: specific enough to localize a section — no more than
+    #: ``MAX_ANCHOR_SPAN_FRACTION`` of the atlas's 19 mm axis, so 1 mm each —
+    #: while ``EL`` itself exists on every slice and anchors nothing.
+    CORE_A_ID, CORE_A_FIRST, CORE_A_LAST = 3, 2, 3
+    CORE_P_ID, CORE_P_FIRST, CORE_P_LAST = 4, 5, 6
 
-    #: A three-node structure tree, so the whole-brain end-anchor gate has
-    #: something to resolve ``EL``/``CORE`` against.
+    #: A four-node structure tree, so the whole-brain end-anchor gate has
+    #: something to resolve ``EL``/``COREA``/``COREP`` against.
     structures = {
         1: {"id": 1, "acronym": "root", "name": "root", "structure_id_path": [1]},
         BODY_ID: {
@@ -70,11 +71,17 @@ class EllipseAtlas:
             "name": "Ellipse body",
             "structure_id_path": [1, BODY_ID],
         },
-        CORE_ID: {
-            "id": CORE_ID,
-            "acronym": "CORE",
-            "name": "Ellipse core",
-            "structure_id_path": [1, CORE_ID],
+        CORE_A_ID: {
+            "id": CORE_A_ID,
+            "acronym": "COREA",
+            "name": "Ellipse core anterior",
+            "structure_id_path": [1, CORE_A_ID],
+        },
+        CORE_P_ID: {
+            "id": CORE_P_ID,
+            "acronym": "COREP",
+            "name": "Ellipse core posterior",
+            "structure_id_path": [1, CORE_P_ID],
         },
     }
 
@@ -87,12 +94,14 @@ class EllipseAtlas:
         )
         self.annotation = np.repeat(plane[None, :, :], 20, axis=0)
         # Relabel the same tissue pixels, not add new ones: the silhouette
-        # (any nonzero voxel) is unchanged, only which id claims indices
-        # 2-6 is different.
-        core_mask = self.annotation[self.CORE_FIRST : self.CORE_LAST + 1] > 0
-        self.annotation[self.CORE_FIRST : self.CORE_LAST + 1][core_mask] = (
-            self.CORE_ID
-        )
+        # (any nonzero voxel) is unchanged, only which id claims those
+        # indices is different.
+        for structure_id, first, last in (
+            (self.CORE_A_ID, self.CORE_A_FIRST, self.CORE_A_LAST),
+            (self.CORE_P_ID, self.CORE_P_FIRST, self.CORE_P_LAST),
+        ):
+            core = self.annotation[first : last + 1]
+            core[core > 0] = structure_id
         self.reference = (self.annotation > 0).astype(np.uint8) * 200
 
 
@@ -122,11 +131,16 @@ class SlabAtlas:
         (3, "FA", "Forebrain area A", (1, 2, 3), 2, 6, (3, 5)),
         (4, "FB", "Forebrain area B", (1, 2, 4), 5, 9, (5, 9)),
         (5, "HB", "Hindbrain", (1, 5), 12, 18, (3, 8)),
-        # Narrow: 3 mm wide (indices 2-5), well under any reasonable
-        # anchor-span cutoff — the counterpart to the broad ones above for
-        # end-anchor tests. A different row (2) than FA/FB so it coexists
-        # with them at the same indices without overwriting either.
+        # 3 mm wide (indices 2-5): narrower than the ones above and still too
+        # broad to anchor an end under MAX_ANCHOR_SPAN_FRACTION. A different
+        # row (2) than FA/FB so it coexists with them at the same indices
+        # without overwriting either.
         (6, "NS", "Narrow structure", (1, 6), 2, 5, (2, 3)),
+        # Extra narrow, 1 mm each and one per END of the placed test stack:
+        # the only structures here that can carry an end anchor. Row 9 is the
+        # last tissue row, free of everything above.
+        (7, "XA", "Extra narrow anterior", (1, 7), 2, 3, (9, 10)),
+        (8, "XP", "Extra narrow posterior", (1, 8), 4, 5, (9, 10)),
     )
     #: Structures with no voxels of their own, to exercise roll-up.
     CONTAINERS = ((1, "root", "root", (1,)), (2, "FOR", "Forebrain", (1, 2)))
@@ -258,9 +272,10 @@ class _CleanStackLlm(BaseLlm):
 
     positions: dict[str, float] | None = None
     #: "EL" exists on every slice of EllipseAtlas and is too broad to anchor
-    #: anything under the end-anchor gate's span-fraction rule; "CORE" is
-    #: the narrow structure built for exactly this.
-    anchor_structure: str = "CORE"
+    #: anything under the end-anchor gate's span-fraction rule; COREA/COREP
+    #: are the two narrow structures built for exactly this, one per end.
+    anchor_first: str = "COREA"
+    anchor_last: str = "COREP"
 
     async def generate_content_async(
         self, llm_request: LlmRequest, stream: bool = False
@@ -288,9 +303,12 @@ class _CleanStackLlm(BaseLlm):
             args = dict(_CLEAN_STACK_SUBMISSIONS[name]) if name is not None else {}
             if name == "submit_positions":
                 ids = list(self.positions or {})
+                ends = list(dict.fromkeys([ids[0], ids[-1]])) if ids else []
                 args["end_anchors"] = [
-                    {"id": slice_id, "structure": self.anchor_structure, "note": "seen"}
-                    for slice_id in (dict.fromkeys([ids[0], ids[-1]]) if ids else ())
+                    {"id": slice_id, "structure": structure, "note": "seen"}
+                    for slice_id, structure in zip(
+                        ends, (self.anchor_first, self.anchor_last)
+                    )
                 ]
             part = (
                 types.Part.from_function_call(name=name, args=args)
