@@ -97,6 +97,15 @@ def test_position_self_loop_is_bounded(tmp_path: Path):
     assert log[-1] == "emit"
 
 
+def test_forward_jump_books_the_skipped_nodes_as_complete(tmp_path: Path):
+    """A clean survey routes to seed; fix must not re-run on the next resume."""
+    log: list[str] = []
+    state = _run(_graph({"survey": ["seed"]}, log), _ctx(tmp_path), StackState())
+    assert "fix" not in log
+    assert state.completed_nodes[:4] == ["ingest", "survey", "fix", "seed"]
+    assert state.node_cycles.get("fix") is None
+
+
 def test_resume_skips_completed_nodes(tmp_path: Path):
     log: list[str] = []
     state = StackState(completed_nodes=["ingest", "survey", "fix"])

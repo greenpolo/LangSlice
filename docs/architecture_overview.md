@@ -11,7 +11,8 @@ other:
 - `src/langslice/linear/` -- slice-position estimation: the single-slice ADK
   agent, prompts, tools, validators, runners, and trace collection.
 - `src/langslice/linear/whole_brain/` -- the whole-brain estimation engine:
-  stack state, JSON checkpoint, node graph, and advisory spacing signals.
+  stack state, JSON checkpoint, node graph, the stack-survey agent, and
+  advisory spacing signals.
 - `src/langslice/nonlinear/` -- generative-image registration: candidate
   generation, image provider adapters, Elastix runtime, optional ADK review,
   affine/nonlinear result types, and the silhouette-based `quick_affine`

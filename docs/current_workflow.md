@@ -18,7 +18,7 @@ position as an argument and does not care where it came from, so it can follow
 
 ```bash
 langslice linear estimate <image> [--atlas ...] [--model ...] [--plane ...]
-langslice linear estimate-brain <image_folder> [--atlas ...] [--plane ...] [--interval 200] [--thickness 50] [--keep-order|--no-keep-order] [--model ...] [--out ...] [--resume|--fresh]
+langslice linear estimate-brain <image_folder> [--atlas ...] [--plane ...] [--interval 200] [--thickness 50] [--keep-order|--no-keep-order] [--model ...] [--out ...] [--resume|--fresh] [--stop-after NODE]
 ```
 
 Single-slice estimation runs through the ADK harness. The agent surface is
@@ -32,10 +32,23 @@ per-node cycle limits.
 
 - `ingest` discovers the folder (natural sort), loads the atlas, builds the
   stack state, and writes a labelled contact sheet next to the checkpoint.
+- `survey` is one agent pass over the whole stack: it is shown the contact
+  sheet plus a manifest and triages damage, hemisphere flips, section order
+  and interval breaks in a single pass. Its tools (`view_slices`,
+  `fetch_atlas`, `flip_slices`, `reorder_slices`, `mark_damaged`,
+  `submit_survey`) record corrections as data on the stack state. Under
+  `--keep-order` (the default) `reorder_slices` refuses and the agent reports
+  ordering problems in its notes instead.
+- `fix` re-renders the contact sheet from the corrected stack and sends it
+  back to `survey` for one verification pass. A clean survey skips `fix`.
 - `emit` writes the results JSON (default `<image_folder>/brain_results.json`,
   or `--out`).
-- The steps in between are agent work and currently ship as stubs that pass
+- `seed`, `position`, `transforms` and `review` are still stubs that pass
   through.
+
+`--stop-after NODE` runs the graph up to and including that node, writes the
+checkpoint and stops; re-running continues from there. It is how a single step
+is measured or tuned in isolation.
 
 Everything the engine produces -- corrected order, flips, positions, oblique
 angles, per-slice transforms -- is a proposal recorded as data. The user's

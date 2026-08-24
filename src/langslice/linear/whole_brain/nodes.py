@@ -1,9 +1,9 @@
 """The eight nodes of the whole-brain graph.
 
-``ingest`` and ``emit`` are plain code and complete. The six steps between
-them are agent work and land as stubs: each one logs, marks itself complete
-and falls through to its default successor. Their docstrings are the contract
-a later implementation has to satisfy — what it reads from
+``ingest``, ``survey``, ``fix`` and ``emit`` are implemented; the four steps
+between ``fix`` and ``emit`` are still stubs that log, mark themselves
+complete and fall through to their default successor. Their docstrings are
+the contract a later implementation has to satisfy — what it reads from
 :class:`~langslice.linear.whole_brain.state.StackState` and what it writes
 back.
 
@@ -28,6 +28,7 @@ from langslice.linear.whole_brain.discovery import (
 )
 from langslice.linear.whole_brain.engine import EngineContext, Node
 from langslice.linear.whole_brain.state import SliceState, StackState
+from langslice.linear.whole_brain.survey import run_survey_session
 from langslice.space import Plane
 
 logger = logging.getLogger(__name__)
@@ -137,30 +138,93 @@ async def ingest(state: StackState, ctx: EngineContext) -> str:
 
 
 async def survey(state: StackState, ctx: EngineContext) -> str:
-    """Fused stack review: order, hemisphere flips, damage, gaps. STUB.
+    """Fused stack review: order, hemisphere flips, damage, gaps.
 
     Reads: ``contact_sheet`` plus per-slice images on demand, ``keep_order``,
     filenames as ordering context.
-    Writes: findings for the fix step — proposed ``index_corrected`` values,
-    ``flip``, ``damaged``/``damage_note``, ``interval_breaks``,
-    ``axis_directions`` — and notes describing what it saw.
-    Routes: "fix" when it found issues, "" (seed) when the stack is clean.
+    Writes: the agent's tools apply corrections directly — ``index_corrected``,
+    ``flip``, ``damaged``/``damage_note`` — and the submission adds
+    ``axis_directions``, ``interval_breaks`` and notes.
+    Routes: "fix" when this pass corrected something (fix re-renders the stack
+    and sends it back for one re-check), "seed" when the stack is clean.
     """
-    ctx.progress("[survey] not implemented (stub): treating the stack as clean")
-    return ""
+    atlas = ctx.atlas_loader(state.atlas or ctx.config.atlas)
+    pos_lo, pos_hi = get_position_range_mm(atlas, plane=cast(Plane, state.plane))
+    metadata = getattr(atlas, "metadata", None) or {}
+    species = str(metadata.get("species", "mouse"))
+
+    outcome = await run_survey_session(
+        state=state,
+        ctx=ctx,
+        species=species,
+        pos_lo=pos_lo,
+        pos_hi=pos_hi,
+    )
+
+    findings = outcome.findings
+    if findings is None:
+        state.notes.append(
+            f"survey: incomplete — no submission within {outcome.turns} turns"
+        )
+        clean = True
+    else:
+        directions = findings.get("axis_directions") or {}
+        if isinstance(directions, dict):
+            state.axis_directions.update({str(k): str(v) for k, v in directions.items()})
+        breaks: set[int] = set()
+        for index in findings.get("interval_breaks") or []:
+            try:
+                breaks.add(int(index))
+            except (TypeError, ValueError):
+                continue
+        state.interval_breaks = sorted(breaks)
+        summary = str(findings.get("summary", "")).strip()
+        if summary:
+            state.notes.append(f"survey: {summary}")
+        state.notes.extend(
+            f"survey: {note}" for note in findings.get("notes") or [] if str(note).strip()
+        )
+        # An agent that applied corrections and still called itself clean gets
+        # the re-check anyway: the contact sheet it looked at is now stale.
+        clean = bool(findings.get("clean")) and not outcome.corrections_applied
+
+    flipped = sum(1 for s in state.slices if s.flip)
+    damaged = sum(1 for s in state.slices if s.damaged)
+    ctx.progress(
+        f"[survey] {outcome.tool_calls} tool calls; {flipped} flipped, "
+        f"{damaged} damaged, {len(state.interval_breaks)} interval break(s); "
+        f"{'clean' if clean else 'corrections applied'}"
+    )
+
+    if not clean:
+        return "fix"
+    if outcome.corrections_applied:
+        # Only reachable when the pass ended without a submission: keep the
+        # sheet honest about the corrections its tools did apply.
+        state.contact_sheet = build_contact_sheet(state, ctx)
+    # Jump past fix — it has nothing to re-render. The engine books skipped
+    # nodes as complete so a resumed run does not walk back into them.
+    return "seed"
 
 
 async def fix(state: StackState, ctx: EngineContext) -> str:
-    """Apply the survey's corrections as data. STUB.
+    """Re-render the corrected stack for a second look. Plain code, no model.
 
-    Reads: the survey findings on state.
-    Writes: ``index_corrected`` and ``flip`` on the affected slices — never
-    the user's image files — and a refreshed ``contact_sheet``.
-    Routes: "survey" to re-check, until the stack is clean or the survey
-    cycle limit is hit. The stub falls through to seed.
+    The survey's tools already applied its corrections to state, so all that
+    is left is a contact sheet that shows the stack as it now stands.
+    Routes: "survey" to re-check, until the stack is clean or the survey cycle
+    limit is hit (the engine then falls through to seed).
     """
-    ctx.progress("[fix] not implemented (stub): no corrections applied")
-    return ""
+    if not state.slices:
+        return ""
+    state.contact_sheet = build_contact_sheet(state, ctx)
+    flipped = sum(1 for s in state.slices if s.flip)
+    damaged = sum(1 for s in state.slices if s.damaged)
+    ctx.progress(
+        f"[fix] contact sheet rebuilt ({flipped} flipped, {damaged} damaged) "
+        f"-> {state.contact_sheet}"
+    )
+    return "survey"
 
 
 async def seed(state: StackState, ctx: EngineContext) -> str:
