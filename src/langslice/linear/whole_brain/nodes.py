@@ -3,8 +3,8 @@
 Each node's docstring is its contract: what it reads from
 :class:`~langslice.linear.whole_brain.state.StackState`, what it writes back,
 and where it can route. The work itself lives beside them — ``survey.py``,
-``seeding.py``, ``position.py``, ``transforms.py``, ``review.py`` — so a node
-stays a routing decision plus its bookkeeping.
+``position.py``, ``transforms.py``, ``review.py`` — so a node stays a routing
+decision plus its bookkeeping.
 
 Every node signature is ``async (state, ctx) -> next_node_name``; return ""
 for the default successor.
@@ -20,7 +20,7 @@ from typing import cast
 from PIL import Image, ImageDraw
 
 from langslice.atlas.core import get_position_range_mm
-from langslice.image_prep import normalize_image, prepare_image_for_vlm
+from langslice.linear.whole_brain._step_common import render_slice
 from langslice.linear.whole_brain.deepslice import deepslice_available
 from langslice.linear.whole_brain.discovery import (
     CONTACT_SHEET_FILENAME,
@@ -29,7 +29,6 @@ from langslice.linear.whole_brain.discovery import (
 from langslice.linear.whole_brain.engine import EngineContext, Node
 from langslice.linear.whole_brain.position import run_position_session
 from langslice.linear.whole_brain.review import run_review_session
-from langslice.linear.whole_brain.seeding import seed_positions
 from langslice.linear.whole_brain.state import SliceState, StackState
 from langslice.linear.whole_brain.survey import run_survey_session
 from langslice.linear.whole_brain.transforms import (
@@ -67,10 +66,9 @@ def build_contact_sheet(
 ) -> str:
     """Render the stack as one labelled thumbnail grid; return its path.
 
-    Rendered through the corrected view — slices appear in
-    ``index_corrected`` order and flipped slices are mirrored — so re-running
-    it after a fix step shows the stack the agent believes it has. Labels are
-    ``<corrected index>: <filename>``.
+    Thumbnails come from :func:`render_slice`, so the sheet shows the corrected
+    view — ``index_corrected`` order, flips mirrored, the same preprocessing the
+    per-slice views use. Labels are ``<corrected index>: <filename>``.
     """
     ordered = state.in_order()
     if not ordered:
@@ -84,13 +82,7 @@ def build_contact_sheet(
     draw = ImageDraw.Draw(sheet)
 
     for position, record in enumerate(ordered):
-        with Image.open(ctx.image_path(record.id)) as handle:
-            # Detach from the file before it closes: prepare_image_for_vlm can
-            # hand back the very object it was given when no resize is needed.
-            source = normalize_image(handle.copy())
-        thumb = prepare_image_for_vlm(source, max_long_edge=thumb_px).image
-        if record.flip:
-            thumb = thumb.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+        thumb = render_slice(ctx, record, long_edge=thumb_px)
         col, row = position % cols, position // cols
         x0, y0 = col * cell_w, row * cell_h
         sheet.paste(
@@ -243,15 +235,17 @@ async def fix(state: StackState, ctx: EngineContext) -> str:
 
 
 async def seed(state: StackState, ctx: EngineContext) -> str:
-    """Seed initial positions for the whole stack. Plain code, no stack agent.
+    """Automatic seeding, if any is available. Plain code, no model.
 
-    Reads: corrected stack order, ``plane``, ``atlas``, damage flags.
-    Writes: ``position_mm`` + ``position_source`` — "anchor" for the few
-    sections estimated directly by the single-slice worker, "interpolated" for
-    everything filled in between them, plus a damage caveat where both apply.
-    DeepSlice would seed the whole stack in one shot instead; it is not
-    installed (see :mod:`langslice.linear.whole_brain.deepslice`), so anchor
-    seeding is the path taken today.
+    There is no automatic seeder installed today: DeepSlice would place a whole
+    coronal mouse stack in one shot (see
+    :mod:`langslice.linear.whole_brain.deepslice`) but is an optional extra that
+    is not wired. Nothing else is prescribed here on purpose — picking key
+    sections needs intimate atlas knowledge, so *which* placement strategy to
+    use is the positioning agent's decision, not this node's.
+
+    Reads: nothing but the stack size.
+    Writes: one note. Positions stay ``None``.
     Routes: "" (position).
     """
     if not state.slices:
@@ -259,30 +253,29 @@ async def seed(state: StackState, ctx: EngineContext) -> str:
     if deepslice_available():
         # No integration behind this yet; the seam exists so adding the extra
         # is a one-function change (run_deepslice) rather than a node rewrite.
-        ctx.progress("[seed] deepslice installed but not wired — using anchor seeding")
+        reason = "deepslice is installed but not wired"
     else:
-        ctx.progress("[seed] deepslice unavailable — using anchor seeding")
-
-    pos_lo, pos_hi = _atlas_range(state, ctx)
-    anchored, interpolated = await seed_positions(
-        state, ctx, pos_lo=pos_lo, pos_hi=pos_hi
-    )
+        reason = "no automatic seeding available"
     state.notes.append(
-        f"seed: {anchored} anchor estimate(s), {interpolated} interpolated"
+        f"seed: {reason}; placement strategy left to the positioning agent"
     )
     ctx.progress(
-        f"[seed] {anchored} anchor(s) estimated, {interpolated} section(s) "
-        f"interpolated between them"
+        f"[seed] {reason} — every section stays unplaced; the positioning "
+        f"agent chooses its own strategy"
     )
     return ""
 
 
 async def position(state: StackState, ctx: EngineContext) -> str:
-    """Refine the seeded positions with the whole stack in context.
+    """Place the whole stack against the atlas, with the whole stack in context.
 
-    Reads: seeded positions, ``interval_mm``/``thickness_mm``, the contact
-    sheet, advisory spacing signals from
-    :mod:`langslice.linear.whole_brain.signals`, and per-slice escalation via
+    This step owns the placement strategy — key sections plus interpolation,
+    estimating every section, or whatever mix the stack calls for — and it
+    usually starts from an unplaced stack.
+
+    Reads: any positions already on the stack, ``interval_mm``/``thickness_mm``,
+    the contact sheet, advisory spacing signals from
+    :mod:`langslice.linear.whole_brain.signals`, and single-slice estimation via
     :func:`langslice.linear.whole_brain.estimation_agents.run_slice_estimation`.
     Writes: ``position_mm`` + ``position_source`` ("refined"), ``confidence``,
     ``interval_breaks`` and notes from the submission.
@@ -327,7 +320,7 @@ async def position(state: StackState, ctx: EngineContext) -> str:
     ctx.progress(
         f"[position] {outcome.tool_calls} tool calls; "
         f"{outcome.positions_written} section(s) repositioned, "
-        f"{outcome.escalations} escalation(s), "
+        f"{outcome.estimated} section(s) estimated directly, "
         f"{len(state.interval_breaks)} interval break(s)"
         + ("" if findings is not None else "; incomplete")
     )

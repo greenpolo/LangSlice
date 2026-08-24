@@ -78,16 +78,20 @@ Two methods live as sibling subpackages with no dependency on each other:
   Flips and reorders are recorded as data on the state; user image files are
   never modified. `survey.py` is the stack-triage agent (damage, hemisphere
   flips, order, interval breaks in one pass) and `fix` re-renders the contact
-  sheet for a re-check; `seeding.py` anchors a few sections with the
-  single-slice worker and interpolates the rest (`deepslice.py` is the
-  not-yet-installed optional alternative); `position.py` is the second agent
-  pass that refines those positions; `transforms.py` proposes one in-plane
+  sheet for a re-check; `seed` runs an automatic seeder if one is installed
+  (only `deepslice.py`, which is not) and otherwise passes the stack through
+  unplaced; `position.py` is the agent pass that owns placement AND the choice
+  of placement strategy — its prompt is an atlas-agnostic menu (key sections +
+  `interpolate_between`, full coverage via `estimate_slices`, or a mix), not a
+  prescription; `transforms.py` proposes one in-plane
   alignment per section — the shared silhouette affine (plain code) for intact
   sections, a per-section interactive agent loop (preview → look → adjust →
   submit) for damaged ones; `review.py` is the final whole-stack consistency
   agent and can route back to `position` once. `_step_common.py` holds what the
   agent steps share (`render_slice`, `view_slices`, manifest, ADK session
-  loop). `--stop-after NODE` runs one step and checkpoints.
+  loop); `render_slice` also applies the display-only fluorescence
+  preprocessing (`--preprocess auto|none`, `BrainConfig.preprocess`).
+  `--stop-after NODE` runs one step and checkpoints.
 - `nonlinear/` — generative-image registration: candidate generation, image
   provider adapters, Elastix runtime, optional ADK review loop, affine and
   nonlinear result types, and `quick_affine.py` (silhouette affine preview;

@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from langslice.linear import APResult
 from langslice.linear.whole_brain.engine import build_context, run_brain
 from langslice.linear.whole_brain.nodes import emit, ingest
 from langslice.linear.whole_brain.state import BrainConfig, StackState
@@ -41,12 +40,6 @@ def _make_stack(folder: Path, n: int = 5) -> list[str]:
 
 def _config(folder: Path, **kwargs) -> BrainConfig:
     return BrainConfig(image_folder=str(folder), **kwargs)
-
-
-async def _fake_anchor_estimate(*, image_path: str, **_kwargs) -> APResult:
-    """Stand-in for the single-slice worker: 1 mm per section, no model call."""
-    index = int(Path(image_path).stem.split("_")[-1])
-    return APResult(position_mm=float(index), reasoning="fake")
 
 
 def test_ingest_populates_state_and_contact_sheet(tmp_path: Path):
@@ -114,15 +107,15 @@ def test_run_brain_end_to_end_then_resume(tmp_path: Path, monkeypatch):
         install_fake_adk_model_clean_stack,
     )
 
-    # Every agent step is real now; script them to submit at once, and stub the
-    # single-slice worker seed uses for its anchor estimates. The transform
-    # step's affine runs for real against the synthetic ellipse atlas.
-    install_fake_adk_model_clean_stack(monkeypatch)
-    monkeypatch.setattr(
-        "langslice.linear.whole_brain.seeding.run_slice_estimation",
-        _fake_anchor_estimate,
-    )
+    # Every agent step is real now; script them to submit at once. The stack
+    # reaches the positioning step unplaced, so the fake positions it in one
+    # set_positions call. The transform step's affine runs for real against
+    # the synthetic ellipse atlas.
     names = _make_stack(tmp_path)
+    install_fake_adk_model_clean_stack(
+        monkeypatch,
+        positions={name: 2.0 + index for index, name in enumerate(names)},
+    )
     for index, name in enumerate(names):
         ellipse_section(angle=4.0 * index).save(tmp_path / name)
     ellipse_atlas = EllipseAtlas()

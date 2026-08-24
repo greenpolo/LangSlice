@@ -22,7 +22,11 @@ from google.genai import types
 from PIL import Image
 
 from langslice.adk import TOOL_MEDIA_PARTS_KEY
-from langslice.image_prep import normalize_image, prepare_image_for_vlm
+from langslice.image_prep import (
+    adaptive_preprocess,
+    normalize_image,
+    prepare_image_for_vlm,
+)
 from langslice.linear.runner import _APP_NAME, _USER_ID, _build_plugins
 from langslice.linear.session import build_initial_state
 from langslice.linear.tools import _image_to_part
@@ -51,16 +55,26 @@ def split_known_ids(state: StackState, slice_ids: list[str]) -> tuple[list[str],
 def render_slice(
     ctx: EngineContext, record: SliceState, *, long_edge: int = VIEW_LONG_EDGE
 ) -> Image.Image:
-    """One section as the engine sees it: normalized, downsampled, flip applied.
+    """One section as the engine sees it: normalized, downsampled, enhanced, flipped.
 
     Every step that shows or measures a section goes through here, so the
     pixels the agent judges are the pixels the transform step fits against.
+
+    With ``config.preprocess == "auto"`` (the default) the section is run
+    through :func:`~langslice.image_prep.adaptive_preprocess` — per-channel
+    CLAHE plus a DAPI-weighted grayscale blend — so dim fluorescence reads like
+    the atlas instead of like a black field. Display only: the user's file is
+    never touched.
     """
     with Image.open(ctx.image_path(record.id)) as handle:
         # Detach from the file handle: prepare_image_for_vlm can hand back the
         # very object it was given when no resize is needed.
         source = normalize_image(handle.copy())
     prepped = prepare_image_for_vlm(source, max_long_edge=long_edge).image
+    if ctx.config.preprocess == "auto":
+        # ponytail: no cache — CLAHE on a <=1024 px render is milliseconds,
+        # cache it per (id, long_edge) if a big stack ever shows up slow.
+        prepped = adaptive_preprocess(prepped)
     if record.flip:
         prepped = prepped.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
     return prepped
@@ -134,7 +148,7 @@ def build_stack_manifest(state: StackState, *, with_positions: bool = False) -> 
         suffix = f"  [{'; '.join(flags)}]" if flags else ""
         position = ""
         if with_positions and record.position_mm is None:
-            position = "  NO POSITION"
+            position = "  unplaced"
         elif with_positions:
             origin = record.position_source or "unknown"
             if record.confidence:

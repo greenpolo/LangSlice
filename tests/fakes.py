@@ -129,7 +129,7 @@ _CLEAN_STACK_SUBMISSIONS: dict[str, dict[str, Any]] = {
     "submit_positions": {
         "interval_breaks": [],
         "notes": [],
-        "summary": "Seeded positions check out.",
+        "summary": "Placed the stack from two key sections.",
     },
     "submit_review": {
         "approved": True,
@@ -144,21 +144,44 @@ class _CleanStackLlm(BaseLlm):
 
     Which step it is in is read off the tools the request declares, so one
     fake drives the survey and positioning agents alike.
+
+    ``positions`` (id -> mm) is the positioning step's script: the stack now
+    reaches that step unplaced, so the fake writes those positions with
+    ``set_positions`` on its first turn and submits on the next.
     """
+
+    positions: dict[str, float] | None = None
 
     async def generate_content_async(
         self, llm_request: LlmRequest, stream: bool = False
     ) -> AsyncGenerator[LlmResponse, None]:
         del stream
         available = set(llm_request.tools_dict or {})
-        name = next(
-            (tool for tool in _CLEAN_STACK_SUBMISSIONS if tool in available), None
-        )
-        part = (
-            types.Part.from_function_call(name=name, args=_CLEAN_STACK_SUBMISSIONS[name])
-            if name is not None
-            else types.Part.from_text(text="Nothing to submit.")
-        )
+        if (
+            self.positions
+            and "set_positions" in available
+            and _count_function_responses(llm_request) == 0
+        ):
+            part = types.Part.from_function_call(
+                name="set_positions",
+                args={
+                    "entries": [
+                        {"id": slice_id, "position_mm": position}
+                        for slice_id, position in self.positions.items()
+                    ]
+                },
+            )
+        else:
+            name = next(
+                (tool for tool in _CLEAN_STACK_SUBMISSIONS if tool in available), None
+            )
+            part = (
+                types.Part.from_function_call(
+                    name=name, args=_CLEAN_STACK_SUBMISSIONS[name]
+                )
+                if name is not None
+                else types.Part.from_text(text="Nothing to submit.")
+            )
         yield LlmResponse(
             content=types.Content(role="model", parts=[part]),
             partial=False,
@@ -166,12 +189,19 @@ class _CleanStackLlm(BaseLlm):
         )
 
 
-def install_fake_adk_model_clean_stack(monkeypatch: Any) -> None:
-    """Patch LLMRegistry.new_llm so whole-brain agent steps submit at once."""
+def install_fake_adk_model_clean_stack(
+    monkeypatch: Any, positions: dict[str, float] | None = None
+) -> None:
+    """Patch LLMRegistry.new_llm so whole-brain agent steps submit at once.
+
+    Pass *positions* (slice id -> mm) when the run reaches the positioning
+    step: it arrives unplaced, and ``submit_positions`` refuses a stack with
+    any section still missing a position.
+    """
     from google.adk.models.registry import LLMRegistry
 
     def _fake_new_llm(model: str) -> BaseLlm:
-        return _CleanStackLlm(model=model)
+        return _CleanStackLlm(model=model, positions=positions)
 
     monkeypatch.setattr(LLMRegistry, "new_llm", staticmethod(_fake_new_llm))
 

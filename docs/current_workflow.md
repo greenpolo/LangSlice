@@ -18,7 +18,7 @@ position as an argument and does not care where it came from, so it can follow
 
 ```bash
 langslice linear estimate <image> [--atlas ...] [--model ...] [--plane ...]
-langslice linear estimate-brain <image_folder> [--atlas ...] [--plane ...] [--interval 200] [--thickness 50] [--keep-order|--no-keep-order] [--model ...] [--out ...] [--resume|--fresh] [--stop-after NODE]
+langslice linear estimate-brain <image_folder> [--atlas ...] [--plane ...] [--interval 200] [--thickness 50] [--keep-order|--no-keep-order] [--model ...] [--preprocess auto|none] [--out ...] [--resume|--fresh] [--stop-after NODE]
 ```
 
 Single-slice estimation runs through the ADK harness. The agent surface is
@@ -41,25 +41,33 @@ per-node cycle limits.
   ordering problems in its notes instead.
 - `fix` re-renders the contact sheet from the corrected stack and sends it
   back to `survey` for one verification pass. A clean survey skips `fix`.
-- `seed` puts a first set of positions on the stack, in plain code. A few
-  sections spread center-out (4 for stacks up to 20 sections, 6 above,
-  damaged sections skipped) are estimated with the single-slice agent one at
-  a time; every other section is filled in by interpolating between them.
-  Anchors are recorded as `position_source="anchor"`, the rest as
-  `"interpolated"`. DeepSlice would seed the whole stack in one shot instead;
-  it is an optional extra that is not installed, so `seed` logs the fallback
-  and anchors.
-- `position` is the second agent pass: the whole stack in context, refining
-  the seeded positions. Its prompt encodes the key-slice strategy — verify
-  the anchors against the atlas first, then hunt for breaks in the interval,
-  because a constant slicing interval does not mean no sections were lost.
-  Tools: `view_slices`, `fetch_atlas`, `set_positions` (batch write, clamped
-  to the atlas range, returns the resulting neighbour-interval table),
-  `estimate_slice` (escalation — a full single-slice sweep for one stubborn
-  section, reported but not written), `get_advisories` (interval table,
-  interpolation residuals, monotone-fit suggestion, all explicitly advisory)
-  and `submit_positions`, which is rejected unless every section has a
-  position. Oblique-angle estimation is not part of this step yet.
+- `seed` runs whatever automatic seeder is available — today, none. DeepSlice
+  would place a whole coronal mouse stack in one shot, but it is an optional
+  extra that is not installed, so the node writes a note and passes the stack
+  through unplaced. Nothing prescribes key sections here on purpose: picking
+  good ones needs intimate atlas knowledge, and a badly chosen key section
+  drags every position interpolated from it.
+- `position` is the second agent pass and it owns the placement strategy. The
+  whole stack is in context, usually with no positions on it. Its prompt is a
+  MENU, not a prescription: key sections plus interpolation, estimating every
+  section, or a mix — the agent picks. The prompt is deliberately
+  atlas-agnostic (no region names, no landmarks, no absolute positions) so the
+  same text works for every BrainGlobe atlas, species and plane, and it carries
+  the failure modes that bite whichever strategy is chosen: re-verify
+  disagreeing estimates instead of averaging them or sliding a self-consistent
+  ladder to match a minority reading; anchor only where the atlas level is
+  identifiable at a glance; check both ends of the stack before submitting,
+  because a plausible ladder hung at the wrong absolute position looks
+  consistent from the inside; and a constant slicing interval does not mean no
+  sections were lost. Tools: `view_slices`, `fetch_atlas`, `estimate_slices`
+  (up to 8 named sections per call, each a full single-slice sweep, run one
+  after another and reported but not written), `interpolate_between` (fixed
+  points in, one suggestion per section out, not written), `set_positions`
+  (batch write, clamped to the atlas range, returns the resulting
+  neighbour-interval table), `get_advisories` (interval table plus a
+  monotone-fit suggestion, both explicitly advisory) and `submit_positions`,
+  which is rejected unless every section has a position. Oblique-angle
+  estimation is not part of this step yet.
 - `transforms` proposes one in-plane alignment per section, on two routes.
   Intact sections take the plain-code route: the shared silhouette affine
   (`src/langslice/affine.py`) against the atlas section their position names,
@@ -83,6 +91,14 @@ is measured or tuned in isolation.
 Everything the engine produces -- corrected order, flips, positions, oblique
 angles, per-slice transforms -- is a proposal recorded as data. The user's
 image files are never modified.
+
+`--preprocess auto` (the default) runs adaptive CLAHE plus a DAPI-weighted
+grayscale blend on every section the engine renders -- the contact sheet, the
+`view_slices` images, the transform previews and the silhouette fit -- so dim
+fluorescence reads like the atlas instead of like a black field.
+`--preprocess none` shows the raw sections. Either way this is display only:
+the enhanced pixels are never written back to the user's files, and the
+single-slice estimation worker applies the same setting once, internally.
 
 State is checkpointed to `<image_folder>/brain_estimate.json` after every
 node, in the same shape as the results file. `--resume` (default) skips nodes

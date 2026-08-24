@@ -1,18 +1,18 @@
-"""The positioning agent: refine the seeded positions with the whole stack in view.
+"""The positioning agent: place the whole stack, with the whole stack in view.
 
-The seed step put a globally consistent but coarse set of positions on the
-stack — a few anchor estimates with everything else interpolated between them.
-This step is the expert's "reposition slices": one agent, whole stack in
-context, verifying the anchors against the atlas and hunting for BREAKS in the
-interval, because a constant slicing interval does not mean no sections went
-missing.
+This step owns placement, strategy included. The stack usually arrives
+unplaced: nothing upstream picks key sections, because picking good ones needs
+intimate atlas knowledge and a badly chosen key section poisons every position
+interpolated from it. Instead the agent gets the full toolkit — look at
+sections, fetch atlas levels, estimate named sections with the single-slice
+worker, interpolate between points it trusts, read the spacing arithmetic —
+plus a menu of strategies in its prompt, and decides for itself.
 
 Everything the agent writes goes through ``set_positions`` onto the
 :class:`~langslice.linear.whole_brain.state.StackState` the node handed in, so
 a pass that runs out of turns still leaves its accepted positions behind.
-``estimate_slice`` is the escalation hatch — a full single-slice sweep for one
-stubborn section — and deliberately does NOT write: the agent looks at the
-number and decides.
+``estimate_slices`` and ``interpolate_between`` deliberately do NOT write: they
+report, and the agent decides what to keep.
 """
 
 from __future__ import annotations
@@ -31,6 +31,7 @@ from langslice.linear.whole_brain._step_common import (
     contact_sheet_parts,
     make_view_slices,
     run_agent_session,
+    split_known_ids,
 )
 from langslice.linear.whole_brain.engine import EngineContext
 from langslice.linear.whole_brain.estimation_agents import run_slice_estimation
@@ -43,8 +44,13 @@ from langslice.linear.whole_brain.state import (
 
 logger = logging.getLogger(__name__)
 
-#: Model turns (counted as tool calls) one positioning pass may spend.
-DEFAULT_POSITION_MAX_ITERATIONS = 25
+#: Model turns (counted as tool calls) one positioning pass may spend. This
+#: step now owns strategy as well as placement, so the budget is generous.
+DEFAULT_POSITION_MAX_ITERATIONS = 40
+
+#: Sections one ``estimate_slices`` call may estimate. Each one is a full
+#: single-slice agent session, so the cap is about cost, not correctness.
+MAX_ESTIMATE_SLICES = 8
 
 DEFAULT_POSITION_MODEL = "gemini-3-flash-preview"
 
@@ -58,12 +64,13 @@ _PLANE_AXIS_LABEL: dict[str, str] = {
 
 _NUDGE_NO_TOOL = (
     "You did not call a tool. Do not answer in prose: compare sections against "
-    "the atlas with `view_slices` and `fetch_atlas`, write positions with "
-    "`set_positions`, and finish with `submit_positions`."
+    "the atlas with `view_slices` and `fetch_atlas`, estimate sections with "
+    "`estimate_slices`, write positions with `set_positions`, and finish with "
+    "`submit_positions`."
 )
 _NUDGE_CONTINUE = (
-    "Please continue repositioning. Check anything still unresolved, write the "
-    "positions you have settled on with `set_positions`, then call "
+    "Please continue placing the stack. Check anything still unresolved, write "
+    "the positions you have settled on with `set_positions`, then call "
     "`submit_positions`."
 )
 
@@ -81,7 +88,7 @@ class PositionOutcome:
 
     findings: dict[str, Any] | None = None
     positions_written: int = 0
-    escalations: int = 0
+    estimated: int = 0
     tool_calls: int = 0
     turns: int = 0
 
@@ -93,7 +100,7 @@ class PositionToolBox:
     tools: list[Any] = field(default_factory=list)
     submission: dict[str, Any] = field(default_factory=dict)
     written: list[str] = field(default_factory=list)
-    escalations: list[str] = field(default_factory=list)
+    estimated: list[str] = field(default_factory=list)
 
 
 # --- spacing views -------------------------------------------------------
@@ -132,36 +139,8 @@ def _positioned(ordered: list[SliceState]) -> list[SliceState]:
     return [record for record in ordered if record.position_mm is not None]
 
 
-def _interpolation_residuals(state: StackState) -> dict[str, Any]:
-    """Per-section gap between the current position and the anchor interpolation."""
-    ordered = state.in_order()
-    known: list[float | None] = [
-        record.position_mm if record.position_source == "anchor" else None
-        for record in ordered
-    ]
-    anchors = [value for value in known if value is not None]
-    if len(anchors) < 2:
-        return {
-            "status": "unavailable",
-            "reason": "fewer than two anchor sections to interpolate between",
-        }
-    step = state.interval_mm if anchors[-1] >= anchors[0] else -state.interval_mm
-    expected = interpolate_positions(known, interval_mm=step)
-    rows = [
-        {
-            "id": record.id,
-            "position_mm": round(record.position_mm, 3),
-            "interpolated_mm": round(value, 3),
-            "residual_mm": round(record.position_mm - value, 3),
-        }
-        for record, value in zip(ordered, expected, strict=True)
-        if record.position_mm is not None
-    ]
-    return {"status": "ok", "rows": rows}
-
-
 def spacing_advisories(state: StackState) -> dict[str, Any]:
-    """The three arithmetic spacing views of the stack, as one dict.
+    """The two arithmetic spacing views of the stack, as one dict.
 
     Shared with the review step: both show the agent the same numbers, and
     both label them advisory — nothing here has looked at an image.
@@ -173,7 +152,6 @@ def spacing_advisories(state: StackState) -> dict[str, Any]:
             "has looked at a section image; verify before acting."
         ),
         "interval_table": interval_table(state),
-        "interpolation_residuals": _interpolation_residuals(state),
         "monotone_fit": _monotone_suggestion(state),
     }
 
@@ -289,51 +267,152 @@ def build_position_tools(
             result["error"] = "NOTHING_WRITTEN"
         return result
 
-    async def estimate_slice(slice_id: str) -> dict[str, Any]:
-        """Run a full single-slice atlas sweep on ONE section. Escalation only.
+    async def estimate_slices(slice_ids: list[str]) -> dict[str, Any]:
+        """Estimate named sections independently against the whole atlas.
 
-        This is the slow path: an independent agent sweeps the whole atlas for
-        that one section and reports what it found. Use it for a section you
-        cannot place by eye against its neighbours. The result is NOT written —
-        judge it against the rest of the stack and, if you accept it, write it
-        with `set_positions`.
+        Each section gets its own full atlas sweep by an independent estimator
+        that sees only that section — no stack context, no neighbours. This is
+        how you place key sections, or resolve a section you cannot place by
+        eye. It is the slow, expensive tool: one sweep per section, run one
+        after another, up to 8 sections per call.
+
+        Nothing is written. Judge the numbers against each other and against
+        the stack — independent estimates disagree, and the disagreement is
+        information — then write what you accept with `set_positions`.
 
         Args:
-            slice_id: One filename from the stack manifest.
+            slice_ids: Filenames from the stack manifest (max 8 per call).
 
         Returns:
-            The estimated position and the estimator's reasoning, or
-            ``{"status": "error", ...}`` if the estimate failed.
+            One entry per section: its estimated position and the estimator's
+            reasoning, or an error for that section if its estimate failed.
         """
-        record = state.by_id(str(slice_id))
-        if record is None:
-            return {"status": "error", "error": "UNKNOWN_SLICE_ID", "id": str(slice_id)}
-        try:
-            result = await run_slice_estimation(
-                image_path=ctx.image_path(record.id),
-                atlas_name=state.atlas,
-                plane=state.plane,
-                model_name=ctx.model,
+        if not slice_ids:
+            return {"status": "error", "error": "BAD_ARGS"}
+        requested = list(slice_ids)
+        wanted, unknown = split_known_ids(state, requested[:MAX_ESTIMATE_SLICES])
+        if not wanted:
+            return {"status": "error", "error": "UNKNOWN_SLICE_IDS", "unknown": unknown}
+
+        estimates: list[dict[str, Any]] = []
+        for slice_id in wanted:
+            record = state.by_id(slice_id)
+            assert record is not None
+            current = (
+                round(record.position_mm, 3) if record.position_mm is not None else None
             )
-        except Exception as exc:
-            logger.warning("position: escalation failed for %s: %s", record.id, exc)
+            try:
+                result = await run_slice_estimation(
+                    image_path=ctx.image_path(record.id),
+                    atlas_name=state.atlas,
+                    plane=state.plane,
+                    model_name=ctx.model,
+                    apply_clahe=ctx.config.preprocess == "auto",
+                )
+            except Exception as exc:
+                logger.warning("position: estimate failed for %s: %s", record.id, exc)
+                estimates.append(
+                    {
+                        "id": record.id,
+                        "status": "error",
+                        "error": "ESTIMATE_FAILED",
+                        "message": str(exc),
+                    }
+                )
+                continue
+            box.estimated.append(record.id)
+            estimates.append(
+                {
+                    "id": record.id,
+                    "status": "ok",
+                    "position_mm": round(float(result.position_mm), 3),
+                    "reasoning": result.reasoning,
+                    "current_position_mm": current,
+                }
+            )
+
+        return {
+            "status": "ok" if any(e["status"] == "ok" for e in estimates) else "error",
+            "estimates": estimates,
+            "unknown_ids": unknown,
+            "skipped_ids": requested[MAX_ESTIMATE_SLICES:],
+            "note": (
+                "Nothing was written. Call `set_positions` for the estimates "
+                "you accept."
+            ),
+        }
+
+    def interpolate_between(fixed: list[dict[str, Any]]) -> dict[str, Any]:
+        """Suggest positions for every other section from points you fix.
+
+        Straight-line interpolation in corrected stack order: between two fixed
+        points the spacing is spread evenly, and beyond the outermost ones it
+        steps by the nominal section interval. It is arithmetic — it has never
+        looked at an image and knows nothing about sections lost during
+        collection, so a stretch where the anatomy advances faster than the
+        suggestion says is exactly where you should look.
+
+        Nothing is written. Write what you accept with `set_positions`.
+
+        Args:
+            fixed: The points to interpolate between, as
+                ``[{"id": "<filename>", "position_mm": <number>}]``. Two or
+                more is normal; one only fixes an offset.
+
+        Returns:
+            One suggested position per section, each marked as fixed by you or
+            interpolated.
+        """
+        if not fixed:
+            return {"status": "error", "error": "BAD_ARGS"}
+        ordered = state.in_order()
+        index_of = {record.id: index for index, record in enumerate(ordered)}
+        known: list[float | None] = [None] * len(ordered)
+        unknown: list[str] = []
+        rejected: list[dict[str, Any]] = []
+        for entry in fixed:
+            if not isinstance(entry, dict):
+                rejected.append({"entry": str(entry), "reason": "not an object"})
+                continue
+            slice_id = str(entry.get("id", ""))
+            if slice_id not in index_of:
+                unknown.append(slice_id)
+                continue
+            try:
+                known[index_of[slice_id]] = float(entry.get("position_mm"))  # type: ignore[arg-type]
+            except (TypeError, ValueError):
+                rejected.append({"id": slice_id, "reason": "position_mm is not a number"})
+        anchors = [value for value in known if value is not None]
+        if not anchors:
             return {
                 "status": "error",
-                "error": "ESTIMATE_FAILED",
-                "id": record.id,
-                "message": str(exc),
+                "error": "NO_FIXED_POINTS",
+                "unknown_ids": unknown,
+                "rejected": rejected,
             }
-        box.escalations.append(record.id)
+
+        # Direction comes from the fixed points themselves: a stack cut
+        # back-to-front runs the other way and its extrapolation must too.
+        step = state.interval_mm if anchors[-1] >= anchors[0] else -state.interval_mm
+        suggested = interpolate_positions(known, interval_mm=step)
+        rows = [
+            {
+                "id": record.id,
+                "position_mm": round(min(pos_hi, max(pos_lo, value)), 3),
+                "source": "fixed" if known[index] is not None else "interpolated",
+            }
+            for index, (record, value) in enumerate(
+                zip(ordered, suggested, strict=True)
+            )
+        ]
         return {
             "status": "ok",
-            "id": record.id,
-            "position_mm": round(float(result.position_mm), 3),
-            "reasoning": result.reasoning,
-            "current_position_mm": (
-                round(record.position_mm, 3) if record.position_mm is not None else None
-            ),
+            "suggestions": rows,
+            "unknown_ids": unknown,
+            "rejected": rejected,
             "note": (
-                "Not written. Call `set_positions` if you accept this estimate."
+                "Suggestions only, nothing written, no image looked at. Check "
+                "the stretches between your fixed points before accepting them."
             ),
         }
 
@@ -345,9 +424,8 @@ def build_position_tools(
         the stack disagrees with itself, then check those sections yourself.
 
         Returns:
-            The neighbour-interval table, the residual between each section and
-            what interpolating between the anchor sections would predict, and a
-            monotone minimum-spacing curve fitted through the current positions.
+            The neighbour-interval table and a monotone minimum-spacing curve
+            fitted through the positions the stack currently carries.
         """
         return spacing_advisories(state)
 
@@ -407,8 +485,9 @@ def build_position_tools(
     box.tools = [
         view_slices,
         fetch_atlas,
+        estimate_slices,
+        interpolate_between,
         set_positions,
-        estimate_slice,
         get_advisories,
         submit_positions,
     ]
@@ -421,26 +500,34 @@ def build_position_tools(
 def build_position_prompt(
     *, state: StackState, species: str, pos_lo: float, pos_hi: float
 ) -> str:
-    """System instruction for the positioning agent, plane-aware."""
+    """System instruction for the positioning agent, plane-aware.
+
+    Deliberately atlas-agnostic: it names no region, no landmark and no
+    absolute position, because the same prompt runs against every BrainGlobe
+    atlas, species and plane. What it does carry is a MENU of strategies and
+    the failure modes that bite whichever one the agent picks.
+    """
     plane = state.plane
     axis = _PLANE_AXIS_LABEL.get(plane, "AP")
-    anchors = [s.id for s in state.in_order() if s.position_source == "anchor"]
-    anchor_line = (
-        "The key sections (estimated directly, everything else interpolated "
-        f"between them) are: {', '.join(anchors)}.\n"
-        if anchors
-        else "No section was estimated directly; every position is a guess.\n"
+    placed = [s for s in state.in_order() if s.position_mm is not None]
+    placed_line = (
+        f"- {len(placed)} of {len(state.slices)} sections already carry a "
+        f"position; check them rather than trusting them.\n"
+        if placed
+        else "- No section has a position yet: the stack is unplaced and "
+        "placing it is your job.\n"
     )
     breaks_line = (
-        f"The survey step flagged possible interval breaks at corrected "
+        f"- The survey step flagged possible interval breaks at corrected "
         f"indices {state.interval_breaks}.\n"
         if state.interval_breaks
         else ""
     )
     damaged = [s.id for s in state.in_order() if s.damaged]
     damaged_line = (
-        f"Damaged sections ({', '.join(damaged)}) still need positions — place "
-        "them from their neighbours if their own anatomy is unreadable.\n"
+        f"- Damaged sections ({', '.join(damaged)}) still need positions — "
+        "place them from their neighbours if their own anatomy is "
+        "unreadable.\n"
         if damaged
         else ""
     )
@@ -450,41 +537,71 @@ def build_position_prompt(
         f"{len(state.slices)} {plane} histology sections along the "
         f"{state.atlas} ({species}) atlas.\n\n"
         f"Stack facts:\n"
-        f"- Valid {axis} range: {pos_lo:.2f}-{pos_hi:.2f} mm, measured from "
-        f"the anterior edge of the atlas volume\n"
+        f"- Valid {axis} range: {pos_lo:.2f}-{pos_hi:.2f} mm along the slicing "
+        f"axis, measured from the origin edge of the atlas volume "
+        f"({pos_lo:.2f} mm is its first section, {pos_hi:.2f} mm its last)\n"
         f"- Nominal section interval: {state.interval_mm:.3f} mm "
         f"center-to-center; slice thickness {state.thickness_mm:.3f} mm\n"
-        f"- {anchor_line}"
+        f"{placed_line}"
         f"{breaks_line}"
-        f"{damaged_line}\n"
-        f"Every section already has a starting position. Your job is to check "
-        f"and correct them, not to re-derive the stack from scratch.\n\n"
-        f"HOW TO WORK:\n\n"
-        f"1. VERIFY THE KEY SECTIONS FIRST. They carry the whole stack: every "
-        f"other position was interpolated between them, so an error in a key "
-        f"section is an error in all its neighbours. Compare each one against "
-        f"the atlas — `fetch_atlas` around its current position, `view_slices` "
-        f"to see the section itself — and correct it if it is off.\n\n"
-        f"2. THEN LOOK FOR BREAKS IN THE INTERVAL. A consistent slicing "
-        f"interval does NOT mean no sections are missing: sections get lost, "
-        f"torn or skipped during collection, and the sections on either side "
-        f"of the loss still look evenly spaced on the slide. Between two "
-        f"verified key sections, the anatomy must advance by roughly "
-        f"{state.interval_mm:.3f} mm per section. Where it advances faster "
-        f"than that, sections are missing and the interpolated positions in "
-        f"that stretch are wrong — investigate that stretch and reposition it. "
-        f"Report every break you confirm in `submit_positions`.\n\n"
-        f"3. WRITE POSITIONS IN BATCHES. `set_positions` takes many sections "
-        f"in one call and hands back the resulting neighbour-interval table, "
-        f"so you immediately see what your edit did to the spacing.\n\n"
-        f"4. ESCALATE ONLY WHEN STUCK. `estimate_slice` runs a full atlas "
-        f"sweep on one section. It is slow, so save it for a section you "
-        f"cannot place from its neighbours. It does not write anything: judge "
-        f"the number it returns against the rest of the stack, then write it "
-        f"with `set_positions` if you accept it.\n\n"
-        f"5. `get_advisories` gives you arithmetic — interval table, "
-        f"interpolation residuals, a monotone spacing fit. It is advice from "
-        f"numbers that have never seen an image. Use it to find suspicious "
+        f"{damaged_line}"
+        f"\n"
+        f"YOU CHOOSE THE STRATEGY. Nothing upstream picked sections for you and "
+        f"no strategy is prescribed here. Look at the stack, decide how to "
+        f"place it, and say which approach you took in your submission.\n\n"
+        f"STRATEGIES THAT WORK — pick one or mix them:\n\n"
+        f"A. KEY SECTIONS, THEN INTERPOLATE. Choose a few sections whose "
+        f"anatomy is distinctive and unambiguous, estimate them with "
+        f"`estimate_slices`, VERIFY each one yourself against the atlas, then "
+        f"fill the rest with `interpolate_between` and investigate the "
+        f"stretches in between. Fast, and only as good as the key sections: a "
+        f"key section placed wrong drags every section interpolated from it.\n\n"
+        f"B. FULL COVERAGE. For a small stack, estimate every section with "
+        f"`estimate_slices` (up to 8 per call) and reconcile the results "
+        f"against each other and against the slicing interval. Slower, but no "
+        f"section inherits another's error.\n\n"
+        f"C. A MIX. Place a few sections, interpolate, then estimate more "
+        f"wherever the result looks weak — around a suspected break, at the "
+        f"ends, or anywhere the anatomy stops matching.\n\n"
+        f"RULES THAT APPLY WHATEVER YOU CHOOSE:\n\n"
+        f"1. PLACE KEY SECTIONS WHERE THE FEATURES ARE UNAMBIGUOUS. A good key "
+        f"section is one whose atlas level is identifiable at a glance: some "
+        f"structure appears, disappears, or changes shape sharply within a "
+        f"short span of the slicing axis. Do NOT anchor on a section that sits "
+        f"inside a long span of levels that look alike — that span is where "
+        f"you interpolate through, not where you take your bearings.\n\n"
+        f"2. DISAGREEING ESTIMATES ARE A STOP SIGN, NOT AN AVERAGE. Estimates "
+        f"are made independently, one section at a time, so they can disagree "
+        f"about where the stack sits as a whole. When they do, RE-VERIFY the "
+        f"disagreeing sections before you commit to any global placement: "
+        f"`fetch_atlas` around EACH candidate position, `view_slices` the "
+        f"sections around each one, and check that the neighbours make sense "
+        f"at that placement too. Then discard the estimate that does not hold "
+        f"up. Never resolve the conflict by sliding a self-consistent set of "
+        f"sections to match a minority reading, and never split the "
+        f"difference.\n\n"
+        f"3. CHECK BOTH ENDS BEFORE YOU SUBMIT. A ladder with plausible "
+        f"spacing hung at the wrong absolute position is perfectly consistent "
+        f"from the inside — every interval looks right and every section still "
+        f"sits wrong. The ends are where that shows: verify the first and the "
+        f"last section of the stack against the atlas independently, and if "
+        f"either one does not match, the whole placement is offset, not just "
+        f"that section.\n\n"
+        f"4. WATCH FOR BREAKS IN THE INTERVAL. A consistent slicing interval "
+        f"does NOT mean no sections are missing: sections get lost, torn or "
+        f"skipped during collection, and the sections on either side of the "
+        f"loss still look evenly spaced on the slide. Between two verified "
+        f"sections the anatomy must advance by roughly {state.interval_mm:.3f} "
+        f"mm per section; where it advances faster, sections are missing and "
+        f"any interpolation across that stretch is wrong. Investigate the "
+        f"stretch, reposition it, and report every break you confirm in "
+        f"`submit_positions`.\n\n"
+        f"5. WRITE IN BATCHES. `set_positions` takes many sections in one call "
+        f"and hands back the resulting neighbour-interval table, so you see "
+        f"immediately what your edit did to the spacing.\n\n"
+        f"6. THE ARITHMETIC IS ADVICE. `interpolate_between` and "
+        f"`get_advisories` compute from numbers that have never seen an image "
+        f"and know nothing about missing sections. Use them to find suspicious "
         f"stretches, never as the answer.\n\n"
         f"Finish with `submit_positions`. It is rejected unless every section "
         f"in the stack has a position, damaged sections included."
@@ -492,7 +609,10 @@ def build_position_prompt(
 
 
 def build_position_seed_message(state: StackState, *, note_limit: int = 12) -> types.Content:
-    """Contact sheet + positioned manifest: what the positioning step starts from.
+    """Contact sheet + stack manifest: what the positioning step starts from.
+
+    Sections with no position yet read as "unplaced" in the manifest — the
+    normal case, since nothing upstream places them.
 
     The recent run notes ride along because this step is also the loop-back
     target: when the review step refuses a stack it writes what is wrong into
@@ -505,13 +625,14 @@ def build_position_seed_message(state: StackState, *, note_limit: int = 12) -> t
         types.Part.from_text(
             text=(
                 "Stack manifest (corrected index, filename, current position "
-                "and where it came from, current flags):\n"
+                "and where it came from — 'unplaced' means no position yet — "
+                "and current flags):\n"
                 f"{build_stack_manifest(state, with_positions=True)}\n\n"
                 f"Run notes so far (a 'review:' note means an earlier pass "
                 f"sent this stack back — read it first):\n{notes_block}\n\n"
-                "Verify the key ('anchor') sections against the atlas, hunt "
-                "for breaks in the interval between them, correct positions "
-                "with `set_positions`, then call `submit_positions`."
+                "Decide how you want to place this stack, work through it with "
+                "the tools, write positions with `set_positions`, then call "
+                "`submit_positions`."
             )
         )
     )
@@ -593,7 +714,7 @@ async def run_position_session(
     return PositionOutcome(
         findings=dict(box.submission) if box.submission else None,
         positions_written=len(set(box.written)),
-        escalations=len(box.escalations),
+        estimated=len(box.estimated),
         tool_calls=tool_calls,
         turns=turns,
     )

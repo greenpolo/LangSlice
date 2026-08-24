@@ -247,7 +247,6 @@ def build_review_seed_message(state: StackState) -> types.Content:
                 "Advisory spacing signals (arithmetic only — no image has been "
                 "looked at):\n"
                 f"- neighbour intervals: {advisories['interval_table']}\n"
-                f"- interpolation residuals: {advisories['interpolation_residuals']}\n"
                 f"- monotone spacing fit: {advisories['monotone_fit']}\n\n"
                 f"Run notes so far:\n{_recent_notes(state)}\n\n"
                 "Review the stack, flag what needs flagging, then call "
