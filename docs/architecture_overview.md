@@ -66,7 +66,8 @@ Nodes are plain async Python functions that return the name of the next node
 (`""` for the default successor); backward edges (`fix → survey`,
 `position → position`, `review → position`) are bounded per node.
 
-`ingest` and `emit` are complete; the agent steps between them are stubs.
+`ingest`, `survey`, `fix`, `seed`, `position` and `emit` are complete;
+`transforms` and `review` are still stubs.
 The engine writes a JSON checkpoint after every node and the results file
 uses the same schema, so the CLI, the checkpoint, and any host adapter read
 one shape. Corrections (order, flips), positions, oblique angles, and

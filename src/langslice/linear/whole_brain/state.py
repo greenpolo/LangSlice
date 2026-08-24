@@ -15,8 +15,9 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-# position_source values, in rough order of authority.
-POSITION_SOURCES = ("", "survey", "deepslice", "anchor", "refined")
+# position_source values, in rough order of authority. "interpolated" is a
+# position derived from other slices rather than measured against the atlas.
+POSITION_SOURCES = ("", "survey", "interpolated", "deepslice", "anchor", "refined")
 CONFIDENCE_LEVELS = ("", "low", "medium", "high")
 
 

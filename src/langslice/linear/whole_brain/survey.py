@@ -20,35 +20,28 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from google.adk.agents import LlmAgent
-from google.adk.apps.app import App
-from google.adk.runners import InMemoryRunner
 from google.genai import types
-from PIL import Image
 
-from langslice.adk import TOOL_MEDIA_PARTS_KEY
 from langslice.adk.model_resolver import default_http_options, resolve_adk_model
-from langslice.image_prep import normalize_image, prepare_image_for_vlm
-from langslice.linear.runner import _APP_NAME, _USER_ID, _build_plugins
-from langslice.linear.session import build_initial_state
-from langslice.linear.tools import _image_to_part, fetch_atlas
+from langslice.linear.tools import fetch_atlas
+from langslice.linear.whole_brain._step_common import (
+    build_stack_manifest,
+    contact_sheet_parts,
+    make_view_slices,
+    run_agent_session,
+    split_known_ids,
+)
 from langslice.linear.whole_brain.engine import EngineContext
 from langslice.linear.whole_brain.state import StackState
-from langslice.space import Plane
 
 logger = logging.getLogger(__name__)
 
 #: Model turns (counted as tool calls) one survey pass may spend.
 DEFAULT_SURVEY_MAX_ITERATIONS = 15
-#: Sections one ``view_slices`` call may return.
-MAX_VIEW_SLICES = 8
-#: Long edge for ``view_slices`` images: enough to zoom past the 256 px
-#: contact-sheet thumbnails without paying full-resolution tokens.
-VIEW_LONG_EDGE = 1024
 
 DEFAULT_SURVEY_MODEL = "gemini-3-flash-preview"
 
 _RUN_LABEL = "whole_brain_survey"
-_SESSION_ID = "whole_brain_survey"
 
 _PLANE_AXIS_LABEL: dict[str, str] = {
     "coronal": "AP",
@@ -130,60 +123,10 @@ def build_survey_tools(state: StackState, ctx: EngineContext) -> SurveyToolBox:
     """Build the survey tool set, closed over *state* (the working copy)."""
     box = SurveyToolBox()
 
+    view_slices = make_view_slices(state, ctx)
+
     def _known(slice_ids: list[str]) -> tuple[list[str], list[str]]:
-        ids = {s.id for s in state.slices}
-        return (
-            [sid for sid in slice_ids if sid in ids],
-            [sid for sid in slice_ids if sid not in ids],
-        )
-
-    def view_slices(slice_ids: list[str]) -> dict[str, Any]:
-        """Look at up to 8 named sections at higher resolution.
-
-        Use this whenever the contact-sheet thumbnails are too small to judge
-        damage, a notch, or a hemisphere flip. Sections are rendered through
-        the current corrected state: a section you have already flipped comes
-        back mirrored, i.e. as it will be used.
-
-        Args:
-            slice_ids: Filenames from the stack manifest (max 8 per call).
-
-        Returns:
-            status/slice_ids/description plus the images, in the requested
-            order. On failure, ``{"status": "error", "error": ...}``.
-        """
-        if not slice_ids:
-            return {"status": "error", "error": "BAD_ARGS"}
-        wanted, unknown = _known(list(slice_ids)[:MAX_VIEW_SLICES])
-        if not wanted:
-            return {"status": "error", "error": "UNKNOWN_SLICE_IDS", "unknown": unknown}
-
-        parts: list[types.Part] = []
-        for slice_id in wanted:
-            record = state.by_id(slice_id)
-            assert record is not None
-            with Image.open(ctx.image_path(slice_id)) as handle:
-                # Detach from the file handle: prepare_image_for_vlm can hand
-                # back the very object it was given when no resize is needed.
-                source = normalize_image(handle.copy())
-            prepped = prepare_image_for_vlm(source, max_long_edge=VIEW_LONG_EDGE).image
-            if record.flip:
-                prepped = prepped.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
-            parts.append(_image_to_part(prepped))
-
-        return {
-            "status": "ok",
-            "slice_ids": wanted,
-            "unknown_ids": unknown,
-            # The attached images are unlabelled, so this ordering note is the
-            # only way the model can tie an image back to a filename.
-            "description": (
-                "Attached images are "
-                + ", ".join(wanted)
-                + ", in that order, rendered with any flips already applied."
-            ),
-            TOOL_MEDIA_PARTS_KEY: parts,
-        }
+        return split_known_ids(state, slice_ids)
 
     def flip_slices(slice_ids: list[str]) -> dict[str, Any]:
         """Toggle the hemisphere flip on the named sections.
@@ -352,20 +295,6 @@ def build_survey_tools(state: StackState, ctx: EngineContext) -> SurveyToolBox:
 # --- prompt + seed message ----------------------------------------------
 
 
-def build_stack_manifest(state: StackState) -> str:
-    """One line per section in corrected order, with its current flags."""
-    lines: list[str] = []
-    for record in state.in_order():
-        flags: list[str] = []
-        if record.flip:
-            flags.append("flipped")
-        if record.damaged:
-            flags.append(f"damaged: {record.damage_note}" if record.damage_note else "damaged")
-        suffix = f"  [{'; '.join(flags)}]" if flags else ""
-        lines.append(f"{record.index_corrected:>3}  {record.id}{suffix}")
-    return "\n".join(lines)
-
-
 def build_survey_prompt(
     *, state: StackState, species: str, pos_lo: float, pos_hi: float
 ) -> str:
@@ -454,21 +383,7 @@ def build_survey_prompt(
 
 def build_seed_message(state: StackState) -> types.Content:
     """Contact sheet + manifest: everything the survey starts from."""
-    parts: list[types.Part] = []
-    if state.contact_sheet:
-        with open(state.contact_sheet, "rb") as handle:
-            parts.append(
-                types.Part.from_bytes(mime_type="image/png", data=handle.read())
-            )
-        parts.insert(
-            0,
-            types.Part.from_text(
-                text=(
-                    "Contact sheet of the whole stack in its current corrected "
-                    "order; each thumbnail is labelled '<index>: <filename>'."
-                )
-            ),
-        )
+    parts: list[types.Part] = contact_sheet_parts(state)
     parts.append(
         types.Part.from_text(
             text=(
@@ -542,62 +457,18 @@ async def run_survey_session(
         model=ctx.model or DEFAULT_SURVEY_MODEL,
     )
 
-    app = App(name=_APP_NAME, root_agent=agent, plugins=_build_plugins(_RUN_LABEL))
-    runner = InMemoryRunner(app=app)
-    assert runner.session_service is not None
-
-    plane: Plane = state.plane  # type: ignore[assignment]
-    await runner.session_service.create_session(
-        app_name=_APP_NAME,
-        user_id=_USER_ID,
-        session_id=_SESSION_ID,
-        # fetch_atlas reads atlas/plane/pos_lo/pos_hi from session state.
-        state=build_initial_state(
-            atlas_name=state.atlas,
-            plane=plane,
-            pos_lo=pos_lo,
-            pos_hi=pos_hi,
-            n_slices=len(state.slices),
-            interval_mm=state.interval_mm,
-            thickness_um=int(round(state.thickness_mm * 1000)),
-            max_iterations=max_iterations,
-        ),
+    tool_calls, turns = await run_agent_session(
+        agent=agent,
+        state=state,
+        pos_lo=pos_lo,
+        pos_hi=pos_hi,
+        seed_message=build_seed_message(state),
+        done=lambda: bool(box.submission),
+        nudge_no_tool=_NUDGE_NO_TOOL,
+        nudge_continue=_NUDGE_CONTINUE,
+        max_iterations=max_iterations,
+        run_label=_RUN_LABEL,
     )
-
-    message = build_seed_message(state)
-    tool_calls = 0
-    turns = 0
-    while turns < max_iterations and not box.submission:
-        turns += 1
-        saw_tool_call = False
-        async for event in runner.run_async(
-            user_id=_USER_ID, session_id=_SESSION_ID, new_message=message
-        ):
-            calls = event.get_function_calls() or []
-            if calls:
-                saw_tool_call = True
-                tool_calls += len(calls)
-                logger.info(
-                    "survey turn %d: %s (tool calls=%d)",
-                    turns,
-                    [getattr(call, "name", "?") for call in calls],
-                    tool_calls,
-                )
-            if box.submission or tool_calls > max_iterations:
-                break
-        if box.submission:
-            break
-        if tool_calls > max_iterations:
-            logger.warning("survey hit max_iterations=%d; ending pass", max_iterations)
-            break
-        message = types.Content(
-            role="user",
-            parts=[
-                types.Part.from_text(
-                    text=_NUDGE_CONTINUE if saw_tool_call else _NUDGE_NO_TOOL
-                )
-            ],
-        )
 
     return SurveyOutcome(
         findings=dict(box.submission) if box.submission else None,

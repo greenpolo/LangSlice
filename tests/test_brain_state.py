@@ -1,6 +1,11 @@
 """StackState serialization round-trip."""
 
-from langslice.linear.whole_brain.state import BrainConfig, SliceState, StackState
+from langslice.linear.whole_brain.state import (
+    POSITION_SOURCES,
+    BrainConfig,
+    SliceState,
+    StackState,
+)
 
 
 def _state() -> StackState:
@@ -42,6 +47,25 @@ def test_stack_state_roundtrip():
     original = _state()
     restored = StackState.from_dict(original.to_dict())
     assert restored == original
+
+
+def test_every_position_source_survives_a_round_trip():
+    """Seeding writes 'anchor' and 'interpolated'; both must serialize as-is."""
+    assert "interpolated" in POSITION_SOURCES
+    state = StackState(
+        slices=[
+            SliceState(
+                id=f"s{index}.png",
+                index_original=index,
+                index_corrected=index,
+                position_mm=float(index),
+                position_source=source,
+            )
+            for index, source in enumerate(POSITION_SOURCES)
+        ]
+    )
+    restored = StackState.from_dict(state.to_dict())
+    assert [s.position_source for s in restored.slices] == list(POSITION_SOURCES)
 
 
 def test_from_dict_ignores_unknown_keys():

@@ -8,6 +8,11 @@ from dataclasses import dataclass
 import numpy as np
 from PIL import Image
 
+# Whole-slide microscopy exports routinely exceed PIL's ~179-megapixel
+# decompression-bomb guard, which is meant for untrusted web content; our
+# inputs are the user's local acquisitions.
+Image.MAX_IMAGE_PIXELS = None
+
 _RESAMPLE_LANCZOS = Image.Resampling.LANCZOS
 
 DEFAULT_VLM_MAX_PIXELS = 12_000_000

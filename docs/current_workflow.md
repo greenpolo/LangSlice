@@ -41,10 +41,28 @@ per-node cycle limits.
   ordering problems in its notes instead.
 - `fix` re-renders the contact sheet from the corrected stack and sends it
   back to `survey` for one verification pass. A clean survey skips `fix`.
+- `seed` puts a first set of positions on the stack, in plain code. A few
+  sections spread center-out (4 for stacks up to 20 sections, 6 above,
+  damaged sections skipped) are estimated with the single-slice agent one at
+  a time; every other section is filled in by interpolating between them.
+  Anchors are recorded as `position_source="anchor"`, the rest as
+  `"interpolated"`. DeepSlice would seed the whole stack in one shot instead;
+  it is an optional extra that is not installed, so `seed` logs the fallback
+  and anchors.
+- `position` is the second agent pass: the whole stack in context, refining
+  the seeded positions. Its prompt encodes the key-slice strategy — verify
+  the anchors against the atlas first, then hunt for breaks in the interval,
+  because a constant slicing interval does not mean no sections were lost.
+  Tools: `view_slices`, `fetch_atlas`, `set_positions` (batch write, clamped
+  to the atlas range, returns the resulting neighbour-interval table),
+  `estimate_slice` (escalation — a full single-slice sweep for one stubborn
+  section, reported but not written), `get_advisories` (interval table,
+  interpolation residuals, monotone-fit suggestion, all explicitly advisory)
+  and `submit_positions`, which is rejected unless every section has a
+  position. Oblique-angle estimation is not part of this step yet.
 - `emit` writes the results JSON (default `<image_folder>/brain_results.json`,
   or `--out`).
-- `seed`, `position`, `transforms` and `review` are still stubs that pass
-  through.
+- `transforms` and `review` are still stubs that pass through.
 
 `--stop-after NODE` runs the graph up to and including that node, writes the
 checkpoint and stops; re-running continues from there. It is how a single step

@@ -28,6 +28,7 @@ async def run_slice_estimation(
     *,
     image_path: str,
     atlas_name: str,
+    plane: str = "coronal",
     model_name: str | None = None,
 ) -> APResult:
     """Estimate one slice's position with the single-slice tool-use agent.
@@ -40,6 +41,7 @@ async def run_slice_estimation(
         estimate_position,
         image,
         atlas_name,
+        plane=plane,
         model_name=model_name,
     )
     logger.info("Slice (tool-use): %.3fmm (%s)", result.position_mm, image_path)
