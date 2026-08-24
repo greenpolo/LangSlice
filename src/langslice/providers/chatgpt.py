@@ -426,8 +426,11 @@ def _part_data_uri(blob: Any) -> str | None:
 def content_to_input_items(content: types.Content) -> list[dict[str, Any]]:
     """Convert one ADK ``Content`` into Codex Responses ``input`` items."""
     items: list[dict[str, Any]] = []
-    texts: list[str] = []
-    image_uris: list[str] = []
+    # User content keeps PART ORDER (label text directly before its image —
+    # interleaving is load-bearing for multi-image seed messages); model text
+    # is joined as one assistant message.
+    user_content: list[dict[str, Any]] = []
+    model_texts: list[str] = []
     tool_media: list[str] = []
     tool_names: list[str] = []
 
@@ -463,22 +466,24 @@ def content_to_input_items(content: types.Content) -> list[dict[str, Any]]:
         elif part.inline_data is not None:
             uri = _part_data_uri(part.inline_data)
             if uri:
-                image_uris.append(uri)
+                user_content.append({"type": "input_image", "image_url": uri})
         elif part.text and not part.thought:
-            texts.append(part.text)
+            if content.role == "model":
+                model_texts.append(part.text)
+            else:
+                user_content.append({"type": "input_text", "text": part.text})
 
-    text = "\n".join(texts)
     if content.role == "model":
-        if text:
+        if model_texts:
             items.append(
                 {
                     "type": "message",
                     "role": "assistant",
-                    "content": [{"type": "output_text", "text": text}],
+                    "content": [{"type": "output_text", "text": "\n".join(model_texts)}],
                 }
             )
-    elif text or image_uris:
-        items.append(user_message(text, image_uris))
+    elif user_content:
+        items.append({"type": "message", "role": "user", "content": user_content})
 
     if tool_media:
         label = ", ".join(dict.fromkeys(tool_names))

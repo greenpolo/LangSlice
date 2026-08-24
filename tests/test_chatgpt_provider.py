@@ -481,3 +481,25 @@ def test_nonlinear_provider_selects_chatgpt(monkeypatch):
     assert all(uri.startswith("data:image/png;base64,") for uri in captured["references"])
     assert captured["size"] == "1536x1024"  # landscape slice
     assert captured["quality"] == "high"
+
+
+def test_user_content_preserves_text_image_interleaving():
+    from google.genai import types as gt
+
+    from langslice.providers.chatgpt import content_to_input_items
+
+    png = b"\x89PNG\r\n\x1a\nfakebytes"
+    content = gt.Content(
+        role="user",
+        parts=[
+            gt.Part.from_text(text="0: a.tif"),
+            gt.Part.from_bytes(mime_type="image/png", data=png),
+            gt.Part.from_text(text="1: b.tif"),
+            gt.Part.from_bytes(mime_type="image/png", data=png),
+        ],
+    )
+    (item,) = content_to_input_items(content)
+    kinds = [c["type"] for c in item["content"]]
+    assert kinds == ["input_text", "input_image", "input_text", "input_image"]
+    assert item["content"][0]["text"] == "0: a.tif"
+    assert item["content"][2]["text"] == "1: b.tif"
