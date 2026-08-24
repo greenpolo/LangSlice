@@ -3,9 +3,9 @@
 DeepSlice ships as an optional extra (``pip install langslice[deepslice]``)
 and is expected to seed positions for a whole coronal mouse stack in one shot.
 Nothing here calls it: the package is not a dependency today, so
-:func:`deepslice_available` reports False and the seed node falls back to
-anchor seeding. When the extra lands, :func:`run_deepslice` is the only
-function that has to grow a body.
+:func:`deepslice_available` reports False and the seed node hands an unplaced
+stack to the positioning agent. When the extra lands, :func:`run_deepslice` is
+the only function that has to grow a body.
 """
 
 from __future__ import annotations
@@ -39,6 +39,6 @@ def run_deepslice(state: StackState, ctx: EngineContext) -> dict[str, float]:
     del state, ctx
     raise NotImplementedError(
         "DeepSlice seeding is not implemented yet. It ships later as the "
-        "optional 'deepslice' extra; until then the seed node uses anchor "
-        "seeding (a few single-slice estimates plus interpolation)."
+        "optional 'deepslice' extra; until then the stack reaches the "
+        "positioning agent unplaced and that agent chooses how to place it."
     )

@@ -17,7 +17,7 @@ from typing import Any
 
 # position_source values, in rough order of authority. "interpolated" is a
 # position derived from other slices rather than measured against the atlas.
-POSITION_SOURCES = ("", "survey", "interpolated", "deepslice", "anchor", "refined")
+POSITION_SOURCES = ("", "survey", "interpolated", "deepslice", "refined")
 CONFIDENCE_LEVELS = ("", "low", "medium", "high")
 
 
@@ -38,6 +38,11 @@ class BrainConfig:
     model: str | None = None
     out: str | None = None
     resume: bool = True
+    #: Display-side image preprocessing for everything the agents look at:
+    #: "auto" runs :func:`langslice.image_prep.adaptive_preprocess` (per-channel
+    #: CLAHE + DAPI-weighted grayscale), "none" shows the raw section. Never
+    #: written back to the user's files.
+    preprocess: str = "auto"
 
     @property
     def thickness_mm(self) -> float:

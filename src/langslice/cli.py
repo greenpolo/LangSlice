@@ -427,6 +427,14 @@ def _add_estimate_brain_parser(subparsers: argparse._SubParsersAction) -> None:
     )
     p.add_argument("--model", default=None, help="Model name for the engine's agent steps")
     p.add_argument(
+        "--preprocess",
+        default="auto",
+        choices=["auto", "none"],
+        help="Image preprocessing for everything the agents look at: 'auto' applies "
+        "adaptive CLAHE + brightness normalization, 'none' shows the raw sections. "
+        "Display only — the image files are never modified",
+    )
+    p.add_argument(
         "--out",
         default=None,
         help="Results JSON path. Default: <image_folder>/brain_results.json",
@@ -472,11 +480,13 @@ def _run_estimate_brain(args: argparse.Namespace) -> None:
         model=args.model,
         out=args.out,
         resume=args.resume,
+        preprocess=args.preprocess,
     )
 
     print(f"Atlas: {config.atlas}  Plane: {config.plane}")
     print(f"Interval: {config.interval_um}um  Thickness: {config.thickness_um}um")
     print(f"Folder: {config.image_folder}  Resume: {config.resume}")
+    print(f"Preprocess: {config.preprocess}")
     print()
 
     state = asyncio.run(run_brain(config, emit=print, stop_after=args.stop_after))
