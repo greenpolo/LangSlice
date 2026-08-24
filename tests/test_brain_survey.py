@@ -313,9 +313,9 @@ def test_survey_applies_corrections_and_routes_to_fix(tmp_path: Path, monkeypatc
 
 
 def test_survey_routes_past_fix_when_clean(tmp_path: Path, monkeypatch):
-    from tests.fakes import install_fake_adk_model_clean_survey
+    from tests.fakes import install_fake_adk_model_clean_stack
 
-    install_fake_adk_model_clean_survey(monkeypatch)
+    install_fake_adk_model_clean_stack(monkeypatch)
     state, ctx = _ingested(tmp_path)
 
     # "seed" jumps past fix; the engine books the skipped node as complete.

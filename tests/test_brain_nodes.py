@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
+from langslice.linear import APResult
 from langslice.linear.whole_brain.engine import build_context, run_brain
 from langslice.linear.whole_brain.nodes import emit, ingest
 from langslice.linear.whole_brain.state import BrainConfig, StackState
@@ -40,6 +41,12 @@ def _make_stack(folder: Path, n: int = 5) -> list[str]:
 
 def _config(folder: Path, **kwargs) -> BrainConfig:
     return BrainConfig(image_folder=str(folder), **kwargs)
+
+
+async def _fake_anchor_estimate(*, image_path: str, **_kwargs) -> APResult:
+    """Stand-in for the single-slice worker: 1 mm per section, no model call."""
+    index = int(Path(image_path).stem.split("_")[-1])
+    return APResult(position_mm=float(index), reasoning="fake")
 
 
 def test_ingest_populates_state_and_contact_sheet(tmp_path: Path):
@@ -101,10 +108,15 @@ def test_emit_writes_the_state_serialization(tmp_path: Path):
 
 
 def test_run_brain_end_to_end_then_resume(tmp_path: Path, monkeypatch):
-    from tests.fakes import install_fake_adk_model_clean_survey
+    from tests.fakes import install_fake_adk_model_clean_stack
 
-    # The survey step is a real agent now; script it to submit a clean stack.
-    install_fake_adk_model_clean_survey(monkeypatch)
+    # survey and position are real agents now; script them to submit at once,
+    # and stub the single-slice worker seed uses for its anchor estimates.
+    install_fake_adk_model_clean_stack(monkeypatch)
+    monkeypatch.setattr(
+        "langslice.linear.whole_brain.seeding.run_slice_estimation",
+        _fake_anchor_estimate,
+    )
     _make_stack(tmp_path)
     messages: list[str] = []
     config = _config(tmp_path, out=str(tmp_path / "results.json"))
@@ -121,8 +133,10 @@ def test_run_brain_end_to_end_then_resume(tmp_path: Path, monkeypatch):
     results = json.loads((tmp_path / "results.json").read_text())
     assert results["slices"] == checkpoint["slices"]
     assert (tmp_path / "contact_sheet.png").exists()
-    # seed, position, transforms, review are still stubs; fix was skipped.
-    assert sum("not implemented" in m for m in messages) == 4
+    # Every section leaves the graph positioned.
+    assert all(s.position_mm is not None for s in state.slices)
+    # transforms and review are still stubs; fix was skipped.
+    assert sum("not implemented" in m for m in messages) == 2
     assert any("skipping 'fix'" in m for m in messages)
 
     # Second run resumes: every node is already complete, nothing re-runs.

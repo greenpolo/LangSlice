@@ -1,9 +1,9 @@
 """The eight nodes of the whole-brain graph.
 
-``ingest``, ``survey``, ``fix`` and ``emit`` are implemented; the four steps
-between ``fix`` and ``emit`` are still stubs that log, mark themselves
-complete and fall through to their default successor. Their docstrings are
-the contract a later implementation has to satisfy — what it reads from
+Everything up to ``position`` is implemented, plus ``emit``; ``transforms``
+and ``review`` are still stubs that log, mark themselves complete and fall
+through to their default successor. Their docstrings are the contract a later
+implementation has to satisfy — what it reads from
 :class:`~langslice.linear.whole_brain.state.StackState` and what it writes
 back.
 
@@ -22,11 +22,14 @@ from PIL import Image, ImageDraw
 
 from langslice.atlas.core import get_position_range_mm
 from langslice.image_prep import normalize_image, prepare_image_for_vlm
+from langslice.linear.whole_brain.deepslice import deepslice_available
 from langslice.linear.whole_brain.discovery import (
     CONTACT_SHEET_FILENAME,
     discover_slices,
 )
 from langslice.linear.whole_brain.engine import EngineContext, Node
+from langslice.linear.whole_brain.position import run_position_session
+from langslice.linear.whole_brain.seeding import seed_positions
 from langslice.linear.whole_brain.state import SliceState, StackState
 from langslice.linear.whole_brain.survey import run_survey_session
 from langslice.space import Plane
@@ -34,6 +37,18 @@ from langslice.space import Plane
 logger = logging.getLogger(__name__)
 
 _PLANES = ("coronal", "sagittal", "horizontal")
+
+
+def _atlas_range(state: StackState, ctx: EngineContext) -> tuple[float, float]:
+    """Valid position range of the stack's atlas along its slicing plane."""
+    atlas = ctx.atlas_loader(state.atlas or ctx.config.atlas)
+    return get_position_range_mm(atlas, plane=cast(Plane, state.plane))
+
+
+def _species(state: StackState, ctx: EngineContext) -> str:
+    """Species from the atlas metadata; mouse when the atlas does not say."""
+    metadata = getattr(ctx.atlas_loader(state.atlas or ctx.config.atlas), "metadata", None)
+    return str((metadata or {}).get("species", "mouse"))
 
 
 # --- contact sheet -------------------------------------------------------
@@ -148,15 +163,11 @@ async def survey(state: StackState, ctx: EngineContext) -> str:
     Routes: "fix" when this pass corrected something (fix re-renders the stack
     and sends it back for one re-check), "seed" when the stack is clean.
     """
-    atlas = ctx.atlas_loader(state.atlas or ctx.config.atlas)
-    pos_lo, pos_hi = get_position_range_mm(atlas, plane=cast(Plane, state.plane))
-    metadata = getattr(atlas, "metadata", None) or {}
-    species = str(metadata.get("species", "mouse"))
-
+    pos_lo, pos_hi = _atlas_range(state, ctx)
     outcome = await run_survey_session(
         state=state,
         ctx=ctx,
-        species=species,
+        species=_species(state, ctx),
         pos_lo=pos_lo,
         pos_hi=pos_hi,
     )
@@ -228,31 +239,94 @@ async def fix(state: StackState, ctx: EngineContext) -> str:
 
 
 async def seed(state: StackState, ctx: EngineContext) -> str:
-    """Seed initial positions for the stack. STUB.
+    """Seed initial positions for the whole stack. Plain code, no stack agent.
 
     Reads: corrected stack order, ``plane``, ``atlas``, damage flags.
-    Writes: ``position_mm`` + ``position_source`` ("deepslice" when the
-    optional DeepSlice tool ran, otherwise "survey"), and
-    ``oblique_angles_deg`` if the seeding tool reported one.
+    Writes: ``position_mm`` + ``position_source`` — "anchor" for the few
+    sections estimated directly by the single-slice worker, "interpolated" for
+    everything filled in between them, plus a damage caveat where both apply.
+    DeepSlice would seed the whole stack in one shot instead; it is not
+    installed (see :mod:`langslice.linear.whole_brain.deepslice`), so anchor
+    seeding is the path taken today.
     Routes: "" (position).
     """
-    ctx.progress("[seed] not implemented (stub): no positions seeded")
+    if not state.slices:
+        return ""
+    if deepslice_available():
+        # No integration behind this yet; the seam exists so adding the extra
+        # is a one-function change (run_deepslice) rather than a node rewrite.
+        ctx.progress("[seed] deepslice installed but not wired — using anchor seeding")
+    else:
+        ctx.progress("[seed] deepslice unavailable — using anchor seeding")
+
+    pos_lo, pos_hi = _atlas_range(state, ctx)
+    anchored, interpolated = await seed_positions(
+        state, ctx, pos_lo=pos_lo, pos_hi=pos_hi
+    )
+    state.notes.append(
+        f"seed: {anchored} anchor estimate(s), {interpolated} interpolated"
+    )
+    ctx.progress(
+        f"[seed] {anchored} anchor(s) estimated, {interpolated} section(s) "
+        f"interpolated between them"
+    )
     return ""
 
 
 async def position(state: StackState, ctx: EngineContext) -> str:
-    """Refine positions and estimate the oblique angle. STUB.
+    """Refine the seeded positions with the whole stack in context.
 
-    Reads: seeded positions, ``interval_mm``/``thickness_mm``, advisory
-    spacing signals from
-    :mod:`langslice.linear.whole_brain.signals`, per-slice escalation via
+    Reads: seeded positions, ``interval_mm``/``thickness_mm``, the contact
+    sheet, advisory spacing signals from
+    :mod:`langslice.linear.whole_brain.signals`, and per-slice escalation via
     :func:`langslice.linear.whole_brain.estimation_agents.run_slice_estimation`.
-    Writes: ``position_mm`` + ``position_source`` ("anchor" for key slices,
-    "refined" elsewhere), ``confidence``, ``interval_breaks``,
-    ``oblique_angles_deg``.
-    Routes: itself while interval breaks remain (bounded), else "" (transforms).
+    Writes: ``position_mm`` + ``position_source`` ("refined"), ``confidence``,
+    ``interval_breaks`` and notes from the submission.
+    Routes: "" (transforms). Oblique-angle estimation is not part of this
+    build — it needs atlas re-slicing machinery that does not exist yet.
     """
-    ctx.progress("[position] not implemented (stub): positions unchanged")
+    if not state.slices:
+        return ""
+    pos_lo, pos_hi = _atlas_range(state, ctx)
+    outcome = await run_position_session(
+        state=state,
+        ctx=ctx,
+        species=_species(state, ctx),
+        pos_lo=pos_lo,
+        pos_hi=pos_hi,
+    )
+
+    findings = outcome.findings
+    if findings is None:
+        # Budget exhausted: whatever set_positions wrote is kept and the run
+        # goes on — a partly refined stack beats no stack.
+        state.notes.append(
+            f"position: incomplete — no submission within {outcome.turns} turns"
+        )
+    else:
+        breaks: set[int] = set()
+        for index in findings.get("interval_breaks") or []:
+            try:
+                breaks.add(int(index))
+            except (TypeError, ValueError):
+                continue
+        state.interval_breaks = sorted(breaks)
+        summary = str(findings.get("summary", "")).strip()
+        if summary:
+            state.notes.append(f"position: {summary}")
+        state.notes.extend(
+            f"position: {note}"
+            for note in findings.get("notes") or []
+            if str(note).strip()
+        )
+
+    ctx.progress(
+        f"[position] {outcome.tool_calls} tool calls; "
+        f"{outcome.positions_written} section(s) repositioned, "
+        f"{outcome.escalations} escalation(s), "
+        f"{len(state.interval_breaks)} interval break(s)"
+        + ("" if findings is not None else "; incomplete")
+    )
     return ""
 
 

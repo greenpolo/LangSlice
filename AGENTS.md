@@ -78,8 +78,13 @@ Two methods live as sibling subpackages with no dependency on each other:
   Flips and reorders are recorded as data on the state; user image files are
   never modified. `survey.py` is the stack-triage agent (damage, hemisphere
   flips, order, interval breaks in one pass) and `fix` re-renders the contact
-  sheet for a re-check; `seed`, `position`, `transforms` and `review` are
-  still stubs. `--stop-after NODE` runs one step and checkpoints.
+  sheet for a re-check; `seeding.py` anchors a few sections with the
+  single-slice worker and interpolates the rest (`deepslice.py` is the
+  not-yet-installed optional alternative); `position.py` is the second agent
+  pass that refines those positions; `_step_common.py` holds what the two
+  agent steps share (`view_slices`, manifest, ADK session loop). `transforms`
+  and `review` are still stubs. `--stop-after NODE` runs one step and
+  checkpoints.
 - `nonlinear/` — generative-image registration: candidate generation, image
   provider adapters, Elastix runtime, optional ADK review loop, affine and
   nonlinear result types, and `quick_affine.py` (silhouette affine preview;

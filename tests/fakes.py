@@ -71,40 +71,55 @@ class _ScriptedSubmitLlm(BaseLlm):
         )
 
 
-class _CleanSurveyLlm(BaseLlm):
-    """A fake BaseLlm that submits an empty, clean whole-brain survey."""
+_CLEAN_STACK_SUBMISSIONS: dict[str, dict[str, Any]] = {
+    "submit_survey": {
+        "axis_directions": {"ap": "anterior_to_posterior"},
+        "interval_breaks": [],
+        "notes": [],
+        "clean": True,
+        "summary": "Stack is consistent.",
+    },
+    "submit_positions": {
+        "interval_breaks": [],
+        "notes": [],
+        "summary": "Seeded positions check out.",
+    },
+}
+
+
+class _CleanStackLlm(BaseLlm):
+    """A fake BaseLlm that submits a clean result for any whole-brain step.
+
+    Which step it is in is read off the tools the request declares, so one
+    fake drives the survey and positioning agents alike.
+    """
 
     async def generate_content_async(
         self, llm_request: LlmRequest, stream: bool = False
     ) -> AsyncGenerator[LlmResponse, None]:
-        del stream, llm_request
+        del stream
+        available = set(llm_request.tools_dict or {})
+        name = next(
+            (tool for tool in _CLEAN_STACK_SUBMISSIONS if tool in available), None
+        )
+        part = (
+            types.Part.from_function_call(name=name, args=_CLEAN_STACK_SUBMISSIONS[name])
+            if name is not None
+            else types.Part.from_text(text="Nothing to submit.")
+        )
         yield LlmResponse(
-            content=types.Content(
-                role="model",
-                parts=[
-                    types.Part.from_function_call(
-                        name="submit_survey",
-                        args={
-                            "axis_directions": {"ap": "anterior_to_posterior"},
-                            "interval_breaks": [],
-                            "notes": [],
-                            "clean": True,
-                            "summary": "Stack is consistent.",
-                        },
-                    )
-                ],
-            ),
+            content=types.Content(role="model", parts=[part]),
             partial=False,
             turn_complete=True,
         )
 
 
-def install_fake_adk_model_clean_survey(monkeypatch: Any) -> None:
-    """Patch LLMRegistry.new_llm so the survey step submits 'clean' at once."""
+def install_fake_adk_model_clean_stack(monkeypatch: Any) -> None:
+    """Patch LLMRegistry.new_llm so whole-brain agent steps submit at once."""
     from google.adk.models.registry import LLMRegistry
 
     def _fake_new_llm(model: str) -> BaseLlm:
-        return _CleanSurveyLlm(model=model)
+        return _CleanStackLlm(model=model)
 
     monkeypatch.setattr(LLMRegistry, "new_llm", staticmethod(_fake_new_llm))
 
