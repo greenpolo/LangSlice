@@ -1,8 +1,21 @@
 """Checks for VLM image preparation."""
 
+import cv2
+import numpy as np
 from PIL import Image
 
-from langslice.image_prep import prepare_image_for_vlm
+from langslice.image_prep import (
+    FRAME_MARGIN,
+    crop_to_mask,
+    crop_to_tissue,
+    prepare_image_for_vlm,
+)
+
+
+def _fill(image: Image.Image, *, background: int) -> float:
+    """Fraction of pixels that differ from *background*."""
+    arr = np.asarray(image.convert("L"), dtype=np.int16)
+    return float((np.abs(arr - background) > 20).mean())
 
 
 def test_prepare_image_for_vlm_downsamples_and_tracks_pixel_size() -> None:
@@ -23,3 +36,56 @@ def test_prepare_image_for_vlm_downsamples_and_tracks_pixel_size() -> None:
     assert small_prep.output_size == (1200, 800)
     assert not small_prep.downsampled
     assert small_prep.effective_pixel_size_um == 2.5
+
+
+# --- framing -------------------------------------------------------------
+
+
+def test_crop_to_tissue_lifts_a_small_section_to_a_full_frame() -> None:
+    """Dark-on-light: a section adrift in a big scan comes back filling it."""
+    canvas = np.full((400, 400, 3), 240, dtype=np.uint8)
+    cv2.ellipse(canvas, (150, 220), (60, 40), 0, 0, 360, (30, 30, 30), -1)
+    section = Image.fromarray(canvas, mode="RGB")
+
+    framed = crop_to_tissue(section)
+
+    assert _fill(section, background=240) < 0.06
+    assert _fill(framed, background=240) > 0.45
+    assert framed.size < section.size
+
+
+def test_crop_to_tissue_keeps_a_dim_interior(monkeypatch) -> None:
+    """Light-on-dark fluorescence: a dim core is tissue, not background."""
+    canvas = np.zeros((300, 400, 3), dtype=np.uint8)
+    cv2.ellipse(canvas, (200, 150), (80, 55), 0, 0, 360, (200, 200, 200), -1)
+    cv2.ellipse(canvas, (200, 150), (40, 25), 0, 0, 360, (60, 60, 60), -1)
+
+    framed = crop_to_tissue(Image.fromarray(canvas, mode="RGB"))
+
+    # The whole ellipse survives: 2 * 80 wide plus the margin, not the ring.
+    assert framed.width >= 160
+    assert framed.height >= 110
+
+
+def test_crop_to_tissue_leaves_a_frame_it_cannot_read() -> None:
+    uniform = Image.new("RGB", (100, 80), (120, 120, 120))
+    assert crop_to_tissue(uniform).size == uniform.size
+
+    noise = Image.fromarray(
+        np.random.default_rng(0).integers(60, 200, (80, 120, 3)).astype(np.uint8),
+        mode="RGB",
+    )
+    assert crop_to_tissue(noise).size == noise.size
+
+
+def test_crop_to_mask_scales_the_mask_and_adds_the_margin() -> None:
+    image = Image.new("RGB", (200, 200), (10, 10, 10))
+    mask = np.zeros((50, 50), dtype=bool)
+    mask[10:30, 10:30] = True  # a quarter-scale mask: 40..120 px in the image
+
+    framed = crop_to_mask(image, mask)
+
+    expected = 80 + 2 * round(FRAME_MARGIN * 80)
+    assert abs(framed.width - expected) <= 2
+    assert abs(framed.height - expected) <= 2
+    assert crop_to_mask(image, np.zeros((50, 50), dtype=bool)).size == image.size

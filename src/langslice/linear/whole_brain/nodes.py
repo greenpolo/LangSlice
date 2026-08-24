@@ -325,6 +325,17 @@ async def position(state: StackState, ctx: EngineContext) -> str:
             for note in findings.get("notes") or []
             if str(note).strip()
         )
+        # The end anchors are the evidence the placement rests on — the one
+        # check that came from outside the agent's own arithmetic. Keep them.
+        for anchor in findings.get("end_anchors") or []:
+            structure = str(anchor.get("structure", "")).strip()
+            if not structure:
+                continue
+            seen = str(anchor.get("note", "")).strip()
+            state.notes.append(
+                f"position: end anchor {anchor.get('id')} = {structure}"
+                + (f" ({seen})" if seen else "")
+            )
 
     ctx.progress(
         f"[position] {outcome.tool_calls} tool calls; "

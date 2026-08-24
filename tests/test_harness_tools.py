@@ -1,6 +1,8 @@
 import asyncio
+import io
 from unittest.mock import AsyncMock, MagicMock
 
+import numpy as np
 import pytest
 from google.genai import types
 from PIL import Image
@@ -101,6 +103,65 @@ def test_fetch_atlas_returns_media_parts_and_updates_state():
     assert state["saw_broad_sweep"] is True
     assert state["images_fetched"] == 3
     assert ctx.save_artifact.call_count == 3
+
+
+def _decode(part: types.Part) -> Image.Image:
+    inline = part.inline_data
+    assert inline is not None and inline.data is not None
+    return Image.open(io.BytesIO(inline.data)).convert("L")
+
+
+def _brain_fill(image: Image.Image) -> float:
+    arr = np.asarray(image, dtype=np.uint8)
+    return float((arr > 10).mean())
+
+
+def _fetch_one(position_mm: float, *, frame_atlas: bool) -> Image.Image:
+    state = build_initial_state(
+        atlas_name="allen_mouse_25um", plane="coronal",
+        pos_lo=0.0, pos_hi=13.2, n_slices=1,
+        interval_mm=0.0, thickness_um=50, max_iterations=20,
+        frame_atlas=frame_atlas,
+    )
+    result = asyncio.run(
+        fetch_atlas(
+            positions_mm=[position_mm], tool_context=_fake_tool_context(state)
+        )
+    )
+    return _decode(_media_parts(result)[0])
+
+
+def test_fetch_atlas_frames_the_brain_when_the_session_asks():
+    """Anterior sections leave a fixed atlas canvas mostly empty; the
+    whole-brain steps crop that away so apparent scale is not a cue."""
+    plain = _fetch_one(2.0, frame_atlas=False)
+    framed = _fetch_one(2.0, frame_atlas=True)
+
+    assert _brain_fill(plain) < 0.25
+    assert _brain_fill(framed) > 0.45
+    assert framed.size[0] < plain.size[0]
+    assert framed.size[1] < plain.size[1]
+
+
+def test_fetch_atlas_framing_is_off_by_default():
+    """The single-slice worker keeps the raw canvas it has always had."""
+    default = _fetch_one(2.0, frame_atlas=False)
+    assert default.size == _decode(
+        _media_parts(
+            asyncio.run(
+                fetch_atlas(
+                    positions_mm=[2.0],
+                    tool_context=_fake_tool_context(
+                        build_initial_state(
+                            atlas_name="allen_mouse_25um", plane="coronal",
+                            pos_lo=0.0, pos_hi=13.2, n_slices=1,
+                            interval_mm=0.0, thickness_um=50, max_iterations=20,
+                        )
+                    ),
+                )
+            )
+        )[0]
+    ).size
 
 
 def test_fetch_atlas_rejects_empty_positions():

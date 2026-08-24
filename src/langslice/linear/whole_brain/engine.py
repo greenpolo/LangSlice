@@ -69,13 +69,13 @@ class EngineContext:
     emit: Callable[[str], None] = _log_progress
     #: Atlas accessor, injectable so tests (and offline hosts) can supply one.
     atlas_loader: Callable[[str], Any] = load_atlas
-    #: Rendered sections, keyed ``(slice_id, flip, long_edge, preprocess)``.
+    #: Rendered sections, keyed ``(slice_id, flip, long_edge, preprocess, frame)``.
     #: Every agent step renders the whole stack for its seed message and the
     #: fix->survey loop renders it again, so the same section is prepared many
     #: times per run. Nothing needs invalidating: the user's files never change
     #: during a run, and a flip or a different size is a different key. Cached
     #: images are shared — callers read them, never mutate them.
-    render_cache: dict[tuple[str, bool, int, str], Image.Image] = field(
+    render_cache: dict[tuple[str, bool, int, str, bool], Image.Image] = field(
         default_factory=dict, repr=False
     )
 

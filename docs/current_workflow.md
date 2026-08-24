@@ -36,6 +36,16 @@ per-node cycle limits.
   stack as a labelled sequence of per-section images instead (a thumbnail grid
   splits one vision-encoder patch budget across every section at once, and
   individual images -- even small ones -- read better).
+  In the whole-brain visual path only, sections and fetched atlas sections are
+  both cropped to their foreground plus a 6% margin before resizing, so the two
+  fill their frames about equally: histology arrives filling most of its scan
+  while a fixed-canvas atlas render leaves an anterior brain small and centred,
+  and that difference in apparent scale is itself a cue. Histology foreground
+  is "far from the border's background level"; the atlas silhouette comes from
+  the annotation (a reference volume's faint background noise would defeat a
+  non-zero test). The geometry path is deliberately excluded: the `transforms`
+  step fits its affine on the uncropped render, since the six numbers it hands
+  back are normalized against that frame.
 - `survey` is one agent pass over the whole stack: it is shown every section
   as its own image in corrected order, each preceded by an
   `<index>: <filename>` label, plus the same stack as a text manifest, and
@@ -58,23 +68,42 @@ per-node cycle limits.
   whole stack is in context, usually with no positions on it. Its prompt is a
   MENU, not a prescription: key sections plus interpolation, estimating every
   section, or a mix — the agent picks. The prompt is deliberately
-  atlas-agnostic (no region names, no landmarks, no absolute positions) so the
-  same text works for every BrainGlobe atlas, species and plane, and it carries
-  the failure modes that bite whichever strategy is chosen: re-verify
-  disagreeing estimates instead of averaging them or sliding a self-consistent
-  ladder to match a minority reading; anchor only where the atlas level is
-  identifiable at a glance; check both ends of the stack before submitting,
-  because a plausible ladder hung at the wrong absolute position looks
-  consistent from the inside; and a constant slicing interval does not mean no
-  sections were lost. Tools: `view_slices`, `fetch_atlas`, `estimate_slices`
-  (up to 8 named sections per call, each a full single-slice sweep, run one
-  after another and reported but not written), `interpolate_between` (fixed
-  points in, one suggestion per section out, not written), `set_positions`
-  (batch write, clamped to the atlas range, returns the resulting
-  neighbour-interval table), `get_advisories` (interval table plus a
-  monotone-fit suggestion, both explicitly advisory) and `submit_positions`,
-  which is rejected unless every section has a position. Oblique-angle
-  estimation is not part of this step yet.
+  atlas-agnostic (no region names, no hard-coded landmarks, no absolute
+  positions) so the same text works for every BrainGlobe atlas, species and
+  plane, and it carries the failure modes that bite whichever strategy is
+  chosen: re-verify disagreeing estimates instead of averaging them or sliding
+  a self-consistent ladder to match a minority reading — but when MANY
+  independent estimates disagree with a tidy ladder by a consistent amount, it
+  is the ladder's absolute placement that is suspect; anchor only where the
+  atlas level is identifiable at a glance; verify both ends of the stack
+  against the atlas annotation before submitting, because a plausible ladder
+  hung at the wrong absolute position looks consistent from the inside; and the
+  realized section spacing is usually LARGER than the nominal cutting interval,
+  so a ladder matching the nominal interval exactly is a warning sign, not a
+  success.
+  Tools: `view_slices`, `fetch_atlas`, `atlas_structures_at` (what the atlas
+  annotation carries at up to 8 levels, by in-plane area share),
+  `structure_range` (the slicing-axis span over which up to 10 named structures
+  exist, descendants included — the check that does not come from the agent's
+  own arithmetic), `estimate_slices` (up to 8 named sections per call, each a
+  full single-slice sweep, run one after another and reported but not written),
+  `interpolate_between` (fixed points in, one suggestion per section out, not
+  written; beyond the outermost fixed points it steps at the interval those
+  points IMPLY, never at the nominal one, and it refuses a single fixed point),
+  `set_positions` (batch write, clamped to the atlas range, returns the
+  resulting interval table), `get_advisories` (interval table plus a
+  monotone-fit suggestion, both explicitly advisory) and `submit_positions`.
+  The interval table reports the implied mean interval — per contiguous placed
+  stretch and overall — next to the nominal one, with a legend saying which of
+  the two is evidence. `submit_positions` is rejected unless every section has
+  a position AND its two `end_anchors` hold: one entry per END of the corrected
+  order naming a structure visible in that section, whose atlas existence range
+  (`langslice.atlas.landmarks.axis_range_of`) must contain that section's
+  submitted position, within one slice thickness. A refused anchor comes back
+  with the structure's actual span against the proposed position and does not
+  escalate — the agent fixes the placement or names a truthful landmark. The
+  accepted anchors are recorded in the run notes. Oblique-angle estimation is
+  not part of this step yet.
 - `transforms` proposes one in-plane alignment per section, on two routes.
   Intact sections take the plain-code route: the shared silhouette affine
   (`src/langslice/affine.py`) against the atlas section their position names,
