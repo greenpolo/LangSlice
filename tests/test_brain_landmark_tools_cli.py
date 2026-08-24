@@ -12,9 +12,9 @@ def _parse(args: list[str]) -> argparse.Namespace:
     return cli._build_parser().parse_args(args)
 
 
-def test_landmark_tools_defaults_on(tmp_path: Path):
+def test_landmark_tools_defaults_off(tmp_path: Path):
     args = _parse(["linear", "estimate-brain", str(tmp_path)])
-    assert args.landmark_tools is True
+    assert args.landmark_tools is False
 
 
 def test_landmark_tools_flag_parses_both_ways(tmp_path: Path):

@@ -39,6 +39,7 @@ def _make_stack(folder: Path, n: int = 5) -> list[str]:
 
 
 def _config(folder: Path, **kwargs) -> BrainConfig:
+    kwargs.setdefault("landmark_tools", True)
     return BrainConfig(image_folder=str(folder), **kwargs)
 
 
