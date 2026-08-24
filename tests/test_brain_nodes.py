@@ -39,7 +39,6 @@ def _make_stack(folder: Path, n: int = 5) -> list[str]:
 
 
 def _config(folder: Path, **kwargs) -> BrainConfig:
-    kwargs.setdefault("landmark_tools", True)
     return BrainConfig(image_folder=str(folder), **kwargs)
 
 
@@ -139,12 +138,8 @@ def test_run_brain_end_to_end_then_resume(tmp_path: Path, monkeypatch):
     assert all(s.position_mm is not None for s in state.slices)
     assert all(s.affine is not None and len(s.affine) == 6 for s in state.slices)
     assert any("5 affine fit(s)" in note for note in state.notes)
-    # The positioning step really submitted: its summary and the end anchors
-    # it had to defend are both on the record.
+    # The positioning step really submitted: its summary is on the record.
     assert any("position: Placed the stack" in note for note in state.notes)
-    assert any("position: end anchor" in note for note in state.notes)
-    # ...and they were checked against the atlas, not waved through.
-    assert not any("end-anchor check skipped" in note for note in state.notes)
     assert any("review: Stack is consistent end to end." in n for n in state.notes)
     assert any("skipping 'fix'" in m for m in messages)  # the stack came back clean
 

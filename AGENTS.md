@@ -92,25 +92,20 @@ Two methods live as sibling subpackages with no dependency on each other:
   showed the per-slice worker's estimates carried ~no signal on real data
   while eating 82% of the wall-clock, and every major benchmark failure traced
   back to advice text the harness injected. Tools report data; the agent
-  reasons. Tools: `view_slices`, `fetch_atlas`, `atlas_structures_at` /
-  `structure_range` (wrapping `atlas/landmarks.py`), `stack_positions`
+  reasons. Tools: `view_slices`, `fetch_atlas`, `stack_positions`
   (index, id, `position_mm`, `spacing_to_next_mm` — no nominal comparison, no
   legend), `interpolate_between` (computes, writes nothing), `set_positions`
   (writes, returns the same rows) and `submit_positions`. The gates stay,
   because a constraint stating a fact is not coaching: `submit_positions`
-  refuses a submission unless its two `end_anchors` (a structure seen at each
-  END of the stack) contain that section's position in their atlas span AND
-  that structure's own span is narrow — `MAX_ANCHOR_SPAN_FRACTION` (8%) of the
-  atlas's full slicing-axis extent, refused as `STRUCTURE_TOO_BROAD`
-  otherwise, so a structure present almost everywhere (cortex, say) cannot
-  "prove" a placement. It also refuses `interval_breaks` the agent's own
-  written positions do not show (the interval there must exceed 1.5x the
-  stack's median written spacing). Refusal messages state the numbers that
-  caused them and stop. Both landmark tools and the end-anchor gate are gated
-  by `BrainConfig.landmark_tools` (default on; CLI
-  `--landmark-tools`/`--no-landmark-tools`), an ablation switch that off,
-  drops the tools, the `end_anchors` argument, and the two landmark lines plus
-  the end-anchor constraint from the prompt. Interpolation beyond the
+  refuses `interval_breaks` the agent's own written positions do not show (the
+  interval there must exceed 1.5x the stack's median written spacing) and a
+  submission whose positions run the wrong way along the stack's known axis
+  direction (`DIRECTION_REVERSED`, a plain code check). Refusal messages state
+  the numbers that caused them and stop. There used to be a second gate here —
+  `atlas_structures_at`/`structure_range` landmark tools plus a
+  `submit_positions` end-anchor requirement — but a benchmarked ablation (both
+  test brains) found it made placement worse, not better, so it was deleted
+  rather than kept behind a flag. Interpolation beyond the
   outermost fixed points steps at the interval those points imply, never at
   the nominal one; `transforms.py` proposes one in-plane
   alignment per section — the shared silhouette affine (plain code) for intact
@@ -141,10 +136,18 @@ Two methods live as sibling subpackages with no dependency on each other:
 Shared, top-level:
 
 - `atlas/` — BrainGlobe loading, position helpers, slice extraction, colored
-  region maps, borders, plus `landmarks.py`: what the annotation says exists at
-  a level (`structures_at`) and the slicing-axis span over which a structure
-  exists (`axis_range_of`, descendants rolled up, presence scan cached per
-  atlas+plane). Generic over the structure tree — no acronym is special-cased
+  region maps, borders.
+  Also `recolor.py`: organized structure colors for atlases whose native
+  palettes mislead image-gen models. `color_lut(atlas)` keeps native colors
+  when they are hierarchy-organized, joins the true Allen CCF colors by
+  acronym (vendored `allen_colors.json`) for all-white Allen-tree atlases
+  (Osten, Princeton, adult Kim), and generates an Allen-style palette (one
+  hue per top-level division) for disorganized foreign trees (Waxholm rat,
+  ADMBA). Auto-detection is data-driven — degenerate = one color for
+  everything; disorganized = child colors uncorrelated with parents — and
+  flat or small trees always keep native colors. Both colored-region-map
+  paths (`atlas/core.py` and `nonlinear/image_gen_helpers.py`, render and
+  pixel-classify alike) draw from this one LUT
 - `space.py` — coordinate and orientation conventions
 - `affine.py` — shared in-plane affine core: the silhouette (moments) fit of a
   section onto an atlas section, plus the rotation/scale/translate matrix
