@@ -27,7 +27,7 @@ from langslice.linear.whole_brain._step_common import (
     stack_image_parts,
 )
 from langslice.linear.whole_brain.engine import EngineContext
-from langslice.linear.whole_brain.position import spacing_advisories
+from langslice.linear.whole_brain.position import position_rows
 from langslice.linear.whole_brain.state import StackState, apply_confidence
 
 logger = logging.getLogger(__name__)
@@ -40,14 +40,10 @@ DEFAULT_REVIEW_MODEL = "gemini-3-flash-preview"
 _RUN_LABEL = "whole_brain_review"
 
 _NUDGE_NO_TOOL = (
-    "You did not call a tool. Do not answer in prose: check anything doubtful "
-    "with `view_slices` and `fetch_atlas`, attach caveats with `flag_slice`, "
-    "and finish with `submit_review`."
+    "You did not call a tool. Continue with the tools rather than in prose; "
+    "when you have a verdict, call `submit_review`."
 )
-_NUDGE_CONTINUE = (
-    "Please finish the review. Flag anything that needs a caveat, then call "
-    "`submit_review` with your verdict."
-)
+_NUDGE_CONTINUE = "Continue; when you have a verdict, call `submit_review`."
 
 
 # --- outcome -------------------------------------------------------------
@@ -121,10 +117,8 @@ def build_review_tools(state: StackState, ctx: EngineContext) -> ReviewToolBox:
     def flag_slice(entries: list[dict[str, Any]]) -> dict[str, Any]:
         """Attach a caveat to one or more sections. Batch: one call, many sections.
 
-        Use it for anything a downstream user should know: a position you are
-        not sure of, a section whose transform could not cover the damage, a
-        stretch of the stack whose spacing looks wrong but that you could not
-        resolve. Caveats accumulate; they never overwrite each other.
+        Caveats accumulate on a section; they never overwrite each other.
+        Caveats ride out with the results and are what a downstream user sees.
 
         Args:
             entries: ``[{"id": "<filename>", "caveat": "<short warning>",
@@ -167,12 +161,11 @@ def build_review_tools(state: StackState, ctx: EngineContext) -> ReviewToolBox:
         """Finish the review. Call this exactly once, last.
 
         Args:
-            approved: True to hand the stack back as it stands. False sends it
-                back to the positioning step for ONE more pass — only worth it
-                if you can say in your notes what specifically has to change,
-                because the positioning step reads them.
-            notes: Short, concrete observations. If you are not approving, this
-                is the instruction the next positioning pass works from.
+            approved: True hands the stack back as it stands. False sends it
+                back to the positioning step for ONE more pass, which reads
+                ``notes``.
+            notes: Short, concrete observations. They are carried on the run
+                and are what a returned stack's next positioning pass reads.
             summary: One or two sentences on the state of the stack.
         """
         # Model output is a trust boundary: a malformed submission must not
@@ -200,49 +193,40 @@ def build_review_tools(state: StackState, ctx: EngineContext) -> ReviewToolBox:
 
 
 def build_review_prompt(*, state: StackState, species: str) -> str:
-    """System instruction for the review agent."""
+    """System instruction for the review agent.
+
+    Same lean treatment as the positioning prompt: the job, the run's facts,
+    the tools and what the verdict does. No checklist, no rules of thumb.
+    """
     return (
         f"You are an expert neuroanatomist signing off on a stack of "
         f"{len(state.slices)} {state.plane} histology sections that has been "
         f"ordered, positioned along the {state.atlas} ({species}) atlas, and "
         f"given a proposed in-plane transform per section.\n\n"
-        f"Nominal section interval: {state.interval_mm:.3f} mm "
-        f"center-to-center; slice thickness {state.thickness_mm:.3f} mm.\n\n"
-        f"This is the last look before the results go back to the user. You "
-        f"are checking the stack as a WHOLE, not re-doing the work:\n\n"
-        f"1. SERIAL ORDER. Positions must advance in one direction down the "
-        f"stack. A section that goes backwards is either misordered or "
-        f"misplaced.\n\n"
-        f"2. SPACING. The nominal {state.interval_mm:.3f} mm is the cutting "
-        f"protocol, not a measurement: the realized mean is usually LARGER, "
-        f"because sections get lost during collection. Isolated jumps are "
-        f"worth a look — they are either a real break in the interval "
-        f"(legitimate, and already reported) or a misplaced section. Do not "
-        f"expect perfect regularity, and do NOT send a stack back for spacing "
-        f"that merely fails to match the nominal interval. Spacing FAR above "
-        f"nominal (roughly 1.3x or more across the whole stack) is the one "
-        f"spacing pattern worth acting on: either that many sections are "
-        f"missing or the stack has been stretched, and only the atlas can say "
-        f"which.\n\n"
-        f"3. CAVEATS. Damaged sections, low-confidence positions, sections "
-        f"whose transform is missing or weak — say so with `flag_slice`. A "
-        f"caveat costs nothing; a silent bad section costs the user their "
-        f"analysis.\n\n"
-        f"4. VERDICT. `submit_review(approved=True)` hands the stack back. "
-        f"`approved=False` sends it to ONE more positioning pass — use it only "
-        f"when something concrete is wrong AND your notes say what, because "
-        f"those notes are what the next pass reads. If the stack is merely "
-        f"imperfect, approve it with caveats instead.\n\n"
-        f"The spacing signals in the manifest are arithmetic: they have never "
-        f"seen an image and know nothing about missing sections. Use "
-        f"`view_slices` and `fetch_atlas` to check anything they flag before "
-        f"you act on it."
+        f"Your job: look at the finished stack as a whole and decide whether "
+        f"it goes back to the user as it stands.\n\n"
+        f"Run facts:\n"
+        f"- {len(state.slices)} sections, {state.plane} plane, atlas "
+        f"{state.atlas} ({species}).\n"
+        f"- Cutting protocol: nominal section interval "
+        f"{state.interval_mm:.3f} mm center-to-center, section thickness "
+        f"{state.thickness_mm:.3f} mm.\n"
+        f"- Interval breaks reported by the positioning step: "
+        f"{state.interval_breaks or 'none'}.\n\n"
+        f"Tools:\n"
+        f"- `view_slices`: up to 8 named sections at higher resolution.\n"
+        f"- `fetch_atlas`: atlas sections at the positions you name.\n"
+        f"- `flag_slice`: attaches a caveat, and optionally a confidence, to "
+        f"one or more sections. Caveats travel out with the results.\n"
+        f"- `submit_review`: ends the step. `approved=True` hands the stack "
+        f"back; `approved=False` sends it to ONE more positioning pass, which "
+        f"reads your notes.\n\n"
+        f"Call `submit_review` when you have a verdict."
     )
 
 
 def build_review_seed_message(state: StackState, ctx: EngineContext) -> types.Content:
-    """Per-section images + full manifest + advisory spacing signals."""
-    advisories = spacing_advisories(state)
+    """Per-section images, the full manifest, and the stack's own spacing."""
     parts: list[types.Part] = stack_image_parts(state, ctx)
     parts.append(
         types.Part.from_text(
@@ -250,10 +234,9 @@ def build_review_seed_message(state: StackState, ctx: EngineContext) -> types.Co
                 "Final stack manifest (corrected index, filename, position, "
                 "provenance and flags):\n"
                 f"{review_manifest(state)}\n\n"
-                "Advisory spacing signals (arithmetic only — no image has been "
-                "looked at):\n"
-                f"- neighbour intervals: {advisories['interval_table']}\n"
-                f"- monotone spacing fit: {advisories['monotone_fit']}\n\n"
+                "Positions and neighbour spacing (corrected index, filename, "
+                "position in mm, spacing to the next placed section):\n"
+                f"{position_rows(state)}\n\n"
                 f"Run notes so far:\n{_recent_notes(state)}\n\n"
                 "Review the stack, flag what needs flagging, then call "
                 "`submit_review`."

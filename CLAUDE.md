@@ -84,33 +84,40 @@ Two methods live as sibling subpackages with no dependency on each other:
   pass) and `fix` rebuilds the sheet and routes back for a re-check;
   `seed` runs an automatic seeder if one is installed
   (only `deepslice.py`, which is not) and otherwise passes the stack through
-  unplaced; `position.py` is the agent pass that owns placement AND the choice
-  of placement strategy — its prompt is an atlas-agnostic menu (key sections +
-  `interpolate_between`, full coverage via `estimate_slices`, or a mix), not a
-  prescription. Its one external check is the annotation: `atlas_structures_at`
-  / `structure_range` wrap `atlas/landmarks.py`, and `submit_positions` refuses
-  a submission unless its two `end_anchors` (a structure seen at each END of
-  the stack) contain that section's position in their atlas span AND that
-  structure's own span is narrow — `MAX_ANCHOR_SPAN_FRACTION` (8%) of the
+  unplaced; `position.py` is the agent pass that places the stack, and it is
+  deliberately LEAN — no per-slice estimation worker, data-only tool payloads,
+  and a prompt that carries the job, the run's facts, one factual line per
+  tool and the hard constraints, nothing else. No strategies, no rules of
+  thumb, no failure-mode warnings anywhere in the step: full-trace forensics
+  showed the per-slice worker's estimates carried ~no signal on real data
+  while eating 82% of the wall-clock, and every major benchmark failure traced
+  back to advice text the harness injected. Tools report data; the agent
+  reasons. Tools: `view_slices`, `fetch_atlas`, `atlas_structures_at` /
+  `structure_range` (wrapping `atlas/landmarks.py`), `stack_positions`
+  (index, id, `position_mm`, `spacing_to_next_mm` — no nominal comparison, no
+  legend), `interpolate_between` (computes, writes nothing), `set_positions`
+  (writes, returns the same rows) and `submit_positions`. The gates stay,
+  because a constraint stating a fact is not coaching: `submit_positions`
+  refuses a submission unless its two `end_anchors` (a structure seen at each
+  END of the stack) contain that section's position in their atlas span AND
+  that structure's own span is narrow — `MAX_ANCHOR_SPAN_FRACTION` (8%) of the
   atlas's full slicing-axis extent, refused as `STRUCTURE_TOO_BROAD`
   otherwise, so a structure present almost everywhere (cortex, say) cannot
   "prove" a placement. It also refuses `interval_breaks` the agent's own
   written positions do not show (the interval there must exceed 1.5x the
-  stack's median written spacing). Both landmark tools and the end-anchor gate
-  are gated
+  stack's median written spacing). Refusal messages state the numbers that
+  caused them and stop. Both landmark tools and the end-anchor gate are gated
   by `BrainConfig.landmark_tools` (default on; CLI
   `--landmark-tools`/`--no-landmark-tools`), an ablation switch that off,
-  drops the tools, the `end_anchors` argument, and every mention of landmarks
-  from the prompt, reverting to the pre-gate visual end check. Spacing is
-  reported as implied-vs-nominal everywhere, two-sided (implied below nominal =
-  compressed; far above = stretched or sections truly lost) and with the
-  offset-vs-scale rule (both ends off the same way = rigid shift, not a spacing
-  change), and extrapolation never falls back
-  to the nominal interval; `transforms.py` proposes one in-plane
+  drops the tools, the `end_anchors` argument, and the two landmark lines plus
+  the end-anchor constraint from the prompt. Interpolation beyond the
+  outermost fixed points steps at the interval those points imply, never at
+  the nominal one; `transforms.py` proposes one in-plane
   alignment per section — the shared silhouette affine (plain code) for intact
   sections, a per-section interactive agent loop (preview → look → adjust →
   submit) for damaged ones; `review.py` is the final whole-stack consistency
-  agent and can route back to `position` once. `_step_common.py` holds what the
+  agent, gets the same lean prompt and data-only seed, and can route back to
+  `position` once. `_step_common.py` holds what the
   agent steps share (`render_slice`, `view_slices`, manifest, ADK session
   loop); `render_slice` also applies the display-only fluorescence
   preprocessing (`--preprocess auto|none`, `BrainConfig.preprocess`) and, for

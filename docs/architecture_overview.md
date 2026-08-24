@@ -11,8 +11,8 @@ other:
 - `src/langslice/linear/` -- slice-position estimation: the single-slice ADK
   agent, prompts, tools, validators, runners, and trace collection.
 - `src/langslice/linear/whole_brain/` -- the whole-brain estimation engine:
-  stack state, JSON checkpoint, node graph, the survey, positioning, transform
-  and review agents, and advisory spacing signals.
+  stack state, JSON checkpoint, node graph, and the survey, positioning,
+  transform and review agents.
 - `src/langslice/nonlinear/` -- generative-image registration: candidate
   generation, image provider adapters, Elastix runtime, optional ADK review,
   affine/nonlinear result types, and the silhouette-based `quick_affine`
@@ -78,9 +78,9 @@ one shape. Corrections (order, flips), positions, oblique angles, and
 per-slice transforms are proposals -- the host applies them, and the user's
 image files are never modified.
 
-`signals.py` holds the interval interpolation and monotone-spacing fit that
-the old pipeline applied silently; they are now advisory functions the
-positioning and review steps can consult.
+`signals.py` holds the interval interpolation the old pipeline applied
+silently; it is now just the arithmetic behind the positioning step's
+`interpolate_between` tool, which computes and writes nothing.
 
 ## Nonlinear: Image-Gen Registration
 

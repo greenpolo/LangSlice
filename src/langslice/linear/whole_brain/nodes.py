@@ -250,8 +250,11 @@ async def seed(state: StackState, ctx: EngineContext) -> str:
     coronal mouse stack in one shot (see
     :mod:`langslice.linear.whole_brain.deepslice`) but is an optional extra that
     is not wired. Nothing else is prescribed here on purpose — picking key
-    sections needs intimate atlas knowledge, so *which* placement strategy to
-    use is the positioning agent's decision, not this node's.
+    sections needs intimate atlas knowledge, so the positioning agent decides
+    how to place the stack, not this node.
+
+    The note this writes is read back by the positioning step's seed message,
+    so it states a fact and nothing more.
 
     Reads: nothing but the stack size.
     Writes: one note. Positions stay ``None``.
@@ -265,27 +268,20 @@ async def seed(state: StackState, ctx: EngineContext) -> str:
         reason = "deepslice is installed but not wired"
     else:
         reason = "no automatic seeding available"
-    state.notes.append(
-        f"seed: {reason}; placement strategy left to the positioning agent"
-    )
-    ctx.progress(
-        f"[seed] {reason} — every section stays unplaced; the positioning "
-        f"agent chooses its own strategy"
-    )
+    state.notes.append(f"seed: {reason}; the stack is unplaced")
+    ctx.progress(f"[seed] {reason} — every section stays unplaced")
     return ""
 
 
 async def position(state: StackState, ctx: EngineContext) -> str:
     """Place the whole stack against the atlas, with the whole stack in context.
 
-    This step owns the placement strategy — key sections plus interpolation,
-    estimating every section, or whatever mix the stack calls for — and it
-    usually starts from an unplaced stack.
+    The agent decides how to place the stack; the step hands it data tools and
+    the hard constraints, and prescribes nothing.
 
     Reads: any positions already on the stack, ``interval_mm``/``thickness_mm``,
-    every section as its own labelled image, advisory spacing signals from
-    :mod:`langslice.linear.whole_brain.signals`, and single-slice estimation via
-    :func:`langslice.linear.whole_brain.estimation_agents.run_slice_estimation`.
+    every section as its own labelled image, and the atlas annotation through
+    the landmark tools.
     Writes: ``position_mm`` + ``position_source`` ("refined"), ``confidence``,
     ``interval_breaks`` and notes from the submission.
     Routes: "" (transforms). Oblique-angle estimation is not part of this
@@ -325,8 +321,13 @@ async def position(state: StackState, ctx: EngineContext) -> str:
             for note in findings.get("notes") or []
             if str(note).strip()
         )
-        # The end anchors are the evidence the placement rests on — the one
-        # check that came from outside the agent's own arithmetic. Keep them.
+        if state.interval_breaks:
+            state.notes.append(
+                f"position: interval breaks accepted at corrected indices "
+                f"{state.interval_breaks}"
+            )
+        # The end anchors are the one check that came from outside the agent's
+        # own arithmetic; record which ones the gate accepted.
         for anchor in findings.get("end_anchors") or []:
             structure = str(anchor.get("structure", "")).strip()
             if not structure:
@@ -339,8 +340,7 @@ async def position(state: StackState, ctx: EngineContext) -> str:
 
     ctx.progress(
         f"[position] {outcome.tool_calls} tool calls; "
-        f"{outcome.positions_written} section(s) repositioned, "
-        f"{outcome.estimated} section(s) estimated directly, "
+        f"{outcome.positions_written} section(s) positioned, "
         f"{len(state.interval_breaks)} interval break(s)"
         + ("" if findings is not None else "; incomplete")
     )
@@ -383,8 +383,8 @@ async def transforms(state: StackState, ctx: EngineContext) -> str:
 async def review(state: StackState, ctx: EngineContext) -> str:
     """Whole-stack consistency pass: the last look before hand-back.
 
-    Reads: the full positioned, transformed stack plus the advisory spacing
-    signals (interval table, interpolation residuals, monotone fit).
+    Reads: the full positioned, transformed stack plus the positions and
+    neighbour spacing it carries.
     Writes: ``confidence``, ``caveats``, ``notes``.
     Routes: "position" when the agent refuses the stack (the engine bounds
     that loop; on refusal it falls through), else "" (emit). A pass that runs

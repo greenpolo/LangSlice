@@ -72,53 +72,40 @@ per-node cycle limits.
   would place a whole coronal mouse stack in one shot, but it is an optional
   extra that is not installed, so the node writes a note and passes the stack
   through unplaced. Nothing prescribes key sections here on purpose: picking
-  good ones needs intimate atlas knowledge, and a badly chosen key section
-  drags every position interpolated from it.
-- `position` is the second agent pass and it owns the placement strategy. The
-  whole stack is in context, usually with no positions on it. Its prompt is a
-  MENU, not a prescription: key sections plus interpolation, estimating every
-  section, or a mix — the agent picks. The prompt is deliberately
-  atlas-agnostic (no region names, no hard-coded landmarks, no absolute
-  positions) so the same text works for every BrainGlobe atlas, species and
-  plane, and it carries the failure modes that bite whichever strategy is
-  chosen: re-verify disagreeing estimates instead of averaging them or sliding
-  a self-consistent ladder to match a minority reading — but when MANY
-  independent estimates disagree with a tidy ladder by a consistent amount, it
-  is the ladder's absolute placement that is suspect; anchor only where the
-  atlas level is identifiable at a glance; verify both ends of the stack
-  against the atlas annotation before submitting, because a plausible ladder
-  hung at the wrong absolute position looks consistent from the inside; when an
-  end IS off, both ends off in the SAME direction means the ladder needs a rigid
-  shift, not a spacing change (only ends off in OPPOSITE directions indict the
-  spacing); and the realized section spacing is usually LARGER than the nominal
-  cutting interval, so a ladder matching the nominal interval exactly is a
-  warning sign, not a success — while a ladder implying far MORE than nominal
-  (about 1.3x or above) is the opposite warning, a stack stretched to reach
-  something it may not contain.
+  good ones needs intimate atlas knowledge, and that is the positioning
+  agent's decision.
+- `position` is the second agent pass. The whole stack is in context, usually
+  with no positions on it, and the agent reasons its own way to a placement.
+  The step is deliberately lean: the prompt states the job (give every section
+  a position in mm along the slicing axis, report the interval breaks it
+  concludes are real, damaged sections included), the run's facts (section
+  count, plane, atlas and species, valid axis range, the cutting protocol's
+  nominal interval and thickness, whether the order is fixed, what is already
+  placed), one factual line per tool, and the hard constraints — nothing else.
+  No strategy menu, no rules of thumb, no warnings about failure modes: full
+  traces showed every major benchmark failure tracking back to advice the
+  harness injected, so tools and prompts report data and the model does the
+  judging. The prompt stays atlas-agnostic (no region names, no hard-coded
+  landmarks, no absolute positions) so the same text works for every
+  BrainGlobe atlas, species and plane.
   Tools: `view_slices`, `fetch_atlas`, `atlas_structures_at` (what the atlas
   annotation carries at up to 8 levels, by in-plane area share),
   `structure_range` (the slicing-axis span over which up to 10 named structures
-  exist, descendants included — the check that does not come from the agent's
-  own arithmetic; each hit reports the `name` the query actually resolved to
-  plus up to three `also_matches` acronyms it could have meant instead, so a
-  short acronym cannot resolve to the wrong structure unnoticed),
-  `estimate_slices` (up to 8 named sections per call, each a
-  full single-slice sweep, run one after another and reported but not written),
-  `interpolate_between` (fixed points in, one suggestion per section out, not
-  written; beyond the outermost fixed points it steps at the interval those
-  points IMPLY, never at the nominal one, and it refuses a single fixed point),
-  `set_positions` (batch write, clamped to the atlas range, returns the
-  resulting interval table), `get_advisories` (interval table plus a
-  monotone-fit suggestion, both explicitly advisory) and `submit_positions`.
-  The interval table reports the implied mean interval — per contiguous placed
-  stretch and overall — next to the nominal one, with a legend saying which of
-  the two is evidence and reading the comparison BOTH ways: implied below
-  nominal means the stack is compressed, implied far above it (about 1.3x)
-  means it may have been stretched or those sections really are missing, and
-  ends that disagree with the atlas in the same direction call for a rigid
-  shift rather than a spacing change. `submit_positions` is rejected unless
-  every section has a position, its reported `interval_breaks` are visible in
-  the positions it wrote, AND its two `end_anchors` hold:
+  exist, descendants included; each hit reports the `name` the query actually
+  resolved to plus up to three `also_matches` acronyms it could have meant
+  instead, so a short acronym cannot resolve to the wrong structure unnoticed),
+  `stack_positions` (one row per section in corrected order — index, filename,
+  `position_mm` or null, and `spacing_to_next_mm`, the distance to the next
+  placed section), `interpolate_between` (fixed points in, one position per
+  section out, not written; beyond the outermost fixed points it steps at the
+  interval those points imply, and it refuses a single fixed point),
+  `set_positions` (batch write, clamped to the atlas range, returns the same
+  rows `stack_positions` gives) and `submit_positions`. There is no per-slice
+  estimation worker in this step: full-trace forensics found its estimates
+  carried essentially no signal on real data while consuming most of the
+  step's wall-clock. `submit_positions` is rejected unless every section has a
+  position, its reported `interval_breaks` are visible in the positions it
+  wrote, AND its two `end_anchors` hold:
   - `interval_breaks` — each reported index names the section AFTER a gap, and
     the written interval at that neighbour pair must be more than 1.5x the
     stack's own median written spacing. An index whose own numbers show
@@ -137,9 +124,10 @@ per-node cycle limits.
     errors the gate exists to catch (310 of the 839 annotated Allen structures
     still qualify). A refused anchor comes back with the structure's actual
     span (and, for a too-broad one, `span_fraction`) against the proposed
-    position and does not escalate — the agent fixes the placement or names a
-    truthful, specific landmark. The accepted anchors are recorded in the run
-    notes.
+    position and does not escalate. Refusal messages state the facts that
+    caused them ("X spans a-b mm, you placed S at c mm") and stop there — they
+    do not tell the agent what to do about it. The accepted anchors are
+    recorded in the run notes, along with the accepted interval breaks.
 
   Oblique-angle estimation is not part of this step yet.
 
@@ -149,8 +137,8 @@ per-node cycle limits.
   experiments, not a normal deployment knob. Off, `atlas_structures_at` and
   `structure_range` are not registered, `submit_positions` takes no
   `end_anchors` argument (the interval-break check still runs), and the prompt
-  drops every mention of the landmark tools in favor of the older "verify both
-  ends visually" wording.
+  drops the two tool lines and the end-anchor constraint. Everything else in
+  the prompt is identical.
 - `transforms` proposes one in-plane alignment per section, on two routes.
   Intact sections take the plain-code route: the shared silhouette affine
   (`src/langslice/affine.py`) against the atlas section their position names,
@@ -161,9 +149,11 @@ per-node cycle limits.
   adjusts and repeats, then `submit_transform` records the five parameters on
   `slice.interactive_transform`. A failed fit is a caveat, never a failed run.
 - `review` is the last agent pass: the whole finished stack, its manifest, and
-  the advisory spacing signals. It can attach caveats (`flag_slice`) and, once,
-  send the stack back to `position` with notes the next pass reads. A review
-  that runs out of turns approves with a note -- it can never block hand-back.
+  the same positions/spacing rows the positioning step reads. Its prompt gets
+  the same lean treatment — job, run facts, tools, no checklist. It can attach
+  caveats (`flag_slice`) and, once, send the stack back to `position` with
+  notes the next pass reads. A review that runs out of turns approves with a
+  note -- it can never block hand-back.
 - `emit` writes the results JSON (default `<image_folder>/brain_results.json`,
   or `--out`).
 
@@ -181,8 +171,7 @@ images, the `view_slices` images, the contact sheet, the transform previews
 and the silhouette fit -- so dim
 fluorescence reads like the atlas instead of like a black field.
 `--preprocess none` shows the raw sections. Either way this is display only:
-the enhanced pixels are never written back to the user's files, and the
-single-slice estimation worker applies the same setting once, internally.
+the enhanced pixels are never written back to the user's files.
 
 State is checkpointed to `<image_folder>/brain_estimate.json` after every
 node, in the same shape as the results file. `--resume` (default) skips nodes
