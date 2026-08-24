@@ -195,6 +195,66 @@ async def run_nodes(
     return state
 
 
+#: Nodes a checkpoint can be rewound to. Survey/fix/seed are not accepted:
+#: reordering, flips and damage flags are agent findings a rewind cannot
+#: cheaply reproduce, so those stay unsupported.
+REWINDABLE_NODES = ("position", "transforms", "review")
+
+
+def rewind_state(state: StackState, node: str) -> None:
+    """Roll *state* back to just before *node*, in place, for a fresh pass.
+
+    Removes *node* and every node after it (canonical graph order) from
+    ``state.completed_nodes`` and zeroes their ``state.node_cycles`` entries.
+    Also resets the slice-level fields *node* and its downstream nodes wrote,
+    cumulative — rewinding an earlier node clears later nodes' fields too,
+    since their output was derived from what this node produced:
+
+    * ``"position"`` — every slice's ``position_mm``, ``position_source`` and
+      ``confidence``, plus ``state.interval_breaks``.
+    * ``"transforms"`` — every slice's ``affine`` and
+      ``interactive_transform``, and caveats this step added itself
+      (``"affine failed"``, ``"weak affine fit"``, ``"interactive
+      transform"`` prefixes). Other caveats are left alone.
+    * ``"review"`` — nothing slice-level beyond the above: a review pass's
+      ``flag_slice`` caveats carry no fixed prefix, so they are not tracked
+      here and are not removed.
+
+    Survey outputs (flips, damage, corrected order, ``axis_directions``) and
+    ``state.notes`` are never touched — provenance for those is not tracked
+    per-node, so clearing them would be a guess.
+
+    Does not checkpoint; callers persist the result themselves.
+    """
+    if node not in REWINDABLE_NODES:
+        raise ValueError(f"cannot rewind to {node!r}; expected one of {REWINDABLE_NODES}")
+
+    # Imported here: nodes.py imports EngineContext from this module.
+    from langslice.linear.whole_brain.nodes import NODES
+
+    order = [name for name, _ in NODES]
+    cleared = set(order[order.index(node) :])
+    state.completed_nodes = [n for n in state.completed_nodes if n not in cleared]
+    for name in cleared:
+        state.node_cycles[name] = 0
+
+    if node == "position":
+        for record in state.slices:
+            record.position_mm = None
+            record.position_source = ""
+            record.confidence = ""
+        state.interval_breaks = []
+
+    if node in ("position", "transforms"):
+        stale_prefixes = ("affine failed", "weak affine fit", "interactive transform")
+        for record in state.slices:
+            record.affine = None
+            record.interactive_transform = None
+            record.caveats = [c for c in record.caveats if not c.startswith(stale_prefixes)]
+
+    state.notes.append(f"rewound from '{node}' for a fresh pass")
+
+
 async def run_brain(
     config: BrainConfig,
     *,

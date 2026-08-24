@@ -8,12 +8,14 @@ import pytest
 from langslice.linear.whole_brain.checkpoint import load_checkpoint
 from langslice.linear.whole_brain.engine import (
     CYCLE_LIMITS,
+    REWINDABLE_NODES,
     EngineContext,
     Node,
     build_context,
+    rewind_state,
     run_nodes,
 )
-from langslice.linear.whole_brain.state import BrainConfig, StackState
+from langslice.linear.whole_brain.state import BrainConfig, SliceState, StackState
 
 
 def _ctx(tmp_path: Path) -> EngineContext:
@@ -155,3 +157,172 @@ def test_node_failure_names_the_node_and_checkpoints(tmp_path: Path):
     assert saved is not None
     assert saved.notes == ["ingested"]
     assert saved.completed_nodes == ["ingest"]
+
+
+# --- rewind_state ----------------------------------------------------------
+
+
+_ALL_NODES = ["ingest", "survey", "fix", "seed", "position", "transforms", "review", "emit"]
+
+
+def _completed_state() -> StackState:
+    """A checkpoint as if a full run just finished, with something on every field."""
+    return StackState(
+        image_folder="/tmp/brain",
+        atlas="allen_mouse_25um",
+        plane="coronal",
+        axis_directions={"ap": "anterior_to_posterior"},
+        interval_mm=0.2,
+        thickness_mm=0.05,
+        keep_order=False,
+        interval_breaks=[3, 7],
+        notes=["ingest: 2 slices", "survey: clean", "position: done"],
+        contact_sheet="/tmp/brain/contact_sheet.png",
+        slices=[
+            SliceState(
+                id="s1.png",
+                index_original=0,
+                index_corrected=1,
+                flip=True,
+                damaged=True,
+                damage_note="torn cortex",
+                position_mm=1.25,
+                position_source="refined",
+                interactive_transform={"rotation_deg": 2.0},
+                confidence="medium",
+                caveats=[
+                    "affine failed for neighbour fit",
+                    "interactive transform: manual nudge",
+                    "damaged: transform is approximate",
+                ],
+            ),
+            SliceState(
+                id="s2.png",
+                index_original=1,
+                index_corrected=0,
+                position_mm=0.9,
+                position_source="refined",
+                confidence="high",
+                affine=[1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+                caveats=["weak affine fit (silhouette overlap 0.55)"],
+            ),
+        ],
+        completed_nodes=list(_ALL_NODES),
+        node_cycles={name: (2 if name in ("survey", "position") else 1) for name in _ALL_NODES},
+    )
+
+
+def test_rewind_unsupported_node_raises():
+    with pytest.raises(ValueError, match="survey"):
+        rewind_state(_completed_state(), "survey")
+
+
+def test_rewind_position_clears_position_and_downstream_fields():
+    state = _completed_state()
+    rewind_state(state, "position")
+
+    for record in state.slices:
+        assert record.position_mm is None
+        assert record.position_source == ""
+        assert record.confidence == ""
+        assert record.affine is None
+        assert record.interactive_transform is None
+        assert not any(
+            c.startswith(("affine failed", "weak affine fit", "interactive transform"))
+            for c in record.caveats
+        )
+    assert state.interval_breaks == []
+    assert state.notes[-1] == "rewound from 'position' for a fresh pass"
+
+    # Untracked caveat (a review flag_slice free-text note) survives.
+    s1 = state.by_id("s1.png")
+    assert s1 is not None
+    assert "damaged: transform is approximate" in s1.caveats
+
+
+def test_rewind_preserves_survey_outputs():
+    state = _completed_state()
+    rewind_state(state, "position")
+
+    s1 = state.by_id("s1.png")
+    assert s1 is not None
+    assert s1.flip is True
+    assert s1.damaged is True
+    assert s1.damage_note == "torn cortex"
+    assert s1.index_corrected == 1
+    s2 = state.by_id("s2.png")
+    assert s2 is not None
+    assert s2.index_corrected == 0
+    assert state.axis_directions == {"ap": "anterior_to_posterior"}
+    assert state.notes[:3] == ["ingest: 2 slices", "survey: clean", "position: done"]
+
+
+def test_rewind_transforms_leaves_position_alone():
+    state = _completed_state()
+    rewind_state(state, "transforms")
+
+    s1 = state.by_id("s1.png")
+    assert s1 is not None
+    assert s1.position_mm == 1.25
+    assert s1.position_source == "refined"
+    assert s1.confidence == "medium"
+    assert s1.interactive_transform is None
+    assert state.interval_breaks == [3, 7]
+
+    s2 = state.by_id("s2.png")
+    assert s2 is not None
+    assert s2.affine is None
+    assert not any(c.startswith("weak affine fit") for c in s2.caveats)
+
+
+def test_rewind_review_touches_no_slice_fields():
+    state = _completed_state()
+    rewind_state(state, "review")
+
+    s1 = state.by_id("s1.png")
+    assert s1 is not None
+    assert s1.position_mm == 1.25
+    assert s1.interactive_transform == {"rotation_deg": 2.0}
+    s2 = state.by_id("s2.png")
+    assert s2 is not None
+    assert s2.affine == [1.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+
+
+@pytest.mark.parametrize(
+    ("node", "expected_completed"),
+    [
+        ("position", ["ingest", "survey", "fix", "seed"]),
+        ("transforms", ["ingest", "survey", "fix", "seed", "position"]),
+        ("review", ["ingest", "survey", "fix", "seed", "position", "transforms"]),
+    ],
+)
+def test_rewind_trims_completed_nodes_in_graph_order(node, expected_completed):
+    state = _completed_state()
+    rewind_state(state, node)
+    assert state.completed_nodes == expected_completed
+
+
+def test_rewind_zeroes_node_cycles_for_rewound_nodes_only():
+    state = _completed_state()
+    rewind_state(state, "position")
+
+    for name in ("position", "transforms", "review", "emit"):
+        assert state.node_cycles[name] == 0
+    assert state.node_cycles["ingest"] == 1
+    assert state.node_cycles["survey"] == 2
+    assert state.node_cycles["fix"] == 1
+    assert state.node_cycles["seed"] == 1
+
+
+def test_rewind_trims_completed_nodes_regardless_of_list_order():
+    """completed_nodes need not be in canonical order; the cut is by node identity."""
+    state = _completed_state()
+    state.completed_nodes = [
+        "fix", "ingest", "survey", "position", "seed", "review", "transforms", "emit",
+    ]
+    rewind_state(state, "transforms")
+    assert set(state.completed_nodes) == {"ingest", "survey", "fix", "seed", "position"}
+
+
+def test_rewindable_nodes_are_position_transforms_review():
+    assert REWINDABLE_NODES == ("position", "transforms", "review")

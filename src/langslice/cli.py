@@ -447,12 +447,6 @@ def _add_estimate_brain_parser(subparsers: argparse._SubParsersAction) -> None:
         help="Resume from the folder checkpoint, skipping completed nodes",
     )
     p.add_argument(
-        "--fresh",
-        dest="resume",
-        action="store_false",
-        help="Ignore any existing checkpoint and start over",
-    )
-    p.add_argument(
         "--stop-after",
         default=None,
         metavar="NODE",
@@ -463,12 +457,36 @@ def _add_estimate_brain_parser(subparsers: argparse._SubParsersAction) -> None:
         help="Run up to and including NODE, checkpoint, and stop "
              "(re-run to continue from there)",
     )
+    fresh_group = p.add_mutually_exclusive_group()
+    fresh_group.add_argument(
+        "--fresh",
+        dest="resume",
+        action="store_false",
+        help="Ignore any existing checkpoint and start over",
+    )
+    fresh_group.add_argument(
+        "--rerun-from",
+        default=None,
+        metavar="NODE",
+        choices=["position", "transforms", "review"],
+        help="Rewind an existing checkpoint's NODE and everything after it "
+             "(clearing what they wrote), then resume from there. Requires "
+             "an existing checkpoint; mutually exclusive with --fresh. "
+             "Composable with --stop-after",
+    )
 
 
 def _run_estimate_brain(args: argparse.Namespace) -> None:
     import asyncio
+    import os
 
     from langslice.linear.whole_brain import BrainConfig, run_brain
+    from langslice.linear.whole_brain.checkpoint import (
+        default_checkpoint_path,
+        load_checkpoint,
+        save_checkpoint,
+    )
+    from langslice.linear.whole_brain.engine import rewind_state
 
     config = BrainConfig(
         image_folder=args.image_folder,
@@ -482,6 +500,19 @@ def _run_estimate_brain(args: argparse.Namespace) -> None:
         resume=args.resume,
         preprocess=args.preprocess,
     )
+
+    if args.rerun_from:
+        checkpoint_path = default_checkpoint_path(os.path.abspath(config.image_folder))
+        state = load_checkpoint(checkpoint_path)
+        if state is None:
+            raise SystemExit(
+                f"--rerun-from requires an existing checkpoint; none found at "
+                f"{checkpoint_path}"
+            )
+        rewind_state(state, args.rerun_from)
+        save_checkpoint(state, checkpoint_path)
+        config.resume = True
+        print(f"Rewound checkpoint from '{args.rerun_from}' -> {checkpoint_path}")
 
     print(f"Atlas: {config.atlas}  Plane: {config.plane}")
     print(f"Interval: {config.interval_um}um  Thickness: {config.thickness_um}um")

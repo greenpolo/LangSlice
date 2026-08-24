@@ -2,8 +2,10 @@
 
 from langslice.linear.whole_brain.engine import (
     CYCLE_LIMITS,
+    REWINDABLE_NODES,
     EngineContext,
     build_context,
+    rewind_state,
     run_brain,
     run_nodes,
 )
@@ -13,9 +15,11 @@ __all__ = [
     "BrainConfig",
     "CYCLE_LIMITS",
     "EngineContext",
+    "REWINDABLE_NODES",
     "SliceState",
     "StackState",
     "build_context",
+    "rewind_state",
     "run_brain",
     "run_nodes",
 ]

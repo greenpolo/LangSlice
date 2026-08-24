@@ -18,7 +18,7 @@ position as an argument and does not care where it came from, so it can follow
 
 ```bash
 langslice linear estimate <image> [--atlas ...] [--model ...] [--plane ...]
-langslice linear estimate-brain <image_folder> [--atlas ...] [--plane ...] [--interval 200] [--thickness 50] [--keep-order|--no-keep-order] [--model ...] [--preprocess auto|none] [--out ...] [--resume|--fresh] [--stop-after NODE]
+langslice linear estimate-brain <image_folder> [--atlas ...] [--plane ...] [--interval 200] [--thickness 50] [--keep-order|--no-keep-order] [--model ...] [--preprocess auto|none] [--out ...] [--resume|--fresh|--rerun-from NODE] [--stop-after NODE]
 ```
 
 Single-slice estimation runs through the ADK harness. The agent surface is
@@ -111,6 +111,17 @@ single-slice estimation worker applies the same setting once, internally.
 State is checkpointed to `<image_folder>/brain_estimate.json` after every
 node, in the same shape as the results file. `--resume` (default) skips nodes
 the checkpoint lists as complete; `--fresh` re-runs the whole graph.
+
+`--rerun-from {position,transforms,review}` rewinds an existing checkpoint to
+just before that node and resumes from there, so a single step can be
+re-benchmarked without re-running (and re-paying for) the agent steps ahead of
+it. It clears that node's own output plus everything derived from it --
+`position` also clears `transforms`, since the transform step reads
+positions -- but leaves `survey`'s findings (order, flips, damage) untouched:
+those are not cheaply reproducible, so rewinding `survey`/`fix`/`seed` is not
+supported. Requires a checkpoint to already exist; mutually exclusive with
+`--fresh`; composes with `--stop-after` to run exactly one rewound node and
+stop.
 
 ## Linear: Quick Affine
 
