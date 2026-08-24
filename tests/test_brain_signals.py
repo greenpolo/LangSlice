@@ -1,8 +1,8 @@
-"""Advisory spacing signals: gap interpolation and the monotone fit."""
+"""Position arithmetic: gap interpolation."""
 
 import pytest
 
-from langslice.linear.whole_brain.signals import interpolate_positions, monotone_fit
+from langslice.linear.whole_brain.signals import interpolate_positions
 
 
 def test_interpolate_between_two_knowns():
@@ -31,59 +31,3 @@ def test_interpolate_needs_one_known():
 
 def test_interpolate_empty_is_empty():
     assert interpolate_positions([], interval_mm=0.2) == []
-
-
-def test_monotone_fit_leaves_monotone_input_alone():
-    fitted = monotone_fit(
-        [2.0, 3.0, 4.0, 5.0, 6.0], interval_mm=1.0, thickness_mm=0.05
-    )
-    assert fitted == sorted(fitted)
-    for original, value in zip([2.0, 3.0, 4.0, 5.0, 6.0], fitted, strict=True):
-        assert abs(original - value) < 0.5
-
-
-def test_monotone_fit_tames_an_outlier():
-    fitted = monotone_fit(
-        [2.0, 3.0, 8.0, 5.0, 6.0], interval_mm=1.0, thickness_mm=0.05
-    )
-    assert fitted == sorted(fitted)
-    assert fitted[2] < 7.0
-
-
-def test_monotone_fit_enforces_minimum_spacing():
-    fitted = monotone_fit(
-        [1.0, 1.01, 1.02, 1.03, 2.0], interval_mm=0.2, thickness_mm=0.05
-    )
-    for a, b in zip(fitted, fitted[1:], strict=False):
-        assert b - a >= 0.05 - 1e-6
-
-
-def test_monotone_fit_corrects_non_monotone_input():
-    fitted = monotone_fit(
-        [5.0, 3.0, 4.0, 2.0, 6.0], interval_mm=1.0, thickness_mm=0.05
-    )
-    assert fitted == sorted(fitted)
-
-
-def test_monotone_fit_weights_pull_toward_trusted_points():
-    positions = [2.0, 3.0, 8.0, 5.0, 6.0]
-    trusted = monotone_fit(
-        positions,
-        interval_mm=1.0,
-        thickness_mm=0.05,
-        weights=[1.0, 1.0, 20.0, 1.0, 1.0],
-    )
-    plain = monotone_fit(positions, interval_mm=1.0, thickness_mm=0.05)
-    assert trusted[2] > plain[2]
-
-
-def test_monotone_fit_short_inputs_pass_through():
-    assert monotone_fit([], interval_mm=1.0, thickness_mm=0.05) == []
-    assert monotone_fit([3.0], interval_mm=1.0, thickness_mm=0.05) == [3.0]
-
-
-def test_monotone_fit_rejects_mismatched_weights():
-    with pytest.raises(ValueError, match="weights length"):
-        monotone_fit(
-            [1.0, 2.0], interval_mm=1.0, thickness_mm=0.05, weights=[1.0]
-        )

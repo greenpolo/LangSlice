@@ -60,10 +60,9 @@ def test_seed_passes_the_stack_through_unplaced(tmp_path: Path):
     assert all(s.position_mm is None for s in state.slices)
     assert all(s.position_source == "" for s in state.slices)
     assert any("no automatic seeding available" in note for note in state.notes)
-    assert any(
-        "placement strategy left to the positioning agent" in note
-        for note in state.notes
-    )
+    # The note is read back by the positioning step, so it states a fact only.
+    assert any("the stack is unplaced" in note for note in state.notes)
+    assert not any("strategy" in note for note in state.notes)
     assert any("unplaced" in message for message in messages)
 
 

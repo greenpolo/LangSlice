@@ -1,18 +1,21 @@
 """The positioning agent: place the whole stack, with the whole stack in view.
 
-This step owns placement, strategy included. The stack usually arrives
-unplaced: nothing upstream picks key sections, because picking good ones needs
-intimate atlas knowledge and a badly chosen key section poisons every position
-interpolated from it. Instead the agent gets the full toolkit — look at
-sections, fetch atlas levels, estimate named sections with the single-slice
-worker, interpolate between points it trusts, read the spacing arithmetic —
-plus a menu of strategies in its prompt, and decides for itself.
+The stack arrives unplaced. The agent gets data tools — look at sections, fetch
+atlas levels, read the atlas annotation, interpolate between points it fixes,
+read back the positions it has written — and reasons its own way to a placement.
+Nothing here prescribes an approach, and no tool payload carries an opinion:
+tools report numbers and the agent judges them.
 
 Everything the agent writes goes through ``set_positions`` onto the
 :class:`~langslice.linear.whole_brain.state.StackState` the node handed in, so
 a pass that runs out of turns still leaves its accepted positions behind.
-``estimate_slices`` and ``interpolate_between`` deliberately do NOT write: they
-report, and the agent decides what to keep.
+``interpolate_between`` deliberately does NOT write: it computes, and the agent
+decides what to keep.
+
+The refusals in ``submit_positions`` are the exception, and they are
+constraints, not advice: a submission that contradicts the atlas annotation, or
+reports a gap the agent's own numbers do not contain, is rejected with the
+facts that rejected it.
 """
 
 from __future__ import annotations
@@ -37,28 +40,17 @@ from langslice.linear.whole_brain._step_common import (
     build_stack_manifest,
     make_view_slices,
     run_agent_session,
-    split_known_ids,
     stack_image_parts,
 )
 from langslice.linear.whole_brain.engine import EngineContext
-from langslice.linear.whole_brain.estimation_agents import run_slice_estimation
-from langslice.linear.whole_brain.signals import interpolate_positions, monotone_fit
-from langslice.linear.whole_brain.state import (
-    SliceState,
-    StackState,
-    apply_confidence,
-)
+from langslice.linear.whole_brain.signals import interpolate_positions
+from langslice.linear.whole_brain.state import StackState, apply_confidence
 from langslice.space import Plane
 
 logger = logging.getLogger(__name__)
 
-#: Model turns (counted as tool calls) one positioning pass may spend. This
-#: step now owns strategy as well as placement, so the budget is generous.
+#: Model turns (counted as tool calls) one positioning pass may spend.
 DEFAULT_POSITION_MAX_ITERATIONS = 40
-
-#: Sections one ``estimate_slices`` call may estimate. Each one is a full
-#: single-slice agent session, so the cap is about cost, not correctness.
-MAX_ESTIMATE_SLICES = 8
 
 #: Levels one ``atlas_structures_at`` call may report on.
 MAX_STRUCTURE_LEVELS = 8
@@ -89,29 +81,12 @@ _PLANE_AXIS_LABEL: dict[str, str] = {
     "horizontal": "DV",
 }
 
-_NUDGE_NO_TOOL_ON = (
-    "You did not call a tool. Do not answer in prose: compare sections against "
-    "the atlas with `view_slices` and `fetch_atlas`, check what the atlas says "
-    "is there with `atlas_structures_at` and `structure_range`, estimate "
-    "sections with `estimate_slices`, write positions with `set_positions`, "
-    "and finish with `submit_positions`."
+_NUDGE_NO_TOOL = (
+    "You did not call a tool. Continue with the tools rather than in prose; "
+    "when every section has a position, call `submit_positions`."
 )
-_NUDGE_NO_TOOL_OFF = (
-    "You did not call a tool. Do not answer in prose: compare sections against "
-    "the atlas with `view_slices` and `fetch_atlas`, estimate sections with "
-    "`estimate_slices`, write positions with `set_positions`, and finish with "
-    "`submit_positions`."
-)
-_NUDGE_CONTINUE_ON = (
-    "Please continue placing the stack. Check anything still unresolved, write "
-    "the positions you have settled on with `set_positions`, verify both ends "
-    "against the atlas with `structure_range`, then call `submit_positions` "
-    "with an end anchor for the first and last section."
-)
-_NUDGE_CONTINUE_OFF = (
-    "Please continue placing the stack. Check anything still unresolved, write "
-    "the positions you have settled on with `set_positions`, then call "
-    "`submit_positions`."
+_NUDGE_CONTINUE = (
+    "Continue; when every section has a position, call `submit_positions`."
 )
 
 
@@ -128,7 +103,6 @@ class PositionOutcome:
 
     findings: dict[str, Any] | None = None
     positions_written: int = 0
-    estimated: int = 0
     tool_calls: int = 0
     turns: int = 0
 
@@ -140,161 +114,47 @@ class PositionToolBox:
     tools: list[Any] = field(default_factory=list)
     submission: dict[str, Any] = field(default_factory=dict)
     written: list[str] = field(default_factory=list)
-    estimated: list[str] = field(default_factory=list)
 
 
-# --- spacing views -------------------------------------------------------
+# --- the stack's own numbers ---------------------------------------------
 
 
-#: Legend carried with every interval table. The nominal interval is the one
-#: number in the run that is NOT evidence, and BOTH ways of disagreeing with
-#: it are failures worth naming: a one-sided legend that only warned about
-#: compression was read as licence to stretch a stack by 22%.
-INTERVAL_LEGEND = (
-    "nominal_interval_mm is the cutting protocol, not a measurement; "
-    "implied_interval_mm is what your own placed positions say the spacing "
-    "actually is. Read the comparison in BOTH directions. Implied BELOW "
-    "nominal: sections cannot sit closer together than they were cut, so the "
-    "stack is COMPRESSED and its ends have been pulled inward. Implied a "
-    "little ABOVE nominal: normal and expected, because sections get lost, "
-    "torn or skipped during collection. Implied FAR above nominal (more than "
-    "about 1.3x) is the opposite warning, not a confirmation: either the "
-    "stack has been STRETCHED to reach something it does not really contain, "
-    "or that many sections really are missing — verify against the atlas "
-    "before believing it. OFFSET IS NOT SCALE: when BOTH ends of the stack "
-    "disagree with the atlas in the SAME direction, the placement needs a "
-    "rigid SHIFT and the spacing is fine; only ends that disagree in "
-    "OPPOSITE directions mean the spacing itself is wrong."
-)
+def position_rows(state: StackState) -> list[dict[str, Any]]:
+    """One row per section in corrected order: index, id, position, spacing.
 
+    ``position_mm`` is ``None`` for a section that has none.
+    ``spacing_to_next_mm`` is the distance to the next section in corrected
+    order that carries a position, and ``None`` when this section has no
+    position or no placed section follows it.
 
-def _placed_runs(ordered: list[SliceState]) -> list[list[SliceState]]:
-    """Contiguous stretches of positioned sections, in corrected order."""
-    runs: list[list[SliceState]] = []
-    current: list[SliceState] = []
-    for record in ordered:
-        if record.position_mm is None:
-            if len(current) > 1:
-                runs.append(current)
-            current = []
-            continue
-        current.append(record)
-    if len(current) > 1:
-        runs.append(current)
-    return runs
-
-
-def interval_table(state: StackState) -> dict[str, Any]:
-    """Neighbour spacing in corrected order, implied interval beside the nominal.
-
-    ``rows`` is one entry per section (index, id, position, source, delta to
-    the next). Around them sit the two numbers that decide absolute placement:
-    the NOMINAL interval the cutting protocol claims, and the interval the
-    placed sections actually IMPLY — over each contiguous placed stretch and
-    over the stack as a whole.
+    Data only: no comparison against the nominal interval, no verdict. The
+    agent does its own arithmetic on these numbers.
     """
     ordered = state.in_order()
     rows: list[dict[str, Any]] = []
-    for position, record in enumerate(ordered):
-        following = ordered[position + 1] if position + 1 < len(ordered) else None
-        delta = (
-            round(following.position_mm - record.position_mm, 3)
-            if following is not None
-            and following.position_mm is not None
-            and record.position_mm is not None
-            else None
-        )
+    for index, record in enumerate(ordered):
+        here = record.position_mm
+        spacing: float | None = None
+        if here is not None:
+            following = next(
+                (
+                    value
+                    for r in ordered[index + 1 :]
+                    if (value := r.position_mm) is not None
+                ),
+                None,
+            )
+            if following is not None:
+                spacing = round(following - here, 3)
         rows.append(
             {
                 "index": record.index_corrected,
                 "id": record.id,
-                "position_mm": (
-                    round(record.position_mm, 3)
-                    if record.position_mm is not None
-                    else None
-                ),
-                "source": record.position_source,
-                "delta_to_next_mm": delta,
+                "position_mm": round(here, 3) if here is not None else None,
+                "spacing_to_next_mm": spacing,
             }
         )
-
-    stretches: list[dict[str, Any]] = []
-    total_span = 0.0
-    total_gaps = 0
-    for run in _placed_runs(ordered):
-        span = abs(float(run[-1].position_mm) - float(run[0].position_mm))  # type: ignore[arg-type]
-        gaps = len(run) - 1
-        total_span += span
-        total_gaps += gaps
-        stretches.append(
-            {
-                "from_index": run[0].index_corrected,
-                "to_index": run[-1].index_corrected,
-                "sections": len(run),
-                "implied_interval_mm": round(span / gaps, 3),
-            }
-        )
-
-    return {
-        "rows": rows,
-        "nominal_interval_mm": round(state.interval_mm, 3),
-        "implied_interval_mm": (
-            round(total_span / total_gaps, 3) if total_gaps else None
-        ),
-        "implied_by_stretch": stretches,
-        "legend": INTERVAL_LEGEND,
-    }
-
-
-def _positioned(ordered: list[SliceState]) -> list[SliceState]:
-    return [record for record in ordered if record.position_mm is not None]
-
-
-def spacing_advisories(state: StackState) -> dict[str, Any]:
-    """The two arithmetic spacing views of the stack, as one dict.
-
-    Shared with the review step: both show the agent the same numbers, and
-    both label them advisory — nothing here has looked at an image.
-    """
-    return {
-        "status": "ok",
-        "advisory": (
-            "Suggestions computed from the current numbers only. Nothing here "
-            "has looked at a section image; verify before acting."
-        ),
-        "interval_table": interval_table(state),
-        "monotone_fit": _monotone_suggestion(state),
-    }
-
-
-def _monotone_suggestion(state: StackState) -> dict[str, Any]:
-    """A monotone, minimum-spacing curve through the current positions."""
-    ordered = _positioned(state.in_order())
-    if len(ordered) < 3:
-        return {"status": "unavailable", "reason": "fewer than three positioned sections"}
-    positions = [float(record.position_mm) for record in ordered]  # type: ignore[arg-type]
-    # monotone_fit fits an increasing curve; a stack cut back-to-front is
-    # fitted on the negated positions and flipped back.
-    sign = 1.0 if positions[-1] >= positions[0] else -1.0
-    try:
-        fitted = monotone_fit(
-            [sign * value for value in positions],
-            interval_mm=state.interval_mm,
-            thickness_mm=state.thickness_mm,
-        )
-    except Exception as exc:  # a bad fit must not take the session down
-        logger.warning("position: monotone fit failed: %s", exc)
-        return {"status": "unavailable", "reason": str(exc)}
-    rows = [
-        {
-            "id": record.id,
-            "position_mm": round(value, 3),
-            "suggested_mm": round(sign * fit, 3),
-            "delta_mm": round(sign * fit - value, 3),
-        }
-        for record, value, fit in zip(ordered, positions, fitted, strict=True)
-    ]
-    return {"status": "ok", "rows": rows}
+    return rows
 
 
 # --- the end-anchor gate -------------------------------------------------
@@ -337,12 +197,10 @@ def check_end_anchors(
             "error": "END_ANCHORS_REQUIRED",
             "required_ids": required,
             "message": (
-                "submit_positions needs one end anchor for each END of the "
+                "submit_positions requires one end anchor for each END of the "
                 f"corrected order — {required[0]} and {required[-1]} — as "
                 '{"id": ..., "structure": "<acronym>", "note": "<what you '
-                'saw>"}. Name a structure you can SEE in that section, and '
-                "check with `structure_range` that the atlas agrees it exists "
-                "where you have placed the section."
+                'saw>"}.'
             ),
         }
 
@@ -364,10 +222,7 @@ def check_end_anchors(
                     "structure": query,
                     "error": "UNKNOWN_STRUCTURE",
                     "near_misses": near_misses(atlas, query) if query else [],
-                    "reason": (
-                        f"no structure in {state.atlas} matches {query!r}; name "
-                        "one by its acronym or its full name."
-                    ),
+                    "reason": f"no structure in {state.atlas} matches {query!r}.",
                 }
             )
             continue
@@ -380,8 +235,7 @@ def check_end_anchors(
                     "error": "STRUCTURE_NOT_ANNOTATED",
                     "reason": (
                         f"{structure['acronym']} ({structure['name']}) has no "
-                        f"voxels in the {state.atlas} annotation, so it cannot "
-                        "anchor anything. Pick a structure the atlas draws."
+                        f"voxels in the {state.atlas} annotation."
                     ),
                 }
             )
@@ -399,11 +253,9 @@ def check_end_anchors(
                     "error": "STRUCTURE_TOO_BROAD",
                     "reason": (
                         f"{structure['acronym']} spans {span_fraction * 100:.0f}% "
-                        f"of the slicing axis ({hi - lo:.2f} mm), more than the "
-                        f"{MAX_ANCHOR_SPAN_FRACTION * 100:.0f}% an end anchor "
-                        "may cover — a structure that wide cannot localize a "
-                        "section any better than the error you are trying to "
-                        "find. Name a structure specific to this level."
+                        f"of the slicing axis ({hi - lo:.2f} mm); an end anchor "
+                        f"may span at most "
+                        f"{MAX_ANCHOR_SPAN_FRACTION * 100:.0f}%."
                     ),
                 }
             )
@@ -419,10 +271,9 @@ def check_end_anchors(
                     "error": "OUTSIDE_STRUCTURE_SPAN",
                     "reason": (
                         f"{structure['acronym']} exists from {lo:.3f} to "
-                        f"{hi:.3f} mm along the slicing axis, but you placed "
-                        f"{slice_id} at {position:.3f} mm — outside that span "
-                        f"(tolerance {tolerance:.3f} mm). Either the placement "
-                        "is wrong or the structure is not what you saw."
+                        f"{hi:.3f} mm along the slicing axis; you placed "
+                        f"{slice_id} at {position:.3f} mm, outside that span "
+                        f"(tolerance {tolerance:.3f} mm)."
                     ),
                 }
             )
@@ -434,12 +285,8 @@ def check_end_anchors(
         "error": "END_ANCHOR_FAILED",
         "failures": failures,
         "message": (
-            f"The atlas contradicts {len(failures)} of your end anchors, so "
-            "nothing was submitted. A placement that a structure's existence "
-            "range rules out is wrong, full stop: move the section into the "
-            "structure's span, or name a structure that is really there. Do "
-            "not resubmit the same numbers with a different structure unless "
-            "you have looked again."
+            f"{len(failures)} end anchor(s) do not hold against the "
+            f"{state.atlas} annotation; nothing was submitted."
         ),
     }
 
@@ -454,9 +301,8 @@ def _missing_positions_error(state: StackState) -> dict[str, Any] | None:
         "error": "MISSING_POSITIONS",
         "missing_ids": missing,
         "message": (
-            f"{len(missing)} section(s) still have no position. Every "
-            "section needs one, damaged sections included: write them "
-            "with `set_positions`, then submit again."
+            f"{len(missing)} section(s) have no position. submit_positions "
+            "requires a position for every section, damaged ones included."
         ),
     }
 
@@ -507,9 +353,9 @@ def check_interval_breaks(state: StackState, breaks: Any) -> dict[str, Any] | No
                     "index": index,
                     "error": "NOT_A_GAP",
                     "reason": (
-                        f"corrected index {index} is not a section with a "
-                        "section before it, so there is no interval there. A "
-                        "break index is the index of the section AFTER the gap."
+                        f"corrected index {index} has no section before it, so "
+                        "there is no interval there; a break index names the "
+                        "section AFTER the gap."
                     ),
                 }
             )
@@ -526,11 +372,9 @@ def check_interval_breaks(state: StackState, breaks: Any) -> dict[str, Any] | No
                 "median_interval_mm": round(median, 3),
                 "between": [before.id, after.id],
                 "reason": (
-                    f"you placed {before.id} and {after.id} {written:.3f} mm "
-                    f"apart, against a median written spacing of "
-                    f"{median:.3f} mm. That is not a break. Either move the "
-                    "sections so the positions show the gap you saw, or drop "
-                    f"index {index} from interval_breaks."
+                    f"{before.id} and {after.id} are {written:.3f} mm apart in "
+                    f"the positions you wrote; the stack's median written "
+                    f"spacing is {median:.3f} mm."
                 ),
             }
         )
@@ -542,11 +386,10 @@ def check_interval_breaks(state: StackState, breaks: Any) -> dict[str, Any] | No
         "error": "INTERVAL_BREAKS_UNSUPPORTED",
         "failures": failures,
         "message": (
-            f"{len(failures)} of your reported interval breaks are not in the "
-            "positions you wrote, so nothing was submitted. A break is a "
-            "claim about the spacing on THIS stack: report only the indices "
-            f"where your own written interval is more than "
-            f"{INTERVAL_BREAK_MIN_RATIO:g}x the stack's median."
+            f"{len(failures)} reported interval break(s) are not in the "
+            "positions you wrote; nothing was submitted. A break index is "
+            f"accepted only where the written interval exceeds "
+            f"{INTERVAL_BREAK_MIN_RATIO:g}x the stack's median written spacing."
         ),
     }
 
@@ -577,12 +420,7 @@ def build_position_tools(
     if landmark_tools:
 
         def atlas_structures_at(positions_mm: list[float]) -> dict[str, Any]:
-            """What the ATLAS says is present at up to 8 levels along the slicing axis.
-
-            Read straight out of the atlas annotation volume — not a model opinion
-            and not arithmetic over your own writes. Use it two ways: to check what
-            anatomy should be there at a level you are considering, and to find
-            where a structure you can SEE in the tissue can and cannot be.
+            """What the atlas annotation carries at up to 8 levels along the slicing axis.
 
             Args:
                 positions_mm: Positions along the slicing axis (max 8 per call).
@@ -628,9 +466,8 @@ def build_position_tools(
                 "status": "ok",
                 "levels": levels,
                 "note": (
-                    "Structures the atlas annotation carries at each level, by "
-                    "share of the section's tissue area. Anything you SEE that "
-                    "this list rules out means the level is wrong."
+                    "Structures the atlas annotation carries at each level, "
+                    "ordered by share of the section's in-plane area."
                 ),
             }
 
@@ -638,9 +475,7 @@ def build_position_tools(
             """Where along the slicing axis each named structure exists, at all.
 
             The span covers the structure and everything under it in the atlas
-            hierarchy. A section placed outside a span cannot contain that
-            structure — this is how you check an absolute placement against
-            something other than your own spacing arithmetic.
+            hierarchy.
 
             Args:
                 acronyms: Structure acronyms, or full structure names (max 10 per
@@ -722,19 +557,28 @@ def build_position_tools(
                 "skipped": [str(a) for a in list(acronyms)[MAX_STRUCTURE_QUERIES:]],
                 "note": (
                     "Spans include the structure's descendants, in atlas-native mm "
-                    "along the slicing axis. `name` is the structure your query "
-                    "actually resolved to — read it. `also_matches` lists other "
-                    "structures your query could have meant; if one of those is "
-                    "what you saw, query it by its own acronym."
+                    "along the slicing axis. `name` is the structure the query "
+                    "resolved to; `also_matches` lists other structures the same "
+                    "query matched."
                 ),
             }
+
+    def stack_positions() -> dict[str, Any]:
+        """The stack's current positions and neighbour spacing, in corrected order.
+
+        Returns:
+            One row per section: corrected index, filename, ``position_mm``
+            (null when the section has none) and ``spacing_to_next_mm``, the
+            distance to the next placed section (null when none follows).
+        """
+        return {"status": "ok", "rows": position_rows(state)}
 
     def set_positions(entries: list[dict[str, Any]]) -> dict[str, Any]:
         """Write positions for one or more sections. Batch: one call, many sections.
 
-        Positions are in atlas-native millimetres along the slicing axis.
-        Anything outside the atlas range is clamped and reported back as a
-        warning. Calling this again for the same section overwrites it.
+        Positions are in atlas-native millimetres along the slicing axis. A
+        value outside the atlas range is clamped and reported back. Writing a
+        section again overwrites its position.
 
         Args:
             entries: ``[{"id": "<filename>", "position_mm": <number>,
@@ -743,8 +587,8 @@ def build_position_tools(
 
         Returns:
             Which sections were written, which values were clamped, unknown
-            ids, and the resulting neighbour-interval table so you can see the
-            spacing your edit produced.
+            ids, and the same rows ``stack_positions`` returns, as they stand
+            after the write.
         """
         if not entries:
             return {"status": "error", "error": "BAD_ARGS"}
@@ -788,7 +632,7 @@ def build_position_tools(
             "unknown_ids": unknown,
             "rejected": rejected,
             "clamped": clamped,
-            "interval_table": interval_table(state),
+            "rows": position_rows(state),
         }
         if clamped:
             result["warning"] = (
@@ -799,106 +643,22 @@ def build_position_tools(
             result["error"] = "NOTHING_WRITTEN"
         return result
 
-    async def estimate_slices(slice_ids: list[str]) -> dict[str, Any]:
-        """Estimate named sections independently against the whole atlas.
-
-        Each section gets its own full atlas sweep by an independent estimator
-        that sees only that section — no stack context, no neighbours. This is
-        how you place key sections, or resolve a section you cannot place by
-        eye. It is the slow, expensive tool: one sweep per section, run one
-        after another, up to 8 sections per call.
-
-        Nothing is written. Judge the numbers against each other and against
-        the stack — independent estimates disagree, and the disagreement is
-        information — then write what you accept with `set_positions`.
-
-        Args:
-            slice_ids: Filenames from the stack manifest (max 8 per call).
-
-        Returns:
-            One entry per section: its estimated position and the estimator's
-            reasoning, or an error for that section if its estimate failed.
-        """
-        if not slice_ids:
-            return {"status": "error", "error": "BAD_ARGS"}
-        requested = list(slice_ids)
-        wanted, unknown = split_known_ids(state, requested[:MAX_ESTIMATE_SLICES])
-        if not wanted:
-            return {"status": "error", "error": "UNKNOWN_SLICE_IDS", "unknown": unknown}
-
-        estimates: list[dict[str, Any]] = []
-        for slice_id in wanted:
-            record = state.by_id(slice_id)
-            assert record is not None
-            current = (
-                round(record.position_mm, 3) if record.position_mm is not None else None
-            )
-            try:
-                result = await run_slice_estimation(
-                    image_path=ctx.image_path(record.id),
-                    atlas_name=state.atlas,
-                    plane=state.plane,
-                    model_name=ctx.model,
-                    apply_clahe=ctx.config.preprocess == "auto",
-                )
-            except Exception as exc:
-                logger.warning("position: estimate failed for %s: %s", record.id, exc)
-                estimates.append(
-                    {
-                        "id": record.id,
-                        "status": "error",
-                        "error": "ESTIMATE_FAILED",
-                        "message": str(exc),
-                    }
-                )
-                continue
-            box.estimated.append(record.id)
-            estimates.append(
-                {
-                    "id": record.id,
-                    "status": "ok",
-                    "position_mm": round(float(result.position_mm), 3),
-                    "reasoning": result.reasoning,
-                    "current_position_mm": current,
-                }
-            )
-
-        return {
-            "status": "ok" if any(e["status"] == "ok" for e in estimates) else "error",
-            "estimates": estimates,
-            "unknown_ids": unknown,
-            "skipped_ids": requested[MAX_ESTIMATE_SLICES:],
-            "note": (
-                "Nothing was written. Call `set_positions` for the estimates "
-                "you accept."
-            ),
-        }
-
     def interpolate_between(fixed: list[dict[str, Any]]) -> dict[str, Any]:
-        """Suggest positions for every other section from points you fix.
+        """Compute positions for every section from two or more points you fix.
 
         Straight-line interpolation in corrected stack order: between two fixed
-        points the spacing is spread evenly, and beyond the outermost ones it
-        steps by the interval those fixed points IMPLY — never by the nominal
-        interval, which would quietly compress the ends of the stack back onto
-        the cutting protocol. Two fixed points are the minimum: one cannot
-        place a stack, only offset it.
-
-        It is arithmetic — it has never looked at an image and knows nothing
-        about sections lost during collection, so a stretch where the anatomy
-        advances faster than the suggestion says is exactly where you should
-        look.
-
-        Nothing is written. Write what you accept with `set_positions`.
+        points the spacing is spread evenly, and beyond the outermost fixed
+        points it steps by the interval those points imply. At least two fixed
+        points are required. Nothing is written.
 
         Args:
             fixed: The points to interpolate between, as
-                ``[{"id": "<filename>", "position_mm": <number>}]``. At least
-                two, ideally one near each end of the stack.
+                ``[{"id": "<filename>", "position_mm": <number>}]``.
 
         Returns:
-            One suggested position per section, each marked as fixed by you or
-            interpolated, plus the implied interval used beyond the ends.
+            One position per section, each marked ``fixed`` or
+            ``interpolated``, plus the interval used beyond the outermost
+            fixed points.
         """
         if not fixed:
             return {"status": "error", "error": "BAD_ARGS"}
@@ -934,11 +694,8 @@ def build_position_tools(
                 "unknown_ids": unknown,
                 "rejected": rejected,
                 "message": (
-                    "one fixed point cannot place the stack; fix a second "
-                    "point near the other end. With a single point every "
-                    "section outside it would be stepped at the nominal "
-                    "interval, which is the cutting protocol, not a "
-                    "measurement — that is how a stack ends up compressed."
+                    "interpolate_between requires at least two fixed points; "
+                    "one was given."
                 ),
             }
 
@@ -964,28 +721,7 @@ def build_position_tools(
             "unknown_ids": unknown,
             "rejected": rejected,
             "implied_interval_mm": round(abs(step), 3),
-            "nominal_interval_mm": round(state.interval_mm, 3),
-            "note": (
-                "Suggestions only, nothing written, no image looked at. "
-                f"Sections beyond your outermost fixed points were stepped at "
-                f"{abs(step):.3f} mm, the interval your fixed points imply "
-                f"(nominal is {state.interval_mm:.3f} mm). Check the stretches "
-                "between your fixed points before accepting them."
-            ),
         }
-
-    def get_advisories() -> dict[str, Any]:
-        """Computed spacing signals for the stack as it currently stands.
-
-        ADVISORY ONLY — these are arithmetic, not anatomy. They cannot see the
-        images and know nothing about missing sections. Use them to spot where
-        the stack disagrees with itself, then check those sections yourself.
-
-        Returns:
-            The neighbour-interval table and a monotone minimum-spacing curve
-            fitted through the positions the stack currently carries.
-        """
-        return spacing_advisories(state)
 
     if landmark_tools:
 
@@ -998,30 +734,24 @@ def build_position_tools(
         ) -> dict[str, Any]:
             """Finish the positioning step. Call this exactly once, last.
 
-            Every section must have a position first, damaged sections
-            included, and both ends of the stack must be anchored to real
-            anatomy — the call is rejected otherwise.
+            Rejected unless every section has a position, the reported
+            interval breaks are present in those positions, and both end
+            anchors hold against the atlas annotation.
 
             Args:
-                interval_breaks: Corrected indices where the spacing between
-                    neighbouring sections breaks the nominal interval — the
-                    index of the section AFTER the gap. Empty if the stack is
-                    regular. Checked against the positions you wrote: an index
-                    whose written interval is not clearly wider than the
-                    stack's median is refused, so report a break only where
-                    your own numbers show it.
+                interval_breaks: Corrected indices of the sections AFTER a gap
+                    you conclude is real. Empty if there are none. An index is
+                    accepted only where the interval between the positions you
+                    wrote exceeds 1.5x the stack's median written spacing.
                 notes: Short observations worth carrying forward.
-                summary: One or two sentences on what you changed and why.
+                summary: One or two sentences on what you did.
                 end_anchors: Exactly two entries, one for the FIRST and one
                     for the LAST section of the corrected order:
                     ``[{"id": "<filename>", "structure": "<acronym>", "note":
-                    "<what you saw>"}]``. The structure must be one you can
-                    SEE in that section, must exist over only a SHORT span of
-                    the slicing axis, and the atlas must agree it exists where
-                    you have placed it — checked here against the annotation
-                    volume, so a placement that contradicts the structure's
-                    range, or a structure too broad to localize anything, is
-                    refused.
+                    "<what you saw>"}]``. Each structure's atlas span must
+                    contain the position written for that section (within one
+                    slice thickness) and must itself cover no more than 8% of
+                    the slicing axis.
             """
             refusal = _submission_errors(state, interval_breaks)
             if refusal is not None:
@@ -1086,19 +816,16 @@ def build_position_tools(
         ) -> dict[str, Any]:
             """Finish the positioning step. Call this exactly once, last.
 
-            Every section must have a position first, damaged sections
-            included — the call is rejected if any is missing.
+            Rejected unless every section has a position and the reported
+            interval breaks are present in those positions.
 
             Args:
-                interval_breaks: Corrected indices where the spacing between
-                    neighbouring sections breaks the nominal interval — the
-                    index of the section AFTER the gap. Empty if the stack is
-                    regular. Checked against the positions you wrote: an index
-                    whose written interval is not clearly wider than the
-                    stack's median is refused, so report a break only where
-                    your own numbers show it.
+                interval_breaks: Corrected indices of the sections AFTER a gap
+                    you conclude is real. Empty if there are none. An index is
+                    accepted only where the interval between the positions you
+                    wrote exceeds 1.5x the stack's median written spacing.
                 notes: Short observations worth carrying forward.
-                summary: One or two sentences on what you changed and why.
+                summary: One or two sentences on what you did.
             """
             refusal = _submission_errors(state, interval_breaks)
             if refusal is not None:
@@ -1129,10 +856,9 @@ def build_position_tools(
         view_slices,
         fetch_atlas,
         *([atlas_structures_at, structure_range] if landmark_tools else []),
-        estimate_slices,
+        stack_positions,
         interpolate_between,
         set_positions,
-        get_advisories,
         submit_positions,
     ]
     return box
@@ -1151,25 +877,28 @@ def build_position_prompt(
 ) -> str:
     """System instruction for the positioning agent, plane-aware.
 
+    The job, the run's facts, the tools and the hard constraints — nothing
+    else. No strategy, no rules of thumb, no warnings about failure modes:
+    every benchmark failure worth tracing came back to advice the harness put
+    in front of the model, so the model reasons and the prompt reports.
+
     Deliberately atlas-agnostic: it names no region, no landmark and no
     absolute position, because the same prompt runs against every BrainGlobe
-    atlas, species and plane. What it does carry is a MENU of strategies and
-    the failure modes that bite whichever one the agent picks.
+    atlas, species and plane.
 
     ``landmark_tools=False`` (an ablation switch, see
     :attr:`~langslice.linear.whole_brain.state.BrainConfig.landmark_tools`)
-    drops every mention of `atlas_structures_at`/`structure_range` and the
-    end-anchor gate, falling back to a plain visual end check.
+    drops `atlas_structures_at`/`structure_range` and the end-anchor
+    requirement.
     """
     plane = state.plane
     axis = _PLANE_AXIS_LABEL.get(plane, "AP")
     placed = [s for s in state.in_order() if s.position_mm is not None]
     placed_line = (
         f"- {len(placed)} of {len(state.slices)} sections already carry a "
-        f"position; check them rather than trusting them.\n"
+        f"position.\n"
         if placed
-        else "- No section has a position yet: the stack is unplaced and "
-        "placing it is your job.\n"
+        else "- No section carries a position yet.\n"
     )
     breaks_line = (
         f"- The survey step flagged possible interval breaks at corrected "
@@ -1179,177 +908,75 @@ def build_position_prompt(
     )
     damaged = [s.id for s in state.in_order() if s.damaged]
     damaged_line = (
-        f"- Damaged sections ({', '.join(damaged)}) still need positions — "
-        "place them from their neighbours if their own anatomy is "
-        "unreadable.\n"
-        if damaged
-        else ""
+        f"- Sections marked damaged: {', '.join(damaged)}.\n" if damaged else ""
+    )
+    order_line = (
+        "- The corrected order shown is fixed; it was not open to "
+        "reordering.\n"
+        if state.keep_order
+        else "- The corrected order shown is the survey step's, which was free "
+        "to reorder the stack.\n"
     )
 
-    if landmark_tools:
-        rule2_tail = (
-            "difference. BUT: when MANY independent estimates disagree with "
-            "your tidy ladder by a CONSISTENT amount and in the same "
-            "direction, it is the ladder's absolute placement that is "
-            "suspect, not the estimates. That pattern is what a compressed "
-            "or offset stack looks like from the inside — check it with "
-            "`atlas_structures_at` and `structure_range` before discarding a "
-            "single estimate.\n\n"
-        )
-        rule3 = (
-            "3. CHECK BOTH ENDS BEFORE YOU SUBMIT — AGAINST THE ATLAS, NOT "
-            "AGAINST YOUR OWN ARITHMETIC. A ladder with plausible spacing "
-            "hung at the wrong absolute position is perfectly consistent "
-            "from the inside: every interval looks right and every section "
-            "still sits wrong. The only way out of that loop is evidence "
-            "from outside it. For the FIRST and the LAST section of the "
-            "corrected order: NAME a structure you can actually SEE in that "
-            "section — one that exists only over a SHORT span of the "
-            "slicing axis, so its presence actually pins the section down. "
-            "A structure that runs most of the brain's length proves "
-            "nothing, since it is present almost everywhere: "
-            "`submit_positions` refuses any anchor spanning more than "
-            f"{MAX_ANCHOR_SPAN_FRACTION * 100:.0f}% of the atlas's slicing "
-            "axis. Call "
-            "`structure_range` on your candidate, and check both that its "
-            "span is short and that the position you have written falls "
-            "inside it. `atlas_structures_at` goes the other way — it tells "
-            "you what the atlas says is there at a level you are "
-            "considering. A placement that contradicts a structure's "
-            "existence range is WRONG, full stop; move the section or pick a "
-            "landmark you can defend, never a structure you have not looked "
-            "for. `submit_positions` asks for both end anchors and "
-            "re-checks them, and refuses the submission when they do not "
-            "hold. AND WHEN AN END IS OFF, ASK WHICH KIND OF WRONG IT IS: if "
-            "BOTH ends are off in the SAME direction, the ladder needs a "
-            "rigid SHIFT and its spacing is fine — moving one end while the "
-            "other already matches STRETCHES the stack and ruins every "
-            "section in between. Only ends that are off in OPPOSITE "
-            "directions mean the spacing itself is wrong.\n\n"
-        )
-        rule6 = (
-            "6. THE ARITHMETIC IS ADVICE; THE ATLAS IS EVIDENCE. "
-            "`interpolate_between` and `get_advisories` compute from numbers "
-            "that have never seen an image and know nothing about missing "
-            "sections. Use them to find suspicious stretches, never as the "
-            "answer. `atlas_structures_at` and `structure_range` are the "
-            "other kind of tool: they read the atlas annotation itself, so "
-            "they can contradict you. Let them.\n\n"
-        )
-        closing = (
-            "Finish with `submit_positions`. It is rejected unless every "
-            "section in the stack has a position (damaged sections "
-            "included) AND both end anchors hold up against the atlas."
-        )
-    else:
-        rule2_tail = "difference.\n\n"
-        rule3 = (
-            "3. CHECK BOTH ENDS BEFORE YOU SUBMIT. A ladder with plausible "
-            "spacing hung at the wrong absolute position is perfectly "
-            "consistent from the inside — every interval looks right and "
-            "every section still sits wrong. The ends are where that shows: "
-            "verify the first and the last section of the stack against the "
-            "atlas independently, and if either one does not match, the "
-            "whole placement is offset, not just that section. ASK WHICH "
-            "KIND OF WRONG IT IS: if BOTH ends are off in the SAME "
-            "direction, the ladder needs a rigid SHIFT and its spacing is "
-            "fine — moving one end while the other already matches STRETCHES "
-            "the stack and ruins every section in between. Only ends that "
-            "are off in OPPOSITE directions mean the spacing itself is "
-            "wrong.\n\n"
-        )
-        rule6 = (
-            "6. THE ARITHMETIC IS ADVICE. `interpolate_between` and "
-            "`get_advisories` compute from numbers that have never seen an "
-            "image and know nothing about missing sections. Use them to "
-            "find suspicious stretches, never as the answer.\n\n"
-        )
-        closing = (
-            "Finish with `submit_positions`. It is rejected unless every "
-            "section in the stack has a position, damaged sections "
-            "included."
-        )
+    landmark_tool_lines = (
+        "- `atlas_structures_at`: the structures the atlas annotation carries "
+        "at up to 8 levels you name, by share of in-plane area.\n"
+        "- `structure_range`: the slicing-axis span over which each of up to "
+        "10 named structures exists, descendants included.\n"
+        if landmark_tools
+        else ""
+    )
+    anchor_constraint = (
+        "- `submit_positions` requires one end anchor for the FIRST and one "
+        "for the LAST section of the corrected order: a structure you can see "
+        "in that section, whose span in the atlas annotation contains the "
+        "position you wrote for that section (within one slice thickness) and "
+        f"itself covers no more than {MAX_ANCHOR_SPAN_FRACTION * 100:.0f}% of "
+        "the slicing axis. Both are checked against the annotation volume.\n"
+        if landmark_tools
+        else ""
+    )
 
     return (
         f"You are an expert neuroanatomist placing a stack of "
         f"{len(state.slices)} {plane} histology sections along the "
         f"{state.atlas} ({species}) atlas.\n\n"
-        f"Stack facts:\n"
+        f"Your job: give every section a position in millimetres along the "
+        f"slicing axis, and report the corrected indices where you conclude "
+        f"the interval between neighbouring sections is genuinely broken. "
+        f"Damaged sections get a position too.\n\n"
+        f"Run facts:\n"
+        f"- {len(state.slices)} sections, {plane} plane, atlas "
+        f"{state.atlas} ({species}).\n"
         f"- Valid {axis} range: {pos_lo:.2f}-{pos_hi:.2f} mm along the slicing "
         f"axis, measured from the origin edge of the atlas volume "
-        f"({pos_lo:.2f} mm is its first section, {pos_hi:.2f} mm its last)\n"
-        f"- Nominal section interval from the cutting protocol: "
-        f"{state.interval_mm:.3f} mm center-to-center — expect the REALIZED "
-        f"mean spacing to be >= this, because sections get lost. It is a "
-        f"starting guess, not a measurement, and nothing in the stack has to "
-        f"match it.\n"
-        f"- Slice thickness: {state.thickness_mm:.3f} mm\n"
+        f"({pos_lo:.2f} mm is its first section, {pos_hi:.2f} mm its last).\n"
+        f"- Cutting protocol: nominal section interval "
+        f"{state.interval_mm:.3f} mm center-to-center, section thickness "
+        f"{state.thickness_mm:.3f} mm.\n"
+        f"{order_line}"
         f"{placed_line}"
         f"{breaks_line}"
         f"{damaged_line}"
         f"\n"
-        f"YOU CHOOSE THE STRATEGY. Nothing upstream picked sections for you and "
-        f"no strategy is prescribed here. Look at the stack, decide how to "
-        f"place it, and say which approach you took in your submission.\n\n"
-        f"STRATEGIES THAT WORK — pick one or mix them:\n\n"
-        f"A. KEY SECTIONS, THEN INTERPOLATE. Choose a few sections whose "
-        f"anatomy is distinctive and unambiguous, estimate them with "
-        f"`estimate_slices`, VERIFY each one yourself against the atlas, then "
-        f"fill the rest with `interpolate_between` and investigate the "
-        f"stretches in between. Fast, and only as good as the key sections: a "
-        f"key section placed wrong drags every section interpolated from it.\n\n"
-        f"B. FULL COVERAGE. For a small stack, estimate every section with "
-        f"`estimate_slices` (up to 8 per call) and reconcile the results "
-        f"against each other and against the slicing interval. Slower, but no "
-        f"section inherits another's error.\n\n"
-        f"C. A MIX. Place a few sections, interpolate, then estimate more "
-        f"wherever the result looks weak — around a suspected break, at the "
-        f"ends, or anywhere the anatomy stops matching.\n\n"
-        f"RULES THAT APPLY WHATEVER YOU CHOOSE:\n\n"
-        f"1. PLACE KEY SECTIONS WHERE THE FEATURES ARE UNAMBIGUOUS. A good key "
-        f"section is one whose atlas level is identifiable at a glance: some "
-        f"structure appears, disappears, or changes shape sharply within a "
-        f"short span of the slicing axis. Do NOT anchor on a section that sits "
-        f"inside a long span of levels that look alike — that span is where "
-        f"you interpolate through, not where you take your bearings.\n\n"
-        f"2. DISAGREEING ESTIMATES ARE A STOP SIGN, NOT AN AVERAGE. Estimates "
-        f"are made independently, one section at a time, so they can disagree "
-        f"about where the stack sits as a whole. When they do, RE-VERIFY the "
-        f"disagreeing sections before you commit to any global placement: "
-        f"`fetch_atlas` around EACH candidate position, `view_slices` the "
-        f"sections around each one, and check that the neighbours make sense "
-        f"at that placement too. Then discard the estimate that does not hold "
-        f"up. Never resolve the conflict by sliding a self-consistent set of "
-        f"sections to match a minority reading, and never split the "
-        f"{rule2_tail}"
-        f"{rule3}"
-        f"4. THE SPACING IS NOT THE NOMINAL INTERVAL, IN EITHER DIRECTION. A "
-        f"consistent slicing interval does NOT mean no sections are missing: "
-        f"sections get lost, torn or skipped during collection, and the "
-        f"sections on either side of the loss still look evenly spaced on the "
-        f"slide. So the realized spacing is usually LARGER than the nominal "
-        f"{state.interval_mm:.3f} mm, occasionally smaller where the protocol "
-        f"drifted, and a ladder that matches the nominal interval EXACTLY end "
-        f"to end is a warning sign, not a success — it usually means the stack "
-        f"has been compressed onto the protocol and its ends pulled inward. "
-        f"The interval table shows the implied interval next to the nominal "
-        f"one: when your anchors imply larger spacing than your ladder uses, "
-        f"believe the anchors. But an implied interval FAR above the nominal "
-        f"one — more than about 1.3x — is the opposite warning and not a "
-        f"confirmation: either the stack has been stretched to reach "
-        f"something it does not contain, or that many sections really are "
-        f"missing, and only the atlas can tell you which. Where the anatomy "
-        f"advances faster than the "
-        f"suggestion says, sections are missing and any interpolation across "
-        f"that stretch is wrong — investigate it, reposition it, and report "
-        f"every break you confirm in `submit_positions`, which accepts a "
-        f"break index only where the positions you wrote really do show a "
-        f"wider-than-usual interval.\n\n"
-        f"5. WRITE IN BATCHES. `set_positions` takes many sections in one call "
-        f"and hands back the resulting neighbour-interval table, so you see "
-        f"immediately what your edit did to the spacing.\n\n"
-        f"{rule6}"
-        f"{closing}"
+        f"Tools:\n"
+        f"- `view_slices`: up to 8 named sections at higher resolution.\n"
+        f"- `fetch_atlas`: atlas sections at the positions you name.\n"
+        f"{landmark_tool_lines}"
+        f"- `stack_positions`: the positions currently written and the "
+        f"spacing between them.\n"
+        f"- `interpolate_between`: straight-line positions for every section "
+        f"from two or more points you fix; writes nothing.\n"
+        f"- `set_positions`: writes positions for one or more sections.\n"
+        f"- `submit_positions`: ends the step.\n\n"
+        f"Constraints:\n"
+        f"- Every section must have a position before `submit_positions` is "
+        f"accepted, damaged sections included.\n"
+        f"{anchor_constraint}"
+        f"- A reported interval break is accepted only at an index where the "
+        f"interval between the positions you wrote exceeds "
+        f"{INTERVAL_BREAK_MIN_RATIO:g}x the stack's median written spacing.\n\n"
+        f"Work with the tools, then call `submit_positions`."
     )
 
 
@@ -1368,17 +995,6 @@ def build_position_seed_message(
     recent = state.notes[-note_limit:]
     notes_block = "\n".join(f"- {note}" for note in recent) if recent else "- (none)"
     parts: list[types.Part] = stack_image_parts(state, ctx)
-    closing = (
-        "Decide how you want to place this stack, work through it with "
-        "the tools, write positions with `set_positions`, verify the "
-        "first and last section against the atlas with "
-        "`structure_range`, then call `submit_positions` with an end "
-        "anchor for each of them."
-        if ctx.config.landmark_tools
-        else "Decide how you want to place this stack, work through it with "
-        "the tools, write positions with `set_positions`, then call "
-        "`submit_positions`."
-    )
     parts.append(
         types.Part.from_text(
             text=(
@@ -1386,9 +1002,11 @@ def build_position_seed_message(
                 "and where it came from — 'unplaced' means no position yet — "
                 "and current flags):\n"
                 f"{build_stack_manifest(state, with_positions=True)}\n\n"
-                f"Run notes so far (a 'review:' note means an earlier pass "
-                f"sent this stack back — read it first):\n{notes_block}\n\n"
-                f"{closing}"
+                f"Run notes so far, oldest first (a 'review:' note was written "
+                f"by a review pass that sent this stack back):\n"
+                f"{notes_block}\n\n"
+                "Place the stack with the tools, write positions with "
+                "`set_positions`, then call `submit_positions`."
             )
         )
     )
@@ -1449,7 +1067,6 @@ async def run_position_session(
     The tools mutate *state* as they are called, so accepted positions survive
     even when the agent never reaches ``submit_positions``.
     """
-    landmark_tools = bool(ctx.config.landmark_tools)
     box = build_position_tools(state, ctx, pos_lo=pos_lo, pos_hi=pos_hi)
     agent = build_position_agent(
         state=state,
@@ -1458,7 +1075,7 @@ async def run_position_session(
         pos_lo=pos_lo,
         pos_hi=pos_hi,
         model=ctx.model or DEFAULT_POSITION_MODEL,
-        landmark_tools=landmark_tools,
+        landmark_tools=bool(ctx.config.landmark_tools),
     )
 
     tool_calls, turns = await run_agent_session(
@@ -1468,10 +1085,8 @@ async def run_position_session(
         pos_hi=pos_hi,
         seed_message=build_position_seed_message(state, ctx),
         done=lambda: bool(box.submission),
-        nudge_no_tool=_NUDGE_NO_TOOL_ON if landmark_tools else _NUDGE_NO_TOOL_OFF,
-        nudge_continue=(
-            _NUDGE_CONTINUE_ON if landmark_tools else _NUDGE_CONTINUE_OFF
-        ),
+        nudge_no_tool=_NUDGE_NO_TOOL,
+        nudge_continue=_NUDGE_CONTINUE,
         max_iterations=max_iterations,
         run_label=_RUN_LABEL,
     )
@@ -1479,7 +1094,6 @@ async def run_position_session(
     return PositionOutcome(
         findings=dict(box.submission) if box.submission else None,
         positions_written=len(set(box.written)),
-        estimated=len(box.estimated),
         tool_calls=tool_calls,
         turns=turns,
     )

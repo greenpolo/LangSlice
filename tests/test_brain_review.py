@@ -93,7 +93,7 @@ def test_review_manifest_shows_positions_flags_and_transforms(tmp_path: Path):
     assert "NO TRANSFORM" in lines[3]
 
 
-def test_review_seed_carries_the_manifest_advisories_and_notes(tmp_path: Path):
+def test_review_seed_carries_the_manifest_positions_and_notes(tmp_path: Path):
     state, ctx = _reviewed(tmp_path)
     state.notes.append("position: one section was moved 0.4 mm")
 
@@ -102,9 +102,21 @@ def test_review_seed_carries_the_manifest_advisories_and_notes(tmp_path: Path):
     )
 
     assert "slice_00.png" in text
-    assert "neighbour intervals" in text
-    assert "monotone spacing fit" in text
+    assert "Positions and neighbour spacing" in text
+    assert "'spacing_to_next_mm': 0.2" in text
     assert "one section was moved 0.4 mm" in text
+
+
+def test_review_seed_is_data_only(tmp_path: Path):
+    """The seed hands over numbers; no advisories, no fitted suggestions."""
+    state, ctx = _reviewed(tmp_path)
+
+    text = "".join(
+        part.text or "" for part in build_review_seed_message(state, ctx).parts or []
+    ).lower()
+
+    for phrase in ("advisory", "monotone", "suggested_mm", "arithmetic only"):
+        assert phrase not in text, phrase
 
 
 def test_review_prompt_states_the_verdict_contract(tmp_path: Path):
@@ -112,9 +124,27 @@ def test_review_prompt_states_the_verdict_contract(tmp_path: Path):
 
     prompt = build_review_prompt(state=state, species="mouse")
 
-    assert "SERIAL ORDER" in prompt
+    assert "Your job:" in prompt
+    assert "Run facts:" in prompt
+    assert "Tools:" in prompt
     assert "approved=False" in prompt
     assert "0.200 mm" in prompt
+
+
+def test_review_prompt_carries_no_coaching(tmp_path: Path):
+    state, _ctx = _reviewed(tmp_path)
+
+    prompt = build_review_prompt(state=state, species="mouse").lower()
+
+    for phrase in (
+        "serial order",
+        "stretched",
+        "advisory",
+        "1.3x",
+        "costs the user",
+        "do not expect",
+    ):
+        assert phrase not in prompt, phrase
 
 
 # --- flag_slice ----------------------------------------------------------
