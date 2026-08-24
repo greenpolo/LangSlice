@@ -71,6 +71,44 @@ class _ScriptedSubmitLlm(BaseLlm):
         )
 
 
+class _CleanSurveyLlm(BaseLlm):
+    """A fake BaseLlm that submits an empty, clean whole-brain survey."""
+
+    async def generate_content_async(
+        self, llm_request: LlmRequest, stream: bool = False
+    ) -> AsyncGenerator[LlmResponse, None]:
+        del stream, llm_request
+        yield LlmResponse(
+            content=types.Content(
+                role="model",
+                parts=[
+                    types.Part.from_function_call(
+                        name="submit_survey",
+                        args={
+                            "axis_directions": {"ap": "anterior_to_posterior"},
+                            "interval_breaks": [],
+                            "notes": [],
+                            "clean": True,
+                            "summary": "Stack is consistent.",
+                        },
+                    )
+                ],
+            ),
+            partial=False,
+            turn_complete=True,
+        )
+
+
+def install_fake_adk_model_clean_survey(monkeypatch: Any) -> None:
+    """Patch LLMRegistry.new_llm so the survey step submits 'clean' at once."""
+    from google.adk.models.registry import LLMRegistry
+
+    def _fake_new_llm(model: str) -> BaseLlm:
+        return _CleanSurveyLlm(model=model)
+
+    monkeypatch.setattr(LLMRegistry, "new_llm", staticmethod(_fake_new_llm))
+
+
 def _count_function_responses(llm_request: LlmRequest) -> int:
     """Count how many function-response parts appear across request contents."""
     count = 0

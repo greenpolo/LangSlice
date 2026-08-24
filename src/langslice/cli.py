@@ -444,6 +444,17 @@ def _add_estimate_brain_parser(subparsers: argparse._SubParsersAction) -> None:
         action="store_false",
         help="Ignore any existing checkpoint and start over",
     )
+    p.add_argument(
+        "--stop-after",
+        default=None,
+        metavar="NODE",
+        choices=[
+            "ingest", "survey", "fix", "seed",
+            "position", "transforms", "review", "emit",
+        ],
+        help="Run up to and including NODE, checkpoint, and stop "
+             "(re-run to continue from there)",
+    )
 
 
 def _run_estimate_brain(args: argparse.Namespace) -> None:
@@ -468,11 +479,15 @@ def _run_estimate_brain(args: argparse.Namespace) -> None:
     print(f"Folder: {config.image_folder}  Resume: {config.resume}")
     print()
 
-    state = asyncio.run(run_brain(config, emit=print))
+    state = asyncio.run(run_brain(config, emit=print, stop_after=args.stop_after))
 
     positioned = [s for s in state.slices if s.position_mm is not None]
     print()
-    print("Whole-brain estimation complete")
+    print(
+        f"Whole-brain estimation stopped after {args.stop_after}"
+        if args.stop_after
+        else "Whole-brain estimation complete"
+    )
     print(f"  Slices: {len(state.slices)}  Positioned: {len(positioned)}")
     print(f"  Nodes run: {', '.join(state.completed_nodes)}")
     if state.contact_sheet:

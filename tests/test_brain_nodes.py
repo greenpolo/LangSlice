@@ -100,7 +100,11 @@ def test_emit_writes_the_state_serialization(tmp_path: Path):
     assert json.loads(out.read_text()) == state.to_dict()
 
 
-def test_run_brain_end_to_end_then_resume(tmp_path: Path):
+def test_run_brain_end_to_end_then_resume(tmp_path: Path, monkeypatch):
+    from tests.fakes import install_fake_adk_model_clean_survey
+
+    # The survey step is a real agent now; script it to submit a clean stack.
+    install_fake_adk_model_clean_survey(monkeypatch)
     _make_stack(tmp_path)
     messages: list[str] = []
     config = _config(tmp_path, out=str(tmp_path / "results.json"))
@@ -117,7 +121,9 @@ def test_run_brain_end_to_end_then_resume(tmp_path: Path):
     results = json.loads((tmp_path / "results.json").read_text())
     assert results["slices"] == checkpoint["slices"]
     assert (tmp_path / "contact_sheet.png").exists()
-    assert sum("not implemented" in m for m in messages) == 6
+    # seed, position, transforms, review are still stubs; fix was skipped.
+    assert sum("not implemented" in m for m in messages) == 4
+    assert any("skipping 'fix'" in m for m in messages)
 
     # Second run resumes: every node is already complete, nothing re-runs.
     resumed_messages: list[str] = []

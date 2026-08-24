@@ -102,6 +102,7 @@ async def run_nodes(
     ctx: EngineContext,
     *,
     resume: bool = True,
+    stop_after: str | None = None,
 ) -> StackState:
     """Drive *nodes* over *state*, checkpointing after each one.
 
@@ -112,9 +113,15 @@ async def run_nodes(
     ``state.node_cycles`` is cumulative across resumes on purpose: a run that
     already spent its loop budget on a node does not get a fresh one by being
     restarted.
+
+    *stop_after* halts the run once that node completes (its checkpoint is
+    already written) — the per-step measurement seam: run one node on a saved
+    checkpoint, then look at what it did.
     """
     order = [name for name, _ in nodes]
     fns = dict(nodes)
+    if stop_after is not None and stop_after not in fns:
+        raise ValueError(f"stop_after names an unknown node {stop_after!r}")
     # Nodes this run has run or been explicitly routed to: never resume-skipped.
     claimed: set[str] = set()
     index = 0
@@ -141,6 +148,10 @@ async def run_nodes(
         state.mark_complete(name)
         save_checkpoint(state, ctx.checkpoint_path)
 
+        if name == stop_after:
+            ctx.progress(f"[{name}] --stop-after: halting; checkpoint written")
+            return state
+
         if not target:
             index += 1
             continue
@@ -160,6 +171,13 @@ async def run_nodes(
                 )
                 index += 1
                 continue
+        else:
+            # A forward jump rules the nodes in between out for this run
+            # (survey skipping fix when the stack is clean). Book them as done
+            # or a resumed run would walk straight back into them.
+            for skipped in order[index + 1:target_index]:
+                state.mark_complete(skipped)
+                ctx.progress(f"[{name}] skipping {skipped!r}: nothing to do")
         claimed.add(target)
         index = target_index
 
@@ -171,8 +189,13 @@ async def run_brain(
     *,
     emit: Callable[[str], None] | None = None,
     atlas_loader: Callable[[str], Any] | None = None,
+    stop_after: str | None = None,
 ) -> StackState:
-    """Run the whole-brain engine and return the final stack state."""
+    """Run the whole-brain engine and return the final stack state.
+
+    *stop_after* halts the run after that node completes; combined with the
+    default resume behaviour it runs the graph one step at a time.
+    """
     # Imported here: nodes.py imports EngineContext from this module.
     from langslice.linear.whole_brain.nodes import NODES
 
@@ -189,4 +212,6 @@ async def run_brain(
     if state is None:
         state = StackState()
 
-    return await run_nodes(NODES, state, ctx, resume=config.resume)
+    return await run_nodes(
+        NODES, state, ctx, resume=config.resume, stop_after=stop_after
+    )

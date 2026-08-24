@@ -76,7 +76,10 @@ Two methods live as sibling subpackages with no dependency on each other:
   over one `StackState`, with bounded loop-back edges, a JSON checkpoint
   after every node, and results in the same shape as the checkpoint.
   Flips and reorders are recorded as data on the state; user image files are
-  never modified. The agent steps between `ingest` and `emit` are stubs.
+  never modified. `survey.py` is the stack-triage agent (damage, hemisphere
+  flips, order, interval breaks in one pass) and `fix` re-renders the contact
+  sheet for a re-check; `seed`, `position`, `transforms` and `review` are
+  still stubs. `--stop-after NODE` runs one step and checkpoints.
 - `nonlinear/` — generative-image registration: candidate generation, image
   provider adapters, Elastix runtime, optional ADK review loop, affine and
   nonlinear result types, and `quick_affine.py` (silhouette affine preview;
