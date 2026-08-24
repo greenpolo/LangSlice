@@ -18,7 +18,7 @@ position as an argument and does not care where it came from, so it can follow
 
 ```bash
 langslice linear estimate <image> [--atlas ...] [--model ...] [--plane ...]
-langslice linear estimate-brain <image_folder> [--atlas ...] [--plane ...] [--interval 200] [--thickness 50] [--keep-order|--no-keep-order] [--model ...] [--preprocess auto|none] [--landmark-tools|--no-landmark-tools] [--out ...] [--resume|--fresh|--rerun-from NODE] [--stop-after NODE]
+langslice linear estimate-brain <image_folder> [--atlas ...] [--plane ...] [--interval 200] [--thickness 50] [--keep-order|--no-keep-order] [--model ...] [--preprocess auto|none] [--out ...] [--resume|--fresh|--rerun-from NODE] [--stop-after NODE]
 ```
 
 Single-slice estimation runs through the ADK harness. The agent surface is
@@ -88,57 +88,37 @@ per-node cycle limits.
   judging. The prompt stays atlas-agnostic (no region names, no hard-coded
   landmarks, no absolute positions) so the same text works for every
   BrainGlobe atlas, species and plane.
-  Tools: `view_slices`, `fetch_atlas`, `atlas_structures_at` (what the atlas
-  annotation carries at up to 8 levels, by in-plane area share),
-  `structure_range` (the slicing-axis span over which up to 10 named structures
-  exist, descendants included; each hit reports the `name` the query actually
-  resolved to plus up to three `also_matches` acronyms it could have meant
-  instead, so a short acronym cannot resolve to the wrong structure unnoticed),
-  `stack_positions` (one row per section in corrected order — index, filename,
-  `position_mm` or null, and `spacing_to_next_mm`, the distance to the next
-  placed section), `interpolate_between` (fixed points in, one position per
-  section out, not written; beyond the outermost fixed points it steps at the
-  interval those points imply, and it refuses a single fixed point),
-  `set_positions` (batch write, clamped to the atlas range, returns the same
-  rows `stack_positions` gives) and `submit_positions`. There is no per-slice
-  estimation worker in this step: full-trace forensics found its estimates
-  carried essentially no signal on real data while consuming most of the
-  step's wall-clock. `submit_positions` is rejected unless every section has a
-  position, its reported `interval_breaks` are visible in the positions it
-  wrote, AND its two `end_anchors` hold:
+  Tools: `view_slices`, `fetch_atlas`, `stack_positions` (one row per section
+  in corrected order — index, filename, `position_mm` or null, and
+  `spacing_to_next_mm`, the distance to the next placed section),
+  `interpolate_between` (fixed points in, one position per section out, not
+  written; beyond the outermost fixed points it steps at the interval those
+  points imply, and it refuses a single fixed point), `set_positions` (batch
+  write, clamped to the atlas range, returns the same rows `stack_positions`
+  gives) and `submit_positions`. There is no per-slice estimation worker in
+  this step: full-trace forensics found its estimates carried essentially no
+  signal on real data while consuming most of the step's wall-clock, and no
+  atlas-annotation landmark tools either: a benchmarked ablation (both test
+  brains) found the `atlas_structures_at`/`structure_range` tools and the
+  `submit_positions` end-anchor gate they backed made placement worse, not
+  better, so they were deleted rather than kept behind a flag. `submit_positions`
+  is rejected unless every section has a position and its reported
+  `interval_breaks` are visible in the positions it wrote:
   - `interval_breaks` — each reported index names the section AFTER a gap, and
     the written interval at that neighbour pair must be more than 1.5x the
     stack's own median written spacing. An index whose own numbers show
     ordinary spacing is refused as `INTERVAL_BREAKS_UNSUPPORTED`, naming the
     interval actually written there, so a break cannot travel downstream as a
     finding the placement does not contain.
-  - `end_anchors` — one entry per END of the corrected order naming a structure
-    visible in that section, whose atlas existence range
-    (`langslice.atlas.landmarks.axis_range_of`) must contain that section's
-    submitted position, within one slice thickness, AND whose own span covers no
-    more than `MAX_ANCHOR_SPAN_FRACTION` (8%) of the atlas's full slicing-axis
-    extent — a structure present almost everywhere (cortex, say) "proves" any
-    placement and is refused as `STRUCTURE_TOO_BROAD` before its span is even
-    checked against the position. The cap is deliberately tight: at a quarter of
-    the axis a mouse-atlas anchor could still be 3 mm wide, wider than the
-    errors the gate exists to catch (310 of the 839 annotated Allen structures
-    still qualify). A refused anchor comes back with the structure's actual
-    span (and, for a too-broad one, `span_fraction`) against the proposed
-    position and does not escalate. Refusal messages state the facts that
-    caused them ("X spans a-b mm, you placed S at c mm") and stop there — they
-    do not tell the agent what to do about it. The accepted anchors are
-    recorded in the run notes, along with the accepted interval breaks.
+  - The submitted positions must also run in the stack's known axis direction
+    (`survey`'s `axis_directions`, when determined): a submission that trends
+    the wrong way is refused as `DIRECTION_REVERSED`. This is a plain code
+    check, not a tool call.
+
+  Refusal messages state the facts that caused them and stop there — they do
+  not tell the agent what to do about it.
 
   Oblique-angle estimation is not part of this step yet.
-
-  All of the above — the two landmark tools and the end-anchor gate — are
-  gated by `BrainConfig.landmark_tools` (default on; CLI
-  `--landmark-tools`/`--no-landmark-tools`), an ablation switch for
-  experiments, not a normal deployment knob. Off, `atlas_structures_at` and
-  `structure_range` are not registered, `submit_positions` takes no
-  `end_anchors` argument (the interval-break check still runs), and the prompt
-  drops the two tool lines and the end-anchor constraint. Everything else in
-  the prompt is identical.
 - `transforms` proposes one in-plane alignment per section, on two routes.
   Intact sections take the plain-code route: the shared silhouette affine
   (`src/langslice/affine.py`) against the atlas section their position names,

@@ -435,14 +435,6 @@ def _add_estimate_brain_parser(subparsers: argparse._SubParsersAction) -> None:
         "Display only — the image files are never modified",
     )
     p.add_argument(
-        "--landmark-tools",
-        action=argparse.BooleanOptionalAction,
-        default=False,
-        help="Give the positioning step atlas-annotation landmark tools and "
-        "its end-anchor submission gate (off by default: benchmarked worse "
-        "on both test brains; the direction guard is a code check now)",
-    )
-    p.add_argument(
         "--out",
         default=None,
         help="Results JSON path. Default: <image_folder>/brain_results.json",
@@ -519,7 +511,6 @@ def _run_estimate_brain(args: argparse.Namespace) -> None:
         out=args.out,
         resume=args.resume,
         preprocess=args.preprocess,
-        landmark_tools=args.landmark_tools,
     )
 
     if args.rerun_from:

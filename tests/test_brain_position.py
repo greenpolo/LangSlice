@@ -3,9 +3,9 @@
 No live model calls: the agent step is driven by a scripted fake BaseLlm
 swapped in through ``LLMRegistry.new_llm``.
 
-The stack is placed against ``SlabAtlas`` (tests/fakes.py) — 20 slices at
-1 mm, structures in known index ranges — because ``submit_positions``
-checks its end anchors against a real annotation volume.
+The stack is placed against ``SlabAtlas`` (tests/fakes.py) — a 20-slice,
+1 mm-per-voxel atlas with tissue on every slice — because ``ingest`` needs a
+real atlas-shaped object to compute the position range.
 """
 
 import asyncio
@@ -18,7 +18,6 @@ from google.adk.models.llm_response import LlmResponse
 from google.genai import types
 from PIL import Image
 
-from langslice.atlas import landmarks
 from langslice.linear.whole_brain.engine import build_context
 from langslice.linear.whole_brain.nodes import ingest, position
 from langslice.linear.whole_brain.position import (
@@ -46,27 +45,8 @@ BANNED_COACHING = (
     "rigid shift",
 )
 
-#: One instance for the module: the landmark caches key on the atlas name, and
-#: rebuilding the volume per tool call buys nothing.
+#: One instance for the module: cheap to build and shared across tests.
 _ATLAS = SlabAtlas()
-
-#: The two EXTRA-narrow structures of _ATLAS, 1.0 mm each (7.6% of the
-#: atlas's 13.18 mm span) and one per END of the placed test stack — the
-#: default end anchors, since they are the only ones that clear
-#: MAX_ANCHOR_SPAN_FRACTION. "FA" (2.0-6.0 mm, 30%) and "NS" (2.0-5.0 mm,
-#: 23%) are the counterparts used to exercise the too-broad rejection.
-_ANCHOR_FIRST = "XA"
-_ANCHOR_LAST = "XP"
-_BROAD_STRUCTURE = "FA"
-
-
-@pytest.fixture(autouse=True)
-def _clear_landmark_caches():
-    landmarks._PRESENCE_CACHE.clear()
-    landmarks._STRUCTURE_CACHE.clear()
-    yield
-    landmarks._PRESENCE_CACHE.clear()
-    landmarks._STRUCTURE_CACHE.clear()
 
 
 class _Actions:
@@ -78,35 +58,16 @@ class _ToolContext:
         self.actions = _Actions()
 
 
-def _anchors(state: StackState, structure: str | None = None):
-    """Valid end anchors for *state*: one narrow structure per END.
-
-    Pass *structure* to use the same one at both ends — how the too-broad and
-    unresolvable cases are exercised.
-    """
-    ordered = state.in_order()
-    first = structure or _ANCHOR_FIRST
-    last = structure or _ANCHOR_LAST
-    return [
-        {"id": ordered[0].id, "structure": first, "note": "seen at this end"},
-        {"id": ordered[-1].id, "structure": last, "note": "seen at this end"},
-    ]
-
-
 def _stack(folder: Path, n: int = 6, *, placed: bool = True, **kwargs):
     """An ingested stack, optionally with a ladder of positions already on it.
 
     The unplaced form (``placed=False``) is what the positioning step actually
-    receives now: the seed node no longer places anything. When placed, the
-    ladder runs 2.0-4.5 mm, so its first section sits inside ``XA``
-    (2.0-3.0 mm) and its last inside ``XP`` (4.0-5.0 mm): the end-anchor gate
-    passes by default and each test can break exactly one thing.
+    receives now: the seed node no longer places anything.
     """
     for index in range(n):
         Image.new("RGB", (40, 30), (10 * index, 60, 120)).save(
             folder / f"slice_{index:02d}.png"
         )
-    kwargs.setdefault("landmark_tools", True)
     ctx = build_context(
         BrainConfig(image_folder=str(folder), **kwargs),
         emit=lambda _m: None,
@@ -372,7 +333,7 @@ def test_interpolate_between_needs_a_fixed_point(tmp_path: Path):
 
 
 def test_the_toolset_is_the_lean_one(tmp_path: Path):
-    """No per-slice worker, no advisory tool: data tools and the gate only."""
+    """No per-slice worker, no advisory tool: data tools only."""
     state, ctx = _stack(tmp_path)
 
     names = {t.__name__ for t in _box(state, ctx).tools}
@@ -380,8 +341,6 @@ def test_the_toolset_is_the_lean_one(tmp_path: Path):
     assert names == {
         "view_slices",
         "fetch_atlas",
-        "atlas_structures_at",
-        "structure_range",
         "stack_positions",
         "interpolate_between",
         "set_positions",
@@ -403,8 +362,6 @@ def test_no_tool_payload_carries_advice(tmp_path: Path):
                 {"id": "slice_04.png", "position_mm": 4.0},
             ]
         ),
-        _tool(box, "atlas_structures_at")([4.0]),
-        _tool(box, "structure_range")(["XA"]),
     ]
 
     blob = " ".join(str(payload) for payload in payloads).lower()
@@ -418,7 +375,6 @@ def test_no_tool_payload_carries_advice(tmp_path: Path):
 def test_submit_positions_rejects_an_incomplete_stack(tmp_path: Path):
     state, ctx = _stack(tmp_path)
     box = _box(state, ctx)
-    anchors = _anchors(state)
     state.in_order()[2].position_mm = None
     tool_context = _ToolContext()
 
@@ -426,7 +382,6 @@ def test_submit_positions_rejects_an_incomplete_stack(tmp_path: Path):
         interval_breaks=[],
         notes=[],
         summary="done",
-        end_anchors=anchors,
         tool_context=tool_context,
     )
 
@@ -448,7 +403,6 @@ def test_submit_positions_escalates_and_captures_findings(tmp_path: Path):
         interval_breaks=[3],
         notes=["sections 3-4 jump two intervals"],
         summary="Verified both key sections; one gap.",
-        end_anchors=_anchors(state),
         tool_context=tool_context,
     )
 
@@ -456,21 +410,16 @@ def test_submit_positions_escalates_and_captures_findings(tmp_path: Path):
     assert tool_context.actions.escalate is True
     assert box.submission["interval_breaks"] == [3]
     assert box.submission["notes"] == ["sections 3-4 jump two intervals"]
-    assert [entry["structure"] for entry in box.submission["end_anchors"]] == [
-        _ANCHOR_FIRST,
-        _ANCHOR_LAST,
-    ]
 
 
 # --- the interval-break gate ----------------------------------------------
 
 
-def _submit_breaks(box, state, breaks, tool_context=None):
+def _submit_breaks(box, breaks, tool_context=None):
     return _tool(box, "submit_positions")(
         interval_breaks=breaks,
         notes=[],
         summary="done",
-        end_anchors=_anchors(state),
         tool_context=tool_context or _ToolContext(),
     )
 
@@ -481,7 +430,7 @@ def test_submit_refuses_a_break_its_own_positions_do_not_show(tmp_path: Path):
     box = _box(state, ctx)
     tool_context = _ToolContext()
 
-    result = _submit_breaks(box, state, [2, 4], tool_context)
+    result = _submit_breaks(box, [2, 4], tool_context)
 
     assert result["error"] == "INTERVAL_BREAKS_UNSUPPORTED"
     assert [failure["index"] for failure in result["failures"]] == [2, 4]
@@ -502,7 +451,7 @@ def test_submit_accepts_a_break_the_positions_really_show(tmp_path: Path):
     for record in state.in_order()[4:]:  # a double gap before index 4
         record.position_mm = float(record.position_mm) + 0.5  # type: ignore[arg-type]
 
-    assert _submit_breaks(box, state, [4])["status"] == "ok"
+    assert _submit_breaks(box, [4])["status"] == "ok"
     assert box.submission["interval_breaks"] == [4]
 
 
@@ -510,256 +459,11 @@ def test_submit_refuses_a_break_index_with_no_interval(tmp_path: Path):
     state, ctx = _stack(tmp_path)
     box = _box(state, ctx)
 
-    result = _submit_breaks(box, state, [0, 99], None)
+    result = _submit_breaks(box, [0, 99], None)
 
     assert [failure["index"] for failure in result["failures"]] == [0, 99]
     assert all(f["error"] == "NOT_A_GAP" for f in result["failures"])
     assert "no section before it" in result["failures"][0]["reason"]
-
-
-def test_submit_break_gate_is_on_with_the_landmark_tools_off(tmp_path: Path):
-    state, ctx = _stack(tmp_path, landmark_tools=False)
-    box = _box(state, ctx)
-
-    refused = _tool(box, "submit_positions")(
-        interval_breaks=[2], notes=[], summary="done", tool_context=_ToolContext()
-    )
-
-    assert refused["error"] == "INTERVAL_BREAKS_UNSUPPORTED"
-    assert not box.submission
-
-
-# --- the end-anchor gate --------------------------------------------------
-
-
-def _submit(box, state, anchors, tool_context=None):
-    return _tool(box, "submit_positions")(
-        interval_breaks=[],
-        notes=[],
-        summary="done",
-        end_anchors=anchors,
-        tool_context=tool_context or _ToolContext(),
-    )
-
-
-def test_submit_refuses_a_placement_the_atlas_rules_out(tmp_path: Path):
-    """XA exists over 2.0-3.0 mm; a section at 12 mm cannot show it."""
-    state, ctx = _stack(tmp_path)
-    box = _box(state, ctx)
-    for record in state.in_order():
-        record.position_mm = 12.0 + 0.5 * record.index_corrected
-    tool_context = _ToolContext()
-
-    result = _submit(box, state, _anchors(state), tool_context)
-
-    assert result["error"] == "END_ANCHOR_FAILED"
-    failure = result["failures"][0]
-    assert failure["error"] == "OUTSIDE_STRUCTURE_SPAN"
-    assert failure["structure"] == _ANCHOR_FIRST
-    assert failure["atlas_span_mm"] == [2.0, 3.0]
-    assert failure["position_mm"] == pytest.approx(12.0)
-    # The span the model has to reconcile with is IN the message it reads.
-    assert "2.000 to 3.000 mm" in failure["reason"]
-    assert "12.000 mm" in failure["reason"]
-    # Refused, not escalated: the agent has to fix it.
-    assert tool_context.actions.escalate is False
-    assert not box.submission
-
-
-def test_submit_refuses_a_structure_too_broad_to_localize(tmp_path: Path):
-    """FA spans 30% of the slicing axis — wide enough to "prove" anywhere.
-
-    XA/XP, sitting over the same section range, are the narrow counterparts:
-    a good end landmark only needs a SHORT span, not agreement everywhere.
-    """
-    state, ctx = _stack(tmp_path)
-    box = _box(state, ctx)
-    tool_context = _ToolContext()
-
-    broad = _submit(box, state, _anchors(state, _BROAD_STRUCTURE), tool_context)
-
-    assert broad["error"] == "END_ANCHOR_FAILED"
-    failure = broad["failures"][0]
-    assert failure["error"] == "STRUCTURE_TOO_BROAD"
-    assert failure["structure"] == _BROAD_STRUCTURE
-    assert failure["span_mm"] == [2.0, 6.0]
-    assert failure["span_fraction"] == pytest.approx(4.0 / 13.18, abs=0.01)
-    assert "%" in failure["reason"]
-    assert tool_context.actions.escalate is False
-    assert not box.submission
-
-    # 3 mm over a 13.18 mm axis (23%) is still too wide to anchor an end: the
-    # cap is tight enough to exclude structures wider than the errors it is
-    # there to catch.
-    assert _submit(box, state, _anchors(state, "NS"))["error"] == "END_ANCHOR_FAILED"
-
-    # The extra-narrow structures, over the same sections, are accepted.
-    accepted = _submit(box, state, _anchors(state), tool_context)
-    assert accepted["status"] == "ok"
-
-
-def test_submit_refuses_an_unresolvable_structure_and_names_near_misses(
-    tmp_path: Path,
-):
-    state, ctx = _stack(tmp_path)
-    box = _box(state, ctx)
-    anchors = _anchors(state)
-    anchors[0]["structure"] = "forebrain area"  # ambiguous: FA and FB
-
-    result = _submit(box, state, anchors)
-
-    assert result["error"] == "END_ANCHOR_FAILED"
-    failure = result["failures"][0]
-    assert failure["error"] == "UNKNOWN_STRUCTURE"
-    assert set(failure["near_misses"]) == {"FA", "FB"}
-    assert not box.submission
-
-
-def test_submit_refuses_when_an_end_anchor_is_missing(tmp_path: Path):
-    state, ctx = _stack(tmp_path)
-    box = _box(state, ctx)
-    ordered = state.in_order()
-
-    result = _submit(box, state, _anchors(state)[:1])
-
-    assert result["error"] == "END_ANCHORS_REQUIRED"
-    assert result["required_ids"] == [ordered[0].id, ordered[-1].id]
-    assert ordered[-1].id in result["message"]
-    assert not box.submission
-
-    # Anchoring the same end twice is not two ends either.
-    inner = _anchors(state)
-    inner[1]["id"] = ordered[0].id
-    assert _submit(box, state, inner)["error"] == "END_ANCHORS_REQUIRED"
-    # ...nor is anchoring a section in the middle.
-    middle = _anchors(state)
-    middle[1]["id"] = ordered[2].id
-    assert _submit(box, state, middle)["error"] == "END_ANCHORS_REQUIRED"
-
-
-def test_submit_accepts_an_anchor_within_a_thickness_of_the_span(tmp_path: Path):
-    """The tolerance is one section thickness, not zero."""
-    state, ctx = _stack(tmp_path)
-    box = _box(state, ctx)
-    ordered = state.in_order()
-    ordered[0].position_mm = 2.0 - state.thickness_mm / 2  # just outside XA
-    ordered[-1].position_mm = 5.0
-
-    assert _submit(box, state, _anchors(state))["status"] == "ok"
-
-
-def test_submit_survives_an_atlas_that_cannot_answer(tmp_path: Path):
-    """A broken atlas must not deadlock the run — but it is on the record."""
-    state, ctx = _stack(tmp_path)
-    ctx.atlas_loader = lambda _name: object()
-    box = _box(state, ctx)
-    tool_context = _ToolContext()
-
-    result = _submit(box, state, _anchors(state), tool_context)
-
-    assert result["status"] == "ok"
-    assert tool_context.actions.escalate is True
-    assert any(
-        "end-anchor check skipped" in note for note in box.submission["notes"]
-    )
-
-
-# --- the landmark tools ---------------------------------------------------
-
-
-def test_atlas_structures_at_reports_what_the_annotation_carries(tmp_path: Path):
-    state, ctx = _stack(tmp_path)
-    atlas_structures_at = _tool(_box(state, ctx), "atlas_structures_at")
-
-    result = atlas_structures_at([6.0, 15.0])
-
-    assert result["status"] == "ok"
-    first, second = result["levels"]
-    assert first["position_mm"] == pytest.approx(6.0)
-    assert [entry["acronym"] for entry in first["structures"]] == ["FB", "FA"]
-    assert [entry["acronym"] for entry in second["structures"]] == ["HB"]
-
-
-def test_atlas_structures_at_clamps_and_caps(tmp_path: Path):
-    state, ctx = _stack(tmp_path)
-    atlas_structures_at = _tool(_box(state, ctx), "atlas_structures_at")
-
-    assert atlas_structures_at([])["error"] == "BAD_ARGS"
-    assert atlas_structures_at([-5.0])["levels"][0]["position_mm"] == 0.0
-    assert len(atlas_structures_at([1.0] * 12)["levels"]) == 8
-
-
-def test_structure_range_reports_spans_and_near_misses(tmp_path: Path):
-    state, ctx = _stack(tmp_path)
-    structure_range = _tool(_box(state, ctx), "structure_range")
-
-    result = structure_range(["FA", "FOR", "ghost"])
-
-    by_query = {entry["query"]: entry for entry in result["ranges"]}
-    assert (by_query["FA"]["first_mm"], by_query["FA"]["last_mm"]) == (2.0, 6.0)
-    # A parent's span rolls its descendants up.
-    assert (by_query["FOR"]["first_mm"], by_query["FOR"]["last_mm"]) == (2.0, 9.0)
-    assert by_query["ghost"]["error"] == "UNKNOWN_STRUCTURE"
-    assert "near_misses" in by_query["ghost"]
-
-
-def test_structure_range_names_the_structures_the_query_could_have_meant(
-    tmp_path: Path,
-):
-    """A short acronym resolves silently; the alternatives make that visible."""
-    state, ctx = _stack(tmp_path)
-    structure_range = _tool(_box(state, ctx), "structure_range")
-
-    entry = structure_range(["FOR"])["ranges"][0]
-
-    # "FOR" resolves to the parent, but FA and FB match it too.
-    assert entry["acronym"] == "FOR"
-    assert entry["name"] == "Forebrain"
-    assert set(entry["also_matches"]) == {"FA", "FB"}
-    assert len(entry["also_matches"]) <= 3
-
-    # An unambiguous acronym carries no alternatives to second-guess.
-    assert "also_matches" not in structure_range(["HB"])["ranges"][0]
-
-
-def test_structure_range_caps_the_batch(tmp_path: Path):
-    state, ctx = _stack(tmp_path)
-    structure_range = _tool(_box(state, ctx), "structure_range")
-
-    assert structure_range([])["error"] == "BAD_ARGS"
-    result = structure_range(["FA"] * 12)
-    assert len(result["ranges"]) == 10
-    assert len(result["skipped"]) == 2
-
-
-# --- landmark_tools=False: the ablation switch ----------------------------
-
-
-def test_landmark_tools_off_drops_the_tools_from_the_toolbox(tmp_path: Path):
-    state, ctx = _stack(tmp_path, landmark_tools=False)
-    names = {t.__name__ for t in _box(state, ctx).tools}
-
-    assert "atlas_structures_at" not in names
-    assert "structure_range" not in names
-    assert {"view_slices", "set_positions", "submit_positions"} <= names
-
-
-def test_landmark_tools_off_submit_positions_takes_no_end_anchors(tmp_path: Path):
-    state, ctx = _stack(tmp_path, landmark_tools=False)
-    box = _box(state, ctx)
-    submit_positions = _tool(box, "submit_positions")
-    tool_context = _ToolContext()
-
-    result = submit_positions(
-        interval_breaks=[],
-        notes=["checked both ends by eye"],
-        summary="done",
-        tool_context=tool_context,
-    )
-
-    assert result["status"] == "ok"
-    assert tool_context.actions.escalate is True
-    assert "end_anchors" not in box.submission
 
 
 # --- prompt + seed message ------------------------------------------------
@@ -791,8 +495,6 @@ def test_prompt_states_the_job_the_facts_the_tools_and_the_constraints(
     for tool in (
         "view_slices",
         "fetch_atlas",
-        "atlas_structures_at",
-        "structure_range",
         "stack_positions",
         "interpolate_between",
         "set_positions",
@@ -805,16 +507,11 @@ def test_prompt_carries_no_coaching(tmp_path: Path):
     """No strategies, no rules of thumb, no failure-mode warnings."""
     state, _ctx = _stack(tmp_path, placed=False)
 
-    for landmark_tools in (True, False):
-        prompt = build_position_prompt(
-            state=state,
-            species="mouse",
-            pos_lo=0.0,
-            pos_hi=13.18,
-            landmark_tools=landmark_tools,
-        ).lower()
-        for phrase in (*BANNED_COACHING, "rules that apply", "ladder", "key section"):
-            assert phrase not in prompt, phrase
+    prompt = build_position_prompt(
+        state=state, species="mouse", pos_lo=0.0, pos_hi=13.18
+    ).lower()
+    for phrase in (*BANNED_COACHING, "rules that apply", "ladder", "key section"):
+        assert phrase not in prompt, phrase
 
 
 def test_prompt_states_the_hard_constraints_only(tmp_path: Path):
@@ -825,28 +522,8 @@ def test_prompt_states_the_hard_constraints_only(tmp_path: Path):
     )
 
     assert "Every section must have a position" in prompt
-    assert "one end anchor for the FIRST and one for the LAST section" in prompt
-    assert "8% of" in prompt  # MAX_ANCHOR_SPAN_FRACTION
     assert "1.5x the stack's median written spacing" in prompt
-
-
-def test_prompt_omits_landmarks_when_the_gate_is_off(tmp_path: Path):
-    state, _ctx = _stack(tmp_path, placed=False)
-
-    prompt = build_position_prompt(
-        state=state,
-        species="mouse",
-        pos_lo=0.0,
-        pos_hi=13.18,
-        landmark_tools=False,
-    )
-
-    assert "structure_range" not in prompt
-    assert "atlas_structures_at" not in prompt
     assert "end anchor" not in prompt.lower()
-    # The rest of the lean prompt is unchanged.
-    assert "Every section must have a position" in prompt
-    assert "1.5x the stack's median written spacing" in prompt
 
 
 def test_prompt_stays_atlas_agnostic(tmp_path: Path):
@@ -922,18 +599,6 @@ class _ScriptedPositionLlm(BaseLlm):
                     "interval_breaks": [3],
                     "notes": ["one section missing before index 3"],
                     "summary": "Moved one section; found a gap.",
-                    "end_anchors": [
-                        {
-                            "id": "slice_00.png",
-                            "structure": "XA",
-                            "note": "extra-narrow anterior structure fills it",
-                        },
-                        {
-                            "id": "slice_05.png",
-                            "structure": "XP",
-                            "note": "extra-narrow posterior structure present",
-                        },
-                    ],
                 },
             )
         yield LlmResponse(
@@ -946,8 +611,8 @@ class _ScriptedPositionLlm(BaseLlm):
 class _PlacingLlm(BaseLlm):
     """Place an unplaced stack with the reduced toolset.
 
-    look -> write two points -> interpolate -> check a structure span -> read
-    the stack back -> write the whole ladder -> submit.
+    look -> write two points -> interpolate -> read the stack back -> write
+    the whole ladder -> submit.
     """
 
     async def generate_content_async(
@@ -980,7 +645,6 @@ class _PlacingLlm(BaseLlm):
                     ]
                 },
             ),
-            ("structure_range", {"acronyms": ["FA"]}),
             (
                 "set_positions",
                 {
@@ -997,18 +661,6 @@ class _PlacingLlm(BaseLlm):
                     "interval_breaks": [],
                     "notes": ["two points fixed, the rest interpolated"],
                     "summary": "Placed the stack from two verified sections.",
-                    "end_anchors": [
-                        {
-                            "id": "slice_00.png",
-                            "structure": "XA",
-                            "note": "extra-narrow anterior structure, whole section",
-                        },
-                        {
-                            "id": "slice_05.png",
-                            "structure": "XP",
-                            "note": "extra-narrow posterior structure, smaller",
-                        },
-                    ],
                 },
             ),
         ]
@@ -1078,8 +730,6 @@ def test_position_node_places_an_unplaced_stack_with_the_lean_toolset(
     assert positions == pytest.approx([2.0, 2.5, 3.0, 3.5, 4.0, 4.5])
     assert all(s.position_source == "refined" for s in state.slices)
     assert any("two points fixed" in note for note in state.notes)
-    # The end anchors it submitted are on the record, not just in the gate.
-    assert any("end anchor slice_00.png = XA" in note for note in state.notes)
 
 
 def test_position_node_keeps_partial_work_when_the_budget_runs_out(

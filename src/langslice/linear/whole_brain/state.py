@@ -43,12 +43,6 @@ class BrainConfig:
     #: CLAHE + DAPI-weighted grayscale), "none" shows the raw section. Never
     #: written back to the user's files.
     preprocess: str = "auto"
-    #: Whether the positioning step gets the atlas-annotation landmark tools
-    #: (`atlas_structures_at`, `structure_range`) and the `submit_positions`
-    #: end-anchor gate they back. False strips both the tools and every
-    #: mention of them from the prompt, reverting to a visual end check —
-    #: an ablation switch, not a normal deployment knob.
-    landmark_tools: bool = False
 
     @property
     def thickness_mm(self) -> float:

@@ -280,8 +280,8 @@ async def position(state: StackState, ctx: EngineContext) -> str:
     the hard constraints, and prescribes nothing.
 
     Reads: any positions already on the stack, ``interval_mm``/``thickness_mm``,
-    every section as its own labelled image, and the atlas annotation through
-    the landmark tools.
+    every section as its own labelled image, and atlas sections through
+    ``fetch_atlas``.
     Writes: ``position_mm`` + ``position_source`` ("refined"), ``confidence``,
     ``interval_breaks`` and notes from the submission.
     Routes: "" (transforms). Oblique-angle estimation is not part of this
@@ -325,17 +325,6 @@ async def position(state: StackState, ctx: EngineContext) -> str:
             state.notes.append(
                 f"position: interval breaks accepted at corrected indices "
                 f"{state.interval_breaks}"
-            )
-        # The end anchors are the one check that came from outside the agent's
-        # own arithmetic; record which ones the gate accepted.
-        for anchor in findings.get("end_anchors") or []:
-            structure = str(anchor.get("structure", "")).strip()
-            if not structure:
-                continue
-            seen = str(anchor.get("note", "")).strip()
-            state.notes.append(
-                f"position: end anchor {anchor.get('id')} = {structure}"
-                + (f" ({seen})" if seen else "")
             )
 
     ctx.progress(

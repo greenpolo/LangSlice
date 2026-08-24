@@ -22,18 +22,8 @@ from langslice.atlas.core import (
     load_atlas,
     position_mm_to_index,
 )
-from langslice.atlas.landmarks import (
-    axis_range_of,
-    find_structure,
-    near_misses,
-    structures_at,
-)
 
 __all__ = [
-    "axis_range_of",
-    "find_structure",
-    "near_misses",
-    "structures_at",
     "load_atlas",
     "DEFAULT_ATLAS_NAME",
     "canonicalize_atlas_name",
