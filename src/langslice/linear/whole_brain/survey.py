@@ -201,11 +201,16 @@ def build_survey_tools(state: StackState, ctx: EngineContext) -> SurveyToolBox:
         return {"status": "ok", "order": list(new_order)}
 
     def mark_damaged(entries: list[dict[str, str]]) -> dict[str, Any]:
-        """Record damaged sections and why, for the later registration steps.
+        """Record sections whose shape would break affine registration.
+
+        Damage means the section outline massively deviates from the atlas:
+        large missing chunks, a missing hemisphere or olfactory bulb, split
+        or independently rotated hemispheres, displaced fragments. Bubbles,
+        stains, low contrast, and small tears with an intact outline are NOT
+        damage.
 
         Args:
-            entries: ``[{"id": "<filename>", "note": "<short description>"}]``
-                — tears, folds, missing tissue, bubbles, knife chatter.
+            entries: ``[{"id": "<filename>", "note": "<what breaks the outline>"}]``
 
         Returns:
             Which sections are marked damaged afterwards.
@@ -332,9 +337,18 @@ def build_survey_prompt(
         f"The filenames are context for the intended order — they usually "
         f"encode the order the sections were cut.\n\n"
         f"In ONE pass, triage the stack for four things at once:\n\n"
-        f"1. DAMAGE. Tears, folds, missing tissue, bubbles, knife chatter. "
-        f"Record each one with a short note via `mark_damaged`. This list is "
-        f"needed later: damaged sections take a different registration path.\n\n"
+        f"1. DAMAGE. 'Damaged' has an operational definition here: anything "
+        f"that would make an automatic affine (outline-based) registration "
+        f"against the atlas fail. Large missing chunks, a missing hemisphere, "
+        f"a missing olfactory bulb, hemispheres separated or independently "
+        f"rotated, a detached piece mounted out of place — anything that "
+        f"makes the section's shape massively deviate from the atlas "
+        f"section. NOT damage: bubbles, stains, debris, low contrast, small "
+        f"tears or folds that leave the overall outline intact — those "
+        f"register fine and must not be marked. Record each damaged section "
+        f"with a short note via `mark_damaged`; the note should say what "
+        f"breaks the outline. This list is needed later: damaged sections "
+        f"take a different registration path.\n\n"
         f"2. {flip_heading}. Sections are rarely mounted in a consistent "
         f"orientation, so expect some to be mirrored. A flipped section shows "
         f"{mirror_cue}. Two cues:\n"
