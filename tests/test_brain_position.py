@@ -1101,3 +1101,23 @@ def test_position_node_is_a_no_op_on_an_empty_stack(tmp_path: Path):
         atlas_loader=lambda _name: _ATLAS,
     )
     assert asyncio.run(position(StackState(), ctx)) == ""
+
+
+def test_submission_refused_when_direction_reversed(tmp_path):
+    from langslice.linear.whole_brain.position import _direction_error
+
+    state, _ctx = _stack(tmp_path, placed=False)
+    state.axis_directions = {"ap": "anterior_to_posterior"}
+    ordered = state.in_order()
+    n = len(ordered)
+    for i, record in enumerate(ordered):
+        record.position_mm = 5.0 - i * (3.0 / max(1, n - 1))  # descending
+    err = _direction_error(state)
+    assert err is not None and err["error"] == "DIRECTION_REVERSED"
+    for i, record in enumerate(ordered):
+        record.position_mm = 2.0 + i * (3.0 / max(1, n - 1))  # ascending
+    assert _direction_error(state) is None
+    state.axis_directions = {}
+    for i, record in enumerate(ordered):
+        record.position_mm = 5.0 - i * 0.1
+    assert _direction_error(state) is None  # unknown direction: no check

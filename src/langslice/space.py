@@ -35,7 +35,7 @@ def _resolution3d_um(resolution: object) -> tuple[float, float, float]:
 def atlas_space_context(atlas: object) -> AtlasSpaceContext:
     atlas_name = str(getattr(atlas, "atlas_name", "unknown"))
     orientation = str(getattr(atlas, "orientation", ""))
-    shape = _shape3d(getattr(atlas, "reference", None))
+    shape = _shape3d(getattr(atlas, "template", None))
     resolution_um = _resolution3d_um(getattr(atlas, "resolution", None))
     space = AnatomicalSpace(
         origin=orientation,

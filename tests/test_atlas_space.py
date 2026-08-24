@@ -22,7 +22,7 @@ class _FakeAtlas:
     def __init__(self, orientation: str) -> None:
         self.atlas_name = f"fake_{orientation}"
         self.orientation = orientation
-        self.reference = np.zeros((4, 5, 6), dtype=np.uint16)
+        self.template = np.zeros((4, 5, 6), dtype=np.uint16)
         self.annotation = np.zeros((4, 5, 6), dtype=np.uint32)
         self.resolution = (100.0, 100.0, 100.0)
         self.metadata = {}
