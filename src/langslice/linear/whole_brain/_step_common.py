@@ -12,6 +12,7 @@ seed message differ, so those stay with the step.
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import Callable
 from typing import Any
 
@@ -46,7 +47,7 @@ VIEW_LONG_EDGE = 1024
 #: Long edge for the per-section images in a step's seed message. Small on
 #: purpose: the whole stack (40-odd sections) rides in one user message and
 #: stays in context for the whole session.
-SEED_IMAGE_LONG_EDGE = 512
+SEED_IMAGE_LONG_EDGE = int(os.environ.get("LANGSLICE_SEED_IMAGE_LONG_EDGE", "512"))
 
 
 def split_known_ids(state: StackState, slice_ids: list[str]) -> tuple[list[str], list[str]]:
