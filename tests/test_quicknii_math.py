@@ -4,7 +4,7 @@ from typing import Protocol, cast
 
 import numpy as np
 
-from langslice.export import (
+from langslice.integrations.quint import (
     CORONAL_FRAME_PADDING_FACTOR,
     compute_anchoring,
     compute_coronal_frame_geometry,
