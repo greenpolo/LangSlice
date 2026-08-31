@@ -107,3 +107,38 @@ def test_contact_sheet_geometry_is_the_same_either_way(tmp_path: Path):
     assert auto_size == raw_size
     # Same grid, brighter tissue.
     assert auto_mean > raw_mean
+
+
+def test_adaptive_preprocess_auto_routes_brightfield_and_keeps_polarity() -> None:
+    import numpy as np
+    from PIL import Image
+
+    from langslice.image_prep import adaptive_preprocess
+
+    # Brightfield: white slide, violet-gray tissue blob
+    arr = np.full((64, 64, 3), 250, dtype=np.uint8)
+    arr[16:48, 16:48] = (150, 110, 160)
+    out = np.asarray(adaptive_preprocess(Image.fromarray(arr)).convert("L"))
+    assert out[0, 0] > 200  # background stays light
+    assert out[32, 32] < out[0, 0]  # tissue stays darker than background
+
+    # Fluorescence: black background, blue-bright tissue -> bright-on-dark
+    arr = np.zeros((64, 64, 3), dtype=np.uint8)
+    arr[16:48, 16:48] = (10, 10, 180)
+    out = np.asarray(adaptive_preprocess(Image.fromarray(arr)).convert("L"))
+    assert out[0, 0] < 30
+    assert out[32, 32] > out[0, 0]
+
+
+def test_adaptive_preprocess_explicit_mode_overrides_auto() -> None:
+    import numpy as np
+    from PIL import Image
+
+    from langslice.image_prep import adaptive_preprocess
+
+    arr = np.full((32, 32, 3), 250, dtype=np.uint8)
+    arr[8:24, 8:24] = (150, 110, 160)
+    bf = np.asarray(adaptive_preprocess(Image.fromarray(arr), mode="brightfield").convert("L"))
+    fl = np.asarray(adaptive_preprocess(Image.fromarray(arr), mode="fluorescence").convert("L"))
+    assert bf[0, 0] > 200
+    assert (bf != fl).any()

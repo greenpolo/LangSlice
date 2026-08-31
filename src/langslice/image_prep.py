@@ -51,30 +51,110 @@ def normalize_image(image: Image.Image) -> Image.Image:
     return image.convert("RGB")
 
 
+#: Brightfield CLAHE strength: stronger clip and finer tiles than the
+#: fluorescence path, because absorbance stains (Nissl, ISH) carry their
+#: structure in low-contrast density variations.
+_BRIGHTFIELD_CLAHE_CLIP = 6.0
+_BRIGHTFIELD_CLAHE_TILE = (16, 16)
+#: Optical-density blend: violet/purple stains absorb green light most, so
+#: the green channel carries the sharpest stain-density signal.
+_BRIGHTFIELD_DENSITY_WEIGHTS = (0.2, 0.6, 0.2)
+#: Densities at or below this are slide background; CLAHE output is not
+#: applied there, so empty regions stay clean instead of amplifying slide
+#: texture into gray blotches.
+_BRIGHTFIELD_BG_DENSITY = 8
+
+
+def _brightfield_preprocess(arr: np.ndarray) -> Image.Image:
+    """Brightfield (absorbance) variant: CLAHE on optical density.
+
+    Structure in brightfield is stain DENSITY, not brightness, so the image
+    is inverted to per-channel optical density, blended green-heavy, contrast
+    enhanced, and re-inverted — output keeps the native dark-tissue-on-light
+    polarity.
+    """
+    import cv2
+
+    od = 255.0 - arr.astype(np.float32)
+    wr, wg, wb = _BRIGHTFIELD_DENSITY_WEIGHTS
+    density = np.clip(wr * od[..., 0] + wg * od[..., 1] + wb * od[..., 2], 0, 255).astype(
+        np.uint8
+    )
+    clahe = cv2.createCLAHE(
+        clipLimit=_BRIGHTFIELD_CLAHE_CLIP, tileGridSize=_BRIGHTFIELD_CLAHE_TILE
+    )
+    enhanced = clahe.apply(density)
+    enhanced = np.where(density > _BRIGHTFIELD_BG_DENSITY, enhanced, density)
+    out = (255 - enhanced).astype(np.uint8)
+    return Image.fromarray(np.stack([out, out, out], axis=-1))
+
+
 def adaptive_preprocess(
     image: Image.Image,
     *,
+    mode: str = "auto",
     clahe_clip: float = 4.0,
     clahe_tile: tuple[int, int] = (8, 8),
     target_brightness: float = 90.0,
     max_boost: float = 3.0,
-    channel_weights: tuple[float, float, float] = (0.15, 0.15, 0.70),
+    channel_weights: tuple[float, float, float] | None = None,
 ) -> Image.Image:
     """Adaptive preprocessing for VLM input: CLAHE + weighted blend + brightness.
 
-    Designed for fluorescent histology with DAPI (blue) as the structural
-    channel and viral tracers in red/green.  Produces a consistent grayscale
-    output that matches atlas appearance regardless of stain intensity.
+    Two paths, selected by ``mode``:
 
-    Steps:
-        1. CLAHE on each R, G, B channel independently (local contrast)
-        2. Weighted blend to grayscale (default 70% blue + 15% red + 15% green)
-        3. Adaptive brightness boost to reach *target_brightness* mean
+    - ``"fluorescence"`` — per-channel CLAHE, a blend weighted toward the
+      STRUCTURAL channel (auto-selected by tissue coverage when
+      *channel_weights* is None: DAPI-blue, YFP-green, whatever lights the
+      whole tissue; sparse tracer channels get little weight), brightness
+      boost toward *target_brightness*.
+    - ``"brightfield"`` — absorbance stains (Nissl, ISH): CLAHE runs on
+      optical density with stronger clip and finer tiles
+      (:func:`_brightfield_preprocess`), keeping dark-on-light polarity.
+    - ``"auto"`` (default) — brightfield when the image border is bright
+      (a light slide background), fluorescence otherwise.
     """
     import cv2
 
     arr = np.asarray(normalize_image(image), dtype=np.uint8)
+
+    if mode not in ("auto", "fluorescence", "brightfield"):
+        raise ValueError(f"Unknown adaptive_preprocess mode: {mode!r}")
+    if mode == "auto":
+        ring = max(2, int(round(0.02 * max(arr.shape[:2]))))
+        border = np.concatenate(
+            [
+                arr[:ring].reshape(-1, 3),
+                arr[-ring:].reshape(-1, 3),
+                arr[:, :ring].reshape(-1, 3),
+                arr[:, -ring:].reshape(-1, 3),
+            ]
+        )
+        mode = "brightfield" if float(np.median(border)) > 140.0 else "fluorescence"
+    if mode == "brightfield":
+        return _brightfield_preprocess(arr)
+
     r, g, b = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2]
+
+    # Structural-channel selection: the structural stain (DAPI, YFP fills,
+    # autofluorescence) lights up MOST of the tissue; sparse tracer channels
+    # light small patches brightly. Weight channels by squared tissue
+    # coverage so broad channels dominate regardless of which color they
+    # are; the DAPI-blue default only held for DAPI-stained images.
+    tissue = arr.max(axis=2) > 15
+    if channel_weights is None:
+        if tissue.any():
+            cov = np.array(
+                [float((c[tissue] > 40).mean()) for c in (r, g, b)], dtype=np.float64
+            )
+            w = cov**2
+            if w.sum() > 0:
+                wn = w / w.sum()
+                channel_weights = (float(wn[0]), float(wn[1]), float(wn[2]))
+            else:
+                channel_weights = (1 / 3, 1 / 3, 1 / 3)
+        else:
+            channel_weights = (1 / 3, 1 / 3, 1 / 3)
 
     clahe = cv2.createCLAHE(clipLimit=clahe_clip, tileGridSize=clahe_tile)
     r_enh = clahe.apply(r).astype(np.float32)
@@ -181,6 +261,20 @@ def crop_to_tissue(image: Image.Image, *, margin: float = FRAME_MARGIN) -> Image
     speck of debris cannot drag the frame open. Falls back to the untouched
     image when the result would be degenerate.
     """
+    mask = foreground_mask(image)
+    if mask is None:
+        return image
+    return crop_to_mask(image, mask, margin=margin)
+
+
+def foreground_mask(image: Image.Image) -> np.ndarray | None:
+    """Boolean tissue mask for *image*, or None when detection is degenerate.
+
+    The mask is measured on a small proxy (long edge ``_FRAME_PROXY_EDGE``) and
+    returned at that proxy resolution — scale it onto whatever frame you need,
+    as :func:`crop_to_mask` does. Foreground rule and largest-blob selection
+    are shared with :func:`crop_to_tissue`.
+    """
     proxy = image.convert("L")
     long_edge = max(proxy.size)
     if long_edge > _FRAME_PROXY_EDGE:
@@ -191,7 +285,7 @@ def crop_to_tissue(image: Image.Image, *, margin: float = FRAME_MARGIN) -> Image
         )
     arr = np.asarray(proxy, dtype=np.float32)
     if arr.size == 0:
-        return image
+        return None
     border = np.concatenate(
         [arr[0, :], arr[-1, :], arr[:, 0], arr[:, -1]]
     )
@@ -200,8 +294,8 @@ def crop_to_tissue(image: Image.Image, *, margin: float = FRAME_MARGIN) -> Image
     mask = np.abs(arr - background) > max(8.0, 0.12 * spread)
     covered = float(mask.mean())
     if covered < 0.005 or covered > 0.98:
-        return image
-    return crop_to_mask(image, _largest_component(mask), margin=margin)
+        return None
+    return _largest_component(mask)
 
 
 def prepare_image_for_vlm(
