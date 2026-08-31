@@ -185,7 +185,7 @@ B-spline.
 ## Nonlinear: Image-Gen Registration
 
 ```bash
-langslice nonlinear register <image> --position <mm> [--registration-mode direct|agentic] [--image-model ...] [--review-model ...] [--max-candidates 3] [--out ...]
+langslice nonlinear register <image> --position <mm> [--registration-mode direct|agentic] [--image-model ...] [--review-model ...] [--max-candidates 3] [--palette family|leaf-borders] [--out ...]
 ```
 
 Registration has one active method: image-gen registration. In QUINT/ABBA-style
@@ -193,7 +193,10 @@ workflows, linear placement happens in the host tool and this step stands in for
 the manual spline/BigWarp deformation.
 
 1. Load, normalize, and downsample the histology slice.
-2. Generate atlas inputs at the requested atlas position.
+2. Generate atlas inputs at the requested atlas position. The colored region
+   map the model sees is drawn from smoothed region contours at canvas
+   resolution (flat, exact palette colors — no voxel staircase); the render
+   Elastix registers against stays pixel-exact.
 3. Ask the image model to generate an atlas-colored target aligned to the histology.
 4. Register the generated target to the atlas color map with itk-elastix.
 5. Warp the atlas through the recovered transform.
@@ -202,7 +205,23 @@ the manual spline/BigWarp deformation.
 Modes:
 
 - `direct` generates one candidate and returns it.
-- `agentic` lets an ADK review agent inspect up to three candidates before confirming one.
+- `agentic` runs a hosted-router conversation (openai-oauth only): the prompt
+  and images go to the hosted GPT model with the image_generation tool, Elastix
+  reports come back as follow-up messages, and the loop accepts the first
+  clean-report candidate (cap `--max-candidates`, default 4).
+
+Palette:
+
+- `--palette family` (default) draws flat regions, one color per registration
+  unit.
+- `--palette leaf-borders` draws the same colors plus Allen-Reference-Atlas
+  plate delineation: a hairline at every leaf boundary in a darker shade of
+  that region's own color (2px at a 2048 canvas, family boundaries heavier),
+  so the model is shown the full parcellation without any color moving. Only
+  the model-facing render changes — the Elastix-side render is identical —
+  and the classifier accepts the hairline color as its own region, so a model
+  that paints the lines back does not cut background through its regions. It
+  is a process-wide setting (`LANGSLICE_ATLAS_PALETTE`).
 
 Provider routing is explicit, not inferred from the model name:
 

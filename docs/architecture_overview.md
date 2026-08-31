@@ -29,7 +29,7 @@ The remaining top-level modules are shared by both:
   parameter convention. Used by the whole-brain transform step and by
   `quick_affine`.
 - `src/langslice/image_prep.py` -- image normalization, metadata detection, and downsampling.
-- `src/langslice/export.py` -- QUINT/ABBA-compatible JSON export.
+- `src/langslice/integrations/` -- integration layers for external registration software: `quint.py` (QUINT/QuickNII/VisuAlign JSON export), `abba.py` (abba-python registration plugin).
 - `src/langslice/providers/` -- Gemini and OpenAI-compatible model configuration.
 - `src/langslice/adk/` -- ADK plugins, model resolution, and SDK helpers.
 - `src/langslice/api/` -- Pydantic engine contract, runtime wrappers, and the
@@ -93,8 +93,12 @@ Registration has one active method: image-gen registration.
 5. Extract VisuAlign markers from B-spline control points.
 6. Return the generated atlas target, warped atlas, and warped-border overlay.
 
-Direct mode returns the first candidate. Agentic mode lets an ADK review agent
-inspect up to three candidates before confirming one.
+Direct mode returns the first candidate. Agentic mode runs a hosted-router
+conversation (openai-oauth only): the task prompt and input images go to the
+hosted GPT model with the image_generation tool attached, the harness runs
+Elastix on each generated image and sends the report back as a follow-up
+message, and the loop accepts the first candidate whose report is clean
+(capped at four attempts; otherwise the fewest-codes candidate wins).
 
 ## Debugging
 
