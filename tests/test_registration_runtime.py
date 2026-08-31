@@ -70,7 +70,6 @@ def test_registration_runtime_direct_image_gen_registration_uses_dense_candidate
         Image.new("RGB", (120, 100), (255, 255, 255)),
         atlas_name="allen_mouse_25um",
         position_mm=1.0,
-        registration_mode="direct",
         provider="fallback-provider",
         image_provider="direct-provider",
         image_model="direct-image-model",
@@ -147,87 +146,11 @@ def test_registration_runtime_direct_image_gen_registration_emits_runtime_trace_
         Image.new("RGB", (120, 100), (255, 255, 255)),
         atlas_name="allen_mouse_25um",
         position_mm=1.0,
-        registration_mode="direct",
         on_trace=trace_events.append,
     )
 
     assert result.debug_dir is None
     assert any(event.get("title") == "Registration solve completed" for event in trace_events)
-
-
-def test_registration_runtime_agentic_image_gen_registration_uses_review_session(
-    monkeypatch,
-) -> None:
-    review_calls: list[dict[str, object]] = []
-    progress_messages: list[str] = []
-    trace_events: list[dict[str, object]] = []
-
-    def fake_run_registration_review_session(**kwargs):
-        review_calls.append(dict(kwargs))
-        return RegistrationCandidate(
-            candidate_id="agentic-candidate",
-            generated_segmentation=Image.new("RGB", (16, 16), (210, 40, 40)),
-            warped_atlas=Image.new("RGB", (16, 16), (40, 210, 40)),
-            warped_border_overlay=Image.new("RGB", (16, 16), (40, 40, 210)),
-            markers=[[5.0, 6.0], [7.0, 8.0], [9.0, 10.0]],
-            annotation_session=RegistrationAnnotationSession(
-                workflow="image_gen_registration",
-                target_count=0,
-                metadata={
-                    "visualign_markers": [[5.0, 6.0], [7.0, 8.0], [9.0, 10.0]],
-                    "n_markers": 3,
-                },
-            ),
-            metadata={"source": "agentic-review"},
-        )
-
-    monkeypatch.setattr(
-        runtime,
-        "run_registration_review_session",
-        fake_run_registration_review_session,
-    )
-
-    result = runtime.estimate_registration(
-        Image.new("RGB", (128, 96), (255, 255, 255)),
-        atlas_name="allen_mouse_25um",
-        position_mm=1.0,
-        registration_mode="agentic",
-        provider="fallback-provider",
-        image_provider="agentic-provider",
-        image_model="agentic-image-model",
-        openai_image_route="responses",
-        review_model="agentic-review-model",
-        max_candidates=2,
-        on_progress=progress_messages.append,
-        on_trace=trace_events.append,
-    )
-
-    assert len(review_calls) == 1
-    assert review_calls[0]["image_provider"] == "agentic-provider"
-    assert review_calls[0]["image_model"] == "agentic-image-model"
-    assert review_calls[0]["openai_image_route"] == "responses"
-    assert review_calls[0]["model"] == "agentic-review-model"
-    assert review_calls[0]["pipeline_review_model"] == "agentic-review-model"
-    assert review_calls[0]["max_candidates"] == 2
-    assert review_calls[0]["position_mm"] == 1.0
-    assert review_calls[0]["on_progress"] is not None
-    assert review_calls[0]["on_trace"] is not None
-    assert result.correspondences == []
-    assert result.accepted_correspondences == []
-    assert result.annotation_session is not None
-    assert result.annotation_session.metadata["visualign_markers"] == [
-        [5.0, 6.0],
-        [7.0, 8.0],
-        [9.0, 10.0],
-    ]
-    assert result.annotation_session.metadata["n_markers"] == 3
-    assert result.annotation_session.metadata["candidate_metadata"] == {
-        "source": "agentic-review",
-    }
-    assert progress_messages
-    assert trace_events
-
-
 def test_resolve_register_models_defaults_review_to_effective_model() -> None:
     image_model, review_model = cli._resolve_register_models(
         default_image_model="gpt-image-2",

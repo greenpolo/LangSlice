@@ -37,12 +37,6 @@ def _add_register_parser(subparsers: argparse._SubParsersAction) -> None:
         choices=["coronal", "sagittal", "horizontal"],
         help=_PLANE_HELP,
     )
-    reg.add_argument(
-        "--registration-mode",
-        default="direct",
-        choices=["direct", "agentic"],
-        help="Dense registration mode: direct candidate solve or ADK-reviewed agentic solve.",
-    )
     reg.add_argument("--model", default=None, help="Gemini model name")
     reg.add_argument("--image-model", default=None, help="Image generation model name")
     reg.add_argument(
@@ -53,10 +47,26 @@ def _add_register_parser(subparsers: argparse._SubParsersAction) -> None:
     )
     reg.add_argument("--review-model", default=None, help="Registration review agent model name")
     reg.add_argument(
-        "--max-candidates",
-        type=int,
-        default=3,
-        help="Maximum dense registration candidates for agentic review",
+        "--canvas-pad",
+        type=float,
+        default=0.0,
+        help="Pad every canvas side by this fraction of the long edge with a "
+        "background-colored margin, so a fragment or hemibrain's complete "
+        "painted anatomy can exceed the original image bounds (0 to 1.5)",
+    )
+    reg.add_argument(
+        "--pitch-deg",
+        type=float,
+        default=0.0,
+        help="Block cutting angle about the plane's column axis (degrees). Every "
+        "atlas render is resliced on that oblique plane instead of taken flat.",
+    )
+    reg.add_argument(
+        "--yaw-deg",
+        type=float,
+        default=0.0,
+        help="Block cutting angle about the plane's row axis (degrees) — the "
+        "component that samples a different level on each side.",
     )
     reg.add_argument(
         "--vlm-resolution",
@@ -86,10 +96,15 @@ def _add_register_parser(subparsers: argparse._SubParsersAction) -> None:
     reg.add_argument(
         "--provider",
         default="google",
-        choices=["google", "openai", "chatgpt"],
+        choices=[
+            "gemini-api", "openai-api", "openai-oauth",
+            "google", "openai", "chatgpt",  # legacy aliases
+        ],
         help=(
-            "Model provider: 'google' for Gemini, 'openai' for OpenAI-compatible "
-            "(Ollama, etc.), 'chatgpt' for a ChatGPT subscription (`langslice login`)"
+            "Access method: 'gemini-api' (Google API key), 'openai-api' "
+            "(OpenAI-compatible API key / --endpoint), 'openai-oauth' "
+            "(ChatGPT subscription via `langslice login`). Old spellings "
+            "google/openai/chatgpt still work as aliases."
         ),
     )
     reg.add_argument(
@@ -99,6 +114,40 @@ def _add_register_parser(subparsers: argparse._SubParsersAction) -> None:
             "OpenAI-compatible base URL (e.g. http://127.0.0.1:1234/v1). When "
             "set, the model name is used verbatim and the request is sent here, "
             "bypassing prefix dispatch."
+        ),
+    )
+    reg.add_argument(
+        "--image-axes",
+        default=None,
+        help=(
+            "Anatomical directions of the image's rows,cols (ABBA-style axis "
+            "mapping), e.g. 'ap,lr' for a horizontal image with anterior at "
+            "the top and the animal's left on the image's left; 'si,ap' for "
+            "a sagittal image with dorsal up and anterior left. Default: the "
+            "atlas render's native orientation."
+        ),
+    )
+    reg.add_argument(
+        "--palette",
+        default="family",
+        choices=["family", "leaf-borders"],
+        help=(
+            "How the atlas is drawn for the image model. 'family' is flat "
+            "regions, one color per registration unit; 'leaf-borders' adds "
+            "Allen-Reference-Atlas-style hairlines at every leaf boundary, in "
+            "a darker shade of the region's own color. Colors, the Elastix "
+            "pair and everything classified from it are identical either way."
+        ),
+    )
+    reg.add_argument(
+        "--pixel-size-um",
+        type=float,
+        default=None,
+        help=(
+            "Physical pixel size of the input image in micrometers. When "
+            "given, the atlas references are rendered at TRUE physical "
+            "scale relative to the image — the single most direct "
+            "calibration between image and atlas."
         ),
     )
     reg.add_argument("--json", action="store_true", help="Print result JSON to stdout")
@@ -117,9 +166,23 @@ def _run_register(args: argparse.Namespace) -> None:
     if endpoint:
         os.environ["LANGSLICE_ENDPOINT"] = endpoint
 
+    # Palette is a process-wide setting (see atlas.recolor.active_palette): the
+    # render, the classifier and the family merge must not disagree about it.
+    from langslice.atlas.recolor import PALETTE_ENV
+
+    os.environ[PALETTE_ENV] = getattr(args, "palette", "family")
+
     image_model_arg = args.image_model
 
-    if args.provider in {"openai", "chatgpt"}:
+    from langslice.providers.registry import canonical_provider
+
+    if canonical_provider(args.provider) == "openai-oauth":
+        from langslice.providers import openai_oauth
+
+        default_image_model = args.image_model or openai_oauth.DEFAULT_IMAGE_MODEL
+        default_review_model = args.model or openai_oauth.DEFAULT_REVIEW_MODEL
+        effective_model = default_image_model
+    elif canonical_provider(args.provider) == "openai-api":
         import langslice.providers.openai_config as openai_config
 
         default_image_model = args.image_model or openai_config.get_openai_image_model()
@@ -171,9 +234,12 @@ def _run_register(args: argparse.Namespace) -> None:
         preprocess="auto" if getattr(args, "clahe", False) else "none",
         provider=args.provider,
         output_dir=str(out_dir),
-        registration_mode=args.registration_mode,
         openai_image_route=args.openai_image_route,
-        max_candidates=args.max_candidates,
+        canvas_pad=args.canvas_pad,
+        image_axes=getattr(args, "image_axes", None),
+        pixel_size_um=getattr(args, "pixel_size_um", None),
+        pitch_deg=getattr(args, "pitch_deg", 0.0),
+        yaw_deg=getattr(args, "yaw_deg", 0.0),
         vlm_resolution=args.vlm_resolution,
     )
     result = run_register(request, emit=emit)
@@ -291,7 +357,7 @@ def _add_estimate_parser(subparsers: argparse._SubParsersAction) -> None:
     est.add_argument(
         "--provider",
         default="google",
-        choices=["google", "openai"],
+        choices=["gemini-api", "openai-api", "google", "openai"],
         help="Model provider: 'google' for Gemini, 'openai' for OpenAI-compatible (Ollama, etc.)",
     )
     est.add_argument(
@@ -555,8 +621,9 @@ def _run_estimate(args: argparse.Namespace) -> None:
     import langslice.providers.vlm_config as vlm_config
     from langslice.api.models import EstimateRequest
     from langslice.api.runtime import run_estimate
+    from langslice.providers.registry import canonical_provider
 
-    if args.provider == "openai":
+    if canonical_provider(args.provider) == "openai-api":
         import langslice.providers.openai_config as openai_config
 
         effective_model = args.model or openai_config.get_openai_model()
@@ -643,6 +710,9 @@ def _build_parser() -> argparse.ArgumentParser:
     nonlinear_sub = nonlinear.add_subparsers(dest="subcommand", required=True)
     _add_register_parser(nonlinear_sub)
 
+    # langslice abba
+    _add_abba_parser(subparsers)
+
     # langslice collect-traces
     _add_collect_traces_parser(subparsers)
 
@@ -695,6 +765,55 @@ def _run_quick_affine(args: argparse.Namespace) -> None:
         print(json.dumps(result, indent=2))
 
 
+def _add_abba_parser(subparsers: argparse._SubParsersAction) -> None:
+    p = subparsers.add_parser(
+        "abba",
+        help="Launch ABBA (abba-python GUI) with LangSlice registration installed",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    p.add_argument(
+        "--abba-atlas",
+        default="Adult Mouse Brain - Allen Brain Atlas V3p1",
+        help="Atlas name passed to ABBA",
+    )
+    p.add_argument(
+        "--atlas",
+        default="allen_mouse_10um",
+        help="BrainGlobe atlas LangSlice samples for region maps",
+    )
+    p.add_argument(
+        "--provider",
+        default="google",
+        choices=[
+            "gemini-api", "openai-api", "openai-oauth",
+            "google", "openai", "chatgpt",  # legacy aliases
+        ],
+        help="Image-gen provider for the registration",
+    )
+    p.add_argument("--model", default=None, help="Image-gen model override")
+
+
+def _run_abba(args: argparse.Namespace) -> None:
+    try:
+        import abba_python  # noqa: F401  # pyright: ignore[reportMissingImports]
+
+        from langslice.integrations.abba import run_gui_session
+    except ImportError as exc:
+        raise SystemExit(
+            "abba-python is not installed in this environment. Install it with\n"
+            '  pip install "langslice[abba]"\n'
+            "inside a conda env that provides OpenJDK 11 and Maven "
+            f"(see the abba-python installation docs). ({exc})"
+        ) from exc
+
+    run_gui_session(
+        abba_atlas=args.abba_atlas,
+        atlas_name=args.atlas,
+        provider=args.provider,
+        model=args.model,
+    )
+
+
 def _add_serve_parser(subparsers: argparse._SubParsersAction) -> None:
     p = subparsers.add_parser(
         "serve",
@@ -728,9 +847,11 @@ def main(argv: list[str] | None = None):
     if command == "version":
         print(f"langslice {langslice.__version__}")
     elif command == "login":
-        from langslice.providers.chatgpt import login
+        from langslice.providers.openai_oauth import login
 
         print(f"Signed in. Credentials saved to {login()}")
+    elif command == "abba":
+        _run_abba(args)
     elif command == "register":
         _run_register(args)
     elif command == "quick-affine":
