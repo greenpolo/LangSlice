@@ -124,11 +124,11 @@ def test_openai_images_route_uses_three_png_inputs_and_returns_image(monkeypatch
     result = providers.generate_warped_segmentation_image(request)
 
     assert isinstance(result, GeneratedSegmentation)
-    assert result.provider == "openai"
+    assert result.provider == "openai-api"
     assert result.model == "gpt-image-2"
     assert result.route == "openai_images"
     assert result.revised_prompt is None
-    assert result.metadata["provider"] == "openai"
+    assert result.metadata["provider"] == "openai-api"
     assert result.metadata["request"]["prompt"] == "warp it"
     assert _decode_image(result.image) == (9, 7, (12, 34, 56))
 
@@ -139,9 +139,9 @@ def test_openai_images_route_uses_three_png_inputs_and_returns_image(monkeypatch
     image_files = cast(list[io.BytesIO], call["image"])
     assert len(image_files) == 3
     assert [img.name for img in image_files] == [
+        "slice_image.png",
         "colored_regions.png",
         "reference_slice.png",
-        "slice_image.png",
     ]
 
 
@@ -236,7 +236,7 @@ def test_openai_compatible_provider_uses_images_route_and_normalized_provider(mo
 
     result = providers.generate_warped_segmentation_image(request)
 
-    assert result.provider == "openai-compatible"
+    assert result.provider == "openai-api"  # canonical access-method name
     assert result.route == "openai_images"
     assert result.model == "gpt-image-2"
     assert _decode_image(result.image) == (9, 7, (12, 34, 56))

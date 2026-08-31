@@ -8,7 +8,7 @@ from typing import Any
 
 from google.genai import types
 
-_CHATGPT_PREFIX = "chatgpt/"
+_OAUTH_PREFIXES = ("openai-oauth/", "chatgpt/")  # canonical, then legacy alias
 _PROXY_PREFIX = "litellm-proxy:"
 _OPENROUTER_PREFIX = "openrouter:"
 _OLLAMA_PREFIX = "ollama:"
@@ -127,15 +127,16 @@ def resolve_adk_model(model: str | object) -> str | object:
 
     lowered = stripped.lower()
 
-    # ChatGPT-subscription backend (Codex Responses). No API key: the token
-    # comes from `langslice login` or the Codex CLI.
-    if lowered.startswith(_CHATGPT_PREFIX):
-        model_id = stripped[len(_CHATGPT_PREFIX):].strip()
-        if not model_id:
-            raise ValueError("chatgpt model strings require a model id after '/'")
-        from langslice.providers.chatgpt import ChatGptLlm
+    # OpenAI subscription-OAuth backend (Codex Responses). No API key: the
+    # token comes from `langslice login` or the Codex CLI.
+    for oauth_prefix in _OAUTH_PREFIXES:
+        if lowered.startswith(oauth_prefix):
+            model_id = stripped[len(oauth_prefix):].strip()
+            if not model_id:
+                raise ValueError("openai-oauth model strings require a model id after '/'")
+            from langslice.providers.openai_oauth import ChatGptLlm
 
-        return ChatGptLlm(model=model_id)
+            return ChatGptLlm(model=model_id)
 
     if lowered.startswith("gemma-") or lowered.startswith(f"{_MODELS_PREFIX}gemma-"):
         model_id = stripped

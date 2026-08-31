@@ -12,7 +12,7 @@ from google.adk.models.llm_request import LlmRequest
 from google.genai import types
 from PIL import Image
 
-from langslice.providers import chatgpt
+from langslice.providers import openai_oauth as chatgpt
 
 
 # --- helpers -----------------------------------------------------------------
@@ -397,43 +397,6 @@ def test_function_result_round_trip_body(monkeypatch):
     assert body["input"][2]["call_id"] == "c1"
 
 
-# --- image generation --------------------------------------------------------
-def test_generate_image_extracts_base64_result(monkeypatch):
-    png = _png_bytes()
-    captured: dict[str, Any] = {}
-
-    def fake_stream_events(body: dict[str, Any]):
-        captured["body"] = body
-        return iter(
-            [
-                {"type": "response.output_item.done", "item": {"type": "reasoning"}},
-                {
-                    "type": "response.output_item.done",
-                    "item": {
-                        "type": "image_generation_call",
-                        "result": base64.b64encode(png).decode(),
-                    },
-                },
-            ]
-        )
-
-    monkeypatch.setattr(chatgpt, "stream_events", fake_stream_events)
-    result = chatgpt.generate_image(
-        "draw", ["data:image/png;base64,AAAA"], size="1024x1536", quality="high"
-    )
-    assert result == png
-    body = captured["body"]
-    assert body["tool_choice"] == {"type": "image_generation"}
-    assert body["tools"][0]["model"] == "gpt-image-2"
-    assert body["tools"][0]["size"] == "1024x1536"
-    assert body["input"][0]["content"][1]["image_url"] == "data:image/png;base64,AAAA"
-
-
-def test_generate_image_rejects_too_many_references():
-    with pytest.raises(ValueError, match="at most 8"):
-        chatgpt.generate_image("draw", ["data:image/png;base64,AAAA"] * 9)
-
-
 # --- wiring ------------------------------------------------------------------
 def test_model_resolver_routes_chatgpt_prefix():
     from langslice.adk import model_resolver
@@ -452,18 +415,20 @@ def test_registry_resolves_chatgpt_models():
     assert LLMRegistry.resolve("chatgpt/gpt-5.6-luna") is chatgpt.ChatGptLlm
 
 
-def test_nonlinear_provider_selects_chatgpt(monkeypatch):
+def test_nonlinear_provider_uses_direct_images_edit(monkeypatch):
+    """The registration path calls the direct edits endpoint: one GPT model
+    (the pilot), one image model — no routing model rewriting the prompt."""
     from langslice.nonlinear import providers
 
     captured: dict[str, Any] = {}
 
-    def fake_generate_image(prompt: str, references, **kwargs: Any) -> bytes:
+    def fake_edit_image(prompt: str, references, **kwargs: Any) -> bytes:
         captured["prompt"] = prompt
         captured["references"] = list(references)
         captured.update(kwargs)
         return _png_bytes()
 
-    monkeypatch.setattr(chatgpt, "generate_image", fake_generate_image)
+    monkeypatch.setattr(chatgpt, "edit_image", fake_edit_image)
 
     request = providers.SegmentationGenerationRequest(
         colored_regions=Image.new("RGB", (10, 10)),
@@ -474,19 +439,21 @@ def test_nonlinear_provider_selects_chatgpt(monkeypatch):
     )
     generated = providers.generate_warped_segmentation_image(request)
 
-    assert generated.provider == "chatgpt"
-    assert generated.route == "chatgpt_responses_image_generation"
+    assert generated.provider == "openai-oauth"
+    assert generated.route == "openai_oauth_images_edit"
     assert generated.model == "gpt-image-2"
+    assert generated.revised_prompt is None  # nothing rewrites on this path
+    assert captured["prompt"] == "warp it"  # delivered verbatim
     assert len(captured["references"]) == 3
     assert all(uri.startswith("data:image/png;base64,") for uri in captured["references"])
-    assert captured["size"] == "1536x1024"  # landscape slice
     assert captured["quality"] == "high"
+    assert "size" not in captured  # the backend ignores it; we don't send it
 
 
 def test_user_content_preserves_text_image_interleaving():
     from google.genai import types as gt
 
-    from langslice.providers.chatgpt import content_to_input_items
+    from langslice.providers.openai_oauth import content_to_input_items
 
     png = b"\x89PNG\r\n\x1a\nfakebytes"
     content = gt.Content(

@@ -1,12 +1,18 @@
-"""ChatGPT-subscription backend (Codex Responses).
+"""OpenAI subscription-OAuth backend (Codex Responses).
+
+NOT the OpenAI API: this transport talks to ``chatgpt.com/backend-api/codex``
+— the private backend behind the ChatGPT app and Codex CLI — with its own
+wire format and behaviors (e.g. its image tool ignores ``size`` and matches
+the input image's aspect ratio; probed 2026-08-25).
 
 One user's ChatGPT Plus/Pro login powers both of LangSlice's model needs with
 no API key:
 
 * chat/vision/tool-use through :class:`ChatGptLlm`, a native ``google-adk``
-  model backend registered for ``chatgpt/*`` model strings;
-* image generation (``gpt-image-2``) through :func:`generate_image`, used by
-  the nonlinear registration provider.
+  model backend registered for ``openai-oauth/*`` (and legacy ``chatgpt/*``) model strings;
+* image generation (``gpt-image-2``) through :func:`edit_image`, used by
+  the nonlinear registration provider (the router session drives the hosted
+  ``image_generation`` tool through the Responses body directly).
 
 Credentials come from ``~/.langslice/openai_auth.json`` (written by
 :func:`login`), falling back to the Codex CLI's ``~/.codex/auth.json`` and then
@@ -61,8 +67,10 @@ CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
 AUTHORIZE_URL = "https://auth.openai.com/oauth/authorize"
 TOKEN_URL = "https://auth.openai.com/oauth/token"
 RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses"
+IMAGES_EDITS_URL = "https://chatgpt.com/backend-api/codex/images/edits"
 ORIGINATOR = "langslice"
-MODEL_PREFIX = "chatgpt/"
+MODEL_PREFIX = "openai-oauth/"
+LEGACY_MODEL_PREFIX = "chatgpt/"  # accepted alias; older configs and docs use it
 REFRESH_SKEW_S = 5 * 60  # refresh when the access token expires within 5 min
 
 #: Where ``langslice login`` stores its token (mode 600).
@@ -71,8 +79,10 @@ _CODEX_AUTH = Path.home() / ".codex" / "auth.json"
 
 #: Routing model for image generation; the image itself is always rendered by
 #: ``gpt-image-2`` server-side.
-DEFAULT_ROUTING_MODEL = "gpt-5.5"
 DEFAULT_IMAGE_MODEL = "gpt-image-2"
+
+#: Default review/mainline model for openai-oauth registration paths.
+DEFAULT_REVIEW_MODEL = "openai-oauth/gpt-5.6-sol"
 MAX_REFERENCE_IMAGES = 8
 
 # OAuth callback (the Codex client_id only whitelists this redirect).
@@ -346,68 +356,54 @@ def _failure_message(event: dict[str, Any]) -> str:
 
 
 # --- image generation --------------------------------------------------------
-def generate_image(
+def edit_image(
     prompt: str,
-    reference_images: Sequence[str] = (),
+    reference_images: Sequence[str],
     *,
-    size: str = "1024x1024",
-    quality: str = "high",
-    routing_model: str | None = None,
     image_model: str = DEFAULT_IMAGE_MODEL,
-    instructions: str | None = None,
+    quality: str = "high",
+    size: str | None = None,
+    n: int = 1,
 ) -> bytes:
-    """Generate or edit an image via the Codex ``image_generation`` tool.
+    """Edit an image via the direct Codex ``images/edits`` endpoint.
 
-    Args:
-      prompt: the image instruction.
-      reference_images: up to eight data URIs (see :func:`image_data_uri`).
-        Order is preserved; say what each one is in ``prompt``.
-
-    Returns:
-      Raw PNG bytes.
+    There is NO mainline routing model in this path: ``prompt`` goes into the
+    request body verbatim and reaches the image model untouched. Same OAuth
+    credential; the endpoint mirrors the public ``images.edit`` shape (used by
+    the Codex CLI's own ``imagegenext``), but it is undocumented and carries
+    no compatibility guarantee — on breakage, use the hosted
+    ``image_generation`` tool on a Responses request instead.
     """
-    if len(reference_images) > MAX_REFERENCE_IMAGES:
-        raise ValueError(
-            f"Codex image_generation accepts at most {MAX_REFERENCE_IMAGES} reference images"
-        )
+    creds = load_credentials()
     body: dict[str, Any] = {
-        "model": routing_model or os.environ.get("LANGSLICE_CHATGPT_ROUTING_MODEL")
-        or DEFAULT_ROUTING_MODEL,
-        "store": False,
-        "stream": True,
-        "instructions": instructions
-        or (
-            "You are an image generation dispatcher. Use the image_generation tool "
-            "to produce exactly the image requested. Do not write code or explain."
-        ),
-        "input": [user_message(prompt, reference_images)],
-        "text": {"verbosity": "low"},
-        "prompt_cache_key": str(uuid.uuid4()),
-        "tool_choice": {"type": "image_generation"},  # force the tool
-        "parallel_tool_calls": True,
-        "tools": [
-            {
-                "type": "image_generation",
-                "model": image_model,
-                "output_format": "png",
-                "quality": quality,
-                "size": size,
-            }
-        ],
+        "model": image_model,
+        "prompt": prompt,
+        "images": [{"image_url": uri} for uri in reference_images],
+        "quality": quality,
+        "n": n,
     }
+    if size:
+        body["size"] = size
 
-    for event in stream_events(body):
-        kind = event.get("type")
-        if kind == "response.output_item.done":
-            item = event.get("item", {})
-            if item.get("type") == "image_generation_call" and item.get("result"):
-                return base64.b64decode(item["result"])
-        elif kind == "response.failed":
-            raise RuntimeError(f"Codex response.failed: {_failure_message(event)}")
-    raise RuntimeError("stream ended without an image_generation_call result")
+    def _post(c: Creds) -> requests.Response:
+        headers = _headers(c, str(uuid.uuid4()))
+        headers["Accept"] = "application/json"
+        return requests.post(IMAGES_EDITS_URL, headers=headers, json=body, timeout=600)
+
+    response = _post(creds)
+    if response.status_code == 401 and creds.refresh_token:
+        response = _post(refresh(creds))
+    if response.status_code >= 400:
+        raise RuntimeError(
+            f"Codex images/edits request failed ({response.status_code}): {response.text[:500]}"
+        )
+    data = response.json().get("data") or []
+    b64 = data[0].get("b64_json") if data else None
+    if not b64:
+        raise RuntimeError("Codex images/edits returned no image data")
+    return base64.b64decode(b64)
 
 
-# --- ADK request/response conversion -----------------------------------------
 def _json_dumps(value: Any) -> str:
     try:
         return json.dumps(value, default=str)
@@ -559,7 +555,8 @@ async def _aiter(events: Iterator[dict[str, Any]]) -> AsyncGenerator[dict[str, A
 class ChatGptLlm(BaseLlm):
     """ADK model backed by a ChatGPT subscription (Codex Responses backend).
 
-    Registered for ``chatgpt/<model>`` strings, e.g. ``chatgpt/gpt-5.6-luna``.
+    Registered for ``openai-oauth/<model>`` strings (legacy ``chatgpt/<model>``
+    accepted), e.g. ``openai-oauth/gpt-5.6-luna``.
     Supports vision input, function calling, and media returned by tools.
     """
 
@@ -572,11 +569,14 @@ class ChatGptLlm(BaseLlm):
     @field_validator("model")
     @classmethod
     def _strip_prefix(cls, value: str) -> str:
-        return value[len(MODEL_PREFIX):] if value.startswith(MODEL_PREFIX) else value
+        for prefix in (MODEL_PREFIX, LEGACY_MODEL_PREFIX):
+            if value.startswith(prefix):
+                return value[len(prefix):]
+        return value
 
     @classmethod
     def supported_models(cls) -> list[str]:
-        return [r"chatgpt/.*"]
+        return [r"openai-oauth/.*", r"chatgpt/.*"]
 
     @property
     def capabilities(self) -> LlmCapabilities:
