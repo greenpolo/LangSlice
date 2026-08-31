@@ -20,6 +20,7 @@ from langslice.api.models import (
     RegisterResult,
     VersionResult,
 )
+from langslice.providers.registry import canonical_provider
 
 EngineEmit = Callable[[EngineProgressEvent | EngineLogEvent], None]
 
@@ -98,7 +99,7 @@ def run_estimate(request: EstimateRequest, emit: EngineEmit | None = None) -> Es
         if request.preprocess == "auto":
             image = adaptive_preprocess(image)
 
-        if request.provider == "openai":
+        if canonical_provider(request.provider) == "openai-api":
             import langslice.providers.openai_config as openai_config
 
             model_name = request.model or openai_config.get_openai_model()
@@ -158,14 +159,16 @@ def run_register(request: RegisterRequest, emit: EngineEmit | None = None) -> Re
 
         _progress(emit, f"Loading image: {request.image_path}", stage="register")
         raw_image = Image.open(request.image_path)
-        image = prepare_image_for_vlm(
+        prepared = prepare_image_for_vlm(
             normalize_image(raw_image),
+            pixel_size_um=request.pixel_size_um,
             max_long_edge=request.vlm_resolution or DEFAULT_VLM_MAX_LONG_EDGE,
-        ).image
+        )
+        image = prepared.image
         if request.preprocess == "auto":
             image = adaptive_preprocess(image)
 
-        if request.provider in {"openai", "chatgpt"}:
+        if canonical_provider(request.provider) in {"openai-api", "openai-oauth"}:
             import langslice.providers.openai_config as openai_config
 
             image_model = (
@@ -192,14 +195,17 @@ def run_register(request: RegisterRequest, emit: EngineEmit | None = None) -> Re
             atlas_name=request.atlas,
             position_mm=request.position_mm,
             plane=request.plane,
-            registration_mode=request.registration_mode,
+            image_axes=request.image_axes,
+            pixel_size_um=prepared.effective_pixel_size_um,
             on_progress=on_progress,
             debug_dir=debug_dir,
             provider=request.provider,
             image_model=image_model,
             openai_image_route=request.openai_image_route,
             review_model=review_model,
-            max_candidates=request.max_candidates,
+            canvas_pad=request.canvas_pad,
+            pitch_deg=request.pitch_deg,
+            yaw_deg=request.yaw_deg,
         )
         affine = result.affine_result
         session_dict = annotation_session_to_dict(result.annotation_session)
@@ -281,7 +287,7 @@ def run_export(request: ExportRequest, emit: EngineEmit | None = None) -> Export
     from PIL import Image
 
     from langslice.atlas import load_atlas
-    from langslice.export import build_quint_export, save_quint_json
+    from langslice.integrations.quint import build_quint_export, save_quint_json
     from langslice.space import atlas_space_context
 
     _progress(emit, "Loading atlas", stage="export")

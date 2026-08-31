@@ -7,7 +7,11 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 Plane = Literal["coronal", "sagittal", "horizontal"]
-Provider = Literal["google", "openai", "chatgpt"]
+# Canonical names are access methods (see providers/registry.py); the first
+# three are legacy aliases kept for old configs.
+Provider = Literal[
+    "google", "openai", "chatgpt", "gemini-api", "openai-api", "openai-oauth"
+]
 PreprocessMode = Literal["none", "auto"]
 EngineMethod = Literal[
     "version",
@@ -114,10 +118,14 @@ class RegisterRequest(EngineBaseModel):
     output_dir: str | None = None
     max_iterations: int = 20
     media_resolution: str | None = None
-    registration_mode: str = "direct"
-    max_candidates: int = 3
     openai_image_route: str = "images"
+    canvas_pad: float = 0.0
     vlm_resolution: int | None = None
+    image_axes: str | None = None
+    pixel_size_um: float | None = None
+    # Block cutting angles; every atlas render is resliced on that plane.
+    pitch_deg: float = 0.0
+    yaw_deg: float = 0.0
 
 
 class RegisterResult(EngineBaseModel):

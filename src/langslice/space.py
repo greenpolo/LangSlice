@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Literal
 
+import numpy as np
 from brainglobe_space import AnatomicalSpace
 
 Plane = Literal["coronal", "sagittal", "horizontal"]
@@ -73,3 +74,68 @@ def slice_axis_index(context: AtlasSpaceContext, plane: Plane) -> int:
     if plane == "horizontal":
         return context.dv_axis_index
     raise ValueError(f"Unknown plane: {plane!r}")
+
+
+#: Anatomical direction pair for a brainglobe origin letter (the letter names
+#: where the axis STARTS): 'a' means the axis runs anterior -> posterior.
+_AXIS_PAIR = {"a": "ap", "p": "pa", "s": "si", "i": "is", "l": "lr", "r": "rl"}
+#: Direction pair -> the anatomical axis it lives on.
+_AXIS_KIND = {"ap": "ap", "pa": "ap", "si": "si", "is": "si", "lr": "lr", "rl": "lr"}
+
+
+def native_slice_axes(context: AtlasSpaceContext, plane: Plane) -> tuple[str, str]:
+    """(rows, cols) anatomical directions of a rendered slice.
+
+    Directions are 2-letter pairs read start->end: a sagittal render of an
+    'asr' atlas returns ("si", "ap") — rows run superior->inferior, columns
+    anterior->posterior. Accounts for the in-plane axis swap
+    ``orient_slice_for_display`` applies to sagittal and horizontal slices.
+    """
+    normal = slice_axis_index(context, plane)
+    in_plane = [i for i in range(3) if i != normal]
+    pairs = [_AXIS_PAIR[context.space.origin[i]] for i in in_plane]
+    if plane in ("sagittal", "horizontal"):
+        pairs.reverse()
+    return pairs[0], pairs[1]
+
+
+def orient_slice_to_axes(
+    slice_arr: np.ndarray,
+    context: AtlasSpaceContext,
+    plane: Plane,
+    image_axes: str,
+) -> np.ndarray:
+    """Rotate/flip a rendered slice into the user's image frame.
+
+    ``image_axes`` is "rows,cols" in anatomical direction pairs, mirroring
+    ABBA's atlas-slicing initialization — e.g. "ap,lr" for a horizontal image
+    with anterior at the top and the animal's left on the image's left. Only
+    right-angle transforms are applied; pixels are never resampled.
+    """
+    import numpy as np
+
+    try:
+        rows_req, cols_req = (t.strip().lower() for t in image_axes.split(","))
+    except ValueError:
+        raise ValueError(f"image_axes must be 'rows,cols', got {image_axes!r}") from None
+    for token in (rows_req, cols_req):
+        if token not in _AXIS_KIND:
+            raise ValueError(f"Unknown anatomical direction {token!r} in image_axes")
+
+    rows_nat, cols_nat = native_slice_axes(context, plane)
+    arr = np.asarray(slice_arr)
+    if _AXIS_KIND[rows_req] == _AXIS_KIND[cols_nat]:
+        arr = np.swapaxes(arr, 0, 1)
+        rows_nat, cols_nat = cols_nat, rows_nat
+    if _AXIS_KIND[rows_req] != _AXIS_KIND[rows_nat] or _AXIS_KIND[cols_req] != _AXIS_KIND[
+        cols_nat
+    ]:
+        raise ValueError(
+            f"image_axes {image_axes!r} does not name the in-plane axes of a "
+            f"{plane} slice (native: {rows_nat},{cols_nat})"
+        )
+    if rows_req != rows_nat:
+        arr = arr[::-1]
+    if cols_req != cols_nat:
+        arr = arr[:, ::-1]
+    return np.ascontiguousarray(arr)

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
-import inspect
 import json
 import logging
 import os
@@ -19,9 +17,7 @@ from langslice.atlas import get_composite_slice, load_atlas
 from langslice.nonlinear.image_gen_registration import (
     generate_registration_candidate,
 )
-from langslice.nonlinear.runner import run_registration_review_session
 from langslice.nonlinear.types import (
-    RegistrationCandidate,
     RegistrationResult,
     annotation_session_to_dict,
     candidate_to_registration_result,
@@ -107,56 +103,12 @@ def _dense_registration_debug_root(atlas_name: str, debug_dir: str | None) -> Pa
     return None
 
 
-def _run_registration_review_session_sync(
-    *,
-    image: Image.Image,
-    atlas_name: str,
-    position_mm: float,
-    plane: Plane = "coronal",
-    image_provider: str,
-    image_model: str | None,
-    review_model: str | object | None,
-    pipeline_review_model: str | None,
-    openai_image_route: str,
-    max_candidates: int,
-    debug_dir: str | None,
-    on_progress: Callable[[str], None] | None,
-    on_trace: Callable[[dict[str, object]], None] | None,
-) -> RegistrationCandidate:
-    candidate_result = run_registration_review_session(
-        image=image,
-        atlas_name=atlas_name,
-        position_mm=position_mm,
-        plane=plane,
-        image_provider=image_provider,
-        image_model=image_model,
-        model=review_model,
-        pipeline_review_model=pipeline_review_model,
-        openai_image_route=openai_image_route,
-        max_candidates=max_candidates,
-        debug_dir=debug_dir,
-        on_progress=on_progress,
-        on_trace=on_trace,
-    )
-    if inspect.isawaitable(candidate_result):
-        try:
-            asyncio.get_running_loop()
-        except RuntimeError:
-            return asyncio.run(candidate_result)
-        candidate_result.close()
-        raise RegistrationFailure(
-            "Agentic registration cannot run inside an active event loop."
-        )
-    return candidate_result
-
-
 def _run_dense_registration(
     image: Image.Image,
     *,
     atlas_name: str,
     position_mm: float,
     plane: Plane,
-    selected_mode: str,
     atlas_image: Image.Image,
     debug_dir: str | None,
     on_progress: Callable[[str], None] | None,
@@ -166,45 +118,36 @@ def _run_dense_registration(
     image_model: str | None,
     openai_image_route: str,
     review_model: str | object | None,
-    max_candidates: int,
+    image_axes: str | None,
+    pixel_size_um: float | None,
+    canvas_pad: float,
+    pitch_deg: float,
+    yaw_deg: float,
 ) -> RegistrationResult:
     dense_debug_root = _dense_registration_debug_root(atlas_name, debug_dir)
     runtime_debug_dir = str(dense_debug_root / "registration") if dense_debug_root else None
     effective_provider = image_provider or provider
     candidate_review_model = review_model if isinstance(review_model, str) else None
 
-    if selected_mode == "agentic":
-        _progress(on_progress, "Image-gen registration: running review session...")
-        candidate = _run_registration_review_session_sync(
-            image=image,
-            atlas_name=atlas_name,
-            position_mm=position_mm,
-            plane=plane,
-            image_provider=effective_provider,
-            image_model=image_model,
-            review_model=review_model,
-            pipeline_review_model=candidate_review_model,
-            openai_image_route=openai_image_route,
-            max_candidates=max_candidates,
-            debug_dir=str(dense_debug_root) if dense_debug_root is not None else None,
-            on_progress=on_progress,
-            on_trace=on_trace,
-        )
-    else:
-        _progress(on_progress, "Image-gen registration: generating registration candidate...")
-        candidate = generate_registration_candidate(
-            image,
-            atlas_name=atlas_name,
-            position_mm=position_mm,
-            plane=plane,
-            provider=effective_provider,
-            image_model=image_model,
-            debug_dir=str(dense_debug_root) if dense_debug_root is not None else None,
-            on_progress=on_progress,
-            on_trace=on_trace,
-            openai_image_route=openai_image_route,
-            review_model=candidate_review_model,
-        )
+    _progress(on_progress, "Image-gen registration: generating registration candidate...")
+    candidate = generate_registration_candidate(
+        image,
+        atlas_name=atlas_name,
+        position_mm=position_mm,
+        plane=plane,
+        provider=effective_provider,
+        image_model=image_model,
+        image_axes=image_axes,
+        pixel_size_um=pixel_size_um,
+        canvas_pad=canvas_pad,
+        pitch_deg=pitch_deg,
+        yaw_deg=yaw_deg,
+        debug_dir=str(dense_debug_root) if dense_debug_root is not None else None,
+        on_progress=on_progress,
+        on_trace=on_trace,
+        openai_image_route=openai_image_route,
+        review_model=candidate_review_model,
+    )
 
     result = candidate_to_registration_result(candidate, image.size, debug_dir=runtime_debug_dir)
     session = result.annotation_session
@@ -287,7 +230,6 @@ def estimate_registration(
     atlas_name: str,
     position_mm: float,
     plane: Plane = "coronal",
-    registration_mode: str = "direct",
     on_progress: Callable[[str], None] | None = None,
     on_trace: Callable[[dict[str, object]], None] | None = None,
     debug_dir: str | None = None,
@@ -296,24 +238,25 @@ def estimate_registration(
     image_model: str | None = None,
     openai_image_route: str = "images",
     review_model: str | object | None = None,
-    max_candidates: int = 3,
+    image_axes: str | None = None,
+    pixel_size_um: float | None = None,
+    canvas_pad: float = 0.0,
+    pitch_deg: float = 0.0,
+    yaw_deg: float = 0.0,
 ) -> RegistrationResult:
-    """Run image-gen registration and return affine + nonlinear results."""
+    """Run image-gen registration and return affine + nonlinear results.
+
+    ``pitch_deg``/``yaw_deg`` are the block's cutting angles: every atlas
+    render is resliced on that oblique plane instead of taken flat.
+    """
     atlas = load_atlas(atlas_name)
     atlas_image = get_composite_slice(atlas, position_mm, plane=plane)
-    selected_mode = str(registration_mode).strip().lower() or "direct"
-
-    if selected_mode not in {"direct", "agentic"}:
-        raise RegistrationFailure(
-            f"Unsupported registration_mode {registration_mode!r}; expected 'direct' or 'agentic'."
-        )
 
     result = _run_dense_registration(
         image,
         atlas_name=atlas_name,
         position_mm=position_mm,
         plane=plane,
-        selected_mode=selected_mode,
         atlas_image=atlas_image,
         debug_dir=debug_dir,
         on_progress=on_progress,
@@ -323,7 +266,11 @@ def estimate_registration(
         image_model=image_model,
         openai_image_route=openai_image_route,
         review_model=review_model,
-        max_candidates=max_candidates,
+        image_axes=image_axes,
+        pixel_size_um=pixel_size_um,
+        canvas_pad=canvas_pad,
+        pitch_deg=pitch_deg,
+        yaw_deg=yaw_deg,
     )
     _progress(
         on_progress,

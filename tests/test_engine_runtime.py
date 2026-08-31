@@ -16,7 +16,7 @@ def _stub_image_prep(monkeypatch) -> None:  # noqa: ANN001
     monkeypatch.setattr("langslice.image_prep.normalize_image", lambda img: img)
     monkeypatch.setattr(
         "langslice.image_prep.prepare_image_for_vlm",
-        lambda img, **_kwargs: SimpleNamespace(image=img),
+        lambda img, **_kwargs: SimpleNamespace(image=img, effective_pixel_size_um=None),
     )
 
 

@@ -50,17 +50,19 @@ def _install_pipeline_fakes(monkeypatch, tmp_path: Path | None = None) -> dict[s
 
     monkeypatch.setattr(candidates, "load_atlas", lambda atlas_name: _fake_atlas())
 
-    def fake_get_reference_slice(atlas, position_mm, *, plane="coronal"):  # noqa: ANN001 - local fake
-        del plane
+    def fake_get_reference_slice(  # noqa: ANN001 - local fake
+        atlas, position_mm, *, plane="coronal", pitch_deg=0.0, yaw_deg=0.0
+    ):
+        del plane, pitch_deg, yaw_deg
         return Image.new("L", (4, 3), color=150)
 
     monkeypatch.setattr(candidates, "get_reference_slice", fake_get_reference_slice)
-    monkeypatch.setattr(candidates, "_upscale_to_min_long_edge", lambda image: image)
 
     def fake_colored_region_slice(  # noqa: ANN001
-        atlas, position_mm, target_size=None, *, plane="coronal"
+        atlas, position_mm, target_size=None, *, plane="coronal", smooth=True,
+        pitch_deg=0.0, yaw_deg=0.0
     ):
-        del plane
+        del plane, smooth, pitch_deg, yaw_deg
         image = Image.new("RGB", (4, 3), color=(255, 0, 0))
         image.putpixel((2, 1), (0, 255, 0))
         if target_size is not None:
@@ -71,7 +73,8 @@ def _install_pipeline_fakes(monkeypatch, tmp_path: Path | None = None) -> dict[s
     monkeypatch.setattr(
         candidates,
         "_classify_pixels_to_region_ids",
-        lambda model_output_rgb, atlas, position_mm, *, plane="coronal": np.where(
+        lambda model_output_rgb, atlas, position_mm, *, plane="coronal",
+        off_palette_background=True, pitch_deg=0.0, yaw_deg=0.0: np.where(
             model_output_rgb[:, :, 0] > model_output_rgb[:, :, 1],
             1,
             2,
@@ -91,27 +94,38 @@ def _install_pipeline_fakes(monkeypatch, tmp_path: Path | None = None) -> dict[s
 
     monkeypatch.setattr(candidates, "generate_warped_segmentation_image", fake_generate)
 
-    def fake_register(atlas_target_rgb, model_output_rgb):  # noqa: ANN001 - local fake
-        calls["atlas_target_shape"] = atlas_target_rgb.shape
-        calls["model_output_shape"] = model_output_rgb.shape
+    def fake_register(atlas_classified, generated_classified, atlas, fixed_mask=None):  # noqa: ANN001
+        calls["atlas_target_shape"] = atlas_classified.shape
+        calls["model_output_shape"] = generated_classified.shape
+        calls["fixed_mask_used"] = fixed_mask is not None and bool(fixed_mask.any())
         return SimpleNamespace(name="fake-transform"), 1.25
 
-    monkeypatch.setattr(candidates, "_register_colored_images", fake_register)
+    monkeypatch.setattr(candidates, "_register_region_maps", fake_register)
 
-    def fake_warp(atlas_target_rgb, transform):  # noqa: ANN001 - local fake
+    def fake_warp_labels(classified, transform):  # noqa: ANN001 - local fake
         calls["warp_transform"] = transform
-        warped = np.zeros_like(atlas_target_rgb)
-        warped[:, : warped.shape[1] // 2] = (255, 0, 0)
-        warped[:, warped.shape[1] // 2 :] = (0, 255, 0)
+        warped = np.zeros_like(classified)
+        warped[:, : warped.shape[1] // 2] = 1
+        warped[:, warped.shape[1] // 2 :] = 2
         return warped
 
-    monkeypatch.setattr(candidates, "_warp_atlas_rgb", fake_warp)
+    monkeypatch.setattr(candidates, "_warp_classified_labels", fake_warp_labels)
+
+    def fake_classified_to_rgb(classified, atlas):  # noqa: ANN001 - local fake
+        rgb = np.zeros((*classified.shape, 3), dtype=np.uint8)
+        rgb[classified == 1] = (255, 0, 0)
+        rgb[classified == 2] = (0, 255, 0)
+        return rgb
+
+    monkeypatch.setattr(candidates, "_classified_to_rgb", fake_classified_to_rgb)
+    monkeypatch.setattr(candidates, "_merge_classified", lambda classified, atlas: classified)
+    monkeypatch.setattr(
+        candidates, "generation_report", lambda *args, **kwargs: {"flags": []}
+    )
     monkeypatch.setattr(
         candidates,
         "_extract_visualign_markers",
-        lambda transform, scale_to_slice, image_width, image_height: [
-            [0.0, 0.0, float(image_width) - 1.0, float(image_height) - 1.0]
-        ],
+        lambda field, scale_to_slice, origin_px=(0.0, 0.0): [[0.0, 0.0, 11.0, 7.0]],
     )
 
     def fake_inverse_warp(slice_rgb, *, forward_fixed_gray, forward_result_transform):
@@ -125,18 +139,6 @@ def _install_pipeline_fakes(monkeypatch, tmp_path: Path | None = None) -> dict[s
 
     monkeypatch.setattr(candidates, "_run_inverse_warp_for_slice", fake_inverse_warp)
 
-    def fake_build_atlas_root_mask(atlas, position_mm, target_size, *, plane="coronal"):
-        # Deterministic alpha: top half opaque, bottom half transparent. Mirrors
-        # the shape of a real annotation mask without requiring brainglobe-space
-        # to resolve a fake SimpleNamespace atlas.
-        del atlas, position_mm, plane
-        width, height = target_size
-        mask = np.zeros((height, width), dtype=np.uint8)
-        mask[: height // 2, :] = 255
-        calls["root_mask_target_size"] = target_size
-        return mask
-
-    monkeypatch.setattr(candidates, "_build_atlas_root_mask", fake_build_atlas_root_mask)
 
     if tmp_path is not None:
         calls["debug_dir"] = str(tmp_path)
@@ -155,7 +157,7 @@ def test_generate_registration_candidate_builds_candidate_and_metadata(monkeypat
         position_mm=1.5,
         provider="openai",
         image_model="gpt-image-2",
-        prompt_revision="tighten ventricle boundaries",
+        image_prompt="Repaint the section in atlas colors.",
         previous_candidate_id="candidate-old",
         candidate_id="candidate-new",
         on_progress=progress.append,
@@ -179,11 +181,12 @@ def test_generate_registration_candidate_builds_candidate_and_metadata(monkeypat
     assert request.metadata["previous_candidate_id"] == "candidate-old"
     assert request.metadata["atlas_name"] == "fake_mouse"
     assert request.metadata["position_mm"] == 1.5
-    assert "Revision guidance" in request.prompt
-    assert "tighten ventricle boundaries" in request.prompt
+    # The agent-authored prompt goes through verbatim; no harness additions.
+    assert request.prompt == "Repaint the section in atlas colors."
+    assert request.metadata["image_prompt"] == request.prompt
 
-    assert calls["atlas_target_shape"] == (8, 12, 3)
-    assert calls["model_output_shape"] == (8, 12, 3)
+    assert calls["atlas_target_shape"] == (8, 12)
+    assert calls["model_output_shape"] == (8, 12)
 
     session = candidate.annotation_session
     assert session.workflow == "image_gen_registration"
@@ -198,7 +201,9 @@ def test_generate_registration_candidate_builds_candidate_and_metadata(monkeypat
     assert session.metadata["route"] == "openai_images"
     assert session.metadata["candidate_id"] == "candidate-new"
     assert session.metadata["previous_candidate_id"] == "candidate-old"
-    assert session.metadata["prompt_revision"] == "tighten ventricle boundaries"
+    assert session.metadata["image_prompt"] == "Repaint the section in atlas colors."
+    assert isinstance(session.metadata["elastix"]["codes"], list)
+    assert candidate.metadata["elastix"] == session.metadata["elastix"]
     assert session.metadata["atlas_name"] == "fake_mouse"
     assert session.metadata["position_mm"] == 1.5
 
@@ -234,6 +239,8 @@ def test_generate_registration_candidate_writes_debug_artifacts(monkeypatch, tmp
         "input_slice.png",
         "slice_warped_to_atlas.png",
         "slice_atlas_border_overlay.png",
+        "region_overlay.png",
+        "checkerboard.png",
     }
     assert {path.name for path in artifact_dir.iterdir()} >= expected
 
@@ -342,12 +349,10 @@ def test_slice_warped_to_atlas_saved_as_rgba_with_root_mask_alpha(monkeypatch, t
     alpha = arr[:, :, 3]
     unique_vals = set(np.unique(alpha).tolist())
     assert unique_vals.issubset({0, 255})
-    assert (alpha == 0).any()
+    # Alpha is the atlas silhouette from the letterboxed Elastix-side render:
+    # content opaque, letterbox margins transparent.
+    assert (alpha == 255).mean() > 0.8
     assert (alpha == 255).any()
-    # Top half opaque (matches the fake _build_atlas_root_mask pattern).
-    height = alpha.shape[0]
-    assert (alpha[: height // 2] == 255).all()
-    assert (alpha[height // 2 :] == 0).all()
 
 
 def test_warped_border_overlay_marks_border_pixels(monkeypatch):
@@ -503,7 +508,7 @@ def test_run_inverse_warp_for_slice_writes_forward_transform_to_disk(monkeypatch
     monkeypatch.setattr(
         image_gen_helpers,
         "_build_elastix_parameter_object",
-        lambda: SimpleNamespace(name="fake-parameter-object"),
+        lambda grid_spacing=32: SimpleNamespace(name="fake-parameter-object"),
     )
 
     slice_rgb = np.zeros((3, 5, 3), dtype=np.uint8)
@@ -615,12 +620,11 @@ def test_register_cli_json_payload_includes_inverse_warp_paths(monkeypatch, tmp_
         atlas="allen_mouse_25um",
         position=1.5,
         plane="coronal",
-        registration_mode="direct",
         model=None,
         image_model=None,
         openai_image_route="images",
         review_model=None,
-        max_candidates=1,
+        canvas_pad=0.0,
         vlm_resolution=2048,
         temperature=None,
         thinking=None,
@@ -793,12 +797,11 @@ def test_register_cli_json_payload_surfaces_inverse_warp_failure(
         atlas="allen_mouse_25um",
         position=1.5,
         plane="coronal",
-        registration_mode="direct",
         model=None,
         image_model=None,
         openai_image_route="images",
         review_model=None,
-        max_candidates=1,
+        canvas_pad=0.0,
         vlm_resolution=2048,
         temperature=None,
         thinking=None,
@@ -822,3 +825,197 @@ def test_register_cli_json_payload_surfaces_inverse_warp_failure(
     # Forward paths still emit, so the GUI can show forward-only artifacts.
     assert payload["warped_atlas_path"] == str(forward_warp_path)
     assert payload["warped_border_overlay_path"] == str(forward_overlay_path)
+
+
+def test_elastix_report_emits_codes_only_for_implausible_warps():
+    from langslice.nonlinear.image_gen_helpers import _elastix_report
+
+    atlas = np.zeros((20, 20), dtype=np.int32)
+    atlas[:10] = 1
+    atlas[10:15] = 2
+    atlas[15:] = 3
+    structures = {2: {"acronym": "TH"}, 3: {"acronym": "CB"}}
+
+    # Healthy: identical classification, identity deformation, tissue covered.
+    identity = np.zeros((20, 20, 2), dtype=np.float64)
+    healthy = _elastix_report(
+        atlas_classified=atlas,
+        warped_classified=atlas.copy(),
+        structures=structures,
+        deformation_field=identity,
+        tissue_mask=atlas != 0,
+    )
+    assert healthy["codes"] == []
+
+    # Region 2 vanished, region 3 collapsed to a sliver, and the field folds.
+    warped = np.ones((20, 20), dtype=np.int32)
+    warped[19, :10] = 3
+    folding = np.zeros((20, 20, 2), dtype=np.float64)
+    folding[..., 0] = -2.0 * np.arange(20)[np.newaxis, :]
+    report = _elastix_report(
+        atlas_classified=atlas,
+        warped_classified=warped,
+        structures=structures,
+        deformation_field=folding,
+        tissue_mask=None,
+    )
+    codes = {entry["code"] for entry in report["codes"]}
+    assert codes == {"REGION_MISSING", "REGION_COLLAPSED", "WARP_FOLDS"}
+    missing = next(e for e in report["codes"] if e["code"] == "REGION_MISSING")
+    assert missing["region"] == "TH"
+
+    # All-background warp leaves the real tissue uncovered.
+    uncovered = _elastix_report(
+        atlas_classified=atlas,
+        warped_classified=np.zeros((20, 20), dtype=np.int32),
+        structures=structures,
+        tissue_mask=np.ones((20, 20), dtype=bool),
+    )
+    assert {e["code"] for e in uncovered["codes"]} == {"TISSUE_UNCOVERED"}
+
+
+def test_visualign_markers_sample_the_composed_deformation_field():
+    from langslice.nonlinear.image_gen_helpers import _extract_visualign_markers
+
+    field = np.zeros((100, 100, 2), dtype=np.float64)
+    field[..., 0] = 3.0  # constant +3 px displacement in x, none in y
+    markers = _extract_visualign_markers(field, 2.0)
+    assert markers
+    for ox, oy, nx, ny in markers:
+        assert nx - ox == 6.0  # displacement scaled into slice pixels
+        assert ny == oy
+
+    # A padded-canvas origin shifts markers into the original frame, and
+    # out-of-bounds coordinates survive: the atlas may exceed the picture.
+    shifted = _extract_visualign_markers(field, 2.0, origin_px=(50.0, 50.0))
+    assert any(m[0] < 0 for m in shifted)
+
+    assert _extract_visualign_markers(None, 1.0) == []
+
+
+def test_canvas_pad_grows_working_canvas_and_reports_offsets(monkeypatch):
+    _install_pipeline_fakes(monkeypatch)
+    candidates = _candidates()
+
+    candidate = candidates.generate_registration_candidate(
+        _make_slice(),  # 12x8
+        atlas_name="fake_mouse",
+        position_mm=1.5,
+        candidate_id="pad-candidate",
+        canvas_pad=0.25,
+    )
+
+    # pad = round(0.25 * 12) = 3 px per side -> 18x14 (aspect within range,
+    # so no further clamp).
+    assert candidate.metadata["pad_px"] == 3
+    assert candidate.metadata["canvas_pad"] == 0.25
+    assert candidate.metadata["target_size"] == [18, 14]
+    assert candidate.metadata["canvas_origin_px"] == [3.0, 3.0]
+    assert candidate.warped_atlas.size == (18, 14)
+
+
+def test_region_ledger_accounts_for_every_region_in_physical_units():
+    from langslice.nonlinear.image_gen_helpers import _region_ledger
+
+    atlas = np.zeros((10, 10), dtype=np.int32)
+    atlas[:5] = 1
+    atlas[5:] = 2
+    warped = np.zeros((10, 10), dtype=np.int32)
+    warped[:8] = 1  # region 2 shrank; region 3 appears only in the warp
+    warped[8:] = 3
+    ledger = _region_ledger(
+        atlas_classified=atlas,
+        warped_classified=warped,
+        structures={1: {"acronym": "CTX"}, 2: {"acronym": "TH"}, 3: {"acronym": "CB"}},
+        mm2_per_px=0.01,
+    )
+    rows = {r["region"]: r for r in ledger}
+    assert set(rows) == {"CTX", "TH", "CB"}
+    assert rows["CTX"]["expected_mm2"] == 0.5 and rows["CTX"]["warped_mm2"] == 0.8
+    assert rows["TH"]["warped_px"] == 0
+    assert rows["CB"]["expected_px"] == 0 and rows["CB"]["warped_share"] == 0.2
+
+
+def test_extreme_aspect_ratio_clamps_into_the_supported_range(monkeypatch):
+    """gpt-image-2 accepts 1:3..3:1; a 4:1 strip black-pads down to 3:1."""
+    _install_pipeline_fakes(monkeypatch)
+    candidates = _candidates()
+
+    candidate = candidates.generate_registration_candidate(
+        _make_slice((48, 12)),  # 4:1 -> pad height to reach 3:1
+        atlas_name="fake_mouse",
+        position_mm=1.5,
+        candidate_id="clamp-candidate",
+        image_model="gpt-image-2",
+    )
+
+    assert candidate.metadata["target_size"] == [48, 16]  # ceil(48 / 3)
+    assert candidate.metadata["canvas_origin_px"] == [0.0, 2.0]  # centered pad
+    assert candidate.warped_atlas.size == (48, 16)
+
+
+def test_in_range_aspect_ratio_is_left_untouched(monkeypatch):
+    _install_pipeline_fakes(monkeypatch)
+    candidates = _candidates()
+    candidate = candidates.generate_registration_candidate(
+        _make_slice((24, 9)),  # 2.67:1 — inside 1:3..3:1, no clamp
+        atlas_name="fake_mouse",
+        position_mm=1.5,
+        candidate_id="noop-candidate",
+        image_model="gpt-image-2",
+    )
+    assert candidate.metadata["target_size"] == [24, 9]
+    assert candidate.metadata["canvas_origin_px"] == [0.0, 0.0]
+
+
+def test_classifier_treats_off_palette_pixels_as_background(monkeypatch):
+    """A preserved white slide background must classify as background, not as
+    the nearest region color."""
+    from types import SimpleNamespace
+
+    import langslice.nonlinear.image_gen_helpers as helpers
+
+    atlas = SimpleNamespace(
+        annotation=np.array([[[1, 2]]], dtype=np.int32),
+        structures={
+            1: {"id": 1, "acronym": "A", "name": "A",
+                "structure_id_path": [1], "rgb_triplet": [255, 0, 0]},
+            2: {"id": 2, "acronym": "B", "name": "B",
+                "structure_id_path": [1, 2], "rgb_triplet": [0, 255, 0]},
+        },
+    )
+    monkeypatch.setattr(helpers, "position_mm_to_index", lambda a, p, plane="coronal": 0)
+    monkeypatch.setattr(helpers, "slice_axis_index", lambda ctx, plane: 0)
+    monkeypatch.setattr(helpers, "atlas_space_context", lambda a: SimpleNamespace())
+    monkeypatch.setattr(helpers, "orient_slice_for_display", lambda a, plane: a)
+
+    rgb = np.array(
+        [[[255, 255, 255], [250, 4, 6], [0, 0, 0], [0, 250, 10]]], dtype=np.uint8
+    )
+    classified = helpers._classify_pixels_to_region_ids(rgb, atlas, 0.0)
+    assert classified.tolist() == [[0, 1, 0, 2]]  # white and black -> background
+
+
+def test_prealign_scales_atlas_to_painting_and_clamps_for_fragments():
+    candidates = _candidates()
+    atlas_map = np.zeros((100, 100), dtype=np.int64)
+    atlas_map[40:60, 40:60] = 7  # 20px blob, centered
+    paint = np.zeros((100, 100), dtype=np.int64)
+    paint[39:61, 38:62] = 7  # slightly bigger, slightly shifted
+    aligned, matrix = candidates._prealign_atlas_to_paint(atlas_map, paint)
+    assert matrix is not None
+    # aligned silhouette covers the painting's extent to within a pixel or two
+    ys, xs = np.nonzero(aligned)
+    assert abs(ys.min() - 39) <= 2 and abs(ys.max() - 60) <= 2
+    assert abs(xs.min() - 38) <= 2 and abs(xs.max() - 61) <= 2
+    # a hemibrain-sized painting cannot shrink the atlas onto itself
+    frag = np.zeros((100, 100), dtype=np.int64)
+    frag[45:55, 45:50] = 7
+    _aligned, m2 = candidates._prealign_atlas_to_paint(atlas_map, frag)
+    lo, _hi = candidates._PREALIGN_SCALE_BOUNDS
+    assert m2 is not None and m2[0, 0] >= lo and m2[1, 1] >= lo
+    # degenerate inputs pass through untouched
+    same, none_matrix = candidates._prealign_atlas_to_paint(
+        atlas_map, np.zeros_like(paint)
+    )
+    assert none_matrix is None and same is atlas_map
