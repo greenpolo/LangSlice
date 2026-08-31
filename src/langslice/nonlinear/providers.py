@@ -17,17 +17,18 @@ from langslice.providers.openai_config import (
     get_openai_image_model,
     get_openai_model,
 )
+from langslice.providers.registry import canonical_provider
 
 _VALID_REQUEST_ROUTES = {
     "google_genai",
     "openai_images",
     "openai_responses_image_generation",
-    "chatgpt_responses_image_generation",
+    "openai_oauth_images_edit",
+    "openai_oauth_image_generation",  # hosted-tool fallback path
+    "chatgpt_responses_image_generation",  # legacy spelling of openai_oauth_image_generation
 }
 
-# gpt-image-2 renders at these aspect ratios only.
-_CHATGPT_IMAGE_SIZES = ((1024, 1024), (1536, 1024), (1024, 1536))
-_CHATGPT_QUALITIES = {"low", "medium", "high"}
+_IMAGE_QUALITIES = {"low", "medium", "high"}
 
 
 @dataclass
@@ -40,6 +41,11 @@ class SegmentationGenerationRequest:
     model: str | None = None
     route: str | None = None
     review_model: str | None = None
+    #: Task-level semantic: registration is always an EDIT of the slice image
+    #: (pixel-aligned output). Each transport translates this its own way —
+    #: the images endpoint IS an edit call, the Responses-based routes pass it
+    #: as the image_generation tool's action.
+    mode: str = "edit"
     openai_image_route: str = "images"
     thinking_level: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -170,10 +176,11 @@ def _generate_google_segmentation(request: SegmentationGenerationRequest) -> Gen
     model = request.model or vlm_config.MODEL_NAME
     client = vlm_config.get_client()
 
+    # Histology first: the edited base image leads, references follow.
     contents = [
+        request.slice_image,
         request.colored_regions,
         request.reference_slice,
-        request.slice_image,
         request.prompt,
     ]
     response = client.models.generate_content(  # type: ignore[attr-defined]
@@ -199,10 +206,11 @@ def _generate_openai_images_segmentation(
 ) -> GeneratedSegmentation:
     model = request.model or get_openai_image_model()
     client = get_openai_image_client()
+    # Histology first: the edited base image leads, references follow.
     image_files = [
+        _image_to_png_file(request.slice_image, "slice_image.png"),
         _image_to_png_file(request.colored_regions, "colored_regions.png"),
         _image_to_png_file(request.reference_slice, "reference_slice.png"),
-        _image_to_png_file(request.slice_image, "slice_image.png"),
     ]
 
     response = client.images.edit(  # type: ignore[attr-defined]
@@ -236,9 +244,9 @@ def _generate_openai_responses_segmentation(
             "role": "user",
             "content": [
                 {"type": "input_text", "text": request.prompt},
+                {"type": "input_image", "image_url": _image_to_data_url(request.slice_image)},
                 {"type": "input_image", "image_url": _image_to_data_url(request.colored_regions)},
                 {"type": "input_image", "image_url": _image_to_data_url(request.reference_slice)},
-                {"type": "input_image", "image_url": _image_to_data_url(request.slice_image)},
             ],
         }
     ]
@@ -248,7 +256,7 @@ def _generate_openai_responses_segmentation(
     response = client.responses.create(  # type: ignore[attr-defined]
         model=mainline_model,
         input=cast(Any, contents),
-        tools=[{"type": "image_generation", "action": "edit"}],
+        tools=cast(Any, [{"type": "image_generation", "action": request.mode}]),
         reasoning=cast(Any, {"effort": reasoning_effort}),
     )
 
@@ -264,66 +272,58 @@ def _generate_openai_responses_segmentation(
     )
 
 
-def _chatgpt_image_size(image: Image.Image) -> str:
-    """Pick the gpt-image-2 size whose aspect ratio is closest to *image*."""
-    width, height = image.size
-    aspect = width / height if height else 1.0
-    best = min(_CHATGPT_IMAGE_SIZES, key=lambda wh: abs(wh[0] / wh[1] - aspect))
-    return f"{best[0]}x{best[1]}"
-
-
-def _generate_chatgpt_segmentation(
+def _generate_openai_oauth_segmentation(
     request: SegmentationGenerationRequest,
 ) -> GeneratedSegmentation:
-    from langslice.providers import chatgpt
+    from langslice.providers import openai_oauth
 
-    model = request.model or chatgpt.DEFAULT_IMAGE_MODEL
+    model = request.model or openai_oauth.DEFAULT_IMAGE_MODEL
     quality = (request.thinking_level or "high").lower()
-    png_bytes = chatgpt.generate_image(
+    # Direct images/edits: one GPT model (the pilot) and one image model —
+    # no server-side routing model rewriting the prompt in between.
+    png_bytes = openai_oauth.edit_image(
         request.prompt,
         [
+            _image_to_data_url(request.slice_image),
             _image_to_data_url(request.colored_regions),
             _image_to_data_url(request.reference_slice),
-            _image_to_data_url(request.slice_image),
         ],
-        size=_chatgpt_image_size(request.slice_image),
-        quality=quality if quality in _CHATGPT_QUALITIES else "high",
         image_model=model,
+        quality=quality if quality in _IMAGE_QUALITIES else "high",
     )
+    revised_prompt = None  # nothing rewrites the prompt on this path
 
     image = Image.open(io.BytesIO(png_bytes))
     image.load()
-    route = "chatgpt_responses_image_generation"
+    route = "openai_oauth_images_edit"
     return GeneratedSegmentation(
         image=image.convert("RGB"),
-        provider="chatgpt",
+        provider="openai-oauth",
         model=model,
         route=route,
-        metadata=_build_metadata(request, provider="chatgpt", route=route),
+        revised_prompt=revised_prompt,
+        metadata=_build_metadata(request, provider="openai-oauth", route=route),
     )
 
 
 def generate_warped_segmentation_image(
     request: SegmentationGenerationRequest,
 ) -> GeneratedSegmentation:
-    provider = request.provider.lower()
+    provider = canonical_provider(request.provider)
     _validate_requested_route(request.route)
 
-    if provider == "google":
+    if provider == "gemini-api":
         return _generate_google_segmentation(request)
 
-    if provider == "chatgpt":
-        return _generate_chatgpt_segmentation(request)
+    if provider == "openai-oauth":
+        return _generate_openai_oauth_segmentation(request)
 
-    if provider in {"openai", "flux", "openai-compatible", "openai_compatible"}:
-        if provider == "openai":
-            image_route = request.openai_image_route.lower()
-            if image_route == "images":
-                return _generate_openai_images_segmentation(request, provider=provider)
-            if image_route == "responses":
-                return _generate_openai_responses_segmentation(request)
-            raise ValueError(f"Unknown openai_image_route: {request.openai_image_route}")
-
-        return _generate_openai_images_segmentation(request, provider=provider)
+    if provider == "openai-api":
+        image_route = request.openai_image_route.lower()
+        if image_route == "images":
+            return _generate_openai_images_segmentation(request, provider=provider)
+        if image_route == "responses":
+            return _generate_openai_responses_segmentation(request)
+        raise ValueError(f"Unknown openai_image_route: {request.openai_image_route}")
 
     raise ValueError(f"Unknown provider: {request.provider}")
