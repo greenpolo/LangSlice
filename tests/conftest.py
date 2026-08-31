@@ -1,46 +1,8 @@
-"""Pytest configuration and shared fixtures.
-
-Path setup: model workspace packages live under presentable directory names,
-including some hyphenated folders. The shared bootstrap keeps direct
-``python -m pytest`` invocations aligned with ``pyproject.toml``.
-"""
+"""Pytest configuration and shared fixtures."""
 from __future__ import annotations
-
-import sys
-from pathlib import Path
 
 import numpy as np
 import pytest
-
-from models.langslice_model_paths import add_model_python_paths
-
-REPO_ROOT = Path(__file__).resolve().parent.parent
-
-add_model_python_paths(REPO_ROOT)
-
-GEMMA4_DATA = REPO_ROOT / "models" / "langslice-gemma-4" / "data"
-if str(GEMMA4_DATA) not in sys.path:
-    sys.path.insert(0, str(GEMMA4_DATA))
-GEMMA4_TRAINING = REPO_ROOT / "models" / "langslice-gemma-4" / "training"
-if str(GEMMA4_TRAINING) not in sys.path:
-    sys.path.insert(0, str(GEMMA4_TRAINING))
-LANGSLICE_TRACES = REPO_ROOT / "models" / "langslice-traces"
-
-
-def _prioritize_langslice_traces() -> None:
-    """Keep the canonical trace package ahead of the older training-tree copy."""
-    trace_root = str(LANGSLICE_TRACES)
-    if trace_root in sys.path:
-        sys.path.remove(trace_root)
-    sys.path.insert(0, trace_root)
-
-
-_prioritize_langslice_traces()
-
-
-def pytest_collect_file(file_path: Path, parent: pytest.Collector) -> None:
-    _prioritize_langslice_traces()
-    return None
 
 
 @pytest.fixture(scope="module")

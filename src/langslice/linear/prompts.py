@@ -88,7 +88,7 @@ def build_group_prompt(
 
     The production group estimator is gone (whole-brain work runs through
     ``langslice.linear.whole_brain``). This builder survives for the group
-    RLVR task in ``models/training-core``, whose environment defines its own
+    RLVR task in the LangSlice-Training repo, whose environment defines its own
     ``submit_group_estimate`` tool; nothing in ``langslice.linear`` calls it.
 
     Structure mirrors the legacy ``ap_multi_slice.py`` prompt: explicit
