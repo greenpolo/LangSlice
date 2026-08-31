@@ -22,8 +22,8 @@ def _wants_thinking_prefix(model: str | object) -> bool:
     """Return True for langslice-ft adapters trained with thinking_signature mode.
 
     The thinking-signature SFT corpus rewrites every system prompt to
-    ``f"<|think|>{prompt}"`` (see ``models/langslice-gemma-4/training/sft/
-    render.py``); the model learned to emit a concise ``<|channel>thought
+    ``f"<|think|>{prompt}"`` (see ``sft/render.py`` in the LangSlice-Training
+    repo); the model learned to emit a concise ``<|channel>thought
     \\n…<channel|>`` block per turn ONLY when it sees that literal token
     early in its context. Without it, the model goes off-distribution into
     verbose freeform reasoning and overflows the 8192 context window before
