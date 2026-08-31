@@ -229,3 +229,19 @@ def test_metric_dispatch_and_self_similarity(atlas: _Phantom) -> None:
 
     with pytest.raises(ValueError):
         compute_similarity_metric(plane, plane, "nope")  # type: ignore[arg-type]
+
+
+def test_annotation_sampling_keeps_large_ids_exact() -> None:
+    """Allen ids exceed float32's exact integer range; the sampler must not round."""
+    from langslice.oblique import sample_oblique_annotation
+
+    atlas = _Phantom()
+    # 484682516 (ccb) is the id that exposed this: float32 lands it on ...528.
+    atlas.annotation = np.where(atlas.annotation != 0, 484682516, 0).astype(np.int64)
+    flat = sample_oblique_annotation(atlas, 55 * RES_UM / 1000.0, "coronal", 0.0, 0.0)
+    tilted = sample_oblique_annotation(atlas, 55 * RES_UM / 1000.0, "coronal", 6.0, -3.0)
+
+    assert set(np.unique(flat)) <= {0, 484682516}
+    assert set(np.unique(tilted)) <= {0, 484682516}
+    assert np.array_equal(flat, atlas.annotation[55])
+    assert (tilted != 0).any()

@@ -224,6 +224,54 @@ def sample_oblique_plane(
     return np.asarray(orient_slice_for_display(sampled, plane), dtype=np.float32)
 
 
+_annotation_index_cache: dict[tuple[str, int], tuple[np.ndarray, np.ndarray]] = {}
+
+
+def _compact_annotation(atlas: Any) -> tuple[np.ndarray, np.ndarray]:
+    """(sorted ids, float32 volume of their dense indices), cached per atlas."""
+    key = (str(getattr(atlas, "atlas_name", "?")), id(atlas))
+    hit = _annotation_index_cache.get(key)
+    if hit is not None:
+        return hit
+    annotation = np.asarray(atlas.annotation)
+    ids = np.unique(annotation)
+    lookup = np.zeros(int(ids.max()) + 1, dtype=np.float32)
+    lookup[ids] = np.arange(len(ids), dtype=np.float32)
+    _annotation_index_cache.clear()  # ponytail: one atlas at a time; these are ~300 MB
+    _annotation_index_cache[key] = (ids, lookup[annotation])
+    return _annotation_index_cache[key]
+
+
+def sample_oblique_annotation(
+    atlas: Any,
+    position_mm: float,
+    plane: Plane = "coronal",
+    pitch_deg: float = 0.0,
+    yaw_deg: float = 0.0,
+    *,
+    downsample: int = 1,
+) -> np.ndarray:
+    """Annotation ids on an oblique plane, sampled nearest-neighbour.
+
+    Not ``sample_oblique_plane(volume="annotation")``: that samples in
+    float32, whose 24-bit mantissa cannot hold the larger Allen structure ids
+    (484682516 lands on 484682528). Compacting the volume to dense indices
+    first makes every sampled value round-trip exactly.
+    """
+    ids, index_volume = _compact_annotation(atlas)
+    sampled = sample_oblique_plane(
+        atlas,
+        position_mm,
+        plane,
+        pitch_deg,
+        yaw_deg,
+        volume=index_volume,
+        downsample=downsample,
+        order=0,
+    )
+    return ids[np.rint(sampled).astype(np.intp).clip(0, len(ids) - 1)]
+
+
 # --------------------------------------------------------------------------
 # similarity metrics (adapted from brainglobe_registration.similarity_metrics)
 # --------------------------------------------------------------------------
