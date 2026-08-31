@@ -222,9 +222,29 @@ def orient_slice_for_display(slice_2d: np.ndarray, plane: Plane) -> np.ndarray:
 
 
 def get_reference_slice(
-    atlas: _AtlasLike, position_mm: float, *, plane: Plane = "coronal"
+    atlas: _AtlasLike,
+    position_mm: float,
+    *,
+    plane: Plane = "coronal",
+    pitch_deg: float = 0.0,
+    yaw_deg: float = 0.0,
 ) -> Image.Image:
-    """Get a reference slice along the chosen plane as grayscale PIL image."""
+    """Get a reference slice along the chosen plane as grayscale PIL image.
+
+    Non-zero cutting angles reslice the template obliquely instead of taking
+    it flat off the voxel grid.
+    """
+    if pitch_deg or yaw_deg:
+        from langslice.oblique import sample_oblique_plane
+
+        return Image.fromarray(
+            _normalize_to_uint8(
+                sample_oblique_plane(
+                    atlas, position_mm, plane, pitch_deg, yaw_deg, volume="template", order=3
+                )
+            ),
+            mode="L",
+        )
     idx, axis = _resolve_idx_axis(atlas, position_mm, plane)
     reference_slice = np.take(np.asarray(atlas.template), idx, axis=axis)
     reference_slice = orient_slice_for_display(reference_slice, plane)
@@ -336,18 +356,16 @@ def get_colored_region_slice(
 
     rgb = np.zeros((h, w, 3), dtype=np.uint8)
 
-    unique_ids = np.unique(annotation_slice)
-    structures = getattr(atlas, "structures", None)
+    from langslice.atlas.recolor import color_lut  # local: avoids an import cycle
 
-    for uid in unique_ids:
+    lut = color_lut(atlas)
+    for uid in np.unique(annotation_slice):
         uid_int = int(uid)
         if uid_int == 0:
             continue
-        try:
-            color = structures[uid_int]["rgb_triplet"]  # type: ignore[index]
+        color = lut.get(uid_int)
+        if color is not None:
             rgb[annotation_slice == uid] = color
-        except Exception:
-            pass
 
     return Image.fromarray(rgb, mode="RGB")
 
