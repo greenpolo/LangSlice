@@ -73,25 +73,31 @@ spline/BigWarp deformation step.
 
 Full CLI: `langslice --help`. Pipeline detail: [`docs/index.md`](./docs/index.md).
 
-## Model Hub 
+## ABBA integration
 
-LangSlice hosts training/data helpers in shared packages under `models/`:
+LangSlice runs inside [ABBA](https://abba-documentation.readthedocs.io) as a
+registration plugin: position slices however you like (DeepSlice, QuickNII
+import, manual), then apply LangSlice's nonlinear registration from ABBA's
+`Register` menu like any built-in method — undoable, saved in the ABBA state.
 
-- `models/langslice-traces/langslice_traces`
-- `models/training-core/langslice_training`
-- `models/data/langslice_data`
+```bash
+conda activate langslice
+pip install -e ".[abba]"   # adds abba-python (needs the env's OpenJDK + Maven)
+langslice abba             # launches the ABBA GUI with LangSlice installed
+```
 
-Training entrypoints are exposed as model-scoped launchers:
-`langslice-gemma-rl` and `langslice-gemma-sft`.
+## Related Repositories
 
-Public model-card metadata for the released variant is in
-`models/langslice-gemma-4/variants/langslice-gemma-4-e4b/README.md`.
+- **LangSlice-Training** — training infrastructure for LangSlice local models
+  (SFT/RL pipelines, corpora, manifest tooling, docker training env).
+- **SliceBench** — self-contained position-estimation benchmark.
+
+Both depend on LangSlice; neither is required to run it.
 
 ## Links
 
 - [**Documentation**](https://langslice.readthedocs.io) — full pipeline + harness internals
 - [**langslice-gemma-4-E4B**](https://huggingface.co/greenpolo/langslice-gemma-4-E4B) — the v1.0 fine-tune
-- [**SliceBench**](./slicebench) — self-contained position-estimation benchmark
 
 ## Citation
 

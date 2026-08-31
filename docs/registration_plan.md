@@ -10,7 +10,7 @@ Registration has one active method: image-gen registration. It lives in
 - `src/langslice/nonlinear/types.py` -- affine/nonlinear result and annotation data classes.
 - `src/langslice/nonlinear/image_gen_registration.py` -- candidate pipeline.
 - `src/langslice/nonlinear/providers.py` -- image generation provider adapters.
-- `src/langslice/nonlinear/runner.py` -- optional ADK review loop.
+- `src/langslice/nonlinear/router.py` -- optional hosted-router session.
 - `src/langslice/nonlinear/quick_affine.py` -- silhouette-based affine preview.
 
 ## Pipeline
@@ -25,7 +25,8 @@ Registration has one active method: image-gen registration. It lives in
 ## Modes
 
 - `direct` -- generate one candidate and return it.
-- `agentic` -- expose the candidate generator to an ADK review agent, capped at three candidates.
+- `agentic` -- hosted-router conversation (openai-oauth only); Elastix reports
+  are fed back as follow-up messages, capped at four candidates.
 
 ## Notes
 

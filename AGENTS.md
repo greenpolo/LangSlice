@@ -25,7 +25,7 @@ queries:
 - "Where is `function_name` defined? Where is it called from?"
 - "Which files reference `LANGSLICE_VLM_DEBUG_DIR`?"
 - "Find the entry point for the `register` CLI command."
-- "List all TOML configs under `models/langslice-gemma-4/training/configs/`."
+- "Which files reference `LANGSLICE_TRACE_DIR`?"
 
 Don't speculate about paths or call shapes from memory — module layouts have
 churned. Memory is a hint; the filesystem is ground truth.
@@ -126,9 +126,123 @@ Two methods live as sibling subpackages with no dependency on each other:
   the agent steps ahead of it, and without seeding the fresh pass with the
   rejected one's numbers.
 - `nonlinear/` — generative-image registration: candidate generation, image
-  provider adapters, Elastix runtime, optional ADK review loop, affine and
+  provider adapters, Elastix runtime, affine and
   nonlinear result types, and `quick_affine.py` (silhouette affine preview;
-  note the CLI groups `quick-affine` under `linear`). It runs after a linear
+  note the CLI groups `quick-affine` under `linear`). There is ONE path:
+  direct — the handwritten base prompt goes to the image model verbatim
+  (openai-oauth: the raw `codex/images/edits` endpoint, no routing model in
+  between), one generation per run. The hosted-router session (`router.py`,
+  a GPT conversation wielding the `image_generation` tool with self-review
+  iteration) was DELETED 2026-08-28 on LSD_910 ground-truth evidence: on the
+  anterior benchmark slice the first generation tracked the tissue and the
+  router's "improved" retries degraded it into a generic atlas plate
+  (truth-Dice 0.54 vs a clean first paint), and its prompt refinement is a
+  standing corruption risk — the image model does better with our prompt
+  untouched. The canvas pad the router used to choose is now the
+  `--canvas-pad` knob (0-1.5, `RegisterRequest.canvas_pad`). The Elastix
+  report is the ONLY
+  diagnostic — the old `confirm_registration` gate and per-model prompt
+  profiles were deleted. One base prompt (the original handwritten text, in
+  `model_prompts.py`) serves every image model; the working
+  editing copy is `_local/nonlinear_prompts.md`.
+  The MODEL-FACING atlas render is drawn at canvas resolution, never
+  NEAREST-upscaled: `render.filled_regions` traces each region at atlas
+  resolution, low-pass filters the outline and fills the polygon at ~2048px
+  (`_generate_colored_region_slice(..., smooth=True)`, the default), so a
+  25/39um atlas reaches the model with boundary detail instead of a voxel
+  staircase. Fills stay flat and exact-palette (classification is
+  nearest-color), each region is stroked as well as filled so neighbours
+  overlap instead of leaving background seams, and enclosed pinholes are
+  closed. The ELASTIX side asks for `smooth=False` — that render is
+  classified back and warped, so it must stay pixel-exact. `_fit_to_canvas`
+  picks its resampling filter from the image: NEAREST for a flat region map,
+  LANCZOS for the continuous-tone grayscale template.
+  `generate_registration_candidate(image_prompt)` runs the whole downstream
+  chain immediately (image model → Elastix → pixel classification → borders)
+  and returns the images plus an Elastix report: error codes with the numbers
+  behind them (`REGION_MISSING`, `REGION_COLLAPSED`, `WARP_FOLDS`,
+  `TISSUE_UNCOVERED` — computed on the warped CLASSIFIED result, so color
+  drift that still classifies coherently passes clean; pixels the edit left
+  untouched (identical to the input canvas) are masked to background before
+  classification, because a preserved white background otherwise classifies
+  as the atlas root color; there is one real
+  failure in this pipeline, Elastix not working on the image, and every code
+  is a measured cause of it, not a standalone judgment); passing
+  `generated_image` skips the provider call and evaluates an
+  externally generated image (offline re-derivations, benchmarks). Under `--palette leaf-borders` the classifier's palette gains the
+  hairline color of every region (`darker(color) -> that region's id`),
+  because a model that paints the delineation back would otherwise have it
+  cut through its own regions as background: measured on the Allen sagittal
+  render, hairlines are ~20% of the foreground and land 70-140 RGB from any
+  fill color. With the line color known, no border pixel becomes background
+  and no new region id appears; the residual (family recovery 0.93 vs a flat
+  render) is entirely WHICH of two neighbours owns a shared 2px line, which
+  is two orders below the B-spline grid. Nothing else changes: the
+  Elastix-side render (`smooth=False`) is byte-identical in both styles. The
+  Elastix step registers
+  the two label maps as joint RGB at merged-family granularity (one
+  AdvancedMeanSquares metric per channel plus the bending penalty; both
+  maps merged through a SINGLE family mapping built on their union of ids
+  so a family renders one color on both sides). RGB is a benchmarked
+  choice, not a leftover: one-binary-channel-per-family (the label-
+  registration literature's standard) and clamped per-family signed
+  distance maps were both built and measured on the sag140 debris case, and
+  every variant came out worse than not deforming at all (family agreement
+  0.46-0.54 vs 0.675 identity vs 0.80 RGB) — Elastix's sampled ASGD
+  optimizer starves on channels whose gradient lives only in thin boundary
+  shells. Known residual flaw: in RGB a mismatched label earns partial
+  credit whenever its color sits nearer than black, so preserved debris
+  (dark pixels classify to far-away regions' shades, measurably CLOSER to
+  the palette than real paint) can pull boundaries slightly; the candidate
+  fix is a dense-evaluation engine (NiftyReg 4-D SSD / ANTs label
+  registration), not more Elastix channels. Also measured: the
+  TransformBendingEnergyPenalty at default-scale weights is INERT against
+  0-255 mean-squares values (needs ~1e6-1e8 to bite) — and VisuAlign markers are sampled from the composed
+  transformix deformation field at the B-spline control-grid spacing (the
+  transform's own resolution; consumer-specific densities belong in the
+  integration adapters), never read off the B-spline parameter map, which
+  dropped the affine stage and mistook coefficients for displacements. The
+  The block's CUTTING ANGLES are an input (`--pitch-deg`/`--yaw-deg`,
+  `RegisterRequest`, `generate_registration_candidate`): non-zero angles
+  reslice every atlas render — model-facing map, grayscale template,
+  Elastix-side map, classification palette, leaf overlay — on that oblique
+  plane instead of taking it flat off the voxel grid. Default 0 (flat),
+  because nothing upstream fits them yet, but this is the single biggest
+  lever in the whole fit and it dwarfs every knob inside Elastix. Measured
+  on all 33 LSD_910 hand registrations (block cut at 4 degrees, angles set
+  by hand to that): fit-only family dice 0.912 -> 0.945, boundary p95 39px
+  -> 9px, better on 25 of 33 slices — and re-deriving 32 saved paintings
+  through the fit, +0.022 dice paired, better on 29 of 32, against a
+  per-draw sd of 0.02, with the paintings still made from a FLAT reference.
+  Under a flat plane the residual is wide BANDS of misplaced anatomy
+  (hippocampus, brainstem, one hemisphere ahead of the other); at the right
+  angles it collapses to boundary-width lines. `pixel_size_um` puts every
+  atlas render at TRUE physical scale on the slice canvas (each render's
+  um/px derived from the annotation slice's anatomy, never the letterbox
+  padding; anatomy centered via `_anatomy_focus`, and the canvas auto-grows
+  through `_pad_to_contain_atlas` when the true-scale anatomy would exceed
+  it) so the model sees two comparably sized brains; no pixel size falls
+  back to fit-to-canvas. Known residual, measured over all 33 M01 hand
+  registrations by physical extent of the GT region maps: the specimen runs
+  ~10%% (ML) to ~14%% (DV) smaller than the Allen average, so the true-scale
+  atlas lands slightly larger than the tissue and the fit side alone pays
+  ~0.004 dice for it — calibration is on for the model-side benefit of
+  size-matched references. Settled ablations on the same panel:
+  a finer B-spline grid (/48, /72 rather than /36) buys +0.004 dice, the
+  fixed-mask dilation is flat from 0 to 32px, and the bending penalty is
+  flat at 1e5-1e6 and HARMFUL at 1e7 — the tail is a plane problem, not a
+  regularization one. The
+  canvas pad (`--canvas-pad`, 0-1.5) grows the working
+  canvas by a margin matched to the slice's own background color (never
+  black-on-white) so a fragment or hemibrain's COMPLETE painted anatomy can
+  exceed the original image bounds; after all padding the canvas silently
+  pads one axis if the aspect ratio falls outside what the image path can
+  output (`model_prompts.aspect_ratio_limits`, gpt-image-2 =
+  1:3..3:1 — pad only, never crop; a mismatched ratio would undo edit-mode
+  pixel alignment); markers are reported in
+  original-image pixels, unclipped — out-of-bounds correspondences are
+  legitimate there, and clipping is an adapter concern. It
+  runs after a linear
   placement step, whether that step is `langslice linear ...` or the user's
   own tool (in ABBA/QUINT workflows, linear placement happens first and
   LangSlice-nonlinear replaces the manual spline/BigWarp deformation step).
@@ -139,15 +253,78 @@ Shared, top-level:
   region maps, borders.
   Also `recolor.py`: organized structure colors for atlases whose native
   palettes mislead image-gen models. `color_lut(atlas)` keeps native colors
-  when they are hierarchy-organized, joins the true Allen CCF colors by
-  acronym (vendored `allen_colors.json`) for all-white Allen-tree atlases
-  (Osten, Princeton, adult Kim), and generates an Allen-style palette (one
-  hue per top-level division) for disorganized foreign trees (Waxholm rat,
-  ADMBA). Auto-detection is data-driven — degenerate = one color for
+  when they are hierarchy-organized, joins the true Allen CCF colors
+  (vendored `allen_colors.json`) for trees with
+  enough Allen overlap — the all-white atlases (Osten, Princeton, adult Kim)
+  and the Waxholm rat family. The join matches by normalized name, a
+  terminology bridge (classical/embryological vocabulary onto Allen's, e.g.
+  mesencephalon→Midbrain, white matter→fiber tracts), name variants, and
+  acronym only when the names corroborate it; unmatched subregions inherit
+  their deepest matched ancestor's color (the root never joins or seeds
+  inheritance). It generates an Allen-style palette for
+  foreign trees: nested hue subdivision (each division's hue range is
+  proportional to its subtree), quantized to at most `MAX_FAMILIES` flat
+  family colors, because few flat colors IS the Allen convention. Auto-
+  detection is data-driven — degenerate = one color for
   everything; disorganized = child colors uncorrelated with parents — and
   flat or small trees always keep native colors. Both colored-region-map
   paths (`atlas/core.py` and `nonlinear/image_gen_helpers.py`, render and
-  pixel-classify alike) draw from this one LUT
+  pixel-classify alike) draw from this one LUT.
+  A DERIVED palette (Allen join or generated) is then organized: leaf-level
+  Allen colors are not a usable palette — Allen encodes hierarchy in hue, so
+  a cortex-dominated slice came out as a dozen near-identical greens the
+  pipeline merges away anyway (that was the WHS rat "washed out" bug). Colors
+  closer than `MERGE_EPS` (40, `_family_mapping`'s own radius) collapse into
+  one unit, and the surviving units are pulled at least `MIN_SEPARATION` (60)
+  apart, nudging value/saturation before hue so a family keeps its identity.
+  Native palettes are left exactly as the atlas authored them.
+  `color_lut` has ONE table and no modes: the `--palette` knob picks a
+  model-facing render STYLE, never a color. `"family"` (default) draws flat
+  regions, one color per registration unit; `"leaf-borders"` draws the same
+  flat colors plus the Allen-Reference-Atlas plate treatment — every leaf
+  boundary delineated by a hairline in a darker shade of the region's own
+  color (`render.darker`, RGB × `BORDER_DARKEN` = 0.7, which moves HSV value
+  only, so hue and saturation still name the region), 2px at a 2048 canvas
+  with family boundaries at 1.8× that. Lines are drawn LINE_8 like the fills,
+  on the smoothed sub-pixel contours: an anti-aliased line would blend two
+  region colors into pixels belonging to neither, and the render has to stay
+  classifiable to exact palette colors. Leaf shades were tried here first and
+  rejected (Nash: "everything is uniformly worse in our colors") — borders
+  express leaves without touching the palette. The style is a PROCESS-WIDE
+  setting (`LANGSLICE_ATLAS_PALETTE`, `active_palette()`, `use_palette()`,
+  and `langslice nonlinear register --palette`), because the classifier has
+  to know whether hairlines were painted (see the nonlinear section);
+  `generate_registration_candidate(palette=...)` applies it around one call
+- `integrations/` — one module per external registration ecosystem.
+  `quint.py`: QUINT/QuickNII/VisuAlign-compatible JSON export (anchoring
+  vectors; file-based, formerly top-level `export.py`).
+  `abba.py`: LangSlice as an abba-python registration plugin
+  (`enable_langslice_registration`, `register_selected_slices`). Implements
+  ABBA's `SimpleRegistrationPlugin` socket from Python via JPype: the fixed
+  image requested from ABBA is its atlas *coordinate* channels (per-pixel
+  AP/DV/ML mm), so the adapter samples the BrainGlobe volumes at exactly
+  those coordinates — no offset constants, no axis assumptions (the measured
+  ABBA↔brainglobe AP offset is ~0.99, not 1.0; never hardcode it). The
+  nonlinear result returns as a serializable invertible thin-plate-spline
+  (`InvertibleWrapped2DTransformAs3D` — the plain wrapper is not invertible)
+  sampled from the Elastix deformation field, and lands on the slice's
+  registration stack like a native step (undo, state save/reload included).
+  Reopening a saved state requires the plugin registered first, else ABBA
+  drops the step. `install_gui` adds a `Register > LangSlice` menu entry via
+  ABBA's registration-plugin UI registry (PyCommandBuilder dialog; needs the
+  `pyimagej-scijava-command` artifact, test-scope in ABBA, added as a scyjava
+  endpoint before JVM start — `run_gui_session` handles it), and
+  `langslice abba` is the CLI launcher: full ABBA GUI with LangSlice in the
+  Register menu, one command. Ships in the recommended
+  `langslice` conda env — environment.yml carries openjdk 11 + maven, and
+  `pip install -e ".[abba]"` adds abba-python (a separate env from the user's
+  `abba`/`deepslice` envs). Live-session spikes: `_local/abba_spike/`
+- `oblique.py` — arbitrary-plane sampling out of an atlas volume plus
+  (pitch, yaw) fitting (vendored from brainglobe-registration, BSD-3).
+  `sample_oblique_annotation` is the label-safe entry point: sampling
+  happens in float32, whose mantissa cannot hold the larger Allen ids, so
+  it compacts the volume to dense indices first. THE largest lever measured
+  on the nonlinear fit — see the `nonlinear/` entry
 - `space.py` — coordinate and orientation conventions
 - `affine.py` — shared in-plane affine core: the silhouette (moments) fit of a
   section onto an atlas section, plus the rotation/scale/translate matrix
@@ -159,11 +336,26 @@ Shared, top-level:
   by the whole-brain visual path so histology and atlas sections fill their
   frames comparably. Tissue framing crops to the LARGEST connected blob, so a
   fragment or a speck elsewhere on the slide cannot widen the box
-- `export.py` — QUINT/ABBA-compatible JSON export
-- `providers/` — model access (`vlm_config.py` for Gemini backends,
-  `openai_config.py` for OpenAI-compatible backends, `chatgpt.py` for the
-  ChatGPT-subscription backend: `langslice login`, the `chatgpt/*` ADK model,
-  and `gpt-image-2` image generation)
+- `providers/` — model ACCESS methods, never task logic. `registry.py` is
+  the taxonomy: canonical names pair vendor with auth — `gemini-api` (Google
+  API key, `vlm_config.py`), `openai-api` (API key / endpoint,
+  `openai_config.py`), `openai-oauth` (subscription OAuth,
+  `openai_oauth.py`: `langslice login`, the `openai-oauth/*` ADK model
+  strings — legacy `chatgpt/*` accepted — and gpt-image-2). The OAuth path is
+  NOT the OpenAI API: it talks to the separate Codex backend
+  (`chatgpt.com/backend-api/codex`), whose image tool ignores
+  `model`/`size`/`quality` and matches the input image's aspect exactly.
+  Registration uses the raw `codex/images/edits`
+  endpoint (`edit_image`), which delivers the prompt verbatim with no
+  routing model in between (the hosted-router Responses path was deleted;
+  see the nonlinear section). Default review model:
+  `openai_oauth.DEFAULT_REVIEW_MODEL` (`openai-oauth/gpt-5.6-sol`) —
+  and future providers (anthropic-api, openrouter-api, qwen-api, ...) are
+  added there and nowhere else; legacy spellings google/openai/chatgpt
+  resolve as aliases. Task-level semantics stay OUT of providers: the
+  registration edit-vs-generate decision is `SegmentationGenerationRequest.mode`
+  (nonlinear), and each transport merely translates it (`images.edit`
+  endpoint, `action` on the Responses image_generation tool)
 - `adk/` — ADK harness helpers (`plugins.py`, `model_resolver.py`,
   `sdk_helpers.py`)
 - `api/` — Pydantic engine contract, runtime wrappers, and the stdio service
@@ -172,34 +364,25 @@ Shared, top-level:
   quick-affine}`, `langslice nonlinear {register}`, and top-level `version`,
   `login`, `serve`, `collect-traces`
 - `agent_trace.py` — structured trace helpers
-- `training_launchers.py` — exposes `langslice-gemma-sft` and
-  `langslice-gemma-rl` console scripts
-
-### Models (`models/`)
-
-- `langslice-gemma-4/` — fine-tuned Gemma 4 E4B project
-  - `data/sft_examples.jsonl` — single-slice langslice-native trace corpus
-  - `training/sft/` — SFT trainer (model-scoped; entry `train_sft.py`)
-  - `training/configs/` — TOML configs (`sft_default`, `grpo_lane_a_default`,
-    `grpo_pilot`, phase-specific variants)
-  - `training/single_turn_rl/` — thin shim; canonical RL code lives in
-    `models/training-core/langslice_training/rl/single_turn/`
-  - `inference/` — server-side inference helpers
-  - `variants/` — released checkpoint trees (e.g. `langslice-gemma-4-e4b/`)
-- `training-core/langslice_training/` — shared training package
-  - `sft/`, `rl/{single_turn,multi_turn_env,common}/`, `embeddings/`,
-    `curriculum/`, `adaptive/`, `model_io/`, `contracts/`, `corpus/`
-  - `corpus/` — synthetic trace-corpus + atlas region-description (renderer-free;
-    relocated from the former `synthdata` package)
-- Synthetic histology IMAGE generation was extracted to the separate SimSlice
-  project; only the renderer-free `corpus/` above remains in LangSlice.
-- `langslice-traces/` — agent-trace utilities
 
 ### Other top-level
 
 - `tests/` — pytest coverage (mirrors `src/langslice/` layout)
-- `slicebench/` — self-contained position-estimation benchmark
 - `docs/`, `README.md` — maintained documentation
+
+### Sibling repos (split out 2026-08-25)
+
+- `../LangSlice-Training` — ALL local-model training infrastructure: the
+  `models/` tree (gemma-4 project, training-core, traces, manifest tooling),
+  the `langslice-gemma-sft`/`langslice-gemma-rl` launchers, docker training
+  env, training tests, and the training-side `_local/` (eval manifest CLIs,
+  QC app, synth data, logs). The gemma-4 model there is legacy, slated for
+  wholesale replacement.
+- `../SliceBench` — the position-estimation benchmark (former `slicebench/`).
+
+Both depend on LangSlice as an editable sibling checkout via
+`[tool.uv.sources]`; training additionally depends on SliceBench. Work on
+training or benchmark code happens in those repos, not here.
 
 ## Runtime facts
 
@@ -207,9 +390,10 @@ Shared, top-level:
   (nonlinear) → Elastix B-spline → VisuAlign markers → export`.
 - `linear` and `nonlinear` are independent; `nonlinear` accepts a position
   from any source, not just `langslice linear`.
-- Registration has one active path (image-gen); can run directly or with an
-  optional ADK review loop. The review loop receives the generated atlas
-  target, the Elastix-warped atlas, and the warped-atlas border overlay.
+- Registration has one active path (image-gen); can run directly or with the
+  ADK pilot loop. Each candidate returns the generated atlas target, the
+  Elastix-warped atlas, the warped-atlas border overlay, and the Elastix
+  error-code report.
 - Positions are atlas-native millimeters from the anterior edge of the volume.
 - Atlas orientation assumptions are centralized in `src/langslice/space.py`,
   which derives AP/DV/ML axis indices from the atlas orientation via
@@ -222,122 +406,11 @@ Shared, top-level:
 
 ## Boundaries
 
-- Active surface: `src/langslice/`, `models/`, `slicebench/`, `tests/`,
-  `docs/`, `README.md`.
+- Active surface: `src/langslice/`, `tests/`, `docs/`, `README.md`.
 - Local-only (do not ship, do not document publicly): `_local/`, `references/`,
   generated outputs, `out/`, `archive/`.
 - Keep markdown literal to the code it describes. Behavior change → update the
   relevant doc in the same pass.
-
-## Training-data manifest (multi-agent safety)
-
-The training-data manifest has **two architecturally disjoint layers**.
-Most agents only touch one. Role separation is enforced by hard rules —
-mixing roles in a single session silently destroys another agent's work.
-
-### Layers
-
-- **Shards (GT data):** `data/manifest/shards/<plane>/<dataset>.jsonl` —
-  one shard per `(plane, dataset)` pair. Rows carry GT (position, atlas,
-  species, etc.) but **never** a `split` field. Per-shard curation lives in
-  `data/manifest/overrides/<plane>/<dataset>.json`.
-- **Allocations (split membership):**
-  `data/manifest/allocations/<plane>/<split>.jsonl` — 9 files (3 planes ×
-  3 splits: `eval` / `rlvr` / `sft`). Append-only with tombstones. Splits
-  are computed at read time via `compute_split_for(plane, section_id)`;
-  never stored on the shard row.
-
-### Two roles, never mixed in one session
-
-- **GT-fix agent.** Edits upstream sources or `overrides/`, then runs
-  `rebuild_shard.py`. Never runs `allocate.py`.
-- **Allocation agent.** Builds `eval` / `rlvr` / `sft` splits via
-  `allocate.py`. Never runs `rebuild_shard.py`, never edits shards or
-  overrides.
-
-If you don't know which role you are, stop and ask the user.
-
-### Authoritative docs (read before any data fix)
-
-- `_local/eval/HOW_TO_FIX_DATA.md` — task-oriented walkthrough + 8 hard rules.
-- `_local/eval/SHARDS.md` — architecture reference for shards/overrides/allocations.
-- `_local/qc_app/CONTRACTS.md` — what the QC app reads from each layer.
-  The app reloads on mtime change; do not invent shapes or paths.
-
-### CLIs
-
-```bash
-# GT-fix: edit upstream or overrides/<plane>/<dataset>.json, then:
-python _local/eval/rebuild_shard.py <plane>/<dataset>                  # dry-run, exits 1 on diff
-python _local/eval/rebuild_shard.py <plane>/<dataset> --accept-diff N  # commit; N must match exactly
-
-# Allocation:
-python _local/eval/allocate.py add    <plane>/<split> <section_id> --dataset <name> --added-by <agent_id>
-python _local/eval/allocate.py remove <plane>/<split> <section_id>                  --removed-by <agent_id>
-python _local/eval/allocate.py list   <plane>/<split>
-
-# Read-only cross-shard check:
-python _local/eval/validate_manifest.py
-```
-
-Diff gate: `--accept-diff N` must match the dry-run count *exactly*. If `N`
-is bigger than expected, **stop** — something else changed under you.
-Never bypass.
-
-### Don't resurrect legacy scripts
-
-`_local/eval/legacy/` is read-only context. The old paths in `_local/eval/`
-are now stubs that exit with code 2. Running them re-introduces the
-multi-agent footgun this architecture was built to prevent.
-
-## Training (Gemma 4 E4B fine-tune)
-
-`langslice-gemma-4 E4B v1.0` was blessed 2026-05-17 (see
-`[project_phase9_v7_v1_release_2026_05_17]`). Post-hackathon, the training
-package was consolidated into `models/training-core/langslice_training/`
-(merged 2026-05-22, see `[project_training_core_consolidation_2026_05_22]`).
-
-- **Public overview:** `docs/training_overview.md`
-- **SFT contract:** `models/langslice-gemma-4/training/sft/README.md`
-- **Single-turn RL code:**
-  `models/training-core/langslice_training/rl/single_turn/` (canonical entry `train_grpo.py`; no top-level README yet)
-- **Multi-turn RL env (parked, preserved internally):**
-  `models/training-core/langslice_training/rl/multi_turn_env/`
-
-### SFT data contract
-
-The trainer reads ONE langslice-native JSONL at
-`models/langslice-gemma-4/data/sft_examples.jsonl`. Row shape and constraints
-are documented in `models/langslice-gemma-4/training/sft/README.md`. Image
-paths are relative to the JSONL's parent. The trainer does NOT walk raw
-Gemini run folders directly — corpus assembly is upstream.
-
-### Launchers
-
-```bash
-# SFT (canonical)
-langslice-gemma-sft \
-  --config models/langslice-gemma-4/training/configs/sft_default.toml \
-  --dataset models/langslice-gemma-4/data/sft_examples.jsonl \
-  --output-dir out/cache_fast/sft/run0
-
-# Add --dry-run to validate JSONL structure without loading Gemma.
-
-# Single-turn GRPO RL (canonical)
-langslice-gemma-rl \
-  --config models/langslice-gemma-4/training/configs/grpo_lane_a_default.toml \
-  --output-dir out/cache_fast/rl/run0
-```
-
-### Before depending on training-library APIs
-
-TRL, Unsloth, vLLM, and PEFT all changed shape in the last quarter.
-Before adding new args, swapping callbacks, or changing model-loading flow,
-dispatch a research subagent against Context7 (`unsloth`, `trl`, `vllm`,
-`peft`, `transformers`) and Exa for upstream changelogs. Several painful
-debugging sessions are recorded under `[reference_unsloth_*]` and
-`[reference_gemma4_*]` in auto-memory — those are the failure modes a docs
-check would have prevented.
 
 ## Environment & verify after edits
 
