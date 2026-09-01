@@ -33,8 +33,10 @@ _IMAGE_QUALITIES = {"low", "medium", "high"}
 
 @dataclass
 class SegmentationGenerationRequest:
-    colored_regions: Image.Image
-    reference_slice: Image.Image
+    #: Model-facing atlas references, in prompt order: they follow the slice
+    #: image as Image 2..N. The prompt describes what each one is; providers
+    #: just deliver them in this order.
+    reference_images: list[Image.Image]
     slice_image: Image.Image
     prompt: str
     provider: str = "google"
@@ -179,8 +181,7 @@ def _generate_google_segmentation(request: SegmentationGenerationRequest) -> Gen
     # Histology first: the edited base image leads, references follow.
     contents = [
         request.slice_image,
-        request.colored_regions,
-        request.reference_slice,
+        *request.reference_images,
         request.prompt,
     ]
     response = client.models.generate_content(  # type: ignore[attr-defined]
@@ -209,8 +210,10 @@ def _generate_openai_images_segmentation(
     # Histology first: the edited base image leads, references follow.
     image_files = [
         _image_to_png_file(request.slice_image, "slice_image.png"),
-        _image_to_png_file(request.colored_regions, "colored_regions.png"),
-        _image_to_png_file(request.reference_slice, "reference_slice.png"),
+        *(
+            _image_to_png_file(ref, f"atlas_reference_{i + 1}.png")
+            for i, ref in enumerate(request.reference_images)
+        ),
     ]
 
     response = client.images.edit(  # type: ignore[attr-defined]
@@ -245,8 +248,10 @@ def _generate_openai_responses_segmentation(
             "content": [
                 {"type": "input_text", "text": request.prompt},
                 {"type": "input_image", "image_url": _image_to_data_url(request.slice_image)},
-                {"type": "input_image", "image_url": _image_to_data_url(request.colored_regions)},
-                {"type": "input_image", "image_url": _image_to_data_url(request.reference_slice)},
+                *(
+                    {"type": "input_image", "image_url": _image_to_data_url(ref)}
+                    for ref in request.reference_images
+                ),
             ],
         }
     ]
@@ -285,8 +290,7 @@ def _generate_openai_oauth_segmentation(
         request.prompt,
         [
             _image_to_data_url(request.slice_image),
-            _image_to_data_url(request.colored_regions),
-            _image_to_data_url(request.reference_slice),
+            *(_image_to_data_url(ref) for ref in request.reference_images),
         ],
         image_model=model,
         quality=quality if quality in _IMAGE_QUALITIES else "high",

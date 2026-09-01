@@ -37,6 +37,48 @@ _RENDER_LONG_EDGE = 2048
 #: Width of an ARA-style leaf delineation line, at a 2048px canvas.
 _LEAF_BORDER_PX = 2.0
 
+#: Ventricle blackout (re-instated 2026-09-01; originally deleted in the
+#: palette rework despite Nash's instruction to keep it for coronal only).
+#: In CORONAL sections the ventricular system is a hole in the tissue —
+#: matching histology holes, these ids become background everywhere the
+#: pipeline reads the annotation (render, classifier palette, Elastix side,
+#: ledger stay consistent). Sagittal/horizontal keep their ventricles.
+#: "cerebral aqueduct" and "ventricular systems" are spelled out in full:
+#: a bare "aqueduct"/"ventric" would swallow periaqueductal gray and the
+#: periventricular nuclei, which are real tissue.
+_VENTRICLE_KEYWORDS = (
+    "ventricle",
+    "central canal",
+    "choroid",
+    "subependymal",
+    "cerebral aqueduct",
+    "ventricular systems",
+)
+_BLACKOUT_PLANES = {"coronal"}
+_ventricle_ids_cache: dict[str, frozenset[int]] = {}
+
+
+def _ventricle_ids(atlas: Any) -> frozenset[int]:
+    name = str(getattr(atlas, "atlas_name", id(atlas)))
+    cached = _ventricle_ids_cache.get(name)
+    if cached is not None:
+        return cached
+    ids: set[int] = set()
+    structures = getattr(atlas, "structures", None)
+    try:
+        records = list(structures.values()) if structures is not None else []
+    except Exception:  # noqa: BLE001 - structure table without .values()
+        records = []
+    for record in records:
+        try:
+            if any(k in str(record["name"]).lower() for k in _VENTRICLE_KEYWORDS):
+                ids.add(int(record["id"]))
+        except Exception:  # noqa: BLE001 - malformed structure records
+            continue
+    result = frozenset(ids)
+    _ventricle_ids_cache[name] = result
+    return result
+
 
 def _annotation_slice(
     atlas: Any,
@@ -53,16 +95,26 @@ def _annotation_slice(
     registrations, whose block was cut at 4 degrees: matching the plane is
     worth far more than any fit tuning (fit-only family dice 0.93 -> 0.96,
     boundary p95 34px -> 9px over 33 slices).
+
+    On the planes in :data:`_BLACKOUT_PLANES` the ventricular system is
+    blacked out to background before anything downstream sees it.
     """
     if pitch_deg or yaw_deg:
         from langslice.oblique import sample_oblique_annotation
 
-        return sample_oblique_annotation(atlas, position_mm, plane, pitch_deg, yaw_deg)
-    idx = position_mm_to_index(atlas, position_mm, plane=plane)
-    axis = slice_axis_index(atlas_space_context(atlas), plane)
-    return orient_slice_for_display(
-        np.asarray(np.take(atlas.annotation, idx, axis=axis)), plane
-    )
+        sliced = sample_oblique_annotation(atlas, position_mm, plane, pitch_deg, yaw_deg)
+    else:
+        idx = position_mm_to_index(atlas, position_mm, plane=plane)
+        axis = slice_axis_index(atlas_space_context(atlas), plane)
+        sliced = orient_slice_for_display(
+            np.asarray(np.take(atlas.annotation, idx, axis=axis)), plane
+        )
+    if plane in _BLACKOUT_PLANES:
+        vids = _ventricle_ids(atlas)
+        if vids:
+            # np.where, not in-place: the oblique sampler may hand back cached data
+            sliced = np.where(np.isin(sliced, list(vids)), 0, sliced)
+    return sliced
 
 
 def _generate_colored_region_slice(

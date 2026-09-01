@@ -192,23 +192,27 @@ Registration has one active method: image-gen registration. In QUINT/ABBA-style
 workflows, linear placement happens in the host tool and this step stands in for
 the manual spline/BigWarp deformation.
 
-1. Load, normalize, and downsample the histology slice.
-2. Generate atlas inputs at the requested atlas position. The colored region
-   map the model sees is drawn from smoothed region contours at canvas
-   resolution (flat, exact palette colors — no voxel staircase); the render
-   Elastix registers against stays pixel-exact.
+1. Load, normalize, and downsample the histology slice. `--preprocess auto`
+   (the default) then runs the shared adaptive preprocessing
+   (`image_prep.adaptive_preprocess`: per-channel CLAHE, a blend weighted
+   toward the structural channel, brightness normalization) — the same step
+   the linear path applies — so the image model sees the tissue's lamination
+   and banding, not one dim raw channel. `--preprocess none` sends the raw
+   image.
+2. Generate atlas inputs at the requested atlas position. The model is shown
+   THREE colored region maps bracketing the estimated position at ±125um
+   (human placement error, `REFERENCE_OFFSETS_MM`), anterior → posterior, so
+   it matches the tissue against the position's uncertainty band instead of
+   trusting one possibly-off plane; there is no grayscale template input.
+   Coronal maps black out the
+   ventricular system (ventricles are holes in coronal histology; sagittal
+   sections keep theirs). Renders are flat, exact palette
+   colors — no voxel staircase; the render Elastix registers against stays
+   pixel-exact.
 3. Ask the image model to generate an atlas-colored target aligned to the histology.
 4. Register the generated target to the atlas color map with itk-elastix.
 5. Warp the atlas through the recovered transform.
 6. Return the model-generated atlas target, Elastix-warped atlas, warped-border overlay, and VisuAlign markers.
-
-Modes:
-
-- `direct` generates one candidate and returns it.
-- `agentic` runs a hosted-router conversation (openai-oauth only): the prompt
-  and images go to the hosted GPT model with the image_generation tool, Elastix
-  reports come back as follow-up messages, and the loop accepts the first
-  clean-report candidate (cap `--max-candidates`, default 4).
 
 Palette:
 
@@ -232,8 +236,8 @@ Provider routing is explicit, not inferred from the model name:
   OpenAI-compatible image model is `gpt-image-2`.
 - `--provider chatgpt` uses a ChatGPT subscription instead of an API key: it
   sends `gpt-image-2` requests through the Codex Responses backend with the
-  token stored by `langslice login`. Reference images are the colored region
-  map, the atlas reference slice, and the histology slice; the output size is
+  token stored by `langslice login`. The request carries the histology slice
+  followed by the three colored region maps; the output size is
   the `gpt-image-2` aspect ratio closest to the slice.
 
 ## Sign In With ChatGPT

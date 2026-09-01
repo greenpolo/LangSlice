@@ -14,7 +14,7 @@ import numpy as np
 from PIL import Image
 
 from langslice.agent_trace import image_part_from_pil, json_part, runtime_event
-from langslice.atlas import get_reference_slice, load_atlas
+from langslice.atlas import get_position_range_mm, load_atlas
 from langslice.atlas.recolor import Palette, color_lut, use_palette
 from langslice.image_prep import foreground_mask
 from langslice.nonlinear.image_gen_helpers import (
@@ -49,6 +49,12 @@ from langslice.nonlinear.types import (
 from langslice.space import Plane
 
 _MAX_LONG_EDGE = 2048
+
+#: AP offsets (mm) of the model-facing atlas references around the estimated
+#: position, anterior → posterior. ±0.125mm is human placement error — the
+#: three maps bracket where the section can actually be, and the model reads
+#: the tissue against the whole band rather than one possibly-off plane.
+REFERENCE_OFFSETS_MM = (-0.125, 0.0, +0.125)
 
 #: Max summed RGB delta for a generated pixel to count as "untouched" input.
 #: Comfortably above resampling noise, well below the distance to the
@@ -526,8 +532,7 @@ def _save_debug_artifacts(
     generated_segmentation: Image.Image,
     warped_atlas: Image.Image,
     warped_border_overlay: Image.Image,
-    input_colored_regions: Image.Image,
-    input_reference: Image.Image,
+    input_reference_images: list[Image.Image],
     input_slice: Image.Image,
     generated_border_overlay: Image.Image | None = None,
     slice_warped_to_atlas: Image.Image | None = None,
@@ -554,8 +559,17 @@ def _save_debug_artifacts(
     _save("generated_segmentation.png", generated_segmentation)
     _save("warped_atlas.png", warped_atlas)
     _save("warped_border_overlay.png", warped_border_overlay)
-    _save("input_colored_regions.png", input_colored_regions)
-    _save("input_reference.png", input_reference)
+    # The model-facing reference set, in prompt order (Image 2..N). The
+    # CENTER one keeps the historical input_colored_regions.png name so
+    # downstream tooling keeps working.
+    center = len(input_reference_images) // 2
+    for i, ref in enumerate(input_reference_images):
+        name = (
+            "input_colored_regions.png"
+            if i == center
+            else f"input_reference_{i + 2}.png"
+        )
+        _save(name, ref)
     _save("input_slice.png", input_slice)
     if generated_border_overlay is not None:
         _save("generated_border_overlay.png", generated_border_overlay)
@@ -726,22 +740,27 @@ def _generate_registration_candidate(
         image, canvas_pad=canvas_pad, image_model=image_model, provider=provider
     )
     target_size = slice_image.size
-    # Model-facing atlas references: oriented into the user's image frame,
-    # then uniform-scaled and letterboxed to the histology canvas — one scale
-    # for all inputs, NEAREST-crisp thin bands, and never an anisotropic
-    # stretch of the reference anatomy.
-    colored_native = _orient_pil(
-        _generate_colored_region_slice(
-            atlas, position_mm, None, plane=plane, pitch_deg=pitch_deg, yaw_deg=yaw_deg
-        ),
-        atlas, plane, image_axes,
-    )
-    reference_native = _orient_pil(
-        get_reference_slice(
-            atlas, position_mm, plane=plane, pitch_deg=pitch_deg, yaw_deg=yaw_deg
-        ).convert("RGB"),
-        atlas, plane, image_axes,
-    )
+    # Model-facing atlas references: THREE colored region maps bracketing the
+    # estimated depth at human-placement error (REFERENCE_OFFSETS_MM, ±125um),
+    # anterior → posterior. The model sees how the anatomy evolves through the
+    # position's own uncertainty band and matches the tissue against it,
+    # instead of trusting one possibly-off plane. Each is oriented into the
+    # user's image frame, then uniform-scaled and letterboxed to the histology
+    # canvas — NEAREST-crisp thin bands, never an anisotropic stretch.
+    lo_mm, hi_mm = get_position_range_mm(atlas, plane=plane)
+    reference_positions = [
+        min(max(position_mm + off, lo_mm), hi_mm) for off in REFERENCE_OFFSETS_MM
+    ]
+    reference_natives = [
+        _orient_pil(
+            _generate_colored_region_slice(
+                atlas, pos, None, plane=plane, pitch_deg=pitch_deg, yaw_deg=yaw_deg
+            ),
+            atlas, plane, image_axes,
+        )
+        for pos in reference_positions
+    ]
+    colored_native = reference_natives[len(reference_natives) // 2]
     # With a known physical pixel size, place the atlas at TRUE scale on the
     # canvas — the most direct image-to-atlas calibration there is; without
     # one, fall back to fit-to-canvas. Scale is per render (they arrive at
@@ -755,18 +774,15 @@ def _generate_registration_candidate(
     # center so only empty margin crops. All renders share one frame, so one
     # focus serves them all.
     atlas_focus = _anatomy_focus(colored_native) if canvas_um is not None else None
-    colored_regions = _fit_to_canvas(
-        colored_native,
-        target_size,
-        scale=_physical_scale_for(colored_native, atlas, position_mm, plane, canvas_um),
-        focus=atlas_focus,
-    )
-    reference_slice = _fit_to_canvas(
-        reference_native,
-        target_size,
-        scale=_physical_scale_for(reference_native, atlas, position_mm, plane, canvas_um),
-        focus=atlas_focus,
-    )
+    reference_images = [
+        _fit_to_canvas(
+            native,
+            target_size,
+            scale=_physical_scale_for(native, atlas, pos, plane, canvas_um),
+            focus=atlas_focus,
+        )
+        for native, pos in zip(reference_natives, reference_positions, strict=True)
+    ]
 
     prompt = image_prompt or base_segmentation_prompt(plane, image_model)
     request_metadata: dict[str, Any] = {
@@ -798,8 +814,7 @@ def _generate_registration_candidate(
             on_progress("Image-gen registration: generating warped atlas image...")
         generated = generate_warped_segmentation_image(
             SegmentationGenerationRequest(
-                colored_regions=colored_regions,
-                reference_slice=reference_slice,
+                reference_images=reference_images,
                 slice_image=slice_image,
                 prompt=prompt,
                 provider=provider,
@@ -1071,8 +1086,7 @@ def _generate_registration_candidate(
             generated_segmentation=generated.image,
             warped_atlas=warped_atlas_img,
             warped_border_overlay=warped_border_overlay,
-            input_colored_regions=colored_regions,
-            input_reference=reference_slice,
+            input_reference_images=reference_images,
             input_slice=slice_image,
             generated_border_overlay=generated_border_overlay,
             slice_warped_to_atlas=warped_slice_to_atlas_img,

@@ -114,8 +114,7 @@ def test_openai_images_route_uses_three_png_inputs_and_returns_image(monkeypatch
     monkeypatch.setattr(providers, "get_openai_image_model", lambda: "gpt-image-2")
 
     request = providers.SegmentationGenerationRequest(
-        colored_regions=_make_image((255, 0, 0)),
-        reference_slice=_make_image((0, 255, 0)),
+        reference_images=[_make_image((255, 0, 0)), _make_image((0, 255, 0))],
         slice_image=_make_image((0, 0, 255)),
         prompt="warp it",
         provider="openai",
@@ -140,8 +139,8 @@ def test_openai_images_route_uses_three_png_inputs_and_returns_image(monkeypatch
     assert len(image_files) == 3
     assert [img.name for img in image_files] == [
         "slice_image.png",
-        "colored_regions.png",
-        "reference_slice.png",
+        "atlas_reference_1.png",
+        "atlas_reference_2.png",
     ]
 
 
@@ -152,8 +151,7 @@ def test_openai_responses_route_uses_image_generation_tool_and_revised_prompt(mo
     monkeypatch.setattr(providers, "get_openai_model", lambda: "gpt-4.1")
 
     request = providers.SegmentationGenerationRequest(
-        colored_regions=_make_image((255, 0, 0)),
-        reference_slice=_make_image((0, 255, 0)),
+        reference_images=[_make_image((255, 0, 0)), _make_image((0, 255, 0))],
         slice_image=_make_image((0, 0, 255)),
         prompt="edit please",
         provider="openai",
@@ -192,8 +190,7 @@ def test_google_route_uses_last_inline_image_from_parts(monkeypatch):
     )
 
     request = providers.SegmentationGenerationRequest(
-        colored_regions=_make_image((255, 0, 0)),
-        reference_slice=_make_image((0, 255, 0)),
+        reference_images=[_make_image((255, 0, 0)), _make_image((0, 255, 0))],
         slice_image=_make_image((0, 0, 255)),
         prompt="google it",
         provider="google",
@@ -226,8 +223,7 @@ def test_openai_compatible_provider_uses_images_route_and_normalized_provider(mo
     monkeypatch.setattr(providers, "get_openai_image_model", lambda: "gpt-image-2")
 
     request = providers.SegmentationGenerationRequest(
-        colored_regions=_make_image((255, 0, 0)),
-        reference_slice=_make_image((0, 255, 0)),
+        reference_images=[_make_image((255, 0, 0)), _make_image((0, 255, 0))],
         slice_image=_make_image((0, 0, 255)),
         prompt="compat",
         provider="OpenAI-Compatible",
@@ -245,8 +241,7 @@ def test_openai_compatible_provider_uses_images_route_and_normalized_provider(mo
 def test_unknown_provider_raises_value_error():
     providers = _providers()
     request = providers.SegmentationGenerationRequest(
-        colored_regions=_make_image((255, 0, 0)),
-        reference_slice=_make_image((0, 255, 0)),
+        reference_images=[_make_image((255, 0, 0)), _make_image((0, 255, 0))],
         slice_image=_make_image((0, 0, 255)),
         prompt="nope",
         provider="mystery",
@@ -259,8 +254,7 @@ def test_unknown_provider_raises_value_error():
 def test_unknown_openai_image_route_raises_value_error():
     providers = _providers()
     request = providers.SegmentationGenerationRequest(
-        colored_regions=_make_image((255, 0, 0)),
-        reference_slice=_make_image((0, 255, 0)),
+        reference_images=[_make_image((255, 0, 0)), _make_image((0, 255, 0))],
         slice_image=_make_image((0, 0, 255)),
         prompt="nope",
         provider="openai",
@@ -274,8 +268,7 @@ def test_unknown_openai_image_route_raises_value_error():
 def test_unknown_request_route_raises_value_error():
     providers = _providers()
     request = providers.SegmentationGenerationRequest(
-        colored_regions=_make_image((255, 0, 0)),
-        reference_slice=_make_image((0, 255, 0)),
+        reference_images=[_make_image((255, 0, 0)), _make_image((0, 255, 0))],
         slice_image=_make_image((0, 0, 255)),
         prompt="nope",
         provider="google",

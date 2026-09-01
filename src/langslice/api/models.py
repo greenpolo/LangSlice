@@ -90,7 +90,7 @@ class EstimateRequest(EngineBaseModel):
     temperature: float | None = None
     media_resolution: str | None = None
     max_iterations: int = 20
-    preprocess: PreprocessMode = "none"
+    preprocess: PreprocessMode = "auto"
     provider: Provider = "google"
     endpoint: str | None = None
     output_dir: str | None = None
@@ -112,7 +112,7 @@ class RegisterRequest(EngineBaseModel):
     review_model: str | None = None
     thinking: str | None = None
     temperature: float | None = None
-    preprocess: PreprocessMode = "none"
+    preprocess: PreprocessMode = "auto"
     provider: Provider = "google"
     endpoint: str | None = None
     output_dir: str | None = None
