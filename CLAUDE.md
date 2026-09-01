@@ -144,7 +144,20 @@ Two methods live as sibling subpackages with no dependency on each other:
   diagnostic — the old `confirm_registration` gate and per-model prompt
   profiles were deleted. One base prompt (the original handwritten text, in
   `model_prompts.py`) serves every image model; the working
-  editing copy is `_local/nonlinear_prompts.md`.
+  editing copy is `_local/nonlinear_prompts.md`. The model's inputs are the
+  histology slice followed by THREE colored region maps bracketing the
+  estimated position at ±125um (`REFERENCE_OFFSETS_MM`, human placement
+  error), anterior → posterior — the grayscale template input was dropped
+  2026-09-01 with the prompt updated to match; the slice itself goes through
+  the shared `image_prep.adaptive_preprocess` first (`--preprocess auto`,
+  the default on BOTH the linear and nonlinear CLIs / API requests) so the
+  model sees structural detail, not one dim raw channel. CORONAL planes
+  black out the ventricular system (`_annotation_slice` +
+  `_VENTRICLE_KEYWORDS`, re-instated 2026-09-01 — ventricles are holes in
+  coronal histology; sagittal keeps them per Nash's original instruction):
+  the ids become background at the shared annotation entry point, so
+  render, classifier palette, Elastix side and ledger stay consistent, and
+  the prompt tells the model the black holes are holes.
   The MODEL-FACING atlas render is drawn at canvas resolution, never
   NEAREST-upscaled: `render.filled_regions` traces each region at atlas
   resolution, low-pass filters the outline and fills the polygon at ~2048px

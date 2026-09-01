@@ -75,11 +75,12 @@ def _add_register_parser(subparsers: argparse._SubParsersAction) -> None:
         help="Max long-edge pixels for VLM",
     )
     reg.add_argument(
-        "--clahe",
-        action="store_true",
-        help="Apply adaptive CLAHE + DAPI-weighted grayscale preprocessing to the slice "
-        "before sending it to the image-gen registration model. Useful when the red "
-        "fluorescence channel dominates and washes out structural detail.",
+        "--preprocess",
+        default="auto",
+        choices=["auto", "none"],
+        help="Image preprocessing: 'auto' (default) applies the shared adaptive CLAHE + "
+        "structural-channel-weighted blend before sending the slice to the image-gen "
+        "model — the same preprocessing the linear path uses; 'none' sends the raw image",
     )
     reg.add_argument("--temperature", type=float, default=None, help="Generation temperature")
     reg.add_argument(
@@ -231,7 +232,7 @@ def _run_register(args: argparse.Namespace) -> None:
         plane=args.plane,
         image_model=image_model,
         review_model=review_model,
-        preprocess="auto" if getattr(args, "clahe", False) else "none",
+        preprocess=getattr(args, "preprocess", "auto"),
         provider=args.provider,
         output_dir=str(out_dir),
         openai_image_route=args.openai_image_route,

@@ -49,14 +49,12 @@ def _install_pipeline_fakes(monkeypatch, tmp_path: Path | None = None) -> dict[s
     calls: dict[str, Any] = {}
 
     monkeypatch.setattr(candidates, "load_atlas", lambda atlas_name: _fake_atlas())
-
-    def fake_get_reference_slice(  # noqa: ANN001 - local fake
-        atlas, position_mm, *, plane="coronal", pitch_deg=0.0, yaw_deg=0.0
-    ):
-        del plane, pitch_deg, yaw_deg
-        return Image.new("L", (4, 3), color=150)
-
-    monkeypatch.setattr(candidates, "get_reference_slice", fake_get_reference_slice)
+    # The real atlas.resolution/orientation machinery doesn't apply to this
+    # stub atlas; the reference band just needs a range wide enough that the
+    # +-0.125mm offsets never clamp.
+    monkeypatch.setattr(
+        candidates, "get_position_range_mm", lambda atlas, plane="coronal": (-10.0, 10.0)
+    )
 
     def fake_colored_region_slice(  # noqa: ANN001
         atlas, position_mm, target_size=None, *, plane="coronal", smooth=True,
@@ -235,7 +233,8 @@ def test_generate_registration_candidate_writes_debug_artifacts(monkeypatch, tmp
         "warped_atlas.png",
         "warped_border_overlay.png",
         "input_colored_regions.png",
-        "input_reference.png",
+        "input_reference_2.png",
+        "input_reference_4.png",
         "input_slice.png",
         "slice_warped_to_atlas.png",
         "slice_atlas_border_overlay.png",

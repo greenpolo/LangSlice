@@ -13,7 +13,9 @@ from langslice.nonlinear.render import BORDER_DARKEN
 
 WHITE = [255, 255, 255]
 
-#: An Allen-tree atlas whose hippocampal subfields share one family color.
+#: An Allen-tree atlas whose hippocampal subfields share one family color;
+#: CA1 and CA3 are drawn touching so a leaf-only boundary actually exists
+#: between two same-family regions (family borders alone would show none).
 _ROWS = {
     997: ("root", [997], "root"),
     8: ("grey", [997, 8], "Basic cell groups and regions"),
@@ -31,7 +33,7 @@ def atlas(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
     """A 200x200 four-region slice on the Allen structure tree."""
     annotation = np.zeros((1, 200, 200), dtype=np.int32)
     annotation[0, 10:90, 10:90] = 382
-    annotation[0, 10:90, 110:190] = 463
+    annotation[0, 10:90, 90:170] = 463  # touches CA1: same family, different leaf
     annotation[0, 110:190, 10:90] = 726
     annotation[0, 110:190, 110:190] = 512
     fake = SimpleNamespace(
