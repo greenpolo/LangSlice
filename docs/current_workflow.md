@@ -185,7 +185,7 @@ B-spline.
 ## Nonlinear: Image-Gen Registration
 
 ```bash
-langslice nonlinear register <image> --position <mm> [--registration-mode direct|agentic] [--image-model ...] [--review-model ...] [--max-candidates 3] [--palette family|leaf-borders|family-flat] [--out ...]
+langslice nonlinear register <image> --position <mm> [--registration-mode direct|agentic] [--image-model ...] [--review-model ...] [--max-candidates 3] [--palette family|leaf-borders|family-flat] [--draws 1] [--deformation bspline|affine] [--out ...]
 ```
 
 Registration has one active method: image-gen registration. In QUINT/ABBA-style
@@ -209,10 +209,31 @@ the manual spline/BigWarp deformation.
    sections keep theirs). Renders are flat, exact palette
    colors — no voxel staircase; the render Elastix registers against stays
    pixel-exact.
-3. Ask the image model to generate an atlas-colored target aligned to the histology.
-4. Register the generated target to the atlas color map with itk-elastix.
+3. Ask the image model to generate an atlas-colored target aligned to the
+   histology. With `--draws K` the same request is sampled K times and the
+   paintings are combined per pixel by majority vote (see below).
+4. Register the generated target to the atlas color map with itk-elastix
+   (affine + B-spline, or the affine stage alone under
+   `--deformation affine`).
 5. Warp the atlas through the recovered transform.
 6. Return the model-generated atlas target, Elastix-warped atlas, warped-border overlay, and VisuAlign markers.
+
+Draws and deformation:
+
+- `--draws K` (default 1) asks the image model for K independent paintings of
+  the same inputs and registers their per-pixel majority vote, rebuilt into a
+  single painting in atlas colors; every raw draw is kept in the output
+  directory as `generated_segmentation_draw<i>.png`. Draws that half-preserve
+  the tissue texture instead of painting flat color ("translucent") are
+  dropped from the vote first, unless that would drop all of them. Measured
+  on hand-registered slices, the vote beats the average single draw by
+  0.04-0.08 family Dice and lands near the best draw of the set. Ties go to
+  the first draw, so ask for three or more (two kept draws tie on every
+  disagreement and reduce to the first one).
+- `--deformation affine` (default `bspline`) fits the affine stage alone,
+  without the B-spline stage. Measured on the same slices, the B-spline stage
+  driven by generated paintings scores below the affine stage alone; the
+  markers, overlays and reports are the same either way.
 
 Palette:
 

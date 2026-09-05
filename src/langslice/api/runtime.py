@@ -206,6 +206,8 @@ def run_register(request: RegisterRequest, emit: EngineEmit | None = None) -> Re
             canvas_pad=request.canvas_pad,
             pitch_deg=request.pitch_deg,
             yaw_deg=request.yaw_deg,
+            draws=request.draws,
+            deformation=request.deformation,
         )
         affine = result.affine_result
         session_dict = annotation_session_to_dict(result.annotation_session)

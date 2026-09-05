@@ -42,6 +42,7 @@ from langslice.nonlinear.providers import (
     generate_warped_segmentation_image,
 )
 from langslice.nonlinear.types import (
+    Deformation,
     GeneratedSegmentation,
     RegistrationAnnotationSession,
     RegistrationCandidate,
@@ -61,6 +62,11 @@ REFERENCE_OFFSETS_MM = (-0.125, 0.0, +0.125)
 #: nearest palette colors (light grays sit ~138 from white).
 _PRESERVED_PIXEL_TOL = 45
 
+#: Off-palette foreground fraction above which a draw is called translucent
+#: and dropped from the vote. Clean draws measure 0.01-0.03, translucent ones
+#: 0.10-0.17, so the gate sits between the two populations.
+_MAX_OFF_PALETTE = 0.08
+
 
 def _preserved_background_mask(
     model_output_rgb: np.ndarray, slice_image: Image.Image
@@ -75,6 +81,48 @@ def _preserved_background_mask(
     slice_rgb = np.asarray(slice_image.convert("RGB"), dtype=int)
     delta = np.abs(model_output_rgb.astype(int) - slice_rgb).sum(axis=2)
     return delta <= _PRESERVED_PIXEL_TOL
+
+
+def _off_palette_fraction(model_output_rgb: np.ndarray, classified: np.ndarray) -> float:
+    """Share of a painting's foreground that classifies as background.
+
+    The translucency detector. A "translucent" draw half-preserves the
+    tissue texture instead of painting flat atlas color, and those blended
+    pixels land far from every palette color, so the classifier calls them
+    background. Measured over 3 slices x 8 draws: 0.01-0.03 for clean
+    paintings, 0.10-0.17 for translucent ones. Foreground is the
+    classifier's own darkness cut (max channel >= 20), and *classified* must
+    be the raw classification — before the preserved-background mask (a
+    preserved white slide is foreground by this test) and before despeckle.
+    """
+    foreground = model_output_rgb.max(axis=2) >= 20
+    if not foreground.any():
+        return 0.0
+    return float((classified[foreground] == 0).mean())
+
+
+def _majority_vote_classified(classified_draws: list[np.ndarray]) -> np.ndarray:
+    """Per-pixel majority region id across independently classified draws.
+
+    Ties go to the LOWEST draw index (first pass wins, later passes need a
+    strictly larger count to displace it), so with exactly TWO kept draws
+    every disagreement is a 1-1 tie and the result is the first kept draw —
+    ask for three or more (odd is best) to get a real vote. Measured on the
+    hand-registered slices: voting K draws beats the mean single draw by
+    0.04-0.08 family dice and lands near the best draw of the set.
+    """
+    stack = np.stack(classified_draws)
+    best = np.zeros_like(stack[0])
+    best_count = np.zeros(stack.shape[1:], dtype=int)
+    # ponytail: K passes over a K-deep stack (O(K^2) per pixel). Fine for the
+    # handful of draws this is used with; a per-pixel bincount would win only
+    # well past K=16.
+    for draw in stack:
+        count = (stack == draw).sum(axis=0)
+        take = count > best_count
+        best = np.where(take, draw, best)
+        best_count = np.where(take, count, best_count)
+    return best
 
 
 def _background_color(image: Image.Image) -> tuple[int, int, int]:
@@ -530,6 +578,7 @@ def _save_debug_artifacts(
     artifact_dir: Path,
     *,
     generated_segmentation: Image.Image,
+    generated_draws: list[Image.Image] | None = None,
     warped_atlas: Image.Image,
     warped_border_overlay: Image.Image,
     input_reference_images: list[Image.Image],
@@ -558,6 +607,11 @@ def _save_debug_artifacts(
         paths[name] = str(out_path.resolve())
 
     _save("generated_segmentation.png", generated_segmentation)
+    # Raw provider draws behind a vote (only written when there is more than
+    # one — a single draw IS generated_segmentation.png). Index matches the
+    # kept/dropped indices in the candidate metadata.
+    for i, draw in enumerate(generated_draws or []):
+        _save(f"generated_segmentation_draw{i}.png", draw)
     _save("warped_atlas.png", warped_atlas)
     _save("warped_border_overlay.png", warped_border_overlay)
     # The model-facing reference set, in prompt order (Image 2..N). The
@@ -632,6 +686,9 @@ def generate_registration_candidate(
     canvas_pad: float = 0.0,
     pitch_deg: float = 0.0,
     yaw_deg: float = 0.0,
+    draws: int = 1,
+    max_off_palette: float = _MAX_OFF_PALETTE,
+    deformation: Deformation = "bspline",
     previous_candidate_id: str | None = None,
     candidate_id: str | None = None,
     debug_dir: str | None = None,
@@ -671,6 +728,14 @@ def generate_registration_candidate(
     keeps whatever ``LANGSLICE_ATLAS_PALETTE`` says. It changes only the
     model-facing region map; colors, the Elastix pair and everything
     classified from it are the same either way.
+
+    ``draws`` > 1 asks the provider for that many independent paintings of
+    the same request and registers their per-pixel majority vote (see
+    :func:`_majority_vote_classified`); draws whose off-palette foreground
+    fraction exceeds ``max_off_palette`` are dropped as translucent first
+    (:func:`_off_palette_fraction`), unless that would drop them all.
+    ``deformation="affine"`` fits the affine stage alone, without the
+    B-spline stage.
     """
     with use_palette(palette):
         return _generate_registration_candidate(
@@ -687,6 +752,9 @@ def generate_registration_candidate(
             canvas_pad=canvas_pad,
             pitch_deg=pitch_deg,
             yaw_deg=yaw_deg,
+            draws=draws,
+            max_off_palette=max_off_palette,
+            deformation=deformation,
             previous_candidate_id=previous_candidate_id,
             candidate_id=candidate_id,
             debug_dir=debug_dir,
@@ -713,6 +781,9 @@ def _generate_registration_candidate(
     canvas_pad: float = 0.0,
     pitch_deg: float = 0.0,
     yaw_deg: float = 0.0,
+    draws: int = 1,
+    max_off_palette: float = _MAX_OFF_PALETTE,
+    deformation: Deformation = "bspline",
     extra_reference_images: list[Image.Image] | None = None,
     previous_candidate_id: str | None = None,
     candidate_id: str | None = None,
@@ -812,6 +883,7 @@ def _generate_registration_candidate(
     if image_prompt is not None:
         request_metadata["image_prompt"] = image_prompt
 
+    draws = max(1, int(draws))
     if generated_image is not None:
         # The image came from an external conversation (the router session);
         # only the downstream pipeline runs here.
@@ -822,28 +894,32 @@ def _generate_registration_candidate(
             route="router_session",
             metadata=dict(request_metadata),
         )
+        draw_images = [generated.image]
     else:
         if on_progress:
             on_progress("Image-gen registration: generating warped atlas image...")
-        generated = generate_warped_segmentation_image(
-            SegmentationGenerationRequest(
-                reference_images=reference_images,
-                slice_image=slice_image,
-                prompt=prompt,
-                provider=provider,
-                model=image_model,
-                review_model=review_model,
-                openai_image_route=openai_image_route,
-                thinking_level=thinking_level,
-                metadata=request_metadata,
-            )
+        # One request, sampled *draws* times: independent paintings of the same
+        # inputs, voted per pixel below.
+        generation_request = SegmentationGenerationRequest(
+            reference_images=reference_images,
+            slice_image=slice_image,
+            prompt=prompt,
+            provider=provider,
+            model=image_model,
+            review_model=review_model,
+            openai_image_route=openai_image_route,
+            thinking_level=thinking_level,
+            metadata=request_metadata,
         )
+        generated = generate_warped_segmentation_image(generation_request)
+        draw_images = [generated.image]
+        for draw_index in range(1, draws):
+            if on_progress:
+                on_progress(f"Image-gen registration: draw {draw_index + 1}/{draws}...")
+            draw_images.append(
+                generate_warped_segmentation_image(generation_request).image
+            )
 
-    model_output = generated.image.convert("RGB").resize(
-        target_size,
-        resample=Image.Resampling.LANCZOS,
-    )
-    model_output_rgb = np.asarray(model_output, dtype=np.uint8)
     # Elastix side: the pixel-exact NEAREST render, never the smoothed one —
     # this is the image classified back to region ids and warped. Placed in
     # the SAME frame as the model-facing references (oriented, uniform
@@ -866,14 +942,51 @@ def _generate_registration_candidate(
 
     # Classify the raw model output first: registration runs on the CLEANED
     # map (exact palette colors on black), so the preserved background and any
-    # color drift cannot poison the per-channel metric.
-    generated_classified = _classify_pixels_to_region_ids(
-        model_output_rgb, atlas, position_mm, plane=plane,
-        pitch_deg=pitch_deg, yaw_deg=yaw_deg,
-    )
-    preserved_mask = _preserved_background_mask(model_output_rgb, slice_image)
-    generated_classified[preserved_mask] = 0
-    generated_classified = _despeckle_classified(generated_classified)
+    # color drift cannot poison the per-channel metric. Every draw goes
+    # through exactly this path, and only then are they voted on.
+    classified_draws: list[np.ndarray] = []
+    off_palette_fractions: list[float] = []
+    preserved_fractions: list[float] = []
+    for draw in draw_images:
+        draw_rgb = np.asarray(
+            draw.convert("RGB").resize(target_size, resample=Image.Resampling.LANCZOS),
+            dtype=np.uint8,
+        )
+        classified = _classify_pixels_to_region_ids(
+            draw_rgb, atlas, position_mm, plane=plane,
+            pitch_deg=pitch_deg, yaw_deg=yaw_deg,
+        )
+        off_palette_fractions.append(_off_palette_fraction(draw_rgb, classified))
+        preserved_mask = _preserved_background_mask(draw_rgb, slice_image)
+        classified[preserved_mask] = 0
+        classified_draws.append(_despeckle_classified(classified))
+        preserved_fractions.append(float(preserved_mask.mean()))
+
+    # Translucency gate, then the vote. Dropping every draw would leave
+    # nothing to register, so an all-translucent set votes on itself.
+    kept = [i for i, frac in enumerate(off_palette_fractions) if frac <= max_off_palette]
+    if not kept:
+        kept = list(range(len(classified_draws)))
+    dropped = [i for i in range(len(classified_draws)) if i not in kept]
+    if len(kept) == 1:
+        generated_classified = classified_draws[kept[0]]
+        painting = draw_images[kept[0]]
+    else:
+        generated_classified = _majority_vote_classified(
+            [classified_draws[i] for i in kept]
+        )
+        # The voted ids repainted in atlas colors on black: from here down
+        # (Elastix target, ledger, overlays, artifacts) there is one painting.
+        painting = Image.fromarray(
+            _classified_to_rgb(generated_classified, atlas), mode="RGB"
+        )
+    preserved_fraction = float(np.mean([preserved_fractions[i] for i in kept]))
+    if on_progress and len(classified_draws) > 1:
+        on_progress(
+            f"Image-gen registration: voted {len(kept)}/{len(classified_draws)} draws"
+            + (f", dropped {dropped} as translucent" if dropped else "")
+        )
+
     atlas_pre_classified = _classify_pixels_to_region_ids(
         atlas_target_rgb,
         atlas,
@@ -899,6 +1012,7 @@ def _generate_registration_candidate(
         generated_classified,
         atlas,
         fixed_mask=generated_classified != 0,
+        deformation=deformation,
     )
 
     if on_progress:
@@ -948,7 +1062,7 @@ def _generate_registration_candidate(
         atlas_classified,
         atlas,
         tissue_mask=tissue_mask,
-        preserved_fraction=float(preserved_mask.mean()),
+        preserved_fraction=preserved_fraction,
         structures=getattr(atlas, "structures", None),
     )
     if on_progress:
@@ -977,6 +1091,7 @@ def _generate_registration_candidate(
             slice_rgb_array,
             forward_fixed_gray=forward_fixed_gray,
             forward_result_transform=result_transform,
+            deformation=deformation,
         )
         # Mask the warped slice to the atlas root silhouette so the 3D viewer
         # can render it as a brain-shaped sheet at the AP position instead of
@@ -1058,6 +1173,16 @@ def _generate_registration_candidate(
         "inverse_warp_status": inverse_warp_status,
         "elastix": elastix_report,
         "generation": gen_report,
+        "deformation": deformation,
+        # Which draws the registered painting came from. Indices match the
+        # generated_segmentation_draw{i}.png artifacts.
+        "draws": {
+            "n": len(classified_draws),
+            "kept": kept,
+            "dropped": dropped,
+            "off_palette_fraction": [round(f, 4) for f in off_palette_fractions],
+            "max_off_palette": float(max_off_palette),
+        },
         "generated": {
             "provider": generated.provider,
             "model": generated.model,
@@ -1097,7 +1222,8 @@ def _generate_registration_candidate(
         saved_artifact_paths["generation_report.json"] = str(gen_report_path.resolve())
         saved_artifact_paths |= _save_debug_artifacts(
             Path(debug_dir) / "registration" / candidate_id,
-            generated_segmentation=generated.image,
+            generated_segmentation=painting,
+            generated_draws=draw_images if len(draw_images) > 1 else None,
             warped_atlas=warped_atlas_img,
             warped_border_overlay=warped_border_overlay,
             input_reference_images=atlas_reference_images,
@@ -1152,7 +1278,7 @@ def _generate_registration_candidate(
         on_trace,
         candidate_id=candidate_id,
         metadata=trace_metadata,
-        generated_segmentation=generated.image,
+        generated_segmentation=painting,
         warped_atlas=warped_atlas_img,
         warped_border_overlay=warped_border_overlay,
     )
@@ -1165,7 +1291,7 @@ def _generate_registration_candidate(
 
     return RegistrationCandidate(
         candidate_id=candidate_id,
-        generated_segmentation=generated.image,
+        generated_segmentation=painting,
         warped_atlas=warped_atlas_img,
         warped_border_overlay=warped_border_overlay,
         markers=markers,
