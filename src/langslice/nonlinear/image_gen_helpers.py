@@ -136,13 +136,13 @@ def _generate_colored_region_slice(
     ``smooth=False`` for the native-size pixel-exact render the Elastix side
     registers against and classifies back.
 
-    Under ``palette="leaf-borders"`` the model-facing render additionally
-    gets the Allen-Reference-Atlas plate treatment — every leaf boundary
-    delineated in a darker shade of its own region's color (neighbor
-    difference, so lines follow the true boundary), family boundaries
-    heavier. MODEL-FACING decoration only: it never touches the
-    ``smooth=False`` render, so the Elastix pair and everything classified
-    from it are identical either way.
+    Every model-facing render delineates its painted colors: wherever the
+    fill color changes, a line in a darker shade of each side's own color
+    (neighbor difference, so lines follow the true boundary). Under
+    ``palette="leaf-borders"`` the finer leaf boundaries are added on top,
+    color lines heavier — the full Allen-Reference-Atlas plate treatment. MODEL-FACING decoration only:
+    it never touches the ``smooth=False`` render, so the Elastix pair and
+    everything classified from it are identical either way.
     """
     annotation_slice = _annotation_slice(
         atlas, position_mm, plane=plane, pitch_deg=pitch_deg, yaw_deg=yaw_deg
@@ -166,35 +166,44 @@ def _generate_colored_region_slice(
         for uid in np.unique(ids):
             if int(uid):
                 rgb[ids == uid] = lut.get(int(uid), (128, 128, 128))
+        # Every model-facing render delineates its painted colors — a line in
+        # a darker shade of the fill wherever the fill changes, ARA-plate
+        # style (Nash 2026-09-01: borders around the colored regions). One
+        # label per COLOR, not per registration family: the family clustering
+        # was tried here first and left visibly different shades (cerebellar
+        # lobules, cortical areas, striatum vs tubercle) inside one family
+        # with no line between them. Under "leaf-borders" the finer leaf
+        # hairlines are added on top.
+        from langslice.nonlinear.render import darker
+
+        units = (rgb.astype(np.int64) * np.array([65536, 256, 1])).sum(axis=2)
+
+        def _boundary(labels: np.ndarray) -> np.ndarray:
+            b = np.zeros(labels.shape, dtype=bool)
+            b[:, 1:] |= labels[:, 1:] != labels[:, :-1]
+            b[1:, :] |= labels[1:, :] != labels[:-1, :]
+            return b & (labels != 0)
+
+        leaf_w = max(1, round(_LEAF_BORDER_PX * max(target_size) / 2048))
+        leaf_b = np.zeros(ids.shape, dtype=bool)
         if active_palette() == "leaf-borders":
-            from langslice.nonlinear.render import darker
-
-            fams = _merge_classified(ids, atlas)
-
-            def _boundary(labels: np.ndarray) -> np.ndarray:
-                b = np.zeros(labels.shape, dtype=bool)
-                b[:, 1:] |= labels[:, 1:] != labels[:, :-1]
-                b[1:, :] |= labels[1:, :] != labels[:-1, :]
-                return b & (labels != 0)
-
-            leaf_w = max(1, round(_LEAF_BORDER_PX * max(target_size) / 2048))
-            leaf_b: np.ndarray = _boundary(ids)
+            leaf_b = _boundary(ids)
             if leaf_w > 1:
                 leaf_b = np.asarray(
                     ndimage.binary_dilation(leaf_b, iterations=leaf_w - 1), dtype=bool
                 )
-            fam_b = np.asarray(
-                ndimage.binary_dilation(_boundary(fams), iterations=2 * leaf_w - 1),
-                dtype=bool,
-            )
-            border = (leaf_b | fam_b) & (ids != 0)
-            dark_lut = {
-                int(u): darker(lut.get(int(u), (128, 128, 128)))
-                for u in np.unique(ids)
-                if int(u)
-            }
-            for uid, dcol in dark_lut.items():
-                rgb[border & (ids == uid)] = dcol
+        unit_b = np.asarray(
+            ndimage.binary_dilation(_boundary(units), iterations=2 * leaf_w - 1),
+            dtype=bool,
+        )
+        border = (leaf_b | unit_b) & (ids != 0)
+        dark_lut = {
+            int(u): darker(lut.get(int(u), (128, 128, 128)))
+            for u in np.unique(ids)
+            if int(u)
+        }
+        for uid, dcol in dark_lut.items():
+            rgb[border & (ids == uid)] = dcol
         return Image.fromarray(rgb, mode="RGB")
 
     rgb = np.zeros((height, width, 3), dtype=np.uint8)
@@ -244,15 +253,15 @@ def _classify_pixels_to_region_ids(
         if color is not None:
             color_to_id[color] = uid_int
 
-    if active_palette() == "leaf-borders":
-        # The model was shown hairlines in darker(color) and may paint them
-        # back. Measured: at 2px they are ~7% of the foreground, and far
-        # enough off-palette that the background cutoff would punch them
-        # straight through the regions they delineate — so the line color is
-        # part of the palette, mapping to the region it belongs to.
-        from langslice.nonlinear.render import darker
+    # Every model-facing render carries darker(color) delineation lines the
+    # model may paint back (unit borders always; leaf hairlines too under
+    # "leaf-borders"). Measured: at 2px they are ~7% of the foreground, and
+    # far enough off-palette that the background cutoff would punch them
+    # straight through the regions they delineate — so the line color is
+    # part of the palette, mapping to the region it belongs to.
+    from langslice.nonlinear.render import darker
 
-        color_to_id = {darker(c): uid for c, uid in color_to_id.items()} | color_to_id
+    color_to_id = {darker(c): uid for c, uid in color_to_id.items()} | color_to_id
 
     if not color_to_id:
         logger.warning("No atlas structure colors found; returning all-zero classification")

@@ -293,7 +293,10 @@ Shared, top-level:
   Native palettes are left exactly as the atlas authored them.
   `color_lut` has ONE table and no modes: the `--palette` knob picks a
   model-facing render STYLE, never a color. `"family"` (default) draws flat
-  regions, one color per registration unit; `"leaf-borders"` draws the same
+  regions, each painted color outlined by a line in a darker shade of itself
+  wherever the FILL changes (not where the registration family changes: the
+  family clustering left visibly different shades with no line between them);
+  `"leaf-borders"` draws the same
   flat colors plus the Allen-Reference-Atlas plate treatment — every leaf
   boundary delineated by a hairline in a darker shade of the region's own
   color (`render.darker`, RGB × `BORDER_DARKEN` = 0.7, which moves HSV value
