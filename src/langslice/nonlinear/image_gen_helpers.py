@@ -88,15 +88,19 @@ def _generate_colored_region_slice(
     gets the Allen-Reference-Atlas plate treatment — every leaf boundary
     delineated in a darker shade of its own region's color (neighbor
     difference, so lines follow the true boundary), family boundaries
-    heavier. MODEL-FACING decoration only: it never touches the
-    ``smooth=False`` render, so the Elastix pair and everything classified
-    from it are identical either way.
+    heavier. Under ``palette="family-flat"`` the leaves are collapsed to
+    their registration families FIRST (:func:`_plane_families`), so the paint
+    is one flat color per family and the same darker hairlines fall wherever
+    that color changes. MODEL-FACING decoration only: neither style touches
+    the ``smooth=False`` render, so the Elastix pair and everything
+    classified from it are identical whatever the style.
     """
     annotation_slice = _annotation_slice(
         atlas, position_mm, plane=plane, pitch_deg=pitch_deg, yaw_deg=yaw_deg
     )
     height, width = annotation_slice.shape
     lut = color_lut(atlas)
+    style = active_palette()
 
     if smooth:
         from scipy import ndimage
@@ -110,14 +114,22 @@ def _generate_colored_region_slice(
             ),
             dtype=np.int64,
         )
+        if style == "family-flat":
+            families = _plane_families(annotation_slice, atlas)
+            flat = np.zeros_like(ids)
+            for uid in np.unique(ids):
+                if int(uid):
+                    flat[ids == uid] = families.get(int(uid), int(uid))
+            ids = flat
         rgb = np.zeros((*ids.shape, 3), dtype=np.uint8)
         for uid in np.unique(ids):
             if int(uid):
                 rgb[ids == uid] = lut.get(int(uid), (128, 128, 128))
-        if active_palette() == "leaf-borders":
+        if style != "family":
             from langslice.nonlinear.render import darker
 
-            fams = _merge_classified(ids, atlas)
+            # already one id per family, and merging is idempotent there
+            fams = ids if style == "family-flat" else _merge_classified(ids, atlas)
 
             def _boundary(labels: np.ndarray) -> np.ndarray:
                 b = np.zeros(labels.shape, dtype=bool)
@@ -192,7 +204,19 @@ def _classify_pixels_to_region_ids(
         if color is not None:
             color_to_id[color] = uid_int
 
-    if active_palette() == "leaf-borders":
+    style = active_palette()
+    if style == "family-flat":
+        # The model was shown one flat color per family, so classify straight
+        # to that family's representative id — _merge_classified then keeps
+        # what comes out (representatives sit farther apart than the merge
+        # radius). Every LEAF color stays in the palette, keyed to the same
+        # representative: the Elastix-side render is drawn per leaf whatever
+        # the style, and nearest-FAMILY-color is not the family a leaf
+        # belongs to (measured on Allen coronal 3.9mm: 10 of 64 leaf colors
+        # sit nearest a family that is not their own, 15% of the pixels).
+        families = _plane_families(annotation_slice, atlas)
+        color_to_id = {color: families[uid] for color, uid in color_to_id.items()}
+    if style != "family":
         # The model was shown hairlines in darker(color) and may paint them
         # back. Measured: at 2px they are ~7% of the foreground, and far
         # enough off-palette that the background cutoff would punch them
@@ -300,6 +324,24 @@ def _family_mapping(
             reps.append((color, uid))
             mapping[uid] = uid
     return mapping
+
+
+def _plane_families(annotation_slice: np.ndarray, atlas: Any) -> dict[int, int]:
+    """region id -> family representative, for every id one plane contains.
+
+    :func:`_family_mapping` is deterministic only in the id set it is given,
+    and a CLASSIFIED map carries one id per distinct COLOR (nearest-color
+    classification cannot tell two structures the palette paints alike
+    apart), not the raw annotation's ids. So the families are taken over that
+    reduced set — the classifier's own key set — and the representatives come
+    out as the ones ``_merge_classified`` picks downstream, which is what lets
+    a family-flat render and a family render merge to the same map.
+    """
+    lut = color_lut(atlas)
+    uids = [int(u) for u in np.unique(annotation_slice) if int(u) and int(u) in lut]
+    by_color = {lut[uid]: uid for uid in uids}
+    families = _family_mapping(by_color.values(), atlas)
+    return {uid: families[by_color[lut[uid]]] for uid in uids}
 
 
 def _merge_classified(

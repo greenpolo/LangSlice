@@ -648,7 +648,8 @@ def generate_registration_candidate(
     reason calibration is on.
 
     ``palette`` overrides the process-wide atlas render style for this call
-    (``"family"`` or ``"leaf-borders"``, see ``atlas.recolor``); ``None``
+    (``"family"``, ``"leaf-borders"`` or ``"family-flat"``, see
+    ``atlas.recolor``); ``None``
     keeps whatever ``LANGSLICE_ATLAS_PALETTE`` says. It changes only the
     model-facing region map; colors, the Elastix pair and everything
     classified from it are the same either way.
