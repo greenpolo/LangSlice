@@ -69,8 +69,13 @@ here is a verbatim copy — edit one, mirror to the other.
   fill color. With the line color known, no border pixel becomes background
   and no new region id appears; the residual (family recovery 0.93 vs a flat
   render) is entirely WHICH of two neighbours owns a shared 2px line, which
-  is two orders below the B-spline grid. Nothing else changes: the
-  Elastix-side render (`smooth=False`) is byte-identical in both styles. The
+  is two orders below the B-spline grid. The experimental `--palette
+  family-flat` goes further: `_plane_families` collapses leaves onto the
+  `_family_mapping` partition BEFORE painting, and the classifier's whole
+  palette becomes the family colors plus their line shades, keyed to each
+  family's representative id — so `_merge_classified` is already the identity
+  on what it returns. Nothing else changes: the
+  Elastix-side render (`smooth=False`) is byte-identical in every style. The
   Elastix step registers
   the two label maps as joint RGB at merged-family granularity (one
   AdvancedMeanSquares metric per channel plus the bending penalty; both

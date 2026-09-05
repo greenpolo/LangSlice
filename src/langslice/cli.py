@@ -131,13 +131,15 @@ def _add_register_parser(subparsers: argparse._SubParsersAction) -> None:
     reg.add_argument(
         "--palette",
         default="family",
-        choices=["family", "leaf-borders"],
+        choices=["family", "leaf-borders", "family-flat"],
         help=(
             "How the atlas is drawn for the image model. 'family' is flat "
-            "regions, one color per registration unit; 'leaf-borders' adds "
+            "regions, one color per palette unit; 'leaf-borders' adds "
             "Allen-Reference-Atlas-style hairlines at every leaf boundary, in "
-            "a darker shade of the region's own color. Colors, the Elastix "
-            "pair and everything classified from it are identical either way."
+            "a darker shade of the region's own color; 'family-flat' "
+            "(experimental) paints one flat color per registration family, "
+            "delineated by the same hairlines. Colors, the Elastix pair and "
+            "everything classified from it are identical whichever is used."
         ),
     )
     reg.add_argument(
