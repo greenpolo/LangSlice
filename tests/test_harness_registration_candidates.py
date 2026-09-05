@@ -72,7 +72,7 @@ def _install_pipeline_fakes(monkeypatch, tmp_path: Path | None = None) -> dict[s
         candidates,
         "_classify_pixels_to_region_ids",
         lambda model_output_rgb, atlas, position_mm, *, plane="coronal",
-        off_palette_background=True, pitch_deg=0.0, yaw_deg=0.0: np.where(
+        off_palette_background=True, pitch_deg=0.0, yaw_deg=0.0, paint=False: np.where(
             model_output_rgb[:, :, 0] > model_output_rgb[:, :, 1],
             1,
             2,
@@ -1063,7 +1063,7 @@ def _install_draw_fakes(monkeypatch, colors: list[tuple[int, int, int]]) -> dict
 
     def fake_classify(  # noqa: ANN001 - local fake
         rgb, atlas, position_mm, *, plane="coronal", off_palette_background=True,
-        pitch_deg=0.0, yaw_deg=0.0,
+        pitch_deg=0.0, yaw_deg=0.0, paint=False,
     ):
         if not off_palette_background:
             return np.where(rgb[:, :, 0] > rgb[:, :, 1], 1, 2).astype(np.int32)

@@ -94,6 +94,7 @@ def _annotation_slice(
     plane: Plane = "coronal",
     pitch_deg: float = 0.0,
     yaw_deg: float = 0.0,
+    blackout: bool = True,
 ) -> np.ndarray:
     """The atlas annotation at *position_mm*, oriented for display.
 
@@ -104,7 +105,9 @@ def _annotation_slice(
     boundary p95 34px -> 9px over 33 slices).
 
     On the planes in :data:`_BLACKOUT_PLANES` the ventricular system is
-    blacked out to background before anything downstream sees it.
+    blacked out to background before anything downstream sees it;
+    ``blackout=False`` keeps it (review/evaluation renders that must show
+    where the fit put the ventricles — they are landmarks to a reviewer).
     """
     if pitch_deg or yaw_deg:
         from langslice.oblique import sample_oblique_annotation
@@ -116,7 +119,7 @@ def _annotation_slice(
         sliced = orient_slice_for_display(
             np.asarray(np.take(atlas.annotation, idx, axis=axis)), plane
         )
-    if plane in _BLACKOUT_PLANES:
+    if blackout and plane in _BLACKOUT_PLANES:
         vids = _ventricle_ids(atlas)
         if vids:
             # np.where, not in-place: the oblique sampler may hand back cached data
@@ -222,6 +225,7 @@ def _classify_pixels_to_region_ids(
     off_palette_background: bool = True,
     pitch_deg: float = 0.0,
     yaw_deg: float = 0.0,
+    paint: bool = False,
 ) -> np.ndarray:
     """Classify RGB pixels to the nearest atlas region color at *position_mm*.
 
@@ -229,6 +233,21 @@ def _classify_pixels_to_region_ids(
     right for MODEL output (its preserved background can be any color), wrong
     for our own renders: warping blends colors at region boundaries, and the
     cutoff would erase thin regions there (pass False for those).
+
+    ``paint`` classifies MODEL paint rather than one of our own renders. The
+    model often paints translucently, so tissue brightness modulates each
+    region's color: same hue, varying lightness. Plain nearest-RGB reads that
+    modulation as region changes (confetti) and its cutoff punches holes, so
+    in paint mode the lightness axis is down-weighted by
+    ``_PAINT_LIGHTNESS_WEIGHT`` (hue and saturation decide, lightness only
+    breaks ties between same-hue shades). Measured on 12 draws (2026-09-05):
+    family dice 0.583 -> 0.606, despeckle churn 0.067 -> 0.044, the one
+    translucent draw's churn 0.158 -> 0.090; weights 0.10/0.15/0.5 were all
+    worse on dice. Two things measured to do NOTHING and were dropped:
+    forbidding gray/white palette colors from claiming colored pixels
+    (identical numbers), and unmixing against the input tissue pixel (the
+    model re-renders the tissue brighter and not pixel-aligned, so the exact
+    input is not what shows through; dice 0.598 but churn UP).
 
     The cutting angles must match the render the pixels came from: the
     palette is built from the ids that plane actually contains.
@@ -282,15 +301,42 @@ def _classify_pixels_to_region_ids(
     # untouched in edit mode, so it can be any color, not just black.
     background_mask = np.max(pixels, axis=1) < 20.0
 
-    diff = pixels[:, np.newaxis, :] - palette_colors[np.newaxis, :, :]
-    distances_sq = np.sum(diff * diff, axis=2)
-    nearest_idx = np.argmin(distances_sq, axis=1)
+    nearest_idx, residual_sq = _nearest_palette(pixels, palette_colors, paint=paint)
     classified = palette_ids[nearest_idx]
     if off_palette_background:
-        off = distances_sq[np.arange(len(pixels)), nearest_idx] > _BG_COLOR_DISTANCE**2
-        background_mask = background_mask | off
+        background_mask = background_mask | (residual_sq > _BG_COLOR_DISTANCE**2)
     classified[background_mask] = 0
     return classified.reshape(height, width)
+
+
+#: Paint mode: weight of the lightness axis in the color distance (1.0 = plain
+#: RGB). 0.25 measured best of {0.10, 0.15, 0.25, 0.5, 1.0} on 12 draws — see
+#: _classify_pixels_to_region_ids.
+_PAINT_LIGHTNESS_WEIGHT = 0.25
+
+
+def _nearest_palette(
+    pixels: np.ndarray, palette: np.ndarray, *, paint: bool, chunk: int = 8192
+) -> tuple[np.ndarray, np.ndarray]:
+    """(palette index, plain RGB distance^2) per pixel, chunked for memory."""
+    n = len(pixels)
+    idx_out = np.zeros(n, dtype=np.int64)
+    res_out = np.zeros(n, dtype=np.float32)
+    gray = np.ones(3, dtype=np.float32) / np.sqrt(3.0)
+    pal_light = palette @ gray
+    pal_chroma_vec = palette - pal_light[:, None] * gray[None, :]
+    for start in range(0, n, chunk):
+        p = pixels[start : start + chunk]
+        light = p @ gray
+        chroma_vec = p - light[:, None] * gray[None, :]
+        d_light = light[:, None] - pal_light[None, :]
+        d_chroma_sq = np.sum((chroma_vec[:, None, :] - pal_chroma_vec[None, :, :]) ** 2, axis=2)
+        plain_sq = d_chroma_sq + d_light * d_light
+        dist = d_chroma_sq + _PAINT_LIGHTNESS_WEIGHT * d_light * d_light if paint else plain_sq
+        idx = np.argmin(dist, axis=1)
+        idx_out[start : start + chunk] = idx
+        res_out[start : start + chunk] = plain_sq[np.arange(len(p)), idx]
+    return idx_out, res_out
 
 
 def _despeckle_classified(classified_2d: np.ndarray, min_px: int = 16) -> np.ndarray:
