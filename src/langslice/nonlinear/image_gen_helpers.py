@@ -504,6 +504,13 @@ def _grid_spacing_px(image_shape: tuple[int, ...]) -> int:
     return max(32, round(max(image_shape) / 36))
 
 
+#: Benchmark-only overrides applied to the multi-channel parameter maps
+#: (``{"bspline": {"Metric3Weight": ("30.0",)}}``). Empty in production.
+ELASTIX_PARAM_OVERRIDES: dict[str, dict[str, tuple[str, ...]]] = {}
+#: Benchmark-only: AND-ed into the Elastix fixed mask (canvas-sized bool array).
+FIXED_MASK_AND: np.ndarray | None = None
+
+
 def _build_elastix_parameter_object(grid_spacing: int = 32) -> Any:
     """Build the standard affine+B-spline ParameterObject used for colored registration."""
     import itk
@@ -601,6 +608,9 @@ def _build_multichannel_parameter_object(
         param_map["Interpolator"] = ("LinearInterpolator",) * n_slots
         param_map["ImageSampler"] = ("RandomCoordinate",) * n_slots
         param_map["NumberOfResolutions"] = ("4",)
+        # Experiment hook (benchmarks only): per-stage parameter overrides.
+        for key, value in ELASTIX_PARAM_OVERRIDES.get(kind, {}).items():
+            param_map[key] = tuple(value)
         if n_channels > 8:
             # Every metric pays the full random-sample budget per iteration;
             # at one-channel-per-family counts, trim it so runtime does not
@@ -738,6 +748,8 @@ def _register_region_maps(
         fixed_mask = ndimage.binary_dilation(
             fixed_mask.astype(bool), iterations=_FIXED_MASK_DILATE_PX
         )
+        if FIXED_MASK_AND is not None and FIXED_MASK_AND.shape == fixed_mask.shape:
+            fixed_mask = fixed_mask & FIXED_MASK_AND
     return _register_channel_stacks(
         _rgb_channels(generated_classified), _rgb_channels(atlas_classified), fixed_mask
     )
