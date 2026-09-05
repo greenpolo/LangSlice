@@ -123,7 +123,16 @@ here is a verbatim copy — edit one, mirror to the other.
   a finer B-spline grid (/48, /72 rather than /36) buys +0.004 dice, the
   fixed-mask dilation is flat from 0 to 32px, and the bending penalty is
   flat at 1e5-1e6 and HARMFUL at 1e7 — the tail is a plane problem, not a
-  regularization one. The
+  regularization one. The image model's quality tier is not a lever either
+  (2026-09-05, 12 draws/arm on the same three M01 slices, byte-identical
+  inputs): the subscription lane runs gpt-image-2 at quality `auto` — it
+  chose the medium token band (~1300-1600 output image tokens) for our
+  edits — and scored painting dice 0.537; the public API at the same pixel
+  budget scored 0.461 (low), 0.526 (medium), 0.481 (high). Paying for
+  `high` made the anterior slice WORSE (plate-copied striatum, more
+  cortical confetti). `openai-api` honors `thinking_level` as the tier
+  and pins `size` to the subscription lane's pixel budget (1024x1536
+  worth of pixels at the canvas aspect) so the lanes stay comparable. The
   canvas pad (`--canvas-pad`, 0-1.5) grows the working
   canvas by a margin matched to the slice's own background color (never
   black-on-white) so a fragment or hemibrain's COMPLETE painted anatomy can
