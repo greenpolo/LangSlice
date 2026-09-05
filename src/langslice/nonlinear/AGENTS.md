@@ -113,18 +113,27 @@ here is a verbatim copy — edit one, mirror to the other.
   per-draw sd of 0.02, with the paintings still made from a FLAT reference.
   Under a flat plane the residual is wide BANDS of misplaced anatomy
   (hippocampus, brainstem, one hemisphere ahead of the other); at the right
-  angles it collapses to boundary-width lines. `pixel_size_um` puts every
-  atlas render at TRUE physical scale on the slice canvas (each render's
-  um/px derived from the annotation slice's anatomy, never the letterbox
-  padding; anatomy centered via `_anatomy_focus`, and the canvas auto-grows
-  through `_pad_to_contain_atlas` when the true-scale anatomy would exceed
-  it) so the model sees two comparably sized brains; no pixel size falls
-  back to fit-to-canvas. Known residual, measured over all 33 M01 hand
-  registrations by physical extent of the GT region maps: the specimen runs
-  ~10%% (ML) to ~14%% (DV) smaller than the Allen average, so the true-scale
-  atlas lands slightly larger than the tissue and the fit side alone pays
-  ~0.004 dice for it — calibration is on for the model-side benefit of
-  size-matched references. Settled ablations on the same panel:
+  angles it collapses to boundary-width lines. Every atlas render is FIT TO
+  CANVAS — a hard boundary, pinned by `tests/test_reference_scale_boundary.py`:
+  `_fit_to_canvas` takes no scale, and the physical-placement helpers were
+  deleted. `pixel_size_um` is recorded in metadata only. True-physical
+  placement (on 2026-08-29 to 2026-09-05, never measured on the model side
+  until Nash saw the paintings) drew the atlas 20-30%% larger than the
+  shrunken LSD tissue (specimens run ~10-14%% under the Allen average) and
+  the model copied the oversized plate instead of repainting the tissue:
+  painting dice 0.52 vs 0.62 fit-to-canvas on A_02+A_04 (4 Codex draws
+  each), visibly worse, on BOTH lanes; the fit side never needed it either
+  (0.912 fit-to-canvas vs 0.908 physical, 33 slices). Model paint is classified
+  in PAINT MODE (`_classify_pixels_to_region_ids(..., paint=True)`): the model
+  often paints translucently, so tissue brightness modulates a region's
+  lightness; the lightness axis is down-weighted (0.25) in the color distance
+  so hue/saturation decide. Measured 2026-09-05 on 12 draws: dice 0.583 ->
+  0.606, despeckle churn 0.067 -> 0.044, the translucent draw 0.158 -> 0.090.
+  Unmixing against the input pixel and a gray-color gate both measured no gain
+  and were dropped. The leaf review render keeps the ventricles (blackout
+  off) and its warped id map is saved as `warped_leaf_ids.npz` — the input to
+  landmark scoring against hand registrations (`_local/nonlinear_eval/landmarks.py`,
+  Nash's visual-landmark list). Settled ablations on the same panel:
   a finer B-spline grid (/48, /72 rather than /36) buys +0.004 dice, the
   fixed-mask dilation is flat from 0 to 32px, and the bending penalty is
   flat at 1e5-1e6 and HARMFUL at 1e7 — the tail is a plane problem, not a

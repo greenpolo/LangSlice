@@ -258,21 +258,21 @@ def _fit_to_canvas(
     image: Image.Image,
     size: tuple[int, int],
     fill: tuple[int, int, int] = (0, 0, 0),
-    scale: float | None = None,
-    focus: tuple[float, float] | None = None,
 ) -> Image.Image:
-    """Uniform-scale *image* onto a *size* canvas, center-padded with *fill*.
+    """Uniform-scale *image* to fit INSIDE a *size* canvas, centered on *fill*.
 
     Never stretches: an atlas render squeezed into the histology's aspect
-    ratio deforms the very anatomy the prompt calls authoritative. With
-    *scale* (true physical scale from a known pixel size), the image is
-    scaled by exactly that factor and cropped where it overflows the
-    canvas; otherwise it is fit inside the canvas. *focus* is a fractional
-    (x, y) point of the image aligned to the canvas center — used to center
-    the anatomy rather than the atlas frame, whose empty margins may crop.
+    ratio deforms the very anatomy the prompt calls authoritative. And never
+    anything but fit-to-canvas: this is the one place every atlas render
+    (model-facing maps, the Elastix moving image, the leaf review render)
+    is placed, and it deliberately takes no scale. True-physical placement
+    from a pixel size was tried here (2026-08-29 to 2026-09-05) and drew the
+    atlas 20-30%% larger than shrunken tissue; the image model then copied
+    the oversized plate instead of repainting the tissue (painting dice 0.52
+    vs 0.62 fit-to-canvas, and visibly worse). ``tests/test_reference_scale_
+    boundary.py`` pins this.
     """
-    if scale is None:
-        scale = min(size[0] / image.width, size[1] / image.height)
+    scale = min(size[0] / image.width, size[1] / image.height)
     new = (max(1, round(image.width * scale)), max(1, round(image.height * scale)))
     rgb = image.convert("RGB")
     resample = (
@@ -282,109 +282,8 @@ def _fit_to_canvas(
     )
     resized = rgb.resize(new, resample=resample)
     canvas = Image.new("RGB", size, fill)
-    if focus is None:
-        focus = (0.5, 0.5)
-    canvas.paste(
-        resized,
-        (
-            round(size[0] / 2 - focus[0] * new[0]),
-            round(size[1] / 2 - focus[1] * new[1]),
-        ),
-    )
+    canvas.paste(resized, ((size[0] - new[0]) // 2, (size[1] - new[1]) // 2))
     return canvas
-
-
-def _canvas_um_per_px(
-    pixel_size_um: float | None,
-    original_image: Image.Image,
-    target_size: tuple[int, int],
-) -> float | None:
-    """Effective um/px of the working canvas, or None without a pixel size."""
-    if pixel_size_um is None:
-        return None
-    return float(pixel_size_um) * (original_image.width / target_size[0])
-
-
-def _anatomy_focus(render: Image.Image) -> tuple[float, float] | None:
-    """Fractional (x, y) center of the non-black anatomy in an atlas render."""
-    arr = np.asarray(render.convert("RGB"))
-    ys, xs = np.nonzero(arr.any(axis=2))
-    if ys.size == 0:
-        return None
-    return (
-        float(xs.min() + xs.max() + 1) / (2.0 * arr.shape[1]),
-        float(ys.min() + ys.max() + 1) / (2.0 * arr.shape[0]),
-    )
-
-
-def _pad_to_contain_atlas(
-    image: Image.Image,
-    pixel_size_um: float,
-    atlas: Any,
-    position_mm: float,
-    plane: Plane,
-    image_axes: str | None,
-    pitch_deg: float = 0.0,
-    yaw_deg: float = 0.0,
-) -> float:
-    """Minimum ``canvas_pad`` that keeps the true-scale atlas ANATOMY on canvas.
-
-    Physical calibration can put the atlas larger than the slice frame (the
-    tissue may fill its frame while running smaller than the atlas average);
-    rather than crop anatomy off the render, grow the canvas just enough.
-    Extent comes from the annotation's nonzero bounding box, not the atlas
-    frame — the frame's empty margins may crop freely.
-    """
-    from langslice.nonlinear.image_gen_helpers import _annotation_slice
-
-    ann = _annotation_slice(
-        atlas, position_mm, plane=plane, pitch_deg=pitch_deg, yaw_deg=yaw_deg
-    )
-    ys, xs = np.nonzero(ann)
-    if ys.size == 0:
-        return 0.0
-    extent = (float(xs.max() - xs.min() + 1), float(ys.max() - ys.min() + 1))
-    # Orientation may transpose the render's axes; probe with a 2:1 stamp.
-    probe = _orient_pil(Image.new("L", (2, 1)), atlas, plane, image_axes)
-    if probe.size == (1, 2):
-        extent = (extent[1], extent[0])
-    res_um = float(max(atlas.resolution))
-    atlas_mm = (extent[0] * res_um, extent[1] * res_um)
-    canvas_mm = (image.width * pixel_size_um, image.height * pixel_size_um)
-    longest = float(max(image.size))
-    pad = 0.0
-    for a_mm, c_mm, c_px in zip(atlas_mm, canvas_mm, image.size, strict=True):
-        if a_mm > c_mm:
-            pad = max(pad, c_px * (a_mm / c_mm - 1.0) / (2.0 * longest))
-    return 1.02 * pad if pad else 0.0
-
-
-def _physical_scale_for(
-    render: Image.Image,
-    atlas: Any,
-    position_mm: float,
-    plane: Plane,
-    canvas_um: float | None,
-) -> float | None:
-    """Render -> canvas scale that puts the atlas at TRUE physical size.
-
-    Renders arrive at arbitrary pixel sizes (the smooth model-facing render
-    is pre-upscaled; the grayscale template is voxel-native), so each
-    render's own um/px is derived from the annotation slice's native extent
-    — the long edge survives any orientation transpose — and divided by the
-    canvas's um/px.
-    """
-    if canvas_um is None:
-        return None
-    try:
-        from langslice.nonlinear.image_gen_helpers import _annotation_slice
-
-        native_long = max(_annotation_slice(atlas, position_mm, plane=plane).shape)
-        atlas_res_um = float(max(atlas.resolution))
-    except Exception:
-        return None
-    render_um_per_px = atlas_res_um * native_long / max(render.size)
-    return render_um_per_px / canvas_um
 
 
 def _overlay_borders(base_image: Image.Image, borders: np.ndarray) -> Image.Image:
@@ -512,13 +411,15 @@ def _leaf_overlay_render(
     image_axes: str | None,
     result_transform: Any,
     *,
-    canvas_um: float | None = None,
     prealign_matrix: np.ndarray | None = None,
     pitch_deg: float = 0.0,
     yaw_deg: float = 0.0,
     on_progress: Callable[[str], None] | None = None,
-) -> Image.Image | None:
+) -> tuple[Image.Image | None, np.ndarray | None]:
     """Leaf-level review render: the RAW annotation warped through the fit.
+
+    Returns ``(overlay, warped_leaf_ids)``; the id map is what landmark-level
+    evaluation against hand registrations reads, so it is saved alongside.
 
     Color classification collapses every set of same-colored regions (all
     fiber tracts, quantized families) into one label, hiding their internal
@@ -533,22 +434,21 @@ def _leaf_overlay_render(
     try:
         context = atlas_space_context(atlas)
         leaf = _annotation_slice(
-            atlas, position_mm, plane=plane, pitch_deg=pitch_deg, yaw_deg=yaw_deg
+            atlas, position_mm, plane=plane, pitch_deg=pitch_deg, yaw_deg=yaw_deg,
+            blackout=False,  # a reviewer checks the ventricles; keep them in this render
         )
         if image_axes:
             from langslice.space import orient_slice_to_axes
 
             leaf = orient_slice_to_axes(leaf, context, plane, image_axes)
-        # Same frame as the Elastix moving render: uniform scale (physical
-        # when known), centered — a stretched leaf map against a letterboxed
-        # transform inflates every annotation off the tissue.
+        # Same frame as the Elastix moving render: uniform fit-to-canvas,
+        # centered — a stretched leaf map against a letterboxed transform
+        # inflates every annotation off the tissue.
         leaf_img = Image.fromarray(leaf.astype(np.int32), mode="I")
-        scale = _physical_scale_for(leaf_img, atlas, position_mm, plane, canvas_um)
-        if scale is None:
-            scale = min(
-                slice_image.size[0] / leaf_img.width,
-                slice_image.size[1] / leaf_img.height,
-            )
+        scale = min(
+            slice_image.size[0] / leaf_img.width,
+            slice_image.size[1] / leaf_img.height,
+        )
         new_size = (
             max(1, round(leaf_img.width * scale)),
             max(1, round(leaf_img.height * scale)),
@@ -577,7 +477,7 @@ def _leaf_overlay_render(
             for uid in np.unique(warped_leaf)
             if int(uid) != 0
         }
-        return render.region_overlay(
+        overlay = render.region_overlay(
             slice_image,
             warped_leaf,
             lut=color_lut(atlas),
@@ -585,10 +485,11 @@ def _leaf_overlay_render(
             families=_merge_classified(warped_leaf, atlas),
             fill_alpha=0.15,
         )
+        return overlay, warped_leaf
     except Exception as exc:  # pragma: no cover - debug artifacts only
         if on_progress:
             on_progress(f"Image-gen registration: leaf overlay skipped ({exc})")
-        return None
+        return None, None
 
 
 def _save_debug_artifacts(
@@ -732,18 +633,14 @@ def generate_registration_candidate(
     whose block was cut at 4 degrees: fit-only family dice 0.93 -> 0.96 and
     boundary p95 34px -> 9px over 33 slices, dwarfing every fit-side knob.
 
-    ``pixel_size_um`` switches every atlas render onto true-physical
-    placement: the anatomy is drawn at the same physical size as the tissue
-    in the slice image (each render's own um/px derived from the annotation
-    slice extent, never from the letterbox padding), so the model sees two
-    comparably sized brains. Without a pixel size the renders fall back to
-    fit-to-canvas. Known residual: LSD_910 tissue measures ~10%% (ML) to
-    ~14%% (DV) smaller than the Allen average (processing shrinkage,
-    measured over all 33 hand registrations), so a true-scale atlas lands
-    slightly larger than the tissue; on the fit side alone that cost 0.004
-    family dice on the 33-slice panel (0.912 fit-to-canvas vs 0.908
-    physical) — the model-side benefit of size-matched references is the
-    reason calibration is on.
+    ``pixel_size_um`` is recorded in the candidate metadata and NEVER scales
+    an atlas render: every render is fit to the canvas. True-physical
+    placement was tried (2026-08-29 to 2026-09-05) and was a regression on
+    the model side — LSD_910 tissue runs ~10-14%% smaller than the Allen
+    average, the true-scale plate overflowed the tissue by 20-30%%, and the
+    image model copied the oversized plate instead of repainting the tissue
+    (painting dice 0.52 vs 0.62, visibly worse). The fit side never needed
+    it either (0.912 fit-to-canvas vs 0.908 physical on the 33-slice panel).
 
     ``palette`` overrides the process-wide atlas render style for this call
     (``"family"``, ``"leaf-borders"`` or ``"family-flat"``, see
@@ -840,20 +737,6 @@ def _generate_registration_candidate(
         on_progress("Image-gen registration: loading atlas and preparing inputs...")
     atlas = load_atlas(atlas_name)
 
-    if pixel_size_um is not None:
-        canvas_pad = max(
-            canvas_pad,
-            _pad_to_contain_atlas(
-                image,
-                float(pixel_size_um),
-                atlas,
-                position_mm,
-                plane,
-                image_axes,
-                pitch_deg=pitch_deg,
-                yaw_deg=yaw_deg,
-            ),
-        )
     slice_image, unpadded_size, origin_x, origin_y, pad_px = prepare_canvas(
         image, canvas_pad=canvas_pad, image_model=image_model, provider=provider
     )
@@ -912,29 +795,9 @@ def _generate_registration_candidate(
         )
         for pos in reference_positions
     ]
-    colored_native = reference_natives[len(reference_natives) // 2]
-    # With a known physical pixel size, place the atlas at TRUE scale on the
-    # canvas — the most direct image-to-atlas calibration there is; without
-    # one, fall back to fit-to-canvas. Scale is per render (they arrive at
-    # different pixel densities).
-    # unpadded_size, not target_size: padding and aspect-snap grow the canvas
-    # without rescaling its pixels, so the canvas um/px is set by the resized
-    # slice alone.
-    canvas_um = _canvas_um_per_px(pixel_size_um, image, unpadded_size)
-    # At physical scale the atlas frame's empty margins may overflow the
-    # canvas; align the anatomy's center (not the frame's) to the canvas
-    # center so only empty margin crops. All renders share one frame, so one
-    # focus serves them all.
-    atlas_focus = _anatomy_focus(colored_native) if canvas_um is not None else None
-    reference_images = [
-        _fit_to_canvas(
-            native,
-            target_size,
-            scale=_physical_scale_for(native, atlas, pos, plane, canvas_um),
-            focus=atlas_focus,
-        )
-        for native, pos in zip(reference_natives, reference_positions, strict=True)
-    ]
+    # Fit-to-canvas, always. `pixel_size_um` is recorded in the metadata for
+    # downstream consumers and never scales a render — see _fit_to_canvas.
+    reference_images = [_fit_to_canvas(native, target_size) for native in reference_natives]
     # Experimental: images the PROMPT describes beyond the atlas maps (e.g. a
     # worked example: another section and its correct painting). Delivered
     # after the atlas maps, in the order given; the caller's prompt names them.
@@ -972,6 +835,7 @@ def _generate_registration_candidate(
         "plane": plane,
         "target_size": list(target_size),
         "original_size": [original_width, original_height],
+        "pixel_size_um": pixel_size_um,
     }
     if previous_candidate_id is not None:
         request_metadata["previous_candidate_id"] = previous_candidate_id
@@ -1030,7 +894,7 @@ def _generate_registration_candidate(
     # Elastix side: the pixel-exact NEAREST render, never the smoothed one —
     # this is the image classified back to region ids and warped. Placed in
     # the SAME frame as the model-facing references (oriented, uniform
-    # scale, physical scale when a pixel size is known) — the old
+    # fit-to-canvas scale) — the old
     # full-canvas anisotropic stretch fabricated a large distortion the
     # affine stage had to undo before doing real work, and when it
     # under-corrected the warped atlas landed outside the slice.
@@ -1041,10 +905,7 @@ def _generate_registration_candidate(
         ),
         atlas, plane, image_axes,
     )
-    elastix_scale = _physical_scale_for(elastix_native, atlas, position_mm, plane, canvas_um)
-    atlas_colored_at_target = _fit_to_canvas(
-        elastix_native, target_size, scale=elastix_scale, focus=atlas_focus
-    )
+    atlas_colored_at_target = _fit_to_canvas(elastix_native, target_size)
     atlas_target_rgb = np.asarray(atlas_colored_at_target, dtype=np.uint8)
 
     # Classify the raw model output first: registration runs on the CLEANED
@@ -1066,6 +927,7 @@ def _generate_registration_candidate(
         classified = _classify_pixels_to_region_ids(
             draw_rgb, atlas, position_mm, plane=plane,
             pitch_deg=pitch_deg, yaw_deg=yaw_deg,
+            paint=True,
         )
         off_palette_fractions.append(_off_palette_fraction(draw_rgb, classified))
         preserved_mask = _preserved_background_mask(draw_rgb, canvas_image)
@@ -1321,9 +1183,8 @@ def _generate_registration_candidate(
         review_overlay, review_checkerboard = _review_renders(
             slice_image, warped_classified, warped_families, atlas, on_progress=on_progress
         )
-        leaf_overlay = _leaf_overlay_render(
+        leaf_overlay, warped_leaf_ids = _leaf_overlay_render(
             slice_image, atlas, position_mm, plane, image_axes, result_transform,
-            canvas_um=canvas_um,
             prealign_matrix=prealign_matrix,
             pitch_deg=pitch_deg,
             yaw_deg=yaw_deg,
@@ -1331,6 +1192,15 @@ def _generate_registration_candidate(
         )
         candidate_dir = Path(debug_dir) / "registration" / candidate_id
         candidate_dir.mkdir(parents=True, exist_ok=True)
+        if warped_leaf_ids is not None:
+            # Leaf ids of the warped atlas, in canvas pixels: the artifact
+            # landmark scoring reads (which structures landed where).
+            np.savez_compressed(
+                candidate_dir / "warped_leaf_ids.npz", ids=warped_leaf_ids.astype(np.int32)
+            )
+            saved_artifact_paths["warped_leaf_ids.npz"] = str(
+                (candidate_dir / "warped_leaf_ids.npz").resolve()
+            )
         ledger_path = candidate_dir / "region_ledger.json"
         ledger_path.write_text(json.dumps(region_ledger, indent=1))
         saved_artifact_paths["region_ledger.json"] = str(ledger_path.resolve())

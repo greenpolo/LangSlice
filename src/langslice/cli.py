@@ -176,10 +176,9 @@ def _add_register_parser(subparsers: argparse._SubParsersAction) -> None:
         type=float,
         default=None,
         help=(
-            "Physical pixel size of the input image in micrometers. When "
-            "given, the atlas references are rendered at TRUE physical "
-            "scale relative to the image — the single most direct "
-            "calibration between image and atlas."
+            "Physical pixel size of the input image in micrometers. Recorded "
+            "in the candidate metadata for downstream consumers; atlas renders "
+            "are always fit to the canvas, never physically scaled."
         ),
     )
     reg.add_argument("--json", action="store_true", help="Print result JSON to stdout")
