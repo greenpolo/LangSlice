@@ -62,6 +62,11 @@ REFERENCE_OFFSETS_MM = (-0.125, 0.0, +0.125)
 _PRESERVED_PIXEL_TOL = 45
 
 
+#: Benchmark hook: when the CANVAS itself is a label map (prior-as-canvas
+#: arm), unchanged pixels are valid paint, not preserved background.
+PRESERVED_BACKGROUND_MASKING = True
+
+
 def _preserved_background_mask(
     model_output_rgb: np.ndarray, slice_image: Image.Image
 ) -> np.ndarray:
@@ -714,6 +719,7 @@ def _generate_registration_candidate(
     pitch_deg: float = 0.0,
     yaw_deg: float = 0.0,
     extra_reference_images: list[Image.Image] | None = None,
+    reference_images_override: list[Image.Image] | None = None,
     previous_candidate_id: str | None = None,
     candidate_id: str | None = None,
     debug_dir: str | None = None,
@@ -795,7 +801,19 @@ def _generate_registration_candidate(
     # worked example: another section and its correct painting). Delivered
     # after the atlas maps, in the order given; the caller's prompt names them.
     atlas_reference_images = reference_images
-    reference_images = reference_images + list(extra_reference_images or [])
+    if reference_images_override is not None:
+        # Experimental: the caller supplies Images 2..N itself (its prompt
+        # names them); the atlas maps still feed the Elastix side.
+        def _center_on_canvas(im: Image.Image) -> Image.Image:
+            if im.size == slice_image.size:
+                return im
+            out = Image.new("RGB", slice_image.size, (0, 0, 0))
+            out.paste(im.convert("RGB"), ((slice_image.width - im.width) // 2, (slice_image.height - im.height) // 2))
+            return out
+        reference_images = [_center_on_canvas(im) for im in reference_images_override]
+        extra_reference_images = list(reference_images)
+    else:
+        reference_images = reference_images + list(extra_reference_images or [])
 
     prompt = image_prompt or base_segmentation_prompt(plane, image_model)
     request_metadata: dict[str, Any] = {
@@ -872,7 +890,8 @@ def _generate_registration_candidate(
         pitch_deg=pitch_deg, yaw_deg=yaw_deg,
     )
     preserved_mask = _preserved_background_mask(model_output_rgb, slice_image)
-    generated_classified[preserved_mask] = 0
+    if PRESERVED_BACKGROUND_MASKING:
+        generated_classified[preserved_mask] = 0
     generated_classified = _despeckle_classified(generated_classified)
     atlas_pre_classified = _classify_pixels_to_region_ids(
         atlas_target_rgb,
