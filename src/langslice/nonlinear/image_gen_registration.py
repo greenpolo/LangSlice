@@ -533,6 +533,7 @@ def _save_debug_artifacts(
     warped_atlas: Image.Image,
     warped_border_overlay: Image.Image,
     input_reference_images: list[Image.Image],
+    input_extra_images: list[Image.Image] | None = None,
     input_slice: Image.Image,
     generated_border_overlay: Image.Image | None = None,
     slice_warped_to_atlas: Image.Image | None = None,
@@ -570,6 +571,8 @@ def _save_debug_artifacts(
             else f"input_reference_{i + 2}.png"
         )
         _save(name, ref)
+    for i, ref in enumerate(input_extra_images or []):
+        _save(f"input_exemplar_{i + 1}.png", ref)
     _save("input_slice.png", input_slice)
     if generated_border_overlay is not None:
         _save("generated_border_overlay.png", generated_border_overlay)
@@ -636,6 +639,7 @@ def generate_registration_candidate(
     on_trace: Callable[[dict[str, object]], None] | None = None,
     openai_image_route: str = "images",
     review_model: str | None = None,
+    thinking_level: str | None = None,
     palette: Palette | None = None,
 ) -> RegistrationCandidate:
     """Generate one dense registration candidate from a histology slice.
@@ -689,6 +693,7 @@ def generate_registration_candidate(
             on_trace=on_trace,
             openai_image_route=openai_image_route,
             review_model=review_model,
+            thinking_level=thinking_level,
         )
 
 
@@ -707,6 +712,7 @@ def _generate_registration_candidate(
     canvas_pad: float = 0.0,
     pitch_deg: float = 0.0,
     yaw_deg: float = 0.0,
+    extra_reference_images: list[Image.Image] | None = None,
     previous_candidate_id: str | None = None,
     candidate_id: str | None = None,
     debug_dir: str | None = None,
@@ -714,6 +720,7 @@ def _generate_registration_candidate(
     on_trace: Callable[[dict[str, object]], None] | None = None,
     openai_image_route: str = "images",
     review_model: str | None = None,
+    thinking_level: str | None = None,
 ) -> RegistrationCandidate:
     candidate_id = candidate_id or f"candidate-{uuid.uuid4().hex[:12]}"
     original_width, original_height = image.size
@@ -783,6 +790,11 @@ def _generate_registration_candidate(
         )
         for native, pos in zip(reference_natives, reference_positions, strict=True)
     ]
+    # Experimental: images the PROMPT describes beyond the atlas maps (e.g. a
+    # worked example: another section and its correct painting). Delivered
+    # after the atlas maps, in the order given; the caller's prompt names them.
+    atlas_reference_images = reference_images
+    reference_images = reference_images + list(extra_reference_images or [])
 
     prompt = image_prompt or base_segmentation_prompt(plane, image_model)
     request_metadata: dict[str, Any] = {
@@ -821,6 +833,7 @@ def _generate_registration_candidate(
                 model=image_model,
                 review_model=review_model,
                 openai_image_route=openai_image_route,
+                thinking_level=thinking_level,
                 metadata=request_metadata,
             )
         )
@@ -1086,7 +1099,8 @@ def _generate_registration_candidate(
             generated_segmentation=generated.image,
             warped_atlas=warped_atlas_img,
             warped_border_overlay=warped_border_overlay,
-            input_reference_images=reference_images,
+            input_reference_images=atlas_reference_images,
+            input_extra_images=list(extra_reference_images or []),
             input_slice=slice_image,
             generated_border_overlay=generated_border_overlay,
             slice_warped_to_atlas=warped_slice_to_atlas_img,
