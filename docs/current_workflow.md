@@ -185,7 +185,7 @@ B-spline.
 ## Nonlinear: Image-Gen Registration
 
 ```bash
-langslice nonlinear register <image> --position <mm> [--registration-mode direct|agentic] [--image-model ...] [--review-model ...] [--max-candidates 3] [--palette family|leaf-borders] [--out ...]
+langslice nonlinear register <image> --position <mm> [--registration-mode direct|agentic] [--image-model ...] [--review-model ...] [--max-candidates 3] [--palette family|leaf-borders|family-flat] [--out ...]
 ```
 
 Registration has one active method: image-gen registration. In QUINT/ABBA-style
@@ -224,8 +224,14 @@ Palette:
   so the model is shown the full parcellation without any color moving. Only
   the model-facing render changes — the Elastix-side render is identical —
   and the classifier accepts the hairline color as its own region, so a model
-  that paints the lines back does not cut background through its regions. It
-  is a process-wide setting (`LANGSLICE_ATLAS_PALETTE`).
+  that paints the lines back does not cut background through its regions.
+- `--palette family-flat` is an experimental arm: it collapses the leaves onto
+  their registration families before painting, so the model sees one flat
+  color per family — the granularity Elastix and the benchmark score at — with
+  the same darker hairlines delineating it. Render, classify and merge land on
+  the same map as `family`; the Elastix-side render is again identical.
+
+The style is a process-wide setting (`LANGSLICE_ATLAS_PALETTE`).
 
 Provider routing is explicit, not inferred from the model name:
 

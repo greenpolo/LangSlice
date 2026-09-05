@@ -48,7 +48,18 @@ here is a verbatim copy — edit one, mirror to the other.
   region colors into pixels belonging to neither, and the render has to stay
   classifiable to exact palette colors. Leaf shades were tried here first and
   rejected (Nash: "everything is uniformly worse in our colors") — borders
-  express leaves without touching the palette. The style is a PROCESS-WIDE
+  express leaves without touching the palette. A third style,
+  `"family-flat"`, is an EXPERIMENTAL arm and not the default: it collapses
+  the leaves onto their registration families before painting
+  (`image_gen_helpers._plane_families`, exactly the `_family_mapping`
+  partition Elastix and the benchmark already score at) and delineates that
+  flat paint with the same darker hairlines, so the model is shown the
+  granularity it is graded on and nothing finer. Its classifier maps each
+  family color and its line shade to the family's representative id, which
+  `_merge_classified` keeps unchanged — measured on Allen coronal 3.9 and
+  9.0 mm, render→classify→merge lands on the SAME map as `"family"` to the
+  pixel, and the family colors on those planes stay 40.6 / 42.1 RGB apart.
+  The style is a PROCESS-WIDE
   setting (`LANGSLICE_ATLAS_PALETTE`, `active_palette()`, `use_palette()`,
   and `langslice nonlinear register --palette`), because the classifier has
   to know whether hairlines were painted (see the nonlinear section);
