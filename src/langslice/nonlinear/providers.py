@@ -216,10 +216,13 @@ def _generate_openai_images_segmentation(
         ),
     ]
 
+    quality = (request.thinking_level or "auto").lower()
     response = client.images.edit(  # type: ignore[attr-defined]
         model=model,
         image=image_files,
         prompt=request.prompt,
+        quality=quality if quality in _IMAGE_QUALITIES else "auto",
+        size=_api_edit_size(request.slice_image),
     )
 
     image_b64 = _extract_openai_image_b64(response)
@@ -227,13 +230,30 @@ def _generate_openai_images_segmentation(
     image = Image.open(io.BytesIO(image_bytes))
     image.load()
     route = "openai_images"
+    metadata = _build_metadata(request, provider=provider, route=route)
+    usage = getattr(response, "usage", None)
+    if usage is not None:
+        metadata["usage"] = usage.model_dump() if hasattr(usage, "model_dump") else dict(usage)
     return GeneratedSegmentation(
         image=image.convert("RGB"),
         provider=provider,
         model=model,
         route=route,
-        metadata=_build_metadata(request, provider=provider, route=route),
+        metadata=metadata,
     )
+
+
+def _api_edit_size(canvas: Image.Image, budget_px: int = 1024 * 1536) -> str:
+    """Legal ``WIDTHxHEIGHT`` (multiples of 16) at the canvas aspect, ~budget pixels.
+
+    ponytail: pinned to the Codex lane's pixel budget (every subscription output
+    has exactly 1024x1536 worth of pixels) so the two lanes differ only in
+    quality tier; make the budget a request field when size itself is the
+    experiment.
+    """
+    w, h = canvas.size
+    s = (budget_px / (w * h)) ** 0.5
+    return f"{round(w * s / 16) * 16}x{round(h * s / 16) * 16}"
 
 
 def _generate_openai_responses_segmentation(
