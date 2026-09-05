@@ -185,7 +185,7 @@ B-spline.
 ## Nonlinear: Image-Gen Registration
 
 ```bash
-langslice nonlinear register <image> --position <mm> [--registration-mode direct|agentic] [--image-model ...] [--review-model ...] [--max-candidates 3] [--palette family|leaf-borders|family-flat] [--draws 1] [--deformation bspline|affine] [--out ...]
+langslice nonlinear register <image> --position <mm> [--registration-mode direct|agentic] [--image-model ...] [--review-model ...] [--max-candidates 3] [--palette family|leaf-borders|family-flat] [--draws 1] [--deformation bspline|affine] [--init atlas|silhouette] [--provider ...|none] [--out ...]
 ```
 
 Registration has one active method: image-gen registration. In QUINT/ABBA-style
@@ -235,6 +235,28 @@ Draws and deformation:
   driven by generated paintings scores below the affine stage alone; the
   markers, overlays and reports are the same either way.
 
+Where the painting starts (`--init`):
+
+- `--init atlas` (default) is the path above: the section is the canvas and
+  the model paints it against the three atlas maps.
+- `--init silhouette` places the atlas plane on the section's own outline
+  first — a moments (silhouette) fit of the plane's foreground onto the
+  tissue mask, painted in the same flat palette colors with the same
+  delineation lines — and sends THAT map as Image 1, with the section as
+  Image 2 and a prompt that asks only for the boundaries to be moved onto
+  the visible anatomy. The placement is written to the output directory as
+  `input_prior.png`.
+- `--provider none` goes further and calls no model at all: the placement IS
+  the painting, and the rest of the pipeline (Elastix, VisuAlign markers,
+  overlays, reports, exports) runs on it unchanged. It requires
+  `--init silhouette`. The model-free backbone is
+  `langslice nonlinear register slice.png --position 5.2 --provider none
+  --init silhouette --deformation affine`.
+- Measured against the LSD_910 hand registrations: the placement alone scores
+  0.82 mean family Dice, better than every image-model configuration tried,
+  and used as the model's canvas it raises the painting floor from ~0.5 to
+  ~0.8.
+
 Palette:
 
 - `--palette family` (default) draws flat regions, one color per registration
@@ -261,6 +283,7 @@ Provider routing is explicit, not inferred from the model name:
   picks the Images API (`images`, default) or the Responses API (`responses`),
   and `--endpoint` points it at a non-OpenAI base URL. The default
   OpenAI-compatible image model is `gpt-image-2`.
+- `--provider none` calls no image model (see `--init` above).
 - `--provider chatgpt` uses a ChatGPT subscription instead of an API key: it
   sends `gpt-image-2` requests through the Codex Responses backend with the
   token stored by `langslice login`. The request carries the histology slice

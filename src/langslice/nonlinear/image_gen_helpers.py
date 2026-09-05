@@ -38,6 +38,12 @@ _RENDER_LONG_EDGE = 2048
 #: Width of an ARA-style leaf delineation line, at a 2048px canvas.
 _LEAF_BORDER_PX = 2.0
 
+
+def line_width_px(long_edge: int) -> int:
+    """Delineation-line width for a render whose long edge is *long_edge* px."""
+    return max(1, round(_LEAF_BORDER_PX * long_edge / 2048))
+
+
 #: Ventricle blackout (re-instated 2026-09-01; originally deleted in the
 #: palette rework despite Nash's instruction to keep it for coronal only).
 #: In CORONAL sections the ventricular system is a hole in the tissue —
@@ -158,8 +164,6 @@ def _generate_colored_region_slice(
     style = active_palette()
 
     if smooth:
-        from scipy import ndimage
-
         if target_size is None:
             scale = max(1.0, _RENDER_LONG_EDGE / max(height, width))
             target_size = (round(width * scale), round(height * scale))
@@ -176,10 +180,6 @@ def _generate_colored_region_slice(
                 if int(uid):
                     flat[ids == uid] = families.get(int(uid), int(uid))
             ids = flat
-        rgb = np.zeros((*ids.shape, 3), dtype=np.uint8)
-        for uid in np.unique(ids):
-            if int(uid):
-                rgb[ids == uid] = lut.get(int(uid), (128, 128, 128))
         # Every model-facing render delineates its painted colors — a line in
         # a darker shade of the fill wherever the fill changes, ARA-plate
         # style (Nash 2026-09-01: borders around the colored regions). One
@@ -187,37 +187,17 @@ def _generate_colored_region_slice(
         # was tried here first and left visibly different shades (cerebellar
         # lobules, cortical areas, striatum vs tubercle) inside one family
         # with no line between them. Under "leaf-borders" the finer leaf
-        # hairlines are added on top.
-        from langslice.nonlinear.render import darker
+        # hairlines are added on top. The paint itself is
+        # ``render.paint_labels`` — the same call the silhouette prior makes,
+        # so a prior canvas and an atlas reference are drawn identically.
+        from langslice.nonlinear.render import paint_labels
 
-        units = (rgb.astype(np.int64) * np.array([65536, 256, 1])).sum(axis=2)
-
-        def _boundary(labels: np.ndarray) -> np.ndarray:
-            b = np.zeros(labels.shape, dtype=bool)
-            b[:, 1:] |= labels[:, 1:] != labels[:, :-1]
-            b[1:, :] |= labels[1:, :] != labels[:-1, :]
-            return b & (labels != 0)
-
-        leaf_w = max(1, round(_LEAF_BORDER_PX * max(target_size) / 2048))
-        leaf_b = np.zeros(ids.shape, dtype=bool)
-        if active_palette() == "leaf-borders":
-            leaf_b = _boundary(ids)
-            if leaf_w > 1:
-                leaf_b = np.asarray(
-                    ndimage.binary_dilation(leaf_b, iterations=leaf_w - 1), dtype=bool
-                )
-        unit_b = np.asarray(
-            ndimage.binary_dilation(_boundary(units), iterations=2 * leaf_w - 1),
-            dtype=bool,
+        rgb = paint_labels(
+            ids,
+            lut=lut,
+            line_px=line_width_px(max(target_size)),
+            leaf_lines=active_palette() == "leaf-borders",
         )
-        border = (leaf_b | unit_b) & (ids != 0)
-        dark_lut = {
-            int(u): darker(lut.get(int(u), (128, 128, 128)))
-            for u in np.unique(ids)
-            if int(u)
-        }
-        for uid, dcol in dark_lut.items():
-            rgb[border & (ids == uid)] = dcol
         return Image.fromarray(rgb, mode="RGB")
 
     rgb = np.zeros((height, width, 3), dtype=np.uint8)

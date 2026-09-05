@@ -36,7 +36,12 @@ from langslice.nonlinear.image_gen_helpers import (
     _warp_classified_labels,
     generation_report,
 )
-from langslice.nonlinear.model_prompts import aspect_ratio_limits, base_segmentation_prompt
+from langslice.nonlinear.model_prompts import (
+    aspect_ratio_limits,
+    base_segmentation_prompt,
+    prior_refinement_prompt,
+)
+from langslice.nonlinear.prior import build_silhouette_prior
 from langslice.nonlinear.providers import (
     SegmentationGenerationRequest,
     generate_warped_segmentation_image,
@@ -44,9 +49,11 @@ from langslice.nonlinear.providers import (
 from langslice.nonlinear.types import (
     Deformation,
     GeneratedSegmentation,
+    Init,
     RegistrationAnnotationSession,
     RegistrationCandidate,
 )
+from langslice.providers.registry import canonical_provider
 from langslice.space import Plane
 
 _MAX_LONG_EDGE = 2048
@@ -68,22 +75,27 @@ _PRESERVED_PIXEL_TOL = 45
 _MAX_OFF_PALETTE = 0.08
 
 
-#: Benchmark hook: when the CANVAS itself is a label map (prior-as-canvas
-#: arm), unchanged pixels are valid paint, not preserved background.
+#: Benchmark hook: force the preserved-background mask off. Production
+#: decides per call — ``init="silhouette"`` sends a label map as the canvas,
+#: where unchanged pixels are valid paint rather than preserved background —
+#: so this flag only exists for offline arms that need it off on the
+#: ordinary path.
 PRESERVED_BACKGROUND_MASKING = True
 
 
 def _preserved_background_mask(
-    model_output_rgb: np.ndarray, slice_image: Image.Image
+    model_output_rgb: np.ndarray, canvas_image: Image.Image
 ) -> np.ndarray:
-    """Pixels the edit left untouched — background by the edit contract.
+    """Pixels the edit left untouched, against the canvas that was sent.
 
-    The generation is an in-place edit of the slice canvas, so anything
-    still (nearly) identical to the input is unpainted, never anatomy.
-    Without this, a preserved white background classifies as the atlas
-    root color (white in the Allen LUT) and poisons the registration.
+    The generation is an in-place edit, so anything still (nearly) identical
+    to the input is unchanged. On a SECTION canvas that means unpainted, and
+    the caller zeroes it — without that, a preserved white background
+    classifies as the atlas root color (white in the Allen LUT) and poisons
+    the registration. On a PRIOR canvas the same pixels are paint the model
+    chose to keep, so the caller only records the fraction.
     """
-    slice_rgb = np.asarray(slice_image.convert("RGB"), dtype=int)
+    slice_rgb = np.asarray(canvas_image.convert("RGB"), dtype=int)
     delta = np.abs(model_output_rgb.astype(int) - slice_rgb).sum(axis=2)
     return delta <= _PRESERVED_PIXEL_TOL
 
@@ -589,6 +601,7 @@ def _save_debug_artifacts(
     input_reference_images: list[Image.Image],
     input_extra_images: list[Image.Image] | None = None,
     input_slice: Image.Image,
+    input_prior: Image.Image | None = None,
     generated_border_overlay: Image.Image | None = None,
     slice_warped_to_atlas: Image.Image | None = None,
     slice_atlas_border_overlay: Image.Image | None = None,
@@ -633,6 +646,10 @@ def _save_debug_artifacts(
     for i, ref in enumerate(input_extra_images or []):
         _save(f"input_exemplar_{i + 1}.png", ref)
     _save("input_slice.png", input_slice)
+    # The prior canvas (init="silhouette"): Image 1 as the model received it,
+    # and — with provider="none" — the painting itself.
+    if input_prior is not None:
+        _save("input_prior.png", input_prior)
     if generated_border_overlay is not None:
         _save("generated_border_overlay.png", generated_border_overlay)
     if slice_warped_to_atlas is not None:
@@ -694,6 +711,7 @@ def generate_registration_candidate(
     draws: int = 1,
     max_off_palette: float = _MAX_OFF_PALETTE,
     deformation: Deformation = "bspline",
+    init: Init = "atlas",
     previous_candidate_id: str | None = None,
     candidate_id: str | None = None,
     debug_dir: str | None = None,
@@ -741,6 +759,19 @@ def generate_registration_candidate(
     (:func:`_off_palette_fraction`), unless that would drop them all.
     ``deformation="affine"`` fits the affine stage alone, without the
     B-spline stage.
+
+    ``init="silhouette"`` builds the silhouette prior first — the atlas
+    plane placed on this section's own outline by a moments fit and painted
+    like an atlas reference (:mod:`langslice.nonlinear.prior`) — and sends
+    THAT as the canvas to edit, with the section itself as the only
+    reference image and the boundary-correction prompt. With
+    ``provider="none"`` no model is called at all and the prior IS the
+    painting: the model-free backbone, which with ``deformation="affine"``
+    runs the whole downstream chain (Elastix, markers, overlays, report) on
+    the placement alone. Measured on the LSD_910 hand registrations: the
+    placement scores 0.82 mean family dice, better than every image-model
+    configuration, and as a canvas it lifts the painting floor from ~0.5 to
+    ~0.8.
     """
     with use_palette(palette):
         return _generate_registration_candidate(
@@ -760,6 +791,7 @@ def generate_registration_candidate(
             draws=draws,
             max_off_palette=max_off_palette,
             deformation=deformation,
+            init=init,
             previous_candidate_id=previous_candidate_id,
             candidate_id=candidate_id,
             debug_dir=debug_dir,
@@ -789,6 +821,7 @@ def _generate_registration_candidate(
     draws: int = 1,
     max_off_palette: float = _MAX_OFF_PALETTE,
     deformation: Deformation = "bspline",
+    init: Init = "atlas",
     extra_reference_images: list[Image.Image] | None = None,
     reference_images_override: list[Image.Image] | None = None,
     previous_candidate_id: str | None = None,
@@ -825,6 +858,40 @@ def _generate_registration_candidate(
         image, canvas_pad=canvas_pad, image_model=image_model, provider=provider
     )
     target_size = slice_image.size
+
+    # The silhouette prior: the atlas plane placed on this section's own
+    # outline and painted like an atlas reference (see nonlinear.prior). It
+    # is the canvas the model edits under init="silhouette", and the painting
+    # itself under provider="none".
+    model_free = canonical_provider(provider) == "none"
+    prior_image: Image.Image | None = None
+    prior_metadata: dict[str, Any] = {}
+    if init == "silhouette":
+        if on_progress:
+            on_progress("Image-gen registration: placing the silhouette prior...")
+        prior_image, prior_metadata = build_silhouette_prior(
+            slice_image,
+            atlas=atlas,
+            position_mm=position_mm,
+            plane=plane,
+            image_axes=image_axes,
+            pitch_deg=pitch_deg,
+            yaw_deg=yaw_deg,
+        )
+        if on_progress:
+            on_progress(
+                "Image-gen registration: prior placed, tissue IoU "
+                f"{prior_metadata['tissue_iou']:.3f} signs {prior_metadata['sign_pattern']}"
+            )
+    elif model_free and generated_image is None:
+        raise ValueError(
+            'provider="none" has nothing to paint with: it registers the '
+            'silhouette prior, so it needs init="silhouette".'
+        )
+    # What the model is handed as Image 1. Everything measured against "what
+    # was sent" (the preserved mask) reads this; the overlays stay on the
+    # section, which is what a human checks the fit against.
+    canvas_image = prior_image if prior_image is not None else slice_image
     # Model-facing atlas references: THREE colored region maps bracketing the
     # estimated depth at human-placement error (REFERENCE_OFFSETS_MM, ±125um),
     # anterior → posterior. The model sees how the anatomy evolves through the
@@ -872,6 +939,11 @@ def _generate_registration_candidate(
     # worked example: another section and its correct painting). Delivered
     # after the atlas maps, in the order given; the caller's prompt names them.
     atlas_reference_images = reference_images
+    if init == "silhouette" and reference_images_override is None:
+        # Image 1 is the prior; Image 2 is the section whose anatomy the
+        # prior's boundaries have to be moved onto. The atlas maps are not
+        # sent — the prior already carries them, in this section's frame.
+        reference_images_override = [slice_image]
     if reference_images_override is not None:
         # Experimental: the caller supplies Images 2..N itself (its prompt
         # names them); the atlas maps still feed the Elastix side.
@@ -887,7 +959,11 @@ def _generate_registration_candidate(
     else:
         reference_images = reference_images + list(extra_reference_images or [])
 
-    prompt = image_prompt or base_segmentation_prompt(plane, image_model)
+    prompt = image_prompt or (
+        prior_refinement_prompt(plane)
+        if init == "silhouette"
+        else base_segmentation_prompt(plane, image_model)
+    )
     request_metadata: dict[str, Any] = {
         "workflow": "image_gen_registration",
         "candidate_id": candidate_id,
@@ -914,6 +990,18 @@ def _generate_registration_candidate(
             metadata=dict(request_metadata),
         )
         draw_images = [generated.image]
+    elif model_free:
+        # No model in the loop: the prior IS the painting. Everything
+        # downstream (Elastix, markers, overlays, report, exports) runs on it
+        # exactly as it runs on a generated one.
+        generated = GeneratedSegmentation(
+            image=canvas_image,
+            provider="none",
+            model="none",
+            route="silhouette_prior",
+            metadata=dict(request_metadata),
+        )
+        draw_images = [generated.image]
     else:
         if on_progress:
             on_progress("Image-gen registration: generating warped atlas image...")
@@ -921,7 +1009,7 @@ def _generate_registration_candidate(
         # inputs, voted per pixel below.
         generation_request = SegmentationGenerationRequest(
             reference_images=reference_images,
-            slice_image=slice_image,
+            slice_image=canvas_image,
             prompt=prompt,
             provider=provider,
             model=image_model,
@@ -963,6 +1051,10 @@ def _generate_registration_candidate(
     # map (exact palette colors on black), so the preserved background and any
     # color drift cannot poison the per-channel metric. Every draw goes
     # through exactly this path, and only then are they voted on.
+    # Unchanged pixels are unpainted BACKGROUND only when the canvas was the
+    # section. On a prior canvas they are paint the model chose to keep, and
+    # zeroing them would erase every boundary it got right first time.
+    mask_preserved = PRESERVED_BACKGROUND_MASKING and prior_image is None
     classified_draws: list[np.ndarray] = []
     off_palette_fractions: list[float] = []
     preserved_fractions: list[float] = []
@@ -976,8 +1068,8 @@ def _generate_registration_candidate(
             pitch_deg=pitch_deg, yaw_deg=yaw_deg,
         )
         off_palette_fractions.append(_off_palette_fraction(draw_rgb, classified))
-        preserved_mask = _preserved_background_mask(draw_rgb, slice_image)
-        if PRESERVED_BACKGROUND_MASKING:
+        preserved_mask = _preserved_background_mask(draw_rgb, canvas_image)
+        if mask_preserved:
             classified[preserved_mask] = 0
         classified_draws.append(_despeckle_classified(classified))
         preserved_fractions.append(float(preserved_mask.mean()))
@@ -1167,6 +1259,8 @@ def _generate_registration_candidate(
         "inverse_warp_status": inverse_warp_status,
         "elastix": elastix_report,
         "generation": gen_report,
+        "init": init,
+        "prior": prior_metadata,
     }
     if previous_candidate_id is not None:
         session_metadata["previous_candidate_id"] = previous_candidate_id
@@ -1194,6 +1288,12 @@ def _generate_registration_candidate(
         "elastix": elastix_report,
         "generation": gen_report,
         "deformation": deformation,
+        # What the painting started from: "atlas" (a blank section canvas) or
+        # "silhouette" (the placed prior), and how well the placement's
+        # silhouette matched the tissue.
+        "init": init,
+        "prior": prior_metadata,
+        "provider": generated.provider,
         # Which draws the registered painting came from. Indices match the
         # generated_segmentation_draw{i}.png artifacts.
         "draws": {
@@ -1249,6 +1349,7 @@ def _generate_registration_candidate(
             input_reference_images=atlas_reference_images,
             input_extra_images=list(extra_reference_images or []),
             input_slice=slice_image,
+            input_prior=prior_image,
             generated_border_overlay=generated_border_overlay,
             slice_warped_to_atlas=warped_slice_to_atlas_img,
             slice_atlas_border_overlay=slice_atlas_border_overlay,

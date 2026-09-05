@@ -85,6 +85,17 @@ def _add_register_parser(subparsers: argparse._SubParsersAction) -> None:
         "the affine stage alone (measured higher on generated paintings).",
     )
     reg.add_argument(
+        "--init",
+        default="atlas",
+        choices=["atlas", "silhouette"],
+        help="What the painting starts from: 'atlas' sends the section and "
+        "the atlas maps and asks the model to paint it; 'silhouette' places "
+        "the atlas plane on the section's own outline first (moments fit) "
+        "and sends THAT map as the canvas to correct. With --provider none "
+        "the placement is the whole result — no model call. Measured: the "
+        "placement alone scores 0.82 family dice against hand registrations.",
+    )
+    reg.add_argument(
         "--vlm-resolution",
         type=int,
         default=2048,
@@ -114,14 +125,16 @@ def _add_register_parser(subparsers: argparse._SubParsersAction) -> None:
         "--provider",
         default="google",
         choices=[
-            "gemini-api", "openai-api", "openai-oauth",
+            "gemini-api", "openai-api", "openai-oauth", "none",
             "google", "openai", "chatgpt",  # legacy aliases
         ],
         help=(
             "Access method: 'gemini-api' (Google API key), 'openai-api' "
             "(OpenAI-compatible API key / --endpoint), 'openai-oauth' "
-            "(ChatGPT subscription via `langslice login`). Old spellings "
-            "google/openai/chatgpt still work as aliases."
+            "(ChatGPT subscription via `langslice login`), 'none' (no model "
+            "at all — registers the silhouette prior, requires --init "
+            "silhouette). Old spellings google/openai/chatgpt still work as "
+            "aliases."
         ),
     )
     reg.add_argument(
@@ -195,7 +208,11 @@ def _run_register(args: argparse.Namespace) -> None:
 
     from langslice.providers.registry import canonical_provider
 
-    if canonical_provider(args.provider) == "openai-oauth":
+    if canonical_provider(args.provider) == "none":
+        # Model-free backbone: nothing to name, nothing to configure.
+        default_image_model = default_review_model = ""
+        effective_model = "none (silhouette prior)"
+    elif canonical_provider(args.provider) == "openai-oauth":
         from langslice.providers import openai_oauth
 
         default_image_model = args.image_model or openai_oauth.DEFAULT_IMAGE_MODEL
@@ -261,6 +278,7 @@ def _run_register(args: argparse.Namespace) -> None:
         yaw_deg=getattr(args, "yaw_deg", 0.0),
         draws=getattr(args, "draws", 1),
         deformation=getattr(args, "deformation", "bspline"),
+        init=getattr(args, "init", "atlas"),
         vlm_resolution=args.vlm_resolution,
     )
     result = run_register(request, emit=emit)

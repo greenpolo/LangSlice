@@ -124,3 +124,34 @@ def base_segmentation_prompt(plane: Plane, image_model: str | None = None) -> st
         "Change only the tissue; leave every pixel outside the painted "
         "anatomy exactly as it is. No text or labels."
     )
+
+
+def prior_refinement_prompt(plane: Plane) -> str:
+    """Prompt for the ``init="silhouette"`` canvas: correct a placed atlas.
+
+    A different task from :func:`base_segmentation_prompt`, so a different
+    prompt: the model is not painting a section from scratch against three
+    atlas maps, it is moving the boundaries of an already-placed map onto the
+    anatomy underneath it. Measured with this text, the prior canvas raises
+    the painting floor from ~0.5 to ~0.8 family dice.
+    """
+    section_phrase = _SECTION_PHRASE_BY_PLANE.get(plane, _SECTION_PHRASE_BY_PLANE["coronal"])
+    return (
+        "IMAGE 1 is a flat color map of brain atlas regions that has been "
+        "placed over a histology section by a rigid alignment: it is "
+        "approximately right, but its region boundaries do not yet follow "
+        f"the section's real anatomy. IMAGE 2 is that same {section_phrase} "
+        "(the stain's contrast separates cell-dense tissue from fiber "
+        "tracts; holes are ventricles), in exactly the same frame and scale "
+        "as Image 1.\n\n"
+        "Edit Image 1 so that every region boundary follows the anatomy "
+        "visible in Image 2: move each boundary onto the visible transition "
+        "it corresponds to (cortex against white matter, the edges of "
+        "nuclei, fiber bundles, ventricle walls, the outer edge of the "
+        "tissue), and make the painted area cover exactly the tissue in "
+        "Image 2. Keep every region's color exactly as it is, keep the "
+        "regions flat and opaque with no texture, and do not add, remove, "
+        "rename or recolor any region. Where a boundary already matches the "
+        "tissue, leave it unchanged. Keep the background black. No text or "
+        "labels."
+    )

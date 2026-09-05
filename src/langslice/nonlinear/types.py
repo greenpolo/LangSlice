@@ -20,6 +20,16 @@ AffineMatrixLike = Sequence[Sequence[float]] | np.ndarray
 #: 0.74 vs 0.80 oblique).
 Deformation = Literal["bspline", "affine"]
 
+#: What the pipeline starts from. ``"atlas"`` is the historical path: the
+#: model is shown the section and the atlas maps and paints from scratch.
+#: ``"silhouette"`` builds the silhouette prior first (the atlas plane placed
+#: on the section's own outline, see :mod:`langslice.nonlinear.prior`) and
+#: uses it as the canvas — or, with ``provider="none"``, as the painting
+#: itself. Measured on the LSD_910 hand registrations: the placement alone
+#: scores 0.82 family dice, above every image-model configuration, and as a
+#: canvas it lifts the painting floor from ~0.5 to ~0.8.
+Init = Literal["atlas", "silhouette"]
+
 
 def identity_affine_matrix() -> np.ndarray:
     """Return a 3x3 identity affine matrix."""

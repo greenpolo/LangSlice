@@ -116,7 +116,9 @@ Shared, top-level:
   API key, `vlm_config.py`), `openai-api` (API key / endpoint,
   `openai_config.py`), `openai-oauth` (subscription OAuth,
   `openai_oauth.py`: `langslice login`, the `openai-oauth/*` ADK model
-  strings — legacy `chatgpt/*` accepted — and gpt-image-2). The OAuth path is
+  strings — legacy `chatgpt/*` accepted — and gpt-image-2), and `none` (no
+  model at all: nonlinear's model-free backbone registers the silhouette
+  prior itself, so there is nothing to authenticate). The OAuth path is
   NOT the OpenAI API: it talks to the separate Codex backend
   (`chatgpt.com/backend-api/codex`), whose image tool ignores
   `model`/`size`/`quality` and matches the input image's aspect exactly.

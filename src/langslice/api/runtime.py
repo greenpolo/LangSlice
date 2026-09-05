@@ -168,7 +168,9 @@ def run_register(request: RegisterRequest, emit: EngineEmit | None = None) -> Re
         if request.preprocess == "auto":
             image = adaptive_preprocess(image)
 
-        if canonical_provider(request.provider) in {"openai-api", "openai-oauth"}:
+        if canonical_provider(request.provider) == "none":
+            image_model = review_model = None
+        elif canonical_provider(request.provider) in {"openai-api", "openai-oauth"}:
             import langslice.providers.openai_config as openai_config
 
             image_model = (
@@ -208,6 +210,7 @@ def run_register(request: RegisterRequest, emit: EngineEmit | None = None) -> Re
             yaw_deg=request.yaw_deg,
             draws=request.draws,
             deformation=request.deformation,
+            init=request.init,
         )
         affine = result.affine_result
         session_dict = annotation_session_to_dict(result.annotation_session)
