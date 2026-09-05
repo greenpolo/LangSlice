@@ -6,12 +6,19 @@ import math
 from collections.abc import Sequence
 from copy import deepcopy
 from dataclasses import asdict, dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 from PIL import Image, ImageDraw
 
 AffineMatrixLike = Sequence[Sequence[float]] | np.ndarray
+
+#: Elastix deformation model. ``"bspline"`` is the historical affine +
+#: B-spline pair; ``"affine"`` stops after the affine stage, because the
+#: B-spline stage driven by generated paintings measured BELOW the affine
+#: stage alone on the hand-registered slices (family dice 0.65 vs 0.735 flat,
+#: 0.74 vs 0.80 oblique).
+Deformation = Literal["bspline", "affine"]
 
 
 def identity_affine_matrix() -> np.ndarray:
