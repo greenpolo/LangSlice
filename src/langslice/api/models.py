@@ -10,11 +10,15 @@ Plane = Literal["coronal", "sagittal", "horizontal"]
 # Canonical names are access methods (see providers/registry.py); the first
 # three are legacy aliases kept for old configs.
 Provider = Literal[
-    "google", "openai", "chatgpt", "gemini-api", "openai-api", "openai-oauth"
+    "google", "openai", "chatgpt", "gemini-api", "openai-api", "openai-oauth",
+    # No model at all: registration registers the silhouette prior itself.
+    "none",
 ]
 PreprocessMode = Literal["none", "auto"]
 # Elastix stages the fit runs (see nonlinear.types.Deformation).
 Deformation = Literal["bspline", "affine"]
+# What the painting starts from (see nonlinear.types.Init).
+Init = Literal["atlas", "silhouette"]
 EngineMethod = Literal[
     "version",
     "estimate.run",
@@ -131,6 +135,9 @@ class RegisterRequest(EngineBaseModel):
     # Independent paintings of the same request, voted per pixel.
     draws: int = 1
     deformation: Deformation = "bspline"
+    # "silhouette" places the atlas plane on the section's outline first and
+    # paints from there; with provider="none" that placement IS the result.
+    init: Init = "atlas"
 
 
 class RegisterResult(EngineBaseModel):

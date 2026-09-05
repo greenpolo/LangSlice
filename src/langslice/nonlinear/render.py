@@ -40,6 +40,7 @@ __all__ = [
     "filled_regions",
     "is_dark_background",
     "label_anchor",
+    "paint_labels",
     "region_contours",
     "region_overlay",
     "split_view",
@@ -205,6 +206,60 @@ def darker(color: Rgb) -> Rgb:
         int(color[1] * BORDER_DARKEN),
         int(color[2] * BORDER_DARKEN),
     )
+
+
+def paint_labels(
+    labels: np.ndarray,
+    *,
+    lut: Mapping[int, Rgb],
+    line_px: int = 1,
+    leaf_lines: bool = False,
+) -> np.ndarray:
+    """A flat label map painted in palette colors, with delineation lines.
+
+    THE model-facing look, shared by the atlas reference render
+    (:func:`~langslice.nonlinear.image_gen_helpers._generate_colored_region_slice`)
+    and the silhouette prior (:mod:`langslice.nonlinear.prior`): every label
+    filled with its exact palette color, and wherever the fill COLOR changes
+    a line in :func:`darker` of each side's own color, ``2 * line_px - 1``
+    dilations wide. One line per COLOR, not per label — two labels the
+    palette paints alike are one painted unit and get no line between them.
+    ``leaf_lines`` adds the finer per-LABEL hairlines on top (the
+    ``leaf-borders`` palette).
+
+    Every pixel stays an exact palette color, fill or line, so the map
+    classifies back losslessly (the classifier's palette carries
+    ``darker(color)`` for every region).
+    """
+    from scipy import ndimage
+
+    rgb = np.zeros((*labels.shape, 3), dtype=np.uint8)
+    for uid in np.unique(labels):
+        if int(uid):
+            rgb[labels == uid] = lut.get(int(uid), (128, 128, 128))
+
+    def _boundary(values: np.ndarray) -> np.ndarray:
+        b = np.zeros(values.shape, dtype=bool)
+        b[:, 1:] |= values[:, 1:] != values[:, :-1]
+        b[1:, :] |= values[1:, :] != values[:-1, :]
+        return b & (values != 0)
+
+    units = (rgb.astype(np.int64) * np.array([65536, 256, 1])).sum(axis=2)
+    leaf_b = np.zeros(labels.shape, dtype=bool)
+    if leaf_lines:
+        leaf_b = _boundary(labels)
+        if line_px > 1:
+            leaf_b = np.asarray(
+                ndimage.binary_dilation(leaf_b, iterations=line_px - 1), dtype=bool
+            )
+    unit_b = np.asarray(
+        ndimage.binary_dilation(_boundary(units), iterations=2 * line_px - 1), dtype=bool
+    )
+    border = (leaf_b | unit_b) & (labels != 0)
+    for uid in np.unique(labels[border]):
+        if int(uid):
+            rgb[border & (labels == uid)] = darker(lut.get(int(uid), (128, 128, 128)))
+    return rgb
 
 
 def filled_regions(

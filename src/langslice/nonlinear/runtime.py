@@ -19,6 +19,7 @@ from langslice.nonlinear.image_gen_registration import (
 )
 from langslice.nonlinear.types import (
     Deformation,
+    Init,
     RegistrationResult,
     annotation_session_to_dict,
     candidate_to_registration_result,
@@ -126,6 +127,7 @@ def _run_dense_registration(
     yaw_deg: float,
     draws: int,
     deformation: Deformation,
+    init: Init,
 ) -> RegistrationResult:
     dense_debug_root = _dense_registration_debug_root(atlas_name, debug_dir)
     runtime_debug_dir = str(dense_debug_root / "registration") if dense_debug_root else None
@@ -147,6 +149,7 @@ def _run_dense_registration(
         yaw_deg=yaw_deg,
         draws=draws,
         deformation=deformation,
+        init=init,
         debug_dir=str(dense_debug_root) if dense_debug_root is not None else None,
         on_progress=on_progress,
         on_trace=on_trace,
@@ -250,6 +253,7 @@ def estimate_registration(
     yaw_deg: float = 0.0,
     draws: int = 1,
     deformation: Deformation = "bspline",
+    init: Init = "atlas",
 ) -> RegistrationResult:
     """Run image-gen registration and return affine + nonlinear results.
 
@@ -257,6 +261,8 @@ def estimate_registration(
     render is resliced on that oblique plane instead of taken flat.
     ``draws`` > 1 votes that many paintings per pixel; ``deformation`` picks
     the Elastix stages (affine+B-spline, or the affine stage alone).
+    ``init="silhouette"`` starts from the silhouette prior — with
+    ``provider="none"`` that prior is the whole painting, no model called.
     """
     atlas = load_atlas(atlas_name)
     atlas_image = get_composite_slice(atlas, position_mm, plane=plane)
@@ -282,6 +288,7 @@ def estimate_registration(
         yaw_deg=yaw_deg,
         draws=draws,
         deformation=deformation,
+        init=init,
     )
     _progress(
         on_progress,

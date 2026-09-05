@@ -176,7 +176,38 @@ here is a verbatim copy — edit one, mirror to the other.
   toward. Nothing downstream assumes a B-spline map: the deformation field
   comes from transformix (composing whatever stages exist, verified to carry
   the affine displacement in full) and the VisuAlign markers are sampled off
-  that field. It
+  that field. INIT (`--init`, `RegisterRequest.init`, default `atlas` =
+  today's path: the section is the canvas and the model paints it against the
+  three atlas maps) chooses what the painting starts from. `silhouette`
+  builds the PRIOR first (`prior.py`): the atlas plane at (position, pitch,
+  yaw) placed on the section's own outline by the shared moments fit
+  (`affine._moments_pose`/`_affine_from_pose`), soft-label smoothed to take
+  the voxel staircase off the upscaled plane, and painted by the SAME
+  `render.paint_labels` call the model-facing reference makes — flat palette
+  fills, ventricles black, darker fill-change lines at the same width rule —
+  canvas-sized, saved as `input_prior.png`. Only the two ROTATIONS are tried
+  (the reflections score the same silhouette IoU on a near-symmetric section
+  and land anatomy on the wrong hemisphere); the one with the higher tissue
+  IoU wins and both numbers go in the metadata beside `init` and `provider`.
+  With a real provider, `init=silhouette` sends the prior as Image 1 and the
+  preprocessed section as Image 2 (`reference_images_override`; the ±125um
+  atlas band is NOT sent) under `model_prompts.prior_refinement_prompt` —
+  move each boundary onto the visible transition, change nothing else — and
+  the preserved-background mask is OFF for that call, because unchanged
+  pixels on a prior canvas are paint the model kept, not unpainted slide
+  (production decides this per call from `init`; the module flag
+  `PRESERVED_BACKGROUND_MASKING` remains for offline arms). `provider="none"`
+  (canonical in `providers/registry.py`, and it requires `init=silhouette`)
+  calls no model at all: the prior IS the painting, and with
+  `--deformation affine` the entire downstream chain — Elastix, classified
+  warp, markers, overlays, ledger, report, exports — runs on the placement
+  alone. Measured against the LSD_910 hand registrations, the placement
+  scores 0.82 mean family dice on the fitted cutting plane, better than every
+  image-model configuration measured, and as the model's canvas it raises the
+  painting floor from ~0.5 to ~0.8 — which is why the prior exists on both
+  sides of the model. The classifier is untouched by any of it: every prior
+  pixel, fill or line, is an exact palette color, so classification is
+  lossless. It
   runs after a linear
   placement step, whether that step is `langslice linear ...` or the user's
   own tool (in ABBA/QUINT workflows, linear placement happens first and
