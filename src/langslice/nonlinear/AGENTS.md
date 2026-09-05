@@ -113,17 +113,21 @@ here is a verbatim copy — edit one, mirror to the other.
   per-draw sd of 0.02, with the paintings still made from a FLAT reference.
   Under a flat plane the residual is wide BANDS of misplaced anatomy
   (hippocampus, brainstem, one hemisphere ahead of the other); at the right
-  angles it collapses to boundary-width lines. Every atlas render is FIT TO
-  CANVAS — a hard boundary, pinned by `tests/test_reference_scale_boundary.py`:
-  `_fit_to_canvas` takes no scale, and the physical-placement helpers were
-  deleted. `pixel_size_um` is recorded in metadata only. True-physical
-  placement (on 2026-08-29 to 2026-09-05, never measured on the model side
-  until Nash saw the paintings) drew the atlas 20-30%% larger than the
-  shrunken LSD tissue (specimens run ~10-14%% under the Allen average) and
-  the model copied the oversized plate instead of repainting the tissue:
-  painting dice 0.52 vs 0.62 fit-to-canvas on A_02+A_04 (4 Codex draws
-  each), visibly worse, on BOTH lanes; the fit side never needed it either
-  (0.912 fit-to-canvas vs 0.908 physical, 33 slices). Model paint is classified
+  angles it collapses to boundary-width lines. Every atlas render is placed at TRUE PHYSICAL SCALE when the
+  slide's pixel size is known (`pixel_size_um`): each render's own um/px comes
+  from the annotation slice's extent at the render's cutting angles, divided
+  by the canvas um/px, and the canvas grows (`_pad_to_contain_atlas`) when the
+  tissue frame is smaller than the atlas; fit-to-canvas is the fallback for an
+  unknown pixel size only. Pinned by `tests/test_reference_scale_boundary.py`.
+  Fit-to-canvas is not a calibration: it fits the whole atlas plane, margins
+  included, into the tissue-cropped canvas — measured 2026-09-05 on M01 A_02
+  it drew the plate at 0.69x the tissue width where true scale draws 1.05x
+  (atlas plane 7.80 mm, tissue 7.46 mm). Separate from calibration, the image
+  MODEL reacts to the plate's size: with the true-scale plate it copied the
+  plate on 7 of 8 draws (painting dice 0.621), with the 0.69x plate it edited
+  the tissue in place on 5 of 8 (0.669, best draws 0.76) — a plate the size of
+  the tissue reads as the answer, a small one as a legend. That is a prompt /
+  model-facing-scale lever, not a reason to miscalibrate the fit side. Model paint is classified
   in PAINT MODE (`_classify_pixels_to_region_ids(..., paint=True)`): the model
   often paints translucently, so tissue brightness modulates a region's
   lightness; the lightness axis is down-weighted (0.25) in the color distance
