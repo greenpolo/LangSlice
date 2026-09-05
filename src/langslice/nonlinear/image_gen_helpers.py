@@ -140,9 +140,10 @@ def _generate_colored_region_slice(
     fill color changes, a line in a darker shade of each side's own color
     (neighbor difference, so lines follow the true boundary). Under
     ``palette="leaf-borders"`` the finer leaf boundaries are added on top,
-    color lines heavier — the full Allen-Reference-Atlas plate treatment. MODEL-FACING decoration only:
-    it never touches the ``smooth=False`` render, so the Elastix pair and
-    everything classified from it are identical either way.
+    color lines heavier — the full Allen-Reference-Atlas plate treatment.
+    MODEL-FACING decoration only: it never touches the ``smooth=False``
+    render, so the Elastix pair and everything classified from it are
+    identical either way.
     """
     annotation_slice = _annotation_slice(
         atlas, position_mm, plane=plane, pitch_deg=pitch_deg, yaw_deg=yaw_deg
