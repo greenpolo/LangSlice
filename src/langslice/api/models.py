@@ -13,6 +13,8 @@ Provider = Literal[
     "google", "openai", "chatgpt", "gemini-api", "openai-api", "openai-oauth"
 ]
 PreprocessMode = Literal["none", "auto"]
+# Elastix stages the fit runs (see nonlinear.types.Deformation).
+Deformation = Literal["bspline", "affine"]
 EngineMethod = Literal[
     "version",
     "estimate.run",
@@ -126,6 +128,9 @@ class RegisterRequest(EngineBaseModel):
     # Block cutting angles; every atlas render is resliced on that plane.
     pitch_deg: float = 0.0
     yaw_deg: float = 0.0
+    # Independent paintings of the same request, voted per pixel.
+    draws: int = 1
+    deformation: Deformation = "bspline"
 
 
 class RegisterResult(EngineBaseModel):

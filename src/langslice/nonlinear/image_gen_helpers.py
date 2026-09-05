@@ -15,6 +15,7 @@ from PIL import Image
 from langslice.atlas import position_mm_to_index
 from langslice.atlas.core import get_root_mask, orient_slice_for_display
 from langslice.atlas.recolor import active_palette, color_lut
+from langslice.nonlinear.types import Deformation
 from langslice.space import (
     Plane,
     atlas_space_context,
@@ -511,8 +512,15 @@ ELASTIX_PARAM_OVERRIDES: dict[str, dict[str, tuple[str, ...]]] = {}
 FIXED_MASK_AND: np.ndarray | None = None
 
 
-def _build_elastix_parameter_object(grid_spacing: int = 32) -> Any:
-    """Build the standard affine+B-spline ParameterObject used for colored registration."""
+def _build_elastix_parameter_object(
+    grid_spacing: int = 32, deformation: Deformation = "bspline"
+) -> Any:
+    """Build the standard affine+B-spline ParameterObject used for colored registration.
+
+    With ``deformation="affine"`` the B-spline stage is left off entirely and
+    the object carries a single parameter map — the fit is the affine stage
+    alone (see :data:`langslice.nonlinear.types.Deformation`).
+    """
     import itk
 
     parameter_object = itk.ParameterObject.New()  # type: ignore[attr-defined]
@@ -524,6 +532,8 @@ def _build_elastix_parameter_object(grid_spacing: int = 32) -> Any:
     affine_map["AutomaticTransformInitialization"] = ("true",)
     affine_map["AutomaticTransformInitializationMethod"] = ("CenterOfGravity",)
     parameter_object.AddParameterMap(affine_map)
+    if deformation == "affine":
+        return parameter_object
 
     bspline_map = parameter_object.GetDefaultParameterMap("bspline")
     bspline_map["FinalGridSpacingInPhysicalUnits"] = (str(grid_spacing),)
@@ -563,7 +573,7 @@ def _run_elastix_registration(
 
 
 def _build_multichannel_parameter_object(
-    grid_spacing: int = 32, n_channels: int = 3
+    grid_spacing: int = 32, n_channels: int = 3, deformation: Deformation = "bspline"
 ) -> Any:
     """Affine+B-spline ParameterObject registering *n_channels* jointly.
 
@@ -572,14 +582,19 @@ def _build_multichannel_parameter_object(
     Elastix's multi-metric machinery requires images == pyramids == metrics,
     and the bending-energy penalty counts as a metric without consuming an
     image, so a duplicate of channel 0 fills its slot (weight 0 in the affine
-    stage, where the penalty does not apply).
+    stage, where the penalty does not apply). The duplicate slot stays in the
+    affine-only object too, so the caller's channel list is built the same way
+    either way.
+
+    With ``deformation="affine"`` only the affine map is emitted.
     """
     import itk
 
     n_slots = n_channels + 1  # channels + the penalty's dummy slot
     parameter_object = itk.ParameterObject.New()  # type: ignore[attr-defined]
 
-    for kind in ("affine", "bspline"):
+    stages = ("affine",) if deformation == "affine" else ("affine", "bspline")
+    for kind in stages:
         param_map = parameter_object.GetDefaultParameterMap(kind)
         param_map["Registration"] = ("MultiMetricMultiResolutionRegistration",)
         if kind == "affine":
@@ -626,6 +641,7 @@ def _register_channel_stacks(
     fixed_channels: list[np.ndarray],
     moving_channels: list[np.ndarray],
     fixed_mask: np.ndarray | None = None,
+    deformation: Deformation = "bspline",
 ) -> tuple[Any, float]:
     """Elastix registration of N fixed/moving channel pairs under one transform.
 
@@ -659,6 +675,7 @@ def _register_channel_stacks(
         _build_multichannel_parameter_object(
             _grid_spacing_px(fixed_channels[0].shape),
             n_channels=len(fixed_channels),
+            deformation=deformation,
         )
     )
     elastix.SetLogToConsole(False)
@@ -667,8 +684,9 @@ def _register_channel_stacks(
 
     elapsed = time.perf_counter() - start
     logger.info(
-        "Elastix %d-channel affine+B-spline registration completed in %.1fs",
+        "Elastix %d-channel %s registration completed in %.1fs",
         len(fixed_channels),
+        "affine" if deformation == "affine" else "affine+B-spline",
         elapsed,
     )
     return result_transform, elapsed
@@ -698,6 +716,7 @@ def _register_region_maps(
     atlas: Any,
     fixed_mask: np.ndarray | None = None,
     merge_eps: float = 40.0,
+    deformation: Deformation = "bspline",
 ) -> tuple[Any, float]:
     """Register the atlas label map to the model's label map as joint RGB at
     merged-family granularity.
@@ -720,7 +739,8 @@ def _register_region_maps(
     regions' shades) can pull boundaries slightly. A dense-evaluation
     engine (NiftyReg 4-D SSD, ANTs label registration) is the candidate fix
     if that flaw matters more later. ``fixed_mask`` restricts the metric to
-    the model's segmented tissue.
+    the model's segmented tissue; ``deformation="affine"`` drops the B-spline
+    stage and returns the affine fit alone.
     """
     mapping = _family_mapping(
         (
@@ -751,7 +771,10 @@ def _register_region_maps(
         if FIXED_MASK_AND is not None and FIXED_MASK_AND.shape == fixed_mask.shape:
             fixed_mask = fixed_mask & FIXED_MASK_AND
     return _register_channel_stacks(
-        _rgb_channels(generated_classified), _rgb_channels(atlas_classified), fixed_mask
+        _rgb_channels(generated_classified),
+        _rgb_channels(atlas_classified),
+        fixed_mask,
+        deformation,
     )
 
 
@@ -1100,20 +1123,22 @@ def _run_inverse_warp_for_slice(
     forward_fixed_gray: np.ndarray,
     forward_result_transform: Any,
     scratch_dir: Path | None = None,
+    deformation: Deformation = "bspline",
 ) -> tuple[np.ndarray, Any]:
     """Convenience: run the inverse warp end-to-end from in-memory forward outputs.
 
     Handles the small ceremony around the fixed-to-fixed inverse pattern:
     rebuilds the forward parameter object, writes the forward transform to a
     temp file, re-creates the forward fixed itk.Image, and delegates to
-    :func:`_warp_slice_to_atlas`.
+    :func:`_warp_slice_to_atlas`. ``deformation`` must match the forward run:
+    the inverse is fit with the same stages.
 
     Returns ``(warped_slice_rgb_uint8, inverse_transform_parameters)``.
     """
     import itk
 
     parameter_object = _build_elastix_parameter_object(
-        _grid_spacing_px(forward_fixed_gray.shape)
+        _grid_spacing_px(forward_fixed_gray.shape), deformation
     )
     fixed_image_itk = itk.image_from_array(forward_fixed_gray.astype(np.float32))
 

@@ -147,7 +147,36 @@ here is a verbatim copy — edit one, mirror to the other.
   1:3..3:1 — pad only, never crop; a mismatched ratio would undo edit-mode
   pixel alignment); markers are reported in
   original-image pixels, unclipped — out-of-bounds correspondences are
-  legitimate there, and clipping is an adapter concern. It
+  legitimate there, and clipping is an adapter concern.
+  DRAWS (`--draws`, `RegisterRequest.draws`, default 1 = today's single
+  generation) asks the image model for K independent paintings of the SAME
+  request and registers their per-pixel MAJORITY vote (ties go to the lowest
+  draw index, so exactly TWO kept draws degenerate to the first of them — ask
+  for three or more), repainted from the voted ids through the atlas LUT on black so
+  Elastix, the ledger and every overlay still see one painting; the raw draws
+  are kept as `generated_segmentation_draw{i}.png` and
+  `generated_segmentation.png` stays the voted result. Measured on the
+  hand-registered slices (3 slices x 8 draws): the vote beats the mean single
+  draw by 0.04-0.08 family dice and lands near the BEST draw of the set — it
+  buys best-of-K without having to know which draw is best. The TRANSLUCENCY
+  gate (`max_off_palette`, default 0.08) drops the draws that half-preserve
+  the tissue texture instead of painting flat color: the share of painted
+  foreground (max channel >= 20) that classifies as off-palette background,
+  taken BEFORE the preserved mask and despeckle, runs 0.01-0.03 on clean
+  draws and 0.10-0.17 on translucent ones, so the threshold sits between the
+  two populations. A draw over it leaves the vote unless that would drop
+  every draw (then they all stay — something has to register), and with one
+  draw the number is only recorded; kept/dropped indices and every draw's
+  fraction go in the candidate metadata. DEFORMATION (`--deformation`,
+  default `bspline`) picks the Elastix stages: `affine` emits only the affine
+  map in BOTH parameter builders, so the fit is the affine stage alone.
+  Measured on the same slices, the B-spline stage driven by generated
+  paintings lands BELOW the affine stage alone (0.65 vs 0.735 flat, 0.74 vs
+  0.80 oblique) — the paintings' boundaries are not accurate enough to bend
+  toward. Nothing downstream assumes a B-spline map: the deformation field
+  comes from transformix (composing whatever stages exist, verified to carry
+  the affine displacement in full) and the VisuAlign markers are sampled off
+  that field. It
   runs after a linear
   placement step, whether that step is `langslice linear ...` or the user's
   own tool (in ABBA/QUINT workflows, linear placement happens first and
