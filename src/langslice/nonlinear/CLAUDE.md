@@ -207,7 +207,22 @@ here is a verbatim copy — edit one, mirror to the other.
   painting floor from ~0.5 to ~0.8 — which is why the prior exists on both
   sides of the model. The classifier is untouched by any of it: every prior
   pixel, fill or line, is an exact palette color, so classification is
-  lossless. It
+  lossless. The overnight run of 2026-09-05 (report in
+  `_local/nonlinear_eval/runs/night_report_2026-09-05.md`) is the evidence
+  behind these knobs: on A_02/A_04/A_08 with 8 draws per arm the B-spline
+  stage driven by any painting scored BELOW its own affine stage (0.65 vs
+  0.735 flat, 0.74 vs 0.80 oblique), the affine-placed atlas beat the
+  8-draw vote in every family on every slice, and no fit variant (coarser
+  grid, bending x10, vote target, edge-only metric, consensus masks)
+  recovered the loss; with the prior as canvas the model's edits landed
+  0.04-0.13 below the prior even after consensus and morphological
+  filtering, though it visibly perceives ventricles. The family-Dice
+  metric against the spline-warped hand registrations saturates near
+  0.87-0.90 for a good affine (boundary precision ~50um), so judging
+  refinements finer than that needs a finer ground truth. The production
+  backbone (`--provider none --init silhouette --deformation affine`)
+  scored 0.874/0.808/0.751 with the fitted angles and 0.813/0.797/0.668
+  flat, versus 0.741/0.672/0.655 for the best image-model arm. It
   runs after a linear
   placement step, whether that step is `langslice linear ...` or the user's
   own tool (in ABBA/QUINT workflows, linear placement happens first and
