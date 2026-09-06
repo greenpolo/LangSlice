@@ -68,7 +68,7 @@ SliceState
   transform | null: {kind: silhouette|elastix|interactive, params (six
                      normalized numbers), physical (rotation_deg, scale_x,
                      scale_y, shear, translate_x_mm, translate_y_mm, pivot),
-                     calibration, iou?, roi?, mirrored?, note?}
+                     calibration, iou?, mirrored?, note?}
   caveats: [str]
 ```
 
@@ -108,7 +108,7 @@ in any payload or prompt (see `lean-harness` history in `linear/CLAUDE.md`).
 | `run_deepslice(ids?, allow_angle_change, keep=[ids])` | position.deepslice | positions (+ angles) for undamaged sections; UNAVAILABLE unless installed and plane/atlas supported. |
 | `fit_position(id, window_mm, angles?)` | position.bayesian | `oblique.fit_oblique` at the section's current position: best position (and angles) with score; writes nothing. |
 | `set_cutting_angles(pitch_deg, yaw_deg)` | transform.angles | stack-wide; subsequent atlas fetches and fits use them. |
-| `fit_affine(ids, method=silhouette\|elastix, apply=True, roi=[])` | transform | per-section in-plane affine against its atlas section; returns iou, the transform as the same five `physical` knobs `set_transform` takes (plus `shear`, about the canvas centre) and a captioned overlay panel per section (≤16). `roi` = [x0, y0, x1, y1] fractions of the CANVAS restricts the fit to the tissue and the atlas outline inside that box, on the canvas at identity; damaged sections are refused WITHOUT an roi and fitted with one. |
+| `fit_affine(ids, method=silhouette\|elastix, apply=True)` | transform | per-section in-plane affine against its atlas section; returns iou, the transform as the same five `physical` knobs `set_transform` takes (plus `shear`, about the canvas centre) and a captioned overlay panel per section (≤16). Damaged sections are refused. |
 | `preview_transform(id, rotation_deg, scale_x, scale_y, translate_x_mm, translate_y_mm, mode, zoom, template_opacity, pivot, outlines)` | transform | draws ANY positioned section under a candidate transform with the atlas outlines at true physical scale; `NO_POSITION` otherwise. Writes nothing, snapshots nothing. |
 | `landmarks(id, pairs, params...)` | transform | point pairs (section point, atlas point) as fractions of the canvas: the residual per pair in mm, their RMS, the transform fitted to them (similarity from 2, affine from 3) in the same physical units, and the pairs drawn on the view. Writes nothing. |
 | `set_transform(id, params..., note, pivot)` | transform | records `{"kind": "interactive", ...}` on the section; the write the interactive route ends with, undoable and checkpointed like every other. |
@@ -270,13 +270,11 @@ older single overlay exactly.
   none; `ab_reference` says which). The candidate toggle, as asked.
 
 **Astra's requests, built 2026-09-06.** GPT-6 Astra (medium) aligned damaged
-M05 sections in the main trajectory at human level and was debriefed; four of
+M05 sections in the main trajectory at human level and was debriefed; three of
 its five asks are in:
-- `roi` on `fit_affine` — "registration restricted to retained anatomy", its
-  first ask twice. The moments core (`affine.mask_affine`) now takes two
-  prepared masks, so an ROI fit is the same math on the section's tissue and
-  the atlas root inside one canvas box. It is the ONLY way to fit a damaged
-  section automatically, and the reason damage is no longer a blanket refusal.
+- An ROI-restricted fit was built and removed the same day (2026-09-06): a
+  moments fit inside a box has no anatomy to lock rotation to and inflated
+  remnants; damaged sections are aligned by hand.
 - one transform representation: `physical` on every stored transform and every
   fit payload, so a fit and a hand alignment are the same five numbers ("its
   reported matrix/decomposition was not directly interchangeable with the

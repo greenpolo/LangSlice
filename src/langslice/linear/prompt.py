@@ -51,9 +51,7 @@ TOOL_LINES: dict[str, str] = {
     "fit_affine": "fits an in-plane affine per section against its atlas "
     "section and returns the overlap, the transform as the same five physical "
     "parameters `set_transform` takes, and an image of the section under the "
-    "atlas outlines at true physical scale; `roi` ([x0, y0, x1, y1] of the "
-    "canvas) restricts the fit to what lies inside that box, and damaged "
-    "sections are fitted only with one.",
+    "atlas outlines at true physical scale; damaged sections are refused.",
     "preview_transform": "renders one positioned section under a candidate "
     "rotation, per-axis scales and millimetre shifts, with the atlas outlines "
     "at true physical scale; `mode` is overlay, side_by_side, checkerboard, "
@@ -188,8 +186,7 @@ def build_job_statement(
             )
     if spec.has("transform"):
         constraints.append(
-            "- Damaged sections are refused by `fit_affine` unless it is given "
-            "an `roi`."
+            "- Damaged sections are refused by `fit_affine`."
         )
         constraints.append(
             "- `submit` is refused unless every section carries a transform, "
