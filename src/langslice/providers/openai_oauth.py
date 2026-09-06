@@ -435,6 +435,24 @@ def content_to_input_items(content: types.Content) -> list[dict[str, Any]]:
             response = part.function_response
             payload = response.response
             output = payload if isinstance(payload, str) else _json_dumps(payload)
+            # A tool can attach media to its result. A function_call_output
+            # carries text only, so the media follows as its own user message,
+            # and the output says so: GPT-6 Astra read a result that said
+            # "attached" and found no image in it (2026-09-06 debrief).
+            uris = [
+                uri
+                for response_part in response.parts or []
+                if (uri := _part_data_uri(response_part.inline_data))
+            ]
+            if uris:
+                name = response.name or "tool"
+                output += (
+                    f"\n\n[{len(uris)} image(s) from this {name} call follow "
+                    "in the next user message, each preceded by "
+                    f"'{name} image k of {len(uris)}'.]"
+                )
+                tool_media.extend(uris)
+                tool_names.extend([name] * len(uris))
             items.append(
                 {
                     "type": "function_call_output",
@@ -442,13 +460,6 @@ def content_to_input_items(content: types.Content) -> list[dict[str, Any]]:
                     "output": output,
                 }
             )
-            # A tool can attach media to its result. A function_call_output
-            # carries text only, so the media follows as its own user message.
-            for response_part in response.parts or []:
-                uri = _part_data_uri(response_part.inline_data)
-                if uri:
-                    tool_media.append(uri)
-                    tool_names.append(response.name or "tool")
         elif part.function_call is not None:
             call = part.function_call
             items.append(

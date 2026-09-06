@@ -243,11 +243,12 @@ def test_function_response_media_is_forwarded_as_input_image():
         ],
     )
     items = chatgpt.content_to_input_items(response)
-    assert items[0] == {
-        "type": "function_call_output",
-        "call_id": "call_1",
-        "output": json.dumps({"status": "ok"}),
-    }
+    assert items[0]["type"] == "function_call_output"
+    assert items[0]["call_id"] == "call_1"
+    # The text output names where its images are: they cannot ride inside a
+    # function_call_output, and a model that reads "attached" there finds none.
+    assert items[0]["output"].startswith(json.dumps({"status": "ok"}))
+    assert "1 image(s) from this get_slice call follow" in items[0]["output"]
     follow_up = items[1]
     assert follow_up["role"] == "user"
     assert "get_slice" in follow_up["content"][0]["text"]

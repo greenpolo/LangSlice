@@ -31,6 +31,24 @@ atlas at its new position, `fit_affine` always writes (no `apply` flag), and
 `distribute_spacing` is gone — the agent can space a list of sections in its
 head and send one `set_positions`. Nothing previews; everything is undoable.
 
+**GPT-6 Astra's positioning debrief, built 2026-09-06** (full M04, 38
+sections, reorder+position: order 38/38, positions median 0.30 mm, bias
+-0.17 — a 0.2 mm ladder from a correct anchor; damage 7/7 +1 FP; 13 calls).
+Nash kept five of its ten asks:
+- images "not delivered": a 134-image probe on the same layout answered 8/8,
+  so delivery works; the tool's text now SAYS its images follow in the next
+  user message (`openai_oauth.content_to_input_items`), and the picture-
+  returning writes report `render_failed` instead of silently dropping.
+- `compare_placement` (position stage): the section on the physical canvas
+  against the atlas at any positions, every `VIEW_MODES` view, zoom, opacity
+  — the "linked viewer" and the "placement preview / AP stepper" in one
+  read-only tool. `physical_views` at identity, same renderer as everything.
+- `view_stack`: the strip ordered by written position with position and
+  spacing in the labels, plus `render.spacing_plot` (PIL, no matplotlib).
+- `reorder_slices` takes corrected indices as well as filenames.
+Rejected: labelled anatomy/landmarks, confidence and verification states,
+damage masks, an anatomy-based gap review, a validity-vs-verification audit.
+
 ## Files
 
 - `spec.py` — `JobSpec` (+ `ReorderSpec`/`PositionSpec`/`TransformSpec`). Every

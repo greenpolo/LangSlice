@@ -253,6 +253,29 @@ def test_ab_returns_the_candidate_and_what_is_stored(tmp_path: Path):
     assert _state.slices[0].transform["physical"]["rotation_deg"] == 6.0
 
 
+def test_compare_placement_draws_the_section_on_each_atlas_position(tmp_path: Path):
+    from langslice.adk import TOOL_MEDIA_PARTS_KEY
+
+    tools, _box, state = _tools(tmp_path)
+    compare = tools["compare_placement"]
+
+    current = compare("s.tif")
+    assert current["status"] == "ok"
+    assert current["positions_mm"] == [0.2] and current["current_position_mm"] == 0.2
+    assert len(current[TOOL_MEDIA_PARTS_KEY]) == 2  # side_by_side: section, template
+
+    stepped = compare("s.tif", [0.1, 0.2, 0.3], "overlay", [], 0.3)
+    assert stepped["positions_mm"] == [0.1, 0.2, 0.3]
+    assert len(stepped[TOOL_MEDIA_PARTS_KEY]) == 3
+    assert stepped["render_failed"] == []
+    # A look, not a write.
+    assert state.slices[0].position_mm == 0.2
+
+    assert compare("s.tif", [], "flicker")["error"] == "BAD_MODE"
+    state.slices[0].position_mm = None
+    assert compare("s.tif")["error"] == "NO_POSITION"
+
+
 # --- the pivot -----------------------------------------------------------
 
 
