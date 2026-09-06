@@ -88,12 +88,17 @@ def caption(image: Image.Image, text: str) -> Image.Image:
     only what is SHOWN: an image a fit measures must never be captioned, since
     the strip changes the pixels the fit reads.
     """
-    labelled = image.convert("RGB").copy()
-    draw = ImageDraw.Draw(labelled)
+    source = image.convert("RGB")
     font = _caption_font()
-    left, top, right, bottom = draw.textbbox((0, 0), text, font=font)
-    draw.rectangle((0, 0, right - left + 7, bottom - top + 5), fill=(0, 0, 0))
-    draw.text((3 - left, 2 - top), text, fill=(255, 255, 255), font=font)
+    probe = ImageDraw.Draw(source)
+    left, top, right, bottom = probe.textbbox((0, 0), text, font=font)
+    band = int(bottom - top + 6)
+    # The band sits ABOVE the picture, never over it: a caption drawn on the
+    # pixels covered exactly the magnified dorsal tissue an agent was reading.
+    labelled = Image.new("RGB", (source.width, source.height + band), (0, 0, 0))
+    labelled.paste(source, (0, band))
+    draw = ImageDraw.Draw(labelled)
+    draw.text((3 - left, 3 - top), text, fill=(255, 255, 255), font=font)
     return labelled
 
 
@@ -405,7 +410,7 @@ def canvas_geometry(
 
 #: How the ONE alignment screen may be composed. ``overlay`` is the default and
 #: what every earlier run saw.
-VIEW_MODES = ("overlay", "side_by_side", "checkerboard", "outlines")
+VIEW_MODES = ("overlay", "side_by_side", "checkerboard", "outlines", "section", "template")
 
 #: Tiles across the width of a ``checkerboard`` view.
 CHECKER_TILES = 8
@@ -741,7 +746,14 @@ def physical_views(
         return plate
 
     silhouette: list[np.ndarray] = []
-    if mode == "side_by_side":
+    lines = True  # atlas outlines drawn on every panel...
+    if mode == "section":
+        panels = [(warped, label or "section")]
+        lines = False  # ...except the clean views, which show one source alone
+    elif mode == "template":
+        panels = [(_template_canvas(), "atlas template")]
+        lines = False
+    elif mode == "side_by_side":
         panels = [(warped, label or "section"), (_template_canvas(), "atlas template")]
     elif mode == "checkerboard":
         panels = [(_checkerboard(warped, _template_canvas()), label or "section")]
@@ -776,9 +788,10 @@ def physical_views(
     images: list[Image.Image] = []
     for panel, head in panels:
         screen, factor = _to_screen(panel, box, long_edge)
-        _draw_outlines(
-            screen, outlines, geometry, dark=dark, factor=factor, origin=box[:2]
-        )
+        if lines:
+            _draw_outlines(
+                screen, outlines, geometry, dark=dark, factor=factor, origin=box[:2]
+            )
         if silhouette:
             _draw_polys(
                 screen,

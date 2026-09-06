@@ -208,9 +208,9 @@ def test_the_scale_bar_is_one_millimetre_long():
 def test_the_template_only_shows_when_it_is_asked_for():
     plain = _overlay(_IDENTITY)
     with_template = _overlay(_IDENTITY, template_opacity=0.35)
-    # The atlas anatomy sits centred; the template lights it up under the lines.
-    box = (slice(140, 160), slice(140, 160))
-    assert with_template[box].mean() > plain[box].mean() + 5
+    # The template lights up the atlas anatomy under the lines: the picture
+    # area (below the caption band) gets brighter overall.
+    assert with_template[60:].mean() > plain[60:].mean() + 1
 
 
 # --- the outlines --------------------------------------------------------
