@@ -289,8 +289,10 @@ def _build_align_tools(
             mode: "overlay" (the section with the outlines on it),
                 "side_by_side" (two images: the section, then the atlas
                 template, same scale and same crop), "checkerboard" (section
-                and template in alternating tiles) or "outlines" (the atlas
-                lines and the section's own silhouette contour on black).
+                and template in alternating tiles), "outlines" (the atlas
+                lines and the section's own silhouette contour on black),
+                "section" (the section alone, no lines) or "template" (the
+                atlas template alone, no lines).
             zoom: [x0, y0, x1, y1] as fractions of the CANVAS, cropped before
                 the image is sized down, so it is real magnification. An empty
                 list is the whole canvas.
@@ -298,10 +300,10 @@ def _build_align_tools(
                 under the outlines in "overlay". 0.0 draws no template.
 
         Returns:
-            The parameters you passed, their decomposition, the shift in
-            canvas pixels, the calibration used, the overlap between the
-            section's tissue and the atlas anatomy, every parameter set
-            previewed so far, and the image(s) of the view you asked for.
+            The parameters you passed, their decomposition (rotation, scales,
+            shear, mirrored), the shift in canvas pixels, the calibration used,
+            every parameter set previewed so far, and the image(s) of the view
+            you asked for.
         """
         try:
             params = _params(
@@ -359,12 +361,14 @@ def _build_align_tools(
                 "the atlas outlines and the section's own silhouette contour, "
                 "on black"
             ),
+            "section": "the section alone, no outlines",
+            "template": "the atlas template alone, no outlines",
         }[view]
         return {
             "status": "ok",
             "id": record.id,
             "params": params,
-            "decomposition": decompose_affine(
+            "decomposition": _align_decomposition(
                 normalized_physical_affine(
                     size=section.size, um_per_px=box.um_per_px, **params
                 ),
@@ -434,6 +438,20 @@ def _build_align_tools(
     return box
 
 
+def _align_decomposition(params: Any, size: tuple[int, int]) -> dict[str, Any]:
+    """decompose_affine without its translation fractions.
+
+    In the alignment loop the shift IS the entered millimetres; the matrix's
+    fractional offsets also absorb the centre-based scale and rotation, so
+    they read as a contradiction (four agents flagged "+0.04 mm entered,
+    negative fraction reported"). Rotation, scales, shear and mirrored stay.
+    """
+    out = decompose_affine(params, size)
+    out.pop("translate_x_frac", None)
+    out.pop("translate_y_frac", None)
+    return out
+
+
 def _align_prompt(
     record: SliceState,
     state: StackState,
@@ -467,7 +485,7 @@ def _align_prompt(
         "rotation/scale/translation with the atlas region outlines over it at "
         "true physical scale. Writes nothing.",
         "- `preview_transform` view controls, all optional: `mode` "
-        "(overlay, side_by_side, checkerboard, outlines), `zoom` "
+        "(overlay, side_by_side, checkerboard, outlines, section, template), `zoom` "
         "([x0, y0, x1, y1] as fractions of the canvas, cropped before the "
         "image is sized down), `template_opacity` (0..1).",
         "- `submit_transform`: ends this alignment with the parameters you "
@@ -557,7 +575,7 @@ async def run_align_session(
         "id": record.id,
         "params": params,
         "matrix_params": matrix_params,
-        "decomposition": decompose_affine(matrix_params, section.size),
+        "decomposition": _align_decomposition(matrix_params, section.size),
         "calibration": {
             "section_um_per_px": round(box.um_per_px, 4),
             "source": box.calibration_source,

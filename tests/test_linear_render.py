@@ -113,7 +113,8 @@ def test_caption_labels_a_copy_without_touching_the_original():
     labelled = caption(source, "atlas 3.20 mm")
 
     assert labelled is not source
-    assert labelled.size == source.size
+    # The caption is a band ABOVE the picture: same width, taller, pixels untouched.
+    assert labelled.size[0] == source.size[0] and labelled.size[1] > source.size[1]
     assert np.asarray(source).max() == 10  # the original is untouched
 
     array = np.asarray(labelled)

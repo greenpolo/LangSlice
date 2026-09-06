@@ -76,7 +76,9 @@ def test_zoom_magnifies_and_the_bar_is_still_one_millimetre():
     (whole,), _ = _views()
     (zoomed,), _ = _views(zoom=box)
 
-    assert whole.shape == zoomed.shape, "the output frame does not change"
+    # Same output width; the height differs only by the caption band (the zoom
+    # caption has a third line).
+    assert whole.shape[1] == zoomed.shape[1], "the output width does not change"
     tissue = lambda rgb: float(((rgb >= 100) & (rgb <= 140)).all(axis=2).mean())  # noqa: E731
     assert tissue(zoomed) > 2.0 * tissue(whole), "the crop did not magnify the tissue"
 
@@ -166,8 +168,13 @@ def test_the_preview_payload_carries_history_and_pixels_but_no_overlap(tmp_path:
     assert "silhouette_iou" not in first
     assert first["view"] == {"mode": "overlay", "zoom": [0.0, 0.0, 1.0, 1.0]}
     # The decomposition names its translations for what they are: fractions.
-    assert "translate_x_frac" in first["decomposition"]
+    # The alignment payload's decomposition carries no translation fields at
+    # all: the shift is the entered millimetres, and the matrix's fractions
+    # (which absorb centre-based scale/rotation) read as a contradiction.
+    assert "translate_x_frac" not in first["decomposition"]
     assert "translate_x" not in first["decomposition"]
+    kept = {"rotation_deg", "scale_x", "scale_y", "shear", "mirrored"}
+    assert kept <= set(first["decomposition"])
 
     second = preview(2.0, 1.0, 1.0, 0.0, 0.0)
     assert [entry["rotation_deg"] for entry in second["history"]] == [0.0, 2.0]
@@ -191,3 +198,18 @@ def test_the_preview_tool_takes_the_view_controls(tmp_path: Path):
 
     assert preview(0.0, 1.0, 1.0, 0.0, 0.0, "flicker")["error"] == "BAD_MODE"
     assert preview(0.0, 1.0, 1.0, 0.0, 0.0, "overlay", [0.3, 0.7])["error"] == "BAD_ZOOM"
+
+
+def test_clean_section_and_template_views_carry_no_outlines():
+    (section_only,), _ = _views(mode="section")
+    (template_only,), _ = _views(mode="template")
+    (overlaid,), _ = _views(mode="overlay")
+    pair, _ = _views(mode="side_by_side")
+
+    # The synthetic tissue is 120 grey; anti-aliased hairlines are far brighter.
+    # Picture area only: below the caption band, above the scale bar.
+    assert overlaid[60:-40].max() >= 200
+    assert section_only[60:-40].max() < 200
+    # The template alone is the side-by-side's second panel minus its lines.
+    assert template_only.shape == pair[1].shape
+    assert not np.array_equal(template_only[60:-40], pair[1][60:-40])
