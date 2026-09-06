@@ -59,8 +59,7 @@ def test_a_position_only_spec_has_no_reorder_or_transform_tools(tmp_path: Path):
     names = set(box.names)
     assert {"status", "view_slices", "fetch_atlas", "set_positions", "submit"} <= names
     assert not names & {"reorder_slices", "move_slice", "orient_slices"}
-    assert not names & {"fit_affine", "preview_transform", "set_transform",
-                        "landmarks", "copy_transform"}
+    assert not names & {"fit_affine", "adjust_transform", "landmarks"}
 
 
 def test_optional_tools_follow_their_flags(tmp_path: Path):
@@ -76,7 +75,7 @@ def test_optional_tools_follow_their_flags(tmp_path: Path):
     assert not set(plain.names) & {"run_deepslice", "fit_position", "set_cutting_angles"}
     # The interactive transform rides in the main trajectory, always on with
     # the task.
-    assert {"preview_transform", "landmarks", "set_transform"} <= set(plain.names)
+    assert {"adjust_transform", "landmarks"} <= set(plain.names)
 
 
 def test_flip_is_refused_when_the_spec_switches_it_off(tmp_path: Path):
@@ -375,7 +374,7 @@ def test_fit_affine_records_a_transform_and_refuses_damaged_sections(tmp_path: P
     assert result["status"] == "ok"
     assert [row["id"] for row in result["results"]] == ["s0.png"]  # damaged is skipped
     assert result["results"][0]["iou"] > 0.5
-    # One representation: a fit reports the same five knobs set_transform takes.
+    # One representation: a fit reports the same five knobs adjust_transform takes.
     assert set(result["results"][0]["physical"]) == {
         "rotation_deg", "scale_x", "scale_y", "shear",
         "translate_x_mm", "translate_y_mm", "pivot",
@@ -395,7 +394,9 @@ def test_fit_affine_records_a_transform_and_refuses_damaged_sections(tmp_path: P
     assert _tool(box, "fit_affine")([], "elastix", True)["error"] == "UNAVAILABLE"
 
 
-def test_set_transform_writes_an_interactive_transform_and_undoes(tmp_path: Path):
+def test_adjust_transform_writes_shows_and_undoes(tmp_path: Path):
+    from langslice.adk import TOOL_MEDIA_PARTS_KEY
+
     atlas = EllipseAtlas()
     for index in range(2):
         ellipse_section().save(tmp_path / f"s{index}.png")
@@ -406,18 +407,17 @@ def test_set_transform_writes_an_interactive_transform_and_undoes(tmp_path: Path
     state.by_id("s0.png").damaged = True  # the hand path is for exactly these
     box = build_tools(state, ctx, spec)
 
+    adjust = _tool(box, "adjust_transform")
     # A section with no position has nothing to align against.
-    assert _tool(box, "preview_transform")("s1.png", 0.0, 1.0, 1.0, 0.0, 0.0)[
-        "error"
-    ] == "NO_POSITION"
-    assert _tool(box, "set_transform")(
-        "s1.png", 0.0, 1.0, 1.0, 0.0, 0.0, ""
-    )["error"] == "NO_POSITION"
+    assert adjust("s1.png", 0.0, 1.0, 1.0, 0.0, 0.0)["error"] == "NO_POSITION"
 
-    result = _tool(box, "set_transform")(
-        "s0.png", 5.0, 1.1, 1.0, 0.25, -0.1, "lined up the intact border"
+    result = adjust(
+        "s0.png", 5.0, 1.1, 1.0, 0.25, -0.1, note="lined up the intact border"
     )
     assert result["status"] == "ok"
+    # The write and the look are one call: the result comes back as a picture.
+    assert len(result[TOOL_MEDIA_PARTS_KEY]) == 1
+    assert result["changed"][0]["id"] == "s0.png"
     transform = state.by_id("s0.png").transform
     assert transform["kind"] == "interactive"
     assert len(transform["params"]) == 6
@@ -428,6 +428,9 @@ def test_set_transform_writes_an_interactive_transform_and_undoes(tmp_path: Path
     assert transform["calibration"]["source"] == "estimated"
     assert load_checkpoint(ctx.checkpoint_path).by_id("s0.png").transform is not None
 
+    # The same numbers again are a look, not a write: one undo clears the lot.
+    again = adjust("s0.png", 5.0, 1.1, 1.0, 0.25, -0.1, "side_by_side")
+    assert len(again[TOOL_MEDIA_PARTS_KEY]) == 2 and again["changed"] == []
     assert _tool(box, "undo")()["status"] == "ok"
     assert state.by_id("s0.png").transform is None
 
@@ -447,14 +450,6 @@ def test_submit_names_the_sections_with_no_transform(tmp_path: Path):
     assert validate([]) == {"status": "ok", "would_submit": True}
     assert _submit(box)["status"] == "ok"
     assert state.submitted is True
-
-
-def test_copy_transform_copies_onto_named_sections(tmp_path: Path):
-    state, _, box = _box(tmp_path)
-    state.by_id("s0.png").transform = {"kind": "silhouette", "params": [1, 0, 0, 0, 1, 0]}
-    result = _tool(box, "copy_transform")("s0.png", ["s1.png", "s2.png"])
-    assert result["copied_to"] == ["s1.png", "s2.png"]
-    assert state.by_id("s1.png").transform["copied_from"] == "s0.png"
 
 
 def test_orient_change_clears_a_stale_transform(tmp_path: Path):

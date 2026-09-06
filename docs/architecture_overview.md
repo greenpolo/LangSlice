@@ -70,9 +70,10 @@ angles and per-section transforms are proposals -- the host applies them, and
 the user's image files are never modified.
 
 The per-section interactive alignment is not a nested session: since
-2026-09-06 `preview_transform`, `landmarks` and `set_transform` sit in the main
-toolbox, so the agent aligns a section whenever it wants, in the same context
-that placed it.
+2026-09-06 `adjust_transform` and `landmarks` sit in the main toolbox, so the
+agent aligns a section whenever it wants, in the same context that placed it.
+Each `adjust_transform` call writes the transform and returns the picture of
+the result, so acting and looking are one step.
 
 `signals.py` holds the interval interpolation behind `distribute_spacing`,
 which computes and only writes when asked.
