@@ -144,6 +144,20 @@ def build_job_statement(
         facts.append("- The positions shown are given; this run does not change them.")
     if not spec.has("transform"):
         facts.append("- Transforms are not part of this run.")
+    else:
+        # The alignment frame, as facts: these lived in the deleted
+        # sub-session prompt and the fold-in dropped them.
+        facts.append(
+            "- Alignment canvas: each section is drawn at its TRUE physical size "
+            "from its pixel size (read from the file, or given by the host, or "
+            "estimated — the tool payload says which), and the atlas at its "
+            "voxel size; scale 1.0 is the section's calibrated size."
+        )
+        facts.append(
+            "- Transform frame: rotation and scales act about the pivot (the "
+            "canvas centre unless another is chosen), x runs right and y runs "
+            "down, shifts are millimetres."
+        )
     if spec.reorder.hemisphere_cue.strip():
         facts.append(f"- {spec.reorder.hemisphere_cue.strip()}")
     facts.extend(f"- {fact.strip()}" for fact in spec.facts if str(fact).strip())
