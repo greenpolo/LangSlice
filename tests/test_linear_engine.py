@@ -206,7 +206,6 @@ def test_ingest_tools_and_emit_on_a_real_folder(tmp_path: Path):
     assert tools["set_positions"](
         [{"id": first, "position_mm": 3.0}, {"id": last, "position_mm": 9.0}]
     )["status"] == "ok"
-    assert tools["distribute_spacing"]([], [first, last], True)["applied"] is True
     assert tools["status"]()["rows"][0]["position_mm"] == 3.0
 
     emit_results(state, ctx)

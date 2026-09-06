@@ -24,7 +24,12 @@ same day preview and set became ONE tool, the computer-use pattern: every
 `adjust_transform` call writes the transform and returns the picture, so the
 agent always sees what it did and never spends a turn on a separate look or a
 separate commit. `copy_transform` went with it — re-sending the same call for
-another section is trivial for the agent.
+another section is trivial for the agent. The same rule now holds for every
+write outside the transform (audit, 2026-09-06): `orient_slices` returns the
+re-oriented sections, `set_positions` returns each written section beside the
+atlas at its new position, `fit_affine` always writes (no `apply` flag), and
+`distribute_spacing` is gone — the agent can space a list of sections in its
+head and send one `set_positions`. Nothing previews; everything is undoable.
 
 ## Files
 
@@ -112,8 +117,8 @@ another section is trivial for the agent.
 - `session.py` — the ADK agent builder, the plugins, and the loop.
 - `engine.py` — `EngineContext`, `ingest`, `apply_host_inputs`, `run_session`,
   `emit_results`, and `run(spec)`. No post pass: the session is the whole run.
-- `signals.py`, `deepslice.py`, `trace.py` — interval arithmetic, the DeepSlice
-  seam (reports `UNAVAILABLE`), and the full-content JSONL session trace.
+- `deepslice.py`, `trace.py` — the DeepSlice seam (reports `UNAVAILABLE`) and
+  the full-content JSONL session trace.
 
 ## Rules that are not negotiable here
 

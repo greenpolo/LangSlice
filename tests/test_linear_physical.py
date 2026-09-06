@@ -369,7 +369,7 @@ def test_damage_is_refused_by_fit_affine(tmp_path: Path):
     tools, state = _half_section(tmp_path)
     state.slices[0].damaged = True
 
-    refused = tools["fit_affine"](["s.tif"], "silhouette", True)
+    refused = tools["fit_affine"](["s.tif"], "silhouette")
     assert refused["results"][0]["error"] == "DAMAGED"
     assert state.slices[0].transform is None
 
@@ -378,7 +378,7 @@ def test_a_stored_silhouette_fit_is_the_b_side_of_an_a_b_preview(tmp_path: Path)
     from langslice.adk import TOOL_MEDIA_PARTS_KEY
 
     tools, state = _half_section(tmp_path)
-    tools["fit_affine"](["s.tif"], "silhouette", True)
+    tools["fit_affine"](["s.tif"], "silhouette")
     stored = state.slices[0].transform["physical"]
 
     ab = tools["adjust_transform"]("s.tif", 0.0, 1.0, 1.0, 0.0, 0.0, "ab")

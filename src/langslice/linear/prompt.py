@@ -34,24 +34,25 @@ TOOL_LINES: dict[str, str] = {
     "mark_damaged": "records sections whose outline would break an "
     "outline-based fit, with a note each.",
     "unmark_damaged": "clears the damaged flag.",
-    "orient_slices": "sets the flip and the rotation of named sections; a "
-    "section whose orientation changes loses its transform.",
+    "orient_slices": "sets the flip and the rotation of named sections and "
+    "returns them rendered as they now stand; a section whose orientation "
+    "changes loses its transform.",
     "reorder_slices": "sets the corrected order of the whole stack in one "
     "call; positions and transforms are kept.",
     "move_slice": "moves one section in the corrected order; positions and "
     "transforms are kept.",
     "set_positions": "writes positions for one or more sections, clamped to "
-    "the atlas range.",
-    "distribute_spacing": "spreads positions over the stack from the points "
-    "you fix; writes only when apply=true.",
+    "the atlas range, and returns each written section beside the atlas "
+    "section at the position it was given.",
     "run_deepslice": "seeds positions (and optionally angles) with DeepSlice.",
     "fit_position": "searches the atlas around one section's current position "
     "and reports the best it found; writes nothing.",
     "set_cutting_angles": "sets the stack-wide cutting angles.",
     "fit_affine": "fits an in-plane affine per section against its atlas "
-    "section and returns the overlap, the transform as the same five physical "
-    "parameters `adjust_transform` takes, and an image of the section under the "
-    "atlas outlines at true physical scale; damaged sections are refused.",
+    "section, writes it as the section's transform, and returns the overlap, "
+    "the transform as the same five physical parameters `adjust_transform` "
+    "takes, and an image of the section under the atlas outlines at true "
+    "physical scale; damaged sections are refused.",
     "adjust_transform": "sets one positioned section's in-plane transform — a "
     "rotation, per-axis scales and millimetre shifts — and returns the section "
     "drawn under it with the atlas outlines at true physical scale; every "

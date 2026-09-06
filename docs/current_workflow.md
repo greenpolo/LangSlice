@@ -47,14 +47,13 @@ run can use:
 | `fetch_atlas` | always | up to 8 atlas sections, rendered at the stack's current cutting angles, each captioned with its position |
 | `note`, `undo`, `redo` | always | run notes; snapshot undo where one tool call undoes as one step |
 | `mark_damaged` / `unmark_damaged` | always | agent-internal classification: an outline an affine cannot bite on |
-| `orient_slices` | `reorder` | flip and quarter-turn per section (`--no-flip` refuses the flip half) |
+| `orient_slices` | `reorder` | flip and quarter-turn per section (`--no-flip` refuses the flip half); returns the changed sections as they now stand |
 | `reorder_slices` / `move_slice` | `reorder` | full permutation or one incremental move; corrected indices only, positions and transforms are kept |
-| `set_positions` | `position` | batch write, clamped to the atlas range |
-| `distribute_spacing` | `position` | interpolates from the points you fix, `keep` holds sections in place, `apply=false` computes without writing |
+| `set_positions` | `position` | batch write, clamped to the atlas range; returns each written section beside the atlas at its new position |
 | `run_deepslice` | `--deepslice` | reports `UNAVAILABLE` until the optional extra lands |
 | `fit_position` | `--bayesian` | `oblique.fit_oblique` around a section's current position; writes nothing |
 | `set_cutting_angles` | `--angles` | stack-wide pitch/yaw; later fetches and previews follow |
-| `fit_affine` | `transform` | silhouette affine per section, with the overlap, the transform as the five physical parameters (`rotation_deg`, `scale_x`, `scale_y`, `translate_x_mm`, `translate_y_mm`, plus `shear`) about the canvas centre, and a physical-scale overlay (up to 16); `roi` ([x0, y0, x1, y1] of the canvas) fits only the tissue and atlas outline inside that box, which is how a damaged section is fitted — damage is refused without one; `--elastix`'s method is not wired yet |
+| `fit_affine` | `transform` | silhouette affine per section, written as its transform, with the overlap, the transform as the five physical parameters (`rotation_deg`, `scale_x`, `scale_y`, `translate_x_mm`, `translate_y_mm`, plus `shear`) about the canvas centre, and a physical-scale overlay (up to 16); `roi` ([x0, y0, x1, y1] of the canvas) fits only the tissue and atlas outline inside that box, which is how a damaged section is fitted — damage is refused without one; `--elastix`'s method is not wired yet |
 | `adjust_transform` | `transform` | writes one positioned section's in-plane transform (rotation / per-axis scales / millimetre shifts, plus a note) and returns the section drawn under it with the atlas outlines at true physical scale; every call writes and the last one stays, the same parameters again only re-draw; `mode` (overlay, side_by_side, checkerboard, outlines, section, template, ab = new beside what it carried before), `zoom`, `template_opacity`, `pivot` (canvas, tissue, or [fx, fy] of the canvas) and `outlines` (all, outer, none) are the view and the centre it turns about; it does not change the section's flip or rotation |
 | `landmarks` | `transform` | point pairs as fractions of the canvas: the residual in millimetres per pair, their RMS, the transform fitted to them (similarity from 2 pairs, affine from 3), and the pairs drawn on the view; writes nothing |
 | `submit` | always | ends the run; gated |

@@ -100,16 +100,15 @@ in any payload or prompt (see `lean-harness` history in `linear/CLAUDE.md`).
 | `fetch_atlas(positions_mm)` | always | up to 8 atlas sections, rendered at the current cutting angles, each captioned with its position (and the angles when oblique). |
 | `note(text)` | always | append to the run notes. |
 | `undo()` / `redo()` | always | snapshot stack; a batch call undoes as one. |
-| `orient_slices([{id, flip?, rotate_deg?}])` | reorder.flip (flip) / reorder (rotate) | toggle flip, add rotation. |
+| `orient_slices([{id, flip?, rotate_deg?}])` | reorder.flip (flip) / reorder (rotate) | toggle flip, add rotation; returns each changed section rendered as it now stands (≤8). |
 | `reorder_slices(new_order)` | reorder | full permutation; changes corrected indices only, positions and transforms are kept. |
 | `move_slice(id, after)` | reorder | incremental move; same rule. |
 | `mark_damaged([{id, note}])` / unmark | always | agent-internal classification. |
-| `set_positions([{id, position_mm}])` | position | batch write, clamped to the atlas range. |
-| `distribute_spacing(fixed=[{id, position_mm}], keep=[ids])` | position | linear interpolation between fixed points, extrapolating at the implied interval; `keep` sections are not moved; returns rows, writes nothing (`apply=True` writes). |
+| `set_positions([{id, position_mm}])` | position | batch write, clamped to the atlas range; returns, per written section (≤8), the section beside the atlas section at the position it was given. |
 | `run_deepslice(ids?, allow_angle_change, keep=[ids])` | position.deepslice | positions (+ angles) for undamaged sections; UNAVAILABLE unless installed and plane/atlas supported. |
 | `fit_position(id, window_mm, angles?)` | position.bayesian | `oblique.fit_oblique` at the section's current position: best position (and angles) with score; writes nothing. |
 | `set_cutting_angles(pitch_deg, yaw_deg)` | transform.angles | stack-wide; subsequent atlas fetches and fits use them. |
-| `fit_affine(ids, method=silhouette\|elastix, apply=True)` | transform | per-section in-plane affine against its atlas section; returns iou, the transform as the same five `physical` knobs `adjust_transform` takes (plus `shear`, about the canvas centre) and a captioned overlay panel per section (≤16). Damaged sections are refused. |
+| `fit_affine(ids, method=silhouette\|elastix)` | transform | per-section in-plane affine against its atlas section, written as the section's transform; returns iou, the transform as the same five `physical` knobs `adjust_transform` takes (plus `shear`, about the canvas centre) and a captioned overlay panel per section (≤16). Damaged sections are refused. |
 | `adjust_transform(id, rotation_deg, scale_x, scale_y, translate_x_mm, translate_y_mm, mode, zoom, template_opacity, pivot, outlines, note)` | transform | writes `{"kind": "interactive", ...}` on ANY positioned section (`NO_POSITION` otherwise) and returns it drawn under those parameters with the atlas outlines at true physical scale. The last call stays; the same parameters again only re-draw (no undo step). Undoable and checkpointed like every other write. |
 | `landmarks(id, pairs, params...)` | transform | point pairs (section point, atlas point) as fractions of the canvas: the residual per pair in mm, their RMS, the transform fitted to them (similarity from 2, affine from 3) in the same physical units, and the pairs drawn on the view. Writes nothing. |
 | `submit(summary, notes, interval_breaks)` | always | ends the run; gated (below). |

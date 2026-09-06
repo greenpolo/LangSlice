@@ -27,7 +27,7 @@ from langslice.affine import (
     normalized_physical_affine,
     physical_affine_matrix,
 )
-from langslice.linear.atlas_fetch import make_fetch_atlas
+from langslice.linear.atlas_fetch import ATLAS_LONG_EDGE, atlas_part, make_fetch_atlas
 from langslice.linear.checkpoint import save_checkpoint
 from langslice.linear.deepslice import run_deepslice as _run_deepslice
 from langslice.linear.render import (
@@ -45,7 +45,6 @@ from langslice.linear.render import (
     render_slice,
     status_rows,
 )
-from langslice.linear.signals import interpolate_positions
 from langslice.linear.spec import JobSpec
 from langslice.linear.state import SliceState, StackState
 from langslice.linear.transform import (
@@ -451,6 +450,15 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         """
         return {"status": "ok", **rows()}
 
+    def section_part(record: SliceState, *, long_edge: int = VIEW_LONG_EDGE) -> types.Part:
+        """One section as corrected, tissue-framed, its index and id burned in."""
+        return image_to_part(
+            caption(
+                render_slice(ctx, record, long_edge=long_edge, frame=True),
+                f"{record.index_corrected}: {record.id}",
+            )
+        )
+
     def view_slices(slice_ids: list[str]) -> dict[str, Any]:
         """Look at up to 8 named sections at higher resolution.
 
@@ -470,15 +478,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         known, unknown = resolve_many(list(slice_ids)[:MAX_VIEW_SLICES])
         if not known:
             return {"status": "error", "error": "UNKNOWN_SLICE_IDS", "unknown": unknown}
-        parts = [
-            image_to_part(
-                caption(
-                    render_slice(ctx, record, long_edge=VIEW_LONG_EDGE, frame=True),
-                    f"{record.index_corrected}: {record.id}",
-                )
-            )
-            for record in known
-        ]
+        parts = [section_part(record) for record in known]
         return {
             "status": "ok",
             "slice_ids": [record.id for record in known],
@@ -668,11 +668,14 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
     # --- reorder --------------------------------------------------------
 
     def orient_slices(entries: list[dict[str, Any]]) -> dict[str, Any]:
-        """Set the flip and rotation of one or more sections.
+        """Set the flip and rotation of one or more sections, and show them.
 
         Corrections are recorded as data; the user's image files are never
         modified. Rotation is applied first, then the flip. A section whose
-        orientation changes loses its transform.
+        orientation changes loses its transform. Determining hemisphere
+        orientation (whether a section is mirrored) is only possible when
+        there is a visible notch or a noticeable oblique cutting angle that
+        produces differences between the hemispheres' anatomy.
 
         Args:
             entries: ``[{"id": "<filename>", "flip": true|false,
@@ -680,7 +683,9 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                 leave that correction as it is.
 
         Returns:
-            The rows this call changed.
+            The rows this call changed, and each changed section rendered as
+            it now stands (up to 8), its corrected index and filename burned
+            into its top-left corner.
         """
         if not entries:
             return {"status": "error", "error": "BAD_ARGS"}
@@ -723,12 +728,22 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                 record.transform = None
                 cleared.append(record.id)
             applied.append(record.id)
+        shown = [state.by_id(name) for name in applied[:MAX_VIEW_SLICES]]
         return {
             "applied": applied,
             "cleared_transforms": cleared,
             "unknown_ids": unknown,
             "rejected": rejected,
             **commit(*applied),
+            "description": (
+                "Attached images are "
+                + ", ".join(applied[:MAX_VIEW_SLICES])
+                + ", in that order, rendered as they now stand, each labelled "
+                "'<corrected index>: <filename>' in its top-left corner."
+            ),
+            TOOL_MEDIA_PARTS_KEY: [
+                section_part(record) for record in shown if record is not None
+            ],
         }
 
     def reorder_slices(new_order: list[str]) -> dict[str, Any]:
@@ -800,7 +815,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
     # --- position -------------------------------------------------------
 
     def set_positions(entries: list[dict[str, Any]]) -> dict[str, Any]:
-        """Write positions for one or more sections. Batch: one call, many.
+        """Write positions for one or more sections, and show each placement.
 
         Positions are in atlas-native millimetres along the slicing axis. A
         value outside the atlas range is clamped and reported back.
@@ -809,7 +824,10 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             entries: ``[{"id": "<filename>", "position_mm": <number>}]``.
 
         Returns:
-            What was written, what was clamped, and the rows it changed.
+            What was written, what was clamped, the rows it changed, and for
+            each written section (up to 8) two images: the section as
+            corrected, then the atlas section at the position it was given,
+            both tissue-framed and labelled in the top-left corner.
         """
         if not entries:
             return {"status": "error", "error": "BAD_ARGS"}
@@ -860,103 +878,22 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         }
         if clamped:
             result["atlas_range_mm"] = [round(pos_lo, 3), round(pos_hi, 3)]
-        return result
-
-    def distribute_spacing(
-        fixed: list[dict[str, Any]], keep: list[str], apply: bool
-    ) -> dict[str, Any]:
-        """Spread positions over the stack from the points you fix.
-
-        Between two anchors the spacing is spread evenly; beyond the outermost
-        anchors it steps at the interval those anchors imply. Sections named in
-        *keep* hold their current position and act as anchors too.
-
-        Args:
-            fixed: ``[{"id": "<filename>", "position_mm": <number>}]``.
-            keep: Filenames whose current positions must not move. Pass an
-                empty list for none.
-            apply: False computes and returns rows without writing; True
-                writes the result.
-
-        Returns:
-            One position per section, each marked ``fixed``, ``kept`` or
-            ``interpolated``, plus the interval used beyond the anchors.
-        """
-        ordered = state.in_order()
-        if not ordered:
-            return {"status": "error", "error": "EMPTY_STACK"}
-        index_of = {record.id: index for index, record in enumerate(ordered)}
-        known: list[float | None] = [None] * len(ordered)
-        source = ["interpolated"] * len(ordered)
-        unknown: list[str] = []
-        rejected: list[dict[str, Any]] = []
-
-        for slice_id in keep or []:
-            record = state.resolve(slice_id)
+        shown = written[:MAX_VIEW_SLICES]
+        parts: list[types.Part] = []
+        for row in shown:
+            record = state.by_id(row["id"])
             if record is None:
-                unknown.append(str(slice_id))
                 continue
-            if record.position_mm is None:
-                rejected.append({"id": record.id, "reason": "kept section has no position"})
-                continue
-            known[index_of[record.id]] = float(record.position_mm)
-            source[index_of[record.id]] = "kept"
-
-        for entry in fixed or []:
-            if not isinstance(entry, dict):
-                rejected.append({"entry": str(entry), "reason": "not an object"})
-                continue
-            record = state.resolve(entry.get("id", ""))
-            if record is None:
-                unknown.append(str(entry.get("id", "")))
-                continue
-            try:
-                known[index_of[record.id]] = float(entry.get("position_mm"))  # type: ignore[arg-type]
-            except (TypeError, ValueError):
-                rejected.append({"id": record.id, "reason": "position_mm is not a number"})
-                continue
-            source[index_of[record.id]] = "fixed"
-
-        anchors = [i for i, value in enumerate(known) if value is not None]
-        if len(anchors) < 2:
-            return {
-                "status": "error",
-                "error": "NEED_TWO_ANCHORS",
-                "anchors": len(anchors),
-                "unknown_ids": unknown,
-                "rejected": rejected,
-                "message": (
-                    "distribute_spacing needs at least two anchors between "
-                    "`fixed` and `keep`."
-                ),
-            }
-        first, last = anchors[0], anchors[-1]
-        step = (float(known[last]) - float(known[first])) / (last - first)  # type: ignore[arg-type]
-        values = interpolate_positions(known, interval_mm=step)
-        suggestions = [
-            {
-                "id": record.id,
-                "position_mm": round(min(pos_hi, max(pos_lo, value)), 3),
-                "source": source[index],
-            }
-            for index, (record, value) in enumerate(
-                zip(ordered, values, strict=True)
-            )
-        ]
-        result: dict[str, Any] = {
-            "status": "ok",
-            "suggestions": suggestions,
-            "implied_interval_mm": round(abs(step), 3),
-            "unknown_ids": unknown,
-            "rejected": rejected,
-            "applied": bool(apply),
-        }
-        if not apply:
-            return result
-        snapshot()
-        for record, row in zip(ordered, suggestions, strict=True):
-            record.position_mm = float(row["position_mm"])
-        result.update(commit(*[record.id for record in ordered]))
+            parts.append(section_part(record, long_edge=ATLAS_LONG_EDGE))
+            parts.append(atlas_part(ctx, state, float(row["position_mm"])))
+        result["description"] = (
+            "Attached images are a pair per written section, in the order "
+            "written: the section as corrected, then the atlas section at the "
+            "position it was given, for "
+            + ", ".join(row["id"] for row in shown)
+            + ". Each is labelled in its top-left corner."
+        )
+        result[TOOL_MEDIA_PARTS_KEY] = parts
         return result
 
     def run_deepslice(
@@ -1039,7 +976,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         }
 
     if spec.has("position"):
-        box.tools += [set_positions, distribute_spacing]
+        box.tools += [set_positions]
         if spec.position.deepslice:
             box.tools.append(run_deepslice)
         if spec.position.bayesian:
@@ -1068,27 +1005,23 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         ctx.render_cache.clear()
         return commit()  # stack-wide: no section row changes
 
-    def fit_affine(
-        slice_ids: list[str],
-        method: str,
-        apply: bool,
-    ) -> dict[str, Any]:
+    def fit_affine(slice_ids: list[str], method: str) -> dict[str, Any]:
         """Fit an in-plane affine per section against its atlas section.
 
         The whole tissue outline is matched against the whole atlas outline;
-        a damaged section is refused.
+        a damaged section is refused. Each fit is written as the section's
+        transform (undoable, and `adjust_transform` overwrites it).
 
         Args:
             slice_ids: Filenames or corrected indices; empty means every
                 positioned, undamaged section.
             method: "silhouette" (moments fit) or "elastix" (intensity affine).
-            apply: True records the fits on the stack; False only measures.
 
         Returns:
             Per-section overlap (iou), the transform as the five physical
             knobs about the canvas centre, the calibration the image was
-            drawn with, and an image of the fitted section under the atlas
-            outlines for up to 16 sections.
+            drawn with, the rows written, and an image of the fitted section
+            under the atlas outlines for up to 16 sections.
         """
         # ponytail: spec.transform.elastix is inert until the method lands;
         # asking for it answers UNAVAILABLE either way.
@@ -1136,7 +1069,6 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             "status": "ok" if fits else "error",
             "results": results,
             "unknown_ids": unknown,
-            "applied": bool(apply) and bool(fits),
         }
         if not fits:
             payload["error"] = "NOTHING_FITTED"
@@ -1150,8 +1082,6 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                 "physical scale."
             )
             payload[TOOL_MEDIA_PARTS_KEY] = parts
-        if not apply:
-            return payload
         snapshot()
         for record, outcome in fits:
             record.transform = {
