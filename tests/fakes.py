@@ -114,7 +114,10 @@ class _StackLlm(BaseLlm):
     ) -> AsyncGenerator[LlmResponse, None]:
         del stream
         available = set(llm_request.tools_dict or {})
-        if (
+        if _has_function_response(llm_request, "submit"):
+            # The job is done; anything after this is the debrief question.
+            part = types.Part.from_text(text="Debrief: nothing was missing.")
+        elif (
             self.positions
             and "set_positions" in available
             and _count_function_responses(llm_request) == 0
@@ -152,6 +155,16 @@ def install_fake_adk_model_stack(
         return _StackLlm(model=model, positions=positions)
 
     monkeypatch.setattr(LLMRegistry, "new_llm", staticmethod(_fake_new_llm))
+
+
+def _has_function_response(llm_request: LlmRequest, name: str) -> bool:
+    """Whether a response from tool *name* already sits in the request history."""
+    for content in llm_request.contents or []:
+        for part in getattr(content, "parts", None) or []:
+            response = getattr(part, "function_response", None)
+            if response is not None and getattr(response, "name", None) == name:
+                return True
+    return False
 
 
 def _count_function_responses(llm_request: LlmRequest) -> int:

@@ -58,6 +58,22 @@ def build_plugins(run_label: str) -> list[BasePlugin]:
     return plugins
 
 
+def _with_reasoning(model: str | object, reasoning: str | None) -> str | object:
+    """Set a resolved model's reasoning effort, when it has one to set.
+
+    Providers that expose the knob carry a ``reasoning_effort`` field (the
+    OAuth ``ChatGptLlm`` is a pydantic model, hence ``model_copy``); every
+    other backend is left exactly as it was.
+    """
+    if not reasoning or not hasattr(model, "reasoning_effort"):
+        return model
+    copier = getattr(model, "model_copy", None)
+    if callable(copier):  # pydantic BaseLlm, e.g. the OAuth ChatGptLlm
+        return copier(update={"reasoning_effort": reasoning})
+    object.__setattr__(model, "reasoning_effort", reasoning)
+    return model
+
+
 def build_agent(
     *,
     model: str | object,
@@ -66,6 +82,7 @@ def build_agent(
     tools: list[Any],
     max_output_tokens: int = 8000,
     media_resolution: str = "MEDIA_RESOLUTION_MEDIUM",
+    reasoning: str | None = None,
 ) -> LlmAgent:
     """Construct an :class:`LlmAgent` with the harness's standard config."""
     # kwargs dict so the enum-typed media_resolution string is accepted as-is.
@@ -76,7 +93,7 @@ def build_agent(
         "http_options": default_http_options(),
     }
     return LlmAgent(
-        model=resolve_adk_model(model),  # type: ignore[arg-type]
+        model=_with_reasoning(resolve_adk_model(model), reasoning),  # type: ignore[arg-type]
         name=name,
         instruction=instruction,
         tools=tools,
@@ -93,6 +110,8 @@ async def run_agent_session(
     nudge_continue: str,
     max_iterations: int,
     run_label: str,
+    debrief: str | None = None,
+    debrief_sink: list[str] | None = None,
 ) -> tuple[int, int]:
     """Drive one agent pass; return ``(tool_calls, turns)``.
 
@@ -154,6 +173,32 @@ async def run_agent_session(
             break
         nudge = nudge_continue if saw_tool_call else nudge_no_tool
         message = types.Content(role="user", parts=[types.Part.from_text(text=nudge)])
+
+    if debrief and done():
+        # One more user message in the SAME context, after the job is over:
+        # what did the agent reach for that was not there? Its answer is data
+        # for the people building the environment, never for the run.
+        if trace is not None:
+            trace.nudge(debrief, turn=turns + 1)
+        answer: list[str] = []
+        try:
+            async for event in runner.run_async(
+                user_id=_USER_ID,
+                session_id=run_label,
+                new_message=types.Content(
+                    role="user", parts=[types.Part.from_text(text=debrief)]
+                ),
+            ):
+                if trace is not None:
+                    trace.event(event, turn=turns + 1)
+                for part in getattr(getattr(event, "content", None), "parts", None) or []:
+                    text = getattr(part, "text", None)
+                    if isinstance(text, str) and text and not getattr(part, "thought", False):
+                        answer.append(text)
+        except Exception as exc:  # the debrief is a courtesy; it never fails a run
+            logger.warning("%s: debrief failed: %s", run_label, exc)
+        if debrief_sink is not None and answer:
+            debrief_sink.append("\n".join(answer).strip())
 
     if trace is not None:
         trace.summary(tool_calls=tool_calls, turns=turns, submitted=done())

@@ -8,7 +8,7 @@ import numpy as np
 from PIL import Image
 
 from langslice.linear.engine import build_context, ingest
-from langslice.linear.render import render_slice, status_rows, status_text
+from langslice.linear.render import caption, render_slice, status_rows, status_text
 from langslice.linear.spec import JobSpec
 from tests.fakes import SlabAtlas
 
@@ -73,16 +73,50 @@ def test_status_rows_carry_the_whole_row(tmp_path: Path):
     state.slices[1].flip = True
     state.slices[2].damaged = True
     state.slices[2].damage_note = "half the section is gone"
-    state.slices[0].transform = {"kind": "silhouette", "params": [], "iou": 0.9}
+    state.slices[0].transform = {
+        "kind": "silhouette",
+        "params": [],
+        "iou": 0.9,
+        "mirrored": True,
+    }
 
     rows = status_rows(state)
     assert [row["id"] for row in rows] == ["s0.png", "s1.png", "s2.png"]
-    assert rows[0]["spacing_to_next_mm"] == 0.5
-    assert rows[1]["spacing_to_next_mm"] is None  # nothing placed after it
+    assert rows[0]["delta_to_next_mm"] == 0.5
+    assert rows[1]["delta_to_next_mm"] is None  # nothing placed after it
     assert rows[1]["flip"] is True
     assert rows[2]["position_mm"] is None
     assert rows[2]["damage_note"] == "half the section is gone"
     assert rows[0]["transform"] == "silhouette"
+    assert rows[0]["transform_iou"] == 0.9
+    assert rows[0]["transform_mirrored"] is True
+    assert rows[1]["transform_mirrored"] is None
 
     text = status_text(state)
     assert "s2.png" in text and "unplaced" in text and "damaged" in text
+    assert "delta_to_next_mm" in text
+    assert "iou=0.900" in text and "mirrored=True" in text
+
+
+def test_the_delta_to_the_next_section_is_signed(tmp_path: Path):
+    for index in range(2):
+        _corner_image(tmp_path / f"s{index}.png")
+    ctx = _ctx(tmp_path)
+    state = ingest(ctx.spec, ctx)
+    state.slices[0].position_mm = 5.0
+    state.slices[1].position_mm = 4.0  # the stack runs backwards
+    assert status_rows(state)[0]["delta_to_next_mm"] == -1.0
+
+
+def test_caption_labels_a_copy_without_touching_the_original():
+    source = Image.new("RGB", (120, 80), (10, 10, 10))
+    labelled = caption(source, "atlas 3.20 mm")
+
+    assert labelled is not source
+    assert labelled.size == source.size
+    assert np.asarray(source).max() == 10  # the original is untouched
+
+    array = np.asarray(labelled)
+    strip, below = array[:18, :90], array[30:, :]
+    assert strip.max() > 200  # bright text in a dark box, top-left
+    assert below.max() == 10  # nothing outside the strip changed

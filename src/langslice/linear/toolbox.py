@@ -26,6 +26,7 @@ from langslice.linear.checkpoint import save_checkpoint
 from langslice.linear.deepslice import run_deepslice as _run_deepslice
 from langslice.linear.render import (
     VIEW_LONG_EDGE,
+    caption,
     image_to_part,
     render_slice,
     status_rows,
@@ -41,9 +42,13 @@ if TYPE_CHECKING:  # ponytail: import cycle — engine builds the toolbox
 
 logger = logging.getLogger(__name__)
 
-#: Sections one ``view_slices`` call may return, and panels one ``fit_affine``
-#: call may attach.
+#: Sections one ``view_slices`` call may return.
 MAX_VIEW_SLICES = 8
+
+#: Overlay panels one ``fit_affine`` call may attach. Higher than
+#: :data:`MAX_VIEW_SLICES`: a panel is one look at a fit that already ran, and
+#: a stack-wide fit that shows only 8 of its 40 results hides the rest.
+MAX_FIT_PANELS = 16
 
 #: Undo snapshots kept in memory. Not persisted: a resumed run starts from the
 #: checkpoint, which is the state as it stood.
@@ -73,29 +78,6 @@ class ToolBox:
     @property
     def names(self) -> list[str]:
         return [tool.__name__ for tool in self.tools]
-
-
-def _longest_increasing_run(values: list[int]) -> set[int]:
-    """Positions of one longest strictly increasing subsequence of *values*.
-
-    O(n^2) patience-free DP; stacks are tens of sections.
-    """
-    n = len(values)
-    if n == 0:
-        return set()
-    best = [1] * n
-    prev = [-1] * n
-    for i in range(n):
-        for j in range(i):
-            if values[j] < values[i] and best[j] + 1 > best[i]:
-                best[i] = best[j] + 1
-                prev[i] = j
-    end = max(range(n), key=lambda i: best[i])
-    keep: set[int] = set()
-    while end != -1:
-        keep.add(end)
-        end = prev[end]
-    return keep
 
 
 # --- submit gates --------------------------------------------------------
@@ -322,24 +304,16 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         return known, unknown
 
     def renumber(order: list[SliceState]) -> list[str]:
-        """Apply a new corrected order; return the ids that moved.
+        """Apply a new corrected order; return the ids whose index changed.
 
-        "Moved" is the smallest set of sections whose removal leaves the rest
-        in their old relative order (the complement of the longest increasing
-        run of old indices) — so moving one section past twenty others moves
-        ONE section, not twenty-one. A moved section loses its position and
-        its transform: both were decided under different neighbours.
+        Only ``index_corrected`` moves. Positions and transforms stay where
+        they are; ``submit`` is what holds order and position together.
         """
-        old = [record.index_corrected for record in order]
-        keep = _longest_increasing_run(old)
         moved: list[str] = []
         for index, record in enumerate(order):
+            if record.index_corrected != index:
+                moved.append(record.id)
             record.index_corrected = index
-            if index in keep:
-                continue
-            record.position_mm = None
-            record.transform = None
-            moved.append(record.id)
         return moved
 
     # --- always on ------------------------------------------------------
@@ -348,9 +322,10 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         """The stack as it stands: one row per section in corrected order.
 
         Returns:
-            ``rows`` (index, id, position_mm, spacing_to_next_mm, flip,
-            rotation_deg, damaged, damage_note, transform kind, confidence,
-            caveats), plus the stack's cutting angles and interval breaks.
+            ``rows`` (index, id, position_mm, delta_to_next_mm, flip,
+            rotation_deg, damaged, damage_note, transform kind, transform_iou,
+            transform_mirrored, confidence, caveats), plus the stack's cutting
+            angles and interval breaks.
         """
         return {"status": "ok", **rows()}
 
@@ -359,7 +334,8 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
 
         Sections are rendered as corrected: any rotation and flip already
         applied, framed to their tissue the same way fetched atlas sections
-        are.
+        are. Each image carries its corrected index and filename burned into
+        its top-left corner.
 
         Args:
             slice_ids: Filenames or corrected indices (max 8 per call).
@@ -374,7 +350,10 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             return {"status": "error", "error": "UNKNOWN_SLICE_IDS", "unknown": unknown}
         parts = [
             image_to_part(
-                render_slice(ctx, record, long_edge=VIEW_LONG_EDGE, frame=True)
+                caption(
+                    render_slice(ctx, record, long_edge=VIEW_LONG_EDGE, frame=True),
+                    f"{record.index_corrected}: {record.id}",
+                )
             )
             for record in known
         ]
@@ -382,12 +361,13 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             "status": "ok",
             "slice_ids": [record.id for record in known],
             "unknown_ids": unknown,
-            # The attached images are unlabelled, so this ordering note is the
-            # only way the model can tie an image back to a filename.
+            # Each image carries its own burned-in label; the ordering note
+            # says the same thing in the payload.
             "description": (
                 "Attached images are "
                 + ", ".join(record.id for record in known)
-                + ", in that order, rendered as corrected."
+                + ", in that order, rendered as corrected, each labelled "
+                "'<corrected index>: <filename>' in its top-left corner."
             ),
             TOOL_MEDIA_PARTS_KEY: parts,
         }
@@ -529,8 +509,31 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             tool_context.actions.escalate = True
         return {"status": "ok", **rows()}
 
+    def validate(interval_breaks: list[int]) -> dict[str, Any]:
+        """Run the submit checks without submitting. Writes nothing.
+
+        Args:
+            interval_breaks: The corrected indices you would pass to `submit`.
+                Empty list for none.
+
+        Returns:
+            The refusal `submit` would return, or
+            ``{"status": "ok", "would_submit": true}``.
+        """
+        breaks: list[int] = []
+        for raw in interval_breaks if isinstance(interval_breaks, (list, tuple)) else []:
+            try:
+                breaks.append(int(raw))
+            except (TypeError, ValueError):
+                continue
+        return submit_errors(state, spec, breaks) or {
+            "status": "ok",
+            "would_submit": True,
+        }
+
     box.tools = [
         status,
+        validate,
         view_slices,
         make_fetch_atlas(state, ctx),
         note,
@@ -546,7 +549,8 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         """Set the flip and rotation of one or more sections.
 
         Corrections are recorded as data; the user's image files are never
-        modified. Rotation is applied first, then the flip.
+        modified. Rotation is applied first, then the flip. A section whose
+        orientation changes loses its transform.
 
         Args:
             entries: ``[{"id": "<filename>", "flip": true|false,
@@ -562,6 +566,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         applied: list[str] = []
         unknown: list[str] = []
         rejected: list[dict[str, Any]] = []
+        cleared: list[str] = []
         for entry in entries:
             if not isinstance(entry, dict):
                 continue
@@ -569,6 +574,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             if record is None:
                 unknown.append(str(entry.get("id", "")))
                 continue
+            was = (record.flip, record.rotation_deg)
             if "flip" in entry and entry["flip"] is not None:
                 if not spec.reorder.flip:
                     rejected.append({"id": record.id, "error": "FLIP_DISABLED"})
@@ -589,9 +595,15 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                     )
                 else:
                     record.rotation_deg = rotation
+            if (record.flip, record.rotation_deg) != was and record.transform is not None:
+                # A transform describes the section AFTER its orientation, so
+                # an orientation change makes the old one stale.
+                record.transform = None
+                cleared.append(record.id)
             applied.append(record.id)
         return {
             "applied": applied,
+            "cleared_transforms": cleared,
             "unknown_ids": unknown,
             "rejected": rejected,
             **commit(),
@@ -600,15 +612,14 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
     def reorder_slices(new_order: list[str]) -> dict[str, Any]:
         """Set the corrected order of the WHOLE stack in one call.
 
-        A section that moves loses its position and its transform; the rows
-        show which.
+        Only the corrected index changes: positions and transforms are kept.
 
         Args:
             new_order: Every section filename exactly once, in the order the
                 sections were cut.
 
         Returns:
-            The status rows plus the ids that moved.
+            The status rows plus the ids whose corrected index changed.
         """
         ids = [s.id for s in state.slices]
         if sorted(str(item) for item in new_order) != sorted(ids):
@@ -625,12 +636,12 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         snapshot()
         ordered = [state.by_id(str(item)) for item in new_order]
         moved = renumber([record for record in ordered if record is not None])
-        return {"moved": moved, "cleared_positions": moved, **commit()}
+        return {"moved": moved, **commit()}
 
     def move_slice(slice_id: str, after: str) -> dict[str, Any]:
         """Move one section to a new place in the corrected order.
 
-        The moved section loses its position and its transform.
+        Only corrected indices change: positions and transforms are kept.
 
         Args:
             slice_id: Filename or corrected index of the section to move.
@@ -638,7 +649,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                 follow, or "start" to put it first.
 
         Returns:
-            The status rows plus the ids that moved.
+            The status rows plus the ids whose corrected index changed.
         """
         record = state.resolve(slice_id)
         if record is None:
@@ -659,7 +670,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         index = 0 if anchor is None else ordered.index(anchor) + 1
         ordered.insert(index, record)
         moved = renumber(ordered)
-        return {"moved": moved, "cleared_positions": moved, **commit()}
+        return {"moved": moved, **commit()}
 
     if spec.has("reorder"):
         box.tools += [orient_slices, reorder_slices, move_slice]
@@ -950,8 +961,10 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             apply: True records the fits on the stack; False only measures.
 
         Returns:
-            Per-section overlap (iou) plus an overlay panel for up to 8
-            sections.
+            Per-section overlap (iou), the transform decomposed into
+            rotation, scale, shear, translation and a mirrored flag, the
+            calibration the image was drawn with, and an image of the fitted
+            section under the atlas outlines for up to 16 sections.
         """
         # ponytail: spec.transform.elastix is inert until the method lands;
         # asking for it answers UNAVAILABLE either way.
@@ -992,7 +1005,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             if outcome["status"] != "ok":
                 continue
             fits.append((record, outcome))
-            if panel is not None and len(parts) < MAX_VIEW_SLICES:
+            if panel is not None and len(parts) < MAX_FIT_PANELS:
                 parts.append(image_to_part(panel))
 
         payload: dict[str, Any] = {
@@ -1008,8 +1021,9 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             payload["description"] = (
                 "Attached panels are "
                 + ", ".join(record.id for record, _ in fits[: len(parts)])
-                + ", in that order; each shows the transformed section, its "
-                "atlas section, and the two overlaid."
+                + ", in that order; each shows the section under its fitted "
+                "transform with the atlas region outlines over it at true "
+                "physical scale."
             )
             payload[TOOL_MEDIA_PARTS_KEY] = parts
         if not apply:
@@ -1020,6 +1034,8 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                 "kind": "silhouette",
                 "params": outcome["params"],
                 "iou": outcome["iou"],
+                "calibration": outcome["calibration"],
+                "mirrored": outcome["decomposition"]["mirrored"],
             }
         payload.update(commit())
         return payload
@@ -1028,7 +1044,8 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         """Align ONE section by eye, in a bounded sub-session, and record it.
 
         The sub-session previews candidate transforms over the section's atlas
-        section and submits the alignment it settles on.
+        section and submits the alignment it settles on. It records an in-plane
+        transform only: the section's flip and rotation flags are not changed.
 
         Args:
             slice_id: Filename or corrected index.
@@ -1036,7 +1053,8 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                 empty.
 
         Returns:
-            The parameters it settled on plus the final overlay panel.
+            The parameters it settled on (translations in millimetres), their
+            decomposition, the calibration used, and the final overlay.
         """
         record = state.resolve(slice_id)
         if record is None:
@@ -1049,14 +1067,18 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         record.transform = {
             "kind": "interactive",
             "params": outcome["matrix_params"],
+            "physical": outcome["params"],
+            "calibration": outcome["calibration"],
             "note": outcome["note"],
+            "mirrored": outcome["decomposition"]["mirrored"],
         }
         apply_confidence(record, outcome.get("confidence"))
         outcome.update(commit())
         if panel is not None:
             outcome["description"] = (
-                f"The attached panel is the final alignment of {record.id}: "
-                "transformed section, atlas section, and the two overlaid."
+                f"The attached image is the final alignment of {record.id}: "
+                "the section under its transform with the atlas region "
+                "outlines over it at true physical scale."
             )
             outcome[TOOL_MEDIA_PARTS_KEY] = [image_to_part(panel)]
         return outcome

@@ -65,6 +65,9 @@ class JobSpec:
     atlas: str = "allen_mouse_25um"
     plane: str = "coronal"
     model: str | None = None
+    #: Reasoning effort for models that expose one (none|minimal|low|medium|
+    #: high). None leaves the provider's own default alone.
+    reasoning: str | None = None
     out: str | None = None
     #: Display-side preprocessing for everything the agent looks at:
     #: "auto" runs :func:`langslice.image_prep.adaptive_preprocess`, "none"
@@ -76,12 +79,16 @@ class JobSpec:
     transform: TransformSpec = field(default_factory=TransformSpec)
     #: Free-form user facts, one line each, passed to the agent verbatim.
     facts: list[str] = field(default_factory=list)
-    #: Host-supplied answers for tasks that are OFF:
+    #: Host-supplied answers for tasks that are OFF, plus the optional
+    #: calibration override:
     #: ``{"positions": {filename: mm}, "order": [filename, ...],
-    #: "angles": {"pitch": deg, "yaw": deg}}``.
+    #: "angles": {"pitch": deg, "yaw": deg}, "pixel_size_um": float}``.
     inputs: dict[str, Any] = field(default_factory=dict)
     #: Resume from the folder checkpoint when one exists.
     resume: bool = True
+    #: After submit, ask the agent (same context) what tools it missed and
+    #: record the answer on the state. One extra model call.
+    debrief: bool = True
 
     def __post_init__(self) -> None:
         if self.plane not in PLANES:

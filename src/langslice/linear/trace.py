@@ -93,6 +93,7 @@ class SessionTrace:
     """Append-only JSONL record of one linear agent session."""
 
     def __init__(self, trace_dir: str | Path, run_label: str, *, agent: Any) -> None:
+        self._steps = 0
         safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in run_label)
         # Same uuid trick as RequestCapturePlugin: concurrent sessions can share
         # a run label, and must not share a file.
@@ -149,9 +150,13 @@ class SessionTrace:
                 (thought if getattr(part, "thought", False) else text).append(part_text)
 
         if text or thought or calls:
+            # ``turn`` counts driver invocations; ``step`` counts model
+            # responses, which is what a reader paging through a trace wants.
+            self._steps += 1
             record: dict[str, Any] = {
                 "kind": "model",
                 "turn": turn,
+                "step": self._steps,
                 "author": getattr(event, "author", None),
             }
             if text:

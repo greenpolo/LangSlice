@@ -15,9 +15,10 @@ from google.genai import types
 from PIL import Image
 
 from langslice.adk import TOOL_MEDIA_PARTS_KEY
+from langslice.affine import resize_long_edge
 from langslice.atlas.core import get_reference_slice, get_root_mask
 from langslice.image_prep import crop_to_mask
-from langslice.linear.render import image_to_part
+from langslice.linear.render import caption, image_to_part
 from langslice.linear.state import StackState
 from langslice.space import Plane
 
@@ -27,6 +28,12 @@ if TYPE_CHECKING:  # ponytail: import cycle — engine builds the toolbox
 #: Atlas sections one ``fetch_atlas`` call may return. Anything past this is
 #: dropped — and reported back, never silently.
 MAX_FETCH_POSITIONS = 8
+
+#: Long edge of every atlas image ``fetch_atlas`` returns. A tissue-framed
+#: atlas render is at native atlas resolution, so an anterior section would
+#: arrive at ~180 px while the stack images are 512 px; resizing puts every
+#: atlas image at the size of the sections it is compared with.
+ATLAS_LONG_EDGE = 512
 
 
 def _as_floats(values: list[Any]) -> list[float]:
@@ -116,7 +123,9 @@ def make_fetch_atlas(state: StackState, ctx: EngineContext):
     def fetch_atlas(positions_mm: list[float]) -> dict[str, Any]:
         """Fetch atlas sections at the positions you name, at most 8 per call.
 
-        Sections are rendered at the stack's current cutting angles. Ask for
+        Sections are rendered at the stack's current cutting angles, each
+        labelled with its position (and the angles, when the stack is oblique)
+        in its top-left corner. Ask for
         more than 8 and only the first 8 are fetched; the rest come back under
         ``dropped_positions_mm`` with ``truncated: true``. Positions outside
         the atlas range are clamped, and positions within 0.02 mm of one
@@ -138,8 +147,20 @@ def make_fetch_atlas(state: StackState, ctx: EngineContext):
         if not positions:
             return {"status": "error", "error": "EMPTY_RESULT"}
 
+        angles = (
+            f" pitch {state.pitch_deg:.1f} yaw {state.yaw_deg:.1f}"
+            if state.is_oblique
+            else ""
+        )
         parts: list[types.Part] = [
-            image_to_part(atlas_section(ctx, state, position, frame=True))
+            image_to_part(
+                caption(
+                    resize_long_edge(
+                        atlas_section(ctx, state, position, frame=True), ATLAS_LONG_EDGE
+                    ),
+                    f"atlas {position:.2f} mm{angles}",
+                )
+            )
             for position in positions
         ]
         plural = "s" if len(positions) != 1 else ""
@@ -147,12 +168,13 @@ def make_fetch_atlas(state: StackState, ctx: EngineContext):
             "status": "ok",
             "positions_mm": [round(position, 2) for position in positions],
             "cutting_angles_deg": dict(state.cutting_angles_deg),
-            # The attached images are unlabelled, so the ordering note is the
-            # model's only way to tie an image to its position.
+            # Each image carries its own burned-in label; the ordering note
+            # says the same thing in the payload.
             "description": (
                 f"Fetched {len(positions)} atlas section{plural}: "
                 + ", ".join(f"{position:.2f} mm" for position in positions)
-                + ". The attached atlas images appear in that same order."
+                + ". The attached atlas images appear in that same order, each "
+                "labelled with its position in its top-left corner."
             ),
             TOOL_MEDIA_PARTS_KEY: parts,
         }

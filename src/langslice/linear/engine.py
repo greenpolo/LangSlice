@@ -20,6 +20,7 @@ from google.genai import types
 from PIL import Image
 
 from langslice.atlas.core import get_position_range_mm, load_atlas
+from langslice.image_prep import read_pixel_size_um
 from langslice.linear.checkpoint import (
     default_checkpoint_path,
     load_checkpoint,
@@ -37,7 +38,7 @@ from langslice.linear.spec import JobSpec
 from langslice.linear.state import SliceState, StackState, add_caveat
 from langslice.linear.toolbox import ToolBox, build_tools
 from langslice.linear.transform import fit_silhouette, run_align_session
-from langslice.space import Plane
+from langslice.space import Plane, atlas_space_context, slice_axis_ends
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,23 @@ _NUDGE_NO_TOOL = (
     "call `submit` when the job is done."
 )
 _NUDGE_CONTINUE = "Continue; call `submit` when the job is done."
+
+#: Asked once, after submit, in the same context. The answer is recorded on the
+#: state (``debrief``) for the people building this environment; nothing about
+#: the run changes. Answer in text: tools are still live, and a call here would
+#: be a write after submit.
+DEBRIEF_PROMPT = (
+    "The job is submitted and nothing you say now changes it. This is a "
+    "debrief for the people building this tool environment; answer in text "
+    "and do not call any tool.\n"
+    "1. Which tools or pieces of information did you reach for, or wish "
+    "existed, that were not available?\n"
+    "2. Which tools behaved differently from what you expected, or were "
+    "awkward to use as specified?\n"
+    "3. What did you have to work around?\n"
+    "4. Which tool environments you know does this resemble, and what did "
+    "those have that this lacks?"
+)
 
 
 def _log_progress(message: str) -> None:
@@ -75,8 +93,14 @@ class EngineContext:
     render_cache: dict[tuple[str, bool, int, int, str, bool], Image.Image] = field(
         default_factory=dict, repr=False
     )
+    #: Same keys as ``render_cache``: how much that render shrank the file's
+    #: pixels, so a known micrometres-per-pixel can follow the image down.
+    render_scale: dict[tuple[str, bool, int, int, str, bool], float] = field(
+        default_factory=dict, repr=False
+    )
     _atlas: Any = field(default=None, repr=False)
     _range: tuple[float, float] | None = field(default=None, repr=False)
+    _pixel_sizes: dict[str, float | None] = field(default_factory=dict, repr=False)
 
     def progress(self, message: str) -> None:
         self.emit(message)
@@ -99,6 +123,34 @@ class EngineContext:
                 self.atlas, plane=cast(Plane, self.spec.plane)
             )
         return self._range
+
+    @property
+    def axis_ends(self) -> tuple[str, str]:
+        """(low, high) anatomical ends of this run's slicing axis."""
+        return slice_axis_ends(
+            atlas_space_context(self.atlas), cast(Plane, self.spec.plane)
+        )
+
+    def calibration(self, slice_id: str) -> tuple[float | None, str]:
+        """``(micrometres per pixel of the FILE, source)`` for one section.
+
+        The host's ``inputs["pixel_size_um"]`` wins when it is given — that is
+        what ``--pixel-size-um`` is for — otherwise the file's own tags answer
+        (:func:`langslice.image_prep.read_pixel_size_um`). ``(None, "")`` when
+        nothing says; the caller estimates and says that it estimated.
+        """
+        host = (self.spec.inputs or {}).get("pixel_size_um")
+        if host:
+            try:
+                value = float(host)
+            except (TypeError, ValueError):
+                value = 0.0
+            if value > 0:
+                return value, "host"
+        if slice_id not in self._pixel_sizes:
+            self._pixel_sizes[slice_id] = read_pixel_size_um(self.image_path(slice_id))
+        from_file = self._pixel_sizes[slice_id]
+        return (from_file, "file") if from_file else (None, "")
 
     @property
     def species(self) -> str:
@@ -243,10 +295,13 @@ async def run_session(
             species=ctx.species,
             pos_lo=pos_lo,
             pos_hi=pos_hi,
+            axis_ends=ctx.axis_ends,
         ),
         tools=box.tools,
+        reasoning=spec.reasoning,
     )
-    return await run_agent_session(
+    sink: list[str] = []
+    outcome = await run_agent_session(
         agent=agent,
         seed_message=build_seed_message(state, ctx),
         done=lambda: state.submitted,
@@ -254,7 +309,13 @@ async def run_session(
         nudge_continue=_NUDGE_CONTINUE,
         max_iterations=max_iterations,
         run_label=_RUN_LABEL,
+        debrief=DEBRIEF_PROMPT if spec.debrief else None,
+        debrief_sink=sink,
     )
+    if sink and sink[0]:
+        state.debrief = sink[0]
+        save_checkpoint(state, ctx.checkpoint_path)
+    return outcome
 
 
 # --- the post pass -------------------------------------------------------
@@ -287,7 +348,10 @@ async def run_post_pass(state: StackState, ctx: EngineContext, spec: JobSpec) ->
             record.transform = {
                 "kind": "interactive",
                 "params": outcome["matrix_params"],
+                "physical": outcome["params"],
+                "calibration": outcome["calibration"],
                 "note": outcome["note"],
+                "mirrored": outcome["decomposition"]["mirrored"],
             }
             ctx.progress(f"[post] {record.id}: interactive transform recorded")
             continue
@@ -301,6 +365,8 @@ async def run_post_pass(state: StackState, ctx: EngineContext, spec: JobSpec) ->
             "kind": "silhouette",
             "params": outcome["params"],
             "iou": outcome["iou"],
+            "calibration": outcome["calibration"],
+            "mirrored": outcome["decomposition"]["mirrored"],
         }
         ctx.progress(
             f"[post] {record.id}: silhouette affine (overlap {outcome['iou']:.2f})"

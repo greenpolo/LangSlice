@@ -23,6 +23,7 @@ _PLANE_AXIS_LABEL: dict[str, str] = {
 #: One factual line per tool. Only the tools actually built are listed.
 TOOL_LINES: dict[str, str] = {
     "status": "the stack as it stands, one row per section in corrected order.",
+    "validate": "runs the submit checks without submitting; writes nothing.",
     "view_slices": "up to 8 named sections at higher resolution, as corrected.",
     "fetch_atlas": "up to 8 atlas sections at the positions you name, rendered "
     "at the stack's cutting angles.",
@@ -32,11 +33,12 @@ TOOL_LINES: dict[str, str] = {
     "mark_damaged": "records sections whose outline would break an "
     "outline-based fit, with a note each.",
     "unmark_damaged": "clears the damaged flag.",
-    "orient_slices": "sets the flip and the rotation of named sections.",
+    "orient_slices": "sets the flip and the rotation of named sections; a "
+    "section whose orientation changes loses its transform.",
     "reorder_slices": "sets the corrected order of the whole stack in one "
-    "call; a section that moves loses its position and transform.",
-    "move_slice": "moves one section in the corrected order; it loses its "
-    "position and transform.",
+    "call; positions and transforms are kept.",
+    "move_slice": "moves one section in the corrected order; positions and "
+    "transforms are kept.",
     "set_positions": "writes positions for one or more sections, clamped to "
     "the atlas range.",
     "distribute_spacing": "spreads positions over the stack from the points "
@@ -46,9 +48,11 @@ TOOL_LINES: dict[str, str] = {
     "and reports the best it found; writes nothing.",
     "set_cutting_angles": "sets the stack-wide cutting angles.",
     "fit_affine": "fits an in-plane affine per section against its atlas "
-    "section and returns the overlap plus an overlay panel.",
+    "section and returns the overlap, the transform decomposed, and an image "
+    "of the section under the atlas outlines at true physical scale.",
     "align_slice": "runs a bounded alignment sub-session for ONE section and "
-    "records what it settles on.",
+    "records the in-plane transform it settles on; it does not change the "
+    "section's flip or rotation.",
     "copy_transform": "copies one section's transform onto other sections.",
     "submit": "ends the run.",
 }
@@ -62,8 +66,14 @@ def build_job_statement(
     species: str,
     pos_lo: float,
     pos_hi: float,
+    axis_ends: tuple[str, str],
 ) -> str:
-    """The system instruction for one run, built from the spec and the state."""
+    """The system instruction for one run, built from the spec and the state.
+
+    *axis_ends* is ``(low, high)`` from
+    :func:`langslice.space.slice_axis_ends` — what the two ends of the slicing
+    axis are anatomically in THIS atlas.
+    """
     axis = _PLANE_AXIS_LABEL.get(state.plane, "AP")
     jobs: list[str] = []
     if spec.has("reorder"):
@@ -73,9 +83,10 @@ def build_job_statement(
         )
     if spec.has("position"):
         jobs.append(
-            "give every section a position in millimetres along the slicing "
-            "axis, damaged sections included, and report the corrected indices "
-            "where you conclude the interval between neighbouring sections is "
+            "give every section its own position in millimetres along the "
+            "slicing axis, each one inspected and checked against the atlas, "
+            "damaged sections included, and report the corrected indices where "
+            "you conclude the interval between neighbouring sections is "
             "genuinely broken"
         )
     if spec.has("transform"):
@@ -91,8 +102,13 @@ def build_job_statement(
         f"- Valid {axis} range: {pos_lo:.2f}-{pos_hi:.2f} mm along the slicing "
         f"axis, measured from the origin edge of the atlas volume "
         f"({pos_lo:.2f} mm is its first section, {pos_hi:.2f} mm its last).",
+        f"- {pos_lo:.2f} mm is the {axis_ends[0]} edge of the volume; "
+        f"positions increase toward {axis_ends[1]}.",
         f"- Cutting protocol: nominal section interval {state.interval_mm:.3f} "
-        f"mm center-to-center, section thickness {state.thickness_mm:.3f} mm.",
+        f"mm center-to-center, section thickness {state.thickness_mm:.3f} mm. "
+        f"The nominal interval is a protocol value, not a measurement: sections "
+        f"can be missing anywhere in the stack, so the spacing between "
+        f"neighbours may differ from it.",
         f"- Stack-wide cutting angles: pitch {state.pitch_deg:.2f} deg, yaw "
         f"{state.yaw_deg:.2f} deg.",
     ]

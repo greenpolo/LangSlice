@@ -4,10 +4,9 @@ One object, one JSON shape, three uses. Corrections are DATA — ``flip``,
 ``rotation_deg`` and ``index_corrected`` describe a view over the discovered
 stack, and the user's image files are never modified.
 
-Order and position are separate fields that must agree at submit: reordering a
-section that already has a position clears that position (it was assigned under
-the wrong neighbours), and ``submit`` refuses positions that are not monotone
-along the corrected order.
+Order and position are separate fields that must agree at submit: reordering
+changes only ``index_corrected``, and ``submit`` refuses positions that are not
+monotone along the corrected order.
 """
 
 from __future__ import annotations
@@ -30,6 +29,7 @@ class SliceState:
         {"kind": "silhouette" | "elastix" | "interactive",
          "params": [a, b, tx, c, d, ty],   # normalized 2x3, see langslice.affine
          "iou": float | None,              # fits only
+         "mirrored": bool,                 # det of the 2x2 is negative
          "note": str}                      # interactive only
 
     Coordinates are NORMALIZED — x as a fraction of image width, y as a
@@ -95,6 +95,9 @@ class StackState:
     notes: list[str] = field(default_factory=list)
     slices: list[SliceState] = field(default_factory=list)
     submitted: bool = False
+    #: The agent's post-submit debrief (what it reached for that was not
+    #: there), verbatim. Data for the environment's builders, not for the run.
+    debrief: str = ""
 
     # --- views -----------------------------------------------------------
 

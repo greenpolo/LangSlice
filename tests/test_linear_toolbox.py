@@ -138,20 +138,21 @@ def test_set_positions_clamps_to_the_atlas_range(tmp_path: Path):
 # --- the reorder rule ----------------------------------------------------
 
 
-def test_reorder_clears_the_positions_and_transforms_that_moved(tmp_path: Path):
+def test_reorder_keeps_positions_and_transforms(tmp_path: Path):
     state, _, box = _box(tmp_path, placed=True)
     for record in state.slices:
         record.transform = {"kind": "silhouette", "params": [], "iou": 0.8}
+    before = {s.id: s.position_mm for s in state.slices}
     order = ["s0.png", "s2.png", "s1.png", "s3.png", "s4.png"]
     result = _tool(box, "reorder_slices")(order)
 
-    # Swapping two neighbours: one of them moved, the other kept its place.
-    assert len(result["moved"]) == 1 and result["moved"][0] in {"s1.png", "s2.png"}
-    mover = result["moved"][0]
-    assert state.by_id(mover).position_mm is None
-    assert state.by_id(mover).transform is None
-    assert state.by_id("s0.png").position_mm == 2.0  # never moved
     assert [s.id for s in state.in_order()] == order
+    assert sorted(result["moved"]) == ["s1.png", "s2.png"]  # index changed
+    assert "cleared_positions" not in result
+    # Nothing but the corrected index moves; the submit gate is what holds
+    # order and position together.
+    assert {s.id: s.position_mm for s in state.slices} == before
+    assert all(s.transform is not None for s in state.slices)
 
 
 def test_reorder_refuses_anything_that_is_not_a_permutation(tmp_path: Path):
@@ -161,13 +162,14 @@ def test_reorder_refuses_anything_that_is_not_a_permutation(tmp_path: Path):
     assert state.by_id("s1.png").position_mm is not None
 
 
-def test_move_slice_moves_one_section_and_clears_what_shifted(tmp_path: Path):
+def test_move_slice_moves_one_section_and_keeps_every_position(tmp_path: Path):
     state, _, box = _box(tmp_path, placed=True)
     result = _tool(box, "move_slice")("s3.png", "start")
     assert [s.id for s in state.in_order()][0] == "s3.png"
-    # Only the section that moved loses its position; the ones it passed keep theirs.
-    assert result["moved"] == ["s3.png"]
-    assert state.by_id("s0.png").position_mm is not None
+    # Every section it passed is renumbered; nothing loses its position.
+    assert sorted(result["moved"]) == ["s0.png", "s1.png", "s2.png", "s3.png"]
+    assert state.by_id("s3.png").position_mm == 3.5
+    assert state.by_id("s0.png").position_mm == 2.0
     assert state.by_id("s4.png").position_mm == 4.0
 
     box.undo_stack.clear()
@@ -287,6 +289,26 @@ def test_strict_interval_refuses_uneven_spacing_and_any_break(tmp_path: Path):
     assert _submit(box, interval_breaks=[2])["error"] == "STRICT_INTERVAL"
 
 
+def test_validate_runs_the_gates_without_writing(tmp_path: Path):
+    state, ctx, box = _box(tmp_path, placed=True)
+    validate = _tool(box, "validate")
+
+    state.by_id("s2.png").position_mm = None
+    assert validate([])["error"] == "MISSING_POSITIONS"
+
+    state.by_id("s2.png").position_mm = 0.5  # placed, but against the order
+    assert validate([])["error"] == "ORDER_POSITION_MISMATCH"
+
+    state.by_id("s2.png").position_mm = 3.0
+    assert validate([]) == {"status": "ok", "would_submit": True}
+    assert validate([3])["error"] == "INTERVAL_BREAKS_UNSUPPORTED"
+
+    # Writes nothing: no checkpoint, no undo step, no submission.
+    assert state.submitted is False
+    assert box.undo_stack == []
+    assert load_checkpoint(ctx.checkpoint_path) is None
+
+
 def test_gates_do_not_apply_when_position_is_off(tmp_path: Path):
     state, _, box = _box(tmp_path, tasks=["reorder"])
     assert _submit(box)["status"] == "ok"
@@ -312,8 +334,12 @@ def test_fit_affine_records_a_transform_and_refuses_damaged_sections(tmp_path: P
     assert result["status"] == "ok"
     assert [row["id"] for row in result["results"]] == ["s0.png"]  # damaged is skipped
     assert result["results"][0]["iou"] > 0.5
+    assert result["results"][0]["decomposition"]["mirrored"] in (True, False)
     assert state.by_id("s0.png").transform["kind"] == "silhouette"
     assert len(state.by_id("s0.png").transform["params"]) == 6
+    assert state.by_id("s0.png").transform["mirrored"] == (
+        result["results"][0]["decomposition"]["mirrored"]
+    )
     assert state.by_id("s1.png").transform is None
 
     named = _tool(box, "fit_affine")(["s1.png"], "silhouette", True)
@@ -328,3 +354,30 @@ def test_copy_transform_copies_onto_named_sections(tmp_path: Path):
     result = _tool(box, "copy_transform")("s0.png", ["s1.png", "s2.png"])
     assert result["copied_to"] == ["s1.png", "s2.png"]
     assert state.by_id("s1.png").transform["copied_from"] == "s0.png"
+
+
+def test_orient_change_clears_a_stale_transform(tmp_path: Path):
+    state, _, box = _box(tmp_path, placed=True)
+    for record in state.slices:
+        record.transform = {"kind": "silhouette", "params": [], "iou": 0.8}
+    result = _tool(box, "orient_slices")(
+        [{"id": "s0.png", "flip": True}, {"id": "s1.png", "flip": False}]
+    )
+    assert result["cleared_transforms"] == ["s0.png"]
+    assert state.by_id("s0.png").transform is None
+    assert state.by_id("s1.png").transform is not None  # unchanged orientation
+
+
+def test_fetch_atlas_images_are_section_sized(tmp_path: Path):
+    import io
+
+    from PIL import Image
+
+    from langslice.adk import TOOL_MEDIA_PARTS_KEY
+    from langslice.linear.atlas_fetch import ATLAS_LONG_EDGE
+
+    _, _, box = _box(tmp_path)
+    result = _tool(box, "fetch_atlas")([1.0])
+    assert result["status"] == "ok"
+    image = Image.open(io.BytesIO(result[TOOL_MEDIA_PARTS_KEY][0].inline_data.data))
+    assert max(image.size) == ATLAS_LONG_EDGE
