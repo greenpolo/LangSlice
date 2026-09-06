@@ -216,15 +216,49 @@ code (`region_contours`, `_smooth_closed`, family mapping, annotation slice
 at cutting angles) moves from `nonlinear/` to `atlas/render.py` so both
 methods draw the same lines from the same source.
 
-**The screen.** `preview_transform` returns ONE image: the transformed section
+**The screen.** `preview_transform` returns the transformed section
 (display-preprocessed grayscale) with the family outlines on top at true
 scale, a 1 mm scale bar, and a caption (section id, position, angles, the
-params). `show_template=True` blends the atlas template at 35 % under the
-outlines. `fit_affine`'s panels use the same renderer, so the main agent and
-the sub-session see the same picture.
+params). `fit_affine`'s panels use the same renderer
+(`render.physical_overlay`, the `overlay` view of `render.physical_views`), so
+the main agent and the sub-session see the same picture.
+
+**View controls (2026-09-06).** Four sessions of gpt-5.6-luna aligning damaged
+M04 sections converged on the same three complaints — one fixed small image,
+no way to see the atlas apart from the section, and no magnification — so
+`preview_transform` takes three optional controls. Defaults reproduce the
+older single overlay exactly.
+- `zoom = [x0, y0, x1, y1]`, fractions of the CANVAS (not of the section).
+  The crop happens BEFORE the resize to the output long edge, so it is real
+  magnification rather than an upscale; outlines and bar are drawn after the
+  crop at output resolution, and the bar is redrawn for the magnified
+  µm/px, so it is still exactly 1 mm. The caption states the box.
+- `mode` — `overlay` (default), `side_by_side` (TWO captioned images, the
+  warped section and the atlas template at the same µm/px and the same crop,
+  outlines on both), `checkerboard` (the two in alternating tiles, 8 across),
+  `outlines` (the atlas lines plus the section's own silhouette contour in a
+  second grey, on black — no pixels).
+- `template_opacity` (0..1, default 0.0) replaces the old `show_template`
+  bool and dials the template blended under the outlines in `overlay`.
+
+Region acronyms on the outlines were asked for and deliberately NOT built
+(Nash: "it has no use for this"), and neither was damage masking.
+
+**What the payload carries.** Beside the params, their decomposition and the
+calibration: `silhouette_iou` (the warped section's tissue mask against the
+atlas anatomy at this placement — a number, no verdict), `translate_px` (the
+entered millimetres as canvas pixels, plus `px_per_mm`, so mm↔px is explicit),
+`history` (every parameter set previewed in this session, oldest first) and
+`view` (the mode and zoom box the image was drawn with). `decompose_affine`
+names its shifts `translate_x_frac` / `translate_y_frac`: they are fractions of
+width and height, and one session read 0.0075 as millimetres because the old
+name did not say so.
 
 **Rock-solid means tested.** Geometry tests pin: a 1 mm translation moves the
 section by exactly 1000/µm-per-px pixels; an atlas of known physical width
-renders at that width in pixels; the scale bar is 1000/µm-per-px pixels long;
-outline pixels lie on family-color boundaries of the filled render; a file
-with no pixel size yields `calibration: "estimated"`, never a crash.
+renders at that width in pixels; the scale bar is 1000/µm-per-px pixels long
+before AND after a zoom crop; outline pixels lie on family-color boundaries of
+the filled render; `side_by_side` returns two frames of one size;
+`checkerboard` carries both sources in pixels; `outlines` is black off the
+lines; `silhouette_iou` measures a known overlap; a file with no pixel size
+yields `calibration: "estimated"`, never a crash.

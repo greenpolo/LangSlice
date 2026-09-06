@@ -38,13 +38,21 @@ section, run in-process as an async tool of the main agent (`transform.py`).
   overlay: `canvas_geometry` places an atlas section on a section's frame at
   true scale (`atlas um/px / canvas um/px`, anatomy centred, canvas grown to
   hold it — never fit-to-canvas, which is not a calibration), and
-  `physical_overlay` draws the ONE alignment picture on it (family outlines
+  `physical_views` draws the alignment picture on it (family outlines
   from `atlas.render.family_outlines` as 1 px neutral-grey hairlines drawn at
   OUTPUT size — ABBA's border look; coloured 2 px rimmed lines were tried and
-  rejected as "too thick, colors are weird" — optional 35% template, 1 mm scale bar,
-  two-line caption). It takes either the five physical knobs or a ready 2x3
-  in the section's frame, so the interactive loop and `fit_affine` draw the
-  same picture. `canvas_um_per_px` follows the file's pixel size down through
+  rejected as "too thick, colors are weird" — 1 mm scale bar, two-line
+  caption). It takes either the five physical knobs or a ready 2x3 in the
+  section's frame, so the interactive loop and `fit_affine` draw the same
+  picture, and returns `(images, silhouette_iou)`. Its view controls:
+  `mode` (`overlay`, `side_by_side` — two images, `checkerboard`,
+  `outlines` — atlas lines plus the section's own silhouette in a second grey
+  on black), `zoom` ([x0, y0, x1, y1] fractions of the CANVAS, cropped BEFORE
+  the resize so it magnifies, with the bar redrawn for the new µm/px) and
+  `template_opacity` (0..1, replaced the `show_template` bool).
+  `physical_overlay` is the one-image `overlay` wrapper `fit_affine` uses.
+  Region acronyms and damage masking were asked for and deliberately not
+  built. `canvas_um_per_px` follows the file's pixel size down through
   the render's own downsample (`render_scale`, same key as `render_cache`);
   `estimate_um_per_px` is the fallback guess from tissue width. Renders are
   cached on the context and shared: read them, never mutate them. `caption`
@@ -65,7 +73,12 @@ section, run in-process as an async tool of the main agent (`transform.py`).
   silently pretends. The sub-session's knobs are ABBA's (rotation about the
   centre, per-axis scales, `translate_x_mm`/`translate_y_mm`), and the
   recorded transform carries them under `"physical"` next to the six
-  normalized numbers plus the `"calibration"` used.
+  normalized numbers plus the `"calibration"` used. `preview_transform`'s
+  payload also carries `silhouette_iou` (no verdict), `translate_px` (the
+  entered mm as canvas pixels, plus `px_per_mm`), `history` (every parameter
+  set previewed this session, oldest first) and the `view` it drew; the
+  prompt states the rotation/scale centre (the CANVAS centre), that x is
+  right and y is down, and the units.
 - `prompt.py` — `build_job_statement`: job, run facts, ONE factual line per
   tool that exists, hard constraints. Nothing else.
 - `session.py` — the ADK agent builder, the plugins, and the loop.

@@ -207,7 +207,7 @@ def test_the_scale_bar_is_one_millimetre_long():
 
 def test_the_template_only_shows_when_it_is_asked_for():
     plain = _overlay(_IDENTITY)
-    with_template = _overlay(_IDENTITY, show_template=True)
+    with_template = _overlay(_IDENTITY, template_opacity=0.35)
     # The atlas anatomy sits centred; the template lights it up under the lines.
     box = (slice(140, 160), slice(140, 160))
     assert with_template[box].mean() > plain[box].mean() + 5
@@ -310,7 +310,7 @@ def test_the_preview_tool_returns_one_image_and_the_numbers(tmp_path: Path):
     box = _build_align_tools(state, ctx, record)
     preview = next(tool for tool in box.tools if tool.__name__ == "preview_transform")
 
-    result = preview(0.0, 1.0, 1.0, 0.25, 0.0, True)
+    result = preview(0.0, 1.0, 1.0, 0.25, 0.0)
     assert result["status"] == "ok"
     assert len(result[TOOL_MEDIA_PARTS_KEY]) == 1  # ONE image, not a panel strip
     assert result["params"]["translate_x_mm"] == 0.25

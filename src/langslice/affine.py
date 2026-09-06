@@ -361,8 +361,13 @@ def decompose_affine(
     A normalized 6-vector lives in a fractional frame (x/width, y/height),
     which is anisotropic on a non-square image: a pure 5-degree rotation reads
     as 7 degrees plus shear there. Pass *size* to decompose in the pixel frame
-    instead — angles and scales then mean what they say; translations are
-    still reported as fractions of width/height.
+    instead — angles and scales then mean what they say.
+
+    Translations come back as the input's own ``tx``/``ty``, which for the
+    normalized 6-vector every payload passes are FRACTIONS of width and
+    height. Hence the names: a 0.15 mm shift on a 20 mm-wide frame reads as
+    ``translate_x_frac = 0.0075``, and reading that as millimetres is exactly
+    the confusion the suffix exists to stop.
     """
     values = np.asarray(params_or_matrix, dtype=np.float64).reshape(2, 3)
     (a, b, tx), (c, d, ty) = values[0], values[1]
@@ -379,8 +384,8 @@ def decompose_affine(
         "scale_x": round(scale_x, 4),
         "scale_y": round(scale_y, 4),
         "shear": round(shear, 4),
-        "translate_x": round(float(tx), 4),
-        "translate_y": round(float(ty), 4),
+        "translate_x_frac": round(float(tx), 4),
+        "translate_y_frac": round(float(ty), 4),
         "mirrored": determinant < 0,
     }
 
