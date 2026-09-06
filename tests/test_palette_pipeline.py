@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+import langslice.atlas.render as atlas_render
 import langslice.nonlinear.image_gen_helpers as helpers
 from langslice.atlas.recolor import color_lut, use_palette
 from langslice.nonlinear.render import BORDER_DARKEN
@@ -47,10 +48,13 @@ def atlas(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
             for sid, (acronym, path, name) in _ROWS.items()
         },
     )
-    monkeypatch.setattr(helpers, "position_mm_to_index", lambda a, p, plane="coronal": 0)
-    monkeypatch.setattr(helpers, "slice_axis_index", lambda ctx, plane: 0)
-    monkeypatch.setattr(helpers, "atlas_space_context", lambda a: SimpleNamespace())
-    monkeypatch.setattr(helpers, "orient_slice_for_display", lambda a, plane: a)
+    # the annotation slice lives in atlas.render now; patch it where it is defined
+    monkeypatch.setattr(
+        atlas_render, "position_mm_to_index", lambda a, p, plane="coronal": 0
+    )
+    monkeypatch.setattr(atlas_render, "slice_axis_index", lambda ctx, plane: 0)
+    monkeypatch.setattr(atlas_render, "atlas_space_context", lambda a: SimpleNamespace())
+    monkeypatch.setattr(atlas_render, "orient_slice_for_display", lambda a, plane: a)
     return fake
 
 

@@ -59,15 +59,15 @@ The CLI is grouped by method — `linear` for position estimation and affine
 anchoring, `nonlinear` for generative-image registration:
 
 ```bash
-# Linear: position estimation
-langslice linear estimate slice.png
+# Linear: order, position and transform for a folder of sections
+langslice linear run sections/
 
 # Nonlinear: registration at a known atlas position
 langslice nonlinear register slice.png --position 3.9
 ```
 
 The two are independent. `nonlinear register` takes the position as an
-argument, so it can follow `langslice linear estimate` or a placement made in
+argument, so it can follow `langslice linear run` or a placement made in
 another tool — in QUINT/ABBA-style workflows it stands in for the manual
 spline/BigWarp deformation step.
 

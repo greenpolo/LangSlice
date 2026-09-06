@@ -2,7 +2,7 @@
 
 Shared by both methods, which is why it sits at the top level:
 :mod:`langslice.nonlinear.quick_affine` wraps :func:`silhouette_affine` into a
-warped RGBA preview for the 3D viewer, and the whole-brain ``transforms`` step
+warped RGBA preview for the 3D viewer, and the linear ``fit_affine`` tool
 records its parameters as the proposed affine for an intact section. Pure
 functions only — no CLI, no agent, no model calls, no file writes.
 
@@ -224,6 +224,12 @@ def silhouette_affine(
             dst_c, dst_eigvals, dst_V,
             sign_pattern,
         )
+        # Reflections are not the fit's to make: a mirrored section is an
+        # ORIENTATION correction (the section's flip flag), and the atlas
+        # silhouette is left-right symmetric anyway, so a reflected candidate
+        # ties the proper one on IoU and would win by handedness noise.
+        if np.linalg.det(candidate[:, :2]) <= 0:
+            continue
         warped_mask = cv2.warpAffine(
             slice_mask, candidate, (w, h), flags=cv2.INTER_NEAREST, borderValue=0
         )
@@ -272,6 +278,111 @@ def affine_matrix(
         [a, b, cx - (a * cx + b * cy) + translate_x * width],
         [c, d, cy - (c * cx + d * cy) + translate_y * height],
     ], dtype=np.float64)
+
+
+def physical_affine_matrix(
+    *,
+    rotation_deg: float,
+    scale_x: float,
+    scale_y: float,
+    translate_x_mm: float,
+    translate_y_mm: float,
+    size: tuple[int, int],
+    um_per_px: float,
+) -> np.ndarray:
+    """:func:`affine_matrix` with the shifts given in MILLIMETRES.
+
+    The registration-software convention (ABBA's): rotation in degrees about
+    the frame's centre, unitless per-axis scales, translations in mm on a
+    frame whose pixels are *um_per_px* micrometres wide. One millimetre is
+    ``1000 / um_per_px`` pixels, whatever the frame's size — which is the
+    whole point of calibrating: the same numbers mean the same displacement
+    at any working resolution.
+    """
+    if um_per_px <= 0:
+        raise ValueError("um_per_px must be positive")
+    px_per_mm = 1000.0 / float(um_per_px)
+    width, height = size
+    return affine_matrix(
+        rotation_deg=rotation_deg,
+        scale_x=scale_x,
+        scale_y=scale_y,
+        translate_x=translate_x_mm * px_per_mm / width,
+        translate_y=translate_y_mm * px_per_mm / height,
+        size=size,
+    )
+
+
+def normalized_physical_affine(
+    *,
+    rotation_deg: float,
+    scale_x: float,
+    scale_y: float,
+    translate_x_mm: float,
+    translate_y_mm: float,
+    size: tuple[int, int],
+    um_per_px: float,
+) -> list[float]:
+    """Physical parameters as the six normalized numbers hosts consume.
+
+    *size* is the SECTION's own frame, not the padded canvas the parameters
+    were chosen on: the pad is symmetric, so both frames share a centre, and
+    a rotation about the canvas centre is the same map as a rotation about
+    the section centre. Only the frame the numbers are expressed in changes.
+    """
+    return normalized_affine(
+        physical_affine_matrix(
+            rotation_deg=rotation_deg,
+            scale_x=scale_x,
+            scale_y=scale_y,
+            translate_x_mm=translate_x_mm,
+            translate_y_mm=translate_y_mm,
+            size=size,
+            um_per_px=um_per_px,
+        ),
+        size,
+    )
+
+
+def decompose_affine(
+    params_or_matrix: Any, size: tuple[int, int] | None = None
+) -> dict[str, Any]:
+    """A 2x3 affine as the numbers a human reads: rotation, scale, shear, shift.
+
+    Accepts either the normalized 6-vector ``[a, b, tx, c, d, ty]`` or a 2x3
+    matrix. The decomposition is ``M = R(rotation) . [[sx, shear*sx], [0, sy]]``
+    read back out by QR: ``scale_x`` is the length of the first column,
+    ``rotation_deg`` its angle (counter-clockwise on screen, the
+    :func:`affine_matrix` convention), ``shear`` the residual x/y coupling in
+    units of ``scale_x``, and ``scale_y`` the determinant over ``scale_x`` —
+    so it goes NEGATIVE exactly when the map includes a reflection.
+    ``mirrored`` reports that determinant sign on its own.
+
+    A normalized 6-vector lives in a fractional frame (x/width, y/height),
+    which is anisotropic on a non-square image: a pure 5-degree rotation reads
+    as 7 degrees plus shear there. Pass *size* to decompose in the pixel frame
+    instead — angles and scales then mean what they say; translations are
+    still reported as fractions of width/height.
+    """
+    values = np.asarray(params_or_matrix, dtype=np.float64).reshape(2, 3)
+    (a, b, tx), (c, d, ty) = values[0], values[1]
+    if size is not None:
+        width, height = float(size[0]), float(size[1])
+        b, c = b * width / height, c * height / width
+    scale_x = float(math.hypot(a, c))
+    determinant = float(a * d - b * c)
+    rotation = math.degrees(math.atan2(-c, a)) if scale_x > 0 else 0.0
+    shear = float((a * b + c * d) / (scale_x**2)) if scale_x > 0 else 0.0
+    scale_y = determinant / scale_x if scale_x > 0 else 0.0
+    return {
+        "rotation_deg": round(rotation, 3),
+        "scale_x": round(scale_x, 4),
+        "scale_y": round(scale_y, 4),
+        "shear": round(shear, 4),
+        "translate_x": round(float(tx), 4),
+        "translate_y": round(float(ty), 4),
+        "mirrored": determinant < 0,
+    }
 
 
 def normalized_affine(matrix: np.ndarray, size: tuple[int, int]) -> list[float]:

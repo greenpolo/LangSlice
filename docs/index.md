@@ -17,7 +17,7 @@ session handoffs.
 ## Repository Map
 
 - `src/langslice/` - installable Python package and `langslice` CLI.
-  - `linear/` - slice-position estimation.
+  - `linear/` - order, position and one in-plane transform per section.
   - `nonlinear/` - generative-image registration.
 - `tests/` - pytest coverage.
 - `docs/` - public documentation.

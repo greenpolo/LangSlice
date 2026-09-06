@@ -1,12 +1,11 @@
-"""Full-content JSONL traces for whole-brain agent sessions.
+"""Full-content JSONL traces for linear agent sessions.
 
-Off unless ``LANGSLICE_TRACE_DIR`` is set (``langslice linear estimate-brain
---trace-dir`` sets it for one run): :func:`open_trace` returns ``None`` and the
-session loop skips every call. When it is set, each session started by
-:func:`~langslice.linear.whole_brain._step_common.run_agent_session` appends
-one JSONL file, ``<trace_dir>/<run_label>_<8 hex>.jsonl``, with one record per
-event — enough to reconstruct what the agent was shown, said, called, and got
-back.
+Off unless ``LANGSLICE_TRACE_DIR`` is set (``langslice linear run --trace-dir``
+sets it for one run): :func:`open_trace` returns ``None`` and the session loop
+skips every call. When it is set, each session started by
+:func:`~langslice.linear.session.run_agent_session` appends one JSONL file,
+``<trace_dir>/<run_label>_<8 hex>.jsonl``, with one record per event — enough
+to reconstruct what the agent was shown, said, called, and got back.
 
 This is deliberately not
 :class:`~langslice.adk.plugins.RequestCapturePlugin`: that one records shapes
@@ -91,7 +90,7 @@ def _describe_parts(parts: Any) -> list[dict[str, Any]]:
 
 
 class SessionTrace:
-    """Append-only JSONL record of one whole-brain agent session."""
+    """Append-only JSONL record of one linear agent session."""
 
     def __init__(self, trace_dir: str | Path, run_label: str, *, agent: Any) -> None:
         safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in run_label)

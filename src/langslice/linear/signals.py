@@ -1,8 +1,8 @@
-"""Position arithmetic for the whole-brain steps.
+"""Position arithmetic.
 
-A pure function over plain numbers, used by the positioning step's
-``interpolate_between`` tool. Nothing here writes to state and nothing here
-judges: it computes what the caller asked for.
+A pure function over plain numbers, used by the ``distribute_spacing`` tool.
+Nothing here writes to state and nothing here judges: it computes what the
+caller asked for.
 
 Positions are expected in corrected stack order; callers normalize direction
 before asking.

@@ -483,7 +483,20 @@ def content_to_input_items(content: types.Content) -> list[dict[str, Any]]:
 
     if tool_media:
         label = ", ".join(dict.fromkeys(tool_names))
-        items.append(user_message(f"Image(s) returned by tool: {label}.", tool_media))
+        # One user message, but each image gets its own text item right before
+        # it: without that the model sees N anonymous attachments and cannot
+        # tell which tool call, or which argument, any one of them answers.
+        media_content: list[dict[str, Any]] = [
+            {"type": "input_text", "text": f"Image(s) returned by tool: {label}."}
+        ]
+        total = len(tool_media)
+        pairs = enumerate(zip(tool_media, tool_names, strict=True), start=1)
+        for index, (uri, name) in pairs:
+            media_content.append(
+                {"type": "input_text", "text": f"{name} image {index} of {total}"}
+            )
+            media_content.append({"type": "input_image", "image_url": uri})
+        items.append({"type": "message", "role": "user", "content": media_content})
     return items
 
 

@@ -1,62 +1,95 @@
-# LangSlice `linear/ — slice-position estimation`
+# LangSlice `linear/` — order, position, transform
 
 Package guide for `src/langslice/linear/`. The repo-level `CLAUDE.md` holds the
-project-wide rules; this file holds what is specific to this package. `AGENTS.md`
-here is a verbatim copy — edit one, mirror to the other.
+project-wide rules; this file holds what is specific to this package.
+`AGENTS.md` here is a verbatim copy — edit one, mirror to the other.
 
-- `linear/` — slice-position estimation. Single-slice ADK agent, prompts,
-  tools, validators, session/runner plumbing, trace collection, and
-  `linear/whole_brain/` — the whole-brain engine: a node graph
-  (`ingest → survey → fix → seed → position → transforms → review → emit`)
-  over one `StackState`, with bounded loop-back edges, a JSON checkpoint
-  after every node, and results in the same shape as the checkpoint.
-  Flips and reorders are recorded as data on the state; user image files are
-  never modified. Every agent step is seeded with the whole stack as a
-  labelled sequence of per-section images (`_step_common.stack_image_parts`),
-  not a thumbnail grid; the contact sheet is still written next to the
-  checkpoint but is a human-facing artifact only. `survey.py` is the
-  stack-triage agent (damage, hemisphere flips, order, interval breaks in one
-  pass) and `fix` rebuilds the sheet and routes back for a re-check;
-  `seed` runs an automatic seeder if one is installed
-  (only `deepslice.py`, which is not) and otherwise passes the stack through
-  unplaced; `position.py` is the agent pass that places the stack, and it is
-  deliberately LEAN — no per-slice estimation worker, data-only tool payloads,
-  and a prompt that carries the job, the run's facts, one factual line per
-  tool and the hard constraints, nothing else. No strategies, no rules of
-  thumb, no failure-mode warnings anywhere in the step: full-trace forensics
-  showed the per-slice worker's estimates carried ~no signal on real data
-  while eating 82% of the wall-clock, and every major benchmark failure traced
-  back to advice text the harness injected. Tools report data; the agent
-  reasons. Tools: `view_slices`, `fetch_atlas`, `stack_positions`
-  (index, id, `position_mm`, `spacing_to_next_mm` — no nominal comparison, no
-  legend), `interpolate_between` (computes, writes nothing), `set_positions`
-  (writes, returns the same rows) and `submit_positions`. The gates stay,
-  because a constraint stating a fact is not coaching: `submit_positions`
-  refuses `interval_breaks` the agent's own written positions do not show (the
-  interval there must exceed 1.5x the stack's median written spacing) and a
-  submission whose positions run the wrong way along the stack's known axis
-  direction (`DIRECTION_REVERSED`, a plain code check). Refusal messages state
-  the numbers that caused them and stop. There used to be a second gate here —
-  `atlas_structures_at`/`structure_range` landmark tools plus a
-  `submit_positions` end-anchor requirement — but a benchmarked ablation (both
-  test brains) found it made placement worse, not better, so it was deleted
-  rather than kept behind a flag. Interpolation beyond the
-  outermost fixed points steps at the interval those points imply, never at
-  the nominal one; `transforms.py` proposes one in-plane
-  alignment per section — the shared silhouette affine (plain code) for intact
-  sections, a per-section interactive agent loop (preview → look → adjust →
-  submit) for damaged ones; `review.py` is the final whole-stack consistency
-  agent, gets the same lean prompt and data-only seed, and can route back to
-  `position` once. `_step_common.py` holds what the
-  agent steps share (`render_slice`, `view_slices`, manifest, ADK session
-  loop); `render_slice` also applies the display-only fluorescence
-  preprocessing (`--preprocess auto|none`, `BrainConfig.preprocess`) and, for
-  the paths that SHOW a section to a model (`frame=True`), the tissue crop that
-  matches the framing of fetched atlas sections — never for the affine-fitting
-  path, whose coordinates the crop would move.
-  `--stop-after NODE` runs one step and checkpoints; `--rerun-from
-  {position,transforms,review}` rewinds an existing checkpoint's node and
-  everything downstream of it (`engine.rewind_state`), notes those steps wrote
-  included, then resumes — for re-benchmarking one step without re-paying for
-  the agent steps ahead of it, and without seeding the fresh pass with the
-  rejected one's numbers.
+The design this implements is `docs/linear_design.md`. Read it before changing
+shapes; this file is the map of the code, not a second spec.
+
+## One environment, not a pipeline
+
+`langslice linear run FOLDER` is ONE agent environment over a stack of
+sections: one `StackState`, one toolbox, one job statement, one ADK session
+that ends at `submit` or the turn budget. A single section is a stack of one.
+There is no node graph, no per-step agent, and no single-slice agent — looking
+at the whole stack once yields the information for every task, and splitting
+that into separate sessions threw the shared reading away and re-paid for it.
+
+The one exception is `align_slice`: a bounded interactive sub-session for ONE
+section, run in-process as an async tool of the main agent (`transform.py`).
+
+## Files
+
+- `spec.py` — `JobSpec` (+ `ReorderSpec`/`PositionSpec`/`TransformSpec`). Every
+  checkbox a host shows maps to a field here; nothing else is user-facing.
+  `tasks` is the master switch: a task that is OFF builds no tools and takes
+  its answer from `spec.inputs` instead.
+- `state.py` — `StackState`/`SliceState`. The checkpoint, the result and the
+  thing every tool writes, one JSON shape for all three. `restore()` refills
+  the same object in place, because tools close over one state.
+- `checkpoint.py` — atomic JSON write to `<folder>/linear_state.json`.
+- `discovery.py` — natural-sorted image discovery.
+- `render.py` — `render_slice` (ROTATE first, then FLIP, then the display-only
+  `--preprocess auto` enhancement), `stack_image_parts`, the status rows and
+  their text form, `preview_panel`, and the JPEG `types.Part` encoder. Renders
+  are cached on the context and shared: read them, never mutate them.
+- `atlas_fetch.py` — `atlas_section` (the one atlas renderer: flat at 0/0
+  cutting angles, `oblique.sample_oblique_plane` otherwise) and the
+  `fetch_atlas` tool, closed over the run context. Sections and atlas sections
+  are framed the same way so apparent scale is not a cue.
+- `toolbox.py` — `build_tools(state, ctx, spec)`: every tool, gated by the
+  spec, plus the submit gates and the undo/redo snapshot stack.
+- `transform.py` — the silhouette fit and the interactive alignment
+  sub-session.
+- `prompt.py` — `build_job_statement`: job, run facts, ONE factual line per
+  tool that exists, hard constraints. Nothing else.
+- `session.py` — the ADK agent builder, the plugins, and the loop.
+- `engine.py` — `EngineContext`, `ingest`, `apply_host_inputs`, `run_session`,
+  `run_post_pass`, `emit_results`, and `run(spec)`.
+- `signals.py`, `deepslice.py`, `trace.py` — interval arithmetic, the DeepSlice
+  seam (reports `UNAVAILABLE`), and the full-content JSONL session trace.
+
+## Rules that are not negotiable here
+
+**Lean harness.** Tools return data. No advice, no interpretation, no strategy
+in any payload or prompt. The job statement carries the job, the facts, one
+line per tool and the constraints — no strategy menu, no rules of thumb, no
+failure-mode warnings, no region names (the same text runs against every
+BrainGlobe atlas, species and plane). Full-trace forensics found every major
+benchmark failure tracking back to advice the harness injected; a per-slice
+estimation worker that ate 82% of the wall-clock carried ~no signal and was
+deleted; a landmark-tool pass benchmarked WORSE and was deleted rather than
+kept behind a flag.
+
+**Gates are constraints, not coaching.** A refusal states the numbers that
+caused it and stops. `submit` refuses `MISSING_POSITIONS`,
+`ORDER_POSITION_MISMATCH` (positions must run one way along the corrected
+order; the offending neighbour pairs are named), `STRICT_INTERVAL` (spacing
+within 10% of the interval and no breaks, when `--strict-interval`) and
+`INTERVAL_BREAKS_UNSUPPORTED` (a reported break must exceed 1.5x the stack's
+median written spacing). Gates only run for tasks that are on.
+
+**Corrections are data.** Order, flips, rotations, positions, cutting angles
+and transforms are proposals on the state. The user's image files are never
+modified.
+
+**Order and position must agree.** Reordering a section that already carries a
+position CLEARS that position and its transform — they were decided under the
+wrong neighbours — and the response rows say which.
+
+**Every write checkpoints, every write is undoable.** One tool call is one undo
+step, so a batch undoes as one. The undo stack is in memory only (depth 50); a
+resumed run starts from the checkpoint, which is the state as it stood.
+
+## Ceilings worth knowing
+
+- `fit_affine`'s silhouette method measures against the FLAT atlas section even
+  when the stack carries cutting angles (`langslice.affine.silhouette_affine`
+  builds its own atlas silhouette off the voxel grid). The payload says so with
+  `flat_atlas_fit: true`.
+- `method="elastix"` and `run_deepslice` answer `UNAVAILABLE`; both are seams,
+  not stubs to fill in casually.
+- `fit_position` is a thin wrapper over `oblique.fit_oblique` — correct, not
+  tuned. It has not been benchmarked.
+- The post pass (`--no-subagents`) runs alignment sessions one at a time.

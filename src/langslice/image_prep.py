@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 from PIL import Image
@@ -30,6 +32,59 @@ class PreparedImage:
     @property
     def downsampled(self) -> bool:
         return self.scale_factor < 0.999999
+
+
+#: Length units an image tag may name, in micrometres. Micron spellings are
+#: matched separately: a file written by tifffile carries "µm" whose UTF-8
+#: bytes routinely reach us as "Âµm", and a plain "m" lookup would read that
+#: as METRES.
+_LENGTH_UM: dict[str, float] = {"nm": 1e-3, "mm": 1e3, "cm": 1e4, "m": 1e6}
+
+
+def _unit_to_um(unit: str) -> float | None:
+    text = unit.strip().lower()
+    if not text:
+        return 1.0  # OME's default PhysicalSize unit is micrometres
+    if "µ" in text or "μ" in text or "micro" in text or text.startswith("u"):
+        return 1.0
+    return _LENGTH_UM.get(text)
+
+
+def read_pixel_size_um(path: str | Path) -> float | None:
+    """Micrometres per pixel of an image file, or None when it does not say.
+
+    Two sources, in order: the OME-XML in the TIFF ImageDescription
+    (``PhysicalSizeX`` plus its unit) and the TIFF resolution tags
+    (``XResolution`` interpreted through ``ResolutionUnit``: 2 = inch,
+    3 = centimetre; 1 means "no unit", i.e. no calibration). Anything else —
+    a PNG export, a JPEG, a TIFF written without resolution — answers None,
+    and the caller says so rather than inventing a scale.
+    """
+    try:
+        with Image.open(path) as handle:
+            tags = dict(getattr(handle, "tag_v2", None) or {})
+    except Exception:
+        return None
+
+    description = tags.get(270)
+    if isinstance(description, str) and "PhysicalSizeX" in description:
+        value = re.search(r'PhysicalSizeX="([-+0-9.eE]+)"', description)
+        unit = re.search(r'PhysicalSizeXUnit="([^"]*)"', description)
+        factor = _unit_to_um(unit.group(1) if unit else "")
+        if value is not None and factor is not None:
+            size = float(value.group(1)) * factor
+            if size > 0:
+                return size
+
+    resolution, unit_code = tags.get(282), int(tags.get(296, 2) or 2)
+    per_unit_um = {2: 25400.0, 3: 10000.0}.get(unit_code)
+    if resolution is None or per_unit_um is None:
+        return None
+    try:
+        pixels_per_unit = float(resolution)
+    except (TypeError, ValueError):
+        return None
+    return per_unit_um / pixels_per_unit if pixels_per_unit > 0 else None
 
 
 def normalize_image(image: Image.Image) -> Image.Image:
