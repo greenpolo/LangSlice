@@ -46,7 +46,7 @@ def _atlas_plane() -> np.ndarray:
 
 @pytest.fixture
 def atlas(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
-    import langslice.nonlinear.image_gen_helpers as helpers
+    import langslice.atlas.render as helpers
 
     plane = _atlas_plane()
     fake = SimpleNamespace(

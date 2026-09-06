@@ -80,8 +80,15 @@ or pure docs/API verification (a research agent is faster).
 
 Two methods live as sibling subpackages with no dependency on each other:
 
-- `linear/` — slice-position estimation: single-slice agent plus the whole-brain
-  node-graph engine. Design, settled ablations, and constraints:
+- `linear/` — order, position and one in-plane transform per section, as ONE
+  agent environment (`langslice linear run FOLDER`): one `StackState`, one
+  toolbox built from a `JobSpec`, one job statement, one ADK session that ends
+  at `submit` or the turn budget. Tasks (`reorder`/`position`/`transform`) are
+  switched on task by task; a task that is OFF builds no tools and takes its
+  answer from the host instead. Every write checkpoints and is undoable, order
+  and position must agree at submit, and the only nested session is the bounded
+  per-section `align_slice`. Spec: `docs/linear_design.md`. Code map, the lean-
+  harness rule, the submit gates and the known ceilings:
   `src/langslice/linear/CLAUDE.md` (loads when working there).
 - `nonlinear/` — generative-image registration (image model → Elastix → report).
   The one active path, its measured design choices, and the cutting-angle lever:
@@ -104,11 +111,11 @@ Shared, top-level:
 - `affine.py` — shared in-plane affine core: the silhouette (moments) fit of a
   section onto an atlas section, plus the rotation/scale/translate matrix
   builder and the normalized 6-number parameter convention. Used by both
-  `linear/whole_brain/transforms.py` and `nonlinear/quick_affine.py`; belongs
+  `linear/transform.py` and `nonlinear/quick_affine.py`; belongs
   to neither
 - `image_prep.py` — image normalization, pixel-size detection, VLM
   downsampling, and foreground framing (`crop_to_tissue`, `crop_to_mask`), used
-  by the whole-brain visual path so histology and atlas sections fill their
+  by the linear visual path so histology and atlas sections fill their
   frames comparably. Tissue framing crops to the LARGEST connected blob, so a
   fragment or a speck elsewhere on the slide cannot widen the box
 - `providers/` — model ACCESS methods, never task logic. `registry.py` is
@@ -163,9 +170,9 @@ training or benchmark code happens in those repos, not here.
   which derives AP/DV/ML axis indices from the atlas orientation via
   `brainglobe_space` and requires the AP axis to increase anterior→posterior.
 - Optional debug traces are written only when `LANGSLICE_VLM_DEBUG_DIR` is set.
-- Whole-brain agent sessions write a full-content JSONL trace (what the agent
+- Linear agent sessions write a full-content JSONL trace (what the agent
   was shown, said, called, and got back; images as descriptors, never bytes)
-  only when `LANGSLICE_TRACE_DIR` is set — `langslice linear estimate-brain
+  only when `LANGSLICE_TRACE_DIR` is set — `langslice linear run
   --trace-dir PATH` sets it for one run. See `docs/current_workflow.md`.
 
 ## Boundaries

@@ -1,6 +1,7 @@
 """LangSlice CLI entry point."""
 import argparse
 import sys
+import textwrap
 
 import langslice
 
@@ -339,181 +340,18 @@ def _register_output_dir(out: str | None, atlas: str):
     return out_dir
 
 
-def _add_estimate_parser(subparsers: argparse._SubParsersAction) -> None:
-    est = subparsers.add_parser(
-        "estimate",
-        help="Estimate the AP position of a brain slice image",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    est.add_argument("image", help="Path to slice image (PNG, TIFF, JPEG)")
-    est.add_argument("--atlas", default="allen_mouse_25um", help="BrainGlobe atlas name")
-    est.add_argument(
-        "--plane",
-        default="coronal",
-        choices=["coronal", "sagittal", "horizontal"],
-        help=_PLANE_HELP,
-    )
-    est.add_argument("--model", default=None, help="Gemini model name")
-    est.add_argument(
-        "--thinking",
-        default=None,
-        choices=["MINIMAL", "LOW", "MEDIUM", "HIGH"],
-        help="Gemini thinking level",
-    )
-    est.add_argument("--temperature", type=float, default=None, help="Generation temperature")
-    est.add_argument(
-        "--media-resolution",
-        default="medium",
-        choices=["low", "medium", "high", "ultra_high"],
-        help="Gemini media resolution for input images",
-    )
-    est.add_argument(
-        "--vlm-resolution",
-        type=int,
-        default=2048,
-        help="Max long-edge pixels for VLM",
-    )
-    est.add_argument(
-        "--max-iterations",
-        type=int,
-        default=20,
-        help="Max tool-loop iterations",
-    )
-    est.add_argument(
-        "--preprocess",
-        default="auto",
-        choices=["auto", "none"],
-        help="Image preprocessing: 'auto' applies adaptive CLAHE + brightness normalization, "
-        "'none' sends the raw image",
-    )
-    est.add_argument(
-        "--out",
-        default=None,
-        help="Output directory for debug artifacts",
-    )
-    est.add_argument("--json", action="store_true", help="Print result JSON to stdout")
-    est.add_argument(
-        "--provider",
-        default="google",
-        choices=["gemini-api", "openai-api", "google", "openai"],
-        help="Model provider: 'google' for Gemini, 'openai' for OpenAI-compatible (Ollama, etc.)",
-    )
-    est.add_argument(
-        "--endpoint",
-        default=None,
-        help=(
-            "OpenAI-compatible base URL (e.g. http://127.0.0.1:1234/v1). When "
-            "set, the model name is used verbatim and the request is sent here, "
-            "bypassing prefix dispatch."
-        ),
-    )
-
-
-def _add_collect_traces_parser(subparsers: argparse._SubParsersAction) -> None:
+def _add_linear_run_parser(subparsers: argparse._SubParsersAction) -> None:
     p = subparsers.add_parser(
-        "collect-traces",
-        help="Collect Gemini teacher traces for SFT training data",
+        "run",
+        help="Order, position and transform a folder of sections",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    p.add_argument("--manifest", required=True, help="JSONL manifest of trace jobs")
-    p.add_argument("--out", required=True, help="Output directory for trace artifacts")
-    p.add_argument("--model", default="gemini-3.1-pro-preview", help="Teacher model")
+    p.add_argument("image_folder", help="Folder containing the section images")
     p.add_argument(
-        "--thinking",
-        default="MEDIUM",
-        choices=["LOW", "MEDIUM", "HIGH"],
-        help="Gemini thinking level for trace collection",
+        "--tasks",
+        default="reorder,position,transform",
+        help="Comma-separated subset of reorder,position,transform",
     )
-    p.add_argument(
-        "--media-resolution",
-        default="medium",
-        choices=["low", "medium", "high", "ultra_high"],
-        help="Gemini media resolution for input images",
-    )
-    p.add_argument("--max-iterations", type=int, default=20, help="Max tool-loop iterations")
-    p.add_argument("--limit", type=int, default=None, help="Limit manifest rows for a test run")
-    p.add_argument(
-        "--kind",
-        default="all",
-        choices=["all", "single"],
-        help="Run only one manifest kind",
-    )
-    p.add_argument("--resume", action="store_true", help="Skip runs with existing raw traces")
-    p.add_argument(
-        "--include-thought-summaries",
-        dest="include_thought_summaries",
-        action="store_true",
-        default=True,
-        help="Request Gemini thought summaries and store them in raw traces",
-    )
-    p.add_argument(
-        "--no-include-thought-summaries",
-        dest="include_thought_summaries",
-        action="store_false",
-        help="Do not request Gemini thought summaries",
-    )
-    p.add_argument(
-        "--sft-export",
-        default="both",
-        choices=["deployment", "rationale", "both"],
-        help="Which SFT trace export variants to write",
-    )
-    p.add_argument(
-        "--persist-tool-images",
-        dest="persist_tool_images",
-        action="store_true",
-        default=True,
-        help="Persist multimodal atlas tool-result images beside each trace",
-    )
-    p.add_argument(
-        "--no-persist-tool-images",
-        dest="persist_tool_images",
-        action="store_false",
-        help="Do not persist multimodal atlas tool-result images",
-    )
-
-
-def _run_collect_traces(args: argparse.Namespace) -> None:
-    from pathlib import Path
-
-    from langslice.linear.trace_collection import (
-        collect_manifest_traces,
-    )
-
-    kind_filter = None if args.kind == "all" else args.kind
-    results = collect_manifest_traces(
-        manifest_path=Path(args.manifest),
-        out_dir=Path(args.out),
-        model=args.model,
-        thinking_level=args.thinking,
-        media_resolution=args.media_resolution,
-        max_iterations=args.max_iterations,
-        include_thought_summaries=args.include_thought_summaries,
-        sft_export=args.sft_export,
-        persist_tool_images=args.persist_tool_images,
-        limit=args.limit,
-        kind_filter=kind_filter,
-        resume=args.resume,
-    )
-    accepted = sum(
-        1
-        for result in results
-        if isinstance(result.get("category"), dict)
-        and result["category"].get("accepted") is True
-    )
-    print("Trace collection complete")
-    print(f"  Runs: {len(results)}")
-    print(f"  Accepted: {accepted}")
-    print(f"  Output: {Path(args.out)}")
-
-
-def _add_estimate_brain_parser(subparsers: argparse._SubParsersAction) -> None:
-    p = subparsers.add_parser(
-        "estimate-brain",
-        help="Run the whole-brain estimation engine on a folder of slices",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    p.add_argument("image_folder", help="Folder containing slice images")
     p.add_argument("--atlas", default="allen_mouse_25um", help="BrainGlobe atlas name")
     p.add_argument(
         "--plane",
@@ -521,197 +359,189 @@ def _add_estimate_brain_parser(subparsers: argparse._SubParsersAction) -> None:
         choices=["coronal", "sagittal", "horizontal"],
         help=_PLANE_HELP,
     )
-    p.add_argument("--thickness", type=int, default=50, help="Slice thickness in microns")
-    p.add_argument("--interval", type=int, default=200, help="Section interval in microns")
+    p.add_argument("--model", default=None, help="Model name for the agent session")
     p.add_argument(
-        "--keep-order",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Trust the discovered slice order (--no-keep-order lets the engine reorder)",
+        "--reasoning",
+        default=None,
+        choices=["none", "minimal", "low", "medium", "high"],
+        help="Reasoning effort for models that expose one. Default: the "
+        "provider's own",
     )
-    p.add_argument("--model", default=None, help="Model name for the engine's agent steps")
+    p.add_argument(
+        "--pixel-size-um",
+        type=float,
+        default=None,
+        metavar="UM",
+        help="Micrometres per pixel of the section images. Default: read from "
+        "each file's TIFF/OME tags",
+    )
     p.add_argument(
         "--preprocess",
         default="auto",
         choices=["auto", "none"],
-        help="Image preprocessing for everything the agents look at: 'auto' applies "
-        "adaptive CLAHE + brightness normalization, 'none' shows the raw sections. "
-        "Display only — the image files are never modified",
+        help="Image preprocessing for everything the agent looks at. Display "
+        "only - the image files are never modified",
+    )
+    p.add_argument(
+        "--no-flip",
+        dest="flip",
+        action="store_false",
+        default=True,
+        help="Do not let the agent mirror sections across the midline",
+    )
+    p.add_argument(
+        "--hemisphere-cue",
+        default="",
+        metavar="TEXT",
+        help="What marks a hemisphere in these sections (a notch, an injection...)",
+    )
+    p.add_argument("--thickness", type=int, default=50, help="Section thickness in microns")
+    p.add_argument("--interval", type=int, default=200, help="Section interval in microns")
+    p.add_argument(
+        "--strict-interval",
+        action="store_true",
+        help="Sections must sit exactly one interval apart",
+    )
+    p.add_argument(
+        "--deepslice", action="store_true", help="Offer the run_deepslice tool"
+    )
+    p.add_argument(
+        "--bayesian", action="store_true", help="Offer the fit_position tool"
+    )
+    p.add_argument(
+        "--angles", action="store_true", help="Let the agent set the cutting angles"
+    )
+    p.add_argument(
+        "--elastix", action="store_true", help="Let fit_affine use the Elastix affine"
+    )
+    p.add_argument(
+        "--fact",
+        dest="facts",
+        action="append",
+        default=[],
+        metavar="TEXT",
+        help="A fact about this stack, passed to the agent verbatim (repeatable)",
+    )
+    p.add_argument(
+        "--positions",
+        default=None,
+        metavar="JSON",
+        help='Host-supplied positions: a JSON file path or inline JSON mapping '
+        'filename -> mm',
+    )
+    p.add_argument(
+        "--order",
+        default=None,
+        metavar="JSON",
+        help="Host-supplied order: a JSON file path or inline JSON list of filenames",
     )
     p.add_argument(
         "--out",
         default=None,
-        help="Results JSON path. Default: <image_folder>/brain_results.json",
+        help="Results JSON path. Default: <image_folder>/linear_results.json",
     )
     p.add_argument(
         "--trace-dir",
         default=None,
         metavar="PATH",
-        help="Write a full-content JSONL trace of every agent session here "
-        "(what the agent was shown, said, called, and got back). Overrides "
-        "LANGSLICE_TRACE_DIR",
+        help="Write a full-content JSONL trace of every agent session here. "
+        "Overrides LANGSLICE_TRACE_DIR",
     )
     p.add_argument(
-        "--resume",
-        dest="resume",
-        action="store_true",
-        default=True,
-        help="Resume from the folder checkpoint, skipping completed nodes",
-    )
-    p.add_argument(
-        "--stop-after",
-        default=None,
-        metavar="NODE",
-        choices=[
-            "ingest", "survey", "fix", "seed",
-            "position", "transforms", "review", "emit",
-        ],
-        help="Run up to and including NODE, checkpoint, and stop "
-             "(re-run to continue from there)",
-    )
-    fresh_group = p.add_mutually_exclusive_group()
-    fresh_group.add_argument(
         "--fresh",
         dest="resume",
         action="store_false",
+        default=True,
         help="Ignore any existing checkpoint and start over",
     )
-    fresh_group.add_argument(
-        "--rerun-from",
-        default=None,
-        metavar="NODE",
-        choices=["position", "transforms", "review"],
-        help="Rewind an existing checkpoint's NODE and everything after it "
-             "(clearing what they wrote), then resume from there. Requires "
-             "an existing checkpoint; mutually exclusive with --fresh. "
-             "Composable with --stop-after",
+    p.add_argument(
+        "--no-debrief",
+        dest="debrief",
+        action="store_false",
+        help="Skip the post-submit debrief question (what tools the agent missed)",
     )
 
 
-def _run_estimate_brain(args: argparse.Namespace) -> None:
+def _load_json_arg(value: str | None) -> object | None:
+    """A JSON argument, given inline or as a path to a JSON file."""
+    import json
+    from pathlib import Path
+
+    if not value:
+        return None
+    path = Path(value)
+    if path.exists():
+        return json.loads(path.read_text(encoding="utf-8"))
+    return json.loads(value)
+
+
+def _run_linear(args: argparse.Namespace) -> None:
     import asyncio
     import os
 
-    from langslice.linear.whole_brain import BrainConfig, run_brain
-    from langslice.linear.whole_brain.checkpoint import (
-        default_checkpoint_path,
-        load_checkpoint,
-        save_checkpoint,
-    )
-    from langslice.linear.whole_brain.engine import rewind_state
-    from langslice.linear.whole_brain.trace import TRACE_DIR_ENV
+    from langslice.linear import JobSpec, run
+    from langslice.linear.spec import PositionSpec, ReorderSpec, TransformSpec
+    from langslice.linear.trace import TRACE_DIR_ENV
 
     if args.trace_dir:
         os.environ[TRACE_DIR_ENV] = args.trace_dir
 
-    config = BrainConfig(
+    inputs: dict[str, object] = {}
+    positions = _load_json_arg(args.positions)
+    if positions is not None:
+        inputs["positions"] = positions
+    order = _load_json_arg(args.order)
+    if order is not None:
+        inputs["order"] = order
+    if args.pixel_size_um:
+        inputs["pixel_size_um"] = float(args.pixel_size_um)
+
+    spec = JobSpec(
         image_folder=args.image_folder,
         atlas=args.atlas,
         plane=args.plane,
-        thickness_um=args.thickness,
-        interval_um=args.interval,
-        keep_order=args.keep_order,
         model=args.model,
+        reasoning=args.reasoning,
         out=args.out,
-        resume=args.resume,
         preprocess=args.preprocess,
+        tasks=[task.strip() for task in args.tasks.split(",") if task.strip()],
+        reorder=ReorderSpec(flip=args.flip, hemisphere_cue=args.hemisphere_cue),
+        position=PositionSpec(
+            thickness_um=args.thickness,
+            interval_um=args.interval,
+            strict_interval=args.strict_interval,
+            deepslice=args.deepslice,
+            bayesian=args.bayesian,
+        ),
+        transform=TransformSpec(angles=args.angles, elastix=args.elastix),
+        facts=list(args.facts),
+        inputs=inputs,
+        resume=args.resume,
+        debrief=args.debrief,
     )
 
-    if args.rerun_from:
-        checkpoint_path = default_checkpoint_path(os.path.abspath(config.image_folder))
-        state = load_checkpoint(checkpoint_path)
-        if state is None:
-            raise SystemExit(
-                f"--rerun-from requires an existing checkpoint; none found at "
-                f"{checkpoint_path}"
-            )
-        rewind_state(state, args.rerun_from)
-        save_checkpoint(state, checkpoint_path)
-        config.resume = True
-        print(f"Rewound checkpoint from '{args.rerun_from}' -> {checkpoint_path}")
-
-    print(f"Atlas: {config.atlas}  Plane: {config.plane}")
-    print(f"Interval: {config.interval_um}um  Thickness: {config.thickness_um}um")
-    print(f"Folder: {config.image_folder}  Resume: {config.resume}")
-    print(f"Preprocess: {config.preprocess}")
+    print(f"Atlas: {spec.atlas}  Plane: {spec.plane}")
+    print(f"Tasks: {', '.join(spec.tasks) or '(none)'}")
+    print(f"Interval: {spec.position.interval_um}um  "
+          f"Thickness: {spec.position.thickness_um}um")
+    print(f"Folder: {spec.image_folder}  Resume: {spec.resume}")
     if os.environ.get(TRACE_DIR_ENV):
         print(f"Agent traces: {os.environ[TRACE_DIR_ENV]}")
     print()
 
-    state = asyncio.run(run_brain(config, emit=print, stop_after=args.stop_after))
+    state = asyncio.run(run(spec, emit=print))
 
     positioned = [s for s in state.slices if s.position_mm is not None]
+    transformed = [s for s in state.slices if s.transform is not None]
     print()
-    print(
-        f"Whole-brain estimation stopped after {args.stop_after}"
-        if args.stop_after
-        else "Whole-brain estimation complete"
-    )
-    print(f"  Slices: {len(state.slices)}  Positioned: {len(positioned)}")
-    print(f"  Nodes run: {', '.join(state.completed_nodes)}")
-    if state.contact_sheet:
-        print(f"  Contact sheet: {state.contact_sheet}")
-
-
-def _run_estimate(args: argparse.Namespace) -> None:
-    import json
-
-    import langslice.providers.vlm_config as vlm_config
-    from langslice.api.models import EstimateRequest
-    from langslice.api.runtime import run_estimate
-    from langslice.providers.registry import canonical_provider
-
-    if canonical_provider(args.provider) == "openai-api":
-        import langslice.providers.openai_config as openai_config
-
-        effective_model = args.model or openai_config.get_openai_model()
-        provider_label = "openai"
-    else:
-        effective_model = args.model or vlm_config.MODEL_NAME
-        provider_label = "google"
-
-    print(f"Atlas: {args.atlas}  Plane: {args.plane}")
-    print(f"Model: {effective_model}  Provider: {provider_label}")
-    print(f"Max iterations: {args.max_iterations}")
-    if args.out:
-        print(f"Output: {args.out}")
-    print()
-
-    def emit(event: object) -> None:
-        print(f"  {getattr(event, 'message', event)}")
-
-    request = EstimateRequest(
-        image_path=args.image,
-        atlas=args.atlas,
-        plane=args.plane,
-        model=args.model,
-        thinking=args.thinking,
-        temperature=args.temperature,
-        media_resolution=args.media_resolution,
-        max_iterations=args.max_iterations,
-        preprocess=args.preprocess,
-        provider=args.provider,
-        endpoint=args.endpoint,
-        output_dir=args.out,
-    )
-    result = run_estimate(request, emit=emit)
-
-    # Summary.
-    print()
-    print("AP Estimation complete")
-    print(f"  Position: {result.position_mm:.3f} mm")
-    print(f"  Reasoning: {result.reasoning}")
-    if result.debug_dir:
-        print(f"  Artifacts: {result.debug_dir}")
-
-    if args.json:
-        payload = {
-            "position_mm": result.position_mm,
-            "reasoning": result.reasoning,
-            "debug_dir": result.debug_dir,
-        }
-        print()
-        print(json.dumps(payload, indent=2))
+    print("Linear run complete" if state.submitted else "Linear run ended without a submission")
+    print(f"  Sections: {len(state.slices)}  Positioned: {len(positioned)}  "
+          f"Transformed: {len(transformed)}")
+    if state.debrief:
+        print("\nAgent debrief (what it reached for that was not there):")
+        print(textwrap.indent(state.debrief, "  "))
+    if state.interval_breaks:
+        print(f"  Interval breaks: {state.interval_breaks}")
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -736,8 +566,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Linear methods: slice position and affine estimation",
     )
     linear_sub = linear.add_subparsers(dest="subcommand", required=True)
-    _add_estimate_parser(linear_sub)
-    _add_estimate_brain_parser(linear_sub)
+    _add_linear_run_parser(linear_sub)
     _add_quick_affine_parser(linear_sub)
 
     # langslice nonlinear <cmd> — image-gen registration
@@ -750,9 +579,6 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # langslice abba
     _add_abba_parser(subparsers)
-
-    # langslice collect-traces
-    _add_collect_traces_parser(subparsers)
 
     # langslice serve
     _add_serve_parser(subparsers)
@@ -894,12 +720,8 @@ def main(argv: list[str] | None = None):
         _run_register(args)
     elif command == "quick-affine":
         _run_quick_affine(args)
-    elif command == "estimate":
-        _run_estimate(args)
-    elif command == "collect-traces":
-        _run_collect_traces(args)
-    elif command == "estimate-brain":
-        _run_estimate_brain(args)
+    elif command == "run":
+        _run_linear(args)
     elif command == "serve":
         _run_serve(args)
     else:

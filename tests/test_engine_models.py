@@ -11,7 +11,6 @@ from langslice.api.models import (
     EngineEventEnvelope,
     EngineProgressEvent,
     EngineRequest,
-    EstimateRequest,
     export_schema_bundle,
 )
 
@@ -23,17 +22,12 @@ def test_engine_request_defaults_are_not_shared() -> None:
     assert second.params == {}
 
 
-def test_estimate_request_validates_required_fields() -> None:
-    with pytest.raises(ValidationError):
-        EstimateRequest.model_validate({"atlas": "allen_mouse_25um"})
-
-
 def test_export_schema_bundle_contains_engine_shapes() -> None:
     bundle = cast(dict[str, Any], export_schema_bundle())
     assert "schemas" in bundle
     assert "EngineRequest" in bundle["schemas"]
     assert "EngineResultEnvelope" in bundle["schemas"]
-    assert "EstimateRequest" in bundle["schemas"]
+    assert "RegisterRequest" in bundle["schemas"]
 
 
 def test_engine_request_method_schema_matches_engine_methods() -> None:

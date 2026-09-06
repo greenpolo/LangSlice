@@ -5,22 +5,18 @@ from __future__ import annotations
 import logging
 import tempfile
 import time
-from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 from PIL import Image
 
-from langslice.atlas import position_mm_to_index
-from langslice.atlas.core import get_root_mask, orient_slice_for_display
+from langslice.atlas.core import get_root_mask
 from langslice.atlas.recolor import active_palette, color_lut
+from langslice.atlas.render import annotation_slice
+from langslice.atlas.render import family_mapping as _family_mapping
 from langslice.nonlinear.types import Deformation
-from langslice.space import (
-    Plane,
-    atlas_space_context,
-    slice_axis_index,
-)
+from langslice.space import Plane, atlas_space_context, slice_axis_index
 
 logger = logging.getLogger(__name__)
 
@@ -96,29 +92,14 @@ def _annotation_slice(
     yaw_deg: float = 0.0,
     blackout: bool = True,
 ) -> np.ndarray:
-    """The atlas annotation at *position_mm*, oriented for display.
-
-    With a non-zero cutting angle the plane is resliced obliquely instead of
-    taken flat off the voxel grid. Measured on the LSD_910 hand
-    registrations, whose block was cut at 4 degrees: matching the plane is
-    worth far more than any fit tuning (fit-only family dice 0.93 -> 0.96,
-    boundary p95 34px -> 9px over 33 slices).
+    """:func:`~langslice.atlas.render.annotation_slice` plus the ventricle blackout.
 
     On the planes in :data:`_BLACKOUT_PLANES` the ventricular system is
     blacked out to background before anything downstream sees it;
     ``blackout=False`` keeps it (review/evaluation renders that must show
     where the fit put the ventricles — they are landmarks to a reviewer).
     """
-    if pitch_deg or yaw_deg:
-        from langslice.oblique import sample_oblique_annotation
-
-        sliced = sample_oblique_annotation(atlas, position_mm, plane, pitch_deg, yaw_deg)
-    else:
-        idx = position_mm_to_index(atlas, position_mm, plane=plane)
-        axis = slice_axis_index(atlas_space_context(atlas), plane)
-        sliced = orient_slice_for_display(
-            np.asarray(np.take(atlas.annotation, idx, axis=axis)), plane
-        )
+    sliced = annotation_slice(atlas, position_mm, plane=plane, pitch_deg=pitch_deg, yaw_deg=yaw_deg)
     if blackout and plane in _BLACKOUT_PLANES:
         vids = _ventricle_ids(atlas)
         if vids:
@@ -390,30 +371,6 @@ def _classified_to_rgb(classified_2d: np.ndarray, atlas: Any) -> np.ndarray:
     return rgb
 
 
-def _family_mapping(
-    uids: Iterable[int], atlas: Any, merge_eps: float = 40.0
-) -> dict[int, int]:
-    """region id -> representative id of its merged color family.
-
-    Deterministic in the id set it is given: pass the ids of every map that
-    has to share one vocabulary (e.g. a generated map and the atlas render),
-    or the two get different representatives for the same family.
-    """
-    lut = color_lut(atlas)
-    reps: list[tuple[tuple[int, int, int], int]] = []
-    mapping: dict[int, int] = {}
-    for uid in sorted(int(u) for u in uids if int(u) != 0):
-        color = lut.get(uid, (128, 128, 128))
-        for rep_color, rep_id in reps:
-            if sum((a - b) ** 2 for a, b in zip(color, rep_color, strict=False)) <= merge_eps**2:
-                mapping[uid] = rep_id
-                break
-        else:
-            reps.append((color, uid))
-            mapping[uid] = uid
-    return mapping
-
-
 def _plane_families(annotation_slice: np.ndarray, atlas: Any) -> dict[int, int]:
     """region id -> family representative, for every id one plane contains.
 
@@ -432,9 +389,7 @@ def _plane_families(annotation_slice: np.ndarray, atlas: Any) -> dict[int, int]:
     return {uid: families[by_color[lut[uid]]] for uid in uids}
 
 
-def _merge_classified(
-    classified_2d: np.ndarray, atlas: Any, merge_eps: float = 40.0
-) -> np.ndarray:
+def _merge_classified(classified_2d: np.ndarray, atlas: Any, merge_eps: float = 40.0) -> np.ndarray:
     """Map region ids onto one representative id per merged family color.
 
     An image model paints one flat shade per area, so the atlas render's thin
@@ -444,18 +399,14 @@ def _merge_classified(
     this granularity; classification, markers, and the ledger keep the full
     palette.
     """
-    mapping = _family_mapping(
-        (int(u) for u in np.unique(classified_2d)), atlas, merge_eps
-    )
+    mapping = _family_mapping((int(u) for u in np.unique(classified_2d)), atlas, merge_eps)
     merged = np.zeros_like(classified_2d)
     for uid, rep_id in mapping.items():
         merged[classified_2d == uid] = rep_id
     return merged
 
 
-def _registration_rgb(
-    classified_2d: np.ndarray, atlas: Any, merge_eps: float = 40.0
-) -> np.ndarray:
+def _registration_rgb(classified_2d: np.ndarray, atlas: Any, merge_eps: float = 40.0) -> np.ndarray:
     """RGB for the REGISTRATION pair: exact palette colors at merged granularity."""
     return _classified_to_rgb(_merge_classified(classified_2d, atlas, merge_eps), atlas)
 
@@ -630,9 +581,7 @@ def _build_multichannel_parameter_object(
             param_map["AutomaticTransformInitialization"] = ("true",)
             param_map["AutomaticTransformInitializationMethod"] = ("CenterOfGravity",)
         else:
-            metrics = ("AdvancedMeanSquares",) * n_channels + (
-                "TransformBendingEnergyPenalty",
-            )
+            metrics = ("AdvancedMeanSquares",) * n_channels + ("TransformBendingEnergyPenalty",)
             # The data term is a SUM over channels, so the penalty must scale
             # with channel count to keep the same regularization strength the
             # 3-channel RGB setup was calibrated at (penalty 3.0 per 3
@@ -772,9 +721,7 @@ def _register_region_maps(
         (
             int(u)
             for u in np.unique(
-                np.concatenate(
-                    [atlas_classified.ravel(), generated_classified.ravel()]
-                )
+                np.concatenate([atlas_classified.ravel(), generated_classified.ravel()])
             )
         ),
         atlas,
@@ -992,9 +939,7 @@ def _elastix_report(
         jacobian_det = (1.0 + du_dx) * (1.0 + dv_dy) - du_dy * dv_dx
         folded = float(np.mean(jacobian_det[warped_fg] <= 0.0))
         if folded > _FOLD_FRACTION:
-            codes.append(
-                {"code": "WARP_FOLDS", "folded_fraction": round(folded, 4)}
-            )
+            codes.append({"code": "WARP_FOLDS", "folded_fraction": round(folded, 4)})
 
     if tissue_mask is not None:
         tissue_total = int(tissue_mask.sum())
@@ -1085,9 +1030,7 @@ def _write_forward_transform_to_disk(
         if idx == 0:
             pmap["InitialTransformParameterFileName"] = ["NoInitialTransform"]
         else:
-            pmap["InitialTransformParameterFileName"] = [
-                str(written[-1]).replace("\\", "/")
-            ]
+            pmap["InitialTransformParameterFileName"] = [str(written[-1]).replace("\\", "/")]
         _write_param_map_to_disk(pmap, path)
         written.append(path)
     return str(written[-1])
@@ -1121,14 +1064,12 @@ def _warp_slice_to_atlas(
     """
     import itk
 
-    _inverse_image, inverse_transform_parameters = (
-        itk.elastix_registration_method(  # type: ignore[attr-defined]
-            fixed_image_itk,
-            fixed_image_itk,
-            parameter_object=parameter_object,
-            initial_transform_parameter_file_name=forward_transform_params_path,
-            log_to_console=False,
-        )
+    _inverse_image, inverse_transform_parameters = itk.elastix_registration_method(  # type: ignore[attr-defined]
+        fixed_image_itk,
+        fixed_image_itk,
+        parameter_object=parameter_object,
+        initial_transform_parameter_file_name=forward_transform_params_path,
+        log_to_console=False,
     )
 
     warped_channels: list[np.ndarray] = []
@@ -1137,9 +1078,7 @@ def _warp_slice_to_atlas(
         warped = itk.transformix_filter(  # type: ignore[attr-defined]
             channel_image, inverse_transform_parameters
         )
-        warped_channels.append(
-            np.clip(itk.array_from_image(warped), 0, 255).astype(np.uint8)
-        )
+        warped_channels.append(np.clip(itk.array_from_image(warped), 0, 255).astype(np.uint8))
     return np.stack(warped_channels, axis=-1), inverse_transform_parameters
 
 
@@ -1233,9 +1172,7 @@ def _extract_visualign_markers(
             ny_pos = (y + float(dy) - origin_px[1]) * scale_to_slice
             markers.append([ox, oy, nx_pos, ny_pos])
 
-    logger.info(
-        "Extracted %d VisuAlign markers at %dpx field spacing", len(markers), spacing
-    )
+    logger.info("Extracted %d VisuAlign markers at %dpx field spacing", len(markers), spacing)
     return markers
 
 
@@ -1291,9 +1228,7 @@ def _normalized_masks(classified_2d: np.ndarray) -> dict[int, np.ndarray]:
     resized = cv2.resize(
         crop.astype(np.float32), (_GEN_GRID, _GEN_GRID), interpolation=cv2.INTER_NEAREST
     ).astype(classified_2d.dtype)
-    return {
-        int(uid): resized == int(uid) for uid in np.unique(resized) if int(uid) != 0
-    }
+    return {int(uid): resized == int(uid) for uid in np.unique(resized) if int(uid) != 0}
 
 
 def _ectopic_masks(
@@ -1440,9 +1375,7 @@ def generation_report(
     # legitimately be absent, so this is a ranking signal, never a flag.
     ref_total = sum(int(m.sum()) for m in ref_masks.values()) or 1
     missing = [
-        uid
-        for uid, m in ref_masks.items()
-        if m.sum() / ref_total >= 0.01 and uid not in gen_masks
+        uid for uid, m in ref_masks.items() if m.sum() / ref_total >= 0.01 and uid not in gen_masks
     ]
     report["families_missing"] = len(missing)
     if tissue_mask is not None and tissue_mask.any():

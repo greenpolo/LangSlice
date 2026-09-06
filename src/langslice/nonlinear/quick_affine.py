@@ -7,8 +7,8 @@ attempt was both slow (~15s cold-start) and fragile across modalities (the NCC
 metric chases noise when comparing histology staining patterns to atlas Nissl).
 Both problems vanish if we register *shapes* instead of intensities.
 
-The fit itself lives in :mod:`langslice.affine` (shared with the whole-brain
-``transforms`` step). All this module adds is the viewer's output format: warp
+The fit itself lives in :mod:`langslice.affine` (shared with the linear
+``fit_affine`` tool). All this module adds is the viewer's output format: warp
 the section RGB through the fitted affine and use the atlas root silhouette as
 the alpha channel, so the 3D viewer renders a brain-shaped sheet rather than a
 rectangular slab.

@@ -291,7 +291,7 @@ def test_build_atlas_root_mask_produces_binary_alpha_at_target_size(monkeypatch)
     binary -- bilinear interpolation would halo the 3D-viewer silhouette.
 
     The implementation now lives in `langslice.atlas.core.get_root_mask` (it is
-    an atlas accessor, and the whole-brain transform step needs it too); the
+    an atlas accessor, and the linear transform tools need it too); the
     name here is an alias, so this exercises both."""
     from langslice.atlas import core as atlas_core
     from langslice.nonlinear import image_gen_helpers
@@ -995,10 +995,15 @@ def test_classifier_treats_off_palette_pixels_as_background(monkeypatch):
                 "structure_id_path": [1, 2], "rgb_triplet": [0, 255, 0]},
         },
     )
-    monkeypatch.setattr(helpers, "position_mm_to_index", lambda a, p, plane="coronal": 0)
-    monkeypatch.setattr(helpers, "slice_axis_index", lambda ctx, plane: 0)
-    monkeypatch.setattr(helpers, "atlas_space_context", lambda a: SimpleNamespace())
-    monkeypatch.setattr(helpers, "orient_slice_for_display", lambda a, plane: a)
+    # the annotation slice lives in atlas.render now; patch it where it is defined
+    import langslice.atlas.render as atlas_render
+
+    monkeypatch.setattr(
+        atlas_render, "position_mm_to_index", lambda a, p, plane="coronal": 0
+    )
+    monkeypatch.setattr(atlas_render, "slice_axis_index", lambda ctx, plane: 0)
+    monkeypatch.setattr(atlas_render, "atlas_space_context", lambda a: SimpleNamespace())
+    monkeypatch.setattr(atlas_render, "orient_slice_for_display", lambda a, plane: a)
 
     rgb = np.array(
         [[[255, 255, 255], [250, 4, 6], [0, 0, 0], [0, 250, 10]]], dtype=np.uint8

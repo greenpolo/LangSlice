@@ -1,8 +1,8 @@
-"""JSON checkpoint for whole-brain estimation — the record of truth.
+"""JSON checkpoint for a linear run — the record of truth.
 
-The engine writes the full :class:`StackState` after every node, atomically
-(temp file + rename) so a crash mid-write cannot leave a truncated file.
-Resume = load the checkpoint and skip the nodes it lists as complete.
+Every write tool saves the full :class:`StackState` here, atomically (temp
+file + rename) so a crash mid-write cannot leave a truncated file. Resume =
+load the checkpoint and re-seed the agent with the state it had.
 """
 
 from __future__ import annotations
@@ -11,13 +11,13 @@ import json
 import os
 import tempfile
 
-from langslice.linear.whole_brain.state import StackState
+from langslice.linear.state import StackState
 
-CHECKPOINT_FILENAME = "brain_estimate.json"
+CHECKPOINT_FILENAME = "linear_state.json"
 
 
 def default_checkpoint_path(image_folder: str) -> str:
-    """``<image_folder>/brain_estimate.json``."""
+    """``<image_folder>/linear_state.json``."""
     return os.path.join(image_folder, CHECKPOINT_FILENAME)
 
 
