@@ -26,8 +26,14 @@ from langslice.affine import (
     denormalized_affine,
     normalized_physical_affine,
     physical_affine_matrix,
+    resize_long_edge,
 )
-from langslice.linear.atlas_fetch import ATLAS_LONG_EDGE, atlas_part, make_fetch_atlas
+from langslice.linear.atlas_fetch import (
+    ATLAS_LONG_EDGE,
+    atlas_part,
+    atlas_section,
+    make_fetch_atlas,
+)
 from langslice.linear.checkpoint import save_checkpoint
 from langslice.linear.deepslice import run_deepslice as _run_deepslice
 from langslice.linear.render import (
@@ -762,33 +768,30 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         Only the corrected index changes: positions and transforms are kept.
 
         Args:
-            new_order: Every section exactly once, by filename or by its
-                corrected index as it stands now, in the order the sections
-                were cut.
+            new_order: Every section filename exactly once, in the order the
+                sections were cut. Filenames, not corrected indices: the
+                indices are what this call changes.
 
         Returns:
             The rows it changed, plus the ids whose corrected index changed.
         """
         ids = [s.id for s in state.slices]
-        # Filenames or the corrected indices as they stand at this call.
-        resolved = [state.resolve(item) for item in new_order]
-        named = [record.id for record in resolved if record is not None]
-        if sorted(named) != sorted(ids) or len(named) != len(new_order):
+        # Filenames only: a corrected index is exactly what this call changes,
+        # so an index-addressed reorder can hit the wrong section next call.
+        if sorted(str(item) for item in new_order) != sorted(ids):
             return {
                 "status": "error",
                 "error": "NOT_A_PERMUTATION",
-                "missing_ids": [i for i in ids if i not in set(named)],
-                "unknown_ids": [
-                    str(item) for item, record in zip(new_order, resolved, strict=True)
-                    if record is None
-                ],
+                "missing_ids": [i for i in ids if i not in set(map(str, new_order))],
+                "unknown_ids": [str(i) for i in new_order if str(i) not in set(ids)],
                 "message": (
-                    f"new_order must list all {len(ids)} sections exactly once, "
-                    "by filename or by corrected index."
+                    f"new_order must list all {len(ids)} section filenames "
+                    "exactly once."
                 ),
             }
         snapshot()
-        moved = renumber([record for record in resolved if record is not None])
+        ordered = [state.by_id(str(item)) for item in new_order]
+        moved = renumber([record for record in ordered if record is not None])
         return {"moved": moved, **commit(*moved)}
 
     def move_slice(slice_id: str, after: str) -> dict[str, Any]:
@@ -1001,23 +1004,23 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         }
 
     def compare_placement(
-        slice_id: str,
-        positions_mm: list[float] = [],  # noqa: B006 — read, never mutated; ADK wants a value
+        entries: list[dict[str, Any]],
         mode: str = "side_by_side",
         zoom: list[float] = [],  # noqa: B006 — read, never mutated; ADK wants a value
         template_opacity: float = 0.0,
         outlines: str = "all",
     ) -> dict[str, Any]:
-        """Show one section against the atlas at candidate positions. Writes nothing.
+        """Show sections against the atlas at candidate positions. Writes nothing.
 
-        The section is drawn as corrected, at true physical scale, on the
-        same canvas as the atlas section at each position, so the two are
-        directly comparable; the atlas outlines are drawn over the section.
+        Each section is drawn as corrected, at true physical scale, on the
+        same canvas as the atlas section at each of its candidate positions,
+        so the two are directly comparable; the atlas outlines are drawn over
+        the section. At most 8 section-position pairs per call.
 
         Args:
-            slice_id: Filename or corrected index.
-            positions_mm: Positions along the slicing axis to compare against,
-                at most 8. Empty means the section's current position.
+            entries: ``[{"id": "<filename or corrected index>",
+                "positions_mm": [<mm>, ...]}]``. An empty or missing
+                ``positions_mm`` means that section's current position.
             mode: "side_by_side" (two images per position: the section, then
                 the atlas template, same scale and crop), "overlay" (the
                 section with the outlines on it), "checkerboard" (section and
@@ -1030,12 +1033,9 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                 outline only) or "none".
 
         Returns:
-            The positions compared, the calibration, and the images per
-            position in the order given.
+            The section-position pairs compared, in order, each with its
+            calibration, and the images per pair in that order.
         """
-        record = state.resolve(slice_id)
-        if record is None:
-            return {"status": "error", "error": "UNKNOWN_SLICE_IDS", "unknown": [slice_id]}
         view = str(mode or "side_by_side").strip().lower()
         if view not in VIEW_MODES:
             return {"status": "error", "error": "BAD_MODE", "modes": list(VIEW_MODES)}
@@ -1043,7 +1043,6 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         if layer not in OUTLINE_LAYERS:
             return {"status": "error", "error": "BAD_OUTLINES", "layers": list(OUTLINE_LAYERS)}
         try:
-            wanted = [float(value) for value in (positions_mm or [])]
             window = [float(value) for value in (zoom or [])]
             opacity = float(template_opacity)
         except (TypeError, ValueError):
@@ -1051,17 +1050,51 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         if window and len(window) != 4:
             return {"status": "error", "error": "BAD_ZOOM",
                     "expected": "[x0, y0, x1, y1] as fractions of the canvas"}
-        if not wanted:
-            if record.position_mm is None:
-                return {"status": "error", "error": "NO_POSITION", "id": record.id}
-            wanted = [float(record.position_mm)]
-        wanted = [min(pos_hi, max(pos_lo, value)) for value in wanted[:MAX_VIEW_SLICES]]
 
-        section = render_slice(ctx, record, long_edge=PREVIEW_LONG_EDGE)
-        um_per_px, source = calibrate(state, ctx, record, section)
+        # Resolve every pair first, so the errors name every problem at once.
+        pairs: list[tuple[SliceState, float]] = []
+        unknown: list[str] = []
+        unplaced: list[str] = []
+        for entry in entries or []:
+            if not isinstance(entry, dict):
+                continue
+            record = state.resolve(entry.get("id", ""))
+            if record is None:
+                unknown.append(str(entry.get("id", "")))
+                continue
+            try:
+                wanted = [float(value) for value in (entry.get("positions_mm") or [])]
+            except (TypeError, ValueError):
+                return {"status": "error", "error": "BAD_ARGS", "id": record.id}
+            if not wanted:
+                if record.position_mm is None:
+                    unplaced.append(record.id)
+                    continue
+                wanted = [float(record.position_mm)]
+            pairs.extend((record, min(pos_hi, max(pos_lo, value))) for value in wanted)
+        if not pairs:
+            return {
+                "status": "error",
+                "error": (
+                    "UNKNOWN_SLICE_IDS" if unknown
+                    else "NO_POSITION" if unplaced
+                    else "BAD_ARGS"
+                ),
+                "unknown": unknown,
+                "no_position": unplaced,
+            }
+        dropped = len(pairs) - MAX_VIEW_SLICES
+        pairs = pairs[:MAX_VIEW_SLICES]
+
+        sections: dict[str, tuple[Any, float, str]] = {}
+        compared: list[dict[str, Any]] = []
         parts: list[types.Part] = []
         failed: list[dict[str, Any]] = []
-        for position in wanted:
+        for record, position in pairs:
+            if record.id not in sections:
+                section = render_slice(ctx, record, long_edge=PREVIEW_LONG_EDGE)
+                sections[record.id] = (section, *calibrate(state, ctx, record, section))
+            section, um_per_px, source = sections[record.id]
             try:
                 images, _ = physical_views(
                     section, um_per_px, ctx.atlas, position, cast(Plane, state.plane),
@@ -1071,43 +1104,66 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                     long_edge=OVERLAY_LONG_EDGE,
                 )
             except Exception as exc:
-                failed.append({"position_mm": round(position, 3), "message": str(exc)})
+                failed.append({"id": record.id, "position_mm": round(position, 3),
+                               "message": str(exc)})
                 continue
             parts.extend(image_to_part(image) for image in images)
+            compared.append({
+                "id": record.id,
+                "position_mm": round(position, 3),
+                "current_position_mm": (
+                    None if record.position_mm is None else round(record.position_mm, 3)
+                ),
+                "calibration": {"um_per_px": round(um_per_px, 3), "source": source},
+            })
         per = 2 if view == "side_by_side" else 1
-        return {
+        result: dict[str, Any] = {
             "status": "ok" if parts else "error",
             **({} if parts else {"error": "RENDER_FAILED"}),
-            "id": record.id,
-            "current_position_mm": (
-                None if record.position_mm is None else round(record.position_mm, 3)
-            ),
-            "positions_mm": [round(value, 3) for value in wanted],
+            "compared": compared,
+            "unknown_ids": unknown,
+            "no_position": unplaced,
             "view": {"mode": view, "zoom": window or [0.0, 0.0, 1.0, 1.0], "outlines": layer},
-            "calibration": {"um_per_px": round(um_per_px, 3), "source": source},
             "render_failed": failed,
             "description": (
-                f"{record.id} against the atlas at "
-                + ", ".join(f"{value:.2f} mm" for value in wanted)
-                + f", {per} image(s) per position in that order, each captioned "
-                "with the section and the position it is compared with."
+                "Compared, in order: "
+                + ", ".join(f"{row['id']} at {row['position_mm']:.2f} mm" for row in compared)
+                + f"; {per} image(s) per pair in that order, each captioned with "
+                "the section and the position it is compared with."
             ),
             TOOL_MEDIA_PARTS_KEY: parts,
         }
+        if dropped > 0:
+            result["truncated"] = True
+            result["dropped_pairs"] = dropped
+        return result
 
     def view_stack() -> dict[str, Any]:
-        """The whole stack ordered by written position, plus a spacing plot.
+        """The whole stack ordered by written position, each over its atlas match.
 
         Every section as its own labelled image, in the order of the positions
-        written so far (unplaced sections last), the label carrying the
-        corrected index, filename, position and the signed distance to the
-        next placed section; then one plot of position against corrected
-        index (damaged sections in red).
+        written so far (unplaced sections last); a placed section has the
+        atlas section at its position pasted directly beneath it in the same
+        picture. The label carries the corrected index, filename, position and
+        the signed distance to the next placed section. Then one plot of
+        position against corrected index (damaged sections in red).
 
         Returns:
             The rows in that order and the images.
         """
-        parts = stack_image_parts(state, ctx, by_position=True)
+        def atlas_under(record: SliceState) -> Any:
+            if record.position_mm is None:
+                return None
+            try:
+                return resize_long_edge(
+                    atlas_section(ctx, state, float(record.position_mm), frame=True),
+                    ATLAS_LONG_EDGE,
+                )
+            except Exception as exc:
+                logger.warning("view_stack: atlas render failed for %s: %s", record.id, exc)
+                return None
+
+        parts = stack_image_parts(state, ctx, by_position=True, under=atlas_under)
         parts.append(types.Part.from_text(text="Position against corrected index:"))
         parts.append(image_to_part(spacing_plot(state)))
         ordered = sorted(
@@ -1118,8 +1174,9 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             "rows": ordered,
             "description": (
                 "Attached: every section in the order of its written position, "
-                "each preceded by its label, then a plot of position against "
-                "corrected index."
+                "each preceded by its label, with the atlas section at its "
+                "position pasted beneath it in the same image when it has one; "
+                "then a plot of position against corrected index."
             ),
             TOOL_MEDIA_PARTS_KEY: parts,
         }

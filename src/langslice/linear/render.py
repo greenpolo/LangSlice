@@ -8,6 +8,7 @@ are applied in one order everywhere: ROTATE first, then FLIP left-right.
 from __future__ import annotations
 
 import io
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any
@@ -287,12 +288,15 @@ def stack_image_parts(
     *,
     long_edge: int = SEED_IMAGE_LONG_EDGE,
     by_position: bool = False,
+    under: Callable[[SliceState], Image.Image | None] | None = None,
 ) -> list[types.Part]:
     """The whole stack as labelled text+image pairs, in corrected order.
 
     *by_position* orders the strip by written position instead (unplaced
     sections last) and puts each section's position and the signed distance
-    to the next placed one in its label.
+    to the next placed one in its label. *under* returns a second image to
+    paste beneath a section's own in the same picture (None for none), so a
+    section and its atlas match travel as ONE captioned image.
 
     Each section gets a one-line label — ``"<corrected index>: <filename>"``
     plus any flags — immediately followed by its own image, rendered through
@@ -340,14 +344,22 @@ def stack_image_parts(
         if flags:
             label += f"  [{'; '.join(flags)}]"
         parts.append(types.Part.from_text(text=label))
-        parts.append(
-            image_to_part(
-                caption(
-                    render_slice(ctx, record, long_edge=long_edge, frame=True), label
-                )
-            )
-        )
+        picture = render_slice(ctx, record, long_edge=long_edge, frame=True)
+        below = under(record) if under is not None else None
+        if below is not None:
+            picture = stacked(picture, below)
+        parts.append(image_to_part(caption(picture, label)))
     return parts
+
+
+def stacked(top: Image.Image, bottom: Image.Image) -> Image.Image:
+    """*top* over *bottom* on black, centred, a thin gap between."""
+    gap = 6
+    width = max(top.width, bottom.width)
+    out = Image.new("RGB", (width, top.height + gap + bottom.height), (0, 0, 0))
+    out.paste(top.convert("RGB"), ((width - top.width) // 2, 0))
+    out.paste(bottom.convert("RGB"), ((width - bottom.width) // 2, top.height + gap))
+    return out
 
 
 def _font(px: int) -> Any:

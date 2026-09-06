@@ -48,10 +48,10 @@ run can use:
 | `note`, `undo`, `redo` | always | run notes; snapshot undo where one tool call undoes as one step |
 | `mark_damaged` / `unmark_damaged` | always | agent-internal classification: an outline an affine cannot bite on |
 | `orient_slices` | `reorder` | flip and quarter-turn per section (`--no-flip` refuses the flip half); returns the changed sections as they now stand |
-| `reorder_slices` / `move_slice` | `reorder` | full permutation (by filename or corrected index) or one incremental move; corrected indices only, positions and transforms are kept |
+| `reorder_slices` / `move_slice` | `reorder` | full permutation (by filename) or one incremental move; corrected indices only, positions and transforms are kept |
 | `set_positions` | `position` | batch write, clamped to the atlas range; returns each written section beside the atlas at its new position |
-| `compare_placement` | `position` | one section against the atlas at the positions named (or its current one), on one physical-scale canvas; `mode`, `zoom`, `template_opacity`, `outlines` as on `adjust_transform`; writes nothing |
-| `view_stack` | `position` | every section in the order of its written position, labelled with position and the distance to the next, plus a position-vs-index plot; writes nothing |
+| `compare_placement` | `position` | sections against the atlas at the candidate positions named for each (or its current one), up to 8 pairs, on one physical-scale canvas; `mode`, `zoom`, `template_opacity`, `outlines` as on `adjust_transform`; writes nothing |
+| `view_stack` | `position` | every section in the order of its written position with the atlas at that position beneath it in the same image, labelled with position and the distance to the next, plus a position-vs-index plot; writes nothing |
 | `run_deepslice` | `--deepslice` | reports `UNAVAILABLE` until the optional extra lands |
 | `fit_position` | `--bayesian` | `oblique.fit_oblique` around a section's current position; writes nothing |
 | `set_cutting_angles` | `--angles` | stack-wide pitch/yaw; later fetches and previews follow |

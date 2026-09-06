@@ -38,17 +38,19 @@ TOOL_LINES: dict[str, str] = {
     "returns them rendered as they now stand; a section whose orientation "
     "changes loses its transform.",
     "reorder_slices": "sets the corrected order of the whole stack in one "
-    "call, by filename or corrected index; positions and transforms are kept.",
+    "call, by filename; positions and transforms are kept.",
     "move_slice": "moves one section in the corrected order; positions and "
     "transforms are kept.",
-    "compare_placement": "shows one section against the atlas at the "
-    "positions you name (or its current one) on one physical-scale canvas; "
+    "compare_placement": "shows sections against the atlas at the candidate "
+    "positions you name for each (or its current one), up to 8 pairs, on one "
+    "physical-scale canvas; "
     "`mode` is side_by_side, overlay, checkerboard, outlines, section or "
     "template, `zoom` is [x0, y0, x1, y1] of the canvas, `template_opacity` "
     "is 0..1 and `outlines` is all, outer or none; writes nothing.",
-    "view_stack": "every section in the order of its written position, "
-    "labelled with index, filename, position and the distance to the next, "
-    "plus a plot of position against corrected index; writes nothing.",
+    "view_stack": "every section in the order of its written position, the "
+    "atlas at its position beneath it in the same image, labelled with index, "
+    "filename, position and the distance to the next, plus a plot of position "
+    "against corrected index; writes nothing.",
     "set_positions": "writes positions for one or more sections, clamped to "
     "the atlas range, and returns each written section beside the atlas "
     "section at the position it was given.",

@@ -101,12 +101,12 @@ in any payload or prompt (see `lean-harness` history in `linear/CLAUDE.md`).
 | `note(text)` | always | append to the run notes. |
 | `undo()` / `redo()` | always | snapshot stack; a batch call undoes as one. |
 | `orient_slices([{id, flip?, rotate_deg?}])` | reorder.flip (flip) / reorder (rotate) | toggle flip, add rotation; returns each changed section rendered as it now stands (≤8). |
-| `reorder_slices(new_order)` | reorder | full permutation, by filename or corrected index; changes corrected indices only, positions and transforms are kept. |
+| `reorder_slices(new_order)` | reorder | full permutation, by filename (never by corrected index: the index is what it changes); changes corrected indices only, positions and transforms are kept. |
 | `move_slice(id, after)` | reorder | incremental move; same rule. |
 | `mark_damaged([{id, note}])` / unmark | always | agent-internal classification. |
 | `set_positions([{id, position_mm}])` | position | batch write, clamped to the atlas range; returns, per written section (≤8), the section beside the atlas section at the position it was given. |
-| `compare_placement(id, positions_mm=[], mode, zoom, template_opacity, outlines)` | position | the section on one physical-scale canvas with the atlas at each named position (≤8; empty = its current one), in any `VIEW_MODES` view with the outlines over it. Writes nothing. |
-| `view_stack()` | position | every section in the order of its written position, labelled with index, filename, position and the distance to the next, plus a plot of position against corrected index (damaged in red). Writes nothing. |
+| `compare_placement([{id, positions_mm?}], mode, zoom, template_opacity, outlines)` | position | each section on one physical-scale canvas with the atlas at each of its candidate positions (≤8 pairs per call; no positions = its current one), in any `VIEW_MODES` view with the outlines over it. Writes nothing. |
+| `view_stack()` | position | every section in the order of its written position with the atlas at its position pasted beneath it in the same image, labelled with index, filename, position and the distance to the next, plus a plot of position against corrected index (damaged in red). Writes nothing. |
 | `run_deepslice(ids?, allow_angle_change, keep=[ids])` | position.deepslice | positions (+ angles) for undamaged sections; UNAVAILABLE unless installed and plane/atlas supported. |
 | `fit_position(id, window_mm, angles?)` | position.bayesian | `oblique.fit_oblique` at the section's current position: best position (and angles) with score; writes nothing. |
 | `set_cutting_angles(pitch_deg, yaw_deg)` | transform.angles | stack-wide; subsequent atlas fetches and fits use them. |
