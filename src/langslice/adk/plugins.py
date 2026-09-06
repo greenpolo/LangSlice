@@ -16,10 +16,14 @@ from google.adk.plugins.base_plugin import BasePlugin
 from google.genai import types
 from PIL import Image
 
-# Three full sweeps' worth of atlas images (a full sweep is up to 8). At 12
-# two consecutive full sweeps already blew the budget, leaving the model
-# comparing candidates with only the newest call's pixels in front of it.
-DEFAULT_KEEP_LAST_TOOL_IMAGES = 24
+# Tool images kept in context, newest first. 24 was sized for 8-image atlas
+# sweeps; once every write returned its picture (16 per set_positions batch)
+# it stripped every call but the newest two, and GPT-6 Astra reported, twice,
+# that early tool results "said attached but showed no image" (2026-09-06).
+# 128 covers a whole positioning run (a 134-image request was probed fine);
+# what is dropped now says so in the tool result instead of claiming
+# attachment.
+DEFAULT_KEEP_LAST_TOOL_IMAGES = 128
 
 #: Media-bearing tool calls kept whatever the budget says. Two, so the model
 #: can always compare its newest sweep against the one before it — a single
@@ -60,14 +64,22 @@ def trim_stale_tool_images(
     if not drop:
         return contents
     out = list(contents)
+    note = (
+        f"dropped from context: older than the newest {keep_last} tool "
+        "images. Call again to see them."
+    )
     for ci, pi in drop:
         parts = list(out[ci].parts or [])
         stale = parts[pi]
         assert stale.function_response is not None
+        response = stale.function_response.response
+        # The result must not go on saying "attached" about pixels that are
+        # gone: the model reads that as a delivery failure.
+        honest = {**response, "images": note} if isinstance(response, dict) else response
         parts[pi] = stale.model_copy(
             update={
                 "function_response": stale.function_response.model_copy(
-                    update={"parts": None}
+                    update={"parts": None, "response": honest}
                 )
             }
         )

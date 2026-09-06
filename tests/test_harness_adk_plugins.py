@@ -183,11 +183,13 @@ def test_trim_keeps_newest_tool_images_and_user_images():
     # Oldest tool call stripped, newest two kept, histology untouched.
     assert [n_media(c) for c in out[1:]] == [0, 6, 6]
     assert out[0].parts is not None and out[0].parts[0].inline_data is not None
-    # JSON result survives on the stripped call.
+    # JSON result survives on the stripped call, and says its images are gone.
     stripped = out[1].parts
     assert stripped is not None
     fr = stripped[0].function_response
-    assert fr is not None and fr.response == {"status": "ok"}
+    assert fr is not None and fr.response["status"] == "ok"
+    assert "dropped from context" in fr.response["images"]
+    assert contents[1].parts[0].function_response.response == {"status": "ok"}
     # Input list and its contents are not mutated.
     assert sum(n_media(c) for c in contents[1:]) == 18
 
@@ -222,12 +224,18 @@ def test_trim_always_keeps_the_two_newest_calls_over_budget():
     assert _kept(out) == [0, 8, 8]
 
 
-def test_trim_default_budget_holds_three_full_sweeps():
-    assert DEFAULT_KEEP_LAST_TOOL_IMAGES == 24
-    contents = [_tool_turn(8), _tool_turn(8), _tool_turn(8)]
+def test_trim_default_budget_holds_a_whole_positioning_run():
+    """Two 8-image sweeps plus five 16-image set_positions batches: 96, kept.
+
+    At 24 that run kept only its newest two calls, and GPT-6 Astra reported
+    the older results as "attached but no image" in two debriefs.
+    """
+    assert DEFAULT_KEEP_LAST_TOOL_IMAGES == 128
+    contents = [_tool_turn(8), _tool_turn(8), *(_tool_turn(16) for _ in range(5))]
     assert trim_stale_tool_images(contents) is contents
-    # A fourth sweep pushes the oldest out, the rest stay.
-    assert _kept(trim_stale_tool_images([*contents, _tool_turn(8)])) == [0, 8, 8, 8]
+    # Three more batches push past 128: the oldest calls go, newest stay.
+    more = [*contents, *(_tool_turn(16) for _ in range(3))]
+    assert _kept(trim_stale_tool_images(more)) == [0, 0, 16, 16, 16, 16, 16, 16, 16, 16]
 
 
 def test_trim_drop_is_monotone_no_holes():
