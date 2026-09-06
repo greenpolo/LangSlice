@@ -212,3 +212,23 @@ def test_ingest_tools_and_emit_on_a_real_folder(tmp_path: Path):
     emit_results(state, ctx)
     written = json.loads(Path(spec.out).read_text())
     assert len(written["slices"]) == len(state.slices)
+
+
+def test_the_job_statement_states_the_alignment_frame_when_transforms_are_on(tmp_path: Path):
+    names = _make_stack(tmp_path, n=2)
+    del names
+    on = _spec(tmp_path, tasks=["transform"])
+    off = _spec(tmp_path, tasks=["position"])
+    from langslice.linear.engine import build_context, ingest
+    from langslice.linear.prompt import build_job_statement
+    from langslice.linear.toolbox import build_tools
+
+    for spec, expected in ((on, True), (off, False)):
+        ctx = build_context(spec, emit=lambda _m: None, atlas_loader=lambda _n: _ATLAS)
+        state = ingest(spec, ctx)
+        box = build_tools(state, ctx, spec)
+        text = build_job_statement(
+            spec, state, tool_names=box.names, species="mouse", pos_lo=0.0, pos_hi=10.0,
+            axis_ends=("anterior", "posterior"),
+        )
+        assert ("TRUE physical size" in text) is expected
