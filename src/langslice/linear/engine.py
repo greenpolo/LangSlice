@@ -66,7 +66,9 @@ DEBRIEF_PROMPT = (
     "awkward to use as specified?\n"
     "3. What did you have to work around?\n"
     "4. Which tool environments you know does this resemble, and what did "
-    "those have that this lacks?"
+    "those have that this lacks?\n"
+    "5. Your wishlist: what would you want in this environment to do this "
+    "job well?"
 )
 
 
