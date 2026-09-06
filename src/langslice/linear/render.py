@@ -282,9 +282,17 @@ def slice_flags(record: SliceState) -> list[str]:
 
 
 def stack_image_parts(
-    state: StackState, ctx: EngineContext, *, long_edge: int = SEED_IMAGE_LONG_EDGE
+    state: StackState,
+    ctx: EngineContext,
+    *,
+    long_edge: int = SEED_IMAGE_LONG_EDGE,
+    by_position: bool = False,
 ) -> list[types.Part]:
     """The whole stack as labelled text+image pairs, in corrected order.
+
+    *by_position* orders the strip by written position instead (unplaced
+    sections last) and puts each section's position and the signed distance
+    to the next placed one in its label.
 
     Each section gets a one-line label — ``"<corrected index>: <filename>"``
     plus any flags — immediately followed by its own image, rendered through
@@ -298,19 +306,37 @@ def stack_image_parts(
     into the image (:func:`caption`), so it survives any transport that drops
     the text part next to an attachment.
     """
+    ordered = list(state.in_order())
+    if by_position:
+        ordered.sort(key=lambda r: (r.position_mm is None, r.position_mm or 0.0))
     parts: list[types.Part] = [
         types.Part.from_text(
             text=(
                 f"The {len(state.slices)} sections of the stack follow, in "
-                "their current corrected order, one image each. Every image is "
-                "preceded by its label '<index>: <filename>' and is rendered "
-                "with any rotation and flip already applied."
+                + (
+                    "the order of their written positions (unplaced last)"
+                    if by_position
+                    else "their current corrected order"
+                )
+                + ", one image each. Every image is preceded by its label "
+                "'<index>: <filename>' and is rendered with any rotation and "
+                "flip already applied."
             )
         )
     ]
-    for record in state.in_order():
+    for slot, record in enumerate(ordered):
         flags = slice_flags(record)
         label = f"{record.index_corrected}: {record.id}"
+        if by_position:
+            following = next(
+                (r for r in ordered[slot + 1 :] if r.position_mm is not None), None
+            )
+            if record.position_mm is None:
+                label += "  (no position)"
+            else:
+                label += f"  {record.position_mm:.2f} mm"
+                if following is not None and following.position_mm is not None:
+                    label += f" ({following.position_mm - record.position_mm:+.2f} to next)"
         if flags:
             label += f"  [{'; '.join(flags)}]"
         parts.append(types.Part.from_text(text=label))
@@ -322,6 +348,60 @@ def stack_image_parts(
             )
         )
     return parts
+
+
+def _font(px: int) -> Any:
+    try:
+        return ImageFont.load_default(size=px)
+    except TypeError:
+        return ImageFont.load_default()
+
+
+def spacing_plot(state: StackState, *, size: tuple[int, int] = (768, 384)) -> Image.Image:
+    """Written position against corrected index, one dot per placed section.
+
+    Data only: axes, ticks in millimetres, a dot per section and a line
+    through the placed ones in corrected order.
+    """
+    width, height = size
+    img = Image.new("RGB", size, (255, 255, 255))
+    draw = ImageDraw.Draw(img)
+    left, right, top, bottom = 56, width - 16, 16, height - 36
+    rows = list(state.in_order())
+    placed = [r for r in rows if r.position_mm is not None]
+    draw.rectangle((left, top, right, bottom), outline=(0, 0, 0))
+    draw.text((left, bottom + 8), "corrected index", fill=(0, 0, 0), font=_font(14))
+    draw.text((4, top), "mm", fill=(0, 0, 0), font=_font(14))
+    if not placed:
+        return img
+    values = [float(r.position_mm or 0.0) for r in placed]
+    lo, hi = min(values), max(values)
+    if hi - lo < 1e-6:
+        lo, hi = lo - 0.5, hi + 0.5
+    n = max(len(rows) - 1, 1)
+
+    def at(record: SliceState) -> tuple[float, float]:
+        x = left + (right - left) * record.index_corrected / n
+        y = bottom - (bottom - top) * ((record.position_mm or 0.0) - lo) / (hi - lo)
+        return x, y
+
+    for tick in range(5):
+        mm = lo + (hi - lo) * tick / 4
+        y = bottom - (bottom - top) * tick / 4
+        draw.line((left - 4, y, left, y), fill=(0, 0, 0))
+        draw.text((6, y - 7), f"{mm:.1f}", fill=(0, 0, 0), font=_font(12))
+    for index in range(0, len(rows), max(1, len(rows) // 8)):
+        x = left + (right - left) * index / n
+        draw.line((x, bottom, x, bottom + 4), fill=(0, 0, 0))
+        draw.text((x - 6, bottom + 22), str(index), fill=(0, 0, 0), font=_font(12))
+    points = [at(r) for r in sorted(placed, key=lambda r: r.index_corrected)]
+    if len(points) > 1:
+        draw.line(points, fill=(160, 160, 160), width=1)
+    for record in placed:
+        x, y = at(record)
+        colour = (200, 0, 0) if record.damaged else (0, 0, 0)
+        draw.ellipse((x - 3, y - 3, x + 3, y + 3), fill=colour)
+    return img
 
 
 # --- the physical overlay ------------------------------------------------

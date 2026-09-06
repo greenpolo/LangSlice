@@ -155,6 +155,20 @@ def test_writes_return_the_picture_of_what_they_did(tmp_path: Path):
     assert "s1.png" in turned["description"]
 
 
+def test_view_stack_orders_by_position_and_plots_it(tmp_path: Path):
+    from langslice.adk import TOOL_MEDIA_PARTS_KEY
+
+    state, _, box = _box(tmp_path, placed=True)
+    state.by_id("s0.png").position_mm = 9.0  # placed after the others
+    result = _tool(box, "view_stack")()
+    assert [row["id"] for row in result["rows"]][-1] == "s0.png"
+    parts = result[TOOL_MEDIA_PARTS_KEY]
+    labels = [part.text for part in parts if part.text and ": s" in part.text]
+    assert labels[-1].startswith("0: s0.png  9.00 mm")
+    assert "to next)" in labels[0]
+    assert sum(1 for part in parts if part.inline_data is not None) == 6  # 5 sections + plot
+
+
 def test_a_write_returns_only_the_rows_it_touched(tmp_path: Path):
     state, _, box = _box(tmp_path, placed=True)
     result = _tool(box, "set_positions")(
@@ -201,6 +215,9 @@ def test_reorder_keeps_positions_and_transforms(tmp_path: Path):
 
     assert [s.id for s in state.in_order()] == order
     assert sorted(result["moved"]) == ["s1.png", "s2.png"]  # index changed
+    # Corrected indices, as they stand at the call, are the other address.
+    assert _tool(box, "reorder_slices")(["0", "2", "1", "3", "4"])["status"] == "ok"
+    assert [s.id for s in state.in_order()] == ["s0.png", "s1.png", "s2.png", "s3.png", "s4.png"]
     assert "cleared_positions" not in result
     # Nothing but the corrected index moves; the submit gate is what holds
     # order and position together.
