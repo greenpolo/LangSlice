@@ -83,6 +83,29 @@ _AXIS_PAIR = {"a": "ap", "p": "pa", "s": "si", "i": "is", "l": "lr", "r": "rl"}
 _AXIS_KIND = {"ap": "ap", "pa": "ap", "si": "si", "is": "si", "lr": "lr", "rl": "lr"}
 
 
+#: Anatomical name of each end of an axis, keyed by the letter naming where
+#: the axis STARTS: 'a' means it runs from anterior to posterior.
+_AXIS_ENDS = {
+    "a": ("anterior", "posterior"),
+    "p": ("posterior", "anterior"),
+    "s": ("superior", "inferior"),
+    "i": ("inferior", "superior"),
+    "l": ("left", "right"),
+    "r": ("right", "left"),
+}
+
+
+def slice_axis_ends(context: AtlasSpaceContext, plane: Plane) -> tuple[str, str]:
+    """(low, high) anatomical ends of the axis normal to *plane*.
+
+    Positions along that axis are measured from index 0, so the first name is
+    what 0 mm sits at and the second is what positions increase toward. A
+    coronal plane on a supported atlas always answers ("anterior",
+    "posterior") — :func:`atlas_space_context` refuses any other AP order.
+    """
+    return _AXIS_ENDS[context.space.origin[slice_axis_index(context, plane)]]
+
+
 def native_slice_axes(context: AtlasSpaceContext, plane: Plane) -> tuple[str, str]:
     """(rows, cols) anatomical directions of a rendered slice.
 

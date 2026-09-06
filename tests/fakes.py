@@ -68,7 +68,7 @@ class EllipseAtlas:
 class SlabAtlas:
     """A 20-slice, 1 mm-per-voxel atlas with a ``root`` tissue shell.
 
-    Minimal generic atlas fixture for the whole-brain positioning tests:
+    Minimal generic atlas fixture for the linear tests:
     enough shape (annotation, template, resolution, orientation) for
     ``ingest`` to compute a position range and render a contact sheet.
     """
@@ -99,80 +99,12 @@ def ellipse_section(
     return Image.fromarray(canvas, mode="RGB")
 
 
-class _ScriptedSubmitLlm(BaseLlm):
-    """A fake BaseLlm that scripts broad sweep -> narrow sweep -> submit_estimate.
+class _StackLlm(BaseLlm):
+    """A fake BaseLlm that drives one linear stack session to ``submit``.
 
-    The step is inferred from how many function-response parts are already
-    present in the request. This avoids needing instance state on the fake and
-    keeps behaviour deterministic across retries.
-    """
-
-    async def generate_content_async(
-        self, llm_request: LlmRequest, stream: bool = False
-    ) -> AsyncGenerator[LlmResponse, None]:
-        del stream  # unused; we always emit one response
-        n_responses = _count_function_responses(llm_request)
-
-        if n_responses == 0:
-            # Turn 1: broad sweep
-            call = types.Part.from_function_call(
-                name="fetch_atlas",
-                args={"positions_mm": [2.0, 4.0, 6.0, 8.0, 10.0]},
-            )
-        elif n_responses == 1:
-            # Turn 2: narrow sweep around a plausible candidate
-            call = types.Part.from_function_call(
-                name="fetch_atlas",
-                args={"positions_mm": [5.6, 5.8, 6.0, 6.2, 6.4]},
-            )
-        else:
-            # Turn 3+: submit. The validator may reject the first few attempts
-            # if gating is strict, but will relax after enough attempts.
-            call = types.Part.from_function_call(
-                name="submit_estimate",
-                args={
-                    "position_mm": 6.0,
-                    "reasoning": "Broad sweep placed slice near 6mm; narrow sweep confirmed.",
-                },
-            )
-
-        yield LlmResponse(
-            content=types.Content(role="model", parts=[call]),
-            partial=False,
-            turn_complete=True,
-        )
-
-
-_CLEAN_STACK_SUBMISSIONS: dict[str, dict[str, Any]] = {
-    "submit_survey": {
-        "axis_directions": {"ap": "anterior_to_posterior"},
-        "interval_breaks": [],
-        "notes": [],
-        "clean": True,
-        "summary": "Stack is consistent.",
-    },
-    "submit_positions": {
-        "interval_breaks": [],
-        "notes": [],
-        "summary": "Placed the stack from two key sections.",
-    },
-    "submit_review": {
-        "approved": True,
-        "notes": [],
-        "summary": "Stack is consistent end to end.",
-    },
-}
-
-
-class _CleanStackLlm(BaseLlm):
-    """A fake BaseLlm that submits a clean result for any whole-brain step.
-
-    Which step it is in is read off the tools the request declares, so one
-    fake drives the survey and positioning agents alike.
-
-    ``positions`` (id -> mm) is the positioning step's script: the stack now
-    reaches that step unplaced, so the fake writes those positions with
-    ``set_positions`` on its first turn and submits on the next.
+    ``positions`` (id -> mm) is written with ``set_positions`` on the first
+    turn — ``submit`` refuses a stack with any section still unplaced — and the
+    submission follows on the next.
     """
 
     positions: dict[str, float] | None = None
@@ -196,16 +128,13 @@ class _CleanStackLlm(BaseLlm):
                     ]
                 },
             )
+        elif "submit" in available:
+            part = types.Part.from_function_call(
+                name="submit",
+                args={"summary": "Placed the stack.", "notes": [], "interval_breaks": []},
+            )
         else:
-            name = next(
-                (tool for tool in _CLEAN_STACK_SUBMISSIONS if tool in available), None
-            )
-            args = dict(_CLEAN_STACK_SUBMISSIONS[name]) if name is not None else {}
-            part = (
-                types.Part.from_function_call(name=name, args=args)
-                if name is not None
-                else types.Part.from_text(text="Nothing to submit.")
-            )
+            part = types.Part.from_text(text="Nothing to submit.")
         yield LlmResponse(
             content=types.Content(role="model", parts=[part]),
             partial=False,
@@ -213,19 +142,14 @@ class _CleanStackLlm(BaseLlm):
         )
 
 
-def install_fake_adk_model_clean_stack(
+def install_fake_adk_model_stack(
     monkeypatch: Any, positions: dict[str, float] | None = None
 ) -> None:
-    """Patch LLMRegistry.new_llm so whole-brain agent steps submit at once.
-
-    Pass *positions* (slice id -> mm) when the run reaches the positioning
-    step: it arrives unplaced, and ``submit_positions`` refuses a stack with
-    any section still missing a position.
-    """
+    """Patch LLMRegistry.new_llm so a linear session submits at once."""
     from google.adk.models.registry import LLMRegistry
 
     def _fake_new_llm(model: str) -> BaseLlm:
-        return _CleanStackLlm(model=model, positions=positions)
+        return _StackLlm(model=model, positions=positions)
 
     monkeypatch.setattr(LLMRegistry, "new_llm", staticmethod(_fake_new_llm))
 
@@ -238,19 +162,3 @@ def _count_function_responses(llm_request: LlmRequest) -> int:
             if getattr(part, "function_response", None) is not None:
                 count += 1
     return count
-
-
-def install_fake_adk_model_scripted_submit(monkeypatch: Any) -> None:
-    """Patch LLMRegistry.new_llm so any ``model=<string>`` resolves to the fake.
-
-    The resulting agent will, over the course of a session:
-      1. call fetch_atlas with a broad sweep
-      2. call fetch_atlas with a narrow sweep
-      3. call submit_estimate
-    """
-    from google.adk.models.registry import LLMRegistry
-
-    def _fake_new_llm(model: str) -> BaseLlm:
-        return _ScriptedSubmitLlm(model=model)
-
-    monkeypatch.setattr(LLMRegistry, "new_llm", staticmethod(_fake_new_llm))

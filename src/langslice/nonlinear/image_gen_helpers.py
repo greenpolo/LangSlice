@@ -5,21 +5,17 @@ from __future__ import annotations
 import logging
 import tempfile
 import time
-from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 from PIL import Image
 
-from langslice.atlas import position_mm_to_index
-from langslice.atlas.core import get_root_mask, orient_slice_for_display
+from langslice.atlas.core import get_root_mask
 from langslice.atlas.recolor import active_palette, color_lut
-from langslice.space import (
-    Plane,
-    atlas_space_context,
-    slice_axis_index,
-)
+from langslice.atlas.render import annotation_slice as _annotation_slice
+from langslice.atlas.render import family_mapping as _family_mapping
+from langslice.space import Plane, atlas_space_context, slice_axis_index
 
 logger = logging.getLogger(__name__)
 
@@ -36,33 +32,6 @@ _RENDER_LONG_EDGE = 2048
 
 #: Width of an ARA-style leaf delineation line, at a 2048px canvas.
 _LEAF_BORDER_PX = 2.0
-
-
-def _annotation_slice(
-    atlas: Any,
-    position_mm: float,
-    *,
-    plane: Plane = "coronal",
-    pitch_deg: float = 0.0,
-    yaw_deg: float = 0.0,
-) -> np.ndarray:
-    """The atlas annotation at *position_mm*, oriented for display.
-
-    With a non-zero cutting angle the plane is resliced obliquely instead of
-    taken flat off the voxel grid. Measured on the LSD_910 hand
-    registrations, whose block was cut at 4 degrees: matching the plane is
-    worth far more than any fit tuning (fit-only family dice 0.93 -> 0.96,
-    boundary p95 34px -> 9px over 33 slices).
-    """
-    if pitch_deg or yaw_deg:
-        from langslice.oblique import sample_oblique_annotation
-
-        return sample_oblique_annotation(atlas, position_mm, plane, pitch_deg, yaw_deg)
-    idx = position_mm_to_index(atlas, position_mm, plane=plane)
-    axis = slice_axis_index(atlas_space_context(atlas), plane)
-    return orient_slice_for_display(
-        np.asarray(np.take(atlas.annotation, idx, axis=axis)), plane
-    )
 
 
 def _generate_colored_region_slice(
@@ -276,30 +245,6 @@ def _classified_to_rgb(classified_2d: np.ndarray, atlas: Any) -> np.ndarray:
             continue
         rgb[classified_2d == uid_int] = lut.get(uid_int, (128, 128, 128))
     return rgb
-
-
-def _family_mapping(
-    uids: Iterable[int], atlas: Any, merge_eps: float = 40.0
-) -> dict[int, int]:
-    """region id -> representative id of its merged color family.
-
-    Deterministic in the id set it is given: pass the ids of every map that
-    has to share one vocabulary (e.g. a generated map and the atlas render),
-    or the two get different representatives for the same family.
-    """
-    lut = color_lut(atlas)
-    reps: list[tuple[tuple[int, int, int], int]] = []
-    mapping: dict[int, int] = {}
-    for uid in sorted(int(u) for u in uids if int(u) != 0):
-        color = lut.get(uid, (128, 128, 128))
-        for rep_color, rep_id in reps:
-            if sum((a - b) ** 2 for a, b in zip(color, rep_color, strict=False)) <= merge_eps**2:
-                mapping[uid] = rep_id
-                break
-        else:
-            reps.append((color, uid))
-            mapping[uid] = uid
-    return mapping
 
 
 def _merge_classified(

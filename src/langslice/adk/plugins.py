@@ -99,7 +99,7 @@ class ModelCallPacingPlugin(BasePlugin):
 def part_summary(part: types.Part) -> dict[str, Any]:
     """Describe a part without copying its payload (media stays out of traces).
 
-    Also used by the whole-brain session tracer, which passes
+    Also used by the linear session tracer, which passes
     ``FunctionResponsePart``s here — same duck-typed attributes.
     """
     inline = getattr(part, "inline_data", None)

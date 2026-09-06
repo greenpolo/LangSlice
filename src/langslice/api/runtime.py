@@ -10,8 +10,6 @@ from pathlib import Path
 from langslice.api.models import (
     EngineLogEvent,
     EngineProgressEvent,
-    EstimateRequest,
-    EstimateResult,
     ExportRequest,
     ExportResult,
     QuickAffineRequest,
@@ -71,69 +69,6 @@ def get_version() -> VersionResult:
     import langslice
 
     return VersionResult(version=langslice.__version__)
-
-
-def run_estimate(request: EstimateRequest, emit: EngineEmit | None = None) -> EstimateResult:
-    with _preserve_runtime_state():
-        from PIL import Image
-
-        from langslice.image_prep import (
-            adaptive_preprocess,
-            normalize_image,
-            prepare_image_for_vlm,
-        )
-        from langslice.linear import estimate_position
-        from langslice.providers import vlm_config
-
-        if request.endpoint:
-            os.environ["LANGSLICE_ENDPOINT"] = request.endpoint
-
-        debug_dir = request.output_dir
-        if debug_dir:
-            Path(debug_dir).mkdir(parents=True, exist_ok=True)
-            os.environ["LANGSLICE_VLM_DEBUG_DIR"] = debug_dir
-
-        _progress(emit, f"Loading image: {request.image_path}", stage="estimate")
-        raw_image = Image.open(request.image_path)
-        image = prepare_image_for_vlm(normalize_image(raw_image)).image
-        if request.preprocess == "auto":
-            image = adaptive_preprocess(image)
-
-        if canonical_provider(request.provider) == "openai-api":
-            import langslice.providers.openai_config as openai_config
-
-            model_name = request.model or openai_config.get_openai_model()
-        else:
-            model_name = request.model or vlm_config.MODEL_NAME
-            if request.temperature is not None:
-                vlm_config.set_temperature(request.temperature)
-            if request.thinking is not None:
-                vlm_config.set_thinking_level(request.thinking)
-
-        _log(emit, f"Running estimate provider={request.provider}")
-
-        def on_progress(message: str) -> None:
-            _progress(emit, message, stage="estimate")
-
-        result = estimate_position(
-            image=image,
-            atlas_name=request.atlas,
-            plane=request.plane,
-            on_progress=on_progress,
-            model_name=model_name,
-            max_iterations=request.max_iterations,
-            media_resolution=request.media_resolution,
-            thinking=request.thinking,
-            temperature=request.temperature,
-            apply_clahe=False,
-            debug_dir=debug_dir,
-        )
-
-        return EstimateResult(
-            position_mm=float(result.position_mm),
-            reasoning=str(result.reasoning),
-            debug_dir=result.debug_dir,
-        )
 
 
 def run_register(request: RegisterRequest, emit: EngineEmit | None = None) -> RegisterResult:

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import builtins
 import os
 from types import SimpleNamespace
 
@@ -8,7 +7,7 @@ import pytest
 from PIL import Image
 
 from langslice.api import runtime
-from langslice.api.models import EstimateRequest, RegisterRequest
+from langslice.api.models import RegisterRequest
 
 
 def _stub_image_prep(monkeypatch) -> None:  # noqa: ANN001
@@ -84,87 +83,6 @@ def test_run_register_surfaces_artifact_paths_from_metadata(monkeypatch) -> None
     assert result.slice_warped_to_atlas_path == "/tmp/inverse_slice.png"
     assert result.slice_atlas_border_overlay_path == "/tmp/inverse_border.png"
     assert result.inverse_warp_status == "ok"
-
-
-def test_run_estimate_tool_use_forwards_on_progress_to_estimator(monkeypatch) -> None:  # noqa: ANN001
-    _stub_image_prep(monkeypatch)
-    monkeypatch.setattr("langslice.providers.vlm_config.MODEL_NAME", "fake-model")
-
-    def fake_estimate_position(**kwargs):  # noqa: ANN003
-        kwargs["on_progress"]("tool-use progress")
-        return SimpleNamespace(position_mm=1.0, reasoning="ok", debug_dir=None)
-
-    monkeypatch.setattr("langslice.linear.estimate_position", fake_estimate_position)
-
-    events = []
-    request = EstimateRequest(
-        image_path="slice.png",
-        atlas="allen_mouse_25um",
-    )
-    runtime.run_estimate(request, emit=events.append)
-    progress_messages = [event.message for event in events if event.kind == "progress"]
-    assert any("tool-use progress" == msg for msg in progress_messages)
-
-
-def test_run_estimate_restores_runtime_globals_after_success(monkeypatch) -> None:  # noqa: ANN001
-    _stub_image_prep(monkeypatch)
-    monkeypatch.setattr("langslice.providers.vlm_config.MODEL_NAME", "fake-model")
-    monkeypatch.setattr("langslice.providers.vlm_config.TEMPERATURE", 0.7)
-    monkeypatch.setattr("langslice.providers.vlm_config.THINKING_LEVEL", "HIGH")
-    _stub_vlm_mutators(monkeypatch)
-    monkeypatch.setenv("LANGSLICE_ENDPOINT", "http://prior-endpoint")
-    monkeypatch.setenv("LANGSLICE_VLM_DEBUG_DIR", "prior-debug")
-    monkeypatch.setattr(
-        "langslice.linear.estimate_position",
-        lambda **_kwargs: SimpleNamespace(position_mm=1.0, reasoning="ok", debug_dir=None),
-    )
-
-    request = EstimateRequest(
-        image_path="slice.png",
-        atlas="allen_mouse_25um",
-        endpoint="http://new-endpoint",
-        output_dir="new-debug",
-        temperature=0.1,
-        thinking="LOW",
-    )
-    runtime.run_estimate(request)
-    assert os.environ["LANGSLICE_ENDPOINT"] == "http://prior-endpoint"
-    assert os.environ["LANGSLICE_VLM_DEBUG_DIR"] == "prior-debug"
-    import langslice.providers.vlm_config as vlm_config
-
-    assert vlm_config.TEMPERATURE == 0.7
-    assert vlm_config.THINKING_LEVEL == "HIGH"
-
-
-def test_run_estimate_restores_runtime_globals_after_exception(monkeypatch) -> None:  # noqa: ANN001
-    _stub_image_prep(monkeypatch)
-    monkeypatch.setattr("langslice.providers.vlm_config.MODEL_NAME", "fake-model")
-    monkeypatch.setattr("langslice.providers.vlm_config.TEMPERATURE", 0.7)
-    monkeypatch.setattr("langslice.providers.vlm_config.THINKING_LEVEL", "HIGH")
-    _stub_vlm_mutators(monkeypatch)
-    monkeypatch.setenv("LANGSLICE_ENDPOINT", "http://prior-endpoint")
-    monkeypatch.setenv("LANGSLICE_VLM_DEBUG_DIR", "prior-debug")
-
-    def boom(**_kwargs):  # noqa: ANN003
-        raise RuntimeError("estimate failed")
-
-    monkeypatch.setattr("langslice.linear.estimate_position", boom)
-    request = EstimateRequest(
-        image_path="slice.png",
-        atlas="allen_mouse_25um",
-        endpoint="http://new-endpoint",
-        output_dir="new-debug",
-        temperature=0.1,
-        thinking="LOW",
-    )
-    with pytest.raises(RuntimeError, match="estimate failed"):
-        runtime.run_estimate(request)
-    assert os.environ["LANGSLICE_ENDPOINT"] == "http://prior-endpoint"
-    assert os.environ["LANGSLICE_VLM_DEBUG_DIR"] == "prior-debug"
-    import langslice.providers.vlm_config as vlm_config
-
-    assert vlm_config.TEMPERATURE == 0.7
-    assert vlm_config.THINKING_LEVEL == "HIGH"
 
 
 def test_run_register_restores_runtime_globals_after_exception(monkeypatch) -> None:  # noqa: ANN001
@@ -250,26 +168,3 @@ def test_run_register_restores_runtime_globals_after_success(monkeypatch) -> Non
     assert vlm_config.THINKING_LEVEL == "HIGH"
 
 
-def test_run_estimate_never_imports_image_gen_module(monkeypatch) -> None:  # noqa: ANN001
-    """The image-gen estimation module is gone; estimate always uses tool-use."""
-    _stub_image_prep(monkeypatch)
-    monkeypatch.setattr("langslice.providers.vlm_config.MODEL_NAME", "fake-model")
-    monkeypatch.setattr(
-        "langslice.linear.estimate_position",
-        lambda **_kwargs: SimpleNamespace(position_mm=1.0, reasoning="ok", debug_dir=None),
-    )
-
-    original_import = builtins.__import__
-
-    def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):  # noqa: ANN001, A002
-        if name == "langslice.linear.image_gen":
-            raise AssertionError("image_gen module no longer exists")
-        return original_import(name, globals, locals, fromlist, level)
-
-    monkeypatch.setattr(builtins, "__import__", guarded_import)
-    request = EstimateRequest(
-        image_path="slice.png",
-        atlas="allen_mouse_25um",
-    )
-    result = runtime.run_estimate(request)
-    assert result.position_mm == 1.0

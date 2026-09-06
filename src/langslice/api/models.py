@@ -15,14 +15,12 @@ Provider = Literal[
 PreprocessMode = Literal["none", "auto"]
 EngineMethod = Literal[
     "version",
-    "estimate.run",
     "register.run",
     "quick_affine.run",
     "export.run",
 ]
 ENGINE_METHODS: tuple[EngineMethod, ...] = (
     "version",
-    "estimate.run",
     "register.run",
     "quick_affine.run",
     "export.run",
@@ -79,27 +77,6 @@ class EngineErrorEnvelope(EngineBaseModel):
 
 class VersionResult(EngineBaseModel):
     version: str
-
-
-class EstimateRequest(EngineBaseModel):
-    image_path: str
-    atlas: str
-    plane: Plane = "coronal"
-    model: str | None = None
-    thinking: str | None = None
-    temperature: float | None = None
-    media_resolution: str | None = None
-    max_iterations: int = 20
-    preprocess: PreprocessMode = "none"
-    provider: Provider = "google"
-    endpoint: str | None = None
-    output_dir: str | None = None
-
-
-class EstimateResult(EngineBaseModel):
-    position_mm: float
-    reasoning: str
-    debug_dir: str | None = None
 
 
 class RegisterRequest(EngineBaseModel):
@@ -190,8 +167,6 @@ def export_schema_bundle() -> dict[str, object]:
         "EngineResultEnvelope": EngineResultEnvelope,
         "EngineErrorEnvelope": EngineErrorEnvelope,
         "VersionResult": VersionResult,
-        "EstimateRequest": EstimateRequest,
-        "EstimateResult": EstimateResult,
         "RegisterRequest": RegisterRequest,
         "RegisterResult": RegisterResult,
         "QuickAffineRequest": QuickAffineRequest,

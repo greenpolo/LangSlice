@@ -7,7 +7,14 @@ here is a verbatim copy — edit one, mirror to the other.
 - `nonlinear/` — generative-image registration: candidate generation, image
   provider adapters, Elastix runtime, affine and
   nonlinear result types, and `quick_affine.py` (silhouette affine preview;
-  note the CLI groups `quick-affine` under `linear`). There is ONE path:
+  note the CLI groups `quick-affine` under `linear`).
+  The atlas geometry these draw from lives in `atlas/render.py`, not here:
+  the annotation slice (`_annotation_slice` is an alias of
+  `atlas.render.annotation_slice`), the family mapping (`_family_mapping` of
+  `family_mapping`), `region_contours`, and the `border_color` / `darker` /
+  `BORDER_DARKEN` / `is_dark_background` shade rules, which
+  `nonlinear/render.py` re-exports. `linear` draws its physical overlay from
+  the same functions, so both methods put a boundary in the same place. There is ONE path:
   direct — the handwritten base prompt goes to the image model verbatim
   (openai-oauth: the raw `codex/images/edits` endpoint, no routing model in
   between), one generation per run. The hosted-router session (`router.py`,
