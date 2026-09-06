@@ -70,6 +70,23 @@ _NUDGE_CONTINUE = (
     "call `submit_transform` if the current alignment is the best you can get."
 )
 
+#: Asked once, after submit_transform, in the same context. The answer is data
+#: for the people building this environment; nothing about the alignment
+#: changes. Text only: the tools are still live.
+ALIGN_DEBRIEF_PROMPT = (
+    "The alignment is submitted and nothing you say now changes it. This is a "
+    "debrief for the people building this alignment tool; answer in text and "
+    "do not call any tool.\n"
+    "1. What did you want to see or do while aligning that the tools did not "
+    "offer (views, overlays, controls, measurements, information)?\n"
+    "2. Which parts of the picture or the parameters behaved differently from "
+    "what you expected, or were awkward to use?\n"
+    "3. What did you have to work around?\n"
+    "4. Which alignment or registration interfaces you know does this "
+    "resemble, and what did those have that this lacks?\n"
+    "5. Your wishlist for doing this alignment well."
+)
+
 # --- calibration ---------------------------------------------------------
 
 
@@ -417,8 +434,12 @@ async def run_align_session(
     notes: str,
     *,
     max_iterations: int = ALIGN_MAX_ITERATIONS,
+    debrief: bool = False,
 ) -> dict[str, Any]:
     """Run the bounded interactive alignment for ONE section.
+
+    With *debrief*, one more message after submit asks the agent what it
+    missed while aligning; the answer comes back under ``"debrief"``.
 
     Writes nothing: returns ``{"status": "ok", "params": {...physical
     knobs...}, "matrix_params": [...six normalized numbers...],
@@ -448,6 +469,7 @@ async def run_align_session(
             )
         ],
     )
+    debrief_sink: list[str] = []
     tool_calls, turns = await run_agent_session(
         agent=agent,
         seed_message=seed,
@@ -456,6 +478,8 @@ async def run_align_session(
         nudge_continue=_NUDGE_CONTINUE,
         max_iterations=max_iterations,
         run_label=f"linear_align_{record.index_corrected:03d}",
+        debrief=ALIGN_DEBRIEF_PROMPT if debrief else None,
+        debrief_sink=debrief_sink,
     )
 
     submitted = bool(box.submission)
@@ -483,6 +507,7 @@ async def run_align_session(
             "source": box.calibration_source,
         },
         "submitted": submitted,
+        "debrief": debrief_sink[0] if debrief_sink else "",
         "confidence": str(box.submission.get("confidence", "")),
         "note": str(box.submission.get("note", "")),
         "previews": box.previews,
