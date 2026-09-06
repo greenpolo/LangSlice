@@ -116,6 +116,23 @@ def atlas_section(
     return crop_to_mask(image, mask > 0)
 
 
+def atlas_part(ctx: EngineContext, state: StackState, position_mm: float) -> types.Part:
+    """One tissue-framed atlas section at *position_mm*, section-sized and captioned."""
+    angles = (
+        f" pitch {state.pitch_deg:.1f} yaw {state.yaw_deg:.1f}"
+        if state.is_oblique
+        else ""
+    )
+    return image_to_part(
+        caption(
+            resize_long_edge(
+                atlas_section(ctx, state, position_mm, frame=True), ATLAS_LONG_EDGE
+            ),
+            f"atlas {position_mm:.2f} mm{angles}",
+        )
+    )
+
+
 def make_fetch_atlas(state: StackState, ctx: EngineContext):
     """Build the ``fetch_atlas`` tool, closed over the run's atlas and plane."""
     pos_lo, pos_hi = ctx.position_range
@@ -147,21 +164,8 @@ def make_fetch_atlas(state: StackState, ctx: EngineContext):
         if not positions:
             return {"status": "error", "error": "EMPTY_RESULT"}
 
-        angles = (
-            f" pitch {state.pitch_deg:.1f} yaw {state.yaw_deg:.1f}"
-            if state.is_oblique
-            else ""
-        )
         parts: list[types.Part] = [
-            image_to_part(
-                caption(
-                    resize_long_edge(
-                        atlas_section(ctx, state, position, frame=True), ATLAS_LONG_EDGE
-                    ),
-                    f"atlas {position:.2f} mm{angles}",
-                )
-            )
-            for position in positions
+            atlas_part(ctx, state, position) for position in positions
         ]
         plural = "s" if len(positions) != 1 else ""
         result: dict[str, Any] = {

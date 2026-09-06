@@ -75,8 +75,10 @@ agent aligns a section whenever it wants, in the same context that placed it.
 Each `adjust_transform` call writes the transform and returns the picture of
 the result, so acting and looking are one step.
 
-`signals.py` holds the interval interpolation behind `distribute_spacing`,
-which computes and only writes when asked.
+Every write returns the picture of what it did: `orient_slices` the
+re-oriented sections, `set_positions` each section beside the atlas at its
+new position, `fit_affine` and `adjust_transform` the overlay. There is no
+preview-then-apply anywhere; every write is undoable instead.
 
 ## Nonlinear: Image-Gen Registration
 

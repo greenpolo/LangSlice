@@ -139,6 +139,22 @@ def test_set_positions_clamps_to_the_atlas_range(tmp_path: Path):
 # --- what a write answers with -------------------------------------------
 
 
+def test_writes_return_the_picture_of_what_they_did(tmp_path: Path):
+    from langslice.adk import TOOL_MEDIA_PARTS_KEY
+
+    _, _, box = _box(tmp_path)
+    placed = _tool(box, "set_positions")(
+        [{"id": "s0.png", "position_mm": 1.0}, {"id": "s3.png", "position_mm": 6.0}]
+    )
+    # A pair per written section: the section, then the atlas at its position.
+    assert len(placed[TOOL_MEDIA_PARTS_KEY]) == 4
+    assert "s0.png, s3.png" in placed["description"]
+
+    turned = _tool(box, "orient_slices")([{"id": "s1.png", "flip": True}])
+    assert len(turned[TOOL_MEDIA_PARTS_KEY]) == 1
+    assert "s1.png" in turned["description"]
+
+
 def test_a_write_returns_only_the_rows_it_touched(tmp_path: Path):
     state, _, box = _box(tmp_path, placed=True)
     result = _tool(box, "set_positions")(
@@ -212,44 +228,6 @@ def test_move_slice_moves_one_section_and_keeps_every_position(tmp_path: Path):
     box.undo_stack.clear()
     result = _tool(box, "move_slice")("s3.png", "s4.png")
     assert [s.id for s in state.in_order()][-1] == "s3.png"
-
-
-# --- distribute_spacing --------------------------------------------------
-
-
-def test_distribute_spacing_previews_without_writing(tmp_path: Path):
-    state, _, box = _box(tmp_path)
-    result = _tool(box, "distribute_spacing")(
-        [{"id": "s0.png", "position_mm": 1.0}, {"id": "s4.png", "position_mm": 5.0}],
-        [],
-        False,
-    )
-    assert [row["position_mm"] for row in result["suggestions"]] == [1.0, 2.0, 3.0, 4.0, 5.0]
-    assert result["implied_interval_mm"] == 1.0
-    assert result["applied"] is False
-    assert all(s.position_mm is None for s in state.slices)
-
-
-def test_distribute_spacing_keeps_the_sections_named_in_keep(tmp_path: Path):
-    state, _, box = _box(tmp_path)
-    state.by_id("s2.png").position_mm = 4.0
-    result = _tool(box, "distribute_spacing")(
-        [{"id": "s0.png", "position_mm": 1.0}], ["s2.png"], True
-    )
-    positions = [s.position_mm for s in state.in_order()]
-    assert result["applied"] is True
-    assert positions[0] == 1.0
-    assert positions[2] == 4.0  # kept, and used as an anchor
-    assert positions[1] == 2.5
-    assert positions[3] == 5.5 and positions[4] == 7.0  # implied interval of 1.5
-
-
-def test_distribute_spacing_needs_two_anchors(tmp_path: Path):
-    _, _, box = _box(tmp_path)
-    result = _tool(box, "distribute_spacing")(
-        [{"id": "s0.png", "position_mm": 1.0}], [], False
-    )
-    assert result["error"] == "NEED_TWO_ANCHORS"
 
 
 # --- the submit gates ----------------------------------------------------
@@ -370,7 +348,7 @@ def test_fit_affine_records_a_transform_and_refuses_damaged_sections(tmp_path: P
     state.by_id("s1.png").damaged = True
     box = build_tools(state, ctx, spec)
 
-    result = _tool(box, "fit_affine")([], "silhouette", True)
+    result = _tool(box, "fit_affine")([], "silhouette")
     assert result["status"] == "ok"
     assert [row["id"] for row in result["results"]] == ["s0.png"]  # damaged is skipped
     assert result["results"][0]["iou"] > 0.5
@@ -388,10 +366,10 @@ def test_fit_affine_records_a_transform_and_refuses_damaged_sections(tmp_path: P
     assert state.by_id("s0.png").transform["physical"]["rotation_deg"] is not None
     assert state.by_id("s1.png").transform is None
 
-    named = _tool(box, "fit_affine")(["s1.png"], "silhouette", True)
+    named = _tool(box, "fit_affine")(["s1.png"], "silhouette")
     assert named["results"][0]["error"] == "DAMAGED"
 
-    assert _tool(box, "fit_affine")([], "elastix", True)["error"] == "UNAVAILABLE"
+    assert _tool(box, "fit_affine")([], "elastix")["error"] == "UNAVAILABLE"
 
 
 def test_adjust_transform_writes_shows_and_undoes(tmp_path: Path):
