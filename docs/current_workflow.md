@@ -19,6 +19,7 @@ position as an argument and does not care where it came from, so it can follow
 ```bash
 langslice linear run FOLDER [--tasks reorder,position,transform]
     [--atlas ...] [--plane ...] [--model ...] [--preprocess auto|none]
+    [--reasoning none|minimal|low|medium|high] [--pixel-size-um UM]
     [--no-flip] [--hemisphere-cue TEXT]
     [--thickness UM] [--interval UM] [--strict-interval] [--deepslice] [--bayesian]
     [--angles] [--elastix] [--no-subagents]
@@ -40,25 +41,28 @@ run can use:
 
 | tool | on when | does |
 | --- | --- | --- |
-| `status` | always | one row per section in corrected order: index, id, `position_mm`, `spacing_to_next_mm`, flip, rotation, damaged (+note), transform kind, confidence, caveats; plus the stack's cutting angles and interval breaks |
-| `view_slices` | always | up to 8 sections at higher resolution, rendered as corrected |
-| `fetch_atlas` | always | up to 8 atlas sections, rendered at the stack's current cutting angles |
+| `status` | always | one row per section in corrected order: index, id, `position_mm`, `delta_to_next_mm` (signed), flip, rotation, damaged (+note), transform kind, `transform_iou`, `transform_mirrored`, confidence, caveats; plus the stack's cutting angles and interval breaks |
+| `validate` | always | runs the submit checks without submitting; writes nothing |
+| `view_slices` | always | up to 8 sections at higher resolution, rendered as corrected, each captioned with its index and filename |
+| `fetch_atlas` | always | up to 8 atlas sections, rendered at the stack's current cutting angles, each captioned with its position |
 | `note`, `undo`, `redo` | always | run notes; snapshot undo where one tool call undoes as one step |
 | `mark_damaged` / `unmark_damaged` | always | agent-internal classification: an outline an affine cannot bite on |
 | `orient_slices` | `reorder` | flip and quarter-turn per section (`--no-flip` refuses the flip half) |
-| `reorder_slices` / `move_slice` | `reorder` | full permutation or one incremental move |
+| `reorder_slices` / `move_slice` | `reorder` | full permutation or one incremental move; corrected indices only, positions and transforms are kept |
 | `set_positions` | `position` | batch write, clamped to the atlas range |
 | `distribute_spacing` | `position` | interpolates from the points you fix, `keep` holds sections in place, `apply=false` computes without writing |
 | `run_deepslice` | `--deepslice` | reports `UNAVAILABLE` until the optional extra lands |
 | `fit_position` | `--bayesian` | `oblique.fit_oblique` around a section's current position; writes nothing |
 | `set_cutting_angles` | `--angles` | stack-wide pitch/yaw; later fetches and previews follow |
-| `fit_affine` | `transform` | silhouette affine per section, with the overlap and an overlay panel; refuses damaged sections; `--elastix`'s method is not wired yet |
-| `align_slice` | `transform` (default) | the bounded interactive sub-session for ONE section; `--no-subagents` moves those sessions to after `submit` |
+| `fit_affine` | `transform` | silhouette affine per section, with the overlap, the transform decomposed (rotation, scales, shear, translation, `mirrored`) and a physical-scale overlay (up to 16); refuses damaged sections; `--elastix`'s method is not wired yet |
+| `align_slice` | `transform` (default) | the bounded interactive sub-session for ONE section (`preview_transform` / `submit_transform`, parameters in millimetres), recording an in-plane transform only; `--no-subagents` moves those sessions to after `submit` |
 | `copy_transform` | `transform` | copies one section's transform onto others |
 | `submit` | always | ends the run; gated |
 
 Sections and fetched atlas sections are framed the same way (foreground plus a
-6% margin) so apparent scale is not a cue. The seed message is every section as
+6% margin) so apparent scale is not a cue. Every image a tool returns has its
+label burned into the pixels (section id, atlas position), because tool images
+arrive as bare attachments with no text beside them. The seed message is every section as
 its own labelled image in corrected order plus the status table -- not a
 thumbnail grid, which splits one vision-encoder patch budget across the whole
 stack at once.
@@ -80,9 +84,25 @@ worth tracing came back to advice the harness injected.
   written interval there must exceed 1.5x the stack's median written spacing
   (`INTERVAL_BREAKS_UNSUPPORTED`).
 
-Reordering a section that already carries a position CLEARS that position and
-its transform: both were decided under the wrong neighbours. The rows show
-which sections were cleared.
+Reordering changes only the corrected index -- positions and transforms are
+kept, and the rows show which sections were renumbered. The
+`ORDER_POSITION_MISMATCH` gate above is what keeps order and position honest.
+
+Alignment renders are in PHYSICAL space. The section's micrometres per pixel
+come from the image file (TIFF `XResolution` + `ResolutionUnit`, or the OME-XML
+`PhysicalSizeX`), or from `--pixel-size-um`, which overrides it; the atlas is
+placed at `atlas um/px / canvas um/px` with its anatomy centred, never fitted
+to the canvas. With no pixel size anywhere the run estimates one from the
+tissue's width against the atlas anatomy's and records
+`calibration.source = "estimated"` on the transform. Both the interactive
+preview and `fit_affine` draw the same picture: the transformed section under
+the atlas's family-level region outlines, each in its own color, with a 1 mm
+scale bar. The alignment parameters (`rotation_deg`, `scale_x`, `scale_y`,
+`translate_x_mm`, `translate_y_mm`) are stored alongside the host-facing six
+normalized numbers.
+
+`--reasoning` sets the reasoning effort on models that expose one (the
+`openai-oauth/*` backend); unset leaves the provider's own default.
 
 `--preprocess auto` (the default) runs adaptive CLAHE plus a DAPI-weighted
 grayscale blend on every section the run renders -- the seed images, the

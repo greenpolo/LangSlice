@@ -1,6 +1,7 @@
 """LangSlice CLI entry point."""
 import argparse
 import sys
+import textwrap
 
 import langslice
 
@@ -322,6 +323,21 @@ def _add_linear_run_parser(subparsers: argparse._SubParsersAction) -> None:
     )
     p.add_argument("--model", default=None, help="Model name for the agent session")
     p.add_argument(
+        "--reasoning",
+        default=None,
+        choices=["none", "minimal", "low", "medium", "high"],
+        help="Reasoning effort for models that expose one. Default: the "
+        "provider's own",
+    )
+    p.add_argument(
+        "--pixel-size-um",
+        type=float,
+        default=None,
+        metavar="UM",
+        help="Micrometres per pixel of the section images. Default: read from "
+        "each file's TIFF/OME tags",
+    )
+    p.add_argument(
         "--preprocess",
         default="auto",
         choices=["auto", "none"],
@@ -407,6 +423,12 @@ def _add_linear_run_parser(subparsers: argparse._SubParsersAction) -> None:
         default=True,
         help="Ignore any existing checkpoint and start over",
     )
+    p.add_argument(
+        "--no-debrief",
+        dest="debrief",
+        action="store_false",
+        help="Skip the post-submit debrief question (what tools the agent missed)",
+    )
 
 
 def _load_json_arg(value: str | None) -> object | None:
@@ -440,12 +462,15 @@ def _run_linear(args: argparse.Namespace) -> None:
     order = _load_json_arg(args.order)
     if order is not None:
         inputs["order"] = order
+    if args.pixel_size_um:
+        inputs["pixel_size_um"] = float(args.pixel_size_um)
 
     spec = JobSpec(
         image_folder=args.image_folder,
         atlas=args.atlas,
         plane=args.plane,
         model=args.model,
+        reasoning=args.reasoning,
         out=args.out,
         preprocess=args.preprocess,
         tasks=[task.strip() for task in args.tasks.split(",") if task.strip()],
@@ -463,6 +488,7 @@ def _run_linear(args: argparse.Namespace) -> None:
         facts=list(args.facts),
         inputs=inputs,
         resume=args.resume,
+        debrief=args.debrief,
     )
 
     print(f"Atlas: {spec.atlas}  Plane: {spec.plane}")
@@ -482,6 +508,9 @@ def _run_linear(args: argparse.Namespace) -> None:
     print("Linear run complete" if state.submitted else "Linear run ended without a submission")
     print(f"  Sections: {len(state.slices)}  Positioned: {len(positioned)}  "
           f"Transformed: {len(transformed)}")
+    if state.debrief:
+        print("\nAgent debrief (what it reached for that was not there):")
+        print(textwrap.indent(state.debrief, "  "))
     if state.interval_breaks:
         print(f"  Interval breaks: {state.interval_breaks}")
 

@@ -121,12 +121,22 @@ def test_the_job_statement_lists_only_the_tools_that_exist(tmp_path: Path):
     pos_lo, pos_hi = ctx.position_range
 
     text = build_job_statement(
-        spec, state, tool_names=box.names, species="mouse", pos_lo=pos_lo, pos_hi=pos_hi
+        spec,
+        state,
+        tool_names=box.names,
+        species="mouse",
+        pos_lo=pos_lo,
+        pos_hi=pos_hi,
+        axis_ends=ctx.axis_ends,
     )
     assert "`set_positions`" in text and "`submit`" in text
     assert "`reorder_slices`" not in text and "`fit_affine`" not in text
     assert "the block was cut back to front" in text
     assert "0.00-19.00 mm" in text
+    # the one direction fact, derived from the atlas orientation
+    assert ctx.axis_ends == ("anterior", "posterior")
+    assert "0.00 mm is the anterior edge" in text
+    assert "positions increase toward posterior" in text
     # atlas-agnostic: no region names, no strategy
     for banned in ("cortex", "hippocampus", "strategy", "tip:", "you should"):
         assert banned not in text.lower()
@@ -250,8 +260,8 @@ class _AlignLlm(BaseLlm):
                     "rotation_deg": 5.0,
                     "scale_x": 1.0,
                     "scale_y": 1.0,
-                    "translate_x": 0.0,
-                    "translate_y": 0.0,
+                    "translate_x_mm": 0.0,
+                    "translate_y_mm": 0.0,
                     "confidence": "medium",
                     "note": "lined up the intact border",
                 },
@@ -298,5 +308,9 @@ def test_align_slice_runs_a_sub_session_and_records_its_transform(
     assert transform["kind"] == "interactive"
     assert len(transform["params"]) == 6
     assert transform["note"] == "lined up the intact border"
+    assert transform["physical"]["rotation_deg"] == 5.0
+    # nothing carries a pixel size: the run says it estimated one
+    assert transform["calibration"]["source"] == "estimated"
+    assert transform["calibration"]["section_um_per_px"] > 0
     assert state.slices[0].confidence == "medium"
     assert load_checkpoint(ctx.checkpoint_path).slices[0].transform is not None

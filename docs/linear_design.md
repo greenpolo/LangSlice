@@ -64,15 +64,18 @@ SliceState
   damaged: bool, damage_note: str          # agent-internal: excludes from DeepSlice
                                            # and automatic affine; never a user option
   position_mm | null, confidence
-  transform | null: {kind: silhouette|elastix|interactive, params|matrix, iou?, note?}
+  transform | null: {kind: silhouette|elastix|interactive, params|matrix, iou?,
+                     mirrored?, note?}
   caveats: [str]
 ```
 
-Order and position are separate fields that must agree at submit: reordering a
-section that already has a position CLEARS that position (it was assigned under
-the wrong neighbours), and `submit` refuses positions that are not monotone
-along the corrected order. Standalone reorder therefore outputs a permutation;
-unified runs output positions and the order comes for free.
+Order and position are separate fields that must agree at submit. Reordering
+touches ONLY `index_corrected` — positions and transforms are kept — and
+`submit` refuses positions that are not monotone along the corrected order.
+The gate is the whole of the rule: clearing positions on a reorder cost the
+agent its work and forced it to re-enter numbers it still believed.
+Standalone reorder therefore outputs a permutation; unified runs output
+positions and the order comes for free.
 
 The user's image files are never modified. Everything is a proposal as data.
 
@@ -86,33 +89,39 @@ in any payload or prompt (see `lean-harness` history in `linear/CLAUDE.md`).
 
 | tool | task gate | does |
 | --- | --- | --- |
-| `status` | always | one row per section in corrected order: index, id, position_mm, spacing_to_next_mm, flip, rotation_deg, damaged(+note), transform kind, confidence, caveats; plus cutting angles and interval breaks. The `ls` of the environment. |
-| `view_slices(ids)` | always | up to 8 sections at higher resolution, rendered as corrected. |
-| `fetch_atlas(positions_mm)` | always | up to 8 atlas sections, rendered at the current cutting angles. |
+| `status` | always | one row per section in corrected order: index, id, position_mm, delta_to_next_mm (signed), flip, rotation_deg, damaged(+note), transform kind, transform_iou, transform_mirrored, confidence, caveats; plus cutting angles and interval breaks. The `ls` of the environment. |
+| `validate(interval_breaks)` | always | runs exactly the submit gates and returns the refusal or `{"status": "ok", "would_submit": true}`; writes nothing. |
+| `view_slices(ids)` | always | up to 8 sections at higher resolution, rendered as corrected, each captioned with its index and filename. |
+| `fetch_atlas(positions_mm)` | always | up to 8 atlas sections, rendered at the current cutting angles, each captioned with its position (and the angles when oblique). |
 | `note(text)` | always | append to the run notes. |
 | `undo()` / `redo()` | always | snapshot stack; a batch call undoes as one. |
 | `orient_slices([{id, flip?, rotate_deg?}])` | reorder.flip (flip) / reorder (rotate) | toggle flip, add rotation. |
-| `reorder_slices(new_order)` | reorder | full permutation; clears positions of sections whose index changed. |
-| `move_slice(id, after)` | reorder | incremental move; same clearing rule. |
+| `reorder_slices(new_order)` | reorder | full permutation; changes corrected indices only, positions and transforms are kept. |
+| `move_slice(id, after)` | reorder | incremental move; same rule. |
 | `mark_damaged([{id, note}])` / unmark | always | agent-internal classification. |
 | `set_positions([{id, position_mm, confidence?}])` | position | batch write, clamped to the atlas range. |
 | `distribute_spacing(fixed=[{id, position_mm}], keep=[ids])` | position | linear interpolation between fixed points, extrapolating at the implied interval; `keep` sections are not moved; returns rows, writes nothing (`apply=True` writes). |
 | `run_deepslice(ids?, allow_angle_change, keep=[ids])` | position.deepslice | positions (+ angles) for undamaged sections; UNAVAILABLE unless installed and plane/atlas supported. |
 | `fit_position(id, window_mm, angles?)` | position.bayesian | `oblique.fit_oblique` at the section's current position: best position (and angles) with score; writes nothing. |
 | `set_cutting_angles(pitch_deg, yaw_deg)` | transform.angles | stack-wide; subsequent atlas fetches and fits use them. |
-| `fit_affine(ids, method=silhouette\|elastix, apply=True)` | transform | per-section in-plane affine against its atlas section; returns iou and an overlay panel per section (≤8); refuses damaged sections. |
-| `align_slice(id, notes)` | transform (subagents) | runs the bounded interactive sub-session for ONE section; returns params + final overlay for the main agent to accept or re-call. |
+| `fit_affine(ids, method=silhouette\|elastix, apply=True)` | transform | per-section in-plane affine against its atlas section; returns iou, the transform decomposed (rotation, scales, shear, translation, `mirrored`) and a captioned overlay panel per section (≤16); refuses damaged sections. |
+| `align_slice(id, notes)` | transform (subagents) | runs the bounded interactive sub-session for ONE section; records an in-plane transform only (flip/rotation flags are untouched); returns params, their decomposition and the final overlay. |
 | `copy_transform(from_id, to_ids)` | transform | copy one section's transform to others. |
 | `submit(summary, notes, interval_breaks)` | always | ends the run; gated (below). |
 
 `fetch_atlas` and `view_slices` frame tissue the same way so apparent scale is
-not a cue. Seed message: every section as its own labelled image in corrected
-order plus the status table.
+not a cue. Every image a tool returns carries its label burned into the pixels
+(`render.caption`): tool images reach the model as bare attachments, so the
+text that ties an image to a section or a position has to ride in the image.
+The image a fit MEASURES is never captioned — only what is shown. Seed
+message: every section as its own labelled image in corrected order plus the
+status table.
 
 ## Submit gates (constraints, not coaching)
 
 - position on: every section has a position; positions monotone along the
-  corrected order (`ORDER_POSITION_MISMATCH`, naming the pairs).
+  corrected order (`ORDER_POSITION_MISMATCH`, naming the pairs). `validate`
+  runs the same gates without submitting.
 - strict_interval: every consecutive spacing within 10% of the interval;
   `interval_breaks` must be empty.
 - not strict: each reported break index must sit where the written interval
@@ -140,6 +149,7 @@ section, its atlas section, and the notes the main agent passed.
 ```
 langslice linear run FOLDER [--tasks reorder,position,transform]
     [--atlas ..] [--plane ..] [--model ..] [--preprocess auto|none]
+    [--reasoning none|minimal|low|medium|high] [--pixel-size-um UM]
     [--no-flip] [--hemisphere-cue TEXT]
     [--thickness UM] [--interval UM] [--strict-interval] [--deepslice] [--bayesian]
     [--angles] [--elastix] [--no-subagents]
@@ -167,3 +177,54 @@ langslice linear quick-affine ...   (unchanged)
 - Elastix affine method (behind `--elastix`), first version may land after the
   silhouette method.
 - Host adapters (ABBA hand-back of order/positions/transforms).
+
+## Interactive transform: physical space and atlas outlines (2026-09-05, Nash)
+
+The per-section alignment loop is a vision-action loop: tool → section with
+the atlas overlaid in physical space → tool → repeat. If the render lies, the
+loop is compromised, so this is the part of linear that adopts standard
+registration-software practice (ABBA) exactly.
+
+**Physical calibration.** Both images are placed in millimetres.
+- Section pixel size (µm/px) comes from the image file (TIFF XResolution +
+  ResolutionUnit, or OME-XML PhysicalSizeX), overridable by the host
+  (`--pixel-size-um`, `JobSpec.inputs["pixel_size_um"]`). The working canvas
+  is the downsampled section, so canvas µm/px = file µm/px × downsample.
+- Atlas µm/px is the atlas voxel size (25 µm for allen_mouse_25um); an atlas
+  render is placed on the canvas at scale = atlas µm/px ÷ canvas µm/px, its
+  anatomy centred on the canvas centre. Never fit-to-canvas: that is not a
+  calibration (measured 0.69× vs true 1.05× on M01).
+- No pixel size anywhere → the run records `calibration: "estimated"` from
+  the silhouette fit's scale and says so in the tool payload; it never
+  silently pretends.
+- Transform parameters are physical, ABBA's: rotation (deg, about the canvas
+  centre), scale_x / scale_y (unitless), translate_x_mm / translate_y_mm.
+  The stored transform stays the host-facing normalized six numbers, plus the
+  physical params and the calibration used.
+
+**Atlas outlines, ABBA's way.** ABBA's border channel is the 1-voxel edge of
+the label volume shown as one neutral grey hairline; region colors belong to
+the filled map, not to lines over tissue. Ours: one smoothed contour per
+FAMILY-level region (the organized `color_lut`, families merged at
+`MERGE_EPS` — leaf boundaries are visual noise here), drawn as a 1 px
+anti-aliased line in light grey on dark fluorescence (dark grey on
+brightfield), no rim, no per-region color, AFTER the resize to the output
+size so a hairline stays a hairline on the screen the model sees. Coloured
+2 px lines with a dark rim were tried first and rejected (Nash: "too thick,
+colors are weird"). The contour
+code (`region_contours`, `_smooth_closed`, family mapping, annotation slice
+at cutting angles) moves from `nonlinear/` to `atlas/render.py` so both
+methods draw the same lines from the same source.
+
+**The screen.** `preview_transform` returns ONE image: the transformed section
+(display-preprocessed grayscale) with the family outlines on top at true
+scale, a 1 mm scale bar, and a caption (section id, position, angles, the
+params). `show_template=True` blends the atlas template at 35 % under the
+outlines. `fit_affine`'s panels use the same renderer, so the main agent and
+the sub-session see the same picture.
+
+**Rock-solid means tested.** Geometry tests pin: a 1 mm translation moves the
+section by exactly 1000/µm-per-px pixels; an atlas of known physical width
+renders at that width in pixels; the scale bar is 1000/µm-per-px pixels long;
+outline pixels lie on family-color boundaries of the filled render; a file
+with no pixel size yields `calibration: "estimated"`, never a crash.
