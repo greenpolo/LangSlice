@@ -18,7 +18,6 @@ from langslice.api.models import (
     EngineProgressEvent,
     EngineRequest,
     EngineResultEnvelope,
-    EstimateRequest,
     ExportRequest,
     QuickAffineRequest,
     RegisterRequest,
@@ -54,9 +53,6 @@ def handle_request(request: EngineRequest, emit: EmitEventEnvelope) -> EngineRes
 
     if request.method == "version":
         result = runtime.get_version()
-    elif request.method == "estimate.run":
-        params = EstimateRequest.model_validate(request.params)
-        result = runtime.run_estimate(params, emit=runtime_emit)
     elif request.method == "register.run":
         params = RegisterRequest.model_validate(request.params)
         result = runtime.run_register(params, emit=runtime_emit)

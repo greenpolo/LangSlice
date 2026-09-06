@@ -30,7 +30,20 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
+# Contours, family colors and the shade rules moved to `atlas/render.py` when
+# `linear` started drawing the same lines; re-exported here so this module
+# stays the one import for review rendering.
+from langslice.atlas.render import (
+    BORDER_DARKEN,
+    Rgb,
+    border_color,
+    darker,
+    is_dark_background,
+    region_contours,
+)
+
 __all__ = [
+    "BORDER_DARKEN",
     "border_color",
     "checkerboard",
     "checkerboard_mask",
@@ -45,8 +58,6 @@ __all__ = [
     "region_overlay",
     "split_view",
 ]
-
-Rgb = tuple[int, int, int]
 
 #: Everything sized in pixels is tuned at this canvas long edge and scaled.
 _REFERENCE_LONG_EDGE = 2048.0
@@ -96,116 +107,9 @@ def _scale_for(shape: tuple[int, ...]) -> float:
     return max(shape[0], shape[1]) / _REFERENCE_LONG_EDGE
 
 
-def is_dark_background(image: Image.Image | np.ndarray) -> bool:
-    """True for fluorescence-style canvases, False for light brightfield.
-
-    Line and text colors flip on this: the same near-black acronym that reads
-    cleanly on a white slide disappears on a dark-field section.
-    """
-    if isinstance(image, Image.Image):
-        gray = np.asarray(image.convert("L"), dtype=np.uint8)
-    else:
-        arr = np.asarray(image)
-        gray = arr if arr.ndim == 2 else cv2.cvtColor(arr.astype(np.uint8), cv2.COLOR_RGB2GRAY)
-    return float(np.median(gray)) < 110.0
-
-
-def border_color(color: Rgb, *, dark_background: bool = False) -> Rgb:
-    """A saturated, background-contrasting version of a region's own color.
-
-    Keeping the hue is the whole point: a border tells you which structure it
-    bounds. Only saturation and value move, and value moves toward whichever
-    end the canvas is not.
-    """
-    hsv = cv2.cvtColor(np.array([[color]], dtype=np.uint8), cv2.COLOR_RGB2HSV)
-    hue, sat, val = (int(v) for v in hsv[0, 0])
-    # Gray regions (fiber tracts, root) stay gray: pushing saturation on an
-    # achromatic color invents a hue out of rounding noise.
-    sat = 0 if sat < 12 else min(255, int(sat * 1.9) + 40)
-    val = min(255, int(val * 0.35) + 170) if dark_background else int(val * 0.52)
-    out = cv2.cvtColor(np.array([[(hue, sat, val)]], dtype=np.uint8), cv2.COLOR_HSV2RGB)
-    r, g, b = (int(v) for v in out[0, 0])
-    return (r, g, b)
-
-
-def _smooth_closed(points: np.ndarray, window: int) -> np.ndarray:
-    """Circular moving average over a closed polygon's vertices.
-
-    A traced label boundary is a staircase of unit steps; a short circular
-    box filter erases the steps while leaving anything larger than the window
-    where it was. Cheaper and more stable than resampling to a spline, and it
-    preserves the vertex count so both sides of a shared boundary land on the
-    same curve.
-    """
-    count = len(points)
-    if window < 3 or count < 2 * window:
-        return points
-    half = window // 2
-    kernel = np.ones(2 * half + 1) / float(2 * half + 1)
-    extended = np.concatenate([points[-half:], points, points[:half]])
-    return np.stack(
-        [np.convolve(extended[:, axis], kernel, mode="valid") for axis in (0, 1)],
-        axis=1,
-    )
-
-
-def region_contours(
-    labels: np.ndarray,
-    *,
-    smooth_window: int = 9,
-    min_area_px: float = 24.0,
-) -> dict[int, list[np.ndarray]]:
-    """Smoothed outlines per region id, as float ``(N, 2)`` x/y polygons.
-
-    Includes hole boundaries (a region wrapping another is traced inside and
-    out). Region id 0 is background and never traced. Components smaller than
-    *min_area_px* are dropped — classification confetti, not anatomy.
-    """
-    from scipy import ndimage
-
-    ids = np.union1d(np.array([0], dtype=labels.dtype), np.unique(labels))
-    compact = np.searchsorted(ids, labels).astype(np.int32)
-    boxes = ndimage.find_objects(compact)
-
-    out: dict[int, list[np.ndarray]] = {}
-    for index, box in enumerate(boxes):
-        uid = int(ids[index + 1])
-        if box is None or uid == 0:
-            continue
-        rows, cols = box
-        # Pad by one so a region touching its own bounding box still traces a
-        # closed contour; the offset below puts it back in image coordinates.
-        sub = np.pad((labels[rows, cols] == uid).astype(np.uint8), 1)
-        contours, _ = cv2.findContours(sub, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
-        offset = np.array([cols.start - 1, rows.start - 1], dtype=np.float64)
-        polys = [
-            _smooth_closed(contour.reshape(-1, 2).astype(np.float64) + offset, smooth_window)
-            for contour in contours
-            if cv2.contourArea(contour) >= min_area_px
-        ]
-        if polys:
-            out[uid] = polys
-    return out
-
-
-#: Allen-Reference-Atlas plate look: a region's delineating line is its own
-#: color at this fraction of its brightness — same hue and saturation, only
-#: value moves, so the line reads as "the edge of THIS region" rather than as
-#: a separate structure. (Scaling all three channels scales HSV value exactly.)
-BORDER_DARKEN = 0.7
-
 #: Family boundaries are drawn this much heavier than leaf boundaries — the
 #: ARA hierarchy cue: a major division reads before its subdivisions do.
 _FAMILY_BORDER_SCALE = 1.8
-
-
-def darker(color: Rgb) -> Rgb:
-    """*color* dimmed to :data:`BORDER_DARKEN` of its brightness."""
-    return (
-        int(color[0] * BORDER_DARKEN),
-        int(color[1] * BORDER_DARKEN),
-        int(color[2] * BORDER_DARKEN),
-    )
 
 
 def paint_labels(
@@ -249,9 +153,7 @@ def paint_labels(
     if leaf_lines:
         leaf_b = _boundary(labels)
         if line_px > 1:
-            leaf_b = np.asarray(
-                ndimage.binary_dilation(leaf_b, iterations=line_px - 1), dtype=bool
-            )
+            leaf_b = np.asarray(ndimage.binary_dilation(leaf_b, iterations=line_px - 1), dtype=bool)
     unit_b = np.asarray(
         ndimage.binary_dilation(_boundary(units), iterations=2 * line_px - 1), dtype=bool
     )
@@ -326,8 +228,7 @@ def filled_regions(
         # 1/16-pixel precision.
         for uid, polys in traced.items():
             points = [
-                np.round(poly * scale * 16.0).astype(np.int32).reshape(-1, 1, 2)
-                for poly in polys
+                np.round(poly * scale * 16.0).astype(np.int32).reshape(-1, 1, 2) for poly in polys
             ]
             color = darker(lut.get(uid, (128, 128, 128)))
             cv2.polylines(canvas, points, True, color, thickness, cv2.LINE_8, 4)
@@ -389,9 +290,7 @@ def _draw_polys(
     for color, polys in colored_polys:
         points = [np.round(poly * 16.0).astype(np.int32) for poly in polys]
         if points:
-            cv2.polylines(
-                drawn, points, True, color, thickness, cv2.LINE_AA, 4
-            )
+            cv2.polylines(drawn, points, True, color, thickness, cv2.LINE_AA, 4)
     if opacity >= 1.0:
         return drawn
     return cv2.addWeighted(drawn, opacity, base, 1.0 - opacity, 0.0)
@@ -524,8 +423,10 @@ def region_overlay(
     fine = region_contours(labels, smooth_window=window)
     canvas = _draw_polys(
         canvas,
-        ((border_color(lut.get(uid, (128, 128, 128)), dark_background=dark), polys)
-         for uid, polys in fine.items()),
+        (
+            (border_color(lut.get(uid, (128, 128, 128)), dark_background=dark), polys)
+            for uid, polys in fine.items()
+        ),
         thickness=max(1, int(round(1.3 * scale))),
         opacity=0.55,
     )
@@ -533,8 +434,10 @@ def region_overlay(
         coarse = region_contours(families, smooth_window=window)
         canvas = _draw_polys(
             canvas,
-            ((border_color(lut.get(uid, (128, 128, 128)), dark_background=dark), polys)
-             for uid, polys in coarse.items()),
+            (
+                (border_color(lut.get(uid, (128, 128, 128)), dark_background=dark), polys)
+                for uid, polys in coarse.items()
+            ),
             thickness=max(1, int(round(2.6 * scale))),
             opacity=0.92,
         )
@@ -702,9 +605,7 @@ def deformation_grid(
         f"bulk shift {np.linalg.norm(bulk):.0f} px   "
         f"max local distortion {float(np.nanmax(magnitude)):.0f} px"
     )
-    return _draw_text(
-        image, [(readout, width * 0.5, height - size, size)], dark_background=dark
-    )
+    return _draw_text(image, [(readout, width * 0.5, height - size, size)], dark_background=dark)
 
 
 def contact_sheet(
@@ -719,18 +620,20 @@ def contact_sheet(
         raise ValueError("contact_sheet needs at least one panel")
     cols = max(1, min(columns, len(panels)))
     rows = (len(panels) + cols - 1) // cols
-    thumbs = [
-        (caption, image.convert("RGB"))
-        for caption, image in panels
-    ]
+    thumbs = [(caption, image.convert("RGB")) for caption, image in panels]
     scaled = [
-        (caption, image.resize(
-            (
-                max(1, round(image.width * min(cell_px / image.width, cell_px / image.height))),
-                max(1, round(image.height * min(cell_px / image.width, cell_px / image.height))),
+        (
+            caption,
+            image.resize(
+                (
+                    max(1, round(image.width * min(cell_px / image.width, cell_px / image.height))),
+                    max(
+                        1, round(image.height * min(cell_px / image.width, cell_px / image.height))
+                    ),
+                ),
+                resample=Image.Resampling.LANCZOS,
             ),
-            resample=Image.Resampling.LANCZOS,
-        ))
+        )
         for caption, image in thumbs
     ]
     cell_w = max(image.width for _, image in scaled)

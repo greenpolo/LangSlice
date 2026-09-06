@@ -7,7 +7,7 @@ from typing import Any, cast
 import pytest
 
 from langslice.api import runtime
-from langslice.api.models import EngineLogEvent, EngineRequest, EstimateResult
+from langslice.api.models import EngineLogEvent, EngineRequest, RegisterResult
 from langslice.api.service import handle_request, run_stdio
 
 
@@ -57,7 +57,7 @@ def test_validation_error_returns_error() -> None:
         json.dumps(
             {
                 "id": "2",
-                "method": "estimate.run",
+                "method": "register.run",
                 "params": {"atlas": "allen_mouse_25um"},
             }
         )
@@ -69,21 +69,28 @@ def test_validation_error_returns_error() -> None:
 
 
 def test_progress_events_are_emitted_before_result(monkeypatch: pytest.MonkeyPatch) -> None:
-    def fake_run_estimate(request, emit=None):  # noqa: ANN001
+    def fake_run_register(request, emit=None):  # noqa: ANN001
         assert request.image_path == "slice.png"
         if emit is not None:
             emit(EngineLogEvent(kind="log", message="starting"))
-        return EstimateResult(position_mm=1.5, reasoning="ok", debug_dir=None)
+        return RegisterResult(
+            accepted_correspondence_count=0,
+            rotation_deg=0.0,
+            translation_px=(0.0, 0.0),
+            scale=(1.0, 1.0),
+            shear=0.0,
+        )
 
-    monkeypatch.setattr(runtime, "run_estimate", fake_run_estimate)
+    monkeypatch.setattr(runtime, "run_register", fake_run_register)
     messages = _run_lines(
         json.dumps(
             {
                 "id": "3",
-                "method": "estimate.run",
+                "method": "register.run",
                 "params": {
                     "image_path": "slice.png",
                     "atlas": "allen_mouse_25um",
+                    "position_mm": 5.0,
                 },
             }
         )
@@ -100,10 +107,11 @@ def test_validation_error_for_unknown_param_key() -> None:
         json.dumps(
             {
                 "id": "4",
-                "method": "estimate.run",
+                "method": "register.run",
                 "params": {
                     "image_path": "slice.png",
                     "atlas": "allen_mouse_25um",
+                    "position_mm": 5.0,
                     "plaen": "coronal",
                 },
             }

@@ -251,8 +251,47 @@ def test_function_response_media_is_forwarded_as_input_image():
     follow_up = items[1]
     assert follow_up["role"] == "user"
     assert "get_slice" in follow_up["content"][0]["text"]
-    assert follow_up["content"][1]["type"] == "input_image"
-    assert follow_up["content"][1]["image_url"].startswith("data:image/png;base64,")
+    assert follow_up["content"][1] == {
+        "type": "input_text",
+        "text": "get_slice image 1 of 1",
+    }
+    assert follow_up["content"][2]["type"] == "input_image"
+    assert follow_up["content"][2]["image_url"].startswith("data:image/png;base64,")
+
+
+def test_each_tool_image_is_labelled_before_it():
+    """N images from one tool arrive interleaved with 'image k of N' text."""
+    blob = types.FunctionResponsePart(
+        inline_data=types.FunctionResponseBlob(data=_png_bytes(), mime_type="image/png")
+    )
+    response = types.Content(
+        role="user",
+        parts=[
+            types.Part(
+                function_response=types.FunctionResponse(
+                    id="call_1",
+                    name="fetch_atlas",
+                    response={"status": "ok"},
+                    parts=[blob, blob, blob],
+                )
+            )
+        ],
+    )
+    content = chatgpt.content_to_input_items(response)[1]["content"]
+    assert [item["type"] for item in content] == [
+        "input_text",
+        "input_text",
+        "input_image",
+        "input_text",
+        "input_image",
+        "input_text",
+        "input_image",
+    ]
+    assert [item["text"] for item in content[1::2]] == [
+        "fetch_atlas image 1 of 3",
+        "fetch_atlas image 2 of 3",
+        "fetch_atlas image 3 of 3",
+    ]
 
 
 def test_tools_to_wire_uses_flat_responses_function_shape():

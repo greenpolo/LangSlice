@@ -2,7 +2,7 @@
 
 Shared by both methods, which is why it sits at the top level:
 :mod:`langslice.nonlinear.quick_affine` wraps :func:`silhouette_affine` into a
-warped RGBA preview for the 3D viewer, and the whole-brain ``transforms`` step
+warped RGBA preview for the 3D viewer, and the linear ``fit_affine`` tool
 records its parameters as the proposed affine for an intact section. Pure
 functions only — no CLI, no agent, no model calls, no file writes.
 
@@ -14,7 +14,8 @@ Two ways to get a 2x3 affine here:
   rotation and principal axes, eigenvalue ratios for scale. The 4-way sign
   ambiguity on the eigenvectors (rotations vs reflections) is resolved by
   picking the candidate with the best silhouette IoU. ~150 ms warm, no
-  Elastix, no itk.
+  Elastix, no itk. :func:`mask_affine` is its core, taking two prepared masks
+  in one frame — what an ROI-restricted fit hands it.
 * :func:`affine_matrix` — the same 2x3 built from human-readable knobs
   (rotation, per-axis scale, translation), which is what the interactive
   transform loop proposes.
@@ -183,6 +184,51 @@ def silhouette_iou(a: np.ndarray, b: np.ndarray) -> float:
     return inter / union if union > 0 else 0.0
 
 
+def mask_affine(
+    src_mask: np.ndarray, dst_mask: np.ndarray
+) -> tuple[np.ndarray, float, tuple[int, int]]:
+    """The moments fit of one binary mask onto another: ``(2x3, iou, pattern)``.
+
+    The core both silhouette routes share — the whole-tissue fit below and the
+    linear tool's ROI-restricted variant, which prepares its own two masks on
+    the physical canvas. Both masks live in the SAME frame; the affine maps
+    *src_mask* pixels to *dst_mask* pixels.
+
+    Raises ``ValueError`` when either mask is empty or no candidate survives.
+    """
+    src_c, src_eigvals, src_V = _moments_pose(src_mask)
+    dst_c, dst_eigvals, dst_V = _moments_pose(dst_mask)
+
+    h, w = dst_mask.shape
+    best_iou = -1.0
+    best_affine: np.ndarray | None = None
+    best_pattern: tuple[int, int] = (1, 1)
+    for sign_pattern in _SIGN_PATTERNS:
+        candidate = _affine_from_pose(
+            src_c, src_eigvals, src_V,
+            dst_c, dst_eigvals, dst_V,
+            sign_pattern,
+        )
+        # Reflections are not the fit's to make: a mirrored section is an
+        # ORIENTATION correction (the section's flip flag), and the atlas
+        # silhouette is left-right symmetric anyway, so a reflected candidate
+        # ties the proper one on IoU and would win by handedness noise.
+        if np.linalg.det(candidate[:, :2]) <= 0:
+            continue
+        warped_mask = cv2.warpAffine(
+            src_mask, candidate, (w, h), flags=cv2.INTER_NEAREST, borderValue=0
+        )
+        score = silhouette_iou(warped_mask, dst_mask)
+        if score > best_iou:
+            best_iou = score
+            best_affine = candidate
+            best_pattern = sign_pattern
+
+    if best_affine is None:
+        raise ValueError("No affine candidate could be computed.")
+    return best_affine, best_iou, best_pattern
+
+
 def silhouette_affine(
     image: Image.Image,
     *,
@@ -210,39 +256,15 @@ def silhouette_affine(
         )
 
     atlas_mask = get_root_mask(atlas, position_mm, size, plane=plane)
-
-    src_c, src_eigvals, src_V = _moments_pose(slice_mask)
-    dst_c, dst_eigvals, dst_V = _moments_pose(atlas_mask)
-
-    h, w = atlas_mask.shape
-    best_iou = -1.0
-    best_affine: np.ndarray | None = None
-    best_pattern: tuple[int, int] = (1, 1)
-    for sign_pattern in _SIGN_PATTERNS:
-        candidate = _affine_from_pose(
-            src_c, src_eigvals, src_V,
-            dst_c, dst_eigvals, dst_V,
-            sign_pattern,
-        )
-        warped_mask = cv2.warpAffine(
-            slice_mask, candidate, (w, h), flags=cv2.INTER_NEAREST, borderValue=0
-        )
-        score = silhouette_iou(warped_mask, atlas_mask)
-        if score > best_iou:
-            best_iou = score
-            best_affine = candidate
-            best_pattern = sign_pattern
-
-    if best_affine is None:
-        raise ValueError("No affine candidate could be computed.")
+    matrix, iou, pattern = mask_affine(slice_mask, atlas_mask)
 
     return SilhouetteFit(
-        matrix=best_affine,
-        iou=best_iou,
+        matrix=matrix,
+        iou=iou,
         size=size,
         slice_rgb=slice_rgb,
         atlas_mask=atlas_mask,
-        sign_pattern=best_pattern,
+        sign_pattern=pattern,
     )
 
 
@@ -254,6 +276,7 @@ def affine_matrix(
     translate_x: float,
     translate_y: float,
     size: tuple[int, int],
+    pivot: tuple[float, float] | None = None,
 ) -> np.ndarray:
     """A 2x3 affine from human knobs, about the centre of a *size* image.
 
@@ -261,9 +284,13 @@ def affine_matrix(
     are multipliers per axis applied before the rotation, and translations are
     FRACTIONS of image width/height — positive x moves right, positive y moves
     down. Identity is ``rotation_deg=0, scale=1, translate=0``.
+
+    *pivot* moves the point rotation and scale happen about, in PIXELS of the
+    same frame *size* describes; ``None`` is the frame's centre. The
+    translation is unaffected — it is applied after, whatever the pivot.
     """
     width, height = size
-    cx, cy = width / 2.0, height / 2.0
+    cx, cy = (width / 2.0, height / 2.0) if pivot is None else (float(pivot[0]), float(pivot[1]))
     rad = math.radians(rotation_deg)
     cos_t, sin_t = math.cos(rad), math.sin(rad)
     a, b = cos_t * scale_x, sin_t * scale_y
@@ -272,6 +299,147 @@ def affine_matrix(
         [a, b, cx - (a * cx + b * cy) + translate_x * width],
         [c, d, cy - (c * cx + d * cy) + translate_y * height],
     ], dtype=np.float64)
+
+
+def physical_affine_matrix(
+    *,
+    rotation_deg: float,
+    scale_x: float,
+    scale_y: float,
+    translate_x_mm: float,
+    translate_y_mm: float,
+    size: tuple[int, int],
+    um_per_px: float,
+    pivot: tuple[float, float] | None = None,
+) -> np.ndarray:
+    """:func:`affine_matrix` with the shifts given in MILLIMETRES.
+
+    The registration-software convention (ABBA's): rotation in degrees about
+    the frame's centre, unitless per-axis scales, translations in mm on a
+    frame whose pixels are *um_per_px* micrometres wide. One millimetre is
+    ``1000 / um_per_px`` pixels, whatever the frame's size — which is the
+    whole point of calibrating: the same numbers mean the same displacement
+    at any working resolution.
+
+    *pivot* is the rotation/scale centre in pixels of *size*; ``None`` is the
+    frame's centre. Since the frame's width and height cancel out of the
+    translation, the SAME numbers build the same map on the section's frame
+    and on the padded canvas around it — as long as the pivot is expressed in
+    whichever frame *size* names.
+    """
+    if um_per_px <= 0:
+        raise ValueError("um_per_px must be positive")
+    px_per_mm = 1000.0 / float(um_per_px)
+    width, height = size
+    return affine_matrix(
+        rotation_deg=rotation_deg,
+        scale_x=scale_x,
+        scale_y=scale_y,
+        translate_x=translate_x_mm * px_per_mm / width,
+        translate_y=translate_y_mm * px_per_mm / height,
+        size=size,
+        pivot=pivot,
+    )
+
+
+def normalized_physical_affine(
+    *,
+    rotation_deg: float,
+    scale_x: float,
+    scale_y: float,
+    translate_x_mm: float,
+    translate_y_mm: float,
+    size: tuple[int, int],
+    um_per_px: float,
+    pivot: tuple[float, float] | None = None,
+) -> list[float]:
+    """Physical parameters as the six normalized numbers hosts consume.
+
+    *size* is the SECTION's own frame, not the padded canvas the parameters
+    were chosen on: the pad is symmetric, so both frames share a centre, and
+    a rotation about the canvas centre is the same map as a rotation about
+    the section centre. Only the frame the numbers are expressed in changes.
+
+    That equivalence is exactly what a *pivot* breaks, so a pivot chosen on
+    the canvas must be handed over in the SECTION's frame (subtract the
+    canvas's section offset). The six numbers then describe the same map the
+    canvas showed, still on the section's own frame.
+    """
+    return normalized_affine(
+        physical_affine_matrix(
+            rotation_deg=rotation_deg,
+            scale_x=scale_x,
+            scale_y=scale_y,
+            translate_x_mm=translate_x_mm,
+            translate_y_mm=translate_y_mm,
+            size=size,
+            um_per_px=um_per_px,
+            pivot=pivot,
+        ),
+        size,
+    )
+
+
+def decompose_affine(
+    params_or_matrix: Any, size: tuple[int, int] | None = None
+) -> dict[str, Any]:
+    """A 2x3 affine as the numbers a human reads: rotation, scale, shear, shift.
+
+    Accepts either the normalized 6-vector ``[a, b, tx, c, d, ty]`` or a 2x3
+    matrix. The decomposition is ``M = R(rotation) . [[sx, shear*sx], [0, sy]]``
+    read back out by QR: ``scale_x`` is the length of the first column,
+    ``rotation_deg`` its angle (counter-clockwise on screen, the
+    :func:`affine_matrix` convention), ``shear`` the residual x/y coupling in
+    units of ``scale_x``, and ``scale_y`` the determinant over ``scale_x`` —
+    so it goes NEGATIVE exactly when the map includes a reflection.
+    ``mirrored`` reports that determinant sign on its own.
+
+    A normalized 6-vector lives in a fractional frame (x/width, y/height),
+    which is anisotropic on a non-square image: a pure 5-degree rotation reads
+    as 7 degrees plus shear there. Pass *size* to decompose in the pixel frame
+    instead — angles and scales then mean what they say.
+
+    Translations come back as the input's own ``tx``/``ty``, which for the
+    normalized 6-vector every payload passes are FRACTIONS of width and
+    height. Hence the names: a 0.15 mm shift on a 20 mm-wide frame reads as
+    ``translate_x_frac = 0.0075``, and reading that as millimetres is exactly
+    the confusion the suffix exists to stop.
+    """
+    values = np.asarray(params_or_matrix, dtype=np.float64).reshape(2, 3)
+    (a, b, tx), (c, d, ty) = values[0], values[1]
+    if size is not None:
+        width, height = float(size[0]), float(size[1])
+        b, c = b * width / height, c * height / width
+    scale_x = float(math.hypot(a, c))
+    determinant = float(a * d - b * c)
+    rotation = math.degrees(math.atan2(-c, a)) if scale_x > 0 else 0.0
+    shear = float((a * b + c * d) / (scale_x**2)) if scale_x > 0 else 0.0
+    scale_y = determinant / scale_x if scale_x > 0 else 0.0
+    return {
+        "rotation_deg": round(rotation, 3),
+        "scale_x": round(scale_x, 4),
+        "scale_y": round(scale_y, 4),
+        "shear": round(shear, 4),
+        "translate_x_frac": round(float(tx), 4),
+        "translate_y_frac": round(float(ty), 4),
+        "mirrored": determinant < 0,
+    }
+
+
+def denormalized_affine(params: Any, size: tuple[int, int]) -> np.ndarray:
+    """The inverse of :func:`normalized_affine`: six numbers back to pixels.
+
+    What a stored transform has to go through to be DRAWN again — the six
+    numbers are exact, including any shear the five physical knobs cannot
+    carry, so a picture of "what is stored" is built from these and not from
+    the knobs.
+    """
+    a, b, tx, c, d, ty = (float(v) for v in params)
+    width, height = float(size[0]), float(size[1])
+    return np.array(
+        [[a, b * width / height, tx * width], [c * height / width, d, ty * height]],
+        dtype=np.float64,
+    )
 
 
 def normalized_affine(matrix: np.ndarray, size: tuple[int, int]) -> list[float]:

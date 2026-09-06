@@ -6,6 +6,19 @@ here is a verbatim copy — edit one, mirror to the other.
 
 - `atlas/` — BrainGlobe loading, position helpers, slice extraction, colored
   region maps, borders.
+  `render.py` is the geometry BOTH methods draw from, and it belongs to
+  neither: `annotation_slice` (the display-oriented annotation at a position,
+  resliced obliquely when the block carries cutting angles), `atlas_um_per_px`,
+  `family_mapping` (region id -> its merged color family's representative),
+  `region_contours` + `_smooth_closed` (smoothed per-region polygons, holes
+  included, confetti dropped), `family_outlines` (one `(family color,
+  polyline)` per family region, in atlas-native pixels), and the shade rules
+  `border_color` / `darker` / `BORDER_DARKEN` / `is_dark_background`. It moved
+  here from `nonlinear/render.py` and `nonlinear/image_gen_helpers.py` when
+  `linear`'s physical overlay started drawing the same lines: two methods
+  disagreeing about where a boundary is would be a bug neither could see.
+  `nonlinear.render` re-exports the shade rules and `region_contours`, so it
+  stays the one import for review rendering.
   Also `recolor.py`: organized structure colors for atlases whose native
   palettes mislead image-gen models. `color_lut(atlas)` keeps native colors
   when they are hierarchy-organized, joins the true Allen CCF colors

@@ -217,8 +217,7 @@ def compute_registration_landmarks(
     for attempt in range(1, _MAX_ATTEMPTS + 1):
         generated = generate_warped_segmentation_image(
             SegmentationGenerationRequest(
-                colored_regions=Image.fromarray(colored, mode="RGB"),
-                reference_slice=Image.fromarray(reference_gray, mode="L"),
+                reference_images=[Image.fromarray(colored, mode="RGB")],
                 slice_image=slice_image,
                 prompt=prompt,
                 provider=config.provider,

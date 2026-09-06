@@ -10,7 +10,12 @@ Plane = Literal["coronal", "sagittal", "horizontal"]
 # Canonical names are access methods (see providers/registry.py); the first
 # three are legacy aliases kept for old configs.
 Provider = Literal[
-    "google", "openai", "chatgpt", "gemini-api", "openai-api", "openai-oauth",
+    "google",
+    "openai",
+    "chatgpt",
+    "gemini-api",
+    "openai-api",
+    "openai-oauth",
     # No model at all: registration registers the silhouette prior itself.
     "none",
 ]
@@ -21,14 +26,12 @@ Deformation = Literal["bspline", "affine"]
 Init = Literal["atlas", "silhouette"]
 EngineMethod = Literal[
     "version",
-    "estimate.run",
     "register.run",
     "quick_affine.run",
     "export.run",
 ]
 ENGINE_METHODS: tuple[EngineMethod, ...] = (
     "version",
-    "estimate.run",
     "register.run",
     "quick_affine.run",
     "export.run",
@@ -85,27 +88,6 @@ class EngineErrorEnvelope(EngineBaseModel):
 
 class VersionResult(EngineBaseModel):
     version: str
-
-
-class EstimateRequest(EngineBaseModel):
-    image_path: str
-    atlas: str
-    plane: Plane = "coronal"
-    model: str | None = None
-    thinking: str | None = None
-    temperature: float | None = None
-    media_resolution: str | None = None
-    max_iterations: int = 20
-    preprocess: PreprocessMode = "auto"
-    provider: Provider = "google"
-    endpoint: str | None = None
-    output_dir: str | None = None
-
-
-class EstimateResult(EngineBaseModel):
-    position_mm: float
-    reasoning: str
-    debug_dir: str | None = None
 
 
 class RegisterRequest(EngineBaseModel):
@@ -202,8 +184,6 @@ def export_schema_bundle() -> dict[str, object]:
         "EngineResultEnvelope": EngineResultEnvelope,
         "EngineErrorEnvelope": EngineErrorEnvelope,
         "VersionResult": VersionResult,
-        "EstimateRequest": EstimateRequest,
-        "EstimateResult": EstimateResult,
         "RegisterRequest": RegisterRequest,
         "RegisterResult": RegisterResult,
         "QuickAffineRequest": QuickAffineRequest,
@@ -214,7 +194,6 @@ def export_schema_bundle() -> dict[str, object]:
     return {
         "schema_version": "1",
         "schemas": {
-            model_name: model_cls.model_json_schema()
-            for model_name, model_cls in models.items()
+            model_name: model_cls.model_json_schema() for model_name, model_cls in models.items()
         },
     }

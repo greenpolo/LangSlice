@@ -8,11 +8,9 @@ under `models/`.
 The two registration methods are sibling subpackages with no dependency on each
 other:
 
-- `src/langslice/linear/` -- slice-position estimation: the single-slice ADK
-  agent, prompts, tools, validators, runners, and trace collection.
-- `src/langslice/linear/whole_brain/` -- the whole-brain estimation engine:
-  stack state, JSON checkpoint, node graph, and the survey, positioning,
-  transform and review agents.
+- `src/langslice/linear/` -- order, position and one in-plane transform per
+  section: the job spec, the stack state and its JSON checkpoint, the one
+  toolbox, the job statement, the ADK session, and the run engine.
 - `src/langslice/nonlinear/` -- generative-image registration: candidate
   generation, image provider adapters, Elastix runtime, optional ADK review,
   affine/nonlinear result types, and the silhouette-based `quick_affine`
@@ -26,7 +24,7 @@ The remaining top-level modules are shared by both:
 - `src/langslice/affine.py` -- the shared in-plane affine core: the silhouette
   (image-moments) fit of a section onto an atlas section, the
   rotation/scale/translate matrix builder, and the normalized six-number
-  parameter convention. Used by the whole-brain transform step and by
+  parameter convention. Used by the linear transform tools and by
   `quick_affine`.
 - `src/langslice/image_prep.py` -- image normalization, metadata detection, and downsampling.
 - `src/langslice/integrations/` -- integration layers for external registration software: `quint.py` (QUINT/QuickNII/VisuAlign JSON export), `abba.py` (abba-python registration plugin).
@@ -40,7 +38,7 @@ The remaining top-level modules are shared by both:
 
 `linear` and `nonlinear` can be used separately. `nonlinear` takes a slice
 position as input and does not care where that position came from, so it can
-follow `langslice linear estimate` or a placement made in another tool. In
+follow `langslice linear run` or a placement made in another tool. In
 QUINT/ABBA-style workflows, linear placement happens first in the host tool and
 LangSlice-nonlinear stands in for the manual spline/BigWarp deformation step.
 
@@ -50,37 +48,34 @@ The Python package is the source of truth for LangSlice runtime behavior. The
 engine contract is defined with Pydantic models in `src/langslice/api/models.py`.
 
 `langslice serve --stdio` runs the newline-delimited JSON engine service. It
-accepts request envelopes such as `version`, `estimate.run`, `register.run`,
+accepts request envelopes such as `version`, `register.run`,
 `quick_affine.run`, and `export.run`, emits progress/log event envelopes, and
 returns either result or error envelopes.
 
-## Linear: Position Estimation
+## Linear: Order, Position, Transform
 
-Single-slice position estimation runs through ADK. The agent can fetch atlas
-images and must submit a structured estimate. Native Gemini requests can use the
-File API for target images, and fetched atlas images are returned as ADK native
-media tool results, so they persist in session history and stay visible on
-every later turn. This is the only estimation path, and it supports all planes
-(coronal, sagittal, horizontal).
+`langslice linear run` is ONE agent environment over a folder of sections: one
+`StackState`, one toolbox, one job statement, and one ADK session that ends at
+`submit` or the turn budget. A host fills a `JobSpec` -- which of `reorder`,
+`position` and `transform` are on, plus the knobs each one exposes -- and the
+toolbox is built from it: a task that is off contributes no tools, and its
+answer comes from `spec.inputs` instead.
 
-## Linear: Whole-Brain Estimation
+Every write tool checkpoints the whole state, so a run that dies resumes with
+the state it had (the agent is re-seeded, not replayed), and every write is
+undoable in memory (`undo`/`redo`, one tool call = one step). The results file
+uses the checkpoint's schema, so the CLI, the checkpoint and any host adapter
+read one shape. Corrections (order, flips, rotations), positions, cutting
+angles and per-section transforms are proposals -- the host applies them, and
+the user's image files are never modified.
 
-Whole-brain estimation is a node engine over one `StackState`:
-`ingest → survey → fix → seed → position → transforms → review → emit`.
-Nodes are plain async Python functions that return the name of the next node
-(`""` for the default successor); backward edges (`fix → survey`,
-`position → position`, `review → position`) are bounded per node.
+The per-section interactive alignment is not a nested session: since
+2026-09-06 `preview_transform`, `landmarks` and `set_transform` sit in the main
+toolbox, so the agent aligns a section whenever it wants, in the same context
+that placed it.
 
-All eight nodes are implemented.
-The engine writes a JSON checkpoint after every node and the results file
-uses the same schema, so the CLI, the checkpoint, and any host adapter read
-one shape. Corrections (order, flips), positions, oblique angles, and
-per-slice transforms are proposals -- the host applies them, and the user's
-image files are never modified.
-
-`signals.py` holds the interval interpolation the old pipeline applied
-silently; it is now just the arithmetic behind the positioning step's
-`interpolate_between` tool, which computes and writes nothing.
+`signals.py` holds the interval interpolation behind `distribute_spacing`,
+which computes and only writes when asked.
 
 ## Nonlinear: Image-Gen Registration
 
