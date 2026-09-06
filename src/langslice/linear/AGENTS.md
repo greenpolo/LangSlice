@@ -74,7 +74,7 @@ section, run in-process as an async tool of the main agent (`transform.py`).
   centre, per-axis scales, `translate_x_mm`/`translate_y_mm`), and the
   recorded transform carries them under `"physical"` next to the six
   normalized numbers plus the `"calibration"` used. `preview_transform`'s
-  payload also carries `silhouette_iou` (no verdict), `translate_px` (the
+  payload also carries `translate_px` (the
   entered mm as canvas pixels, plus `px_per_mm`), `history` (every parameter
   set previewed this session, oldest first) and the `view` it drew; the
   prompt states the rotation/scale centre (the CANVAS centre), that x is

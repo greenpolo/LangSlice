@@ -375,7 +375,6 @@ def _build_align_tools(
                 "y": round(translate_y_mm * px_per_mm, 1),
                 "px_per_mm": round(px_per_mm, 2),
             },
-            "silhouette_iou": round(float(iou), 3),
             "view": {"mode": view, "zoom": window or [0.0, 0.0, 1.0, 1.0]},
             "history": [dict(entry) for entry in box.history],
             "calibration": {
