@@ -208,8 +208,8 @@ def test_decompose_affine_recovers_the_knobs_it_was_built_from():
     # And it reads the normalized 6-vector too, translations as fractions.
     normalized = decompose_affine(normalized_affine(matrix, (200, 200)))
     assert normalized["rotation_deg"] == pytest.approx(12.0, abs=1e-3)
-    assert normalized["translate_x"] == pytest.approx(
-        parts["translate_x"] / 200.0, abs=1e-3
+    assert normalized["translate_x_frac"] == pytest.approx(
+        parts["translate_x_frac"] / 200.0, abs=1e-3
     )
 
 

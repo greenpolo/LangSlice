@@ -39,11 +39,13 @@ from langslice.atlas.render import atlas_um_per_px
 from langslice.linear.render import (
     OVERLAY_LONG_EDGE,
     PREVIEW_LONG_EDGE,
+    VIEW_MODES,
     canvas_geometry,
     canvas_um_per_px,
     estimate_um_per_px,
     image_to_part,
     physical_overlay,
+    physical_views,
     render_slice,
 )
 from langslice.linear.session import build_agent, run_agent_session
@@ -234,6 +236,8 @@ class _AlignBox:
     um_per_px: float = 1.0
     calibration_source: str = ""
     previews: int = 0
+    #: Every parameter set previewed in this session, oldest first.
+    history: list[dict[str, float]] = field(default_factory=list)
 
 
 def _build_align_tools(
@@ -265,7 +269,9 @@ def _build_align_tools(
         scale_y: float,
         translate_x_mm: float,
         translate_y_mm: float,
-        show_template: bool,
+        mode: str = "overlay",
+        zoom: list[float] = [],  # noqa: B006 — read, never mutated; ADK wants a value
+        template_opacity: float = 0.0,
     ) -> dict[str, Any]:
         """Render this section under a candidate transform, with atlas outlines.
 
@@ -273,28 +279,49 @@ def _build_align_tools(
 
         Args:
             rotation_deg: Counter-clockwise rotation about the centre of the
-                image, in degrees. Negative turns it clockwise.
-            scale_x: Horizontal scale multiplier. 1.0 leaves the width alone.
+                canvas, in degrees. Negative turns it clockwise.
+            scale_x: Horizontal scale multiplier about the canvas centre. 1.0
+                leaves the width alone.
             scale_y: Vertical scale multiplier, same convention.
             translate_x_mm: Horizontal shift in millimetres; positive moves
                 right.
             translate_y_mm: Vertical shift in millimetres; positive moves down.
-            show_template: True blends the atlas reference image under the
-                outlines.
+            mode: "overlay" (the section with the outlines on it),
+                "side_by_side" (two images: the section, then the atlas
+                template, same scale and same crop), "checkerboard" (section
+                and template in alternating tiles) or "outlines" (the atlas
+                lines and the section's own silhouette contour on black).
+            zoom: [x0, y0, x1, y1] as fractions of the CANVAS, cropped before
+                the image is sized down, so it is real magnification. An empty
+                list is the whole canvas.
+            template_opacity: 0..1, how strongly the atlas template is blended
+                under the outlines in "overlay". 0.0 draws no template.
 
         Returns:
-            The parameters you passed, their decomposition, the calibration
-            used, and one image: the transformed section with the atlas
-            region outlines drawn over it at true physical scale.
+            The parameters you passed, their decomposition, the shift in
+            canvas pixels, the calibration used, the overlap between the
+            section's tissue and the atlas anatomy, every parameter set
+            previewed so far, and the image(s) of the view you asked for.
         """
         try:
             params = _params(
                 rotation_deg, scale_x, scale_y, translate_x_mm, translate_y_mm
             )
+            view = str(mode or "overlay").strip().lower()
+            window = [float(v) for v in (zoom or [])]
+            opacity = float(template_opacity)
         except (TypeError, ValueError):
             return {"status": "error", "error": "BAD_ARGS"}
+        if view not in VIEW_MODES:
+            return {"status": "error", "error": "BAD_MODE", "modes": list(VIEW_MODES)}
+        if window and len(window) != 4:
+            return {
+                "status": "error",
+                "error": "BAD_ZOOM",
+                "expected": "[x0, y0, x1, y1] as fractions of the canvas",
+            }
         try:
-            overlay = physical_overlay(
+            images, iou = physical_views(
                 section,
                 box.um_per_px,
                 ctx.atlas,
@@ -303,7 +330,9 @@ def _build_align_tools(
                 state.pitch_deg,
                 state.yaw_deg,
                 params,
-                show_template=bool(show_template),
+                mode=view,
+                zoom=window,
+                template_opacity=opacity,
                 label=record.id,
                 long_edge=OVERLAY_LONG_EDGE,
             )
@@ -315,8 +344,22 @@ def _build_align_tools(
                 "message": str(exc),
             }
         box.last_params = params
-        box.last_panel = overlay
+        box.last_panel = images[0]
         box.previews += 1
+        box.history.append(params)
+        px_per_mm = 1000.0 / box.um_per_px
+        described = {
+            "overlay": "the section with the atlas outlines over it",
+            "side_by_side": (
+                "two images at the same scale and the same crop: the section, "
+                "then the atlas template"
+            ),
+            "checkerboard": "the section and the atlas template in alternating tiles",
+            "outlines": (
+                "the atlas outlines and the section's own silhouette contour, "
+                "on black"
+            ),
+        }[view]
         return {
             "status": "ok",
             "id": record.id,
@@ -327,16 +370,25 @@ def _build_align_tools(
                 ),
                 section.size,
             ),
+            "translate_px": {
+                "x": round(translate_x_mm * px_per_mm, 1),
+                "y": round(translate_y_mm * px_per_mm, 1),
+                "px_per_mm": round(px_per_mm, 2),
+            },
+            "silhouette_iou": round(float(iou), 3),
+            "view": {"mode": view, "zoom": window or [0.0, 0.0, 1.0, 1.0]},
+            "history": [dict(entry) for entry in box.history],
             "calibration": {
                 "section_um_per_px": round(box.um_per_px, 4),
                 "source": box.calibration_source,
             },
             "description": (
-                f"{record.id} under the transform above, with the outlines of "
-                f"the {state.plane} atlas section at {position_mm:.3f} mm drawn "
-                "over it at true physical scale, in each region's own color."
+                f"{record.id} under the transform above, {described}. The "
+                f"outlines are the FAMILY regions of the {state.plane} atlas "
+                f"section at {position_mm:.3f} mm, drawn at true physical scale "
+                "as neutral hairlines."
             ),
-            TOOL_MEDIA_PARTS_KEY: [image_to_part(overlay)],
+            TOOL_MEDIA_PARTS_KEY: [image_to_part(image) for image in images],
         }
 
     def submit_transform(
@@ -413,16 +465,21 @@ def _align_prompt(
         "",
         "Tools:",
         "- `preview_transform`: renders the section under a candidate "
-        "rotation/scale/translation with the atlas region outlines over it, "
-        "each in its own color, at true physical scale. Writes nothing.",
+        "rotation/scale/translation with the atlas region outlines over it at "
+        "true physical scale. Writes nothing.",
+        "- `preview_transform` view controls, all optional: `mode` "
+        "(overlay, side_by_side, checkerboard, outlines), `zoom` "
+        "([x0, y0, x1, y1] as fractions of the canvas, cropped before the "
+        "image is sized down), `template_opacity` (0..1).",
         "- `submit_transform`: ends this alignment with the parameters you "
         "settled on.",
         "",
         "Constraints:",
         f"- You have about {ALIGN_MAX_ITERATIONS} tool calls; if you do not "
         "submit, the last preview is taken as your answer.",
-        "- Translations are in millimetres; scales are multipliers; rotation "
-        "is counter-clockwise degrees about the centre of the image.",
+        "- Rotation is in counter-clockwise degrees and both scales are "
+        "multipliers, all three about the CANVAS centre; translations are in "
+        "millimetres, x increasing to the right and y downward.",
     ]
     return "\n".join(lines)
 
