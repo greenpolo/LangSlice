@@ -245,8 +245,7 @@ Region acronyms on the outlines were asked for and deliberately NOT built
 (Nash: "it has no use for this"), and neither was damage masking.
 
 **What the payload carries.** Beside the params, their decomposition and the
-calibration: `silhouette_iou` (the warped section's tissue mask against the
-atlas anatomy at this placement — a number, no verdict), `translate_px` (the
+calibration: `translate_px` (the
 entered millimetres as canvas pixels, plus `px_per_mm`, so mm↔px is explicit),
 `history` (every parameter set previewed in this session, oldest first) and
 `view` (the mode and zoom box the image was drawn with). `decompose_affine`
@@ -260,5 +259,5 @@ renders at that width in pixels; the scale bar is 1000/µm-per-px pixels long
 before AND after a zoom crop; outline pixels lie on family-color boundaries of
 the filled render; `side_by_side` returns two frames of one size;
 `checkerboard` carries both sources in pixels; `outlines` is black off the
-lines; `silhouette_iou` measures a known overlap; a file with no pixel size
+lines; a file with no pixel size
 yields `calibration: "estimated"`, never a crash.

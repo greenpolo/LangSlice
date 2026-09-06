@@ -139,13 +139,6 @@ def test_the_template_opacity_is_a_dial_not_a_switch():
 # --- the numbers the payload carries -------------------------------------
 
 
-def test_silhouette_iou_is_a_fraction_and_measures_the_placement():
-    _images, iou = _views()
-    assert 0.0 <= iou <= 1.0
-    # An 80 px square of tissue inside a 100 px square of atlas anatomy.
-    assert iou == pytest.approx((80.0 / 100.0) ** 2, abs=0.05)
-
-
 def _preview_tool(tmp_path: Path):
     from langslice.linear.transform import _build_align_tools
 
@@ -158,7 +151,7 @@ def _preview_tool(tmp_path: Path):
     return tool, box
 
 
-def test_the_preview_payload_carries_history_pixels_and_overlap(tmp_path: Path):
+def test_the_preview_payload_carries_history_and_pixels_but_no_overlap(tmp_path: Path):
     preview, box = _preview_tool(tmp_path)
 
     first = preview(0.0, 1.0, 1.0, 0.25, 0.0)
@@ -167,7 +160,10 @@ def test_the_preview_payload_carries_history_pixels_and_overlap(tmp_path: Path):
     assert first["translate_px"]["x"] == pytest.approx(25.0, abs=0.1)
     assert first["translate_px"]["y"] == 0.0
     assert first["translate_px"]["px_per_mm"] == pytest.approx(100.0)
-    assert 0.0 <= first["silhouette_iou"] <= 1.0
+    # No overlap number: silhouette overlap against the whole atlas plate
+    # rewarded inflating a damaged remnant to fill it (luna, D_08, 2026-09-06:
+    # 0.29 -> 0.51 at scale 1.35), and this loop exists for damaged sections.
+    assert "silhouette_iou" not in first
     assert first["view"] == {"mode": "overlay", "zoom": [0.0, 0.0, 1.0, 1.0]}
     # The decomposition names its translations for what they are: fractions.
     assert "translate_x_frac" in first["decomposition"]
