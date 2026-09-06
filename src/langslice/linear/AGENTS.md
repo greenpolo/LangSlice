@@ -35,10 +35,16 @@ head and send one `set_positions`. Nothing previews; everything is undoable.
 sections, reorder+position: order 38/38, positions median 0.30 mm, bias
 -0.17 — a 0.2 mm ladder from a correct anchor; damage 7/7 +1 FP; 13 calls).
 Nash kept five of its ten asks:
-- images "not delivered": a 134-image probe on the same layout answered 8/8,
-  so delivery works; the tool's text now SAYS its images follow in the next
-  user message (`openai_oauth.content_to_input_items`), and the picture-
-  returning writes report `render_failed` instead of silently dropping.
+- images "not delivered": REAL, and not the transport. `adk/plugins.py`
+  `trim_stale_tool_images` kept only the newest 24 tool images (sized for
+  8-image sweeps); with 16-image `set_positions` batches every call but the
+  newest two lost its pixels on every later turn, which is exactly Astra's
+  "early results said attached, later ones showed images" — in both runs.
+  Budget now 128 (a 134-image request was probed fine), a dropped call's
+  result says "dropped from context" instead of "attached", the tool text
+  says its images follow in the next user message
+  (`openai_oauth.content_to_input_items`), and the picture-returning writes
+  report `render_failed`.
 - `compare_placement` (position stage): the section on the physical canvas
   against the atlas at any positions, every `VIEW_MODES` view, zoom, opacity
   — the "linked viewer" and the "placement preview / AP stepper" in one
