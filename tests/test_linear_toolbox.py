@@ -59,22 +59,24 @@ def test_a_position_only_spec_has_no_reorder_or_transform_tools(tmp_path: Path):
     names = set(box.names)
     assert {"status", "view_slices", "fetch_atlas", "set_positions", "submit"} <= names
     assert not names & {"reorder_slices", "move_slice", "orient_slices"}
-    assert not names & {"fit_affine", "align_slice", "copy_transform"}
+    assert not names & {"fit_affine", "preview_transform", "set_transform",
+                        "landmarks", "copy_transform"}
 
 
 def test_optional_tools_follow_their_flags(tmp_path: Path):
     _, _, box = _box(
         tmp_path,
         position=PositionSpec(deepslice=True, bayesian=True),
-        transform=TransformSpec(angles=True, subagents=False),
+        transform=TransformSpec(angles=True),
     )
     names = set(box.names)
     assert {"run_deepslice", "fit_position", "set_cutting_angles"} <= names
-    assert "align_slice" not in names  # subagents off
 
     _, _, plain = _box(tmp_path)
     assert not set(plain.names) & {"run_deepslice", "fit_position", "set_cutting_angles"}
-    assert "align_slice" in plain.names
+    # The interactive transform rides in the main trajectory, always on with
+    # the task.
+    assert {"preview_transform", "landmarks", "set_transform"} <= set(plain.names)
 
 
 def test_flip_is_refused_when_the_spec_switches_it_off(tmp_path: Path):
@@ -225,7 +227,7 @@ def _submit(box, **kwargs):
 
 
 def test_submit_refuses_an_unplaced_stack(tmp_path: Path):
-    state, _, box = _box(tmp_path)
+    state, _, box = _box(tmp_path, tasks=["position"])
     result = _submit(box)
     assert result["error"] == "MISSING_POSITIONS"
     assert len(result["missing_ids"]) == 5
@@ -233,7 +235,7 @@ def test_submit_refuses_an_unplaced_stack(tmp_path: Path):
 
 
 def test_submit_refuses_positions_that_run_against_the_order(tmp_path: Path):
-    state, _, box = _box(tmp_path, placed=True)
+    state, _, box = _box(tmp_path, tasks=["position"], placed=True)
     state.by_id("s2.png").position_mm = 0.5  # a dip in an increasing stack
     result = _submit(box)
     assert result["error"] == "ORDER_POSITION_MISMATCH"
@@ -249,7 +251,7 @@ def test_submit_refuses_positions_that_run_against_the_order(tmp_path: Path):
 
 
 def test_submit_accepts_a_stack_that_runs_backwards(tmp_path: Path):
-    state, _, box = _box(tmp_path, placed=True)
+    state, _, box = _box(tmp_path, tasks=["position"], placed=True)
     for index, record in enumerate(state.in_order()):
         record.position_mm = 10.0 - index
     assert _submit(box)["status"] == "ok"
@@ -257,7 +259,7 @@ def test_submit_accepts_a_stack_that_runs_backwards(tmp_path: Path):
 
 
 def test_submit_refuses_a_break_the_positions_do_not_show(tmp_path: Path):
-    state, _, box = _box(tmp_path, placed=True)
+    state, _, box = _box(tmp_path, tasks=["position"], placed=True)
     result = _submit(box, interval_breaks=[3])
     assert result["error"] == "INTERVAL_BREAKS_UNSUPPORTED"
     assert result["failures"][0]["written_interval_mm"] == 0.5
@@ -265,7 +267,7 @@ def test_submit_refuses_a_break_the_positions_do_not_show(tmp_path: Path):
 
 
 def test_submit_accepts_a_break_the_positions_do_show(tmp_path: Path):
-    state, _, box = _box(tmp_path, placed=True)
+    state, _, box = _box(tmp_path, tasks=["position"], placed=True)
     for record in state.in_order()[3:]:
         record.position_mm = float(record.position_mm) + 4.0
     assert _submit(box, interval_breaks=[3])["status"] == "ok"
@@ -274,7 +276,10 @@ def test_submit_accepts_a_break_the_positions_do_show(tmp_path: Path):
 
 def test_strict_interval_refuses_uneven_spacing_and_any_break(tmp_path: Path):
     state, ctx, spec = _stack(
-        tmp_path, placed=True, position=PositionSpec(strict_interval=True, interval_um=500)
+        tmp_path,
+        tasks=["position"],
+        placed=True,
+        position=PositionSpec(strict_interval=True, interval_um=500),
     )
     box = build_tools(state, ctx, spec)
     assert _submit(box)["status"] == "ok"  # 0.5 mm apart, exactly the interval
@@ -290,7 +295,7 @@ def test_strict_interval_refuses_uneven_spacing_and_any_break(tmp_path: Path):
 
 
 def test_validate_runs_the_gates_without_writing(tmp_path: Path):
-    state, ctx, box = _box(tmp_path, placed=True)
+    state, ctx, box = _box(tmp_path, tasks=["position"], placed=True)
     validate = _tool(box, "validate")
 
     state.by_id("s2.png").position_mm = None
@@ -346,6 +351,61 @@ def test_fit_affine_records_a_transform_and_refuses_damaged_sections(tmp_path: P
     assert named["results"][0]["error"] == "DAMAGED"
 
     assert _tool(box, "fit_affine")([], "elastix", True)["error"] == "UNAVAILABLE"
+
+
+def test_set_transform_writes_an_interactive_transform_and_undoes(tmp_path: Path):
+    atlas = EllipseAtlas()
+    for index in range(2):
+        ellipse_section().save(tmp_path / f"s{index}.png")
+    spec = JobSpec(image_folder=str(tmp_path), model="fake-model", preprocess="none")
+    ctx = build_context(spec, emit=lambda _m: None, atlas_loader=lambda _n: atlas)
+    state = ingest(spec, ctx)
+    state.by_id("s0.png").position_mm = 10.0
+    state.by_id("s0.png").damaged = True  # the hand path is for exactly these
+    box = build_tools(state, ctx, spec)
+
+    # A section with no position has nothing to align against.
+    assert _tool(box, "preview_transform")("s1.png", 0.0, 1.0, 1.0, 0.0, 0.0)[
+        "error"
+    ] == "NO_POSITION"
+    assert _tool(box, "set_transform")(
+        "s1.png", 0.0, 1.0, 1.0, 0.0, 0.0, "low", ""
+    )["error"] == "NO_POSITION"
+
+    result = _tool(box, "set_transform")(
+        "s0.png", 5.0, 1.1, 1.0, 0.25, -0.1, "medium", "lined up the intact border"
+    )
+    assert result["status"] == "ok"
+    transform = state.by_id("s0.png").transform
+    assert transform["kind"] == "interactive"
+    assert len(transform["params"]) == 6
+    assert transform["physical"]["rotation_deg"] == 5.0
+    assert transform["note"] == "lined up the intact border"
+    # Nothing states a pixel size here, and the payload says so rather than
+    # pretending.
+    assert transform["calibration"]["source"] == "estimated"
+    assert state.by_id("s0.png").confidence == "medium"
+    assert load_checkpoint(ctx.checkpoint_path).by_id("s0.png").transform is not None
+
+    assert _tool(box, "undo")()["status"] == "ok"
+    assert state.by_id("s0.png").transform is None
+
+
+def test_submit_names_the_sections_with_no_transform(tmp_path: Path):
+    state, ctx, box = _box(tmp_path, tasks=["transform"], placed=True)
+    validate = _tool(box, "validate")
+
+    refusal = _submit(box)
+    assert refusal["error"] == "MISSING_TRANSFORMS"
+    assert len(refusal["missing_ids"]) == 5
+    assert validate([])["error"] == "MISSING_TRANSFORMS"
+    assert state.submitted is False
+
+    for record in state.slices:
+        record.transform = {"kind": "interactive", "params": [1, 0, 0, 0, 1, 0]}
+    assert validate([]) == {"status": "ok", "would_submit": True}
+    assert _submit(box)["status"] == "ok"
+    assert state.submitted is True
 
 
 def test_copy_transform_copies_onto_named_sections(tmp_path: Path):

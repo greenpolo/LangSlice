@@ -260,6 +260,7 @@ def affine_matrix(
     translate_x: float,
     translate_y: float,
     size: tuple[int, int],
+    pivot: tuple[float, float] | None = None,
 ) -> np.ndarray:
     """A 2x3 affine from human knobs, about the centre of a *size* image.
 
@@ -267,9 +268,13 @@ def affine_matrix(
     are multipliers per axis applied before the rotation, and translations are
     FRACTIONS of image width/height — positive x moves right, positive y moves
     down. Identity is ``rotation_deg=0, scale=1, translate=0``.
+
+    *pivot* moves the point rotation and scale happen about, in PIXELS of the
+    same frame *size* describes; ``None`` is the frame's centre. The
+    translation is unaffected — it is applied after, whatever the pivot.
     """
     width, height = size
-    cx, cy = width / 2.0, height / 2.0
+    cx, cy = (width / 2.0, height / 2.0) if pivot is None else (float(pivot[0]), float(pivot[1]))
     rad = math.radians(rotation_deg)
     cos_t, sin_t = math.cos(rad), math.sin(rad)
     a, b = cos_t * scale_x, sin_t * scale_y
@@ -289,6 +294,7 @@ def physical_affine_matrix(
     translate_y_mm: float,
     size: tuple[int, int],
     um_per_px: float,
+    pivot: tuple[float, float] | None = None,
 ) -> np.ndarray:
     """:func:`affine_matrix` with the shifts given in MILLIMETRES.
 
@@ -298,6 +304,12 @@ def physical_affine_matrix(
     ``1000 / um_per_px`` pixels, whatever the frame's size — which is the
     whole point of calibrating: the same numbers mean the same displacement
     at any working resolution.
+
+    *pivot* is the rotation/scale centre in pixels of *size*; ``None`` is the
+    frame's centre. Since the frame's width and height cancel out of the
+    translation, the SAME numbers build the same map on the section's frame
+    and on the padded canvas around it — as long as the pivot is expressed in
+    whichever frame *size* names.
     """
     if um_per_px <= 0:
         raise ValueError("um_per_px must be positive")
@@ -310,6 +322,7 @@ def physical_affine_matrix(
         translate_x=translate_x_mm * px_per_mm / width,
         translate_y=translate_y_mm * px_per_mm / height,
         size=size,
+        pivot=pivot,
     )
 
 
@@ -322,6 +335,7 @@ def normalized_physical_affine(
     translate_y_mm: float,
     size: tuple[int, int],
     um_per_px: float,
+    pivot: tuple[float, float] | None = None,
 ) -> list[float]:
     """Physical parameters as the six normalized numbers hosts consume.
 
@@ -329,6 +343,11 @@ def normalized_physical_affine(
     were chosen on: the pad is symmetric, so both frames share a centre, and
     a rotation about the canvas centre is the same map as a rotation about
     the section centre. Only the frame the numbers are expressed in changes.
+
+    That equivalence is exactly what a *pivot* breaks, so a pivot chosen on
+    the canvas must be handed over in the SECTION's frame (subtract the
+    canvas's section offset). The six numbers then describe the same map the
+    canvas showed, still on the section's own frame.
     """
     return normalized_affine(
         physical_affine_matrix(
@@ -339,6 +358,7 @@ def normalized_physical_affine(
             translate_y_mm=translate_y_mm,
             size=size,
             um_per_px=um_per_px,
+            pivot=pivot,
         ),
         size,
     )

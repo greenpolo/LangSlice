@@ -18,23 +18,39 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, cast
 
+import numpy as np
 from google.genai import types
 
 from langslice.adk import TOOL_MEDIA_PARTS_KEY
+from langslice.affine import normalized_physical_affine, physical_affine_matrix
 from langslice.linear.atlas_fetch import make_fetch_atlas
 from langslice.linear.checkpoint import save_checkpoint
 from langslice.linear.deepslice import run_deepslice as _run_deepslice
 from langslice.linear.render import (
+    OVERLAY_LONG_EDGE,
+    PREVIEW_LONG_EDGE,
     VIEW_LONG_EDGE,
+    VIEW_MODES,
+    CanvasGeometry,
+    canvas_geometry,
     caption,
     image_to_part,
+    physical_views,
+    pivot_on_canvas,
     render_slice,
     status_rows,
 )
 from langslice.linear.signals import interpolate_positions
 from langslice.linear.spec import JobSpec
 from langslice.linear.state import SliceState, StackState, apply_confidence
-from langslice.linear.transform import fit_silhouette, run_align_session
+from langslice.linear.transform import (
+    affine_fit,
+    calibrate,
+    fit_silhouette,
+    physical_decomposition,
+    physical_params,
+    similarity_fit,
+)
 from langslice.space import Plane
 
 if TYPE_CHECKING:  # ponytail: import cycle — engine builds the toolbox
@@ -65,6 +81,21 @@ STRICT_INTERVAL_TOLERANCE = 0.10
 #: Rotations ``orient_slices`` accepts.
 _ROTATIONS = (0, 90, 180, 270)
 
+#: Views ``preview_transform`` composes on top of the renderer's own
+#: (:data:`~langslice.linear.render.VIEW_MODES`): the A/B toggle, which is two
+#: renders of one crop rather than one composition.
+PREVIEW_MODES = (*VIEW_MODES, "ab")
+
+#: The transform every section starts from, and the B side of an A/B preview
+#: when a section carries nothing yet.
+IDENTITY_PARAMS: dict[str, float] = {
+    "rotation_deg": 0.0,
+    "scale_x": 1.0,
+    "scale_y": 1.0,
+    "translate_x_mm": 0.0,
+    "translate_y_mm": 0.0,
+}
+
 
 @dataclass
 class ToolBox:
@@ -74,10 +105,58 @@ class ToolBox:
     submission: dict[str, Any] = field(default_factory=dict)
     undo_stack: list[dict[str, Any]] = field(default_factory=list)
     redo_stack: list[dict[str, Any]] = field(default_factory=list)
+    #: Every parameter set previewed this run, per section id, oldest first.
+    preview_history: dict[str, list[dict[str, float]]] = field(default_factory=dict)
 
     @property
     def names(self) -> list[str]:
         return [tool.__name__ for tool in self.tools]
+
+
+@dataclass(frozen=True)
+class _Staged:
+    """One section ready to be drawn or measured on its physical canvas."""
+
+    record: SliceState
+    section: Any
+    um_per_px: float
+    calibration_source: str
+    geometry: CanvasGeometry
+    params: dict[str, float]
+    #: Rotation/scale centre in CANVAS pixels; None is the canvas centre.
+    pivot: tuple[float, float] | None
+    #: The same pivot as fractions of the canvas, for the payload.
+    pivot_frac: list[float]
+    #: What was asked for: "canvas", "tissue" or "fractions".
+    pivot_mode: str
+
+    @property
+    def pivot_in_section(self) -> tuple[float, float] | None:
+        """The pivot on the SECTION's frame, which the six numbers live on."""
+        if self.pivot is None:
+            return None
+        ox, oy = self.geometry.section_offset
+        return (self.pivot[0] - ox, self.pivot[1] - oy)
+
+    @property
+    def calibration(self) -> dict[str, Any]:
+        return {
+            "section_um_per_px": round(self.um_per_px, 4),
+            "source": self.calibration_source,
+        }
+
+    def matrix(self, params: dict[str, float] | None = None) -> Any:
+        """The canvas-pixel 2x3 of *params* (default: the staged ones).
+
+        Built on the canvas frame directly: width and height cancel out of the
+        physical translation, so this is the very map the picture shows.
+        """
+        return physical_affine_matrix(
+            size=self.geometry.size,
+            um_per_px=self.um_per_px,
+            pivot=self.pivot,
+            **(params if params is not None else self.params),
+        )
 
 
 # --- submit gates --------------------------------------------------------
@@ -244,21 +323,41 @@ def unsupported_breaks(state: StackState, breaks: list[int]) -> dict[str, Any] |
     }
 
 
+def missing_transforms(state: StackState) -> dict[str, Any] | None:
+    """``None`` when every section carries a transform, else the rejection."""
+    missing = [record.id for record in state.in_order() if record.transform is None]
+    if not missing:
+        return None
+    return {
+        "status": "error",
+        "error": "MISSING_TRANSFORMS",
+        "missing_ids": missing,
+        "message": (
+            f"{len(missing)} of {len(state.slices)} section(s) carry no "
+            "transform; every section needs one, damaged ones included."
+        ),
+    }
+
+
 def submit_errors(
     state: StackState, spec: JobSpec, breaks: list[int]
 ) -> dict[str, Any] | None:
     """Every gate that applies to this run, in order."""
-    if not spec.has("position"):
-        return None
-    return (
-        missing_positions(state)
-        or order_position_mismatch(state)
-        or (
-            strict_interval_error(state, breaks)
-            if spec.position.strict_interval
-            else unsupported_breaks(state, breaks)
+    if spec.has("position"):
+        refusal = (
+            missing_positions(state)
+            or order_position_mismatch(state)
+            or (
+                strict_interval_error(state, breaks)
+                if spec.position.strict_interval
+                else unsupported_breaks(state, breaks)
+            )
         )
-    )
+        if refusal is not None:
+            return refusal
+    if spec.has("transform"):
+        return missing_transforms(state)
+    return None
 
 
 # --- the toolbox ---------------------------------------------------------
@@ -1040,48 +1139,477 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         payload.update(commit())
         return payload
 
-    async def align_slice(slice_id: str, notes: str) -> dict[str, Any]:
-        """Align ONE section by eye, in a bounded sub-session, and record it.
+    # --- the interactive transform --------------------------------------
 
-        The sub-session previews candidate transforms over the section's atlas
-        section and submits the alignment it settles on. It records an in-plane
-        transform only: the section's flip and rotation flags are not changed.
-
-        Args:
-            slice_id: Filename or corrected index.
-            notes: What the sub-session should know about this section. May be
-                empty.
-
-        Returns:
-            The parameters it settled on (translations in millimetres), their
-            decomposition, the calibration used, and the final overlay.
-        """
+    def stage(
+        slice_id: str,
+        rotation_deg: float,
+        scale_x: float,
+        scale_y: float,
+        translate_x_mm: float,
+        translate_y_mm: float,
+        pivot: Any,
+    ) -> _Staged | dict[str, Any]:
+        """One section, its calibrated canvas and the pivot, or a refusal."""
         record = state.resolve(slice_id)
         if record is None:
             return {"status": "error", "error": "UNKNOWN_SLICE_IDS", "unknown": [slice_id]}
-        outcome = await run_align_session(state, ctx, record, str(notes or ""))
-        panel = outcome.pop("panel", None)
-        if outcome["status"] != "ok":
-            return outcome
+        if record.position_mm is None:
+            return {"status": "error", "error": "NO_POSITION", "id": record.id}
+        try:
+            params = {
+                "rotation_deg": float(rotation_deg),
+                "scale_x": float(scale_x),
+                "scale_y": float(scale_y),
+                "translate_x_mm": float(translate_x_mm),
+                "translate_y_mm": float(translate_y_mm),
+            }
+        except (TypeError, ValueError):
+            return {"status": "error", "error": "BAD_ARGS"}
+        section = render_slice(ctx, record, long_edge=PREVIEW_LONG_EDGE)
+        um_per_px, source = calibrate(state, ctx, record, section)
+        try:
+            geometry = canvas_geometry(
+                section.size,
+                um_per_px,
+                ctx.atlas,
+                record.position_mm,
+                cast(Plane, state.plane),
+                state.pitch_deg,
+                state.yaw_deg,
+            )
+        except Exception as exc:
+            logger.warning("transform: atlas render failed for %s: %s", record.id, exc)
+            return {
+                "status": "error",
+                "error": "ATLAS_RENDER_FAILED",
+                "message": str(exc),
+            }
+        try:
+            point = pivot_on_canvas(pivot, section, geometry)
+        except ValueError as exc:
+            return {"status": "error", "error": "BAD_PIVOT", "message": str(exc)}
+        width, height = geometry.size
+        centre = point or (width / 2.0, height / 2.0)
+        mode = "canvas"
+        if isinstance(pivot, str):
+            mode = (pivot.strip().lower() or "canvas")
+        elif pivot:
+            mode = "fractions"
+        return _Staged(
+            record=record,
+            section=section,
+            um_per_px=um_per_px,
+            calibration_source=source,
+            geometry=geometry,
+            params=params,
+            pivot=point,
+            pivot_frac=[round(centre[0] / width, 4), round(centre[1] / height, 4)],
+            pivot_mode=mode,
+        )
+
+    def views(
+        staged: _Staged,
+        params: dict[str, float],
+        *,
+        mode: str,
+        zoom: list[float],
+        template_opacity: float,
+        pivot: tuple[float, float] | None,
+        markers: Any = None,
+        label: str = "",
+    ) -> list[Any]:
+        images, _iou = physical_views(
+            staged.section,
+            staged.um_per_px,
+            ctx.atlas,
+            float(staged.record.position_mm or 0.0),
+            cast(Plane, state.plane),
+            state.pitch_deg,
+            state.yaw_deg,
+            params,
+            mode=mode,
+            zoom=zoom,
+            template_opacity=template_opacity,
+            pivot=pivot,
+            markers=markers,
+            label=label or staged.record.id,
+            long_edge=OVERLAY_LONG_EDGE,
+        )
+        return images
+
+    def preview_transform(
+        slice_id: str,
+        rotation_deg: float,
+        scale_x: float,
+        scale_y: float,
+        translate_x_mm: float,
+        translate_y_mm: float,
+        mode: str = "overlay",
+        zoom: list[float] = [],  # noqa: B006 — read, never mutated; ADK wants a value
+        template_opacity: float = 0.0,
+        pivot: str | list[float] = "canvas",
+    ) -> dict[str, Any]:
+        """Render one section under a candidate transform, with atlas outlines.
+
+        Nothing is written. Call it as often as you need, on any section that
+        has a position.
+
+        Args:
+            slice_id: Filename or corrected index.
+            rotation_deg: Counter-clockwise rotation about the pivot, in
+                degrees. Negative turns it clockwise.
+            scale_x: Horizontal scale multiplier about the pivot. 1.0 leaves
+                the width alone.
+            scale_y: Vertical scale multiplier, same convention.
+            translate_x_mm: Horizontal shift in millimetres; positive moves
+                right.
+            translate_y_mm: Vertical shift in millimetres; positive moves down.
+            mode: "overlay" (the section with the outlines on it),
+                "side_by_side" (two images: the section, then the atlas
+                template, same scale and same crop), "checkerboard" (section
+                and template in alternating tiles), "outlines" (the atlas
+                lines and the section's own silhouette contour on black),
+                "section" (the section alone, no lines), "template" (the atlas
+                template alone) or "ab" (two overlays at the same crop: these
+                parameters, then the section's stored transform, or identity
+                when it has none).
+            zoom: [x0, y0, x1, y1] as fractions of the CANVAS, cropped before
+                the image is sized down, so it is real magnification. An empty
+                list is the whole canvas.
+            template_opacity: 0..1, how strongly the atlas template is blended
+                under the outlines in "overlay". 0.0 draws no template.
+            pivot: What the rotation and the scales turn about: "canvas" (the
+                canvas centre), "tissue" (the section's tissue centroid) or
+                [fx, fy] fractions of the canvas.
+
+        Returns:
+            The parameters you passed, their decomposition (rotation, scales,
+            shear, mirrored), the shift in canvas pixels, the pivot used, the
+            calibration, every parameter set previewed for this section so
+            far, and the image(s) of the view you asked for.
+        """
+        view = str(mode or "overlay").strip().lower()
+        if view not in PREVIEW_MODES:
+            return {"status": "error", "error": "BAD_MODE", "modes": list(PREVIEW_MODES)}
+        try:
+            window = [float(value) for value in (zoom or [])]
+            opacity = float(template_opacity)
+        except (TypeError, ValueError):
+            return {"status": "error", "error": "BAD_ARGS"}
+        if window and len(window) != 4:
+            return {
+                "status": "error",
+                "error": "BAD_ZOOM",
+                "expected": "[x0, y0, x1, y1] as fractions of the canvas",
+            }
+        staged = stage(
+            slice_id, rotation_deg, scale_x, scale_y, translate_x_mm,
+            translate_y_mm, pivot,
+        )
+        if isinstance(staged, dict):
+            return staged
+        record = staged.record
+
+        stored = (record.transform or {}).get("physical")
+        reference: dict[str, Any] | None = None
+        try:
+            if view == "ab":
+                other = (
+                    {key: float(stored[key]) for key in IDENTITY_PARAMS}
+                    if isinstance(stored, dict)
+                    else dict(IDENTITY_PARAMS)
+                )
+                other_pivot = staged.pivot
+                if isinstance(stored, dict) and stored.get("pivot"):
+                    fractions = [float(value) for value in stored["pivot"]]
+                    other_pivot = (
+                        fractions[0] * staged.geometry.size[0],
+                        fractions[1] * staged.geometry.size[1],
+                    )
+                images = views(
+                    staged, staged.params, mode="overlay", zoom=window,
+                    template_opacity=opacity, pivot=staged.pivot,
+                    label=f"{record.id} candidate",
+                ) + views(
+                    staged, other, mode="overlay", zoom=window,
+                    template_opacity=opacity, pivot=other_pivot,
+                    label=f"{record.id} {'stored' if isinstance(stored, dict) else 'identity'}",
+                )
+                reference = {
+                    "source": "stored" if isinstance(stored, dict) else "identity",
+                    "params": other,
+                }
+                if not isinstance(stored, dict) and record.transform is not None:
+                    reference["stored_kind"] = record.transform.get("kind")
+            else:
+                images = views(
+                    staged, staged.params, mode=view, zoom=window,
+                    template_opacity=opacity, pivot=staged.pivot,
+                )
+        except Exception as exc:
+            logger.warning("preview_transform failed for %s: %s", record.id, exc)
+            return {"status": "error", "error": "RENDER_FAILED", "message": str(exc)}
+
+        history = box.preview_history.setdefault(record.id, [])
+        history.append(dict(staged.params))
+        px_per_mm = 1000.0 / staged.um_per_px
+        described = {
+            "overlay": "the section with the atlas outlines over it",
+            "side_by_side": (
+                "two images at the same scale and the same crop: the section, "
+                "then the atlas template"
+            ),
+            "checkerboard": "the section and the atlas template in alternating tiles",
+            "outlines": (
+                "the atlas outlines and the section's own silhouette contour, "
+                "on black"
+            ),
+            "section": "the section alone, no outlines",
+            "template": "the atlas template alone, no outlines",
+            "ab": (
+                "two overlays at the same crop: first these parameters, then "
+                + ("the transform stored on the section" if stored else "identity")
+            ),
+        }[view]
+        return {
+            "status": "ok",
+            "id": record.id,
+            "position_mm": round(float(record.position_mm or 0.0), 3),
+            "params": staged.params,
+            "decomposition": physical_decomposition(
+                normalized_physical_affine(
+                    size=staged.section.size,
+                    um_per_px=staged.um_per_px,
+                    pivot=staged.pivot_in_section,
+                    **staged.params,
+                ),
+                staged.section.size,
+            ),
+            "translate_px": {
+                "x": round(staged.params["translate_x_mm"] * px_per_mm, 1),
+                "y": round(staged.params["translate_y_mm"] * px_per_mm, 1),
+                "px_per_mm": round(px_per_mm, 2),
+            },
+            "pivot": {"mode": staged.pivot_mode, "canvas_frac": staged.pivot_frac},
+            "view": {"mode": view, "zoom": window or [0.0, 0.0, 1.0, 1.0]},
+            **({"ab_reference": reference} if reference is not None else {}),
+            "history": [dict(entry) for entry in history],
+            "calibration": staged.calibration,
+            "description": (
+                f"{record.id} under the transform above, {described}. The "
+                f"outlines are the FAMILY regions of the {state.plane} atlas "
+                f"section at {float(record.position_mm or 0.0):.3f} mm, drawn "
+                "at true physical scale as neutral hairlines."
+            ),
+            TOOL_MEDIA_PARTS_KEY: [image_to_part(image) for image in images],
+        }
+
+    def landmarks(
+        slice_id: str,
+        pairs: list[dict[str, list[float]]],
+        rotation_deg: float,
+        scale_x: float,
+        scale_y: float,
+        translate_x_mm: float,
+        translate_y_mm: float,
+        mode: str = "overlay",
+        zoom: list[float] = [],  # noqa: B006 — read, never mutated; ADK wants a value
+        template_opacity: float = 0.0,
+        pivot: str | list[float] = "canvas",
+    ) -> dict[str, Any]:
+        """Measure point pairs under a transform, and fit one to them.
+
+        Each pair is a point on the section and the point of the atlas it
+        belongs on, both as fractions of the CANVAS as the last preview drew
+        it. Nothing is written.
+
+        Args:
+            slice_id: Filename or corrected index.
+            pairs: ``[{"section": [fx, fy], "atlas": [fx, fy]}]``, fractions of
+                the canvas.
+            rotation_deg: Rotation of the transform to measure under.
+            scale_x: Horizontal scale of that transform.
+            scale_y: Vertical scale of that transform.
+            translate_x_mm: Horizontal shift of that transform, in millimetres.
+            translate_y_mm: Vertical shift of that transform, in millimetres.
+            mode: Any `preview_transform` view except "ab".
+            zoom: [x0, y0, x1, y1] as fractions of the canvas; empty is all.
+            template_opacity: 0..1, the template under the outlines in
+                "overlay".
+            pivot: "canvas", "tissue" or [fx, fy] — the point the fitted
+                rotation and scales are reported about, as in
+                `preview_transform`.
+
+        Returns:
+            Per pair the distance in millimetres between the section point
+            under the given transform and its atlas point, the RMS of those
+            distances, the transform fitted to the pairs (a similarity from 2
+            points, a full affine from 3) in the same units, and an image with
+            the pairs drawn on the current view.
+        """
+        view = str(mode or "overlay").strip().lower()
+        if view not in VIEW_MODES:
+            return {"status": "error", "error": "BAD_MODE", "modes": list(VIEW_MODES)}
+        section_points: list[list[float]] = []
+        atlas_points: list[list[float]] = []
+        for pair in pairs or []:
+            if not isinstance(pair, dict):
+                continue
+            try:
+                here = [float(value) for value in pair["section"]]
+                there = [float(value) for value in pair["atlas"]]
+            except (KeyError, TypeError, ValueError):
+                continue
+            if len(here) == 2 and len(there) == 2:
+                section_points.append(here)
+                atlas_points.append(there)
+        if not section_points:
+            return {
+                "status": "error",
+                "error": "BAD_ARGS",
+                "message": (
+                    'pairs must be [{"section": [fx, fy], "atlas": [fx, fy]}] '
+                    "with fractions of the canvas."
+                ),
+            }
+        try:
+            window = [float(value) for value in (zoom or [])]
+            opacity = float(template_opacity)
+        except (TypeError, ValueError):
+            return {"status": "error", "error": "BAD_ARGS"}
+        staged = stage(
+            slice_id, rotation_deg, scale_x, scale_y, translate_x_mm,
+            translate_y_mm, pivot,
+        )
+        if isinstance(staged, dict):
+            return staged
+
+        width, height = staged.geometry.size
+        scale = np.array([width, height], dtype=np.float64)
+        source = np.asarray(section_points, dtype=np.float64) * scale
+        target = np.asarray(atlas_points, dtype=np.float64) * scale
+        matrix = np.asarray(staged.matrix(), dtype=np.float64)
+        mapped = source @ matrix[:, :2].T + matrix[:, 2]
+        distances = np.linalg.norm(mapped - target, axis=1) * staged.um_per_px / 1000.0
+
+        centre = staged.pivot or (width / 2.0, height / 2.0)
+        fitted: dict[str, Any] | None = None
+        if len(source) >= 2:
+            estimator = affine_fit if len(source) >= 3 else similarity_fit
+            estimate = estimator(source, target)
+            residual = np.linalg.norm(
+                source @ estimate[:, :2].T + estimate[:, 2] - target, axis=1
+            ) * staged.um_per_px / 1000.0
+            fitted = {
+                "kind": "affine" if len(source) >= 3 else "similarity",
+                "points": len(source),
+                **physical_params(estimate, pivot=centre, um_per_px=staged.um_per_px),
+                "rms_mm": round(float(np.sqrt((residual**2).mean())), 4),
+            }
+
+        try:
+            images = views(
+                staged, staged.params, mode=view, zoom=window,
+                template_opacity=opacity, pivot=staged.pivot,
+                markers=(source, target),
+            )
+        except Exception as exc:
+            logger.warning("landmarks: render failed for %s: %s", staged.record.id, exc)
+            return {"status": "error", "error": "RENDER_FAILED", "message": str(exc)}
+
+        return {
+            "status": "ok",
+            "id": staged.record.id,
+            "params": staged.params,
+            "pivot": {"mode": staged.pivot_mode, "canvas_frac": staged.pivot_frac},
+            "pairs": [
+                {
+                    "index": index + 1,
+                    "section": section_points[index],
+                    "atlas": atlas_points[index],
+                    "residual_mm": round(float(distances[index]), 4),
+                }
+                for index in range(len(section_points))
+            ],
+            "rms_mm": round(float(np.sqrt((distances**2).mean())), 4),
+            "fit": fitted,
+            "view": {"mode": view, "zoom": window or [0.0, 0.0, 1.0, 1.0]},
+            "calibration": staged.calibration,
+            "description": (
+                f"{staged.record.id} under the transform above, with the "
+                f"{len(section_points)} pair(s) drawn: a cross and its number "
+                "on each section point, a ring on each atlas point, a line "
+                "between them."
+            ),
+            TOOL_MEDIA_PARTS_KEY: [image_to_part(image) for image in images],
+        }
+
+    def set_transform(
+        slice_id: str,
+        rotation_deg: float,
+        scale_x: float,
+        scale_y: float,
+        translate_x_mm: float,
+        translate_y_mm: float,
+        confidence: str,
+        note: str,
+        pivot: str | list[float] = "canvas",
+    ) -> dict[str, Any]:
+        """Record an in-plane transform on one section.
+
+        The section's flip and rotation flags are not touched; this is the
+        in-plane transform only. Writes, checkpoints, and can be undone.
+
+        Args:
+            slice_id: Filename or corrected index.
+            rotation_deg: Rotation of the alignment, in degrees.
+            scale_x: Horizontal scale of the alignment.
+            scale_y: Vertical scale of the alignment.
+            translate_x_mm: Horizontal shift in millimetres.
+            translate_y_mm: Vertical shift in millimetres.
+            confidence: "low", "medium" or "high".
+            note: Short remark for the record. May be empty.
+            pivot: "canvas", "tissue" or [fx, fy] — the point the rotation and
+                the scales turn about, as in `preview_transform`.
+
+        Returns:
+            The parameters recorded, their decomposition, the calibration and
+            the status rows.
+        """
+        staged = stage(
+            slice_id, rotation_deg, scale_x, scale_y, translate_x_mm,
+            translate_y_mm, pivot,
+        )
+        if isinstance(staged, dict):
+            return staged
+        record = staged.record
+        six = normalized_physical_affine(
+            size=staged.section.size,
+            um_per_px=staged.um_per_px,
+            pivot=staged.pivot_in_section,
+            **staged.params,
+        )
+        decomposition = physical_decomposition(six, staged.section.size)
         snapshot()
         record.transform = {
             "kind": "interactive",
-            "params": outcome["matrix_params"],
-            "physical": outcome["params"],
-            "calibration": outcome["calibration"],
-            "note": outcome["note"],
-            "mirrored": outcome["decomposition"]["mirrored"],
+            "params": six,
+            "physical": {**staged.params, "pivot": staged.pivot_frac},
+            "calibration": staged.calibration,
+            "mirrored": decomposition["mirrored"],
+            "note": str(note or "").strip(),
         }
-        apply_confidence(record, outcome.get("confidence"))
-        outcome.update(commit())
-        if panel is not None:
-            outcome["description"] = (
-                f"The attached image is the final alignment of {record.id}: "
-                "the section under its transform with the atlas region "
-                "outlines over it at true physical scale."
-            )
-            outcome[TOOL_MEDIA_PARTS_KEY] = [image_to_part(panel)]
-        return outcome
+        apply_confidence(record, confidence)
+        return {
+            "id": record.id,
+            "params": staged.params,
+            "matrix_params": six,
+            "decomposition": decomposition,
+            "pivot": {"mode": staged.pivot_mode, "canvas_frac": staged.pivot_frac},
+            "calibration": staged.calibration,
+            **commit(),
+        }
 
     def copy_transform(from_id: str, to_ids: list[str]) -> dict[str, Any]:
         """Copy one section's transform onto other sections.
@@ -1112,11 +1640,15 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         }
 
     if spec.has("transform"):
-        box.tools += [fit_affine, copy_transform]
+        box.tools += [
+            fit_affine,
+            preview_transform,
+            landmarks,
+            set_transform,
+            copy_transform,
+        ]
         if spec.transform.angles:
             box.tools.append(set_cutting_angles)
-        if spec.transform.subagents:
-            box.tools.append(align_slice)
 
     box.tools.append(submit)
     return box

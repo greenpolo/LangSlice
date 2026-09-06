@@ -1,4 +1,4 @@
-"""The run: ingest, one agent session, the post pass, results.
+"""The run: ingest, one agent session, results.
 
 ``run(spec)`` is the whole of ``langslice linear``. There is no node graph: one
 state, one toolbox, one job statement, and a session that ends at ``submit`` or
@@ -35,9 +35,8 @@ from langslice.linear.session import (
     run_agent_session,
 )
 from langslice.linear.spec import JobSpec
-from langslice.linear.state import SliceState, StackState, add_caveat
+from langslice.linear.state import SliceState, StackState
 from langslice.linear.toolbox import ToolBox, build_tools
-from langslice.linear.transform import fit_silhouette, run_align_session
 from langslice.space import Plane, atlas_space_context, slice_axis_ends
 
 logger = logging.getLogger(__name__)
@@ -61,7 +60,8 @@ DEBRIEF_PROMPT = (
     "debrief for the people building this tool environment; answer in text "
     "and do not call any tool.\n"
     "1. Which tools or pieces of information did you reach for, or wish "
-    "existed, that were not available?\n"
+    "existed, that were not available — including while aligning sections: "
+    "views, overlays, controls, measurements?\n"
     "2. Which tools behaved differently from what you expected, or were "
     "awkward to use as specified?\n"
     "3. What did you have to work around?\n"
@@ -320,62 +320,6 @@ async def run_session(
     return outcome
 
 
-# --- the post pass -------------------------------------------------------
-
-
-async def run_post_pass(state: StackState, ctx: EngineContext, spec: JobSpec) -> None:
-    """Fill in the transforms the agent did not, when subagents are off.
-
-    Intact sections take the closed-form silhouette fit; damaged ones take the
-    interactive session, one at a time.
-
-    # ponytail: sequential; a semaphore would fan out if damaged-heavy stacks
-    # ever cost real wall-clock.
-    """
-    if not spec.has("transform") or spec.transform.subagents:
-        return
-    for record in state.in_order():
-        if record.transform is not None or record.position_mm is None:
-            continue
-        if record.damaged:
-            try:
-                outcome = await run_align_session(state, ctx, record, "")
-            except Exception as exc:
-                logger.warning("post: alignment failed for %s: %s", record.id, exc)
-                add_caveat(record, "interactive alignment failed")
-                continue
-            if outcome["status"] != "ok":
-                add_caveat(record, "interactive alignment produced no transform")
-                continue
-            record.transform = {
-                "kind": "interactive",
-                "params": outcome["matrix_params"],
-                "physical": outcome["params"],
-                "calibration": outcome["calibration"],
-                "note": outcome["note"],
-                "mirrored": outcome["decomposition"]["mirrored"],
-            }
-            ctx.progress(f"[post] {record.id}: interactive transform recorded")
-            continue
-
-        outcome = fit_silhouette(state, ctx, record)
-        outcome.pop("panel", None)
-        if outcome["status"] != "ok":
-            add_caveat(record, "affine fit failed")
-            continue
-        record.transform = {
-            "kind": "silhouette",
-            "params": outcome["params"],
-            "iou": outcome["iou"],
-            "calibration": outcome["calibration"],
-            "mirrored": outcome["decomposition"]["mirrored"],
-        }
-        ctx.progress(
-            f"[post] {record.id}: silhouette affine (overlap {outcome['iou']:.2f})"
-        )
-    save_checkpoint(state, ctx.checkpoint_path)
-
-
 # --- results -------------------------------------------------------------
 
 
@@ -416,5 +360,4 @@ async def run(
     if not state.submitted:
         state.notes.append(f"session: no submission within {turns} turns")
 
-    await run_post_pass(state, ctx, spec)
     return emit_results(state, ctx)

@@ -69,9 +69,10 @@ read one shape. Corrections (order, flips, rotations), positions, cutting
 angles and per-section transforms are proposals -- the host applies them, and
 the user's image files are never modified.
 
-The per-section interactive alignment (`align_slice`) is the one nested
-session: its own small toolbox (`preview_transform`, `submit_transform`), its
-own turn cap, run in-process as an async tool of the main agent.
+The per-section interactive alignment is not a nested session: since
+2026-09-06 `preview_transform`, `landmarks` and `set_transform` sit in the main
+toolbox, so the agent aligns a section whenever it wants, in the same context
+that placed it.
 
 `signals.py` holds the interval interpolation behind `distribute_spacing`,
 which computes and only writes when asked.

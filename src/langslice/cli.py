@@ -377,13 +377,6 @@ def _add_linear_run_parser(subparsers: argparse._SubParsersAction) -> None:
         "--elastix", action="store_true", help="Let fit_affine use the Elastix affine"
     )
     p.add_argument(
-        "--no-subagents",
-        dest="subagents",
-        action="store_false",
-        default=True,
-        help="Run the per-section alignments after submit instead of as a tool",
-    )
-    p.add_argument(
         "--fact",
         dest="facts",
         action="append",
@@ -482,9 +475,7 @@ def _run_linear(args: argparse.Namespace) -> None:
             deepslice=args.deepslice,
             bayesian=args.bayesian,
         ),
-        transform=TransformSpec(
-            angles=args.angles, elastix=args.elastix, subagents=args.subagents
-        ),
+        transform=TransformSpec(angles=args.angles, elastix=args.elastix),
         facts=list(args.facts),
         inputs=inputs,
         resume=args.resume,

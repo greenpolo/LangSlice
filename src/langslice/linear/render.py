@@ -415,6 +415,13 @@ VIEW_MODES = ("overlay", "side_by_side", "checkerboard", "outlines", "section", 
 #: Tiles across the width of a ``checkerboard`` view.
 CHECKER_TILES = 8
 
+#: Landmark glyph colors (RGB): the section's point, its atlas point, the
+#: connector between them. Colored on purpose — a landmark is a click, not
+#: anatomy, and the atlas hairlines keep their one neutral grey.
+MARKER_SECTION = (80, 220, 255)
+MARKER_ATLAS = (255, 170, 60)
+MARKER_CONNECTOR = (170, 170, 170)
+
 
 def _background_color(section: Image.Image) -> tuple[int, int, int]:
     """The section's own border color, so padding does not read as anatomy."""
@@ -649,6 +656,91 @@ def _checkerboard(a: np.ndarray, b: np.ndarray, tiles: int = CHECKER_TILES) -> n
     return np.where(even, a, b)
 
 
+def pivot_on_canvas(
+    pivot: Any, section: Image.Image, geometry: CanvasGeometry
+) -> tuple[float, float] | None:
+    """A pivot spec as CANVAS pixels, or ``None`` for the canvas centre.
+
+    ``"canvas"`` (or empty) is the centre, ``"tissue"`` the section's own
+    tissue centroid placed on the canvas, and ``[fx, fy]`` fractions of the
+    canvas. A section whose tissue cannot be detected falls back to the
+    centre; the caller reports the pivot it actually got.
+
+    Raises ``ValueError`` on anything else.
+    """
+    if pivot is None or (isinstance(pivot, str) and pivot.strip().lower() in ("", "canvas")):
+        return None
+    width, height = geometry.size
+    if isinstance(pivot, str):
+        if pivot.strip().lower() != "tissue":
+            raise ValueError(f"pivot must be 'canvas', 'tissue' or [fx, fy]; got {pivot!r}")
+        mask = foreground_mask(section)
+        if mask is None or not mask.any():
+            return None
+        ys, xs = np.nonzero(mask)
+        # The mask is measured on a proxy; scale its centroid onto the section,
+        # then place the section on the canvas.
+        return (
+            float(xs.mean()) * section.width / mask.shape[1] + geometry.section_offset[0],
+            float(ys.mean()) * section.height / mask.shape[0] + geometry.section_offset[1],
+        )
+    values = [float(v) for v in pivot]
+    if len(values) != 2:
+        raise ValueError("pivot fractions must be [fx, fy] of the canvas")
+    return (values[0] * width, values[1] * height)
+
+
+def _draw_markers(
+    canvas: np.ndarray,
+    section_pts: np.ndarray,
+    atlas_pts: np.ndarray,
+    *,
+    origin: tuple[int, int] = (0, 0),
+    factor: float = 1.0,
+) -> None:
+    """Landmark pairs: a cross on each section point, a ring on its atlas point.
+
+    Two glyphs and two colors rather than two greys — these are the model's
+    own clicks, not anatomy, and they have to be findable against both the
+    tissue and the hairlines. A connector runs between the pair, and the pair's
+    1-based index is written by the cross so a glyph can be tied to the row in
+    the payload.
+    """
+    def screen(points: np.ndarray) -> np.ndarray:
+        return np.round(
+            (np.asarray(points, dtype=np.float64) - np.asarray(origin, dtype=np.float64))
+            * factor
+        ).astype(np.int32)
+
+    # Glyphs are drawn thicker than the atlas hairline on purpose: at the same
+    # weight they read as another contour instead of as a marker.
+    radius = max(6, round(min(canvas.shape[:2]) / 55))
+    weight = max(1, round(min(canvas.shape[:2]) / 350))
+    for index, (start, end) in enumerate(
+        zip(screen(section_pts), screen(atlas_pts), strict=True), start=1
+    ):
+        sx, sy = int(start[0]), int(start[1])
+        ax, ay = int(end[0]), int(end[1])
+        cv2.line(canvas, (sx, sy), (ax, ay), MARKER_CONNECTOR, 1, cv2.LINE_AA)
+        cv2.line(
+            canvas, (sx - radius, sy), (sx + radius, sy), MARKER_SECTION, weight, cv2.LINE_AA
+        )
+        cv2.line(
+            canvas, (sx, sy - radius), (sx, sy + radius), MARKER_SECTION, weight, cv2.LINE_AA
+        )
+        cv2.circle(canvas, (ax, ay), radius, MARKER_ATLAS, weight, cv2.LINE_AA)
+        cv2.putText(
+            canvas,
+            str(index),
+            (sx + radius + 3, sy - 3),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            MARKER_SECTION,
+            weight,
+            cv2.LINE_AA,
+        )
+
+
 def _silhouette_polys(mask: np.ndarray) -> list[np.ndarray]:
     """Closed contours of the section's own tissue silhouette, in canvas px.
 
@@ -675,6 +767,8 @@ def physical_views(
     zoom: list[float] | None = None,
     template_opacity: float = 0.0,
     pad_to_fit_atlas: bool = True,
+    pivot: tuple[float, float] | None = None,
+    markers: tuple[np.ndarray, np.ndarray] | None = None,
     label: str = "",
     long_edge: int | None = None,
 ) -> tuple[list[Image.Image], float]:
@@ -696,6 +790,10 @@ def physical_views(
     before the resize to *long_edge*, so it is real magnification, and the
     scale bar is redrawn for the magnified micrometres per pixel.
 
+    *pivot* is the rotation/scale centre in CANVAS pixels (``None`` is the
+    canvas centre), and *markers* is ``(section points, atlas points)`` in
+    canvas pixels, drawn on every panel as landmark pairs.
+
     Returns ``(images, silhouette_iou)`` — every image captioned, and the
     overlap between the warped section's tissue mask and the atlas anatomy at
     this placement.
@@ -714,13 +812,18 @@ def physical_views(
     canvas = Image.new("RGB", geometry.size, fill)
     canvas.paste(section.convert("RGB"), geometry.section_offset)
 
+    ox, oy = (float(v) for v in geometry.section_offset)
     if isinstance(params, np.ndarray):
         section_matrix = np.asarray(params, dtype=np.float64)
     else:
         section_matrix = physical_affine_matrix(
-            size=section.size, um_per_px=geometry.um_per_px, **params
+            size=section.size,
+            um_per_px=geometry.um_per_px,
+            # The pivot arrives on the canvas; the matrix is built on the
+            # section's frame and conjugated onto the canvas below.
+            pivot=None if pivot is None else (pivot[0] - ox, pivot[1] - oy),
+            **params,
         )
-    ox, oy = (float(v) for v in geometry.section_offset)
     matrix = (_shift((ox, oy)) @ _as_3x3(section_matrix) @ _shift((-ox, -oy)))[:2]
     warped = cv2.warpAffine(
         np.asarray(canvas, dtype=np.uint8),
@@ -800,6 +903,8 @@ def physical_views(
                 origin=box[:2],
                 factor=factor,
             )
+        if markers is not None and len(markers[0]):
+            _draw_markers(screen, markers[0], markers[1], origin=box[:2], factor=factor)
         _draw_scale_bar(screen, geometry.um_per_px / factor, dark)
         # Two lines: one caption wide enough for all of it would run off a
         # 512px canvas, and `caption` clips rather than wraps.
@@ -834,6 +939,7 @@ def physical_overlay(
     *,
     template_opacity: float = 0.0,
     pad_to_fit_atlas: bool = True,
+    pivot: tuple[float, float] | None = None,
     label: str = "",
     long_edge: int | None = None,
 ) -> Image.Image:
@@ -862,6 +968,7 @@ def physical_overlay(
         params,
         template_opacity=template_opacity,
         pad_to_fit_atlas=pad_to_fit_atlas,
+        pivot=pivot,
         label=label,
         long_edge=long_edge,
     )

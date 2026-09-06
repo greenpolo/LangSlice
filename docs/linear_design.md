@@ -10,9 +10,12 @@ a host switches on task by task. Running everything is the default.
 Looking at the whole stack once yields the information for every task: which
 sections are mirrored, which are out of order, where sections are missing, which
 are damaged, where each one sits. Splitting those into separate agent sessions
-throws that shared reading away and re-pays for it. The one exception is the
-per-section interactive alignment, which is local to a section and runs as a
-bounded sub-session the main agent spawns and reviews.
+throws that shared reading away and re-pays for it. The per-section interactive
+alignment was the one exception until 2026-09-06 — it ran as a bounded
+sub-session — and is not one any more: `preview_transform` / `landmarks` /
+`set_transform` are main-session tools the agent reaches for whenever it wants
+(GPT-6 Astra moved every parameter at once and finished a section in four
+previews, so the fan-out bought nothing).
 
 ## The job spec
 
@@ -34,8 +37,6 @@ JobSpec
   transform:
     angles: bool = False          # may set the stack-wide cutting angles
     elastix: bool = False         # fit_affine may use Elastix intensity affine
-    subagents: bool = True        # align_slice runs as a tool the main agent calls;
-                                  # False = engine runs the sessions after submit
   facts: free-form user facts, one line each, passed verbatim
   inputs: order/positions/angles supplied by the host for tasks that are OFF
 ```
@@ -105,7 +106,9 @@ in any payload or prompt (see `lean-harness` history in `linear/CLAUDE.md`).
 | `fit_position(id, window_mm, angles?)` | position.bayesian | `oblique.fit_oblique` at the section's current position: best position (and angles) with score; writes nothing. |
 | `set_cutting_angles(pitch_deg, yaw_deg)` | transform.angles | stack-wide; subsequent atlas fetches and fits use them. |
 | `fit_affine(ids, method=silhouette\|elastix, apply=True)` | transform | per-section in-plane affine against its atlas section; returns iou, the transform decomposed (rotation, scales, shear, translation, `mirrored`) and a captioned overlay panel per section (≤16); refuses damaged sections. |
-| `align_slice(id, notes)` | transform (subagents) | runs the bounded interactive sub-session for ONE section; records an in-plane transform only (flip/rotation flags are untouched); returns params, their decomposition and the final overlay. |
+| `preview_transform(id, rotation_deg, scale_x, scale_y, translate_x_mm, translate_y_mm, mode, zoom, template_opacity, pivot)` | transform | draws ANY positioned section under a candidate transform with the atlas outlines at true physical scale; `NO_POSITION` otherwise. Writes nothing, snapshots nothing. |
+| `landmarks(id, pairs, params...)` | transform | point pairs (section point, atlas point) as fractions of the canvas: the residual per pair in mm, their RMS, the transform fitted to them (similarity from 2, affine from 3) in the same physical units, and the pairs drawn on the view. Writes nothing. |
+| `set_transform(id, params..., confidence, note, pivot)` | transform | records `{"kind": "interactive", ...}` on the section; the write the interactive route ends with, undoable and checkpointed like every other. |
 | `copy_transform(from_id, to_ids)` | transform | copy one section's transform to others. |
 | `submit(summary, notes, interval_breaks)` | always | ends the run; gated (below). |
 
@@ -126,8 +129,9 @@ status table.
   `interval_breaks` must be empty.
 - not strict: each reported break index must sit where the written interval
   exceeds 1.5x the stack's median written spacing (`INTERVAL_BREAKS_UNSUPPORTED`).
-- transform on, subagents off: nothing to gate; the engine runs the sessions
-  after submit (silhouette affine for intact, interactive for damaged).
+- transform on: every section carries a transform (`MISSING_TRANSFORMS`,
+  naming the sections without one). Damaged sections included — the agent
+  aligns those by hand and says so in the note.
 
 Refusals state the numbers and stop.
 
@@ -140,9 +144,9 @@ checkpoints; a run that dies mid-way resumes from the checkpoint with the
 state it had (the agent is re-seeded, not replayed). `LANGSLICE_TRACE_DIR`
 records the full trajectory (`trace.py`, unchanged).
 
-`align_slice` is an `AgentTool`-style sub-session: its own small toolbox
-(`preview_transform`, `submit_transform`), its own turn cap, seeded with the
-section, its atlas section, and the notes the main agent passed.
+There is ONE session. The alignment tools live in it like every other tool, so
+a section's preview history, its atlas fetches and the stack reading that
+produced its position are all in one context.
 
 ## CLI
 
@@ -152,7 +156,7 @@ langslice linear run FOLDER [--tasks reorder,position,transform]
     [--reasoning none|minimal|low|medium|high] [--pixel-size-um UM]
     [--no-flip] [--hemisphere-cue TEXT]
     [--thickness UM] [--interval UM] [--strict-interval] [--deepslice] [--bayesian]
-    [--angles] [--elastix] [--no-subagents]
+    [--angles] [--elastix]
     [--fact TEXT ...] [--positions JSON] [--order JSON]
     [--out PATH] [--fresh] [--trace-dir PATH]
 langslice linear quick-affine ...   (unchanged)
@@ -180,7 +184,8 @@ langslice linear quick-affine ...   (unchanged)
 
 ## Interactive transform: physical space and atlas outlines (2026-09-05, Nash)
 
-The per-section alignment loop is a vision-action loop: tool → section with
+In the main trajectory since 2026-09-06 — Astra one-shots it. The alignment is
+a vision-action loop: tool → section with
 the atlas overlaid in physical space → tool → repeat. If the render lies, the
 loop is compromised, so this is the part of linear that adopts standard
 registration-software practice (ABBA) exactly.
@@ -219,9 +224,9 @@ methods draw the same lines from the same source.
 **The screen.** `preview_transform` returns the transformed section
 (display-preprocessed grayscale) with the family outlines on top at true
 scale, a 1 mm scale bar, and a caption (section id, position, angles, the
-params). `fit_affine`'s panels use the same renderer
+params). `fit_affine`'s panels and `landmarks`' image use the same renderer
 (`render.physical_overlay`, the `overlay` view of `render.physical_views`), so
-the main agent and the sub-session see the same picture.
+every look at a section is the same picture.
 
 **View controls (2026-09-06).** Four sessions of gpt-5.6-luna aligning damaged
 M04 sections converged on the same three complaints — one fixed small image,
@@ -241,8 +246,28 @@ older single overlay exactly.
 - `template_opacity` (0..1, default 0.0) replaces the old `show_template`
   bool and dials the template blended under the outlines in `overlay`.
 
+**The agents' wishlist, built 2026-09-06.** If Astra wants it, it gets it.
+- `pivot` on `preview_transform`, `landmarks` and `set_transform`: `"canvas"`
+  (the canvas centre, the old behaviour), `"tissue"` (the section's own tissue
+  centroid, from `image_prep.foreground_mask`) or `[fx, fy]` fractions of the
+  canvas. Rotation and the scales turn about it; the translation does not care.
+  The arithmetic is `affine.physical_affine_matrix(pivot=...)`, and
+  `normalized_physical_affine` takes the pivot on the SECTION's frame, so the
+  six stored numbers still describe the map the canvas showed.
+- `landmarks` returns numbers, not a correction: the mm residual of each pair
+  under the given parameters, their RMS, and the transform fitted to the pairs
+  — a similarity from 2 pairs (Umeyama, exact on 2), a full affine from 3 —
+  reported in the same five knobs about the same pivot, with the `shear` an
+  affine can carry that the knobs cannot. Nothing says "apply this".
+- `mode="ab"` renders TWO overlays at one crop: the parameters passed, then the
+  section's stored transform (identity when it has none, or when what is stored
+  is a silhouette fit, whose six numbers are not physical knobs —
+  `ab_reference` says which and names the stored kind). The candidate toggle,
+  as asked.
+
 Region acronyms on the outlines were asked for and deliberately NOT built
-(Nash: "it has no use for this"), and neither was damage masking.
+(Nash: "it has no use for this"), and neither was damage masking — after the
+overlap number left the payload there is no metric a damage mask would clean.
 
 **What the payload carries.** Beside the params, their decomposition and the
 calibration: `translate_px` (the

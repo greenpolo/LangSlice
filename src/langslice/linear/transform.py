@@ -1,17 +1,18 @@
-"""In-plane transforms: the closed-form fit and the interactive sub-session.
+"""In-plane transforms: the closed-form fit and the interactive tools' core.
 
 Two routes to the same field. :func:`fit_silhouette` is plain code — the shared
 moments fit (:func:`langslice.affine.silhouette_affine`) of a section's
-silhouette onto its atlas section. :func:`run_align_session` is a bounded agent
-loop for ONE section (preview → look → adjust → submit), for sections whose
-silhouette is exactly what damage destroyed.
+silhouette onto its atlas section. The interactive route is the main agent's
+own hand: `preview_transform` / `landmarks` / `set_transform` in
+:mod:`langslice.linear.toolbox`, whose arithmetic (calibration, the
+decomposition it reports, the landmark fits) lives here.
 
 Both draw ONE picture, :func:`langslice.linear.render.physical_overlay`: the
 section under its transform with the atlas family outlines on top at true
-physical scale. Parameters are ABBA's — rotation about the canvas centre,
-per-axis scales, translations in MILLIMETRES — which only mean anything once
-the canvas is calibrated, so every payload carries the calibration and where it
-came from.
+physical scale. Parameters are ABBA's — rotation about the canvas centre (or a
+chosen pivot), per-axis scales, translations in MILLIMETRES — which only mean
+anything once the canvas is calibrated, so every payload carries the
+calibration and where it came from.
 
 Everything here is a PROPOSAL: six normalized numbers recorded on the state,
 never applied to the user's images (see :mod:`langslice.affine` for the
@@ -21,34 +22,25 @@ convention).
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
-from google.genai import types
 from PIL import Image
 
-from langslice.adk import TOOL_MEDIA_PARTS_KEY
 from langslice.affine import (
     decompose_affine,
     normalized_affine,
-    normalized_physical_affine,
     silhouette_affine,
 )
 from langslice.atlas.render import atlas_um_per_px
 from langslice.linear.render import (
-    OVERLAY_LONG_EDGE,
     PREVIEW_LONG_EDGE,
-    VIEW_MODES,
     canvas_geometry,
     canvas_um_per_px,
     estimate_um_per_px,
-    image_to_part,
     physical_overlay,
-    physical_views,
     render_slice,
 )
-from langslice.linear.session import build_agent, run_agent_session
 from langslice.linear.state import SliceState, StackState
 from langslice.space import Plane
 
@@ -56,38 +48,6 @@ if TYPE_CHECKING:  # ponytail: import cycle — engine builds the toolbox
     from langslice.linear.engine import EngineContext
 
 logger = logging.getLogger(__name__)
-
-#: Tool calls one interactive alignment session may spend.
-ALIGN_MAX_ITERATIONS = 12
-
-#: Below this silhouette overlap the closed-form fit is not to be trusted.
-WEAK_FIT_IOU = 0.65
-
-_NUDGE_NO_TOOL = (
-    "You did not call a tool. Render a candidate alignment with "
-    "`preview_transform`, then finish with `submit_transform`."
-)
-_NUDGE_CONTINUE = (
-    "Continue. Adjust the parameters and call `preview_transform` again, or "
-    "call `submit_transform` if the current alignment is the best you can get."
-)
-
-#: Asked once, after submit_transform, in the same context. The answer is data
-#: for the people building this environment; nothing about the alignment
-#: changes. Text only: the tools are still live.
-ALIGN_DEBRIEF_PROMPT = (
-    "The alignment is submitted and nothing you say now changes it. This is a "
-    "debrief for the people building this alignment tool; answer in text and "
-    "do not call any tool.\n"
-    "1. What did you want to see or do while aligning that the tools did not "
-    "offer (views, overlays, controls, measurements, information)?\n"
-    "2. Which parts of the picture or the parameters behaved differently from "
-    "what you expected, or were awkward to use?\n"
-    "3. What did you have to work around?\n"
-    "4. Which alignment or registration interfaces you know does this "
-    "resemble, and what did those have that this lacks?\n"
-    "5. Your wishlist for doing this alignment well."
-)
 
 # --- calibration ---------------------------------------------------------
 
@@ -222,229 +182,16 @@ def fit_silhouette(
     return payload
 
 
-# --- the interactive sub-session -----------------------------------------
+# --- what the interactive tools share ------------------------------------
 
 
-@dataclass
-class _AlignBox:
-    """Tool callables plus the results the sub-session reads back."""
-
-    tools: list[Any] = field(default_factory=list)
-    submission: dict[str, Any] = field(default_factory=dict)
-    last_params: dict[str, float] | None = None
-    last_panel: Image.Image | None = None
-    um_per_px: float = 1.0
-    calibration_source: str = ""
-    previews: int = 0
-    #: Every parameter set previewed in this session, oldest first.
-    history: list[dict[str, float]] = field(default_factory=list)
-
-
-def _build_align_tools(
-    state: StackState, ctx: EngineContext, record: SliceState
-) -> _AlignBox:
-    box = _AlignBox()
-    section = render_slice(ctx, record, long_edge=PREVIEW_LONG_EDGE)
-    position_mm = record.position_mm if record.position_mm is not None else 0.0
-    box.um_per_px, box.calibration_source = calibrate(state, ctx, record, section)
-
-    def _params(
-        rotation_deg: float,
-        scale_x: float,
-        scale_y: float,
-        translate_x_mm: float,
-        translate_y_mm: float,
-    ) -> dict[str, float]:
-        return {
-            "rotation_deg": float(rotation_deg),
-            "scale_x": float(scale_x),
-            "scale_y": float(scale_y),
-            "translate_x_mm": float(translate_x_mm),
-            "translate_y_mm": float(translate_y_mm),
-        }
-
-    def preview_transform(
-        rotation_deg: float,
-        scale_x: float,
-        scale_y: float,
-        translate_x_mm: float,
-        translate_y_mm: float,
-        mode: str = "overlay",
-        zoom: list[float] = [],  # noqa: B006 — read, never mutated; ADK wants a value
-        template_opacity: float = 0.0,
-    ) -> dict[str, Any]:
-        """Render this section under a candidate transform, with atlas outlines.
-
-        Nothing is written. Call it as often as you need.
-
-        Args:
-            rotation_deg: Counter-clockwise rotation about the centre of the
-                canvas, in degrees. Negative turns it clockwise.
-            scale_x: Horizontal scale multiplier about the canvas centre. 1.0
-                leaves the width alone.
-            scale_y: Vertical scale multiplier, same convention.
-            translate_x_mm: Horizontal shift in millimetres; positive moves
-                right.
-            translate_y_mm: Vertical shift in millimetres; positive moves down.
-            mode: "overlay" (the section with the outlines on it),
-                "side_by_side" (two images: the section, then the atlas
-                template, same scale and same crop), "checkerboard" (section
-                and template in alternating tiles), "outlines" (the atlas
-                lines and the section's own silhouette contour on black),
-                "section" (the section alone, no lines) or "template" (the
-                atlas template alone, no lines).
-            zoom: [x0, y0, x1, y1] as fractions of the CANVAS, cropped before
-                the image is sized down, so it is real magnification. An empty
-                list is the whole canvas.
-            template_opacity: 0..1, how strongly the atlas template is blended
-                under the outlines in "overlay". 0.0 draws no template.
-
-        Returns:
-            The parameters you passed, their decomposition (rotation, scales,
-            shear, mirrored), the shift in canvas pixels, the calibration used,
-            every parameter set previewed so far, and the image(s) of the view
-            you asked for.
-        """
-        try:
-            params = _params(
-                rotation_deg, scale_x, scale_y, translate_x_mm, translate_y_mm
-            )
-            view = str(mode or "overlay").strip().lower()
-            window = [float(v) for v in (zoom or [])]
-            opacity = float(template_opacity)
-        except (TypeError, ValueError):
-            return {"status": "error", "error": "BAD_ARGS"}
-        if view not in VIEW_MODES:
-            return {"status": "error", "error": "BAD_MODE", "modes": list(VIEW_MODES)}
-        if window and len(window) != 4:
-            return {
-                "status": "error",
-                "error": "BAD_ZOOM",
-                "expected": "[x0, y0, x1, y1] as fractions of the canvas",
-            }
-        try:
-            images, iou = physical_views(
-                section,
-                box.um_per_px,
-                ctx.atlas,
-                position_mm,
-                cast(Plane, state.plane),
-                state.pitch_deg,
-                state.yaw_deg,
-                params,
-                mode=view,
-                zoom=window,
-                template_opacity=opacity,
-                label=record.id,
-                long_edge=OVERLAY_LONG_EDGE,
-            )
-        except Exception as exc:
-            logger.warning("align_slice: overlay failed for %s: %s", record.id, exc)
-            return {
-                "status": "error",
-                "error": "ATLAS_RENDER_FAILED",
-                "message": str(exc),
-            }
-        box.last_params = params
-        box.last_panel = images[0]
-        box.previews += 1
-        box.history.append(params)
-        px_per_mm = 1000.0 / box.um_per_px
-        described = {
-            "overlay": "the section with the atlas outlines over it",
-            "side_by_side": (
-                "two images at the same scale and the same crop: the section, "
-                "then the atlas template"
-            ),
-            "checkerboard": "the section and the atlas template in alternating tiles",
-            "outlines": (
-                "the atlas outlines and the section's own silhouette contour, "
-                "on black"
-            ),
-            "section": "the section alone, no outlines",
-            "template": "the atlas template alone, no outlines",
-        }[view]
-        return {
-            "status": "ok",
-            "id": record.id,
-            "params": params,
-            "decomposition": _align_decomposition(
-                normalized_physical_affine(
-                    size=section.size, um_per_px=box.um_per_px, **params
-                ),
-                section.size,
-            ),
-            "translate_px": {
-                "x": round(translate_x_mm * px_per_mm, 1),
-                "y": round(translate_y_mm * px_per_mm, 1),
-                "px_per_mm": round(px_per_mm, 2),
-            },
-            "view": {"mode": view, "zoom": window or [0.0, 0.0, 1.0, 1.0]},
-            "history": [dict(entry) for entry in box.history],
-            "calibration": {
-                "section_um_per_px": round(box.um_per_px, 4),
-                "source": box.calibration_source,
-            },
-            "description": (
-                f"{record.id} under the transform above, {described}. The "
-                f"outlines are the FAMILY regions of the {state.plane} atlas "
-                f"section at {position_mm:.3f} mm, drawn at true physical scale "
-                "as neutral hairlines."
-            ),
-            TOOL_MEDIA_PARTS_KEY: [image_to_part(image) for image in images],
-        }
-
-    def submit_transform(
-        rotation_deg: float,
-        scale_x: float,
-        scale_y: float,
-        translate_x_mm: float,
-        translate_y_mm: float,
-        confidence: str,
-        note: str,
-        tool_context: Any = None,
-    ) -> dict[str, Any]:
-        """Finish this section. Call this exactly once, last.
-
-        Args:
-            rotation_deg: Rotation of the accepted alignment, in degrees.
-            scale_x: Horizontal scale of the accepted alignment.
-            scale_y: Vertical scale of the accepted alignment.
-            translate_x_mm: Horizontal shift in millimetres.
-            translate_y_mm: Vertical shift in millimetres.
-            confidence: "low", "medium" or "high".
-            note: Short remark for the record. May be empty.
-        """
-        try:
-            params = _params(
-                rotation_deg, scale_x, scale_y, translate_x_mm, translate_y_mm
-            )
-        except (TypeError, ValueError):
-            return {"status": "error", "error": "BAD_ARGS"}
-        # Model output is a trust boundary: a malformed submission must not
-        # take the run down.
-        box.submission.update(
-            {
-                "params": params,
-                "confidence": str(confidence or "").strip().lower(),
-                "note": str(note or "").strip(),
-            }
-        )
-        if tool_context is not None:
-            tool_context.actions.escalate = True
-        return {"status": "ok", "id": record.id, "params": params}
-
-    box.tools = [preview_transform, submit_transform]
-    return box
-
-
-def _align_decomposition(params: Any, size: tuple[int, int]) -> dict[str, Any]:
+def physical_decomposition(params: Any, size: tuple[int, int]) -> dict[str, Any]:
     """decompose_affine without its translation fractions.
 
     In the alignment loop the shift IS the entered millimetres; the matrix's
-    fractional offsets also absorb the centre-based scale and rotation, so
-    they read as a contradiction (four agents flagged "+0.04 mm entered,
-    negative fraction reported"). Rotation, scales, shear and mirrored stay.
+    fractional offsets also absorb the pivot-based scale and rotation, so they
+    read as a contradiction (four agents flagged "+0.04 mm entered, negative
+    fraction reported"). Rotation, scales, shear and mirrored stay.
     """
     out = decompose_affine(params, size)
     out.pop("translate_x_frac", None)
@@ -452,140 +199,59 @@ def _align_decomposition(params: Any, size: tuple[int, int]) -> dict[str, Any]:
     return out
 
 
-def _align_prompt(
-    record: SliceState,
-    state: StackState,
-    notes: str,
-    um_per_px: float,
-    calibration_source: str,
-) -> str:
-    """System instruction for one section's interactive alignment."""
-    position = record.position_mm if record.position_mm is not None else 0.0
-    damage = record.damage_note.strip()
-    lines = [
-        f"You are aligning ONE {state.plane} histology section to the reference "
-        f"atlas section it belongs to, by eye.",
-        "",
-        "Facts:",
-        f"- Section {record.id} (corrected index {record.index_corrected}), "
-        f"placed at {position:.3f} mm along the {state.atlas} atlas.",
-        f"- Cutting angles: pitch {state.pitch_deg:.2f} deg, yaw "
-        f"{state.yaw_deg:.2f} deg.",
-        f"- Canvas: {um_per_px:.2f} um/px, from {calibration_source or 'nothing'}. "
-        f"The atlas outlines are drawn at that scale.",
-    ]
-    if damage:
-        lines.append(f"- Recorded damage: {damage}.")
-    if notes.strip():
-        lines.append(f"- Notes from the caller: {notes.strip()}")
-    lines += [
-        "",
-        "Tools:",
-        "- `preview_transform`: renders the section under a candidate "
-        "rotation/scale/translation with the atlas region outlines over it at "
-        "true physical scale. Writes nothing.",
-        "- `preview_transform` view controls, all optional: `mode` "
-        "(overlay, side_by_side, checkerboard, outlines, section, template), `zoom` "
-        "([x0, y0, x1, y1] as fractions of the canvas, cropped before the "
-        "image is sized down), `template_opacity` (0..1).",
-        "- `submit_transform`: ends this alignment with the parameters you "
-        "settled on.",
-        "",
-        "Constraints:",
-        f"- You have about {ALIGN_MAX_ITERATIONS} tool calls; if you do not "
-        "submit, the last preview is taken as your answer.",
-        "- Rotation is in counter-clockwise degrees and both scales are "
-        "multipliers, all three about the CANVAS centre; translations are in "
-        "millimetres, x increasing to the right and y downward.",
-    ]
-    return "\n".join(lines)
+def similarity_fit(src: np.ndarray, dst: np.ndarray) -> np.ndarray:
+    """The 2x3 similarity (rotation, one scale, shift) mapping *src* to *dst*.
 
-
-async def run_align_session(
-    state: StackState,
-    ctx: EngineContext,
-    record: SliceState,
-    notes: str,
-    *,
-    max_iterations: int = ALIGN_MAX_ITERATIONS,
-    debrief: bool = False,
-) -> dict[str, Any]:
-    """Run the bounded interactive alignment for ONE section.
-
-    With *debrief*, one more message after submit asks the agent what it
-    missed while aligning; the answer comes back under ``"debrief"``.
-
-    Writes nothing: returns ``{"status": "ok", "params": {...physical
-    knobs...}, "matrix_params": [...six normalized numbers...],
-    "decomposition": {...}, "calibration": {...}, "submitted": bool,
-    "note": str, "panel": Image}`` for the caller to record.
+    Umeyama's closed form, so two points give the exact answer and more give
+    the least-squares one. A similarity is what two landmarks can support: a
+    per-axis scale needs three.
     """
-    box = _build_align_tools(state, ctx, record)
-    agent = build_agent(
-        model=ctx.model,
-        name="linear_align_slice",
-        instruction=_align_prompt(
-            record, state, notes, box.um_per_px, box.calibration_source
-        ),
-        tools=box.tools,
-        max_output_tokens=2000,
-        reasoning=ctx.spec.reasoning,
-    )
-    seed = types.Content(
-        role="user",
-        parts=[
-            types.Part.from_text(
-                text=(
-                    f"Align {record.id} to the {state.plane} atlas section at "
-                    f"{(record.position_mm or 0.0):.3f} mm, then call "
-                    "`submit_transform`."
-                )
-            )
-        ],
-    )
-    debrief_sink: list[str] = []
-    tool_calls, turns = await run_agent_session(
-        agent=agent,
-        seed_message=seed,
-        done=lambda: bool(box.submission),
-        nudge_no_tool=_NUDGE_NO_TOOL,
-        nudge_continue=_NUDGE_CONTINUE,
-        max_iterations=max_iterations,
-        run_label=f"linear_align_{record.index_corrected:03d}",
-        debrief=ALIGN_DEBRIEF_PROMPT if debrief else None,
-        debrief_sink=debrief_sink,
-    )
+    src = np.asarray(src, dtype=np.float64)
+    dst = np.asarray(dst, dtype=np.float64)
+    mu_src, mu_dst = src.mean(axis=0), dst.mean(axis=0)
+    x, y = src - mu_src, dst - mu_dst
+    cov = (y.T @ x) / len(src)
+    u, singular, vt = np.linalg.svd(cov)
+    correction = np.eye(2)
+    if np.linalg.det(u) * np.linalg.det(vt) < 0:  # never mirror the section
+        correction[1, 1] = -1.0
+    rotation = u @ correction @ vt
+    variance = float((x**2).sum() / len(src))
+    scale = float((singular * np.diag(correction)).sum() / variance) if variance > 0 else 1.0
+    linear = scale * rotation
+    return np.column_stack([linear, mu_dst - linear @ mu_src])
 
-    submitted = bool(box.submission)
-    params = dict(box.submission["params"]) if submitted else box.last_params
-    if params is None:
-        return {
-            "status": "error",
-            "error": "NO_TRANSFORM",
-            "id": record.id,
-            "turns": turns,
-            "tool_calls": tool_calls,
-        }
-    section = render_slice(ctx, record, long_edge=PREVIEW_LONG_EDGE)
-    matrix_params = normalized_physical_affine(
-        size=section.size, um_per_px=box.um_per_px, **params
-    )
+
+def affine_fit(src: np.ndarray, dst: np.ndarray) -> np.ndarray:
+    """The least-squares 2x3 affine mapping *src* to *dst*; needs 3+ points."""
+    src = np.asarray(src, dtype=np.float64)
+    dst = np.asarray(dst, dtype=np.float64)
+    design = np.column_stack([src, np.ones(len(src))])
+    solution, *_ = np.linalg.lstsq(design, dst, rcond=None)
+    return np.asarray(solution.T, dtype=np.float64)
+
+
+def physical_params(
+    matrix: np.ndarray, *, pivot: tuple[float, float], um_per_px: float
+) -> dict[str, float]:
+    """A 2x3 in canvas pixels as the five knobs, about *pivot*.
+
+    The inverse of :func:`langslice.affine.physical_affine_matrix`: rotation
+    and scales come out of the linear part, and the shift is what is left of
+    the translation once the pivot's own displacement is taken out. ``shear``
+    rides along because a three-point affine can have some and the five knobs
+    cannot express it.
+    """
+    values = np.asarray(matrix, dtype=np.float64).reshape(2, 3)
+    linear, offset = values[:, :2], values[:, 2]
+    centre = np.asarray(pivot, dtype=np.float64)
+    shift = offset - centre + linear @ centre
+    parts = decompose_affine(values)
     return {
-        "status": "ok",
-        "id": record.id,
-        "params": params,
-        "matrix_params": matrix_params,
-        "decomposition": _align_decomposition(matrix_params, section.size),
-        "calibration": {
-            "section_um_per_px": round(box.um_per_px, 4),
-            "source": box.calibration_source,
-        },
-        "submitted": submitted,
-        "debrief": debrief_sink[0] if debrief_sink else "",
-        "confidence": str(box.submission.get("confidence", "")),
-        "note": str(box.submission.get("note", "")),
-        "previews": box.previews,
-        "turns": turns,
-        "tool_calls": tool_calls,
-        "panel": box.last_panel,
+        "rotation_deg": round(float(parts["rotation_deg"]), 3),
+        "scale_x": round(float(parts["scale_x"]), 4),
+        "scale_y": round(float(parts["scale_y"]), 4),
+        "translate_x_mm": round(float(shift[0]) * um_per_px / 1000.0, 4),
+        "translate_y_mm": round(float(shift[1]) * um_per_px / 1000.0, 4),
+        "shear": round(float(parts["shear"]), 4),
     }

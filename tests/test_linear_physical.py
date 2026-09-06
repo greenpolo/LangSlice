@@ -301,22 +301,22 @@ def test_no_pixel_size_anywhere_is_estimated_never_fatal(tmp_path: Path):
 
 def test_the_preview_tool_returns_one_image_and_the_numbers(tmp_path: Path):
     from langslice.adk import TOOL_MEDIA_PARTS_KEY
-    from langslice.linear.transform import _build_align_tools
+    from langslice.linear.toolbox import build_tools
 
     _section((512, 512)).save(tmp_path / "s.tif", dpi=(2540.0, 2540.0))  # 10 um/px
     ctx, state = _ctx(tmp_path)
     record = state.slices[0]
     record.position_mm = 0.2
-    box = _build_align_tools(state, ctx, record)
+    box = build_tools(state, ctx, ctx.spec)
     preview = next(tool for tool in box.tools if tool.__name__ == "preview_transform")
 
-    result = preview(0.0, 1.0, 1.0, 0.25, 0.0)
+    result = preview(record.id, 0.0, 1.0, 1.0, 0.25, 0.0)
     assert result["status"] == "ok"
     assert len(result[TOOL_MEDIA_PARTS_KEY]) == 1  # ONE image, not a panel strip
     assert result["params"]["translate_x_mm"] == 0.25
     assert result["calibration"]["source"] == "file"
     assert result["decomposition"]["rotation_deg"] == 0.0
-    assert box.previews == 1
+    assert box.preview_history[record.id] == [result["params"]]
 
 
 # --- the reasoning knob --------------------------------------------------
