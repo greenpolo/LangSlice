@@ -51,7 +51,13 @@ Nash kept five of its ten asks:
   read-only tool. `physical_views` at identity, same renderer as everything.
 - `view_stack`: the strip ordered by written position with position and
   spacing in the labels, plus `render.spacing_plot` (PIL, no matplotlib).
-- `reorder_slices` takes corrected indices as well as filenames.
+- `reorder_slices` took corrected indices for one run; Astra then pointed
+  out (run 2) that a reorder changes the indices, so an index-addressed
+  reorder can hit the wrong section next call. Filenames only again.
+Run 2's new asks, built: `view_stack` pastes the atlas at each placed
+section's position beneath it in the SAME image (one picture per section, not
+two — the image budget counts); `compare_placement` takes a batch of
+`{id, positions_mm}` entries, ≤8 pairs per call.
 Rejected: labelled anatomy/landmarks, confidence and verification states,
 damage masks, an anatomy-based gap review, a validity-vs-verification audit.
 

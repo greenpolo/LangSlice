@@ -167,6 +167,18 @@ def test_view_stack_orders_by_position_and_plots_it(tmp_path: Path):
     assert labels[-1].startswith("0: s0.png  9.00 mm")
     assert "to next)" in labels[0]
     assert sum(1 for part in parts if part.inline_data is not None) == 6  # 5 sections + plot
+    # A placed section carries its atlas match beneath it: taller than a bare one.
+    import io
+
+    from PIL import Image
+
+    def heights(media) -> list[int]:
+        return [Image.open(io.BytesIO(p.inline_data.data)).height for p in media if p.inline_data]
+
+    tall = heights(parts)
+    state.by_id("s1.png").position_mm = None
+    bare = heights(_tool(box, "view_stack")()[TOOL_MEDIA_PARTS_KEY])
+    assert bare[-2] < tall[-2]  # s1 lost its atlas, and sorts last before the plot
 
 
 def test_a_write_returns_only_the_rows_it_touched(tmp_path: Path):
@@ -215,9 +227,8 @@ def test_reorder_keeps_positions_and_transforms(tmp_path: Path):
 
     assert [s.id for s in state.in_order()] == order
     assert sorted(result["moved"]) == ["s1.png", "s2.png"]  # index changed
-    # Corrected indices, as they stand at the call, are the other address.
-    assert _tool(box, "reorder_slices")(["0", "2", "1", "3", "4"])["status"] == "ok"
-    assert [s.id for s in state.in_order()] == ["s0.png", "s1.png", "s2.png", "s3.png", "s4.png"]
+    # Filenames only: the corrected index is what this call changes.
+    assert _tool(box, "reorder_slices")(["0", "2", "1", "3", "4"])["error"] == "NOT_A_PERMUTATION"
     assert "cleared_positions" not in result
     # Nothing but the corrected index moves; the submit gate is what holds
     # order and position together.

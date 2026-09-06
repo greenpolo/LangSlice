@@ -259,21 +259,30 @@ def test_compare_placement_draws_the_section_on_each_atlas_position(tmp_path: Pa
     tools, _box, state = _tools(tmp_path)
     compare = tools["compare_placement"]
 
-    current = compare("s.tif")
+    current = compare([{"id": "s.tif"}])
     assert current["status"] == "ok"
-    assert current["positions_mm"] == [0.2] and current["current_position_mm"] == 0.2
+    assert current["compared"][0]["position_mm"] == 0.2
+    assert current["compared"][0]["current_position_mm"] == 0.2
     assert len(current[TOOL_MEDIA_PARTS_KEY]) == 2  # side_by_side: section, template
 
-    stepped = compare("s.tif", [0.1, 0.2, 0.3], "overlay", [], 0.3)
-    assert stepped["positions_mm"] == [0.1, 0.2, 0.3]
+    stepped = compare([{"id": "s.tif", "positions_mm": [0.1, 0.2, 0.3]}], "overlay", [], 0.3)
+    assert [row["position_mm"] for row in stepped["compared"]] == [0.1, 0.2, 0.3]
     assert len(stepped[TOOL_MEDIA_PARTS_KEY]) == 3
     assert stepped["render_failed"] == []
     # A look, not a write.
     assert state.slices[0].position_mm == 0.2
 
-    assert compare("s.tif", [], "flicker")["error"] == "BAD_MODE"
+    # A batch: several sections, several candidates each, capped at 8 pairs.
+    many = compare(
+        [{"id": "s.tif", "positions_mm": [0.1] * 6}, {"id": "0", "positions_mm": [0.3] * 4}],
+        "overlay",
+    )
+    assert len(many["compared"]) == 8 and many["truncated"] and many["dropped_pairs"] == 2
+
+    assert compare([{"id": "s.tif"}], "flicker")["error"] == "BAD_MODE"
+    assert compare([{"id": "ghost.tif"}])["error"] == "UNKNOWN_SLICE_IDS"
     state.slices[0].position_mm = None
-    assert compare("s.tif")["error"] == "NO_POSITION"
+    assert compare([{"id": "s.tif"}])["error"] == "NO_POSITION"
 
 
 # --- the pivot -----------------------------------------------------------
