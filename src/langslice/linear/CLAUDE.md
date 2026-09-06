@@ -86,17 +86,12 @@ in four previews, so the fan-out bought nothing and cost the shared reading.
   the sections it touched plus `n_sections`, never the whole table —
   `status`, `undo`, `redo` and `submit` are what return all the rows.
 - `transform.py` — the silhouette fit and the arithmetic the interactive tools
-  run on, both in PHYSICAL space. `fit_silhouette` takes an optional `roi`
-  ([x0, y0, x1, y1] of the CANVAS): with one, `roi_masks` prepares the
-  section's tissue mask and `render.atlas_mask_canvas`'s atlas mask on the
-  physical canvas at identity, cuts both to the box and hands them to
-  `affine.mask_affine` (the moments core, factored out of `silhouette_affine`)
-  — which is how a section that lost its cortex is fitted on the brainstem it
-  kept, and why `fit_affine` refuses damage only when no roi is given. Either
-  route reports the SAME things: six normalized numbers on the section frame
-  and `physical` about the canvas centre (`_conjugate` moves a 2x3 between the
-  two frames). `calibrate` answers the canvas's
-  micrometres per pixel and where it came from: the host's
+  run on, both in PHYSICAL space. `fit_silhouette` matches the whole tissue
+  outline against the whole atlas outline (`affine.silhouette_affine`) and
+  reports six normalized numbers on the section frame plus `physical` about
+  the canvas centre (`_conjugate` moves a 2x3 between the two frames); damaged
+  sections are refused before this runs (`toolbox.fit_affine`). `calibrate`
+  answers the canvas's
   `--pixel-size-um` (`"host"`), else the file's TIFF/OME tags (`"file"`),
   else the tissue-width guess (`"estimated"`) — it never crashes and never
   silently pretends. The knobs are ABBA's (rotation about the pivot, per-axis
@@ -170,10 +165,7 @@ resumed run starts from the checkpoint, which is the state as it stood.
 - `fit_affine`'s silhouette method measures against the FLAT atlas section even
   when the stack carries cutting angles (`langslice.affine.silhouette_affine`
   builds its own atlas silhouette off the voxel grid). The payload says so with
-  `flat_atlas_fit: true`. The `roi` route does NOT have that ceiling — it
-  measures on the physical canvas, at the stack's angles and at true scale —
-  so the two routes answer slightly different questions, and only the roi one
-  is calibrated.
+  `flat_atlas_fit: true`.
 - `physical` on a fit is the five knobs about the canvas centre plus the
   `shear` they cannot express (0.10-0.16 on M05_D_08, not noise), so a preview
   typed from a fit reproduces it only up to that shear. The A/B view does not
@@ -181,13 +173,12 @@ resumed run starts from the checkpoint, which is the state as it stood.
   (`affine.denormalized_affine`), which are exact.
 - The moments core has a 180-degree ambiguity — `(1,1)` and `(-1,-1)` are the
   same axes turned round — and settles it on silhouette IoU alone. On INTACT
-  M05 sections the right one wins by 0.036-0.092 IoU; on the damaged
-  M05_D_08 core inside an ROI it loses by 0.0035, and the fit comes back
-  upside down at 147 deg. Intensity says otherwise (template NCC +0.047 for
-  the -33 deg candidate, -0.161 for the winner), so a template-correlation
-  tie-break would fix it — measured, not built: it would move a benchmarked
-  path (`silhouette_affine` is `nonlinear/quick_affine`'s too). The fit's own
-  panel is what catches it; look at it.
+  M05 sections the right one wins by 0.036-0.092 IoU; a template-correlation
+  tie-break would help the cases where silhouette IoU alone is close, but that
+  is measured, not built: it would move a benchmarked path (`silhouette_affine`
+  is `nonlinear/quick_affine`'s too). The fit's own panel is what catches it;
+  look at it. Damaged sections never reach this path: `fit_affine` refuses
+  them outright.
 - `method="elastix"` and `run_deepslice` answer `UNAVAILABLE`; both are seams,
   not stubs to fill in casually.
 - `fit_position` is a thin wrapper over `oblique.fit_oblique` — correct, not

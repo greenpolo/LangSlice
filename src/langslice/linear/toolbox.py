@@ -1071,30 +1071,23 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         slice_ids: list[str],
         method: str,
         apply: bool,
-        roi: list[float] = [],  # noqa: B006 — read, never mutated; ADK wants a value
     ) -> dict[str, Any]:
         """Fit an in-plane affine per section against its atlas section.
 
-        Without an `roi` the whole tissue outline is matched against the whole
-        atlas outline, and a damaged section is refused. With an `roi` only
-        what lies inside that box is matched — the section's tissue mask
-        against the atlas outline's, both on the canvas at identity — and
-        damaged sections are fitted like any other.
+        The whole tissue outline is matched against the whole atlas outline;
+        a damaged section is refused.
 
         Args:
             slice_ids: Filenames or corrected indices; empty means every
                 positioned, undamaged section.
             method: "silhouette" (moments fit) or "elastix" (intensity affine).
             apply: True records the fits on the stack; False only measures.
-            roi: [x0, y0, x1, y1] as fractions of the CANVAS — the same frame
-                `preview_transform`'s zoom names. An empty list fits the whole
-                canvas.
 
         Returns:
-            Per-section overlap (iou) inside whatever was fitted, the
-            transform as the five physical knobs about the canvas centre, the
-            calibration the image was drawn with, and an image of the fitted
-            section under the atlas outlines for up to 16 sections.
+            Per-section overlap (iou), the transform as the five physical
+            knobs about the canvas centre, the calibration the image was
+            drawn with, and an image of the fitted section under the atlas
+            outlines for up to 16 sections.
         """
         # ponytail: spec.transform.elastix is inert until the method lands;
         # asking for it answers UNAVAILABLE either way.
@@ -1112,17 +1105,6 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                 "message": "method must be 'silhouette' or 'elastix'.",
             }
 
-        try:
-            window = [float(value) for value in (roi or [])]
-        except (TypeError, ValueError):
-            return {"status": "error", "error": "BAD_ARGS"}
-        if window and len(window) != 4:
-            return {
-                "status": "error",
-                "error": "BAD_ROI",
-                "expected": "[x0, y0, x1, y1] as fractions of the canvas",
-            }
-
         if slice_ids:
             targets, unknown = resolve_many(list(slice_ids))
         else:
@@ -1137,10 +1119,10 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         parts: list[types.Part] = []
         fits: list[tuple[SliceState, dict[str, Any]]] = []
         for record in targets:
-            if record.damaged and not window:
+            if record.damaged:
                 results.append({"id": record.id, "status": "error", "error": "DAMAGED"})
                 continue
-            outcome = fit_silhouette(state, ctx, record, roi=window or None)
+            outcome = fit_silhouette(state, ctx, record)
             panel = outcome.pop("panel", None)
             results.append(outcome)
             if outcome["status"] != "ok":
@@ -1178,7 +1160,6 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                 "iou": outcome["iou"],
                 "calibration": outcome["calibration"],
                 "mirrored": outcome["mirrored"],
-                **({"roi": outcome["roi"]} if "roi" in outcome else {}),
             }
         payload.update(commit(*[record.id for record, _ in fits]))
         return payload

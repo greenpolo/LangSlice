@@ -30,7 +30,6 @@ class SliceState:
                       translate_x_mm, translate_y_mm, pivot},
          "calibration": {section_um_per_px, source},
          "iou": float | None,              # fits only
-         "roi": [x0, y0, x1, y1] | absent, # fits restricted to a box
          "mirrored": bool,                 # det of the 2x2 is negative
          "note": str}                      # interactive only
 

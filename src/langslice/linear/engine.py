@@ -217,7 +217,8 @@ def apply_host_inputs(state: StackState, spec: JobSpec) -> None:
     """Write the host's answers for the tasks that are switched off.
 
     Order arrives as a list of filenames, positions as a filename -> mm
-    mapping, angles as ``{"pitch": deg, "yaw": deg}``. Anything the host
+    mapping, angles as ``{"pitch": deg, "yaw": deg}``, damage as a filename
+    -> note mapping. Anything the host
     supplies for a task that IS on is applied too — it is a starting point,
     not a constraint.
     """
@@ -255,6 +256,19 @@ def apply_host_inputs(state: StackState, spec: JobSpec) -> None:
             f"inputs: cutting angles set by the host "
             f"(pitch {state.pitch_deg:.2f}, yaw {state.yaw_deg:.2f})"
         )
+
+    damaged = inputs.get("damaged") or {}
+    if damaged:
+        # Damage is normally the agent's own classification; a host (or a
+        # benchmark) may assert it up front so the automatic fits refuse the
+        # section and it is aligned by hand.
+        for name, note in damaged.items():
+            record = state.by_id(str(name))
+            if record is None:
+                raise ValueError(f"inputs.damaged names an unknown section: {name!r}")
+            record.damaged = True
+            record.damage_note = str(note or "")
+        state.notes.append(f"inputs: {len(damaged)} section(s) marked damaged by the host")
 
 
 # --- the session ---------------------------------------------------------
