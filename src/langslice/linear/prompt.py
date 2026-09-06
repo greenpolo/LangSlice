@@ -50,8 +50,20 @@ TOOL_LINES: dict[str, str] = {
     "fit_affine": "fits an in-plane affine per section against its atlas "
     "section and returns the overlap, the transform decomposed, and an image "
     "of the section under the atlas outlines at true physical scale.",
-    "align_slice": "runs a bounded alignment sub-session for ONE section and "
-    "records the in-plane transform it settles on; it does not change the "
+    "preview_transform": "renders one positioned section under a candidate "
+    "rotation, per-axis scales and millimetre shifts, with the atlas outlines "
+    "at true physical scale; `mode` is overlay, side_by_side, checkerboard, "
+    "outlines, section, template or ab (these parameters and the section's "
+    "stored transform, at one crop), `zoom` is [x0, y0, x1, y1] of the canvas, "
+    "`template_opacity` is 0..1, and `pivot` — what the rotation and scales "
+    "turn about — is canvas, tissue or [fx, fy] of the canvas; writes nothing.",
+    "landmarks": "measures point pairs (a section point and the atlas point it "
+    "belongs on, as fractions of the canvas) under given parameters: the "
+    "distance in millimetres per pair, their RMS, a transform fitted to them "
+    "(similarity from 2 pairs, affine from 3), and the pairs drawn on the "
+    "view; writes nothing.",
+    "set_transform": "records an in-plane transform on one section from the "
+    "same parameters, with a confidence and a note; it does not change the "
     "section's flip or rotation.",
     "copy_transform": "copies one section's transform onto other sections.",
     "submit": "ends the run.",
@@ -157,6 +169,10 @@ def build_job_statement(
             )
     if spec.has("transform"):
         constraints.append("- Damaged sections are refused by `fit_affine`.")
+        constraints.append(
+            "- `submit` is refused unless every section carries a transform, "
+            "damaged sections included."
+        )
     constraints.append(
         "- Corrections are recorded as data; the user's image files are never "
         "modified."

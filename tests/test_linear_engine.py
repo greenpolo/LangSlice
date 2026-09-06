@@ -1,4 +1,4 @@
-"""The run: ingest, host inputs, a fake-model session, the post pass, results.
+"""The run: ingest, host inputs, a fake-model session, results.
 
 No live model calls: the session is driven by a scripted fake BaseLlm swapped
 in through ``LLMRegistry.new_llm`` (tests/fakes.py).
@@ -12,9 +12,6 @@ import os
 from pathlib import Path
 
 import pytest
-from google.adk.models import BaseLlm
-from google.adk.models.llm_response import LlmResponse
-from google.genai import types
 from PIL import Image
 
 from langslice.linear import JobSpec, run
@@ -26,14 +23,9 @@ from langslice.linear.engine import (
     ingest,
 )
 from langslice.linear.prompt import build_job_statement
-from langslice.linear.spec import PositionSpec, TransformSpec
+from langslice.linear.spec import PositionSpec
 from langslice.linear.toolbox import build_tools
-from tests.fakes import (
-    EllipseAtlas,
-    SlabAtlas,
-    ellipse_section,
-    install_fake_adk_model_stack,
-)
+from tests.fakes import SlabAtlas, install_fake_adk_model_stack
 
 _ATLAS = SlabAtlas()
 
@@ -179,28 +171,6 @@ def test_run_resumes_from_the_checkpoint(tmp_path: Path, monkeypatch):
     assert [s.position_mm for s in state.in_order()] == list(positions.values())
 
 
-def test_run_fills_missing_transforms_when_subagents_are_off(tmp_path: Path, monkeypatch):
-    atlas = EllipseAtlas()
-    names = []
-    for index in range(2):
-        name = f"slice_{index}.png"
-        ellipse_section().save(tmp_path / name)
-        names.append(name)
-    positions = {name: 8.0 + index for index, name in enumerate(names)}
-    install_fake_adk_model_stack(monkeypatch, positions=positions)
-
-    spec = _spec(
-        tmp_path,
-        tasks=["position", "transform"],
-        transform=TransformSpec(subagents=False),
-    )
-    state = asyncio.run(run(spec, emit=lambda _m: None, atlas_loader=lambda _n: atlas))
-
-    assert state.submitted is True
-    assert all(s.transform is not None for s in state.slices)
-    assert {s.transform["kind"] for s in state.slices} == {"silhouette"}
-
-
 def test_a_session_that_never_submits_keeps_its_writes(tmp_path: Path, monkeypatch):
     names = _make_stack(tmp_path, n=3)
     positions = {names[0]: 4.0}  # incomplete: submit is refused every turn
@@ -242,75 +212,3 @@ def test_ingest_tools_and_emit_on_a_real_folder(tmp_path: Path):
     emit_results(state, ctx)
     written = json.loads(Path(spec.out).read_text())
     assert len(written["slices"]) == len(state.slices)
-
-
-# --- the alignment sub-session -------------------------------------------
-
-
-class _AlignLlm(BaseLlm):
-    """Calls ``align_slice`` once, submits the sub-session, then submits."""
-
-    async def generate_content_async(self, llm_request, stream: bool = False):
-        del stream
-        available = set(llm_request.tools_dict or {})
-        if "submit_transform" in available:
-            part = types.Part.from_function_call(
-                name="submit_transform",
-                args={
-                    "rotation_deg": 5.0,
-                    "scale_x": 1.0,
-                    "scale_y": 1.0,
-                    "translate_x_mm": 0.0,
-                    "translate_y_mm": 0.0,
-                    "confidence": "medium",
-                    "note": "lined up the intact border",
-                },
-            )
-        elif "align_slice" in available:
-            part = types.Part.from_function_call(
-                name="align_slice",
-                args={"slice_id": "slice_0.png", "notes": "the left half is missing"},
-            )
-        else:
-            part = types.Part.from_text(text="nothing to do")
-        yield LlmResponse(
-            content=types.Content(role="model", parts=[part]),
-            partial=False,
-            turn_complete=True,
-        )
-
-
-def test_align_slice_runs_a_sub_session_and_records_its_transform(
-    tmp_path: Path, monkeypatch
-):
-    from google.adk.models.registry import LLMRegistry
-
-    atlas = EllipseAtlas()
-    ellipse_section().save(tmp_path / "slice_0.png")
-    monkeypatch.setattr(
-        LLMRegistry, "new_llm", staticmethod(lambda model: _AlignLlm(model=model))
-    )
-
-    spec = _spec(tmp_path, tasks=["transform"])
-    ctx = _ctx(spec, atlas=atlas)
-    state = ingest(spec, ctx)
-    state.slices[0].position_mm = 10.0
-    state.slices[0].damaged = True
-    box = build_tools(state, ctx, spec)
-    align = next(tool for tool in box.tools if tool.__name__ == "align_slice")
-
-    result = asyncio.run(align("slice_0.png", "the left half is missing"))
-
-    assert result["status"] == "ok"
-    assert result["submitted"] is True
-    assert result["params"]["rotation_deg"] == 5.0
-    transform = state.slices[0].transform
-    assert transform["kind"] == "interactive"
-    assert len(transform["params"]) == 6
-    assert transform["note"] == "lined up the intact border"
-    assert transform["physical"]["rotation_deg"] == 5.0
-    # nothing carries a pixel size: the run says it estimated one
-    assert transform["calibration"]["source"] == "estimated"
-    assert transform["calibration"]["section_um_per_px"] > 0
-    assert state.slices[0].confidence == "medium"
-    assert load_checkpoint(ctx.checkpoint_path).slices[0].transform is not None

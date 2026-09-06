@@ -24,7 +24,7 @@ def test_spec_round_trips_through_dict():
         tasks=["position"],
         reorder=ReorderSpec(flip=False, hemisphere_cue="notch on the left"),
         position=PositionSpec(interval_um=300, strict_interval=True, bayesian=True),
-        transform=TransformSpec(angles=True, subagents=False),
+        transform=TransformSpec(angles=True, elastix=True),
         facts=["the block was cut back to front"],
         inputs={"positions": {"s0.png": 1.0}},
     )

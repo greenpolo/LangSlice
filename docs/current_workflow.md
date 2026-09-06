@@ -22,7 +22,7 @@ langslice linear run FOLDER [--tasks reorder,position,transform]
     [--reasoning none|minimal|low|medium|high] [--pixel-size-um UM]
     [--no-flip] [--hemisphere-cue TEXT]
     [--thickness UM] [--interval UM] [--strict-interval] [--deepslice] [--bayesian]
-    [--angles] [--elastix] [--no-subagents]
+    [--angles] [--elastix]
     [--fact TEXT ...] [--positions JSON] [--order JSON]
     [--out PATH] [--fresh] [--trace-dir PATH]
 ```
@@ -55,7 +55,9 @@ run can use:
 | `fit_position` | `--bayesian` | `oblique.fit_oblique` around a section's current position; writes nothing |
 | `set_cutting_angles` | `--angles` | stack-wide pitch/yaw; later fetches and previews follow |
 | `fit_affine` | `transform` | silhouette affine per section, with the overlap, the transform decomposed (rotation, scales, shear, translation, `mirrored`) and a physical-scale overlay (up to 16); refuses damaged sections; `--elastix`'s method is not wired yet |
-| `align_slice` | `transform` (default) | the bounded interactive sub-session for ONE section (`preview_transform` / `submit_transform`, parameters in millimetres), recording an in-plane transform only; `--no-subagents` moves those sessions to after `submit` |
+| `preview_transform` | `transform` | one positioned section under a candidate rotation / per-axis scales / millimetre shifts, with the atlas outlines at true physical scale; `mode` (overlay, side_by_side, checkerboard, outlines, section, template, ab), `zoom`, `template_opacity` and `pivot` (canvas, tissue, or [fx, fy] of the canvas) are the view and the centre it turns about; writes nothing |
+| `landmarks` | `transform` | point pairs as fractions of the canvas: the residual in millimetres per pair, their RMS, the transform fitted to them (similarity from 2 pairs, affine from 3), and the pairs drawn on the view; writes nothing |
+| `set_transform` | `transform` | records the in-plane transform of one section (parameters in millimetres, a confidence and a note); it does not change the section's flip or rotation |
 | `copy_transform` | `transform` | copies one section's transform onto others |
 | `submit` | always | ends the run; gated |
 
@@ -94,8 +96,8 @@ come from the image file (TIFF `XResolution` + `ResolutionUnit`, or the OME-XML
 placed at `atlas um/px / canvas um/px` with its anatomy centred, never fitted
 to the canvas. With no pixel size anywhere the run estimates one from the
 tissue's width against the atlas anatomy's and records
-`calibration.source = "estimated"` on the transform. Both the interactive
-preview and `fit_affine` draw the same picture: the transformed section under
+`calibration.source = "estimated"` on the transform. The interactive preview,
+`landmarks` and `fit_affine` all draw the same picture: the transformed section under
 the atlas's family-level region outlines, each in its own color, with a 1 mm
 scale bar. The alignment parameters (`rotation_deg`, `scale_x`, `scale_y`,
 `translate_x_mm`, `translate_y_mm`) are stored alongside the host-facing six
@@ -224,8 +226,8 @@ set `LANGSLICE_ADK_CAPTURE_REQUESTS_DIR` to write redacted JSONL request capture
 `langslice linear run --trace-dir PATH` (or `LANGSLICE_TRACE_DIR`; the flag
 wins) writes one JSONL file per agent session —
 `<trace_dir>/<run_label>_<8 hex>.jsonl`, e.g. `linear_stack_1a2b3c4d.jsonl` for
-the main session and `linear_align_003_*` for a section's alignment
-sub-session — with one record per event:
+the main session, which is the only session a run has — with one record per
+event:
 
 | `kind` | contents |
 | --- | --- |

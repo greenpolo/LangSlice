@@ -52,9 +52,6 @@ class TransformSpec:
     angles: bool = False
     #: ``fit_affine`` may use the Elastix intensity affine.
     elastix: bool = False
-    #: ``align_slice`` is a tool the main agent calls. False = the engine runs
-    #: the alignment sessions itself after submit.
-    subagents: bool = True
 
 
 @dataclass

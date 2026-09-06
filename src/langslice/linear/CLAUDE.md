@@ -16,8 +16,10 @@ There is no node graph, no per-step agent, and no single-slice agent — looking
 at the whole stack once yields the information for every task, and splitting
 that into separate sessions threw the shared reading away and re-paid for it.
 
-The one exception is `align_slice`: a bounded interactive sub-session for ONE
-section, run in-process as an async tool of the main agent (`transform.py`).
+There are no sub-sessions left. The per-section interactive alignment
+(`preview_transform`, `landmarks`, `set_transform`) moved into the main toolbox
+on 2026-09-06: GPT-6 Astra moved every parameter at once and finished a section
+in four previews, so the fan-out bought nothing and cost the shared reading.
 
 ## Files
 
@@ -47,10 +49,13 @@ section, run in-process as an async tool of the main agent (`transform.py`).
   picture, and returns `(images, silhouette_iou)`. Its view controls:
   `mode` (`overlay`, `side_by_side` — two images, `checkerboard`,
   `outlines` — atlas lines plus the section's own silhouette in a second grey
-  on black), `zoom` ([x0, y0, x1, y1] fractions of the CANVAS, cropped BEFORE
+  on black — and the line-free `section` / `template`), `zoom` ([x0, y0, x1, y1] fractions of the CANVAS, cropped BEFORE
   the resize so it magnifies, with the bar redrawn for the new µm/px) and
   `template_opacity` (0..1, replaced the `show_template` bool).
   `physical_overlay` is the one-image `overlay` wrapper `fit_affine` uses.
+  `pivot` (canvas px, `pivot_on_canvas` resolves "canvas"/"tissue"/[fx, fy]
+  onto it) and `markers` (the landmark pairs, a cross per section point and a
+  ring per atlas point in their own two colors) ride through both.
   Region acronyms and damage masking were asked for and deliberately not
   built. `canvas_um_per_px` follows the file's pixel size down through
   the render's own downsample (`render_scale`, same key as `render_cache`);
@@ -64,26 +69,30 @@ section, run in-process as an async tool of the main agent (`transform.py`).
   `fetch_atlas` tool, closed over the run context. Sections and atlas sections
   are framed the same way so apparent scale is not a cue.
 - `toolbox.py` — `build_tools(state, ctx, spec)`: every tool, gated by the
-  spec, plus the submit gates and the undo/redo snapshot stack.
-- `transform.py` — the silhouette fit and the interactive alignment
-  sub-session, both in PHYSICAL space. `calibrate` answers the canvas's
+  spec, plus the submit gates and the undo/redo snapshot stack. The interactive
+  transform lives here: `_Staged` (one section, its calibrated canvas and the
+  resolved pivot), `preview_transform` (read-only, any positioned section,
+  `mode="ab"` for the candidate-vs-stored toggle), `landmarks` (read-only) and
+  `set_transform` (the write). `preview_history` on the ToolBox is per section
+  and lasts the whole run.
+- `transform.py` — the silhouette fit and the arithmetic the interactive tools
+  run on, both in PHYSICAL space. `calibrate` answers the canvas's
   micrometres per pixel and where it came from: the host's
   `--pixel-size-um` (`"host"`), else the file's TIFF/OME tags (`"file"`),
   else the tissue-width guess (`"estimated"`) — it never crashes and never
-  silently pretends. The sub-session's knobs are ABBA's (rotation about the
-  centre, per-axis scales, `translate_x_mm`/`translate_y_mm`), and the
-  recorded transform carries them under `"physical"` next to the six
-  normalized numbers plus the `"calibration"` used. `preview_transform`'s
-  payload also carries `translate_px` (the
-  entered mm as canvas pixels, plus `px_per_mm`), `history` (every parameter
-  set previewed this session, oldest first) and the `view` it drew; the
-  prompt states the rotation/scale centre (the CANVAS centre), that x is
-  right and y is down, and the units.
+  silently pretends. The knobs are ABBA's (rotation about the pivot, per-axis
+  scales, `translate_x_mm`/`translate_y_mm`), and the recorded transform
+  carries them under `"physical"` (with the pivot as canvas fractions) next to
+  the six normalized numbers plus the `"calibration"` used.
+  `physical_decomposition` is `decompose_affine` minus its translation
+  fractions; `similarity_fit` (Umeyama, exact on two points), `affine_fit`
+  (least squares) and `physical_params` (a canvas 2x3 back into the five knobs
+  about a pivot) are what `landmarks` measures with.
 - `prompt.py` — `build_job_statement`: job, run facts, ONE factual line per
   tool that exists, hard constraints. Nothing else.
 - `session.py` — the ADK agent builder, the plugins, and the loop.
 - `engine.py` — `EngineContext`, `ingest`, `apply_host_inputs`, `run_session`,
-  `run_post_pass`, `emit_results`, and `run(spec)`.
+  `emit_results`, and `run(spec)`. No post pass: the session is the whole run.
 - `signals.py`, `deepslice.py`, `trace.py` — interval arithmetic, the DeepSlice
   seam (reports `UNAVAILABLE`), and the full-content JSONL session trace.
 
@@ -96,17 +105,21 @@ failure-mode warnings, no region names (the same text runs against every
 BrainGlobe atlas, species and plane). Full-trace forensics found every major
 benchmark failure tracking back to advice the harness injected; a per-slice
 estimation worker that ate 82% of the wall-clock carried ~no signal and was
-deleted; a landmark-tool pass benchmarked WORSE and was deleted rather than
-kept behind a flag.
+deleted; a landmark-tool pass for POSITION estimation benchmarked WORSE and was
+deleted rather than kept behind a flag (the `landmarks` tool of the transform
+task is a different animal: it measures pairs the agent picks, and reports
+millimetres, never a recommendation).
 
 **Gates are constraints, not coaching.** A refusal states the numbers that
 caused it and stops; `validate` runs the same gates without submitting.
 `submit` refuses `MISSING_POSITIONS`,
 `ORDER_POSITION_MISMATCH` (positions must run one way along the corrected
 order; the offending neighbour pairs are named), `STRICT_INTERVAL` (spacing
-within 10% of the interval and no breaks, when `--strict-interval`) and
+within 10% of the interval and no breaks, when `--strict-interval`),
 `INTERVAL_BREAKS_UNSUPPORTED` (a reported break must exceed 1.5x the stack's
-median written spacing). Gates only run for tasks that are on.
+median written spacing) and `MISSING_TRANSFORMS` (every section carries one,
+damaged included — the agent aligns those by hand or explains in the note).
+Gates only run for tasks that are on.
 
 **Corrections are data.** Order, flips, rotations, positions, cutting angles
 and transforms are proposals on the state. The user's image files are never
@@ -139,4 +152,6 @@ resumed run starts from the checkpoint, which is the state as it stood.
   9.05 x 6.68 mm, so the outlines land ~10% (ML) to ~15% (DV) outside the
   tissue at identity. That is the specimen-vs-Allen size difference, the same
   residual the nonlinear side measures, not a calibration bug.
-- The post pass (`--no-subagents`) runs alignment sessions one at a time.
+- `preview_transform`'s pivot resolution runs its own `canvas_geometry`, so a
+  preview builds the atlas plane twice (once to place the pivot, once to draw).
+  Flat sections are a numpy take; oblique ones resample twice.
