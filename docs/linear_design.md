@@ -12,10 +12,11 @@ sections are mirrored, which are out of order, where sections are missing, which
 are damaged, where each one sits. Splitting those into separate agent sessions
 throws that shared reading away and re-pays for it. The per-section interactive
 alignment was the one exception until 2026-09-06 — it ran as a bounded
-sub-session — and is not one any more: `preview_transform` / `landmarks` /
-`set_transform` are main-session tools the agent reaches for whenever it wants
-(GPT-6 Astra moved every parameter at once and finished a section in four
-previews, so the fan-out bought nothing).
+sub-session — and is not one any more: `adjust_transform` / `landmarks` are
+main-session tools the agent reaches for whenever it wants (GPT-6 Astra moved
+every parameter at once and finished a section in four previews, so the
+fan-out bought nothing). Preview and set are one tool, the computer-use
+pattern: every action writes and returns the picture of what it did.
 
 ## The job spec
 
@@ -108,11 +109,9 @@ in any payload or prompt (see `lean-harness` history in `linear/CLAUDE.md`).
 | `run_deepslice(ids?, allow_angle_change, keep=[ids])` | position.deepslice | positions (+ angles) for undamaged sections; UNAVAILABLE unless installed and plane/atlas supported. |
 | `fit_position(id, window_mm, angles?)` | position.bayesian | `oblique.fit_oblique` at the section's current position: best position (and angles) with score; writes nothing. |
 | `set_cutting_angles(pitch_deg, yaw_deg)` | transform.angles | stack-wide; subsequent atlas fetches and fits use them. |
-| `fit_affine(ids, method=silhouette\|elastix, apply=True)` | transform | per-section in-plane affine against its atlas section; returns iou, the transform as the same five `physical` knobs `set_transform` takes (plus `shear`, about the canvas centre) and a captioned overlay panel per section (≤16). Damaged sections are refused. |
-| `preview_transform(id, rotation_deg, scale_x, scale_y, translate_x_mm, translate_y_mm, mode, zoom, template_opacity, pivot, outlines)` | transform | draws ANY positioned section under a candidate transform with the atlas outlines at true physical scale; `NO_POSITION` otherwise. Writes nothing, snapshots nothing. |
+| `fit_affine(ids, method=silhouette\|elastix, apply=True)` | transform | per-section in-plane affine against its atlas section; returns iou, the transform as the same five `physical` knobs `adjust_transform` takes (plus `shear`, about the canvas centre) and a captioned overlay panel per section (≤16). Damaged sections are refused. |
+| `adjust_transform(id, rotation_deg, scale_x, scale_y, translate_x_mm, translate_y_mm, mode, zoom, template_opacity, pivot, outlines, note)` | transform | writes `{"kind": "interactive", ...}` on ANY positioned section (`NO_POSITION` otherwise) and returns it drawn under those parameters with the atlas outlines at true physical scale. The last call stays; the same parameters again only re-draw (no undo step). Undoable and checkpointed like every other write. |
 | `landmarks(id, pairs, params...)` | transform | point pairs (section point, atlas point) as fractions of the canvas: the residual per pair in mm, their RMS, the transform fitted to them (similarity from 2, affine from 3) in the same physical units, and the pairs drawn on the view. Writes nothing. |
-| `set_transform(id, params..., note, pivot)` | transform | records `{"kind": "interactive", ...}` on the section; the write the interactive route ends with, undoable and checkpointed like every other. |
-| `copy_transform(from_id, to_ids)` | transform | copy one section's transform to others. |
 | `submit(summary, notes, interval_breaks)` | always | ends the run; gated (below). |
 
 `fetch_atlas` and `view_slices` frame tissue the same way so apparent scale is
@@ -227,7 +226,7 @@ code (`region_contours`, `_smooth_closed`, family mapping, annotation slice
 at cutting angles) moves from `nonlinear/` to `atlas/render.py` so both
 methods draw the same lines from the same source.
 
-**The screen.** `preview_transform` returns the transformed section
+**The screen.** `adjust_transform` returns the transformed section
 (display-preprocessed grayscale) with the family outlines on top at true
 scale, a 1 mm scale bar, and a caption (section id, position, angles, the
 params). `fit_affine`'s panels and `landmarks`' image use the same renderer
@@ -237,7 +236,7 @@ every look at a section is the same picture.
 **View controls (2026-09-06).** Four sessions of gpt-5.6-luna aligning damaged
 M04 sections converged on the same three complaints — one fixed small image,
 no way to see the atlas apart from the section, and no magnification — so
-`preview_transform` takes three optional controls. Defaults reproduce the
+`adjust_transform` takes three optional controls. Defaults reproduce the
 older single overlay exactly.
 - `zoom = [x0, y0, x1, y1]`, fractions of the CANVAS (not of the section).
   The crop happens BEFORE the resize to the output long edge, so it is real
@@ -253,7 +252,7 @@ older single overlay exactly.
   bool and dials the template blended under the outlines in `overlay`.
 
 **The agents' wishlist, built 2026-09-06.** If Astra wants it, it gets it.
-- `pivot` on `preview_transform`, `landmarks` and `set_transform`: `"canvas"`
+- `pivot` on `adjust_transform` and `landmarks`: `"canvas"`
   (the canvas centre, the old behaviour), `"tissue"` (the section's own tissue
   centroid, from `image_prep.foreground_mask`) or `[fx, fy]` fractions of the
   canvas. Rotation and the scales turn about it; the translation does not care.
@@ -266,8 +265,8 @@ older single overlay exactly.
   reported in the same five knobs about the same pivot, with the `shear` an
   affine can carry that the knobs cannot. Nothing says "apply this".
 - `mode="ab"` renders TWO overlays at one crop: the parameters passed, then the
-  section's stored transform, whatever made it (identity only when it has
-  none; `ab_reference` says which). The candidate toggle, as asked.
+  transform the section carried before the call, whatever made it (identity
+  only when it had none; `ab_reference` says which). The before/after toggle.
 
 **Astra's requests, built 2026-09-06.** GPT-6 Astra (medium) aligned damaged
 M05 sections in the main trajectory at human level and was debriefed; three of
@@ -279,13 +278,13 @@ its five asks are in:
   fit payload, so a fit and a hand alignment are the same five numbers ("its
   reported matrix/decomposition was not directly interchangeable with the
   manual controls"). The fraction-based decomposition left the fit payload.
-- `outlines` on `preview_transform`: `all` (default), `outer` (the atlas
+- `outlines` on `adjust_transform`: `all` (default), `outer` (the atlas
   outline alone) or `none` — "all family outlines together were visually
   busy". The caption names the layer when it is not `all`.
 - concise writes: a write answers with the rows it changed, not the whole
   table ("on a large stack, concise change reports would be easier to review").
 - confidence is GONE, on Nash's call: nothing downstream reads it, and the
-  reasoning lives in `set_transform`'s note.
+  reasoning lives in `adjust_transform`'s note.
 
 Region acronyms on the outlines were asked for and deliberately NOT built
 (Nash: "it has no use for this"), and neither was damage masking — after the

@@ -50,25 +50,23 @@ TOOL_LINES: dict[str, str] = {
     "set_cutting_angles": "sets the stack-wide cutting angles.",
     "fit_affine": "fits an in-plane affine per section against its atlas "
     "section and returns the overlap, the transform as the same five physical "
-    "parameters `set_transform` takes, and an image of the section under the "
+    "parameters `adjust_transform` takes, and an image of the section under the "
     "atlas outlines at true physical scale; damaged sections are refused.",
-    "preview_transform": "renders one positioned section under a candidate "
-    "rotation, per-axis scales and millimetre shifts, with the atlas outlines "
-    "at true physical scale; `mode` is overlay, side_by_side, checkerboard, "
-    "outlines, section, template or ab (these parameters and the section's "
-    "stored transform, at one crop), `zoom` is [x0, y0, x1, y1] of the canvas, "
-    "`template_opacity` is 0..1, `pivot` — what the rotation and scales "
-    "turn about — is canvas, tissue or [fx, fy] of the canvas, and `outlines` "
-    "is all, outer or none; writes nothing.",
+    "adjust_transform": "sets one positioned section's in-plane transform — a "
+    "rotation, per-axis scales and millimetre shifts — and returns the section "
+    "drawn under it with the atlas outlines at true physical scale; every "
+    "call writes and the last call stays. `mode` is overlay, side_by_side, "
+    "checkerboard, outlines, section, template or ab (these parameters and "
+    "the transform the section carried before, at one crop), `zoom` is "
+    "[x0, y0, x1, y1] of the canvas, `template_opacity` is 0..1, `pivot` — "
+    "what the rotation and scales turn about — is canvas, tissue or [fx, fy] "
+    "of the canvas, `outlines` is all, outer or none, and `note` is a remark "
+    "for the record; it does not change the section's flip or rotation.",
     "landmarks": "measures point pairs (a section point and the atlas point it "
     "belongs on, as fractions of the canvas) under given parameters: the "
     "distance in millimetres per pair, their RMS, a transform fitted to them "
     "(similarity from 2 pairs, affine from 3), and the pairs drawn on the "
     "view; writes nothing.",
-    "set_transform": "records an in-plane transform on one section from the "
-    "same parameters, with a note; it does not change the section's flip or "
-    "rotation.",
-    "copy_transform": "copies one section's transform onto other sections.",
     "submit": "ends the run.",
 }
 

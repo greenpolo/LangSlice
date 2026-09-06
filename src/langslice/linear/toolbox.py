@@ -86,7 +86,7 @@ STRICT_INTERVAL_TOLERANCE = 0.10
 #: Rotations ``orient_slices`` accepts.
 _ROTATIONS = (0, 90, 180, 270)
 
-#: Views ``preview_transform`` composes on top of the renderer's own
+#: Views ``adjust_transform`` composes on top of the renderer's own
 #: (:data:`~langslice.linear.render.VIEW_MODES`): the A/B toggle, which is two
 #: renders of one crop rather than one composition.
 PREVIEW_MODES = (*VIEW_MODES, "ab")
@@ -110,8 +110,9 @@ class ToolBox:
     submission: dict[str, Any] = field(default_factory=dict)
     undo_stack: list[dict[str, Any]] = field(default_factory=list)
     redo_stack: list[dict[str, Any]] = field(default_factory=list)
-    #: Every parameter set previewed this run, per section id, oldest first.
-    preview_history: dict[str, list[dict[str, float]]] = field(default_factory=dict)
+    #: Every parameter set `adjust_transform` was given this run, per section
+    #: id, oldest first.
+    transform_history: dict[str, list[dict[str, float]]] = field(default_factory=dict)
 
     @property
     def names(self) -> list[str]:
@@ -1265,7 +1266,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         )
         return images
 
-    def preview_transform(
+    def adjust_transform(
         slice_id: str,
         rotation_deg: float,
         scale_x: float,
@@ -1277,11 +1278,16 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         template_opacity: float = 0.0,
         pivot: str | list[float] = "canvas",
         outlines: str = "all",
+        note: str = "",
     ) -> dict[str, Any]:
-        """Render one section under a candidate transform, with atlas outlines.
+        """Set one section's in-plane transform and show the result.
 
-        Nothing is written. Call it as often as you need, on any section that
-        has a position.
+        Every call writes the parameters as the section's transform and
+        returns the section drawn under them with the atlas outlines. Call it
+        as often as you need, on any section that has a position; the last
+        call is what stays. The same parameters again only re-draws. The
+        section's flip and rotation flags are not touched. Writes,
+        checkpoints, and can be undone.
 
         Args:
             slice_id: Filename or corrected index.
@@ -1312,12 +1318,14 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                 [fx, fy] fractions of the canvas.
             outlines: Which atlas lines to draw: "all" (every family
                 boundary), "outer" (the atlas outline only) or "none".
+            note: Short remark for the record. May be empty.
 
         Returns:
-            The parameters you passed, their decomposition (rotation, scales,
+            The parameters written, their decomposition (rotation, scales,
             shear, mirrored), the shift in canvas pixels, the pivot used, the
-            calibration, every parameter set previewed for this section so
-            far, and the image(s) of the view you asked for.
+            calibration, every parameter set this section has been given so
+            far, the row this call changed, and the image(s) of the view you
+            asked for.
         """
         view = str(mode or "overlay").strip().lower()
         if view not in PREVIEW_MODES:
@@ -1347,18 +1355,40 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         if isinstance(staged, dict):
             return staged
         record = staged.record
+        previous = record.transform
+        six = normalized_physical_affine(
+            size=staged.section.size,
+            um_per_px=staged.um_per_px,
+            pivot=staged.pivot_in_section,
+            **staged.params,
+        )
+        decomposition = physical_decomposition(six, staged.section.size)
+        written = {
+            "kind": "interactive",
+            "params": six,
+            "physical": {**staged.params, "pivot": staged.pivot_frac},
+            "calibration": staged.calibration,
+            "mirrored": decomposition["mirrored"],
+            "note": str(note or "").strip(),
+        }
+        # The same numbers again are a look, not a write: no undo step for it.
+        wrote = previous is None or {**previous, "note": ""} != {**written, "note": ""}
+        if wrote:
+            snapshot()
+            record.transform = written
 
-        stored = (record.transform or {}).get("physical")
+        stored = (previous or {}).get("physical")
         reference: dict[str, Any] | None = None
         try:
             if view == "ab":
-                # The B side is drawn from the six stored numbers when there
-                # are any: they are the exact map, shear included, and the
-                # five knobs the payload reports cannot carry that shear.
-                six = (record.transform or {}).get("params")
+                # The B side is drawn from the six numbers the section carried
+                # before this call, when there were any: they are the exact
+                # map, shear included, and the five knobs the payload reports
+                # cannot carry that shear.
+                before = (previous or {}).get("params")
                 other: Any = dict(IDENTITY_PARAMS)
-                if six is not None and len(six) == 6:
-                    other = denormalized_affine(six, staged.section.size)
+                if before is not None and len(before) == 6:
+                    other = denormalized_affine(before, staged.section.size)
                 elif isinstance(stored, dict):
                     other = {key: float(stored[key]) for key in IDENTITY_PARAMS}
                 other_pivot = staged.pivot
@@ -1368,7 +1398,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                         fractions[0] * staged.geometry.size[0],
                         fractions[1] * staged.geometry.size[1],
                     )
-                held = record.transform is not None
+                held = previous is not None
                 images = views(
                     staged, staged.params, mode="overlay", zoom=window,
                     template_opacity=opacity, pivot=staged.pivot, outlines=layer,
@@ -1383,17 +1413,17 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                     "params": dict(stored) if isinstance(stored, dict) else dict(IDENTITY_PARAMS),
                 }
                 if held:
-                    reference["stored_kind"] = (record.transform or {}).get("kind")
+                    reference["stored_kind"] = (previous or {}).get("kind")
             else:
                 images = views(
                     staged, staged.params, mode=view, zoom=window,
                     template_opacity=opacity, pivot=staged.pivot, outlines=layer,
                 )
         except Exception as exc:
-            logger.warning("preview_transform failed for %s: %s", record.id, exc)
+            logger.warning("adjust_transform failed for %s: %s", record.id, exc)
             return {"status": "error", "error": "RENDER_FAILED", "message": str(exc)}
 
-        history = box.preview_history.setdefault(record.id, [])
+        history = box.transform_history.setdefault(record.id, [])
         history.append(dict(staged.params))
         px_per_mm = 1000.0 / staged.um_per_px
         described = {
@@ -1412,26 +1442,18 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             "ab": (
                 "two overlays at the same crop: first these parameters, then "
                 + (
-                    "the transform stored on the section"
-                    if record.transform is not None
+                    "the transform the section carried before this call"
+                    if previous is not None
                     else "identity"
                 )
             ),
         }[view]
         return {
-            "status": "ok",
             "id": record.id,
             "position_mm": round(float(record.position_mm or 0.0), 3),
             "params": staged.params,
-            "decomposition": physical_decomposition(
-                normalized_physical_affine(
-                    size=staged.section.size,
-                    um_per_px=staged.um_per_px,
-                    pivot=staged.pivot_in_section,
-                    **staged.params,
-                ),
-                staged.section.size,
-            ),
+            "matrix_params": six,
+            "decomposition": decomposition,
             "translate_px": {
                 "x": round(staged.params["translate_x_mm"] * px_per_mm, 1),
                 "y": round(staged.params["translate_y_mm"] * px_per_mm, 1),
@@ -1446,6 +1468,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             **({"ab_reference": reference} if reference is not None else {}),
             "history": [dict(entry) for entry in history],
             "calibration": staged.calibration,
+            **(commit(record.id) if wrote else {"status": "ok", **changed([])}),
             "description": (
                 f"{record.id} under the transform above, {described}. "
                 + (
@@ -1492,13 +1515,13 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             scale_y: Vertical scale of that transform.
             translate_x_mm: Horizontal shift of that transform, in millimetres.
             translate_y_mm: Vertical shift of that transform, in millimetres.
-            mode: Any `preview_transform` view except "ab".
+            mode: Any `adjust_transform` view except "ab".
             zoom: [x0, y0, x1, y1] as fractions of the canvas; empty is all.
             template_opacity: 0..1, the template under the outlines in
                 "overlay".
             pivot: "canvas", "tissue" or [fx, fy] — the point the fitted
                 rotation and scales are reported about, as in
-                `preview_transform`.
+                `adjust_transform`.
 
         Returns:
             Per pair the distance in millimetres between the section point
@@ -1604,105 +1627,8 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             TOOL_MEDIA_PARTS_KEY: [image_to_part(image) for image in images],
         }
 
-    def set_transform(
-        slice_id: str,
-        rotation_deg: float,
-        scale_x: float,
-        scale_y: float,
-        translate_x_mm: float,
-        translate_y_mm: float,
-        note: str,
-        pivot: str | list[float] = "canvas",
-    ) -> dict[str, Any]:
-        """Record an in-plane transform on one section.
-
-        The section's flip and rotation flags are not touched; this is the
-        in-plane transform only. Writes, checkpoints, and can be undone.
-
-        Args:
-            slice_id: Filename or corrected index.
-            rotation_deg: Rotation of the alignment, in degrees.
-            scale_x: Horizontal scale of the alignment.
-            scale_y: Vertical scale of the alignment.
-            translate_x_mm: Horizontal shift in millimetres.
-            translate_y_mm: Vertical shift in millimetres.
-            note: Short remark for the record. May be empty.
-            pivot: "canvas", "tissue" or [fx, fy] — the point the rotation and
-                the scales turn about, as in `preview_transform`.
-
-        Returns:
-            The parameters recorded, their decomposition, the calibration and
-            the row this call changed.
-        """
-        staged = stage(
-            slice_id, rotation_deg, scale_x, scale_y, translate_x_mm,
-            translate_y_mm, pivot,
-        )
-        if isinstance(staged, dict):
-            return staged
-        record = staged.record
-        six = normalized_physical_affine(
-            size=staged.section.size,
-            um_per_px=staged.um_per_px,
-            pivot=staged.pivot_in_section,
-            **staged.params,
-        )
-        decomposition = physical_decomposition(six, staged.section.size)
-        snapshot()
-        record.transform = {
-            "kind": "interactive",
-            "params": six,
-            "physical": {**staged.params, "pivot": staged.pivot_frac},
-            "calibration": staged.calibration,
-            "mirrored": decomposition["mirrored"],
-            "note": str(note or "").strip(),
-        }
-        return {
-            "id": record.id,
-            "params": staged.params,
-            "matrix_params": six,
-            "decomposition": decomposition,
-            "pivot": {"mode": staged.pivot_mode, "canvas_frac": staged.pivot_frac},
-            "calibration": staged.calibration,
-            **commit(record.id),
-        }
-
-    def copy_transform(from_id: str, to_ids: list[str]) -> dict[str, Any]:
-        """Copy one section's transform onto other sections.
-
-        Args:
-            from_id: Filename or corrected index of the section to copy from.
-            to_ids: Filenames or corrected indices to copy onto.
-
-        Returns:
-            The rows this call changed.
-        """
-        source = state.resolve(from_id)
-        if source is None:
-            return {"status": "error", "error": "UNKNOWN_SLICE_IDS", "unknown": [from_id]}
-        if source.transform is None:
-            return {"status": "error", "error": "NO_TRANSFORM", "id": source.id}
-        targets, unknown = resolve_many(list(to_ids or []))
-        targets = [record for record in targets if record.id != source.id]
-        if not targets:
-            return {"status": "error", "error": "BAD_ARGS", "unknown_ids": unknown}
-        snapshot()
-        for record in targets:
-            record.transform = {**source.transform, "copied_from": source.id}
-        return {
-            "copied_to": [record.id for record in targets],
-            "unknown_ids": unknown,
-            **commit(*[record.id for record in targets]),
-        }
-
     if spec.has("transform"):
-        box.tools += [
-            fit_affine,
-            preview_transform,
-            landmarks,
-            set_transform,
-            copy_transform,
-        ]
+        box.tools += [fit_affine, adjust_transform, landmarks]
         if spec.transform.angles:
             box.tools.append(set_cutting_angles)
 

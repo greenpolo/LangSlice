@@ -308,7 +308,7 @@ def test_the_preview_tool_returns_one_image_and_the_numbers(tmp_path: Path):
     record = state.slices[0]
     record.position_mm = 0.2
     box = build_tools(state, ctx, ctx.spec)
-    preview = next(tool for tool in box.tools if tool.__name__ == "preview_transform")
+    preview = next(tool for tool in box.tools if tool.__name__ == "adjust_transform")
 
     result = preview(record.id, 0.0, 1.0, 1.0, 0.25, 0.0)
     assert result["status"] == "ok"
@@ -316,7 +316,7 @@ def test_the_preview_tool_returns_one_image_and_the_numbers(tmp_path: Path):
     assert result["params"]["translate_x_mm"] == 0.25
     assert result["calibration"]["source"] == "file"
     assert result["decomposition"]["rotation_deg"] == 0.0
-    assert box.preview_history[record.id] == [result["params"]]
+    assert box.transform_history[record.id] == [result["params"]]
 
 
 # --- the reasoning knob --------------------------------------------------
@@ -381,9 +381,9 @@ def test_a_stored_silhouette_fit_is_the_b_side_of_an_a_b_preview(tmp_path: Path)
     tools["fit_affine"](["s.tif"], "silhouette", True)
     stored = state.slices[0].transform["physical"]
 
-    ab = tools["preview_transform"]("s.tif", 0.0, 1.0, 1.0, 0.0, 0.0, "ab")
+    ab = tools["adjust_transform"]("s.tif", 0.0, 1.0, 1.0, 0.0, 0.0, "ab")
     assert len(ab[TOOL_MEDIA_PARTS_KEY]) == 2
     # No identity fallback any more: the fit's own knobs are the B side.
     assert ab["ab_reference"]["source"] == "stored"
     assert ab["ab_reference"]["params"]["scale_x"] == pytest.approx(stored["scale_x"])
-    assert "stored" in ab["description"]
+    assert "before" in ab["description"]

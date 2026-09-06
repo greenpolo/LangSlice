@@ -17,9 +17,14 @@ at the whole stack once yields the information for every task, and splitting
 that into separate sessions threw the shared reading away and re-paid for it.
 
 There are no sub-sessions left. The per-section interactive alignment
-(`preview_transform`, `landmarks`, `set_transform`) moved into the main toolbox
-on 2026-09-06: GPT-6 Astra moved every parameter at once and finished a section
-in four previews, so the fan-out bought nothing and cost the shared reading.
+(`adjust_transform`, `landmarks`) moved into the main toolbox on 2026-09-06:
+GPT-6 Astra moved every parameter at once and finished a section in four
+previews, so the fan-out bought nothing and cost the shared reading. Later the
+same day preview and set became ONE tool, the computer-use pattern: every
+`adjust_transform` call writes the transform and returns the picture, so the
+agent always sees what it did and never spends a turn on a separate look or a
+separate commit. `copy_transform` went with it — re-sending the same call for
+another section is trivial for the agent.
 
 ## Files
 
@@ -35,7 +40,7 @@ in four previews, so the fan-out bought nothing and cost the shared reading.
   transform carries `physical` — the five knobs plus `shear`, about a pivot in
   canvas fractions — next to the six normalized numbers, whatever made it.
   There is no `confidence`: nothing downstream read it (Nash, 2026-09-06), and
-  the reasoning lives in `set_transform`'s note.
+  the reasoning lives in `adjust_transform`'s note.
 - `checkpoint.py` — atomic JSON write to `<folder>/linear_state.json`.
 - `discovery.py` — natural-sorted image discovery.
 - `render.py` — `render_slice` (ROTATE first, then FLIP, then the display-only
@@ -78,11 +83,11 @@ in four previews, so the fan-out bought nothing and cost the shared reading.
 - `toolbox.py` — `build_tools(state, ctx, spec)`: every tool, gated by the
   spec, plus the submit gates and the undo/redo snapshot stack. The interactive
   transform lives here: `_Staged` (one section, its calibrated canvas and the
-  resolved pivot), `preview_transform` (read-only, any positioned section,
-  `mode="ab"` for the candidate-vs-stored toggle, which now works for a
-  silhouette fit too), `landmarks` (read-only) and `set_transform` (the
-  write). `preview_history` on the ToolBox is per section and lasts the whole
-  run. `commit(*touched)` is what every write answers with: the status rows of
+  resolved pivot), `adjust_transform` (the write AND the look, any positioned
+  section; `mode="ab"` draws the new parameters beside what the section
+  carried before the call, a silhouette fit included; the same numbers again
+  re-draw without an undo step) and `landmarks` (read-only).
+  `transform_history` on the ToolBox is per section and lasts the whole run. `commit(*touched)` is what every write answers with: the status rows of
   the sections it touched plus `n_sections`, never the whole table —
   `status`, `undo`, `redo` and `submit` are what return all the rows.
 - `transform.py` — the silhouette fit and the arithmetic the interactive tools
@@ -126,11 +131,11 @@ millimetres, never a recommendation).
 
 **One transform representation.** Silhouette, interactive, elastix-someday:
 every stored transform and every fit payload carries `physical` (the five
-knobs `set_transform` takes, plus `shear`, about a pivot in canvas fractions)
+knobs `adjust_transform` takes, plus `shear`, about a pivot in canvas fractions)
 next to the six normalized numbers. The fraction-based `decomposition` left
 the fit payload: "+0.04 mm entered, negative fraction reported" cost four
 sessions, and GPT-6 Astra could not hand a fit's numbers to the manual
-controls. A fit is now a starting point for `preview_transform` and the B side
+controls. A fit is now a starting point for `adjust_transform` and the B side
 of `mode="ab"`.
 
 **Gates are constraints, not coaching.** A refusal states the numbers that
@@ -188,6 +193,6 @@ resumed run starts from the checkpoint, which is the state as it stood.
   9.05 x 6.68 mm, so the outlines land ~10% (ML) to ~15% (DV) outside the
   tissue at identity. That is the specimen-vs-Allen size difference, the same
   residual the nonlinear side measures, not a calibration bug.
-- `preview_transform`'s pivot resolution runs its own `canvas_geometry`, so a
-  preview builds the atlas plane twice (once to place the pivot, once to draw).
+- `adjust_transform`'s pivot resolution runs its own `canvas_geometry`, so a
+  call builds the atlas plane twice (once to place the pivot, once to draw).
   Flat sections are a numpy take; oblique ones resample twice.

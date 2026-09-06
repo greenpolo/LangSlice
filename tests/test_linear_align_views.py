@@ -178,9 +178,9 @@ def _tools(tmp_path: Path):
     return {tool.__name__: tool for tool in box.tools}, box, state
 
 
-def test_the_preview_payload_carries_history_and_pixels_but_no_overlap(tmp_path: Path):
+def test_the_adjust_payload_carries_history_and_pixels_but_no_overlap(tmp_path: Path):
     tools, box, _state = _tools(tmp_path)
-    preview = tools["preview_transform"]
+    preview = tools["adjust_transform"]
 
     first = preview("s.tif", 0.0, 1.0, 1.0, 0.25, 0.0)
     assert first["status"] == "ok"
@@ -212,13 +212,13 @@ def test_the_preview_payload_carries_history_and_pixels_but_no_overlap(tmp_path:
     assert [entry["translate_x_mm"] for entry in second["history"]] == [0.25, 0.0]
     assert len(first["history"]) == 1  # oldest first, this preview last
     # The history is per section, kept on the toolbox for the whole run.
-    assert len(box.preview_history["s.tif"]) == 2
+    assert len(box.transform_history["s.tif"]) == 2
 
 
-def test_the_preview_tool_takes_the_view_controls(tmp_path: Path):
+def test_the_adjust_tool_takes_the_view_controls(tmp_path: Path):
     from langslice.adk import TOOL_MEDIA_PARTS_KEY
 
-    preview = _tools(tmp_path)[0]["preview_transform"]
+    preview = _tools(tmp_path)[0]["adjust_transform"]
 
     pair = preview("s.tif", 0.0, 1.0, 1.0, 0.0, 0.0, "side_by_side")
     assert len(pair[TOOL_MEDIA_PARTS_KEY]) == 2
@@ -237,19 +237,20 @@ def test_ab_returns_the_candidate_and_what_is_stored(tmp_path: Path):
     from langslice.adk import TOOL_MEDIA_PARTS_KEY
 
     tools, _box, _state = _tools(tmp_path)
-    against_identity = tools["preview_transform"]("s.tif", 6.0, 1.0, 1.0, 0.0, 0.0, "ab")
+    against_identity = tools["adjust_transform"]("s.tif", 6.0, 1.0, 1.0, 0.0, 0.0, "ab")
     assert len(against_identity[TOOL_MEDIA_PARTS_KEY]) == 2
     assert against_identity["view"]["mode"] == "ab"
     assert "identity" in against_identity["description"]
     assert against_identity["ab_reference"]["source"] == "identity"
 
-    tools["set_transform"]("s.tif", 3.0, 1.0, 1.0, 0.0, 0.0, "")
-    against_stored = tools["preview_transform"]("s.tif", 6.0, 1.0, 1.0, 0.0, 0.0, "ab")
+    tools["adjust_transform"]("s.tif", 3.0, 1.0, 1.0, 0.0, 0.0)
+    against_stored = tools["adjust_transform"]("s.tif", 6.0, 1.0, 1.0, 0.0, 0.0, "ab")
     assert len(against_stored[TOOL_MEDIA_PARTS_KEY]) == 2
-    assert "stored" in against_stored["description"]
+    assert "before" in against_stored["description"]
+    # The B side is what the section carried before this call, which is the
+    # before/after view; the call itself wrote the A side.
     assert against_stored["ab_reference"]["params"]["rotation_deg"] == 3.0
-    # A/B is a look, not a write: the stored transform is untouched.
-    assert _state.slices[0].transform["physical"]["rotation_deg"] == 3.0
+    assert _state.slices[0].transform["physical"]["rotation_deg"] == 6.0
 
 
 # --- the pivot -----------------------------------------------------------
@@ -297,7 +298,7 @@ def test_a_tissue_pivot_turns_the_section_about_its_own_centroid(tmp_path: Path)
 
 def test_the_pivot_rides_into_the_six_numbers_and_the_payload(tmp_path: Path):
     tools, _box, state = _tools(tmp_path)
-    preview = tools["preview_transform"]
+    preview = tools["adjust_transform"]
 
     centred = preview("s.tif", 10.0, 1.0, 1.0, 0.0, 0.0, "overlay", [], 0.0, "canvas")
     corner = preview("s.tif", 10.0, 1.0, 1.0, 0.0, 0.0, "overlay", [], 0.0, [0.25, 0.75])
@@ -306,7 +307,7 @@ def test_the_pivot_rides_into_the_six_numbers_and_the_payload(tmp_path: Path):
         "error"
     ] == "BAD_PIVOT"
 
-    tools["set_transform"]("s.tif", 10.0, 1.0, 1.0, 0.0, 0.0, "", [0.25, 0.75])
+    tools["adjust_transform"]("s.tif", 10.0, 1.0, 1.0, 0.0, 0.0, "overlay", [], 0.0, [0.25, 0.75])
     stored = state.slices[0].transform
     assert stored["physical"]["pivot"] == [0.25, 0.75]
     # Same rotation, different pivot: the same map only up to a translation,
@@ -314,7 +315,7 @@ def test_the_pivot_rides_into_the_six_numbers_and_the_payload(tmp_path: Path):
     assert stored["params"][:2] == pytest.approx(
         [np.cos(np.radians(10.0)), np.sin(np.radians(10.0)) * 512 / 512], abs=1e-6
     )
-    tools["set_transform"]("s.tif", 10.0, 1.0, 1.0, 0.0, 0.0, "", "canvas")
+    tools["adjust_transform"]("s.tif", 10.0, 1.0, 1.0, 0.0, 0.0, "overlay", [], 0.0, "canvas")
     assert state.slices[0].transform["params"][2] != stored["params"][2]
     assert centred["decomposition"]["rotation_deg"] == pytest.approx(
         corner["decomposition"]["rotation_deg"]
@@ -417,8 +418,8 @@ def test_clean_section_and_template_views_carry_no_outlines():
     assert not np.array_equal(template_only[60:-40], pair[1][60:-40])
 
 
-def test_the_preview_tool_takes_the_outline_layer(tmp_path: Path):
-    preview = _tools(tmp_path)[0]["preview_transform"]
+def test_the_adjust_tool_takes_the_outline_layer(tmp_path: Path):
+    preview = _tools(tmp_path)[0]["adjust_transform"]
 
     plain = preview("s.tif", 0.0, 1.0, 1.0, 0.0, 0.0)
     assert plain["view"]["outlines"] == "all"
