@@ -24,22 +24,28 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, cast
 
+import cv2
 import numpy as np
 from PIL import Image
 
 from langslice.affine import (
     decompose_affine,
+    extract_slice_silhouette,
+    mask_affine,
     normalized_affine,
     silhouette_affine,
 )
 from langslice.atlas.render import atlas_um_per_px
 from langslice.linear.render import (
     PREVIEW_LONG_EDGE,
+    atlas_mask_canvas,
     canvas_geometry,
     canvas_um_per_px,
     estimate_um_per_px,
     physical_overlay,
     render_slice,
+    template_canvas,
+    zoom_box,
 )
 from langslice.linear.state import SliceState, StackState
 from langslice.space import Plane
@@ -111,28 +117,153 @@ def _fit_matrix_in_section_frame(
     return chain[:2]
 
 
+def _resolve_half_turn(
+    matrix: np.ndarray,
+    section: Image.Image,
+    target_mask: np.ndarray,
+    box: tuple[int, int, int, int],
+    template: np.ndarray,
+    section_offset: tuple[int, int],
+) -> np.ndarray:
+    """Pick between a moments fit and its 180-degree twin by template match.
+
+    A moments fit knows the principal axes but not which way along them the
+    tissue points, so two candidates differ by a half turn about the target
+    centroid and tie on silhouette overlap — on an intact section the correct
+    one wins by 0.04-0.09 IoU, inside an ROI on a damaged section by 0.003
+    (measured on M05 D_08, 2026-09-06). Correlating the warped section with
+    the atlas template inside the box breaks the tie with what the silhouette
+    cannot see: the anatomy's brightness pattern.
+    """
+    ys, xs = np.nonzero(target_mask)
+    if ys.size == 0:
+        return matrix
+    cx, cy = float(xs.mean()), float(ys.mean())
+    half_turn = np.array([[-1.0, 0.0, 2.0 * cx], [0.0, -1.0, 2.0 * cy], [0.0, 0.0, 1.0]])
+    square = np.vstack([np.asarray(matrix, dtype=np.float64), [0.0, 0.0, 1.0]])
+    twin = (half_turn @ square)[:2]
+
+    height, width = template.shape[:2]
+    rgb = np.asarray(section.convert("RGB"), dtype=np.uint8)
+    gray_section = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
+    placed = np.zeros((height, width), dtype=np.uint8)
+    ox, oy = section_offset
+    placed[oy : oy + gray_section.shape[0], ox : ox + gray_section.shape[1]] = gray_section
+    reference = cv2.cvtColor(template, cv2.COLOR_RGB2GRAY).astype(np.float32)
+    x0, y0, x1, y1 = box
+
+    def score(candidate: np.ndarray) -> float:
+        warped = cv2.warpAffine(placed, candidate, (width, height), flags=cv2.INTER_LINEAR)
+        a = warped[y0:y1, x0:x1].astype(np.float32)
+        b = reference[y0:y1, x0:x1]
+        a = a - a.mean()
+        b = b - b.mean()
+        denominator = float(np.sqrt((a * a).sum() * (b * b).sum()))
+        return float((a * b).sum() / denominator) if denominator > 0 else 0.0
+
+    return twin if score(twin) > score(matrix) else matrix
+
+
+def _conjugate(matrix: np.ndarray, offset: tuple[float, float]) -> np.ndarray:
+    """The same map read on a frame shifted by *offset*.
+
+    The section sits at ``geometry.section_offset`` on the canvas, so a 2x3
+    written on one frame becomes the other's by conjugating with that shift —
+    which is all that separates the fit's canvas answer from the six numbers,
+    which live on the section.
+    """
+    ox, oy = float(offset[0]), float(offset[1])
+    shift = np.array([[1.0, 0.0, ox], [0.0, 1.0, oy], [0.0, 0.0, 1.0]])
+    inverse = np.array([[1.0, 0.0, -ox], [0.0, 1.0, -oy], [0.0, 0.0, 1.0]])
+    square = np.vstack([np.asarray(matrix, dtype=np.float64), [0.0, 0.0, 1.0]])
+    return (shift @ square @ inverse)[:2]
+
+
+def roi_masks(
+    section: Image.Image, geometry: Any, roi: list[float]
+) -> tuple[np.ndarray, np.ndarray, tuple[int, int, int, int]]:
+    """Section tissue and atlas anatomy on the canvas, both cut to *roi*.
+
+    Both masks are built at IDENTITY on the physical canvas — the very frame
+    ``preview_transform``'s zoom box names — so a box drawn on a preview is
+    the box the fit measures in. Everything outside it is zeroed, which is the
+    point: a section missing its cortex can still be fitted on the anatomy it
+    kept.
+    """
+    width, height = geometry.size
+    box = zoom_box(list(roi), geometry.size)
+    tissue = np.zeros((height, width), dtype=np.uint8)
+    gray = cv2.cvtColor(np.asarray(section.convert("RGB"), dtype=np.uint8), cv2.COLOR_RGB2GRAY)
+    silhouette = extract_slice_silhouette(gray)
+    ox, oy = geometry.section_offset
+    tissue[oy : oy + silhouette.shape[0], ox : ox + silhouette.shape[1]] = silhouette
+    keep = np.zeros((height, width), dtype=np.uint8)
+    keep[box[1] : box[3], box[0] : box[2]] = 1
+    return tissue * keep, atlas_mask_canvas(geometry) * keep, box
+
+
 def fit_silhouette(
-    state: StackState, ctx: EngineContext, record: SliceState
+    state: StackState,
+    ctx: EngineContext,
+    record: SliceState,
+    roi: list[float] | None = None,
 ) -> dict[str, Any]:
-    """Fit the silhouette affine for one positioned, undamaged section.
+    """Fit the silhouette affine for one positioned section.
+
+    Without *roi* the whole tissue outline is matched against the whole atlas
+    outline (:func:`langslice.affine.silhouette_affine`, in its own frame).
+    With *roi* — ``[fx0, fy0, fx1, fy1]`` of the CANVAS — only what lies
+    inside that box is matched, on the physical canvas, which is what makes a
+    damaged section fittable at all.
 
     Returns the tool-shaped payload: on success ``params`` (six normalized
-    numbers), ``iou``, the ``decomposition`` of those numbers, the
-    ``calibration`` the panel was drawn with, and a ``panel`` image labelled
-    with the section id. ``flat_atlas_fit`` is reported when the stack carries
-    cutting angles: the moments fit measures against the flat atlas section,
-    because it builds its own atlas silhouette from the voxel grid.
+    numbers on the section's frame), ``iou``, the ``physical`` knobs about the
+    canvas centre, the ``calibration`` the panel was drawn with, and a
+    ``panel`` image labelled with the section id. ``flat_atlas_fit`` is
+    reported when the stack carries cutting angles and no roi: the moments fit
+    measures against the flat atlas section, because it builds its own atlas
+    silhouette from the voxel grid.
     """
     if record.position_mm is None:
         return {"status": "error", "error": "NO_POSITION", "id": record.id}
     section = render_slice(ctx, record, long_edge=PREVIEW_LONG_EDGE)
+    um_per_px, source = calibrate(state, ctx, record, section)
     try:
-        fit = silhouette_affine(
-            section,
-            atlas=ctx.atlas,
-            position_mm=record.position_mm,
-            plane=cast(Plane, state.plane),
+        geometry = canvas_geometry(
+            section.size,
+            um_per_px,
+            ctx.atlas,
+            record.position_mm,
+            cast(Plane, state.plane),
+            state.pitch_deg,
+            state.yaw_deg,
         )
+        if roi:
+            source_mask, target_mask, box = roi_masks(section, geometry, roi)
+            on_canvas, iou, _pattern = mask_affine(source_mask, target_mask)
+            on_canvas = _resolve_half_turn(
+                on_canvas, section, target_mask, box,
+                template_canvas(
+                    ctx.atlas, record.position_mm, cast(Plane, state.plane),
+                    state.pitch_deg, state.yaw_deg, geometry,
+                ),
+                geometry.section_offset,
+            )
+            in_section = _conjugate(
+                on_canvas, (-geometry.section_offset[0], -geometry.section_offset[1])
+            )
+        else:
+            fit = silhouette_affine(
+                section,
+                atlas=ctx.atlas,
+                position_mm=record.position_mm,
+                plane=cast(Plane, state.plane),
+            )
+            iou = float(fit.iou)
+            in_section = _fit_matrix_in_section_frame(
+                fit.matrix, fit.size, section, geometry
+            )
+            on_canvas = _conjugate(in_section, geometry.section_offset)
     except Exception as exc:
         logger.warning("fit_affine: silhouette fit failed for %s: %s", record.id, exc)
         return {
@@ -142,16 +273,6 @@ def fit_silhouette(
             "message": str(exc),
         }
 
-    um_per_px, source = calibrate(state, ctx, record, section)
-    geometry = canvas_geometry(
-        section.size,
-        um_per_px,
-        ctx.atlas,
-        record.position_mm,
-        cast(Plane, state.plane),
-        state.pitch_deg,
-        state.yaw_deg,
-    )
     panel = physical_overlay(
         section,
         um_per_px,
@@ -160,24 +281,40 @@ def fit_silhouette(
         cast(Plane, state.plane),
         state.pitch_deg,
         state.yaw_deg,
-        _fit_matrix_in_section_frame(fit.matrix, fit.size, section, geometry),
+        in_section,
         label=record.id,
     )
-    params = normalized_affine(fit.matrix, fit.size)
+    params = normalized_affine(in_section, section.size)
+    width, height = geometry.size
     payload: dict[str, Any] = {
         "status": "ok",
         "id": record.id,
         "position_mm": round(record.position_mm, 3),
-        "iou": round(float(fit.iou), 3),
+        "iou": round(float(iou), 3),
         "params": params,
-        "decomposition": decompose_affine(params, fit.size),
+        # The same five knobs the interactive tools take, about the canvas
+        # centre: one representation for every transform this run records.
+        "physical": {
+            **physical_params(
+                on_canvas, pivot=(width / 2.0, height / 2.0), um_per_px=um_per_px
+            ),
+            "pivot": [0.5, 0.5],
+        },
+        "mirrored": bool(decompose_affine(params)["mirrored"]),
         "calibration": {
             "section_um_per_px": round(um_per_px, 4),
             "source": source,
         },
         "panel": panel,
     }
-    if state.is_oblique:
+    if roi:
+        payload["roi"] = [
+            round(box[0] / width, 4),
+            round(box[1] / height, 4),
+            round(box[2] / width, 4),
+            round(box[3] / height, 4),
+        ]
+    elif state.is_oblique:
         payload["flat_atlas_fit"] = True
     return payload
 

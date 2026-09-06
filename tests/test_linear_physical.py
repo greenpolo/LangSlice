@@ -343,3 +343,84 @@ def test_reasoning_effort_reaches_a_model_that_has_one():
     assert build_agent(
         model="gemini-3-pro", name="t", instruction="i", tools=[], reasoning="high"
     ).model == "gemini-3-pro"
+
+
+# --- the ROI-restricted fit ----------------------------------------------
+
+
+def _half_section(tmp_path: Path):
+    """A section whose tissue is the LEFT HALF of a 1 mm square, on 10 um/px.
+
+    The intact square would match this atlas's anatomy exactly, so the half
+    that is left is exactly the left half of the atlas outline: a fit
+    restricted to the canvas's left half must come back as the identity, and
+    a fit over the whole outline must stretch the remnant over the whole
+    atlas square to match its centroid.
+    """
+    from langslice.linear.toolbox import build_tools
+
+    arr = np.zeros((120, 120, 3), dtype=np.uint8)
+    arr[10:110, 10:60] = 200  # left half of the centred 100 px (= 1 mm) square
+    Image.fromarray(arr, mode="RGB").save(tmp_path / "s.tif", dpi=(2540.0, 2540.0))
+    ctx, state = _ctx(tmp_path)
+    record = state.slices[0]
+    record.position_mm = 0.2
+    box = build_tools(state, ctx, ctx.spec)
+    return {tool.__name__: tool for tool in box.tools}, state
+
+
+def test_an_roi_fit_lands_on_the_anatomy_inside_the_box(tmp_path: Path):
+    tools, _state = _half_section(tmp_path)
+    whole = tools["fit_affine"](["s.tif"], "silhouette", False, [])["results"][0]
+    inside = tools["fit_affine"](
+        ["s.tif"], "silhouette", False, [0.0, 0.0, 0.5, 1.0]
+    )["results"][0]
+
+    # Whole outline: the half section is stretched across the whole atlas
+    # square and shifted right to meet its centroid.
+    assert whole["physical"]["scale_x"] > 1.5
+    assert whole["physical"]["translate_x_mm"] > 0.15
+    # Inside the box the remnant already IS the atlas: the fit is the identity.
+    assert inside["physical"]["scale_x"] == pytest.approx(1.0, abs=0.15)
+    assert inside["physical"]["scale_y"] == pytest.approx(1.0, abs=0.15)
+    assert inside["physical"]["translate_x_mm"] == pytest.approx(0.0, abs=0.05)
+    assert inside["physical"]["rotation_deg"] == pytest.approx(0.0, abs=2.0)
+    assert inside["iou"] > 0.9
+    assert inside["roi"][2] == pytest.approx(0.5, abs=0.01)
+
+
+def test_damage_is_refused_without_an_roi_and_fitted_with_one(tmp_path: Path):
+    tools, state = _half_section(tmp_path)
+    state.slices[0].damaged = True
+
+    refused = tools["fit_affine"](["s.tif"], "silhouette", True, [])
+    assert refused["results"][0]["error"] == "DAMAGED"
+    assert state.slices[0].transform is None
+
+    fitted = tools["fit_affine"](["s.tif"], "silhouette", True, [0.0, 0.0, 0.5, 1.0])
+    assert fitted["results"][0]["status"] == "ok"
+    stored = state.slices[0].transform
+    assert stored["kind"] == "silhouette"
+    assert stored["physical"]["scale_x"] == pytest.approx(1.0, abs=0.15)
+    assert stored["physical"]["pivot"] == [0.5, 0.5]
+    assert stored["roi"][2] == pytest.approx(0.5, abs=0.01)
+    assert len(stored["params"]) == 6
+
+    assert tools["fit_affine"](["s.tif"], "silhouette", False, [0.1, 0.2])[
+        "error"
+    ] == "BAD_ROI"
+
+
+def test_a_stored_silhouette_fit_is_the_b_side_of_an_a_b_preview(tmp_path: Path):
+    from langslice.adk import TOOL_MEDIA_PARTS_KEY
+
+    tools, state = _half_section(tmp_path)
+    tools["fit_affine"](["s.tif"], "silhouette", True, [])
+    stored = state.slices[0].transform["physical"]
+
+    ab = tools["preview_transform"]("s.tif", 0.0, 1.0, 1.0, 0.0, 0.0, "ab")
+    assert len(ab[TOOL_MEDIA_PARTS_KEY]) == 2
+    # No identity fallback any more: the fit's own knobs are the B side.
+    assert ab["ab_reference"]["source"] == "stored"
+    assert ab["ab_reference"]["params"]["scale_x"] == pytest.approx(stored["scale_x"])
+    assert "stored" in ab["description"]

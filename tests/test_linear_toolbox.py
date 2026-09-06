@@ -137,6 +137,42 @@ def test_set_positions_clamps_to_the_atlas_range(tmp_path: Path):
     assert state.by_id("s0.png").position_mm == 19.0
 
 
+# --- what a write answers with -------------------------------------------
+
+
+def test_a_write_returns_only_the_rows_it_touched(tmp_path: Path):
+    state, _, box = _box(tmp_path, placed=True)
+    result = _tool(box, "set_positions")(
+        [{"id": "s0.png", "position_mm": 1.0}, {"id": "s3.png", "position_mm": 6.0}]
+    )
+    assert [row["id"] for row in result["changed"]] == ["s0.png", "s3.png"]
+    assert result["n_sections"] == 5
+    assert "rows" not in result  # the whole table is `status`, one call away
+
+    marked = _tool(box, "mark_damaged")([{"id": "s2.png", "note": "torn"}])
+    assert [row["id"] for row in marked["changed"]] == ["s2.png"]
+    assert marked["changed"][0]["damaged"] is True
+
+    # status, undo and redo still answer with the whole stack.
+    assert len(_tool(box, "status")()["rows"]) == 5
+    assert len(_tool(box, "undo")()["rows"]) == 5
+    assert len(_tool(box, "redo")()["rows"]) == 5
+    assert state.by_id("s2.png").damaged is True
+
+
+def test_confidence_is_gone_from_the_package():
+    """Nash: "What use is there for confidence?" — none downstream."""
+    import langslice.linear
+
+    package = Path(langslice.linear.__file__).parent
+    hits = [
+        path.name
+        for path in sorted(package.glob("*.py"))
+        if "confidence" in path.read_text(encoding="utf-8")
+    ]
+    assert hits == []
+
+
 # --- the reorder rule ----------------------------------------------------
 
 
@@ -339,12 +375,18 @@ def test_fit_affine_records_a_transform_and_refuses_damaged_sections(tmp_path: P
     assert result["status"] == "ok"
     assert [row["id"] for row in result["results"]] == ["s0.png"]  # damaged is skipped
     assert result["results"][0]["iou"] > 0.5
-    assert result["results"][0]["decomposition"]["mirrored"] in (True, False)
+    # One representation: a fit reports the same five knobs set_transform takes.
+    assert set(result["results"][0]["physical"]) == {
+        "rotation_deg", "scale_x", "scale_y", "shear",
+        "translate_x_mm", "translate_y_mm", "pivot",
+    }
+    assert "decomposition" not in result["results"][0]
     assert state.by_id("s0.png").transform["kind"] == "silhouette"
     assert len(state.by_id("s0.png").transform["params"]) == 6
     assert state.by_id("s0.png").transform["mirrored"] == (
-        result["results"][0]["decomposition"]["mirrored"]
+        result["results"][0]["mirrored"]
     )
+    assert state.by_id("s0.png").transform["physical"]["rotation_deg"] is not None
     assert state.by_id("s1.png").transform is None
 
     named = _tool(box, "fit_affine")(["s1.png"], "silhouette", True)
@@ -369,11 +411,11 @@ def test_set_transform_writes_an_interactive_transform_and_undoes(tmp_path: Path
         "error"
     ] == "NO_POSITION"
     assert _tool(box, "set_transform")(
-        "s1.png", 0.0, 1.0, 1.0, 0.0, 0.0, "low", ""
+        "s1.png", 0.0, 1.0, 1.0, 0.0, 0.0, ""
     )["error"] == "NO_POSITION"
 
     result = _tool(box, "set_transform")(
-        "s0.png", 5.0, 1.1, 1.0, 0.25, -0.1, "medium", "lined up the intact border"
+        "s0.png", 5.0, 1.1, 1.0, 0.25, -0.1, "lined up the intact border"
     )
     assert result["status"] == "ok"
     transform = state.by_id("s0.png").transform
@@ -384,7 +426,6 @@ def test_set_transform_writes_an_interactive_transform_and_undoes(tmp_path: Path
     # Nothing states a pixel size here, and the payload says so rather than
     # pretending.
     assert transform["calibration"]["source"] == "estimated"
-    assert state.by_id("s0.png").confidence == "medium"
     assert load_checkpoint(ctx.checkpoint_path).by_id("s0.png").transform is not None
 
     assert _tool(box, "undo")()["status"] == "ok"

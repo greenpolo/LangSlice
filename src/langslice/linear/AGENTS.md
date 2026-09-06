@@ -31,7 +31,11 @@ in four previews, so the fan-out bought nothing and cost the shared reading.
   `session.build_agent` onto any resolved model exposing `reasoning_effort`.
 - `state.py` — `StackState`/`SliceState`. The checkpoint, the result and the
   thing every tool writes, one JSON shape for all three. `restore()` refills
-  the same object in place, because tools close over one state.
+  the same object in place, because tools close over one state. Every stored
+  transform carries `physical` — the five knobs plus `shear`, about a pivot in
+  canvas fractions — next to the six normalized numbers, whatever made it.
+  There is no `confidence`: nothing downstream read it (Nash, 2026-09-06), and
+  the reasoning lives in `set_transform`'s note.
 - `checkpoint.py` — atomic JSON write to `<folder>/linear_state.json`.
 - `discovery.py` — natural-sorted image discovery.
 - `render.py` — `render_slice` (ROTATE first, then FLIP, then the display-only
@@ -50,8 +54,11 @@ in four previews, so the fan-out bought nothing and cost the shared reading.
   `mode` (`overlay`, `side_by_side` — two images, `checkerboard`,
   `outlines` — atlas lines plus the section's own silhouette in a second grey
   on black — and the line-free `section` / `template`), `zoom` ([x0, y0, x1, y1] fractions of the CANVAS, cropped BEFORE
-  the resize so it magnifies, with the bar redrawn for the new µm/px) and
-  `template_opacity` (0..1, replaced the `show_template` bool).
+  the resize so it magnifies, with the bar redrawn for the new µm/px),
+  `template_opacity` (0..1, replaced the `show_template` bool) and `outlines`
+  (`OUTLINE_LAYERS`: `all` family boundaries, `outer` — the root contour from
+  `atlas.render.outer_outline` — or `none`; the caption names the layer when
+  it is not `all`).
   `physical_overlay` is the one-image `overlay` wrapper `fit_affine` uses.
   `pivot` (canvas px, `pivot_on_canvas` resolves "canvas"/"tissue"/[fx, fy]
   onto it) and `markers` (the landmark pairs, a cross per section point and a
@@ -72,11 +79,23 @@ in four previews, so the fan-out bought nothing and cost the shared reading.
   spec, plus the submit gates and the undo/redo snapshot stack. The interactive
   transform lives here: `_Staged` (one section, its calibrated canvas and the
   resolved pivot), `preview_transform` (read-only, any positioned section,
-  `mode="ab"` for the candidate-vs-stored toggle), `landmarks` (read-only) and
-  `set_transform` (the write). `preview_history` on the ToolBox is per section
-  and lasts the whole run.
+  `mode="ab"` for the candidate-vs-stored toggle, which now works for a
+  silhouette fit too), `landmarks` (read-only) and `set_transform` (the
+  write). `preview_history` on the ToolBox is per section and lasts the whole
+  run. `commit(*touched)` is what every write answers with: the status rows of
+  the sections it touched plus `n_sections`, never the whole table —
+  `status`, `undo`, `redo` and `submit` are what return all the rows.
 - `transform.py` — the silhouette fit and the arithmetic the interactive tools
-  run on, both in PHYSICAL space. `calibrate` answers the canvas's
+  run on, both in PHYSICAL space. `fit_silhouette` takes an optional `roi`
+  ([x0, y0, x1, y1] of the CANVAS): with one, `roi_masks` prepares the
+  section's tissue mask and `render.atlas_mask_canvas`'s atlas mask on the
+  physical canvas at identity, cuts both to the box and hands them to
+  `affine.mask_affine` (the moments core, factored out of `silhouette_affine`)
+  — which is how a section that lost its cortex is fitted on the brainstem it
+  kept, and why `fit_affine` refuses damage only when no roi is given. Either
+  route reports the SAME things: six normalized numbers on the section frame
+  and `physical` about the canvas centre (`_conjugate` moves a 2x3 between the
+  two frames). `calibrate` answers the canvas's
   micrometres per pixel and where it came from: the host's
   `--pixel-size-um` (`"host"`), else the file's TIFF/OME tags (`"file"`),
   else the tissue-width guess (`"estimated"`) — it never crashes and never
@@ -110,6 +129,15 @@ deleted rather than kept behind a flag (the `landmarks` tool of the transform
 task is a different animal: it measures pairs the agent picks, and reports
 millimetres, never a recommendation).
 
+**One transform representation.** Silhouette, interactive, elastix-someday:
+every stored transform and every fit payload carries `physical` (the five
+knobs `set_transform` takes, plus `shear`, about a pivot in canvas fractions)
+next to the six normalized numbers. The fraction-based `decomposition` left
+the fit payload: "+0.04 mm entered, negative fraction reported" cost four
+sessions, and GPT-6 Astra could not hand a fit's numbers to the manual
+controls. A fit is now a starting point for `preview_transform` and the B side
+of `mode="ab"`.
+
 **Gates are constraints, not coaching.** A refusal states the numbers that
 caused it and stops; `validate` runs the same gates without submitting.
 `submit` refuses `MISSING_POSITIONS`,
@@ -142,7 +170,24 @@ resumed run starts from the checkpoint, which is the state as it stood.
 - `fit_affine`'s silhouette method measures against the FLAT atlas section even
   when the stack carries cutting angles (`langslice.affine.silhouette_affine`
   builds its own atlas silhouette off the voxel grid). The payload says so with
-  `flat_atlas_fit: true`.
+  `flat_atlas_fit: true`. The `roi` route does NOT have that ceiling — it
+  measures on the physical canvas, at the stack's angles and at true scale —
+  so the two routes answer slightly different questions, and only the roi one
+  is calibrated.
+- `physical` on a fit is the five knobs about the canvas centre plus the
+  `shear` they cannot express (0.10-0.16 on M05_D_08, not noise), so a preview
+  typed from a fit reproduces it only up to that shear. The A/B view does not
+  have that gap: its B side is drawn from the six stored numbers
+  (`affine.denormalized_affine`), which are exact.
+- The moments core has a 180-degree ambiguity — `(1,1)` and `(-1,-1)` are the
+  same axes turned round — and settles it on silhouette IoU alone. On INTACT
+  M05 sections the right one wins by 0.036-0.092 IoU; on the damaged
+  M05_D_08 core inside an ROI it loses by 0.0035, and the fit comes back
+  upside down at 147 deg. Intensity says otherwise (template NCC +0.047 for
+  the -33 deg candidate, -0.161 for the winner), so a template-correlation
+  tie-break would fix it — measured, not built: it would move a benchmarked
+  path (`silhouette_affine` is `nonlinear/quick_affine`'s too). The fit's own
+  panel is what catches it; look at it.
 - `method="elastix"` and `run_deepslice` answer `UNAVAILABLE`; both are seams,
   not stubs to fill in casually.
 - `fit_position` is a thin wrapper over `oblique.fit_oblique` — correct, not

@@ -64,9 +64,11 @@ SliceState
   flip: bool, rotation_deg: 0|90|180|270   # rotate first, then flip left-right
   damaged: bool, damage_note: str          # agent-internal: excludes from DeepSlice
                                            # and automatic affine; never a user option
-  position_mm | null, confidence
-  transform | null: {kind: silhouette|elastix|interactive, params|matrix, iou?,
-                     mirrored?, note?}
+  position_mm | null
+  transform | null: {kind: silhouette|elastix|interactive, params (six
+                     normalized numbers), physical (rotation_deg, scale_x,
+                     scale_y, shear, translate_x_mm, translate_y_mm, pivot),
+                     calibration, iou?, roi?, mirrored?, note?}
   caveats: [str]
 ```
 
@@ -83,14 +85,15 @@ The user's image files are never modified. Everything is a proposal as data.
 ## Toolbox
 
 Conventions, applied to every tool: sections are addressed by filename or
-corrected index; every write returns the same status rows; every write is
-undoable; every write checkpoints; fits have a preview form that computes
-without writing. Tools report data. No advice, no interpretation, no strategy
+corrected index; every write returns the rows it changed (`changed` plus
+`n_sections`; `status` is the whole table, and `undo`/`redo`/`submit` answer
+with it too); every write is undoable; every write checkpoints; fits have a
+preview form that computes without writing. Tools report data. No advice, no interpretation, no strategy
 in any payload or prompt (see `lean-harness` history in `linear/CLAUDE.md`).
 
 | tool | task gate | does |
 | --- | --- | --- |
-| `status` | always | one row per section in corrected order: index, id, position_mm, delta_to_next_mm (signed), flip, rotation_deg, damaged(+note), transform kind, transform_iou, transform_mirrored, confidence, caveats; plus cutting angles and interval breaks. The `ls` of the environment. |
+| `status` | always | one row per section in corrected order: index, id, position_mm, delta_to_next_mm (signed), flip, rotation_deg, damaged(+note), transform kind, transform_iou, transform_mirrored, caveats; plus cutting angles and interval breaks. The `ls` of the environment. |
 | `validate(interval_breaks)` | always | runs exactly the submit gates and returns the refusal or `{"status": "ok", "would_submit": true}`; writes nothing. |
 | `view_slices(ids)` | always | up to 8 sections at higher resolution, rendered as corrected, each captioned with its index and filename. |
 | `fetch_atlas(positions_mm)` | always | up to 8 atlas sections, rendered at the current cutting angles, each captioned with its position (and the angles when oblique). |
@@ -100,15 +103,15 @@ in any payload or prompt (see `lean-harness` history in `linear/CLAUDE.md`).
 | `reorder_slices(new_order)` | reorder | full permutation; changes corrected indices only, positions and transforms are kept. |
 | `move_slice(id, after)` | reorder | incremental move; same rule. |
 | `mark_damaged([{id, note}])` / unmark | always | agent-internal classification. |
-| `set_positions([{id, position_mm, confidence?}])` | position | batch write, clamped to the atlas range. |
+| `set_positions([{id, position_mm}])` | position | batch write, clamped to the atlas range. |
 | `distribute_spacing(fixed=[{id, position_mm}], keep=[ids])` | position | linear interpolation between fixed points, extrapolating at the implied interval; `keep` sections are not moved; returns rows, writes nothing (`apply=True` writes). |
 | `run_deepslice(ids?, allow_angle_change, keep=[ids])` | position.deepslice | positions (+ angles) for undamaged sections; UNAVAILABLE unless installed and plane/atlas supported. |
 | `fit_position(id, window_mm, angles?)` | position.bayesian | `oblique.fit_oblique` at the section's current position: best position (and angles) with score; writes nothing. |
 | `set_cutting_angles(pitch_deg, yaw_deg)` | transform.angles | stack-wide; subsequent atlas fetches and fits use them. |
-| `fit_affine(ids, method=silhouette\|elastix, apply=True)` | transform | per-section in-plane affine against its atlas section; returns iou, the transform decomposed (rotation, scales, shear, translation, `mirrored`) and a captioned overlay panel per section (≤16); refuses damaged sections. |
-| `preview_transform(id, rotation_deg, scale_x, scale_y, translate_x_mm, translate_y_mm, mode, zoom, template_opacity, pivot)` | transform | draws ANY positioned section under a candidate transform with the atlas outlines at true physical scale; `NO_POSITION` otherwise. Writes nothing, snapshots nothing. |
+| `fit_affine(ids, method=silhouette\|elastix, apply=True, roi=[])` | transform | per-section in-plane affine against its atlas section; returns iou, the transform as the same five `physical` knobs `set_transform` takes (plus `shear`, about the canvas centre) and a captioned overlay panel per section (≤16). `roi` = [x0, y0, x1, y1] fractions of the CANVAS restricts the fit to the tissue and the atlas outline inside that box, on the canvas at identity; damaged sections are refused WITHOUT an roi and fitted with one. |
+| `preview_transform(id, rotation_deg, scale_x, scale_y, translate_x_mm, translate_y_mm, mode, zoom, template_opacity, pivot, outlines)` | transform | draws ANY positioned section under a candidate transform with the atlas outlines at true physical scale; `NO_POSITION` otherwise. Writes nothing, snapshots nothing. |
 | `landmarks(id, pairs, params...)` | transform | point pairs (section point, atlas point) as fractions of the canvas: the residual per pair in mm, their RMS, the transform fitted to them (similarity from 2, affine from 3) in the same physical units, and the pairs drawn on the view. Writes nothing. |
-| `set_transform(id, params..., confidence, note, pivot)` | transform | records `{"kind": "interactive", ...}` on the section; the write the interactive route ends with, undoable and checkpointed like every other. |
+| `set_transform(id, params..., note, pivot)` | transform | records `{"kind": "interactive", ...}` on the section; the write the interactive route ends with, undoable and checkpointed like every other. |
 | `copy_transform(from_id, to_ids)` | transform | copy one section's transform to others. |
 | `submit(summary, notes, interval_breaks)` | always | ends the run; gated (below). |
 
@@ -205,7 +208,10 @@ registration-software practice (ABBA) exactly.
 - Transform parameters are physical, ABBA's: rotation (deg, about the canvas
   centre), scale_x / scale_y (unitless), translate_x_mm / translate_y_mm.
   The stored transform stays the host-facing normalized six numbers, plus the
-  physical params and the calibration used.
+  physical params and the calibration used. ONE representation: silhouette
+  fits carry `physical` too (`transform.physical_params` reads their canvas
+  2x3 back into the knobs about the canvas centre), which is what lets the
+  A/B view show a fit as its B side and lets a preview start from one.
 
 **Atlas outlines, ABBA's way.** ABBA's border channel is the 1-voxel edge of
 the label volume shown as one neutral grey hairline; region colors belong to
@@ -260,10 +266,28 @@ older single overlay exactly.
   reported in the same five knobs about the same pivot, with the `shear` an
   affine can carry that the knobs cannot. Nothing says "apply this".
 - `mode="ab"` renders TWO overlays at one crop: the parameters passed, then the
-  section's stored transform (identity when it has none, or when what is stored
-  is a silhouette fit, whose six numbers are not physical knobs —
-  `ab_reference` says which and names the stored kind). The candidate toggle,
-  as asked.
+  section's stored transform, whatever made it (identity only when it has
+  none; `ab_reference` says which). The candidate toggle, as asked.
+
+**Astra's requests, built 2026-09-06.** GPT-6 Astra (medium) aligned damaged
+M05 sections in the main trajectory at human level and was debriefed; four of
+its five asks are in:
+- `roi` on `fit_affine` — "registration restricted to retained anatomy", its
+  first ask twice. The moments core (`affine.mask_affine`) now takes two
+  prepared masks, so an ROI fit is the same math on the section's tissue and
+  the atlas root inside one canvas box. It is the ONLY way to fit a damaged
+  section automatically, and the reason damage is no longer a blanket refusal.
+- one transform representation: `physical` on every stored transform and every
+  fit payload, so a fit and a hand alignment are the same five numbers ("its
+  reported matrix/decomposition was not directly interchangeable with the
+  manual controls"). The fraction-based decomposition left the fit payload.
+- `outlines` on `preview_transform`: `all` (default), `outer` (the atlas
+  outline alone) or `none` — "all family outlines together were visually
+  busy". The caption names the layer when it is not `all`.
+- concise writes: a write answers with the rows it changed, not the whole
+  table ("on a large stack, concise change reports would be easier to review").
+- confidence is GONE, on Nash's call: nothing downstream reads it, and the
+  reasoning lives in `set_transform`'s note.
 
 Region acronyms on the outlines were asked for and deliberately NOT built
 (Nash: "it has no use for this"), and neither was damage masking — after the

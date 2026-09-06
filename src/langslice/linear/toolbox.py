@@ -1,9 +1,9 @@
 """The one toolbox: every tool the linear agent can be given, gated by the spec.
 
 Conventions, applied to every tool: sections are addressed by filename or
-corrected index; every write returns the same status rows; every write is
-undoable; every write checkpoints; fits have a form that computes without
-writing.
+corrected index; every write returns the rows it changed (``status`` is the
+whole table); every write is undoable; every write checkpoints; fits have a
+form that computes without writing.
 
 Tools report data. No advice, no interpretation, no strategy in any payload —
 every benchmark failure worth tracing came back to harness text telling the
@@ -22,11 +22,16 @@ import numpy as np
 from google.genai import types
 
 from langslice.adk import TOOL_MEDIA_PARTS_KEY
-from langslice.affine import normalized_physical_affine, physical_affine_matrix
+from langslice.affine import (
+    denormalized_affine,
+    normalized_physical_affine,
+    physical_affine_matrix,
+)
 from langslice.linear.atlas_fetch import make_fetch_atlas
 from langslice.linear.checkpoint import save_checkpoint
 from langslice.linear.deepslice import run_deepslice as _run_deepslice
 from langslice.linear.render import (
+    OUTLINE_LAYERS,
     OVERLAY_LONG_EDGE,
     PREVIEW_LONG_EDGE,
     VIEW_LONG_EDGE,
@@ -42,7 +47,7 @@ from langslice.linear.render import (
 )
 from langslice.linear.signals import interpolate_positions
 from langslice.linear.spec import JobSpec
-from langslice.linear.state import SliceState, StackState, apply_confidence
+from langslice.linear.state import SliceState, StackState
 from langslice.linear.transform import (
     affine_fit,
     calibrate,
@@ -377,6 +382,21 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             "interval_breaks": list(state.interval_breaks),
         }
 
+    def changed(touched: list[str]) -> dict[str, Any]:
+        """The status rows of the sections a write touched, and nothing else.
+
+        A write used to answer with the whole table; on a forty-section stack
+        that is thirty-nine rows of noise per call. `status` is still the
+        whole table, and is one call away.
+        """
+        wanted = set(touched)
+        return {
+            "changed": [row for row in status_rows(state) if row["id"] in wanted],
+            "n_sections": len(state.slices),
+            "cutting_angles_deg": dict(state.cutting_angles_deg),
+            "interval_breaks": list(state.interval_breaks),
+        }
+
     def push(before: dict[str, Any]) -> None:
         """Record one undo step. One tool call = one step, batch included."""
         box.undo_stack.append(before)
@@ -387,9 +407,10 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         """Take the undo step, before anything is written."""
         push(state.to_dict())
 
-    def commit() -> dict[str, Any]:
+    def commit(*touched: str) -> dict[str, Any]:
+        """Checkpoint the write and answer with the rows it changed."""
         save_checkpoint(state, ctx.checkpoint_path)
-        return {"status": "ok", **rows()}
+        return {"status": "ok", **changed(list(touched))}
 
     def resolve_many(refs: list[Any]) -> tuple[list[SliceState], list[str]]:
         known: list[SliceState] = []
@@ -423,8 +444,9 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         Returns:
             ``rows`` (index, id, position_mm, delta_to_next_mm, flip,
             rotation_deg, damaged, damage_note, transform kind, transform_iou,
-            transform_mirrored, confidence, caveats), plus the stack's cutting
-            angles and interval breaks.
+            transform_mirrored, caveats), plus the stack's cutting angles and
+            interval breaks. Writes return only the rows they changed; this is
+            the whole table.
         """
         return {"status": "ok", **rows()}
 
@@ -517,7 +539,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             entries: ``[{"id": "<filename>", "note": "<what breaks the outline>"}]``
 
         Returns:
-            The status rows, as they stand after the write.
+            The rows this call changed.
         """
         if not entries:
             return {"status": "error", "error": "BAD_ARGS"}
@@ -534,7 +556,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             record.damaged = True
             record.damage_note = str(entry.get("note", "")).strip()
             marked.append(record.id)
-        return {"marked": marked, "unknown_ids": unknown, **commit()}
+        return {"marked": marked, "unknown_ids": unknown, **commit(*marked)}
 
     def unmark_damaged(slice_ids: list[str]) -> dict[str, Any]:
         """Clear the damaged flag on the named sections.
@@ -543,7 +565,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             slice_ids: Filenames or corrected indices.
 
         Returns:
-            The status rows, as they stand after the write.
+            The rows this call changed.
         """
         if not slice_ids:
             return {"status": "error", "error": "BAD_ARGS"}
@@ -555,7 +577,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         return {
             "unmarked": [record.id for record in known],
             "unknown_ids": unknown,
-            **commit(),
+            **commit(*[record.id for record in known]),
         }
 
     def submit(
@@ -657,7 +679,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                 leave that correction as it is.
 
         Returns:
-            The status rows, as they stand after the write.
+            The rows this call changed.
         """
         if not entries:
             return {"status": "error", "error": "BAD_ARGS"}
@@ -705,7 +727,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             "cleared_transforms": cleared,
             "unknown_ids": unknown,
             "rejected": rejected,
-            **commit(),
+            **commit(*applied),
         }
 
     def reorder_slices(new_order: list[str]) -> dict[str, Any]:
@@ -718,7 +740,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                 sections were cut.
 
         Returns:
-            The status rows plus the ids whose corrected index changed.
+            The rows it changed, plus the ids whose corrected index changed.
         """
         ids = [s.id for s in state.slices]
         if sorted(str(item) for item in new_order) != sorted(ids):
@@ -735,7 +757,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         snapshot()
         ordered = [state.by_id(str(item)) for item in new_order]
         moved = renumber([record for record in ordered if record is not None])
-        return {"moved": moved, **commit()}
+        return {"moved": moved, **commit(*moved)}
 
     def move_slice(slice_id: str, after: str) -> dict[str, Any]:
         """Move one section to a new place in the corrected order.
@@ -748,7 +770,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                 follow, or "start" to put it first.
 
         Returns:
-            The status rows plus the ids whose corrected index changed.
+            The rows it changed, plus the ids whose corrected index changed.
         """
         record = state.resolve(slice_id)
         if record is None:
@@ -769,7 +791,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         index = 0 if anchor is None else ordered.index(anchor) + 1
         ordered.insert(index, record)
         moved = renumber(ordered)
-        return {"moved": moved, **commit()}
+        return {"moved": moved, **commit(*moved)}
 
     if spec.has("reorder"):
         box.tools += [orient_slices, reorder_slices, move_slice]
@@ -783,11 +805,10 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         value outside the atlas range is clamped and reported back.
 
         Args:
-            entries: ``[{"id": "<filename>", "position_mm": <number>,
-                "confidence": "low"|"medium"|"high"}]``; confidence optional.
+            entries: ``[{"id": "<filename>", "position_mm": <number>}]``.
 
         Returns:
-            What was written, what was clamped, and the status rows.
+            What was written, what was clamped, and the rows it changed.
         """
         if not entries:
             return {"status": "error", "error": "BAD_ARGS"}
@@ -819,7 +840,6 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                     }
                 )
             record.position_mm = value
-            apply_confidence(record, entry.get("confidence"))
             written.append({"id": record.id, "position_mm": round(value, 3)})
 
         if not written:
@@ -835,7 +855,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             "unknown_ids": unknown,
             "rejected": rejected,
             "clamped": clamped,
-            **commit(),
+            **commit(*[row["id"] for row in written]),
         }
         if clamped:
             result["atlas_range_mm"] = [round(pos_lo, 3), round(pos_hi, 3)]
@@ -935,7 +955,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         snapshot()
         for record, row in zip(ordered, suggestions, strict=True):
             record.position_mm = float(row["position_mm"])
-        result.update(commit())
+        result.update(commit(*[record.id for record in ordered]))
         return result
 
     def run_deepslice(
@@ -1036,7 +1056,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             yaw_deg: Rotation about the plane's row axis, in degrees.
 
         Returns:
-            The status rows, as they stand after the write.
+            The rows this call changed.
         """
         try:
             pitch, yaw = float(pitch_deg), float(yaw_deg)
@@ -1045,23 +1065,34 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         snapshot()
         state.cutting_angles_deg = {"pitch": pitch, "yaw": yaw}
         ctx.render_cache.clear()
-        return commit()
+        return commit()  # stack-wide: no section row changes
 
-    def fit_affine(slice_ids: list[str], method: str, apply: bool) -> dict[str, Any]:
+    def fit_affine(
+        slice_ids: list[str],
+        method: str,
+        apply: bool,
+        roi: list[float] = [],  # noqa: B006 — read, never mutated; ADK wants a value
+    ) -> dict[str, Any]:
         """Fit an in-plane affine per section against its atlas section.
 
-        Refuses damaged sections: the fit matches the tissue OUTLINE, which is
-        what damage destroys.
+        Without an `roi` the whole tissue outline is matched against the whole
+        atlas outline, and a damaged section is refused. With an `roi` only
+        what lies inside that box is matched — the section's tissue mask
+        against the atlas outline's, both on the canvas at identity — and
+        damaged sections are fitted like any other.
 
         Args:
             slice_ids: Filenames or corrected indices; empty means every
                 positioned, undamaged section.
             method: "silhouette" (moments fit) or "elastix" (intensity affine).
             apply: True records the fits on the stack; False only measures.
+            roi: [x0, y0, x1, y1] as fractions of the CANVAS — the same frame
+                `preview_transform`'s zoom names. An empty list fits the whole
+                canvas.
 
         Returns:
-            Per-section overlap (iou), the transform decomposed into
-            rotation, scale, shear, translation and a mirrored flag, the
+            Per-section overlap (iou) inside whatever was fitted, the
+            transform as the five physical knobs about the canvas centre, the
             calibration the image was drawn with, and an image of the fitted
             section under the atlas outlines for up to 16 sections.
         """
@@ -1081,6 +1112,17 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                 "message": "method must be 'silhouette' or 'elastix'.",
             }
 
+        try:
+            window = [float(value) for value in (roi or [])]
+        except (TypeError, ValueError):
+            return {"status": "error", "error": "BAD_ARGS"}
+        if window and len(window) != 4:
+            return {
+                "status": "error",
+                "error": "BAD_ROI",
+                "expected": "[x0, y0, x1, y1] as fractions of the canvas",
+            }
+
         if slice_ids:
             targets, unknown = resolve_many(list(slice_ids))
         else:
@@ -1095,10 +1137,10 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         parts: list[types.Part] = []
         fits: list[tuple[SliceState, dict[str, Any]]] = []
         for record in targets:
-            if record.damaged:
+            if record.damaged and not window:
                 results.append({"id": record.id, "status": "error", "error": "DAMAGED"})
                 continue
-            outcome = fit_silhouette(state, ctx, record)
+            outcome = fit_silhouette(state, ctx, record, roi=window or None)
             panel = outcome.pop("panel", None)
             results.append(outcome)
             if outcome["status"] != "ok":
@@ -1132,11 +1174,13 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             record.transform = {
                 "kind": "silhouette",
                 "params": outcome["params"],
+                "physical": outcome["physical"],
                 "iou": outcome["iou"],
                 "calibration": outcome["calibration"],
-                "mirrored": outcome["decomposition"]["mirrored"],
+                "mirrored": outcome["mirrored"],
+                **({"roi": outcome["roi"]} if "roi" in outcome else {}),
             }
-        payload.update(commit())
+        payload.update(commit(*[record.id for record, _ in fits]))
         return payload
 
     # --- the interactive transform --------------------------------------
@@ -1216,6 +1260,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         zoom: list[float],
         template_opacity: float,
         pivot: tuple[float, float] | None,
+        outlines: str = "all",
         markers: Any = None,
         label: str = "",
     ) -> list[Any]:
@@ -1231,6 +1276,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             mode=mode,
             zoom=zoom,
             template_opacity=template_opacity,
+            outlines=outlines,
             pivot=pivot,
             markers=markers,
             label=label or staged.record.id,
@@ -1249,6 +1295,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         zoom: list[float] = [],  # noqa: B006 — read, never mutated; ADK wants a value
         template_opacity: float = 0.0,
         pivot: str | list[float] = "canvas",
+        outlines: str = "all",
     ) -> dict[str, Any]:
         """Render one section under a candidate transform, with atlas outlines.
 
@@ -1282,6 +1329,8 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             pivot: What the rotation and the scales turn about: "canvas" (the
                 canvas centre), "tissue" (the section's tissue centroid) or
                 [fx, fy] fractions of the canvas.
+            outlines: Which atlas lines to draw: "all" (every family
+                boundary), "outer" (the atlas outline only) or "none".
 
         Returns:
             The parameters you passed, their decomposition (rotation, scales,
@@ -1292,6 +1341,13 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         view = str(mode or "overlay").strip().lower()
         if view not in PREVIEW_MODES:
             return {"status": "error", "error": "BAD_MODE", "modes": list(PREVIEW_MODES)}
+        layer = str(outlines or "all").strip().lower()
+        if layer not in OUTLINE_LAYERS:
+            return {
+                "status": "error",
+                "error": "BAD_OUTLINES",
+                "layers": list(OUTLINE_LAYERS),
+            }
         try:
             window = [float(value) for value in (zoom or [])]
             opacity = float(template_opacity)
@@ -1315,11 +1371,15 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         reference: dict[str, Any] | None = None
         try:
             if view == "ab":
-                other = (
-                    {key: float(stored[key]) for key in IDENTITY_PARAMS}
-                    if isinstance(stored, dict)
-                    else dict(IDENTITY_PARAMS)
-                )
+                # The B side is drawn from the six stored numbers when there
+                # are any: they are the exact map, shear included, and the
+                # five knobs the payload reports cannot carry that shear.
+                six = (record.transform or {}).get("params")
+                other: Any = dict(IDENTITY_PARAMS)
+                if six is not None and len(six) == 6:
+                    other = denormalized_affine(six, staged.section.size)
+                elif isinstance(stored, dict):
+                    other = {key: float(stored[key]) for key in IDENTITY_PARAMS}
                 other_pivot = staged.pivot
                 if isinstance(stored, dict) and stored.get("pivot"):
                     fractions = [float(value) for value in stored["pivot"]]
@@ -1327,25 +1387,26 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                         fractions[0] * staged.geometry.size[0],
                         fractions[1] * staged.geometry.size[1],
                     )
+                held = record.transform is not None
                 images = views(
                     staged, staged.params, mode="overlay", zoom=window,
-                    template_opacity=opacity, pivot=staged.pivot,
+                    template_opacity=opacity, pivot=staged.pivot, outlines=layer,
                     label=f"{record.id} candidate",
                 ) + views(
                     staged, other, mode="overlay", zoom=window,
-                    template_opacity=opacity, pivot=other_pivot,
-                    label=f"{record.id} {'stored' if isinstance(stored, dict) else 'identity'}",
+                    template_opacity=opacity, pivot=other_pivot, outlines=layer,
+                    label=f"{record.id} {'stored' if held else 'identity'}",
                 )
                 reference = {
-                    "source": "stored" if isinstance(stored, dict) else "identity",
-                    "params": other,
+                    "source": "stored" if held else "identity",
+                    "params": dict(stored) if isinstance(stored, dict) else dict(IDENTITY_PARAMS),
                 }
-                if not isinstance(stored, dict) and record.transform is not None:
-                    reference["stored_kind"] = record.transform.get("kind")
+                if held:
+                    reference["stored_kind"] = (record.transform or {}).get("kind")
             else:
                 images = views(
                     staged, staged.params, mode=view, zoom=window,
-                    template_opacity=opacity, pivot=staged.pivot,
+                    template_opacity=opacity, pivot=staged.pivot, outlines=layer,
                 )
         except Exception as exc:
             logger.warning("preview_transform failed for %s: %s", record.id, exc)
@@ -1369,7 +1430,11 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             "template": "the atlas template alone, no outlines",
             "ab": (
                 "two overlays at the same crop: first these parameters, then "
-                + ("the transform stored on the section" if stored else "identity")
+                + (
+                    "the transform stored on the section"
+                    if record.transform is not None
+                    else "identity"
+                )
             ),
         }[view]
         return {
@@ -1392,15 +1457,28 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                 "px_per_mm": round(px_per_mm, 2),
             },
             "pivot": {"mode": staged.pivot_mode, "canvas_frac": staged.pivot_frac},
-            "view": {"mode": view, "zoom": window or [0.0, 0.0, 1.0, 1.0]},
+            "view": {
+                "mode": view,
+                "zoom": window or [0.0, 0.0, 1.0, 1.0],
+                "outlines": layer,
+            },
             **({"ab_reference": reference} if reference is not None else {}),
             "history": [dict(entry) for entry in history],
             "calibration": staged.calibration,
             "description": (
-                f"{record.id} under the transform above, {described}. The "
-                f"outlines are the FAMILY regions of the {state.plane} atlas "
-                f"section at {float(record.position_mm or 0.0):.3f} mm, drawn "
-                "at true physical scale as neutral hairlines."
+                f"{record.id} under the transform above, {described}. "
+                + (
+                    "No atlas outlines are drawn."
+                    if layer == "none"
+                    else (
+                        ("The outline is the OUTER boundary of "
+                         if layer == "outer"
+                         else "The outlines are the FAMILY regions of ")
+                        + f"the {state.plane} atlas section at "
+                        f"{float(record.position_mm or 0.0):.3f} mm, drawn at "
+                        "true physical scale as neutral hairlines."
+                    )
+                )
             ),
             TOOL_MEDIA_PARTS_KEY: [image_to_part(image) for image in images],
         }
@@ -1552,7 +1630,6 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         scale_y: float,
         translate_x_mm: float,
         translate_y_mm: float,
-        confidence: str,
         note: str,
         pivot: str | list[float] = "canvas",
     ) -> dict[str, Any]:
@@ -1568,14 +1645,13 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             scale_y: Vertical scale of the alignment.
             translate_x_mm: Horizontal shift in millimetres.
             translate_y_mm: Vertical shift in millimetres.
-            confidence: "low", "medium" or "high".
             note: Short remark for the record. May be empty.
             pivot: "canvas", "tissue" or [fx, fy] — the point the rotation and
                 the scales turn about, as in `preview_transform`.
 
         Returns:
             The parameters recorded, their decomposition, the calibration and
-            the status rows.
+            the row this call changed.
         """
         staged = stage(
             slice_id, rotation_deg, scale_x, scale_y, translate_x_mm,
@@ -1600,7 +1676,6 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             "mirrored": decomposition["mirrored"],
             "note": str(note or "").strip(),
         }
-        apply_confidence(record, confidence)
         return {
             "id": record.id,
             "params": staged.params,
@@ -1608,7 +1683,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             "decomposition": decomposition,
             "pivot": {"mode": staged.pivot_mode, "canvas_frac": staged.pivot_frac},
             "calibration": staged.calibration,
-            **commit(),
+            **commit(record.id),
         }
 
     def copy_transform(from_id: str, to_ids: list[str]) -> dict[str, Any]:
@@ -1619,7 +1694,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             to_ids: Filenames or corrected indices to copy onto.
 
         Returns:
-            The status rows, as they stand after the write.
+            The rows this call changed.
         """
         source = state.resolve(from_id)
         if source is None:
@@ -1636,7 +1711,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         return {
             "copied_to": [record.id for record in targets],
             "unknown_ids": unknown,
-            **commit(),
+            **commit(*[record.id for record in targets]),
         }
 
     if spec.has("transform"):
