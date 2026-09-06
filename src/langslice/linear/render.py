@@ -29,6 +29,7 @@ from langslice.atlas.render import (
     atlas_um_per_px,
     family_outlines,
     is_dark_background,
+    outer_outline,
     region_contours,
 )
 from langslice.image_prep import (
@@ -223,7 +224,6 @@ def status_rows(state: StackState) -> list[dict[str, Any]]:
                 "transform": transform.get("kind"),
                 "transform_iou": transform.get("iou"),
                 "transform_mirrored": transform.get("mirrored"),
-                "confidence": record.confidence,
                 "caveats": list(record.caveats),
             }
         )
@@ -234,7 +234,7 @@ def status_text(state: StackState) -> str:
     """The status rows as one line per section, for a text message."""
     lines = [
         "index  id  position_mm  delta_to_next_mm  flags  "
-        "transform(kind, iou, mirrored)  confidence"
+        "transform(kind, iou, mirrored)"
     ]
     for row in status_rows(state):
         flags: list[str] = []
@@ -263,7 +263,6 @@ def status_text(state: StackState) -> str:
             f"{row['index']:>3}  {row['id']}  {position}  {delta}"
             + (f"  [{'; '.join(flags)}]" if flags else "")
             + transform
-            + (f"  confidence={row['confidence']}" if row["confidence"] else "")
         )
     return "\n".join(lines)
 
@@ -411,6 +410,10 @@ def canvas_geometry(
 #: How the ONE alignment screen may be composed. ``overlay`` is the default and
 #: what every earlier run saw.
 VIEW_MODES = ("overlay", "side_by_side", "checkerboard", "outlines", "section", "template")
+
+#: Which atlas lines a view draws: every family boundary, the root silhouette
+#: alone, or none at all.
+OUTLINE_LAYERS = ("all", "outer", "none")
 
 #: Tiles across the width of a ``checkerboard`` view.
 CHECKER_TILES = 8
@@ -585,6 +588,20 @@ def _blend_template(
     window[lit] = (
         window[lit] * (1.0 - opacity) + patch[lit] * opacity
     ).astype(np.uint8)
+
+
+def template_canvas(
+    atlas: Any,
+    position_mm: float,
+    plane: Plane,
+    pitch_deg: float,
+    yaw_deg: float,
+    geometry: CanvasGeometry,
+) -> np.ndarray:
+    """The atlas template alone on a black canvas, RGB uint8, at the placement."""
+    plate = np.zeros((geometry.size[1], geometry.size[0], 3), dtype=np.uint8)
+    _blend_template(plate, atlas, position_mm, plane, pitch_deg, yaw_deg, geometry, opacity=1.0)
+    return plate
 
 
 def atlas_mask_canvas(geometry: CanvasGeometry) -> np.ndarray:
@@ -766,6 +783,7 @@ def physical_views(
     mode: str = "overlay",
     zoom: list[float] | None = None,
     template_opacity: float = 0.0,
+    outlines: str = "all",
     pad_to_fit_atlas: bool = True,
     pivot: tuple[float, float] | None = None,
     markers: tuple[np.ndarray, np.ndarray] | None = None,
@@ -789,6 +807,9 @@ def physical_views(
     *zoom* is ``[x0, y0, x1, y1]`` in fractions of the CANVAS; the crop happens
     before the resize to *long_edge*, so it is real magnification, and the
     scale bar is redrawn for the magnified micrometres per pixel.
+
+    *outlines* picks which atlas lines are drawn (:data:`OUTLINE_LAYERS`):
+    every family boundary, the root silhouette alone, or none.
 
     *pivot* is the rotation/scale centre in CANVAS pixels (``None`` is the
     canvas centre), and *markers* is ``(section points, atlas points)`` in
@@ -837,8 +858,12 @@ def physical_views(
     iou = silhouette_iou(tissue, atlas_mask_canvas(geometry))
 
     dark = is_dark_background(section)
-    outlines = family_outlines(
-        atlas, position_mm, plane=plane, pitch_deg=pitch_deg, yaw_deg=yaw_deg
+    layer = str(outlines or "all").strip().lower()
+    draw = outer_outline if layer == "outer" else family_outlines
+    atlas_lines = (
+        []
+        if layer == "none"
+        else draw(atlas, position_mm, plane=plane, pitch_deg=pitch_deg, yaw_deg=yaw_deg)
     )
 
     def _template_canvas() -> np.ndarray:
@@ -893,7 +918,7 @@ def physical_views(
         screen, factor = _to_screen(panel, box, long_edge)
         if lines:
             _draw_outlines(
-                screen, outlines, geometry, dark=dark, factor=factor, origin=box[:2]
+                screen, atlas_lines, geometry, dark=dark, factor=factor, origin=box[:2]
             )
         if silhouette:
             _draw_polys(
@@ -923,6 +948,8 @@ def physical_views(
                 f"\n{mode}  zoom {zoomed}  "
                 f"view {geometry.um_per_px / factor:.2f} um/px"
             )
+        if layer != "all":
+            text += f"  outlines {layer}"
         images.append(caption(Image.fromarray(screen, mode="RGB"), text))
     return images, iou
 

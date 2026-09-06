@@ -14,8 +14,6 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-CONFIDENCE_LEVELS = ("", "low", "medium", "high")
-
 #: Quarter-turns the render applies before the flip.
 ROTATIONS = (0, 90, 180, 270)
 
@@ -28,9 +26,18 @@ class SliceState:
 
         {"kind": "silhouette" | "elastix" | "interactive",
          "params": [a, b, tx, c, d, ty],   # normalized 2x3, see langslice.affine
+         "physical": {rotation_deg, scale_x, scale_y, shear,
+                      translate_x_mm, translate_y_mm, pivot},
+         "calibration": {section_um_per_px, source},
          "iou": float | None,              # fits only
+         "roi": [x0, y0, x1, y1] | absent, # fits restricted to a box
          "mirrored": bool,                 # det of the 2x2 is negative
          "note": str}                      # interactive only
+
+    ``physical`` is the ONE representation every transform carries, whatever
+    made it: the five knobs the alignment tools take (plus the ``shear`` an
+    affine can have and they cannot), about a pivot given as canvas
+    fractions.
 
     Coordinates are NORMALIZED — x as a fraction of image width, y as a
     fraction of image height — so the same six numbers apply at any resolution
@@ -50,23 +57,8 @@ class SliceState:
     damaged: bool = False
     damage_note: str = ""
     position_mm: float | None = None
-    confidence: str = ""
     transform: dict[str, Any] | None = None
     caveats: list[str] = field(default_factory=list)
-
-
-def apply_confidence(record: SliceState, value: object) -> bool:
-    """Set *record*'s confidence from model output; ignore anything else.
-
-    "The model left it out" must not read as "the model said no confidence":
-    an omitted or unrecognised value leaves the current one standing. Returns
-    whether it was applied.
-    """
-    level = str(value or "").strip().lower()
-    if not level or level not in CONFIDENCE_LEVELS:
-        return False
-    record.confidence = level
-    return True
 
 
 def add_caveat(record: SliceState, caveat: str) -> None:

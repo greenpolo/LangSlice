@@ -138,6 +138,31 @@ def test_the_template_opacity_is_a_dial_not_a_switch():
     assert none[box].mean() < half[box].mean() < full[box].mean()
 
 
+# --- the outline layers --------------------------------------------------
+
+
+def _line_pixels(rgb: np.ndarray) -> int:
+    """Hairline-bright pixels in the picture, above the bar, below the caption."""
+    return int((rgb[60:-40] >= 200).all(axis=2).sum())
+
+
+def test_the_outline_layer_picks_which_atlas_lines_are_drawn():
+    """This atlas has two families: the 1 mm square and a region inside it."""
+    (every,), _ = _views()
+    (outer,), _ = _views(outlines="outer")
+    (bare,), _ = _views(outlines="none")
+
+    assert _line_pixels(bare) == 0, "outlines='none' still drew lines"
+    assert _line_pixels(outer) > 300, "the root contour is missing"
+    # The inner family's contour is what "outer" drops, and it is not small.
+    assert _line_pixels(every) > _line_pixels(outer) + 200
+    # Lines are the only thing that changes: they can cover tissue, never
+    # uncover it, so the bare view shows at least as much of the section.
+    tissue = lambda rgb: int(((rgb >= 110) & (rgb <= 130)).all(axis=2).sum())  # noqa: E731
+    assert tissue(bare) >= tissue(every) > 0
+    assert tissue(bare) - tissue(every) < 0.1 * tissue(bare)
+
+
 # --- the tools, in the main toolbox --------------------------------------
 
 
@@ -167,7 +192,11 @@ def test_the_preview_payload_carries_history_and_pixels_but_no_overlap(tmp_path:
     # rewarded inflating a damaged remnant to fill it (luna, D_08, 2026-09-06:
     # 0.29 -> 0.51 at scale 1.35), and this loop exists for damaged sections.
     assert "silhouette_iou" not in first
-    assert first["view"] == {"mode": "overlay", "zoom": [0.0, 0.0, 1.0, 1.0]}
+    assert first["view"] == {
+        "mode": "overlay",
+        "zoom": [0.0, 0.0, 1.0, 1.0],
+        "outlines": "all",
+    }
     assert first["pivot"] == {"mode": "canvas", "canvas_frac": [0.5, 0.5]}
     # The decomposition names its translations for what they are: fractions.
     # The alignment payload's decomposition carries no translation fields at
@@ -214,7 +243,7 @@ def test_ab_returns_the_candidate_and_what_is_stored(tmp_path: Path):
     assert "identity" in against_identity["description"]
     assert against_identity["ab_reference"]["source"] == "identity"
 
-    tools["set_transform"]("s.tif", 3.0, 1.0, 1.0, 0.0, 0.0, "medium", "")
+    tools["set_transform"]("s.tif", 3.0, 1.0, 1.0, 0.0, 0.0, "")
     against_stored = tools["preview_transform"]("s.tif", 6.0, 1.0, 1.0, 0.0, 0.0, "ab")
     assert len(against_stored[TOOL_MEDIA_PARTS_KEY]) == 2
     assert "stored" in against_stored["description"]
@@ -277,7 +306,7 @@ def test_the_pivot_rides_into_the_six_numbers_and_the_payload(tmp_path: Path):
         "error"
     ] == "BAD_PIVOT"
 
-    tools["set_transform"]("s.tif", 10.0, 1.0, 1.0, 0.0, 0.0, "high", "", [0.25, 0.75])
+    tools["set_transform"]("s.tif", 10.0, 1.0, 1.0, 0.0, 0.0, "", [0.25, 0.75])
     stored = state.slices[0].transform
     assert stored["physical"]["pivot"] == [0.25, 0.75]
     # Same rotation, different pivot: the same map only up to a translation,
@@ -285,7 +314,7 @@ def test_the_pivot_rides_into_the_six_numbers_and_the_payload(tmp_path: Path):
     assert stored["params"][:2] == pytest.approx(
         [np.cos(np.radians(10.0)), np.sin(np.radians(10.0)) * 512 / 512], abs=1e-6
     )
-    tools["set_transform"]("s.tif", 10.0, 1.0, 1.0, 0.0, 0.0, "high", "", "canvas")
+    tools["set_transform"]("s.tif", 10.0, 1.0, 1.0, 0.0, 0.0, "", "canvas")
     assert state.slices[0].transform["params"][2] != stored["params"][2]
     assert centred["decomposition"]["rotation_deg"] == pytest.approx(
         corner["decomposition"]["rotation_deg"]
@@ -386,3 +415,20 @@ def test_clean_section_and_template_views_carry_no_outlines():
     # The template alone is the side-by-side's second panel minus its lines.
     assert template_only.shape == pair[1].shape
     assert not np.array_equal(template_only[60:-40], pair[1][60:-40])
+
+
+def test_the_preview_tool_takes_the_outline_layer(tmp_path: Path):
+    preview = _tools(tmp_path)[0]["preview_transform"]
+
+    plain = preview("s.tif", 0.0, 1.0, 1.0, 0.0, 0.0)
+    assert plain["view"]["outlines"] == "all"
+
+    outer = preview("s.tif", 0.0, 1.0, 1.0, 0.0, 0.0, "overlay", [], 0.0, "canvas", "outer")
+    assert outer["view"]["outlines"] == "outer"
+    assert "OUTER boundary" in outer["description"]
+
+    bare = preview("s.tif", 0.0, 1.0, 1.0, 0.0, 0.0, "overlay", [], 0.0, "canvas", "none")
+    assert "No atlas outlines" in bare["description"]
+
+    bad = preview("s.tif", 0.0, 1.0, 1.0, 0.0, 0.0, "overlay", [], 0.0, "canvas", "midline")
+    assert bad["error"] == "BAD_OUTLINES"

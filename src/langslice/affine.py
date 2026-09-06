@@ -14,7 +14,8 @@ Two ways to get a 2x3 affine here:
   rotation and principal axes, eigenvalue ratios for scale. The 4-way sign
   ambiguity on the eigenvectors (rotations vs reflections) is resolved by
   picking the candidate with the best silhouette IoU. ~150 ms warm, no
-  Elastix, no itk.
+  Elastix, no itk. :func:`mask_affine` is its core, taking two prepared masks
+  in one frame — what an ROI-restricted fit hands it.
 * :func:`affine_matrix` — the same 2x3 built from human-readable knobs
   (rotation, per-axis scale, translation), which is what the interactive
   transform loop proposes.
@@ -183,6 +184,51 @@ def silhouette_iou(a: np.ndarray, b: np.ndarray) -> float:
     return inter / union if union > 0 else 0.0
 
 
+def mask_affine(
+    src_mask: np.ndarray, dst_mask: np.ndarray
+) -> tuple[np.ndarray, float, tuple[int, int]]:
+    """The moments fit of one binary mask onto another: ``(2x3, iou, pattern)``.
+
+    The core both silhouette routes share — the whole-tissue fit below and the
+    linear tool's ROI-restricted variant, which prepares its own two masks on
+    the physical canvas. Both masks live in the SAME frame; the affine maps
+    *src_mask* pixels to *dst_mask* pixels.
+
+    Raises ``ValueError`` when either mask is empty or no candidate survives.
+    """
+    src_c, src_eigvals, src_V = _moments_pose(src_mask)
+    dst_c, dst_eigvals, dst_V = _moments_pose(dst_mask)
+
+    h, w = dst_mask.shape
+    best_iou = -1.0
+    best_affine: np.ndarray | None = None
+    best_pattern: tuple[int, int] = (1, 1)
+    for sign_pattern in _SIGN_PATTERNS:
+        candidate = _affine_from_pose(
+            src_c, src_eigvals, src_V,
+            dst_c, dst_eigvals, dst_V,
+            sign_pattern,
+        )
+        # Reflections are not the fit's to make: a mirrored section is an
+        # ORIENTATION correction (the section's flip flag), and the atlas
+        # silhouette is left-right symmetric anyway, so a reflected candidate
+        # ties the proper one on IoU and would win by handedness noise.
+        if np.linalg.det(candidate[:, :2]) <= 0:
+            continue
+        warped_mask = cv2.warpAffine(
+            src_mask, candidate, (w, h), flags=cv2.INTER_NEAREST, borderValue=0
+        )
+        score = silhouette_iou(warped_mask, dst_mask)
+        if score > best_iou:
+            best_iou = score
+            best_affine = candidate
+            best_pattern = sign_pattern
+
+    if best_affine is None:
+        raise ValueError("No affine candidate could be computed.")
+    return best_affine, best_iou, best_pattern
+
+
 def silhouette_affine(
     image: Image.Image,
     *,
@@ -210,45 +256,15 @@ def silhouette_affine(
         )
 
     atlas_mask = get_root_mask(atlas, position_mm, size, plane=plane)
-
-    src_c, src_eigvals, src_V = _moments_pose(slice_mask)
-    dst_c, dst_eigvals, dst_V = _moments_pose(atlas_mask)
-
-    h, w = atlas_mask.shape
-    best_iou = -1.0
-    best_affine: np.ndarray | None = None
-    best_pattern: tuple[int, int] = (1, 1)
-    for sign_pattern in _SIGN_PATTERNS:
-        candidate = _affine_from_pose(
-            src_c, src_eigvals, src_V,
-            dst_c, dst_eigvals, dst_V,
-            sign_pattern,
-        )
-        # Reflections are not the fit's to make: a mirrored section is an
-        # ORIENTATION correction (the section's flip flag), and the atlas
-        # silhouette is left-right symmetric anyway, so a reflected candidate
-        # ties the proper one on IoU and would win by handedness noise.
-        if np.linalg.det(candidate[:, :2]) <= 0:
-            continue
-        warped_mask = cv2.warpAffine(
-            slice_mask, candidate, (w, h), flags=cv2.INTER_NEAREST, borderValue=0
-        )
-        score = silhouette_iou(warped_mask, atlas_mask)
-        if score > best_iou:
-            best_iou = score
-            best_affine = candidate
-            best_pattern = sign_pattern
-
-    if best_affine is None:
-        raise ValueError("No affine candidate could be computed.")
+    matrix, iou, pattern = mask_affine(slice_mask, atlas_mask)
 
     return SilhouetteFit(
-        matrix=best_affine,
-        iou=best_iou,
+        matrix=matrix,
+        iou=iou,
         size=size,
         slice_rgb=slice_rgb,
         atlas_mask=atlas_mask,
-        sign_pattern=best_pattern,
+        sign_pattern=pattern,
     )
 
 
@@ -408,6 +424,22 @@ def decompose_affine(
         "translate_y_frac": round(float(ty), 4),
         "mirrored": determinant < 0,
     }
+
+
+def denormalized_affine(params: Any, size: tuple[int, int]) -> np.ndarray:
+    """The inverse of :func:`normalized_affine`: six numbers back to pixels.
+
+    What a stored transform has to go through to be DRAWN again — the six
+    numbers are exact, including any shear the five physical knobs cannot
+    carry, so a picture of "what is stored" is built from these and not from
+    the knobs.
+    """
+    a, b, tx, c, d, ty = (float(v) for v in params)
+    width, height = float(size[0]), float(size[1])
+    return np.array(
+        [[a, b * width / height, tx * width], [c * height / width, d, ty * height]],
+        dtype=np.float64,
+    )
 
 
 def normalized_affine(matrix: np.ndarray, size: tuple[int, int]) -> list[float]:

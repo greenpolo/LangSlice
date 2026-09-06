@@ -41,7 +41,7 @@ run can use:
 
 | tool | on when | does |
 | --- | --- | --- |
-| `status` | always | one row per section in corrected order: index, id, `position_mm`, `delta_to_next_mm` (signed), flip, rotation, damaged (+note), transform kind, `transform_iou`, `transform_mirrored`, confidence, caveats; plus the stack's cutting angles and interval breaks |
+| `status` | always | one row per section in corrected order: index, id, `position_mm`, `delta_to_next_mm` (signed), flip, rotation, damaged (+note), transform kind, `transform_iou`, `transform_mirrored`, caveats; plus the stack's cutting angles and interval breaks. Writes answer with only the rows they changed (`changed` + `n_sections`); this is the whole table |
 | `validate` | always | runs the submit checks without submitting; writes nothing |
 | `view_slices` | always | up to 8 sections at higher resolution, rendered as corrected, each captioned with its index and filename |
 | `fetch_atlas` | always | up to 8 atlas sections, rendered at the stack's current cutting angles, each captioned with its position |
@@ -54,10 +54,10 @@ run can use:
 | `run_deepslice` | `--deepslice` | reports `UNAVAILABLE` until the optional extra lands |
 | `fit_position` | `--bayesian` | `oblique.fit_oblique` around a section's current position; writes nothing |
 | `set_cutting_angles` | `--angles` | stack-wide pitch/yaw; later fetches and previews follow |
-| `fit_affine` | `transform` | silhouette affine per section, with the overlap, the transform decomposed (rotation, scales, shear, translation, `mirrored`) and a physical-scale overlay (up to 16); refuses damaged sections; `--elastix`'s method is not wired yet |
-| `preview_transform` | `transform` | one positioned section under a candidate rotation / per-axis scales / millimetre shifts, with the atlas outlines at true physical scale; `mode` (overlay, side_by_side, checkerboard, outlines, section, template, ab), `zoom`, `template_opacity` and `pivot` (canvas, tissue, or [fx, fy] of the canvas) are the view and the centre it turns about; writes nothing |
+| `fit_affine` | `transform` | silhouette affine per section, with the overlap, the transform as the five physical parameters (`rotation_deg`, `scale_x`, `scale_y`, `translate_x_mm`, `translate_y_mm`, plus `shear`) about the canvas centre, and a physical-scale overlay (up to 16); `roi` ([x0, y0, x1, y1] of the canvas) fits only the tissue and atlas outline inside that box, which is how a damaged section is fitted — damage is refused without one; `--elastix`'s method is not wired yet |
+| `preview_transform` | `transform` | one positioned section under a candidate rotation / per-axis scales / millimetre shifts, with the atlas outlines at true physical scale; `mode` (overlay, side_by_side, checkerboard, outlines, section, template, ab), `zoom`, `template_opacity`, `pivot` (canvas, tissue, or [fx, fy] of the canvas) and `outlines` (all, outer, none) are the view and the centre it turns about; writes nothing |
 | `landmarks` | `transform` | point pairs as fractions of the canvas: the residual in millimetres per pair, their RMS, the transform fitted to them (similarity from 2 pairs, affine from 3), and the pairs drawn on the view; writes nothing |
-| `set_transform` | `transform` | records the in-plane transform of one section (parameters in millimetres, a confidence and a note); it does not change the section's flip or rotation |
+| `set_transform` | `transform` | records the in-plane transform of one section (parameters in millimetres, plus a note); it does not change the section's flip or rotation |
 | `copy_transform` | `transform` | copies one section's transform onto others |
 | `submit` | always | ends the run; gated |
 
@@ -101,7 +101,8 @@ tissue's width against the atlas anatomy's and records
 the atlas's family-level region outlines, each in its own color, with a 1 mm
 scale bar. The alignment parameters (`rotation_deg`, `scale_x`, `scale_y`,
 `translate_x_mm`, `translate_y_mm`) are stored alongside the host-facing six
-normalized numbers.
+normalized numbers -- on every transform, silhouette fits included, so a fit
+and a hand alignment are the same five numbers.
 
 `--reasoning` sets the reasoning effort on models that expose one (the
 `openai-oauth/*` backend); unset leaves the provider's own default.

@@ -22,7 +22,8 @@ _PLANE_AXIS_LABEL: dict[str, str] = {
 
 #: One factual line per tool. Only the tools actually built are listed.
 TOOL_LINES: dict[str, str] = {
-    "status": "the stack as it stands, one row per section in corrected order.",
+    "status": "the stack as it stands, one row per section in corrected order; "
+    "every write returns only the rows it changed, this returns them all.",
     "validate": "runs the submit checks without submitting; writes nothing.",
     "view_slices": "up to 8 named sections at higher resolution, as corrected.",
     "fetch_atlas": "up to 8 atlas sections at the positions you name, rendered "
@@ -48,23 +49,27 @@ TOOL_LINES: dict[str, str] = {
     "and reports the best it found; writes nothing.",
     "set_cutting_angles": "sets the stack-wide cutting angles.",
     "fit_affine": "fits an in-plane affine per section against its atlas "
-    "section and returns the overlap, the transform decomposed, and an image "
-    "of the section under the atlas outlines at true physical scale.",
+    "section and returns the overlap, the transform as the same five physical "
+    "parameters `set_transform` takes, and an image of the section under the "
+    "atlas outlines at true physical scale; `roi` ([x0, y0, x1, y1] of the "
+    "canvas) restricts the fit to what lies inside that box, and damaged "
+    "sections are fitted only with one.",
     "preview_transform": "renders one positioned section under a candidate "
     "rotation, per-axis scales and millimetre shifts, with the atlas outlines "
     "at true physical scale; `mode` is overlay, side_by_side, checkerboard, "
     "outlines, section, template or ab (these parameters and the section's "
     "stored transform, at one crop), `zoom` is [x0, y0, x1, y1] of the canvas, "
-    "`template_opacity` is 0..1, and `pivot` — what the rotation and scales "
-    "turn about — is canvas, tissue or [fx, fy] of the canvas; writes nothing.",
+    "`template_opacity` is 0..1, `pivot` — what the rotation and scales "
+    "turn about — is canvas, tissue or [fx, fy] of the canvas, and `outlines` "
+    "is all, outer or none; writes nothing.",
     "landmarks": "measures point pairs (a section point and the atlas point it "
     "belongs on, as fractions of the canvas) under given parameters: the "
     "distance in millimetres per pair, their RMS, a transform fitted to them "
     "(similarity from 2 pairs, affine from 3), and the pairs drawn on the "
     "view; writes nothing.",
     "set_transform": "records an in-plane transform on one section from the "
-    "same parameters, with a confidence and a note; it does not change the "
-    "section's flip or rotation.",
+    "same parameters, with a note; it does not change the section's flip or "
+    "rotation.",
     "copy_transform": "copies one section's transform onto other sections.",
     "submit": "ends the run.",
 }
@@ -168,7 +173,10 @@ def build_job_statement(
                 "1.5x the stack's median written spacing."
             )
     if spec.has("transform"):
-        constraints.append("- Damaged sections are refused by `fit_affine`.")
+        constraints.append(
+            "- Damaged sections are refused by `fit_affine` unless it is given "
+            "an `roi`."
+        )
         constraints.append(
             "- `submit` is refused unless every section carries a transform, "
             "damaged sections included."

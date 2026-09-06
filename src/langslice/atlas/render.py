@@ -29,6 +29,7 @@ __all__ = [
     "family_mapping",
     "family_outlines",
     "is_dark_background",
+    "outer_outline",
     "region_contours",
 ]
 
@@ -199,6 +200,33 @@ def region_contours(
         if polys:
             out[uid] = polys
     return out
+
+
+def outer_outline(
+    atlas: Any,
+    position_mm: float,
+    *,
+    plane: Plane = "coronal",
+    pitch_deg: float = 0.0,
+    yaw_deg: float = 0.0,
+    smooth_window: int = 9,
+    min_area_px: float = 24.0,
+) -> list[tuple[Rgb, np.ndarray]]:
+    """``(color, polyline)`` for the ROOT silhouette alone, in atlas pixels.
+
+    Same shape as :func:`family_outlines`, one layer down: the boundary of
+    everything the annotation labels, with no internal region lines. What an
+    overlay wants when the family lines read as busy.
+    """
+    labels = annotation_slice(
+        atlas, position_mm, plane=plane, pitch_deg=pitch_deg, yaw_deg=yaw_deg
+    )
+    contours = region_contours(
+        (labels > 0).astype(np.int32),
+        smooth_window=smooth_window,
+        min_area_px=min_area_px,
+    )
+    return [((128, 128, 128), poly) for poly in contours.get(1, [])]
 
 
 def family_outlines(

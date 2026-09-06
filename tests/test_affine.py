@@ -271,3 +271,13 @@ def test_decompose_affine_reads_a_pure_rotation_on_a_wide_image_when_given_its_s
     assert abs(proper["shear"]) < 1e-3
     assert abs(proper["scale_x"] - 1.0) < 1e-3 and abs(proper["scale_y"] - 1.0) < 1e-3
     assert abs(skewed["rotation_deg"] - 5.0) > 1.0  # the frame effect it corrects
+
+
+def test_the_six_numbers_go_back_to_the_pixels_they_came_from():
+    """A stored transform has to be DRAWN again, shear and all."""
+    from langslice.affine import denormalized_affine
+
+    size = (300, 200)
+    matrix = np.array([[1.03, 0.21, 12.0], [-0.07, 0.94, -5.0]])
+    back = denormalized_affine(normalized_affine(matrix, size), size)
+    assert back == pytest.approx(matrix, abs=1e-9)
