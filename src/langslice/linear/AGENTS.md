@@ -152,11 +152,7 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
 
 ## Rules that are not negotiable here
 
-**Lean harness.** Tools return data. No advice, no interpretation, no strategy
-in any payload or prompt. The job statement carries the job, the facts, one
-line per tool and the constraints — no strategy menu, no rules of thumb, no
-failure-mode warnings, no region names (the same text runs against every
-BrainGlobe atlas, species and plane). Full-trace forensics found every major
+**Lean harness.** Tools return data. No interpretation in any payload. The job statement carries the job, the facts, one line per tool, the constraints and — when positioning is on — a short `Method` section (Nash, 2026-09-07): place each section on its own evidence and compare candidates before writing, review the whole stack afterwards, re-check both sides of a gap before reporting a break, validate, submit. Asked from its own run-3 trace, Astra said it skipped `compare_placement` and `view_stack` by oversight, not wording, and asked for exactly this. Still out: rules of thumb, failure-mode warnings and region names (the same text runs against every BrainGlobe atlas, species and plane). Full-trace forensics found every major
 benchmark failure tracking back to advice the harness injected; a per-slice
 estimation worker that ate 82% of the wall-clock carried ~no signal and was
 deleted; a landmark-tool pass for POSITION estimation benchmarked WORSE and was
