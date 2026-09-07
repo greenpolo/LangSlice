@@ -60,7 +60,7 @@ Nash kept five of its ten asks:
 Run 2's new asks, built: `view_stack` pastes the atlas at each placed
 section's position beneath it in the SAME image (one picture per section, not
 two — the image budget counts); `compare_placement` takes a batch of
-`{id, positions_mm}` entries, ≤8 pairs per call.
+`{id, positions_mm}` entries, ≤4 pairs per call (one image each).
 Rejected: labelled anatomy/landmarks, confidence and verification states,
 damage masks, an anatomy-based gap review, a validity-vs-verification audit.
 
@@ -94,7 +94,7 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
   caption). It takes either the five physical knobs or a ready 2x3 in the
   section's frame, so the interactive loop and `fit_affine` draw the same
   picture, and returns `(images, silhouette_iou)`. Its view controls:
-  `mode` (`overlay`, `side_by_side` — two images, `checkerboard`,
+  `mode` (`overlay`, `side_by_side` — one stitched image, `checkerboard`,
   `outlines` — atlas lines plus the section's own silhouette in a second grey
   on black — and the line-free `section` / `template`), `zoom` ([x0, y0, x1, y1] fractions of the CANVAS, cropped BEFORE
   the resize so it magnifies, with the bar redrawn for the new µm/px),
@@ -160,29 +160,33 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
 ## Context and tokens (2026-09-07)
 
 The OAuth lane resends the whole history on every call (the Codex backend
-refuses stored responses; the Codex CLI does the same), so a run's input
-cost is images-in-context x calls, quadratic in the call count, at ~480
-tokens per 512-px image. Three things hold it down:
-- `adk/plugins.py WorkingSetImages`, wired as the `ContextFilterPlugin`
-  custom filter, one instance per session: tool images live in context
-  until they exceed HIGH (48), then the set is cut to LOW (16, never below
-  the newest two calls) in ONE batch, and once anything is cut the seed
-  strip's images go too. Batches, not per-call trimming, because upstream
-  prompt caching pays only for a byte-stable prefix (the old trimmer moved
-  the boundary every call). Replaying run 4's trace: 1.35M -> 525k raw,
-  last call 93k -> 30k, ~220k uncached if the cache hits.
+refuses stored responses; the Codex CLI does the same, and OpenAI bills the
+whole chain even over its WebSocket transport), so a run's input cost is
+images-in-context x calls, at ~250-540 tokens per image. LangSlice follows
+the frontier computer-use harnesses (OpenAI's loop: 1 screenshot; Fara-7B,
+UFO, Anthropic's reference loop: 3; text carries everything older):
+- **At most 4 images per call** (`render.MAX_IMAGES_PER_CALL`): `view_slices`,
+  `fetch_atlas`, `orient_slices`, `fit_affine` panels; `compare_placement`
+  ≤4 pairs, one image per pair (`side_by_side` is stitched); `set_positions`
+  pictures its first 4 written sections, each section over its atlas, and
+  names the rest in `unpictured`; `view_stack` is ONE contact sheet
+  (`render.stack_sheet`, 256-px thumbnails, a grid by design) plus the plot.
+- **Only the newest call's images stay in context**
+  (`adk/plugins.py WorkingSetImages`, the `ContextFilterPlugin` custom
+  filter, one instance per session). Older tool results keep their JSON and
+  say their images were dropped; the seed strip's images go as soon as the
+  first tool images exist (labels stay). The cut only moves forward, so the
+  cached prefix is stable and an eviction invalidates only the tail.
 - `session.py TokenTally` prints and traces every call's usage (input,
-  cached, output) and `JobSpec.max_input_tokens` ends a run that passes it.
-- `openai_oauth.py`: `prompt_cache_key` and the `session_id` header are one
-  stable id per session; `x-codex-*` quota headers, when the backend sends
-  them, ride on the response as `custom_metadata["quota"]` and print with
-  the token line; a 429 names the quota it saw.
-Next lever if this is not enough: the Codex WebSocket transport, which
-sends only the new items with `previous_response_id` (the CLI's
-`get_incremental_items`); cached input is weighted ~0.1x in every OpenAI
-accounting surface, most likely the Plus window too (not officially stated).
-ADK's own `ContextFilterPlugin` invocation trimming counts human turns and
-would trim nothing here; `EventsCompactionConfig` costs model calls.
+  cached, output); `JobSpec.max_input_tokens` (750k) ends a run that passes
+  it. `openai_oauth.py` sends one stable `prompt_cache_key`/`session_id` per
+  session and surfaces `x-codex-*` quota headers.
+Run 4 on M04 (2026-09-07, 48-image working set, 16-image batches) spent
+1.3M input tokens (93k on the last call) and a Plus window ended it; that is
+the number this section exists to keep down. Not adopted, on Nash's call:
+server-side compaction (for heavy text; we are light text, heavy image) and
+a `Memorize` action (GPT-6 carries its reasoning forward already). The
+WebSocket transport is a latency lever only.
 
 ## Rules that are not negotiable here
 

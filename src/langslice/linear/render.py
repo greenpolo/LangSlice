@@ -57,6 +57,16 @@ SEED_IMAGE_LONG_EDGE = 512
 PREVIEW_LONG_EDGE = 512
 #: Long edge of the ONE image the interactive alignment loop looks at.
 OVERLAY_LONG_EDGE = 768
+
+#: Images one tool call may return. Mature vision-action harnesses keep one
+#: to four images in context at any time (Fara-7B, UFO, Anthropic's loop: 3;
+#: OpenAI's computer-use loop: 1) and carry everything older as text; the
+#: context filter keeps only the newest call's images, so this is also the
+#: most the model ever sees at once.
+MAX_IMAGES_PER_CALL = 4
+
+#: Long edge of one section in the ``view_stack`` contact sheet.
+SHEET_THUMB_LONG_EDGE = 256
 #: Font size of the label strip :func:`caption` burns into an image.
 CAPTION_PX = 14
 
@@ -282,52 +292,28 @@ def slice_flags(record: SliceState) -> list[str]:
     return flags
 
 
-def stack_image_parts(
+def stack_pictures(
     state: StackState,
     ctx: EngineContext,
     *,
     long_edge: int = SEED_IMAGE_LONG_EDGE,
     by_position: bool = False,
     under: Callable[[SliceState], Image.Image | None] | None = None,
-) -> list[types.Part]:
-    """The whole stack as labelled text+image pairs, in corrected order.
+) -> list[tuple[str, Image.Image]]:
+    """``(label, captioned picture)`` per section, in corrected order.
 
-    *by_position* orders the strip by written position instead (unplaced
-    sections last) and puts each section's position and the signed distance
-    to the next placed one in its label. *under* returns a second image to
-    paste beneath a section's own in the same picture (None for none), so a
-    section and its atlas match travel as ONE captioned image.
-
-    Each section gets a one-line label — ``"<corrected index>: <filename>"``
-    plus any flags — immediately followed by its own image, rendered through
-    :func:`render_slice` so preprocessing and corrections are already applied.
-
-    One image per section rather than one thumbnail grid: a grid splits a fixed
-    vision-encoder patch budget across every section at once and lets
-    neighbouring sections share patch boundaries. A labelled sequence at a
-    modest resolution reads better, and the label is what binds each set of
-    pixels to a filename the model can quote back. The same label is burned
-    into the image (:func:`caption`), so it survives any transport that drops
-    the text part next to an attachment.
+    *by_position* orders by written position instead (unplaced last) and puts
+    each section's position and the signed distance to the next placed one in
+    its label. *under* returns a second image to paste beneath a section's
+    own in the same picture (None for none), so a section and its atlas match
+    travel as ONE captioned image. The label is burned into the picture
+    (:func:`caption`), so it survives any transport that drops the text next
+    to an attachment.
     """
     ordered = list(state.in_order())
     if by_position:
         ordered.sort(key=lambda r: (r.position_mm is None, r.position_mm or 0.0))
-    parts: list[types.Part] = [
-        types.Part.from_text(
-            text=(
-                f"The {len(state.slices)} sections of the stack follow, in "
-                + (
-                    "the order of their written positions (unplaced last)"
-                    if by_position
-                    else "their current corrected order"
-                )
-                + ", one image each. Every image is preceded by its label "
-                "'<index>: <filename>' and is rendered with any rotation and "
-                "flip already applied."
-            )
-        )
-    ]
+    out: list[tuple[str, Image.Image]] = []
     for slot, record in enumerate(ordered):
         flags = slice_flags(record)
         label = f"{record.index_corrected}: {record.id}"
@@ -343,13 +329,101 @@ def stack_image_parts(
                     label += f" ({following.position_mm - record.position_mm:+.2f} to next)"
         if flags:
             label += f"  [{'; '.join(flags)}]"
-        parts.append(types.Part.from_text(text=label))
         picture = render_slice(ctx, record, long_edge=long_edge, frame=True)
         below = under(record) if under is not None else None
         if below is not None:
-            picture = stacked(picture, below)
-        parts.append(image_to_part(caption(picture, label)))
+            picture = stacked(picture, resize_long_edge(below, long_edge))
+        out.append((label, caption(picture, label)))
+    return out
+
+
+def stack_image_parts(
+    state: StackState,
+    ctx: EngineContext,
+    *,
+    long_edge: int = SEED_IMAGE_LONG_EDGE,
+) -> list[types.Part]:
+    """The whole stack as labelled text+image pairs, in corrected order.
+
+    Each section gets a one-line label — ``"<corrected index>: <filename>"``
+    plus any flags — immediately followed by its own image, rendered through
+    :func:`render_slice` so preprocessing and corrections are already applied.
+
+    One image per section rather than one thumbnail grid: a grid splits a fixed
+    vision-encoder patch budget across every section at once and lets
+    neighbouring sections share patch boundaries. A labelled sequence at a
+    modest resolution reads better, and the label is what binds each set of
+    pixels to a filename the model can quote back. This is the seed message
+    only: the context filter drops these images as soon as the first tool
+    images arrive, so the strip costs one request.
+    """
+    parts: list[types.Part] = [
+        types.Part.from_text(
+            text=(
+                f"The {len(state.slices)} sections of the stack follow, in "
+                "their current corrected order, one image each. Every image is "
+                "preceded by its label '<index>: <filename>' and is rendered "
+                "with any rotation and flip already applied."
+            )
+        )
+    ]
+    for label, picture in stack_pictures(state, ctx, long_edge=long_edge):
+        parts.append(types.Part.from_text(text=label))
+        parts.append(image_to_part(picture))
     return parts
+
+
+def stack_sheet(
+    state: StackState,
+    ctx: EngineContext,
+    *,
+    under: Callable[[SliceState], Image.Image | None] | None = None,
+    columns: int = 8,
+) -> Image.Image:
+    """One contact sheet of the stack in written-position order, each
+    section (over its atlas match, via *under*) captioned with its label.
+
+    A grid, against the one-image-per-section rule of the seed strip: this is
+    the review picture of a stack the model has already read section by
+    section, and one image is what keeps the whole-stack review inside the
+    per-call image budget. Detail is one ``view_slices`` call away.
+    """
+    pictures = [
+        picture
+        for _, picture in stack_pictures(
+            state, ctx, long_edge=SHEET_THUMB_LONG_EDGE, by_position=True, under=under
+        )
+    ]
+    return grid(pictures, columns=columns)
+
+
+def grid(images: list[Image.Image], *, columns: int) -> Image.Image:
+    """Tile *images* left to right, top to bottom, on black."""
+    if not images:
+        return Image.new("RGB", (8, 8), (0, 0, 0))
+    gap = 6
+    cell_w = max(image.width for image in images)
+    cell_h = max(image.height for image in images)
+    columns = max(1, min(columns, len(images)))
+    rows = -(-len(images) // columns)
+    out = Image.new(
+        "RGB", (columns * cell_w + (columns - 1) * gap, rows * cell_h + (rows - 1) * gap), (0, 0, 0)
+    )
+    for index, image in enumerate(images):
+        x = (index % columns) * (cell_w + gap)
+        y = (index // columns) * (cell_h + gap)
+        out.paste(image.convert("RGB"), (x, y))
+    return out
+
+
+def beside(left: Image.Image, right: Image.Image) -> Image.Image:
+    """*left* next to *right* on black, top-aligned, a thin gap between."""
+    gap = 6
+    height = max(left.height, right.height)
+    out = Image.new("RGB", (left.width + gap + right.width, height), (0, 0, 0))
+    out.paste(left.convert("RGB"), (0, 0))
+    out.paste(right.convert("RGB"), (left.width + gap, 0))
+    return out
 
 
 def stacked(top: Image.Image, bottom: Image.Image) -> Image.Image:

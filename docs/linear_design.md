@@ -96,17 +96,17 @@ in any payload or prompt (see `lean-harness` history in `linear/CLAUDE.md`).
 | --- | --- | --- |
 | `status` | always | one row per section in corrected order: index, id, position_mm, delta_to_next_mm (signed), flip, rotation_deg, damaged(+note), transform kind, transform_iou, transform_mirrored, caveats; plus cutting angles and interval breaks. The `ls` of the environment. |
 | `validate(interval_breaks)` | always | runs exactly the submit gates and returns the refusal or `{"status": "ok", "would_submit": true}`; writes nothing. |
-| `view_slices(ids)` | always | up to 8 sections at higher resolution, rendered as corrected, each captioned with its index and filename. |
-| `fetch_atlas(positions_mm)` | always | up to 8 atlas sections, rendered at the current cutting angles, each captioned with its position (and the angles when oblique). |
+| `view_slices(ids)` | always | up to 4 sections at higher resolution, rendered as corrected, each captioned with its index and filename. |
+| `fetch_atlas(positions_mm)` | always | up to 4 atlas sections, rendered at the current cutting angles, each captioned with its position (and the angles when oblique). |
 | `note(text)` | always | append to the run notes. |
 | `undo()` / `redo()` | always | snapshot stack; a batch call undoes as one. |
 | `orient_slices([{id, flip?, rotate_deg?}])` | reorder.flip (flip) / reorder (rotate) | toggle flip, add rotation; returns each changed section rendered as it now stands (≤8). |
 | `reorder_slices(new_order)` | reorder | full permutation, by filename (never by corrected index: the index is what it changes); changes corrected indices only, positions and transforms are kept. |
 | `move_slice(id, after)` | reorder | incremental move; same rule. |
 | `mark_damaged([{id, note}])` / unmark | always | agent-internal classification. |
-| `set_positions([{id, position_mm}])` | position | batch write, clamped to the atlas range; returns, per written section (≤8), the section beside the atlas section at the position it was given. |
-| `compare_placement([{id, positions_mm?}], mode, zoom, template_opacity, outlines)` | position | each section on one physical-scale canvas with the atlas at each of its candidate positions (≤8 pairs per call; no positions = its current one), in any `VIEW_MODES` view with the outlines over it. Writes nothing. |
-| `view_stack()` | position | every section in the order of its written position with the atlas at its position pasted beneath it in the same image, labelled with index, filename, position and the distance to the next, plus a plot of position against corrected index (damaged in red). Writes nothing. |
+| `set_positions([{id, position_mm}])` | position | batch write, clamped to the atlas range; returns, for the first 4 written sections, one image each: the section over the atlas section at the position it was given; the rest are written without a picture (`unpictured`). |
+| `compare_placement([{id, positions_mm?}], mode, zoom, template_opacity, outlines)` | position | each section on one physical-scale canvas with the atlas at each of its candidate positions (≤4 pairs per call, one image per pair; no positions = its current one), in any `VIEW_MODES` view with the outlines over it. Writes nothing. |
+| `view_stack()` | position | one contact sheet of every section in the order of its written position, each over the atlas at its position and captioned with index, filename, position and the distance to the next, plus a plot of position against corrected index (damaged in red): two images. Writes nothing. |
 | `run_deepslice(ids?, allow_angle_change, keep=[ids])` | position.deepslice | positions (+ angles) for undamaged sections; UNAVAILABLE unless installed and plane/atlas supported. |
 | `fit_position(id, window_mm, angles?)` | position.bayesian | `oblique.fit_oblique` at the section's current position: best position (and angles) with score; writes nothing. |
 | `set_cutting_angles(pitch_deg, yaw_deg)` | transform.angles | stack-wide; subsequent atlas fetches and fits use them. |
