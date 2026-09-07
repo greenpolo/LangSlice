@@ -9,10 +9,11 @@ from google.genai import types
 
 from langslice.adk import TOOL_MEDIA_PARTS_KEY
 from langslice.adk.plugins import (
-    DEFAULT_KEEP_LAST_TOOL_IMAGES,
+    DEFAULT_HIGH_WATER_IMAGES,
+    DEFAULT_LOW_WATER_IMAGES,
     ModelCallPacingPlugin,
     RequestCapturePlugin,
-    trim_stale_tool_images,
+    WorkingSetImages,
 )
 
 
@@ -165,35 +166,6 @@ def _tool_turn(n_images: int) -> types.Content:
     return types.Content(role="user", parts=[_media_part(n_images)])
 
 
-def test_trim_keeps_newest_tool_images_and_user_images():
-    histology = types.Content(
-        role="user",
-        parts=[types.Part.from_bytes(mime_type="image/jpeg", data=b"slice")],
-    )
-    contents = [histology, _tool_turn(6), _tool_turn(6), _tool_turn(6)]
-    out = trim_stale_tool_images(contents, keep_last=12)
-
-    def n_media(c: types.Content) -> int:
-        return sum(
-            len(p.function_response.parts or [])
-            for p in (c.parts or [])
-            if p.function_response is not None
-        )
-
-    # Oldest tool call stripped, newest two kept, histology untouched.
-    assert [n_media(c) for c in out[1:]] == [0, 6, 6]
-    assert out[0].parts is not None and out[0].parts[0].inline_data is not None
-    # JSON result survives on the stripped call, and says its images are gone.
-    stripped = out[1].parts
-    assert stripped is not None
-    fr = stripped[0].function_response
-    assert fr is not None and fr.response["status"] == "ok"
-    assert "dropped from context" in fr.response["images"]
-    assert contents[1].parts[0].function_response.response == {"status": "ok"}
-    # Input list and its contents are not mutated.
-    assert sum(n_media(c) for c in contents[1:]) == 18
-
-
 def _kept(contents: list[types.Content]) -> list[int]:
     return [
         len(p.function_response.parts or [])
@@ -203,42 +175,72 @@ def _kept(contents: list[types.Content]) -> list[int]:
     ]
 
 
-def test_trim_noop_under_budget_and_always_keeps_newest():
-    contents = [_tool_turn(5), _tool_turn(5)]
-    assert trim_stale_tool_images(contents, keep_last=12) is contents
-    # A single oversized newest call is still kept in full.
-    big = [_tool_turn(6), _tool_turn(6), _tool_turn(20)]
-    assert _kept(trim_stale_tool_images(big, keep_last=12)) == [0, 6, 20]
+def _seed() -> types.Content:
+    return types.Content(
+        role="user",
+        parts=[
+            types.Part.from_text(text="0: a.tif"),
+            types.Part.from_bytes(mime_type="image/jpeg", data=b"slice"),
+        ],
+    )
 
 
-def test_trim_always_keeps_the_two_newest_calls_over_budget():
-    """Two full sweeps must stay comparable however big they are.
+def test_working_set_trims_in_batches_and_keeps_the_prefix_stable():
+    """Above HIGH the set drops to LOW in one go; then nothing moves until
+    the next overflow, so the request prefix stays byte-identical between
+    trims (the upstream prompt cache pays only for a stable prefix)."""
+    ws = WorkingSetImages(high=12, low=6)
+    history = [_seed(), _tool_turn(4), _tool_turn(4), _tool_turn(4)]
+    assert ws(history) is history  # 12 is not above 12
+    history.append(_tool_turn(4))  # 16 > 12: cut to <= 6 (newest two calls: 8)
+    assert _kept(ws(history)) == [0, 0, 4, 4]
+    assert ws.trims == 1
+    history.append(_tool_turn(1))  # 9 <= 12: the cut does not move
+    assert _kept(ws(history)) == [0, 0, 4, 4, 1]
+    assert ws.trims == 1
+    history.append(_tool_turn(4))  # 13 > 12: cut again down to the newest two
+    assert _kept(ws(history)) == [0, 0, 0, 0, 1, 4]
+    assert ws.trims == 2
 
-    The 12-image budget plus a one-call floor left an agent with only its
-    newest sweep in view: it could not compare candidate levels at all.
-    """
-    contents = [_tool_turn(8), _tool_turn(8), _tool_turn(8)]
 
-    out = trim_stale_tool_images(contents, keep_last=4)
+def test_working_set_dropped_results_say_so_and_do_not_mutate_the_input():
+    ws = WorkingSetImages(high=4, low=2)
+    contents = [_seed(), _tool_turn(3), _tool_turn(3), _tool_turn(3)]
+    out = ws(contents)
+    assert _kept(out) == [0, 3, 3]
+    fr = out[1].parts[0].function_response
+    assert fr is not None and fr.response["status"] == "ok"
+    assert "dropped from context" in fr.response["images"]
+    assert contents[1].parts[0].function_response.response == {"status": "ok"}
+    assert _kept(contents) == [3, 3, 3]
 
+
+def test_working_set_drops_the_seed_images_once_it_has_cut():
+    ws = WorkingSetImages(high=4, low=2)
+    contents = [_seed(), _tool_turn(3), _tool_turn(3)]
+    same = ws(contents)
+    assert same is contents  # under the bound: the seed strip is untouched
+    contents.append(_tool_turn(3))
+    out = ws(contents)
+    parts = out[0].parts or []
+    assert parts[0].text == "0: a.tif"  # labels stay
+    assert parts[1].inline_data is None and "dropped from context" in (parts[1].text or "")
+    assert contents[0].parts[1].inline_data is not None
+
+
+def test_working_set_always_keeps_the_two_newest_calls():
+    ws = WorkingSetImages(high=4, low=2)
+    out = ws([_tool_turn(8), _tool_turn(8), _tool_turn(8)])
     assert _kept(out) == [0, 8, 8]
 
 
-def test_trim_default_budget_holds_a_whole_positioning_run():
-    """Two 8-image sweeps plus five 16-image set_positions batches: 96, kept.
-
-    At 24 that run kept only its newest two calls, and GPT-6 Astra reported
-    the older results as "attached but no image" in two debriefs.
-    """
-    assert DEFAULT_KEEP_LAST_TOOL_IMAGES == 128
-    contents = [_tool_turn(8), _tool_turn(8), *(_tool_turn(16) for _ in range(5))]
-    assert trim_stale_tool_images(contents) is contents
-    # Three more batches push past 128: the oldest calls go, newest stay.
-    more = [*contents, *(_tool_turn(16) for _ in range(3))]
-    assert _kept(trim_stale_tool_images(more)) == [0, 0, 16, 16, 16, 16, 16, 16, 16, 16]
-
-
-def test_trim_drop_is_monotone_no_holes():
-    # Once an old call is dropped, even older small calls are dropped too.
-    contents = [_tool_turn(2), _tool_turn(2), _tool_turn(5), _tool_turn(10)]
-    assert _kept(trim_stale_tool_images(contents, keep_last=12)) == [0, 0, 5, 10]
+def test_working_set_defaults_fit_a_positioning_run():
+    """Two 16-image batches (compare + write) fit; the third overflows and
+    trims back to those two. ~48 images is ~24k tokens a call, against the
+    170 images / 93k tokens run 4 carried with no working set."""
+    assert (DEFAULT_HIGH_WATER_IMAGES, DEFAULT_LOW_WATER_IMAGES) == (48, 16)
+    ws = WorkingSetImages()
+    history = [_tool_turn(8), _tool_turn(8), _tool_turn(16), _tool_turn(16)]
+    assert ws(history) is history
+    history.append(_tool_turn(16))
+    assert _kept(ws(history)) == [0, 0, 0, 16, 16]

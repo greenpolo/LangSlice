@@ -31,7 +31,7 @@ from langslice.adk.model_resolver import (
 from langslice.adk.plugins import (
     ModelCallPacingPlugin,
     RequestCapturePlugin,
-    trim_stale_tool_images,
+    WorkingSetImages,
 )
 from langslice.linear.trace import open_trace
 
@@ -47,7 +47,8 @@ DEFAULT_MAX_ITERATIONS = 60
 def build_plugins(run_label: str) -> list[BasePlugin]:
     """The ADK plugins every LangSlice session runs with."""
     plugins: list[BasePlugin] = [
-        ContextFilterPlugin(custom_filter=trim_stale_tool_images)
+        # One working set per session: the instance remembers its cut.
+        ContextFilterPlugin(custom_filter=WorkingSetImages())
     ]
     model_call_delay_s = _env_float("LANGSLICE_ADK_MODEL_CALL_DELAY_S")
     if model_call_delay_s is not None and model_call_delay_s > 0:
@@ -199,6 +200,9 @@ async def run_agent_session(
             usage = getattr(event, "usage_metadata", None)
             if usage is not None and not getattr(event, "partial", False):
                 line = tokens.add(usage)
+                quota = (getattr(event, "custom_metadata", None) or {}).get("quota")
+                if quota:
+                    line += f"; quota {quota}"
                 (progress or logger.info)(f"[tokens] {line}")
                 if max_input_tokens is not None and tokens.input > max_input_tokens:
                     stopped = "input_budget"

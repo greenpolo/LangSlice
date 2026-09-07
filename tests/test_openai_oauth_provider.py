@@ -342,7 +342,7 @@ def test_build_request_body_carries_instructions_and_model():
 def _run_turn(monkeypatch, events: list[dict[str, Any]], *, stream: bool):
     captured: dict[str, Any] = {}
 
-    def fake_stream_events(body: dict[str, Any]):
+    def fake_stream_events(body: dict[str, Any], **_kw: Any):
         captured["body"] = body
         return iter(events)
 
@@ -416,7 +416,7 @@ def test_response_failed_raises(monkeypatch):
 def test_function_result_round_trip_body(monkeypatch):
     """A follow-up turn sends the tool result back as function_call_output."""
     monkeypatch.setattr(
-        chatgpt, "stream_events", lambda body: iter([{"type": "response.completed"}])
+        chatgpt, "stream_events", lambda body, **_kw: iter([{"type": "response.completed"}])
     )
     llm = chatgpt.ChatGptLlm(model="chatgpt/gpt-5.6-luna")
     request = LlmRequest(

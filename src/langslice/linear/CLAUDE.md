@@ -40,8 +40,11 @@ Nash kept five of its ten asks:
   8-image sweeps); with 16-image `set_positions` batches every call but the
   newest two lost its pixels on every later turn, which is exactly Astra's
   "early results said attached, later ones showed images" — in both runs.
-  Budget now 128 (a 134-image request was probed fine), a dropped call's
-  result says "dropped from context" instead of "attached", the tool text
+  Budget raised to 128 on 2026-09-06 — then run 4 (2026-09-07) carried 170
+  images / 93k input tokens on its last call and 1.3M over the run, and a
+  Plus window ended it. Now `WorkingSetImages` (see "Context and tokens"
+  below), a dropped call's result says "dropped from context" instead of
+  "attached", the tool text
   says its images follow in the next user message
   (`openai_oauth.content_to_input_items`), and the picture-returning writes
   report `render_failed`.
@@ -146,13 +149,40 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
   tool that exists, hard constraints. Nothing else.
 - `session.py` — the ADK agent builder, the plugins, the loop, and
   `TokenTally`: every call's usage is printed and traced, and
-  `JobSpec.max_input_tokens` (500k) ends the session when the run's summed
+  `JobSpec.max_input_tokens` (750k) ends the session when the run's summed
   input passes it. Run 4 on M04 spent 1.3M input tokens (93k on the last
   call, 170 images resent) and a Plus window ended it; never again.
 - `engine.py` — `EngineContext`, `ingest`, `apply_host_inputs`, `run_session`,
   `emit_results`, and `run(spec)`. No post pass: the session is the whole run.
 - `deepslice.py`, `trace.py` — the DeepSlice seam (reports `UNAVAILABLE`) and
   the full-content JSONL session trace.
+
+## Context and tokens (2026-09-07)
+
+The OAuth lane resends the whole history on every call (the Codex backend
+refuses stored responses; the Codex CLI does the same), so a run's input
+cost is images-in-context x calls, quadratic in the call count, at ~480
+tokens per 512-px image. Three things hold it down:
+- `adk/plugins.py WorkingSetImages`, wired as the `ContextFilterPlugin`
+  custom filter, one instance per session: tool images live in context
+  until they exceed HIGH (48), then the set is cut to LOW (16, never below
+  the newest two calls) in ONE batch, and once anything is cut the seed
+  strip's images go too. Batches, not per-call trimming, because upstream
+  prompt caching pays only for a byte-stable prefix (the old trimmer moved
+  the boundary every call). Replaying run 4's trace: 1.35M -> 525k raw,
+  last call 93k -> 30k, ~220k uncached if the cache hits.
+- `session.py TokenTally` prints and traces every call's usage (input,
+  cached, output) and `JobSpec.max_input_tokens` ends a run that passes it.
+- `openai_oauth.py`: `prompt_cache_key` and the `session_id` header are one
+  stable id per session; `x-codex-*` quota headers, when the backend sends
+  them, ride on the response as `custom_metadata["quota"]` and print with
+  the token line; a 429 names the quota it saw.
+Next lever if this is not enough: the Codex WebSocket transport, which
+sends only the new items with `previous_response_id` (the CLI's
+`get_incremental_items`); cached input is weighted ~0.1x in every OpenAI
+accounting surface, most likely the Plus window too (not officially stated).
+ADK's own `ContextFilterPlugin` invocation trimming counts human turns and
+would trim nothing here; `EventsCompactionConfig` costs model calls.
 
 ## Rules that are not negotiable here
 

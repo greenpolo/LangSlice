@@ -16,75 +16,100 @@ from google.adk.plugins.base_plugin import BasePlugin
 from google.genai import types
 from PIL import Image
 
-# Tool images kept in context, newest first. 24 was sized for 8-image atlas
-# sweeps; once every write returned its picture (16 per set_positions batch)
-# it stripped every call but the newest two, and GPT-6 Astra reported, twice,
-# that early tool results "said attached but showed no image" (2026-09-06).
-# 128 covers a whole positioning run (a 134-image request was probed fine);
-# what is dropped now says so in the tool result instead of claiming
-# attachment.
-DEFAULT_KEEP_LAST_TOOL_IMAGES = 128
+#: Working-set bounds for tool-returned images, in images. Every call resends
+#: the whole history, so the images in context are the run's cost: run 4 on
+#: M04 (2026-09-07) carried 170 images / 93k input tokens on its last call
+#: and 1.3M over the run, at ~480 tokens per 512-px image. Upstream prompt
+#: caching only pays when the prefix is byte-stable, so the set is trimmed in
+#: batches (from above HIGH down to LOW) rather than one call at a time.
+DEFAULT_HIGH_WATER_IMAGES = 48
+DEFAULT_LOW_WATER_IMAGES = 16
 
-#: Media-bearing tool calls kept whatever the budget says. Two, so the model
+#: Media-bearing tool calls kept whatever the bounds say. Two, so the model
 #: can always compare its newest sweep against the one before it — a single
 #: oversized sweep must not evict every other atlas image in context.
 MIN_KEEP_TOOL_CALLS = 2
 
+_DROPPED_TOOL = "dropped from context to keep the working set small. Call again to see them."
+_DROPPED_USER = "(image dropped from context; `view_slices` shows it again)"
 
-def trim_stale_tool_images(
-    contents: list[types.Content], *, keep_last: int = DEFAULT_KEEP_LAST_TOOL_IMAGES
-) -> list[types.Content]:
-    """Drop tool-returned images from all but the most recent tool calls.
 
-    Without this, every atlas sweep is replayed to the model on every later
-    turn (~2.75x prompt-token redundancy measured over real runs). The JSON
-    tool results still name every fetched position, and the model can
-    re-fetch any position it wants to see again, so only the newest calls
-    keep their pixels: walking newest-to-oldest, the newest
-    :data:`MIN_KEEP_TOOL_CALLS` calls are kept whatever their size, further
-    media is kept while the running total stays within *keep_last*, and every
-    call older than the first drop is dropped too. User-message images (the
-    histology slice) are never touched.
+class WorkingSetImages:
+    """Bound the images in context to a working set, trimming in batches.
+
+    One instance per session (it remembers how much of the history is cut):
+    the cut only ever moves forward, so between trims the request prefix is
+    byte-identical and the upstream prompt cache can hit. Walking oldest to
+    newest, tool images before the cut are dropped and their JSON says so;
+    the newest :data:`MIN_KEEP_TOOL_CALLS` calls always keep their pixels.
+    Once anything has been cut, user-message images older than the cut (the
+    seed strip) go too — by then the stack has been reviewed through the
+    tools and any section can be shown again on request.
     """
-    media_sites = [
-        (ci, pi, len(part.function_response.parts))
-        for ci, content in enumerate(contents)
-        for pi, part in enumerate(content.parts or [])
-        if part.function_response is not None and part.function_response.parts
-    ]
-    kept = 0
-    dropping = False
-    drop: list[tuple[int, int]] = []
-    for rank, (ci, pi, n) in enumerate(reversed(media_sites)):
-        if rank >= MIN_KEEP_TOOL_CALLS and (dropping or kept + n > keep_last):
-            dropping = True
-            drop.append((ci, pi))
-        else:
-            kept += n
-    if not drop:
-        return contents
-    out = list(contents)
-    note = (
-        f"dropped from context: older than the newest {keep_last} tool "
-        "images. Call again to see them."
-    )
-    for ci, pi in drop:
-        parts = list(out[ci].parts or [])
-        stale = parts[pi]
-        assert stale.function_response is not None
-        response = stale.function_response.response
-        # The result must not go on saying "attached" about pixels that are
-        # gone: the model reads that as a delivery failure.
-        honest = {**response, "images": note} if isinstance(response, dict) else response
-        parts[pi] = stale.model_copy(
-            update={
-                "function_response": stale.function_response.model_copy(
-                    update={"parts": None, "response": honest}
-                )
-            }
-        )
-        out[ci] = out[ci].model_copy(update={"parts": parts})
-    return out
+
+    def __init__(
+        self,
+        *,
+        high: int = DEFAULT_HIGH_WATER_IMAGES,
+        low: int = DEFAULT_LOW_WATER_IMAGES,
+    ) -> None:
+        if low > high:
+            raise ValueError(f"low water {low} above high water {high}")
+        self.high = high
+        self.low = low
+        self.cut = 0  # media-bearing tool calls dropped, oldest first
+        self.trims = 0
+
+    def __call__(self, contents: list[types.Content]) -> list[types.Content]:
+        sites = [
+            (ci, pi, len(part.function_response.parts))
+            for ci, content in enumerate(contents)
+            for pi, part in enumerate(content.parts or [])
+            if part.function_response is not None and part.function_response.parts
+        ]
+        kept = sum(n for _, _, n in sites[self.cut :])
+        if kept > self.high:
+            cut = self.cut
+            while kept > self.low and len(sites) - cut > MIN_KEEP_TOOL_CALLS:
+                kept -= sites[cut][2]
+                cut += 1
+            if cut != self.cut:
+                self.cut = cut
+                self.trims += 1
+        if self.cut == 0:
+            return contents
+        first_kept_content = sites[self.cut][0] if self.cut < len(sites) else len(contents)
+        out = list(contents)
+        for ci, pi, _ in sites[: self.cut]:
+            parts = list(out[ci].parts or [])
+            stale = parts[pi]
+            assert stale.function_response is not None
+            response = stale.function_response.response
+            # The result must not go on saying "attached" about pixels that
+            # are gone: the model reads that as a delivery failure.
+            honest = (
+                {**response, "images": _DROPPED_TOOL} if isinstance(response, dict) else response
+            )
+            parts[pi] = stale.model_copy(
+                update={
+                    "function_response": stale.function_response.model_copy(
+                        update={"parts": None, "response": honest}
+                    )
+                }
+            )
+            out[ci] = out[ci].model_copy(update={"parts": parts})
+        for ci in range(first_kept_content):
+            content = out[ci]
+            if content.role != "user" or not any(
+                part.inline_data is not None for part in content.parts or []
+            ):
+                continue
+            parts = [
+                types.Part.from_text(text=_DROPPED_USER) if part.inline_data is not None else part
+                for part in content.parts or []
+            ]
+            out[ci] = content.model_copy(update={"parts": parts})
+        return out
 
 
 class ModelCallPacingPlugin(BasePlugin):

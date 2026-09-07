@@ -37,6 +37,7 @@ import asyncio
 import base64
 import hashlib
 import http.server
+import itertools
 import json
 import logging
 import os
@@ -319,10 +320,36 @@ def iter_sse(response: requests.Response) -> Iterator[dict[str, Any]]:
             continue
 
 
-def stream_events(body: dict[str, Any]) -> Iterator[dict[str, Any]]:
-    """POST a Responses request and yield its SSE events, refreshing on 401."""
+#: Quota headers the Codex backend may send (the CLI's ``/status`` reads
+#: them); ``primary`` is the short window, ``secondary`` the long one.
+QUOTA_HEADERS = (
+    "x-codex-primary-used-percent",
+    "x-codex-primary-reset-at",
+    "x-codex-secondary-used-percent",
+    "x-codex-secondary-reset-at",
+)
+
+
+def quota_from_headers(headers: Any) -> dict[str, str]:
+    """The quota headers present on a response, short keys, as strings."""
+    return {
+        name.removeprefix("x-codex-").replace("-", "_"): str(headers[name])
+        for name in QUOTA_HEADERS
+        if name in headers
+    }
+
+
+def stream_events(
+    body: dict[str, Any], *, session_id: str | None = None
+) -> Iterator[dict[str, Any]]:
+    """POST a Responses request and yield its SSE events, refreshing on 401.
+
+    The first event is a synthetic ``langslice.quota`` carrying any quota
+    headers the backend sent. *session_id* rides in the headers; keep it
+    stable across one agent loop so the backend routes to a warm cache.
+    """
     creds = load_credentials()
-    session_id = str(uuid.uuid4())
+    session_id = session_id or str(uuid.uuid4())
     response = requests.post(
         RESPONSES_URL, headers=_headers(creds, session_id), json=body, stream=True, timeout=600
     )
@@ -338,9 +365,14 @@ def stream_events(body: dict[str, Any]) -> Iterator[dict[str, Any]]:
         )
     if response.status_code >= 400:
         message = response.text[:500]
+        quota = quota_from_headers(response.headers)
         response.close()
-        raise RuntimeError(f"Codex Responses request failed ({response.status_code}): {message}")
-    return _closing(response)
+        raise RuntimeError(
+            f"Codex Responses request failed ({response.status_code}): {message}"
+            + (f" quota={quota}" if quota else "")
+        )
+    quota = quota_from_headers(response.headers)
+    return itertools.chain([{"type": "langslice.quota", "quota": quota}], _closing(response))
 
 
 def _closing(response: requests.Response) -> Iterator[dict[str, Any]]:
@@ -639,11 +671,14 @@ class ChatGptLlm(BaseLlm):
     ) -> AsyncGenerator[LlmResponse, None]:
         self._maybe_append_user_content(llm_request)
         body = self.build_request_body(llm_request)
-        events = await asyncio.to_thread(stream_events, body)
+        events = await asyncio.to_thread(
+            stream_events, body, session_id=self.prompt_cache_key
+        )
 
         text_chunks: list[str] = []
         calls: list[types.Part] = []
         usage: types.GenerateContentResponseUsageMetadata | None = None
+        quota: dict[str, str] = {}
 
         async for event in _aiter(events):
             kind = event.get("type")
@@ -677,6 +712,8 @@ class ChatGptLlm(BaseLlm):
                     )
             elif kind == "response.failed":
                 raise RuntimeError(f"Codex response.failed: {_failure_message(event)}")
+            elif kind == "langslice.quota":
+                quota = event.get("quota") or {}
             elif kind == "response.completed":
                 usage = _usage_metadata(event)
                 break
@@ -690,6 +727,7 @@ class ChatGptLlm(BaseLlm):
             content=types.Content(role="model", parts=parts),
             partial=False,
             usage_metadata=usage,
+            custom_metadata={"quota": quota} if quota else None,
             model_version=self.model,
         )
 
