@@ -69,10 +69,12 @@ thumbnail grid, which splits one vision-encoder patch budget across the whole
 stack at once.
 
 The job statement carries the job, the run's facts (`--fact`,
-`--hemisphere-cue`), one factual line per tool that exists, and the hard
-constraints. Nothing else: no strategy, no rules of thumb, no failure-mode
-warnings, and no tool payload carries an opinion. Every major benchmark failure
-worth tracing came back to advice the harness injected.
+`--hemisphere-cue`), one factual line per tool that exists, the hard
+constraints and, when positioning is on, a short `Method` section: place each
+section on its own evidence and compare candidate positions before writing,
+review the whole stack afterwards, re-check both sides of a gap before
+reporting a break, validate, submit. No rules of thumb, no failure-mode
+warnings, no region names, and no tool payload carries an opinion.
 
 `submit` is refused, with the numbers that refused it, when:
 

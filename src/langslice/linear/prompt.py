@@ -41,16 +41,18 @@ TOOL_LINES: dict[str, str] = {
     "call, by filename; positions and transforms are kept.",
     "move_slice": "moves one section in the corrected order; positions and "
     "transforms are kept.",
-    "compare_placement": "shows sections against the atlas at the candidate "
-    "positions you name for each (or its current one), up to 8 pairs, on one "
-    "physical-scale canvas; "
-    "`mode` is side_by_side, overlay, checkerboard, outlines, section or "
-    "template, `zoom` is [x0, y0, x1, y1] of the canvas, `template_opacity` "
-    "is 0..1 and `outlines` is all, outer or none; writes nothing.",
-    "view_stack": "every section in the order of its written position, the "
-    "atlas at its position beneath it in the same image, labelled with index, "
-    "filename, position and the distance to the next, plus a plot of position "
-    "against corrected index; writes nothing.",
+    "compare_placement": "tests candidate positions before you commit to one: "
+    "name a section with several positions (or none for its current one) and "
+    "it is drawn against the atlas at each, up to 8 pairs per call, on one "
+    "physical-scale canvas; e.g. one section at 4.6, 4.8 and 5.0 mm. `mode` "
+    "is side_by_side, overlay, checkerboard, outlines, section or template, "
+    "`zoom` is [x0, y0, x1, y1] of the canvas, `template_opacity` is 0..1 "
+    "and `outlines` is all, outer or none; writes nothing.",
+    "view_stack": "whole-stack review, meant for after the positions are "
+    "written and before `submit`: every section in the order of its written "
+    "position with the atlas at that position beneath it in the same image, "
+    "labelled with index, filename, position and the distance to the next, "
+    "plus a plot of position against corrected index; writes nothing.",
     "set_positions": "writes positions for one or more sections, clamped to "
     "the atlas range, and returns each written section beside the atlas "
     "section at the position it was given.",
@@ -206,6 +208,21 @@ def build_job_statement(
         "modified."
     )
 
+    method: list[str] = []
+    if spec.has("position"):
+        method = [
+            "",
+            "Method:",
+            "- Place each section on its own evidence, one at a time: compare "
+            "it against candidate atlas positions before writing, and do not "
+            "let the nominal interval stand in for a look.",
+            "- After writing, review the whole stack against the atlas, watch "
+            "for a section that sits out of sequence and for spacings that "
+            "differ from their neighbours, and re-check the sections on either "
+            "side of any gap before reporting an interval break.",
+            "- Validate, then submit.",
+        ]
+
     return "\n".join(
         [
             f"You are an expert neuroanatomist working on a stack of "
@@ -222,6 +239,7 @@ def build_job_statement(
             "",
             "Constraints:",
             *constraints,
+            *method,
             "",
             "Work with the tools, then call `submit`.",
         ]
