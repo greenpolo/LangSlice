@@ -25,8 +25,8 @@ TOOL_LINES: dict[str, str] = {
     "status": "the stack as it stands, one row per section in corrected order; "
     "every write returns only the rows it changed, this returns them all.",
     "validate": "runs the submit checks without submitting; writes nothing.",
-    "view_slices": "up to 8 named sections at higher resolution, as corrected.",
-    "fetch_atlas": "up to 8 atlas sections at the positions you name, rendered "
+    "view_slices": "up to 4 named sections at higher resolution, as corrected.",
+    "fetch_atlas": "up to 4 atlas sections at the positions you name, rendered "
     "at the stack's cutting angles.",
     "note": "appends one line to the run notes.",
     "undo": "reverses the last write; one tool call undoes as one step.",
@@ -43,19 +43,22 @@ TOOL_LINES: dict[str, str] = {
     "transforms are kept.",
     "compare_placement": "tests candidate positions before you commit to one: "
     "name a section with several positions (or none for its current one) and "
-    "it is drawn against the atlas at each, up to 8 pairs per call, on one "
-    "physical-scale canvas; e.g. one section at 4.6, 4.8 and 5.0 mm. `mode` "
+    "it is drawn against the atlas at each, up to 4 pairs per call, one image "
+    "per pair, on one physical-scale canvas; e.g. one section at 4.6, 4.8 and "
+    "5.0 mm. `mode` "
     "is side_by_side, overlay, checkerboard, outlines, section or template, "
     "`zoom` is [x0, y0, x1, y1] of the canvas, `template_opacity` is 0..1 "
     "and `outlines` is all, outer or none; writes nothing.",
     "view_stack": "whole-stack review, meant for after the positions are "
-    "written and before `submit`: every section in the order of its written "
-    "position with the atlas at that position beneath it in the same image, "
-    "labelled with index, filename, position and the distance to the next, "
-    "plus a plot of position against corrected index; writes nothing.",
+    "written and before `submit`: one contact sheet of every section in the "
+    "order of its written position with the atlas at that position beneath "
+    "it, each captioned with index, filename, position and the distance to "
+    "the next, plus a plot of position against corrected index; writes "
+    "nothing.",
     "set_positions": "writes positions for one or more sections, clamped to "
-    "the atlas range, and returns each written section beside the atlas "
-    "section at the position it was given.",
+    "the atlas range, and returns the first 4 written sections each over the "
+    "atlas section at the position it was given; the rest are written "
+    "without a picture.",
     "run_deepslice": "seeds positions (and optionally angles) with DeepSlice.",
     "fit_position": "searches the atlas around one section's current position "
     "and reports the best it found; writes nothing.",

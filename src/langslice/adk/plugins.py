@@ -16,71 +16,51 @@ from google.adk.plugins.base_plugin import BasePlugin
 from google.genai import types
 from PIL import Image
 
-#: Working-set bounds for tool-returned images, in images. Every call resends
-#: the whole history, so the images in context are the run's cost: run 4 on
-#: M04 (2026-09-07) carried 170 images / 93k input tokens on its last call
-#: and 1.3M over the run, at ~480 tokens per 512-px image. Upstream prompt
-#: caching only pays when the prefix is byte-stable, so the set is trimmed in
-#: batches (from above HIGH down to LOW) rather than one call at a time.
-DEFAULT_HIGH_WATER_IMAGES = 48
-DEFAULT_LOW_WATER_IMAGES = 16
+#: Media-bearing tool calls whose images stay in context: the newest one.
+#: Mature vision-action harnesses keep one to four images in context at any
+#: time and carry everything older as text (OpenAI's computer-use loop: the
+#: newest screenshot; Fara-7B, UFO, Anthropic's reference loop: three). Every
+#: call resends the whole history, so images in context are the run's cost:
+#: run 4 on M04 (2026-09-07) carried 170 images / 93k input tokens on its
+#: last call and 1.3M over the run, at ~250-540 tokens per image.
+DEFAULT_KEEP_IMAGE_CALLS = 1
 
-#: Media-bearing tool calls kept whatever the bounds say. Two, so the model
-#: can always compare its newest sweep against the one before it — a single
-#: oversized sweep must not evict every other atlas image in context.
-MIN_KEEP_TOOL_CALLS = 2
-
-_DROPPED_TOOL = "dropped from context to keep the working set small. Call again to see them."
+_DROPPED_TOOL = (
+    "dropped from context: only the newest call's images are kept. Call again to see them."
+)
 _DROPPED_USER = "(image dropped from context; `view_slices` shows it again)"
 
 
 class WorkingSetImages:
-    """Bound the images in context to a working set, trimming in batches.
+    """Keep only the newest tool call's images in context.
 
-    One instance per session (it remembers how much of the history is cut):
-    the cut only ever moves forward, so between trims the request prefix is
-    byte-identical and the upstream prompt cache can hit. Walking oldest to
-    newest, tool images before the cut are dropped and their JSON says so;
-    the newest :data:`MIN_KEEP_TOOL_CALLS` calls always keep their pixels.
-    Once anything has been cut, user-message images older than the cut (the
-    seed strip) go too — by then the stack has been reviewed through the
-    tools and any section can be shown again on request.
+    One instance per session: the cut only moves forward, so the prefix
+    before it is byte-identical from one request to the next and the
+    upstream prompt cache pays for everything but the tail. Tool images
+    before the cut are dropped and their JSON says so; user-message images
+    (the seed strip) go as soon as the first tool images exist — by then the
+    model has read the strip, and any section can be shown again on request.
     """
 
-    def __init__(
-        self,
-        *,
-        high: int = DEFAULT_HIGH_WATER_IMAGES,
-        low: int = DEFAULT_LOW_WATER_IMAGES,
-    ) -> None:
-        if low > high:
-            raise ValueError(f"low water {low} above high water {high}")
-        self.high = high
-        self.low = low
+    def __init__(self, *, keep_calls: int = DEFAULT_KEEP_IMAGE_CALLS) -> None:
+        if keep_calls < 1:
+            raise ValueError("keep_calls must be at least 1")
+        self.keep_calls = keep_calls
         self.cut = 0  # media-bearing tool calls dropped, oldest first
-        self.trims = 0
 
     def __call__(self, contents: list[types.Content]) -> list[types.Content]:
         sites = [
-            (ci, pi, len(part.function_response.parts))
+            (ci, pi)
             for ci, content in enumerate(contents)
             for pi, part in enumerate(content.parts or [])
             if part.function_response is not None and part.function_response.parts
         ]
-        kept = sum(n for _, _, n in sites[self.cut :])
-        if kept > self.high:
-            cut = self.cut
-            while kept > self.low and len(sites) - cut > MIN_KEEP_TOOL_CALLS:
-                kept -= sites[cut][2]
-                cut += 1
-            if cut != self.cut:
-                self.cut = cut
-                self.trims += 1
-        if self.cut == 0:
+        if not sites:
             return contents
+        self.cut = max(self.cut, len(sites) - self.keep_calls)
         first_kept_content = sites[self.cut][0] if self.cut < len(sites) else len(contents)
         out = list(contents)
-        for ci, pi, _ in sites[: self.cut]:
+        for ci, pi in sites[: self.cut]:
             parts = list(out[ci].parts or [])
             stale = parts[pi]
             assert stale.function_response is not None

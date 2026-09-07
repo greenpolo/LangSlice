@@ -9,8 +9,7 @@ from google.genai import types
 
 from langslice.adk import TOOL_MEDIA_PARTS_KEY
 from langslice.adk.plugins import (
-    DEFAULT_HIGH_WATER_IMAGES,
-    DEFAULT_LOW_WATER_IMAGES,
+    DEFAULT_KEEP_IMAGE_CALLS,
     ModelCallPacingPlugin,
     RequestCapturePlugin,
     WorkingSetImages,
@@ -185,42 +184,39 @@ def _seed() -> types.Content:
     )
 
 
-def test_working_set_trims_in_batches_and_keeps_the_prefix_stable():
-    """Above HIGH the set drops to LOW in one go; then nothing moves until
-    the next overflow, so the request prefix stays byte-identical between
-    trims (the upstream prompt cache pays only for a stable prefix)."""
-    ws = WorkingSetImages(high=12, low=6)
-    history = [_seed(), _tool_turn(4), _tool_turn(4), _tool_turn(4)]
-    assert ws(history) is history  # 12 is not above 12
-    history.append(_tool_turn(4))  # 16 > 12: cut to <= 6 (newest two calls: 8)
-    assert _kept(ws(history)) == [0, 0, 4, 4]
-    assert ws.trims == 1
-    history.append(_tool_turn(1))  # 9 <= 12: the cut does not move
-    assert _kept(ws(history)) == [0, 0, 4, 4, 1]
-    assert ws.trims == 1
-    history.append(_tool_turn(4))  # 13 > 12: cut again down to the newest two
-    assert _kept(ws(history)) == [0, 0, 0, 0, 1, 4]
-    assert ws.trims == 2
+def test_working_set_keeps_only_the_newest_call_and_never_moves_back():
+    """The newest media-bearing call keeps its pixels; everything older is
+    text. The cut only advances, so the prefix before it is byte-identical
+    between requests and the upstream prompt cache pays for it."""
+    assert DEFAULT_KEEP_IMAGE_CALLS == 1
+    ws = WorkingSetImages()
+    history = [_seed(), _tool_turn(4)]
+    assert _kept(ws(history)) == [4]
+    history.append(_tool_turn(3))
+    assert _kept(ws(history)) == [0, 3]
+    assert ws.cut == 1
+    history.append(_tool_turn(2))
+    assert _kept(ws(history)) == [0, 0, 2]
+    assert ws.cut == 2
 
 
 def test_working_set_dropped_results_say_so_and_do_not_mutate_the_input():
-    ws = WorkingSetImages(high=4, low=2)
-    contents = [_seed(), _tool_turn(3), _tool_turn(3), _tool_turn(3)]
+    ws = WorkingSetImages()
+    contents = [_seed(), _tool_turn(3), _tool_turn(3)]
     out = ws(contents)
-    assert _kept(out) == [0, 3, 3]
+    assert _kept(out) == [0, 3]
     fr = out[1].parts[0].function_response
     assert fr is not None and fr.response["status"] == "ok"
     assert "dropped from context" in fr.response["images"]
     assert contents[1].parts[0].function_response.response == {"status": "ok"}
-    assert _kept(contents) == [3, 3, 3]
+    assert _kept(contents) == [3, 3]
 
 
-def test_working_set_drops_the_seed_images_once_it_has_cut():
-    ws = WorkingSetImages(high=4, low=2)
-    contents = [_seed(), _tool_turn(3), _tool_turn(3)]
-    same = ws(contents)
-    assert same is contents  # under the bound: the seed strip is untouched
-    contents.append(_tool_turn(3))
+def test_working_set_drops_the_seed_images_once_tool_images_exist():
+    ws = WorkingSetImages()
+    contents = [_seed()]
+    assert ws(contents) is contents  # no tool images yet: the strip is read as sent
+    contents.append(_tool_turn(1))
     out = ws(contents)
     parts = out[0].parts or []
     assert parts[0].text == "0: a.tif"  # labels stay
@@ -228,19 +224,7 @@ def test_working_set_drops_the_seed_images_once_it_has_cut():
     assert contents[0].parts[1].inline_data is not None
 
 
-def test_working_set_always_keeps_the_two_newest_calls():
-    ws = WorkingSetImages(high=4, low=2)
+def test_working_set_can_keep_more_calls():
+    ws = WorkingSetImages(keep_calls=2)
     out = ws([_tool_turn(8), _tool_turn(8), _tool_turn(8)])
     assert _kept(out) == [0, 8, 8]
-
-
-def test_working_set_defaults_fit_a_positioning_run():
-    """Two 16-image batches (compare + write) fit; the third overflows and
-    trims back to those two. ~48 images is ~24k tokens a call, against the
-    170 images / 93k tokens run 4 carried with no working set."""
-    assert (DEFAULT_HIGH_WATER_IMAGES, DEFAULT_LOW_WATER_IMAGES) == (48, 16)
-    ws = WorkingSetImages()
-    history = [_tool_turn(8), _tool_turn(8), _tool_turn(16), _tool_turn(16)]
-    assert ws(history) is history
-    history.append(_tool_turn(16))
-    assert _kept(ws(history)) == [0, 0, 0, 16, 16]

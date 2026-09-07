@@ -263,7 +263,7 @@ def test_compare_placement_draws_the_section_on_each_atlas_position(tmp_path: Pa
     assert current["status"] == "ok"
     assert current["compared"][0]["position_mm"] == 0.2
     assert current["compared"][0]["current_position_mm"] == 0.2
-    assert len(current[TOOL_MEDIA_PARTS_KEY]) == 2  # side_by_side: section, template
+    assert len(current[TOOL_MEDIA_PARTS_KEY]) == 1  # side_by_side: one stitched image
 
     stepped = compare([{"id": "s.tif", "positions_mm": [0.1, 0.2, 0.3]}], "overlay", [], 0.3)
     assert [row["position_mm"] for row in stepped["compared"]] == [0.1, 0.2, 0.3]
@@ -272,12 +272,14 @@ def test_compare_placement_draws_the_section_on_each_atlas_position(tmp_path: Pa
     # A look, not a write.
     assert state.slices[0].position_mm == 0.2
 
-    # A batch: several sections, several candidates each, capped at 8 pairs.
+    # A batch: several sections, several candidates each, capped at 4 pairs
+    # (one image each: the most any call returns).
     many = compare(
-        [{"id": "s.tif", "positions_mm": [0.1] * 6}, {"id": "0", "positions_mm": [0.3] * 4}],
+        [{"id": "s.tif", "positions_mm": [0.1] * 3}, {"id": "0", "positions_mm": [0.3] * 3}],
         "overlay",
     )
-    assert len(many["compared"]) == 8 and many["truncated"] and many["dropped_pairs"] == 2
+    assert len(many["compared"]) == 4 and many["truncated"] and many["dropped_pairs"] == 2
+    assert len(many[TOOL_MEDIA_PARTS_KEY]) == 4
 
     assert compare([{"id": "s.tif"}], "flicker")["error"] == "BAD_MODE"
     assert compare([{"id": "ghost.tif"}])["error"] == "UNKNOWN_SLICE_IDS"

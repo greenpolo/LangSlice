@@ -147,8 +147,9 @@ def test_writes_return_the_picture_of_what_they_did(tmp_path: Path):
         [{"id": "s0.png", "position_mm": 1.0}, {"id": "s3.png", "position_mm": 6.0}]
     )
     # A pair per written section: the section, then the atlas at its position.
-    assert len(placed[TOOL_MEDIA_PARTS_KEY]) == 4
+    assert len(placed[TOOL_MEDIA_PARTS_KEY]) == 2  # one stitched picture per section
     assert "s0.png, s3.png" in placed["description"]
+    assert placed["unpictured"] == []
 
     turned = _tool(box, "orient_slices")([{"id": "s1.png", "flip": True}])
     assert len(turned[TOOL_MEDIA_PARTS_KEY]) == 1
@@ -158,27 +159,19 @@ def test_writes_return_the_picture_of_what_they_did(tmp_path: Path):
 def test_view_stack_orders_by_position_and_plots_it(tmp_path: Path):
     from langslice.adk import TOOL_MEDIA_PARTS_KEY
 
-    state, _, box = _box(tmp_path, placed=True)
+    state, ctx, box = _box(tmp_path, placed=True)
     state.by_id("s0.png").position_mm = 9.0  # placed after the others
     result = _tool(box, "view_stack")()
     assert [row["id"] for row in result["rows"]][-1] == "s0.png"
     parts = result[TOOL_MEDIA_PARTS_KEY]
-    labels = [part.text for part in parts if part.text and ": s" in part.text]
+    # Two images however big the stack: the contact sheet and the plot.
+    assert sum(1 for part in parts if part.inline_data is not None) == 2
+    # The sheet's labels carry position and spacing.
+    from langslice.linear.render import stack_pictures
+
+    labels = [label for label, _ in stack_pictures(state, ctx, by_position=True)]
     assert labels[-1].startswith("0: s0.png  9.00 mm")
     assert "to next)" in labels[0]
-    assert sum(1 for part in parts if part.inline_data is not None) == 6  # 5 sections + plot
-    # A placed section carries its atlas match beneath it: taller than a bare one.
-    import io
-
-    from PIL import Image
-
-    def heights(media) -> list[int]:
-        return [Image.open(io.BytesIO(p.inline_data.data)).height for p in media if p.inline_data]
-
-    tall = heights(parts)
-    state.by_id("s1.png").position_mm = None
-    bare = heights(_tool(box, "view_stack")()[TOOL_MEDIA_PARTS_KEY])
-    assert bare[-2] < tall[-2]  # s1 lost its atlas, and sorts last before the plot
 
 
 def test_a_write_returns_only_the_rows_it_touched(tmp_path: Path):

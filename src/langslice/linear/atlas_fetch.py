@@ -18,7 +18,7 @@ from langslice.adk import TOOL_MEDIA_PARTS_KEY
 from langslice.affine import resize_long_edge
 from langslice.atlas.core import get_reference_slice, get_root_mask
 from langslice.image_prep import crop_to_mask
-from langslice.linear.render import caption, image_to_part
+from langslice.linear.render import MAX_IMAGES_PER_CALL, caption, image_to_part
 from langslice.linear.state import StackState
 from langslice.space import Plane
 
@@ -27,7 +27,7 @@ if TYPE_CHECKING:  # ponytail: import cycle — engine builds the toolbox
 
 #: Atlas sections one ``fetch_atlas`` call may return. Anything past this is
 #: dropped — and reported back, never silently.
-MAX_FETCH_POSITIONS = 8
+MAX_FETCH_POSITIONS = MAX_IMAGES_PER_CALL
 
 #: Long edge of every atlas image ``fetch_atlas`` returns. A tissue-framed
 #: atlas render is at native atlas resolution, so an anterior section would
@@ -138,12 +138,12 @@ def make_fetch_atlas(state: StackState, ctx: EngineContext):
     pos_lo, pos_hi = ctx.position_range
 
     def fetch_atlas(positions_mm: list[float]) -> dict[str, Any]:
-        """Fetch atlas sections at the positions you name, at most 8 per call.
+        """Fetch atlas sections at the positions you name, at most 4 per call.
 
         Sections are rendered at the stack's current cutting angles, each
         labelled with its position (and the angles, when the stack is oblique)
         in its top-left corner. Ask for
-        more than 8 and only the first 8 are fetched; the rest come back under
+        more than 4 and only the first 4 are fetched; the rest come back under
         ``dropped_positions_mm`` with ``truncated: true``. Positions outside
         the atlas range are clamped, and positions within 0.02 mm of one
         already in the same call are coalesced.

@@ -30,19 +30,20 @@ from langslice.affine import (
 )
 from langslice.linear.atlas_fetch import (
     ATLAS_LONG_EDGE,
-    atlas_part,
     atlas_section,
     make_fetch_atlas,
 )
 from langslice.linear.checkpoint import save_checkpoint
 from langslice.linear.deepslice import run_deepslice as _run_deepslice
 from langslice.linear.render import (
+    MAX_IMAGES_PER_CALL,
     OUTLINE_LAYERS,
     OVERLAY_LONG_EDGE,
     PREVIEW_LONG_EDGE,
     VIEW_LONG_EDGE,
     VIEW_MODES,
     CanvasGeometry,
+    beside,
     canvas_geometry,
     caption,
     image_to_part,
@@ -50,7 +51,8 @@ from langslice.linear.render import (
     pivot_on_canvas,
     render_slice,
     spacing_plot,
-    stack_image_parts,
+    stack_sheet,
+    stacked,
     status_rows,
 )
 from langslice.linear.spec import JobSpec
@@ -70,13 +72,12 @@ if TYPE_CHECKING:  # ponytail: import cycle — engine builds the toolbox
 
 logger = logging.getLogger(__name__)
 
-#: Sections one ``view_slices`` call may return.
-MAX_VIEW_SLICES = 8
+#: Sections one ``view_slices`` call may return; the same bound applies to
+#: every image-returning tool (see :data:`MAX_IMAGES_PER_CALL`).
+MAX_VIEW_SLICES = MAX_IMAGES_PER_CALL
 
-#: Overlay panels one ``fit_affine`` call may attach. Higher than
-#: :data:`MAX_VIEW_SLICES`: a panel is one look at a fit that already ran, and
-#: a stack-wide fit that shows only 8 of its 40 results hides the rest.
-MAX_FIT_PANELS = 16
+#: Overlay panels one ``fit_affine`` call may attach.
+MAX_FIT_PANELS = MAX_IMAGES_PER_CALL
 
 #: Undo snapshots kept in memory. Not persisted: a resumed run starts from the
 #: checkpoint, which is the state as it stood.
@@ -468,7 +469,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         )
 
     def view_slices(slice_ids: list[str]) -> dict[str, Any]:
-        """Look at up to 8 named sections at higher resolution.
+        """Look at up to 4 named sections at higher resolution.
 
         Sections are rendered as corrected: any rotation and flip already
         applied, framed to their tissue the same way fetched atlas sections
@@ -476,7 +477,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         its top-left corner.
 
         Args:
-            slice_ids: Filenames or corrected indices (max 8 per call).
+            slice_ids: Filenames or corrected indices (max 4 per call).
 
         Returns:
             status/slice_ids/description plus the images, in the order asked.
@@ -692,7 +693,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
 
         Returns:
             The rows this call changed, and each changed section rendered as
-            it now stands (up to 8), its corrected index and filename burned
+            it now stands (up to 4), its corrected index and filename burned
             into its top-left corner.
         """
         if not entries:
@@ -844,9 +845,11 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
 
         Returns:
             What was written, what was clamped, the rows it changed, and for
-            each written section (up to 8) two images: the section as
-            corrected, then the atlas section at the position it was given,
-            both tissue-framed and labelled in the top-left corner.
+            the first 4 written sections one image each: the section as
+            corrected over the atlas section at the position it was given,
+            both tissue-framed, labelled in the top-left corner. Sections
+            beyond the fourth are written all the same; ``unpictured`` names
+            them, and ``compare_placement`` shows any of them on request.
         """
         if not entries:
             return {"status": "error", "error": "BAD_ARGS"}
@@ -897,29 +900,38 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         }
         if clamped:
             result["atlas_range_mm"] = [round(pos_lo, 3), round(pos_hi, 3)]
-        shown = written[:MAX_VIEW_SLICES]
+        shown = written[:MAX_IMAGES_PER_CALL]
         parts: list[types.Part] = []
         failed: list[dict[str, str]] = []
         for row in shown:
             record = state.by_id(row["id"])
             if record is None:
                 continue
+            position = float(row["position_mm"])
             try:
-                pair = [
-                    section_part(record, long_edge=ATLAS_LONG_EDGE),
-                    atlas_part(ctx, state, float(row["position_mm"])),
-                ]
+                picture = stacked(
+                    render_slice(ctx, record, long_edge=ATLAS_LONG_EDGE, frame=True),
+                    resize_long_edge(
+                        atlas_section(ctx, state, position, frame=True), ATLAS_LONG_EDGE
+                    ),
+                )
+                label = f"{record.id} over atlas {position:.2f} mm"
             except Exception as exc:
                 failed.append({"id": row["id"], "message": str(exc)})
                 continue
-            parts.extend(pair)
+            parts.append(image_to_part(caption(picture, label)))
         result["render_failed"] = failed
+        result["unpictured"] = [row["id"] for row in written[MAX_IMAGES_PER_CALL:]]
         result["description"] = (
-            "Attached images are a pair per written section, in the order "
-            "written: the section as corrected, then the atlas section at the "
-            "position it was given, for "
+            "Attached: one image per written section, in the order written, "
+            "the section as corrected over the atlas section at the position "
+            "it was given, for "
             + ", ".join(row["id"] for row in shown)
-            + ". Each is labelled in its top-left corner."
+            + (
+                f". {len(result['unpictured'])} more were written without a picture."
+                if result["unpictured"]
+                else "."
+            )
         )
         result[TOOL_MEDIA_PARTS_KEY] = parts
         return result
@@ -1015,14 +1027,15 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         Each section is drawn as corrected, at true physical scale, on the
         same canvas as the atlas section at each of its candidate positions,
         so the two are directly comparable; the atlas outlines are drawn over
-        the section. At most 8 section-position pairs per call.
+        the section. At most 4 section-position pairs per call, one image
+        per pair.
 
         Args:
             entries: ``[{"id": "<filename or corrected index>",
                 "positions_mm": [<mm>, ...]}]``. An empty or missing
                 ``positions_mm`` means that section's current position.
-            mode: "side_by_side" (two images per position: the section, then
-                the atlas template, same scale and crop), "overlay" (the
+            mode: "side_by_side" (the section beside the atlas template in
+                one image, same scale and crop), "overlay" (the
                 section with the outlines on it), "checkerboard" (section and
                 template in alternating tiles), "outlines" (atlas lines and the
                 section's silhouette on black), "section" or "template".
@@ -1107,6 +1120,8 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                 failed.append({"id": record.id, "position_mm": round(position, 3),
                                "message": str(exc)})
                 continue
+            if len(images) > 1:
+                images = [beside(images[0], images[1])]
             parts.extend(image_to_part(image) for image in images)
             compared.append({
                 "id": record.id,
@@ -1116,7 +1131,6 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                 ),
                 "calibration": {"um_per_px": round(um_per_px, 3), "source": source},
             })
-        per = 2 if view == "side_by_side" else 1
         result: dict[str, Any] = {
             "status": "ok" if parts else "error",
             **({} if parts else {"error": "RENDER_FAILED"}),
@@ -1128,7 +1142,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             "description": (
                 "Compared, in order: "
                 + ", ".join(f"{row['id']} at {row['position_mm']:.2f} mm" for row in compared)
-                + f"; {per} image(s) per pair in that order, each captioned with "
+                + "; one image per pair in that order, each captioned with "
                 "the section and the position it is compared with."
             ),
             TOOL_MEDIA_PARTS_KEY: parts,
@@ -1141,15 +1155,16 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
     def view_stack() -> dict[str, Any]:
         """The whole stack ordered by written position, each over its atlas match.
 
-        Every section as its own labelled image, in the order of the positions
-        written so far (unplaced sections last); a placed section has the
-        atlas section at its position pasted directly beneath it in the same
-        picture. The label carries the corrected index, filename, position and
-        the signed distance to the next placed section. Then one plot of
-        position against corrected index (damaged sections in red).
+        One contact sheet: every section as a labelled thumbnail, in the
+        order of the positions written so far (unplaced sections last), a
+        placed section with the atlas section at its position pasted
+        directly beneath it. The label carries the corrected index,
+        filename, position and the signed distance to the next placed
+        section. Then one plot of position against corrected index (damaged
+        sections in red). Two images; `view_slices` shows any section large.
 
         Returns:
-            The rows in that order and the images.
+            The rows in that order and the two images.
         """
         def atlas_under(record: SliceState) -> Any:
             if record.position_mm is None:
@@ -1163,9 +1178,18 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                 logger.warning("view_stack: atlas render failed for %s: %s", record.id, exc)
                 return None
 
-        parts = stack_image_parts(state, ctx, by_position=True, under=atlas_under)
-        parts.append(types.Part.from_text(text="Position against corrected index:"))
-        parts.append(image_to_part(spacing_plot(state)))
+        parts = [
+            types.Part.from_text(
+                text=(
+                    f"The {len(state.slices)} sections in the order of their "
+                    "written positions (unplaced last), each captioned "
+                    "'<index>: <filename>  <position>', over its atlas match:"
+                )
+            ),
+            image_to_part(stack_sheet(state, ctx, under=atlas_under)),
+            types.Part.from_text(text="Position against corrected index:"),
+            image_to_part(spacing_plot(state)),
+        ]
         ordered = sorted(
             status_rows(state), key=lambda r: (r["position_mm"] is None, r["position_mm"] or 0.0)
         )
@@ -1173,10 +1197,10 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             "status": "ok",
             "rows": ordered,
             "description": (
-                "Attached: every section in the order of its written position, "
-                "each preceded by its label, with the atlas section at its "
-                "position pasted beneath it in the same image when it has one; "
-                "then a plot of position against corrected index."
+                "Attached: one contact sheet of every section in the order of "
+                "its written position, each captioned, with the atlas section "
+                "at its position beneath it when it has one; then a plot of "
+                "position against corrected index."
             ),
             TOOL_MEDIA_PARTS_KEY: parts,
         }

@@ -43,15 +43,15 @@ run can use:
 | --- | --- | --- |
 | `status` | always | one row per section in corrected order: index, id, `position_mm`, `delta_to_next_mm` (signed), flip, rotation, damaged (+note), transform kind, `transform_iou`, `transform_mirrored`, caveats; plus the stack's cutting angles and interval breaks. Writes answer with only the rows they changed (`changed` + `n_sections`); this is the whole table |
 | `validate` | always | runs the submit checks without submitting; writes nothing |
-| `view_slices` | always | up to 8 sections at higher resolution, rendered as corrected, each captioned with its index and filename |
-| `fetch_atlas` | always | up to 8 atlas sections, rendered at the stack's current cutting angles, each captioned with its position |
+| `view_slices` | always | up to 4 sections at higher resolution, rendered as corrected, each captioned with its index and filename |
+| `fetch_atlas` | always | up to 4 atlas sections, rendered at the stack's current cutting angles, each captioned with its position |
 | `note`, `undo`, `redo` | always | run notes; snapshot undo where one tool call undoes as one step |
 | `mark_damaged` / `unmark_damaged` | always | agent-internal classification: an outline an affine cannot bite on |
 | `orient_slices` | `reorder` | flip and quarter-turn per section (`--no-flip` refuses the flip half); returns the changed sections as they now stand |
 | `reorder_slices` / `move_slice` | `reorder` | full permutation (by filename) or one incremental move; corrected indices only, positions and transforms are kept |
-| `set_positions` | `position` | batch write, clamped to the atlas range; returns each written section beside the atlas at its new position |
-| `compare_placement` | `position` | sections against the atlas at the candidate positions named for each (or its current one), up to 8 pairs, on one physical-scale canvas; `mode`, `zoom`, `template_opacity`, `outlines` as on `adjust_transform`; writes nothing |
-| `view_stack` | `position` | every section in the order of its written position with the atlas at that position beneath it in the same image, labelled with position and the distance to the next, plus a position-vs-index plot; writes nothing |
+| `set_positions` | `position` | batch write, clamped to the atlas range; returns the first 4 written sections each over the atlas at its new position; the rest are written without a picture |
+| `compare_placement` | `position` | sections against the atlas at the candidate positions named for each (or its current one), up to 4 pairs, one image per pair, on one physical-scale canvas; `mode`, `zoom`, `template_opacity`, `outlines` as on `adjust_transform`; writes nothing |
+| `view_stack` | `position` | one contact sheet of every section in the order of its written position over the atlas at that position, captioned with position and the distance to the next, plus a position-vs-index plot (two images); writes nothing |
 | `run_deepslice` | `--deepslice` | reports `UNAVAILABLE` until the optional extra lands |
 | `fit_position` | `--bayesian` | `oblique.fit_oblique` around a section's current position; writes nothing |
 | `set_cutting_angles` | `--angles` | stack-wide pitch/yaw; later fetches and previews follow |
