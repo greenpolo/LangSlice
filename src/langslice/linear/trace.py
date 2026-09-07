@@ -165,6 +165,13 @@ class SessionTrace:
                 record["thought"] = "\n".join(thought)
             if calls:
                 record["function_calls"] = calls
+            usage = getattr(event, "usage_metadata", None)
+            if usage is not None:
+                record["usage"] = {
+                    "input_tokens": getattr(usage, "prompt_token_count", None),
+                    "cached_tokens": getattr(usage, "cached_content_token_count", None),
+                    "output_tokens": getattr(usage, "candidates_token_count", None),
+                }
             self._write(record)
 
     @staticmethod
@@ -185,13 +192,26 @@ class SessionTrace:
             record["media"] = media
         return record
 
-    def summary(self, *, tool_calls: int, turns: int, submitted: bool) -> None:
-        self._write({
+    def summary(
+        self,
+        *,
+        tool_calls: int,
+        turns: int,
+        submitted: bool,
+        tokens: dict[str, int] | None = None,
+        stopped: str | None = None,
+    ) -> None:
+        record: dict[str, Any] = {
             "kind": "summary",
             "tool_calls": tool_calls,
             "turns": turns,
             "submitted": submitted,
-        })
+        }
+        if tokens is not None:
+            record["tokens"] = tokens
+        if stopped is not None:
+            record["stopped"] = stopped
+        self._write(record)
 
 
 def open_trace(run_label: str, *, agent: Any) -> SessionTrace | None:

@@ -144,7 +144,11 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
   about a pivot) are what `landmarks` measures with.
 - `prompt.py` — `build_job_statement`: job, run facts, ONE factual line per
   tool that exists, hard constraints. Nothing else.
-- `session.py` — the ADK agent builder, the plugins, and the loop.
+- `session.py` — the ADK agent builder, the plugins, the loop, and
+  `TokenTally`: every call's usage is printed and traced, and
+  `JobSpec.max_input_tokens` (500k) ends the session when the run's summed
+  input passes it. Run 4 on M04 spent 1.3M input tokens (93k on the last
+  call, 170 images resent) and a Plus window ended it; never again.
 - `engine.py` — `EngineContext`, `ingest`, `apply_host_inputs`, `run_session`,
   `emit_results`, and `run(spec)`. No post pass: the session is the whole run.
 - `deepslice.py`, `trace.py` — the DeepSlice seam (reports `UNAVAILABLE`) and

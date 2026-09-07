@@ -560,9 +560,13 @@ def _usage_metadata(event: dict[str, Any]) -> types.GenerateContentResponseUsage
     usage = event.get("response", {}).get("usage")
     if not isinstance(usage, dict):
         return None
+    cached = (usage.get("input_tokens_details") or {}).get("cached_tokens")
+    reasoning = (usage.get("output_tokens_details") or {}).get("reasoning_tokens")
     return types.GenerateContentResponseUsageMetadata(
         prompt_token_count=usage.get("input_tokens"),
+        cached_content_token_count=cached,
         candidates_token_count=usage.get("output_tokens"),
+        thoughts_token_count=reasoning,
         total_token_count=usage.get("total_tokens"),
     )
 

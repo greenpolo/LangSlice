@@ -362,13 +362,27 @@ def test_streaming_yields_partials_then_aggregated_final(monkeypatch):
     events = [
         {"type": "response.output_text.delta", "delta": "Hel"},
         {"type": "response.output_text.delta", "delta": "lo"},
-        {"type": "response.completed", "response": {"usage": {"input_tokens": 7}}},
+        {
+            "type": "response.completed",
+            "response": {
+                "usage": {
+                    "input_tokens": 7,
+                    "input_tokens_details": {"cached_tokens": 5},
+                    "output_tokens": 3,
+                    "output_tokens_details": {"reasoning_tokens": 2},
+                }
+            },
+        },
     ]
     responses, _ = _run_turn(monkeypatch, events, stream=True)
     assert [r.partial for r in responses] == [True, True, False]
     assert responses[-1].content is not None
     assert responses[-1].content.parts[0].text == "Hello"
-    assert responses[-1].usage_metadata.prompt_token_count == 7
+    usage = responses[-1].usage_metadata
+    assert usage.prompt_token_count == 7
+    assert usage.cached_content_token_count == 5
+    assert usage.candidates_token_count == 3
+    assert usage.thoughts_token_count == 2
 
 
 def test_non_streaming_yields_one_aggregated_response_with_function_call(monkeypatch):

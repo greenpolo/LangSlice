@@ -327,6 +327,8 @@ async def run_session(
         run_label=_RUN_LABEL,
         debrief=DEBRIEF_PROMPT if spec.debrief else None,
         debrief_sink=sink,
+        progress=ctx.progress,
+        max_input_tokens=spec.max_input_tokens,
     )
     if sink and sink[0]:
         state.debrief = sink[0]

@@ -185,6 +185,30 @@ def test_a_session_that_never_submits_keeps_its_writes(tmp_path: Path, monkeypat
     assert (tmp_path / "linear_results.json").exists()
 
 
+def test_the_input_token_budget_ends_a_run_before_the_account_does(
+    tmp_path: Path, monkeypatch
+):
+    names = _make_stack(tmp_path, n=3)
+    positions = {names[0]: 4.0}  # incomplete: it would loop to max_iterations
+    install_fake_adk_model_stack(monkeypatch, positions=positions, input_tokens_per_call=1000)
+    lines: list[str] = []
+
+    spec = _spec(
+        tmp_path,
+        tasks=["position"],
+        position=PositionSpec(interval_um=500),
+        max_input_tokens=2500,
+    )
+    state = asyncio.run(run(spec, emit=lines.append, atlas_loader=lambda _n: _ATLAS))
+
+    assert state.submitted is False
+    assert state.by_id(names[0]).position_mm == 4.0  # the write survived the stop
+    budget = [line for line in lines if "passed the budget" in line]
+    assert len(budget) == 1 and "3000" in budget[0]
+    assert any(line.startswith("[tokens] call 1: in=1000") for line in lines)
+    assert any("run total: 3 calls, in=3000" in line for line in lines)
+
+
 # --- a real folder, no model ---------------------------------------------
 
 

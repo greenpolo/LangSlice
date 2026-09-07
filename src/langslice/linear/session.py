@@ -101,6 +101,44 @@ def build_agent(
     )
 
 
+class TokenTally:
+    """Summed token usage over one session, one line per model call."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+        self.input = 0
+        self.cached = 0
+        self.output = 0
+
+    def add(self, usage: Any) -> str:
+        """Add one call's usage; return the one-line report for it."""
+        prompt = int(getattr(usage, "prompt_token_count", None) or 0)
+        cached = int(getattr(usage, "cached_content_token_count", None) or 0)
+        output = int(getattr(usage, "candidates_token_count", None) or 0)
+        self.calls += 1
+        self.input += prompt
+        self.cached += cached
+        self.output += output
+        return (
+            f"call {self.calls}: in={prompt} (cached {cached}) out={output}; "
+            f"run in={self.input}"
+        )
+
+    def as_dict(self) -> dict[str, int]:
+        return {
+            "calls": self.calls,
+            "input": self.input,
+            "cached": self.cached,
+            "output": self.output,
+        }
+
+    def totals(self) -> str:
+        return (
+            f"{self.calls} calls, in={self.input} (cached {self.cached}), "
+            f"out={self.output}"
+        )
+
+
 async def run_agent_session(
     *,
     agent: LlmAgent,
@@ -112,11 +150,16 @@ async def run_agent_session(
     run_label: str,
     debrief: str | None = None,
     debrief_sink: list[str] | None = None,
+    progress: Callable[[str], None] | None = None,
+    max_input_tokens: int | None = None,
 ) -> tuple[int, int]:
     """Drive one agent pass; return ``(tool_calls, turns)``.
 
     Ends when *done* reports the session's submit tool has fired, or when the
-    turn/tool-call budget runs out.
+    turn/tool-call budget runs out, or when the run's summed input tokens
+    pass *max_input_tokens* — the history is resent on every call, so input
+    grows with the square of the call count and the account, not the job,
+    would otherwise end the run.
     """
     trace = open_trace(run_label, agent=agent)
     app = App(name=_APP_NAME, root_agent=agent, plugins=build_plugins(run_label))
@@ -134,7 +177,9 @@ async def run_agent_session(
     nudge: str | None = None
     tool_calls = 0
     turns = 0
-    while turns < max_iterations and not done():
+    tokens = TokenTally()
+    stopped: str | None = None
+    while turns < max_iterations and not done() and stopped is None:
         turns += 1
         if trace is not None and nudge is not None:
             trace.nudge(nudge, turn=turns)
@@ -151,6 +196,17 @@ async def run_agent_session(
                     f"{run_label}: model error on turn {turns} "
                     f"({getattr(event, 'error_code', None)}): {event.error_message}"
                 )
+            usage = getattr(event, "usage_metadata", None)
+            if usage is not None and not getattr(event, "partial", False):
+                line = tokens.add(usage)
+                (progress or logger.info)(f"[tokens] {line}")
+                if max_input_tokens is not None and tokens.input > max_input_tokens:
+                    stopped = "input_budget"
+                    (progress or logger.warning)(
+                        f"[tokens] run input {tokens.input} passed the budget of "
+                        f"{max_input_tokens}; ending the session"
+                    )
+                    break
             calls = event.get_function_calls() or []
             if calls:
                 saw_tool_call = True
@@ -181,6 +237,8 @@ async def run_agent_session(
         if trace is not None:
             trace.nudge(debrief, turn=turns + 1)
         answer: list[str] = []
+        # The debrief's own usage is counted too: it is the biggest single
+        # request of the run (the whole history plus a long answer).
         try:
             async for event in runner.run_async(
                 user_id=_USER_ID,
@@ -191,6 +249,9 @@ async def run_agent_session(
             ):
                 if trace is not None:
                     trace.event(event, turn=turns + 1)
+                usage = getattr(event, "usage_metadata", None)
+                if usage is not None and not getattr(event, "partial", False):
+                    (progress or logger.info)(f"[tokens] {tokens.add(usage)}")
                 for part in getattr(getattr(event, "content", None), "parts", None) or []:
                     text = getattr(part, "text", None)
                     if isinstance(text, str) and text and not getattr(part, "thought", False):
@@ -200,6 +261,13 @@ async def run_agent_session(
         if debrief_sink is not None and answer:
             debrief_sink.append("\n".join(answer).strip())
 
+    (progress or logger.info)(f"[tokens] run total: {tokens.totals()}")
     if trace is not None:
-        trace.summary(tool_calls=tool_calls, turns=turns, submitted=done())
+        trace.summary(
+            tool_calls=tool_calls,
+            turns=turns,
+            submitted=done(),
+            tokens=tokens.as_dict(),
+            stopped=stopped,
+        )
     return tool_calls, turns

@@ -121,6 +121,13 @@ it had -- the agent is re-seeded, not replayed. `--fresh` ignores the
 checkpoint and starts over. `--trace-dir PATH` writes a full-content JSONL
 trace of every agent session.
 
+Every model call prints a `[tokens]` line (input, cached, output, run input
+so far) and the run ends with a total. `--max-input-tokens N` (default
+`JobSpec.max_input_tokens`, 500k) ends the session when the run's summed
+input passes N: the OAuth lane resends the whole history every call, so a
+long run grows quadratically and would otherwise be ended by the account's
+usage window instead of by the job. Writes made before the stop are kept.
+
 ## Linear: Quick Affine
 
 ```bash
@@ -235,10 +242,10 @@ event:
 | --- | --- |
 | `session` | run label, agent name, model name, full system instruction (first line) |
 | `seed` | the session's seed message: text verbatim, images as descriptors labelled with the text above them |
-| `model` | one model turn: its text, any thought summary, every function call with full JSON arguments |
+| `model` | one model turn: its text, any thought summary, every function call with full JSON arguments, and its `usage` (input, cached, output tokens) |
 | `tool_result` | the complete tool payload the model reads, plus descriptors for media riding on the response |
 | `nudge` | a nudge the driver actually sent |
-| `summary` | tool-call count, turn count, whether the session submitted (last line) |
+| `summary` | tool-call count, turn count, whether the session submitted, run token totals, and `stopped` when a budget ended it (last line) |
 
 Unlike the request captures above, this records values, not shapes: full text,
 full tool arguments, full tool responses. Images are always descriptors (mime
