@@ -54,6 +54,12 @@ class TransformSpec:
     elastix: bool = False
 
 
+#: Run 4 on M04 (38 sections, 22 calls) spent 1.3M input tokens with an
+#: unbounded image history; a ChatGPT Plus window ended it. See the
+#: context policy in ``langslice.adk.plugins`` for what keeps a run under this.
+DEFAULT_MAX_INPUT_TOKENS = 500_000
+
+
 @dataclass
 class JobSpec:
     """One whole ``langslice linear`` run, host-agnostic."""
@@ -86,6 +92,10 @@ class JobSpec:
     #: After submit, ask the agent (same context) what tools it missed and
     #: record the answer on the state. One extra model call.
     debrief: bool = True
+    #: Hard stop on the run's summed input tokens. The OAuth lane resends the
+    #: whole history every call, so a long run grows quadratically; this ends
+    #: the session before the account does.
+    max_input_tokens: int = DEFAULT_MAX_INPUT_TOKENS
 
     def __post_init__(self) -> None:
         if self.plane not in PLANES:

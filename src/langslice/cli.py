@@ -417,6 +417,13 @@ def _add_linear_run_parser(subparsers: argparse._SubParsersAction) -> None:
         help="Ignore any existing checkpoint and start over",
     )
     p.add_argument(
+        "--max-input-tokens",
+        type=int,
+        default=None,
+        help="Hard stop on the run's summed input tokens (default: "
+        "JobSpec.max_input_tokens)",
+    )
+    p.add_argument(
         "--no-debrief",
         dest="debrief",
         action="store_false",
@@ -480,6 +487,7 @@ def _run_linear(args: argparse.Namespace) -> None:
         inputs=inputs,
         resume=args.resume,
         debrief=args.debrief,
+        **({"max_input_tokens": args.max_input_tokens} if args.max_input_tokens else {}),
     )
 
     print(f"Atlas: {spec.atlas}  Plane: {spec.plane}")

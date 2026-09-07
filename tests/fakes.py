@@ -108,6 +108,8 @@ class _StackLlm(BaseLlm):
     """
 
     positions: dict[str, float] | None = None
+    #: Input tokens reported per call, so budget handling can be tested.
+    input_tokens_per_call: int = 0
 
     async def generate_content_async(
         self, llm_request: LlmRequest, stream: bool = False
@@ -142,17 +144,25 @@ class _StackLlm(BaseLlm):
             content=types.Content(role="model", parts=[part]),
             partial=False,
             turn_complete=True,
+            usage_metadata=types.GenerateContentResponseUsageMetadata(
+                prompt_token_count=self.input_tokens_per_call,
+                candidates_token_count=1,
+            ),
         )
 
 
 def install_fake_adk_model_stack(
-    monkeypatch: Any, positions: dict[str, float] | None = None
+    monkeypatch: Any,
+    positions: dict[str, float] | None = None,
+    input_tokens_per_call: int = 0,
 ) -> None:
     """Patch LLMRegistry.new_llm so a linear session submits at once."""
     from google.adk.models.registry import LLMRegistry
 
     def _fake_new_llm(model: str) -> BaseLlm:
-        return _StackLlm(model=model, positions=positions)
+        return _StackLlm(
+            model=model, positions=positions, input_tokens_per_call=input_tokens_per_call
+        )
 
     monkeypatch.setattr(LLMRegistry, "new_llm", staticmethod(_fake_new_llm))
 
