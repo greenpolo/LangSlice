@@ -147,6 +147,12 @@ checkpoints; a run that dies mid-way resumes from the checkpoint with the
 state it had (the agent is re-seeded, not replayed). `LANGSLICE_TRACE_DIR`
 records the full trajectory (`trace.py`, unchanged).
 
+Context is bounded, because the whole history is resent on every call: tool
+images live in a working set (`WorkingSetImages`, 48 high / 16 low, trimmed
+in batches so the cached prefix stays stable; the seed strip's images go with
+the first trim), every call's token usage is printed and traced, and
+`JobSpec.max_input_tokens` ends a run that passes it.
+
 There is ONE session. The alignment tools live in it like every other tool, so
 a section's preview history, its atlas fetches and the stack reading that
 produced its position are all in one context.

@@ -123,7 +123,7 @@ trace of every agent session.
 
 Every model call prints a `[tokens]` line (input, cached, output, run input
 so far) and the run ends with a total. `--max-input-tokens N` (default
-`JobSpec.max_input_tokens`, 500k) ends the session when the run's summed
+`JobSpec.max_input_tokens`, 750k) ends the session when the run's summed
 input passes N: the OAuth lane resends the whole history every call, so a
 long run grows quadratically and would otherwise be ended by the account's
 usage window instead of by the job. Writes made before the stop are kept.
