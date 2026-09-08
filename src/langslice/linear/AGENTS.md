@@ -181,11 +181,17 @@ UFO, Anthropic's reference loop: 3; text carries everything older):
   cached, output); `JobSpec.max_input_tokens` (750k) ends a run that passes
   it. `openai_oauth.py` sends one stable `prompt_cache_key`/`session_id` per
   session and surfaces `x-codex-*` quota headers.
+- **Reasoning is replayed.** Each turn's `reasoning` output item (encrypted,
+  `store` is false) is kept on the model turn (`thought_signature`, summary
+  in a `thought` text part so traces show it) and sent back ahead of that
+  turn, the way the Codex CLI does; before 2026-09-07 it was requested and
+  dropped, so Astra restarted its chain of thought on every call. It sits in
+  the cached prefix, so it costs ~nothing on input.
 Run 4 on M04 (2026-09-07, 48-image working set, 16-image batches) spent
 1.3M input tokens (93k on the last call) and a Plus window ended it; that is
 the number this section exists to keep down. Not adopted, on Nash's call:
 server-side compaction (for heavy text; we are light text, heavy image) and
-a `Memorize` action (GPT-6 carries its reasoning forward already). The
+a `Memorize` action (replayed reasoning carries facts forward already). The
 WebSocket transport is a latency lever only.
 
 ## Rules that are not negotiable here

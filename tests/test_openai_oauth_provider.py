@@ -524,3 +524,28 @@ def test_user_content_preserves_text_image_interleaving():
     assert kinds == ["input_text", "input_image", "input_text", "input_image"]
     assert item["content"][0]["text"] == "0: a.tif"
     assert item["content"][2]["text"] == "1: b.tif"
+
+
+def test_reasoning_items_are_kept_and_replayed_ahead_of_the_turn(monkeypatch):
+    reasoning = {
+        "type": "reasoning",
+        "id": "rs_1",
+        "summary": [{"type": "summary_text", "text": "compare 4.6 and 4.8"}],
+        "encrypted_content": "opaque",
+    }
+    events = [
+        {"type": "response.output_item.done", "item": reasoning},
+        {
+            "type": "response.output_item.done",
+            "item": {"type": "function_call", "name": "probe", "arguments": "{}", "call_id": "c1"},
+        },
+        {"type": "response.completed"},
+    ]
+    responses, _ = _run_turn(monkeypatch, events, stream=False)
+    turn = responses[0].content
+    assert turn.parts[0].thought and turn.parts[0].text == "compare 4.6 and 4.8"
+    assert turn.parts[1].function_call.name == "probe"
+
+    items = chatgpt.content_to_input_items(turn)
+    assert [item["type"] for item in items] == ["reasoning", "function_call"]
+    assert items[0] == reasoning

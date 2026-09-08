@@ -27,6 +27,9 @@ matches the openai/codex client and RayBytes/ChatMock:
   "parameters", "strict"}``;
 * model tool calls arrive on ``response.output_item.done`` with
   ``item.type == "function_call"`` (``name``/``arguments``/``call_id``);
+* reasoning items (``encrypted_content``, ``store`` is false) are kept on the
+  model turn and replayed verbatim ahead of it, so each turn continues the
+  previous turn's chain of thought instead of starting over;
 * tool results go back as ``{"type": "function_call_output", "call_id",
   "output"}`` input items.
 """
@@ -462,8 +465,13 @@ def content_to_input_items(content: types.Content) -> list[dict[str, Any]]:
     tool_media: list[str] = []
     tool_names: list[str] = []
 
+    reasoning_items: list[dict[str, Any]] = []
     for part in content.parts or []:
-        if part.function_response is not None:
+        if part.thought_signature:
+            # A previous turn's reasoning, replayed verbatim (encrypted) so the
+            # model continues its own chain of thought instead of restarting.
+            reasoning_items.append(json.loads(part.thought_signature))
+        elif part.function_response is not None:
             response = part.function_response
             payload = response.response
             output = payload if isinstance(payload, str) else _json_dumps(payload)
@@ -513,6 +521,8 @@ def content_to_input_items(content: types.Content) -> list[dict[str, Any]]:
                 user_content.append({"type": "input_text", "text": part.text})
 
     if content.role == "model":
+        # Reasoning leads the turn it produced.
+        items[:0] = reasoning_items
         if model_texts:
             items.append(
                 {
@@ -541,6 +551,23 @@ def content_to_input_items(content: types.Content) -> list[dict[str, Any]]:
             media_content.append({"type": "input_image", "image_url": uri})
         items.append({"type": "message", "role": "user", "content": media_content})
     return items
+
+
+def _reasoning_part(item: dict[str, Any]) -> types.Part:
+    """Keep a reasoning output item for replay.
+
+    The whole item (id, summary, ``encrypted_content``) rides in
+    ``thought_signature`` — the Gemini field for exactly this job — and the
+    summary text, when the backend sent one, in ``text`` so traces show it.
+    """
+    summary = "\n".join(
+        text
+        for entry in item.get("summary") or []
+        if isinstance(text := entry.get("text"), str) and text
+    )
+    return types.Part(
+        thought=True, text=summary or None, thought_signature=_json_dumps(item).encode()
+    )
 
 
 def _json_schema_dict(declaration: types.FunctionDeclaration) -> dict[str, Any]:
@@ -676,6 +703,7 @@ class ChatGptLlm(BaseLlm):
         )
 
         text_chunks: list[str] = []
+        reasoning_parts: list[types.Part] = []
         calls: list[types.Part] = []
         usage: types.GenerateContentResponseUsageMetadata | None = None
         quota: dict[str, str] = {}
@@ -696,6 +724,9 @@ class ChatGptLlm(BaseLlm):
                     )
             elif kind == "response.output_item.done":
                 item = event.get("item", {})
+                if item.get("type") == "reasoning":
+                    reasoning_parts.append(_reasoning_part(item))
+                    continue
                 if item.get("type") != "function_call":
                     continue
                 part = types.Part(
@@ -718,7 +749,7 @@ class ChatGptLlm(BaseLlm):
                 usage = _usage_metadata(event)
                 break
 
-        parts: list[types.Part] = []
+        parts: list[types.Part] = list(reasoning_parts)
         text = "".join(text_chunks)
         if text:
             parts.append(types.Part.from_text(text=text))
