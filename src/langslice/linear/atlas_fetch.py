@@ -216,20 +216,27 @@ def atlas_strip_parts(
     span = pos_hi - pos_lo
     step = max(state.interval_mm, span / max(1, max_images - 1))
     step = math.ceil(step / 0.05) * 0.05  # a round number of 50 um
-    positions = [pos_lo + k * step for k in range(int(span / step) + 1)]
+    pictures: list[tuple[float, Image.Image]] = []
+    for k in range(int(span / step) + 1):
+        position = pos_lo + k * step
+        picture = atlas_section(ctx, state, position, frame=True)
+        if np.asarray(picture).max() < 8:
+            continue  # an oblique plane through the volume's corner: nothing to show
+        pictures.append((position, resize_long_edge(picture, ATLAS_LONG_EDGE)))
+    if not pictures:
+        return []
     parts: list[types.Part] = [
         types.Part.from_text(
             text=(
-                f"The atlas follows at {len(positions)} positions, every "
-                f"{step:.2f} mm from {positions[0]:.2f} to {positions[-1]:.2f} mm, "
+                f"The atlas follows at {len(pictures)} positions, every "
+                f"{step:.2f} mm from {pictures[0][0]:.2f} to {pictures[-1][0]:.2f} mm, "
                 "at the stack's cutting angles, one image each preceded by its "
                 "label 'atlas <position> mm'."
             )
         )
     ]
-    for position in positions:
+    for position, picture in pictures:
         label = f"atlas {position:.2f} mm"
-        picture = resize_long_edge(atlas_section(ctx, state, position, frame=True), ATLAS_LONG_EDGE)
         parts.append(types.Part.from_text(text=label))
         parts.append(image_to_part(caption(picture, label)))
     return parts
