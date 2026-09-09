@@ -373,6 +373,8 @@ def _add_linear_run_parser(subparsers: argparse._SubParsersAction) -> None:
     p.add_argument(
         "--angles", action="store_true", help="Let the agent set the cutting angles"
     )
+    p.add_argument("--pitch", type=float, default=None, help="Host-given cutting pitch, degrees")
+    p.add_argument("--yaw", type=float, default=None, help="Host-given cutting yaw, degrees")
     p.add_argument(
         "--elastix", action="store_true", help="Let fit_affine use the Elastix affine"
     )
@@ -464,6 +466,8 @@ def _run_linear(args: argparse.Namespace) -> None:
         inputs["order"] = order
     if args.pixel_size_um:
         inputs["pixel_size_um"] = float(args.pixel_size_um)
+    if args.pitch is not None or args.yaw is not None:
+        inputs["angles"] = {"pitch": args.pitch or 0.0, "yaw": args.yaw or 0.0}
 
     spec = JobSpec(
         image_folder=args.image_folder,
