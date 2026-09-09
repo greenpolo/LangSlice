@@ -21,6 +21,7 @@ from PIL import Image
 
 from langslice.atlas.core import get_position_range_mm, load_atlas
 from langslice.image_prep import read_pixel_size_um
+from langslice.linear.atlas_fetch import atlas_strip_parts
 from langslice.linear.checkpoint import (
     default_checkpoint_path,
     load_checkpoint,
@@ -275,8 +276,9 @@ def apply_host_inputs(state: StackState, spec: JobSpec) -> None:
 
 
 def build_seed_message(state: StackState, ctx: EngineContext) -> types.Content:
-    """Every section as its own labelled image, plus the status table."""
+    """Every section as its own labelled image, the atlas strip, the table."""
     parts: list[types.Part] = stack_image_parts(state, ctx)
+    parts.extend(atlas_strip_parts(ctx, state))
     parts.append(
         types.Part.from_text(
             text=(

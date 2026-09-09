@@ -232,6 +232,25 @@ def test_the_quota_budget_is_measured_from_the_first_call(tmp_path: Path, monkey
     assert any("run total: 4 calls" in line for line in lines)
 
 
+def test_the_seed_carries_the_atlas_strip_after_the_sections(tmp_path: Path):
+    from langslice.linear.engine import build_context, build_seed_message, ingest
+
+    _make_stack(tmp_path, n=3)
+    spec = _spec(tmp_path, tasks=["position"], position=PositionSpec(interval_um=500))
+    ctx = build_context(spec, emit=lambda _m: None, atlas_loader=lambda _n: _ATLAS)
+    state = ingest(spec, ctx)
+    parts = build_seed_message(state, ctx).parts or []
+    texts = [p.text for p in parts if p.text]
+    intro = next(t for t in texts if t.startswith("The atlas follows at"))
+    n_atlas = sum(1 for t in texts if t.startswith("atlas ") and t.endswith(" mm"))
+    assert f"at {n_atlas} positions" in intro and 1 < n_atlas <= 48
+    images = [p for p in parts if p.inline_data is not None]
+    assert len(images) == 3 + n_atlas
+    # sections first, then the atlas, then the table
+    assert texts.index(intro) > texts.index("0: " + state.in_order()[0].id)
+    assert texts[-1].startswith("Status table")
+
+
 # --- a real folder, no model ---------------------------------------------
 
 

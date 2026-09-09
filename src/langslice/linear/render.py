@@ -390,9 +390,8 @@ def stack_image_parts(
     vision-encoder patch budget across every section at once and lets
     neighbouring sections share patch boundaries. A labelled sequence at a
     modest resolution reads better, and the label is what binds each set of
-    pixels to a filename the model can quote back. This is the seed message
-    only: the context filter drops these images as soon as the first tool
-    images arrive, so the strip costs one request.
+    pixels to a filename the model can quote back. The strip heads the
+    prefix and is never edited, so it is cached for the whole run.
     """
     parts: list[types.Part] = [
         types.Part.from_text(
