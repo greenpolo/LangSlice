@@ -178,8 +178,8 @@ text plus prefix breaks. Design rules that follow:
   `compare_placement` panels 512 (~260 tokens an image, ~530 a stitched
   pair); the interactive-transform canvas keeps `OVERLAY_LONG_EDGE` 768.
 - **Images stay** (`adk/plugins.py WorkingSetImages`): every tool image is
-  kept until 192 are live, then the oldest media-bearing calls are cut in
-  ONE batch to 96 (`DEFAULT_MAX_IMAGES` / `DEFAULT_KEEP_IMAGES`, a cut
+  kept until 256 are live, then the oldest media-bearing calls are cut in
+  ONE batch to 128 (`DEFAULT_MAX_IMAGES` / `DEFAULT_KEEP_IMAGES`, a cut
   result says "dropped from context"); the cut only moves forward and the
   seed strip is never touched. Measured on M11 at low effort, 2026-09-09:
   keep-all (run 6, killed at call 16) had median 0.10 mm / 30 of 36 within
@@ -189,7 +189,8 @@ text plus prefix breaks. Design rules that follow:
   image is 0.13x on every later call, so keep-all grows quadratically
   (2.4k -> 8.8k paid a call by call 15), but a batched run submits in ~21
   calls, where keep-all is ~16% of a window against newest-only's 14%.
-  The batch cut is the safety for a run that goes long; cutting old images
+  A normal run (seed 80, ~50 compares, ~40 write pictures) never reaches
+  the cut; it is the safety for a run that goes long; cutting old images
   re-reads everything after the cut once, so it must stay rare.
 - **A tool's images ride inside its `function_call_output`** as labelled
   `input_image` parts (`openai_oauth._function_call_output`); the separate
