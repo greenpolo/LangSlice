@@ -216,9 +216,11 @@ def build_job_statement(
         method = [
             "",
             "Method:",
-            "- Place each section on its own evidence, one at a time: compare "
-            "it against candidate atlas positions before writing, and do not "
-            "let the nominal interval stand in for a look.",
+            "- Place each section on its own evidence: compare it against "
+            "candidate atlas positions before writing, and do not let the "
+            "nominal interval stand in for a look. Work in batches: several "
+            "sections per `compare_placement` or `set_positions` call cost "
+            "less than one call each.",
             "- After writing, review the whole stack against the atlas, watch "
             "for a section that sits out of sequence and for spacings that "
             "differ from their neighbours, and re-check the sections on either "

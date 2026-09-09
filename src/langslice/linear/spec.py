@@ -58,7 +58,11 @@ class TransformSpec:
 #: unbounded image history; a ChatGPT Plus window ended it. With the working
 #: set in ``langslice.adk.plugins`` the same run replays to ~525k, so this is
 #: a ceiling for a runaway, not a target.
-DEFAULT_MAX_INPUT_TOKENS = 750_000
+DEFAULT_MAX_INPUT_TOKENS = 2_000_000
+#: Share of the provider's usage window one run may spend, when the provider
+#: reports one (the OAuth lane's x-codex headers). Cached tokens are ~0.13x
+#: there, so this, not the raw input count, is the cost.
+DEFAULT_MAX_QUOTA_PERCENT = 25
 
 
 @dataclass
@@ -97,6 +101,10 @@ class JobSpec:
     #: whole history every call, so a long run grows quadratically; this ends
     #: the session before the account does.
     max_input_tokens: int = DEFAULT_MAX_INPUT_TOKENS
+    #: Hard stop on the usage-window share one run may spend, measured from
+    #: the window's reading on the first call; ignored when the provider
+    #: reports no quota.
+    max_quota_percent: int = DEFAULT_MAX_QUOTA_PERCENT
 
     def __post_init__(self) -> None:
         if self.plane not in PLANES:

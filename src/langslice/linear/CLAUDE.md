@@ -150,58 +150,73 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
   tool that exists, hard constraints. Nothing else.
 - `session.py` — the ADK agent builder, the plugins, the loop, and
   `TokenTally`: every call's usage is printed and traced, and
-  `JobSpec.max_input_tokens` (750k) ends the session when the run's summed
-  input passes it. Run 4 on M04 spent 1.3M input tokens (93k on the last
+  `JobSpec.max_quota_percent` (25) ends the session when this run's share
+  of the provider's usage window reaches it, and `max_input_tokens` (2M) is
+  the raw safety. Run 4 on M04 spent 1.3M input tokens (93k on the last
   call, 170 images resent) and a Plus window ended it; never again.
 - `engine.py` — `EngineContext`, `ingest`, `apply_host_inputs`, `run_session`,
   `emit_results`, and `run(spec)`. No post pass: the session is the whole run.
 - `deepslice.py`, `trace.py` — the DeepSlice seam (reports `UNAVAILABLE`) and
   the full-content JSONL session trace.
 
-## Context and tokens (2026-09-07)
+## Context and tokens (2026-09-09)
 
 The OAuth lane resends the whole history on every call (the Codex backend
-refuses stored responses; the Codex CLI does the same, and OpenAI bills the
-whole chain even over its WebSocket transport), so a run's input cost is
-images-in-context x calls, at ~250-540 tokens per image. LangSlice follows
-the frontier computer-use harnesses (OpenAI's loop: 1 screenshot; Fara-7B,
-UFO, Anthropic's reference loop: 3; text carries everything older):
-- **At most 4 images per call** (`render.MAX_IMAGES_PER_CALL`): `view_slices`,
-  `fetch_atlas`, `orient_slices`, `fit_affine` panels; `compare_placement`
-  ≤4 pairs, one image per pair (`side_by_side` is stitched); `set_positions`
-  pictures its first 4 written sections, each section over its atlas, and
-  names the rest in `unpictured`; `view_stack` is ONE contact sheet
-  (`render.stack_sheet`, 256-px thumbnails, a grid by design) plus the plot.
-- **Only the newest call's images stay in context**
-  (`adk/plugins.py WorkingSetImages`, the `ContextFilterPlugin` custom
-  filter, one instance per session). Older tool results keep their JSON and
-  say their images were dropped; the seed strip's images go as soon as the
-  first tool images exist (labels stay). The cut only moves forward, so the
-  cached prefix is stable and an eviction invalidates only the tail.
-- `session.py TokenTally` prints and traces every call's usage (input,
-  cached, output); `JobSpec.max_input_tokens` (750k) ends a run that passes
-  it. `openai_oauth.py` sends one stable `prompt_cache_key`/`session_id` per
-  session and surfaces `x-codex-*` quota headers.
+refuses stored responses; the Codex CLI does the same). What a run COSTS is
+not the raw input count: the usage window prices a cached input token at
+~0.13x an uncached one (fitted on the x-codex quota headers over run 5's 39
+calls, error half a point; OpenAI's published API rate is 0.1x), so a token
+that sits unchanged in the prefix is nearly free and a token that is new, or
+sits after a prefix edit, is full price. Run 5 (M11, 39 calls): 786k raw,
+560k cached, ~298k paid = 28% of a Plus 5-hour window; of the paid part 58%
+was NEW IMAGES (each paid once, in full, the call it arrives) and 42% new
+text plus prefix breaks. Design rules that follow:
+- **Every image at the atlas's resolution, 512 px long edge at most**
+  (`render.atlas_native_long_edge`: with a known pixel size a show render
+  lands at the atlas's µm/px; the fit path is not capped, its parameters
+  are normalized against the render). `VIEW_LONG_EDGE` 512, seed/atlas 512,
+  `compare_placement` panels 512 (~260 tokens an image, ~530 a stitched
+  pair); the interactive-transform canvas keeps `OVERLAY_LONG_EDGE` 768.
+- **Images stay.** `adk/plugins.py WorkingSetImages` keeps every tool image
+  in context until 192 are live, then cuts the oldest media-bearing calls in
+  ONE batch to 96 (`DEFAULT_MAX_IMAGES` / `DEFAULT_KEEP_IMAGES`); a cut
+  result says "dropped from context". The cut only moves forward, so the
+  prefix is byte-stable between cuts. The seed strip is never touched: it
+  heads the prefix, cached, one picture of every section the model always
+  has. Removing an image to save raw tokens is a false economy: it costs a
+  cache break at that point on every later call (run 5's "newest call only"
+  policy paid ~1.2k of text per call for exactly that).
+- **A tool's images ride inside its `function_call_output`** as labelled
+  `input_image` parts (`openai_oauth._function_call_output`); the separate
+  user message they used to follow in opened a new turn and, under the
+  API's default `reasoning.context = current_turn`, threw the replayed
+  reasoning away. The request sends `context = all_turns`.
 - **Reasoning is replayed.** Each turn's `reasoning` output item (encrypted,
   `store` is false) is kept on the model turn (`thought_signature`, summary
   in a `thought` text part so traces show it) and sent back ahead of that
-  turn, the way the Codex CLI does; before 2026-09-07 it was requested and
-  dropped, so Astra restarted its chain of thought on every call. It sits in
-  the cached prefix, so it costs ~nothing on input. The request also sends
-  `reasoning.context = all_turns` (2026-09-09): the API default,
-  `current_turn`, renders no reasoning from before the last user message,
-  and until then every image-bearing tool result and every nudge was a user
-  message, so the replay was inert. Verified live on the Codex backend.
-Run 4 on M04 (2026-09-07, 48-image working set, 16-image batches) spent
-1.3M input tokens (93k on the last call) and a Plus window ended it; that is
-the number this section exists to keep down. Not adopted, on Nash's call:
-server-side compaction (for heavy text; we are light text, heavy image) and
-a `Memorize` action (replayed reasoning carries facts forward already). The
-WebSocket transport is a latency lever only.
+  turn, the way the Codex CLI does. ~9k tokens by call 39, all cached.
+- **Rows are compact** (`render.compact_rows`): null and empty fields are
+  absent from every tool payload (a position-only run carried null transform
+  fields on every row of every result, a third of the paid text).
+- **The budget is the window.** `session.py TokenTally` prints every call's
+  usage with `paid~` (uncached + 0.13 x cached) and, on the OAuth lane, the
+  window percent this run has used; `JobSpec.max_quota_percent` (25,
+  `--max-quota-percent`) ends the session when the run's share of the window
+  reaches it. `JobSpec.max_input_tokens` (2M, `--max-input-tokens`) stays as
+  the raw safety for lanes that report no quota. `openai_oauth.py` sends one
+  stable `prompt_cache_key`/`session_id` per session and surfaces the
+  `x-codex-*` quota headers.
+Not adopted, on Nash's call: server-side compaction (for heavy text; we are
+light text, heavy image) and a `Memorize` action (replayed reasoning carries
+facts forward already; Codex's `notes` exist to cross a hard context-window
+reset, which our runs never hit). The WebSocket transport is a latency lever
+only. Prefix caching is what makes "re-send the same image" cheap; there is
+no content-addressed reuse, so an overlay composed onto a cached picture is
+a new picture at full price, which at 512 px is ~260 tokens.
 
 ## Rules that are not negotiable here
 
-**Lean harness.** Tools return data. No interpretation in any payload. The job statement carries the job, the facts, one line per tool, the constraints and — when positioning is on — a short `Method` section (Nash, 2026-09-07): place each section on its own evidence and compare candidates before writing, review the whole stack afterwards, re-check both sides of a gap before reporting a break, validate, submit. Asked from its own run-3 trace, Astra said it skipped `compare_placement` and `view_stack` by oversight, not wording, and asked for exactly this. Still out: rules of thumb, failure-mode warnings and region names (the same text runs against every BrainGlobe atlas, species and plane). Full-trace forensics found every major
+**Lean harness.** Tools return data. No interpretation in any payload. The job statement carries the job, the facts, one line per tool, the constraints and — when positioning is on — a short `Method` section (Nash, 2026-09-07): place each section on its own evidence and compare candidates before writing, work in batches (several sections per compare or write call — the "one at a time" wording went on 2026-09-09, it bought 39 calls on M11), review the whole stack afterwards, re-check both sides of a gap before reporting a break, validate, submit. Asked from its own run-3 trace, Astra said it skipped `compare_placement` and `view_stack` by oversight, not wording, and asked for exactly this. Still out: rules of thumb, failure-mode warnings and region names (the same text runs against every BrainGlobe atlas, species and plane). Full-trace forensics found every major
 benchmark failure tracking back to advice the harness injected; a per-slice
 estimation worker that ate 82% of the wall-clock carried ~no signal and was
 deleted; a landmark-tool pass for POSITION estimation benchmarked WORSE and was

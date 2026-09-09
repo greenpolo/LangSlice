@@ -329,6 +329,7 @@ async def run_session(
         debrief_sink=sink,
         progress=ctx.progress,
         max_input_tokens=spec.max_input_tokens,
+        max_quota_percent=spec.max_quota_percent,
     )
     if sink and sink[0]:
         state.debrief = sink[0]

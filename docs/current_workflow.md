@@ -73,7 +73,7 @@ The job statement carries the job, the run's facts (`--fact`,
 `--hemisphere-cue`), one factual line per tool that exists, the hard
 constraints and, when positioning is on, a short `Method` section: place each
 section on its own evidence and compare candidate positions before writing,
-review the whole stack afterwards, re-check both sides of a gap before
+work in batches, review the whole stack afterwards, re-check both sides of a gap before
 reporting a break, validate, submit. No rules of thumb, no failure-mode
 warnings, no region names, and no tool payload carries an opinion.
 
@@ -123,8 +123,11 @@ checkpoint and starts over. `--trace-dir PATH` writes a full-content JSONL
 trace of every agent session.
 
 Every model call prints a `[tokens]` line (input, cached, output, run input
-so far) and the run ends with a total. `--max-input-tokens N` (default
-`JobSpec.max_input_tokens`, 750k) ends the session when the run's summed
+so far) and the run ends with a total. `--max-quota-percent N` (default 25) ends the session when this run's share
+of the provider's usage window reaches N (the OAuth lane's quota headers;
+cached input is ~0.13x there, so the window, not the raw count, is the
+cost); `--max-input-tokens N` (default
+`JobSpec.max_input_tokens`, 2M) ends the session when the run's summed
 input passes N: the OAuth lane resends the whole history every call, so a
 long run grows quadratically and would otherwise be ended by the account's
 usage window instead of by the job. Writes made before the stop are kept.

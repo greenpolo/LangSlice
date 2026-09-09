@@ -102,14 +102,36 @@ def build_agent(
     )
 
 
+#: What a cached input token costs relative to an uncached one. Measured on
+#: the OAuth lane's quota headers (run 5, 2026-09-09: 96%/M uncached,
+#: 13%/M cached, fit error half a point); OpenAI's published API rate is 0.1x.
+CACHED_TOKEN_WEIGHT = 0.13
+
+
+def _int_or_none(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 class TokenTally:
-    """Summed token usage over one session, one line per model call."""
+    """Summed token usage over one session, one line per model call.
+
+    ``paid`` is the uncached-equivalent count: uncached input plus cached
+    input at :data:`CACHED_TOKEN_WEIGHT`. That, not ``input``, is what a
+    run costs.
+    """
 
     def __init__(self) -> None:
         self.calls = 0
         self.input = 0
         self.cached = 0
         self.output = 0
+
+    @property
+    def paid(self) -> int:
+        return int(self.input - self.cached + CACHED_TOKEN_WEIGHT * self.cached)
 
     def add(self, usage: Any) -> str:
         """Add one call's usage; return the one-line report for it."""
@@ -122,7 +144,7 @@ class TokenTally:
         self.output += output
         return (
             f"call {self.calls}: in={prompt} (cached {cached}) out={output}; "
-            f"run in={self.input}"
+            f"run in={self.input} paid~{self.paid}"
         )
 
     def as_dict(self) -> dict[str, int]:
@@ -131,12 +153,13 @@ class TokenTally:
             "input": self.input,
             "cached": self.cached,
             "output": self.output,
+            "paid": self.paid,
         }
 
     def totals(self) -> str:
         return (
-            f"{self.calls} calls, in={self.input} (cached {self.cached}), "
-            f"out={self.output}"
+            f"{self.calls} calls, in={self.input} (cached {self.cached}, "
+            f"paid~{self.paid}), out={self.output}"
         )
 
 
@@ -153,6 +176,7 @@ async def run_agent_session(
     debrief_sink: list[str] | None = None,
     progress: Callable[[str], None] | None = None,
     max_input_tokens: int | None = None,
+    max_quota_percent: int | None = None,
 ) -> tuple[int, int]:
     """Drive one agent pass; return ``(tool_calls, turns)``.
 
@@ -179,6 +203,7 @@ async def run_agent_session(
     tool_calls = 0
     turns = 0
     tokens = TokenTally()
+    quota_start: int | None = None
     stopped: str | None = None
     while turns < max_iterations and not done() and stopped is None:
         turns += 1
@@ -201,9 +226,27 @@ async def run_agent_session(
             if usage is not None and not getattr(event, "partial", False):
                 line = tokens.add(usage)
                 quota = (getattr(event, "custom_metadata", None) or {}).get("quota")
+                used: int | None = None
                 if quota:
                     line += f"; quota {quota}"
+                    percent = _int_or_none(quota.get("primary_used_percent"))
+                    if percent is not None:
+                        if quota_start is None:
+                            quota_start = percent
+                        used = percent - quota_start
+                        line += f"; window used by this run {used}%"
                 (progress or logger.info)(f"[tokens] {line}")
+                if (
+                    max_quota_percent is not None
+                    and used is not None
+                    and used >= max_quota_percent
+                ):
+                    stopped = "quota_budget"
+                    (progress or logger.warning)(
+                        f"[tokens] this run has used {used}% of the usage window, "
+                        f"the budget of {max_quota_percent}%; ending the session"
+                    )
+                    break
                 if max_input_tokens is not None and tokens.input > max_input_tokens:
                     stopped = "input_budget"
                     (progress or logger.warning)(

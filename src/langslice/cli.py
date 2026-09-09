@@ -426,6 +426,13 @@ def _add_linear_run_parser(subparsers: argparse._SubParsersAction) -> None:
         "JobSpec.max_input_tokens)",
     )
     p.add_argument(
+        "--max-quota-percent",
+        type=int,
+        default=None,
+        help="Hard stop on the share of the provider's usage window one run "
+        "may spend (default: JobSpec.max_quota_percent)",
+    )
+    p.add_argument(
         "--no-debrief",
         dest="debrief",
         action="store_false",
@@ -492,6 +499,7 @@ def _run_linear(args: argparse.Namespace) -> None:
         resume=args.resume,
         debrief=args.debrief,
         **({"max_input_tokens": args.max_input_tokens} if args.max_input_tokens else {}),
+        **({"max_quota_percent": args.max_quota_percent} if args.max_quota_percent else {}),
     )
 
     print(f"Atlas: {spec.atlas}  Plane: {spec.plane}")

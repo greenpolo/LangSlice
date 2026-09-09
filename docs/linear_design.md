@@ -151,7 +151,8 @@ Context is bounded, because the whole history is resent on every call: tool
 images live in a working set (`WorkingSetImages`, 48 high / 16 low, trimmed
 in batches so the cached prefix stays stable; the seed strip's images go with
 the first trim), every call's token usage is printed and traced, and
-`JobSpec.max_input_tokens` ends a run that passes it.
+`JobSpec.max_quota_percent` ends a run whose share of the provider's usage
+window reaches it; `JobSpec.max_input_tokens` is the raw safety.
 
 There is ONE session. The alignment tools live in it like every other tool, so
 a section's preview history, its atlas fetches and the stack reading that

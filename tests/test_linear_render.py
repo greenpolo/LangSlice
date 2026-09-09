@@ -121,3 +121,14 @@ def test_caption_labels_a_copy_without_touching_the_original():
     strip, below = array[:18, :90], array[30:, :]
     assert strip.max() > 200  # bright text in a dark box, top-left
     assert below.max() == 10  # nothing outside the strip changed
+
+
+def test_compact_rows_drops_null_and_empty_fields_only():
+    from langslice.linear.render import compact_rows
+
+    rows = [
+        {"index": 0, "id": "a", "position_mm": None, "flip": False, "caveats": [],
+         "damage_note": "", "transform_iou": 0.0}
+    ]
+    assert compact_rows(rows) == [{"index": 0, "id": "a", "flip": False, "transform_iou": 0.0}]
+    assert rows[0]["position_mm"] is None  # the input is not mutated

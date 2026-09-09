@@ -16,51 +16,63 @@ from google.adk.plugins.base_plugin import BasePlugin
 from google.genai import types
 from PIL import Image
 
-#: Media-bearing tool calls whose images stay in context: the newest one.
-#: Mature vision-action harnesses keep one to four images in context at any
-#: time and carry everything older as text (OpenAI's computer-use loop: the
-#: newest screenshot; Fara-7B, UFO, Anthropic's reference loop: three). Every
-#: call resends the whole history, so images in context are the run's cost:
-#: run 4 on M04 (2026-09-07) carried 170 images / 93k input tokens on its
-#: last call and 1.3M over the run, at ~250-540 tokens per image.
-DEFAULT_KEEP_IMAGE_CALLS = 1
+#: Images in context before the working set is cut, and what it is cut to.
+#: The upstream cache prices a token that sits unchanged in the prefix at
+#: ~0.13x (measured against the quota headers, run 5, 2026-09-09), and an
+#: image at the atlas's resolution is ~260 tokens, so images that STAY are
+#: cheap and images that are removed cost a cache break at the removal point
+#: on every later call. So: keep everything, cut rarely and in one batch, and
+#: never touch the seed strip at the head of the prefix. 192 images at ~260
+#: tokens is ~50k raw, ~6.5k paid per call at the 0.13x cache rate.
+DEFAULT_MAX_IMAGES = 192
+DEFAULT_KEEP_IMAGES = 96
 
 _DROPPED_TOOL = (
-    "dropped from context: only the newest call's images are kept. Call again to see them."
+    "dropped from context to bound the request; call again to see them."
 )
-_DROPPED_USER = "(image dropped from context; `view_slices` shows it again)"
 
 
 class WorkingSetImages:
-    """Keep only the newest tool call's images in context.
+    """Keep tool images in context until there are too many, then cut once.
 
-    One instance per session: the cut only moves forward, so the prefix
-    before it is byte-identical from one request to the next and the
-    upstream prompt cache pays for everything but the tail. Tool images
-    before the cut are dropped and their JSON says so; user-message images
-    (the seed strip) go as soon as the first tool images exist — by then the
-    model has read the strip, and any section can be shown again on request.
+    One instance per session: the cut only moves forward, oldest media-bearing
+    tool calls first, so the prefix before it is byte-identical from one
+    request to the next and the upstream prompt cache pays for everything but
+    the newest tail. Tool images before the cut are dropped and their JSON
+    says so. The seed strip (user-message images) is never touched: it sits
+    at the head of the prefix, cached, and is the one picture of every
+    section the model always has.
     """
 
-    def __init__(self, *, keep_calls: int = DEFAULT_KEEP_IMAGE_CALLS) -> None:
-        if keep_calls < 1:
-            raise ValueError("keep_calls must be at least 1")
-        self.keep_calls = keep_calls
+    def __init__(
+        self, *, max_images: int = DEFAULT_MAX_IMAGES, keep_images: int = DEFAULT_KEEP_IMAGES
+    ) -> None:
+        if not 0 < keep_images <= max_images:
+            raise ValueError("need 0 < keep_images <= max_images")
+        self.max_images = max_images
+        self.keep_images = keep_images
         self.cut = 0  # media-bearing tool calls dropped, oldest first
 
     def __call__(self, contents: list[types.Content]) -> list[types.Content]:
         sites = [
-            (ci, pi)
+            (ci, pi, len(part.function_response.parts))
             for ci, content in enumerate(contents)
             for pi, part in enumerate(content.parts or [])
             if part.function_response is not None and part.function_response.parts
         ]
         if not sites:
             return contents
-        self.cut = max(self.cut, len(sites) - self.keep_calls)
-        first_kept_content = sites[self.cut][0] if self.cut < len(sites) else len(contents)
+        live = sum(n for _, _, n in sites[self.cut :])
+        if live > self.max_images:
+            cut = self.cut
+            while cut < len(sites) and live > self.keep_images:
+                live -= sites[cut][2]
+                cut += 1
+            self.cut = cut
+        if self.cut == 0:
+            return contents
         out = list(contents)
-        for ci, pi in sites[: self.cut]:
+        for ci, pi, _ in sites[: self.cut]:
             parts = list(out[ci].parts or [])
             stale = parts[pi]
             assert stale.function_response is not None
@@ -78,17 +90,6 @@ class WorkingSetImages:
                 }
             )
             out[ci] = out[ci].model_copy(update={"parts": parts})
-        for ci in range(first_kept_content):
-            content = out[ci]
-            if content.role != "user" or not any(
-                part.inline_data is not None for part in content.parts or []
-            ):
-                continue
-            parts = [
-                types.Part.from_text(text=_DROPPED_USER) if part.inline_data is not None else part
-                for part in content.parts or []
-            ]
-            out[ci] = content.model_copy(update={"parts": parts})
         return out
 
 
