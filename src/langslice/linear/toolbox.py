@@ -46,6 +46,7 @@ from langslice.linear.render import (
     beside,
     canvas_geometry,
     caption,
+    compact_rows,
     image_to_part,
     physical_views,
     pivot_on_canvas,
@@ -386,7 +387,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
 
     def rows() -> dict[str, Any]:
         return {
-            "rows": status_rows(state),
+            "rows": compact_rows(status_rows(state)),
             "cutting_angles_deg": dict(state.cutting_angles_deg),
             "interval_breaks": list(state.interval_breaks),
         }
@@ -400,7 +401,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         """
         wanted = set(touched)
         return {
-            "changed": [row for row in status_rows(state) if row["id"] in wanted],
+            "changed": compact_rows([row for row in status_rows(state) if row["id"] in wanted]),
             "n_sections": len(state.slices),
             "cutting_angles_deg": dict(state.cutting_angles_deg),
             "interval_breaks": list(state.interval_breaks),
@@ -1114,7 +1115,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                     state.pitch_deg, state.yaw_deg, dict(IDENTITY_PARAMS),
                     mode=view, zoom=window, template_opacity=opacity, outlines=layer,
                     label=f"{record.id} vs atlas {position:.2f} mm",
-                    long_edge=OVERLAY_LONG_EDGE,
+                    long_edge=VIEW_LONG_EDGE,  # 512 px panels, ~260 tokens each
                 )
             except Exception as exc:
                 failed.append({"id": record.id, "position_mm": round(position, 3),
@@ -1195,7 +1196,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         )
         return {
             "status": "ok",
-            "rows": ordered,
+            "rows": compact_rows(ordered),
             "description": (
                 "Attached: one contact sheet of every section in the order of "
                 "its written position, each captioned, with the atlas section "

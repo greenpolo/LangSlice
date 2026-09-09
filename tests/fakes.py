@@ -99,6 +99,9 @@ def ellipse_section(
     return Image.fromarray(canvas, mode="RGB")
 
 
+_QUOTA_CALLS = [0]
+
+
 class _StackLlm(BaseLlm):
     """A fake BaseLlm that drives one linear stack session to ``submit``.
 
@@ -110,6 +113,9 @@ class _StackLlm(BaseLlm):
     positions: dict[str, float] | None = None
     #: Input tokens reported per call, so budget handling can be tested.
     input_tokens_per_call: int = 0
+    #: Usage-window percent the fake reports as used, stepping this much per
+    #: call from 40, the way the OAuth lane's quota headers do.
+    quota_percent_per_call: int = 0
 
     async def generate_content_async(
         self, llm_request: LlmRequest, stream: bool = False
@@ -140,6 +146,13 @@ class _StackLlm(BaseLlm):
             )
         else:
             part = types.Part.from_text(text="Nothing to submit.")
+        # ADK resolves a fresh instance per turn, so the call count lives here.
+        _QUOTA_CALLS[0] += 1
+        quota = (
+            {"quota": {"primary_used_percent": str(40 + _QUOTA_CALLS[0] * self.quota_percent_per_call)}}
+            if self.quota_percent_per_call
+            else None
+        )
         yield LlmResponse(
             content=types.Content(role="model", parts=[part]),
             partial=False,
@@ -148,6 +161,7 @@ class _StackLlm(BaseLlm):
                 prompt_token_count=self.input_tokens_per_call,
                 candidates_token_count=1,
             ),
+            custom_metadata=quota,
         )
 
 
@@ -155,13 +169,19 @@ def install_fake_adk_model_stack(
     monkeypatch: Any,
     positions: dict[str, float] | None = None,
     input_tokens_per_call: int = 0,
+    quota_percent_per_call: int = 0,
 ) -> None:
     """Patch LLMRegistry.new_llm so a linear session submits at once."""
     from google.adk.models.registry import LLMRegistry
 
+    _QUOTA_CALLS[0] = 0
+
     def _fake_new_llm(model: str) -> BaseLlm:
         return _StackLlm(
-            model=model, positions=positions, input_tokens_per_call=input_tokens_per_call
+            model=model,
+            positions=positions,
+            input_tokens_per_call=input_tokens_per_call,
+            quota_percent_per_call=quota_percent_per_call,
         )
 
     monkeypatch.setattr(LLMRegistry, "new_llm", staticmethod(_fake_new_llm))

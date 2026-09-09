@@ -48,7 +48,7 @@ if TYPE_CHECKING:  # ponytail: import cycle — engine builds the toolbox that r
 
 #: Long edge for ``view_slices`` images: enough to zoom past the seed-message
 #: stack images without paying full-resolution tokens.
-VIEW_LONG_EDGE = 1024
+VIEW_LONG_EDGE = 512
 #: Long edge for the per-section images in the seed message. Small on purpose:
 #: the whole stack (40-odd sections) rides in one user message and stays in
 #: context for the whole session.
@@ -121,6 +121,25 @@ def render_cache_key(
     return (record.id, record.flip, record.rotation_deg, long_edge, ctx.spec.preprocess, frame)
 
 
+def atlas_native_long_edge(
+    ctx: EngineContext, record: SliceState, source: Image.Image, cap: int
+) -> int:
+    """The long edge that puts *source* at the atlas's own resolution, capped.
+
+    A section carries no more information than the atlas it is judged
+    against, so pixels finer than the atlas voxel are tokens spent on nothing
+    (Nash, 2026-09-09). With a known pixel size the render lands at the
+    atlas's micrometres per pixel; without one *cap* stands. Never above
+    *cap*, never below 128.
+    """
+    um_per_px, _ = ctx.calibration(record.id)
+    if not um_per_px:
+        return cap
+    atlas_um = min(float(r) for r in ctx.atlas.resolution)
+    native = max(source.width, source.height) * um_per_px / atlas_um
+    return max(128, min(cap, int(round(native))))
+
+
 def render_slice(
     ctx: EngineContext,
     record: SliceState,
@@ -156,6 +175,10 @@ def render_slice(
         source = normalize_image(handle.copy())
     if frame:
         source = crop_to_tissue(source)
+    # The atlas-resolution cap applies to the SHOW path only: a fit's
+    # parameters are normalized against the render they were computed on.
+    if frame:
+        long_edge = atlas_native_long_edge(ctx, record, source, long_edge)
     prepped = prepare_image_for_vlm(source, max_long_edge=long_edge).image
     # How much the render shrank the pixels, before any quarter-turn: the
     # section's own micrometres per pixel times this is the canvas's.
@@ -239,6 +262,20 @@ def status_rows(state: StackState) -> list[dict[str, Any]]:
             }
         )
     return rows
+
+
+def compact_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Rows without their null and empty fields, for a tool payload.
+
+    A position-only run carried null transform fields and empty caveat lists
+    on every row of every result, a third of the text the model paid for
+    (run 5, 2026-09-09). Absent means null; ``status_text`` keeps the full
+    rows.
+    """
+    return [
+        {k: v for k, v in row.items() if v is not None and v != [] and v != ""}
+        for row in rows
+    ]
 
 
 def status_text(state: StackState) -> str:
