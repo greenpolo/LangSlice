@@ -177,15 +177,19 @@ text plus prefix breaks. Design rules that follow:
   are normalized against the render). `VIEW_LONG_EDGE` 512, seed/atlas 512,
   `compare_placement` panels 512 (~260 tokens an image, ~530 a stitched
   pair); the interactive-transform canvas keeps `OVERLAY_LONG_EDGE` 768.
-- **Images stay.** `adk/plugins.py WorkingSetImages` keeps every tool image
-  in context until 192 are live, then cuts the oldest media-bearing calls in
-  ONE batch to 96 (`DEFAULT_MAX_IMAGES` / `DEFAULT_KEEP_IMAGES`); a cut
-  result says "dropped from context". The cut only moves forward, so the
-  prefix is byte-stable between cuts. The seed strip is never touched: it
-  heads the prefix, cached, one picture of every section the model always
-  has. Removing an image to save raw tokens is a false economy: it costs a
-  cache break at that point on every later call (run 5's "newest call only"
-  policy paid ~1.2k of text per call for exactly that).
+- **Only the newest call's images stay** (`adk/plugins.py WorkingSetImages`),
+  and the seed strip is never touched. Measured, not reasoned (runs 5 and 6,
+  2026-09-09): an image is full price the call it arrives whatever happens
+  later; a kept image then costs 0.13x on EVERY later call, so keeping tool
+  images carries the whole accumulated image history and grows
+  quadratically (run 6, keep-all at 512 px: 2.4k -> 8.8k paid a call by
+  call 15, killed); dropping the previous call's images costs only the
+  re-read of the small text tail after them, because nothing image-heavy
+  sits after the newest result. Cutting OLD images is the expensive move
+  (everything after the cut re-reads once), cutting the newest-but-one is
+  nearly free. The seed strip heads the prefix, is never edited, rides at
+  0.13x (~1.2k a call at 36 sections) and is the one picture of every
+  section the model always has.
 - **A tool's images ride inside its `function_call_output`** as labelled
   `input_image` parts (`openai_oauth._function_call_output`); the separate
   user message they used to follow in opened a new turn and, under the
