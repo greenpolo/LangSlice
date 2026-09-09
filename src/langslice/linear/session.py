@@ -254,9 +254,9 @@ async def run_agent_session(
                     and used is not None
                     and used >= max_quota_percent
                 ):
-                    # No break: the turn finishes (its tool call runs and is
-                    # answered, so the history stays well-formed), then one
-                    # grace call to submit.
+                    # No break here: the pending tool call is answered first
+                    # (see below), so the history stays well-formed for the
+                    # grace call.
                     if stopped is None:
                         (progress or logger.warning)(
                             f"[tokens] this run has used {used}% of the usage window, "
@@ -282,6 +282,12 @@ async def run_agent_session(
                     tool_calls,
                 )
             if done() or tool_calls > max_iterations:
+                break
+            if stopped is not None and (event.get_function_responses() or not calls):
+                # ADK runs the WHOLE tool loop inside one run_async: a model
+                # that never stops calling tools never ends the turn on its
+                # own (Gemini 3.8 Flash ran 30 calls past the budget,
+                # 2026-09-09). Leave once the budget-tripping call is answered.
                 break
         if done():
             break
