@@ -244,6 +244,16 @@ def build_job_statement(
             "- Write every position in one `set_positions`, then re-check the "
             "sections you were unsure about with `compare_placement` and "
             "correct them.",
+            *(
+                [
+                    "- After the first write, run `fit_position` on every "
+                    "section (window 3 mm, angles false) and write its best "
+                    "position where the fit disagrees with yours; confirm "
+                    "with `compare_placement`."
+                ]
+                if "fit_position" in tool_names
+                else []
+            ),
             "- Mark damaged sections with a note each, set the order, run "
             "`view_stack`, look again at anything out of sequence or "
             "mis-spaced, then `validate` and `submit`.",
