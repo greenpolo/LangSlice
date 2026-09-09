@@ -8,6 +8,7 @@ slice; otherwise the plane is resampled obliquely.
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
@@ -34,6 +35,9 @@ MAX_FETCH_POSITIONS = MAX_IMAGES_PER_CALL
 #: arrive at ~180 px while the stack images are 512 px; resizing puts every
 #: atlas image at the size of the sections it is compared with.
 ATLAS_LONG_EDGE = 512
+#: Most atlas sections in the seed strip. At 512 px an atlas section is ~260
+#: tokens, so 48 is ~12k raw once and ~1.6k a call at the cached rate.
+SEED_ATLAS_MAX_IMAGES = 48
 
 
 def _as_floats(values: list[Any]) -> list[float]:
@@ -195,3 +199,37 @@ def make_fetch_atlas(state: StackState, ctx: EngineContext):
         return result
 
     return fetch_atlas
+
+
+def atlas_strip_parts(
+    ctx: EngineContext, state: StackState, *, max_images: int = SEED_ATLAS_MAX_IMAGES
+) -> list[types.Part]:
+    """The atlas at evenly spaced positions, labelled, for the seed message.
+
+    Until 2026-09-09 the model never saw the atlas as a set: four bare atlas
+    sections from one ``fetch_atlas`` and then only ever half of a
+    comparison pair. The strip spans the atlas's valid range at the nominal
+    interval, or coarser when that would exceed *max_images*, and heads the
+    prefix with the section strip, cached for the whole run.
+    """
+    pos_lo, pos_hi = ctx.position_range
+    span = pos_hi - pos_lo
+    step = max(state.interval_mm, span / max(1, max_images - 1))
+    step = math.ceil(step / 0.05) * 0.05  # a round number of 50 um
+    positions = [pos_lo + k * step for k in range(int(span / step) + 1)]
+    parts: list[types.Part] = [
+        types.Part.from_text(
+            text=(
+                f"The atlas follows at {len(positions)} positions, every "
+                f"{step:.2f} mm from {positions[0]:.2f} to {positions[-1]:.2f} mm, "
+                "at the stack's cutting angles, one image each preceded by its "
+                "label 'atlas <position> mm'."
+            )
+        )
+    ]
+    for position in positions:
+        label = f"atlas {position:.2f} mm"
+        picture = resize_long_edge(atlas_section(ctx, state, position, frame=True), ATLAS_LONG_EDGE)
+        parts.append(types.Part.from_text(text=label))
+        parts.append(image_to_part(caption(picture, label)))
+    return parts

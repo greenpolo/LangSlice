@@ -149,7 +149,7 @@ def test_writes_return_the_picture_of_what_they_did(tmp_path: Path):
     # A pair per written section: the section, then the atlas at its position.
     assert len(placed[TOOL_MEDIA_PARTS_KEY]) == 2  # one stitched picture per section
     assert "s0.png, s3.png" in placed["description"]
-    assert placed["unpictured"] == []
+    assert "unpictured" not in placed
 
     turned = _tool(box, "orient_slices")([{"id": "s1.png", "flip": True}])
     assert len(turned[TOOL_MEDIA_PARTS_KEY]) == 1

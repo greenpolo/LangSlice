@@ -845,12 +845,10 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             entries: ``[{"id": "<filename>", "position_mm": <number>}]``.
 
         Returns:
-            What was written, what was clamped, the rows it changed, and for
-            the first 4 written sections one image each: the section as
-            corrected over the atlas section at the position it was given,
-            both tissue-framed, labelled in the top-left corner. Sections
-            beyond the fourth are written all the same; ``unpictured`` names
-            them, and ``compare_placement`` shows any of them on request.
+            What was written, what was clamped, the rows it changed, and one
+            image per written section: the section as corrected over the
+            atlas section at the position it was given, both tissue-framed,
+            labelled in the top-left corner.
         """
         if not entries:
             return {"status": "error", "error": "BAD_ARGS"}
@@ -901,7 +899,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         }
         if clamped:
             result["atlas_range_mm"] = [round(pos_lo, 3), round(pos_hi, 3)]
-        shown = written[:MAX_IMAGES_PER_CALL]
+        shown = written
         parts: list[types.Part] = []
         failed: list[dict[str, str]] = []
         for row in shown:
@@ -922,17 +920,12 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                 continue
             parts.append(image_to_part(caption(picture, label)))
         result["render_failed"] = failed
-        result["unpictured"] = [row["id"] for row in written[MAX_IMAGES_PER_CALL:]]
         result["description"] = (
             "Attached: one image per written section, in the order written, "
             "the section as corrected over the atlas section at the position "
             "it was given, for "
             + ", ".join(row["id"] for row in shown)
-            + (
-                f". {len(result['unpictured'])} more were written without a picture."
-                if result["unpictured"]
-                else "."
-            )
+            + "."
         )
         result[TOOL_MEDIA_PARTS_KEY] = parts
         return result
