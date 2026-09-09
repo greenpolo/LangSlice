@@ -141,6 +141,10 @@ class ToolBox:
     #: Every parameter set `adjust_transform` was given this run, per section
     #: id, oldest first.
     transform_history: dict[str, list[dict[str, float]]] = field(default_factory=dict)
+    #: Positions each section was compared at since its last write, and
+    #: whether `view_stack` has run since the last write (the gates).
+    compared: dict[str, set[float]] = field(default_factory=dict)
+    reviewed: bool = False
 
     @property
     def names(self) -> list[str]:
@@ -633,6 +637,12 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         refusal = submit_errors(state, spec, breaks)
         if refusal is not None:
             return refusal
+        if spec.has("position") and spec.position.gated and not box.reviewed:
+            return {
+                "status": "refused",
+                "error": "NOT_REVIEWED",
+                "detail": "view_stack has not run since the last set_positions write",
+            }
 
         snapshot()
         state.interval_breaks = sorted(set(breaks))
@@ -891,6 +901,17 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             except (TypeError, ValueError):
                 rejected.append({"id": record.id, "reason": "position_mm is not a number"})
                 continue
+            if spec.position.gated and len(box.compared.get(record.id, ())) < 2:
+                seen = sorted(box.compared.get(record.id, ()))
+                rejected.append(
+                    {
+                        "id": record.id,
+                        "reason": "not compared at 2 or more positions since its last "
+                        "write; compare_placement first",
+                        "compared_at_mm": seen,
+                    }
+                )
+                continue
             value = min(pos_hi, max(pos_lo, requested))
             if value != requested:
                 clamped.append(
@@ -903,6 +924,8 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             moved_from[record.id] = record.position_mm
             record.position_mm = value
             written.append({"id": record.id, "position_mm": round(value, 3)})
+            box.compared.pop(record.id, None)
+            box.reviewed = False
 
         if not written:
             return {
@@ -1141,6 +1164,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         parts: list[types.Part] = []
         failed: list[dict[str, Any]] = []
         for record, position in pairs:
+            box.compared.setdefault(record.id, set()).add(round(position, 2))
             if record.id not in sections:
                 section = render_slice(ctx, record, long_edge=PREVIEW_LONG_EDGE)
                 sections[record.id] = (section, *calibrate(state, ctx, record, section))
@@ -1203,6 +1227,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         Returns:
             The rows in that order and the two images.
         """
+        box.reviewed = True
         def atlas_under(record: SliceState) -> Any:
             if record.position_mm is None:
                 return None

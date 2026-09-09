@@ -426,6 +426,13 @@ def _add_linear_run_parser(subparsers: argparse._SubParsersAction) -> None:
         "JobSpec.max_input_tokens)",
     )
     p.add_argument(
+        "--gates",
+        action="store_true",
+        help="Refuse set_positions for a section not compared at 2+ positions "
+        "since its last write, and submit until view_stack has run after the "
+        "last write",
+    )
+    p.add_argument(
         "--max-quota-percent",
         type=int,
         default=None,
@@ -492,6 +499,7 @@ def _run_linear(args: argparse.Namespace) -> None:
             strict_interval=args.strict_interval,
             deepslice=args.deepslice,
             bayesian=args.bayesian,
+            gated=args.gates,
         ),
         transform=TransformSpec(angles=args.angles, elastix=args.elastix),
         facts=list(args.facts),

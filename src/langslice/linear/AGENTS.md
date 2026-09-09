@@ -231,6 +231,18 @@ a new picture at full price, which at 512 px is ~260 tokens.
 
 ## Rules that are not negotiable here
 
+**Gates for the cheap models (`--gates`, `PositionSpec.gated`, 2026-09-09).**
+With Luna effectively free on the subscription and Gemini 3.8 Flash on the
+API key, Nash's direction is hand-holding for them. The harness does it as
+data-only refusals, not advice: gated, `set_positions` refuses a section
+not compared at two or more positions since its last write (the refusal
+names the positions it was compared at), and `submit` refuses until
+`view_stack` has run after the last write. Run 9 (M11, same harness as
+Astra's run 8): Luna wrote all 36 positions in one uncompared call and
+submitted at call 7 (median 1.2 mm, 0 of 36 within 0.25); Gemini 3.8 Flash
+made 18 compares in 30 calls and never wrote. Astra passes the gates
+without noticing. Off by default so the Astra runs stay comparable.
+
 **Lean harness.** Tools return data. No interpretation in any payload. The job statement carries the job, the facts, one line per tool, the constraints and — when positioning is on — a short `Method` section (Nash, 2026-09-07): place each section on its own evidence and compare candidates before writing, work in batches (several sections per compare or write call — the "one at a time" wording went on 2026-09-09, it bought 39 calls on M11), review the whole stack afterwards, re-check both sides of a gap before reporting a break, validate, submit. Asked from its own run-3 trace, Astra said it skipped `compare_placement` and `view_stack` by oversight, not wording, and asked for exactly this. Still out: rules of thumb, failure-mode warnings and region names (the same text runs against every BrainGlobe atlas, species and plane). Full-trace forensics found every major
 benchmark failure tracking back to advice the harness injected; a per-slice
 estimation worker that ate 82% of the wall-clock carried ~no signal and was

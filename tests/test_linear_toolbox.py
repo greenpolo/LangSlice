@@ -505,3 +505,42 @@ def test_tools_keep_their_identity_and_run_one_at_a_time():
     for t in threads:
         t.join()
     assert inside["peak"] == 1
+
+
+# --- the look-before-you-write gates ---------------------------------------
+
+
+def test_gated_set_positions_refuses_an_uncompared_section(tmp_path: Path):
+    from langslice.linear.spec import PositionSpec
+
+    state, _, box = _box(tmp_path, tasks=["position"], position=PositionSpec(gated=True))
+    result = _tool(box, "set_positions")([{"id": "s0.png", "position_mm": 3.0}])
+    assert result["status"] == "error" and result["error"] == "NOTHING_WRITTEN"
+    assert "compare_placement first" in result["rejected"][0]["reason"]
+    assert state.by_id("s0.png").position_mm is None
+    # one candidate is not a comparison
+    _tool(box, "compare_placement")([{"id": "s0.png", "positions_mm": [3.0]}])
+    result = _tool(box, "set_positions")([{"id": "s0.png", "position_mm": 3.0}])
+    assert result["status"] == "error" and result["rejected"][0]["compared_at_mm"] == [3.0]
+    # two candidates are; the write then resets the record
+    _tool(box, "compare_placement")([{"id": "s0.png", "positions_mm": [2.5, 3.5]}])
+    result = _tool(box, "set_positions")([{"id": "s0.png", "position_mm": 3.0}])
+    assert result["status"] == "ok" and state.by_id("s0.png").position_mm == 3.0
+    result = _tool(box, "set_positions")([{"id": "s0.png", "position_mm": 3.2}])
+    assert result["status"] == "error"
+
+
+def test_gated_submit_waits_for_a_review_after_the_last_write(tmp_path: Path):
+    from langslice.linear.spec import PositionSpec
+
+    state, _, box = _box(
+        tmp_path, placed=True, tasks=["position"], position=PositionSpec(gated=True)
+    )
+    result = _submit(box)
+    assert result["status"] == "refused" and result["error"] == "NOT_REVIEWED"
+    _tool(box, "view_stack")()
+    _tool(box, "compare_placement")([{"id": "s1.png", "positions_mm": [2.4, 2.6]}])
+    _tool(box, "set_positions")([{"id": "s1.png", "position_mm": 2.6}])
+    assert _submit(box)["error"] == "NOT_REVIEWED"  # the write undid the review
+    _tool(box, "view_stack")()
+    assert _submit(box)["status"] == "ok" and state.submitted is True
