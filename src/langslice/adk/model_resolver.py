@@ -127,6 +127,14 @@ def resolve_adk_model(model: str | object) -> str | object:
 
     lowered = stripped.lower()
 
+    # `gemini-api/<model>` is the canonical spelling (providers/registry.py);
+    # ADK takes the bare Gemini model id.
+    if lowered.startswith("gemini-api/"):
+        stripped = stripped[len("gemini-api/"):].strip()
+        lowered = stripped.lower()
+        if not stripped:
+            raise ValueError("gemini-api model strings require a model id after '/'")
+
     # OpenAI subscription-OAuth backend (Codex Responses). No API key: the
     # token comes from `langslice login` or the Codex CLI.
     for oauth_prefix in _OAUTH_PREFIXES:
@@ -222,4 +230,4 @@ def resolve_adk_model(model: str | object) -> str | object:
             openai_kwargs["api_base"] = base_url
         return litellm_cls(model=f"openai/{stripped}", **openai_kwargs)
 
-    return model
+    return stripped
