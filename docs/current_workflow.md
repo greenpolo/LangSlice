@@ -106,9 +106,12 @@ scale bar. The alignment parameters (`rotation_deg`, `scale_x`, `scale_y`,
 normalized numbers -- on every transform, silhouette fits included, so a fit
 and a hand alignment are the same five numbers.
 
-`--gates` refuses `set_positions` for a section not compared at two or more
-positions since its last write, and `submit` until `view_stack` has run after
-the last write: look-before-you-write for the cheaper models, off by default.
+`--gates` refuses `set_positions` for a section not compared since its last
+write, and `submit` until `view_stack` has run after the last write;
+`--playbook` replaces the Method section with GPT-6 Astra's own method
+(hypothesise order and every position from the opening images, confirm each
+section at that position four per call, write, re-check, review). Both are for
+the cheaper models and off by default.
 
 `--reasoning` sets the reasoning effort on models that expose one (the
 `openai-oauth/*` backend); unset leaves the provider's own default.

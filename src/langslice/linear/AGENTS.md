@@ -234,10 +234,19 @@ a new picture at full price, which at 512 px is ~260 tokens.
 **Gates for the cheap models (`--gates`, `PositionSpec.gated`, 2026-09-09).**
 With Luna effectively free on the subscription and Gemini 3.8 Flash on the
 API key, Nash's direction is hand-holding for them. The harness does it as
-data-only refusals, not advice: gated, `set_positions` refuses a section
-not compared at two or more positions since its last write (the refusal
-names the positions it was compared at), and `submit` refuses until
-`view_stack` has run after the last write. Run 9 (M11, same harness as
+data-only refusals first: gated, `set_positions` refuses a section not
+compared since its last write (ONE compare, because Astra's own method
+confirms each section at one hypothesised position; the first version
+demanded two and blocked that), and `submit` refuses until `view_stack`
+has run after the last write. Gates alone did not help Luna (run 10:
+median 1.79, it looked without seeing), so `--playbook`
+(`PositionSpec.playbook`) puts Astra's run-8 method into the job
+statement's Method section, read off its trace: a complete hypothesis of
+order and every position from the opening images (it used the interleaved
+cutting series), one confirmation sweep four sections per call at one
+candidate each, one bulk write, targeted re-checks, damage notes, order,
+`view_stack`, validate, submit. That is coaching text and the one
+exception to the lean-harness rule below; off for Astra. Run 9 (M11, same harness as
 Astra's run 8): Luna wrote all 36 positions in one uncompared call and
 submitted at call 7 (median 1.2 mm, 0 of 36 within 0.25); Gemini 3.8 Flash
 made 18 compares in 30 calls and never wrote. Astra passes the gates

@@ -518,12 +518,9 @@ def test_gated_set_positions_refuses_an_uncompared_section(tmp_path: Path):
     assert result["status"] == "error" and result["error"] == "NOTHING_WRITTEN"
     assert "compare_placement first" in result["rejected"][0]["reason"]
     assert state.by_id("s0.png").position_mm is None
-    # one candidate is not a comparison
+    # one compare is enough (Astra confirms at one hypothesised position);
+    # the write then resets the record
     _tool(box, "compare_placement")([{"id": "s0.png", "positions_mm": [3.0]}])
-    result = _tool(box, "set_positions")([{"id": "s0.png", "position_mm": 3.0}])
-    assert result["status"] == "error" and result["rejected"][0]["compared_at_mm"] == [3.0]
-    # two candidates are; the write then resets the record
-    _tool(box, "compare_placement")([{"id": "s0.png", "positions_mm": [2.5, 3.5]}])
     result = _tool(box, "set_positions")([{"id": "s0.png", "position_mm": 3.0}])
     assert result["status"] == "ok" and state.by_id("s0.png").position_mm == 3.0
     result = _tool(box, "set_positions")([{"id": "s0.png", "position_mm": 3.2}])
@@ -539,8 +536,23 @@ def test_gated_submit_waits_for_a_review_after_the_last_write(tmp_path: Path):
     result = _submit(box)
     assert result["status"] == "refused" and result["error"] == "NOT_REVIEWED"
     _tool(box, "view_stack")()
-    _tool(box, "compare_placement")([{"id": "s1.png", "positions_mm": [2.4, 2.6]}])
+    _tool(box, "compare_placement")([{"id": "s1.png", "positions_mm": [2.6]}])
     _tool(box, "set_positions")([{"id": "s1.png", "position_mm": 2.6}])
     assert _submit(box)["error"] == "NOT_REVIEWED"  # the write undid the review
     _tool(box, "view_stack")()
     assert _submit(box)["status"] == "ok" and state.submitted is True
+
+
+def test_the_playbook_puts_astras_method_in_the_job_statement(tmp_path: Path):
+    from langslice.linear.prompt import build_job_statement
+    from langslice.linear.spec import PositionSpec
+
+    kwargs = dict(tool_names=["set_positions", "compare_placement", "view_stack", "submit"],
+                  species="mouse", pos_lo=0.0, pos_hi=10.0, axis_ends=("anterior", "posterior"))
+    state, _, spec = _stack(tmp_path, tasks=["position"], position=PositionSpec(playbook=True))
+    text = build_job_statement(spec, state, **kwargs)
+    assert "form a complete hypothesis" in text and "four sections per call" in text
+    assert "one at a time" not in text
+    state, _, spec = _stack(tmp_path, tasks=["position"], position=PositionSpec())
+    plain = build_job_statement(spec, state, **kwargs)
+    assert "complete hypothesis" not in plain and "Method:" in plain

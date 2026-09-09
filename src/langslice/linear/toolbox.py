@@ -901,14 +901,14 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             except (TypeError, ValueError):
                 rejected.append({"id": record.id, "reason": "position_mm is not a number"})
                 continue
-            if spec.position.gated and len(box.compared.get(record.id, ())) < 2:
-                seen = sorted(box.compared.get(record.id, ()))
+            if spec.position.gated and not box.compared.get(record.id):
+                # One compare is enough: Astra's run-8 method confirms each
+                # section at ONE hypothesised position (2026-09-09).
                 rejected.append(
                     {
                         "id": record.id,
-                        "reason": "not compared at 2 or more positions since its last "
-                        "write; compare_placement first",
-                        "compared_at_mm": seen,
+                        "reason": "not compared since its last write; "
+                        "compare_placement first",
                     }
                 )
                 continue
