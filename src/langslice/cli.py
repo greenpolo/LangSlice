@@ -325,7 +325,7 @@ def _add_linear_run_parser(subparsers: argparse._SubParsersAction) -> None:
     p.add_argument(
         "--reasoning",
         default=None,
-        choices=["none", "minimal", "low", "medium", "high"],
+        choices=["low", "medium", "high", "xhigh", "max"],
         help="Reasoning effort for models that expose one. Default: the "
         "provider's own",
     )

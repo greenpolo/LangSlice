@@ -243,21 +243,18 @@ def test_function_response_media_is_forwarded_as_input_image():
         ],
     )
     items = chatgpt.content_to_input_items(response)
-    assert items[0]["type"] == "function_call_output"
-    assert items[0]["call_id"] == "call_1"
-    # The text output names where its images are: they cannot ride inside a
-    # function_call_output, and a model that reads "attached" there finds none.
-    assert items[0]["output"].startswith(json.dumps({"status": "ok"}))
-    assert "1 image(s) from this get_slice call follow" in items[0]["output"]
-    follow_up = items[1]
-    assert follow_up["role"] == "user"
-    assert "get_slice" in follow_up["content"][0]["text"]
-    assert follow_up["content"][1] == {
-        "type": "input_text",
-        "text": "get_slice image 1 of 1",
-    }
-    assert follow_up["content"][2]["type"] == "input_image"
-    assert follow_up["content"][2]["image_url"].startswith("data:image/png;base64,")
+    # ONE item: the images ride inside the tool result. A separate user
+    # message would open a new turn and lose the replayed reasoning.
+    assert len(items) == 1
+    item = items[0]
+    assert item["type"] == "function_call_output"
+    assert item["call_id"] == "call_1"
+    content = item["output"]
+    assert content[0] == {"type": "input_text", "text": json.dumps({"status": "ok"})}
+    assert content[1] == {"type": "input_text", "text": "get_slice image 1 of 1"}
+    assert content[2]["type"] == "input_image"
+    assert content[2]["detail"] == "high"
+    assert content[2]["image_url"].startswith("data:image/png;base64,")
 
 
 def test_each_tool_image_is_labelled_before_it():
@@ -278,7 +275,7 @@ def test_each_tool_image_is_labelled_before_it():
             )
         ],
     )
-    content = chatgpt.content_to_input_items(response)[1]["content"]
+    content = chatgpt.content_to_input_items(response)[0]["output"]
     assert [item["type"] for item in content] == [
         "input_text",
         "input_text",
@@ -334,7 +331,11 @@ def test_build_request_body_carries_instructions_and_model():
     assert body["instructions"] == "be terse"
     assert body["stream"] is True
     assert body["store"] is False
-    assert body["reasoning"] == {"effort": "medium", "summary": "auto"}
+    assert body["reasoning"] == {
+        "effort": "medium",
+        "summary": "auto",
+        "context": "all_turns",
+    }
     assert body["input"][0]["content"][0]["text"] == "hi"
 
 

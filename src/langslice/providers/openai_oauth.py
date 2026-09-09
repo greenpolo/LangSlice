@@ -28,10 +28,12 @@ matches the openai/codex client and RayBytes/ChatMock:
 * model tool calls arrive on ``response.output_item.done`` with
   ``item.type == "function_call"`` (``name``/``arguments``/``call_id``);
 * reasoning items (``encrypted_content``, ``store`` is false) are kept on the
-  model turn and replayed verbatim ahead of it, so each turn continues the
-  previous turn's chain of thought instead of starting over;
+  model turn and replayed verbatim ahead of it, and the request asks for
+  ``reasoning.context = all_turns`` so the model actually renders them (the
+  default, ``current_turn``, drops everything before the last user message);
 * tool results go back as ``{"type": "function_call_output", "call_id",
-  "output"}`` input items.
+  "output"}`` input items; a tool's images ride inside ``output`` as
+  ``input_image`` parts, never as a separate user message.
 """
 
 from __future__ import annotations
@@ -462,8 +464,6 @@ def content_to_input_items(content: types.Content) -> list[dict[str, Any]]:
     # is joined as one assistant message.
     user_content: list[dict[str, Any]] = []
     model_texts: list[str] = []
-    tool_media: list[str] = []
-    tool_names: list[str] = []
 
     reasoning_items: list[dict[str, Any]] = []
     for part in content.parts or []:
@@ -472,34 +472,7 @@ def content_to_input_items(content: types.Content) -> list[dict[str, Any]]:
             # model continues its own chain of thought instead of restarting.
             reasoning_items.append(json.loads(part.thought_signature))
         elif part.function_response is not None:
-            response = part.function_response
-            payload = response.response
-            output = payload if isinstance(payload, str) else _json_dumps(payload)
-            # A tool can attach media to its result. A function_call_output
-            # carries text only, so the media follows as its own user message,
-            # and the output says so: GPT-6 Astra read a result that said
-            # "attached" and found no image in it (2026-09-06 debrief).
-            uris = [
-                uri
-                for response_part in response.parts or []
-                if (uri := _part_data_uri(response_part.inline_data))
-            ]
-            if uris:
-                name = response.name or "tool"
-                output += (
-                    f"\n\n[{len(uris)} image(s) from this {name} call follow "
-                    "in the next user message, each preceded by "
-                    f"'{name} image k of {len(uris)}'.]"
-                )
-                tool_media.extend(uris)
-                tool_names.extend([name] * len(uris))
-            items.append(
-                {
-                    "type": "function_call_output",
-                    "call_id": response.id or "",
-                    "output": output,
-                }
-            )
+            items.append(_function_call_output(part.function_response))
         elif part.function_call is not None:
             call = part.function_call
             items.append(
@@ -533,24 +506,42 @@ def content_to_input_items(content: types.Content) -> list[dict[str, Any]]:
             )
     elif user_content:
         items.append({"type": "message", "role": "user", "content": user_content})
-
-    if tool_media:
-        label = ", ".join(dict.fromkeys(tool_names))
-        # One user message, but each image gets its own text item right before
-        # it: without that the model sees N anonymous attachments and cannot
-        # tell which tool call, or which argument, any one of them answers.
-        media_content: list[dict[str, Any]] = [
-            {"type": "input_text", "text": f"Image(s) returned by tool: {label}."}
-        ]
-        total = len(tool_media)
-        pairs = enumerate(zip(tool_media, tool_names, strict=True), start=1)
-        for index, (uri, name) in pairs:
-            media_content.append(
-                {"type": "input_text", "text": f"{name} image {index} of {total}"}
-            )
-            media_content.append({"type": "input_image", "image_url": uri})
-        items.append({"type": "message", "role": "user", "content": media_content})
     return items
+
+
+def _function_call_output(response: types.FunctionResponse) -> dict[str, Any]:
+    """One tool result as a ``function_call_output`` item.
+
+    A tool's images ride INSIDE the output as ``input_image`` parts (the
+    Codex CLI's ``view_image`` does the same), each preceded by an
+    ``input_text`` label naming the call and its index, so the model can tell
+    which call any image answers. Before 2026-09-09 the images followed as a
+    separate user message; every such message opened a new turn, and the
+    replayed reasoning before it was discarded under the API's default
+    ``reasoning.context`` of ``current_turn``.
+    """
+    payload = response.response
+    output = payload if isinstance(payload, str) else _json_dumps(payload)
+    uris = [
+        uri
+        for response_part in response.parts or []
+        if (uri := _part_data_uri(response_part.inline_data))
+    ]
+    item: dict[str, Any] = {
+        "type": "function_call_output",
+        "call_id": response.id or "",
+        "output": output,
+    }
+    if uris:
+        name = response.name or "tool"
+        content: list[dict[str, Any]] = [{"type": "input_text", "text": output}]
+        for index, uri in enumerate(uris, start=1):
+            content.append(
+                {"type": "input_text", "text": f"{name} image {index} of {len(uris)}"}
+            )
+            content.append({"type": "input_image", "image_url": uri, "detail": "high"})
+        item["output"] = content
+    return item
 
 
 def _reasoning_part(item: dict[str, Any]) -> types.Part:
@@ -648,7 +639,8 @@ class ChatGptLlm(BaseLlm):
     """
 
     reasoning_effort: str = "medium"
-    """Codex reasoning effort: none | minimal | low | medium | high."""
+    """Reasoning effort: low | medium | high | xhigh | max (GPT-6 Astra
+    returns HTTP 400 for ``none``; ``minimal`` is gone with it)."""
 
     prompt_cache_key: str = Field(default_factory=lambda: str(uuid.uuid4()))
     """Stable across the turns of one agent loop, for upstream prompt caching."""
@@ -685,7 +677,14 @@ class ChatGptLlm(BaseLlm):
             "store": False,
             "stream": True,
             "prompt_cache_key": self.prompt_cache_key,
-            "reasoning": {"effort": self.reasoning_effort, "summary": "auto"},
+            # context=all_turns: render the replayed reasoning of EARLIER turns
+            # into this sample; the default, current_turn, drops it at every
+            # user message (2026-09-09, verified live on the Codex backend).
+            "reasoning": {
+                "effort": self.reasoning_effort,
+                "summary": "auto",
+                "context": "all_turns",
+            },
             "include": ["reasoning.encrypted_content"],
         }
         instructions = _system_instruction(llm_request.config)

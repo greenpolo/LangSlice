@@ -44,10 +44,11 @@ Nash kept five of its ten asks:
   images / 93k input tokens on its last call and 1.3M over the run, and a
   Plus window ended it. Now `WorkingSetImages` (see "Context and tokens"
   below), a dropped call's result says "dropped from context" instead of
-  "attached", the tool text
-  says its images follow in the next user message
-  (`openai_oauth.content_to_input_items`), and the picture-returning writes
-  report `render_failed`.
+  "attached", a tool's images ride INSIDE its `function_call_output` as
+  labelled `input_image` parts (`openai_oauth._function_call_output`,
+  2026-09-09 — the separate user message they used to follow in opened a
+  new turn and threw the replayed reasoning away), and the
+  picture-returning writes report `render_failed`.
 - `compare_placement` (position stage): the section on the physical canvas
   against the atlas at any positions, every `VIEW_MODES` view, zoom, opacity
   — the "linked viewer" and the "placement preview / AP stepper" in one
@@ -186,7 +187,11 @@ UFO, Anthropic's reference loop: 3; text carries everything older):
   in a `thought` text part so traces show it) and sent back ahead of that
   turn, the way the Codex CLI does; before 2026-09-07 it was requested and
   dropped, so Astra restarted its chain of thought on every call. It sits in
-  the cached prefix, so it costs ~nothing on input.
+  the cached prefix, so it costs ~nothing on input. The request also sends
+  `reasoning.context = all_turns` (2026-09-09): the API default,
+  `current_turn`, renders no reasoning from before the last user message,
+  and until then every image-bearing tool result and every nudge was a user
+  message, so the replay was inert. Verified live on the Codex backend.
 Run 4 on M04 (2026-09-07, 48-image working set, 16-image batches) spent
 1.3M input tokens (93k on the last call) and a Plus window ended it; that is
 the number this section exists to keep down. Not adopted, on Nash's call:

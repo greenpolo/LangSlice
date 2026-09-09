@@ -162,7 +162,7 @@ produced its position are all in one context.
 ```
 langslice linear run FOLDER [--tasks reorder,position,transform]
     [--atlas ..] [--plane ..] [--model ..] [--preprocess auto|none]
-    [--reasoning none|minimal|low|medium|high] [--pixel-size-um UM]
+    [--reasoning low|medium|high|xhigh|max] [--pixel-size-um UM]
     [--no-flip] [--hemisphere-cue TEXT]
     [--thickness UM] [--interval UM] [--strict-interval] [--deepslice] [--bayesian]
     [--angles] [--elastix]
