@@ -22,10 +22,11 @@ from PIL import Image
 #: image at the atlas's resolution is ~260 tokens, so images that STAY are
 #: cheap and images that are removed cost a cache break at the removal point
 #: on every later call. So: keep everything, cut rarely and in one batch, and
-#: never touch the seed strip at the head of the prefix. 192 images at ~260
-#: tokens is ~50k raw, ~6.5k paid per call at the 0.13x cache rate.
-DEFAULT_MAX_IMAGES = 192
-DEFAULT_KEEP_IMAGES = 96
+#: never touch the seed strip at the head of the prefix. 256 images at ~260
+#: tokens is ~67k raw, ~8.7k paid per call at the 0.13x cache rate; a normal
+#: run (seed 80, ~50 compares, ~40 write pictures) stays under it.
+DEFAULT_MAX_IMAGES = 256
+DEFAULT_KEEP_IMAGES = 128
 
 _DROPPED_TOOL = (
     "dropped from context to bound the request; call again to see them."
