@@ -682,6 +682,11 @@ def _run_serve(args: argparse.Namespace) -> None:
 
 
 def main(argv: list[str] | None = None):
+    # `.env` holds the API keys (GEMINI_API_KEY, OPENAI_API_KEY); every lane
+    # reads it, not only the one whose module happens to be imported.
+    from langslice.providers.openai_config import _load_dotenv
+
+    _load_dotenv()
     parser = _build_parser()
     args = parser.parse_args(argv)
 
