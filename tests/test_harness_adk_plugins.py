@@ -9,7 +9,8 @@ from google.genai import types
 
 from langslice.adk import TOOL_MEDIA_PARTS_KEY
 from langslice.adk.plugins import (
-    DEFAULT_KEEP_IMAGE_CALLS,
+    DEFAULT_KEEP_IMAGES,
+    DEFAULT_MAX_IMAGES,
     ModelCallPacingPlugin,
     RequestCapturePlugin,
     WorkingSetImages,
@@ -184,26 +185,25 @@ def _seed() -> types.Content:
     )
 
 
-def test_working_set_keeps_only_the_newest_call_and_never_moves_back():
-    """The newest media-bearing call keeps its pixels; everything older is
-    text. The cut only advances, so the prefix before it is byte-identical
-    between requests and the upstream prompt cache pays for it. Dropping the
-    PREVIOUS call's images re-reads only the small text tail after them;
-    keeping them would carry the whole image history at 0.13x every call."""
-    assert DEFAULT_KEEP_IMAGE_CALLS == 1
-    ws = WorkingSetImages()
-    history = [_seed(), _tool_turn(4)]
-    assert ws(history) is history
-    history.append(_tool_turn(3))
-    assert _kept(ws(history)) == [0, 3]
-    assert ws.cut == 1
-    history.append(_tool_turn(2))
-    assert _kept(ws(history)) == [0, 0, 2]
+def test_working_set_keeps_everything_until_the_cap_then_cuts_once():
+    """Images that stay in the prefix are cached (~0.13x); a removal costs a
+    cache break at that point on every later call. So nothing is dropped
+    until the cap, then one batch cut to the keep level, oldest first, and
+    the cut never moves back."""
+    assert DEFAULT_KEEP_IMAGES < DEFAULT_MAX_IMAGES
+    ws = WorkingSetImages(max_images=6, keep_images=3)
+    history = [_seed(), _tool_turn(2), _tool_turn(2), _tool_turn(2)]
+    assert ws(history) is history  # 6 images: at the cap, nothing cut
+    history.append(_tool_turn(1))  # 7: over the cap
+    assert _kept(ws(history)) == [0, 0, 2, 1]  # cut to <= 3, oldest first
+    assert ws.cut == 2
+    history.append(_tool_turn(1))  # 4 live: under the cap, cut stays put
+    assert _kept(ws(history)) == [0, 0, 2, 1, 1]
     assert ws.cut == 2
 
 
 def test_working_set_dropped_results_say_so_and_do_not_mutate_the_input():
-    ws = WorkingSetImages()
+    ws = WorkingSetImages(max_images=3, keep_images=3)
     contents = [_seed(), _tool_turn(3), _tool_turn(3)]
     out = ws(contents)
     assert _kept(out) == [0, 3]
@@ -217,7 +217,7 @@ def test_working_set_dropped_results_say_so_and_do_not_mutate_the_input():
 def test_working_set_never_touches_the_seed_strip():
     """The seed strip heads the prefix: cached, and the one picture of every
     section the model always has."""
-    ws = WorkingSetImages()
+    ws = WorkingSetImages(max_images=1, keep_images=1)
     contents = [_seed(), _tool_turn(1), _tool_turn(1)]
     out = ws(contents)
     assert _kept(out) == [0, 1]

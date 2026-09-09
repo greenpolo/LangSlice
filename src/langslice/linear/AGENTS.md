@@ -177,19 +177,20 @@ text plus prefix breaks. Design rules that follow:
   are normalized against the render). `VIEW_LONG_EDGE` 512, seed/atlas 512,
   `compare_placement` panels 512 (~260 tokens an image, ~530 a stitched
   pair); the interactive-transform canvas keeps `OVERLAY_LONG_EDGE` 768.
-- **Only the newest call's images stay** (`adk/plugins.py WorkingSetImages`),
-  and the seed strip is never touched. Measured, not reasoned (runs 5 and 6,
-  2026-09-09): an image is full price the call it arrives whatever happens
-  later; a kept image then costs 0.13x on EVERY later call, so keeping tool
-  images carries the whole accumulated image history and grows
-  quadratically (run 6, keep-all at 512 px: 2.4k -> 8.8k paid a call by
-  call 15, killed); dropping the previous call's images costs only the
-  re-read of the small text tail after them, because nothing image-heavy
-  sits after the newest result. Cutting OLD images is the expensive move
-  (everything after the cut re-reads once), cutting the newest-but-one is
-  nearly free. The seed strip heads the prefix, is never edited, rides at
-  0.13x (~1.2k a call at 36 sections) and is the one picture of every
-  section the model always has.
+- **Images stay** (`adk/plugins.py WorkingSetImages`): every tool image is
+  kept until 192 are live, then the oldest media-bearing calls are cut in
+  ONE batch to 96 (`DEFAULT_MAX_IMAGES` / `DEFAULT_KEEP_IMAGES`, a cut
+  result says "dropped from context"); the cut only moves forward and the
+  seed strip is never touched. Measured on M11 at low effort, 2026-09-09:
+  keep-all (run 6, killed at call 16) had median 0.10 mm / 30 of 36 within
+  0.25 with positions written by call 15; newest-call-only (run 7, 21
+  calls, submitted) 0.30 mm / 14 of 36, and its debrief said the "dropped
+  from context" results made its comparisons unreliable. Cost: a kept
+  image is 0.13x on every later call, so keep-all grows quadratically
+  (2.4k -> 8.8k paid a call by call 15), but a batched run submits in ~21
+  calls, where keep-all is ~16% of a window against newest-only's 14%.
+  The batch cut is the safety for a run that goes long; cutting old images
+  re-reads everything after the cut once, so it must stay rare.
 - **A tool's images ride inside its `function_call_output`** as labelled
   `input_image` parts (`openai_oauth._function_call_output`); the separate
   user message they used to follow in opened a new turn and, under the
