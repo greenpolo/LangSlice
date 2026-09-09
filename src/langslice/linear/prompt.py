@@ -46,7 +46,9 @@ TOOL_LINES: dict[str, str] = {
     "it is drawn against the atlas at each, up to 4 pairs per call, one image "
     "per pair, on one physical-scale canvas; e.g. one section at 4.6, 4.8 and "
     "5.0 mm. `mode` "
-    "is side_by_side, overlay, checkerboard, outlines, section or template, "
+    "is template (default: the atlas at that position on the section's own "
+    "canvas and scale; the section itself is in the opening message), "
+    "side_by_side, overlay, checkerboard, outlines or section, "
     "`zoom` is [x0, y0, x1, y1] of the canvas and magnifies (the crop comes "
     "before the resize, so small structures get more pixels), "
     "`template_opacity` is 0..1 and `outlines` is all, outer or none; "
@@ -58,8 +60,8 @@ TOOL_LINES: dict[str, str] = {
     "the next, plus a plot of position against corrected index; writes "
     "nothing.",
     "set_positions": "writes positions for one or more sections, clamped to "
-    "the atlas range, and returns every written section over the atlas "
-    "section at the position it was given.",
+    "the atlas range, and returns each newly placed or moved section over "
+    "the atlas section at the position it was given.",
     "run_deepslice": "seeds positions (and optionally angles) with DeepSlice.",
     "fit_position": "searches the atlas around one section's current position "
     "and reports the best it found; writes nothing.",

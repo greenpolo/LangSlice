@@ -206,7 +206,8 @@ def test_the_input_token_budget_ends_a_run_before_the_account_does(
     budget = [line for line in lines if "passed the budget" in line]
     assert len(budget) == 1 and "3000" in budget[0]
     assert any(line.startswith("[tokens] call 1: in=1000") for line in lines)
-    assert any("run total: 3 calls, in=3000" in line for line in lines)
+    # the stop, then ONE grace call to submit (refused: the stack is incomplete)
+    assert any("run total: 4 calls, in=4000" in line for line in lines)
 
 
 def test_the_quota_budget_is_measured_from_the_first_call(tmp_path: Path, monkeypatch):
@@ -229,7 +230,7 @@ def test_the_quota_budget_is_measured_from_the_first_call(tmp_path: Path, monkey
     stops = [line for line in lines if "the budget of 25%" in line]
     assert len(stops) == 1 and "used 30%" in stops[0]  # 50, 60, 70, 80: 0, 10, 20, 30
     assert any("window used by this run 10%" in line for line in lines)
-    assert any("run total: 4 calls" in line for line in lines)
+    assert any("run total: 5 calls" in line for line in lines)  # the stop + one grace call
 
 
 def test_the_seed_carries_the_atlas_strip_after_the_sections(tmp_path: Path):

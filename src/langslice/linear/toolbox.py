@@ -14,7 +14,9 @@ stop there.
 
 from __future__ import annotations
 
+import functools
 import logging
+import threading
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, cast
 
@@ -109,6 +111,23 @@ IDENTITY_PARAMS: dict[str, float] = {
     "translate_x_mm": 0.0,
     "translate_y_mm": 0.0,
 }
+
+
+def _serialized(tool: Any, lock: threading.Lock) -> Any:
+    """*tool* under *lock*: one state, one writer at a time.
+
+    ADK runs the several tool calls of one model turn concurrently (sync
+    functions in a thread pool), and every tool here closes over ONE
+    ``StackState`` and one undo stack. ``functools.wraps`` keeps the name,
+    docstring and signature ADK builds the schema from.
+    """
+
+    @functools.wraps(tool)
+    def run(*args: Any, **kwargs: Any) -> Any:
+        with lock:
+            return tool(*args, **kwargs)
+
+    return run
 
 
 @dataclass
@@ -846,14 +865,16 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
 
         Returns:
             What was written, what was clamped, the rows it changed, and one
-            image per written section: the section as corrected over the
-            atlas section at the position it was given, both tissue-framed,
-            labelled in the top-left corner.
+            image per section that is newly placed or moved by an interval or
+            more: the section as corrected over the atlas section at the
+            position it was given, both tissue-framed, labelled in the
+            top-left corner.
         """
         if not entries:
             return {"status": "error", "error": "BAD_ARGS"}
         before = state.to_dict()
         written: list[dict[str, Any]] = []
+        moved_from: dict[str, float | None] = {}
         clamped: list[dict[str, Any]] = []
         unknown: list[str] = []
         rejected: list[dict[str, Any]] = []
@@ -879,6 +900,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                         "clamped_to_mm": round(value, 3),
                     }
                 )
+            moved_from[record.id] = record.position_mm
             record.position_mm = value
             written.append({"id": record.id, "position_mm": round(value, 3)})
 
@@ -899,7 +921,15 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         }
         if clamped:
             result["atlas_range_mm"] = [round(pos_lo, 3), round(pos_hi, 3)]
-        shown = written
+        # A picture only where the position is new or moved by an interval
+        # or more: a bulk write of sections just compared returned 36
+        # pictures at once (run 8, 2026-09-09), all of them already seen.
+        shown = [
+            row
+            for row in written
+            if (old := moved_from.get(row["id"])) is None
+            or abs(float(row["position_mm"]) - old) >= state.interval_mm
+        ]
         parts: list[types.Part] = []
         failed: list[dict[str, str]] = []
         for row in shown:
@@ -920,12 +950,22 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                 continue
             parts.append(image_to_part(caption(picture, label)))
         result["render_failed"] = failed
+        quiet = len(written) - len(shown)
         result["description"] = (
-            "Attached: one image per written section, in the order written, "
-            "the section as corrected over the atlas section at the position "
-            "it was given, for "
-            + ", ".join(row["id"] for row in shown)
-            + "."
+            (
+                "Attached: one image per newly placed or moved section, in the "
+                "order written, the section as corrected over the atlas section "
+                "at the position it was given, for "
+                + ", ".join(row["id"] for row in shown)
+                + "."
+                if shown
+                else "No images: no section is newly placed or moved by an interval."
+            )
+            + (
+                f" {quiet} written within an interval of where they were are not pictured."
+                if quiet
+                else ""
+            )
         )
         result[TOOL_MEDIA_PARTS_KEY] = parts
         return result
@@ -1028,11 +1068,14 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             entries: ``[{"id": "<filename or corrected index>",
                 "positions_mm": [<mm>, ...]}]``. An empty or missing
                 ``positions_mm`` means that section's current position.
-            mode: "side_by_side" (the section beside the atlas template in
-                one image, same scale and crop), "overlay" (the
-                section with the outlines on it), "checkerboard" (section and
-                template in alternating tiles), "outlines" (atlas lines and the
-                section's silhouette on black), "section" or "template".
+            mode: "template" (default: the atlas at that position on the
+                section's own canvas, at the section's scale — the section
+                itself is in the opening message and `view_slices`),
+                "side_by_side" (the section beside the atlas template in one
+                image, same scale and crop), "overlay" (the section with the
+                outlines on it), "checkerboard" (section and template in
+                alternating tiles), "outlines" (atlas lines and the section's
+                silhouette on black) or "section".
             zoom: [x0, y0, x1, y1] as fractions of the canvas; empty is all.
             template_opacity: 0..1, the atlas template blended under the
                 outlines in "overlay".
@@ -1043,7 +1086,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             The section-position pairs compared, in order, each with its
             calibration, and the images per pair in that order.
         """
-        view = str(mode or "side_by_side").strip().lower()
+        view = str(mode or "template").strip().lower()
         if view not in VIEW_MODES:
             return {"status": "error", "error": "BAD_MODE", "modes": list(VIEW_MODES)}
         layer = str(outlines or "all").strip().lower()
@@ -1787,4 +1830,6 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             box.tools.append(set_cutting_angles)
 
     box.tools.append(submit)
+    lock = threading.Lock()
+    box.tools = [_serialized(tool, lock) for tool in box.tools]
     return box

@@ -476,3 +476,32 @@ def test_fetch_atlas_images_are_section_sized(tmp_path: Path):
     assert result["status"] == "ok"
     image = Image.open(io.BytesIO(result[TOOL_MEDIA_PARTS_KEY][0].inline_data.data))
     assert max(image.size) == ATLAS_LONG_EDGE
+
+
+def test_tools_keep_their_identity_and_run_one_at_a_time():
+    """ADK runs a turn's several calls concurrently; every tool shares one
+    state, so the box serializes them without changing what ADK sees."""
+    import threading
+    import time
+
+    from langslice.linear.toolbox import _serialized
+
+    lock = threading.Lock()
+    inside = {"now": 0, "peak": 0}
+
+    def slow(x: int) -> int:
+        """Doc kept."""
+        inside["now"] += 1
+        inside["peak"] = max(inside["peak"], inside["now"])
+        time.sleep(0.02)
+        inside["now"] -= 1
+        return x
+
+    wrapped = _serialized(slow, lock)
+    assert wrapped.__name__ == "slow" and wrapped.__doc__ == "Doc kept."
+    threads = [threading.Thread(target=wrapped, args=(k,)) for k in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert inside["peak"] == 1
