@@ -16,57 +16,63 @@ from google.adk.plugins.base_plugin import BasePlugin
 from google.genai import types
 from PIL import Image
 
-#: Media-bearing tool calls whose images stay in context: the newest one.
-#: The cost model, measured on the quota headers (runs 5 and 6, 2026-09-09):
-#: a token that sits unchanged in the prefix is ~0.13x, a token after any
-#: edit point is full price once, and an image is new (full price) the call
-#: it arrives whatever happens later. Keeping tool images therefore costs
-#: 0.13x the WHOLE accumulated image history on every call, which is
-#: quadratic (run 6 climbed from 2.4k to 8.8k paid a call by call 15), while
-#: dropping the previous call's images costs only the re-read of the small
-#: text tail after them, because nothing image-heavy sits after the newest
-#: result. So: the newest call keeps its pixels, everything older is text,
-#: and the cut never moves back. The seed strip is different: it heads the
-#: prefix and is never edited, so it rides at 0.13x for the whole run
-#: (~1.2k a call at 36 sections) and the model always has one picture of
-#: every section (Nash, 2026-09-09).
-DEFAULT_KEEP_IMAGE_CALLS = 1
+#: Images in context before the working set is cut, and what it is cut to.
+#: The upstream cache prices a token that sits unchanged in the prefix at
+#: ~0.13x (measured against the quota headers, run 5, 2026-09-09), and an
+#: image at the atlas's resolution is ~260 tokens, so images that STAY are
+#: cheap and images that are removed cost a cache break at the removal point
+#: on every later call. So: keep everything, cut rarely and in one batch, and
+#: never touch the seed strip at the head of the prefix. 192 images at ~260
+#: tokens is ~50k raw, ~6.5k paid per call at the 0.13x cache rate.
+DEFAULT_MAX_IMAGES = 192
+DEFAULT_KEEP_IMAGES = 96
 
 _DROPPED_TOOL = (
-    "dropped from context: only the newest call's images are kept. Call again to see them."
+    "dropped from context to bound the request; call again to see them."
 )
 
 
 class WorkingSetImages:
-    """Keep only the newest tool call's images in context.
+    """Keep tool images in context until there are too many, then cut once.
 
-    One instance per session: the cut only moves forward, so the prefix
-    before it is byte-identical from one request to the next and the
-    upstream prompt cache pays for everything but the tail. Tool images
-    before the cut are dropped and their JSON says so. User-message images
-    (the seed strip) are never touched.
+    One instance per session: the cut only moves forward, oldest media-bearing
+    tool calls first, so the prefix before it is byte-identical from one
+    request to the next and the upstream prompt cache pays for everything but
+    the newest tail. Tool images before the cut are dropped and their JSON
+    says so. The seed strip (user-message images) is never touched: it sits
+    at the head of the prefix, cached, and is the one picture of every
+    section the model always has.
     """
 
-    def __init__(self, *, keep_calls: int = DEFAULT_KEEP_IMAGE_CALLS) -> None:
-        if keep_calls < 1:
-            raise ValueError("keep_calls must be at least 1")
-        self.keep_calls = keep_calls
+    def __init__(
+        self, *, max_images: int = DEFAULT_MAX_IMAGES, keep_images: int = DEFAULT_KEEP_IMAGES
+    ) -> None:
+        if not 0 < keep_images <= max_images:
+            raise ValueError("need 0 < keep_images <= max_images")
+        self.max_images = max_images
+        self.keep_images = keep_images
         self.cut = 0  # media-bearing tool calls dropped, oldest first
 
     def __call__(self, contents: list[types.Content]) -> list[types.Content]:
         sites = [
-            (ci, pi)
+            (ci, pi, len(part.function_response.parts))
             for ci, content in enumerate(contents)
             for pi, part in enumerate(content.parts or [])
             if part.function_response is not None and part.function_response.parts
         ]
         if not sites:
             return contents
-        self.cut = max(self.cut, len(sites) - self.keep_calls)
+        live = sum(n for _, _, n in sites[self.cut :])
+        if live > self.max_images:
+            cut = self.cut
+            while cut < len(sites) and live > self.keep_images:
+                live -= sites[cut][2]
+                cut += 1
+            self.cut = cut
         if self.cut == 0:
             return contents
         out = list(contents)
-        for ci, pi in sites[: self.cut]:
+        for ci, pi, _ in sites[: self.cut]:
             parts = list(out[ci].parts or [])
             stale = parts[pi]
             assert stale.function_response is not None
