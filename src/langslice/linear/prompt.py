@@ -189,6 +189,15 @@ def build_job_statement(
             "- `submit` is refused unless the positions run one way along the "
             "corrected order."
         )
+        if spec.position.gated:
+            constraints.append(
+                "- `set_positions` is refused for a section that has not been "
+                "compared at two or more positions since it was last written."
+            )
+            constraints.append(
+                "- `submit` is refused until `view_stack` has run after the last "
+                "`set_positions` write."
+            )
         if spec.position.strict_interval:
             constraints.append(
                 f"- Every consecutive spacing must be within 10% of "
