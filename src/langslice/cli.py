@@ -428,9 +428,14 @@ def _add_linear_run_parser(subparsers: argparse._SubParsersAction) -> None:
     p.add_argument(
         "--gates",
         action="store_true",
-        help="Refuse set_positions for a section not compared at 2+ positions "
-        "since its last write, and submit until view_stack has run after the "
-        "last write",
+        help="Refuse set_positions for a section not compared since its last "
+        "write, and submit until view_stack has run after the last write",
+    )
+    p.add_argument(
+        "--playbook",
+        action="store_true",
+        help="Put GPT-6 Astra's own method in the job statement (hypothesise "
+        "everything, confirm, write, re-check, review); for the cheaper models",
     )
     p.add_argument(
         "--max-quota-percent",
@@ -500,6 +505,7 @@ def _run_linear(args: argparse.Namespace) -> None:
             deepslice=args.deepslice,
             bayesian=args.bayesian,
             gated=args.gates,
+            playbook=args.playbook,
         ),
         transform=TransformSpec(angles=args.angles, elastix=args.elastix),
         facts=list(args.facts),

@@ -192,7 +192,7 @@ def build_job_statement(
         if spec.position.gated:
             constraints.append(
                 "- `set_positions` is refused for a section that has not been "
-                "compared at two or more positions since it was last written."
+                "compared since it was last written."
             )
             constraints.append(
                 "- `submit` is refused until `view_stack` has run after the last "
@@ -224,7 +224,31 @@ def build_job_statement(
     )
 
     method: list[str] = []
-    if spec.has("position"):
+    if spec.has("position") and spec.position.playbook:
+        # GPT-6 Astra's own method, read off its run-8 trace (M11, 34 of 36
+        # within 0.25 mm): a complete hypothesis first, then one confirmation
+        # sweep, one write, targeted re-checks, a review. Coaching text: only
+        # for the models that do not find this on their own.
+        method = [
+            "",
+            "Method:",
+            "- First, from the opening images alone — every section and the "
+            "atlas strip — form a complete hypothesis: the corrected order of "
+            "the whole stack and a position for every section. Look for the "
+            "structure of how the sections were cut (series that interleave, "
+            "missing sections) and use it.",
+            "- Then confirm the hypothesis: `compare_placement` every section "
+            "at its hypothesised position, four sections per call, walking the "
+            "stack in order; where the atlas at that position does not match "
+            "the section, change the position.",
+            "- Write every position in one `set_positions`, then re-check the "
+            "sections you were unsure about with `compare_placement` and "
+            "correct them.",
+            "- Mark damaged sections with a note each, set the order, run "
+            "`view_stack`, look again at anything out of sequence or "
+            "mis-spaced, then `validate` and `submit`.",
+        ]
+    elif spec.has("position"):
         method = [
             "",
             "Method:",

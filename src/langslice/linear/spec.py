@@ -43,12 +43,18 @@ class PositionSpec:
     #: Build the ``fit_position`` tool (the oblique fitter).
     bayesian: bool = False
     #: Look-before-you-write gates (2026-09-09, for the cheaper models):
-    #: ``set_positions`` is refused for a section not compared at two or
-    #: more positions since its last write, and ``submit`` until
+    #: ``set_positions`` is refused for a section not compared at any
+    #: position since its last write, and ``submit`` until
     #: ``view_stack`` has run after the last write. Data-only refusals that
     #: name what is missing; Astra passes them without noticing, Luna wrote
     #: 36 uncompared positions in one call without them.
     gated: bool = False
+    #: Astra's own run-8 method, written into the job statement for the
+    #: cheaper models (2026-09-09): hypothesise order and every position from
+    #: the opening images, confirm each section at that position four per
+    #: call, write, re-check the doubtful, review, submit. Coaching text, so
+    #: off for Astra and off by default.
+    playbook: bool = False
 
 
 @dataclass
