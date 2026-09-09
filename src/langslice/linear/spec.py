@@ -69,8 +69,8 @@ class JobSpec:
     atlas: str = "allen_mouse_25um"
     plane: str = "coronal"
     model: str | None = None
-    #: Reasoning effort for models that expose one (none|minimal|low|medium|
-    #: high). None leaves the provider's own default alone.
+    #: Reasoning effort for models that expose one (low|medium|high|xhigh|
+    #: max). None leaves the provider's own default alone.
     reasoning: str | None = None
     out: str | None = None
     #: Display-side preprocessing for everything the agent looks at:
