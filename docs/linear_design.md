@@ -104,7 +104,7 @@ in any payload or prompt (see `lean-harness` history in `linear/CLAUDE.md`).
 | `reorder_slices(new_order)` | reorder | full permutation, by filename (never by corrected index: the index is what it changes); changes corrected indices only, positions and transforms are kept. |
 | `move_slice(id, after)` | reorder | incremental move; same rule. |
 | `mark_damaged([{id, note}])` / unmark | always | agent-internal classification. |
-| `set_positions([{id, position_mm}])` | position | batch write, clamped to the atlas range; returns one image per written section: the section over the atlas section at the position it was given. |
+| `set_positions([{id, position_mm}])` | position | batch write, clamped to the atlas range; returns one image per newly placed or moved section: the section over the atlas section at the position it was given. |
 | `compare_placement([{id, positions_mm?}], mode, zoom, template_opacity, outlines)` | position | each section on one physical-scale canvas with the atlas at each of its candidate positions (≤4 pairs per call, one image per pair; no positions = its current one), in any `VIEW_MODES` view with the outlines over it. Writes nothing. |
 | `view_stack()` | position | one contact sheet of every section in the order of its written position, each over the atlas at its position and captioned with index, filename, position and the distance to the next, plus a plot of position against corrected index (damaged in red): two images. Writes nothing. |
 | `run_deepslice(ids?, allow_angle_change, keep=[ids])` | position.deepslice | positions (+ angles) for undamaged sections; UNAVAILABLE unless installed and plane/atlas supported. |

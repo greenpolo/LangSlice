@@ -673,7 +673,9 @@ class ChatGptLlm(BaseLlm):
             "input": input_items,
             "tools": tools_to_wire(llm_request.config),
             "tool_choice": "auto",
-            "parallel_tool_calls": False,
+            # Several tool calls in one model turn: one call's history cost
+            # instead of one per tool. The toolbox serializes them.
+            "parallel_tool_calls": True,
             "store": False,
             "stream": True,
             "prompt_cache_key": self.prompt_cache_key,

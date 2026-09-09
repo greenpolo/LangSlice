@@ -108,6 +108,12 @@ def build_agent(
 CACHED_TOKEN_WEIGHT = 0.13
 
 
+_BUDGET_GRACE = (
+    "The run's budget is spent. Call `submit` now with the stack as it stands; "
+    "no other tool."
+)
+
+
 def _int_or_none(value: Any) -> int | None:
     try:
         return int(value)
@@ -205,8 +211,15 @@ async def run_agent_session(
     tokens = TokenTally()
     quota_start: int | None = None
     stopped: str | None = None
-    while turns < max_iterations and not done() and stopped is None:
+    # A budget stop gets ONE more call, to submit: run 8 (2026-09-09) ended
+    # on `validate` at 26% of the window with a 500-token `submit` next.
+    grace_left = 1
+    while turns < max_iterations and not done() and (stopped is None or grace_left):
         turns += 1
+        if stopped is not None:
+            grace_left -= 1
+            nudge = _BUDGET_GRACE
+            message = types.Content(role="user", parts=[types.Part.from_text(text=nudge)])
         if trace is not None and nudge is not None:
             trace.nudge(nudge, turn=turns)
         saw_tool_call = False
@@ -241,19 +254,22 @@ async def run_agent_session(
                     and used is not None
                     and used >= max_quota_percent
                 ):
-                    stopped = "quota_budget"
-                    (progress or logger.warning)(
-                        f"[tokens] this run has used {used}% of the usage window, "
-                        f"the budget of {max_quota_percent}%; ending the session"
-                    )
-                    break
+                    # No break: the turn finishes (its tool call runs and is
+                    # answered, so the history stays well-formed), then one
+                    # grace call to submit.
+                    if stopped is None:
+                        (progress or logger.warning)(
+                            f"[tokens] this run has used {used}% of the usage window, "
+                            f"the budget of {max_quota_percent}%; one more call to submit"
+                        )
+                    stopped = stopped or "quota_budget"
                 if max_input_tokens is not None and tokens.input > max_input_tokens:
-                    stopped = "input_budget"
-                    (progress or logger.warning)(
-                        f"[tokens] run input {tokens.input} passed the budget of "
-                        f"{max_input_tokens}; ending the session"
-                    )
-                    break
+                    if stopped is None:
+                        (progress or logger.warning)(
+                            f"[tokens] run input {tokens.input} passed the budget of "
+                            f"{max_input_tokens}; one more call to submit"
+                        )
+                    stopped = stopped or "input_budget"
             calls = event.get_function_calls() or []
             if calls:
                 saw_tool_call = True
@@ -277,7 +293,7 @@ async def run_agent_session(
         nudge = nudge_continue if saw_tool_call else nudge_no_tool
         message = types.Content(role="user", parts=[types.Part.from_text(text=nudge)])
 
-    if debrief and done():
+    if debrief and done() and stopped is None:
         # One more user message in the SAME context, after the job is over:
         # what did the agent reach for that was not there? Its answer is data
         # for the people building the environment, never for the run.

@@ -208,8 +208,17 @@ text plus prefix breaks. Design rules that follow:
   usage with `paid~` (uncached + 0.13 x cached) and, on the OAuth lane, the
   window percent this run has used; `JobSpec.max_quota_percent` (25,
   `--max-quota-percent`) ends the session when the run's share of the window
-  reaches it. `JobSpec.max_input_tokens` (2M, `--max-input-tokens`) stays as
-  the raw safety for lanes that report no quota. `openai_oauth.py` sends one
+  reaches it, after ONE grace call that asks for `submit` (runs 5 and 8
+  both died on `validate` with a 500-token submit next). `JobSpec.
+  max_input_tokens` (2M, `--max-input-tokens`) stays as the raw safety for
+  lanes that report no quota. A budget stop never breaks out of a turn:
+  the pending tool call is answered first, so the history stays
+  well-formed for the grace call.
+- **Several tool calls per model turn** (`parallel_tool_calls: true` on the
+  OAuth lane, 2026-09-09): one call's history cost instead of one per tool.
+  ADK runs a turn's calls concurrently (sync tools in a thread pool), so
+  `toolbox._serialized` puts every tool under one lock: one state, one
+  writer at a time. `openai_oauth.py` sends one
   stable `prompt_cache_key`/`session_id` per session and surfaces the
   `x-codex-*` quota headers.
 Not adopted, on Nash's call: server-side compaction (for heavy text; we are
