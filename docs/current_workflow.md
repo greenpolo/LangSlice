@@ -20,6 +20,7 @@ position as an argument and does not care where it came from, so it can follow
 langslice linear run FOLDER [--tasks reorder,position,transform]
     [--atlas ...] [--plane ...] [--model ...] [--preprocess auto|none]
     [--reasoning low|medium|high|xhigh|max] [--pixel-size-um UM]
+    [--pitch DEG] [--yaw DEG]
     [--no-flip] [--hemisphere-cue TEXT]
     [--thickness UM] [--interval UM] [--strict-interval] [--deepslice] [--bayesian]
     [--angles] [--elastix]
