@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import logging
 import math
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -236,8 +237,15 @@ def silhouette_affine(
     position_mm: float,
     plane: Plane = "coronal",
     long_edge: int = AFFINE_LONG_EDGE,
+    atlas_mask_at: Callable[[tuple[int, int]], np.ndarray] | None = None,
 ) -> SilhouetteFit:
     """Fit a 2x3 affine aligning *image* to the atlas section at *position_mm*.
+
+    *atlas_mask_at* returns the atlas tissue silhouette at a ``(w, h)`` size;
+    the flat section's root mask by default. A stack cut at an angle passes
+    its oblique mask here, so the fit measures against the plane every other
+    picture in the run shows (until 2026-09-10 it measured against the flat
+    plane on a 13-degree brain and said so with ``flat_atlas_fit``).
 
     Raises ``ValueError`` when the tissue silhouette is implausible (Otsu
     failed on a blank or uniform field) or no candidate could be computed.
@@ -255,7 +263,11 @@ def silhouette_affine(
             f"[{_MIN_AREA_FRAC:.0%}, {_MAX_AREA_FRAC:.0%}] — Otsu likely failed."
         )
 
-    atlas_mask = get_root_mask(atlas, position_mm, size, plane=plane)
+    atlas_mask = (
+        atlas_mask_at(size)
+        if atlas_mask_at is not None
+        else get_root_mask(atlas, position_mm, size, plane=plane)
+    )
     matrix, iou, pattern = mask_affine(slice_mask, atlas_mask)
 
     return SilhouetteFit(

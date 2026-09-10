@@ -33,6 +33,7 @@ from langslice.affine import (
     silhouette_affine,
 )
 from langslice.atlas.render import atlas_um_per_px
+from langslice.linear.atlas_fetch import atlas_mask
 from langslice.linear.render import (
     PREVIEW_LONG_EDGE,
     canvas_geometry,
@@ -140,10 +141,9 @@ def fit_silhouette(
     Returns the tool-shaped payload: on success ``params`` (six normalized
     numbers on the section's frame), ``iou``, the ``physical`` knobs about the
     canvas centre, the ``calibration`` the panel was drawn with, and a
-    ``panel`` image labelled with the section id. ``flat_atlas_fit`` is
-    reported when the stack carries cutting angles: the moments fit measures
-    against the flat atlas section, because it builds its own atlas
-    silhouette from the voxel grid.
+    ``panel`` image labelled with the section id. The fit measures against
+    the atlas plane at the stack's cutting angles, the same plane every
+    picture in the run shows.
     """
     if record.position_mm is None:
         return {"status": "error", "error": "NO_POSITION", "id": record.id}
@@ -159,11 +159,13 @@ def fit_silhouette(
             state.pitch_deg,
             state.yaw_deg,
         )
+        position = record.position_mm
         fit = silhouette_affine(
             section,
             atlas=ctx.atlas,
-            position_mm=record.position_mm,
+            position_mm=position,
             plane=cast(Plane, state.plane),
+            atlas_mask_at=lambda size: atlas_mask(ctx, state, position, size),
         )
         iou = float(fit.iou)
         in_section = _fit_matrix_in_section_frame(
@@ -213,8 +215,6 @@ def fit_silhouette(
         },
         "panel": panel,
     }
-    if state.is_oblique:
-        payload["flat_atlas_fit"] = True
     return payload
 
 
