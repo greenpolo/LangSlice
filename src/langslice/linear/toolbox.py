@@ -962,7 +962,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             try:
                 picture = stacked(
                     render_slice(ctx, record, long_edge=ATLAS_LONG_EDGE, frame=True),
-                    atlas_sized(atlas_section(ctx, state, position, frame=True)),
+                    atlas_sized(atlas_section(ctx, state, position, frame=True), ctx.atlas),
                 )
                 label = f"{record.id} over atlas {position:.2f} mm"
             except Exception as exc:
@@ -1230,7 +1230,8 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                 return None
             try:
                 return atlas_sized(
-                    atlas_section(ctx, state, float(record.position_mm), frame=True)
+                    atlas_section(ctx, state, float(record.position_mm), frame=True),
+                    ctx.atlas,
                 )
             except Exception as exc:
                 logger.warning("view_stack: atlas render failed for %s: %s", record.id, exc)

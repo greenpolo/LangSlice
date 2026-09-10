@@ -30,6 +30,7 @@ from langslice.atlas.render import (
     atlas_um_per_px,
     family_outlines,
     is_dark_background,
+    model_long_edge,
     outer_outline,
     region_contours,
 )
@@ -126,18 +127,11 @@ def atlas_native_long_edge(
 ) -> int:
     """The long edge that puts *source* at the atlas's own resolution, capped.
 
-    A section carries no more information than the atlas it is judged
-    against, so pixels finer than the atlas voxel are tokens spent on nothing
-    (Nash, 2026-09-09). With a known pixel size the render lands at the
-    atlas's micrometres per pixel; without one *cap* stands. Never above
-    *cap*, never below 128.
+    :func:`langslice.atlas.render.model_long_edge` with the section's own
+    calibration; without one *cap* stands.
     """
     um_per_px, _ = ctx.calibration(record.id)
-    if not um_per_px:
-        return cap
-    atlas_um = min(float(r) for r in ctx.atlas.resolution)
-    native = max(source.width, source.height) * um_per_px / atlas_um
-    return max(128, min(cap, int(round(native))))
+    return model_long_edge(source.size, um_per_px or None, ctx.atlas, cap=cap)
 
 
 def render_slice(
@@ -1007,8 +1001,10 @@ def physical_views(
       in a second grey, on black. No pixels.
 
     *zoom* is ``[x0, y0, x1, y1]`` in fractions of the CANVAS; the crop happens
-    before the resize to *long_edge*, so it is real magnification, and the
-    scale bar is redrawn for the magnified micrometres per pixel.
+    before the screen is sized, so it is real magnification up to the atlas's
+    own resolution (:func:`langslice.atlas.render.model_long_edge`; *long_edge*
+    is only a cap, and ``None`` is canvas pixels one to one), and the scale
+    bar is redrawn for the magnified micrometres per pixel.
 
     *outlines* picks which atlas lines are drawn (:data:`OUTLINE_LAYERS`):
     every family boundary, the root silhouette alone, or none.
@@ -1115,9 +1111,18 @@ def physical_views(
             f"shift {params['translate_x_mm']:+.2f}/{params['translate_y_mm']:+.2f} mm"
         )
 
+    # The crop happens first, then the screen is sized by the pixel-size rule:
+    # a zoom magnifies until the atlas's own resolution and no further. No
+    # *long_edge* means canvas pixels one to one (host-side use, never a
+    # model's screen).
+    edge = None
+    if long_edge is not None:
+        edge = model_long_edge(
+            (box[2] - box[0], box[3] - box[1]), geometry.um_per_px, atlas, cap=long_edge
+        )
     images: list[Image.Image] = []
     for panel, head in panels:
-        screen, factor = _to_screen(panel, box, long_edge)
+        screen, factor = _to_screen(panel, box, edge)
         if lines:
             _draw_outlines(
                 screen, atlas_lines, geometry, dark=dark, factor=factor, origin=box[:2]

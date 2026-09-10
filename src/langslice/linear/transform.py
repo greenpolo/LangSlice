@@ -35,6 +35,7 @@ from langslice.affine import (
 from langslice.atlas.render import atlas_um_per_px
 from langslice.linear.atlas_fetch import atlas_mask
 from langslice.linear.render import (
+    OVERLAY_LONG_EDGE,
     PREVIEW_LONG_EDGE,
     canvas_geometry,
     canvas_um_per_px,
@@ -191,6 +192,7 @@ def fit_silhouette(
         state.yaw_deg,
         in_section,
         label=record.id,
+        long_edge=OVERLAY_LONG_EDGE,
     )
     params = normalized_affine(in_section, section.size)
     width, height = geometry.size

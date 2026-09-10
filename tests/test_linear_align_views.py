@@ -14,8 +14,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 from PIL import Image
-from test_linear_physical import TwoRegionAtlas, _ctx
+from test_linear_physical import ATLAS_UM, TwoRegionAtlas, _ctx
 
+from langslice.atlas.render import MODEL_MIN_LONG_EDGE, model_long_edge
 from langslice.linear.render import (
     OVERLAY_LONG_EDGE,
     canvas_geometry,
@@ -50,8 +51,34 @@ def _views(value: int = 120, **kwargs) -> tuple[list[np.ndarray], float]:
         0.0,
         0.0,
         _IDENTITY,
-        long_edge=OVERLAY_LONG_EDGE,
+        # Canvas pixels, one to one: these tests pin what each view draws.
+        # The model-facing screen size is the pixel-size rule's business
+        # (test_the_model_screen_is_sized_by_the_atlas_resolution).
+        long_edge=None,
         **kwargs,
+    )
+    return [np.asarray(image.convert("RGB")) for image in images], iou
+
+
+def test_the_model_screen_is_sized_by_the_atlas_resolution():
+    """A 10 um/px canvas on a 25 um atlas is shown at 0.4x: never finer than
+    the atlas, never upsampled to the cap, and a zoom is a crop at that
+    same scale, so it costs only the pixels it shows."""
+    geometry = _geometry()
+    native = model_long_edge(geometry.size, UM_PER_PX, TwoRegionAtlas(), cap=OVERLAY_LONG_EDGE)
+    assert native == round(max(geometry.size) * UM_PER_PX / ATLAS_UM)
+    (whole,), _ = _views_capped()
+    (zoomed,), _ = _views_capped(zoom=[0.3, 0.3, 0.7, 0.7])
+    assert max(whole.shape[1], whole.shape[0] - 60) <= native + 1  # minus the caption band
+    assert whole.shape[1] == native or whole.shape[0] - 60 >= native - 1
+    assert zoomed.shape[1] < whole.shape[1], "a zoom is a crop, not an upsample"
+    assert zoomed.shape[1] >= MODEL_MIN_LONG_EDGE
+
+
+def _views_capped(**kwargs):
+    images, iou = physical_views(
+        _section(), UM_PER_PX, TwoRegionAtlas(), 0.2, "coronal", 0.0, 0.0, _IDENTITY,
+        long_edge=OVERLAY_LONG_EDGE, **kwargs,
     )
     return [np.asarray(image.convert("RGB")) for image in images], iou
 
@@ -76,9 +103,8 @@ def test_zoom_magnifies_and_the_bar_is_still_one_millimetre():
     (whole,), _ = _views()
     (zoomed,), _ = _views(zoom=box)
 
-    # Same output width; the height differs only by the caption band (the zoom
-    # caption has a third line).
-    assert whole.shape[1] == zoomed.shape[1], "the output width does not change"
+    # Canvas pixels one to one: the zoom is the crop, at its own size.
+    assert zoomed.shape[1] == round(0.7 * geometry.size[0]) - round(0.3 * geometry.size[0])
     tissue = lambda rgb: float(((rgb >= 100) & (rgb <= 140)).all(axis=2).mean())  # noqa: E731
     assert tissue(zoomed) > 2.0 * tissue(whole), "the crop did not magnify the tissue"
 
@@ -112,7 +138,10 @@ def test_side_by_side_returns_two_images_of_equal_size():
 def test_checkerboard_carries_both_sources():
     """The section's tissue is 120-bright; this atlas's template renders white."""
     (board,), _ = _views(mode="checkerboard")
-    middle = board[200:570, 200:570]
+    geometry = _geometry()
+    band = board.shape[0] - geometry.size[1]  # the caption above the canvas
+    cx, cy = geometry.size[0] // 2, band + geometry.size[1] // 2
+    middle = board[cy - 90 : cy + 90, cx - 90 : cx + 90]
     section_px = ((middle >= 110) & (middle <= 130)).all(axis=2).sum()
     template_px = (middle >= 250).all(axis=2).sum()
     assert section_px > 1000 and template_px > 1000
@@ -121,8 +150,10 @@ def test_checkerboard_carries_both_sources():
 def test_outlines_mode_is_black_outside_the_lines():
     (lines,), _ = _views(mode="outlines")
     # No tissue, no template: the centre of the anatomy is bare canvas.
-    centre = lines[lines.shape[0] // 2 - 5 : lines.shape[0] // 2 + 5,
-                   lines.shape[1] // 2 - 5 : lines.shape[1] // 2 + 5]
+    geometry = _geometry()
+    cx = geometry.size[0] // 2
+    cy = lines.shape[0] - geometry.size[1] + geometry.size[1] // 2
+    centre = lines[cy - 5 : cy + 5, cx - 5 : cx + 5]
     assert centre.max() == 0
     assert float((lines > 40).any(axis=2).mean()) < 0.05, "more than lines on screen"
     # Two greys: the atlas hairline and the section's own silhouette.
@@ -131,7 +162,12 @@ def test_outlines_mode_is_black_outside_the_lines():
 
 
 def test_the_template_opacity_is_a_dial_not_a_switch():
-    box = (slice(360, 400), slice(360, 400))  # inside the anatomy, outside the tissue
+    # Inside the anatomy, outside the tissue: the atlas square is 1 mm (100 px)
+    # and the tissue 80 px, both centred on the canvas, so the 10 px band just
+    # inside the anatomy's left edge is template-only.
+    geometry = _geometry()
+    cx, cy = geometry.size[0] // 2, geometry.size[1] // 2
+    box = (slice(cy - 30, cy + 30), slice(cx - 49, cx - 42))
     (none,), _ = _views()
     (half,), _ = _views(template_opacity=0.5)
     (full,), _ = _views(template_opacity=1.0)
@@ -142,8 +178,11 @@ def test_the_template_opacity_is_a_dial_not_a_switch():
 
 
 def _line_pixels(rgb: np.ndarray) -> int:
-    """Hairline-bright pixels in the picture, above the bar, below the caption."""
-    return int((rgb[60:-40] >= 200).all(axis=2).sum())
+    """Hairline pixels in the picture, above the bar, below the caption.
+
+    At canvas scale a hairline is one anti-aliased pixel wide, so the
+    threshold sits below full brightness; the tissue (120) stays under it."""
+    return int((rgb[60:-40] >= 150).all(axis=2).sum())
 
 
 def test_the_outline_layer_picks_which_atlas_lines_are_drawn():
@@ -160,7 +199,7 @@ def test_the_outline_layer_picks_which_atlas_lines_are_drawn():
     # uncover it, so the bare view shows at least as much of the section.
     tissue = lambda rgb: int(((rgb >= 110) & (rgb <= 130)).all(axis=2).sum())  # noqa: E731
     assert tissue(bare) >= tissue(every) > 0
-    assert tissue(bare) - tissue(every) < 0.1 * tissue(bare)
+    assert tissue(bare) - tissue(every) < 0.2 * tissue(bare)  # hairlines at canvas scale
 
 
 # --- the tools, in the main toolbox --------------------------------------

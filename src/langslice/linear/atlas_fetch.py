@@ -16,8 +16,8 @@ from google.genai import types
 from PIL import Image
 
 from langslice.adk import TOOL_MEDIA_PARTS_KEY
-from langslice.affine import resize_long_edge
 from langslice.atlas.core import get_reference_slice, get_root_mask
+from langslice.atlas.render import at_model_scale, atlas_um_per_px
 from langslice.image_prep import crop_to_mask
 from langslice.linear.render import MAX_IMAGES_PER_CALL, caption, image_to_part
 from langslice.linear.state import StackState
@@ -123,11 +123,9 @@ def atlas_section(
     return crop_to_mask(image, mask > 0)
 
 
-def atlas_sized(picture: Image.Image) -> Image.Image:
-    """*picture* as rendered, shrunk only when its long edge exceeds the cap."""
-    if max(picture.size) <= ATLAS_LONG_EDGE:
-        return picture
-    return resize_long_edge(picture, ATLAS_LONG_EDGE)
+def atlas_sized(picture: Image.Image, atlas: Any) -> Image.Image:
+    """*picture*, an atlas render at native resolution, under the model cap."""
+    return at_model_scale(picture, atlas_um_per_px(atlas), atlas, cap=ATLAS_LONG_EDGE)
 
 
 def atlas_part(ctx: EngineContext, state: StackState, position_mm: float) -> types.Part:
@@ -139,7 +137,7 @@ def atlas_part(ctx: EngineContext, state: StackState, position_mm: float) -> typ
     )
     return image_to_part(
         caption(
-            atlas_sized(atlas_section(ctx, state, position_mm, frame=True)),
+            atlas_sized(atlas_section(ctx, state, position_mm, frame=True), ctx.atlas),
             f"atlas {position_mm:.2f} mm{angles}",
         )
     )
@@ -230,7 +228,7 @@ def atlas_strip_parts(
         picture = atlas_section(ctx, state, position, frame=True)
         if np.asarray(picture).max() < 8:
             continue  # an oblique plane through the volume's corner: nothing to show
-        pictures.append((position, atlas_sized(picture)))
+        pictures.append((position, atlas_sized(picture, ctx.atlas)))
     if not pictures:
         return []
     parts: list[types.Part] = [

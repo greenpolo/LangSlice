@@ -9,7 +9,12 @@ here is a verbatim copy — edit one, mirror to the other.
   `render.py` is the geometry BOTH methods draw from, and it belongs to
   neither: `annotation_slice` (the display-oriented annotation at a position,
   resliced obliquely when the block carries cutting angles), `atlas_um_per_px`,
-  `family_mapping` (region id -> its merged color family's representative),
+  the model pixel-size rule `model_long_edge` / `at_model_scale` (Nash,
+  2026-09-09: nothing a model is shown is finer than the atlas's own µm/px,
+  nothing is upsampled, nothing exceeds `MODEL_LONG_EDGE` 512 — every
+  linear render path, section, atlas image, compare panel, overlay and
+  zoom, sizes its screen through it; a `long_edge=None` screen is canvas
+  pixels for host-side use only), `family_mapping` (region id -> its merged color family's representative),
   `region_contours` + `_smooth_closed` (smoothed per-region polygons, holes
   included, confetti dropped), `family_outlines` (one `(family color,
   polyline)` per family region, in atlas-native pixels), and the shade rules
