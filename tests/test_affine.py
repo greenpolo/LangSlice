@@ -281,3 +281,29 @@ def test_the_six_numbers_go_back_to_the_pixels_they_came_from():
     matrix = np.array([[1.03, 0.21, 12.0], [-0.07, 0.94, -5.0]])
     back = denormalized_affine(normalized_affine(matrix, size), size)
     assert back == pytest.approx(matrix, abs=1e-9)
+
+
+def test_silhouette_affine_measures_against_the_mask_it_is_given():
+    """A stack cut at an angle passes its oblique mask; the fit must use it,
+    not the flat root mask it would otherwise build."""
+    import numpy as np
+    from PIL import Image
+
+    from langslice.affine import silhouette_affine
+
+    seen: dict[str, tuple[int, int]] = {}
+
+    def mask_at(size):
+        seen["size"] = size
+        w, h = size
+        m = np.zeros((h, w), dtype=np.uint8)
+        m[h // 4 : 3 * h // 4, w // 4 : 3 * w // 4] = 255
+        return m
+
+    canvas = np.zeros((200, 200, 3), dtype=np.uint8)
+    canvas[60:140, 40:160] = 200
+    fit = silhouette_affine(
+        Image.fromarray(canvas), atlas=None, position_mm=1.0, long_edge=200, atlas_mask_at=mask_at
+    )
+    assert seen["size"] == (200, 200)
+    assert 0.0 < fit.iou <= 1.0

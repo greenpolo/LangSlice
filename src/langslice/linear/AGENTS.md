@@ -298,10 +298,11 @@ resumed run starts from the checkpoint, which is the state as it stood.
 
 ## Ceilings worth knowing
 
-- `fit_affine`'s silhouette method measures against the FLAT atlas section even
-  when the stack carries cutting angles (`langslice.affine.silhouette_affine`
-  builds its own atlas silhouette off the voxel grid). The payload says so with
-  `flat_atlas_fit: true`.
+- `fit_affine`'s silhouette method measures against the atlas plane at the
+  stack's cutting angles (`atlas_fetch.atlas_mask` handed to
+  `affine.silhouette_affine` as `atlas_mask_at`, 2026-09-10). Until then it
+  measured against the FLAT section on a 13-degree brain and said so with
+  `flat_atlas_fit`; Astra's run-19 debrief asked for exactly this.
 - `physical` on a fit is the five knobs about the canvas centre plus the
   `shear` they cannot express (0.10-0.16 on M05_D_08, not noise), so a preview
   typed from a fit reproduces it only up to that shear. The A/B view does not
