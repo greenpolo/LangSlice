@@ -134,7 +134,7 @@ so far) and the run ends with a total. `--max-quota-percent N` (default 25) ends
 of the provider's usage window reaches N (the OAuth lane's quota headers;
 cached input is ~0.13x there, so the window, not the raw count, is the
 cost); `--max-input-tokens N` (default
-`JobSpec.max_input_tokens`, 2M) ends the session when the run's summed
+`JobSpec.max_input_tokens`, 6M) ends the session when the run's summed
 input passes N: the OAuth lane resends the whole history every call, so a
 long run grows quadratically and would otherwise be ended by the account's
 usage window instead of by the job. Writes made before the stop are kept.

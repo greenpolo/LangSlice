@@ -27,6 +27,13 @@ from PIL import Image
 #: run (seed 80, ~50 compares, ~40 write pictures) stays under it.
 DEFAULT_MAX_IMAGES = 256
 DEFAULT_KEEP_IMAGES = 128
+#: Tools that open the transform stage. The first media-bearing call to one
+#: of them is a stage boundary: every older tool image (the compares and
+#: write pictures of positioning) is cut in one batch. Positions are written
+#: and reviewed by then, so those pictures only cost their cached carry —
+#: ~45k tokens a call on Astra's run 17 (2026-09-10), ~9% of a window over
+#: the transform stage — against one re-read of the positioning text.
+STAGE_BOUNDARY_TOOLS = frozenset({"fit_affine", "adjust_transform", "landmarks"})
 
 _DROPPED_TOOL = (
     "dropped from context to bound the request; call again to see them."
@@ -63,6 +70,17 @@ class WorkingSetImages:
         ]
         if not sites:
             return contents
+        boundary = next(
+            (
+                k
+                for k, (ci, pi, _) in enumerate(sites)
+                if (contents[ci].parts or [])[pi].function_response.name  # type: ignore[union-attr]
+                in STAGE_BOUNDARY_TOOLS
+            ),
+            None,
+        )
+        if boundary is not None:
+            self.cut = max(self.cut, boundary)
         live = sum(n for _, _, n in sites[self.cut :])
         if live > self.max_images:
             cut = self.cut

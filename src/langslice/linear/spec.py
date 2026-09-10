@@ -71,7 +71,7 @@ class TransformSpec:
 #: unbounded image history; a ChatGPT Plus window ended it. With the working
 #: set in ``langslice.adk.plugins`` the same run replays to ~525k, so this is
 #: a ceiling for a runaway, not a target.
-DEFAULT_MAX_INPUT_TOKENS = 2_000_000
+DEFAULT_MAX_INPUT_TOKENS = 6_000_000
 #: Share of the provider's usage window one run may spend, when the provider
 #: reports one (the OAuth lane's x-codex headers). Cached tokens are ~0.13x
 #: there, so this, not the raw input count, is the cost.
