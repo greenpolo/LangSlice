@@ -35,8 +35,11 @@ DEFAULT_KEEP_IMAGES = 128
 #: the transform stage — against one re-read of the positioning text.
 STAGE_BOUNDARY_TOOLS = frozenset({"fit_affine", "adjust_transform", "landmarks"})
 
+#: Astra's run-19 debrief read the old wording ("dropped from context") as
+#: "never delivered" and doubted comparisons it had actually made.
 _DROPPED_TOOL = (
-    "dropped from context to bound the request; call again to see them."
+    "were shown when this call returned and have since been dropped from "
+    "context to bound the request; call again to see them."
 )
 
 
