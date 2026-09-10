@@ -171,10 +171,14 @@ sits after a prefix edit, is full price. Run 5 (M11, 39 calls): 786k raw,
 560k cached, ~298k paid = 28% of a Plus 5-hour window; of the paid part 58%
 was NEW IMAGES (each paid once, in full, the call it arrives) and 42% new
 text plus prefix breaks. Design rules that follow:
-- **Every image at the atlas's resolution, 512 px long edge at most**
-  (`render.atlas_native_long_edge`: with a known pixel size a show render
-  lands at the atlas's µm/px; the fit path is not capped, its parameters
-  are normalized against the render). `VIEW_LONG_EDGE` 512; atlas images
+- **Every image at the atlas's resolution, 512 px long edge at most** — one
+  rule, `atlas.render.model_long_edge`, sizes every screen from its
+  micrometres per pixel (never finer than the atlas, never upsampled, never
+  above the cap; `render.atlas_native_long_edge` is it with the section's
+  calibration; the fit path is not capped, its parameters are normalized
+  against the render; `physical_views(long_edge=None)` is canvas pixels for
+  host-side use, every model-facing caller passes a cap). A zoom is a crop
+  at that same scale, so it costs only the pixels it shows. `VIEW_LONG_EDGE` 512; atlas images
   (seed strip, `fetch_atlas`, the atlas half of a write's picture) are sent
   at the atlas's own resolution and only ever shrunk to 512
   (`atlas_fetch.atlas_sized`; a mouse section at 25 um is ~100-200
@@ -183,8 +187,9 @@ text plus prefix breaks. Design rules that follow:
   mode is `template`, the atlas alone on the section's canvas, because the
   section is already in the seed — the signature default was
   `side_by_side` until 2026-09-10, so every Astra compare re-sent the
-  section at ~515 tokens a pair); the interactive-transform canvas keeps
-  `OVERLAY_LONG_EDGE` 768.
+  section at ~515 tokens a pair); `OVERLAY_LONG_EDGE` 768 is only the cap on
+  the interactive-transform canvas, which the rule puts at ~450 px on a
+  25 um mouse atlas (it was drawn at raw canvas size before 2026-09-10).
 - **Images stay** (`adk/plugins.py WorkingSetImages`): every tool image is
   kept until 256 are live, then the oldest media-bearing calls are cut in
   ONE batch to 128 (`DEFAULT_MAX_IMAGES` / `DEFAULT_KEEP_IMAGES`, a cut

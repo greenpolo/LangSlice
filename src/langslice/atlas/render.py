@@ -15,7 +15,9 @@ from typing import Any
 
 import cv2
 import numpy as np
+from PIL import Image
 
+from langslice.affine import resize_long_edge
 from langslice.atlas.core import orient_slice_for_display, position_mm_to_index
 from langslice.atlas.recolor import MERGE_EPS, color_lut
 from langslice.space import Plane, atlas_space_context, slice_axis_index
@@ -66,6 +68,43 @@ def annotation_slice(
 def atlas_um_per_px(atlas: Any) -> float:
     """Micrometres per pixel of an atlas render at native resolution."""
     return float(max(atlas.resolution))
+
+
+#: Long edge, in pixels, no image shown to a model may exceed.
+MODEL_LONG_EDGE = 512
+#: Below this an image stops being legible; a source shorter than it is left.
+MODEL_MIN_LONG_EDGE = 128
+
+
+def model_long_edge(
+    size: tuple[int, int], um_per_px: float | None, atlas: Any, *, cap: int = MODEL_LONG_EDGE
+) -> int:
+    """The long edge that puts an image of *size* at the atlas's own resolution.
+
+    The one pixel-size rule for everything a model is shown (Nash,
+    2026-09-09): a section or an atlas render carries no information finer
+    than the atlas voxel, so pixels finer than the atlas's micrometres per
+    pixel are tokens spent on nothing. Given the image's *um_per_px* the
+    long edge lands at the atlas's µm/px; without a calibration *cap*
+    stands. Never above *cap*, never above the source (nothing is ever
+    upsampled), never below :data:`MODEL_MIN_LONG_EDGE` unless the source is.
+    """
+    long = max(1, int(max(size)))
+    edge = min(long, int(cap))
+    if um_per_px and um_per_px > 0:
+        native = int(round(long * float(um_per_px) / atlas_um_per_px(atlas)))
+        edge = min(edge, native)
+    return max(min(long, MODEL_MIN_LONG_EDGE), edge)
+
+
+def at_model_scale(
+    image: Image.Image, um_per_px: float | None, atlas: Any, *, cap: int = MODEL_LONG_EDGE
+) -> Image.Image:
+    """*image* at :func:`model_long_edge`; the same object when nothing changes."""
+    edge = model_long_edge(image.size, um_per_px, atlas, cap=cap)
+    if edge == max(image.size):
+        return image
+    return resize_long_edge(image, edge)
 
 
 def family_mapping(
