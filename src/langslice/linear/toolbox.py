@@ -28,11 +28,11 @@ from langslice.affine import (
     denormalized_affine,
     normalized_physical_affine,
     physical_affine_matrix,
-    resize_long_edge,
 )
 from langslice.linear.atlas_fetch import (
     ATLAS_LONG_EDGE,
     atlas_section,
+    atlas_sized,
     make_fetch_atlas,
 )
 from langslice.linear.checkpoint import save_checkpoint
@@ -962,9 +962,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             try:
                 picture = stacked(
                     render_slice(ctx, record, long_edge=ATLAS_LONG_EDGE, frame=True),
-                    resize_long_edge(
-                        atlas_section(ctx, state, position, frame=True), ATLAS_LONG_EDGE
-                    ),
+                    atlas_sized(atlas_section(ctx, state, position, frame=True)),
                 )
                 label = f"{record.id} over atlas {position:.2f} mm"
             except Exception as exc:
@@ -1073,7 +1071,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
 
     def compare_placement(
         entries: list[dict[str, Any]],
-        mode: str = "side_by_side",
+        mode: str = "template",
         zoom: list[float] = [],  # noqa: B006 — read, never mutated; ADK wants a value
         template_opacity: float = 0.0,
         outlines: str = "all",
@@ -1231,9 +1229,8 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             if record.position_mm is None:
                 return None
             try:
-                return resize_long_edge(
-                    atlas_section(ctx, state, float(record.position_mm), frame=True),
-                    ATLAS_LONG_EDGE,
+                return atlas_sized(
+                    atlas_section(ctx, state, float(record.position_mm), frame=True)
                 )
             except Exception as exc:
                 logger.warning("view_stack: atlas render failed for %s: %s", record.id, exc)
