@@ -475,7 +475,7 @@ def test_fetch_atlas_images_are_section_sized(tmp_path: Path):
     result = _tool(box, "fetch_atlas")([1.0])
     assert result["status"] == "ok"
     image = Image.open(io.BytesIO(result[TOOL_MEDIA_PARTS_KEY][0].inline_data.data))
-    assert max(image.size) == ATLAS_LONG_EDGE
+    assert max(image.size) <= ATLAS_LONG_EDGE  # native atlas resolution, never upsampled
 
 
 def test_tools_keep_their_identity_and_run_one_at_a_time():

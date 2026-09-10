@@ -174,9 +174,17 @@ text plus prefix breaks. Design rules that follow:
 - **Every image at the atlas's resolution, 512 px long edge at most**
   (`render.atlas_native_long_edge`: with a known pixel size a show render
   lands at the atlas's µm/px; the fit path is not capped, its parameters
-  are normalized against the render). `VIEW_LONG_EDGE` 512, seed/atlas 512,
-  `compare_placement` panels 512 (~260 tokens an image, ~530 a stitched
-  pair); the interactive-transform canvas keeps `OVERLAY_LONG_EDGE` 768.
+  are normalized against the render). `VIEW_LONG_EDGE` 512; atlas images
+  (seed strip, `fetch_atlas`, the atlas half of a write's picture) are sent
+  at the atlas's own resolution and only ever shrunk to 512
+  (`atlas_fetch.atlas_sized`; a mouse section at 25 um is ~100-200
+  tokens — until 2026-09-10 they were upsampled to 512, a quarter of run
+  19's input); `compare_placement` panels 512 (~250 tokens; the default
+  mode is `template`, the atlas alone on the section's canvas, because the
+  section is already in the seed — the signature default was
+  `side_by_side` until 2026-09-10, so every Astra compare re-sent the
+  section at ~515 tokens a pair); the interactive-transform canvas keeps
+  `OVERLAY_LONG_EDGE` 768.
 - **Images stay** (`adk/plugins.py WorkingSetImages`): every tool image is
   kept until 256 are live, then the oldest media-bearing calls are cut in
   ONE batch to 128 (`DEFAULT_MAX_IMAGES` / `DEFAULT_KEEP_IMAGES`, a cut
