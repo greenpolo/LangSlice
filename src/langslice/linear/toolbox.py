@@ -80,7 +80,6 @@ logger = logging.getLogger(__name__)
 MAX_VIEW_SLICES = MAX_IMAGES_PER_CALL
 
 #: Overlay panels one ``fit_affine`` call may attach.
-MAX_FIT_PANELS = MAX_IMAGES_PER_CALL
 
 #: Undo snapshots kept in memory. Not persisted: a resumed run starts from the
 #: checkpoint, which is the state as it stood.
@@ -1354,7 +1353,9 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             if outcome["status"] != "ok":
                 continue
             fits.append((record, outcome))
-            if panel is not None and len(parts) < MAX_FIT_PANELS:
+            if panel is not None:
+                # Every fit returns its picture (run 15, 2026-09-10: a
+                # 25-section fit pictured 4 and the model never saw 21).
                 parts.append(image_to_part(panel))
 
         payload: dict[str, Any] = {
@@ -1368,7 +1369,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         if parts:
             payload["description"] = (
                 "Attached panels are "
-                + ", ".join(record.id for record, _ in fits[: len(parts)])
+                + ", ".join(record.id for record, _ in fits)
                 + ", in that order; each shows the section under its fitted "
                 "transform with the atlas region outlines over it at true "
                 "physical scale."
@@ -1378,7 +1379,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         for record, outcome in fits:
             record.transform = {
                 "kind": "silhouette",
-                "params": outcome["params"],
+                "params": outcome.pop("params"),  # the six raw numbers stay host-side
                 "physical": outcome["physical"],
                 "iou": outcome["iou"],
                 "calibration": outcome["calibration"],
