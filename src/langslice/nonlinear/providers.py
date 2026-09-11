@@ -28,7 +28,7 @@ _VALID_REQUEST_ROUTES = {
     "chatgpt_responses_image_generation",  # legacy spelling of openai_oauth_image_generation
 }
 
-_IMAGE_QUALITIES = {"low", "medium", "high"}
+_IMAGE_QUALITIES = {"low", "medium", "high", "xhigh", "max"}
 
 
 @dataclass
