@@ -10,8 +10,19 @@ Plane = Literal["coronal", "sagittal", "horizontal"]
 # Canonical names are access methods (see providers/registry.py); the first
 # three are legacy aliases kept for old configs.
 Provider = Literal[
-    "google", "openai", "chatgpt", "gemini-api", "openai-api", "openai-oauth"
+    "google",
+    "openai",
+    "chatgpt",
+    "gemini-api",
+    "openai-api",
+    "openai-oauth",
+    # No model at all: registration registers the silhouette prior itself.
+    "none",
 ]
+# Adaptive CLAHE + DAPI-weighted grayscale on the section before it is sent.
+PreprocessMode = Literal["none", "auto"]
+# Elastix stages the fit runs (see nonlinear.types.Deformation).
+Deformation = Literal["bspline", "affine"]
 EngineMethod = Literal[
     "version",
     "register.run",
@@ -88,6 +99,7 @@ class RegisterRequest(EngineBaseModel):
     review_model: str | None = None
     thinking: str | None = None
     temperature: float | None = None
+    preprocess: PreprocessMode = "auto"
     provider: Provider = "google"
     endpoint: str | None = None
     output_dir: str | None = None
@@ -100,6 +112,9 @@ class RegisterRequest(EngineBaseModel):
     # Block cutting angles; every atlas render is resliced on that plane.
     pitch_deg: float = 0.0
     yaw_deg: float = 0.0
+    # Independent paintings of the same request, voted per pixel.
+    draws: int = 1
+    deformation: Deformation = "bspline"
 
 
 class RegisterResult(EngineBaseModel):
@@ -174,7 +189,6 @@ def export_schema_bundle() -> dict[str, object]:
     return {
         "schema_version": "1",
         "schemas": {
-            model_name: model_cls.model_json_schema()
-            for model_name, model_cls in models.items()
+            model_name: model_cls.model_json_schema() for model_name, model_cls in models.items()
         },
     }

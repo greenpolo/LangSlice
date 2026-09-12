@@ -19,8 +19,7 @@ position as an argument and does not care where it came from, so it can follow
 ```bash
 langslice linear run FOLDER [--tasks reorder,position,transform]
     [--atlas ...] [--plane ...] [--model ...] [--preprocess auto|none]
-    [--reasoning low|medium|high|xhigh|max] [--pixel-size-um UM]
-    [--pitch DEG] [--yaw DEG]
+    [--reasoning none|minimal|low|medium|high] [--pixel-size-um UM]
     [--no-flip] [--hemisphere-cue TEXT]
     [--thickness UM] [--interval UM] [--strict-interval] [--deepslice] [--bayesian]
     [--angles] [--elastix]
@@ -44,21 +43,22 @@ run can use:
 | --- | --- | --- |
 | `status` | always | one row per section in corrected order: index, id, `position_mm`, `delta_to_next_mm` (signed), flip, rotation, damaged (+note), transform kind, `transform_iou`, `transform_mirrored`, caveats; plus the stack's cutting angles and interval breaks. Writes answer with only the rows they changed (`changed` + `n_sections`); this is the whole table |
 | `validate` | always | runs the submit checks without submitting; writes nothing |
-| `view_slices` | always | up to 4 sections at higher resolution, rendered as corrected, each captioned with its index and filename |
-| `fetch_atlas` | always | up to 4 atlas sections, rendered at the stack's current cutting angles, each captioned with its position |
+| `view_slices` | always | up to 8 sections at higher resolution, rendered as corrected, each captioned with its index and filename |
+| `fetch_atlas` | always | up to 8 atlas sections, rendered at the stack's current cutting angles, each captioned with its position |
 | `note`, `undo`, `redo` | always | run notes; snapshot undo where one tool call undoes as one step |
 | `mark_damaged` / `unmark_damaged` | always | agent-internal classification: an outline an affine cannot bite on |
-| `orient_slices` | `reorder` | flip and quarter-turn per section (`--no-flip` refuses the flip half); returns the changed sections as they now stand |
-| `reorder_slices` / `move_slice` | `reorder` | full permutation (by filename) or one incremental move; corrected indices only, positions and transforms are kept |
-| `set_positions` | `position` | batch write, clamped to the atlas range; returns each newly placed or moved section over the atlas at its new position |
-| `compare_placement` | `position` | sections against the atlas at the candidate positions named for each (or its current one), up to 4 pairs, one image per pair, on one physical-scale canvas; `mode`, `zoom`, `template_opacity`, `outlines` as on `adjust_transform`; writes nothing |
-| `view_stack` | `position` | one contact sheet of every section in the order of its written position over the atlas at that position, captioned with position and the distance to the next, plus a position-vs-index plot (two images); writes nothing |
+| `orient_slices` | `reorder` | flip and quarter-turn per section (`--no-flip` refuses the flip half) |
+| `reorder_slices` / `move_slice` | `reorder` | full permutation or one incremental move; corrected indices only, positions and transforms are kept |
+| `set_positions` | `position` | batch write, clamped to the atlas range |
+| `distribute_spacing` | `position` | interpolates from the points you fix, `keep` holds sections in place, `apply=false` computes without writing |
 | `run_deepslice` | `--deepslice` | reports `UNAVAILABLE` until the optional extra lands |
 | `fit_position` | `--bayesian` | `oblique.fit_oblique` around a section's current position; writes nothing |
 | `set_cutting_angles` | `--angles` | stack-wide pitch/yaw; later fetches and previews follow |
-| `fit_affine` | `transform` | silhouette affine per section, written as its transform, with the overlap, the transform as the five physical parameters (`rotation_deg`, `scale_x`, `scale_y`, `translate_x_mm`, `translate_y_mm`, plus `shear`) about the canvas centre, and a physical-scale overlay (up to 16); `roi` ([x0, y0, x1, y1] of the canvas) fits only the tissue and atlas outline inside that box, which is how a damaged section is fitted — damage is refused without one; `--elastix`'s method is not wired yet |
-| `adjust_transform` | `transform` | writes one positioned section's in-plane transform (rotation / per-axis scales / millimetre shifts, plus a note) and returns the section drawn under it with the atlas outlines at true physical scale; every call writes and the last one stays, the same parameters again only re-draw; `mode` (overlay, side_by_side, checkerboard, outlines, section, template, ab = new beside what it carried before), `zoom`, `template_opacity`, `pivot` (canvas, tissue, or [fx, fy] of the canvas) and `outlines` (all, outer, none) are the view and the centre it turns about; it does not change the section's flip or rotation |
+| `fit_affine` | `transform` | silhouette affine per section, with the overlap, the transform as the five physical parameters (`rotation_deg`, `scale_x`, `scale_y`, `translate_x_mm`, `translate_y_mm`, plus `shear`) about the canvas centre, and a physical-scale overlay (up to 16); `roi` ([x0, y0, x1, y1] of the canvas) fits only the tissue and atlas outline inside that box, which is how a damaged section is fitted — damage is refused without one; `--elastix`'s method is not wired yet |
+| `preview_transform` | `transform` | one positioned section under a candidate rotation / per-axis scales / millimetre shifts, with the atlas outlines at true physical scale; `mode` (overlay, side_by_side, checkerboard, outlines, section, template, ab), `zoom`, `template_opacity`, `pivot` (canvas, tissue, or [fx, fy] of the canvas) and `outlines` (all, outer, none) are the view and the centre it turns about; writes nothing |
 | `landmarks` | `transform` | point pairs as fractions of the canvas: the residual in millimetres per pair, their RMS, the transform fitted to them (similarity from 2 pairs, affine from 3), and the pairs drawn on the view; writes nothing |
+| `set_transform` | `transform` | records the in-plane transform of one section (parameters in millimetres, plus a note); it does not change the section's flip or rotation |
+| `copy_transform` | `transform` | copies one section's transform onto others |
 | `submit` | always | ends the run; gated |
 
 Sections and fetched atlas sections are framed the same way (foreground plus a
@@ -70,12 +70,10 @@ thumbnail grid, which splits one vision-encoder patch budget across the whole
 stack at once.
 
 The job statement carries the job, the run's facts (`--fact`,
-`--hemisphere-cue`), one factual line per tool that exists, the hard
-constraints and, when positioning is on, a short `Method` section: place each
-section on its own evidence and compare candidate positions before writing,
-work in batches, review the whole stack afterwards, re-check both sides of a gap before
-reporting a break, validate, submit. No rules of thumb, no failure-mode
-warnings, no region names, and no tool payload carries an opinion.
+`--hemisphere-cue`), one factual line per tool that exists, and the hard
+constraints. Nothing else: no strategy, no rules of thumb, no failure-mode
+warnings, and no tool payload carries an opinion. Every major benchmark failure
+worth tracing came back to advice the harness injected.
 
 `submit` is refused, with the numbers that refused it, when:
 
@@ -106,13 +104,6 @@ scale bar. The alignment parameters (`rotation_deg`, `scale_x`, `scale_y`,
 normalized numbers -- on every transform, silhouette fits included, so a fit
 and a hand alignment are the same five numbers.
 
-`--gates` refuses `set_positions` for a section not compared since its last
-write, and `submit` until `view_stack` has run after the last write;
-`--playbook` replaces the Method section with GPT-6 Astra's own method
-(hypothesise order and every position from the opening images, confirm each
-section at that position four per call, write, re-check, review). Both are for
-the cheaper models and off by default.
-
 `--reasoning` sets the reasoning effort on models that expose one (the
 `openai-oauth/*` backend); unset leaves the provider's own default.
 
@@ -129,16 +120,6 @@ it had -- the agent is re-seeded, not replayed. `--fresh` ignores the
 checkpoint and starts over. `--trace-dir PATH` writes a full-content JSONL
 trace of every agent session.
 
-Every model call prints a `[tokens]` line (input, cached, output, run input
-so far) and the run ends with a total. `--max-quota-percent N` (default 25) ends the session when this run's share
-of the provider's usage window reaches N (the OAuth lane's quota headers;
-cached input is ~0.13x there, so the window, not the raw count, is the
-cost); `--max-input-tokens N` (default
-`JobSpec.max_input_tokens`, 6M) ends the session when the run's summed
-input passes N: the OAuth lane resends the whole history every call, so a
-long run grows quadratically and would otherwise be ended by the account's
-usage window instead of by the job. Writes made before the stop are kept.
-
 ## Linear: Quick Affine
 
 ```bash
@@ -153,36 +134,72 @@ B-spline.
 ## Nonlinear: Image-Gen Registration
 
 ```bash
-langslice nonlinear register <image> --position <mm> [--image-model ...] [--review-model ...] [--canvas-pad 0..1.5] [--pitch-deg DEG] [--yaw-deg DEG] [--out ...]
+langslice nonlinear register <image> --position <mm> [--image-model ...] [--review-model ...] [--preprocess auto|none] [--draws 1] [--deformation bspline|affine] [--canvas-pad 0..1.5] [--pitch-deg DEG] [--yaw-deg DEG] [--provider ...|none] [--out ...]
 ```
 
 Registration has one active method: image-gen registration. In QUINT/ABBA-style
 workflows, linear placement happens in the host tool and this step stands in for
 the manual spline/BigWarp deformation.
 
-1. Load, normalize, and downsample the histology slice (long edge 2048).
+1. Load, normalize, and downsample the histology slice. `--preprocess auto`
+   (the default) then runs the shared adaptive preprocessing
+   (`image_prep.adaptive_preprocess`: per-channel CLAHE, a blend weighted
+   toward the structural channel, brightness normalization) — the same step
+   the linear path applies — so the image model sees the tissue's lamination
+   and banding, not one dim raw channel. `--preprocess none` sends the raw
+   image.
 2. Draw the atlas at the requested position: ONE colored region map of that
    plane (flat Allen-organized colors, one per registration unit, pixel-exact
-   off the annotation), plus the grayscale atlas template of the same plane.
-   Both are enlarged to a legible size and letterboxed onto black so that they
-   and the section share one frame.
+   off the annotation, ventricles kept) plus the grayscale atlas template of
+   the same plane. Both are enlarged to a legible size and letterboxed onto
+   black so that they and the section share one frame.
 3. Send the model three images — the colored map (Image 1, the image it
    edits), the template (Image 2), the section (Image 3) — and ask it to move
-   the map's regions onto the tissue, answering in that same frame.
+   the map's regions onto the tissue, answering in that same frame. With
+   `--draws K` the same request is sampled K times and the paintings are
+   combined per pixel by majority vote (see below).
 4. Crop the answer back to the section's frame if the image lane returned a
    different one, classify every pixel to the region color nearest it, and
-   register the atlas map to that painting with itk-elastix (affine, then
-   B-spline, on family-colored RGB).
+   register the atlas map to that painting with itk-elastix (affine +
+   B-spline, or the affine stage alone under `--deformation affine`).
 5. Warp the atlas through the recovered transform.
-6. Return the model's painting, the Elastix-warped atlas, the warped-border
-   overlay, the Elastix report and VisuAlign markers.
+6. Return the model's painting, the Elastix-warped atlas, warped-border overlay, and VisuAlign markers.
 
 The model is given no other input: no neighbouring atlas planes, no borders
 drawn over the fills, no blacked-out ventricles, and nothing painted over the
-section itself. `--pitch-deg`/`--yaw-deg` reslice every atlas render on the
-block's cutting plane, which is the largest single lever on the fit;
-`--canvas-pad` grows the section canvas so a fragment's complete anatomy can
-exceed the original image bounds.
+section itself. The working canvas is the image path's own output frame, so
+the section is resampled once and the model edits on the grid its answer
+comes back on.
+
+Draws and deformation:
+
+- `--draws K` (default 1) asks the image model for K independent paintings of
+  the same inputs and registers their per-pixel majority vote, rebuilt into a
+  single painting in atlas colors; every raw draw is kept in the output
+  directory as `generated_segmentation_draw<i>.png`. Draws that half-preserve
+  the tissue texture instead of painting flat color ("translucent") are
+  dropped from the vote first, unless that would drop all of them. Measured
+  on hand-registered slices, the vote beats the average single draw by
+  0.04-0.08 family Dice and lands near the best draw of the set. Ties go to
+  the first draw, so ask for three or more (two kept draws tie on every
+  disagreement and reduce to the first one).
+- `--deformation affine` (default `bspline`) fits the affine stage alone,
+  without the B-spline stage. Measured on the same slices, the B-spline stage
+  driven by generated paintings scores below the affine stage alone; the
+  markers, overlays and reports are the same either way.
+
+The model-free backbone (`--provider none`):
+
+- `--provider none` calls no image model at all. The atlas plane is placed on
+  the section's own outline by a moments (silhouette) fit and THAT placement
+  is the painting; the rest of the pipeline (Elastix, VisuAlign markers,
+  overlays, reports, exports) runs on it unchanged, and it is written to the
+  output directory as `input_prior.png`. The backbone is
+  `langslice nonlinear register slice.png --position 5.2 --provider none
+  --deformation affine`.
+- Measured against the LSD_910 hand registrations: the placement alone scores
+  0.82 mean family Dice, better than every image-model configuration tried
+  before the April lineup — the number a model run has to beat.
 
 Provider routing is explicit, not inferred from the model name:
 
@@ -191,10 +208,13 @@ Provider routing is explicit, not inferred from the model name:
   picks the Images API (`images`, default) or the Responses API (`responses`),
   and `--endpoint` points it at a non-OpenAI base URL. The default
   OpenAI-compatible image model is `gpt-image-2`.
+- `--provider none` calls no image model (see the backbone above).
 - `--provider chatgpt` uses a ChatGPT subscription instead of an API key: it
   sends `gpt-image-2` requests through the Codex images/edits endpoint with
   the token stored by `langslice login`. The edited image is the colored
-  region map; the template and the histology slice follow it as references.
+  region map; the template and the histology section follow it as
+  references. That lane returns a fixed pixel budget at the input's aspect
+  ratio, which is the frame the canvas is built at.
 
 ## Sign In With ChatGPT
 
@@ -245,10 +265,10 @@ event:
 | --- | --- |
 | `session` | run label, agent name, model name, full system instruction (first line) |
 | `seed` | the session's seed message: text verbatim, images as descriptors labelled with the text above them |
-| `model` | one model turn: its text, any thought summary, every function call with full JSON arguments, and its `usage` (input, cached, output tokens) |
+| `model` | one model turn: its text, any thought summary, every function call with full JSON arguments |
 | `tool_result` | the complete tool payload the model reads, plus descriptors for media riding on the response |
 | `nudge` | a nudge the driver actually sent |
-| `summary` | tool-call count, turn count, whether the session submitted, run token totals, and `stopped` when a budget ended it (last line) |
+| `summary` | tool-call count, turn count, whether the session submitted (last line) |
 
 Unlike the request captures above, this records values, not shapes: full text,
 full tool arguments, full tool responses. Images are always descriptors (mime

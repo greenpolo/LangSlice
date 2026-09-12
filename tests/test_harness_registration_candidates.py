@@ -50,13 +50,13 @@ def _install_pipeline_fakes(monkeypatch, tmp_path: Path | None = None) -> dict[s
 
     monkeypatch.setattr(candidates, "load_atlas", lambda atlas_name: _fake_atlas())
 
-    def fake_get_reference_slice(  # noqa: ANN001 - local fake
-        atlas, position_mm, *, plane="coronal", pitch_deg=0.0, yaw_deg=0.0
+    def fake_model_facing_template(  # noqa: ANN001 - local fake
+        atlas, position_mm, plane="coronal", pitch_deg=0.0, yaw_deg=0.0
     ):
-        del plane, pitch_deg, yaw_deg
-        return Image.new("L", (4, 3), color=150)
+        del atlas, position_mm, plane, pitch_deg, yaw_deg
+        return Image.new("RGB", (4, 3), color=(150, 150, 150))
 
-    monkeypatch.setattr(candidates, "get_reference_slice", fake_get_reference_slice)
+    monkeypatch.setattr(candidates, "_model_facing_template", fake_model_facing_template)
 
     def fake_colored_region_slice(  # noqa: ANN001
         atlas, position_mm, target_size=None, *, plane="coronal", smooth=True,
@@ -74,7 +74,7 @@ def _install_pipeline_fakes(monkeypatch, tmp_path: Path | None = None) -> dict[s
         candidates,
         "_classify_pixels_to_region_ids",
         lambda model_output_rgb, atlas, position_mm, *, plane="coronal",
-        off_palette_background=True, pitch_deg=0.0, yaw_deg=0.0: np.where(
+        off_palette_background=True, pitch_deg=0.0, yaw_deg=0.0, paint=False: np.where(
             model_output_rgb[:, :, 0] > model_output_rgb[:, :, 1],
             1,
             2,
@@ -94,10 +94,15 @@ def _install_pipeline_fakes(monkeypatch, tmp_path: Path | None = None) -> dict[s
 
     monkeypatch.setattr(candidates, "generate_warped_segmentation_image", fake_generate)
 
-    def fake_register(atlas_classified, generated_classified, atlas, fixed_mask=None):  # noqa: ANN001
+    def fake_register(  # noqa: ANN001
+        atlas_classified, generated_classified, atlas, fixed_mask=None,
+        deformation="bspline",
+    ):
         calls["atlas_target_shape"] = atlas_classified.shape
         calls["model_output_shape"] = generated_classified.shape
+        calls["generated_classified"] = generated_classified.copy()
         calls["fixed_mask_used"] = fixed_mask is not None and bool(fixed_mask.any())
+        calls["deformation"] = deformation
         return SimpleNamespace(name="fake-transform"), 1.25
 
     monkeypatch.setattr(candidates, "_register_region_maps", fake_register)
@@ -128,10 +133,13 @@ def _install_pipeline_fakes(monkeypatch, tmp_path: Path | None = None) -> dict[s
         lambda field, scale_to_slice, origin_px=(0.0, 0.0): [[0.0, 0.0, 11.0, 7.0]],
     )
 
-    def fake_inverse_warp(slice_rgb, *, forward_fixed_gray, forward_result_transform):
+    def fake_inverse_warp(
+        slice_rgb, *, forward_fixed_gray, forward_result_transform, deformation="bspline"
+    ):
         calls["inverse_slice_shape"] = slice_rgb.shape
         calls["inverse_forward_fixed_gray_shape"] = forward_fixed_gray.shape
         calls["inverse_forward_result_transform"] = forward_result_transform
+        calls["inverse_deformation"] = deformation
         warped = np.zeros_like(slice_rgb)
         warped[:, : warped.shape[1] // 2] = (50, 100, 150)
         warped[:, warped.shape[1] // 2 :] = (200, 150, 100)
@@ -153,6 +161,7 @@ def test_generate_registration_candidate_builds_candidate_and_metadata(monkeypat
 
     candidate = candidates.generate_registration_candidate(
         _make_slice(),
+        native_canvas=False,  # toy section: keep the legacy long-edge layout
         atlas_name="fake_mouse",
         position_mm=1.5,
         provider="openai",
@@ -233,6 +242,7 @@ def test_generate_registration_candidate_writes_debug_artifacts(monkeypatch, tmp
 
     candidate = candidates.generate_registration_candidate(
         _make_slice(),
+        native_canvas=False,  # toy section: keep the legacy long-edge layout
         atlas_name="fake_mouse",
         position_mm=1.5,
         candidate_id="debug-candidate",
@@ -245,7 +255,8 @@ def test_generate_registration_candidate_writes_debug_artifacts(monkeypatch, tmp
         "warped_atlas.png",
         "warped_border_overlay.png",
         "input_colored_regions.png",
-        "input_reference.png",
+        "input_reference_2.png",
+        "input_reference_3.png",
         "input_slice.png",
         "slice_warped_to_atlas.png",
         "slice_atlas_border_overlay.png",
@@ -344,6 +355,7 @@ def test_slice_warped_to_atlas_saved_as_rgba_with_root_mask_alpha(monkeypatch, t
 
     candidates.generate_registration_candidate(
         _make_slice(),
+        native_canvas=False,  # toy section: keep the legacy long-edge layout
         atlas_name="fake_mouse",
         position_mm=1.5,
         candidate_id="rgba-mask-candidate",
@@ -372,6 +384,7 @@ def test_warped_border_overlay_marks_border_pixels(monkeypatch):
 
     candidate = candidates.generate_registration_candidate(
         base,
+        native_canvas=False,  # toy section: keep the legacy long-edge layout
         atlas_name="fake_mouse",
         position_mm=1.5,
         candidate_id="overlay-candidate",
@@ -518,7 +531,9 @@ def test_run_inverse_warp_for_slice_writes_forward_transform_to_disk(monkeypatch
     monkeypatch.setattr(
         image_gen_helpers,
         "_build_elastix_parameter_object",
-        lambda grid_spacing=32: SimpleNamespace(name="fake-parameter-object"),
+        lambda grid_spacing=32, deformation="bspline": SimpleNamespace(
+            name="fake-parameter-object"
+        ),
     )
 
     slice_rgb = np.zeros((3, 5, 3), dtype=np.uint8)
@@ -666,8 +681,10 @@ def test_generate_registration_candidate_handles_inverse_warp_failure(monkeypatc
     _install_pipeline_fakes(monkeypatch, tmp_path)
     candidates = _candidates()
 
-    def boom(slice_rgb, *, forward_fixed_gray, forward_result_transform):  # noqa: ANN001
-        del slice_rgb, forward_fixed_gray, forward_result_transform
+    def boom(  # noqa: ANN001
+        slice_rgb, *, forward_fixed_gray, forward_result_transform, deformation="bspline"
+    ):
+        del slice_rgb, forward_fixed_gray, forward_result_transform, deformation
         raise RuntimeError("simulated elastix divergence")
 
     monkeypatch.setattr(candidates, "_run_inverse_warp_for_slice", boom)
@@ -675,6 +692,7 @@ def test_generate_registration_candidate_handles_inverse_warp_failure(monkeypatc
     progress: list[str] = []
     candidate = candidates.generate_registration_candidate(
         _make_slice(),
+        native_canvas=False,  # toy section: keep the legacy long-edge layout
         atlas_name="fake_mouse",
         position_mm=1.5,
         candidate_id="inverse-failure-candidate",
@@ -909,6 +927,7 @@ def test_canvas_pad_grows_working_canvas_and_reports_offsets(monkeypatch):
 
     candidate = candidates.generate_registration_candidate(
         _make_slice(),  # 12x8
+        native_canvas=False,  # toy section: keep the legacy long-edge layout
         atlas_name="fake_mouse",
         position_mm=1.5,
         candidate_id="pad-candidate",
@@ -953,6 +972,7 @@ def test_extreme_aspect_ratio_clamps_into_the_supported_range(monkeypatch):
 
     candidate = candidates.generate_registration_candidate(
         _make_slice((48, 12)),  # 4:1 -> pad height to reach 3:1
+        native_canvas=False,  # toy section: keep the legacy long-edge layout
         atlas_name="fake_mouse",
         position_mm=1.5,
         candidate_id="clamp-candidate",
@@ -969,6 +989,7 @@ def test_in_range_aspect_ratio_is_left_untouched(monkeypatch):
     candidates = _candidates()
     candidate = candidates.generate_registration_candidate(
         _make_slice((24, 9)),  # 2.67:1 — inside 1:3..3:1, no clamp
+        native_canvas=False,  # toy section: keep the legacy long-edge layout
         atlas_name="fake_mouse",
         position_mm=1.5,
         candidate_id="noop-candidate",
@@ -1034,3 +1055,277 @@ def test_prealign_scales_atlas_to_painting_and_clamps_for_fragments():
         atlas_map, np.zeros_like(paint)
     )
     assert none_matrix is None and same is atlas_map
+
+
+# --- draws: majority vote, translucency gate, affine-only deformation --------
+
+
+def _install_draw_fakes(monkeypatch, colors: list[tuple[int, int, int]]) -> dict[str, Any]:
+    """Pipeline fakes where the provider returns *colors*, one per draw.
+
+    The classifier fake stands in for the real nearest-palette one: a
+    red-dominant painting is "translucent" (its foreground classifies to
+    background), green paints region 1, anything else region 2. The atlas
+    render (``off_palette_background=False``) keeps the plain red/green rule,
+    so only the model's draws can go off palette.
+    """
+    candidates = _candidates()
+    calls = _install_pipeline_fakes(monkeypatch)
+    draws = iter([Image.new("RGB", (12, 8), color) for color in colors])
+
+    def fake_generate(request):  # noqa: ANN001 - local fake
+        calls["request"] = request
+        calls["n_generate_calls"] = calls.get("n_generate_calls", 0) + 1
+        return GeneratedSegmentation(
+            image=next(draws),
+            provider=request.provider,
+            model=request.model or "fake-model",
+            route="fake-route",
+            metadata={},
+        )
+
+    monkeypatch.setattr(candidates, "generate_warped_segmentation_image", fake_generate)
+
+    def fake_classify(  # noqa: ANN001 - local fake
+        rgb, atlas, position_mm, *, plane="coronal", off_palette_background=True,
+        pitch_deg=0.0, yaw_deg=0.0, paint=False,
+    ):
+        if not off_palette_background:
+            return np.where(rgb[:, :, 0] > rgb[:, :, 1], 1, 2).astype(np.int32)
+        return np.where(
+            rgb[:, :, 0] > 200, 0, np.where(rgb[:, :, 1] > 200, 1, 2)
+        ).astype(np.int32)
+
+    monkeypatch.setattr(candidates, "_classify_pixels_to_region_ids", fake_classify)
+    return calls
+
+
+_CLEAN_GREEN = (30, 220, 30)
+_CLEAN_BLUE = (30, 30, 220)
+_TRANSLUCENT_RED = (255, 10, 10)
+
+
+def test_majority_vote_takes_the_majority_id_and_breaks_ties_toward_the_first_draw():
+    candidates = _candidates()
+    first = np.array([[1, 5, 7]], dtype=np.int32)
+    second = np.array([[1, 6, 8]], dtype=np.int32)
+    third = np.array([[2, 6, 9]], dtype=np.int32)
+
+    voted = candidates._majority_vote_classified([first, second, third])
+
+    # col 0: 1,1,2 -> 1. col 1: 5,6,6 -> 6. col 2: all distinct -> first draw.
+    assert voted.tolist() == [[1, 6, 7]]
+    assert voted.dtype == first.dtype
+
+
+def test_draws_vote_per_pixel_and_report_the_kept_draws(monkeypatch):
+    calls = _install_draw_fakes(
+        monkeypatch, [_CLEAN_GREEN, _CLEAN_BLUE, _CLEAN_GREEN]
+    )
+    candidates = _candidates()
+
+    candidate = candidates.generate_registration_candidate(
+        _make_slice(),
+        native_canvas=False,  # toy section: keep the legacy long-edge layout
+        atlas_name="fake_mouse",
+        position_mm=1.5,
+        candidate_id="voted",
+        draws=3,
+    )
+
+    assert calls["n_generate_calls"] == 3
+    # Two green draws (region 1) outvote the blue one (region 2) everywhere.
+    assert set(np.unique(calls["generated_classified"]).tolist()) == {1}
+    draws_meta = candidate.metadata["draws"]
+    assert draws_meta["n"] == 3
+    assert draws_meta["kept"] == [0, 1, 2]
+    assert draws_meta["dropped"] == []
+    assert draws_meta["off_palette_fraction"] == [0.0, 0.0, 0.0]
+
+
+def test_translucency_gate_drops_the_off_palette_draw(monkeypatch):
+    calls = _install_draw_fakes(
+        monkeypatch, [_CLEAN_GREEN, _TRANSLUCENT_RED, _CLEAN_BLUE]
+    )
+    candidates = _candidates()
+
+    candidate = candidates.generate_registration_candidate(
+        _make_slice(),
+        native_canvas=False,  # toy section: keep the legacy long-edge layout
+        atlas_name="fake_mouse",
+        position_mm=1.5,
+        candidate_id="gated",
+        draws=3,
+    )
+
+    draws_meta = candidate.metadata["draws"]
+    assert draws_meta["kept"] == [0, 2]
+    assert draws_meta["dropped"] == [1]
+    assert draws_meta["off_palette_fraction"][1] == 1.0
+    # The dropped draw never reaches the vote: green (1) wins the tie by index.
+    assert set(np.unique(calls["generated_classified"]).tolist()) == {1}
+
+
+def test_translucency_gate_keeps_every_draw_when_all_of_them_fail(monkeypatch):
+    calls = _install_draw_fakes(monkeypatch, [_TRANSLUCENT_RED, _TRANSLUCENT_RED])
+    candidates = _candidates()
+
+    candidate = candidates.generate_registration_candidate(
+        _make_slice(),
+        native_canvas=False,  # toy section: keep the legacy long-edge layout
+        atlas_name="fake_mouse",
+        position_mm=1.5,
+        candidate_id="all-translucent",
+        draws=2,
+    )
+
+    draws_meta = candidate.metadata["draws"]
+    assert draws_meta["kept"] == [0, 1]
+    assert draws_meta["dropped"] == []
+    assert calls["generated_classified"].shape == (8, 12)
+
+
+def test_single_draw_classification_matches_the_historical_path(monkeypatch):
+    """draws=1 must hand Elastix exactly what the un-voted path always did:
+    the draw onto the canvas, classify, despeckle -- in that order, with no
+    vote in between."""
+    from langslice.nonlinear.image_gen_helpers import _despeckle_classified
+
+    candidates = _candidates()
+    calls = _install_pipeline_fakes(monkeypatch)
+    model_output = Image.new("RGB", (5, 4), (200, 100, 50))
+    for y in range(4):
+        model_output.putpixel((4, y), (50, 100, 200))  # a second region to keep
+
+    def fake_generate(request):  # noqa: ANN001 - local fake
+        calls["request"] = request
+        return GeneratedSegmentation(
+            image=model_output, provider=request.provider,
+            model="fake-model", route="fake-route", metadata={},
+        )
+
+    monkeypatch.setattr(candidates, "generate_warped_segmentation_image", fake_generate)
+    slice_image = _make_slice()
+
+    expected_rgb = np.asarray(
+        model_output.resize(slice_image.size, resample=Image.Resampling.LANCZOS),
+        dtype=np.uint8,
+    )
+    expected = np.where(
+        expected_rgb[:, :, 0] > expected_rgb[:, :, 1], 1, 2
+    ).astype(np.int32)
+    expected = _despeckle_classified(expected)
+
+    for kwargs in ({}, {"draws": 1}):
+        candidate = candidates.generate_registration_candidate(
+            slice_image,
+            native_canvas=False,  # toy section: keep the legacy long-edge layout
+            atlas_name="fake_mouse",
+            position_mm=1.5,
+            candidate_id="single",
+            **kwargs,
+        )
+        np.testing.assert_array_equal(calls["generated_classified"], expected)
+        assert candidate.metadata["draws"]["n"] == 1
+        assert candidate.metadata["draws"]["kept"] == [0]
+        # The provider's own image stays the candidate's painting.
+        assert candidate.generated_segmentation is model_output
+
+
+def test_draws_write_every_raw_draw_as_a_debug_artifact(monkeypatch, tmp_path):
+    _install_draw_fakes(monkeypatch, [_CLEAN_GREEN, _CLEAN_BLUE])
+    candidates = _candidates()
+
+    candidates.generate_registration_candidate(
+        _make_slice(),
+        native_canvas=False,  # toy section: keep the legacy long-edge layout
+        atlas_name="fake_mouse",
+        position_mm=1.5,
+        candidate_id="draw-artifacts",
+        debug_dir=str(tmp_path),
+        draws=2,
+    )
+
+    artifact_dir = tmp_path / "registration" / "draw-artifacts"
+    names = {path.name for path in artifact_dir.iterdir()}
+    assert {
+        "generated_segmentation.png",
+        "generated_segmentation_draw0.png",
+        "generated_segmentation_draw1.png",
+    } <= names
+
+
+def _fake_itk_parameter_module() -> SimpleNamespace:
+    """Minimal itk stand-in: a ParameterObject that just collects its maps."""
+
+    class FakeParameterObject:
+        def __init__(self) -> None:
+            self.maps: list[dict[str, Any]] = []
+
+        def GetDefaultParameterMap(self, kind: str):  # noqa: N802 - itk API name
+            return {"Transform": (kind,)}
+
+        def AddParameterMap(self, param_map) -> None:  # noqa: N802, ANN001
+            self.maps.append(param_map)
+
+        def GetNumberOfParameterMaps(self) -> int:  # noqa: N802 - itk API name
+            return len(self.maps)
+
+    return SimpleNamespace(ParameterObject=SimpleNamespace(New=FakeParameterObject))
+
+
+def test_affine_deformation_emits_a_single_parameter_map_in_both_builders(monkeypatch):
+    import sys
+
+    from langslice.nonlinear import image_gen_helpers
+
+    monkeypatch.setitem(sys.modules, "itk", _fake_itk_parameter_module())
+    builders = (
+        lambda deformation: image_gen_helpers._build_elastix_parameter_object(
+            32, deformation
+        ),
+        lambda deformation: image_gen_helpers._build_multichannel_parameter_object(
+            32, 3, deformation
+        ),
+    )
+    for build in builders:
+        assert build("bspline").GetNumberOfParameterMaps() == 2
+        affine_only = build("affine")
+        assert affine_only.GetNumberOfParameterMaps() == 1
+        assert affine_only.maps[0]["Transform"] == ("affine",)
+
+
+def test_affine_deformation_reaches_elastix_and_the_inverse_warp(monkeypatch):
+    calls = _install_pipeline_fakes(monkeypatch)
+    candidates = _candidates()
+
+    candidates.generate_registration_candidate(
+        _make_slice(),
+        native_canvas=False,  # toy section: keep the legacy long-edge layout
+        atlas_name="fake_mouse",
+        position_mm=1.5,
+        candidate_id="affine-only",
+        deformation="affine",
+    )
+
+    assert calls["deformation"] == "affine"
+    assert calls["inverse_deformation"] == "affine"
+
+
+def test_register_cli_parses_draws_and_deformation():
+    from langslice.cli import _build_parser
+
+    args = _build_parser().parse_args(
+        [
+            "nonlinear", "register", "tests/fixture.png", "--position", "5.0",
+            "--draws", "4", "--deformation", "affine",
+        ]
+    )
+    assert args.draws == 4
+    assert args.deformation == "affine"
+
+    defaults = _build_parser().parse_args(
+        ["nonlinear", "register", "tests/fixture.png", "--position", "5.0"]
+    )
+    assert defaults.draws == 1
+    assert defaults.deformation == "bspline"
