@@ -486,9 +486,8 @@ def test_nonlinear_provider_uses_direct_images_edit(monkeypatch):
     monkeypatch.setattr(chatgpt, "edit_image", fake_edit_image)
 
     request = providers.SegmentationGenerationRequest(
-        colored_regions=Image.new("RGB", (10, 10)),
-        reference_slice=Image.new("RGB", (10, 10)),
         slice_image=Image.new("RGB", (30, 20)),
+        reference_images=[Image.new("RGB", (10, 10)), Image.new("RGB", (10, 10))],
         prompt="warp it",
         provider="chatgpt",
     )

@@ -173,6 +173,16 @@ def test_generate_registration_candidate_builds_candidate_and_metadata(monkeypat
     assert candidate.markers == [[0.0, 0.0, 11.0, 7.0]]
 
     request = calls["request"]
+    # The lineup: the model EDITS the colored atlas map (Image 1) and gets the
+    # grayscale template and the section as references, in that order. All
+    # three share the section's aspect ratio.
+    assert len(request.reference_images) == 2
+    # the 4x3 atlas plate, NEAREST-upscaled to a 1024 long edge and then
+    # letterboxed to the section's 3:2 — the template gets the same treatment
+    assert request.slice_image.size == (1152, 768)
+    assert request.reference_images[0].size == (1152, 768)
+    # the section itself is sent as-is, at the working canvas size
+    assert request.reference_images[1].size == (12, 8)
     assert request.provider == "openai"
     assert request.model == "gpt-image-2"
     assert request.openai_image_route == "images"

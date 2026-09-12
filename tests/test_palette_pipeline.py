@@ -1,4 +1,9 @@
-"""Leaf borders are a model-facing decoration and nothing more."""
+"""The model-facing region map and the classifier agree about every color.
+
+The model edits this render and Elastix registers it, so a painted pixel has
+to classify back to the region it was drawn from — the whole pipeline is
+built on that round trip.
+"""
 
 from __future__ import annotations
 
@@ -9,8 +14,7 @@ import pytest
 
 import langslice.atlas.render as atlas_render
 import langslice.nonlinear.image_gen_helpers as helpers
-from langslice.atlas.recolor import color_lut, use_palette
-from langslice.nonlinear.render import BORDER_DARKEN
+from langslice.atlas.recolor import color_lut
 
 WHITE = [255, 255, 255]
 
@@ -58,27 +62,23 @@ def atlas(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
     return fake
 
 
-def _render(atlas: SimpleNamespace, smooth: bool, palette: str) -> np.ndarray:
+def _render(atlas: SimpleNamespace, target_size: tuple[int, int] | None = None) -> np.ndarray:
     """The atlas the way the MODEL sees it."""
-    with use_palette(palette):
-        return np.asarray(
-            helpers._generate_colored_region_slice(atlas, 0.0, (400, 400), smooth=smooth),
-            dtype=np.uint8,
-        )
+    return np.asarray(
+        helpers._generate_colored_region_slice(atlas, 0.0, target_size), dtype=np.uint8
+    )
 
 
 def _classify(atlas: SimpleNamespace, rgb: np.ndarray, **kwargs) -> np.ndarray:
     return helpers._classify_pixels_to_region_ids(rgb, atlas, 0.0, **kwargs)
 
 
-@pytest.mark.parametrize("smooth", [True, False])
+@pytest.mark.parametrize("target_size", [None, (400, 400)])
 def test_the_model_facing_render_classifies_back_to_its_own_regions(
-    atlas: SimpleNamespace, smooth: bool
+    atlas: SimpleNamespace, target_size: tuple[int, int] | None
 ) -> None:
-    """Smoothed or not, every painted pixel is an exact palette color."""
-    classified = _classify(
-        atlas, _render(atlas, smooth, "family"), off_palette_background=False
-    )
+    """Native or resized, every painted pixel is an exact palette color."""
+    classified = _classify(atlas, _render(atlas, target_size), off_palette_background=False)
     lut = color_lut(atlas)
     # one id per COLOR on the section: the hippocampal subfields share theirs
     assert {lut[int(uid)] for uid in np.unique(classified) if uid} == {
@@ -86,46 +86,17 @@ def test_the_model_facing_render_classifies_back_to_its_own_regions(
     }
 
 
-def test_borders_change_only_the_model_facing_render(atlas: SimpleNamespace) -> None:
-    """The Elastix-side render, which everything downstream is built on, is
-    untouched by the style; the smooth one gains darker lines."""
-    assert (
-        _render(atlas, False, "leaf-borders") == _render(atlas, False, "family")
-    ).all()
-    flat = _render(atlas, True, "family")
-    bordered = _render(atlas, True, "leaf-borders")
-    assert not (flat == bordered).all()
-
-    # every changed pixel is a darkened version of some region's own color
-    changed = np.any(flat != bordered, axis=2)
-    palette = np.array(sorted(set(color_lut(atlas).values())), dtype=float)
-    lines = bordered[changed].astype(float)
-    distance = np.linalg.norm(
-        lines[:, None, :] - (palette * BORDER_DARKEN)[None, :, :], axis=2
-    )
-    assert float(np.median(distance.min(axis=1))) < 30.0  # anti-aliased edges aside
-
-
-def test_a_bordered_render_still_classifies_to_its_own_families(
-    atlas: SimpleNamespace,
-) -> None:
-    """The assumption the style rests on: if the model paints the hairlines
-    back, the classifier absorbs them instead of inventing regions."""
-    truth = _classify(atlas, _render(atlas, True, "family"), off_palette_background=False)
-    with use_palette("leaf-borders"):  # the style is in force for the whole run
-        as_model_output = _classify(atlas, _render(atlas, True, "leaf-borders"))
-
-    inside = truth != 0
-    assert float((as_model_output[inside] == truth[inside]).mean()) >= 0.99
-    assert set(np.unique(as_model_output)) <= set(np.unique(truth))
+def test_resizing_the_render_keeps_it_flat(atlas: SimpleNamespace) -> None:
+    """NEAREST throughout: a resize invents no colors to classify as a third region."""
+    native = {tuple(c) for c in _render(atlas).reshape(-1, 3)}
+    resized = {tuple(c) for c in _render(atlas, (400, 400)).reshape(-1, 3)}
+    assert resized <= native
 
 
 def test_registration_render_uses_the_same_colors_the_classifier_expects(
     atlas: SimpleNamespace,
 ) -> None:
-    classified = _classify(
-        atlas, _render(atlas, False, "family"), off_palette_background=False
-    )
+    classified = _classify(atlas, _render(atlas), off_palette_background=False)
     registration_rgb = helpers._registration_rgb(classified, atlas)
     reclassified = _classify(atlas, registration_rgb, off_palette_background=False)
     assert (reclassified == classified).all()
@@ -139,4 +110,4 @@ def test_the_palette_keeps_its_colors_apart_by_more_than_the_merge_radius(
     np.fill_diagonal(distances, np.inf)
     from langslice.atlas.recolor import MERGE_EPS
 
-    assert distances.min() > MERGE_EPS
+    assert float(distances.min()) > MERGE_EPS

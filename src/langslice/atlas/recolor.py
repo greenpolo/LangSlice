@@ -59,12 +59,14 @@ family keeps its identity. Native palettes are left exactly as the atlas
 authored them.
 
 Colors are the same whatever the palette setting says: the process-wide
-:func:`active_palette` knob selects how deep structure is DELINEATED in the
-model-facing render, not how anything is colored. ``"family"`` draws flat
-regions; ``"leaf-borders"`` adds Allen-Reference-Atlas-style hairlines at
-every leaf boundary, in a darker shade of the region's own color
-(``nonlinear.render.filled_regions``). Nothing downstream of that render —
-the Elastix pair, the classifier, the merge, the ledger — sees a difference.
+:func:`active_palette` knob selects how deep structure is DELINEATED in a
+render, not how anything is colored. ``"family"`` draws flat regions;
+``"leaf-borders"`` adds Allen-Reference-Atlas-style hairlines at every leaf
+boundary, in a darker shade of the region's own color
+(``nonlinear.render.filled_regions``). It is a style for renders people look
+at: registration shows its model one flat, pixel-exact map with no lines on
+it, and nothing in that pipeline — the Elastix pair, the classifier, the
+merge, the ledger — reads the setting at all.
 """
 
 from __future__ import annotations

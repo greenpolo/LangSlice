@@ -15,7 +15,7 @@ here is a verbatim copy — edit one, mirror to the other.
   `BORDER_DARKEN` / `is_dark_background` shade rules, which
   `nonlinear/render.py` re-exports. `linear` draws its physical overlay from
   the same functions, so both methods put a boundary in the same place. There is ONE path:
-  direct — the handwritten base prompt goes to the image model verbatim
+  direct — the handwritten prompt goes to the image model verbatim
   (openai-oauth: the raw `codex/images/edits` endpoint, no routing model in
   between), one generation per run. The hosted-router session (`router.py`,
   a GPT conversation wielding the `image_generation` tool with self-review
@@ -28,43 +28,54 @@ here is a verbatim copy — edit one, mirror to the other.
   `--canvas-pad` knob (0-1.5, `RegisterRequest.canvas_pad`). The Elastix
   report is the ONLY
   diagnostic — the old `confirm_registration` gate and per-model prompt
-  profiles were deleted. One base prompt (the original handwritten text, in
-  `model_prompts.py`) serves every image model; the working
-  editing copy is `_local/nonlinear_prompts.md`.
-  The MODEL-FACING atlas render is drawn at canvas resolution, never
-  NEAREST-upscaled: `render.filled_regions` traces each region at atlas
-  resolution, low-pass filters the outline and fills the polygon at ~2048px
-  (`_generate_colored_region_slice(..., smooth=True)`, the default), so a
-  25/39um atlas reaches the model with boundary detail instead of a voxel
-  staircase. Fills stay flat and exact-palette (classification is
-  nearest-color), each region is stroked as well as filled so neighbours
-  overlap instead of leaving background seams, and enclosed pinholes are
-  closed. The ELASTIX side asks for `smooth=False` — that render is
-  classified back and warped, so it must stay pixel-exact. `_fit_to_canvas`
-  picks its resampling filter from the image: NEAREST for a flat region map,
-  LANCZOS for the continuous-tone grayscale template.
+  profiles were deleted.
+- THE LINEUP (what the model is sent, in order). Image 1 is ONE colored atlas
+  region map of the target plane — flat Allen-organized colors, one per
+  registration unit, drawn pixel-exact off the annotation
+  (`_generate_colored_region_slice`), NEAREST-upscaled to a
+  `MODEL_MAP_MIN_LONG_EDGE` (1024) long edge and then letterboxed onto black
+  to the SECTION's aspect (`letterbox_to_aspect`). THIS is the image the model
+  edits (`SegmentationGenerationRequest.slice_image`, the first image every
+  transport sends). Image 2 is the grayscale atlas template of the same plane
+  (`_model_facing_template`, restretched on the plate's own 99.5th
+  percentile), upscaled and letterboxed identically. Image 3 is the section
+  itself, at the working canvas (long edge 2048), unpadded and unaltered.
+  The three therefore share one frame, which is what the prompt pins the
+  answer to. Nothing else reaches the model: no neighbouring planes at
+  ±125um, no borders drawn over the fills, no blacked-out ventricles, no
+  CLAHE, no silhouette-affine prior painted onto the canvas, and never the
+  section repainted in place. This is the APRIL LINEUP, restored 2026-09-12
+  after it beat the elaborated production lineup on the LSD_910 panel; the
+  earlier design is recoverable from git, not from a flag.
+- The ANSWER comes back in the frame it was given, except on lanes with fixed
+  output frames, which return the nearest legal aspect with our frame
+  letterboxed inside it: `crop_to_aspect` (tolerance 0.5%) center-crops that
+  excess off before the painting is resampled onto the section frame. Never
+  stretch — a mismatched ratio resampled whole slides every painted boundary
+  off the tissue. Nothing is masked out by comparison with the input: the
+  model edits the ATLAS MAP, so pixels it left untouched are regions it had
+  no reason to move. (The old `_preserved_background_mask`, which erased
+  untouched pixels as background, belonged to the retired repaint-the-section
+  contract and would now erase correct anatomy.)
+- Every atlas render in the run is fit-to-canvas at its own proportions —
+  the model-facing pair by letterbox, the Elastix-side map by `_fit_to_canvas`
+  (uniform scale, centered, NEAREST) — so the map Elastix registers sits in
+  exactly the geometry the model was shown. There is no physical-scale
+  placement here any more (`pixel_size_um`, `_pad_to_contain_atlas`,
+  `_anatomy_focus`): true-scale plates were measured as something the model
+  COPIES rather than deforms, and the April lineup was benchmarked without
+  them. Physical placement lives on in `linear/`, where the user, not a
+  model, is looking at the overlay.
   `generate_registration_candidate(image_prompt)` runs the whole downstream
   chain immediately (image model → Elastix → pixel classification → borders)
   and returns the images plus an Elastix report: error codes with the numbers
   behind them (`REGION_MISSING`, `REGION_COLLAPSED`, `WARP_FOLDS`,
   `TISSUE_UNCOVERED` — computed on the warped CLASSIFIED result, so color
-  drift that still classifies coherently passes clean; pixels the edit left
-  untouched (identical to the input canvas) are masked to background before
-  classification, because a preserved white background otherwise classifies
-  as the atlas root color; there is one real
+  drift that still classifies coherently passes clean; there is one real
   failure in this pipeline, Elastix not working on the image, and every code
   is a measured cause of it, not a standalone judgment); passing
   `generated_image` skips the provider call and evaluates an
-  externally generated image (offline re-derivations, benchmarks). Under `--palette leaf-borders` the classifier's palette gains the
-  hairline color of every region (`darker(color) -> that region's id`),
-  because a model that paints the delineation back would otherwise have it
-  cut through its own regions as background: measured on the Allen sagittal
-  render, hairlines are ~20% of the foreground and land 70-140 RGB from any
-  fill color. With the line color known, no border pixel becomes background
-  and no new region id appears; the residual (family recovery 0.93 vs a flat
-  render) is entirely WHICH of two neighbours owns a shared 2px line, which
-  is two orders below the B-spline grid. Nothing else changes: the
-  Elastix-side render (`smooth=False`) is byte-identical in both styles. The
+  externally generated image (offline re-derivations, benchmarks). The
   Elastix step registers
   the two label maps as joint RGB at merged-family granularity (one
   AdvancedMeanSquares metric per channel plus the bending penalty; both
@@ -77,8 +88,8 @@ here is a verbatim copy — edit one, mirror to the other.
   0.46-0.54 vs 0.675 identity vs 0.80 RGB) — Elastix's sampled ASGD
   optimizer starves on channels whose gradient lives only in thin boundary
   shells. Known residual flaw: in RGB a mismatched label earns partial
-  credit whenever its color sits nearer than black, so preserved debris
-  (dark pixels classify to far-away regions' shades, measurably CLOSER to
+  credit whenever its color sits nearer than black, so debris (dark pixels
+  classify to far-away regions' shades, measurably CLOSER to
   the palette than real paint) can pull boundaries slightly; the candidate
   fix is a dense-evaluation engine (NiftyReg 4-D SSD / ANTs label
   registration), not more Elastix channels. Also measured: the
@@ -87,8 +98,18 @@ here is a verbatim copy — edit one, mirror to the other.
   transformix deformation field at the B-spline control-grid spacing (the
   transform's own resolution; consumer-specific densities belong in the
   integration adapters), never read off the B-spline parameter map, which
-  dropped the affine stage and mistook coefficients for displacements. The
-  The block's CUTTING ANGLES are an input (`--pitch-deg`/`--yaw-deg`,
+  dropped the affine stage and mistook coefficients for displacements.
+- THE PROMPT is one text per model family, in `model_prompts.py`, chosen by
+  PROVIDER: `V14` for `gemini-api` (written to Google's image-prompting
+  guide, positive framing throughout) and `V14_EDIT_MOUSE` for the GPT image
+  lanes (OpenAI's guide: indexed inputs, invariants listed, the species and
+  atlas named). Both are byte-identical to the benchmark's own copies in
+  `_local/nonlinear_eval/prompts.py` (`v14`, `v14edit_mouse`) — that is how
+  they were measured, and `tests/test_nonlinear_prompts.py` compares them
+  whenever that local tree is present. They are coronal-worded; another
+  plane gets the same text with that one word swapped. Tune against real
+  runs, not per-model prose.
+- The block's CUTTING ANGLES are an input (`--pitch-deg`/`--yaw-deg`,
   `RegisterRequest`, `generate_registration_candidate`): non-zero angles
   reslice every atlas render — model-facing map, grayscale template,
   Elastix-side map, classification palette, leaf overlay — on that oblique
@@ -102,30 +123,21 @@ here is a verbatim copy — edit one, mirror to the other.
   per-draw sd of 0.02, with the paintings still made from a FLAT reference.
   Under a flat plane the residual is wide BANDS of misplaced anatomy
   (hippocampus, brainstem, one hemisphere ahead of the other); at the right
-  angles it collapses to boundary-width lines. `pixel_size_um` puts every
-  atlas render at TRUE physical scale on the slice canvas (each render's
-  um/px derived from the annotation slice's anatomy, never the letterbox
-  padding; anatomy centered via `_anatomy_focus`, and the canvas auto-grows
-  through `_pad_to_contain_atlas` when the true-scale anatomy would exceed
-  it) so the model sees two comparably sized brains; no pixel size falls
-  back to fit-to-canvas. Known residual, measured over all 33 M01 hand
-  registrations by physical extent of the GT region maps: the specimen runs
-  ~10%% (ML) to ~14%% (DV) smaller than the Allen average, so the true-scale
-  atlas lands slightly larger than the tissue and the fit side alone pays
-  ~0.004 dice for it — calibration is on for the model-side benefit of
-  size-matched references. Settled ablations on the same panel:
-  a finer B-spline grid (/48, /72 rather than /36) buys +0.004 dice, the
-  fixed-mask dilation is flat from 0 to 32px, and the bending penalty is
+  angles it collapses to boundary-width lines. Settled ablations on the same
+  panel: a finer B-spline grid (/48, /72 rather than /36) buys +0.004 dice,
+  the fixed-mask dilation is flat from 0 to 32px, and the bending penalty is
   flat at 1e5-1e6 and HARMFUL at 1e7 — the tail is a plane problem, not a
   regularization one. The
   canvas pad (`--canvas-pad`, 0-1.5) grows the working
   canvas by a margin matched to the slice's own background color (never
   black-on-white) so a fragment or hemibrain's COMPLETE painted anatomy can
-  exceed the original image bounds; after all padding the canvas silently
+  exceed the original image bounds; the atlas renders follow it, because they
+  are letterboxed to whatever aspect the padded canvas ends up with. After
+  all padding the canvas silently
   pads one axis if the aspect ratio falls outside what the image path can
   output (`model_prompts.aspect_ratio_limits`, gpt-image-2 =
-  1:3..3:1 — pad only, never crop; a mismatched ratio would undo edit-mode
-  pixel alignment); markers are reported in
+  1:3..3:1 — pad only, never crop; a ratio the lane cannot return would come
+  back letterboxed and have to be cropped); markers are reported in
   original-image pixels, unclipped — out-of-bounds correspondences are
   legitimate there, and clipping is an adapter concern. It
   runs after a linear

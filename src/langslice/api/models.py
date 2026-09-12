@@ -12,7 +12,6 @@ Plane = Literal["coronal", "sagittal", "horizontal"]
 Provider = Literal[
     "google", "openai", "chatgpt", "gemini-api", "openai-api", "openai-oauth"
 ]
-PreprocessMode = Literal["none", "auto"]
 EngineMethod = Literal[
     "version",
     "register.run",
@@ -89,7 +88,6 @@ class RegisterRequest(EngineBaseModel):
     review_model: str | None = None
     thinking: str | None = None
     temperature: float | None = None
-    preprocess: PreprocessMode = "none"
     provider: Provider = "google"
     endpoint: str | None = None
     output_dir: str | None = None
@@ -99,7 +97,6 @@ class RegisterRequest(EngineBaseModel):
     canvas_pad: float = 0.0
     vlm_resolution: int | None = None
     image_axes: str | None = None
-    pixel_size_um: float | None = None
     # Block cutting angles; every atlas render is resliced on that plane.
     pitch_deg: float = 0.0
     yaw_deg: float = 0.0

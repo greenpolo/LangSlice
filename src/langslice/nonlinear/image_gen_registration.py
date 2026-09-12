@@ -15,7 +15,7 @@ from PIL import Image
 
 from langslice.agent_trace import image_part_from_pil, json_part, runtime_event
 from langslice.atlas import get_reference_slice, load_atlas
-from langslice.atlas.recolor import Palette, color_lut, use_palette
+from langslice.atlas.recolor import color_lut
 from langslice.image_prep import foreground_mask
 from langslice.nonlinear.image_gen_helpers import (
     _classified_to_rgb,
@@ -50,25 +50,74 @@ from langslice.space import Plane
 
 _MAX_LONG_EDGE = 2048
 
-#: Max summed RGB delta for a generated pixel to count as "untouched" input.
-#: Comfortably above resampling noise, well below the distance to the
-#: nearest palette colors (light grays sit ~138 from white).
-_PRESERVED_PIXEL_TOL = 45
+#: Long edge every model-facing atlas render is NEAREST-upscaled to at least.
+#: The atlas is coarse (a 25um coronal plate is ~456px across); below this the
+#: thin bands and small nuclei the model has to place stop being legible.
+MODEL_MAP_MIN_LONG_EDGE = 1024
+
+#: Relative aspect-ratio difference above which a returned image is treated as
+#: letterboxed inside a different frame and cropped back. Lanes with fixed
+#: output frames answer at the nearest legal aspect, a percent or two off.
+_ASPECT_TOLERANCE = 0.005
 
 
-def _preserved_background_mask(
-    model_output_rgb: np.ndarray, slice_image: Image.Image
-) -> np.ndarray:
-    """Pixels the edit left untouched — background by the edit contract.
+def letterbox_to_aspect(
+    image: Image.Image, aspect: float, fill: tuple[int, int, int] = (0, 0, 0)
+) -> Image.Image:
+    """Center *image* on a *fill* canvas of the given width/height ratio.
 
-    The generation is an in-place edit of the slice canvas, so anything
-    still (nearly) identical to the input is unpainted, never anatomy.
-    Without this, a preserved white background classifies as the atlas
-    root color (white in the Allen LUT) and poisons the registration.
+    Grows one axis, never scales or crops: the atlas renders keep their own
+    geometry and still arrive in the section's frame, which is what lets the
+    prompt tell the model to answer in that one shared frame.
     """
-    slice_rgb = np.asarray(slice_image.convert("RGB"), dtype=int)
-    delta = np.abs(model_output_rgb.astype(int) - slice_rgb).sum(axis=2)
-    return delta <= _PRESERVED_PIXEL_TOL
+    width, height = image.size
+    if width / height < aspect:
+        canvas_size = (round(height * aspect), height)
+    else:
+        canvas_size = (width, round(width / aspect))
+    canvas = Image.new("RGB", canvas_size, fill)
+    canvas.paste(
+        image.convert("RGB"),
+        ((canvas_size[0] - width) // 2, (canvas_size[1] - height) // 2),
+    )
+    return canvas
+
+
+def upscale_to_min_long_edge(
+    image: Image.Image,
+    resample: Image.Resampling,
+    min_long_edge: int = MODEL_MAP_MIN_LONG_EDGE,
+) -> Image.Image:
+    """Enlarge *image* until its long edge reaches *min_long_edge*; never shrink."""
+    factor = max(1.0, min_long_edge / max(image.size))
+    if factor == 1.0:
+        return image
+    return image.resize(
+        (round(image.width * factor), round(image.height * factor)), resample
+    )
+
+
+def crop_to_aspect(
+    image: Image.Image, aspect: float, tolerance: float = _ASPECT_TOLERANCE
+) -> Image.Image:
+    """Center-crop *image* to the given width/height ratio, never stretch.
+
+    The model is asked for the frame it was given; a lane with fixed output
+    frames returns the nearest legal one instead, with our frame letterboxed
+    inside it. Cropping the excess back off puts every painted boundary where
+    the model put it — resampling the whole thing to the frame would slide
+    them all off the tissue.
+    """
+    width, height = image.size
+    if abs((width / height) / aspect - 1.0) <= tolerance:
+        return image
+    if width / height > aspect:
+        new_width = round(height * aspect)
+        left = (width - new_width) // 2
+        return image.crop((left, 0, left + new_width, height))
+    new_height = round(width / aspect)
+    top = (height - new_height) // 2
+    return image.crop((0, top, width, top + new_height))
 
 
 def _background_color(image: Image.Image) -> tuple[int, int, int]:
@@ -176,144 +225,53 @@ def _orient_pil(
     return Image.fromarray(arr)
 
 
-#: An image with no more distinct colors than this is a flat region map, not
-#: a photograph: resample it NEAREST so every pixel stays an exact palette
-#: color. Anything richer (the grayscale template) is a continuous-tone image
-#: and reads as blocks unless it is resampled smoothly.
-_FLAT_MAP_MAX_COLORS = 128
-
-
 def _fit_to_canvas(
     image: Image.Image,
     size: tuple[int, int],
     fill: tuple[int, int, int] = (0, 0, 0),
-    scale: float | None = None,
-    focus: tuple[float, float] | None = None,
+    resample: Image.Resampling = Image.Resampling.NEAREST,
 ) -> Image.Image:
     """Uniform-scale *image* onto a *size* canvas, center-padded with *fill*.
 
     Never stretches: an atlas render squeezed into the histology's aspect
-    ratio deforms the very anatomy the prompt calls authoritative. With
-    *scale* (true physical scale from a known pixel size), the image is
-    scaled by exactly that factor and cropped where it overflows the
-    canvas; otherwise it is fit inside the canvas. *focus* is a fractional
-    (x, y) point of the image aligned to the canvas center — used to center
-    the anatomy rather than the atlas frame, whose empty margins may crop.
+    ratio deforms the very anatomy the registration measures against. This
+    is the same geometry the model was shown (its map letterboxed to the
+    section's aspect), expressed at the section's pixel size. The default
+    NEAREST is for label maps, where any blending invents colors that
+    classify as third regions.
     """
-    if scale is None:
-        scale = min(size[0] / image.width, size[1] / image.height)
+    scale = min(size[0] / image.width, size[1] / image.height)
     new = (max(1, round(image.width * scale)), max(1, round(image.height * scale)))
-    rgb = image.convert("RGB")
-    resample = (
-        Image.Resampling.NEAREST
-        if rgb.getcolors(_FLAT_MAP_MAX_COLORS) is not None
-        else Image.Resampling.LANCZOS
-    )
-    resized = rgb.resize(new, resample=resample)
+    resized = image.convert("RGB").resize(new, resample=resample)
     canvas = Image.new("RGB", size, fill)
-    if focus is None:
-        focus = (0.5, 0.5)
-    canvas.paste(
-        resized,
-        (
-            round(size[0] / 2 - focus[0] * new[0]),
-            round(size[1] / 2 - focus[1] * new[1]),
-        ),
-    )
+    canvas.paste(resized, ((size[0] - new[0]) // 2, (size[1] - new[1]) // 2))
     return canvas
 
 
-def _canvas_um_per_px(
-    pixel_size_um: float | None,
-    original_image: Image.Image,
-    target_size: tuple[int, int],
-) -> float | None:
-    """Effective um/px of the working canvas, or None without a pixel size."""
-    if pixel_size_um is None:
-        return None
-    return float(pixel_size_um) * (original_image.width / target_size[0])
-
-
-def _anatomy_focus(render: Image.Image) -> tuple[float, float] | None:
-    """Fractional (x, y) center of the non-black anatomy in an atlas render."""
-    arr = np.asarray(render.convert("RGB"))
-    ys, xs = np.nonzero(arr.any(axis=2))
-    if ys.size == 0:
-        return None
-    return (
-        float(xs.min() + xs.max() + 1) / (2.0 * arr.shape[1]),
-        float(ys.min() + ys.max() + 1) / (2.0 * arr.shape[0]),
-    )
-
-
-def _pad_to_contain_atlas(
-    image: Image.Image,
-    pixel_size_um: float,
+def _model_facing_template(
     atlas: Any,
     position_mm: float,
     plane: Plane,
-    image_axes: str | None,
     pitch_deg: float = 0.0,
     yaw_deg: float = 0.0,
-) -> float:
-    """Minimum ``canvas_pad`` that keeps the true-scale atlas ANATOMY on canvas.
+) -> Image.Image:
+    """The grayscale atlas template of one plane, contrast-normalized for the model.
 
-    Physical calibration can put the atlas larger than the slice frame (the
-    tissue may fill its frame while running smaller than the atlas average);
-    rather than crop anatomy off the render, grow the canvas just enough.
-    Extent comes from the annotation's nonzero bounding box, not the atlas
-    frame — the frame's empty margins may crop freely.
+    ``get_reference_slice`` normalizes by the volume's brightest voxel, which
+    leaves a typical plate dim; the model reads structure off this image, so
+    it is restretched on the 99.5th percentile of the plate's own tissue
+    (a linear rescale, exactly what the April benchmark sent).
     """
-    from langslice.nonlinear.image_gen_helpers import _annotation_slice
-
-    ann = _annotation_slice(
-        atlas, position_mm, plane=plane, pitch_deg=pitch_deg, yaw_deg=yaw_deg
+    gray = np.asarray(
+        get_reference_slice(
+            atlas, position_mm, plane=plane, pitch_deg=pitch_deg, yaw_deg=yaw_deg
+        ),
+        dtype=np.float32,
     )
-    ys, xs = np.nonzero(ann)
-    if ys.size == 0:
-        return 0.0
-    extent = (float(xs.max() - xs.min() + 1), float(ys.max() - ys.min() + 1))
-    # Orientation may transpose the render's axes; probe with a 2:1 stamp.
-    probe = _orient_pil(Image.new("L", (2, 1)), atlas, plane, image_axes)
-    if probe.size == (1, 2):
-        extent = (extent[1], extent[0])
-    res_um = float(max(atlas.resolution))
-    atlas_mm = (extent[0] * res_um, extent[1] * res_um)
-    canvas_mm = (image.width * pixel_size_um, image.height * pixel_size_um)
-    longest = float(max(image.size))
-    pad = 0.0
-    for a_mm, c_mm, c_px in zip(atlas_mm, canvas_mm, image.size, strict=True):
-        if a_mm > c_mm:
-            pad = max(pad, c_px * (a_mm / c_mm - 1.0) / (2.0 * longest))
-    return 1.02 * pad if pad else 0.0
-
-
-def _physical_scale_for(
-    render: Image.Image,
-    atlas: Any,
-    position_mm: float,
-    plane: Plane,
-    canvas_um: float | None,
-) -> float | None:
-    """Render -> canvas scale that puts the atlas at TRUE physical size.
-
-    Renders arrive at arbitrary pixel sizes (the smooth model-facing render
-    is pre-upscaled; the grayscale template is voxel-native), so each
-    render's own um/px is derived from the annotation slice's native extent
-    — the long edge survives any orientation transpose — and divided by the
-    canvas's um/px.
-    """
-    if canvas_um is None:
-        return None
-    try:
-        from langslice.nonlinear.image_gen_helpers import _annotation_slice
-
-        native_long = max(_annotation_slice(atlas, position_mm, plane=plane).shape)
-        atlas_res_um = float(max(atlas.resolution))
-    except Exception:
-        return None
-    render_um_per_px = atlas_res_um * native_long / max(render.size)
-    return render_um_per_px / canvas_um
+    tissue = gray[gray > 0]
+    peak = float(np.percentile(tissue, 99.5)) if tissue.size else 0.0
+    scaled = np.clip(255.0 * gray / max(peak, 1.0), 0, 255).astype(np.uint8)
+    return Image.fromarray(scaled, mode="L").convert("RGB")
 
 
 def _overlay_borders(base_image: Image.Image, borders: np.ndarray) -> Image.Image:
@@ -441,7 +399,6 @@ def _leaf_overlay_render(
     image_axes: str | None,
     result_transform: Any,
     *,
-    canvas_um: float | None = None,
     prealign_matrix: np.ndarray | None = None,
     pitch_deg: float = 0.0,
     yaw_deg: float = 0.0,
@@ -468,16 +425,14 @@ def _leaf_overlay_render(
             from langslice.space import orient_slice_to_axes
 
             leaf = orient_slice_to_axes(leaf, context, plane, image_axes)
-        # Same frame as the Elastix moving render: uniform scale (physical
-        # when known), centered — a stretched leaf map against a letterboxed
-        # transform inflates every annotation off the tissue.
+        # Same frame as the Elastix moving render: uniform scale, centered —
+        # a stretched leaf map against a letterboxed transform inflates every
+        # annotation off the tissue.
         leaf_img = Image.fromarray(leaf.astype(np.int32), mode="I")
-        scale = _physical_scale_for(leaf_img, atlas, position_mm, plane, canvas_um)
-        if scale is None:
-            scale = min(
-                slice_image.size[0] / leaf_img.width,
-                slice_image.size[1] / leaf_img.height,
-            )
+        scale = min(
+            slice_image.size[0] / leaf_img.width,
+            slice_image.size[1] / leaf_img.height,
+        )
         new_size = (
             max(1, round(leaf_img.width * scale)),
             max(1, round(leaf_img.height * scale)),
@@ -611,7 +566,6 @@ def generate_registration_candidate(
     image_prompt: str | None = None,
     generated_image: Image.Image | None = None,
     image_axes: str | None = None,
-    pixel_size_um: float | None = None,
     canvas_pad: float = 0.0,
     pitch_deg: float = 0.0,
     yaw_deg: float = 0.0,
@@ -622,9 +576,14 @@ def generate_registration_candidate(
     on_trace: Callable[[dict[str, object]], None] | None = None,
     openai_image_route: str = "images",
     review_model: str | None = None,
-    palette: Palette | None = None,
 ) -> RegistrationCandidate:
     """Generate one dense registration candidate from a histology slice.
+
+    The model is sent three images in one frame: the colored atlas region
+    map of this plane (the image it edits), the grayscale atlas template of
+    the same plane, and the section. It returns the map deformed onto the
+    tissue; that painting is classified back to region ids and Elastix warps
+    the atlas onto it.
 
     ``pitch_deg``/``yaw_deg`` are the block's cutting angles (see
     ``langslice.oblique``): every atlas render this call makes is resliced on
@@ -633,49 +592,28 @@ def generate_registration_candidate(
     are the single largest lever measured on the LSD_910 hand registrations,
     whose block was cut at 4 degrees: fit-only family dice 0.93 -> 0.96 and
     boundary p95 34px -> 9px over 33 slices, dwarfing every fit-side knob.
-
-    ``pixel_size_um`` switches every atlas render onto true-physical
-    placement: the anatomy is drawn at the same physical size as the tissue
-    in the slice image (each render's own um/px derived from the annotation
-    slice extent, never from the letterbox padding), so the model sees two
-    comparably sized brains. Without a pixel size the renders fall back to
-    fit-to-canvas. Known residual: LSD_910 tissue measures ~10%% (ML) to
-    ~14%% (DV) smaller than the Allen average (processing shrinkage,
-    measured over all 33 hand registrations), so a true-scale atlas lands
-    slightly larger than the tissue; on the fit side alone that cost 0.004
-    family dice on the 33-slice panel (0.912 fit-to-canvas vs 0.908
-    physical) — the model-side benefit of size-matched references is the
-    reason calibration is on.
-
-    ``palette`` overrides the process-wide atlas render style for this call
-    (``"family"`` or ``"leaf-borders"``, see ``atlas.recolor``); ``None``
-    keeps whatever ``LANGSLICE_ATLAS_PALETTE`` says. It changes only the
-    model-facing region map; colors, the Elastix pair and everything
-    classified from it are the same either way.
     """
-    with use_palette(palette):
-        return _generate_registration_candidate(
-            image,
-            atlas_name=atlas_name,
-            position_mm=position_mm,
-            plane=plane,
-            provider=provider,
-            image_model=image_model,
-            image_prompt=image_prompt,
-            generated_image=generated_image,
-            image_axes=image_axes,
-            pixel_size_um=pixel_size_um,
-            canvas_pad=canvas_pad,
-            pitch_deg=pitch_deg,
-            yaw_deg=yaw_deg,
-            previous_candidate_id=previous_candidate_id,
-            candidate_id=candidate_id,
-            debug_dir=debug_dir,
-            on_progress=on_progress,
-            on_trace=on_trace,
-            openai_image_route=openai_image_route,
-            review_model=review_model,
-        )
+    return _generate_registration_candidate(
+        image,
+        atlas_name=atlas_name,
+        position_mm=position_mm,
+        plane=plane,
+        provider=provider,
+        image_model=image_model,
+        image_prompt=image_prompt,
+        generated_image=generated_image,
+        image_axes=image_axes,
+        canvas_pad=canvas_pad,
+        pitch_deg=pitch_deg,
+        yaw_deg=yaw_deg,
+        previous_candidate_id=previous_candidate_id,
+        candidate_id=candidate_id,
+        debug_dir=debug_dir,
+        on_progress=on_progress,
+        on_trace=on_trace,
+        openai_image_route=openai_image_route,
+        review_model=review_model,
+    )
 
 
 def _generate_registration_candidate(
@@ -689,7 +627,6 @@ def _generate_registration_candidate(
     image_prompt: str | None = None,
     generated_image: Image.Image | None = None,
     image_axes: str | None = None,
-    pixel_size_um: float | None = None,
     canvas_pad: float = 0.0,
     pitch_deg: float = 0.0,
     yaw_deg: float = 0.0,
@@ -708,67 +645,41 @@ def _generate_registration_candidate(
         on_progress("Image-gen registration: loading atlas and preparing inputs...")
     atlas = load_atlas(atlas_name)
 
-    if pixel_size_um is not None:
-        canvas_pad = max(
-            canvas_pad,
-            _pad_to_contain_atlas(
-                image,
-                float(pixel_size_um),
-                atlas,
-                position_mm,
-                plane,
-                image_axes,
-                pitch_deg=pitch_deg,
-                yaw_deg=yaw_deg,
-            ),
-        )
     slice_image, unpadded_size, origin_x, origin_y, pad_px = prepare_canvas(
         image, canvas_pad=canvas_pad, image_model=image_model, provider=provider
     )
     target_size = slice_image.size
-    # Model-facing atlas references: oriented into the user's image frame,
-    # then uniform-scaled and letterboxed to the histology canvas — one scale
-    # for all inputs, NEAREST-crisp thin bands, and never an anisotropic
-    # stretch of the reference anatomy.
-    colored_native = _orient_pil(
+    section_aspect = target_size[0] / target_size[1]
+    # The atlas map of this plane, drawn pixel-exact at the atlas's own
+    # geometry: this is BOTH the image the model edits and the moving image
+    # Elastix registers, so the two can never disagree about where a
+    # boundary is. Oriented into the user's image frame first.
+    map_native = _orient_pil(
         _generate_colored_region_slice(
-            atlas, position_mm, None, plane=plane, pitch_deg=pitch_deg, yaw_deg=yaw_deg
+            atlas, position_mm, plane=plane, pitch_deg=pitch_deg, yaw_deg=yaw_deg
         ),
         atlas, plane, image_axes,
     )
-    reference_native = _orient_pil(
-        get_reference_slice(
-            atlas, position_mm, plane=plane, pitch_deg=pitch_deg, yaw_deg=yaw_deg
-        ).convert("RGB"),
-        atlas, plane, image_axes,
+    # Model-facing pair: the map and the grayscale template of the same
+    # plane, NEAREST/LANCZOS-upscaled to a legible size and letterboxed to
+    # the section's aspect. The three images then share one frame, which is
+    # what the prompt pins the output to — no physical rescaling, no
+    # cropping, and the anatomy keeps the proportions the atlas gives it.
+    colored_regions = letterbox_to_aspect(
+        upscale_to_min_long_edge(map_native, Image.Resampling.NEAREST), section_aspect
     )
-    # With a known physical pixel size, place the atlas at TRUE scale on the
-    # canvas — the most direct image-to-atlas calibration there is; without
-    # one, fall back to fit-to-canvas. Scale is per render (they arrive at
-    # different pixel densities).
-    # unpadded_size, not target_size: padding and aspect-snap grow the canvas
-    # without rescaling its pixels, so the canvas um/px is set by the resized
-    # slice alone.
-    canvas_um = _canvas_um_per_px(pixel_size_um, image, unpadded_size)
-    # At physical scale the atlas frame's empty margins may overflow the
-    # canvas; align the anatomy's center (not the frame's) to the canvas
-    # center so only empty margin crops. All renders share one frame, so one
-    # focus serves them all.
-    atlas_focus = _anatomy_focus(colored_native) if canvas_um is not None else None
-    colored_regions = _fit_to_canvas(
-        colored_native,
-        target_size,
-        scale=_physical_scale_for(colored_native, atlas, position_mm, plane, canvas_um),
-        focus=atlas_focus,
-    )
-    reference_slice = _fit_to_canvas(
-        reference_native,
-        target_size,
-        scale=_physical_scale_for(reference_native, atlas, position_mm, plane, canvas_um),
-        focus=atlas_focus,
+    reference_slice = letterbox_to_aspect(
+        upscale_to_min_long_edge(
+            _orient_pil(
+                _model_facing_template(atlas, position_mm, plane, pitch_deg, yaw_deg),
+                atlas, plane, image_axes,
+            ),
+            Image.Resampling.LANCZOS,
+        ),
+        section_aspect,
     )
 
-    prompt = image_prompt or base_segmentation_prompt(plane, image_model)
+    prompt = image_prompt or base_segmentation_prompt(plane, provider)
     request_metadata: dict[str, Any] = {
         "workflow": "image_gen_registration",
         "candidate_id": candidate_id,
@@ -784,13 +695,13 @@ def _generate_registration_candidate(
         request_metadata["image_prompt"] = image_prompt
 
     if generated_image is not None:
-        # The image came from an external conversation (the router session);
-        # only the downstream pipeline runs here.
+        # The painting was made elsewhere (an offline re-derivation, a
+        # benchmark draw); only the downstream pipeline runs here.
         generated = GeneratedSegmentation(
             image=generated_image.convert("RGB"),
             provider=provider,
             model=image_model or "unknown",
-            route="router_session",
+            route="external_image",
             metadata=dict(request_metadata),
         )
     else:
@@ -798,9 +709,8 @@ def _generate_registration_candidate(
             on_progress("Image-gen registration: generating warped atlas image...")
         generated = generate_warped_segmentation_image(
             SegmentationGenerationRequest(
-                colored_regions=colored_regions,
-                reference_slice=reference_slice,
-                slice_image=slice_image,
+                slice_image=colored_regions,
+                reference_images=[reference_slice, slice_image],
                 prompt=prompt,
                 provider=provider,
                 model=image_model,
@@ -810,40 +720,29 @@ def _generate_registration_candidate(
             )
         )
 
-    model_output = generated.image.convert("RGB").resize(
-        target_size,
-        resample=Image.Resampling.LANCZOS,
-    )
+    # The frame the model answered in is the frame it was shown; a lane with
+    # fixed output frames returns the nearest legal aspect instead, ours
+    # letterboxed inside it, so crop back rather than stretch.
+    cropped_output = crop_to_aspect(generated.image.convert("RGB"), section_aspect)
+    model_output = _resize_if_needed(cropped_output, target_size)
     model_output_rgb = np.asarray(model_output, dtype=np.uint8)
-    # Elastix side: the pixel-exact NEAREST render, never the smoothed one —
-    # this is the image classified back to region ids and warped. Placed in
-    # the SAME frame as the model-facing references (oriented, uniform
-    # scale, physical scale when a pixel size is known) — the old
-    # full-canvas anisotropic stretch fabricated a large distortion the
-    # affine stage had to undo before doing real work, and when it
-    # under-corrected the warped atlas landed outside the slice.
-    elastix_native = _orient_pil(
-        _generate_colored_region_slice(
-            atlas, position_mm, None, plane=plane, smooth=False,
-            pitch_deg=pitch_deg, yaw_deg=yaw_deg,
-        ),
-        atlas, plane, image_axes,
-    )
-    elastix_scale = _physical_scale_for(elastix_native, atlas, position_mm, plane, canvas_um)
-    atlas_colored_at_target = _fit_to_canvas(
-        elastix_native, target_size, scale=elastix_scale, focus=atlas_focus
-    )
+    # Elastix side: the same pixel-exact map the model edited, in the same
+    # geometry (uniform scale, centered), expressed at the section's pixel
+    # size — the old full-canvas anisotropic stretch fabricated a large
+    # distortion the affine stage had to undo before doing real work, and
+    # when it under-corrected the warped atlas landed outside the slice.
+    atlas_colored_at_target = _fit_to_canvas(map_native, target_size)
     atlas_target_rgb = np.asarray(atlas_colored_at_target, dtype=np.uint8)
 
-    # Classify the raw model output first: registration runs on the CLEANED
-    # map (exact palette colors on black), so the preserved background and any
-    # color drift cannot poison the per-channel metric.
+    # Classify the model output first: registration runs on the CLEANED map
+    # (exact palette colors on black), so color drift cannot poison the
+    # per-channel metric. Nothing is masked out by comparison with the input:
+    # the model edits the atlas map, so pixels it left untouched are regions
+    # it had no reason to move, not background.
     generated_classified = _classify_pixels_to_region_ids(
         model_output_rgb, atlas, position_mm, plane=plane,
         pitch_deg=pitch_deg, yaw_deg=yaw_deg,
     )
-    preserved_mask = _preserved_background_mask(model_output_rgb, slice_image)
-    generated_classified[preserved_mask] = 0
     generated_classified = _despeckle_classified(generated_classified)
     atlas_pre_classified = _classify_pixels_to_region_ids(
         atlas_target_rgb,
@@ -919,7 +818,6 @@ def _generate_registration_candidate(
         atlas_classified,
         atlas,
         tissue_mask=tissue_mask,
-        preserved_fraction=float(preserved_mask.mean()),
         structures=getattr(atlas, "structures", None),
     )
     if on_progress:
@@ -1049,7 +947,6 @@ def _generate_registration_candidate(
         )
         leaf_overlay = _leaf_overlay_render(
             slice_image, atlas, position_mm, plane, image_axes, result_transform,
-            canvas_um=canvas_um,
             prealign_matrix=prealign_matrix,
             pitch_deg=pitch_deg,
             yaw_deg=yaw_deg,

@@ -75,13 +75,6 @@ def _add_register_parser(subparsers: argparse._SubParsersAction) -> None:
         default=2048,
         help="Max long-edge pixels for VLM",
     )
-    reg.add_argument(
-        "--clahe",
-        action="store_true",
-        help="Apply adaptive CLAHE + DAPI-weighted grayscale preprocessing to the slice "
-        "before sending it to the image-gen registration model. Useful when the red "
-        "fluorescence channel dominates and washes out structural detail.",
-    )
     reg.add_argument("--temperature", type=float, default=None, help="Generation temperature")
     reg.add_argument(
         "--thinking",
@@ -128,29 +121,6 @@ def _add_register_parser(subparsers: argparse._SubParsersAction) -> None:
             "atlas render's native orientation."
         ),
     )
-    reg.add_argument(
-        "--palette",
-        default="family",
-        choices=["family", "leaf-borders"],
-        help=(
-            "How the atlas is drawn for the image model. 'family' is flat "
-            "regions, one color per registration unit; 'leaf-borders' adds "
-            "Allen-Reference-Atlas-style hairlines at every leaf boundary, in "
-            "a darker shade of the region's own color. Colors, the Elastix "
-            "pair and everything classified from it are identical either way."
-        ),
-    )
-    reg.add_argument(
-        "--pixel-size-um",
-        type=float,
-        default=None,
-        help=(
-            "Physical pixel size of the input image in micrometers. When "
-            "given, the atlas references are rendered at TRUE physical "
-            "scale relative to the image — the single most direct "
-            "calibration between image and atlas."
-        ),
-    )
     reg.add_argument("--json", action="store_true", help="Print result JSON to stdout")
 
 
@@ -166,12 +136,6 @@ def _run_register(args: argparse.Namespace) -> None:
     endpoint = getattr(args, "endpoint", None)
     if endpoint:
         os.environ["LANGSLICE_ENDPOINT"] = endpoint
-
-    # Palette is a process-wide setting (see atlas.recolor.active_palette): the
-    # render, the classifier and the family merge must not disagree about it.
-    from langslice.atlas.recolor import PALETTE_ENV
-
-    os.environ[PALETTE_ENV] = getattr(args, "palette", "family")
 
     image_model_arg = args.image_model
 
@@ -232,13 +196,11 @@ def _run_register(args: argparse.Namespace) -> None:
         plane=args.plane,
         image_model=image_model,
         review_model=review_model,
-        preprocess="auto" if getattr(args, "clahe", False) else "none",
         provider=args.provider,
         output_dir=str(out_dir),
         openai_image_route=args.openai_image_route,
         canvas_pad=args.canvas_pad,
         image_axes=getattr(args, "image_axes", None),
-        pixel_size_um=getattr(args, "pixel_size_um", None),
         pitch_deg=getattr(args, "pitch_deg", 0.0),
         yaw_deg=getattr(args, "yaw_deg", 0.0),
         vlm_resolution=args.vlm_resolution,

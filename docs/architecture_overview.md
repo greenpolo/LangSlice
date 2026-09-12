@@ -84,19 +84,18 @@ preview-then-apply anywhere; every write is undoable instead.
 
 Registration has one active method: image-gen registration.
 
-1. Prepare a histology slice, atlas color map, and atlas reference image.
-2. Ask the image-generation provider to generate an atlas-colored target aligned to the histology.
-3. Register the generated target to the atlas color map with itk-elastix.
+1. Prepare the histology slice and, at the requested position, the atlas
+   region map of that plane plus its grayscale template. The two atlas
+   renders are letterboxed into the section's frame, so all three images
+   share one frame.
+2. Ask the image-generation provider to EDIT the region map: move its colored
+   regions onto the tissue in the section, answering in the same frame.
+3. Classify the answer back to region ids and register the atlas map to it
+   with itk-elastix (affine, then B-spline, on family-colored RGB).
 4. Warp the atlas RGB through the recovered transform.
-5. Extract VisuAlign markers from B-spline control points.
-6. Return the generated atlas target, warped atlas, and warped-border overlay.
-
-Direct mode returns the first candidate. Agentic mode runs a hosted-router
-conversation (openai-oauth only): the task prompt and input images go to the
-hosted GPT model with the image_generation tool attached, the harness runs
-Elastix on each generated image and sends the report back as a follow-up
-message, and the loop accepts the first candidate whose report is clean
-(capped at four attempts; otherwise the fewest-codes candidate wins).
+5. Extract VisuAlign markers from the composed deformation field.
+6. Return the model's painting, the warped atlas, the warped-border overlay
+   and the Elastix report.
 
 ## Debugging
 

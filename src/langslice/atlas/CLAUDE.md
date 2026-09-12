@@ -51,20 +51,22 @@ here is a verbatim copy — edit one, mirror to the other.
   one unit, and the surviving units are pulled at least `MIN_SEPARATION` (60)
   apart, nudging value/saturation before hue so a family keeps its identity.
   Native palettes are left exactly as the atlas authored them.
-  `color_lut` has ONE table and no modes: the `--palette` knob picks a
-  model-facing render STYLE, never a color. `"family"` (default) draws flat
-  regions, one color per registration unit; `"leaf-borders"` draws the same
-  flat colors plus the Allen-Reference-Atlas plate treatment — every leaf
-  boundary delineated by a hairline in a darker shade of the region's own
-  color (`render.darker`, RGB × `BORDER_DARKEN` = 0.7, which moves HSV value
-  only, so hue and saturation still name the region), 2px at a 2048 canvas
-  with family boundaries at 1.8× that. Lines are drawn LINE_8 like the fills,
-  on the smoothed sub-pixel contours: an anti-aliased line would blend two
-  region colors into pixels belonging to neither, and the render has to stay
-  classifiable to exact palette colors. Leaf shades were tried here first and
-  rejected (Nash: "everything is uniformly worse in our colors") — borders
-  express leaves without touching the palette. The style is a PROCESS-WIDE
-  setting (`LANGSLICE_ATLAS_PALETTE`, `active_palette()`, `use_palette()`,
-  and `langslice nonlinear register --palette`), because the classifier has
-  to know whether hairlines were painted (see the nonlinear section);
-  `generate_registration_candidate(palette=...)` applies it around one call
+  `color_lut` has ONE table and no modes: the palette knob picks a render
+  STYLE, never a color, and it is a PROCESS-WIDE setting
+  (`LANGSLICE_ATLAS_PALETTE`, `active_palette()`, `use_palette()`).
+  `"family"` (default) draws flat regions, one color per registration unit;
+  `"leaf-borders"` draws the same flat colors plus the Allen-Reference-Atlas
+  plate treatment — every leaf boundary delineated by a hairline in a darker
+  shade of the region's own color (`render.darker`, RGB × `BORDER_DARKEN` =
+  0.7, which moves HSV value only, so hue and saturation still name the
+  region), 2px at a 2048 canvas with family boundaries at 1.8× that, drawn
+  LINE_8 like the fills on the smoothed sub-pixel contours: an anti-aliased
+  line would blend two region colors into pixels belonging to neither, and a
+  render has to stay classifiable to exact palette colors. Leaf shades were
+  tried here first and rejected (Nash: "everything is uniformly worse in our
+  colors") — borders express leaves without touching the palette. NO MODEL
+  is shown the delineation any more: since the 2026-09-12 lineup the
+  registration model edits one flat, pixel-exact region map with nothing
+  drawn on it, and the `--palette` CLI flag and
+  `generate_registration_candidate(palette=...)` went with it. The style and
+  the shade rules stay for renders people look at.

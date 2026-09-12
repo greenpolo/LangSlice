@@ -153,43 +153,36 @@ B-spline.
 ## Nonlinear: Image-Gen Registration
 
 ```bash
-langslice nonlinear register <image> --position <mm> [--registration-mode direct|agentic] [--image-model ...] [--review-model ...] [--max-candidates 3] [--palette family|leaf-borders] [--out ...]
+langslice nonlinear register <image> --position <mm> [--image-model ...] [--review-model ...] [--canvas-pad 0..1.5] [--pitch-deg DEG] [--yaw-deg DEG] [--out ...]
 ```
 
 Registration has one active method: image-gen registration. In QUINT/ABBA-style
 workflows, linear placement happens in the host tool and this step stands in for
 the manual spline/BigWarp deformation.
 
-1. Load, normalize, and downsample the histology slice.
-2. Generate atlas inputs at the requested atlas position. The colored region
-   map the model sees is drawn from smoothed region contours at canvas
-   resolution (flat, exact palette colors — no voxel staircase); the render
-   Elastix registers against stays pixel-exact.
-3. Ask the image model to generate an atlas-colored target aligned to the histology.
-4. Register the generated target to the atlas color map with itk-elastix.
+1. Load, normalize, and downsample the histology slice (long edge 2048).
+2. Draw the atlas at the requested position: ONE colored region map of that
+   plane (flat Allen-organized colors, one per registration unit, pixel-exact
+   off the annotation), plus the grayscale atlas template of the same plane.
+   Both are enlarged to a legible size and letterboxed onto black so that they
+   and the section share one frame.
+3. Send the model three images — the colored map (Image 1, the image it
+   edits), the template (Image 2), the section (Image 3) — and ask it to move
+   the map's regions onto the tissue, answering in that same frame.
+4. Crop the answer back to the section's frame if the image lane returned a
+   different one, classify every pixel to the region color nearest it, and
+   register the atlas map to that painting with itk-elastix (affine, then
+   B-spline, on family-colored RGB).
 5. Warp the atlas through the recovered transform.
-6. Return the model-generated atlas target, Elastix-warped atlas, warped-border overlay, and VisuAlign markers.
+6. Return the model's painting, the Elastix-warped atlas, the warped-border
+   overlay, the Elastix report and VisuAlign markers.
 
-Modes:
-
-- `direct` generates one candidate and returns it.
-- `agentic` runs a hosted-router conversation (openai-oauth only): the prompt
-  and images go to the hosted GPT model with the image_generation tool, Elastix
-  reports come back as follow-up messages, and the loop accepts the first
-  clean-report candidate (cap `--max-candidates`, default 4).
-
-Palette:
-
-- `--palette family` (default) draws flat regions, one color per registration
-  unit.
-- `--palette leaf-borders` draws the same colors plus Allen-Reference-Atlas
-  plate delineation: a hairline at every leaf boundary in a darker shade of
-  that region's own color (2px at a 2048 canvas, family boundaries heavier),
-  so the model is shown the full parcellation without any color moving. Only
-  the model-facing render changes — the Elastix-side render is identical —
-  and the classifier accepts the hairline color as its own region, so a model
-  that paints the lines back does not cut background through its regions. It
-  is a process-wide setting (`LANGSLICE_ATLAS_PALETTE`).
+The model is given no other input: no neighbouring atlas planes, no borders
+drawn over the fills, no blacked-out ventricles, and nothing painted over the
+section itself. `--pitch-deg`/`--yaw-deg` reslice every atlas render on the
+block's cutting plane, which is the largest single lever on the fit;
+`--canvas-pad` grows the section canvas so a fragment's complete anatomy can
+exceed the original image bounds.
 
 Provider routing is explicit, not inferred from the model name:
 
@@ -199,10 +192,9 @@ Provider routing is explicit, not inferred from the model name:
   and `--endpoint` points it at a non-OpenAI base URL. The default
   OpenAI-compatible image model is `gpt-image-2`.
 - `--provider chatgpt` uses a ChatGPT subscription instead of an API key: it
-  sends `gpt-image-2` requests through the Codex Responses backend with the
-  token stored by `langslice login`. Reference images are the colored region
-  map, the atlas reference slice, and the histology slice; the output size is
-  the `gpt-image-2` aspect ratio closest to the slice.
+  sends `gpt-image-2` requests through the Codex images/edits endpoint with
+  the token stored by `langslice login`. The edited image is the colored
+  region map; the template and the histology slice follow it as references.
 
 ## Sign In With ChatGPT
 
