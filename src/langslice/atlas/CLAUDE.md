@@ -9,12 +9,7 @@ here is a verbatim copy — edit one, mirror to the other.
   `render.py` is the geometry BOTH methods draw from, and it belongs to
   neither: `annotation_slice` (the display-oriented annotation at a position,
   resliced obliquely when the block carries cutting angles), `atlas_um_per_px`,
-  the model pixel-size rule `model_long_edge` / `at_model_scale` (Nash,
-  2026-09-09: nothing a model is shown is finer than the atlas's own µm/px,
-  nothing is upsampled, nothing exceeds `MODEL_LONG_EDGE` 512 — every
-  linear render path, section, atlas image, compare panel, overlay and
-  zoom, sizes its screen through it; a `long_edge=None` screen is canvas
-  pixels for host-side use only), `family_mapping` (region id -> its merged color family's representative),
+  `family_mapping` (region id -> its merged color family's representative),
   `region_contours` + `_smooth_closed` (smoothed per-region polygons, holes
   included, confetti dropped), `family_outlines` (one `(family color,
   polyline)` per family region, in atlas-native pixels), and the shade rules
@@ -51,22 +46,37 @@ here is a verbatim copy — edit one, mirror to the other.
   one unit, and the surviving units are pulled at least `MIN_SEPARATION` (60)
   apart, nudging value/saturation before hue so a family keeps its identity.
   Native palettes are left exactly as the atlas authored them.
-  `color_lut` has ONE table and no modes: the palette knob picks a render
-  STYLE, never a color, and it is a PROCESS-WIDE setting
-  (`LANGSLICE_ATLAS_PALETTE`, `active_palette()`, `use_palette()`).
-  `"family"` (default) draws flat regions, one color per registration unit;
-  `"leaf-borders"` draws the same flat colors plus the Allen-Reference-Atlas
-  plate treatment — every leaf boundary delineated by a hairline in a darker
-  shade of the region's own color (`render.darker`, RGB × `BORDER_DARKEN` =
-  0.7, which moves HSV value only, so hue and saturation still name the
-  region), 2px at a 2048 canvas with family boundaries at 1.8× that, drawn
-  LINE_8 like the fills on the smoothed sub-pixel contours: an anti-aliased
-  line would blend two region colors into pixels belonging to neither, and a
-  render has to stay classifiable to exact palette colors. Leaf shades were
-  tried here first and rejected (Nash: "everything is uniformly worse in our
-  colors") — borders express leaves without touching the palette. NO MODEL
-  is shown the delineation any more: since the 2026-09-12 lineup the
-  registration model edits one flat, pixel-exact region map with nothing
-  drawn on it, and the `--palette` CLI flag and
-  `generate_registration_candidate(palette=...)` went with it. The style and
-  the shade rules stay for renders people look at.
+  `color_lut` has ONE table and no modes: the `--palette` knob picks a
+  model-facing render STYLE, never a color. `"family"` (default) draws flat
+  regions, each painted color outlined by a line in a darker shade of itself
+  wherever the FILL changes (not where the registration family changes: the
+  family clustering left visibly different shades with no line between them);
+  `"leaf-borders"` draws the same
+  flat colors plus the Allen-Reference-Atlas plate treatment — every leaf
+  boundary delineated by a hairline in a darker shade of the region's own
+  color (`render.darker`, RGB × `BORDER_DARKEN` = 0.7, which moves HSV value
+  only, so hue and saturation still name the region), 2px at a 2048 canvas
+  with family boundaries at 1.8× that. Lines are drawn LINE_8 like the fills,
+  on the smoothed sub-pixel contours: an anti-aliased line would blend two
+  region colors into pixels belonging to neither, and the render has to stay
+  classifiable to exact palette colors. Leaf shades were tried here first and
+  rejected (Nash: "everything is uniformly worse in our colors") — borders
+  express leaves without touching the palette. A third style,
+  `"family-flat"`, is an EXPERIMENTAL arm and not the default: it collapses
+  the leaves onto their registration families before painting
+  (`image_gen_helpers._plane_families`, exactly the `_family_mapping`
+  partition Elastix and the benchmark already score at) and delineates that
+  flat paint with the same darker hairlines, so the model is shown the
+  granularity it is graded on and nothing finer. Its classifier maps each
+  family color and its line shade to the family's representative id, which
+  `_merge_classified` keeps unchanged — measured on Allen coronal 3.9 and
+  9.0 mm, render→classify→merge lands on the SAME map as `"family"` to the
+  pixel, and the family colors on those planes stay 40.6 / 42.1 RGB apart.
+  The style is a PROCESS-WIDE
+  setting (`LANGSLICE_ATLAS_PALETTE`, `active_palette()`, `use_palette()`).
+  NO MODEL is shown any of it since the 2026-09-12 lineup: registration
+  edits one flat, undelineated, pixel-exact map and PINS "family" for the
+  whole call (`nonlinear.image_gen_registration._pinned_registration_palette`),
+  so the render can never drift from what the classifier expects; the
+  `--palette` CLI flag and `generate_registration_candidate(palette=...)`
+  went with it. The styles stay for renders people look at.

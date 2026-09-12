@@ -70,10 +70,34 @@ def _add_register_parser(subparsers: argparse._SubParsersAction) -> None:
         "component that samples a different level on each side.",
     )
     reg.add_argument(
+        "--draws",
+        type=int,
+        default=1,
+        help="Ask the image model for this many independent paintings of the "
+        "same inputs and register their per-pixel majority vote. Translucent "
+        "draws (too much off-palette foreground) are dropped from the vote. "
+        "Measured: voting beats the mean single draw by 0.04-0.08 family dice.",
+    )
+    reg.add_argument(
+        "--deformation",
+        default="bspline",
+        choices=["bspline", "affine"],
+        help="Elastix stages: 'bspline' is affine + B-spline; 'affine' fits "
+        "the affine stage alone (measured higher on generated paintings).",
+    )
+    reg.add_argument(
         "--vlm-resolution",
         type=int,
         default=2048,
         help="Max long-edge pixels for VLM",
+    )
+    reg.add_argument(
+        "--preprocess",
+        default="auto",
+        choices=["auto", "none"],
+        help="Image preprocessing: 'auto' (default) applies the shared adaptive CLAHE + "
+        "structural-channel-weighted blend before sending the slice to the image-gen "
+        "model — the same preprocessing the linear path uses; 'none' sends the raw image",
     )
     reg.add_argument("--temperature", type=float, default=None, help="Generation temperature")
     reg.add_argument(
@@ -91,13 +115,15 @@ def _add_register_parser(subparsers: argparse._SubParsersAction) -> None:
         "--provider",
         default="google",
         choices=[
-            "gemini-api", "openai-api", "openai-oauth",
+            "gemini-api", "openai-api", "openai-oauth", "none",
             "google", "openai", "chatgpt",  # legacy aliases
         ],
         help=(
             "Access method: 'gemini-api' (Google API key), 'openai-api' "
             "(OpenAI-compatible API key / --endpoint), 'openai-oauth' "
-            "(ChatGPT subscription via `langslice login`). Old spellings "
+            "(ChatGPT subscription via `langslice login`), 'none' (no model "
+            "at all — registers the silhouette prior, which alone scores "
+            "0.82 family dice against hand registrations). Old spellings "
             "google/openai/chatgpt still work as aliases."
         ),
     )
@@ -141,7 +167,11 @@ def _run_register(args: argparse.Namespace) -> None:
 
     from langslice.providers.registry import canonical_provider
 
-    if canonical_provider(args.provider) == "openai-oauth":
+    if canonical_provider(args.provider) == "none":
+        # Model-free backbone: nothing to name, nothing to configure.
+        default_image_model = default_review_model = ""
+        effective_model = "none (silhouette prior)"
+    elif canonical_provider(args.provider) == "openai-oauth":
         from langslice.providers import openai_oauth
 
         default_image_model = args.image_model or openai_oauth.DEFAULT_IMAGE_MODEL
@@ -196,6 +226,7 @@ def _run_register(args: argparse.Namespace) -> None:
         plane=args.plane,
         image_model=image_model,
         review_model=review_model,
+        preprocess=getattr(args, "preprocess", "auto"),
         provider=args.provider,
         output_dir=str(out_dir),
         openai_image_route=args.openai_image_route,
@@ -203,6 +234,8 @@ def _run_register(args: argparse.Namespace) -> None:
         image_axes=getattr(args, "image_axes", None),
         pitch_deg=getattr(args, "pitch_deg", 0.0),
         yaw_deg=getattr(args, "yaw_deg", 0.0),
+        draws=getattr(args, "draws", 1),
+        deformation=getattr(args, "deformation", "bspline"),
         vlm_resolution=args.vlm_resolution,
     )
     result = run_register(request, emit=emit)

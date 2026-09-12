@@ -18,6 +18,7 @@ from langslice.nonlinear.image_gen_registration import (
     generate_registration_candidate,
 )
 from langslice.nonlinear.types import (
+    Deformation,
     RegistrationResult,
     annotation_session_to_dict,
     candidate_to_registration_result,
@@ -122,6 +123,8 @@ def _run_dense_registration(
     canvas_pad: float,
     pitch_deg: float,
     yaw_deg: float,
+    draws: int,
+    deformation: Deformation,
 ) -> RegistrationResult:
     dense_debug_root = _dense_registration_debug_root(atlas_name, debug_dir)
     runtime_debug_dir = str(dense_debug_root / "registration") if dense_debug_root else None
@@ -140,6 +143,8 @@ def _run_dense_registration(
         canvas_pad=canvas_pad,
         pitch_deg=pitch_deg,
         yaw_deg=yaw_deg,
+        draws=draws,
+        deformation=deformation,
         debug_dir=str(dense_debug_root) if dense_debug_root is not None else None,
         on_progress=on_progress,
         on_trace=on_trace,
@@ -240,11 +245,17 @@ def estimate_registration(
     canvas_pad: float = 0.0,
     pitch_deg: float = 0.0,
     yaw_deg: float = 0.0,
+    draws: int = 1,
+    deformation: Deformation = "bspline",
 ) -> RegistrationResult:
     """Run image-gen registration and return affine + nonlinear results.
 
     ``pitch_deg``/``yaw_deg`` are the block's cutting angles: every atlas
     render is resliced on that oblique plane instead of taken flat.
+    ``draws`` > 1 votes that many paintings per pixel; ``deformation`` picks
+    the Elastix stages (affine+B-spline, or the affine stage alone).
+    ``provider="none"`` calls no model: the silhouette prior is the whole
+    painting, and the rest of the chain runs on it unchanged.
     """
     atlas = load_atlas(atlas_name)
     atlas_image = get_composite_slice(atlas, position_mm, plane=plane)
@@ -267,6 +278,8 @@ def estimate_registration(
         canvas_pad=canvas_pad,
         pitch_deg=pitch_deg,
         yaw_deg=yaw_deg,
+        draws=draws,
+        deformation=deformation,
     )
     _progress(
         on_progress,

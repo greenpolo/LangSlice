@@ -7,15 +7,15 @@ import math
 import uuid
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import cv2
 import numpy as np
 from PIL import Image
 
 from langslice.agent_trace import image_part_from_pil, json_part, runtime_event
-from langslice.atlas import get_reference_slice, load_atlas
-from langslice.atlas.recolor import color_lut
+from langslice.atlas import load_atlas
+from langslice.atlas.recolor import color_lut, use_palette
 from langslice.image_prep import foreground_mask
 from langslice.nonlinear.image_gen_helpers import (
     _classified_to_rgb,
@@ -32,23 +32,37 @@ from langslice.nonlinear.image_gen_helpers import (
     _region_ledger,
     _register_region_maps,
     _registration_rgb,
+    _run_elastix_april_borders,
     _run_inverse_warp_for_slice,
     _warp_classified_labels,
     generation_report,
 )
-from langslice.nonlinear.model_prompts import aspect_ratio_limits, base_segmentation_prompt
+from langslice.nonlinear.model_prompts import (
+    aspect_ratio_limits,
+    base_segmentation_prompt,
+    native_output_size,
+)
+from langslice.nonlinear.prior import build_silhouette_prior
 from langslice.nonlinear.providers import (
     SegmentationGenerationRequest,
     generate_warped_segmentation_image,
 )
 from langslice.nonlinear.types import (
+    Deformation,
     GeneratedSegmentation,
     RegistrationAnnotationSession,
     RegistrationCandidate,
 )
+from langslice.providers.registry import canonical_provider
 from langslice.space import Plane
 
 _MAX_LONG_EDGE = 2048
+
+#: Which Elastix stage fits the atlas to the painting. ``"rgb"`` is the
+#: measured default (joint RGB at family granularity, affine + B-spline, NCC);
+#: ``"april-borders"`` is the April 2026 stage: B-spline only on single-pixel
+#: border images, mean squares, grid 64, bending 10 (an experiment arm).
+ElastixStage = Literal["rgb", "april-borders"]
 
 #: Long edge every model-facing atlas render is NEAREST-upscaled to at least.
 #: The atlas is coarse (a 25um coronal plate is ~456px across); below this the
@@ -59,6 +73,65 @@ MODEL_MAP_MIN_LONG_EDGE = 1024
 #: letterboxed inside a different frame and cropped back. Lanes with fixed
 #: output frames answer at the nearest legal aspect, a percent or two off.
 _ASPECT_TOLERANCE = 0.005
+
+#: Off-palette foreground fraction above which a draw is called translucent
+#: and dropped from the vote. Clean draws measure 0.01-0.03, translucent ones
+#: 0.10-0.17, so the gate sits between the two populations.
+_MAX_OFF_PALETTE = 0.08
+
+
+def _off_palette_fraction(model_output_rgb: np.ndarray, classified: np.ndarray) -> float:
+    """Share of a painting's foreground that classifies as background.
+
+    The translucency detector. A "translucent" draw half-preserves the
+    tissue texture instead of painting flat atlas color, and those blended
+    pixels land far from every palette color, so the classifier calls them
+    background. Measured over 3 slices x 8 draws: 0.01-0.03 for clean
+    paintings, 0.10-0.17 for translucent ones. Foreground is the
+    classifier's own darkness cut (max channel >= 20), and *classified* must
+    be the raw classification — before the preserved-background mask (a
+    preserved white slide is foreground by this test) and before despeckle.
+    """
+    foreground = model_output_rgb.max(axis=2) >= 20
+    if not foreground.any():
+        return 0.0
+    return float((classified[foreground] == 0).mean())
+
+
+def _majority_vote_classified(classified_draws: list[np.ndarray]) -> np.ndarray:
+    """Per-pixel majority region id across independently classified draws.
+
+    Ties go to the LOWEST draw index (first pass wins, later passes need a
+    strictly larger count to displace it), so with exactly TWO kept draws
+    every disagreement is a 1-1 tie and the result is the first kept draw —
+    ask for three or more (odd is best) to get a real vote. Measured on the
+    hand-registered slices: voting K draws beats the mean single draw by
+    0.04-0.08 family dice and lands near the best draw of the set.
+    """
+    stack = np.stack(classified_draws)
+    best = np.zeros_like(stack[0])
+    best_count = np.zeros(stack.shape[1:], dtype=int)
+    # ponytail: K passes over a K-deep stack (O(K^2) per pixel). Fine for the
+    # handful of draws this is used with; a per-pixel bincount would win only
+    # well past K=16.
+    for draw in stack:
+        count = (stack == draw).sum(axis=0)
+        take = count > best_count
+        best = np.where(take, draw, best)
+        best_count = np.where(take, count, best_count)
+    return best
+
+
+def _pinned_registration_palette():
+    """Force the atlas render style registration is built on.
+
+    The lineup fixes what the model is shown — ONE flat, undelineated region
+    map — so the style must not float with the environment: a delineated or
+    family-collapsed render would change the map without changing what the
+    classifier expects of it. The styles in ``atlas.recolor`` stay for
+    renders people look at.
+    """
+    return use_palette("family")
 
 
 def letterbox_to_aspect(
@@ -147,6 +220,9 @@ def prepare_canvas(
     canvas_pad: float = 0.0,
     image_model: str | None = None,
     provider: str | None = None,
+    native_canvas: bool = True,
+    canvas_long_edge: int | None = None,
+    quality: str | None = None,
 ) -> tuple[Image.Image, tuple[int, int], float, float, int]:
     """Downsample, pad, and aspect-snap the slice into the working canvas.
 
@@ -155,56 +231,86 @@ def prepare_canvas(
     clamp pads the short axis (pad only, never crop): in edit mode the
     model paints on ITS canvas, and resampling a mismatched ratio back
     onto the slice would silently undo the pixel alignment.
+
+    ``native_canvas`` (the default) sizes the canvas to the frame the image
+    path returns (:func:`model_prompts.native_output_size`): the layout is
+    worked out at the long-edge rule, scaled to fit that frame, and padded
+    out to it exactly, so the model edits on the output's own pixel grid.
+    Nash 2026-09-11: every input the model must rescale to its output is a
+    pixel the output cannot carry, paid for twice (input tokens in, a
+    resample out). The slice is resampled ONCE, straight from the original
+    to its final size. ``canvas_long_edge`` instead pins the long edge (an
+    experiment knob: the model is shown a smaller canvas and its output is
+    resampled DOWN onto it).
     """
-    target_size = _target_size_for_slice(image)
-    slice_image = _resize_if_needed(image, target_size)
-    fill = _background_color(slice_image)
-
-    # Canvas padding: a fragment or hemibrain image cannot hold its own
-    # complete anatomy, so the working canvas grows by a margin on every
-    # side and the generated map may legitimately extend past the original
-    # image bounds. Marker coordinates are mapped back to the original frame
-    # (and may fall outside it).
-    unpadded_size = target_size
-    pad_px = int(round(float(canvas_pad) * max(target_size))) if canvas_pad else 0
-    if pad_px > 0:
-        padded = Image.new(
-            "RGB", (target_size[0] + 2 * pad_px, target_size[1] + 2 * pad_px), fill
-        )
-        padded.paste(slice_image, (pad_px, pad_px))
-        slice_image = padded
-        target_size = slice_image.size
-    origin_x = float(pad_px)
-    origin_y = float(pad_px)
-
+    fill = _background_color(image)
     limits = aspect_ratio_limits(image_model, provider)
-    if limits:
-        width, height = target_size
-        current = width / height
-        new_w, new_h = width, height
-        if current > limits[1]:
-            new_h = math.ceil(width / limits[1])
-        elif current < limits[0]:
-            new_w = math.ceil(height * limits[0])
-        if (new_w, new_h) != (width, height):
-            snapped = Image.new("RGB", (new_w, new_h), fill)
-            offset = ((new_w - width) // 2, (new_h - height) // 2)
-            snapped.paste(slice_image, offset)
-            slice_image = snapped
-            origin_x += offset[0]
-            origin_y += offset[1]
 
-    return slice_image, unpadded_size, origin_x, origin_y, pad_px
+    def layout(scale: float) -> tuple[tuple[int, int], int, tuple[int, int], tuple[int, int]]:
+        """(slice size, pad px, snapped canvas size, slice offset) at *scale*."""
+        tw, th = _target_size_for_slice(image, canvas_long_edge)
+        tw, th = max(1, round(tw * scale)), max(1, round(th * scale))
+        pad = int(round(float(canvas_pad) * max(tw, th))) if canvas_pad else 0
+        cw, ch = tw + 2 * pad, th + 2 * pad
+        if limits:
+            if cw / ch > limits[1]:
+                ch = math.ceil(cw / limits[1])
+            elif cw / ch < limits[0]:
+                cw = math.ceil(ch * limits[0])
+        offset = ((cw - tw) // 2, (ch - th) // 2)
+        return (tw, th), pad, (cw, ch), offset
+
+    scale = 1.0
+    frame: tuple[int, int] | None = None
+    if native_canvas and canvas_long_edge is None:
+        _, _, canvas0, _ = layout(1.0)
+        frame = native_output_size(image_model, provider, canvas0, quality)
+        if frame is not None:
+            scale = min(frame[0] / canvas0[0], frame[1] / canvas0[1])
+    target_size, pad_px, canvas_size, offset = layout(scale)
+    if frame is not None:
+        # Pad out to the frame exactly (never crop): the request IS the frame.
+        extra = ((frame[0] - canvas_size[0]) // 2, (frame[1] - canvas_size[1]) // 2)
+        canvas_size = frame
+        offset = (offset[0] + extra[0], offset[1] + extra[1])
+
+    slice_image = _resize_if_needed(image, target_size)
+    if canvas_size != target_size:
+        canvas = Image.new("RGB", canvas_size, fill)
+        canvas.paste(slice_image, offset)
+        slice_image = canvas
+    return slice_image, target_size, float(offset[0]), float(offset[1]), pad_px
 
 
-def _target_size_for_slice(image: Image.Image) -> tuple[int, int]:
+def _target_size_for_slice(
+    image: Image.Image, max_long_edge: int | None = None
+) -> tuple[int, int]:
     width, height = image.size
     long_edge = max(width, height)
-    if long_edge <= _MAX_LONG_EDGE:
+    limit = max_long_edge or _MAX_LONG_EDGE
+    if long_edge <= limit:
         return width, height
 
-    scale = _MAX_LONG_EDGE / float(long_edge)
+    scale = limit / float(long_edge)
     return int(width * scale), int(height * scale)
+
+
+def _onto_canvas(draw: Image.Image, size: tuple[int, int], slack_px: int = 2) -> Image.Image:
+    """A model draw on the canvas grid.
+
+    A native canvas comes back at its own size, give or take a pixel of the
+    lane's rounding: that is pasted (centered, cropped/padded), never
+    resampled. Anything further off is resampled onto the canvas.
+    """
+    draw = draw.convert("RGB")
+    if draw.size == size:
+        return draw
+    dw, dh = abs(draw.width - size[0]), abs(draw.height - size[1])
+    if dw <= slack_px and dh <= slack_px:
+        out = Image.new("RGB", size, (0, 0, 0))
+        out.paste(draw, ((size[0] - draw.width) // 2, (size[1] - draw.height) // 2))
+        return out
+    return draw.resize(size, resample=Image.Resampling.LANCZOS)
 
 
 def _resize_if_needed(image: Image.Image, size: tuple[int, int]) -> Image.Image:
@@ -262,6 +368,8 @@ def _model_facing_template(
     it is restretched on the 99.5th percentile of the plate's own tissue
     (a linear rescale, exactly what the April benchmark sent).
     """
+    from langslice.atlas import get_reference_slice
+
     gray = np.asarray(
         get_reference_slice(
             atlas, position_mm, plane=plane, pitch_deg=pitch_deg, yaw_deg=yaw_deg
@@ -403,8 +511,11 @@ def _leaf_overlay_render(
     pitch_deg: float = 0.0,
     yaw_deg: float = 0.0,
     on_progress: Callable[[str], None] | None = None,
-) -> Image.Image | None:
+) -> tuple[Image.Image | None, np.ndarray | None]:
     """Leaf-level review render: the RAW annotation warped through the fit.
+
+    Returns ``(overlay, warped_leaf_ids)``; the id map is what landmark-level
+    evaluation against hand registrations reads, so it is saved alongside.
 
     Color classification collapses every set of same-colored regions (all
     fiber tracts, quantized families) into one label, hiding their internal
@@ -419,15 +530,16 @@ def _leaf_overlay_render(
     try:
         context = atlas_space_context(atlas)
         leaf = _annotation_slice(
-            atlas, position_mm, plane=plane, pitch_deg=pitch_deg, yaw_deg=yaw_deg
+            atlas, position_mm, plane=plane, pitch_deg=pitch_deg, yaw_deg=yaw_deg,
+            blackout=False,  # a reviewer checks the ventricles; keep them in this render
         )
         if image_axes:
             from langslice.space import orient_slice_to_axes
 
             leaf = orient_slice_to_axes(leaf, context, plane, image_axes)
-        # Same frame as the Elastix moving render: uniform scale, centered —
-        # a stretched leaf map against a letterboxed transform inflates every
-        # annotation off the tissue.
+        # Same frame as the Elastix moving render: uniform scale (physical
+        # when known), centered — a stretched leaf map against a letterboxed
+        # transform inflates every annotation off the tissue.
         leaf_img = Image.fromarray(leaf.astype(np.int32), mode="I")
         scale = min(
             slice_image.size[0] / leaf_img.width,
@@ -461,7 +573,7 @@ def _leaf_overlay_render(
             for uid in np.unique(warped_leaf)
             if int(uid) != 0
         }
-        return render.region_overlay(
+        overlay = render.region_overlay(
             slice_image,
             warped_leaf,
             lut=color_lut(atlas),
@@ -469,21 +581,24 @@ def _leaf_overlay_render(
             families=_merge_classified(warped_leaf, atlas),
             fill_alpha=0.15,
         )
+        return overlay, warped_leaf
     except Exception as exc:  # pragma: no cover - debug artifacts only
         if on_progress:
             on_progress(f"Image-gen registration: leaf overlay skipped ({exc})")
-        return None
+        return None, None
 
 
 def _save_debug_artifacts(
     artifact_dir: Path,
     *,
     generated_segmentation: Image.Image,
+    generated_draws: list[Image.Image] | None = None,
     warped_atlas: Image.Image,
     warped_border_overlay: Image.Image,
     input_colored_regions: Image.Image,
-    input_reference: Image.Image,
+    input_reference_images: list[Image.Image],
     input_slice: Image.Image,
+    input_prior: Image.Image | None = None,
     generated_border_overlay: Image.Image | None = None,
     slice_warped_to_atlas: Image.Image | None = None,
     slice_atlas_border_overlay: Image.Image | None = None,
@@ -507,11 +622,24 @@ def _save_debug_artifacts(
         paths[name] = str(out_path.resolve())
 
     _save("generated_segmentation.png", generated_segmentation)
+    # Raw provider draws behind a vote (only written when there is more than
+    # one — a single draw IS generated_segmentation.png). Index matches the
+    # kept/dropped indices in the candidate metadata.
+    for i, draw in enumerate(generated_draws or []):
+        _save(f"generated_segmentation_draw{i}.png", draw)
     _save("warped_atlas.png", warped_atlas)
     _save("warped_border_overlay.png", warped_border_overlay)
+    # Image 1 exactly as the model received it: the colored atlas map it was
+    # asked to edit, keeping its historical name so downstream tooling works.
     _save("input_colored_regions.png", input_colored_regions)
-    _save("input_reference.png", input_reference)
+    # Images 2..N in prompt order. The first is the grayscale template; the
+    # second is the section, which also keeps its historical name.
+    for i, ref in enumerate(input_reference_images):
+        _save(f"input_reference_{i + 2}.png", ref)
     _save("input_slice.png", input_slice)
+    # The silhouette prior, when provider="none" made it the painting.
+    if input_prior is not None:
+        _save("input_prior.png", input_prior)
     if generated_border_overlay is not None:
         _save("generated_border_overlay.png", generated_border_overlay)
     if slice_warped_to_atlas is not None:
@@ -569,6 +697,9 @@ def generate_registration_candidate(
     canvas_pad: float = 0.0,
     pitch_deg: float = 0.0,
     yaw_deg: float = 0.0,
+    draws: int = 1,
+    max_off_palette: float = _MAX_OFF_PALETTE,
+    deformation: Deformation = "bspline",
     previous_candidate_id: str | None = None,
     candidate_id: str | None = None,
     debug_dir: str | None = None,
@@ -576,6 +707,10 @@ def generate_registration_candidate(
     on_trace: Callable[[dict[str, object]], None] | None = None,
     openai_image_route: str = "images",
     review_model: str | None = None,
+    thinking_level: str | None = None,
+    native_canvas: bool = True,
+    canvas_long_edge: int | None = None,
+    elastix: ElastixStage = "rgb",
 ) -> RegistrationCandidate:
     """Generate one dense registration candidate from a histology slice.
 
@@ -592,28 +727,64 @@ def generate_registration_candidate(
     are the single largest lever measured on the LSD_910 hand registrations,
     whose block was cut at 4 degrees: fit-only family dice 0.93 -> 0.96 and
     boundary p95 34px -> 9px over 33 slices, dwarfing every fit-side knob.
+
+    Every atlas render is fit-to-canvas at its own proportions — the
+    model-facing pair by letterbox, the Elastix-side map by
+    :func:`_fit_to_canvas` — so the map Elastix registers sits in exactly
+    the geometry the model was shown. True-physical placement was measured
+    (2026-09-05) as something the model COPIES rather than deforms: on
+    LSD_910 M01 A_02 a plate drawn at the tissue's own size was copied on 7
+    of 8 draws, while a smaller one was edited in place on 5 of 8. The April
+    lineup was benchmarked without it, and physical placement now lives only
+    in ``linear/``, where a person reads the overlay.
+
+    ``draws`` > 1 asks the provider for that many independent paintings of
+    the same request and registers their per-pixel majority vote (see
+    :func:`_majority_vote_classified`); draws whose off-palette foreground
+    fraction exceeds ``max_off_palette`` are dropped as translucent first
+    (:func:`_off_palette_fraction`), unless that would drop them all.
+    ``deformation="affine"`` fits the affine stage alone, without the
+    B-spline stage.
+
+    ``provider="none"`` calls no model at all: the silhouette prior — the
+    atlas plane placed on this section's own outline by a moments fit and
+    painted like an atlas render (:mod:`langslice.nonlinear.prior`) — IS the
+    painting, and the whole downstream chain (Elastix, markers, overlays,
+    report) runs on the placement alone. Measured on the LSD_910 hand
+    registrations, that placement scores 0.82 mean family dice, better than
+    every image-model configuration measured before the April lineup, which
+    makes it the backbone every model run has to beat. The prior is no
+    longer offered as a CANVAS to edit: Image 1 is the atlas map now.
     """
-    return _generate_registration_candidate(
-        image,
-        atlas_name=atlas_name,
-        position_mm=position_mm,
-        plane=plane,
-        provider=provider,
-        image_model=image_model,
-        image_prompt=image_prompt,
-        generated_image=generated_image,
-        image_axes=image_axes,
-        canvas_pad=canvas_pad,
-        pitch_deg=pitch_deg,
-        yaw_deg=yaw_deg,
-        previous_candidate_id=previous_candidate_id,
-        candidate_id=candidate_id,
-        debug_dir=debug_dir,
-        on_progress=on_progress,
-        on_trace=on_trace,
-        openai_image_route=openai_image_route,
-        review_model=review_model,
-    )
+    with _pinned_registration_palette():
+        return _generate_registration_candidate(
+            image,
+            atlas_name=atlas_name,
+            position_mm=position_mm,
+            plane=plane,
+            provider=provider,
+            image_model=image_model,
+            image_prompt=image_prompt,
+            generated_image=generated_image,
+            image_axes=image_axes,
+            canvas_pad=canvas_pad,
+            pitch_deg=pitch_deg,
+            yaw_deg=yaw_deg,
+            draws=draws,
+            max_off_palette=max_off_palette,
+            deformation=deformation,
+            previous_candidate_id=previous_candidate_id,
+            candidate_id=candidate_id,
+            debug_dir=debug_dir,
+            on_progress=on_progress,
+            on_trace=on_trace,
+            openai_image_route=openai_image_route,
+            review_model=review_model,
+            thinking_level=thinking_level,
+            native_canvas=native_canvas,
+            canvas_long_edge=canvas_long_edge,
+            elastix=elastix,
+        )
 
 
 def _generate_registration_candidate(
@@ -630,6 +801,11 @@ def _generate_registration_candidate(
     canvas_pad: float = 0.0,
     pitch_deg: float = 0.0,
     yaw_deg: float = 0.0,
+    draws: int = 1,
+    max_off_palette: float = _MAX_OFF_PALETTE,
+    deformation: Deformation = "bspline",
+    extra_reference_images: list[Image.Image] | None = None,
+    reference_images_override: list[Image.Image] | None = None,
     previous_candidate_id: str | None = None,
     candidate_id: str | None = None,
     debug_dir: str | None = None,
@@ -637,6 +813,10 @@ def _generate_registration_candidate(
     on_trace: Callable[[dict[str, object]], None] | None = None,
     openai_image_route: str = "images",
     review_model: str | None = None,
+    thinking_level: str | None = None,
+    native_canvas: bool = True,
+    canvas_long_edge: int | None = None,
+    elastix: ElastixStage = "rgb",
 ) -> RegistrationCandidate:
     candidate_id = candidate_id or f"candidate-{uuid.uuid4().hex[:12]}"
     original_width, original_height = image.size
@@ -646,38 +826,80 @@ def _generate_registration_candidate(
     atlas = load_atlas(atlas_name)
 
     slice_image, unpadded_size, origin_x, origin_y, pad_px = prepare_canvas(
-        image, canvas_pad=canvas_pad, image_model=image_model, provider=provider
+        image, canvas_pad=canvas_pad, image_model=image_model, provider=provider,
+        native_canvas=native_canvas, canvas_long_edge=canvas_long_edge, quality=thinking_level,
     )
     target_size = slice_image.size
-    section_aspect = target_size[0] / target_size[1]
+
     # The atlas map of this plane, drawn pixel-exact at the atlas's own
     # geometry: this is BOTH the image the model edits and the moving image
     # Elastix registers, so the two can never disagree about where a
     # boundary is. Oriented into the user's image frame first.
     map_native = _orient_pil(
         _generate_colored_region_slice(
-            atlas, position_mm, plane=plane, pitch_deg=pitch_deg, yaw_deg=yaw_deg
+            atlas, position_mm, None, plane=plane, smooth=False,
+            pitch_deg=pitch_deg, yaw_deg=yaw_deg,
         ),
         atlas, plane, image_axes,
     )
-    # Model-facing pair: the map and the grayscale template of the same
-    # plane, NEAREST/LANCZOS-upscaled to a legible size and letterboxed to
-    # the section's aspect. The three images then share one frame, which is
-    # what the prompt pins the output to — no physical rescaling, no
-    # cropping, and the anatomy keeps the proportions the atlas gives it.
+    section_aspect = target_size[0] / target_size[1]
+    # Model-facing Image 1: the map, NEAREST-upscaled to a legible size and
+    # letterboxed to the section's aspect, so it and the section share one
+    # frame — which is what the prompt pins the answer to. No physical
+    # rescaling, no cropping, and the anatomy keeps the atlas's proportions.
     colored_regions = letterbox_to_aspect(
         upscale_to_min_long_edge(map_native, Image.Resampling.NEAREST), section_aspect
     )
-    reference_slice = letterbox_to_aspect(
-        upscale_to_min_long_edge(
-            _orient_pil(
-                _model_facing_template(atlas, position_mm, plane, pitch_deg, yaw_deg),
-                atlas, plane, image_axes,
-            ),
-            Image.Resampling.LANCZOS,
-        ),
-        section_aspect,
-    )
+    canvas_image = colored_regions
+
+    # No model in the loop: the silhouette prior IS the painting. Everything
+    # downstream (Elastix, markers, overlays, report, exports) runs on it
+    # exactly as it runs on a generated one.
+    model_free = canonical_provider(provider) == "none"
+    prior_image: Image.Image | None = None
+    prior_metadata: dict[str, Any] = {}
+    if model_free and generated_image is None:
+        if on_progress:
+            on_progress("Image-gen registration: placing the silhouette prior...")
+        prior_image, prior_metadata = build_silhouette_prior(
+            slice_image,
+            atlas=atlas,
+            position_mm=position_mm,
+            plane=plane,
+            image_axes=image_axes,
+            pitch_deg=pitch_deg,
+            yaw_deg=yaw_deg,
+        )
+        if on_progress:
+            on_progress(
+                "Image-gen registration: prior placed, tissue IoU "
+                f"{prior_metadata['tissue_iou']:.3f} signs {prior_metadata['sign_pattern']}"
+            )
+
+    # Images 2..N, built only when a model is actually going to see them:
+    # the grayscale template of the same plane (same upscale and letterbox),
+    # then the section. Experimental: a caller may replace the references
+    # entirely (its own prompt names them) or append extra ones (e.g. a
+    # worked example: another section and its correct painting).
+    reference_images: list[Image.Image] = []
+    if generated_image is None and not model_free:
+        if reference_images_override is not None:
+            reference_images = [im.convert("RGB") for im in reference_images_override]
+        else:
+            atlas_template = letterbox_to_aspect(
+                upscale_to_min_long_edge(
+                    _orient_pil(
+                        _model_facing_template(
+                            atlas, position_mm, plane, pitch_deg, yaw_deg
+                        ),
+                        atlas, plane, image_axes,
+                    ),
+                    Image.Resampling.LANCZOS,
+                ),
+                section_aspect,
+            )
+            reference_images = [atlas_template, slice_image]
+        reference_images += list(extra_reference_images or [])
 
     prompt = image_prompt or base_segmentation_prompt(plane, provider)
     request_metadata: dict[str, Any] = {
@@ -694,6 +916,7 @@ def _generate_registration_candidate(
     if image_prompt is not None:
         request_metadata["image_prompt"] = image_prompt
 
+    draws = max(1, int(draws))
     if generated_image is not None:
         # The painting was made elsewhere (an offline re-derivation, a
         # benchmark draw); only the downstream pipeline runs here.
@@ -704,28 +927,42 @@ def _generate_registration_candidate(
             route="external_image",
             metadata=dict(request_metadata),
         )
+        draw_images = [generated.image]
+    elif model_free:
+        assert prior_image is not None
+        generated = GeneratedSegmentation(
+            image=prior_image,
+            provider="none",
+            model="none",
+            route="silhouette_prior",
+            metadata=dict(request_metadata),
+        )
+        draw_images = [generated.image]
     else:
         if on_progress:
             on_progress("Image-gen registration: generating warped atlas image...")
-        generated = generate_warped_segmentation_image(
-            SegmentationGenerationRequest(
-                slice_image=colored_regions,
-                reference_images=[reference_slice, slice_image],
-                prompt=prompt,
-                provider=provider,
-                model=image_model,
-                review_model=review_model,
-                openai_image_route=openai_image_route,
-                metadata=request_metadata,
-            )
+        # One request, sampled *draws* times: independent paintings of the same
+        # inputs, voted per pixel below.
+        generation_request = SegmentationGenerationRequest(
+            reference_images=reference_images,
+            slice_image=canvas_image,
+            prompt=prompt,
+            provider=provider,
+            model=image_model,
+            review_model=review_model,
+            openai_image_route=openai_image_route,
+            thinking_level=thinking_level,
+            metadata=request_metadata,
         )
+        generated = generate_warped_segmentation_image(generation_request)
+        draw_images = [generated.image]
+        for draw_index in range(1, draws):
+            if on_progress:
+                on_progress(f"Image-gen registration: draw {draw_index + 1}/{draws}...")
+            draw_images.append(
+                generate_warped_segmentation_image(generation_request).image
+            )
 
-    # The frame the model answered in is the frame it was shown; a lane with
-    # fixed output frames returns the nearest legal aspect instead, ours
-    # letterboxed inside it, so crop back rather than stretch.
-    cropped_output = crop_to_aspect(generated.image.convert("RGB"), section_aspect)
-    model_output = _resize_if_needed(cropped_output, target_size)
-    model_output_rgb = np.asarray(model_output, dtype=np.uint8)
     # Elastix side: the same pixel-exact map the model edited, in the same
     # geometry (uniform scale, centered), expressed at the section's pixel
     # size — the old full-canvas anisotropic stretch fabricated a large
@@ -734,16 +971,52 @@ def _generate_registration_candidate(
     atlas_colored_at_target = _fit_to_canvas(map_native, target_size)
     atlas_target_rgb = np.asarray(atlas_colored_at_target, dtype=np.uint8)
 
-    # Classify the model output first: registration runs on the CLEANED map
-    # (exact palette colors on black), so color drift cannot poison the
-    # per-channel metric. Nothing is masked out by comparison with the input:
-    # the model edits the atlas map, so pixels it left untouched are regions
-    # it had no reason to move, not background.
-    generated_classified = _classify_pixels_to_region_ids(
-        model_output_rgb, atlas, position_mm, plane=plane,
-        pitch_deg=pitch_deg, yaw_deg=yaw_deg,
-    )
-    generated_classified = _despeckle_classified(generated_classified)
+    # Classify each draw: registration runs on the CLEANED map (exact palette
+    # colors on black), so color drift cannot poison the per-channel metric.
+    # Every draw goes through exactly this path, and only then are they voted
+    # on. Nothing is masked out by comparison with the input: the model edits
+    # the ATLAS MAP, so pixels it left untouched are regions it had no reason
+    # to move, not background.
+    classified_draws: list[np.ndarray] = []
+    off_palette_fractions: list[float] = []
+    for draw in draw_images:
+        # The frame the model answered in is the frame it was shown; a lane
+        # with fixed output frames returns the nearest legal aspect instead,
+        # ours letterboxed inside it, so crop back rather than stretch.
+        cropped = crop_to_aspect(draw.convert("RGB"), section_aspect)
+        draw_rgb = np.asarray(_onto_canvas(cropped, target_size), dtype=np.uint8)
+        classified = _classify_pixels_to_region_ids(
+            draw_rgb, atlas, position_mm, plane=plane,
+            pitch_deg=pitch_deg, yaw_deg=yaw_deg,
+            paint=True,
+        )
+        off_palette_fractions.append(_off_palette_fraction(draw_rgb, classified))
+        classified_draws.append(_despeckle_classified(classified))
+
+    # Translucency gate, then the vote. Dropping every draw would leave
+    # nothing to register, so an all-translucent set votes on itself.
+    kept = [i for i, frac in enumerate(off_palette_fractions) if frac <= max_off_palette]
+    if not kept:
+        kept = list(range(len(classified_draws)))
+    dropped = [i for i in range(len(classified_draws)) if i not in kept]
+    if len(kept) == 1:
+        generated_classified = classified_draws[kept[0]]
+        painting = draw_images[kept[0]]
+    else:
+        generated_classified = _majority_vote_classified(
+            [classified_draws[i] for i in kept]
+        )
+        # The voted ids repainted in atlas colors on black: from here down
+        # (Elastix target, ledger, overlays, artifacts) there is one painting.
+        painting = Image.fromarray(
+            _classified_to_rgb(generated_classified, atlas), mode="RGB"
+        )
+    if on_progress and len(classified_draws) > 1:
+        on_progress(
+            f"Image-gen registration: voted {len(kept)}/{len(classified_draws)} draws"
+            + (f", dropped {dropped} as translucent" if dropped else "")
+        )
+
     atlas_pre_classified = _classify_pixels_to_region_ids(
         atlas_target_rgb,
         atlas,
@@ -764,12 +1037,19 @@ def _generate_registration_candidate(
         on_progress("Image-gen registration: registering region maps...")
     # The metric samples only the model's segmented tissue: omitted (absent)
     # structures never constrain the fit, per the segmentation-only contract.
-    result_transform, elastix_elapsed = _register_region_maps(
-        atlas_pre_classified,
-        generated_classified,
-        atlas,
-        fixed_mask=generated_classified != 0,
-    )
+    if elastix == "april-borders":
+        result_transform, elastix_elapsed = _run_elastix_april_borders(
+            _extract_borders_from_classified(generated_classified),
+            _extract_borders_from_classified(atlas_pre_classified),
+        )
+    else:
+        result_transform, elastix_elapsed = _register_region_maps(
+            atlas_pre_classified,
+            generated_classified,
+            atlas,
+            fixed_mask=generated_classified != 0,
+            deformation=deformation,
+        )
 
     if on_progress:
         on_progress("Image-gen registration: warping atlas and extracting borders...")
@@ -846,6 +1126,7 @@ def _generate_registration_candidate(
             slice_rgb_array,
             forward_fixed_gray=forward_fixed_gray,
             forward_result_transform=result_transform,
+            deformation=deformation,
         )
         # Mask the warped slice to the atlas root silhouette so the 3D viewer
         # can render it as a brain-shaped sheet at the AP position instead of
@@ -886,6 +1167,9 @@ def _generate_registration_candidate(
         "n_markers": len(markers),
         "elastix_elapsed_s": round(float(elastix_elapsed), 2),
         "target_size": list(target_size),
+        "unpadded_size": list(unpadded_size),
+        "canvas_native": bool(native_canvas and canvas_long_edge is None),
+        "elastix_stage": elastix,
         "canvas_pad": float(canvas_pad),
         "pad_px": pad_px,
         "canvas_origin_px": [origin_x, origin_y],
@@ -901,6 +1185,7 @@ def _generate_registration_candidate(
         "inverse_warp_status": inverse_warp_status,
         "elastix": elastix_report,
         "generation": gen_report,
+        "prior": prior_metadata,
     }
     if previous_candidate_id is not None:
         session_metadata["previous_candidate_id"] = previous_candidate_id
@@ -920,6 +1205,9 @@ def _generate_registration_candidate(
         "position_mm": float(position_mm),
         "plane": plane,
         "target_size": list(target_size),
+        "unpadded_size": list(unpadded_size),
+        "canvas_native": bool(native_canvas and canvas_long_edge is None),
+        "elastix_stage": elastix,
         "canvas_pad": float(canvas_pad),
         "pad_px": pad_px,
         "canvas_origin_px": [origin_x, origin_y],
@@ -927,6 +1215,21 @@ def _generate_registration_candidate(
         "inverse_warp_status": inverse_warp_status,
         "elastix": elastix_report,
         "generation": gen_report,
+        "deformation": deformation,
+        # Empty unless provider="none" put the silhouette placement in the
+        # model's place; then it records how well that placement's outline
+        # matched the tissue.
+        "prior": prior_metadata,
+        "provider": generated.provider,
+        # Which draws the registered painting came from. Indices match the
+        # generated_segmentation_draw{i}.png artifacts.
+        "draws": {
+            "n": len(classified_draws),
+            "kept": kept,
+            "dropped": dropped,
+            "off_palette_fraction": [round(f, 4) for f in off_palette_fractions],
+            "max_off_palette": float(max_off_palette),
+        },
         "generated": {
             "provider": generated.provider,
             "model": generated.model,
@@ -945,7 +1248,7 @@ def _generate_registration_candidate(
         review_overlay, review_checkerboard = _review_renders(
             slice_image, warped_classified, warped_families, atlas, on_progress=on_progress
         )
-        leaf_overlay = _leaf_overlay_render(
+        leaf_overlay, warped_leaf_ids = _leaf_overlay_render(
             slice_image, atlas, position_mm, plane, image_axes, result_transform,
             prealign_matrix=prealign_matrix,
             pitch_deg=pitch_deg,
@@ -954,6 +1257,15 @@ def _generate_registration_candidate(
         )
         candidate_dir = Path(debug_dir) / "registration" / candidate_id
         candidate_dir.mkdir(parents=True, exist_ok=True)
+        if warped_leaf_ids is not None:
+            # Leaf ids of the warped atlas, in canvas pixels: the artifact
+            # landmark scoring reads (which structures landed where).
+            np.savez_compressed(
+                candidate_dir / "warped_leaf_ids.npz", ids=warped_leaf_ids.astype(np.int32)
+            )
+            saved_artifact_paths["warped_leaf_ids.npz"] = str(
+                (candidate_dir / "warped_leaf_ids.npz").resolve()
+            )
         ledger_path = candidate_dir / "region_ledger.json"
         ledger_path.write_text(json.dumps(region_ledger, indent=1))
         saved_artifact_paths["region_ledger.json"] = str(ledger_path.resolve())
@@ -965,12 +1277,14 @@ def _generate_registration_candidate(
         saved_artifact_paths["generation_report.json"] = str(gen_report_path.resolve())
         saved_artifact_paths |= _save_debug_artifacts(
             Path(debug_dir) / "registration" / candidate_id,
-            generated_segmentation=generated.image,
+            generated_segmentation=painting,
+            generated_draws=draw_images if len(draw_images) > 1 else None,
             warped_atlas=warped_atlas_img,
             warped_border_overlay=warped_border_overlay,
             input_colored_regions=colored_regions,
-            input_reference=reference_slice,
+            input_reference_images=reference_images,
             input_slice=slice_image,
+            input_prior=prior_image,
             generated_border_overlay=generated_border_overlay,
             slice_warped_to_atlas=warped_slice_to_atlas_img,
             slice_atlas_border_overlay=slice_atlas_border_overlay,
@@ -1020,7 +1334,7 @@ def _generate_registration_candidate(
         on_trace,
         candidate_id=candidate_id,
         metadata=trace_metadata,
-        generated_segmentation=generated.image,
+        generated_segmentation=painting,
         warped_atlas=warped_atlas_img,
         warped_border_overlay=warped_border_overlay,
     )
@@ -1033,7 +1347,7 @@ def _generate_registration_candidate(
 
     return RegistrationCandidate(
         candidate_id=candidate_id,
-        generated_segmentation=generated.image,
+        generated_segmentation=painting,
         warped_atlas=warped_atlas_img,
         warped_border_overlay=warped_border_overlay,
         markers=markers,

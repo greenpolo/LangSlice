@@ -77,6 +77,7 @@ def run_register(request: RegisterRequest, emit: EngineEmit | None = None) -> Re
 
         from langslice.image_prep import (
             DEFAULT_VLM_MAX_LONG_EDGE,
+            adaptive_preprocess,
             normalize_image,
             prepare_image_for_vlm,
         )
@@ -98,8 +99,16 @@ def run_register(request: RegisterRequest, emit: EngineEmit | None = None) -> Re
             max_long_edge=request.vlm_resolution or DEFAULT_VLM_MAX_LONG_EDGE,
         )
         image = prepared.image
+        # Image 3 as the benchmark sent it: adaptive CLAHE plus a
+        # DAPI-weighted grayscale blend, on by default. Dim fluorescence
+        # otherwise reaches the model as a near-black field with the
+        # internal boundaries it is asked to follow invisible.
+        if request.preprocess == "auto":
+            image = adaptive_preprocess(image)
 
-        if canonical_provider(request.provider) in {"openai-api", "openai-oauth"}:
+        if canonical_provider(request.provider) == "none":
+            image_model = review_model = None
+        elif canonical_provider(request.provider) in {"openai-api", "openai-oauth"}:
             import langslice.providers.openai_config as openai_config
 
             image_model = (
@@ -136,6 +145,8 @@ def run_register(request: RegisterRequest, emit: EngineEmit | None = None) -> Re
             canvas_pad=request.canvas_pad,
             pitch_deg=request.pitch_deg,
             yaw_deg=request.yaw_deg,
+            draws=request.draws,
+            deformation=request.deformation,
         )
         affine = result.affine_result
         session_dict = annotation_session_to_dict(result.annotation_session)
