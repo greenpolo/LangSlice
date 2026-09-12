@@ -35,9 +35,9 @@
 
 A VLM agent (default [`langslice-gemma-4-E4B`](https://huggingface.co/greenpolo/langslice-gemma-4-E4B))
 inspects the slice, explores candidate atlas planes through tool calls, and
-submits an AP coordinate. Image generation then produces an atlas-colored
-target from the histology, and itk-elastix recovers a dense B-spline
-deformation. Results export to VisuAlign-compatible JSON for QUINT / ABBA.
+submits an AP coordinate. An image model is then handed the atlas region map
+of that plane and asked to move its colored regions onto the tissue, and
+itk-elastix recovers a dense B-spline deformation from the result. Results export to VisuAlign-compatible JSON for QUINT / ABBA.
 
 <p align="center">
   <img alt="LangSlice registration pipeline: histology slice to atlas-colored target, dense warp, and overlay" src="assets/registration_pipeline_square.png" width="780">

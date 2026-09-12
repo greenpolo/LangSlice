@@ -12,7 +12,7 @@ import numpy as np
 from PIL import Image
 
 from langslice.atlas.core import get_root_mask
-from langslice.atlas.recolor import active_palette, color_lut
+from langslice.atlas.recolor import color_lut
 from langslice.atlas.render import annotation_slice as _annotation_slice
 from langslice.atlas.render import family_mapping as _family_mapping
 from langslice.space import Plane, atlas_space_context, slice_axis_index
@@ -24,95 +24,29 @@ logger = logging.getLogger(__name__)
 #: not tissue. Must stay below the white-to-fiber-tract-gray distance (~88).
 _BG_COLOR_DISTANCE = 70.0
 
-#: Long edge the model-facing region map is drawn at when no size is asked
-#: for. Matches the working canvas (``image_gen_registration._MAX_LONG_EDGE``)
-#: so the atlas reference reaches the model at the histology's own
-#: resolution instead of as upscaled voxel blocks.
-_RENDER_LONG_EDGE = 2048
-
-#: Width of an ARA-style leaf delineation line, at a 2048px canvas.
-_LEAF_BORDER_PX = 2.0
-
-
 def _generate_colored_region_slice(
     atlas: Any,
     position_mm: float,
     target_size: tuple[int, int] | None = None,
     *,
     plane: Plane = "coronal",
-    smooth: bool = True,
     pitch_deg: float = 0.0,
     yaw_deg: float = 0.0,
 ) -> Image.Image:
     """Render an atlas annotation slice as a color-preserving RGB region map.
 
-    ``smooth`` (the default) renders at ``_RENDER_LONG_EDGE`` with EXACT
-    voxel-true geometry — NEAREST-upscaled ids, boundaries exactly where the
-    atlas puts them, no contour smoothing or rounding of any kind (Nash:
-    rounded borders corrupt the geometry the model is told to trust). Pass
-    ``smooth=False`` for the native-size pixel-exact render the Elastix side
-    registers against and classifies back.
-
-    Under ``palette="leaf-borders"`` the model-facing render additionally
-    gets the Allen-Reference-Atlas plate treatment — every leaf boundary
-    delineated in a darker shade of its own region's color (neighbor
-    difference, so lines follow the true boundary), family boundaries
-    heavier. MODEL-FACING decoration only: it never touches the
-    ``smooth=False`` render, so the Elastix pair and everything classified
-    from it are identical either way.
+    Pixel-exact and voxel-true: one flat LUT color per region, boundaries
+    exactly where the atlas puts them, no contour smoothing or rounding of
+    any kind (Nash: rounded borders corrupt the geometry the model is told
+    to trust), and NEAREST if *target_size* resizes it. The model edits this
+    render and Elastix registers it, so it must classify back to exactly the
+    ids it was drawn from.
     """
     annotation_slice = _annotation_slice(
         atlas, position_mm, plane=plane, pitch_deg=pitch_deg, yaw_deg=yaw_deg
     )
     height, width = annotation_slice.shape
     lut = color_lut(atlas)
-
-    if smooth:
-        from scipy import ndimage
-
-        if target_size is None:
-            scale = max(1.0, _RENDER_LONG_EDGE / max(height, width))
-            target_size = (round(width * scale), round(height * scale))
-        ids = np.asarray(
-            Image.fromarray(annotation_slice.astype(np.int32), mode="I").resize(
-                target_size, Image.Resampling.NEAREST
-            ),
-            dtype=np.int64,
-        )
-        rgb = np.zeros((*ids.shape, 3), dtype=np.uint8)
-        for uid in np.unique(ids):
-            if int(uid):
-                rgb[ids == uid] = lut.get(int(uid), (128, 128, 128))
-        if active_palette() == "leaf-borders":
-            from langslice.nonlinear.render import darker
-
-            fams = _merge_classified(ids, atlas)
-
-            def _boundary(labels: np.ndarray) -> np.ndarray:
-                b = np.zeros(labels.shape, dtype=bool)
-                b[:, 1:] |= labels[:, 1:] != labels[:, :-1]
-                b[1:, :] |= labels[1:, :] != labels[:-1, :]
-                return b & (labels != 0)
-
-            leaf_w = max(1, round(_LEAF_BORDER_PX * max(target_size) / 2048))
-            leaf_b: np.ndarray = _boundary(ids)
-            if leaf_w > 1:
-                leaf_b = np.asarray(
-                    ndimage.binary_dilation(leaf_b, iterations=leaf_w - 1), dtype=bool
-                )
-            fam_b = np.asarray(
-                ndimage.binary_dilation(_boundary(fams), iterations=2 * leaf_w - 1),
-                dtype=bool,
-            )
-            border = (leaf_b | fam_b) & (ids != 0)
-            dark_lut = {
-                int(u): darker(lut.get(int(u), (128, 128, 128)))
-                for u in np.unique(ids)
-                if int(u)
-            }
-            for uid, dcol in dark_lut.items():
-                rgb[border & (ids == uid)] = dcol
-        return Image.fromarray(rgb, mode="RGB")
 
     rgb = np.zeros((height, width, 3), dtype=np.uint8)
     for uid in np.unique(annotation_slice):
@@ -140,9 +74,9 @@ def _classify_pixels_to_region_ids(
     """Classify RGB pixels to the nearest atlas region color at *position_mm*.
 
     ``off_palette_background`` sends far-from-palette pixels to background —
-    right for MODEL output (its preserved background can be any color), wrong
-    for our own renders: warping blends colors at region boundaries, and the
-    cutoff would erase thin regions there (pass False for those).
+    right for MODEL output (whose background and color drift are its own),
+    wrong for our own renders: warping blends colors at region boundaries,
+    and the cutoff would erase thin regions there (pass False for those).
 
     The cutting angles must match the render the pixels came from: the
     palette is built from the ids that plane actually contains.
@@ -161,16 +95,6 @@ def _classify_pixels_to_region_ids(
         if color is not None:
             color_to_id[color] = uid_int
 
-    if active_palette() == "leaf-borders":
-        # The model was shown hairlines in darker(color) and may paint them
-        # back. Measured: at 2px they are ~7% of the foreground, and far
-        # enough off-palette that the background cutoff would punch them
-        # straight through the regions they delineate — so the line color is
-        # part of the palette, mapping to the region it belongs to.
-        from langslice.nonlinear.render import darker
-
-        color_to_id = {darker(c): uid for c, uid in color_to_id.items()} | color_to_id
-
     if not color_to_id:
         logger.warning("No atlas structure colors found; returning all-zero classification")
         return np.zeros(model_output_rgb.shape[:2], dtype=np.int32)
@@ -180,9 +104,9 @@ def _classify_pixels_to_region_ids(
 
     height, width = model_output_rgb.shape[:2]
     pixels = model_output_rgb.reshape(-1, 3).astype(np.float32)
-    # Background is anything far from every palette color — the model keeps
-    # the original background (white slide, dark fluorescence, black margin)
-    # untouched in edit mode, so it can be any color, not just black.
+    # Background is anything far from every palette color. The model is asked
+    # for regions on plain black, but it answers with its own rendering of
+    # "black", so the cutoff below does the deciding, not an exact match.
     background_mask = np.max(pixels, axis=1) < 20.0
 
     diff = pixels[:, np.newaxis, :] - palette_colors[np.newaxis, :, :]
@@ -234,8 +158,8 @@ def _classified_to_rgb(classified_2d: np.ndarray, atlas: Any) -> np.ndarray:
     """Rebuild a clean RGB map from classified ids: exact palette colors on black.
 
     Elastix registers this cleaned map against the atlas render — the
-    generated image's preserved background (white slide, anything) and any
-    color drift would otherwise poison the per-channel metric.
+    generated image's own background and any color drift would otherwise
+    poison the per-channel metric.
     """
     lut = color_lut(atlas)
     rgb = np.zeros((*classified_2d.shape, 3), dtype=np.uint8)
@@ -1018,13 +942,6 @@ def _extract_visualign_markers(
     return markers
 
 
-def _segmentation_prompt_for_plane(plane: Plane = "coronal") -> str:
-    """Deprecated alias — prompt text now lives in ``nonlinear.model_prompts``."""
-    from langslice.nonlinear.model_prompts import base_segmentation_prompt
-
-    return base_segmentation_prompt(plane)
-
-
 # --- generation report (human/benchmark diagnostics; never reaches the model) -
 #: Normalized analysis grid. Both maps are resampled onto it over their own
 #: foreground bbox, which is the only alignment this report assumes.
@@ -1107,7 +1024,6 @@ def generation_report(
     atlas: Any,
     *,
     tissue_mask: np.ndarray | None = None,
-    preserved_fraction: float | None = None,
     structures: Any = None,
 ) -> dict[str, Any]:
     """Diagnose the GENERATED map against the atlas map — for humans only.
@@ -1235,6 +1151,4 @@ def generation_report(
         report["tissue_unpainted"] = round(
             float((tissue_mask & ~painted).sum() / max(int(tissue_mask.sum()), 1)), 4
         )
-    if preserved_fraction is not None:
-        report["preserved_background_fraction"] = round(float(preserved_fraction), 4)
     return report

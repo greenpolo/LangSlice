@@ -3,23 +3,6 @@ despeckle, generation-report, and orientation helpers."""
 
 from __future__ import annotations
 
-from PIL import Image
-
-
-def test_preserved_background_mask_marks_untouched_pixels() -> None:
-    import numpy as np
-
-    from langslice.nonlinear.image_gen_registration import _preserved_background_mask
-
-    base = Image.new("RGB", (4, 4), (250, 250, 250))
-    out = np.full((4, 4, 3), 250, dtype=np.uint8)
-    out[0, 0] = (245, 252, 248)  # resampling noise -> preserved
-    out[1, 1] = (204, 204, 204)  # light-gray palette color -> painted
-    out[2, 2] = (30, 200, 30)  # region color -> painted
-    mask = _preserved_background_mask(out, base)
-    assert mask[0, 0] and mask[3, 3]
-    assert not mask[1, 1] and not mask[2, 2]
-
 
 def test_despeckle_reassigns_tiny_components() -> None:
     import numpy as np

@@ -197,9 +197,13 @@ def compute_registration_landmarks(
         _compute_deformation_field,
         _elastix_report,
         _register_rgb_pair,
-        _segmentation_prompt_for_plane,
         _warp_atlas_rgb,
     )
+    from langslice.nonlinear.image_gen_registration import (
+        crop_to_aspect,
+        upscale_to_min_long_edge,
+    )
+    from langslice.nonlinear.model_prompts import base_segmentation_prompt
     from langslice.nonlinear.providers import (
         SegmentationGenerationRequest,
         generate_warped_segmentation_image,
@@ -211,23 +215,39 @@ def compute_registration_landmarks(
     slice_image = normalize_to_rgb(histology)
 
     lut = color_lut(atlas)
-    prompt = _segmentation_prompt_for_plane("coronal")
+    prompt = base_segmentation_prompt("coronal", config.provider)
+
+    # The same lineup the CLI sends: the colored map is the image the model
+    # edits, the template and the histology are its references. ABBA hands us
+    # all three on ONE grid (the fixed raster), so they already share a frame
+    # and only need enlarging to a legible size.
+    colored_input = upscale_to_min_long_edge(
+        Image.fromarray(colored, mode="RGB"), Image.Resampling.NEAREST
+    )
+    template_input = upscale_to_min_long_edge(
+        Image.fromarray(reference_gray, mode="L").convert("RGB"),
+        Image.Resampling.LANCZOS,
+    )
 
     last_codes: list[Any] = []
     for attempt in range(1, _MAX_ATTEMPTS + 1):
         generated = generate_warped_segmentation_image(
             SegmentationGenerationRequest(
-                colored_regions=Image.fromarray(colored, mode="RGB"),
-                reference_slice=Image.fromarray(reference_gray, mode="L"),
-                slice_image=slice_image,
+                slice_image=colored_input,
+                reference_images=[template_input, slice_image],
                 prompt=prompt,
                 provider=config.provider,
                 model=config.model,
                 route=config.route,
             )
         )
+        # Crop back before resampling: a lane with fixed output frames
+        # letterboxes our frame inside its own, and stretching that would
+        # slide every painted boundary off the tissue.
         model_rgb = np.asarray(
-            generated.image.convert("RGB").resize((w, h), Image.Resampling.LANCZOS)
+            crop_to_aspect(generated.image.convert("RGB"), w / h).resize(
+                (w, h), Image.Resampling.LANCZOS
+            )
         )
         # fixed = atlas render, moving = model output (histology-shaped):
         # the resulting transform maps fixed pixels -> moving pixels, which is

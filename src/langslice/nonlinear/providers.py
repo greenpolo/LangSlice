@@ -33,18 +33,22 @@ _IMAGE_QUALITIES = {"low", "medium", "high"}
 
 @dataclass
 class SegmentationGenerationRequest:
-    colored_regions: Image.Image
-    reference_slice: Image.Image
+    #: The image the model edits — Image 1, and the first image every
+    #: transport sends. In registration that is the colored atlas region map.
     slice_image: Image.Image
+    #: The remaining model-facing images, in prompt order: they follow
+    #: ``slice_image`` as Image 2..N. The prompt says what each one is;
+    #: providers only deliver them in this order.
+    reference_images: list[Image.Image]
     prompt: str
     provider: str = "google"
     model: str | None = None
     route: str | None = None
     review_model: str | None = None
-    #: Task-level semantic: registration is always an EDIT of the slice image
-    #: (pixel-aligned output). Each transport translates this its own way —
-    #: the images endpoint IS an edit call, the Responses-based routes pass it
-    #: as the image_generation tool's action.
+    #: Task-level semantic: registration is always an EDIT of the first image
+    #: (the atlas region map, returned in the same frame). Each transport
+    #: translates this its own way — the images endpoint IS an edit call, the
+    #: Responses-based routes pass it as the image_generation tool's action.
     mode: str = "edit"
     openai_image_route: str = "images"
     thinking_level: str | None = None
@@ -176,11 +180,10 @@ def _generate_google_segmentation(request: SegmentationGenerationRequest) -> Gen
     model = request.model or vlm_config.MODEL_NAME
     client = vlm_config.get_client()
 
-    # Histology first: the edited base image leads, references follow.
+    # The edited image leads, references follow.
     contents = [
         request.slice_image,
-        request.colored_regions,
-        request.reference_slice,
+        *request.reference_images,
         request.prompt,
     ]
     response = client.models.generate_content(  # type: ignore[attr-defined]
@@ -206,11 +209,13 @@ def _generate_openai_images_segmentation(
 ) -> GeneratedSegmentation:
     model = request.model or get_openai_image_model()
     client = get_openai_image_client()
-    # Histology first: the edited base image leads, references follow.
+    # The edited image leads, references follow.
     image_files = [
-        _image_to_png_file(request.slice_image, "slice_image.png"),
-        _image_to_png_file(request.colored_regions, "colored_regions.png"),
-        _image_to_png_file(request.reference_slice, "reference_slice.png"),
+        _image_to_png_file(request.slice_image, "image_1.png"),
+        *(
+            _image_to_png_file(reference, f"image_{index + 2}.png")
+            for index, reference in enumerate(request.reference_images)
+        ),
     ]
 
     response = client.images.edit(  # type: ignore[attr-defined]
@@ -245,8 +250,10 @@ def _generate_openai_responses_segmentation(
             "content": [
                 {"type": "input_text", "text": request.prompt},
                 {"type": "input_image", "image_url": _image_to_data_url(request.slice_image)},
-                {"type": "input_image", "image_url": _image_to_data_url(request.colored_regions)},
-                {"type": "input_image", "image_url": _image_to_data_url(request.reference_slice)},
+                *(
+                    {"type": "input_image", "image_url": _image_to_data_url(reference)}
+                    for reference in request.reference_images
+                ),
             ],
         }
     ]
@@ -285,8 +292,7 @@ def _generate_openai_oauth_segmentation(
         request.prompt,
         [
             _image_to_data_url(request.slice_image),
-            _image_to_data_url(request.colored_regions),
-            _image_to_data_url(request.reference_slice),
+            *(_image_to_data_url(reference) for reference in request.reference_images),
         ],
         image_model=model,
         quality=quality if quality in _IMAGE_QUALITIES else "high",
