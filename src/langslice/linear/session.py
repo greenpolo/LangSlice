@@ -31,9 +31,11 @@ from langslice.adk.model_resolver import (
 from langslice.adk.plugins import (
     ModelCallPacingPlugin,
     RequestCapturePlugin,
+    ToolMediaDeliveryPlugin,
     WorkingSetImages,
 )
 from langslice.linear.trace import open_trace
+from langslice.linear.visual_context import VisualContext
 
 logger = logging.getLogger(__name__)
 
@@ -44,12 +46,21 @@ _USER_ID = "langslice-user"
 DEFAULT_MAX_ITERATIONS = 60
 
 
-def build_plugins(run_label: str) -> list[BasePlugin]:
+def build_plugins(
+    run_label: str,
+    *,
+    tool_media_delivered: Callable[[set[str]], None] | None = None,
+    visual_context: VisualContext | None = None,
+) -> list[BasePlugin]:
     """The ADK plugins every LangSlice session runs with."""
     plugins: list[BasePlugin] = [
         # One working set per session: the instance remembers its cut.
-        ContextFilterPlugin(custom_filter=WorkingSetImages())
+        ContextFilterPlugin(custom_filter=visual_context or WorkingSetImages())
     ]
+    if tool_media_delivered is not None and visual_context is None:
+        # Must follow the context filter: only media that survived pruning is
+        # about to be delivered to the model.
+        plugins.append(ToolMediaDeliveryPlugin(tool_media_delivered))
     model_call_delay_s = _env_float("LANGSLICE_ADK_MODEL_CALL_DELAY_S")
     if model_call_delay_s is not None and model_call_delay_s > 0:
         plugins.append(ModelCallPacingPlugin(model_call_delay_s))
@@ -112,6 +123,10 @@ _BUDGET_GRACE = (
     "The run's budget is spent. Call `submit` now with the stack as it stands; "
     "no other tool."
 )
+_CONTEXT_GRACE = (
+    "The last request exceeded the configured input-context limit. "
+    "Call `submit` now with the stack as it stands; no other tool."
+)
 
 
 def _int_or_none(value: Any) -> int | None:
@@ -124,14 +139,17 @@ def _int_or_none(value: Any) -> int | None:
 class TokenTally:
     """Summed token usage over one session, one line per model call.
 
-    ``paid`` is the uncached-equivalent count: uncached input plus cached
-    input at :data:`CACHED_TOKEN_WEIGHT`. That, not ``input``, is what a
-    run costs.
+    ``paid`` is a legacy input-only proxy: uncached input plus cached input
+    at :data:`CACHED_TOKEN_WEIGHT`. It excludes output and is not the standard
+    all-token API-equivalent benchmark cost. ``input`` remains cumulative;
+    ``latest_input`` and ``peak_input`` measure individual request context.
     """
 
     def __init__(self) -> None:
         self.calls = 0
         self.input = 0
+        self.latest_input = 0
+        self.peak_input = 0
         self.cached = 0
         self.output = 0
 
@@ -146,17 +164,21 @@ class TokenTally:
         output = int(getattr(usage, "candidates_token_count", None) or 0)
         self.calls += 1
         self.input += prompt
+        self.latest_input = prompt
+        self.peak_input = max(self.peak_input, prompt)
         self.cached += cached
         self.output += output
         return (
-            f"call {self.calls}: in={prompt} (cached {cached}) out={output}; "
-            f"run in={self.input} paid~{self.paid}"
+            f"call {self.calls}: request_input={prompt} (cached {cached}) out={output}; "
+            f"cumulative_input={self.input} peak_input={self.peak_input} paid~{self.paid}"
         )
 
     def as_dict(self) -> dict[str, int]:
         return {
             "calls": self.calls,
             "input": self.input,
+            "latest_input": self.latest_input,
+            "peak_input": self.peak_input,
             "cached": self.cached,
             "output": self.output,
             "paid": self.paid,
@@ -164,8 +186,8 @@ class TokenTally:
 
     def totals(self) -> str:
         return (
-            f"{self.calls} calls, in={self.input} (cached {self.cached}, "
-            f"paid~{self.paid}), out={self.output}"
+            f"{self.calls} calls, cumulative_input={self.input} (cached {self.cached}, "
+            f"paid~{self.paid}), out={self.output}, peak_input={self.peak_input}"
         )
 
 
@@ -183,17 +205,28 @@ async def run_agent_session(
     progress: Callable[[str], None] | None = None,
     max_input_tokens: int | None = None,
     max_quota_percent: int | None = None,
+    tool_media_delivered: Callable[[set[str]], None] | None = None,
+    visual_context: VisualContext | None = None,
 ) -> tuple[int, int]:
     """Drive one agent pass; return ``(tool_calls, turns)``.
 
     Ends when *done* reports the session's submit tool has fired, or when the
-    turn/tool-call budget runs out, or when the run's summed input tokens
-    pass *max_input_tokens* — the history is resent on every call, so input
-    grows with the square of the call count and the account, not the job,
-    would otherwise end the run.
+    turn/tool-call budget runs out, or when a single request's reported input
+    tokens exceed *max_input_tokens*. Cached input still occupies context.
+    This optional check happens after the response, not before sending it;
+    cumulative usage remains available separately for cost accounting.
     """
     trace = open_trace(run_label, agent=agent)
-    app = App(name=_APP_NAME, root_agent=agent, plugins=build_plugins(run_label))
+    if visual_context is not None and trace is not None:
+        visual_context.trace = trace.visual_event
+    app = App(
+        name=_APP_NAME,
+        root_agent=agent,
+        plugins=build_plugins(
+            run_label, tool_media_delivered=tool_media_delivered,
+            visual_context=visual_context,
+        ),
+    )
     runner = InMemoryRunner(app=app)
     assert runner.session_service is not None
     await runner.session_service.create_session(
@@ -218,7 +251,7 @@ async def run_agent_session(
         turns += 1
         if stopped is not None:
             grace_left -= 1
-            nudge = _BUDGET_GRACE
+            nudge = _CONTEXT_GRACE if stopped == "input_context_limit" else _BUDGET_GRACE
             message = types.Content(role="user", parts=[types.Part.from_text(text=nudge)])
         if trace is not None and nudge is not None:
             trace.nudge(nudge, turn=turns)
@@ -263,13 +296,13 @@ async def run_agent_session(
                             f"the budget of {max_quota_percent}%; one more call to submit"
                         )
                     stopped = stopped or "quota_budget"
-                if max_input_tokens is not None and tokens.input > max_input_tokens:
+                if max_input_tokens is not None and tokens.latest_input > max_input_tokens:
                     if stopped is None:
                         (progress or logger.warning)(
-                            f"[tokens] run input {tokens.input} passed the budget of "
-                            f"{max_input_tokens}; one more call to submit"
+                            f"[tokens] request input {tokens.latest_input} exceeded the "
+                            f"context limit of {max_input_tokens}; one more call to submit"
                         )
-                    stopped = stopped or "input_budget"
+                    stopped = stopped or "input_context_limit"
             calls = event.get_function_calls() or []
             if calls:
                 saw_tool_call = True

@@ -43,12 +43,15 @@ TOOL_LINES: dict[str, str] = {
     "transforms are kept.",
     "compare_placement": "tests candidate positions before you commit to one: "
     "name a section with several positions (or none for its current one) and "
-    "it is drawn against the atlas at each, up to 4 pairs per call, one image "
-    "per pair, on one physical-scale canvas; e.g. one section at 4.6, 4.8 and "
+    "it is compared with the atlas at each, up to 4 pairs per call; "
+    "e.g. one section at 4.6, 4.8 and "
     "5.0 mm. `mode` "
     "is template (default: the atlas at that position on the section's own "
     "canvas and scale; the section itself is in the opening message), "
-    "side_by_side, overlay, checkerboard, outlines or section, "
+    "side_by_side (separate original section plus atlas references, "
+    "one section per distinct id and one atlas per pair, up to 8 images; "
+    "independently tissue-framed, full view only, no outlines/opacity), "
+    "overlay, checkerboard, outlines or section (one physical-canvas image per pair), "
     "`zoom` is [x0, y0, x1, y1] of the canvas and magnifies (the crop comes "
     "before the resize, so small structures get more pixels), "
     "`template_opacity` is 0..1 and `outlines` is all, outer or none; "
@@ -60,8 +63,9 @@ TOOL_LINES: dict[str, str] = {
     "the next, plus a plot of position against corrected index; writes "
     "nothing.",
     "set_positions": "writes positions for one or more sections, clamped to "
-    "the atlas range, and returns each newly placed or moved section over "
-    "the atlas section at the position it was given.",
+    "the atlas range, and returns a placement image unless that exact section, "
+    "position, orientation and cutting-angle combination was already seen in "
+    "a full-canvas atlas-bearing placement view.",
     "run_deepslice": "seeds positions (and optionally angles) with DeepSlice.",
     "fit_position": "searches the atlas around one section's current position "
     "and reports the best it found; writes nothing.",
@@ -81,11 +85,20 @@ TOOL_LINES: dict[str, str] = {
     "what the rotation and scales turn about — is canvas, tissue or [fx, fy] "
     "of the canvas, `outlines` is all, outer or none, and `note` is a remark "
     "for the record; it does not change the section's flip or rotation.",
+    "adjust_transforms": "sets and shows up to four independent positioned "
+    "sections in one undoable call, with the same physical parameters and "
+    "one labelled feedback image per section; each section may appear once, "
+    "and a dependent follow-up adjustment uses `adjust_transform` after "
+    "seeing the first result.",
     "landmarks": "measures point pairs (a section point and the atlas point it "
     "belongs on, as fractions of the canvas) under given parameters: the "
     "distance in millimetres per pair, their RMS, a transform fitted to them "
     "(similarity from 2 pairs, affine from 3), and the pairs drawn on the "
     "view; writes nothing.",
+    "accept_views": "accepts inspected current views for a batch of sections "
+    "at stage position or transform; retires their superseded images, keeping "
+    "all text and reasoning. Requires a full current comparison or overlay "
+    "shown in an earlier model round. submit accepts all final views.",
     "submit": "ends the run.",
 }
 
@@ -264,9 +277,7 @@ def build_job_statement(
             "Method:",
             "- Place each section on its own evidence: compare it against "
             "candidate atlas positions before writing, and do not let the "
-            "nominal interval stand in for a look. Work in batches: several "
-            "sections per `compare_placement` or `set_positions` call cost "
-            "less than one call each.",
+            "nominal interval stand in for a look.",
             "- After writing, review the whole stack against the atlas, watch "
             "for a section that sits out of sequence and for spacings that "
             "differ from their neighbours, and re-check the sections on either "

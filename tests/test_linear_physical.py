@@ -313,10 +313,9 @@ def test_the_preview_tool_returns_one_image_and_the_numbers(tmp_path: Path):
     result = preview(record.id, 0.0, 1.0, 1.0, 0.25, 0.0)
     assert result["status"] == "ok"
     assert len(result[TOOL_MEDIA_PARTS_KEY]) == 1  # ONE image, not a panel strip
-    assert result["params"]["translate_x_mm"] == 0.25
-    assert result["calibration"]["source"] == "file"
-    assert result["decomposition"]["rotation_deg"] == 0.0
-    assert box.transform_history[record.id] == [result["params"]]
+    assert result["physical"]["translate_x_mm"] == 0.25
+    assert record.transform["calibration"]["source"] == "file"
+    assert box.transform_history[record.id][0]["rotation_deg"] == 0.0
 
 
 # --- the reasoning knob --------------------------------------------------

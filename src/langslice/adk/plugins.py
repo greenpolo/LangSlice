@@ -6,6 +6,7 @@ import asyncio
 import io
 import json
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,8 @@ from google.adk.models.llm_response import LlmResponse
 from google.adk.plugins.base_plugin import BasePlugin
 from google.genai import types
 from PIL import Image
+
+from langslice.adk import TOOL_MEDIA_DELIVERY_ID_KEY
 
 #: Images in context before the working set is cut, and what it is cut to.
 #: The upstream cache prices a token that sits unchanged in the prefix at
@@ -33,7 +36,9 @@ DEFAULT_KEEP_IMAGES = 128
 #: and reviewed by then, so those pictures only cost their cached carry —
 #: ~45k tokens a call on Astra's run 17 (2026-09-10), ~9% of a window over
 #: the transform stage — against one re-read of the positioning text.
-STAGE_BOUNDARY_TOOLS = frozenset({"fit_affine", "adjust_transform", "landmarks"})
+STAGE_BOUNDARY_TOOLS = frozenset(
+    {"fit_affine", "adjust_transform", "adjust_transforms", "landmarks"}
+)
 
 #: Astra's run-19 debrief read the old wording ("dropped from context") as
 #: "never delivered" and doubted comparisons it had actually made.
@@ -133,6 +138,41 @@ class ModelCallPacingPlugin(BasePlugin):
         del callback_context, llm_request
         if self.delay_s > 0:
             await asyncio.sleep(self.delay_s)
+        return None
+
+
+class ToolMediaDeliveryPlugin(BasePlugin):
+    """Report media-bearing function responses present in a model request.
+
+    Register this after the context filter. The callback therefore observes
+    the request after working-set pruning and can distinguish an image that
+    was successfully rendered from one the model is actually about to see.
+    """
+
+    def __init__(
+        self,
+        delivered: Callable[[set[str]], None],
+        *,
+        name: str = "langslice_tool_media_delivery",
+    ) -> None:
+        super().__init__(name)
+        self.delivered = delivered
+
+    async def before_model_callback(
+        self, *, callback_context: CallbackContext, llm_request: LlmRequest
+    ) -> LlmResponse | None:
+        del callback_context
+        delivery_ids = {
+            str(response[TOOL_MEDIA_DELIVERY_ID_KEY])
+            for content in (llm_request.contents or [])
+            for part in (content.parts or [])
+            if (function_response := part.function_response) is not None
+            and function_response.parts
+            and isinstance((response := function_response.response), dict)
+            and response.get(TOOL_MEDIA_DELIVERY_ID_KEY)
+        }
+        if delivery_ids:
+            self.delivered(delivery_ids)
         return None
 
 

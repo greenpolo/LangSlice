@@ -128,19 +128,30 @@ def atlas_sized(picture: Image.Image, atlas: Any) -> Image.Image:
     return at_model_scale(picture, atlas_um_per_px(atlas), atlas, cap=ATLAS_LONG_EDGE)
 
 
-def atlas_part(ctx: EngineContext, state: StackState, position_mm: float) -> types.Part:
+def atlas_part(
+    ctx: EngineContext, state: StackState, position_mm: float, *,
+    prepared: Image.Image | None = None,
+) -> types.Part:
     """One tissue-framed atlas section at *position_mm*, section-sized and captioned."""
+    key = ("atlas", state.plane, float(position_mm), state.pitch_deg, state.yaw_deg,
+           ATLAS_LONG_EDGE)
+    if key in ctx.reference_parts:
+        return ctx.reference_parts[key].model_copy(deep=True)
     angles = (
         f" pitch {state.pitch_deg:.1f} yaw {state.yaw_deg:.1f}"
         if state.is_oblique
         else ""
     )
-    return image_to_part(
+    part = image_to_part(
         caption(
-            atlas_sized(atlas_section(ctx, state, position_mm, frame=True), ctx.atlas),
+            prepared if prepared is not None else atlas_sized(
+                atlas_section(ctx, state, position_mm, frame=True), ctx.atlas,
+            ),
             f"atlas {position_mm:.2f} mm{angles}",
         )
     )
+    ctx.reference_parts[key] = part
+    return part.model_copy(deep=True)
 
 
 def make_fetch_atlas(state: StackState, ctx: EngineContext):
@@ -244,5 +255,5 @@ def atlas_strip_parts(
     for position, picture in pictures:
         label = f"atlas {position:.2f} mm"
         parts.append(types.Part.from_text(text=label))
-        parts.append(image_to_part(caption(picture, label)))
+        parts.append(atlas_part(ctx, state, position, prepared=picture))
     return parts

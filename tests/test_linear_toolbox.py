@@ -22,8 +22,9 @@ class _Actions:
 
 
 class _ToolContext:
-    def __init__(self) -> None:
+    def __init__(self, function_call_id: str | None = None) -> None:
         self.actions = _Actions()
+        self.function_call_id = function_call_id
 
 
 def _stack(folder: Path, n: int = 5, *, placed: bool = False, **spec_kwargs):
@@ -75,7 +76,7 @@ def test_optional_tools_follow_their_flags(tmp_path: Path):
     assert not set(plain.names) & {"run_deepslice", "fit_position", "set_cutting_angles"}
     # The interactive transform rides in the main trajectory, always on with
     # the task.
-    assert {"adjust_transform", "landmarks"} <= set(plain.names)
+    assert {"adjust_transform", "adjust_transforms", "landmarks"} <= set(plain.names)
 
 
 def test_flip_is_refused_when_the_spec_switches_it_off(tmp_path: Path):
@@ -154,6 +155,188 @@ def test_writes_return_the_picture_of_what_they_did(tmp_path: Path):
     turned = _tool(box, "orient_slices")([{"id": "s1.png", "flip": True}])
     assert len(turned[TOOL_MEDIA_PARTS_KEY]) == 1
     assert "s1.png" in turned["description"]
+
+
+def test_set_positions_suppresses_only_a_placement_seen_in_an_earlier_round(
+    tmp_path: Path,
+):
+    from langslice.adk import TOOL_MEDIA_PARTS_KEY
+
+    state, _, box = _box(tmp_path, tasks=["position"])
+    compare = _tool(box, "compare_placement")
+    write = _tool(box, "set_positions")
+
+    compared = compare(
+        [{"id": "s0.png", "positions_mm": [3.0]}],
+        tool_context=_ToolContext("adk-compare-1"),
+    )
+    assert len(compared[TOOL_MEDIA_PARTS_KEY]) == 1
+
+    # Both calls emitted by one model response are planned before either
+    # result is visible, so a same-round write still returns its own picture.
+    same_round = write(
+        [{"id": "s0.png", "position_mm": 3.0}],
+        tool_context=_ToolContext("write-1"),
+    )
+    assert len(same_round[TOOL_MEDIA_PARTS_KEY]) == 1
+
+    # The opaque ids ride in response JSON even where ADK strips generated
+    # FunctionResponse ids from replayed history.
+    box.mark_placement_views_delivered({"adk-compare-1", "write-1"})
+    later = write(
+        [{"id": "s0.png", "position_mm": 3.0}],
+        tool_context=_ToolContext("write-2"),
+    )
+    assert later[TOOL_MEDIA_PARTS_KEY] == []
+    assert later["images_suppressed_seen"] == ["s0.png"]
+    assert state.by_id("s0.png").position_mm == 3.0
+
+
+def test_seen_placement_identity_includes_orientation_and_cutting_angles(
+    tmp_path: Path,
+):
+    from langslice.adk import TOOL_MEDIA_PARTS_KEY
+
+    state, _, box = _box(tmp_path, tasks=["position"])
+    compare = _tool(box, "compare_placement")
+    write = _tool(box, "set_positions")
+    compare(
+        [{"id": "s0.png", "positions_mm": [3.0]}],
+        tool_context=_ToolContext("compare-1"),
+    )
+    box.mark_placement_views_delivered({"compare-1"})
+
+    state.by_id("s0.png").flip = True
+    reoriented = write(
+        [{"id": "s0.png", "position_mm": 3.0}],
+        tool_context=_ToolContext("write-1"),
+    )
+    assert len(reoriented[TOOL_MEDIA_PARTS_KEY]) == 1
+    box.mark_placement_views_delivered({"write-1"})
+
+    state.cutting_angles_deg["pitch"] = 2.0
+    reangled = write(
+        [{"id": "s0.png", "position_mm": 3.0}],
+        tool_context=_ToolContext("write-2"),
+    )
+    assert len(reangled[TOOL_MEDIA_PARTS_KEY]) == 1
+
+
+def test_seen_placement_uses_the_actual_position_not_rounded_reply_text(
+    tmp_path: Path,
+):
+    from langslice.adk import TOOL_MEDIA_PARTS_KEY
+
+    _state, _, box = _box(tmp_path, tasks=["position"])
+    compare = _tool(box, "compare_placement")
+    write = _tool(box, "set_positions")
+    compare(
+        [{"id": "s0.png", "positions_mm": [3.0004]}],
+        tool_context=_ToolContext("compare-1"),
+    )
+    box.mark_placement_views_delivered({"compare-1"})
+
+    different = write(
+        [{"id": "s0.png", "position_mm": 3.00049}],
+        tool_context=_ToolContext("write-1"),
+    )
+    assert len(different[TOOL_MEDIA_PARTS_KEY]) == 1
+
+
+def test_only_a_full_atlas_bearing_compare_suppresses_the_write_image(
+    tmp_path: Path,
+):
+    from langslice.adk import TOOL_MEDIA_DELIVERY_ID_KEY, TOOL_MEDIA_PARTS_KEY
+
+    _state, _, box = _box(tmp_path, tasks=["position"])
+    compare = _tool(box, "compare_placement")
+    write = _tool(box, "set_positions")
+
+    section_only = compare(
+        [{"id": "s0.png", "positions_mm": [3.0]}],
+        mode="section",
+        tool_context=_ToolContext("section-only"),
+    )
+    assert TOOL_MEDIA_DELIVERY_ID_KEY not in section_only
+    after_section = write(
+        [{"id": "s0.png", "position_mm": 3.0}],
+        tool_context=_ToolContext("write-0"),
+    )
+    assert len(after_section[TOOL_MEDIA_PARTS_KEY]) == 1
+
+    zoomed = compare(
+        [{"id": "s1.png", "positions_mm": [3.5]}],
+        mode="overlay",
+        zoom=[0.0, 0.0, 0.5, 0.5],
+        tool_context=_ToolContext("zoomed"),
+    )
+    assert TOOL_MEDIA_DELIVERY_ID_KEY not in zoomed
+    after_zoom = write(
+        [{"id": "s1.png", "position_mm": 3.5}],
+        tool_context=_ToolContext("write-1"),
+    )
+    assert len(after_zoom[TOOL_MEDIA_PARTS_KEY]) == 1
+
+    full = compare(
+        [{"id": "s2.png", "positions_mm": [4.0]}],
+        mode="template",
+        tool_context=_ToolContext("full"),
+    )
+    assert full[TOOL_MEDIA_DELIVERY_ID_KEY] == "full"
+    box.mark_placement_views_delivered({"full"})
+    after_full = write(
+        [{"id": "s2.png", "position_mm": 4.0}],
+        tool_context=_ToolContext("write-2"),
+    )
+    assert after_full[TOOL_MEDIA_PARTS_KEY] == []
+
+
+def test_historical_delivery_token_cannot_promote_a_new_pending_call(
+    tmp_path: Path,
+):
+    from langslice.adk import TOOL_MEDIA_PARTS_KEY
+
+    _state, _, box = _box(tmp_path, tasks=["position"])
+    compare = _tool(box, "compare_placement")
+    compare(
+        [{"id": "s0.png", "positions_mm": [3.0]}],
+        tool_context=_ToolContext("new-call"),
+    )
+
+    # A replayed old response may still carry media, but its stable token is
+    # different and cannot make the new, possibly-pruned response look seen.
+    box.mark_placement_views_delivered({"old-call"})
+    result = _tool(box, "set_positions")(
+        [{"id": "s0.png", "position_mm": 3.0}],
+        tool_context=_ToolContext("write-1"),
+    )
+    assert len(result[TOOL_MEDIA_PARTS_KEY]) == 1
+
+
+def test_failed_compare_is_not_counted_as_seen_or_compared(
+    tmp_path: Path, monkeypatch,
+):
+    from langslice.adk import TOOL_MEDIA_PARTS_KEY
+
+    _state, _, box = _box(tmp_path, tasks=["position"])
+
+    def fail_render(*_args, **_kwargs):
+        raise RuntimeError("render broke")
+
+    monkeypatch.setattr("langslice.linear.toolbox.physical_views", fail_render)
+    result = _tool(box, "compare_placement")(
+        [{"id": "s0.png", "positions_mm": [3.0]}],
+        tool_context=_ToolContext("compare-1"),
+    )
+    assert result["error"] == "RENDER_FAILED"
+    assert "s0.png" not in box.compared
+    assert box.pending_placement_views == {}
+
+    written = _tool(box, "set_positions")(
+        [{"id": "s0.png", "position_mm": 3.0}],
+        tool_context=_ToolContext("write-1"),
+    )
+    assert len(written[TOOL_MEDIA_PARTS_KEY]) == 1
 
 
 def test_view_stack_orders_by_position_and_plots_it(tmp_path: Path):
@@ -386,6 +569,7 @@ def test_fit_affine_records_a_transform_and_refuses_damaged_sections(tmp_path: P
     )
     assert state.by_id("s0.png").transform["physical"]["rotation_deg"] is not None
     assert state.by_id("s1.png").transform is None
+    assert "changed" not in result  # fit results already identify every written transform
 
     named = _tool(box, "fit_affine")(["s1.png"], "silhouette")
     assert named["results"][0]["error"] == "DAMAGED"
@@ -416,7 +600,9 @@ def test_adjust_transform_writes_shows_and_undoes(tmp_path: Path):
     assert result["status"] == "ok"
     # The write and the look are one call: the result comes back as a picture.
     assert len(result[TOOL_MEDIA_PARTS_KEY]) == 1
-    assert result["changed"][0]["id"] == "s0.png"
+    assert result["written"] is True
+    assert result["id"] == "s0.png"
+    assert "changed" not in result  # the physical result is the canonical reply
     transform = state.by_id("s0.png").transform
     assert transform["kind"] == "interactive"
     assert len(transform["params"]) == 6
@@ -429,9 +615,123 @@ def test_adjust_transform_writes_shows_and_undoes(tmp_path: Path):
 
     # The same numbers again are a look, not a write: one undo clears the lot.
     again = adjust("s0.png", 5.0, 1.1, 1.0, 0.25, -0.1, "side_by_side")
-    assert len(again[TOOL_MEDIA_PARTS_KEY]) == 2 and again["changed"] == []
+    assert len(again[TOOL_MEDIA_PARTS_KEY]) == 2 and again["written"] is False
     assert _tool(box, "undo")()["status"] == "ok"
     assert state.by_id("s0.png").transform is None
+
+
+def test_adjust_transforms_batches_independent_sections_as_one_undo_step(
+    tmp_path: Path,
+):
+    from langslice.adk import TOOL_MEDIA_PARTS_KEY
+
+    state, _, box = _box(tmp_path, placed=True)
+    adjust_many = _tool(box, "adjust_transforms")
+    result = adjust_many(
+        [
+            {
+                "id": "s0.png",
+                "rotation_deg": 2.0,
+                "scale_x": 1.0,
+                "scale_y": 1.0,
+                "translate_x_mm": 0.1,
+                "translate_y_mm": 0.0,
+            },
+            {
+                "id": "s1.png",
+                "rotation_deg": -3.0,
+                "scale_x": 1.1,
+                "scale_y": 0.9,
+                "translate_x_mm": 0.0,
+                "translate_y_mm": -0.1,
+                "mode": "outlines",
+            },
+        ]
+    )
+    assert result["status"] == "ok"
+    assert [row["id"] for row in result["results"]] == ["s0.png", "s1.png"]
+    assert len(result[TOOL_MEDIA_PARTS_KEY]) == 2
+    assert len(box.undo_stack) == 1
+    assert state.by_id("s0.png").transform["physical"]["rotation_deg"] == 2.0
+    assert state.by_id("s1.png").transform["physical"]["rotation_deg"] == -3.0
+
+    assert _tool(box, "undo")()["status"] == "ok"
+    assert state.by_id("s0.png").transform is None
+    assert state.by_id("s1.png").transform is None
+
+
+def test_adjust_transforms_refuses_two_planned_edits_to_the_same_section(
+    tmp_path: Path,
+):
+    state, _, box = _box(tmp_path, placed=True)
+    base = {
+        "rotation_deg": 0.0,
+        "scale_x": 1.0,
+        "scale_y": 1.0,
+        "translate_x_mm": 0.0,
+        "translate_y_mm": 0.0,
+    }
+    result = _tool(box, "adjust_transforms")(
+        [{"id": "s0.png", **base}, {"id": "0", **base}]
+    )
+    assert result["error"] == "DUPLICATE_SLICE_IDS"
+    assert state.by_id("s0.png").transform is None
+    assert box.undo_stack == []
+
+
+def test_adjust_transforms_checkpoints_successes_when_another_render_fails(
+    tmp_path: Path, monkeypatch,
+):
+    import langslice.linear.toolbox as toolbox_module
+
+    state, ctx, box = _box(tmp_path, placed=True)
+    real_views = toolbox_module.physical_views
+    calls = 0
+
+    def fail_second(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise RuntimeError("second render broke")
+        return real_views(*args, **kwargs)
+
+    monkeypatch.setattr(toolbox_module, "physical_views", fail_second)
+    base = {
+        "rotation_deg": 0.0,
+        "scale_x": 1.0,
+        "scale_y": 1.0,
+        "translate_x_mm": 0.0,
+        "translate_y_mm": 0.0,
+    }
+    result = _tool(box, "adjust_transforms")(
+        [{"id": "s0.png", **base}, {"id": "s1.png", **base}]
+    )
+
+    assert [row["status"] for row in result["results"]] == ["ok", "error"]
+    assert state.by_id("s0.png").transform is not None
+    assert state.by_id("s1.png").transform is None
+    assert load_checkpoint(ctx.checkpoint_path).by_id("s0.png").transform is not None
+    assert len(box.undo_stack) == 1
+    _tool(box, "undo")()
+    assert state.by_id("s0.png").transform is None
+
+
+def test_adjust_transform_encoding_failure_does_not_mutate_state(
+    tmp_path: Path, monkeypatch,
+):
+    state, ctx, box = _box(tmp_path, placed=True)
+
+    def fail_encode(*_args, **_kwargs):
+        raise RuntimeError("encode broke")
+
+    monkeypatch.setattr("langslice.linear.toolbox.image_to_part", fail_encode)
+    result = _tool(box, "adjust_transform")(
+        "s0.png", 2.0, 1.0, 1.0, 0.0, 0.0
+    )
+    assert result["error"] == "RENDER_FAILED"
+    assert state.by_id("s0.png").transform is None
+    assert load_checkpoint(ctx.checkpoint_path) is None
+    assert box.undo_stack == []
 
 
 def test_submit_names_the_sections_with_no_transform(tmp_path: Path):
@@ -556,3 +856,10 @@ def test_the_playbook_puts_astras_method_in_the_job_statement(tmp_path: Path):
     state, _, spec = _stack(tmp_path, tasks=["position"], position=PositionSpec())
     plain = build_job_statement(spec, state, **kwargs)
     assert "complete hypothesis" not in plain and "Method:" in plain
+    method = plain.split("Method:", 1)[1]
+    assert "batch" not in method.lower()
+    assert "candidate atlas positions before writing" in method
+    assert "nominal interval stand in for a look" in method
+    assert "After writing, review the whole stack" in method
+    assert "side of any gap before reporting an interval break" in method
+    assert "Validate, then submit." in method

@@ -66,6 +66,8 @@ from google.adk.models.registry import LLMRegistry
 from google.genai import types
 from pydantic import Field, field_validator
 
+from langslice.adk import MEDIA_LAYOUT_ATTR
+
 logger = logging.getLogger(__name__)
 
 # --- constants ---------------------------------------------------------------
@@ -532,14 +534,20 @@ def _function_call_output(response: types.FunctionResponse) -> dict[str, Any]:
         "call_id": response.id or "",
         "output": output,
     }
-    if uris:
+    layout = getattr(response, MEDIA_LAYOUT_ATTR, None)
+    if uris or layout is not None:
         name = response.name or "tool"
         content: list[dict[str, Any]] = [{"type": "input_text", "text": output}]
-        for index, uri in enumerate(uris, start=1):
+        total, slots = layout if layout is not None else (len(uris), list(range(len(uris))))
+        surviving = dict(zip(slots, uris, strict=True))
+        for index in range(total):
             content.append(
-                {"type": "input_text", "text": f"{name} image {index} of {len(uris)}"}
+                {"type": "input_text", "text": f"{name} image {index + 1} of {total}"}
             )
-            content.append({"type": "input_image", "image_url": uri, "detail": "high"})
+            if index in surviving:
+                content.append({
+                    "type": "input_image", "image_url": surviving[index], "detail": "high",
+                })
         item["output"] = content
     return item
 

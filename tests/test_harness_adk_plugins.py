@@ -7,14 +7,16 @@ from google.adk.flows.llm_flows.functions import (
 from google.adk.models.llm_request import LlmRequest
 from google.genai import types
 
-from langslice.adk import TOOL_MEDIA_PARTS_KEY
+from langslice.adk import TOOL_MEDIA_DELIVERY_ID_KEY, TOOL_MEDIA_PARTS_KEY
 from langslice.adk.plugins import (
     DEFAULT_KEEP_IMAGES,
     DEFAULT_MAX_IMAGES,
     ModelCallPacingPlugin,
     RequestCapturePlugin,
+    ToolMediaDeliveryPlugin,
     WorkingSetImages,
 )
+from langslice.linear.session import build_plugins
 
 
 class _FakeTool:
@@ -102,6 +104,44 @@ def test_model_call_pacing_plugin_accepts_zero_delay():
     )
 
     assert result is None
+
+
+def test_tool_media_delivery_reports_only_tagged_media_that_survived_filtering():
+    delivered: list[set[str]] = []
+    plugin = ToolMediaDeliveryPlugin(delivered.append)
+    kept = _media_part(1)
+    assert kept.function_response is not None
+    kept.function_response.name = "compare_placement"
+    kept.function_response.response[TOOL_MEDIA_DELIVERY_ID_KEY] = "compare-1"
+    dropped = _media_part(1)
+    assert dropped.function_response is not None
+    dropped.function_response.name = "set_positions"
+    dropped.function_response.response[TOOL_MEDIA_DELIVERY_ID_KEY] = "write-1"
+    dropped.function_response.parts = None
+    # Historical untagged media is replayed too; it must not be guessed to
+    # belong to a new pending call merely because its tool name matches.
+    anonymous = _media_part(1)
+    assert anonymous.function_response is not None
+    anonymous.function_response.name = "compare_placement"
+    request = LlmRequest(
+        model="capture-model",
+        contents=[types.Content(role="user", parts=[kept, dropped, anonymous])],
+    )
+
+    asyncio.run(
+        plugin.before_model_callback(
+            callback_context=None,  # type: ignore[arg-type]
+            llm_request=request,
+        )
+    )
+
+    assert delivered == [{"compare-1"}]
+
+
+def test_media_delivery_tracker_runs_after_the_working_set_filter():
+    plugins = build_plugins("unit", tool_media_delivered=lambda _responses: None)
+    assert plugins[0].__class__.__name__ == "ContextFilterPlugin"
+    assert isinstance(plugins[1], ToolMediaDeliveryPlugin)
 
 
 def test_request_capture_plugin_redacts_inline_image_bytes(tmp_path):
@@ -220,6 +260,7 @@ def test_the_first_transform_call_cuts_the_positioning_images():
     from langslice.adk.plugins import STAGE_BOUNDARY_TOOLS
 
     assert "fit_affine" in STAGE_BOUNDARY_TOOLS
+    assert "adjust_transforms" in STAGE_BOUNDARY_TOOLS
     ws = WorkingSetImages()
 
     def _turn(name: str, n: int) -> types.Content:
@@ -245,5 +286,3 @@ def test_working_set_never_touches_the_seed_strip():
     assert _kept(out) == [0, 1]
     assert out[0] is contents[0]
     assert (out[0].parts or [])[1].inline_data is not None
-
-

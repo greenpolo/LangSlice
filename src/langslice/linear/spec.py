@@ -67,11 +67,9 @@ class TransformSpec:
     elastix: bool = False
 
 
-#: Run 4 on M04 (38 sections, 22 calls) spent 1.3M input tokens with an
-#: unbounded image history; a ChatGPT Plus window ended it. With the working
-#: set in ``langslice.adk.plugins`` the same run replays to ~525k, so this is
-#: a ceiling for a runaway, not a target.
-DEFAULT_MAX_INPUT_TOKENS = 6_000_000
+#: Optional per-request context safeguard, disabled unless a host sets it.
+#: Cumulative input measures repeated processing, not context-window size.
+DEFAULT_MAX_INPUT_TOKENS: int | None = None
 #: Share of the provider's usage window one run may spend, when the provider
 #: reports one (the OAuth lane's x-codex headers). Cached tokens are ~0.13x
 #: there, so this, not the raw input count, is the cost.
@@ -110,16 +108,20 @@ class JobSpec:
     #: After submit, ask the agent (same context) what tools it missed and
     #: record the answer on the state. One extra model call.
     debrief: bool = True
-    #: Hard stop on the run's summed input tokens. The OAuth lane resends the
-    #: whole history every call, so a long run grows quadratically; this ends
-    #: the session before the account does.
-    max_input_tokens: int = DEFAULT_MAX_INPUT_TOKENS
+    #: Completion retirement is opt-in until live quality/caching validation.
+    image_retention: str = "legacy"
+    #: Stop after an observed request exceeds this input count (cached tokens
+    #: included), with one grace call to submit. None disables the safeguard.
+    #: This is checked after usage arrives, not a preflight context guarantee.
+    max_input_tokens: int | None = DEFAULT_MAX_INPUT_TOKENS
     #: Hard stop on the usage-window share one run may spend, measured from
     #: the window's reading on the first call; ignored when the provider
     #: reports no quota.
     max_quota_percent: int = DEFAULT_MAX_QUOTA_PERCENT
 
     def __post_init__(self) -> None:
+        if self.image_retention not in {"legacy", "completion"}:
+            raise ValueError("image_retention must be legacy or completion")
         if self.plane not in PLANES:
             raise ValueError(f"Unsupported plane {self.plane!r}; expected one of {PLANES}")
         unknown = [task for task in self.tasks if task not in ALL_TASKS]

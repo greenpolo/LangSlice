@@ -101,6 +101,8 @@ class EngineContext:
     render_scale: dict[tuple[str, bool, int, int, str, bool], float] = field(
         default_factory=dict, repr=False
     )
+    #: Encoded, captioned reference images shared by the seed and comparison tools.
+    reference_parts: dict[tuple[Any, ...], types.Part] = field(default_factory=dict, repr=False)
     _atlas: Any = field(default=None, repr=False)
     _range: tuple[float, float] | None = field(default=None, repr=False)
     _pixel_sizes: dict[str, float | None] = field(default_factory=dict, repr=False)
@@ -332,6 +334,8 @@ async def run_session(
         progress=ctx.progress,
         max_input_tokens=spec.max_input_tokens,
         max_quota_percent=spec.max_quota_percent,
+        tool_media_delivered=box.mark_placement_views_delivered,
+        visual_context=box.visual_context,
     )
     if sink and sink[0]:
         state.debrief = sink[0]
