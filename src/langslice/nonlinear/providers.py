@@ -127,9 +127,17 @@ def _extract_inline_images(response: Any) -> list[Image.Image]:
             images.append(image.convert("RGB"))
             continue
 
+        # A text part has no picture to give; walking FORWARD over every part
+        # means asking that question of text parts too, and ``as_image()`` is
+        # not guaranteed to answer politely on one.
+        if getattr(part, "text", None):
+            continue
         as_image = getattr(part, "as_image", None)
         if callable(as_image):
-            image = cast(Image.Image, as_image())
+            try:
+                image = cast(Image.Image, as_image())
+            except Exception:  # noqa: BLE001 - a part that holds no image
+                continue
             if image is not None:
                 if hasattr(image, "load"):
                     image.load()
@@ -209,14 +217,18 @@ def _validate_requested_route(request_route: str | None) -> None:
 _GEMINI_IMAGE_SIZES = frozenset({"512", "512P", "512PX", "1K", "2K", "4K"})
 
 
-def _gemini_image_config(request: SegmentationGenerationRequest) -> Any:
+def _gemini_image_config(
+    request: SegmentationGenerationRequest,
+    response_modalities: tuple[str, ...] = ("IMAGE",),
+) -> Any:
     """The image config Gemini needs to return an aligned edit.
 
     Without it the model picks its own size and aspect (1K, whatever it
     likes), which the pipeline then stretches back onto the canvas. Pin the
     aspect to the nearest ratio the API accepts, and the resolution to the
-    caller's tier when one is given. ``response_modalities`` is IMAGE only:
-    adding TEXT silently caps output at 1K on these models.
+    caller's tier when one is given. ``response_modalities`` defaults to IMAGE
+    only: adding TEXT silently caps output at 1K on these models, and a
+    single-image request has nothing to gain from it.
     """
     types_mod = importlib.import_module("google.genai.types")
     w, h = request.slice_image.size
@@ -229,7 +241,7 @@ def _gemini_image_config(request: SegmentationGenerationRequest) -> Any:
         image_size=size if size in _GEMINI_IMAGE_SIZES else None,
     )
     return types_mod.GenerateContentConfig(
-        response_modalities=["IMAGE"],
+        response_modalities=list(response_modalities),
         image_config=image_config,
     )
 
@@ -285,7 +297,17 @@ def _generate_google_segmentation_images(
         *request.reference_images,
         request.prompt,
     ]
-    config = _gemini_image_config(request)
+    # A reply carrying two pictures is a multi-part reply, and these models
+    # narrate the pictures they emit, so IMAGE-only output is a plausible
+    # reason a two-image request comes back as one blended picture. TEXT in
+    # the modalities silently caps the image at 1K, so it is added only when
+    # the run already asks for that tier or lower.
+    modalities = (
+        ("TEXT", "IMAGE")
+        if (request.thinking_level or "").upper() in ("", "512", "512P", "512PX", "1K")
+        else ("IMAGE",)
+    )
+    config = _gemini_image_config(request, modalities)
     response = client.models.generate_content(  # type: ignore[attr-defined]
         model=model, contents=contents, config=config
     )
@@ -306,7 +328,12 @@ def _generate_google_segmentation_images(
             provider="google",
             model=model,
             route=route,
-            metadata={**metadata, "image_index": index, "images_returned": len(images)},
+            metadata={
+                **metadata,
+                "image_index": index,
+                "images_returned": len(images),
+                "response_modalities": list(modalities),
+            },
         )
         for index, image in enumerate(images)
     ]

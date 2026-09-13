@@ -338,7 +338,7 @@ def _despeckle_classified(classified_2d: np.ndarray, min_px: int = 16) -> np.nda
         labels, n = ndimage.label(out == uid)  # type: ignore[misc]
         if not n:
             continue
-        sizes = np.bincount(labels.ravel())
+        sizes = np.bincount(np.asarray(labels, dtype=np.intp).ravel())
         boxes = ndimage.find_objects(labels)
         for comp in np.nonzero(sizes[1:] < min_px)[0] + 1:
             # Inside the speck's own bounding box (grown by the 1px ring):
