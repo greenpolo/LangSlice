@@ -42,7 +42,7 @@ run can use:
 
 | tool | on when | does |
 | --- | --- | --- |
-| `status` | always | one row per section in corrected order: index, id, `position_mm`, `delta_to_next_mm` (signed), flip, rotation, damaged (+note), transform kind, `transform_iou`, `transform_mirrored`, caveats; plus the stack's cutting angles and interval breaks. Writes answer with only the rows they changed (`changed` + `n_sections`); this is the whole table |
+| `status` | always | one row per section in corrected order: index, id, `position_mm`, `delta_to_next_mm` (signed), flip, rotation, damaged (+note), transform kind, `transform_iou`, `transform_mirrored`, caveats; plus the stack's cutting angles and interval breaks. Ordinary writes answer with only the rows they changed; transform writes use their physical result instead. This is the whole table |
 | `validate` | always | runs the submit checks without submitting; writes nothing |
 | `view_slices` | always | up to 4 sections at higher resolution, rendered as corrected, each captioned with its index and filename |
 | `fetch_atlas` | always | up to 4 atlas sections, rendered at the stack's current cutting angles, each captioned with its position |
@@ -50,14 +50,15 @@ run can use:
 | `mark_damaged` / `unmark_damaged` | always | agent-internal classification: an outline an affine cannot bite on |
 | `orient_slices` | `reorder` | flip and quarter-turn per section (`--no-flip` refuses the flip half); returns the changed sections as they now stand |
 | `reorder_slices` / `move_slice` | `reorder` | full permutation (by filename) or one incremental move; corrected indices only, positions and transforms are kept |
-| `set_positions` | `position` | batch write, clamped to the atlas range; returns each newly placed or moved section over the atlas at its new position |
-| `compare_placement` | `position` | sections against the atlas at the candidate positions named for each (or its current one), up to 4 pairs, one image per pair, on one physical-scale canvas; `mode`, `zoom`, `template_opacity`, `outlines` as on `adjust_transform`; writes nothing |
+| `set_positions` | `position` | batch write, clamped to the atlas range; returns a placement image unless the model has already seen that exact section, position, orientation and cutting-angle combination in a full-canvas atlas-bearing view. Section-only and zoomed comparisons do not suppress the full placement. A compare and write requested together still return the write image because neither sibling result was visible when they were planned |
+| `compare_placement` | `position` | up to 4 candidate pairs (or current positions); `side_by_side` returns separate original section and atlas references, up to 8 images, full-view only, independently tissue-framed; other modes return one physical-canvas image per pair with `zoom`, `template_opacity`, `outlines`; writes nothing |
 | `view_stack` | `position` | one contact sheet of every section in the order of its written position over the atlas at that position, captioned with position and the distance to the next, plus a position-vs-index plot (two images); writes nothing |
 | `run_deepslice` | `--deepslice` | reports `UNAVAILABLE` until the optional extra lands |
 | `fit_position` | `--bayesian` | `oblique.fit_oblique` around a section's current position; writes nothing |
 | `set_cutting_angles` | `--angles` | stack-wide pitch/yaw; later fetches and previews follow |
-| `fit_affine` | `transform` | silhouette affine per section, written as its transform, with the overlap, the transform as the five physical parameters (`rotation_deg`, `scale_x`, `scale_y`, `translate_x_mm`, `translate_y_mm`, plus `shear`) about the canvas centre, and a physical-scale overlay (up to 16); `roi` ([x0, y0, x1, y1] of the canvas) fits only the tissue and atlas outline inside that box, which is how a damaged section is fitted — damage is refused without one; `--elastix`'s method is not wired yet |
+| `fit_affine` | `transform` | silhouette affine per section, written as its transform, with the overlap, the transform as the five physical parameters (`rotation_deg`, `scale_x`, `scale_y`, `translate_x_mm`, `translate_y_mm`, plus `shear`) about the canvas centre, and a physical-scale overlay for every successful fit; damaged sections are refused and `--elastix`'s method is not wired yet |
 | `adjust_transform` | `transform` | writes one positioned section's in-plane transform (rotation / per-axis scales / millimetre shifts, plus a note) and returns the section drawn under it with the atlas outlines at true physical scale; every call writes and the last one stays, the same parameters again only re-draw; `mode` (overlay, side_by_side, checkerboard, outlines, section, template, ab = new beside what it carried before), `zoom`, `template_opacity`, `pivot` (canvas, tissue, or [fx, fy] of the canvas) and `outlines` (all, outer, none) are the view and the centre it turns about; it does not change the section's flip or rotation |
+| `adjust_transforms` | `transform` | writes up to four independent sections as one undoable batch and returns one labelled feedback image per section. Each section may appear once; a follow-up that depends on the first picture uses `adjust_transform` after that picture arrives |
 | `landmarks` | `transform` | point pairs as fractions of the canvas: the residual in millimetres per pair, their RMS, the transform fitted to them (similarity from 2 pairs, affine from 3), and the pairs drawn on the view; writes nothing |
 | `submit` | always | ends the run; gated |
 
@@ -73,9 +74,10 @@ The job statement carries the job, the run's facts (`--fact`,
 `--hemisphere-cue`), one factual line per tool that exists, the hard
 constraints and, when positioning is on, a short `Method` section: place each
 section on its own evidence and compare candidate positions before writing,
-work in batches, review the whole stack afterwards, re-check both sides of a gap before
+review the whole stack afterwards, re-check both sides of a gap before
 reporting a break, validate, submit. No rules of thumb, no failure-mode
-warnings, no region names, and no tool payload carries an opinion.
+warnings, no region names, and no tool payload carries an opinion. The default
+Method does not prescribe batching; the model chooses how to group its work.
 
 `submit` is refused, with the numbers that refused it, when:
 
@@ -100,11 +102,14 @@ to the canvas. With no pixel size anywhere the run estimates one from the
 tissue's width against the atlas anatomy's and records
 `calibration.source = "estimated"` on the transform. The interactive preview,
 `landmarks` and `fit_affine` all draw the same picture: the transformed section under
-the atlas's family-level region outlines, each in its own color, with a 1 mm
+the atlas's family-level region outlines as neutral hairlines, with a 1 mm
 scale bar. The alignment parameters (`rotation_deg`, `scale_x`, `scale_y`,
 `translate_x_mm`, `translate_y_mm`) are stored alongside the host-facing six
 normalized numbers -- on every transform, silhouette fits included, so a fit
-and a hand alignment are the same five numbers.
+and a hand alignment are the same five numbers. Tool feedback returns those
+physical controls and the image; the normalized matrix, derived forms and full
+adjustment history remain in the checkpoint/local toolbox rather than being
+repeated into each later model turn.
 
 `--gates` refuses `set_positions` for a section not compared since its last
 write, and `submit` until `view_stack` has run after the last write;
@@ -129,15 +134,18 @@ it had -- the agent is re-seeded, not replayed. `--fresh` ignores the
 checkpoint and starts over. `--trace-dir PATH` writes a full-content JSONL
 trace of every agent session.
 
-Every model call prints a `[tokens]` line (input, cached, output, run input
-so far) and the run ends with a total. `--max-quota-percent N` (default 25) ends the session when this run's share
+Every model call prints a `[tokens]` line separating request input, cached
+input, output, cumulative input and peak request input. Cumulative input is
+repeated processing for cost accounting, not context size; cached input still
+occupies context. The run ends with totals and its peak request input.
+`--max-quota-percent N` (default 25) ends the session when this run's share
 of the provider's usage window reaches N (the OAuth lane's quota headers;
 cached input is ~0.13x there, so the window, not the raw count, is the
-cost); `--max-input-tokens N` (default
-`JobSpec.max_input_tokens`, 6M) ends the session when the run's summed
-input passes N: the OAuth lane resends the whole history every call, so a
-long run grows quadratically and would otherwise be ended by the account's
-usage window instead of by the job. Writes made before the stop are kept.
+cost); `--max-input-tokens N` (default disabled;
+`JobSpec.max_input_tokens=None`) stops after a single request reports more
+than N input tokens, including cached input. It is checked after the response,
+not a preflight guarantee. Both stops allow one grace call to submit; writes
+made before the stop are kept. No cumulative input-token stop is applied.
 
 ## Linear: Quick Affine
 

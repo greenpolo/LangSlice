@@ -73,12 +73,20 @@ The per-section interactive alignment is not a nested session: since
 2026-09-06 `adjust_transform` and `landmarks` sit in the main toolbox, so the
 agent aligns a section whenever it wants, in the same context that placed it.
 Each `adjust_transform` call writes the transform and returns the picture of
-the result, so acting and looking are one step.
+the result, so acting and looking are one step. `adjust_transforms` does this
+for up to four independent sections as one main-session call and one undo
+step; dependent refinements still wait for the first picture.
 
-Every write returns the picture of what it did: `orient_slices` the
-re-oriented sections, `set_positions` each section beside the atlas at its
-new position, `fit_affine` and `adjust_transform` the overlay. There is no
-preview-then-apply anywhere; every write is undoable instead.
+Picture-returning writes show what they did: `orient_slices` the re-oriented
+sections, `set_positions` placements not already seen at the same position,
+orientation and cutting angles in a full-canvas atlas-bearing view, and the
+transform tools their overlays. A section-only or zoomed comparison does not
+suppress the full placement. A compare and position write planned in the same
+model round both return their images because neither sibling result was
+visible when planned. There is no
+preview-then-apply anywhere; every write is undoable instead. Transform
+results send the useful physical parameters once; normalized matrices,
+derived representations and adjustment history stay local.
 
 ## Nonlinear: Image-Gen Registration
 
