@@ -23,11 +23,12 @@ previews, so the fan-out bought nothing and cost the shared reading. Later the
 same day preview and set became ONE tool, the computer-use pattern: every
 `adjust_transform` call writes the transform and returns the picture, so the
 agent always sees what it did and never spends a turn on a separate look or a
-separate commit. `copy_transform` went with it — re-sending the same call for
-another section is trivial for the agent. The same rule now holds for every
+separate commit. `adjust_transforms` batches up to four independent sections
+inside this same trajectory and one undo step; a dependent refinement waits
+for the first picture. The same rule now holds for every
 write outside the transform (audit, 2026-09-06): `orient_slices` returns the
-re-oriented sections, `set_positions` returns each written section beside the
-atlas at its new position, `fit_affine` always writes (no `apply` flag), and
+re-oriented sections, `set_positions` returns placements not already seen at
+the same geometry, `fit_affine` always writes (no `apply` flag), and
 `distribute_spacing` is gone — the agent can space a list of sections in its
 head and send one `set_positions`. Nothing previews; everything is undoable.
 
@@ -61,7 +62,23 @@ Nash kept five of its ten asks:
 Run 2's new asks, built: `view_stack` pastes the atlas at each placed
 section's position beneath it in the SAME image (one picture per section, not
 two — the image budget counts); `compare_placement` takes a batch of
-`{id, positions_mm}` entries, ≤4 pairs per call (one image each).
+`{id, positions_mm}` entries, ≤4 pairs per call. Since 2026-09-11,
+positioning `side_by_side` returns separate seed-style reference images:
+one unchanged section per distinct id, one atlas per pair (up to 8 images),
+mapped by zero-based `image_indexes` in each compared row. These are
+independently tissue-framed, not a common physical canvas; zoom is refused
+and outlines/opacity do not apply. Other modes still return one physical
+canvas per pair. Interactive-transform `side_by_side` is unchanged.
+Seed, comparison and atlas-fetch paths share encoded reference caches:
+section captions retain their first display index/flags across reorder,
+filenames are the stable identity, and orientation/preprocessing/size changes
+get distinct entries. Atlas entries include exact position, plane and angles.
+Reusing bytes avoids recomposition, not new-image input charges. An image
+replayed in its original unchanged history prefix is eligible for prompt-cache
+reuse; another copy appended after new conversation content is new input,
+even when byte-identical. Do not budget a cached-input discount for that copy
+merely because the seed contains it. Later requests can reuse its new prefix
+if history stays unchanged and the backend retains a matching cache entry.
 Rejected: labelled anatomy/landmarks, confidence and verification states,
 damage masks, an anatomy-based gap review, a validity-vs-verification audit.
 
@@ -95,7 +112,7 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
   caption). It takes either the five physical knobs or a ready 2x3 in the
   section's frame, so the interactive loop and `fit_affine` draw the same
   picture, and returns `(images, silhouette_iou)`. Its view controls:
-  `mode` (`overlay`, `side_by_side` — one stitched image, `checkerboard`,
+  `mode` (`overlay`, `side_by_side` — two physical images, `checkerboard`,
   `outlines` — atlas lines plus the section's own silhouette in a second grey
   on black — and the line-free `section` / `template`), `zoom` ([x0, y0, x1, y1] fractions of the CANVAS, cropped BEFORE
   the resize so it magnifies, with the bar redrawn for the new µm/px),
@@ -125,10 +142,13 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
   resolved pivot), `adjust_transform` (the write AND the look, any positioned
   section; `mode="ab"` draws the new parameters beside what the section
   carried before the call, a silhouette fit included; the same numbers again
-  re-draw without an undo step) and `landmarks` (read-only).
-  `transform_history` on the ToolBox is per section and lasts the whole run. `commit(*touched)` is what every write answers with: the status rows of
+  re-draw without an undo step), `adjust_transforms` (up to four distinct
+  sections, one feedback image each) and `landmarks` (read-only).
+  `transform_history` on the ToolBox is per section and lasts the whole run,
+  but is not repeated in tool replies. `commit(*touched)` is what ordinary writes answer with: the status rows of
   the sections it touched plus `n_sections`, never the whole table —
-  `status`, `undo`, `redo` and `submit` are what return all the rows.
+  transform writes return their canonical physical result instead; `status`,
+  `undo`, `redo` and `submit` are what return all the rows.
 - `transform.py` — the silhouette fit and the arithmetic the interactive tools
   run on, both in PHYSICAL space. `fit_silhouette` matches the whole tissue
   outline against the whole atlas outline (`affine.silhouette_affine`) and
@@ -151,15 +171,38 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
 - `session.py` — the ADK agent builder, the plugins, the loop, and
   `TokenTally`: every call's usage is printed and traced, and
   `JobSpec.max_quota_percent` (25) ends the session when this run's share
-  of the provider's usage window reaches it, and `max_input_tokens` (2M) is
-  the raw safety. Run 4 on M04 spent 1.3M input tokens (93k on the last
-  call, 170 images resent) and a Plus window ended it; never again.
+  of the provider's usage window reaches it. Optional `max_input_tokens`
+  (default `None`) checks one request's reported input, including cached
+  tokens, after its response. It is not a cumulative spending guard or a
+  preflight size guarantee. Logs separate cumulative input from peak request
+  input; 1.3M processed over a run does not mean a 1.3M-token context.
 - `engine.py` — `EngineContext`, `ingest`, `apply_host_inputs`, `run_session`,
   `emit_results`, and `run(spec)`. No post pass: the session is the whole run.
 - `deepslice.py`, `trace.py` — the DeepSlice seam (reports `UNAVAILABLE`) and
   the full-content JSONL session trace.
 
 ## Context and tokens (2026-09-09)
+
+**Opt-in completion lifecycle (2026-09-12).** `JobSpec.image_retention` /
+`--image-retention completion` replaces `WorkingSetImages` with the
+session-local `visual_context.py` registry. Default `legacy` is unchanged.
+`accept_views(slice_ids, stage)` accepts current full views included in an
+earlier model request, then retires superseded media for those sections;
+`submit` accepts all final views. Completion-mode validate/submit require
+this evidence, which is an additional inspection condition, not a prescribed
+stage or batch order. Interleaving and reopening remain unrestricted.
+The registry protects seed images, accepted overlays, and the corrected-section
+companion of an accepted separate atlas comparison. It never retires unseen
+sibling results; shared atlas/stack evidence waits for acceptance of all
+sections in the final enabled task. After submit succeeds, completion mode
+refuses subsequent tools, including queued sibling writes; unread sibling
+images remain rather than being removed before delivery.
+Request copies lose only attachments, with original slot labels preserved by
+the OAuth serializer; historical text and reasoning are not summarized or
+rewritten. Retirement and current-image events are traced separately.
+No legacy image-count fallback runs in completion mode. Cache reuse and cost
+remain to be measured; unchanged bytes alone do not guarantee a cache lookup.
+Full design and rollout conditions: `docs/visual_context_design.md`.
 
 The OAuth lane resends the whole history on every call (the Codex backend
 refuses stored responses; the Codex CLI does the same). What a run COSTS is
@@ -217,14 +260,25 @@ text plus prefix breaks. Design rules that follow:
 - **Rows are compact** (`render.compact_rows`): null and empty fields are
   absent from every tool payload (a position-only run carried null transform
   fields on every row of every result, a third of the paid text).
-- **The budget is the window.** `session.py TokenTally` prints every call's
-  usage with `paid~` (uncached + 0.13 x cached) and, on the OAuth lane, the
+- **A placement picture is sent once per geometry.** Successful
+  `compare_placement` and `set_positions` renders are associated with their
+  function result and become seen only when their media survives filtering
+  into a later model request. `set_positions` suppresses a picture only when
+  the same section, position, orientation and cutting angles were already
+  seen in a full-canvas atlas-bearing view; section-only, zoomed and failed
+  renders do not count, and same-round compare/write siblings both return
+  images.
+- **Cost and context are separate.** `session.py TokenTally` prints every call's
+  input, cumulative input, peak request input and the legacy input-only
+  `paid~` proxy (uncached + 0.13 x cached; excludes output), plus, on the OAuth lane, the
   window percent this run has used; `JobSpec.max_quota_percent` (25,
   `--max-quota-percent`) ends the session when the run's share of the window
   reaches it, after ONE grace call that asks for `submit` (runs 5 and 8
   both died on `validate` with a 500-token submit next). `JobSpec.
-  max_input_tokens` (2M, `--max-input-tokens`) stays as the raw safety for
-  lanes that report no quota. A budget stop never breaks out of a turn:
+  max_input_tokens` (`None` by default, `--max-input-tokens`) instead limits
+  one request's reported input, cached included, after its response, with
+  one grace submit call. Repeated below-limit requests never trip it, even
+  if cumulative input exceeds the limit. A budget stop never breaks out of a turn:
   the pending tool call is answered first, so the history stays
   well-formed for the grace call.
 - **Several tool calls per model turn** (`parallel_tool_calls: true` on the
@@ -238,9 +292,11 @@ Not adopted, on Nash's call: server-side compaction (for heavy text; we are
 light text, heavy image) and a `Memorize` action (replayed reasoning carries
 facts forward already; Codex's `notes` exist to cross a hard context-window
 reset, which our runs never hit). The WebSocket transport is a latency lever
-only. Prefix caching is what makes "re-send the same image" cheap; there is
-no content-addressed reuse, so an overlay composed onto a cached picture is
-a new picture at full price, which at 512 px is ~260 tokens.
+only. Prefix caching makes replay of unchanged history cheap, not arbitrary
+re-insertion of the same image later. Neither a byte-identical appended copy
+nor a new overlay should be budgeted as a cache hit on arrival. The public
+OpenAI prompt-caching guide documents prefix reuse, not content-addressed
+image discounts; subscription-backend usage remains the measurement source.
 
 ## Rules that are not negotiable here
 
@@ -265,7 +321,7 @@ submitted at call 7 (median 1.2 mm, 0 of 36 within 0.25); Gemini 3.8 Flash
 made 18 compares in 30 calls and never wrote. Astra passes the gates
 without noticing. Off by default so the Astra runs stay comparable.
 
-**Lean harness.** Tools return data. No interpretation in any payload. The job statement carries the job, the facts, one line per tool, the constraints and — when positioning is on — a short `Method` section (Nash, 2026-09-07): place each section on its own evidence and compare candidates before writing, work in batches (several sections per compare or write call — the "one at a time" wording went on 2026-09-09, it bought 39 calls on M11), review the whole stack afterwards, re-check both sides of a gap before reporting a break, validate, submit. Asked from its own run-3 trace, Astra said it skipped `compare_placement` and `view_stack` by oversight, not wording, and asked for exactly this. Still out: rules of thumb, failure-mode warnings and region names (the same text runs against every BrainGlobe atlas, species and plane). Full-trace forensics found every major
+**Lean harness.** Tools return data. No interpretation in any payload. The job statement carries the job, the facts, one line per tool, the constraints and — when positioning is on — a short `Method` section (Nash, 2026-09-07): place each section on its own evidence and compare candidates before writing, review the whole stack afterwards, re-check both sides of a gap before reporting a break, validate, submit. The default Method no longer prescribes batching (2026-09-11): grouping work is the model's choice; batch-capable tools remain available. The opt-in cheap-model playbook is unchanged. Asked from its own run-3 trace, Astra said it skipped `compare_placement` and `view_stack` by oversight, not wording, and asked for exactly this. Still out: rules of thumb, failure-mode warnings and region names (the same text runs against every BrainGlobe atlas, species and plane). Full-trace forensics found every major
 benchmark failure tracking back to advice the harness injected; a per-slice
 estimation worker that ate 82% of the wall-clock carried ~no signal and was
 deleted; a landmark-tool pass for POSITION estimation benchmarked WORSE and was

@@ -88,8 +88,9 @@ The user's image files are never modified. Everything is a proposal as data.
 Conventions, applied to every tool: sections are addressed by filename or
 corrected index; every write returns the rows it changed (`changed` plus
 `n_sections`; `status` is the whole table, and `undo`/`redo`/`submit` answer
-with it too); every write is undoable; every write checkpoints; fits have a
-preview form that computes without writing. Tools report data. No advice, no interpretation, no strategy
+with it too), except transform writes whose physical result already identifies
+what changed; every write is undoable; every write checkpoints; fits write
+their result. Tools report data. No advice, no interpretation, no strategy
 in any payload or prompt (see `lean-harness` history in `linear/CLAUDE.md`).
 
 | tool | task gate | does |
@@ -104,15 +105,17 @@ in any payload or prompt (see `lean-harness` history in `linear/CLAUDE.md`).
 | `reorder_slices(new_order)` | reorder | full permutation, by filename (never by corrected index: the index is what it changes); changes corrected indices only, positions and transforms are kept. |
 | `move_slice(id, after)` | reorder | incremental move; same rule. |
 | `mark_damaged([{id, note}])` / unmark | always | agent-internal classification. |
-| `set_positions([{id, position_mm}])` | position | batch write, clamped to the atlas range; returns one image per newly placed or moved section: the section over the atlas section at the position it was given. |
-| `compare_placement([{id, positions_mm?}], mode, zoom, template_opacity, outlines)` | position | each section on one physical-scale canvas with the atlas at each of its candidate positions (≤4 pairs per call, one image per pair; no positions = its current one), in any `VIEW_MODES` view with the outlines over it. Writes nothing. |
+| `set_positions([{id, position_mm}])` | position | batch write, clamped to the atlas range; returns a placement image only when that exact section, position, orientation and cutting-angle combination has not already reached the model in a full-canvas atlas-bearing view. A compare and write planned in the same model round both return their images. |
+| `compare_placement([{id, positions_mm?}], mode, zoom, template_opacity, outlines)` | position | ≤4 candidate pairs; no positions = current position. `side_by_side` returns separate original section and atlas reference images (one section per distinct id, one atlas per pair; ≤8 images), independently tissue-framed, full-view only. Other modes return one physical-canvas image per pair. Writes nothing. |
 | `view_stack()` | position | one contact sheet of every section in the order of its written position, each over the atlas at its position and captioned with index, filename, position and the distance to the next, plus a plot of position against corrected index (damaged in red): two images. Writes nothing. |
 | `run_deepslice(ids?, allow_angle_change, keep=[ids])` | position.deepslice | positions (+ angles) for undamaged sections; UNAVAILABLE unless installed and plane/atlas supported. |
 | `fit_position(id, window_mm, angles?)` | position.bayesian | `oblique.fit_oblique` at the section's current position: best position (and angles) with score; writes nothing. |
 | `set_cutting_angles(pitch_deg, yaw_deg)` | transform.angles | stack-wide; subsequent atlas fetches and fits use them. |
-| `fit_affine(ids, method=silhouette\|elastix)` | transform | per-section in-plane affine against its atlas section, written as the section's transform; returns iou, the transform as the same five `physical` knobs `adjust_transform` takes (plus `shear`, about the canvas centre) and a captioned overlay panel per section (≤16). Damaged sections are refused. |
+| `fit_affine(ids, method=silhouette\|elastix)` | transform | per-section in-plane affine against its atlas section, written as the section's transform; returns iou, the transform as the same five `physical` knobs `adjust_transform` takes (plus `shear`, about the canvas centre) and a captioned overlay panel for every successful fit. Damaged sections are refused. |
 | `adjust_transform(id, rotation_deg, scale_x, scale_y, translate_x_mm, translate_y_mm, mode, zoom, template_opacity, pivot, outlines, note)` | transform | writes `{"kind": "interactive", ...}` on ANY positioned section (`NO_POSITION` otherwise) and returns it drawn under those parameters with the atlas outlines at true physical scale. The last call stays; the same parameters again only re-draw (no undo step). Undoable and checkpointed like every other write. |
+| `adjust_transforms(entries)` | transform | the same write-and-look action for up to four independent sections, one labelled feedback image each and one undo step. A section may appear once; a dependent refinement waits for its first result and uses `adjust_transform`. |
 | `landmarks(id, pairs, params...)` | transform | point pairs (section point, atlas point) as fractions of the canvas: the residual per pair in mm, their RMS, the transform fitted to them (similarity from 2, affine from 3) in the same physical units, and the pairs drawn on the view. Writes nothing. |
+| `accept_views(slice_ids, stage)` | completion image retention, position or transform | accepts full current views delivered in a prior model request; retires superseded images for the selected sections without changing scientific state. Grouping and revisits are unrestricted. |
 | `submit(summary, notes, interval_breaks)` | always | ends the run; gated (below). |
 
 `fetch_atlas` and `view_slices` frame tissue the same way so apparent scale is
@@ -148,15 +151,38 @@ state it had (the agent is re-seeded, not replayed). `LANGSLICE_TRACE_DIR`
 records the full trajectory (`trace.py`, unchanged).
 
 Context is bounded, because the whole history is resent on every call: tool
-images live in a working set (`WorkingSetImages`, 48 high / 16 low, trimmed
-in batches so the cached prefix stays stable; the seed strip's images go with
-the first trim), every call's token usage is printed and traced, and
+images live in a working set (`WorkingSetImages`, 256 high / 128 low, trimmed
+in batches so the cached prefix stays stable; the seed strip is never
+trimmed), every call's token usage is printed and traced, and
 `JobSpec.max_quota_percent` ends a run whose share of the provider's usage
-window reaches it; `JobSpec.max_input_tokens` is the raw safety.
+window reaches it. Optional `JobSpec.max_input_tokens` (default `None`)
+checks a single request's reported input, including cached tokens, after the
+response and allows one grace submission call if exceeded. It does not limit
+cumulative usage. Logs report cumulative input for cost and peak request input
+for context pressure separately.
+
+The opt-in successor (`--image-retention completion`) is documented in
+[Visual context lifecycle](visual_context_design.md):
+preserve the seed and all text/reasoning, retain intermediate images during
+active work, and retire superseded images in batches after acceptance while
+keeping final overlays (or final comparison bundles for position-only work).
+It replaces, rather than supplements, the legacy image-count and stage cuts.
+The model may accept any group with `accept_views`, interleave work, and
+reopen decisions. `submit` accepts all final views; completion-mode validation
+requires those full current views to have appeared in a prior model request.
+This is an additional inspection requirement, not a prescribed stage order.
+Legacy remains the default while transport, cost, and quality are validated.
+See the linked document for cache limitations and the distinction between
+testing this workflow bundle and isolating image retention alone.
 
 There is ONE session. The alignment tools live in it like every other tool, so
 a section's preview history, its atlas fetches and the stack reading that
 produced its position are all in one context.
+
+Successful placement renders are associated with their function-call result
+and become "seen" only when their media survives filtering into a later model
+request. This keeps same-round parallel compare/write calls honest, does not
+count failed renders, and works across providers that omit generated call ids.
 
 ## CLI
 
@@ -170,6 +196,7 @@ langslice linear run FOLDER [--tasks reorder,position,transform]
     [--angles] [--elastix]
     [--fact TEXT ...] [--positions JSON] [--order JSON]
     [--out PATH] [--fresh] [--trace-dir PATH]
+    [--image-retention legacy|completion]
 langslice linear quick-affine ...   (unchanged)
 ```
 
@@ -292,6 +319,10 @@ its five asks are in:
   busy". The caption names the layer when it is not `all`.
 - concise writes: a write answers with the rows it changed, not the whole
   table ("on a large stack, concise change reports would be easier to review").
+- concise transform feedback: the full adjustment history, normalized matrix
+  and derived representations stay in local state; each result sends the
+  physical controls and image once. A silhouette fit likewise does not repeat
+  its result in a generic changed row.
 - confidence is GONE, on Nash's call: nothing downstream reads it, and the
   reasoning lives in `adjust_transform`'s note.
 
@@ -299,14 +330,11 @@ Region acronyms on the outlines were asked for and deliberately NOT built
 (Nash: "it has no use for this"), and neither was damage masking — after the
 overlap number left the payload there is no metric a damage mask would clean.
 
-**What the payload carries.** Beside the params, their decomposition and the
-calibration: `translate_px` (the
-entered millimetres as canvas pixels, plus `px_per_mm`, so mm↔px is explicit),
-`history` (every parameter set previewed in this session, oldest first) and
-`view` (the mode and zoom box the image was drawn with). `decompose_affine`
-names its shifts `translate_x_frac` / `translate_y_frac`: they are fractions of
-width and height, and one session read 0.0075 as millimetres because the old
-name did not say so.
+**What the payload carries.** The physical controls, whether they changed
+state, the requested view and the labelled image. The checkpoint still carries
+the normalized matrix, calibration and note, and the toolbox keeps the full
+per-section adjustment history, but those derived and accumulated forms are
+not repeated into every later model turn.
 
 **Rock-solid means tested.** Geometry tests pin: a 1 mm translation moves the
 section by exactly 1000/µm-per-px pixels; an atlas of known physical width
