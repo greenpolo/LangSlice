@@ -1,9 +1,9 @@
 """The one toolbox: every tool the linear agent can be given, gated by the spec.
 
 Conventions, applied to every tool: sections are addressed by filename or
-corrected index; every write returns the rows it changed (``status`` is the
-whole table); every write is undoable; every write checkpoints; fits have a
-form that computes without writing.
+corrected index; ordinary writes return the rows they changed (``status`` is
+the whole table); every write is undoable and checkpoints. Transform writes
+return their physical result and omit a generic row that would repeat it.
 
 Tools report data. No advice, no interpretation, no strategy in any payload —
 every benchmark failure worth tracing came back to harness text telling the
@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Any, cast
 import numpy as np
 from google.genai import types
 
-from langslice.adk import TOOL_MEDIA_PARTS_KEY
+from langslice.adk import TOOL_MEDIA_DELIVERY_ID_KEY, TOOL_MEDIA_PARTS_KEY
 from langslice.affine import (
     denormalized_affine,
     normalized_physical_affine,
@@ -31,6 +31,7 @@ from langslice.affine import (
 )
 from langslice.linear.atlas_fetch import (
     ATLAS_LONG_EDGE,
+    atlas_part,
     atlas_section,
     atlas_sized,
     make_fetch_atlas,
@@ -45,13 +46,13 @@ from langslice.linear.render import (
     VIEW_LONG_EDGE,
     VIEW_MODES,
     CanvasGeometry,
-    beside,
     canvas_geometry,
     caption,
     compact_rows,
     image_to_part,
     physical_views,
     pivot_on_canvas,
+    reference_slice_part,
     render_slice,
     spacing_plot,
     stack_sheet,
@@ -68,6 +69,7 @@ from langslice.linear.transform import (
     physical_params,
     similarity_fit,
 )
+from langslice.linear.visual_context import EVIDENCE_KEY, VisualContext, VisualEvidence
 from langslice.space import Plane
 
 if TYPE_CHECKING:  # ponytail: import cycle — engine builds the toolbox
@@ -75,11 +77,9 @@ if TYPE_CHECKING:  # ponytail: import cycle — engine builds the toolbox
 
 logger = logging.getLogger(__name__)
 
-#: Sections one ``view_slices`` call may return; the same bound applies to
-#: every image-returning tool (see :data:`MAX_IMAGES_PER_CALL`).
+#: Sections one ``view_slices`` call may return, or candidate pairs per compare.
+#: Separate reference comparisons return up to two images per candidate pair.
 MAX_VIEW_SLICES = MAX_IMAGES_PER_CALL
-
-#: Overlay panels one ``fit_affine`` call may attach.
 
 #: Undo snapshots kept in memory. Not persisted: a resumed run starts from the
 #: checkpoint, which is the state as it stood.
@@ -111,8 +111,7 @@ IDENTITY_PARAMS: dict[str, float] = {
     "translate_y_mm": 0.0,
 }
 
-
-def _serialized(tool: Any, lock: threading.Lock) -> Any:
+def _serialized(tool: Any, lock: threading.Lock, visual: VisualContext | None = None) -> Any:
     """*tool* under *lock*: one state, one writer at a time.
 
     ADK runs the several tool calls of one model turn concurrently (sync
@@ -124,7 +123,15 @@ def _serialized(tool: Any, lock: threading.Lock) -> Any:
     @functools.wraps(tool)
     def run(*args: Any, **kwargs: Any) -> Any:
         with lock:
-            return tool(*args, **kwargs)
+            # Concurrent sibling calls can acquire this lock after submit.
+            # Completion acceptance closes the session: nothing later may
+            # change its scientific state or final visual evidence.
+            if visual is not None and visual.state.submitted:
+                return {"status": "refused", "error": "ALREADY_SUBMITTED"}
+            result = tool(*args, **kwargs)
+            if visual is not None and isinstance(result, dict):
+                visual.register(result)
+            return result
 
     return run
 
@@ -138,16 +145,61 @@ class ToolBox:
     undo_stack: list[dict[str, Any]] = field(default_factory=list)
     redo_stack: list[dict[str, Any]] = field(default_factory=list)
     #: Every parameter set `adjust_transform` was given this run, per section
-    #: id, oldest first.
+    #: id, oldest first. Kept host-side; the growing history is not repeated
+    #: in every tool result because it is already present in the trajectory.
     transform_history: dict[str, list[dict[str, float]]] = field(default_factory=dict)
     #: Positions each section was compared at since its last write, and
     #: whether `view_stack` has run since the last write (the gates).
     compared: dict[str, set[float]] = field(default_factory=dict)
+    #: Placement pictures successfully produced by a tool call but not yet
+    #: carried into a later model request. A compare and a write requested in
+    #: the same model turn therefore cannot mistake one another for a view the
+    #: model has already received.
+    pending_placement_views: dict[
+        str, set[tuple[str, float, bool, int, float, float]]
+    ] = field(default_factory=dict)
+    #: Placement pictures delivered in an earlier model request. This is
+    #: deliberately a record of what the model has seen, not a render cache.
+    seen_placement_views: set[tuple[str, float, bool, int, float, float]] = field(
+        default_factory=set
+    )
     reviewed: bool = False
+    visual_context: VisualContext | None = None
 
     @property
     def names(self) -> list[str]:
         return [tool.__name__ for tool in self.tools]
+
+    def record_placement_view(
+        self,
+        tool_context: Any,
+        key: tuple[str, float, bool, int, float, float],
+    ) -> str:
+        """Associate a successfully rendered placement with its tool call."""
+        call_id = str(getattr(tool_context, "function_call_id", None) or "__direct__")
+        self.pending_placement_views.setdefault(call_id, set()).add(key)
+        return call_id
+
+    def mark_placement_views_delivered(self, delivery_ids: set[str]) -> None:
+        """Promote pictures whose media survived into a model request.
+
+        The id is also embedded in ordinary function-response JSON because
+        some ADK backends strip generated ``adk-*`` FunctionResponse ids.
+        Historical replay is then harmless: an old result cannot match a new
+        pending call merely because both came from the same tool.
+        """
+        for delivery_id in delivery_ids:
+            self.seen_placement_views.update(
+                self.pending_placement_views.pop(delivery_id, set())
+            )
+
+    def begin_model_call(self) -> None:
+        """Promote pictures from direct calls (a convenience for hosts/tests)."""
+        if self.visual_context is not None:
+            self.visual_context.mark_all_delivered()
+        direct = self.pending_placement_views.pop("__direct__", None)
+        if direct is not None:
+            self.seen_placement_views.update(direct)
 
 
 @dataclass(frozen=True)
@@ -403,6 +455,12 @@ def submit_errors(
 def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox:
     """Build the tools this run's spec switches on, closed over *state*."""
     box = ToolBox()
+    if spec.image_retention == "completion":
+        box.visual_context = VisualContext(
+            state, box.seen_placement_views,
+            final_stage="transform" if spec.has("transform") else "position",
+        )
+    visual = box.visual_context
     pos_lo, pos_hi = ctx.position_range
 
     # --- shared plumbing ------------------------------------------------
@@ -443,6 +501,19 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         """Checkpoint the write and answer with the rows it changed."""
         save_checkpoint(state, ctx.checkpoint_path)
         return {"status": "ok", **changed(list(touched))}
+
+    def placement_view_key(
+        record: SliceState, position_mm: float
+    ) -> tuple[str, float, bool, int, float, float]:
+        """Identity of one placement picture from the model's perspective."""
+        return (
+            record.id,
+            float(position_mm),
+            bool(record.flip),
+            int(record.rotation_deg),
+            float(state.pitch_deg),
+            float(state.yaw_deg),
+        )
 
     def resolve_many(refs: list[Any]) -> tuple[list[SliceState], list[str]]:
         known: list[SliceState] = []
@@ -524,6 +595,9 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                 "'<corrected index>: <filename>' in its top-left corner."
             ),
             TOOL_MEDIA_PARTS_KEY: parts,
+            **({EVIDENCE_KEY: [
+                visual.evidence(record, "reference", eligible=False) for record in known
+            ]} if visual is not None else {}),
         }
 
     def note(text: str) -> dict[str, Any]:
@@ -613,6 +687,23 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             **commit(*[record.id for record in known]),
         }
 
+    def accept_views(slice_ids: list[str], stage: str) -> dict[str, Any]:
+        """Accept inspected current images and retire superseded attachments.
+
+        Args:
+            slice_ids: Section filenames or corrected indices accepted together.
+            stage: position for comparisons, transform for final overlays.
+
+        Requires full views delivered in an earlier model round. Retains all
+        text and reasoning; does not change positions or transformations.
+        """
+        if visual is None or stage not in {"position", "transform"} or not spec.has(stage):
+            return {"status": "error", "error": "BAD_STAGE"}
+        records, unknown = resolve_many(slice_ids)
+        if unknown or not records:
+            return {"status": "error", "error": "UNKNOWN_SLICE_IDS", "unknown": unknown}
+        return visual.accept([record.id for record in records], stage)
+
     def submit(
         summary: str,
         notes: list[str],
@@ -643,6 +734,11 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                 "detail": "view_stack has not run since the last set_positions write",
             }
 
+        if visual is not None and (spec.has("transform") or spec.has("position")):
+            stage = "transform" if spec.has("transform") else "position"
+            accepted = visual.accept([record.id for record in state.slices], stage, final=True)
+            if accepted["status"] != "ok":
+                return accepted
         snapshot()
         state.interval_breaks = sorted(set(breaks))
         # Model output is a trust boundary: a malformed submission must not
@@ -686,7 +782,16 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                 breaks.append(int(raw))
             except (TypeError, ValueError):
                 continue
-        return submit_errors(state, spec, breaks) or {
+        refusal = submit_errors(state, spec, breaks)
+        if (refusal is None and visual is not None
+                and (spec.has("transform") or spec.has("position"))):
+            stage = "transform" if spec.has("transform") else "position"
+            _, missing = visual.candidates([record.id for record in state.slices], stage)
+            if missing:
+                refusal = {
+                    "status": "refused", "error": "FINAL_VIEWS_NOT_SEEN", "slice_ids": missing,
+                }
+        return refusal or {
             "status": "ok",
             "would_submit": True,
         }
@@ -768,12 +873,17 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             applied.append(record.id)
         parts: list[types.Part] = []
         failed: list[dict[str, str]] = []
+        orientation_evidence: list[VisualEvidence] = []
         for name in applied[:MAX_VIEW_SLICES]:
             record = state.by_id(name)
             if record is None:
                 continue
             try:
                 parts.append(section_part(record))
+                if visual is not None:
+                    orientation_evidence.append(
+                        visual.evidence(record, "reference", eligible=False)
+                    )
             except Exception as exc:
                 failed.append({"id": name, "message": str(exc)})
         return {
@@ -790,6 +900,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             ),
             "render_failed": failed,
             TOOL_MEDIA_PARTS_KEY: parts,
+            **({EVIDENCE_KEY: orientation_evidence} if visual is not None else {}),
         }
 
     def reorder_slices(new_order: list[str]) -> dict[str, Any]:
@@ -863,7 +974,9 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
 
     # --- position -------------------------------------------------------
 
-    def set_positions(entries: list[dict[str, Any]]) -> dict[str, Any]:
+    def set_positions(
+        entries: list[dict[str, Any]], tool_context: Any = None
+    ) -> dict[str, Any]:
         """Write positions for one or more sections, and show each placement.
 
         Positions are in atlas-native millimetres along the slicing axis. A
@@ -874,16 +987,17 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
 
         Returns:
             What was written, what was clamped, the rows it changed, and one
-            image per section that is newly placed or moved by an interval or
-            more: the section as corrected over the atlas section at the
-            position it was given, both tissue-framed, labelled in the
+            image per placement not already seen in a full-canvas,
+            atlas-bearing view with this orientation and these cutting
+            angles: the section as corrected over the atlas section at the
+            position it was given, both tissue-framed and labelled in the
             top-left corner.
         """
         if not entries:
             return {"status": "error", "error": "BAD_ARGS"}
         before = state.to_dict()
         written: list[dict[str, Any]] = []
-        moved_from: dict[str, float | None] = {}
+        written_positions: list[float] = []
         clamped: list[dict[str, Any]] = []
         unknown: list[str] = []
         rejected: list[dict[str, Any]] = []
@@ -920,9 +1034,9 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                         "clamped_to_mm": round(value, 3),
                     }
                 )
-            moved_from[record.id] = record.position_mm
             record.position_mm = value
             written.append({"id": record.id, "position_mm": round(value, 3)})
+            written_positions.append(value)
             box.compared.pop(record.id, None)
             box.reviewed = False
 
@@ -943,22 +1057,27 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         }
         if clamped:
             result["atlas_range_mm"] = [round(pos_lo, 3), round(pos_hi, 3)]
-        # A picture only where the position is new or moved by an interval
-        # or more: a bulk write of sections just compared returned 36
-        # pictures at once (run 8, 2026-09-09), all of them already seen.
+        # Do not pay for the same placement picture twice. A successful
+        # compare is promoted to ``seen`` only at the next model-call
+        # boundary, so compare + write tool calls emitted in one round still
+        # return the write picture: the model has not received the compare
+        # result yet. Orientation and cutting angles are part of the identity.
         shown = [
-            row
-            for row in written
-            if (old := moved_from.get(row["id"])) is None
-            or abs(float(row["position_mm"]) - old) >= state.interval_mm
+            (row, position)
+            for row, position in zip(written, written_positions, strict=True)
+            if (record := state.by_id(row["id"])) is not None
+            and placement_view_key(record, position)
+            not in box.seen_placement_views
         ]
         parts: list[types.Part] = []
         failed: list[dict[str, str]] = []
-        for row in shown:
+        rendered: list[str] = []
+        evidence: list[VisualEvidence] = []
+        delivery_id: str | None = None
+        for row, position in shown:
             record = state.by_id(row["id"])
             if record is None:
                 continue
-            position = float(row["position_mm"])
             try:
                 picture = stacked(
                     render_slice(ctx, record, long_edge=ATLAS_LONG_EDGE, frame=True),
@@ -969,25 +1088,44 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                 failed.append({"id": row["id"], "message": str(exc)})
                 continue
             parts.append(image_to_part(caption(picture, label)))
+            rendered.append(record.id)
+            if visual is not None:
+                evidence.append(
+                    visual.evidence(record, "position", eligible=True, position=position)
+                )
+            delivery_id = box.record_placement_view(
+                tool_context, placement_view_key(record, position)
+            )
         result["render_failed"] = failed
-        quiet = len(written) - len(shown)
+        shown_rows = [row for row, _position in shown]
+        suppressed = [row["id"] for row in written if row not in shown_rows]
         result["description"] = (
             (
-                "Attached: one image per newly placed or moved section, in the "
+                "Attached: one placement image per section not already seen "
+                "at this position, orientation and cutting angle, in the "
                 "order written, the section as corrected over the atlas section "
                 "at the position it was given, for "
-                + ", ".join(row["id"] for row in shown)
+                + ", ".join(rendered)
                 + "."
-                if shown
-                else "No images: no section is newly placed or moved by an interval."
+                if rendered
+                else (
+                    "No images: placement rendering failed."
+                    if failed
+                    else "No images: every written placement was already seen."
+                )
             )
             + (
-                f" {quiet} written within an interval of where they were are not pictured."
-                if quiet
+                " Already-seen placements not pictured: " + ", ".join(suppressed) + "."
+                if suppressed
                 else ""
             )
         )
+        result["images_suppressed_seen"] = suppressed
+        if delivery_id is not None:
+            result[TOOL_MEDIA_DELIVERY_ID_KEY] = delivery_id
         result[TOOL_MEDIA_PARTS_KEY] = parts
+        if visual is not None:
+            result[EVIDENCE_KEY] = evidence
         return result
 
     def run_deepslice(
@@ -1075,14 +1213,14 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         zoom: list[float] = [],  # noqa: B006 — read, never mutated; ADK wants a value
         template_opacity: float = 0.0,
         outlines: str = "all",
+        tool_context: Any = None,
     ) -> dict[str, Any]:
         """Show sections against the atlas at candidate positions. Writes nothing.
 
-        Each section is drawn as corrected, at true physical scale, on the
-        same canvas as the atlas section at each of its candidate positions,
-        so the two are directly comparable; the atlas outlines are drawn over
-        the section. At most 4 section-position pairs per call, one image
-        per pair.
+        At most 4 section-position pairs per call. Physical views return one
+        image per pair. side_by_side returns separate tissue-framed reference
+        images: one original section per distinct id plus one atlas per pair
+        (up to 8 images), without overlaying or re-drawing the section.
 
         Args:
             entries: ``[{"id": "<filename or corrected index>",
@@ -1091,16 +1229,19 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             mode: "template" (default: the atlas at that position on the
                 section's own canvas, at the section's scale — the section
                 itself is in the opening message and `view_slices`),
-                "side_by_side" (the section beside the atlas template in one
-                image, same scale and crop), "overlay" (the section with the
+                "side_by_side" (separate original section and atlas images,
+                independently tissue-framed, not a shared physical canvas),
+                "overlay" (the section with the
                 outlines on it), "checkerboard" (section and template in
                 alternating tiles), "outlines" (atlas lines and the section's
                 silhouette on black) or "section".
             zoom: [x0, y0, x1, y1] as fractions of the canvas; empty is all.
+                side_by_side supports only the full view.
             template_opacity: 0..1, the atlas template blended under the
                 outlines in "overlay".
             outlines: "all" (every family boundary), "outer" (the atlas
-                outline only) or "none".
+                outline only) or "none". Outlines and template_opacity apply
+                only to physical views, not side_by_side reference images.
 
         Returns:
             The section-position pairs compared, in order, each with its
@@ -1120,6 +1261,10 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         if window and len(window) != 4:
             return {"status": "error", "error": "BAD_ZOOM",
                     "expected": "[x0, y0, x1, y1] as fractions of the canvas"}
+        separate = view == "side_by_side"
+        if separate and window and window != [0.0, 0.0, 1.0, 1.0]:
+            return {"status": "error", "error": "ZOOM_UNSUPPORTED",
+                    "mode": view, "supported_zoom": [0.0, 0.0, 1.0, 1.0]}
 
         # Resolve every pair first, so the errors name every problem at once.
         pairs: list[tuple[SliceState, float]] = []
@@ -1160,27 +1305,64 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         compared: list[dict[str, Any]] = []
         parts: list[types.Part] = []
         failed: list[dict[str, Any]] = []
+        delivery_id: str | None = None
+        full_atlas_view = view != "section" and (
+            not window or window == [0.0, 0.0, 1.0, 1.0]
+        )
+        evidence: list[VisualEvidence] = []
+        section_indexes: dict[str, int] = {}
         for record, position in pairs:
-            box.compared.setdefault(record.id, set()).add(round(position, 2))
             if record.id not in sections:
                 section = render_slice(ctx, record, long_edge=PREVIEW_LONG_EDGE)
                 sections[record.id] = (section, *calibrate(state, ctx, record, section))
             section, um_per_px, source = sections[record.id]
+            media_indexes: dict[str, int] = {}
             try:
-                images, _ = physical_views(
-                    section, um_per_px, ctx.atlas, position, cast(Plane, state.plane),
-                    state.pitch_deg, state.yaw_deg, dict(IDENTITY_PARAMS),
-                    mode=view, zoom=window, template_opacity=opacity, outlines=layer,
-                    label=f"{record.id} vs atlas {position:.2f} mm",
-                    long_edge=VIEW_LONG_EDGE,  # 512 px panels, ~260 tokens each
-                )
+                if separate:
+                    # Resolve/encode both before mutating delivery bookkeeping.
+                    atlas_image = atlas_part(ctx, state, position)
+                    tissue_image = reference_slice_part(ctx, record)
+                    if record.id not in section_indexes:
+                        section_indexes[record.id] = len(parts)
+                        parts.append(tissue_image)
+                        if visual is not None:
+                            evidence.append(visual.evidence(
+                                record, "position", eligible=False, position=position,
+                            ))
+                    media_indexes = {"section": section_indexes[record.id], "atlas": len(parts)}
+                    parts.append(atlas_image)
+                    if visual is not None:
+                        candidate = visual.evidence(
+                            record, "position", eligible=True, position=position,
+                        )
+                        candidate.dependencies = (section_indexes[record.id],)
+                        evidence.append(candidate)
+                else:
+                    images, _ = physical_views(
+                        section, um_per_px, ctx.atlas, position, cast(Plane, state.plane),
+                        state.pitch_deg, state.yaw_deg, dict(IDENTITY_PARAMS),
+                        mode=view, zoom=window, template_opacity=opacity, outlines=layer,
+                        label=f"{record.id} vs atlas {position:.2f} mm",
+                        long_edge=VIEW_LONG_EDGE,
+                    )
+                    parts.extend(image_to_part(image) for image in images)
+                    if visual is not None:
+                        evidence.extend(
+                            visual.evidence(record, "position", eligible=full_atlas_view,
+                                            position=position)
+                            for _ in images
+                        )
             except Exception as exc:
                 failed.append({"id": record.id, "position_mm": round(position, 3),
                                "message": str(exc)})
                 continue
-            if len(images) > 1:
-                images = [beside(images[0], images[1])]
-            parts.extend(image_to_part(image) for image in images)
+            # A failed render is neither a gate-satisfying comparison nor a
+            # picture the model could have seen.
+            box.compared.setdefault(record.id, set()).add(round(position, 2))
+            if full_atlas_view:
+                delivery_id = box.record_placement_view(
+                    tool_context, placement_view_key(record, position)
+                )
             compared.append({
                 "id": record.id,
                 "position_mm": round(position, 3),
@@ -1188,6 +1370,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                     None if record.position_mm is None else round(record.position_mm, 3)
                 ),
                 "calibration": {"um_per_px": round(um_per_px, 3), "source": source},
+                **({"image_indexes": media_indexes} if separate else {}),
             })
         result: dict[str, Any] = {
             "status": "ok" if parts else "error",
@@ -1200,14 +1383,22 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             "description": (
                 "Compared, in order: "
                 + ", ".join(f"{row['id']} at {row['position_mm']:.2f} mm" for row in compared)
-                + "; one image per pair in that order, each captioned with "
-                "the section and the position it is compared with."
+                + ("; separate reference images mapped by zero-based image_indexes. "
+                   "Section captions retain their original display index/flags; "
+                   "filenames identify sections. Independently tissue-framed, not "
+                   "a shared physical canvas. Outlines/opacity do not apply."
+                   if separate else "; one image per pair in that order, each captioned "
+                   "with the section and the position it is compared with.")
             ),
             TOOL_MEDIA_PARTS_KEY: parts,
         }
         if dropped > 0:
             result["truncated"] = True
             result["dropped_pairs"] = dropped
+        if visual is not None:
+            result[EVIDENCE_KEY] = evidence
+        if delivery_id is not None:
+            result[TOOL_MEDIA_DELIVERY_ID_KEY] = delivery_id
         return result
 
     def view_stack() -> dict[str, Any]:
@@ -1309,8 +1500,9 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         Returns:
             Per-section overlap (iou), the transform as the five physical
             knobs about the canvas centre, the calibration the image was
-            drawn with, the rows written, and an image of the fitted section
-            under the atlas outlines for up to 16 sections.
+            drawn with, and an image of each fitted section under the atlas
+            outlines. The generic changed row is omitted because it repeats
+            the same fit identifiers and overlap.
         """
         # ponytail: spec.transform.elastix is inert until the method lands;
         # asking for it answers UNAVAILABLE either way.
@@ -1341,6 +1533,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         results: list[dict[str, Any]] = []
         parts: list[types.Part] = []
         fits: list[tuple[SliceState, dict[str, Any]]] = []
+        pictured: list[SliceState] = []
         for record in targets:
             if record.damaged:
                 results.append({"id": record.id, "status": "error", "error": "DAMAGED"})
@@ -1355,6 +1548,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                 # Every fit returns its picture (run 15, 2026-09-10: a
                 # 25-section fit pictured 4 and the model never saw 21).
                 parts.append(image_to_part(panel))
+                pictured.append(record)
 
         payload: dict[str, Any] = {
             "status": "ok" if fits else "error",
@@ -1383,7 +1577,11 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                 "calibration": outcome["calibration"],
                 "mirrored": outcome["mirrored"],
             }
-        payload.update(commit(*[record.id for record, _ in fits]))
+        save_checkpoint(state, ctx.checkpoint_path)
+        if visual is not None:
+            payload[EVIDENCE_KEY] = [
+                visual.evidence(record, "transform", eligible=True) for record in pictured
+            ]
         return payload
 
     # --- the interactive transform --------------------------------------
@@ -1487,6 +1685,8 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         )
         return images
 
+    batching_adjustments = False
+
     def adjust_transform(
         slice_id: str,
         rotation_deg: float,
@@ -1542,11 +1742,10 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             note: Short remark for the record. May be empty.
 
         Returns:
-            The parameters written, their decomposition (rotation, scales,
-            shear, mirrored), the shift in canvas pixels, the pivot used, the
-            calibration, every parameter set this section has been given so
-            far, the row this call changed, and the image(s) of the view you
-            asked for.
+            The physical parameters written, whether state changed, the view
+            requested, and its image(s). The normalized matrix, decomposition
+            and full adjustment history remain in local state rather than
+            being repeated in every result.
         """
         view = str(mode or "overlay").strip().lower()
         if view not in PREVIEW_MODES:
@@ -1594,9 +1793,6 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         }
         # The same numbers again are a look, not a write: no undo step for it.
         wrote = previous is None or {**previous, "note": ""} != {**written, "note": ""}
-        if wrote:
-            snapshot()
-            record.transform = written
 
         stored = (previous or {}).get("physical")
         reference: dict[str, Any] | None = None
@@ -1644,9 +1840,23 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             logger.warning("adjust_transform failed for %s: %s", record.id, exc)
             return {"status": "error", "error": "RENDER_FAILED", "message": str(exc)}
 
+        # Encoding is part of producing feedback. Finish it before mutating
+        # state so an encoder failure cannot leave an uncheckpointed transform,
+        # especially inside a multi-section batch.
+        try:
+            media_parts = [image_to_part(image) for image in images]
+        except Exception as exc:
+            logger.warning("adjust_transform encode failed for %s: %s", record.id, exc)
+            return {"status": "error", "error": "RENDER_FAILED", "message": str(exc)}
+
         history = box.transform_history.setdefault(record.id, [])
         history.append(dict(staged.params))
-        px_per_mm = 1000.0 / staged.um_per_px
+        if wrote:
+            if not batching_adjustments:
+                snapshot()
+            record.transform = written
+            if not batching_adjustments:
+                save_checkpoint(state, ctx.checkpoint_path)
         described = {
             "overlay": "the section with the atlas outlines over it",
             "side_by_side": (
@@ -1670,26 +1880,23 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             ),
         }[view]
         return {
+            "status": "ok",
             "id": record.id,
             "position_mm": round(float(record.position_mm or 0.0), 3),
-            "params": staged.params,
-            "matrix_params": six,
-            "decomposition": decomposition,
-            "translate_px": {
-                "x": round(staged.params["translate_x_mm"] * px_per_mm, 1),
-                "y": round(staged.params["translate_y_mm"] * px_per_mm, 1),
-                "px_per_mm": round(px_per_mm, 2),
-            },
-            "pivot": {"mode": staged.pivot_mode, "canvas_frac": staged.pivot_frac},
+            "physical": written["physical"],
+            **({EVIDENCE_KEY: [
+                visual.evidence(record, "transform", eligible=(
+                    (not window or window == [0.0, 0.0, 1.0, 1.0])
+                    and view in {"overlay", "ab"} and layer != "none" and index == 0
+                )) for index in range(len(media_parts))
+            ]} if visual is not None else {}),
+            "written": wrote,
             "view": {
                 "mode": view,
                 "zoom": window or [0.0, 0.0, 1.0, 1.0],
                 "outlines": layer,
             },
             **({"ab_reference": reference} if reference is not None else {}),
-            "history": [dict(entry) for entry in history],
-            "calibration": staged.calibration,
-            **(commit(record.id) if wrote else {"status": "ok", **changed([])}),
             "description": (
                 f"{record.id} under the transform above, {described}. "
                 + (
@@ -1705,7 +1912,117 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                     )
                 )
             ),
-            TOOL_MEDIA_PARTS_KEY: [image_to_part(image) for image in images],
+            TOOL_MEDIA_PARTS_KEY: media_parts,
+        }
+
+    def adjust_transforms(entries: list[dict[str, Any]]) -> dict[str, Any]:
+        """Set and show up to four independent sections in one undoable call.
+
+        Every section is evaluated from the state at the start of this call
+        and returns one labelled image. Use ``adjust_transform`` instead when
+        a second adjustment depends on seeing the first one's feedback, or for
+        the two-image ``side_by_side`` and ``ab`` views. Naming one section
+        more than once is refused because those edits would be dependent but
+        planned without intervening visual feedback.
+
+        Args:
+            entries: Up to four objects, each with ``id``, ``rotation_deg``,
+                ``scale_x``, ``scale_y``, ``translate_x_mm`` and
+                ``translate_y_mm``. Each may also include ``mode`` (overlay,
+                checkerboard, outlines, section or template), ``zoom``,
+                ``template_opacity``, ``pivot``, ``outlines`` and ``note`` as
+                on ``adjust_transform``.
+
+        Returns:
+            One concise result and one labelled feedback image per successful
+            section, in entry order. All writes form one undo step.
+        """
+        nonlocal batching_adjustments
+        if not entries:
+            return {"status": "error", "error": "BAD_ARGS"}
+        if len(entries) > MAX_VIEW_SLICES:
+            return {
+                "status": "error",
+                "error": "TOO_MANY_ENTRIES",
+                "max_entries": MAX_VIEW_SLICES,
+            }
+        canonical: list[str] = []
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            record = state.resolve(entry.get("id", ""))
+            if record is not None:
+                canonical.append(record.id)
+        duplicates = sorted({item for item in canonical if canonical.count(item) > 1})
+        if duplicates:
+            return {
+                "status": "error",
+                "error": "DUPLICATE_SLICE_IDS",
+                "duplicate_ids": duplicates,
+                "message": (
+                    "A batch may adjust each section once; inspect the first "
+                    "result before making a dependent adjustment."
+                ),
+            }
+
+        before = state.to_dict()
+        results: list[dict[str, Any]] = []
+        parts: list[types.Part] = []
+        wrote_any = False
+        evidence: list[VisualEvidence] = []
+        batching_adjustments = True
+        try:
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    results.append({"status": "error", "error": "BAD_ARGS"})
+                    continue
+                mode = str(entry.get("mode", "overlay") or "overlay").strip().lower()
+                if mode in {"side_by_side", "ab"}:
+                    results.append({
+                        "status": "error",
+                        "error": "BATCH_VIEW_NEEDS_SINGLE_CALL",
+                        "id": str(entry.get("id", "")),
+                        "mode": mode,
+                    })
+                    continue
+                result = adjust_transform(
+                    str(entry.get("id", "")),
+                    entry.get("rotation_deg"),  # type: ignore[arg-type]
+                    entry.get("scale_x"),  # type: ignore[arg-type]
+                    entry.get("scale_y"),  # type: ignore[arg-type]
+                    entry.get("translate_x_mm"),  # type: ignore[arg-type]
+                    entry.get("translate_y_mm"),  # type: ignore[arg-type]
+                    mode,
+                    entry.get("zoom", []),  # type: ignore[arg-type]
+                    entry.get("template_opacity", 0.0),  # type: ignore[arg-type]
+                    entry.get("pivot", "canvas"),  # type: ignore[arg-type]
+                    str(entry.get("outlines", "all")),
+                    str(entry.get("note", "")),
+                )
+                media = result.pop(TOOL_MEDIA_PARTS_KEY, [])
+                evidence.extend(result.pop(EVIDENCE_KEY, []))
+                result.pop("description", None)
+                parts.extend(media)
+                wrote_any = wrote_any or bool(result.get("written"))
+                results.append(result)
+        finally:
+            batching_adjustments = False
+
+        if wrote_any:
+            push(before)
+            save_checkpoint(state, ctx.checkpoint_path)
+        successful = [row["id"] for row in results if row.get("status") == "ok"]
+        return {
+            "status": "ok" if successful else "error",
+            **({} if successful else {"error": "NOTHING_ADJUSTED"}),
+            "results": results,
+            **({EVIDENCE_KEY: evidence} if visual is not None else {}),
+            "description": (
+                "Attached feedback images, in entry order, for "
+                + ", ".join(successful)
+                + "; each image is labelled with its section and transform."
+            ),
+            TOOL_MEDIA_PARTS_KEY: parts,
         }
 
     def landmarks(
@@ -1846,14 +2163,20 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                 "between them."
             ),
             TOOL_MEDIA_PARTS_KEY: [image_to_part(image) for image in images],
+            **({EVIDENCE_KEY: [
+                visual.evidence(staged.record, "transform", eligible=False)
+                for _ in images
+            ]} if visual is not None else {}),
         }
 
     if spec.has("transform"):
-        box.tools += [fit_affine, adjust_transform, landmarks]
+        box.tools += [fit_affine, adjust_transform, adjust_transforms, landmarks]
         if spec.transform.angles:
             box.tools.append(set_cutting_angles)
 
     box.tools.append(submit)
+    if visual is not None and (spec.has("position") or spec.has("transform")):
+        box.tools.append(accept_views)
     lock = threading.Lock()
-    box.tools = [_serialized(tool, lock) for tool in box.tools]
+    box.tools = [_serialized(tool, lock, visual) for tool in box.tools]
     return box

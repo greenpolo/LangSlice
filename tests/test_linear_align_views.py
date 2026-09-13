@@ -217,16 +217,14 @@ def _tools(tmp_path: Path):
     return {tool.__name__: tool for tool in box.tools}, box, state
 
 
-def test_the_adjust_payload_carries_history_and_pixels_but_no_overlap(tmp_path: Path):
+def test_the_adjust_payload_is_concise_while_local_history_stays_complete(tmp_path: Path):
     tools, box, _state = _tools(tmp_path)
     preview = tools["adjust_transform"]
 
     first = preview("s.tif", 0.0, 1.0, 1.0, 0.25, 0.0)
     assert first["status"] == "ok"
-    # 0.25 mm on a 10 um/px canvas is 25 px, and the payload says so.
-    assert first["translate_px"]["x"] == pytest.approx(25.0, abs=0.1)
-    assert first["translate_px"]["y"] == 0.0
-    assert first["translate_px"]["px_per_mm"] == pytest.approx(100.0)
+    assert first["physical"]["translate_x_mm"] == 0.25
+    assert first["physical"]["pivot"] == [0.5, 0.5]
     # No overlap number: silhouette overlap against the whole atlas plate
     # rewarded inflating a damaged remnant to fill it (luna, D_08, 2026-09-06:
     # 0.29 -> 0.51 at scale 1.35), and this loop exists for damaged sections.
@@ -236,22 +234,16 @@ def test_the_adjust_payload_carries_history_and_pixels_but_no_overlap(tmp_path: 
         "zoom": [0.0, 0.0, 1.0, 1.0],
         "outlines": "all",
     }
-    assert first["pivot"] == {"mode": "canvas", "canvas_frac": [0.5, 0.5]}
-    # The decomposition names its translations for what they are: fractions.
-    # The alignment payload's decomposition carries no translation fields at
-    # all: the shift is the entered millimetres, and the matrix's fractions
-    # (which absorb pivot-based scale/rotation) read as a contradiction.
-    assert "translate_x_frac" not in first["decomposition"]
-    assert "translate_x" not in first["decomposition"]
-    kept = {"rotation_deg", "scale_x", "scale_y", "shear", "mirrored"}
-    assert kept <= set(first["decomposition"])
+    # The normalized matrix, derived pixel shift/decomposition, generic status
+    # row and accumulated history stay host-side instead of growing each reply.
+    assert not {
+        "matrix_params", "translate_px", "decomposition", "changed", "history"
+    } & set(first)
 
-    second = preview("s.tif", 2.0, 1.0, 1.0, 0.0, 0.0)
-    assert [entry["rotation_deg"] for entry in second["history"]] == [0.0, 2.0]
-    assert [entry["translate_x_mm"] for entry in second["history"]] == [0.25, 0.0]
-    assert len(first["history"]) == 1  # oldest first, this preview last
+    preview("s.tif", 2.0, 1.0, 1.0, 0.0, 0.0)
     # The history is per section, kept on the toolbox for the whole run.
     assert len(box.transform_history["s.tif"]) == 2
+    assert [entry["rotation_deg"] for entry in box.transform_history["s.tif"]] == [0.0, 2.0]
 
 
 def test_the_adjust_tool_takes_the_view_controls(tmp_path: Path):
@@ -375,7 +367,7 @@ def test_the_pivot_rides_into_the_six_numbers_and_the_payload(tmp_path: Path):
 
     centred = preview("s.tif", 10.0, 1.0, 1.0, 0.0, 0.0, "overlay", [], 0.0, "canvas")
     corner = preview("s.tif", 10.0, 1.0, 1.0, 0.0, 0.0, "overlay", [], 0.0, [0.25, 0.75])
-    assert corner["pivot"] == {"mode": "fractions", "canvas_frac": [0.25, 0.75]}
+    assert corner["physical"]["pivot"] == [0.25, 0.75]
     assert preview("s.tif", 0.0, 1.0, 1.0, 0.0, 0.0, "overlay", [], 0.0, "middle")[
         "error"
     ] == "BAD_PIVOT"
@@ -390,8 +382,8 @@ def test_the_pivot_rides_into_the_six_numbers_and_the_payload(tmp_path: Path):
     )
     tools["adjust_transform"]("s.tif", 10.0, 1.0, 1.0, 0.0, 0.0, "overlay", [], 0.0, "canvas")
     assert state.slices[0].transform["params"][2] != stored["params"][2]
-    assert centred["decomposition"]["rotation_deg"] == pytest.approx(
-        corner["decomposition"]["rotation_deg"]
+    assert centred["physical"]["rotation_deg"] == pytest.approx(
+        corner["physical"]["rotation_deg"]
     )
 
 

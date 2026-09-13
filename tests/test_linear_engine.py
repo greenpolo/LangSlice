@@ -185,7 +185,7 @@ def test_a_session_that_never_submits_keeps_its_writes(tmp_path: Path, monkeypat
     assert (tmp_path / "linear_results.json").exists()
 
 
-def test_the_input_token_budget_ends_a_run_before_the_account_does(
+def test_one_request_over_the_input_context_limit_stops_with_grace(
     tmp_path: Path, monkeypatch
 ):
     names = _make_stack(tmp_path, n=3)
@@ -197,17 +197,54 @@ def test_the_input_token_budget_ends_a_run_before_the_account_does(
         tmp_path,
         tasks=["position"],
         position=PositionSpec(interval_um=500),
-        max_input_tokens=2500,
+        max_input_tokens=999,
     )
     state = asyncio.run(run(spec, emit=lines.append, atlas_loader=lambda _n: _ATLAS))
 
     assert state.submitted is False
     assert state.by_id(names[0]).position_mm == 4.0  # the write survived the stop
-    budget = [line for line in lines if "passed the budget" in line]
-    assert len(budget) == 1 and "3000" in budget[0]
-    assert any(line.startswith("[tokens] call 1: in=1000") for line in lines)
+    budget = [line for line in lines if "exceeded the context limit" in line]
+    assert len(budget) == 1 and "request input 1000" in budget[0]
+    assert any(line.startswith("[tokens] call 1: request_input=1000") for line in lines)
     # the stop, then ONE grace call to submit (refused: the stack is incomplete)
-    assert any("run total: 4 calls, in=4000" in line for line in lines)
+    assert any("run total: 2 calls, cumulative_input=2000" in line for line in lines)
+
+
+@pytest.mark.parametrize("limit", [None, 1000, 2500])
+def test_repeated_inputs_are_not_cumulative_context(tmp_path: Path, monkeypatch, limit):
+    names = _make_stack(tmp_path, n=3)
+    install_fake_adk_model_stack(
+        monkeypatch, positions=dict(zip(names, [4.0, 4.5, 5.0], strict=True)),
+        input_tokens_per_call=1000,
+    )
+    lines: list[str] = []
+    state = asyncio.run(run(
+        _spec(tmp_path, tasks=["position"], position=PositionSpec(interval_um=500),
+              max_input_tokens=limit),
+        emit=lines.append, atlas_loader=lambda _n: _ATLAS,
+    ))
+    assert state.submitted
+    assert not any("exceeded the context limit" in line for line in lines)
+    assert any("cumulative_input=3000" in line and "peak_input=1000" in line for line in lines)
+
+
+def test_input_context_safeguard_is_disabled_by_default(tmp_path):
+    assert _spec(tmp_path).max_input_tokens is None
+
+
+def test_token_tally_tracks_last_and_peak_including_cached_input():
+    from types import SimpleNamespace
+
+    from langslice.linear.session import TokenTally
+
+    tally = TokenTally()
+    for prompt, cached in [(2000, 1900), (1000, 900)]:
+        tally.add(SimpleNamespace(prompt_token_count=prompt,
+                                  cached_content_token_count=cached,
+                                  candidates_token_count=10))
+    assert tally.as_dict()["input"] == 3000
+    assert tally.as_dict()["latest_input"] == 1000
+    assert tally.as_dict()["peak_input"] == 2000
 
 
 def test_the_quota_budget_is_measured_from_the_first_call(tmp_path: Path, monkeypatch):

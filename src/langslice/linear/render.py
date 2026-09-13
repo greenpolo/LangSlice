@@ -59,11 +59,9 @@ PREVIEW_LONG_EDGE = 512
 #: Long edge of the ONE image the interactive alignment loop looks at.
 OVERLAY_LONG_EDGE = 768
 
-#: Images one tool call may return. Mature vision-action harnesses keep one
-#: to four images in context at any time (Fara-7B, UFO, Anthropic's loop: 3;
-#: OpenAI's computer-use loop: 1) and carry everything older as text; the
-#: context filter keeps only the newest call's images, so this is also the
-#: most the model ever sees at once.
+#: Default image/pair batch size. Separate positioning comparisons may return
+#: two references per pair (up to eight images); retained context is governed
+#: by the session's image-retention policy, not this per-tool batch size.
 MAX_IMAGES_PER_CALL = 4
 
 #: Long edge of one section in the ``view_stack`` contact sheet.
@@ -397,10 +395,35 @@ def stack_image_parts(
             )
         )
     ]
-    for label, picture in stack_pictures(state, ctx, long_edge=long_edge):
+    for record in state.in_order():
+        label = f"{record.index_corrected}: {record.id}"
+        flags = slice_flags(record)
+        if flags:
+            label += f"  [{'; '.join(flags)}]"
         parts.append(types.Part.from_text(text=label))
-        parts.append(image_to_part(picture))
+        parts.append(reference_slice_part(ctx, record, long_edge=long_edge))
     return parts
+
+
+def reference_slice_part(
+    ctx: EngineContext, record: SliceState, *, long_edge: int = SEED_IMAGE_LONG_EDGE,
+) -> types.Part:
+    """Reuse the original captioned seed image for this display orientation.
+
+    Ordering and damage annotations do not change the pixels being compared.
+    The cached caption retains the index/flags at first display; current state
+    is carried separately in tool text. Filename remains the stable identity.
+    """
+    key = ("section", *render_cache_key(ctx, record, long_edge=long_edge, frame=True))
+    if key not in ctx.reference_parts:
+        label = f"{record.index_corrected}: {record.id}"
+        flags = slice_flags(record)
+        if flags:
+            label += f"  [{'; '.join(flags)}]"
+        ctx.reference_parts[key] = image_to_part(caption(
+            render_slice(ctx, record, long_edge=long_edge, frame=True), label,
+        ))
+    return ctx.reference_parts[key].model_copy(deep=True)
 
 
 def stack_sheet(

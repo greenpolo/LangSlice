@@ -13,3 +13,12 @@ from __future__ import annotations
 # their parts in a flat list under exactly this key. Text belongs in ordinary
 # JSON fields: text Parts are not media and would leak into the JSON result.
 TOOL_MEDIA_PARTS_KEY = "images"
+
+# Opaque JSON field tying media to the tool call that produced it. Some ADK
+# providers strip generated FunctionResponse ids from replayed history, while
+# ordinary response JSON remains intact.
+TOOL_MEDIA_DELIVERY_ID_KEY = "media_delivery_id"
+
+# Private FunctionResponse attribute: original attachment count and surviving
+# slot indices. Transports preserve their generated text when media is retired.
+MEDIA_LAYOUT_ATTR = "_langslice_media_layout"

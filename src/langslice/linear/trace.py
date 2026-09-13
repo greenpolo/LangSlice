@@ -192,6 +192,10 @@ class SessionTrace:
             record["media"] = media
         return record
 
+    def visual_event(self, event: dict[str, Any]) -> None:
+        """Record context retirement without modifying historical events."""
+        self._write(event)
+
     def summary(
         self,
         *,

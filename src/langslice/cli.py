@@ -422,8 +422,8 @@ def _add_linear_run_parser(subparsers: argparse._SubParsersAction) -> None:
         "--max-input-tokens",
         type=int,
         default=None,
-        help="Hard stop on the run's summed input tokens (default: "
-        "JobSpec.max_input_tokens)",
+        help="Stop after one request reports more than N input tokens, cached included, "
+        "then allow one submit call (default: disabled; checked after the response)",
     )
     p.add_argument(
         "--gates",
@@ -443,6 +443,10 @@ def _add_linear_run_parser(subparsers: argparse._SubParsersAction) -> None:
         default=None,
         help="Hard stop on the share of the provider's usage window one run "
         "may spend (default: JobSpec.max_quota_percent)",
+    )
+    p.add_argument(
+        "--image-retention", choices=("legacy", "completion"), default="legacy",
+        help="Image context policy: legacy working set or acceptance-based retirement",
     )
     p.add_argument(
         "--no-debrief",
@@ -512,6 +516,7 @@ def _run_linear(args: argparse.Namespace) -> None:
         inputs=inputs,
         resume=args.resume,
         debrief=args.debrief,
+        image_retention=getattr(args, "image_retention", "legacy"),
         **({"max_input_tokens": args.max_input_tokens} if args.max_input_tokens else {}),
         **({"max_quota_percent": args.max_quota_percent} if args.max_quota_percent else {}),
     )
