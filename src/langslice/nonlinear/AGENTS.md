@@ -4,6 +4,50 @@ Package guide for `src/langslice/nonlinear/`. The repo-level `CLAUDE.md` holds t
 project-wide rules; this file holds what is specific to this package. `AGENTS.md`
 here is a verbatim copy — edit one, mirror to the other.
 
+## Current direction and review standard
+
+The April input arrangement is the production baseline. The second-prompt /
+reply approach is an active experiment to improve anatomical outlines. Historical
+scores have not ruled it out; it is not yet a production second turn. Preserve
+its prompts, exact inputs, raw replies and conversation history.
+
+Judge generated outputs primarily by visual inspection against actual histology.
+Inspect raw replies before classification, resizing or registration, then inspect
+model boundaries against the original section. Describe concrete anatomical
+successes, errors and uncertainty. Metrics, downstream registration and agreement
+with human annotations cannot establish model-output quality. Historical
+metric-based verdicts below are experiment history, not settled conclusions.
+A useful model output can be damaged by the subsequent fit. Check a redrawn
+photograph's boundaries against the original tissue before accepting alignment.
+
+## Image-generation prompts: sentence-by-sentence review
+
+Before changing or sending an experimental prompt, scrutinize EVERY sentence:
+
+- State its intended effect and plausible alternative interpretations. Remove
+  ambiguity, redundant demands and contradictions with earlier sentences; look
+  for wording that is simultaneously restrictive and vague.
+- Identify each input by its actual order, content and role. Specify which image
+  is edited, what changes, what is preserved and the intended output frame.
+- For border refinement, distinguish moving boundaries to visible tissue
+  transitions from copying or overlaying a reference. Calling reference lines
+  "correct" can imply transferring them unchanged.
+- For a reply, verify the actual history and attachments. Say "your previous
+  image" only when it really is the model's earlier reply in the supplied
+  history. Record constructed history explicitly.
+- Prefer positive descriptions of the desired result and small, targeted edits.
+  Preserve separate Gemini and OpenAI base wordings; change one idea at a time
+  and save the exact text and inputs used, not just a prompt nickname.
+
+This review applies even to a one-sentence follow-up. Inspect the resulting
+images before declaring a prompt improvement or rejecting an approach.
+
+The multi-image provider helper preserves every returned image in reply order,
+skips text parts during extraction, and requests TEXT plus IMAGE for multi-image
+requests at 1K or below (IMAGE only at higher tiers). The single-image helper
+continues to return the last image. This support does not itself create a second
+conversational turn.
+
 - `nonlinear/` — generative-image registration: candidate generation, image
   provider adapters, Elastix runtime, affine and
   nonlinear result types, and `quick_affine.py` (silhouette affine preview;

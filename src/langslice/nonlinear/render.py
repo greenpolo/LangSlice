@@ -259,7 +259,7 @@ def _close_seams(canvas: np.ndarray, *, max_hole_px: int) -> np.ndarray:
     if not holes.any():
         return canvas
     labelled, count = ndimage.label(holes)  # type: ignore[misc]
-    sizes = np.bincount(np.asarray(labelled).ravel())
+    sizes = np.bincount(np.asarray(labelled, dtype=np.intp).ravel())
     small = np.isin(labelled, np.nonzero(sizes[1:] <= max_hole_px)[0] + 1)
     if not small.any():
         return canvas

@@ -13,13 +13,17 @@ Speak to the user in conceptual and strategic terms, rather than in code, functi
 
 ## Judging results: look, don't just measure
 
-Visual inspection and metrics carry equal weight. When judging a registration,
-a painting, a crop, a render, or any image the pipeline produces, open the
-output and describe what you see, then quote the number; do not let a Dice
-score, an IoU, or a boundary distance stand in for looking. A metric and a look
-at the overlay are two measurements of the same thing: report both, and when
-they disagree, say so and treat the disagreement as a finding, not noise.
-Subagents dispatched to evaluate outputs get the same instruction.
+For nonlinear experiments, generated-image quality is judged primarily by
+visual inspection against the original histology. Open the raw model output,
+describe anatomical successes and errors, and distinguish it from later
+classification or registration. Metrics and human agreement are secondary
+diagnostics, not acceptance criteria or a ranking of model quality. Read the
+nonlinear package guide for mandatory sentence-by-sentence prompt review.
+
+For other visual pipeline work, open the output and describe what you see as
+well as reporting relevant measurements. When the picture and measurements
+disagree, report the disagreement as a finding. Evaluating subagents follow the
+same standard.
 
 ## Before writing code (READ THIS FIRST)
 
