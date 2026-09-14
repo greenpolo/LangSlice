@@ -57,9 +57,11 @@ run can use:
 | `fit_position` | `--bayesian` | `oblique.fit_oblique` around a section's current position; writes nothing |
 | `set_cutting_angles` | `--angles` | stack-wide pitch/yaw; later fetches and previews follow |
 | `fit_affine` | `transform` | silhouette affine per section, written as its transform, with the overlap, the transform as the five physical parameters (`rotation_deg`, `scale_x`, `scale_y`, `translate_x_mm`, `translate_y_mm`, plus `shear`) about the canvas centre, and a physical-scale overlay for every successful fit; damaged sections are refused and `--elastix`'s method is not wired yet |
-| `adjust_transform` | `transform` | writes one positioned section's in-plane transform (rotation / per-axis scales / millimetre shifts, plus a note) and returns the section drawn under it with the atlas outlines at true physical scale; every call writes and the last one stays, the same parameters again only re-draw; `mode` (overlay, side_by_side, checkerboard, outlines, section, template, ab = new beside what it carried before), `zoom`, `template_opacity`, `pivot` (canvas, tissue, or [fx, fy] of the canvas) and `outlines` (all, outer, none) are the view and the centre it turns about; it does not change the section's flip or rotation |
+| `adjust_transform` | `transform` | writes one positioned section's in-plane transform (rotation / per-axis scales / millimetre shifts, plus a note) and returns the section drawn under it with the atlas outlines at true physical scale; every call writes and the last one stays, the same parameters again only re-draw; `mode` (overlay, side_by_side, checkerboard, outlines, section, template, ab = new beside what it carried before), `zoom`, `template_opacity`, `border_color` (named color or #RRGGBB; yellow), `border_thickness` (0.25–8 output pixels; default 0.5), `pivot` (canvas, tissue, or [fx, fy] of the canvas) and `outlines` (all, outer, none) are the view and the centre it turns about; it does not change the section's flip or rotation |
 | `adjust_transforms` | `transform` | writes up to four independent sections as one undoable batch and returns one labelled feedback image per section. Each section may appear once; a follow-up that depends on the first picture uses `adjust_transform` after that picture arrives |
-| `landmarks` | `transform` | point pairs as fractions of the canvas: the residual in millimetres per pair, their RMS, the transform fitted to them (similarity from 2 pairs, affine from 3), and the pairs drawn on the view; writes nothing |
+| `view_landmarks` | `transform` | stable unwarped slice and atlas, matching numbered pairs, and current overlay |
+| `edit_landmarks` | `transform` | add/move/delete saved pairs by ID; does not change the applied transform |
+| `warp_landmarks` | `transform` | fit affine (default) or spline from saved pairs; before/after overlays and numbered references |
 | `submit` | always | ends the run; gated |
 
 Sections and fetched atlas sections are framed the same way (foreground plus a
@@ -101,8 +103,8 @@ placed at `atlas um/px / canvas um/px` with its anatomy centred, never fitted
 to the canvas. With no pixel size anywhere the run estimates one from the
 tissue's width against the atlas anatomy's and records
 `calibration.source = "estimated"` on the transform. The interactive preview,
-`landmarks` and `fit_affine` all draw the same picture: the transformed section under
-the atlas's family-level region outlines as neutral hairlines, with a 1 mm
+`warp_landmarks` and `fit_affine` all draw the same picture: the transformed section under
+the atlas's family-level region outlines in yellow (1 px by default), with a 1 mm
 scale bar. The alignment parameters (`rotation_deg`, `scale_x`, `scale_y`,
 `translate_x_mm`, `translate_y_mm`) are stored alongside the host-facing six
 normalized numbers -- on every transform, silhouette fits included, so a fit
@@ -133,6 +135,22 @@ has the same shape. A run that dies resumes from that checkpoint with the state
 it had -- the agent is re-seeded, not replayed. `--fresh` ignores the
 checkpoint and starts over. `--trace-dir PATH` writes a full-content JSONL
 trace of every agent session.
+
+With tracing enabled, the subscription provider also records content-free usage
+diagnostics: optional cache-write counts, backend item/content counters, hashed
+request slots, and reconciliation residuals. It changes no request content,
+cache keys, image delivery, or model tools. Image bytes, raw request payloads
+and encrypted reasoning are excluded from these diagnostics. Backend-generated
+item IDs are not request indices: only explicit ID matches are attributed to
+request/output items; ambiguous matches remain unmapped. Missing counters are
+unknown, not zero. Parent item and child content counters are alternative
+breakdowns, not additive charges. Usage-only responses are recorded as well.
+
+The public [Responses usage schema](https://developers.openai.com/api/reference/python/resources/responses/methods/retrieve)
+documents aggregate cached and cache-write counts. The subscription backend's
+additional per-item attribution is optional observed data, not a guaranteed
+public API contract. These measurements do not equate subscription quota with
+API dollars or establish a causal cost for pruning.
 
 Every model call prints a `[tokens]` line separating request input, cached
 input, output, cumulative input and peak request input. Cumulative input is
@@ -271,3 +289,23 @@ full tool arguments, full tool responses. Images are always descriptors (mime
 type, byte count, pixel size) — never bytes — so a trace stays small. Nothing
 but content, the prompt and a model name is read, so no credentials are
 written. Unset, the recorder is never constructed.
+
+Overlay border color and thickness are display-only controls available on
+`compare_placement`, `adjust_transform`, each `adjust_transforms` entry, and
+`view_landmarks` and `warp_landmarks`. Automatic-fit feedback uses yellow 0.5 px borders. Fractional widths are antialiased. The separate
+reference images from positioning `side_by_side` and the clean `section` /
+`template` modes remain free of outlines. Native ABBA display colors are unchanged.
+
+### Interactive landmark warps
+
+Interactive runs use `view_landmarks` to see a stable unwarped slice beside
+the atlas, with corresponding numbered points. `edit_landmarks` adds, moves,
+or deletes individual pairs without replacing the other points. `warp_landmarks`
+fits the saved pairs with `method="affine"` first (at least three), then
+`method="spline"` when local corrections are needed (at least four). Each fit
+returns before/after overlays and both numbered reference images; the same
+pairs and IDs carry across methods. Both point edits and
+warp application are checkpointed and undoable. Source reference coordinates
+remain stable across applications. Use the ABBA LangSlice menu for the calibrated
+snapshot mapping needed by native BigWarp synchronization. The former read-only
+`landmarks` measurement tool has been removed.

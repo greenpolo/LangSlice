@@ -15,8 +15,10 @@ stop there.
 from __future__ import annotations
 
 import functools
+import inspect
 import logging
 import threading
+import uuid
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, cast
 
@@ -38,6 +40,7 @@ from langslice.linear.atlas_fetch import (
 )
 from langslice.linear.checkpoint import save_checkpoint
 from langslice.linear.deepslice import run_deepslice as _run_deepslice
+from langslice.linear.live import LiveCallback, _plain
 from langslice.linear.render import (
     MAX_IMAGES_PER_CALL,
     OUTLINE_LAYERS,
@@ -50,6 +53,7 @@ from langslice.linear.render import (
     caption,
     compact_rows,
     image_to_part,
+    normalize_border_style,
     physical_views,
     pivot_on_canvas,
     reference_slice_part,
@@ -62,14 +66,10 @@ from langslice.linear.render import (
 from langslice.linear.spec import JobSpec
 from langslice.linear.state import SliceState, StackState
 from langslice.linear.transform import (
-    affine_fit,
     calibrate,
     fit_silhouette,
     physical_decomposition,
-    physical_params,
-    similarity_fit,
 )
-from langslice.linear.visual_context import EVIDENCE_KEY, VisualContext, VisualEvidence
 from langslice.space import Plane
 
 if TYPE_CHECKING:  # ponytail: import cycle — engine builds the toolbox
@@ -111,26 +111,79 @@ IDENTITY_PARAMS: dict[str, float] = {
     "translate_y_mm": 0.0,
 }
 
-def _serialized(tool: Any, lock: threading.Lock, visual: VisualContext | None = None) -> Any:
-    """*tool* under *lock*: one state, one writer at a time.
+def _tool_target_ids(state: StackState, name: str, args: dict[str, Any]) -> list[str]:
+    """Resolve host display targets before a tool can reorder the stack."""
+    if name in {"view_stack", "status", "undo", "redo", "submit", "validate",
+                "set_cutting_angles", "run_deepslice"}:
+        return [record.id for record in state.in_order()]
+    if name == "fit_affine" and not args.get("slice_ids"):
+        return [record.id for record in state.in_order()
+                if record.position_mm is not None and not record.damaged]
+    refs = list(args.get("slice_ids") or args.get("new_order") or [])
+    if "slice_id" in args:
+        refs.append(args["slice_id"])
+    for entry in args.get("entries") or []:
+        if isinstance(entry, dict) and "id" in entry:
+            refs.append(entry["id"])
+    if name == "view_slices":
+        refs = refs[:MAX_VIEW_SLICES]
+    targets: list[str] = []
+    for ref in refs:
+        record = state.resolve(ref)
+        if record is not None and record.id not in targets:
+            targets.append(record.id)
+    return targets
 
-    ADK runs the several tool calls of one model turn concurrently (sync
-    functions in a thread pool), and every tool here closes over ONE
-    ``StackState`` and one undo stack. ``functools.wraps`` keeps the name,
-    docstring and signature ADK builds the schema from.
+
+def _serialized(
+    tool: Any, lock: threading.Lock, *, state: StackState | None = None,
+    on_event: LiveCallback | None = None,
+) -> Any:
+    """Serialize execution and its host notifications under the same lock.
+
+    Model tool-call announcements may arrive together. These optional events
+    identify the tool actually executing, including stable filenames resolved
+    before a reorder. They never enter model context or change its schema.
     """
+    signature = inspect.signature(tool)
+
+    def notify(event: dict[str, Any]) -> None:
+        if on_event is not None:
+            try:
+                on_event(event)
+            except Exception:
+                logger.warning("Tool execution observer failed", exc_info=True)
 
     @functools.wraps(tool)
     def run(*args: Any, **kwargs: Any) -> Any:
         with lock:
-            # Concurrent sibling calls can acquire this lock after submit.
-            # Completion acceptance closes the session: nothing later may
-            # change its scientific state or final visual evidence.
-            if visual is not None and visual.state.submitted:
-                return {"status": "refused", "error": "ALREADY_SUBMITTED"}
-            result = tool(*args, **kwargs)
-            if visual is not None and isinstance(result, dict):
-                visual.register(result)
+            if on_event is None:
+                return tool(*args, **kwargs)
+            fields: dict[str, Any] = {"name": tool.__name__, "execution_id": uuid.uuid4().hex}
+            try:
+                bound = signature.bind(*args, **kwargs)
+                bound.apply_defaults()
+                arguments = dict(bound.arguments)
+                context = arguments.pop("tool_context", None)
+                fields.update(
+                    id=_plain(getattr(context, "function_call_id", None)),
+                    args=_plain(arguments),
+                    target_ids=_tool_target_ids(state, tool.__name__, arguments)
+                    if state is not None else [],
+                )
+            except Exception:
+                # Bad display metadata must never change the tool's behavior.
+                logger.warning("Tool execution metadata unavailable", exc_info=True)
+                fields.update(id=None, args={}, target_ids=[])
+            notify({"kind": "tool_start", **fields})
+            try:
+                result = tool(*args, **kwargs)
+            except Exception as exc:
+                notify({"kind": "tool_end", **fields, "response": {
+                    "status": "error", "error": type(exc).__name__, "message": str(exc),
+                }})
+                raise
+            notify({"kind": "tool_end", **fields, "response": _plain(result)})
             return result
 
     return run
@@ -164,7 +217,6 @@ class ToolBox:
         default_factory=set
     )
     reviewed: bool = False
-    visual_context: VisualContext | None = None
 
     @property
     def names(self) -> list[str]:
@@ -195,8 +247,6 @@ class ToolBox:
 
     def begin_model_call(self) -> None:
         """Promote pictures from direct calls (a convenience for hosts/tests)."""
-        if self.visual_context is not None:
-            self.visual_context.mark_all_delivered()
         direct = self.pending_placement_views.pop("__direct__", None)
         if direct is not None:
             self.seen_placement_views.update(direct)
@@ -428,6 +478,57 @@ def missing_transforms(state: StackState) -> dict[str, Any] | None:
     }
 
 
+def damaged_transform_error(state: StackState, spec: JobSpec) -> dict[str, Any] | None:
+    """Damaged sections require an applied interactive correction, not identity."""
+    failures = []
+    identity = np.array([1.0, 0.0, 0.0, 0.0, 1.0, 0.0])
+    for record in state.in_order():
+        if not record.damaged:
+            continue
+        transform = record.transform or {}
+        reason = None
+        if not transform:
+            reason = "missing_transform"
+        elif transform.get("kind") != "interactive":
+            reason = "not_interactive"
+        else:
+            try:
+                params = np.asarray(transform.get("params"), dtype=float)
+                if params.shape != (6,) or not np.isfinite(params).all():
+                    reason = "invalid_transform"
+                elif transform.get("spline") is not None:
+                    from langslice.landmark_warp import fit_spline
+
+                    spline = transform["spline"]
+                    fit_spline(spline)
+                    if np.allclose(spline["source"], spline["target"], rtol=0, atol=1e-9):
+                        reason = "identity_transform"
+                elif np.allclose(params, identity, rtol=0, atol=1e-9):
+                    reason = "identity_transform"
+            except (TypeError, ValueError):
+                reason = "invalid_transform"
+        if reason:
+            failures.append({"id": record.id, "reason": reason})
+    if not failures:
+        return None
+    return {
+        "status": "error",
+        "error": "DAMAGED_REQUIRES_MANUAL_TRANSFORM",
+        "failures": failures,
+        "interactive_enabled": spec.transform.interactive,
+        "message": (
+            "Damaged sections require a non-identity interactive transform. "
+            + (
+                "Use adjust_transform or adjust_transforms to align the surviving "
+                "anatomy, inspect the returned overlays, then validate again."
+                if spec.transform.interactive else
+                "Interactive transform tools are disabled for this run; the host "
+                "must enable interactive transforms to resolve these sections."
+            )
+        ),
+    }
+
+
 def submit_errors(
     state: StackState, spec: JobSpec, breaks: list[int]
 ) -> dict[str, Any] | None:
@@ -445,22 +546,19 @@ def submit_errors(
         if refusal is not None:
             return refusal
     if spec.has("transform"):
-        return missing_transforms(state)
+        return damaged_transform_error(state, spec) or missing_transforms(state)
     return None
 
 
 # --- the toolbox ---------------------------------------------------------
 
 
-def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox:
+def build_tools(
+    state: StackState, ctx: EngineContext, spec: JobSpec, *,
+    on_event: LiveCallback | None = None,
+) -> ToolBox:
     """Build the tools this run's spec switches on, closed over *state*."""
     box = ToolBox()
-    if spec.image_retention == "completion":
-        box.visual_context = VisualContext(
-            state, box.seen_placement_views,
-            final_stage="transform" if spec.has("transform") else "position",
-        )
-    visual = box.visual_context
     pos_lo, pos_hi = ctx.position_range
 
     # --- shared plumbing ------------------------------------------------
@@ -595,9 +693,6 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                 "'<corrected index>: <filename>' in its top-left corner."
             ),
             TOOL_MEDIA_PARTS_KEY: parts,
-            **({EVIDENCE_KEY: [
-                visual.evidence(record, "reference", eligible=False) for record in known
-            ]} if visual is not None else {}),
         }
 
     def note(text: str) -> dict[str, Any]:
@@ -687,23 +782,6 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             **commit(*[record.id for record in known]),
         }
 
-    def accept_views(slice_ids: list[str], stage: str) -> dict[str, Any]:
-        """Accept inspected current images and retire superseded attachments.
-
-        Args:
-            slice_ids: Section filenames or corrected indices accepted together.
-            stage: position for comparisons, transform for final overlays.
-
-        Requires full views delivered in an earlier model round. Retains all
-        text and reasoning; does not change positions or transformations.
-        """
-        if visual is None or stage not in {"position", "transform"} or not spec.has(stage):
-            return {"status": "error", "error": "BAD_STAGE"}
-        records, unknown = resolve_many(slice_ids)
-        if unknown or not records:
-            return {"status": "error", "error": "UNKNOWN_SLICE_IDS", "unknown": unknown}
-        return visual.accept([record.id for record in records], stage)
-
     def submit(
         summary: str,
         notes: list[str],
@@ -734,11 +812,6 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                 "detail": "view_stack has not run since the last set_positions write",
             }
 
-        if visual is not None and (spec.has("transform") or spec.has("position")):
-            stage = "transform" if spec.has("transform") else "position"
-            accepted = visual.accept([record.id for record in state.slices], stage, final=True)
-            if accepted["status"] != "ok":
-                return accepted
         snapshot()
         state.interval_breaks = sorted(set(breaks))
         # Model output is a trust boundary: a malformed submission must not
@@ -783,14 +856,6 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             except (TypeError, ValueError):
                 continue
         refusal = submit_errors(state, spec, breaks)
-        if (refusal is None and visual is not None
-                and (spec.has("transform") or spec.has("position"))):
-            stage = "transform" if spec.has("transform") else "position"
-            _, missing = visual.candidates([record.id for record in state.slices], stage)
-            if missing:
-                refusal = {
-                    "status": "refused", "error": "FINAL_VIEWS_NOT_SEEN", "slice_ids": missing,
-                }
         return refusal or {
             "status": "ok",
             "would_submit": True,
@@ -873,17 +938,12 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             applied.append(record.id)
         parts: list[types.Part] = []
         failed: list[dict[str, str]] = []
-        orientation_evidence: list[VisualEvidence] = []
         for name in applied[:MAX_VIEW_SLICES]:
             record = state.by_id(name)
             if record is None:
                 continue
             try:
                 parts.append(section_part(record))
-                if visual is not None:
-                    orientation_evidence.append(
-                        visual.evidence(record, "reference", eligible=False)
-                    )
             except Exception as exc:
                 failed.append({"id": name, "message": str(exc)})
         return {
@@ -900,7 +960,6 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             ),
             "render_failed": failed,
             TOOL_MEDIA_PARTS_KEY: parts,
-            **({EVIDENCE_KEY: orientation_evidence} if visual is not None else {}),
         }
 
     def reorder_slices(new_order: list[str]) -> dict[str, Any]:
@@ -1072,7 +1131,6 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         parts: list[types.Part] = []
         failed: list[dict[str, str]] = []
         rendered: list[str] = []
-        evidence: list[VisualEvidence] = []
         delivery_id: str | None = None
         for row, position in shown:
             record = state.by_id(row["id"])
@@ -1089,10 +1147,6 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                 continue
             parts.append(image_to_part(caption(picture, label)))
             rendered.append(record.id)
-            if visual is not None:
-                evidence.append(
-                    visual.evidence(record, "position", eligible=True, position=position)
-                )
             delivery_id = box.record_placement_view(
                 tool_context, placement_view_key(record, position)
             )
@@ -1124,8 +1178,6 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         if delivery_id is not None:
             result[TOOL_MEDIA_DELIVERY_ID_KEY] = delivery_id
         result[TOOL_MEDIA_PARTS_KEY] = parts
-        if visual is not None:
-            result[EVIDENCE_KEY] = evidence
         return result
 
     def run_deepslice(
@@ -1214,6 +1266,8 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         template_opacity: float = 0.0,
         outlines: str = "all",
         tool_context: Any = None,
+        border_color: str = "yellow",
+        border_thickness: float = 0.5,
     ) -> dict[str, Any]:
         """Show sections against the atlas at candidate positions. Writes nothing.
 
@@ -1239,6 +1293,11 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                 side_by_side supports only the full view.
             template_opacity: 0..1, the atlas template blended under the
                 outlines in "overlay".
+            border_color: Atlas border color, a named color or #RRGGBB; yellow
+                by default. Display only; does not change the transform.
+            border_thickness: Atlas border width in output pixels, 0.25..8;
+                default 0.5. Fractional widths are antialiased. Applies only
+                where atlas outlines are drawn.
             outlines: "all" (every family boundary), "outer" (the atlas
                 outline only) or "none". Outlines and template_opacity apply
                 only to physical views, not side_by_side reference images.
@@ -1247,6 +1306,11 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             The section-position pairs compared, in order, each with its
             calibration, and the images per pair in that order.
         """
+        try:
+            rgb, border_thickness = normalize_border_style(border_color, border_thickness)
+        except ValueError as exc:
+            return {"status": "error", "error": "INVALID_BORDER_STYLE", "message": str(exc)}
+        border_color = "#" + "".join(f"{channel:02x}" for channel in rgb)
         view = str(mode or "template").strip().lower()
         if view not in VIEW_MODES:
             return {"status": "error", "error": "BAD_MODE", "modes": list(VIEW_MODES)}
@@ -1309,7 +1373,6 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         full_atlas_view = view != "section" and (
             not window or window == [0.0, 0.0, 1.0, 1.0]
         )
-        evidence: list[VisualEvidence] = []
         section_indexes: dict[str, int] = {}
         for record, position in pairs:
             if record.id not in sections:
@@ -1325,33 +1388,18 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                     if record.id not in section_indexes:
                         section_indexes[record.id] = len(parts)
                         parts.append(tissue_image)
-                        if visual is not None:
-                            evidence.append(visual.evidence(
-                                record, "position", eligible=False, position=position,
-                            ))
                     media_indexes = {"section": section_indexes[record.id], "atlas": len(parts)}
                     parts.append(atlas_image)
-                    if visual is not None:
-                        candidate = visual.evidence(
-                            record, "position", eligible=True, position=position,
-                        )
-                        candidate.dependencies = (section_indexes[record.id],)
-                        evidence.append(candidate)
                 else:
                     images, _ = physical_views(
                         section, um_per_px, ctx.atlas, position, cast(Plane, state.plane),
                         state.pitch_deg, state.yaw_deg, dict(IDENTITY_PARAMS),
                         mode=view, zoom=window, template_opacity=opacity, outlines=layer,
+                        border_color=border_color, border_thickness=border_thickness,
                         label=f"{record.id} vs atlas {position:.2f} mm",
                         long_edge=VIEW_LONG_EDGE,
                     )
                     parts.extend(image_to_part(image) for image in images)
-                    if visual is not None:
-                        evidence.extend(
-                            visual.evidence(record, "position", eligible=full_atlas_view,
-                                            position=position)
-                            for _ in images
-                        )
             except Exception as exc:
                 failed.append({"id": record.id, "position_mm": round(position, 3),
                                "message": str(exc)})
@@ -1378,7 +1426,9 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             "compared": compared,
             "unknown_ids": unknown,
             "no_position": unplaced,
-            "view": {"mode": view, "zoom": window or [0.0, 0.0, 1.0, 1.0], "outlines": layer},
+            "view": {"mode": view, "zoom": window or [0.0, 0.0, 1.0, 1.0],
+                     "outlines": layer, "border_color": border_color,
+                     "border_thickness": border_thickness},
             "render_failed": failed,
             "description": (
                 "Compared, in order: "
@@ -1395,8 +1445,6 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         if dropped > 0:
             result["truncated"] = True
             result["dropped_pairs"] = dropped
-        if visual is not None:
-            result[EVIDENCE_KEY] = evidence
         if delivery_id is not None:
             result[TOOL_MEDIA_DELIVERY_ID_KEY] = delivery_id
         return result
@@ -1533,7 +1581,6 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         results: list[dict[str, Any]] = []
         parts: list[types.Part] = []
         fits: list[tuple[SliceState, dict[str, Any]]] = []
-        pictured: list[SliceState] = []
         for record in targets:
             if record.damaged:
                 results.append({"id": record.id, "status": "error", "error": "DAMAGED"})
@@ -1548,7 +1595,6 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                 # Every fit returns its picture (run 15, 2026-09-10: a
                 # 25-section fit pictured 4 and the model never saw 21).
                 parts.append(image_to_part(panel))
-                pictured.append(record)
 
         payload: dict[str, Any] = {
             "status": "ok" if fits else "error",
@@ -1578,10 +1624,6 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                 "mirrored": outcome["mirrored"],
             }
         save_checkpoint(state, ctx.checkpoint_path)
-        if visual is not None:
-            payload[EVIDENCE_KEY] = [
-                visual.evidence(record, "transform", eligible=True) for record in pictured
-            ]
         return payload
 
     # --- the interactive transform --------------------------------------
@@ -1662,8 +1704,11 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         template_opacity: float,
         pivot: tuple[float, float] | None,
         outlines: str = "all",
+        border_color: str = "yellow",
+        border_thickness: float = 0.5,
         markers: Any = None,
         label: str = "",
+        spline: dict[str, Any] | None = None,
     ) -> list[Any]:
         images, _iou = physical_views(
             staged.section,
@@ -1677,10 +1722,12 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             mode=mode,
             zoom=zoom,
             template_opacity=template_opacity,
+            border_color=border_color, border_thickness=border_thickness,
             outlines=outlines,
             pivot=pivot,
             markers=markers,
             label=label or staged.record.id,
+            spline=spline,
             long_edge=OVERLAY_LONG_EDGE,
         )
         return images
@@ -1700,6 +1747,8 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         pivot: str | list[float] = "canvas",
         outlines: str = "all",
         note: str = "",
+        border_color: str = "yellow",
+        border_thickness: float = 0.5,
     ) -> dict[str, Any]:
         """Set one section's in-plane transform and show the result.
 
@@ -1734,6 +1783,11 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                 list is the whole canvas.
             template_opacity: 0..1, how strongly the atlas template is blended
                 under the outlines in "overlay". 0.0 draws no template.
+            border_color: Atlas border color, a named color or #RRGGBB; yellow
+                by default. Display only; does not change the transform.
+            border_thickness: Atlas border width in output pixels, 0.25..8;
+                default 0.5. Fractional widths are antialiased. Applies only
+                where atlas outlines are drawn.
             pivot: What the rotation and the scales turn about: "canvas" (the
                 canvas centre), "tissue" (the section's tissue centroid) or
                 [fx, fy] fractions of the canvas.
@@ -1747,6 +1801,11 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             and full adjustment history remain in local state rather than
             being repeated in every result.
         """
+        try:
+            rgb, border_thickness = normalize_border_style(border_color, border_thickness)
+        except ValueError as exc:
+            return {"status": "error", "error": "INVALID_BORDER_STYLE", "message": str(exc)}
+        border_color = "#" + "".join(f"{channel:02x}" for channel in rgb)
         view = str(mode or "overlay").strip().lower()
         if view not in PREVIEW_MODES:
             return {"status": "error", "error": "BAD_MODE", "modes": list(PREVIEW_MODES)}
@@ -1819,11 +1878,14 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                 images = views(
                     staged, staged.params, mode="overlay", zoom=window,
                     template_opacity=opacity, pivot=staged.pivot, outlines=layer,
+                    border_color=border_color, border_thickness=border_thickness,
                     label=f"{record.id} candidate",
                 ) + views(
                     staged, other, mode="overlay", zoom=window,
                     template_opacity=opacity, pivot=other_pivot, outlines=layer,
+                    border_color=border_color, border_thickness=border_thickness,
                     label=f"{record.id} {'stored' if held else 'identity'}",
+                    spline=(previous or {}).get("spline"),
                 )
                 reference = {
                     "source": "stored" if held else "identity",
@@ -1835,6 +1897,7 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                 images = views(
                     staged, staged.params, mode=view, zoom=window,
                     template_opacity=opacity, pivot=staged.pivot, outlines=layer,
+                    border_color=border_color, border_thickness=border_thickness,
                 )
         except Exception as exc:
             logger.warning("adjust_transform failed for %s: %s", record.id, exc)
@@ -1884,17 +1947,13 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             "id": record.id,
             "position_mm": round(float(record.position_mm or 0.0), 3),
             "physical": written["physical"],
-            **({EVIDENCE_KEY: [
-                visual.evidence(record, "transform", eligible=(
-                    (not window or window == [0.0, 0.0, 1.0, 1.0])
-                    and view in {"overlay", "ab"} and layer != "none" and index == 0
-                )) for index in range(len(media_parts))
-            ]} if visual is not None else {}),
             "written": wrote,
             "view": {
                 "mode": view,
                 "zoom": window or [0.0, 0.0, 1.0, 1.0],
                 "outlines": layer,
+                "border_color": border_color,
+                "border_thickness": border_thickness,
             },
             **({"ab_reference": reference} if reference is not None else {}),
             "description": (
@@ -1908,7 +1967,8 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                          else "The outlines are the FAMILY regions of ")
                         + f"the {state.plane} atlas section at "
                         f"{float(record.position_mm or 0.0):.3f} mm, drawn at "
-                        "true physical scale as neutral hairlines."
+                        f"true physical scale with {border_color} borders "
+                        f"{border_thickness} output pixel(s) wide."
                     )
                 )
             ),
@@ -1930,7 +1990,8 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                 ``scale_x``, ``scale_y``, ``translate_x_mm`` and
                 ``translate_y_mm``. Each may also include ``mode`` (overlay,
                 checkerboard, outlines, section or template), ``zoom``,
-                ``template_opacity``, ``pivot``, ``outlines`` and ``note`` as
+                ``template_opacity``, ``border_color``, ``border_thickness``,
+                ``pivot``, ``outlines`` and ``note`` as
                 on ``adjust_transform``.
 
         Returns:
@@ -1969,7 +2030,6 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
         results: list[dict[str, Any]] = []
         parts: list[types.Part] = []
         wrote_any = False
-        evidence: list[VisualEvidence] = []
         batching_adjustments = True
         try:
             for entry in entries:
@@ -1998,9 +2058,10 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
                     entry.get("pivot", "canvas"),  # type: ignore[arg-type]
                     str(entry.get("outlines", "all")),
                     str(entry.get("note", "")),
+                    border_color=entry.get("border_color", "yellow"),
+                    border_thickness=entry.get("border_thickness", 0.5),
                 )
                 media = result.pop(TOOL_MEDIA_PARTS_KEY, [])
-                evidence.extend(result.pop(EVIDENCE_KEY, []))
                 result.pop("description", None)
                 parts.extend(media)
                 wrote_any = wrote_any or bool(result.get("written"))
@@ -2016,7 +2077,6 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             "status": "ok" if successful else "error",
             **({} if successful else {"error": "NOTHING_ADJUSTED"}),
             "results": results,
-            **({EVIDENCE_KEY: evidence} if visual is not None else {}),
             "description": (
                 "Attached feedback images, in entry order, for "
                 + ", ".join(successful)
@@ -2025,158 +2085,18 @@ def build_tools(state: StackState, ctx: EngineContext, spec: JobSpec) -> ToolBox
             TOOL_MEDIA_PARTS_KEY: parts,
         }
 
-    def landmarks(
-        slice_id: str,
-        pairs: list[dict[str, list[float]]],
-        rotation_deg: float,
-        scale_x: float,
-        scale_y: float,
-        translate_x_mm: float,
-        translate_y_mm: float,
-        mode: str = "overlay",
-        zoom: list[float] = [],  # noqa: B006 — read, never mutated; ADK wants a value
-        template_opacity: float = 0.0,
-        pivot: str | list[float] = "canvas",
-    ) -> dict[str, Any]:
-        """Measure point pairs under a transform, and fit one to them.
-
-        Each pair is a point on the section and the point of the atlas it
-        belongs on, both as fractions of the CANVAS as the last preview drew
-        it. Nothing is written.
-
-        Args:
-            slice_id: Filename or corrected index.
-            pairs: ``[{"section": [fx, fy], "atlas": [fx, fy]}]``, fractions of
-                the canvas.
-            rotation_deg: Rotation of the transform to measure under.
-            scale_x: Horizontal scale of that transform.
-            scale_y: Vertical scale of that transform.
-            translate_x_mm: Horizontal shift of that transform, in millimetres.
-            translate_y_mm: Vertical shift of that transform, in millimetres.
-            mode: Any `adjust_transform` view except "ab".
-            zoom: [x0, y0, x1, y1] as fractions of the canvas; empty is all.
-            template_opacity: 0..1, the template under the outlines in
-                "overlay".
-            pivot: "canvas", "tissue" or [fx, fy] — the point the fitted
-                rotation and scales are reported about, as in
-                `adjust_transform`.
-
-        Returns:
-            Per pair the distance in millimetres between the section point
-            under the given transform and its atlas point, the RMS of those
-            distances, the transform fitted to the pairs (a similarity from 2
-            points, a full affine from 3) in the same units, and an image with
-            the pairs drawn on the current view.
-        """
-        view = str(mode or "overlay").strip().lower()
-        if view not in VIEW_MODES:
-            return {"status": "error", "error": "BAD_MODE", "modes": list(VIEW_MODES)}
-        section_points: list[list[float]] = []
-        atlas_points: list[list[float]] = []
-        for pair in pairs or []:
-            if not isinstance(pair, dict):
-                continue
-            try:
-                here = [float(value) for value in pair["section"]]
-                there = [float(value) for value in pair["atlas"]]
-            except (KeyError, TypeError, ValueError):
-                continue
-            if len(here) == 2 and len(there) == 2:
-                section_points.append(here)
-                atlas_points.append(there)
-        if not section_points:
-            return {
-                "status": "error",
-                "error": "BAD_ARGS",
-                "message": (
-                    'pairs must be [{"section": [fx, fy], "atlas": [fx, fy]}] '
-                    "with fractions of the canvas."
-                ),
-            }
-        try:
-            window = [float(value) for value in (zoom or [])]
-            opacity = float(template_opacity)
-        except (TypeError, ValueError):
-            return {"status": "error", "error": "BAD_ARGS"}
-        staged = stage(
-            slice_id, rotation_deg, scale_x, scale_y, translate_x_mm,
-            translate_y_mm, pivot,
-        )
-        if isinstance(staged, dict):
-            return staged
-
-        width, height = staged.geometry.size
-        scale = np.array([width, height], dtype=np.float64)
-        source = np.asarray(section_points, dtype=np.float64) * scale
-        target = np.asarray(atlas_points, dtype=np.float64) * scale
-        matrix = np.asarray(staged.matrix(), dtype=np.float64)
-        mapped = source @ matrix[:, :2].T + matrix[:, 2]
-        distances = np.linalg.norm(mapped - target, axis=1) * staged.um_per_px / 1000.0
-
-        centre = staged.pivot or (width / 2.0, height / 2.0)
-        fitted: dict[str, Any] | None = None
-        if len(source) >= 2:
-            estimator = affine_fit if len(source) >= 3 else similarity_fit
-            estimate = estimator(source, target)
-            residual = np.linalg.norm(
-                source @ estimate[:, :2].T + estimate[:, 2] - target, axis=1
-            ) * staged.um_per_px / 1000.0
-            fitted = {
-                "kind": "affine" if len(source) >= 3 else "similarity",
-                "points": len(source),
-                **physical_params(estimate, pivot=centre, um_per_px=staged.um_per_px),
-                "rms_mm": round(float(np.sqrt((residual**2).mean())), 4),
-            }
-
-        try:
-            images = views(
-                staged, staged.params, mode=view, zoom=window,
-                template_opacity=opacity, pivot=staged.pivot,
-                markers=(source, target),
-            )
-        except Exception as exc:
-            logger.warning("landmarks: render failed for %s: %s", staged.record.id, exc)
-            return {"status": "error", "error": "RENDER_FAILED", "message": str(exc)}
-
-        return {
-            "status": "ok",
-            "id": staged.record.id,
-            "params": staged.params,
-            "pivot": {"mode": staged.pivot_mode, "canvas_frac": staged.pivot_frac},
-            "pairs": [
-                {
-                    "index": index + 1,
-                    "section": section_points[index],
-                    "atlas": atlas_points[index],
-                    "residual_mm": round(float(distances[index]), 4),
-                }
-                for index in range(len(section_points))
-            ],
-            "rms_mm": round(float(np.sqrt((distances**2).mean())), 4),
-            "fit": fitted,
-            "view": {"mode": view, "zoom": window or [0.0, 0.0, 1.0, 1.0]},
-            "calibration": staged.calibration,
-            "description": (
-                f"{staged.record.id} under the transform above, with the "
-                f"{len(section_points)} pair(s) drawn: a cross and its number "
-                "on each section point, a ring on each atlas point, a line "
-                "between them."
-            ),
-            TOOL_MEDIA_PARTS_KEY: [image_to_part(image) for image in images],
-            **({EVIDENCE_KEY: [
-                visual.evidence(staged.record, "transform", eligible=False)
-                for _ in images
-            ]} if visual is not None else {}),
-        }
-
     if spec.has("transform"):
-        box.tools += [fit_affine, adjust_transform, adjust_transforms, landmarks]
+        if spec.transform.automatic:
+            box.tools.append(fit_affine)
+        if spec.transform.interactive:
+            from langslice.linear.landmark_tools import make_landmark_tools
+
+            box.tools += [adjust_transform, adjust_transforms]
+            box.tools += make_landmark_tools(state, ctx, snapshot, commit)
         if spec.transform.angles:
             box.tools.append(set_cutting_angles)
 
     box.tools.append(submit)
-    if visual is not None and (spec.has("position") or spec.has("transform")):
-        box.tools.append(accept_views)
     lock = threading.Lock()
-    box.tools = [_serialized(tool, lock, visual) for tool in box.tools]
+    box.tools = [_serialized(tool, lock, state=state, on_event=on_event) for tool in box.tools]
     return box

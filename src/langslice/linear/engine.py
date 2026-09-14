@@ -9,6 +9,7 @@ replayed.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -25,9 +26,11 @@ from langslice.linear.atlas_fetch import atlas_strip_parts
 from langslice.linear.checkpoint import (
     default_checkpoint_path,
     load_checkpoint,
+    observe_checkpoints,
     save_checkpoint,
 )
 from langslice.linear.discovery import discover_slices
+from langslice.linear.live import LiveCallback
 from langslice.linear.prompt import build_job_statement
 from langslice.linear.render import stack_image_parts, status_text
 from langslice.linear.session import (
@@ -302,6 +305,7 @@ async def run_session(
     box: ToolBox,
     *,
     max_iterations: int = DEFAULT_MAX_ITERATIONS,
+    on_event: LiveCallback | None = None,
 ) -> tuple[int, int]:
     """Drive the one stack session; return ``(tool_calls, turns)``."""
     pos_lo, pos_hi = ctx.position_range
@@ -335,7 +339,7 @@ async def run_session(
         max_input_tokens=spec.max_input_tokens,
         max_quota_percent=spec.max_quota_percent,
         tool_media_delivered=box.mark_placement_views_delivered,
-        visual_context=box.visual_context,
+        on_event=on_event,
     )
     if sink and sink[0]:
         state.debrief = sink[0]
@@ -360,8 +364,17 @@ async def run(
     *,
     emit: Callable[[str], None] | None = None,
     atlas_loader: Callable[[str], Any] | None = None,
+    on_write: Callable[[StackState], None] | None = None,
+    on_event: LiveCallback | None = None,
 ) -> StackState:
-    """Run one linear job and return the final stack state."""
+    """Run one linear job and return the final stack state.
+
+    *on_write* is a host adapter that wants to watch the run live (the ABBA
+    mirror, :mod:`langslice.integrations.abba_linear`): it is called once
+    with the state as ingested, then again after every checkpoint the
+    session writes (:func:`langslice.linear.checkpoint.observe_checkpoints`),
+    through to the final result.
+    """
     ctx = build_context(spec, emit=emit, atlas_loader=atlas_loader)
 
     state = load_checkpoint(ctx.checkpoint_path) if spec.resume else None
@@ -373,14 +386,18 @@ async def run(
         state = ingest(spec, ctx)
         apply_host_inputs(state, spec)
     save_checkpoint(state, ctx.checkpoint_path)
+    if on_write is not None:
+        on_write(state)
 
-    box = build_tools(state, ctx, spec)
-    tool_calls, turns = await run_session(state, ctx, spec, box)
-    ctx.progress(
-        f"[session] {tool_calls} tool call(s) over {turns} turn(s); "
-        + ("submitted" if state.submitted else "no submission")
-    )
-    if not state.submitted:
-        state.notes.append(f"session: no submission within {turns} turns")
+    box = build_tools(state, ctx, spec, on_event=on_event)
+    watch = observe_checkpoints(on_write) if on_write is not None else contextlib.nullcontext()
+    with watch:
+        tool_calls, turns = await run_session(state, ctx, spec, box, on_event=on_event)
+        ctx.progress(
+            f"[session] {tool_calls} tool call(s) over {turns} turn(s); "
+            + ("submitted" if state.submitted else "no submission")
+        )
+        if not state.submitted:
+            state.notes.append(f"session: no submission within {turns} turns")
 
-    return emit_results(state, ctx)
+        return emit_results(state, ctx)

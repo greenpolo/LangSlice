@@ -12,7 +12,7 @@ sections are mirrored, which are out of order, where sections are missing, which
 are damaged, where each one sits. Splitting those into separate agent sessions
 throws that shared reading away and re-pays for it. The per-section interactive
 alignment was the one exception until 2026-09-06 — it ran as a bounded
-sub-session — and is not one any more: `adjust_transform` / `landmarks` are
+sub-session — and is not one any more: `adjust_transform` / landmark tools are
 main-session tools the agent reaches for whenever it wants (GPT-6 Astra moved
 every parameter at once and finished a section in four previews, so the
 fan-out bought nothing). Preview and set are one tool, the computer-use
@@ -36,6 +36,8 @@ JobSpec
     deepslice: bool = False       # run_deepslice tool available (coronal mouse/rat only)
     bayesian: bool = False        # fit_position tool available (oblique.py fitter)
   transform:
+    interactive: bool = True      # direct visual adjustments and landmarks
+    automatic: bool = True        # automatic affine fitting tool
     angles: bool = False          # may set the stack-wide cutting angles
     elastix: bool = False         # fit_affine may use Elastix intensity affine
   facts: free-form user facts, one line each, passed verbatim
@@ -114,8 +116,9 @@ in any payload or prompt (see `lean-harness` history in `linear/CLAUDE.md`).
 | `fit_affine(ids, method=silhouette\|elastix)` | transform | per-section in-plane affine against its atlas section, written as the section's transform; returns iou, the transform as the same five `physical` knobs `adjust_transform` takes (plus `shear`, about the canvas centre) and a captioned overlay panel for every successful fit. Damaged sections are refused. |
 | `adjust_transform(id, rotation_deg, scale_x, scale_y, translate_x_mm, translate_y_mm, mode, zoom, template_opacity, pivot, outlines, note)` | transform | writes `{"kind": "interactive", ...}` on ANY positioned section (`NO_POSITION` otherwise) and returns it drawn under those parameters with the atlas outlines at true physical scale. The last call stays; the same parameters again only re-draw (no undo step). Undoable and checkpointed like every other write. |
 | `adjust_transforms(entries)` | transform | the same write-and-look action for up to four independent sections, one labelled feedback image each and one undo step. A section may appear once; a dependent refinement waits for its first result and uses `adjust_transform`. |
-| `landmarks(id, pairs, params...)` | transform | point pairs (section point, atlas point) as fractions of the canvas: the residual per pair in mm, their RMS, the transform fitted to them (similarity from 2, affine from 3) in the same physical units, and the pairs drawn on the view. Writes nothing. |
-| `accept_views(slice_ids, stage)` | completion image retention, position or transform | accepts full current views delivered in a prior model request; retires superseded images for the selected sections without changing scientific state. Grouping and revisits are unrestricted. |
+| `view_landmarks` | transform | stable unwarped slice and atlas with matching numbered points, plus current overlay; pixel coordinates and immutable view ID |
+| `edit_landmarks` | transform | add/move/delete pairs by ID; checkpoints editable points without applying a deformation |
+| `warp_landmarks` | transform | affine (default) or spline fit from saved pairs; before/after overlays plus numbered references, undo supported |
 | `submit(summary, notes, interval_breaks)` | always | ends the run; gated (below). |
 
 `fetch_atlas` and `view_slices` frame tissue the same way so apparent scale is
@@ -136,10 +139,57 @@ status table.
 - not strict: each reported break index must sit where the written interval
   exceeds 1.5x the stack's median written spacing (`INTERVAL_BREAKS_UNSUPPORTED`).
 - transform on: every section carries a transform (`MISSING_TRANSFORMS`,
-  naming the sections without one). Damaged sections included — the agent
-  aligns those by hand and says so in the note.
+  naming the sections without one). Damaged sections require a non-identity
+  interactive transform (`DAMAGED_REQUIRES_MANUAL_TRANSFORM`, naming each section
+  and the missing, automatic, identity or invalid transform). Both `validate`
+  and `submit` return an instruction to align the surviving anatomy with the
+  interactive tools and inspect the overlays. If those tools are disabled, the
+  refusal reports that the host must enable them. This checks an applied manual
+  correction, not anatomical alignment quality; intact identity transforms remain
+  valid. Position-only runs are unaffected.
 
 Refusals state the numbers and stop.
+
+When interactive transforms are enabled, the prompt asks for inspection of each
+fit or adjustment against surviving internal anatomy, then refinement of each
+slice until no further improvement is possible with the available transforms.
+Changes should be kept only if they improve alignment. This adds no mandatory
+adjustment count or final-review hook.
+
+### Paired landmark deformation
+
+Interactive transforms expose `view_landmarks`, `edit_landmarks`, and
+`warp_landmarks`, replacing the old read-only affine-landmark measurement tool.
+The view returns a stable unwarped section, atlas, and current overlay. Both
+reference images carry matching numbered points. Coordinates are `[x,y] pixels
+in their returned images, including explicit caption/content/crop mapping.
+The image resolution and OAuth `high` detail setting are unchanged.
+
+Editable correspondences persist independently of the applied transform.
+`edit_landmarks` adds, moves, or deletes individual pairs by stable ID, retaining
+all untouched pairs. It checkpoints the points and returns updated numbered
+images. `warp_landmarks(method="affine")` is the default: it least-squares fits
+3–64 saved pairs with a full affine, including shear. After inspecting its
+overlay, the agent can call `warp_landmarks(method="spline")` on the same saved
+4–64 pairs to fit local deformation. Both fits replace the complete transform;
+the affine is not applied twice. Every application returns full before/after
+overlays and numbered slice/atlas references. Both edits and applications are
+undoable; changing the fit method preserves the pair IDs and coordinates.
+The stable slice reference does not move when a warp is applied. Existing saved
+splines supply their original source/target points for continued editing.
+Invalid coordinates, stale views, degenerate pairs, sampled folds, or failed
+inversion refuse without changing state. Fold screening is not a global proof.
+
+Pairs persist in normalized original oriented-section coordinates with the
+original physical extent. The canonical spline is BigWarp's target-to-source
+pullback; forward point mapping numerically inverts that same map. The stored
+six-number affine remains baseline metadata when a spline is present, not an
+additional transformation. Later affine fitting or knob adjustment replaces
+the spline; A/B comparison renders the complete previous spline. Native ABBA
+receives the same TPS in calibrated snapshot world coordinates and stores it
+as an editable BigWarp registration. Fresh-import CLI sessions without recorded
+snapshot geometry report an explicit synchronization error for spline writes;
+start from the ABBA LangSlice menu for native spline registration.
 
 ## Session
 
@@ -161,19 +211,14 @@ response and allows one grace submission call if exceeded. It does not limit
 cumulative usage. Logs report cumulative input for cost and peak request input
 for context pressure separately.
 
-The opt-in successor (`--image-retention completion`) is documented in
-[Visual context lifecycle](visual_context_design.md):
-preserve the seed and all text/reasoning, retain intermediate images during
-active work, and retire superseded images in batches after acceptance while
-keeping final overlays (or final comparison bundles for position-only work).
-It replaces, rather than supplements, the legacy image-count and stage cuts.
-The model may accept any group with `accept_views`, interleave work, and
-reopen decisions. `submit` accepts all final views; completion-mode validation
-requires those full current views to have appeared in a prior model request.
-This is an additional inspection requirement, not a prescribed stage order.
-Legacy remains the default while transport, cost, and quality are validated.
-See the linked document for cache limitations and the distinction between
-testing this workflow bundle and isolating image retention alone.
+The established working-set policy is the only active policy: its first
+transform-media stage cut and 256-to-128 image-count cuts are unchanged.
+There is no image-acceptance tool, additional inspection gate, or predictive
+cost trigger. `--image-retention legacy` remains a compatibility option;
+the removed `completion` value is rejected rather than silently remapped.
+The [visual context design record](visual_context_design.md) preserves the
+shelved experiment and the measurement-first direction: improve image
+delivery and observe actual cache costs before adding retention machinery.
 
 There is ONE session. The alignment tools live in it like every other tool, so
 a section's preview history, its atlas fetches and the stack reading that
@@ -196,7 +241,7 @@ langslice linear run FOLDER [--tasks reorder,position,transform]
     [--angles] [--elastix]
     [--fact TEXT ...] [--positions JSON] [--order JSON]
     [--out PATH] [--fresh] [--trace-dir PATH]
-    [--image-retention legacy|completion]
+    [--image-retention legacy]
 langslice linear quick-affine ...   (unchanged)
 ```
 
@@ -218,7 +263,30 @@ langslice linear quick-affine ...   (unchanged)
   UNAVAILABLE).
 - Elastix affine method (behind `--elastix`), first version may land after the
   silhouette method.
-- Host adapters (ABBA hand-back of order/positions/transforms).
+
+## The write-observer hook and the ABBA host adapter (2026-09-10)
+
+Host adapters were open until 2026-09-10: `checkpoint.py` now exposes
+`observe_checkpoints(fn)`, a context manager that registers `fn` to be called
+with the state right after every `save_checkpoint` write — the one point
+every tool's write already funnels through (`toolbox.py`'s writers,
+`engine.run`'s own checkpoint after ingest). `engine.run(spec, ...,
+on_write=fn)` wraps the whole session in it and calls `fn` once more up
+front, on the freshly-ingested state, so a host sees the stack before the
+agent has touched it. The agent itself never knows a host is watching:
+nothing about the toolbox, the job statement, or the render path changes.
+
+`langslice.integrations.abba_linear.AbbaStackMirror` is the first such host:
+`langslice abba --linear FOLDER` runs the ordinary headless agent — it still
+renders its own BrainGlobe pictures — inside a live ABBA session, and on
+every `on_write` call diffs the new state against the last one it saw and
+pushes only what changed into ABBA (order/position as `moveSlice`, flip and
+the quarter-turn as the slice's pre-transform, the in-plane affine as a
+registration step, cutting angles onto the resliced atlas), so a person
+watches the stack move in BigDataViewer as the agent works. ABBA is display
+plus the final home of the result; see
+`src/langslice/integrations/CLAUDE.md` for what is and is not verified about
+its sign/axis conventions.
 
 ## Interactive transform: physical space and atlas outlines (2026-09-05, Nash)
 
@@ -248,16 +316,16 @@ registration-software practice (ABBA) exactly.
   2x3 back into the knobs about the canvas centre), which is what lets the
   A/B view show a fit as its B side and lets a preview start from one.
 
-**Atlas outlines, ABBA's way.** ABBA's border channel is the 1-voxel edge of
-the label volume shown as one neutral grey hairline; region colors belong to
-the filled map, not to lines over tissue. Ours: one smoothed contour per
-FAMILY-level region (the organized `color_lut`, families merged at
-`MERGE_EPS` — leaf boundaries are visual noise here), drawn as a 1 px
-anti-aliased line in light grey on dark fluorescence (dark grey on
-brightfield), no rim, no per-region color, AFTER the resize to the output
-size so a hairline stays a hairline on the screen the model sees. Coloured
-2 px lines with a dark rim were tried first and rejected (Nash: "too thick,
-colors are weird"). The contour
+**Atlas outlines.** One smoothed contour per FAMILY-level region (the
+organized `color_lut`, families merged at `MERGE_EPS`; leaf boundaries are
+omitted). Borders default to yellow, 0.5 anti-aliased output pixels, without a
+rim. Agent overlay tools expose `border_color` (named color or `#RRGGBB`) and
+`border_thickness` (0.25–8 output pixels, including fractional widths) alongside `template_opacity`.
+Lines are drawn after crop/resize so zoom does not change their pixel thickness.
+These controls affect display only; changing style with the same transform
+redraws without an undo step. Automatic fit feedback uses the yellow/0.5 px default.
+The separate native ABBA viewer retains ABBA's own display settings.
+The contour
 code (`region_contours`, `_smooth_closed`, family mapping, annotation slice
 at cutting angles) moves from `nonlinear/` to `atlas/render.py` so both
 methods draw the same lines from the same source.
@@ -265,7 +333,7 @@ methods draw the same lines from the same source.
 **The screen.** `adjust_transform` returns the transformed section
 (display-preprocessed grayscale) with the family outlines on top at true
 scale, a 1 mm scale bar, and a caption (section id, position, angles, the
-params). `fit_affine`'s panels and `landmarks`' image use the same renderer
+params). `fit_affine`'s panels and landmark-warp overlays use the same renderer
 (`render.physical_overlay`, the `overlay` view of `render.physical_views`), so
 every look at a section is the same picture.
 
@@ -288,18 +356,13 @@ older single overlay exactly.
   bool and dials the template blended under the outlines in `overlay`.
 
 **The agents' wishlist, built 2026-09-06.** If Astra wants it, it gets it.
-- `pivot` on `adjust_transform` and `landmarks`: `"canvas"`
+- `pivot` on `adjust_transform`: `"canvas"`
   (the canvas centre, the old behaviour), `"tissue"` (the section's own tissue
   centroid, from `image_prep.foreground_mask`) or `[fx, fy]` fractions of the
   canvas. Rotation and the scales turn about it; the translation does not care.
   The arithmetic is `affine.physical_affine_matrix(pivot=...)`, and
   `normalized_physical_affine` takes the pivot on the SECTION's frame, so the
   six stored numbers still describe the map the canvas showed.
-- `landmarks` returns numbers, not a correction: the mm residual of each pair
-  under the given parameters, their RMS, and the transform fitted to the pairs
-  — a similarity from 2 pairs (Umeyama, exact on 2), a full affine from 3 —
-  reported in the same five knobs about the same pivot, with the `shear` an
-  affine can carry that the knobs cannot. Nothing says "apply this".
 - `mode="ab"` renders TWO overlays at one crop: the parameters passed, then the
   transform the section carried before the call, whatever made it (identity
   only when it had none; `ab_reference` says which). The before/after toggle.

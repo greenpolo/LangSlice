@@ -25,7 +25,10 @@ Record kinds, in the order a healthy session writes them:
     carrying the label text that preceded them.
 ``model``
     One model turn: its visible text, any thought summary, and every function
-    call with full JSON arguments.
+    call with full JSON arguments. Usage-only responses are recorded too.
+    Supported providers add sanitized usage diagnostics: numeric attribution,
+    request-slot fingerprints and reconciliation residuals, never image bytes,
+    raw request payloads or encrypted reasoning. Unknown counts stay unknown.
 ``tool_result``
     One tool response: the complete payload the model reads, plus descriptors
     for any media riding on the function response.
@@ -149,7 +152,8 @@ class SessionTrace:
             if isinstance(part_text, str) and part_text:
                 (thought if getattr(part, "thought", False) else text).append(part_text)
 
-        if text or thought or calls:
+        usage = getattr(event, "usage_metadata", None)
+        if text or thought or calls or usage is not None:
             # ``turn`` counts driver invocations; ``step`` counts model
             # responses, which is what a reader paging through a trace wants.
             self._steps += 1
@@ -165,13 +169,19 @@ class SessionTrace:
                 record["thought"] = "\n".join(thought)
             if calls:
                 record["function_calls"] = calls
-            usage = getattr(event, "usage_metadata", None)
             if usage is not None:
                 record["usage"] = {
                     "input_tokens": getattr(usage, "prompt_token_count", None),
                     "cached_tokens": getattr(usage, "cached_content_token_count", None),
                     "output_tokens": getattr(usage, "candidates_token_count", None),
                 }
+            metadata = getattr(event, "custom_metadata", None) or {}
+            diagnostics = metadata.get("usage_diagnostics")
+            if isinstance(diagnostics, dict) and diagnostics.get("schema_version") == 1:
+                record["usage_diagnostics"] = diagnostics
+                writes = diagnostics.get("totals", {}).get("cache_write_tokens")
+                if "usage" in record and type(writes) is int and writes >= 0:
+                    record["usage"]["cache_write_tokens"] = writes
             self._write(record)
 
     @staticmethod
@@ -191,10 +201,6 @@ class SessionTrace:
         if media:
             record["media"] = media
         return record
-
-    def visual_event(self, event: dict[str, Any]) -> None:
-        """Record context retirement without modifying historical events."""
-        self._write(event)
 
     def summary(
         self,

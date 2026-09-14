@@ -13,9 +13,12 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from typing import Any
+from contextlib import aclosing
+from typing import Any, cast
 
 from google.adk.agents import LlmAgent
+from google.adk.agents._streaming_mode import StreamingMode
+from google.adk.agents.run_config import RunConfig
 from google.adk.apps.app import App
 from google.adk.plugins.base_plugin import BasePlugin
 from google.adk.plugins.context_filter_plugin import ContextFilterPlugin
@@ -34,8 +37,8 @@ from langslice.adk.plugins import (
     ToolMediaDeliveryPlugin,
     WorkingSetImages,
 )
+from langslice.linear.live import LiveCallback, LiveEvents
 from langslice.linear.trace import open_trace
-from langslice.linear.visual_context import VisualContext
 
 logger = logging.getLogger(__name__)
 
@@ -50,14 +53,13 @@ def build_plugins(
     run_label: str,
     *,
     tool_media_delivered: Callable[[set[str]], None] | None = None,
-    visual_context: VisualContext | None = None,
 ) -> list[BasePlugin]:
     """The ADK plugins every LangSlice session runs with."""
     plugins: list[BasePlugin] = [
         # One working set per session: the instance remembers its cut.
-        ContextFilterPlugin(custom_filter=visual_context or WorkingSetImages())
+        ContextFilterPlugin(custom_filter=WorkingSetImages())
     ]
-    if tool_media_delivered is not None and visual_context is None:
+    if tool_media_delivered is not None:
         # Must follow the context filter: only media that survived pruning is
         # about to be delivered to the model.
         plugins.append(ToolMediaDeliveryPlugin(tool_media_delivered))
@@ -206,7 +208,7 @@ async def run_agent_session(
     max_input_tokens: int | None = None,
     max_quota_percent: int | None = None,
     tool_media_delivered: Callable[[set[str]], None] | None = None,
-    visual_context: VisualContext | None = None,
+    on_event: LiveCallback | None = None,
 ) -> tuple[int, int]:
     """Drive one agent pass; return ``(tool_calls, turns)``.
 
@@ -216,15 +218,16 @@ async def run_agent_session(
     This optional check happens after the response, not before sending it;
     cumulative usage remains available separately for cost accounting.
     """
+    live = LiveEvents(on_event) if on_event is not None else None
+    run_config = RunConfig(streaming_mode=StreamingMode.SSE) if live else None
     trace = open_trace(run_label, agent=agent)
-    if visual_context is not None and trace is not None:
-        visual_context.trace = trace.visual_event
+    if trace is not None and hasattr(agent.model, "capture_usage_details"):
+        cast(Any, agent.model).capture_usage_details = True
     app = App(
         name=_APP_NAME,
         root_agent=agent,
         plugins=build_plugins(
             run_label, tool_media_delivered=tool_media_delivered,
-            visual_context=visual_context,
         ),
     )
     runner = InMemoryRunner(app=app)
@@ -234,6 +237,8 @@ async def run_agent_session(
     )
 
     message = seed_message
+    if live is not None:
+        live.start(agent, seed_message)
     if trace is not None:
         trace.seed(seed_message)
     # The nudge is traced where it is sent, not where it is written: the last
@@ -256,72 +261,83 @@ async def run_agent_session(
         if trace is not None and nudge is not None:
             trace.nudge(nudge, turn=turns)
         saw_tool_call = False
-        async for event in runner.run_async(
-            user_id=_USER_ID, session_id=run_label, new_message=message
-        ):
-            if trace is not None:
-                trace.event(event, turn=turns)
-            if getattr(event, "error_message", None):
-                # A model/provider error is a stop, not a turn to nudge past:
-                # looping would re-pay the same failure until the budget ran out.
-                raise RuntimeError(
-                    f"{run_label}: model error on turn {turns} "
-                    f"({getattr(event, 'error_code', None)}): {event.error_message}"
-                )
-            usage = getattr(event, "usage_metadata", None)
-            if usage is not None and not getattr(event, "partial", False):
-                line = tokens.add(usage)
-                quota = (getattr(event, "custom_metadata", None) or {}).get("quota")
-                used: int | None = None
-                if quota:
-                    line += f"; quota {quota}"
-                    percent = _int_or_none(quota.get("primary_used_percent"))
-                    if percent is not None:
-                        if quota_start is None:
-                            quota_start = percent
-                        used = percent - quota_start
-                        line += f"; window used by this run {used}%"
-                (progress or logger.info)(f"[tokens] {line}")
-                if (
-                    max_quota_percent is not None
-                    and used is not None
-                    and used >= max_quota_percent
-                ):
-                    # No break here: the pending tool call is answered first
-                    # (see below), so the history stays well-formed for the
-                    # grace call.
-                    if stopped is None:
-                        (progress or logger.warning)(
-                            f"[tokens] this run has used {used}% of the usage window, "
-                            f"the budget of {max_quota_percent}%; one more call to submit"
-                        )
-                    stopped = stopped or "quota_budget"
-                if max_input_tokens is not None and tokens.latest_input > max_input_tokens:
-                    if stopped is None:
-                        (progress or logger.warning)(
-                            f"[tokens] request input {tokens.latest_input} exceeded the "
-                            f"context limit of {max_input_tokens}; one more call to submit"
-                        )
-                    stopped = stopped or "input_context_limit"
-            calls = event.get_function_calls() or []
-            if calls:
-                saw_tool_call = True
-                tool_calls += len(calls)
-                logger.info(
-                    "%s turn %d: %s (tool calls=%d)",
-                    run_label,
-                    turns,
-                    [getattr(call, "name", "?") for call in calls],
-                    tool_calls,
-                )
-            if done() or tool_calls > max_iterations:
-                break
-            if stopped is not None and (event.get_function_responses() or not calls):
-                # ADK runs the WHOLE tool loop inside one run_async: a model
-                # that never stops calling tools never ends the turn on its
-                # own (Gemini 3.8 Flash ran 30 calls past the budget,
-                # 2026-09-09). Leave once the budget-tripping call is answered.
-                break
+        # Close inside this task before submit/budget breaks leave the loop.
+        # Deferred finalization detaches ADK telemetry in a different context.
+        async with aclosing(runner.run_async(
+            user_id=_USER_ID, session_id=run_label, new_message=message, run_config=run_config
+        )) as events:
+            async for event in events:
+                if trace is not None:
+                    trace.event(event, turn=turns)
+                if live is not None:
+                    live.event(event)
+                if getattr(event, "error_message", None):
+                    # A model/provider error is a stop, not a turn to nudge past:
+                    # looping would re-pay the same failure until the budget ran out.
+                    if live is not None:
+                        live.emit("error", text=str(event.error_message))
+                    raise RuntimeError(
+                        f"{run_label}: model error on turn {turns} "
+                        f"({getattr(event, 'error_code', None)}): {event.error_message}"
+                    )
+                if getattr(event, "partial", False):
+                    continue
+                usage = getattr(event, "usage_metadata", None)
+                if usage is not None and not getattr(event, "partial", False):
+                    line = tokens.add(usage)
+                    if live is not None:
+                        live.emit("usage", tokens=tokens.as_dict())
+                    quota = (getattr(event, "custom_metadata", None) or {}).get("quota")
+                    used: int | None = None
+                    if quota:
+                        line += f"; quota {quota}"
+                        percent = _int_or_none(quota.get("primary_used_percent"))
+                        if percent is not None:
+                            if quota_start is None:
+                                quota_start = percent
+                            used = percent - quota_start
+                            line += f"; window used by this run {used}%"
+                    (progress or logger.info)(f"[tokens] {line}")
+                    if (
+                        max_quota_percent is not None
+                        and used is not None
+                        and used >= max_quota_percent
+                    ):
+                        # No break here: the pending tool call is answered first
+                        # (see below), so the history stays well-formed for the
+                        # grace call.
+                        if stopped is None:
+                            (progress or logger.warning)(
+                                f"[tokens] this run has used {used}% of the usage window, "
+                                f"the budget of {max_quota_percent}%; one more call to submit"
+                            )
+                        stopped = stopped or "quota_budget"
+                    if max_input_tokens is not None and tokens.latest_input > max_input_tokens:
+                        if stopped is None:
+                            (progress or logger.warning)(
+                                f"[tokens] request input {tokens.latest_input} exceeded the "
+                                f"context limit of {max_input_tokens}; one more call to submit"
+                            )
+                        stopped = stopped or "input_context_limit"
+                calls = event.get_function_calls() or []
+                if calls:
+                    saw_tool_call = True
+                    tool_calls += len(calls)
+                    logger.info(
+                        "%s turn %d: %s (tool calls=%d)",
+                        run_label,
+                        turns,
+                        [getattr(call, "name", "?") for call in calls],
+                        tool_calls,
+                    )
+                if done() or tool_calls > max_iterations:
+                    break
+                if stopped is not None and (event.get_function_responses() or not calls):
+                    # ADK runs the WHOLE tool loop inside one run_async: a model
+                    # that never stops calling tools never ends the turn on its
+                    # own (Gemini 3.8 Flash ran 30 calls past the budget,
+                    # 2026-09-09). Leave once the budget-tripping call is answered.
+                    break
         if done():
             break
         if tool_calls > max_iterations:
@@ -342,22 +358,28 @@ async def run_agent_session(
         # The debrief's own usage is counted too: it is the biggest single
         # request of the run (the whole history plus a long answer).
         try:
-            async for event in runner.run_async(
+            async with aclosing(runner.run_async(
                 user_id=_USER_ID,
                 session_id=run_label,
                 new_message=types.Content(
                     role="user", parts=[types.Part.from_text(text=debrief)]
                 ),
-            ):
-                if trace is not None:
-                    trace.event(event, turn=turns + 1)
-                usage = getattr(event, "usage_metadata", None)
-                if usage is not None and not getattr(event, "partial", False):
-                    (progress or logger.info)(f"[tokens] {tokens.add(usage)}")
-                for part in getattr(getattr(event, "content", None), "parts", None) or []:
-                    text = getattr(part, "text", None)
-                    if isinstance(text, str) and text and not getattr(part, "thought", False):
-                        answer.append(text)
+                run_config=run_config,
+            )) as events:
+                async for event in events:
+                    if trace is not None:
+                        trace.event(event, turn=turns + 1)
+                    if live is not None:
+                        live.event(event)
+                    if getattr(event, "partial", False):
+                        continue
+                    usage = getattr(event, "usage_metadata", None)
+                    if usage is not None and not getattr(event, "partial", False):
+                        (progress or logger.info)(f"[tokens] {tokens.add(usage)}")
+                    for part in getattr(getattr(event, "content", None), "parts", None) or []:
+                        text = getattr(part, "text", None)
+                        if isinstance(text, str) and text and not getattr(part, "thought", False):
+                            answer.append(text)
         except Exception as exc:  # the debrief is a courtesy; it never fails a run
             logger.warning("%s: debrief failed: %s", run_label, exc)
         if debrief_sink is not None and answer:
@@ -372,4 +394,6 @@ async def run_agent_session(
             tokens=tokens.as_dict(),
             stopped=stopped,
         )
+    if live is not None:
+        live.emit("complete", submitted=done(), tokens=tokens.as_dict())
     return tool_calls, turns

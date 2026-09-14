@@ -28,3 +28,173 @@ here is a verbatim copy — edit one, mirror to the other.
   `langslice` conda env — environment.yml carries openjdk 11 + maven, and
   `pip install -e ".[abba]"` adds abba-python (a separate env from the user's
   `abba`/`deepslice` envs). Live-session spikes: `_local/abba_spike/`
+  `abba_linear.py`: a live mirror for the LINEAR agent (the nonlinear plugin
+  above is a different door). `langslice abba --linear FOLDER [linear
+  flags]` (`run_linear_in_abba`) launches the ABBA GUI with the nonlinear
+  plugin installed too, imports the folder's images in `linear/discovery.py`
+  order, and runs the linear agent with `AbbaStackMirror.on_write` attached
+  to `engine.run`'s `on_write` hook (fired by `checkpoint.observe_checkpoints`
+  after every tool write). The mirror diffs each `StackState` against the
+  last one and pushes only what changed: order/position → `moveSlice` (one
+  write = one ABBA undo step via `MarkActionSequenceBatchAction`);
+  flip/quarter-turn → the slice pre-transform, rebuilt from a captured
+  import-time base so it never accumulates; the in-plane affine → an
+  `AffineRegistration` step, replaced (not stacked) when revised; cutting
+  angles → `ReslicedAtlas.setRotateX/Y`. `damaged` has no ABBA equivalent.
+  The agent still renders its own BrainGlobe pictures; ABBA is display plus
+  the final home (`finish` writes an `.abba` state file).
+  Coordinates: `measure_axis_offset` fits ABBA slicing-axis mm to BrainGlobe
+  AP mm at startup instead of hardcoding (measured `z_abba = ap_mm + 0.985`
+  on LSD_910/M01). It works by moving one slice to two z's and running a
+  throwaway probe registration at each, reading the fixed image's AP channel
+  — the resliced atlas's own channel sources are a static cross-section
+  view, not a 3D sampler, so they cannot be read directly. Falls back to
+  `(1.0, 1.0)` loudly.
+  Signs: the in-plane constants (`FLIP_ROTATION_AXIS`, `QUARTER_TURN_SIGN`,
+  `INPLANE_ROTATION_SIGN`, translation/scale axes) were MEASURED 2026-09-10
+  with the same probe trick (`_local/abba_spike/spike8_sign_probe.py`,
+  `spike9_axis_direction.py`): ABBA's ML coordinate DECREASES with screen x,
+  and ImgLib2 `rotate` is clockwise on ABBA's y-down screen, so both
+  rotation signs are −1 and the translation signs are +1. COMPOSITION ORDER
+  matters as much as sign: every ImgLib2 `scale`/`rotate`/`translate` acts
+  after the transform built so far, LangSlice's `affine_matrix` is translate
+  ∘ rotate ∘ scale and `linear/render.py` turns before it flips — so the
+  mirror calls scale, rotate, translate (affine) and quarter-turn, then flip
+  (pre-transform). The first live M01 run (2026-09-10) caught the affine
+  order: with unequal scales rotate-then-scale differs, and single-knob
+  probes never see it. `_local/abba_spike/spike11_matrix_readback.py` reads
+  the ImgLib2 matrices straight back for combined knobs and matches
+  LangSlice's blocks exactly; `spike10_verify_state.py` checks a saved
+  `.abba` against the agent's `linear_state.json` slice by slice. Only the
+  pitch/yaw ↔ `setRotateX/Y` mapping is still unverified. Do not rely on screenshots
+  to check these on this Wayland box (Java Robot returns black; offscreen
+  painting shows only overlays) — use the probe.
+  Imports JPype/scyjava lazily like `abba.py`, so its diff logic is
+  unit-tested in the plain `.venv` against a fake ABBA facade
+  (`tests/test_integrations_abba_linear.py`); the live/JVM smoke is
+  `_local/abba_spike/spike6_linear_mirror.py`.
+
+## Linear menu and existing sessions (2026-09-13)
+
+`abba_gui.py::install_menu` runs after `show_bdv_ui` and adds the top-level
+LangSlice menu. Session-local settings expose model/reasoning, interval and
+thickness, ordering/flip/cue, position/strict-spacing, and independent
+interactive/automatic/Elastix transform choices. Unset interval is the median
+positive ABBA slice spacing; unset thickness is the median `getThicknessInMm`
+value, not an independent biological metadata field. User overrides persist
+for the session. Swing updates run on the EDT; the agent runs in a guarded
+background thread. Agent-viewer and agent-log opening are independently optional. The installer also
+initializes ABBA's theme if the Python launcher left its strokes null.
+
+`abba_linear.py::run_existing_in_abba` snapshots selected slices (all if none
+selected) with `SliceToImagePlus.export` onto a centred calibrated frame. It
+attaches an explicit filename-to-slice mapping, seeds current positions/order,
+and skips the initial mirror write so ingestion cannot reset the user's work.
+Snapshots, checkpoint and `abba_run.json` mapping remain in the reported run
+folder. Existing registrations stay underneath new corrections; disabled task
+properties are preserved. Source orientation on already registered sections is
+refused. This entry point currently requires flat coronal Allen mouse sessions;
+GUI cutting-angle control is not exposed while the sign mapping is unverified.
+Human edits during a run are not read back. Save results through ABBA's normal
+state-save UI.
+
+`abba_affine.py` converts the stored normalized six-number affine to ABBA world
+millimetres for these snapshots, preserving pivot displacement and shear. The
+normalization refers to the oriented section frame, not the padded atlas
+canvas. Use original snapshot physical dimensions, swapping axes after a
+quarter-turn; do not use the preview's resized calibration. The legacy CLI
+fresh-import path still reconstructs its affine from physical knobs.
+
+## Live agent companion window and native following
+
+`abba_chat.py::create_activity_window` prefers a local Chrome/Chromium app
+window beside ABBA, falling back to `abba_activity.py::ActivityWindow` if browser
+startup fails. The browser transcript renders escaped Markdown, streamed visible
+assistant text and provider-exposed reasoning summaries in a neutral monospace
+log. Compact expandable tool rows show exact tool names, targets and status,
+and image-count links. A smaller image panel beneath it supports history and
+full-image inspection; it collapses to a header when no images are available. Summary wording comes directly from the provider; there
+is no summarizing model or first-person rewrite. Encrypted reasoning and
+signatures are excluded. Exact incoming image bytes are served locally; browser
+scaling changes only their display. The loopback GET server uses a random path
+token and serves bundled assets, sanitized events and images, with no registration
+or command endpoints. Recent history is bounded to 1,500 events / 2 MiB event
+JSON and 64 MiB images. Console and optional JSONL diagnostics remain separate.
+Close does not cancel the agent; **Show agent log** reopens the viewer.
+New runs dispose the previous viewer and its server/private browser profile.
+The Swing fallback retains its adjustable vertical split, bounded image history,
+and off-EDT image decoding.
+
+`abba_follow.py::AbbaFollower` consumes seed and actual `tool_start`/`tool_end`
+events. `linear.toolbox._serialized` emits execution events inside its lock,
+resolving corrected-index references to stable filenames before each operation.
+Model `tool_call` announcements may be batched ahead of execution and must not
+drive navigation. The existing-session adapter owns the explicit mapping and
+fans events out to the follower and sidebar; the CLI import path does likewise.
+With a comparison factory configured, the follower routes every supported
+positioning, inspection and transform event, including single targets and seed,
+to `abba_compare.py::ComparisonWindow`. It leaves the main ABBA camera, selection
+and display modes untouched. Viewer failures are isolated and do not fall back
+to moving the main view. Matching post-write end events update focus after the
+checkpoint mirror issues registration changes. Callers without a viewer factory
+retain the legacy selection/camera follower and its selection restoration.
+
+The native agent viewer stays visible as focus changes between single and
+multiple targets. `abba_overview.py::NativeOverview` borrows ABBA's actual
+`extendedSlicedSources` positioning mosaic at the existing `getStep`, preserving
+its native active atlas channels and copied converter settings. All registered
+sections retain native size. When the host is in positioning mode, their centers
+come directly from `getDisplayedCenter`, including its overlap/stair placement.
+If the host is in review mode, the separate overview uses ABBA's voxel-snapped
+positioning formula and normal below-atlas placement; it never switches the host
+mode. The camera fits the stack, retains in-range framing, and reframes if the
+host changes its display interval. No artificial atlas interval, thumbnail lanes
+or custom position markers are introduced.
+
+Selection is drawn by ABBA's actual `CircleGraphicalHandle` and
+`SquareGraphicalHandle` components, with local agent-target suppliers and no
+editing behaviors. Dashed guides and connecting lines use `ABBABdvViewPrefs`.
+The lower independent BigDataViewer focus panels page targets in execution order,
+four per page, using native registered section and atlas sources. Local source
+wrappers, converters and cameras belong to this viewer,
+with no changes to registration state or the global source registry. A 250 ms
+poll tracks source replacement, native affine changes and positions as ABBA's
+asynchronous actions finish. Both overview and focus cameras maintain their
+calibrated fit, correcting late BDV initialization without rewriting an unchanged
+camera. Steady polling must not restart progressive rendering.
+Both areas show committed ABBA registrations. Candidate atlas positions are
+neither written nor marked here; exact tool images in the log show speculative
+comparisons.
+
+`MenuSettings.open_agent_viewer` and `open_agent_log` independently control
+**Open agent viewer in ABBA** and **Open agent log**, for GUI and CLI runs.
+`MenuController` owns the lazily created native viewer beyond run completion;
+**Show agent viewer** reopens its last page. The next run disposes the old
+companions. Closing or hiding the native viewer stops refresh without cancelling
+registration; disabling its opening option prevents subsequent automatic updates.
+The retained `follow_agent` settings field is for compatibility and no longer
+controls these window options. Native ABBA APIs verified against installed
+0.11.0 and upstream sources.
+
+## Landmark splines
+
+`warp_landmarks` writes paired source/target points normalized to the oriented
+section frame. `abba_spline.py` converts these to centred world millimetres from
+the original calibrated snapshot, then builds the same target-to-source TPS
+pullback used by the Python renderer and native BigWarp. The spline includes
+its affine component; baseline affine parameters are not applied again.
+A completed native `SacBigWarp2DRegistration` carries this serialized transform
+through `RegisterSliceAction` without opening BigWarp. Save/reload uses ABBA's
+normal native registration adapters. Revisions replace the mirror's owned step;
+undoing to an affine replaces the spline with the exact earlier affine.
+Geometry and native serialization are validated before deleting the old step.
+The fresh-import CLI path has no snapshot calibration and refuses spline
+mirroring with an actionable message directing users to the ABBA menu; it must
+never silently substitute an affine. `view_landmarks` and `edit_landmarks`
+route as inspection events; draft point edits do not change the native
+registration. `warp_landmarks` applies the saved pairs as a transform event.
+Registration failures remain available in `mirror.sync_errors` and retry on the
+next checkpoint even if the transform is unchanged. Native JVM validation on
+ABBA 0.11.0 confirmed the TPS against an independent fit at landmarks and other
+points, one owned step through revisions, and pixel-identical affine restoration
+and spline state reload.

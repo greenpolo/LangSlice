@@ -54,7 +54,10 @@ TOOL_LINES: dict[str, str] = {
     "overlay, checkerboard, outlines or section (one physical-canvas image per pair), "
     "`zoom` is [x0, y0, x1, y1] of the canvas and magnifies (the crop comes "
     "before the resize, so small structures get more pixels), "
-    "`template_opacity` is 0..1 and `outlines` is all, outer or none; "
+    "`template_opacity` is 0..1, `border_color` is a named color or #RRGGBB "
+    "(default yellow), `border_thickness` is 0.25..8 output pixels (default 0.5), "
+    "and `outlines` is all, outer or none; border controls affect only drawn "
+    "atlas outlines, not separate reference images; "
     "writes nothing.",
     "view_stack": "whole-stack review, meant for after the positions are "
     "written and before `submit`: one contact sheet of every section in the "
@@ -81,24 +84,32 @@ TOOL_LINES: dict[str, str] = {
     "call writes and the last call stays. `mode` is overlay, side_by_side, "
     "checkerboard, outlines, section, template or ab (these parameters and "
     "the transform the section carried before, at one crop), `zoom` is "
-    "[x0, y0, x1, y1] of the canvas, `template_opacity` is 0..1, `pivot` — "
+    "[x0, y0, x1, y1] of the canvas, `template_opacity` is 0..1, "
+    "`border_color` is a named color or #RRGGBB (default yellow), "
+    "`border_thickness` is 0.25..8 output pixels (default 0.5); these display "
+    "controls do not alter alignment. `pivot` — "
     "what the rotation and scales turn about — is canvas, tissue or [fx, fy] "
     "of the canvas, `outlines` is all, outer or none, and `note` is a remark "
     "for the record; it does not change the section's flip or rotation.",
     "adjust_transforms": "sets and shows up to four independent positioned "
     "sections in one undoable call, with the same physical parameters and "
+    "per-entry display controls (including border color and thickness), and "
     "one labelled feedback image per section; each section may appear once, "
     "and a dependent follow-up adjustment uses `adjust_transform` after "
     "seeing the first result.",
-    "landmarks": "measures point pairs (a section point and the atlas point it "
-    "belongs on, as fractions of the canvas) under given parameters: the "
-    "distance in millimetres per pair, their RMS, a transform fitted to them "
-    "(similarity from 2 pairs, affine from 3), and the pairs drawn on the "
-    "view; writes nothing.",
-    "accept_views": "accepts inspected current views for a batch of sections "
-    "at stage position or transform; retires their superseded images, keeping "
-    "all text and reasoning. Requires a full current comparison or overlay "
-    "shown in an earlier model round. submit accepts all final views.",
+    "view_landmarks": "shows the stable unwarped slice (image0), atlas (image1), "
+    "and current overlay (image2). Matching numbered points persist on both "
+    "reference images. Coordinates are [x,y] image pixels, origin top-left, "
+    "x right/y down. Returns view_id and image/content dimensions; supports zoom.",
+    "edit_landmarks": "adds, moves or deletes individual matched point pairs by "
+    "ID in a view_landmarks view. Other pairs stay fixed. Saves the editable "
+    "points and returns the numbered reference images; does not apply a warp.",
+    "warp_landmarks": "fits the saved point pairs using method='affine' "
+    "(default, 3..64 pairs, least-squares full affine including shear) or "
+    "method='spline' (4..64 pairs, thin-plate spline). Returns before/after "
+    "overlays and the numbered reference images. Both methods reuse the same "
+    "unwarped-slice/atlas pairs and replace the complete transform in one "
+    "undoable step; they are never applied twice. Invalid fits are refused.",
     "submit": "ends the run.",
 }
 
@@ -224,13 +235,32 @@ def build_job_statement(
                 "1.5x the stack's median written spacing."
             )
     if spec.has("transform"):
-        constraints.append(
-            "- Damaged sections are refused by `fit_affine`."
-        )
+        if spec.transform.automatic:
+            constraints.append(
+                "- Damaged sections are refused by `fit_affine`."
+            )
         constraints.append(
             "- `submit` is refused unless every section carries a transform, "
             "damaged sections included."
         )
+        constraints.append(
+            "- Every damaged section requires a non-identity manual (interactive) "
+            "transform based on surviving anatomy; marking damage does not exempt "
+            "it from alignment. An automatic fit or an identity transform does "
+            "not satisfy this requirement."
+        )
+        if spec.transform.interactive:
+            constraints.append(
+                "- Align damaged sections with `adjust_transform` or "
+                "`adjust_transforms`, or match paired landmarks with "
+                "`view_landmarks`, `edit_landmarks`, and `warp_landmarks`; "
+                "inspect the overlays before submitting."
+            )
+        else:
+            constraints.append(
+                "- Interactive transforms are disabled; unresolved damaged "
+                "sections require the host to enable them before submission."
+            )
     constraints.append(
         "- Corrections are recorded as data; the user's image files are never "
         "modified."
@@ -284,6 +314,19 @@ def build_job_statement(
             "side of any gap before reporting an interval break.",
             "- Validate, then submit.",
         ]
+
+    if spec.has("transform") and spec.transform.interactive:
+        if not method:
+            method = ["", "Method:"]
+        method.append(
+            "- After each automatic fit or manual adjustment, inspect the returned "
+            "overlay against surviving internal anatomy. Refine each slice's "
+            "alignment until no further improvement is possible with the available "
+            "transforms. Keep changes only if they improve the alignment. "
+            "For landmark registration, fit an affine from the matched points "
+            "first and inspect its overlay; use a spline from those same points "
+            "where local discrepancies remain."
+        )
 
     return "\n".join(
         [

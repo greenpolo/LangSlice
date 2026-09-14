@@ -1,15 +1,36 @@
-# Visual context lifecycle
+# Visual context lifecycle — shelved design record
 
-Status: opt-in implementation under validation, 2026-09-12; completion-policy
-cost and quality have not yet been benchmarked.
+Status: acceptance-based implementation removed, 2026-09-13. The sections
+under “Historical proposal” below preserve the design considered on 2026-09-12;
+they are not instructions for the current runtime.
 
-This document describes the completion-based image-retention policy for the
-linear harness (`--image-retention completion`). The default remains `legacy`;
-neither policy replaces the conversation with summaries. The existing
-`WorkingSetImages` filter protects
-the seed, performs a positioning-to-transform image cut, and uses a 256-image
-high / 128-image low working set. Completion-based retirement below is a
-opt-in replacement for those broad cuts, not a description of them.
+## Current direction
+
+Keep the established `WorkingSetImages` policy unchanged: protect the seed,
+perform the first transform-media stage cut, and trim at a 256-image high /
+128-image low working set. The only supported `image_retention` value is
+`legacy`; requesting the removed `completion` policy fails explicitly.
+
+There is no `accept_views` tool or added final-view inspection requirement.
+The model chooses its scientific strategy without managing image acceptance.
+Predictive cost triggers are shelved, not implemented. Preserve low-resolution
+global context, higher-resolution inspection, separate positioning references,
+and delivery-aware suppression of already-seen placement pictures.
+
+Optimize image delivery before adding pruning machinery. Accounting must
+distinguish newly appended image/text input, cached replay, and uncached replay
+after history edits. Aggregate usage alone cannot establish that split; missing
+attribution is unknown, not zero, and attachment dimensions are not token bills.
+Only evidence of substantial retained-image carry cost should motivate a new
+retention policy. Test cache mechanics with fixed histories first, then test
+agent behavior independently with quality and strategy changes controlled.
+Keep final registration quality separate from cost and inspect overlays as well
+as numerical scores when evaluating registration.
+
+## Historical proposal (not active)
+
+The following proposed completion-based retirement was an opt-in replacement
+for the established broad cuts, not a description of the current policy.
 
 ## Objective
 

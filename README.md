@@ -80,10 +80,57 @@ registration plugin: position slices however you like (DeepSlice, QuickNII
 import, manual), then apply LangSlice's nonlinear registration from ABBA's
 `Register` menu like any built-in method — undoable, saved in the ABBA state.
 
+The top-bar **LangSlice** menu configures and starts the linear agent on
+selected slices (all slices if none are selected). Choose the model, reasoning
+effort, slice interval and thickness, then enable **Ordering**, **Position**,
+and **Transforms** independently. Transforms offers interactive adjustment by
+the agent and automatic affine fitting as separate checkboxes. Interval and
+thickness initially follow ABBA's current stack and can be overridden; interval
+is the median current spacing, and thickness is ABBA's displayed thickness,
+so check these against your cutting protocol.
+
+The independent **Open agent viewer in ABBA** and **Open agent log** menu
+options control which companion windows open during a run. The log appears as a
+narrow sidebar with streamed assistant text, provider reasoning summaries,
+expandable tool cards, and smaller image previews below. Browse earlier images,
+enlarge a preview, or pause scrolling. It uses a local Chrome/Chromium app window,
+with a Swing fallback. Reasoning summaries come directly from the provider;
+LangSlice does not rewrite them, and encrypted reasoning is never displayed.
+The viewer keeps bounded recent history. Enable a JSONL trace separately for
+full persistent diagnostics.
+
+The native agent viewer stays open across single-section and multi-section
+work. Its upper overview uses ABBA's actual positioning atlas display, at the
+session's existing display interval and channel settings. Sections retain their
+native size and placement, with ABBA's green selection handles and dashed guides.
+The lower focus panels show individual registered atlas overlays, up to four
+sections per page. The agent's target changes update this separate viewer while
+preserving the main ABBA camera and selection. Position and transform writes still reach
+ABBA through its normal undoable actions. The overview and focus panels show
+committed registrations; speculative candidate positions appear only in the
+exact tool-image previews in the log, without moving sections or adding candidate
+markers to the native viewer. Closing either companion leaves registration
+running; **Show agent viewer** and **Show agent log** reopen them.
+
+Menu runs currently support flat coronal Allen mouse sessions. Turn off ordering
+when working on slices with existing registrations. The agent uses calibrated
+snapshots of the loaded images and adds its corrections to the existing stack;
+the window remains responsive while it works. Human edits during a run are not
+read back by the agent. Results and snapshots are retained in the run directory
+reported in the console; save the finished session with ABBA's **File > Save State**.
+
+`langslice abba --linear FOLDER` runs the `linear` agent (order, position,
+one in-plane transform per section) inside the same ABBA session instead: the
+agent works exactly as it does headless, and every write it makes — a
+reorder, a position, a flip, an affine tweak — appears live on the stack in
+ABBA's BigDataViewer as it happens, undoable there like any other ABBA
+action. `Register > LangSlice` stays available in the same session.
+
 ```bash
 conda activate langslice
 pip install -e ".[abba]"   # adds abba-python (needs the env's OpenJDK + Maven)
 langslice abba             # launches the ABBA GUI with LangSlice installed
+langslice abba --linear ./sections --save-state ./sections/run.abba
 ```
 
 ## Related Repositories

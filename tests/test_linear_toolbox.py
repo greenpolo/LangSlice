@@ -60,7 +60,8 @@ def test_a_position_only_spec_has_no_reorder_or_transform_tools(tmp_path: Path):
     names = set(box.names)
     assert {"status", "view_slices", "fetch_atlas", "set_positions", "submit"} <= names
     assert not names & {"reorder_slices", "move_slice", "orient_slices"}
-    assert not names & {"fit_affine", "adjust_transform", "landmarks"}
+    assert not names & {"fit_affine", "adjust_transform", "view_landmarks",
+        "edit_landmarks", "warp_landmarks"}
 
 
 def test_optional_tools_follow_their_flags(tmp_path: Path):
@@ -76,7 +77,8 @@ def test_optional_tools_follow_their_flags(tmp_path: Path):
     assert not set(plain.names) & {"run_deepslice", "fit_position", "set_cutting_angles"}
     # The interactive transform rides in the main trajectory, always on with
     # the task.
-    assert {"adjust_transform", "adjust_transforms", "landmarks"} <= set(plain.names)
+    assert {"adjust_transform", "adjust_transforms", "view_landmarks",
+        "edit_landmarks", "warp_landmarks"} <= set(plain.names)
 
 
 def test_flip_is_refused_when_the_spec_switches_it_off(tmp_path: Path):

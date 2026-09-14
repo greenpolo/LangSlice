@@ -156,6 +156,29 @@ def test_run_places_the_stack_and_writes_results(tmp_path: Path, monkeypatch):
     assert checkpoint is not None and checkpoint.submitted is True
 
 
+def test_run_calls_on_write_with_the_initial_state_and_every_checkpoint(
+    tmp_path: Path, monkeypatch
+):
+    names = _make_stack(tmp_path, n=3)
+    positions = {name: 2.0 + index for index, name in enumerate(names)}
+    install_fake_adk_model_stack(monkeypatch, positions=positions)
+    seen: list[bool] = []  # snapshot of "has any position yet" per call
+
+    def on_write(state):
+        seen.append(any(s.position_mm is not None for s in state.slices))
+
+    spec = _spec(tmp_path, tasks=["position"])
+    state = asyncio.run(
+        run(spec, emit=lambda _m: None, atlas_loader=lambda _n: _ATLAS, on_write=on_write)
+    )
+
+    assert state.submitted is True
+    # the very first call is the freshly-ingested stack, before any write
+    assert seen[0] is False
+    # at least one later call saw the positions land
+    assert seen[-1] is True
+
+
 def test_run_resumes_from_the_checkpoint(tmp_path: Path, monkeypatch):
     names = _make_stack(tmp_path, n=3)
     positions = {name: 2.0 + index for index, name in enumerate(names)}

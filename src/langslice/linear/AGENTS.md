@@ -106,14 +106,16 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
   true scale (`atlas um/px / canvas um/px`, anatomy centred, canvas grown to
   hold it — never fit-to-canvas, which is not a calibration), and
   `physical_views` draws the alignment picture on it (family outlines
-  from `atlas.render.family_outlines` as 1 px neutral-grey hairlines drawn at
-  OUTPUT size — ABBA's border look; coloured 2 px rimmed lines were tried and
-  rejected as "too thick, colors are weird" — 1 mm scale bar, two-line
+  from `atlas.render.family_outlines` as yellow 0.5 px lines by default, drawn
+  at OUTPUT size. Agent tools expose `border_color` (named color/#RRGGBB) and
+  `border_thickness` (0.25–8 output pixels, including fractional widths) alongside template opacity;
+  these are display-only and do not change transforms or IoU. The native ABBA
+  viewer keeps its own display settings. Includes a 1 mm scale bar and two-line
   caption). It takes either the five physical knobs or a ready 2x3 in the
   section's frame, so the interactive loop and `fit_affine` draw the same
   picture, and returns `(images, silhouette_iou)`. Its view controls:
   `mode` (`overlay`, `side_by_side` — two physical images, `checkerboard`,
-  `outlines` — atlas lines plus the section's own silhouette in a second grey
+  `outlines` — atlas lines plus the section's own silhouette in neutral grey
   on black — and the line-free `section` / `template`), `zoom` ([x0, y0, x1, y1] fractions of the CANVAS, cropped BEFORE
   the resize so it magnifies, with the bar redrawn for the new µm/px),
   `template_opacity` (0..1, replaced the `show_template` bool) and `outlines`
@@ -143,7 +145,8 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
   section; `mode="ab"` draws the new parameters beside what the section
   carried before the call, a silhouette fit included; the same numbers again
   re-draw without an undo step), `adjust_transforms` (up to four distinct
-  sections, one feedback image each) and `landmarks` (read-only).
+  sections, one feedback image each). Paired landmark editing/warping lives in
+  `landmark_tools.py`; the old read-only `landmarks` tool is removed.
   `transform_history` on the ToolBox is per section and lasts the whole run,
   but is not repeated in tool replies. `commit(*touched)` is what ordinary writes answer with: the status rows of
   the sections it touched plus `n_sections`, never the whole table —
@@ -165,7 +168,7 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
   `physical_decomposition` is `decompose_affine` minus its translation
   fractions; `similarity_fit` (Umeyama, exact on two points), `affine_fit`
   (least squares) and `physical_params` (a canvas 2x3 back into the five knobs
-  about a pivot) are what `landmarks` measures with.
+  about a pivot) are shared affine geometry helpers.
 - `prompt.py` — `build_job_statement`: job, run facts, ONE factual line per
   tool that exists, hard constraints. Nothing else.
 - `session.py` — the ADK agent builder, the plugins, the loop, and
@@ -178,31 +181,63 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
   input; 1.3M processed over a run does not mean a 1.3M-token context.
 - `engine.py` — `EngineContext`, `ingest`, `apply_host_inputs`, `run_session`,
   `emit_results`, and `run(spec)`. No post pass: the session is the whole run.
+- `live.py` — optional in-memory observer for host activity windows.
+  `engine.run(on_event=...)` streams sanitized seed images, assistant text,
+  provider-exposed reasoning summaries, final tool calls/results with detached
+  image bytes, usage, completion and errors. Observer failures cannot fail the
+  run. With an observer, ADK uses SSE; partial events are displayed but never
+  counted twice toward usage, tool limits or final response collection.
+  Encrypted reasoning/signatures stay in provider replay only. The disk trace
+  remains independently opt-in.
+  Actual execution emits `tool_start`/`tool_end` inside the toolbox serialization
+  lock, with resolved filename `target_ids`, sanitized arguments/results and a
+  unique execution ID. These host-only events follow real execution order and
+  never enter model context; `tool_end` follows checkpoint/mirror writes.
 - `deepslice.py`, `trace.py` — the DeepSlice seam (reports `UNAVAILABLE`) and
   the full-content JSONL session trace.
 
+## Landmark warps
+
+`landmark_tools.py` exposes `view_landmarks` (stable unwarped slice, atlas,
+current overlay), `edit_landmarks` (persistent numbered pairs: add/move/delete),
+and `warp_landmarks` (default `method="affine"`, 3–64 pairs; `method="spline"`,
+4–64 pairs). The same persistent points drive both fits. Affine fitting uses
+least squares and preserves shear in the canonical matrix. It rejects
+rank-deficient, collapsed and mirrored fits. Spline fitting replaces that affine
+with the complete TPS rather than composing the affine twice. The prompt asks
+for affine first, inspection, then spline for remaining local discrepancies.
+Point edits return numbered reference images. Every application returns full
+before/after overlays and both numbered reference images before checkpointing.
+The old read-only `landmarks` measurement tool is removed. Coordinates are
+pixels in the returned reference images; caption, crop and resizing are handled
+by the harness. The unwarped slice reference stays fixed across applications.
+Editable point pairs persist separately from the applied transform, with undo
+and checkpoint support. Existing spline points can initialize the editor.
+Landmark images keep the current output resolution and OAuth high detail.
+
+Shared `landmark_warp.py` implements BigWarp's analytic target-to-source TPS
+and its numerical forward inverse. `transform.spline` is authoritative and
+stores normalized source/target pairs plus original `extent_mm`; affine
+`params` and `physical` are baseline metadata only while the spline exists.
+`physical_views(..., spline=...)` renders the complete map. Full before/after
+images are encoded before checkpointing; invalid landmarks and sampled folds
+refuse without writing. Undo/redo and resume preserve pairs. Later affine
+adjustments/fits replace the spline. A spline-only nonidentity correction can
+satisfy the damaged-section manual-transform gate. The native ABBA snapshot
+mirror emits an editable BigWarp registration; snapshot geometry is required.
+
 ## Context and tokens (2026-09-09)
 
-**Opt-in completion lifecycle (2026-09-12).** `JobSpec.image_retention` /
-`--image-retention completion` replaces `WorkingSetImages` with the
-session-local `visual_context.py` registry. Default `legacy` is unchanged.
-`accept_views(slice_ids, stage)` accepts current full views included in an
-earlier model request, then retires superseded media for those sections;
-`submit` accepts all final views. Completion-mode validate/submit require
-this evidence, which is an additional inspection condition, not a prescribed
-stage or batch order. Interleaving and reopening remain unrestricted.
-The registry protects seed images, accepted overlays, and the corrected-section
-companion of an accepted separate atlas comparison. It never retires unseen
-sibling results; shared atlas/stack evidence waits for acceptance of all
-sections in the final enabled task. After submit succeeds, completion mode
-refuses subsequent tools, including queued sibling writes; unread sibling
-images remain rather than being removed before delivery.
-Request copies lose only attachments, with original slot labels preserved by
-the OAuth serializer; historical text and reasoning are not summarized or
-rewritten. Retirement and current-image events are traced separately.
-No legacy image-count fallback runs in completion mode. Cache reuse and cost
-remain to be measured; unchanged bytes alone do not guarantee a cache lookup.
-Full design and rollout conditions: `docs/visual_context_design.md`.
+**Established working set only (2026-09-13).** `WorkingSetImages` retains
+its first transform-media stage cut and 256-to-128 high/low image-count cuts.
+The acceptance-based completion experiment has been removed: no
+`accept_views`, final-view inspection gate, or acceptance-only post-submit
+closure remains. `JobSpec.image_retention` / `--image-retention` accepts only
+`legacy` for compatibility; obsolete `completion` configurations fail clearly.
+No predictive cost trigger is implemented. Preserve image-delivery improvements
+and measure new image/text input and cache loss before changing retention.
+The shelved design and evaluation separation are recorded in
+`docs/visual_context_design.md`.
 
 The OAuth lane resends the whole history on every call (the Codex backend
 refuses stored responses; the Codex CLI does the same). What a run COSTS is
@@ -321,13 +356,17 @@ submitted at call 7 (median 1.2 mm, 0 of 36 within 0.25); Gemini 3.8 Flash
 made 18 compares in 30 calls and never wrote. Astra passes the gates
 without noticing. Off by default so the Astra runs stay comparable.
 
-**Lean harness.** Tools return data. No interpretation in any payload. The job statement carries the job, the facts, one line per tool, the constraints and — when positioning is on — a short `Method` section (Nash, 2026-09-07): place each section on its own evidence and compare candidates before writing, review the whole stack afterwards, re-check both sides of a gap before reporting a break, validate, submit. The default Method no longer prescribes batching (2026-09-11): grouping work is the model's choice; batch-capable tools remain available. The opt-in cheap-model playbook is unchanged. Asked from its own run-3 trace, Astra said it skipped `compare_placement` and `view_stack` by oversight, not wording, and asked for exactly this. Still out: rules of thumb, failure-mode warnings and region names (the same text runs against every BrainGlobe atlas, species and plane). Full-trace forensics found every major
+**Lean harness.** Tools return data. No interpretation in any payload. The job statement carries the job, the facts, one line per tool, the constraints and — when positioning is on — a short `Method` section (Nash, 2026-09-07): place each section on its own evidence and compare candidates before writing, review the whole stack afterwards, re-check both sides of a gap before reporting a break, validate, submit. When interactive transforms are enabled, Method also asks the agent to inspect
+each fitted/adjusted overlay against surviving internal anatomy and refine each
+slice until no further improvement is possible with the available transforms,
+keeping only changes that improve alignment; this is prompt guidance, not a
+fixed-adjustment-count or submission-review hook.
+The default Method no longer prescribes batching (2026-09-11): grouping work is the model's choice; batch-capable tools remain available. The opt-in cheap-model playbook is unchanged. Asked from its own run-3 trace, Astra said it skipped `compare_placement` and `view_stack` by oversight, not wording, and asked for exactly this. Still out: rules of thumb, failure-mode warnings and region names (the same text runs against every BrainGlobe atlas, species and plane). Full-trace forensics found every major
 benchmark failure tracking back to advice the harness injected; a per-slice
 estimation worker that ate 82% of the wall-clock carried ~no signal and was
 deleted; a landmark-tool pass for POSITION estimation benchmarked WORSE and was
-deleted rather than kept behind a flag (the `landmarks` tool of the transform
-task is a different animal: it measures pairs the agent picks, and reports
-millimetres, never a recommendation).
+deleted rather than kept behind a flag. The paired landmark tools now serve
+in-plane spline registration, not position estimation.
 
 **One transform representation.** Silhouette, interactive, elastix-someday:
 every stored transform and every fit payload carries `physical` (the five
@@ -346,8 +385,13 @@ order; the offending neighbour pairs are named), `STRICT_INTERVAL` (spacing
 within 10% of the interval and no breaks, when `--strict-interval`),
 `INTERVAL_BREAKS_UNSUPPORTED` (a reported break must exceed 1.5x the stack's
 median written spacing) and `MISSING_TRANSFORMS` (every section carries one,
-damaged included — the agent aligns those by hand or explains in the note).
-Gates only run for tasks that are on.
+damaged included). `DAMAGED_REQUIRES_MANUAL_TRANSFORM` additionally rejects
+missing, automatic, invalid or identity transforms on damaged sections and asks
+for interactive alignment of surviving anatomy. A note alone cannot satisfy it.
+The check uses the normalized matrix (identity tolerance 1e-9), not the physical
+parameter labels, and is shared by `validate` and `submit`. If interactive tools
+are disabled, the refusal names that host setting as the blocker. It does not
+measure anatomical alignment quality. Gates only run for tasks that are on.
 
 **Corrections are data.** Order, flips, rotations, positions, cutting angles
 and transforms are proposals on the state. The user's image files are never
@@ -397,3 +441,11 @@ resumed run starts from the checkpoint, which is the state as it stood.
 - `adjust_transform`'s pivot resolution runs its own `canvas_geometry`, so a
   call builds the atlas plane twice (once to place the pivot, once to draw).
   Flat sections are a numpy take; oblique ones resample twice.
+
+### Host transform choices
+
+`TransformSpec.interactive` and `.automatic` default to true. Hosts such as the
+ABBA menu may independently remove direct adjustment/landmark tools or the
+automatic `fit_affine` tool. `elastix` controls the optional backend within the
+automatic fitter. The transform task's submit requirement still applies; a
+host must enable at least one transform method when enabling that task.

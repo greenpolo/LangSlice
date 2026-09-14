@@ -67,6 +67,7 @@ from google.genai import types
 from pydantic import Field, field_validator
 
 from langslice.adk import MEDIA_LAYOUT_ATTR
+from langslice.providers.usage import item_descriptor, request_descriptor, usage_diagnostics
 
 logger = logging.getLogger(__name__)
 
@@ -524,6 +525,10 @@ def _function_call_output(response: types.FunctionResponse) -> dict[str, Any]:
     """
     payload = response.response
     output = payload if isinstance(payload, str) else _json_dumps(payload)
+    # Coordinate-sensitive tools may request preservation of supplied pixels.
+    detail = payload.get("image_detail", "high") if isinstance(payload, dict) else "high"
+    if detail not in {"low", "high", "original", "auto"}:
+        detail = "high"
     uris = [
         uri
         for response_part in response.parts or []
@@ -546,7 +551,7 @@ def _function_call_output(response: types.FunctionResponse) -> dict[str, Any]:
             )
             if index in surviving:
                 content.append({
-                    "type": "input_image", "image_url": surviving[index], "detail": "high",
+                    "type": "input_image", "image_url": surviving[index], "detail": detail,
                 })
         item["output"] = content
     return item
@@ -653,6 +658,9 @@ class ChatGptLlm(BaseLlm):
     prompt_cache_key: str = Field(default_factory=lambda: str(uuid.uuid4()))
     """Stable across the turns of one agent loop, for upstream prompt caching."""
 
+    capture_usage_details: bool = False
+    """Capture content-free request/usage diagnostics in host metadata, not the prompt."""
+
     @field_validator("model")
     @classmethod
     def _strip_prefix(cls, value: str) -> str:
@@ -707,12 +715,16 @@ class ChatGptLlm(BaseLlm):
     ) -> AsyncGenerator[LlmResponse, None]:
         self._maybe_append_user_content(llm_request)
         body = self.build_request_body(llm_request)
+        request_usage = request_descriptor(body) if self.capture_usage_details else None
+        output_usage: list[dict[str, Any]] = []
+        diagnostics: dict[str, Any] | None = None
         events = await asyncio.to_thread(
             stream_events, body, session_id=self.prompt_cache_key
         )
 
         text_chunks: list[str] = []
         reasoning_parts: list[types.Part] = []
+        last_summary_key: tuple[Any, Any] | None = None
         calls: list[types.Part] = []
         usage: types.GenerateContentResponseUsageMetadata | None = None
         quota: dict[str, str] = {}
@@ -731,10 +743,32 @@ class ChatGptLlm(BaseLlm):
                         ),
                         partial=True,
                     )
+            elif kind == "response.reasoning_summary_text.delta":
+                # Only the backend's public summary is displayable. Encrypted
+                # reasoning remains on the final item's replay signature below.
+                delta = event.get("delta", "")
+                if stream and isinstance(delta, str) and delta:
+                    # Summary parts have independent text streams. Preserve
+                    # their boundaries to match the finalized summary text.
+                    key = (event.get("item_id"), event.get("summary_index", 0))
+                    if last_summary_key is not None and key != last_summary_key:
+                        delta = "\n" + delta
+                    last_summary_key = key
+                    yield LlmResponse(
+                        content=types.Content(
+                            role="model", parts=[types.Part(thought=True, text=delta)]
+                        ),
+                        partial=True,
+                    )
             elif kind == "response.output_item.done":
                 item = event.get("item", {})
+                if self.capture_usage_details:
+                    output_usage.append(item_descriptor(item))
                 if item.get("type") == "reasoning":
-                    reasoning_parts.append(_reasoning_part(item))
+                    reasoning_part = _reasoning_part(item)
+                    if reasoning_part.text and any(part.text for part in reasoning_parts):
+                        reasoning_part.text = "\n" + reasoning_part.text
+                    reasoning_parts.append(reasoning_part)
                     continue
                 if item.get("type") != "function_call":
                     continue
@@ -756,6 +790,9 @@ class ChatGptLlm(BaseLlm):
                 quota = event.get("quota") or {}
             elif kind == "response.completed":
                 usage = _usage_metadata(event)
+                diagnostics = usage_diagnostics(
+                    event.get("response", {}).get("usage"), request_usage, output_usage,
+                )
                 break
 
         parts: list[types.Part] = list(reasoning_parts)
@@ -767,7 +804,10 @@ class ChatGptLlm(BaseLlm):
             content=types.Content(role="model", parts=parts),
             partial=False,
             usage_metadata=usage,
-            custom_metadata={"quota": quota} if quota else None,
+            custom_metadata={
+                **({"quota": quota} if quota else {}),
+                **({"usage_diagnostics": diagnostics} if diagnostics is not None else {}),
+            } or None,
             model_version=self.model,
         )
 

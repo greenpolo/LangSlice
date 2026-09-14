@@ -87,15 +87,10 @@ def test_separate_full_views_suppress_only_after_delivery_and_reject_zoom(tmp_pa
     assert write([{"id": "s0.png", "position_mm": 3.0}])[TOOL_MEDIA_PARTS_KEY] == []
 
 
-def test_completion_evidence_marks_only_atlas_eligible_and_caps_pairs(tmp_path):
-    state, _, box = _box(tmp_path, image_retention="completion")
+def test_separate_comparison_caps_pairs(tmp_path):
+    state, _, box = _box(tmp_path)
     result = _tool(box, "compare_placement")([
         {"id": record.id, "positions_mm": [3.0]} for record in state.in_order()
     ], mode="side_by_side")
     assert len(result[TOOL_MEDIA_PARTS_KEY]) == 8
     assert result["dropped_pairs"] == 1
-    evidence = box.visual_context.media[result[TOOL_MEDIA_DELIVERY_ID_KEY]]
-    assert [item.eligible for item in evidence] == [False, True] * 4
-    assert [item.slice_id for item in evidence] == [
-        f"s{i}.png" for i in range(4) for _ in range(2)
-    ]

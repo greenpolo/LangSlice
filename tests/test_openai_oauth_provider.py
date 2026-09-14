@@ -386,6 +386,83 @@ def test_streaming_yields_partials_then_aggregated_final(monkeypatch):
     assert usage.thoughts_token_count == 2
 
 
+@pytest.mark.parametrize("stream", [False, True])
+def test_summary_streaming_preserves_final_reasoning_and_ignores_raw_reasoning(monkeypatch, stream):
+    reasoning = {
+        "type": "reasoning",
+        "id": "rs_1",
+        "summary": [{"type": "summary_text", "text": "Compare the sections."}],
+        "encrypted_content": "opaque-replay-only",
+    }
+    events = [
+        {"type": "response.reasoning_summary_text.delta", "delta": "Compare "},
+        {"type": "response.reasoning_text.delta", "delta": "private reasoning"},
+        {"type": "response.reasoning_summary_text.delta", "delta": "the sections."},
+        {"type": "response.reasoning_summary_text.delta", "delta": ""},
+        {"type": "response.output_item.done", "item": reasoning},
+        {
+            "type": "response.output_item.done",
+            "item": {"type": "function_call", "name": "probe", "arguments": "{}", "call_id": "c1"},
+        },
+        {"type": "response.completed"},
+    ]
+    responses, _ = _run_turn(monkeypatch, events, stream=stream)
+    assert [r.partial for r in responses] == ([True, True, True, False] if stream else [False])
+    if stream:
+        summary_parts = [r.content.parts[0] for r in responses[:2]]
+        assert "".join(part.text for part in summary_parts) == "Compare the sections."
+        assert all(part.thought and part.thought_signature is None for part in summary_parts)
+        assert responses[2].content.parts[0].function_call.name == "probe"
+    final = responses[-1].content
+    assert final.parts[0].thought and final.parts[0].text == "Compare the sections."
+    assert chatgpt.content_to_input_items(final) == [
+        reasoning,
+        {"type": "function_call", "call_id": "c1", "name": "probe", "arguments": "{}"},
+    ]
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_summary_part_and_item_boundaries_match_final_text_and_keep_replay(monkeypatch, stream):
+    first = {
+        "type": "reasoning", "id": "rs_1", "encrypted_content": "opaque-one",
+        "summary": [
+            {"type": "summary_text", "text": "First heading"},
+            {"type": "summary_text", "text": "Second heading"},
+        ],
+    }
+    second = {
+        "type": "reasoning", "id": "rs_2", "encrypted_content": "opaque-two",
+        "summary": [{"type": "summary_text", "text": "Third heading"}],
+    }
+
+    def delta(item_id, summary_index, text):
+        return {
+            "type": "response.reasoning_summary_text.delta", "delta": text,
+            "item_id": item_id, "summary_index": summary_index,
+        }
+
+    events = [
+        delta("rs_1", 0, "First "), delta("rs_1", 0, "heading"),
+        delta("rs_1", 1, ""), delta("rs_1", 1, "Second heading"),
+        {"type": "response.output_item.done", "item": first},
+        # A new reasoning item resets summary_index, but is still a new paragraph.
+        delta("rs_2", 0, "Third "), delta("rs_2", 0, "heading"),
+        {"type": "response.output_item.done", "item": second},
+        {"type": "response.completed"},
+    ]
+    responses, _ = _run_turn(monkeypatch, events, stream=stream)
+    final = responses[-1].content
+    expected = "First heading\nSecond heading\nThird heading"
+    assert "".join(part.text for part in final.parts) == expected
+    assert chatgpt.content_to_input_items(final) == [first, second]
+    if stream:
+        partials = [part for response in responses[:-1] for part in response.content.parts]
+        assert "".join(part.text for part in partials) == expected
+        assert all(part.thought and part.thought_signature is None for part in partials)
+    else:
+        assert len(responses) == 1
+
+
 def test_non_streaming_yields_one_aggregated_response_with_function_call(monkeypatch):
     events = [
         {"type": "response.output_text.delta", "delta": "checking"},
@@ -550,3 +627,16 @@ def test_reasoning_items_are_kept_and_replayed_ahead_of_the_turn(monkeypatch):
     items = chatgpt.content_to_input_items(turn)
     assert [item["type"] for item in items] == ["reasoning", "function_call"]
     assert items[0] == reasoning
+
+
+@pytest.mark.parametrize("detail,expected", [("original", "original"), ("invalid", "high")])
+def test_coordinate_tool_images_preserve_requested_detail(detail, expected):
+    response = types.FunctionResponse(
+        id="coordinates", name="point_view", response={"image_detail": detail},
+        parts=[types.FunctionResponsePart(inline_data=types.FunctionResponseBlob(
+            data=_png_bytes(), mime_type="image/png"))],
+    )
+    output = chatgpt._function_call_output(response)["output"]
+    image = next(item for item in output if item["type"] == "input_image")
+    assert image["detail"] == expected
+    assert image["image_url"].startswith("data:image/png;base64,")
