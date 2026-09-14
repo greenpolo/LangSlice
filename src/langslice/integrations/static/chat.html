@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LangSlice · Agent log</title>
+  <link rel="stylesheet" href="chat.css">
+  <script src="chat.js" defer></script>
+</head>
+<body>
+  <header><strong>LangSlice <span>/ Agent log</span></strong><span id="status" class="status">Starting</span></header>
+  <div class="modelbar"><span>Model</span><span id="model"></span></div>
+  <main id="conversation" aria-label="Agent log">
+    <div class="welcome" id="welcome">Waiting for agent events.</div>
+    <div id="messages"></div><div id="tail"></div>
+  </main>
+  <button id="jump" class="jump" hidden>↓ Latest activity</button>
+  <section id="visuals" class="visuals" aria-label="Tool images">
+    <div class="visual-head">
+      <div><strong>Tool images</strong><span id="image-label">No images received</span></div>
+      <div class="image-nav">
+        <button id="previous" title="Earlier images" aria-label="Earlier images">←</button>
+        <span id="image-count">0 / 0</span>
+        <button id="next" title="Later images" aria-label="Later images">→</button>
+        <button id="follow-images" class="active" title="Follow latest images">Follow</button>
+      </div>
+    </div>
+    <div id="image-grid" class="image-grid"><div class="image-empty">No tool images in this session.</div></div>
+  </section>
+  <footer><span id="connection">Connected locally</span><span>Closing this log does not stop the run.</span></footer>
+  <dialog id="lightbox"><button id="close-image" aria-label="Close enlarged image">×</button><img id="large-image" alt="Agent image enlarged"><p id="large-label"></p></dialog>
+</body>
+</html>

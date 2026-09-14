@@ -2,8 +2,12 @@
 import argparse
 import sys
 import textwrap
+from typing import TYPE_CHECKING
 
 import langslice
+
+if TYPE_CHECKING:
+    from langslice.linear.spec import JobSpec
 
 _PLANE_HELP = (
     "Slicing plane (normal axis). Position is interpreted along this axis "
@@ -309,6 +313,13 @@ def _add_linear_run_parser(subparsers: argparse._SubParsersAction) -> None:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument("image_folder", help="Folder containing the section images")
+    _add_linear_arguments(p)
+
+
+def _add_linear_arguments(p: argparse.ArgumentParser) -> None:
+    """Every ``linear run`` flag but the folder itself — shared with
+    ``abba --linear FOLDER``, which takes the same job, plus ``--save-state``,
+    inside a live ABBA session instead of headless."""
     p.add_argument(
         "--tasks",
         default="reorder,position,transform",
@@ -445,8 +456,8 @@ def _add_linear_run_parser(subparsers: argparse._SubParsersAction) -> None:
         "may spend (default: JobSpec.max_quota_percent)",
     )
     p.add_argument(
-        "--image-retention", choices=("legacy", "completion"), default="legacy",
-        help="Image context policy: legacy working set or acceptance-based retirement",
+        "--image-retention", choices=("legacy",), default="legacy",
+        help="Compatibility option: legacy working set only; completion retirement was removed",
     )
     p.add_argument(
         "--no-debrief",
@@ -469,16 +480,25 @@ def _load_json_arg(value: str | None) -> object | None:
     return json.loads(value)
 
 
-def _run_linear(args: argparse.Namespace) -> None:
-    import asyncio
+def _apply_trace_dir(args: argparse.Namespace) -> None:
+    """``--trace-dir`` overrides ``LANGSLICE_TRACE_DIR`` for this process."""
     import os
 
-    from langslice.linear import JobSpec, run
-    from langslice.linear.spec import PositionSpec, ReorderSpec, TransformSpec
     from langslice.linear.trace import TRACE_DIR_ENV
 
     if args.trace_dir:
         os.environ[TRACE_DIR_ENV] = args.trace_dir
+
+
+def _build_linear_spec(args: argparse.Namespace, image_folder: str) -> "JobSpec":
+    """Args -> :class:`~langslice.linear.spec.JobSpec`.
+
+    Shared by ``linear run`` (*image_folder* is the positional) and
+    ``abba --linear FOLDER`` (*image_folder* is that flag's value) — both
+    parsers add the same flags via :func:`_add_linear_arguments`.
+    """
+    from langslice.linear import JobSpec
+    from langslice.linear.spec import PositionSpec, ReorderSpec, TransformSpec
 
     inputs: dict[str, object] = {}
     positions = _load_json_arg(args.positions)
@@ -492,8 +512,8 @@ def _run_linear(args: argparse.Namespace) -> None:
     if args.pitch is not None or args.yaw is not None:
         inputs["angles"] = {"pitch": args.pitch or 0.0, "yaw": args.yaw or 0.0}
 
-    spec = JobSpec(
-        image_folder=args.image_folder,
+    return JobSpec(
+        image_folder=image_folder,
         atlas=args.atlas,
         plane=args.plane,
         model=args.model,
@@ -520,6 +540,17 @@ def _run_linear(args: argparse.Namespace) -> None:
         **({"max_input_tokens": args.max_input_tokens} if args.max_input_tokens else {}),
         **({"max_quota_percent": args.max_quota_percent} if args.max_quota_percent else {}),
     )
+
+
+def _run_linear(args: argparse.Namespace) -> None:
+    import asyncio
+    import os
+
+    from langslice.linear import run
+    from langslice.linear.trace import TRACE_DIR_ENV
+
+    _apply_trace_dir(args)
+    spec = _build_linear_spec(args, args.image_folder)
 
     print(f"Atlas: {spec.atlas}  Plane: {spec.plane}")
     print(f"Tasks: {', '.join(spec.tasks) or '(none)'}")
@@ -642,9 +673,15 @@ def _add_abba_parser(subparsers: argparse._SubParsersAction) -> None:
         help="Atlas name passed to ABBA",
     )
     p.add_argument(
-        "--atlas",
+        "--nonlinear-atlas",
         default="allen_mouse_10um",
-        help="BrainGlobe atlas LangSlice samples for region maps",
+        help="BrainGlobe atlas the nonlinear registration plugin samples for "
+        "region maps (independent of the linear agent's --atlas)",
+    )
+    p.add_argument(
+        "--image-model",
+        default=None,
+        help="Image-gen model override for the nonlinear registration plugin",
     )
     p.add_argument(
         "--provider",
@@ -653,16 +690,34 @@ def _add_abba_parser(subparsers: argparse._SubParsersAction) -> None:
             "gemini-api", "openai-api", "openai-oauth",
             "google", "openai", "chatgpt",  # legacy aliases
         ],
-        help="Image-gen provider for the registration",
+        help="Image-gen provider for the nonlinear registration",
     )
-    p.add_argument("--model", default=None, help="Image-gen model override")
+    p.add_argument(
+        "--linear",
+        default=None,
+        metavar="FOLDER",
+        help="Also run the linear agent (order/position/transform) on FOLDER "
+        "inside this ABBA session, so you watch it move sections in "
+        "BigDataViewer as it works. Takes the same flags as `linear run` "
+        "(below); --atlas and --model govern the linear agent, while the "
+        "nonlinear plugin uses --nonlinear-atlas / --image-model",
+    )
+    p.add_argument(
+        "--save-state",
+        default=None,
+        metavar="PATH",
+        help="Write an ABBA .abba state file here once the linear agent's "
+        "session ends (only with --linear)",
+    )
+    # Everything `linear run` takes — image_folder is `--linear` here instead
+    # of a positional. --atlas / --model belong to the linear agent only; the
+    # nonlinear plugin has its own --nonlinear-atlas / --image-model.
+    _add_linear_arguments(p)
 
 
 def _run_abba(args: argparse.Namespace) -> None:
     try:
         import abba_python  # noqa: F401  # pyright: ignore[reportMissingImports]
-
-        from langslice.integrations.abba import run_gui_session
     except ImportError as exc:
         raise SystemExit(
             "abba-python is not installed in this environment. Install it with\n"
@@ -671,11 +726,28 @@ def _run_abba(args: argparse.Namespace) -> None:
             f"(see the abba-python installation docs). ({exc})"
         ) from exc
 
+    if args.linear:
+        from langslice.integrations.abba_linear import run_linear_in_abba
+
+        _apply_trace_dir(args)
+        spec = _build_linear_spec(args, args.linear)
+        run_linear_in_abba(
+            spec,
+            abba_atlas=args.abba_atlas,
+            save_state=args.save_state,
+            atlas_name=args.nonlinear_atlas,
+            provider=args.provider,
+            model=args.image_model,
+        )
+        return
+
+    from langslice.integrations.abba import run_gui_session
+
     run_gui_session(
         abba_atlas=args.abba_atlas,
-        atlas_name=args.atlas,
+        atlas_name=args.nonlinear_atlas,
         provider=args.provider,
-        model=args.model,
+        model=args.image_model,
     )
 
 

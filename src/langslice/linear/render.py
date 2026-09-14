@@ -8,6 +8,8 @@ are applied in one order everywhere: ROTATE first, then FLIP left-right.
 from __future__ import annotations
 
 import io
+import math
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import lru_cache
@@ -16,7 +18,7 @@ from typing import TYPE_CHECKING, Any
 import cv2
 import numpy as np
 from google.genai import types
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageColor, ImageDraw, ImageFont
 
 from langslice.affine import (
     extract_slice_silhouette,
@@ -248,6 +250,9 @@ def status_rows(state: StackState) -> list[dict[str, Any]]:
                 "damaged": record.damaged,
                 "damage_note": record.damage_note,
                 "transform": transform.get("kind"),
+                **({"transform_model": "thin_plate_spline",
+                    "landmarks": len(transform["spline"]["source"])}
+                   if transform.get("spline") else {}),
                 "transform_iou": transform.get("iou"),
                 "transform_mirrored": transform.get("mirrored"),
                 "caveats": list(record.caveats),
@@ -681,13 +686,31 @@ def _draw_scale_bar(canvas: np.ndarray, um_per_px: float, dark: bool) -> None:
     )
 
 
-def _line_color(dark: bool) -> tuple[int, int, int]:
-    """The atlas hairline's neutral grey, for whichever background it lands on."""
-    return (235, 235, 235) if dark else (40, 40, 40)
+def normalize_border_style(
+    color: str = "yellow", thickness: float = 0.5,
+) -> tuple[tuple[int, int, int], float]:
+    """Validate display-only atlas borders; width is in output-image pixels."""
+    if not isinstance(color, str):
+        raise ValueError("border_color must be a named color or #RRGGBB")
+    value = color.strip().lower()
+    if not re.fullmatch(r"[a-z]+|#[0-9a-f]{6}", value):
+        raise ValueError("border_color must be a named color or #RRGGBB")
+    try:
+        rgb = ImageColor.getrgb(value)
+    except ValueError:
+        raise ValueError("border_color must be a named color or #RRGGBB") from None
+    if len(rgb) != 3:
+        raise ValueError("border_color must be an opaque RGB color")
+    if (
+        isinstance(thickness, bool) or not isinstance(thickness, (int, float))
+        or not math.isfinite(thickness) or not 0.25 <= thickness <= 8
+    ):
+        raise ValueError("border_thickness must be a number from 0.25 to 8 output pixels")
+    return (rgb[0], rgb[1], rgb[2]), float(thickness)
 
 
 def _tissue_color(dark: bool) -> tuple[int, int, int]:
-    """A SECOND grey, for the section's own silhouette in the outlines view."""
+    """Neutral grey for the section's silhouette, distinct from atlas borders."""
     return (150, 150, 150) if dark else (140, 140, 140)
 
 
@@ -696,25 +719,39 @@ def _draw_polys(
     polys: list[np.ndarray],
     color: tuple[int, int, int],
     *,
+    thickness: float = 1,
     scale: float = 1.0,
     offset: tuple[float, float] = (0.0, 0.0),
     origin: tuple[int, int] = (0, 0),
     factor: float = 1.0,
 ) -> None:
-    """Closed x/y polylines as 1 px anti-aliased lines, at OUTPUT resolution.
+    """Closed x/y polylines with anti-aliased thickness at OUTPUT resolution.
 
     Each point runs through the same chain the pixels did: its own frame ->
     canvas (*scale*, *offset*), minus the zoom crop's *origin*, times *factor*,
     the canvas-px -> output-px ratio. Sub-pixel via OpenCV's 4-bit shift.
     """
     ox, oy = float(origin[0]), float(origin[1])
+    # Supersample all stroke widths consistently, keeping tissue at its
+    # original resolution and compositing each border pixel only once.
+    supersample = 8
+    target = np.zeros(
+        (canvas.shape[0] * supersample, canvas.shape[1] * supersample), dtype=np.uint8,
+    )
     for poly in polys:
         points = np.round(
             ((poly * scale + np.asarray(offset, dtype=np.float64)) - (ox, oy))
-            * factor
-            * 16.0
+            * factor * supersample * 16.0
         ).astype(np.int32)
-        cv2.polylines(canvas, [points], True, color, 1, cv2.LINE_AA, 4)
+        cv2.polylines(
+            target, [points], True, 255,
+            max(1, round(thickness * supersample)), cv2.LINE_AA, 4,
+        )
+    coverage = cv2.resize(
+        target, (canvas.shape[1], canvas.shape[0]), interpolation=cv2.INTER_AREA,
+    ).astype(np.float32)[..., None] / 255.0
+    blended = canvas * (1.0 - coverage) + np.asarray(color) * coverage
+    canvas[:] = np.rint(blended).astype(np.uint8)
 
 
 def _draw_outlines(
@@ -722,21 +759,17 @@ def _draw_outlines(
     outlines: list[tuple[tuple[int, int, int], np.ndarray]],
     geometry: CanvasGeometry,
     *,
-    dark: bool,
+    color: tuple[int, int, int] = (255, 255, 0),
+    thickness: float = 1,
     factor: float = 1.0,
     origin: tuple[int, int] = (0, 0),
 ) -> None:
-    """Atlas region borders the way ABBA draws them: one hairline, one neutral
-    color, no rim. ABBA's border channel is the 1-voxel edge of the label
-    volume shown in a single grey; the per-region colors belong to the filled
-    map, not to lines over tissue. *factor* is canvas px -> output px, so the
-    line is 1 px on the screen the model sees whatever the canvas size, and
-    *origin* is the zoom crop's top-left corner in canvas pixels.
-    """
+    """One atlas-border color, with width set after crop and display resizing."""
     _draw_polys(
         canvas,
         [poly for _color, poly in outlines],
-        _line_color(dark),
+        color,
+        thickness=thickness,
         scale=geometry.atlas_scale,
         offset=geometry.atlas_offset,
         origin=origin,
@@ -1002,12 +1035,16 @@ def physical_views(
     mode: str = "overlay",
     zoom: list[float] | None = None,
     template_opacity: float = 0.0,
+    border_color: str = "yellow",
+    border_thickness: float = 0.5,
     outlines: str = "all",
     pad_to_fit_atlas: bool = True,
     pivot: tuple[float, float] | None = None,
     markers: tuple[np.ndarray, np.ndarray] | None = None,
     label: str = "",
     long_edge: int | None = None,
+    spline: dict[str, Any] | None = None,
+    frames: list[dict[str, Any]] | None = None,
 ) -> tuple[list[Image.Image], float]:
     """The alignment screen in one of :data:`VIEW_MODES`, plus the overlap.
 
@@ -1030,7 +1067,9 @@ def physical_views(
     bar is redrawn for the magnified micrometres per pixel.
 
     *outlines* picks which atlas lines are drawn (:data:`OUTLINE_LAYERS`):
-    every family boundary, the root silhouette alone, or none.
+    every family boundary, the root silhouette alone, or none. *border_color*
+    is a named color or #RRGGBB (default yellow); *border_thickness* is 0.25..8
+    output-image pixels (default 0.5), unchanged by zoom or canvas resolution.
 
     *pivot* is the rotation/scale centre in CANVAS pixels (``None`` is the
     canvas centre), and *markers* is ``(section points, atlas points)`` in
@@ -1040,6 +1079,7 @@ def physical_views(
     overlap between the warped section's tissue mask and the atlas anatomy at
     this placement.
     """
+    line_color, line_width = normalize_border_style(border_color, border_thickness)
     geometry = canvas_geometry(
         section.size,
         section_um_per_px,
@@ -1067,13 +1107,21 @@ def physical_views(
             **params,
         )
     matrix = (_shift((ox, oy)) @ _as_3x3(section_matrix) @ _shift((-ox, -oy)))[:2]
-    warped = cv2.warpAffine(
-        np.asarray(canvas, dtype=np.uint8),
-        matrix,
-        geometry.size,
-        flags=cv2.INTER_LINEAR,
-        borderValue=fill,
-    )
+    if spline is not None:
+        from langslice.landmark_warp import warp_section
+
+        warped = warp_section(
+            np.asarray(section.convert("RGB"), dtype=np.uint8), spline,
+            geometry.size, geometry.section_offset, geometry.um_per_px, fill,
+        )
+    else:
+        warped = cv2.warpAffine(
+            np.asarray(canvas, dtype=np.uint8),
+            matrix,
+            geometry.size,
+            flags=cv2.INTER_LINEAR,
+            borderValue=fill,
+        )
 
     tissue = extract_slice_silhouette(cv2.cvtColor(warped, cv2.COLOR_RGB2GRAY))
     iou = silhouette_iou(tissue, atlas_mask_canvas(geometry))
@@ -1125,7 +1173,9 @@ def physical_views(
         panels = [(warped, label or "section")]
 
     box = zoom_box(zoom, geometry.size)
-    if isinstance(params, np.ndarray):
+    if spline is not None:
+        knobs = "landmark thin-plate spline"
+    elif isinstance(params, np.ndarray):
         knobs = "fitted matrix"
     else:
         knobs = (
@@ -1148,7 +1198,8 @@ def physical_views(
         screen, factor = _to_screen(panel, box, edge)
         if lines:
             _draw_outlines(
-                screen, atlas_lines, geometry, dark=dark, factor=factor, origin=box[:2]
+                screen, atlas_lines, geometry, color=line_color, thickness=line_width,
+                factor=factor, origin=box[:2]
             )
         if silhouette:
             _draw_polys(
@@ -1180,7 +1231,16 @@ def physical_views(
             )
         if layer != "all":
             text += f"  outlines {layer}"
-        images.append(caption(Image.fromarray(screen, mode="RGB"), text))
+        labelled = caption(Image.fromarray(screen, mode="RGB"), text)
+        if frames is not None:
+            frames.append({
+                "width": labelled.width, "height": labelled.height,
+                "content_box": [0, labelled.height - screen.shape[0],
+                                labelled.width, labelled.height],
+                "canvas_box": list(box), "section_offset": list(geometry.section_offset),
+                "section_size": list(section.size), "um_per_px": geometry.um_per_px,
+            })
+        images.append(labelled)
     return images, iou
 
 
@@ -1195,6 +1255,8 @@ def physical_overlay(
     params: dict[str, float] | np.ndarray,
     *,
     template_opacity: float = 0.0,
+    border_color: str = "yellow",
+    border_thickness: float = 0.5,
     pad_to_fit_atlas: bool = True,
     pivot: tuple[float, float] | None = None,
     label: str = "",
@@ -1224,6 +1286,8 @@ def physical_overlay(
         yaw_deg,
         params,
         template_opacity=template_opacity,
+        border_color=border_color,
+        border_thickness=border_thickness,
         pad_to_fit_atlas=pad_to_fit_atlas,
         pivot=pivot,
         label=label,

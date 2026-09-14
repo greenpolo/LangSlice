@@ -462,6 +462,20 @@ def install_gui(abba: Any) -> str:
     return GUI_COMMAND_NAME
 
 
+def wait_for_jvm_shutdown(poll_seconds: float = 1.0) -> None:
+    """Block until the ABBA session's JVM shuts down (GUI window closed).
+
+    Shared by every long-lived ABBA session launcher: :func:`run_gui_session`
+    here, and :func:`langslice.integrations.abba_linear.run_linear_in_abba`.
+    """
+    import time
+
+    import jpype  # pyright: ignore[reportMissingImports]
+
+    while jpype.isJVMStarted():
+        time.sleep(poll_seconds)
+
+
 def run_gui_session(
     abba_atlas: str = "Adult Mouse Brain - Allen Brain Atlas V3p1", **overrides: Any
 ) -> None:
@@ -470,9 +484,6 @@ def run_gui_session(
     Blocks until the ImageJ/ABBA session's JVM shuts down. Keyword overrides
     are forwarded to :func:`enable_langslice_registration`.
     """
-    import time
-
-    import jpype  # pyright: ignore[reportMissingImports]
     import scyjava.config  # pyright: ignore[reportMissingImports]
     from abba_python.abba import Abba  # pyright: ignore[reportMissingImports]
 
@@ -484,5 +495,7 @@ def run_gui_session(
     enable_langslice_registration(abba, **overrides)
     install_gui(abba)
     abba.show_bdv_ui()
-    while jpype.isJVMStarted():
-        time.sleep(1)
+    from langslice.integrations.abba_gui import install_menu
+
+    install_menu(abba)
+    wait_for_jvm_shutdown()

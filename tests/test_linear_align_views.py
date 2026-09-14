@@ -156,7 +156,7 @@ def test_outlines_mode_is_black_outside_the_lines():
     centre = lines[cy - 5 : cy + 5, cx - 5 : cx + 5]
     assert centre.max() == 0
     assert float((lines > 40).any(axis=2).mean()) < 0.05, "more than lines on screen"
-    # Two greys: the atlas hairline and the section's own silhouette.
+    # Yellow atlas lines and a neutral grey tissue silhouette.
     values = set(np.unique(lines[lines > 40]))
     assert max(values) >= 200 and any(90 < v < 190 for v in values)
 
@@ -182,7 +182,9 @@ def _line_pixels(rgb: np.ndarray) -> int:
 
     At canvas scale a hairline is one anti-aliased pixel wide, so the
     threshold sits below full brightness; the tissue (120) stays under it."""
-    return int((rgb[60:-40] >= 150).all(axis=2).sum())
+    pixels = rgb[60:-40].astype(np.int16)
+    return int(((pixels[..., 0] - pixels[..., 2] > 80)
+                & (pixels[..., 1] - pixels[..., 2] > 80)).sum())
 
 
 def test_the_outline_layer_picks_which_atlas_lines_are_drawn():
@@ -229,7 +231,7 @@ def test_the_adjust_payload_is_concise_while_local_history_stays_complete(tmp_pa
     # rewarded inflating a damaged remnant to fill it (luna, D_08, 2026-09-06:
     # 0.29 -> 0.51 at scale 1.35), and this loop exists for damaged sections.
     assert "silhouette_iou" not in first
-    assert first["view"] == {
+    assert {key: first["view"][key] for key in ("mode", "zoom", "outlines")} == {
         "mode": "overlay",
         "zoom": [0.0, 0.0, 1.0, 1.0],
         "outlines": "all",
@@ -387,87 +389,6 @@ def test_the_pivot_rides_into_the_six_numbers_and_the_payload(tmp_path: Path):
     )
 
 
-# --- landmarks -----------------------------------------------------------
-
-
-def test_a_pair_the_transform_already_maps_has_no_residual(tmp_path: Path):
-    from langslice.adk import TOOL_MEDIA_PARTS_KEY
-
-    tools, _box, _state = _tools(tmp_path)
-    params = (4.0, 1.05, 0.95, 0.3, -0.2)
-
-    from langslice.affine import physical_affine_matrix
-    from langslice.linear.render import canvas_geometry, render_slice
-
-    ctx = _ctx(tmp_path)[0]
-    section = render_slice(ctx, _state.slices[0], long_edge=512)
-    geometry = canvas_geometry(
-        section.size, 10.0, TwoRegionAtlas(), 0.2, "coronal"
-    )
-    width, height = geometry.size
-    matrix = physical_affine_matrix(
-        size=geometry.size, um_per_px=10.0,
-        rotation_deg=params[0], scale_x=params[1], scale_y=params[2],
-        translate_x_mm=params[3], translate_y_mm=params[4],
-    )
-    here = np.array([0.4 * width, 0.35 * height])
-    there = matrix[:, :2] @ here + matrix[:, 2]
-    pair = {
-        "section": [0.4, 0.35],
-        "atlas": [there[0] / width, there[1] / height],
-    }
-
-    result = tools["landmarks"]("s.tif", [pair], *params)
-    assert result["status"] == "ok"
-    assert result["pairs"][0]["residual_mm"] == pytest.approx(0.0, abs=1e-3)
-    assert result["rms_mm"] == pytest.approx(0.0, abs=1e-3)
-    assert result["fit"] is None  # one pair supports no fit
-    assert len(result[TOOL_MEDIA_PARTS_KEY]) == 1
-
-
-def test_the_landmark_fit_recovers_a_known_shift_and_scale(tmp_path: Path):
-    tools, _box, _state = _tools(tmp_path)
-    # Four points on the canvas, moved by a known scale and shift. The file
-    # is 512 px at 10 um/px, so the render is 1:1 and 1 mm is 100 canvas px;
-    # the payload must report the shift in millimetres.
-    points = [(0.3, 0.3), (0.7, 0.3), (0.3, 0.7), (0.7, 0.7)]
-    scale, shift_mm = 1.2, 0.5
-    from langslice.linear.render import canvas_geometry, render_slice
-
-    ctx = _ctx(tmp_path)[0]
-    section = render_slice(ctx, _state.slices[0], long_edge=512)
-    geometry = canvas_geometry(section.size, 10.0, TwoRegionAtlas(), 0.2, "coronal")
-    width, height = geometry.size
-    cx, cy = width / 2.0, height / 2.0
-    pairs = []
-    for fx, fy in points:
-        x, y = fx * width, fy * height
-        moved = (
-            cx + (x - cx) * scale + shift_mm * 1000.0 / 10.0,
-            cy + (y - cy) * scale,
-        )
-        pairs.append(
-            {"section": [fx, fy], "atlas": [moved[0] / width, moved[1] / height]}
-        )
-
-    result = tools["landmarks"]("s.tif", pairs, 0.0, 1.0, 1.0, 0.0, 0.0)
-    fit = result["fit"]
-    assert fit["kind"] == "affine" and fit["points"] == 4
-    assert fit["scale_x"] == pytest.approx(scale, abs=1e-3)
-    assert fit["scale_y"] == pytest.approx(scale, abs=1e-3)
-    assert fit["rotation_deg"] == pytest.approx(0.0, abs=1e-3)
-    assert fit["translate_x_mm"] == pytest.approx(shift_mm, abs=1e-3)
-    assert fit["translate_y_mm"] == pytest.approx(0.0, abs=1e-3)
-    assert fit["rms_mm"] == pytest.approx(0.0, abs=1e-3)
-    # Under the identity the points are still where they were: the residual is
-    # the move itself, in millimetres.
-    assert result["rms_mm"] > 0.1
-
-    two = tools["landmarks"]("s.tif", pairs[:2], 0.0, 1.0, 1.0, 0.0, 0.0)
-    assert two["fit"]["kind"] == "similarity" and two["fit"]["points"] == 2
-    assert tools["landmarks"]("s.tif", [], 0.0, 1.0, 1.0, 0.0, 0.0)["error"] == "BAD_ARGS"
-
-
 def test_clean_section_and_template_views_carry_no_outlines():
     (section_only,), _ = _views(mode="section")
     (template_only,), _ = _views(mode="template")
@@ -498,3 +419,103 @@ def test_the_adjust_tool_takes_the_outline_layer(tmp_path: Path):
 
     bad = preview("s.tif", 0.0, 1.0, 1.0, 0.0, 0.0, "overlay", [], 0.0, "canvas", "midline")
     assert bad["error"] == "BAD_OUTLINES"
+
+
+@pytest.mark.parametrize("color", ["cyan", "#00ffff"])
+def test_border_color_changes_atlas_lines_without_changing_tissue_or_overlap(color):
+    (yellow,), original_iou = _views()
+    (cyan,), recolored_iou = _views(border_color=color)
+    assert original_iou == recolored_iou
+    # Both images carry the same tissue, scale bar and geometry. Only the
+    # atlas lines change; their RGB channels swap red and blue for cyan.
+    assert np.array_equal(yellow[..., 1], cyan[..., 1])
+    assert np.array_equal(yellow[..., 0], cyan[..., 2])
+    assert np.array_equal(yellow[..., 2], cyan[..., 0])
+    assert _line_pixels(yellow) > 300
+    assert _line_pixels(cyan) == 0
+
+
+def test_border_thickness_is_measured_after_zoom_and_resize():
+    from langslice.linear.render import _draw_polys
+
+    square = np.asarray([[20, 20], [80, 20], [80, 80], [20, 80]], dtype=float)
+    widths = {}
+    for thickness in (1, 4):
+        widths[thickness] = []
+        # Equivalent crops/scales change the square's on-screen size, but
+        # the straight vertical edge should keep the requested pixel width.
+        for factor, origin in ((1.0, (0, 0)), (0.5, (0, 0)), (2.0, (10, 10))):
+            screen = np.zeros((200, 200, 3), dtype=np.uint8)
+            _draw_polys(screen, [square], (255, 255, 0), factor=factor,
+                        origin=origin, thickness=thickness)
+            y = round((50 - origin[1]) * factor)
+            x = round((20 - origin[0]) * factor)
+            widths[thickness].append(int((screen[y, x-6:x+7, 0] > 127).sum()))
+        assert len(set(widths[thickness])) == 1
+    assert widths[4][0] > widths[1][0]
+
+
+@pytest.mark.parametrize("style", [
+    {"border_color": "not-a-color"}, {"border_color": "#abc"},
+    {"border_thickness": 0}, {"border_thickness": 9},
+    {"border_thickness": float("nan")}, {"border_thickness": True},
+])
+def test_invalid_border_style_does_not_write_a_transform(tmp_path: Path, style):
+    tools, box, state = _tools(tmp_path)
+    before = state.to_dict()
+    response = tools["adjust_transform"]("s.tif", 5.0, 1.0, 1.0, 0.0, 0.0, **style)
+    assert response["error"] == "INVALID_BORDER_STYLE"
+    assert state.to_dict() == before
+    assert not box.undo_stack
+
+
+def test_batch_border_style_changes_only_the_render(tmp_path: Path):
+    from langslice.adk import TOOL_MEDIA_PARTS_KEY
+
+    tools, box, state = _tools(tmp_path)
+    entry = {"id": "s.tif", **_IDENTITY, "rotation_deg": 5.0}
+    first = tools["adjust_transforms"]([entry])
+    before = state.to_dict()
+    undo_depth = len(box.undo_stack)
+    second = tools["adjust_transforms"]([
+        {**entry, "border_color": "cyan", "border_thickness": 3},
+    ])
+    assert first["status"] == second["status"] == "ok"
+    assert state.to_dict() == before
+    assert len(box.undo_stack) == undo_depth
+    first_image = first[TOOL_MEDIA_PARTS_KEY][0].inline_data.data
+    second_image = second[TOOL_MEDIA_PARTS_KEY][0].inline_data.data
+    assert first_image != second_image
+
+
+@pytest.mark.parametrize("mode", ["overlay", "side_by_side", "checkerboard", "outlines"])
+def test_border_style_reaches_all_atlas_bearing_panels(mode):
+    defaults, default_iou = _views(mode=mode)
+    styled, styled_iou = _views(mode=mode, border_color="cyan", border_thickness=4)
+    assert default_iou == styled_iou
+    for default, custom in zip(defaults, styled, strict=True):
+        assert default.shape == custom.shape
+        assert _line_pixels(default) > 0
+        assert _line_pixels(custom) == 0
+        assert _line_pixels(custom[..., ::-1]) > _line_pixels(default)
+
+
+@pytest.mark.parametrize("mode", ["section", "template"])
+def test_border_style_does_not_add_lines_to_clean_views(mode):
+    (default,), _ = _views(mode=mode)
+    (custom,), _ = _views(mode=mode, border_color="cyan", border_thickness=4)
+    assert np.array_equal(default, custom)
+
+
+def test_fractional_border_widths_are_distinct_and_preserve_geometry():
+    from langslice.linear.render import _draw_polys, normalize_border_style
+
+    square = np.asarray([[20, 20], [80, 20], [80, 80], [20, 80]], dtype=float)
+    ink = []
+    for width in (0.25, 0.5, 0.75, 1.0):
+        assert normalize_border_style("yellow", width)[1] == width
+        screen = np.zeros((100, 100, 3), dtype=np.uint8)
+        _draw_polys(screen, [square], (255, 255, 0), thickness=width)
+        ink.append(int(screen[50, 15:26, 0].sum()))
+        assert not screen[40:60, 40:60].any()
+    assert all(a < b for a, b in zip(ink, ink[1:], strict=False))

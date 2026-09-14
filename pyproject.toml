@@ -42,7 +42,7 @@ where = ["src"]
 include = ["langslice*"]
 
 [tool.setuptools.package-data]
-langslice = ["atlas/*.json"]
+langslice = ["atlas/*.json", "integrations/static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

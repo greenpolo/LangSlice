@@ -61,6 +61,10 @@ class PositionSpec:
 class TransformSpec:
     """Knobs of the ``transform`` task."""
 
+    #: Offer direct visual adjustment and landmark tools.
+    interactive: bool = True
+    #: Offer automatic silhouette / optional Elastix fitting.
+    automatic: bool = True
     #: The agent may set the stack-wide cutting angles.
     angles: bool = False
     #: ``fit_affine`` may use the Elastix intensity affine.
@@ -108,7 +112,7 @@ class JobSpec:
     #: After submit, ask the agent (same context) what tools it missed and
     #: record the answer on the state. One extra model call.
     debrief: bool = True
-    #: Completion retirement is opt-in until live quality/caching validation.
+    #: Compatibility field: only the established working-set policy is supported.
     image_retention: str = "legacy"
     #: Stop after an observed request exceeds this input count (cached tokens
     #: included), with one grace call to submit. None disables the safeguard.
@@ -120,8 +124,8 @@ class JobSpec:
     max_quota_percent: int = DEFAULT_MAX_QUOTA_PERCENT
 
     def __post_init__(self) -> None:
-        if self.image_retention not in {"legacy", "completion"}:
-            raise ValueError("image_retention must be legacy or completion")
+        if self.image_retention != "legacy":
+            raise ValueError("image_retention must be legacy; completion retirement was removed")
         if self.plane not in PLANES:
             raise ValueError(f"Unsupported plane {self.plane!r}; expected one of {PLANES}")
         unknown = [task for task in self.tasks if task not in ALL_TASKS]
