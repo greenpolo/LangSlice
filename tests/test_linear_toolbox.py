@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import pytest
 from PIL import Image
 
 from langslice.linear.checkpoint import load_checkpoint
@@ -13,6 +14,7 @@ from langslice.linear.engine import build_context, ingest
 from langslice.linear.spec import JobSpec, PositionSpec, ReorderSpec, TransformSpec
 from langslice.linear.toolbox import build_tools
 from tests.fakes import EllipseAtlas, SlabAtlas, ellipse_section
+from tests.linear_tool_helpers import single_adjust
 
 _ATLAS = SlabAtlas()
 
@@ -60,7 +62,7 @@ def test_a_position_only_spec_has_no_reorder_or_transform_tools(tmp_path: Path):
     names = set(box.names)
     assert {"status", "view_slices", "fetch_atlas", "set_positions", "submit"} <= names
     assert not names & {"reorder_slices", "move_slice", "orient_slices"}
-    assert not names & {"fit_affine", "adjust_transform", "view_landmarks",
+    assert not names & {"fit_affine", "adjust_transforms", "view_landmarks",
         "edit_landmarks", "warp_landmarks"}
 
 
@@ -77,8 +79,20 @@ def test_optional_tools_follow_their_flags(tmp_path: Path):
     assert not set(plain.names) & {"run_deepslice", "fit_position", "set_cutting_angles"}
     # The interactive transform rides in the main trajectory, always on with
     # the task.
-    assert {"adjust_transform", "adjust_transforms", "view_landmarks",
-        "edit_landmarks", "warp_landmarks"} <= set(plain.names)
+    assert not {"adjust_transform", "unmark_damaged", "validate", "move_slice"} & set(plain.names)
+    assert "adjust_transforms" in plain.names
+    assert not set(plain.names) & {"view_landmarks", "edit_landmarks", "warp_landmarks"}
+    from google.adk.tools import FunctionTool
+
+    schemas = [FunctionTool(tool)._get_declaration().model_dump() for tool in plain.tools]
+    assert len(schemas) == 15
+    assert "landmark" not in str(schemas).lower()
+
+    _, _, refinement = _box(
+        tmp_path, tasks=["transform"],
+        transform=TransformSpec(interactive=True, automatic=False),
+    )
+    assert len(refinement.tools) == 9
 
 
 def test_flip_is_refused_when_the_spec_switches_it_off(tmp_path: Path):
@@ -405,8 +419,6 @@ def test_reorder_keeps_positions_and_transforms(tmp_path: Path):
 
     assert [s.id for s in state.in_order()] == order
     assert sorted(result["moved"]) == ["s1.png", "s2.png"]  # index changed
-    # Filenames only: the corrected index is what this call changes.
-    assert _tool(box, "reorder_slices")(["0", "2", "1", "3", "4"])["error"] == "NOT_A_PERMUTATION"
     assert "cleared_positions" not in result
     # Nothing but the corrected index moves; the submit gate is what holds
     # order and position together.
@@ -414,26 +426,83 @@ def test_reorder_keeps_positions_and_transforms(tmp_path: Path):
     assert all(s.transform is not None for s in state.slices)
 
 
-def test_reorder_refuses_anything_that_is_not_a_permutation(tmp_path: Path):
+def test_reorder_moves_one_section_and_keeps_every_position(tmp_path: Path):
     state, _, box = _box(tmp_path, placed=True)
-    result = _tool(box, "reorder_slices")(["s0.png", "s1.png"])
-    assert result["error"] == "NOT_A_PERMUTATION"
-    assert state.by_id("s1.png").position_mm is not None
-
-
-def test_move_slice_moves_one_section_and_keeps_every_position(tmp_path: Path):
-    state, _, box = _box(tmp_path, placed=True)
-    result = _tool(box, "move_slice")("s3.png", "start")
-    assert [s.id for s in state.in_order()][0] == "s3.png"
+    before_positions = {s.id: s.position_mm for s in state.slices}
+    result = _tool(box, "reorder_slices")(["s3.png"])
+    assert [s.id for s in state.in_order()] == [
+        "s3.png", "s0.png", "s1.png", "s2.png", "s4.png",
+    ]
     # Every section it passed is renumbered; nothing loses its position.
     assert sorted(result["moved"]) == ["s0.png", "s1.png", "s2.png", "s3.png"]
-    assert state.by_id("s3.png").position_mm == 3.5
-    assert state.by_id("s0.png").position_mm == 2.0
-    assert state.by_id("s4.png").position_mm == 4.0
+    assert {s.id: s.position_mm for s in state.slices} == before_positions
 
-    box.undo_stack.clear()
-    result = _tool(box, "move_slice")("s3.png", "s4.png")
-    assert [s.id for s in state.in_order()][-1] == "s3.png"
+    result = _tool(box, "reorder_slices")(["s3.png"], after="s4.png")
+    assert result["status"] == "ok"
+    assert [s.id for s in state.in_order()] == [
+        "s0.png", "s1.png", "s2.png", "s4.png", "s3.png",
+    ]
+    assert {s.id: s.position_mm for s in state.slices} == before_positions
+
+
+@pytest.mark.parametrize(
+    ("after", "expected"),
+    [
+        ("start", ["s4.png", "s1.png", "s0.png", "s2.png", "s3.png"]),
+        ("s2.png", ["s0.png", "s2.png", "s4.png", "s1.png", "s3.png"]),
+        ("s3.png", ["s0.png", "s2.png", "s3.png", "s4.png", "s1.png"]),
+    ],
+)
+def test_reorder_moves_a_block_and_checkpoints_one_undo_step(
+    tmp_path: Path, after: str, expected: list[str],
+):
+    state, ctx, box = _box(tmp_path, placed=True)
+    before = state.to_dict()
+    result = _tool(box, "reorder_slices")(["s4.png", "s1.png"], after=after)
+    assert result["status"] == "ok"
+    assert [s.id for s in state.in_order()] == expected
+    assert [s.index_corrected for s in state.in_order()] == list(range(5))
+    assert len(box.undo_stack) == 1
+    saved = load_checkpoint(ctx.checkpoint_path)
+    assert saved is not None
+    assert saved.to_dict() == state.to_dict()
+    assert _tool(box, "undo")()["status"] == "ok"
+    assert state.to_dict() == before
+    assert not box.undo_stack
+
+
+@pytest.mark.parametrize(
+    ("new_order", "after"),
+    [
+        ([], "start"),
+        (["s1.png", "s1.png"], "start"),
+        (["s1.png", "missing.png"], "start"),
+        (["0", "2", "1", "3", "4"], "start"),
+        (["s1.png"], "missing.png"),
+        (["s1.png"], "0"),
+        (["s1.png", "s3.png"], "s3.png"),
+    ],
+)
+def test_reorder_rejects_invalid_input_without_writing_or_changing_history(
+    tmp_path: Path, new_order: list[str], after: str,
+):
+    state, ctx, box = _box(tmp_path, placed=True)
+    _tool(box, "note")("keep this undo step")
+    _tool(box, "note")("keep this redo step")
+    _tool(box, "undo")()
+    before = state.to_dict()
+    checkpoint_before = Path(ctx.checkpoint_path).read_bytes()
+    undo_before = list(box.undo_stack)
+    redo_before = list(box.redo_stack)
+
+    result = _tool(box, "reorder_slices")(new_order, after=after)
+
+    assert result["status"] == "error"
+    assert result["error"]
+    assert state.to_dict() == before
+    assert Path(ctx.checkpoint_path).read_bytes() == checkpoint_before
+    assert box.undo_stack == undo_before
+    assert box.redo_stack == redo_before
 
 
 # --- the submit gates ----------------------------------------------------
@@ -513,19 +582,17 @@ def test_strict_interval_refuses_uneven_spacing_and_any_break(tmp_path: Path):
     assert _submit(box, interval_breaks=[2])["error"] == "STRICT_INTERVAL"
 
 
-def test_validate_runs_the_gates_without_writing(tmp_path: Path):
+def test_refused_submit_runs_the_gates_without_writing(tmp_path: Path):
     state, ctx, box = _box(tmp_path, tasks=["position"], placed=True)
-    validate = _tool(box, "validate")
 
     state.by_id("s2.png").position_mm = None
-    assert validate([])["error"] == "MISSING_POSITIONS"
+    assert _submit(box)["error"] == "MISSING_POSITIONS"
 
     state.by_id("s2.png").position_mm = 0.5  # placed, but against the order
-    assert validate([])["error"] == "ORDER_POSITION_MISMATCH"
+    assert _submit(box)["error"] == "ORDER_POSITION_MISMATCH"
 
     state.by_id("s2.png").position_mm = 3.0
-    assert validate([]) == {"status": "ok", "would_submit": True}
-    assert validate([3])["error"] == "INTERVAL_BREAKS_UNSUPPORTED"
+    assert _submit(box, interval_breaks=[3])["error"] == "INTERVAL_BREAKS_UNSUPPORTED"
 
     # Writes nothing: no checkpoint, no undo step, no submission.
     assert state.submitted is False
@@ -558,7 +625,7 @@ def test_fit_affine_records_a_transform_and_refuses_damaged_sections(tmp_path: P
     assert result["status"] == "ok"
     assert [row["id"] for row in result["results"]] == ["s0.png"]  # damaged is skipped
     assert result["results"][0]["iou"] > 0.5
-    # One representation: a fit reports the same five knobs adjust_transform takes.
+    # One representation: a fit reports the same five knobs adjust_transforms takes.
     assert set(result["results"][0]["physical"]) == {
         "rotation_deg", "scale_x", "scale_y", "shear",
         "translate_x_mm", "translate_y_mm", "pivot",
@@ -579,7 +646,7 @@ def test_fit_affine_records_a_transform_and_refuses_damaged_sections(tmp_path: P
     assert _tool(box, "fit_affine")([], "elastix")["error"] == "UNAVAILABLE"
 
 
-def test_adjust_transform_writes_shows_and_undoes(tmp_path: Path):
+def test_one_entry_adjustment_writes_shows_and_undoes(tmp_path: Path):
     from langslice.adk import TOOL_MEDIA_PARTS_KEY
 
     atlas = EllipseAtlas()
@@ -592,7 +659,7 @@ def test_adjust_transform_writes_shows_and_undoes(tmp_path: Path):
     state.by_id("s0.png").damaged = True  # the hand path is for exactly these
     box = build_tools(state, ctx, spec)
 
-    adjust = _tool(box, "adjust_transform")
+    adjust = single_adjust(_tool(box, "adjust_transforms"))
     # A section with no position has nothing to align against.
     assert adjust("s1.png", 0.0, 1.0, 1.0, 0.0, 0.0)["error"] == "NO_POSITION"
 
@@ -718,7 +785,7 @@ def test_adjust_transforms_checkpoints_successes_when_another_render_fails(
     assert state.by_id("s0.png").transform is None
 
 
-def test_adjust_transform_encoding_failure_does_not_mutate_state(
+def test_one_entry_adjustment_encoding_failure_does_not_mutate_state(
     tmp_path: Path, monkeypatch,
 ):
     state, ctx, box = _box(tmp_path, placed=True)
@@ -727,7 +794,7 @@ def test_adjust_transform_encoding_failure_does_not_mutate_state(
         raise RuntimeError("encode broke")
 
     monkeypatch.setattr("langslice.linear.toolbox.image_to_part", fail_encode)
-    result = _tool(box, "adjust_transform")(
+    result = single_adjust(_tool(box, "adjust_transforms"))(
         "s0.png", 2.0, 1.0, 1.0, 0.0, 0.0
     )
     assert result["error"] == "RENDER_FAILED"
@@ -738,17 +805,15 @@ def test_adjust_transform_encoding_failure_does_not_mutate_state(
 
 def test_submit_names_the_sections_with_no_transform(tmp_path: Path):
     state, ctx, box = _box(tmp_path, tasks=["transform"], placed=True)
-    validate = _tool(box, "validate")
 
     refusal = _submit(box)
     assert refusal["error"] == "MISSING_TRANSFORMS"
     assert len(refusal["missing_ids"]) == 5
-    assert validate([])["error"] == "MISSING_TRANSFORMS"
+    assert _submit(box)["error"] == "MISSING_TRANSFORMS"
     assert state.submitted is False
 
     for record in state.slices:
         record.transform = {"kind": "interactive", "params": [1, 0, 0, 0, 1, 0]}
-    assert validate([]) == {"status": "ok", "would_submit": True}
     assert _submit(box)["status"] == "ok"
     assert state.submitted is True
 
@@ -864,4 +929,44 @@ def test_the_playbook_puts_astras_method_in_the_job_statement(tmp_path: Path):
     assert "nominal interval stand in for a look" in method
     assert "After writing, review the whole stack" in method
     assert "side of any gap before reporting an interval break" in method
-    assert "Validate, then submit." in method
+    assert "Submit when the work is complete" in method
+
+
+def test_damage_flags_can_be_set_and_cleared_together_with_undo(tmp_path: Path):
+    state, ctx, box = _box(tmp_path)
+    state.by_id("s0.png").damaged = True
+    state.by_id("s0.png").damage_note = "previous damage"
+    before = state.to_dict()
+    result = _tool(box, "mark_damaged")([
+        {"id": "s0.png", "damaged": False},
+        {"id": "s1.png", "damaged": True, "note": "missing hemisphere"},
+    ])
+    assert result["status"] == "ok"
+    assert state.by_id("s0.png").damaged is False
+    assert state.by_id("s0.png").damage_note == ""
+    assert state.by_id("s1.png").damaged is True
+    assert state.by_id("s1.png").damage_note == "missing hemisphere"
+    assert load_checkpoint(ctx.checkpoint_path).to_dict() == state.to_dict()
+    assert len(box.undo_stack) == 1
+    _tool(box, "undo")()
+    assert state.to_dict() == before
+
+
+def test_adjust_transforms_mixed_views_map_all_images_to_their_sections(tmp_path: Path):
+    from langslice.adk import TOOL_MEDIA_PARTS_KEY
+
+    state, _, box = _box(tmp_path, placed=True)
+    base = {"rotation_deg": 2, "scale_x": 1, "scale_y": 1,
+            "translate_x_mm": 0, "translate_y_mm": 0}
+    modes = ["overlay", "ab", "side_by_side", "outlines"]
+    result = _tool(box, "adjust_transforms")([
+        {"id": f"s{i}.png", **base, "mode": mode}
+        for i, mode in enumerate(modes)
+    ])
+    assert result["status"] == "ok"
+    assert [row["image_indexes"] for row in result["results"]] == [[0], [1, 2], [3, 4], [5]]
+    assert [row["view"]["mode"] for row in result["results"]] == modes
+    assert len(result[TOOL_MEDIA_PARTS_KEY]) == 6
+    assert len(box.undo_stack) == 1
+    _tool(box, "undo")()
+    assert all(record.transform is None for record in state.slices)

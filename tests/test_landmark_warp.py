@@ -106,3 +106,9 @@ def test_resampling_uses_original_extent_despite_thumbnail_rounding():
     shifted = spec(POINTS + [2 / 16, 2 / 11])
     warped = warp_section(section, shifted, (22, 17), (2, 2), 500)
     np.testing.assert_array_equal(warped[4:15, 4:20], section)
+
+
+@pytest.mark.parametrize("payload", [None, [], "invalid"])
+def test_nonmapping_checkpoint_deformation_rejected(payload):
+    with pytest.raises(ValueError, match="must be a mapping"):
+        fit_spline(payload)

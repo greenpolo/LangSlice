@@ -37,8 +37,10 @@ class SliceState:
     normalized oriented-section coordinates, ``extent_mm`` from original image
     calibration, and optional labels. When present it is the COMPLETE mapping;
     ``params``/``physical`` retain the affine baseline as metadata and are not
-    composed with the spline. The BigWarp target-to-source TPS is evaluated
-    analytically for image resampling; its inverse maps source coordinates.
+    composed with the spline. New ``backend="elastix"`` payloads store native
+    ``parameter_maps``, ``affine_mm`` and ``domain_mm`` for the complete affine
+    plus residual pullback. Legacy payloads retain their BigWarp TPS mapping.
+    Both evaluate target-to-source resampling and invert it for forward points.
     Affine adjustment/fitting replaces the spline. Checkpoints and undo retain
     all pairs. ``iou`` is always tissue-silhouette overlap, not anatomical quality.
 
@@ -67,11 +69,7 @@ class SliceState:
     position_mm: float | None = None
     transform: dict[str, Any] | None = None
     caveats: list[str] = field(default_factory=list)
-    #: None imports legacy applied-spline pairs; [] is an explicitly empty draft.
-    landmark_pairs: list[dict[str, Any]] | None = None
-    #: Geometry under which the draft was selected, excluding the applied transform.
-    landmark_frame: str | None = None
-    landmark_next_id: int = 1
+
 
 
 def add_caveat(record: SliceState, caveat: str) -> None:

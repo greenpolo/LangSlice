@@ -27,6 +27,7 @@ from langslice.linear.render import (
 )
 from langslice.linear.spec import JobSpec
 from langslice.linear.transform import calibrate
+from tests.linear_tool_helpers import single_adjust
 
 #: The atlas fake below is 25 um per voxel, like allen_mouse_25um.
 ATLAS_UM = 25.0
@@ -308,7 +309,9 @@ def test_the_preview_tool_returns_one_image_and_the_numbers(tmp_path: Path):
     record = state.slices[0]
     record.position_mm = 0.2
     box = build_tools(state, ctx, ctx.spec)
-    preview = next(tool for tool in box.tools if tool.__name__ == "adjust_transform")
+    preview = single_adjust(
+        next(tool for tool in box.tools if tool.__name__ == "adjust_transforms")
+    )
 
     result = preview(record.id, 0.0, 1.0, 1.0, 0.25, 0.0)
     assert result["status"] == "ok"
@@ -380,7 +383,7 @@ def test_a_stored_silhouette_fit_is_the_b_side_of_an_a_b_preview(tmp_path: Path)
     tools["fit_affine"](["s.tif"], "silhouette")
     stored = state.slices[0].transform["physical"]
 
-    ab = tools["adjust_transform"]("s.tif", 0.0, 1.0, 1.0, 0.0, 0.0, "ab")
+    ab = single_adjust(tools["adjust_transforms"])("s.tif", 0.0, 1.0, 1.0, 0.0, 0.0, "ab")
     assert len(ab[TOOL_MEDIA_PARTS_KEY]) == 2
     # No identity fallback any more: the fit's own knobs are the B side.
     assert ab["ab_reference"]["source"] == "stored"

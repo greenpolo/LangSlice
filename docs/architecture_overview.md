@@ -8,7 +8,7 @@ under `models/`.
 The two registration methods are sibling subpackages with no dependency on each
 other:
 
-- `src/langslice/linear/` -- order, position and one in-plane transform per
+- `src/langslice/linear/` -- order, position and one in-plane affine per
   section: the job spec, the stack state and its JSON checkpoint, the one
   toolbox, the job statement, the ADK session, and the run engine.
 - `src/langslice/nonlinear/` -- generative-image registration: candidate
@@ -69,13 +69,12 @@ read one shape. Corrections (order, flips, rotations), positions, cutting
 angles and per-section transforms are proposals -- the host applies them, and
 the user's image files are never modified.
 
-The per-section interactive alignment is not a nested session: since
-2026-09-06 `adjust_transform` and `landmarks` sit in the main toolbox, so the
-agent aligns a section whenever it wants, in the same context that placed it.
-Each `adjust_transform` call writes the transform and returns the picture of
-the result, so acting and looking are one step. `adjust_transforms` does this
-for up to four independent sections as one main-session call and one undo
-step; dependent refinements still wait for the first picture.
+Interactive alignment runs in the main session, sharing the context that placed
+and ordered the stack. `adjust_transforms` writes and shows one to four sections
+in one undo step, including before/after or side-by-side views. A dependent
+refinement waits for its first picture. The linear agent handles affine
+alignment; local deformation belongs to the separate nonlinear image-generation
+workflow. An agent-callable bridge to image generation remains undecided.
 
 Picture-returning writes show what they did: `orient_slices` the re-oriented
 sections, `set_positions` placements not already seen at the same position,

@@ -9,16 +9,13 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-_TRANSFORMS = {
-    "adjust_transform", "adjust_transforms", "fit_affine",
-    "view_landmarks", "edit_landmarks", "warp_landmarks",
-}
+_TRANSFORMS = {"adjust_transforms", "fit_affine"}
 _POSITIONING = {
     "view_slices", "compare_placement", "view_stack", "set_positions", "fit_position",
-    "run_deepslice", "orient_slices", "reorder_slices", "move_slice", "set_cutting_angles",
+    "run_deepslice", "orient_slices", "reorder_slices", "set_cutting_angles",
     "undo", "redo",
 }
-_WRITES = (_TRANSFORMS - {"view_landmarks", "edit_landmarks"}) | (_POSITIONING - {
+_WRITES = _TRANSFORMS | (_POSITIONING - {
     "view_slices", "compare_placement", "view_stack",
 })
 

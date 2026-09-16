@@ -76,3 +76,35 @@ def test_cutting_angles_report_obliqueness():
     state.cutting_angles_deg = {"pitch": 3.0, "yaw": -1.0}
     assert state.is_oblique
     assert (state.pitch_deg, state.yaw_deg) == (3.0, -1.0)
+
+
+def test_old_checkpoint_discards_draft_landmarks_and_retains_applied_spline():
+    import numpy as np
+
+    from langslice.landmark_warp import fit_spline
+
+    state = _stack(1)
+    source = [[.2, .2], [.8, .2], [.2, .8], [.8, .8]]
+    target = [[x + .05, y - .02] for x, y in source]
+    transform = {
+        "kind": "interactive", "params": [1, 0, 0, 0, 1, 0],
+        "spline": {"source": source, "target": target, "extent_mm": [4, 3]},
+    }
+    old = state.to_dict()
+    old["slices"][0].update(
+        transform=transform, landmark_pairs=[{"id": 1}],
+        landmark_frame="old-frame", landmark_next_id=2,
+    )
+    resumed = StackState.from_dict(old)
+    saved = resumed.to_dict()
+    assert saved["slices"][0]["transform"] == transform
+    assert not {"landmark_pairs", "landmark_frame", "landmark_next_id"} & saved["slices"][0].keys()
+    applied = resumed.slices[0].transform
+    assert applied is not None
+    fitted = fit_spline(applied["spline"])
+    extent = np.array([4, 3])
+    np.testing.assert_allclose(fitted.forward(np.asarray(source) * extent),
+                               np.asarray(target) * extent, atol=1e-12)
+    resumed.slices[0].transform = None
+    resumed.restore(saved)
+    assert resumed.slices[0].transform == transform

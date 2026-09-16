@@ -1,4 +1,6 @@
-"""Landmark TPS in physical millimeters, including its affine component.
+"""Landmark deformation dispatch, rendering, and legacy TPS in physical millimeters.
+
+New Elastix payloads dispatch to their saved coefficient evaluator.
 
 The kernel is r² log(r), as in BigWarp's
 ``jitk.spline.ThinPlateR2LogRSplineKernelTransform``. BigWarp fits the
@@ -34,10 +36,10 @@ def _kernel(delta: FloatArray) -> FloatArray:
 class _ThinPlateKernel:
     """An exact interpolating 2D TPS. Arrays use rows of physical [x, y]."""
 
-    def __init__(self, source: ArrayLike, target: ArrayLike) -> None:
+    def __init__(self, source: ArrayLike, target: ArrayLike, *, max_points: int = 64) -> None:
         source, target = _points(source), _points(target)
-        if source.shape != target.shape or not 4 <= len(source) <= 64:
-            raise ValueError("Supply 4 to 64 corresponding source and target landmarks")
+        if source.shape != target.shape or not 4 <= len(source) <= max_points:
+            raise ValueError(f"Supply 4 to {max_points} corresponding source and target landmarks")
         self.origin = np.mean(source, axis=0)
         self.scale = float(np.max(np.ptp(source, axis=0)))
         if self.scale <= 0:
@@ -137,10 +139,10 @@ class ThinPlateSpline:
     the source-to-target mapping. Both directions here use that single kernel.
     """
 
-    def __init__(self, source: ArrayLike, target: ArrayLike) -> None:
+    def __init__(self, source: ArrayLike, target: ArrayLike, *, max_points: int = 64) -> None:
         self.source = _points(source).copy()
         self.target = _points(target).copy()
-        self._pullback = _ThinPlateKernel(self.target, self.source)
+        self._pullback = _ThinPlateKernel(self.target, self.source, max_points=max_points)
 
     def forward(self, points_mm: ArrayLike, *, tolerance_mm: float = 1e-6,
                 max_iterations: int = 40) -> FloatArray:
@@ -185,8 +187,21 @@ class ThinPlateSpline:
         self.inverse(probes)
 
 
-def fit_spline(spline: Mapping[str, Any]) -> ThinPlateSpline:
-    """Validate and fit persisted normalized landmarks; safe before state writes."""
+def fit_spline(spline: Mapping[str, Any]) -> Any:
+    """Load the authoritative deformation; old checkpoints retain their exact TPS.
+
+    New landmark refinements carry serialized Elastix maps. Their landmark
+    provenance must never be mistaken for an exact-interpolating TPS fit.
+    """
+    if not isinstance(spline, Mapping):
+        raise ValueError("Landmark deformation must be a mapping")
+    backend = spline.get("backend", "tps")
+    if backend == "elastix":
+        from langslice.landmark_elastix import load_elastix
+
+        return load_elastix(spline)
+    if backend != "tps":
+        raise ValueError(f"Unknown landmark deformation backend: {backend}")
     extent = np.asarray(spline.get("extent_mm"), dtype=np.float64)
     if extent.shape != (2,) or not np.isfinite(extent).all() or np.any(extent <= 0):
         raise ValueError("extent_mm must contain positive finite width and height")
@@ -199,7 +214,7 @@ def fit_spline(spline: Mapping[str, Any]) -> ThinPlateSpline:
 def warp_section(section: NDArray[Any], spline: Mapping[str, Any],
                  output_size: tuple[int, int], section_offset: tuple[int, int],
                  um_per_px: float, fill: tuple[int, int, int] = (0, 0, 0)) -> NDArray[Any]:
-    """Resample the section through the native analytic BigWarp pullback.
+    """Resample original tissue through its authoritative deformation pullback.
 
     ``section_offset`` is the section's unwarped top-left in canvas pixels.
     Pixel centers use OpenCV's integer coordinate convention. Millimeters are

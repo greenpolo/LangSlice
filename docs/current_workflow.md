@@ -43,13 +43,12 @@ run can use:
 | tool | on when | does |
 | --- | --- | --- |
 | `status` | always | one row per section in corrected order: index, id, `position_mm`, `delta_to_next_mm` (signed), flip, rotation, damaged (+note), transform kind, `transform_iou`, `transform_mirrored`, caveats; plus the stack's cutting angles and interval breaks. Ordinary writes answer with only the rows they changed; transform writes use their physical result instead. This is the whole table |
-| `validate` | always | runs the submit checks without submitting; writes nothing |
 | `view_slices` | always | up to 4 sections at higher resolution, rendered as corrected, each captioned with its index and filename |
 | `fetch_atlas` | always | up to 4 atlas sections, rendered at the stack's current cutting angles, each captioned with its position |
 | `note`, `undo`, `redo` | always | run notes; snapshot undo where one tool call undoes as one step |
-| `mark_damaged` / `unmark_damaged` | always | agent-internal classification: an outline an affine cannot bite on |
+| `mark_damaged` | always | set or clear damage per entry with `damaged` (default True); clearing also removes the note |
 | `orient_slices` | `reorder` | flip and quarter-turn per section (`--no-flip` refuses the flip half); returns the changed sections as they now stand |
-| `reorder_slices` / `move_slice` | `reorder` | full permutation (by filename) or one incremental move; corrected indices only, positions and transforms are kept |
+| `reorder_slices(new_order, after="start")` | reorder | move the listed filenames as a block, in the listed order, after a named section or at the start. One filename moves one slice; the full list sets the whole order. Unlisted sections keep their relative order. Corrected indices only; positions and transforms are kept. One undo step. |
 | `set_positions` | `position` | batch write, clamped to the atlas range; returns a placement image unless the model has already seen that exact section, position, orientation and cutting-angle combination in a full-canvas atlas-bearing view. Section-only and zoomed comparisons do not suppress the full placement. A compare and write requested together still return the write image because neither sibling result was visible when they were planned |
 | `compare_placement` | `position` | up to 4 candidate pairs (or current positions); `side_by_side` returns separate original section and atlas references, up to 8 images, full-view only, independently tissue-framed; other modes return one physical-canvas image per pair with `zoom`, `template_opacity`, `outlines`; writes nothing |
 | `view_stack` | `position` | one contact sheet of every section in the order of its written position over the atlas at that position, captioned with position and the distance to the next, plus a position-vs-index plot (two images); writes nothing |
@@ -57,11 +56,7 @@ run can use:
 | `fit_position` | `--bayesian` | `oblique.fit_oblique` around a section's current position; writes nothing |
 | `set_cutting_angles` | `--angles` | stack-wide pitch/yaw; later fetches and previews follow |
 | `fit_affine` | `transform` | silhouette affine per section, written as its transform, with the overlap, the transform as the five physical parameters (`rotation_deg`, `scale_x`, `scale_y`, `translate_x_mm`, `translate_y_mm`, plus `shear`) about the canvas centre, and a physical-scale overlay for every successful fit; damaged sections are refused and `--elastix`'s method is not wired yet |
-| `adjust_transform` | `transform` | writes one positioned section's in-plane transform (rotation / per-axis scales / millimetre shifts, plus a note) and returns the section drawn under it with the atlas outlines at true physical scale; every call writes and the last one stays, the same parameters again only re-draw; `mode` (overlay, side_by_side, checkerboard, outlines, section, template, ab = new beside what it carried before), `zoom`, `template_opacity`, `border_color` (named color or #RRGGBB; yellow), `border_thickness` (0.25–8 output pixels; default 0.5), `pivot` (canvas, tissue, or [fx, fy] of the canvas) and `outlines` (all, outer, none) are the view and the centre it turns about; it does not change the section's flip or rotation |
-| `adjust_transforms` | `transform` | writes up to four independent sections as one undoable batch and returns one labelled feedback image per section. Each section may appear once; a follow-up that depends on the first picture uses `adjust_transform` after that picture arrives |
-| `view_landmarks` | `transform` | stable unwarped slice and atlas, matching numbered pairs, and current overlay |
-| `edit_landmarks` | `transform` | add/move/delete saved pairs by ID; does not change the applied transform |
-| `warp_landmarks` | `transform` | fit affine (default) or spline from saved pairs; before/after overlays and numbered references |
+| `adjust_transforms(entries)` | transform.interactive | set one to four independent sections, each with rotation, per-axis scales and millimetre shifts. Per-entry mode, zoom, opacity, pivot and border controls; `ab` and `side_by_side` return two images, other modes one. Each result maps its images with `image_indexes`. One undo step; repeat unchanged parameters to redraw. Replaces the complete transform, including spline or shear. Inspect before a dependent correction in a later call. |
 | `submit` | always | ends the run; gated |
 
 Sections and fetched atlas sections are framed the same way (foreground plus a
@@ -77,7 +72,7 @@ The job statement carries the job, the run's facts (`--fact`,
 constraints and, when positioning is on, a short `Method` section: place each
 section on its own evidence and compare candidate positions before writing,
 review the whole stack afterwards, re-check both sides of a gap before
-reporting a break, validate, submit. No rules of thumb, no failure-mode
+reporting a break, submit. No rules of thumb, no failure-mode
 warnings, no region names, and no tool payload carries an opinion. The default
 Method does not prescribe batching; the model chooses how to group its work.
 
@@ -102,9 +97,9 @@ come from the image file (TIFF `XResolution` + `ResolutionUnit`, or the OME-XML
 placed at `atlas um/px / canvas um/px` with its anatomy centred, never fitted
 to the canvas. With no pixel size anywhere the run estimates one from the
 tissue's width against the atlas anatomy's and records
-`calibration.source = "estimated"` on the transform. The interactive preview,
-`warp_landmarks` and `fit_affine` all draw the same picture: the transformed section under
-the atlas's family-level region outlines in yellow (1 px by default), with a 1 mm
+`calibration.source = "estimated"` on the transform. The interactive preview
+and `fit_affine` draw the same picture: the transformed section under
+the atlas's family-level region outlines in yellow (0.5 px by default), with a 1 mm
 scale bar. The alignment parameters (`rotation_deg`, `scale_x`, `scale_y`,
 `translate_x_mm`, `translate_y_mm`) are stored alongside the host-facing six
 normalized numbers -- on every transform, silhouette fits included, so a fit
@@ -291,21 +286,19 @@ but content, the prompt and a model name is read, so no credentials are
 written. Unset, the recorder is never constructed.
 
 Overlay border color and thickness are display-only controls available on
-`compare_placement`, `adjust_transform`, each `adjust_transforms` entry, and
-`view_landmarks` and `warp_landmarks`. Automatic-fit feedback uses yellow 0.5 px borders. Fractional widths are antialiased. The separate
+`compare_placement` and each `adjust_transforms` entry. Automatic-fit feedback
+uses yellow 0.5 px borders. Fractional widths are antialiased. The separate
 reference images from positioning `side_by_side` and the clean `section` /
 `template` modes remain free of outlines. Native ABBA display colors are unchanged.
 
-### Interactive landmark warps
+### Linear and nonlinear scope
 
-Interactive runs use `view_landmarks` to see a stable unwarped slice beside
-the atlas, with corresponding numbered points. `edit_landmarks` adds, moves,
-or deletes individual pairs without replacing the other points. `warp_landmarks`
-fits the saved pairs with `method="affine"` first (at least three), then
-`method="spline"` when local corrections are needed (at least four). Each fit
-returns before/after overlays and both numbered reference images; the same
-pairs and IDs carry across methods. Both point edits and
-warp application are checkpointed and undoable. Source reference coordinates
-remain stable across applications. Use the ABBA LangSlice menu for the calibrated
-snapshot mapping needed by native BigWarp synchronization. The former read-only
-`landmarks` measurement tool has been removed.
+The linear agent handles section order, atlas position and affine alignment.
+Local deformation is handled by the separate nonlinear image-generation
+registration workflow. The linear agent has no paired-landmark tools or
+image-generation tool. An agent-callable image-generation bridge remains
+undecided.
+
+Applied spline transforms in historical checkpoints still load, render and
+export with their saved mapping. A new affine fit or adjustment replaces a saved
+spline. Editable-point drafts from the removed tools are ignored when loading.

@@ -61,8 +61,6 @@ extra:
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/greenpolo/LangSlice
-    - icon: simple/huggingface
-      link: https://huggingface.co/greenpolo/langslice-gemma-4-E4B
 
 # RTD-friendly: do not error on the missing README at the project root
 # (the README lives in the repo root, not inside docs/).

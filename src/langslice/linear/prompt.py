@@ -24,7 +24,6 @@ _PLANE_AXIS_LABEL: dict[str, str] = {
 TOOL_LINES: dict[str, str] = {
     "status": "the stack as it stands, one row per section in corrected order; "
     "every write returns only the rows it changed, this returns them all.",
-    "validate": "runs the submit checks without submitting; writes nothing.",
     "view_slices": "up to 4 named sections at higher resolution, as corrected.",
     "fetch_atlas": "up to 4 atlas sections at the positions you name, rendered "
     "at the stack's cutting angles.",
@@ -32,15 +31,14 @@ TOOL_LINES: dict[str, str] = {
     "undo": "reverses the last write; one tool call undoes as one step.",
     "redo": "reapplies the write `undo` reversed.",
     "mark_damaged": "records sections whose outline would break an "
-    "outline-based fit, with a note each.",
-    "unmark_damaged": "clears the damaged flag.",
+    "outline-based fit, with a note each; damaged=False clears the flag and note.",
     "orient_slices": "sets the flip and the rotation of named sections and "
     "returns them rendered as they now stand; a section whose orientation "
     "changes loses its transform.",
-    "reorder_slices": "sets the corrected order of the whole stack in one "
-    "call, by filename; positions and transforms are kept.",
-    "move_slice": "moves one section in the corrected order; positions and "
-    "transforms are kept.",
+    "reorder_slices": "places the filenames in new_order together, in that "
+    "order, after a named section or at start (default). A one-item list moves "
+    "one section; a complete list sets the whole order. Unlisted sections keep "
+    "their relative order. Positions and transforms are kept.",
     "compare_placement": "tests candidate positions before you commit to one: "
     "name a section with several positions (or none for its current one) and "
     "it is compared with the atlas at each, up to 4 pairs per call; "
@@ -75,42 +73,20 @@ TOOL_LINES: dict[str, str] = {
     "set_cutting_angles": "sets the stack-wide cutting angles.",
     "fit_affine": "fits an in-plane affine per section against its atlas "
     "section, writes it as the section's transform, and returns the overlap, "
-    "the transform as the same five physical parameters `adjust_transform` "
+    "the transform as the same five physical parameters `adjust_transforms` "
     "takes, and an image of the section under the atlas outlines at true "
     "physical scale; damaged sections are refused.",
-    "adjust_transform": "sets one positioned section's in-plane transform — a "
-    "rotation, per-axis scales and millimetre shifts — and returns the section "
-    "drawn under it with the atlas outlines at true physical scale; every "
-    "call writes and the last call stays. `mode` is overlay, side_by_side, "
-    "checkerboard, outlines, section, template or ab (these parameters and "
-    "the transform the section carried before, at one crop), `zoom` is "
-    "[x0, y0, x1, y1] of the canvas, `template_opacity` is 0..1, "
-    "`border_color` is a named color or #RRGGBB (default yellow), "
-    "`border_thickness` is 0.25..8 output pixels (default 0.5); these display "
-    "controls do not alter alignment. `pivot` — "
-    "what the rotation and scales turn about — is canvas, tissue or [fx, fy] "
-    "of the canvas, `outlines` is all, outer or none, and `note` is a remark "
-    "for the record; it does not change the section's flip or rotation.",
-    "adjust_transforms": "sets and shows up to four independent positioned "
-    "sections in one undoable call, with the same physical parameters and "
-    "per-entry display controls (including border color and thickness), and "
-    "one labelled feedback image per section; each section may appear once, "
-    "and a dependent follow-up adjustment uses `adjust_transform` after "
-    "seeing the first result.",
-    "view_landmarks": "shows the stable unwarped slice (image0), atlas (image1), "
-    "and current overlay (image2). Matching numbered points persist on both "
-    "reference images. Coordinates are [x,y] image pixels, origin top-left, "
-    "x right/y down. Returns view_id and image/content dimensions; supports zoom.",
-    "edit_landmarks": "adds, moves or deletes individual matched point pairs by "
-    "ID in a view_landmarks view. Other pairs stay fixed. Saves the editable "
-    "points and returns the numbered reference images; does not apply a warp.",
-    "warp_landmarks": "fits the saved point pairs using method='affine' "
-    "(default, 3..64 pairs, least-squares full affine including shear) or "
-    "method='spline' (4..64 pairs, thin-plate spline). Returns before/after "
-    "overlays and the numbered reference images. Both methods reuse the same "
-    "unwarped-slice/atlas pairs and replace the complete transform in one "
-    "undoable step; they are never applied twice. Invalid fits are refused.",
-    "submit": "ends the run.",
+    "adjust_transforms": "sets and shows one to four independent positioned "
+    "sections in one undoable call. Each entry supplies rotation_deg, scale_x, "
+    "scale_y, translate_x_mm and translate_y_mm, plus optional mode (overlay, "
+    "side_by_side, checkerboard, outlines, section, template or ab), zoom, "
+    "template_opacity, pivot, outlines, note, border_color and border_thickness. "
+    "ab shows new and previous transforms; side_by_side shows section and atlas. "
+    "Results map their images with zero-based image_indexes. Each section may "
+    "appear once; inspect before a dependent correction in a later call. "
+    "This replaces the complete transform, including any spline or shear.",
+    "submit": "checks requirements and ends the run if they pass; otherwise "
+    "returns the missing requirements without ending or changing the run.",
 }
 
 
@@ -251,9 +227,8 @@ def build_job_statement(
         )
         if spec.transform.interactive:
             constraints.append(
-                "- Align damaged sections with `adjust_transform` or "
-                "`adjust_transforms`, or match paired landmarks with "
-                "`view_landmarks`, `edit_landmarks`, and `warp_landmarks`; "
+                "- Align damaged sections with "
+                "`adjust_transforms`; "
                 "inspect the overlays before submitting."
             )
         else:
@@ -299,7 +274,7 @@ def build_job_statement(
             ),
             "- Mark damaged sections with a note each, set the order, run "
             "`view_stack`, look again at anything out of sequence or "
-            "mis-spaced, then `validate` and `submit`.",
+            "mis-spaced, then `submit`.",
         ]
     elif spec.has("position"):
         method = [
@@ -312,7 +287,7 @@ def build_job_statement(
             "for a section that sits out of sequence and for spacings that "
             "differ from their neighbours, and re-check the sections on either "
             "side of any gap before reporting an interval break.",
-            "- Validate, then submit.",
+            "- Submit when the work is complete; address any missing requirements it returns.",
         ]
 
     if spec.has("transform") and spec.transform.interactive:
@@ -322,10 +297,7 @@ def build_job_statement(
             "- After each automatic fit or manual adjustment, inspect the returned "
             "overlay against surviving internal anatomy. Refine each slice's "
             "alignment until no further improvement is possible with the available "
-            "transforms. Keep changes only if they improve the alignment. "
-            "For landmark registration, fit an affine from the matched points "
-            "first and inspect its overlay; use a spline from those same points "
-            "where local discrepancies remain."
+            "transforms. Keep changes only if they improve the alignment."
         )
 
     return "\n".join(

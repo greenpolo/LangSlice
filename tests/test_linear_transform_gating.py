@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from langslice.linear.spec import TransformSpec
+from tests.linear_tool_helpers import single_adjust
 from tests.test_linear_toolbox import _box
 
 
@@ -19,8 +20,8 @@ def test_transform_controls_independently_gate_tools(
         transform=TransformSpec(interactive=interactive, automatic=automatic),
     )
     names = set(box.names)
-    manual = {"adjust_transform", "adjust_transforms", "view_landmarks",
-        "edit_landmarks", "warp_landmarks"}
+    manual = {"adjust_transforms"}
+    assert not names & {"view_landmarks", "edit_landmarks", "warp_landmarks"}
     assert names & manual == (manual if interactive else set())
     assert ("fit_affine" in names) is automatic
     assert "submit" in names
@@ -48,19 +49,20 @@ def test_disabled_transform_task_overrides_enabled_fitting_switches(tmp_path: Pa
      "invalid_transform"),
 ])
 def test_damaged_submission_requires_applied_manual_transform(tmp_path, transform, reason):
-    from tests.test_linear_toolbox import _submit, _tool
+    from tests.test_linear_toolbox import _submit
 
-    state, _, box = _box(tmp_path, tasks=["transform"], placed=True)
+    state, ctx, box = _box(tmp_path, tasks=["transform"], placed=True)
     for record in state.slices:
         record.transform = {"kind": "interactive", "params": [1, 0, 0, 0, 1, 0]}
     damaged = state.by_id("s0.png")
     assert damaged is not None
     damaged.damaged = True
     damaged.transform = transform
-    validation = _tool(box, "validate")([])
+    validation = _submit(box)
     assert validation["error"] == "DAMAGED_REQUIRES_MANUAL_TRANSFORM"
     assert validation["failures"] == [{"id": damaged.id, "reason": reason}]
-    assert "adjust_transform" in validation["message"]
+    assert "adjust_transforms" in validation["message"]
+    assert "landmark" not in validation["message"]
     assert _submit(box) == validation
     assert not state.submitted
 
@@ -68,17 +70,19 @@ def test_damaged_submission_requires_applied_manual_transform(tmp_path, transfor
 def test_real_manual_adjustment_resolves_damage_gate_and_undo_restores_it(tmp_path):
     from tests.test_linear_toolbox import _submit, _tool
 
-    state, _, box = _box(tmp_path, tasks=["transform"], placed=True)
+    state, ctx, box = _box(tmp_path, tasks=["transform"], placed=True)
     for record in state.slices:
         record.transform = {"kind": "interactive", "params": [1, 0, 0, 0, 1, 0]}
     damaged = state.by_id("s0.png")
     assert damaged is not None
     damaged.damaged = True
-    result = _tool(box, "adjust_transform")("s0.png", 5, 1.1, 1, .25, 0)
+    result = single_adjust(_tool(box, "adjust_transforms"))("s0.png", 5, 1.1, 1, .25, 0)
     assert result["status"] == "ok"
-    assert _tool(box, "validate")([])["would_submit"]
+    from langslice.linear.toolbox import submit_errors
+
+    assert submit_errors(state, ctx.spec, []) is None
     _tool(box, "undo")()
-    assert _tool(box, "validate")([])["error"] == "DAMAGED_REQUIRES_MANUAL_TRANSFORM"
+    assert _submit(box)["error"] == "DAMAGED_REQUIRES_MANUAL_TRANSFORM"
     _tool(box, "redo")()
     assert _submit(box)["status"] == "ok"
 
@@ -100,3 +104,23 @@ def test_damage_gate_reports_disabled_manual_tools_and_respects_task_switch(tmp_
     assert "host must enable" in refusal["message"]
     spec.tasks = ["position"]
     assert submit_errors(state, spec, []) is None
+
+
+@pytest.mark.parametrize("shift,accepted", [(0, False), (.05, True)])
+def test_historical_spline_checkpoint_still_obeys_damage_gate(tmp_path, shift, accepted):
+    from langslice.linear.toolbox import submit_errors
+
+    state, ctx, box = _box(tmp_path, tasks=["transform"], placed=True)
+    for record in state.slices:
+        record.transform = {"kind": "interactive", "params": [1, 0, 0, 0, 1, 0]}
+    source = [[.2, .2], [.8, .2], [.2, .8], [.8, .8]]
+    state.slices[0].damaged = True
+    state.slices[0].transform["spline"] = {
+        "source": source, "target": [[x + shift, y] for x, y in source],
+        "extent_mm": [4, 3],
+    }
+    refusal = submit_errors(state, ctx.spec, [])
+    if accepted:
+        assert refusal is None
+    else:
+        assert refusal["failures"] == [{"id": "s0.png", "reason": "identity_transform"}]

@@ -3,9 +3,9 @@
 Vertical 4-stage flow showing how a slice gets registered:
 
   1. Inputs: target slice + atlas colored regions
-        |  Nano Banana
+        |  Image model
         v
-  2. Atlas warped onto slice (Nano Banana output)
+  2. Atlas warped onto slice (Image model output)
         |  Elastix
         v
   3. Extract deformation calculation (B-spline control-point field)
@@ -204,7 +204,7 @@ def build(out_path: Path) -> None:
          render_single_image, FINAL_OVERLAY_PATH),
     ]
     arrow_labels = [
-        "Nano Banana",
+        "Image model",
         "Elastix",
         "Apply deformation to atlas coordinates",
     ]

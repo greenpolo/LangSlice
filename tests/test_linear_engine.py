@@ -358,3 +358,5 @@ def test_the_job_statement_states_the_alignment_frame_when_transforms_are_on(tmp
             axis_ends=("anterior", "posterior"),
         )
         assert ("TRUE physical size" in text) is expected
+        assert "landmark" not in text.lower()
+        assert "regularized spline" not in text.lower()

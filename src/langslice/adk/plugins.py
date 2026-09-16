@@ -37,8 +37,7 @@ DEFAULT_KEEP_IMAGES = 128
 #: ~45k tokens a call on Astra's run 17 (2026-09-10), ~9% of a window over
 #: the transform stage — against one re-read of the positioning text.
 STAGE_BOUNDARY_TOOLS = frozenset(
-    {"fit_affine", "adjust_transform", "adjust_transforms",
-     "view_landmarks", "edit_landmarks", "warp_landmarks"}
+    {"fit_affine", "adjust_transforms"}
 )
 
 #: Astra's run-19 debrief read the old wording ("dropped from context") as

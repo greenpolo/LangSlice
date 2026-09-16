@@ -1,0 +1,392 @@
+[
+{
+"ap_mm": 0.2,
+"left_mm": 4.15,
+"right_mm": 7.25,
+"midline_filled": false
+},
+{
+"ap_mm": 0.4,
+"left_mm": 3.98,
+"right_mm": 7.4,
+"midline_filled": true
+},
+{
+"ap_mm": 0.6,
+"left_mm": 3.7,
+"right_mm": 7.7,
+"midline_filled": true
+},
+{
+"ap_mm": 0.8,
+"left_mm": 3.7,
+"right_mm": 7.68,
+"midline_filled": true
+},
+{
+"ap_mm": 1.0,
+"left_mm": 3.65,
+"right_mm": 7.72,
+"midline_filled": true
+},
+{
+"ap_mm": 1.2,
+"left_mm": 3.6,
+"right_mm": 7.8,
+"midline_filled": true
+},
+{
+"ap_mm": 1.4,
+"left_mm": 3.58,
+"right_mm": 7.8,
+"midline_filled": true
+},
+{
+"ap_mm": 1.6,
+"left_mm": 3.6,
+"right_mm": 7.78,
+"midline_filled": true
+},
+{
+"ap_mm": 1.8,
+"left_mm": 3.68,
+"right_mm": 7.7,
+"midline_filled": true
+},
+{
+"ap_mm": 2.0,
+"left_mm": 3.62,
+"right_mm": 7.75,
+"midline_filled": true
+},
+{
+"ap_mm": 2.2,
+"left_mm": 3.25,
+"right_mm": 8.12,
+"midline_filled": true
+},
+{
+"ap_mm": 2.4,
+"left_mm": 3.05,
+"right_mm": 8.35,
+"midline_filled": true
+},
+{
+"ap_mm": 2.6,
+"left_mm": 2.85,
+"right_mm": 8.52,
+"midline_filled": true
+},
+{
+"ap_mm": 2.8,
+"left_mm": 2.68,
+"right_mm": 8.72,
+"midline_filled": true
+},
+{
+"ap_mm": 3.0,
+"left_mm": 2.5,
+"right_mm": 8.9,
+"midline_filled": true
+},
+{
+"ap_mm": 3.2,
+"left_mm": 2.33,
+"right_mm": 9.05,
+"midline_filled": true
+},
+{
+"ap_mm": 3.4,
+"left_mm": 2.18,
+"right_mm": 9.2,
+"midline_filled": true
+},
+{
+"ap_mm": 3.6,
+"left_mm": 2.02,
+"right_mm": 9.35,
+"midline_filled": true
+},
+{
+"ap_mm": 3.8,
+"left_mm": 1.88,
+"right_mm": 9.5,
+"midline_filled": true
+},
+{
+"ap_mm": 4.0,
+"left_mm": 1.72,
+"right_mm": 9.65,
+"midline_filled": true
+},
+{
+"ap_mm": 4.2,
+"left_mm": 1.6,
+"right_mm": 9.78,
+"midline_filled": true
+},
+{
+"ap_mm": 4.4,
+"left_mm": 1.48,
+"right_mm": 9.9,
+"midline_filled": true
+},
+{
+"ap_mm": 4.6,
+"left_mm": 1.38,
+"right_mm": 10.0,
+"midline_filled": true
+},
+{
+"ap_mm": 4.8,
+"left_mm": 1.23,
+"right_mm": 10.15,
+"midline_filled": true
+},
+{
+"ap_mm": 5.0,
+"left_mm": 1.12,
+"right_mm": 10.25,
+"midline_filled": true
+},
+{
+"ap_mm": 5.2,
+"left_mm": 1.03,
+"right_mm": 10.35,
+"midline_filled": true
+},
+{
+"ap_mm": 5.4,
+"left_mm": 0.95,
+"right_mm": 10.42,
+"midline_filled": true
+},
+{
+"ap_mm": 5.6,
+"left_mm": 0.88,
+"right_mm": 10.5,
+"midline_filled": true
+},
+{
+"ap_mm": 5.8,
+"left_mm": 0.82,
+"right_mm": 10.55,
+"midline_filled": true
+},
+{
+"ap_mm": 6.0,
+"left_mm": 0.78,
+"right_mm": 10.6,
+"midline_filled": true
+},
+{
+"ap_mm": 6.2,
+"left_mm": 0.73,
+"right_mm": 10.65,
+"midline_filled": true
+},
+{
+"ap_mm": 6.4,
+"left_mm": 0.7,
+"right_mm": 10.68,
+"midline_filled": true
+},
+{
+"ap_mm": 6.6,
+"left_mm": 0.68,
+"right_mm": 10.73,
+"midline_filled": true
+},
+{
+"ap_mm": 6.8,
+"left_mm": 0.62,
+"right_mm": 10.75,
+"midline_filled": true
+},
+{
+"ap_mm": 7.0,
+"left_mm": 0.6,
+"right_mm": 10.78,
+"midline_filled": true
+},
+{
+"ap_mm": 7.2,
+"left_mm": 0.58,
+"right_mm": 10.8,
+"midline_filled": true
+},
+{
+"ap_mm": 7.4,
+"left_mm": 0.55,
+"right_mm": 10.82,
+"midline_filled": true
+},
+{
+"ap_mm": 7.6,
+"left_mm": 0.52,
+"right_mm": 10.85,
+"midline_filled": true
+},
+{
+"ap_mm": 7.8,
+"left_mm": 0.52,
+"right_mm": 10.85,
+"midline_filled": true
+},
+{
+"ap_mm": 8.0,
+"left_mm": 0.52,
+"right_mm": 10.85,
+"midline_filled": true
+},
+{
+"ap_mm": 8.2,
+"left_mm": 0.55,
+"right_mm": 10.82,
+"midline_filled": true
+},
+{
+"ap_mm": 8.4,
+"left_mm": 0.55,
+"right_mm": 10.82,
+"midline_filled": true
+},
+{
+"ap_mm": 8.6,
+"left_mm": 0.58,
+"right_mm": 10.8,
+"midline_filled": true
+},
+{
+"ap_mm": 8.8,
+"left_mm": 0.6,
+"right_mm": 10.78,
+"midline_filled": true
+},
+{
+"ap_mm": 9.0,
+"left_mm": 0.65,
+"right_mm": 10.73,
+"midline_filled": true
+},
+{
+"ap_mm": 9.2,
+"left_mm": 0.73,
+"right_mm": 10.68,
+"midline_filled": true
+},
+{
+"ap_mm": 9.4,
+"left_mm": 0.78,
+"right_mm": 10.6,
+"midline_filled": true
+},
+{
+"ap_mm": 9.6,
+"left_mm": 0.82,
+"right_mm": 10.55,
+"midline_filled": true
+},
+{
+"ap_mm": 9.8,
+"left_mm": 0.98,
+"right_mm": 10.42,
+"midline_filled": true
+},
+{
+"ap_mm": 10.0,
+"left_mm": 1.12,
+"right_mm": 10.28,
+"midline_filled": true
+},
+{
+"ap_mm": 10.2,
+"left_mm": 1.35,
+"right_mm": 10.05,
+"midline_filled": true
+},
+{
+"ap_mm": 10.4,
+"left_mm": 1.7,
+"right_mm": 9.7,
+"midline_filled": true
+},
+{
+"ap_mm": 10.6,
+"left_mm": 1.08,
+"right_mm": 10.3,
+"midline_filled": true
+},
+{
+"ap_mm": 10.8,
+"left_mm": 1.08,
+"right_mm": 10.3,
+"midline_filled": true
+},
+{
+"ap_mm": 11.0,
+"left_mm": 1.12,
+"right_mm": 10.25,
+"midline_filled": true
+},
+{
+"ap_mm": 11.2,
+"left_mm": 1.23,
+"right_mm": 10.18,
+"midline_filled": true
+},
+{
+"ap_mm": 11.4,
+"left_mm": 1.33,
+"right_mm": 10.05,
+"midline_filled": true
+},
+{
+"ap_mm": 11.6,
+"left_mm": 1.48,
+"right_mm": 9.9,
+"midline_filled": true
+},
+{
+"ap_mm": 11.8,
+"left_mm": 1.6,
+"right_mm": 9.8,
+"midline_filled": true
+},
+{
+"ap_mm": 12.0,
+"left_mm": 1.68,
+"right_mm": 9.73,
+"midline_filled": true
+},
+{
+"ap_mm": 12.2,
+"left_mm": 1.78,
+"right_mm": 9.6,
+"midline_filled": true
+},
+{
+"ap_mm": 12.4,
+"left_mm": 1.92,
+"right_mm": 9.45,
+"midline_filled": true
+},
+{
+"ap_mm": 12.6,
+"left_mm": 2.18,
+"right_mm": 9.2,
+"midline_filled": true
+},
+{
+"ap_mm": 12.8,
+"left_mm": 2.55,
+"right_mm": 8.85,
+"midline_filled": true
+},
+{
+"ap_mm": 13.0,
+"left_mm": 2.98,
+"right_mm": 8.4,
+"midline_filled": true
+}
+]

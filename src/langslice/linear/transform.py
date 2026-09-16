@@ -3,9 +3,9 @@
 Two routes to the same field. :func:`fit_silhouette` is plain code — the shared
 moments fit (:func:`langslice.affine.silhouette_affine`) of a section's
 silhouette onto its atlas section. The interactive route is the main agent's
-own hand: `adjust_transform` / `landmarks` in
-:mod:`langslice.linear.toolbox`, whose arithmetic (calibration, the
-decomposition it reports, the landmark fits) lives here.
+own hand: `adjust_transforms` in :mod:`langslice.linear.toolbox`, whose
+arithmetic (calibration and the decomposition it reports) lives here. Shared
+point-fit geometry helpers are retained for analysis and historical results.
 
 Both draw ONE picture, :func:`langslice.linear.render.physical_overlay`: the
 section under its transform with the atlas family outlines on top at true
