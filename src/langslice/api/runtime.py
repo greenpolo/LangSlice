@@ -96,14 +96,42 @@ def run_register(request: RegisterRequest, emit: EngineEmit | None = None) -> Re
         raw_image = Image.open(request.image_path)
         prepared = prepare_image_for_vlm(
             normalize_image(raw_image),
-            pixel_size_um=request.pixel_size_um,
             max_long_edge=request.vlm_resolution or DEFAULT_VLM_MAX_LONG_EDGE,
         )
         image = prepared.image
+        # Explicitly record the API's image frame even without supplied geometry:
+        # existing marker output refers to this prepared frame, not the file.
+        sx, sy = image.width / raw_image.width, image.height / raw_image.height
+        input_to_runtime = [
+            [sx, 0.0, (sx - 1) / 2],
+            [0.0, sy, (sy - 1) / 2],
+            [0.0, 0.0, 1.0],
+        ]
+        image_frame = {
+            "input_file_size": list(raw_image.size),
+            "runtime_image_size": list(image.size),
+            "input_to_runtime": input_to_runtime,
+            "marker_frame": "runtime prepared image pixels; not acquisition image pixels",
+            "atlas_frame": "native atlas coordinates unchanged by API image resizing",
+        }
+        initial_alignment = request.initial_atlas_to_slice
+        if initial_alignment is not None:
+            import numpy as np
+
+            # PIL resize maps pixel centres: x' = sx * (x + .5) - .5.
+            # Use actual dimensions independently, including resize rounding.
+            resize = np.asarray(input_to_runtime, dtype=float)
+            initial_alignment = (resize @ np.asarray(initial_alignment, dtype=float)).tolist()
+        # Shared histology preprocessing: adaptive CLAHE plus a
+        # DAPI-weighted grayscale blend, on by default. Dim fluorescence
+        # otherwise reaches the model as a near-black field with the
+        # internal boundaries it is asked to follow invisible.
         if request.preprocess == "auto":
             image = adaptive_preprocess(image)
 
-        if canonical_provider(request.provider) in {"openai-api", "openai-oauth"}:
+        if canonical_provider(request.provider) == "none":
+            image_model = review_model = None
+        elif canonical_provider(request.provider) in {"openai-api", "openai-oauth"}:
             import langslice.providers.openai_config as openai_config
 
             image_model = (
@@ -131,7 +159,6 @@ def run_register(request: RegisterRequest, emit: EngineEmit | None = None) -> Re
             position_mm=request.position_mm,
             plane=request.plane,
             image_axes=request.image_axes,
-            pixel_size_um=prepared.effective_pixel_size_um,
             on_progress=on_progress,
             debug_dir=debug_dir,
             provider=request.provider,
@@ -141,17 +168,29 @@ def run_register(request: RegisterRequest, emit: EngineEmit | None = None) -> Re
             canvas_pad=request.canvas_pad,
             pitch_deg=request.pitch_deg,
             yaw_deg=request.yaw_deg,
+            draws=request.draws,
+            deformation=request.deformation,
+            registration_mode=request.registration_mode,
+            initial_atlas_to_slice=initial_alignment,
+            initial_alignment_source=request.initial_alignment_source,
+            atlas_mirror_lr=request.atlas_mirror_lr,
         )
         affine = result.affine_result
         session_dict = annotation_session_to_dict(result.annotation_session)
         session_meta = session_dict.get("metadata", {}) if isinstance(session_dict, dict) else {}
         if not isinstance(session_meta, dict):
             session_meta = {}
+        if isinstance(session_dict, dict):
+            session_dict["metadata"] = session_meta
+            session_meta["api_image_frame"] = image_frame
         candidate_metadata = session_meta.get("candidate_metadata")
         if not isinstance(candidate_metadata, dict):
             candidate_metadata = {}
 
         artifact_path_keys = (
+            "raw_correction_path",
+            "rough_border_overlay_path",
+            "corrected_border_overlay_path",
             "warped_atlas_path",
             "warped_border_overlay_path",
             "generated_segmentation_path",
@@ -190,6 +229,9 @@ def run_register(request: RegisterRequest, emit: EngineEmit | None = None) -> Re
             slice_warped_to_atlas_path=artifact_paths["slice_warped_to_atlas_path"],
             slice_atlas_border_overlay_path=artifact_paths["slice_atlas_border_overlay_path"],
             inverse_warp_status=inverse_warp_status,
+            raw_correction_path=artifact_paths["raw_correction_path"],
+            rough_border_overlay_path=artifact_paths["rough_border_overlay_path"],
+            corrected_border_overlay_path=artifact_paths["corrected_border_overlay_path"],
         )
 
 

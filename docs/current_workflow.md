@@ -171,59 +171,57 @@ at a known position, using the shared affine core (`src/langslice/affine.py`)
 that the linear `fit_affine` tool also runs on. No image generation, no
 B-spline.
 
-## Nonlinear: Image-Gen Registration
+## Nonlinear: Border Refinement
 
 ```bash
-langslice nonlinear register <image> --position <mm> [--registration-mode direct|agentic] [--image-model ...] [--review-model ...] [--max-candidates 3] [--palette family|leaf-borders] [--out ...]
+# Standalone: initial color registration, then border correction (two model calls)
+langslice nonlinear register slice.png --position 3.9
+
+# Supplied placement: border correction directly (one model call)
+langslice nonlinear register slice.png --position 3.9 --initial-alignment placement.json
 ```
 
-Registration has one active method: image-gen registration. In QUINT/ABBA-style
-workflows, linear placement happens in the host tool and this step stands in for
-the manual spline/BigWarp deformation.
+The preferred input is the rough alignment already established by the linear
+agent or a host tool. The image model receives the placed yellow atlas borders
+over histology, followed by the same photograph without lines, and adjusts the
+boundaries to match the visible tissue. It is not asked for another color map.
 
-1. Load, normalize, and downsample the histology slice.
-2. Generate atlas inputs at the requested atlas position. The colored region
-   map the model sees is drawn from smoothed region contours at canvas
-   resolution (flat, exact palette colors — no voxel staircase); the render
-   Elastix registers against stays pixel-exact.
-3. Ask the image model to generate an atlas-colored target aligned to the histology.
-4. Register the generated target to the atlas color map with itk-elastix.
-5. Warp the atlas through the recovered transform.
-6. Return the model-generated atlas target, Elastix-warped atlas, warped-border overlay, and VisuAlign markers.
+When no placement is supplied, the standalone route first uses the existing
+three-image color-map request (color atlas, grayscale atlas, histology), registers
+that reply, then sends the registered borders and clean histology for correction.
+These are two prompts and two image-generation calls. Supplied placement bypasses
+the color-map stage; it is never replaced by automatic silhouette alignment.
 
-Modes:
+After correction, yellow lines are extracted and displayed on the original
+photograph. A residual Elastix fit transfers that correction to the atlas labels.
+Exports compose the complete initial placement and residual deformation.
+Keep the raw reply, corrected lines on original tissue, and fitted atlas overlay
+distinct when reviewing results.
 
-- `direct` generates one candidate and returns it.
-- `agentic` runs a hosted-router conversation (openai-oauth only): the prompt
-  and images go to the hosted GPT model with the image_generation tool, Elastix
-  reports come back as follow-up messages, and the loop accepts the first
-  clean-report candidate (cap `--max-candidates`, default 4).
+`placement.json` contains a 3×3 affine mapping oriented native atlas pixel
+centers to pixels in the input image. Position, cutting angles and atlas axes
+must agree with that placement. `--mirror-atlas-lr` applies an explicit atlas
+reflection; no reflection is inferred from the tissue. The top-level
+`registration_handoff` bridge prepares this contract from linear section state.
+ABBA uses its existing host alignment directly.
 
-Palette:
+`--preprocess auto` remains the default shared tissue-visibility enhancement;
+`none` disables it. In either case, both correction attachments use the identical
+prepared photograph. `--canvas-pad`, `--pitch-deg`, `--yaw-deg` and
+`--deformation bspline|affine` remain available. The border route requires
+`--draws 1` (one draw per stage), not color-map voting.
 
-- `--palette family` (default) draws flat regions, one color per registration
-  unit.
-- `--palette leaf-borders` draws the same colors plus Allen-Reference-Atlas
-  plate delineation: a hairline at every leaf boundary in a darker shade of
-  that region's own color (2px at a 2048 canvas, family boundaries heavier),
-  so the model is shown the full parcellation without any color moving. Only
-  the model-facing render changes — the Elastix-side render is identical —
-  and the classifier accepts the hairline color as its own region, so a model
-  that paints the lines back does not cut background through its regions. It
-  is a process-wide setting (`LANGSLICE_ATLAS_PALETTE`).
+`--provider none` is an explicit model-free diagnostic: retain supplied placement
+or fit a silhouette placement, then return its borders and composed coordinates.
+It does not run image generation or residual Elastix fitting.
 
-Provider routing is explicit, not inferred from the model name:
+Provider selection remains explicit: `google`/`gemini-api` for Gemini,
+`openai`/`openai-api` for API access, or `chatgpt`/`openai-oauth` for
+subscription access. API requests retain `--openai-image-route` and
+`--endpoint`. Both stages use the selected provider.
 
-- `--provider google` (default) uses the Google/Gemini image adapter.
-- `--provider openai` uses the OpenAI-compatible path. `--openai-image-route`
-  picks the Images API (`images`, default) or the Responses API (`responses`),
-  and `--endpoint` points it at a non-OpenAI base URL. The default
-  OpenAI-compatible image model is `gpt-image-2`.
-- `--provider chatgpt` uses a ChatGPT subscription instead of an API key: it
-  sends `gpt-image-2` requests through the Codex Responses backend with the
-  token stored by `langslice login`. Reference images are the colored region
-  map, the atlas reference slice, and the histology slice; the output size is
-  the `gpt-image-2` aspect ratio closest to the slice.
+See [the nonlinear design](nonlinear_design.md) for coordinate contracts,
+artifact meanings, supported handoffs and review limitations.
 
 ## Sign In With ChatGPT
 

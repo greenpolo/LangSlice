@@ -45,6 +45,19 @@ def _add_register_parser(subparsers: argparse._SubParsersAction) -> None:
     reg.add_argument("--model", default=None, help="Gemini model name")
     reg.add_argument("--image-model", default=None, help="Image generation model name")
     reg.add_argument(
+        "--registration-mode", choices=["borders", "colormap"], default="borders",
+        help="Refine atlas borders on tissue, or run the original color-map generation only",
+    )
+    reg.add_argument(
+        "--initial-alignment", default=None, metavar="JSON",
+        help="JSON 3x3 affine (or object with atlas_to_slice): native atlas pixels to "
+        "original image pixels. Skips initial color-map generation in borders mode.",
+    )
+    reg.add_argument(
+        "--mirror-atlas-lr", action="store_true",
+        help="Mirror sampled atlas left-right before applying the supplied alignment",
+    )
+    reg.add_argument(
         "--openai-image-route",
         default="images",
         choices=["images", "responses"],
@@ -74,17 +87,32 @@ def _add_register_parser(subparsers: argparse._SubParsersAction) -> None:
         "component that samples a different level on each side.",
     )
     reg.add_argument(
+        "--draws",
+        type=int,
+        default=1,
+        help="Border mode requires 1 draw per stage. Explicit colormap mode supports "
+        "multiple independent draws with a per-pixel majority vote.",
+    )
+    reg.add_argument(
+        "--deformation",
+        default="bspline",
+        choices=["bspline", "affine"],
+        help="Elastix stages: 'bspline' is affine + B-spline; 'affine' fits "
+        "the affine stage alone (measured higher on generated paintings).",
+    )
+    reg.add_argument(
         "--vlm-resolution",
         type=int,
         default=2048,
         help="Max long-edge pixels for VLM",
     )
     reg.add_argument(
-        "--clahe",
-        action="store_true",
-        help="Apply adaptive CLAHE + DAPI-weighted grayscale preprocessing to the slice "
-        "before sending it to the image-gen registration model. Useful when the red "
-        "fluorescence channel dominates and washes out structural detail.",
+        "--preprocess",
+        default="auto",
+        choices=["auto", "none"],
+        help="Image preprocessing: 'auto' (default) applies the shared adaptive CLAHE + "
+        "structural-channel-weighted blend before sending the slice to the image-gen "
+        "model — the same preprocessing the linear path uses; 'none' sends the raw image",
     )
     reg.add_argument("--temperature", type=float, default=None, help="Generation temperature")
     reg.add_argument(
@@ -102,13 +130,15 @@ def _add_register_parser(subparsers: argparse._SubParsersAction) -> None:
         "--provider",
         default="google",
         choices=[
-            "gemini-api", "openai-api", "openai-oauth",
+            "gemini-api", "openai-api", "openai-oauth", "none",
             "google", "openai", "chatgpt",  # legacy aliases
         ],
         help=(
             "Access method: 'gemini-api' (Google API key), 'openai-api' "
             "(OpenAI-compatible API key / --endpoint), 'openai-oauth' "
-            "(ChatGPT subscription via `langslice login`). Old spellings "
+            "(ChatGPT subscription via `langslice login`), 'none' (no model "
+            "at all — registers the silhouette prior, which alone scores "
+            "0.82 family dice against hand registrations). Old spellings "
             "google/openai/chatgpt still work as aliases."
         ),
     )
@@ -132,29 +162,6 @@ def _add_register_parser(subparsers: argparse._SubParsersAction) -> None:
             "atlas render's native orientation."
         ),
     )
-    reg.add_argument(
-        "--palette",
-        default="family",
-        choices=["family", "leaf-borders"],
-        help=(
-            "How the atlas is drawn for the image model. 'family' is flat "
-            "regions, one color per registration unit; 'leaf-borders' adds "
-            "Allen-Reference-Atlas-style hairlines at every leaf boundary, in "
-            "a darker shade of the region's own color. Colors, the Elastix "
-            "pair and everything classified from it are identical either way."
-        ),
-    )
-    reg.add_argument(
-        "--pixel-size-um",
-        type=float,
-        default=None,
-        help=(
-            "Physical pixel size of the input image in micrometers. When "
-            "given, the atlas references are rendered at TRUE physical "
-            "scale relative to the image — the single most direct "
-            "calibration between image and atlas."
-        ),
-    )
     reg.add_argument("--json", action="store_true", help="Print result JSON to stdout")
 
 
@@ -165,23 +172,34 @@ def _run_register(args: argparse.Namespace) -> None:
     from langslice.api.models import RegisterRequest
     from langslice.api.runtime import run_register
 
+    initial_alignment = None
+    alignment_path = getattr(args, "initial_alignment", None)
+    if alignment_path:
+        from pathlib import Path
+
+        initial_alignment = json.loads(Path(alignment_path).read_text(encoding="utf-8"))
+        if isinstance(initial_alignment, dict):
+            if "atlas_to_slice" not in initial_alignment:
+                raise ValueError("Initial-alignment JSON object must contain atlas_to_slice")
+            initial_alignment = initial_alignment["atlas_to_slice"]
+        if initial_alignment is None:
+            raise ValueError("Initial-alignment JSON must contain a 3x3 affine matrix")
+
     # Optional endpoint override for a local-engine model. The harness's
     # model resolver picks this up via env var.
     endpoint = getattr(args, "endpoint", None)
     if endpoint:
         os.environ["LANGSLICE_ENDPOINT"] = endpoint
 
-    # Palette is a process-wide setting (see atlas.recolor.active_palette): the
-    # render, the classifier and the family merge must not disagree about it.
-    from langslice.atlas.recolor import PALETTE_ENV
-
-    os.environ[PALETTE_ENV] = getattr(args, "palette", "family")
-
     image_model_arg = args.image_model
 
     from langslice.providers.registry import canonical_provider
 
-    if canonical_provider(args.provider) == "openai-oauth":
+    if canonical_provider(args.provider) == "none":
+        # Model-free backbone: nothing to name, nothing to configure.
+        default_image_model = default_review_model = ""
+        effective_model = "none (silhouette prior)"
+    elif canonical_provider(args.provider) == "openai-oauth":
         from langslice.providers import openai_oauth
 
         default_image_model = args.image_model or openai_oauth.DEFAULT_IMAGE_MODEL
@@ -236,16 +254,21 @@ def _run_register(args: argparse.Namespace) -> None:
         plane=args.plane,
         image_model=image_model,
         review_model=review_model,
-        preprocess="auto" if getattr(args, "clahe", False) else "none",
+        preprocess=getattr(args, "preprocess", "auto"),
         provider=args.provider,
         output_dir=str(out_dir),
         openai_image_route=args.openai_image_route,
         canvas_pad=args.canvas_pad,
         image_axes=getattr(args, "image_axes", None),
-        pixel_size_um=getattr(args, "pixel_size_um", None),
         pitch_deg=getattr(args, "pitch_deg", 0.0),
         yaw_deg=getattr(args, "yaw_deg", 0.0),
+        draws=getattr(args, "draws", 1),
+        deformation=getattr(args, "deformation", "bspline"),
         vlm_resolution=args.vlm_resolution,
+        registration_mode=getattr(args, "registration_mode", "borders"),
+        initial_atlas_to_slice=initial_alignment,
+        initial_alignment_source=str(alignment_path) if alignment_path else "supplied",
+        atlas_mirror_lr=getattr(args, "mirror_atlas_lr", False),
     )
     result = run_register(request, emit=emit)
 
@@ -288,6 +311,9 @@ def _run_register(args: argparse.Namespace) -> None:
             "generated_border_overlay_path": result.generated_border_overlay_path,
             "slice_warped_to_atlas_path": result.slice_warped_to_atlas_path,
             "slice_atlas_border_overlay_path": result.slice_atlas_border_overlay_path,
+            "raw_correction_path": result.raw_correction_path,
+            "rough_border_overlay_path": result.rough_border_overlay_path,
+            "corrected_border_overlay_path": result.corrected_border_overlay_path,
         }
         print()
         print(json.dumps(payload, indent=2))

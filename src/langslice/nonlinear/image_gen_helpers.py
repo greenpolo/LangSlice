@@ -13,8 +13,9 @@ from PIL import Image
 
 from langslice.atlas.core import get_root_mask
 from langslice.atlas.recolor import active_palette, color_lut
-from langslice.atlas.render import annotation_slice as _annotation_slice
+from langslice.atlas.render import annotation_slice
 from langslice.atlas.render import family_mapping as _family_mapping
+from langslice.nonlinear.types import Deformation
 from langslice.space import Plane, atlas_space_context, slice_axis_index
 
 logger = logging.getLogger(__name__)
@@ -32,6 +33,81 @@ _RENDER_LONG_EDGE = 2048
 
 #: Width of an ARA-style leaf delineation line, at a 2048px canvas.
 _LEAF_BORDER_PX = 2.0
+
+
+def line_width_px(long_edge: int) -> int:
+    """Delineation-line width for a render whose long edge is *long_edge* px."""
+    return max(1, round(_LEAF_BORDER_PX * long_edge / 2048))
+
+
+#: Ventricle ids, for callers that want the ventricular system dropped to
+#: background. The registration lineup does NOT: it asks the model to deform
+#: an atlas plate onto the tissue, where a ventricle is a region to place
+#: like any other (and a useful landmark for the fit). Blacking them out was
+#: for the retired lineup, where the model painted ON the section and a
+#: ventricle was a hole with no tissue to paint.
+#: "cerebral aqueduct" and "ventricular systems" are spelled out in full:
+#: a bare "aqueduct"/"ventric" would swallow periaqueductal gray and the
+#: periventricular nuclei, which are real tissue.
+_VENTRICLE_KEYWORDS = (
+    "ventricle",
+    "central canal",
+    "choroid",
+    "subependymal",
+    "cerebral aqueduct",
+    "ventricular systems",
+)
+_BLACKOUT_PLANES = {"coronal"}
+_ventricle_ids_cache: dict[str, frozenset[int]] = {}
+
+
+def _ventricle_ids(atlas: Any) -> frozenset[int]:
+    name = str(getattr(atlas, "atlas_name", id(atlas)))
+    cached = _ventricle_ids_cache.get(name)
+    if cached is not None:
+        return cached
+    ids: set[int] = set()
+    structures = getattr(atlas, "structures", None)
+    try:
+        records = list(structures.values()) if structures is not None else []
+    except Exception:  # noqa: BLE001 - structure table without .values()
+        records = []
+    for record in records:
+        try:
+            if any(k in str(record["name"]).lower() for k in _VENTRICLE_KEYWORDS):
+                ids.add(int(record["id"]))
+        except Exception:  # noqa: BLE001 - malformed structure records
+            continue
+    result = frozenset(ids)
+    _ventricle_ids_cache[name] = result
+    return result
+
+
+def _annotation_slice(
+    atlas: Any,
+    position_mm: float,
+    *,
+    plane: Plane = "coronal",
+    pitch_deg: float = 0.0,
+    yaw_deg: float = 0.0,
+    blackout: bool = False,
+) -> np.ndarray:
+    """:func:`~langslice.atlas.render.annotation_slice`, ventricles kept.
+
+    With ``blackout=True`` the ventricular system is dropped to background
+    on the planes in :data:`_BLACKOUT_PLANES` before anything downstream
+    sees it. The registration path never asks for that: the model deforms
+    an atlas plate rather than painting the section, so a ventricle is a
+    region to place, and the render, the classifier palette, the Elastix
+    side and the ledger all read the same plane.
+    """
+    sliced = annotation_slice(atlas, position_mm, plane=plane, pitch_deg=pitch_deg, yaw_deg=yaw_deg)
+    if blackout and plane in _BLACKOUT_PLANES:
+        vids = _ventricle_ids(atlas)
+        if vids:
+            # np.where, not in-place: the oblique sampler may hand back cached data
+            sliced = np.where(np.isin(sliced, list(vids)), 0, sliced)
+    return sliced
 
 
 def _generate_colored_region_slice(
@@ -53,23 +129,27 @@ def _generate_colored_region_slice(
     ``smooth=False`` for the native-size pixel-exact render the Elastix side
     registers against and classifies back.
 
-    Under ``palette="leaf-borders"`` the model-facing render additionally
-    gets the Allen-Reference-Atlas plate treatment — every leaf boundary
-    delineated in a darker shade of its own region's color (neighbor
-    difference, so lines follow the true boundary), family boundaries
-    heavier. MODEL-FACING decoration only: it never touches the
-    ``smooth=False`` render, so the Elastix pair and everything classified
-    from it are identical either way.
+    Every model-facing render delineates its painted colors: wherever the
+    fill color changes, a line in a darker shade of each side's own color
+    (neighbor difference, so lines follow the true boundary). Under
+    ``palette="leaf-borders"`` the finer leaf boundaries are added on top,
+    color lines heavier — the full Allen-Reference-Atlas plate treatment.
+    MODEL-FACING decoration only: it never touches the ``smooth=False``
+    render, so the Elastix pair and everything classified from it are
+    identical either way.
+    Under ``palette="family-flat"`` the leaves are collapsed to their
+    registration families FIRST (:func:`_plane_families`), so the paint is
+    one flat color per family and the fill-change lines fall at family
+    boundaries.
     """
     annotation_slice = _annotation_slice(
         atlas, position_mm, plane=plane, pitch_deg=pitch_deg, yaw_deg=yaw_deg
     )
     height, width = annotation_slice.shape
     lut = color_lut(atlas)
+    style = active_palette()
 
     if smooth:
-        from scipy import ndimage
-
         if target_size is None:
             scale = max(1.0, _RENDER_LONG_EDGE / max(height, width))
             target_size = (round(width * scale), round(height * scale))
@@ -79,39 +159,31 @@ def _generate_colored_region_slice(
             ),
             dtype=np.int64,
         )
-        rgb = np.zeros((*ids.shape, 3), dtype=np.uint8)
-        for uid in np.unique(ids):
-            if int(uid):
-                rgb[ids == uid] = lut.get(int(uid), (128, 128, 128))
-        if active_palette() == "leaf-borders":
-            from langslice.nonlinear.render import darker
+        if style == "family-flat":
+            families = _plane_families(annotation_slice, atlas)
+            flat = np.zeros_like(ids)
+            for uid in np.unique(ids):
+                if int(uid):
+                    flat[ids == uid] = families.get(int(uid), int(uid))
+            ids = flat
+        # Every model-facing render delineates its painted colors — a line in
+        # a darker shade of the fill wherever the fill changes, ARA-plate
+        # style (Nash 2026-09-01: borders around the colored regions). One
+        # label per COLOR, not per registration family: the family clustering
+        # was tried here first and left visibly different shades (cerebellar
+        # lobules, cortical areas, striatum vs tubercle) inside one family
+        # with no line between them. Under "leaf-borders" the finer leaf
+        # hairlines are added on top. The paint itself is
+        # ``render.paint_labels`` — the same call the silhouette prior makes,
+        # so a prior canvas and an atlas reference are drawn identically.
+        from langslice.nonlinear.render import paint_labels
 
-            fams = _merge_classified(ids, atlas)
-
-            def _boundary(labels: np.ndarray) -> np.ndarray:
-                b = np.zeros(labels.shape, dtype=bool)
-                b[:, 1:] |= labels[:, 1:] != labels[:, :-1]
-                b[1:, :] |= labels[1:, :] != labels[:-1, :]
-                return b & (labels != 0)
-
-            leaf_w = max(1, round(_LEAF_BORDER_PX * max(target_size) / 2048))
-            leaf_b: np.ndarray = _boundary(ids)
-            if leaf_w > 1:
-                leaf_b = np.asarray(
-                    ndimage.binary_dilation(leaf_b, iterations=leaf_w - 1), dtype=bool
-                )
-            fam_b = np.asarray(
-                ndimage.binary_dilation(_boundary(fams), iterations=2 * leaf_w - 1),
-                dtype=bool,
-            )
-            border = (leaf_b | fam_b) & (ids != 0)
-            dark_lut = {
-                int(u): darker(lut.get(int(u), (128, 128, 128)))
-                for u in np.unique(ids)
-                if int(u)
-            }
-            for uid, dcol in dark_lut.items():
-                rgb[border & (ids == uid)] = dcol
+        rgb = paint_labels(
+            ids,
+            lut=lut,
+            line_px=line_width_px(max(target_size)),
+            leaf_lines=active_palette() == "leaf-borders",
+        )
         return Image.fromarray(rgb, mode="RGB")
 
     rgb = np.zeros((height, width, 3), dtype=np.uint8)
@@ -136,6 +208,7 @@ def _classify_pixels_to_region_ids(
     off_palette_background: bool = True,
     pitch_deg: float = 0.0,
     yaw_deg: float = 0.0,
+    paint: bool = False,
 ) -> np.ndarray:
     """Classify RGB pixels to the nearest atlas region color at *position_mm*.
 
@@ -143,6 +216,21 @@ def _classify_pixels_to_region_ids(
     right for MODEL output (its preserved background can be any color), wrong
     for our own renders: warping blends colors at region boundaries, and the
     cutoff would erase thin regions there (pass False for those).
+
+    ``paint`` classifies MODEL paint rather than one of our own renders. The
+    model often paints translucently, so tissue brightness modulates each
+    region's color: same hue, varying lightness. Plain nearest-RGB reads that
+    modulation as region changes (confetti) and its cutoff punches holes, so
+    in paint mode the lightness axis is down-weighted by
+    ``_PAINT_LIGHTNESS_WEIGHT`` (hue and saturation decide, lightness only
+    breaks ties between same-hue shades). Measured on 12 draws (2026-09-05):
+    family dice 0.583 -> 0.606, despeckle churn 0.067 -> 0.044, the one
+    translucent draw's churn 0.158 -> 0.090; weights 0.10/0.15/0.5 were all
+    worse on dice. Two things measured to do NOTHING and were dropped:
+    forbidding gray/white palette colors from claiming colored pixels
+    (identical numbers), and unmixing against the input tissue pixel (the
+    model re-renders the tissue brighter and not pixel-aligned, so the exact
+    input is not what shows through; dice 0.598 but churn UP).
 
     The cutting angles must match the render the pixels came from: the
     palette is built from the ids that plane actually contains.
@@ -161,15 +249,27 @@ def _classify_pixels_to_region_ids(
         if color is not None:
             color_to_id[color] = uid_int
 
-    if active_palette() == "leaf-borders":
-        # The model was shown hairlines in darker(color) and may paint them
-        # back. Measured: at 2px they are ~7% of the foreground, and far
-        # enough off-palette that the background cutoff would punch them
-        # straight through the regions they delineate — so the line color is
-        # part of the palette, mapping to the region it belongs to.
-        from langslice.nonlinear.render import darker
+    if active_palette() == "family-flat":
+        # The model was shown one flat color per family, so classify straight
+        # to that family's representative id — _merge_classified then keeps
+        # what comes out (representatives sit farther apart than the merge
+        # radius). Every LEAF color stays in the palette, keyed to the same
+        # representative: the Elastix-side render is drawn per leaf whatever
+        # the style, and nearest-FAMILY-color is not the family a leaf
+        # belongs to (measured on Allen coronal 3.9mm: 10 of 64 leaf colors
+        # sit nearest a family that is not their own, 15% of the pixels).
+        families = _plane_families(annotation_slice, atlas)
+        color_to_id = {color: families[uid] for color, uid in color_to_id.items()}
+    # A delineated render (the styles in atlas.recolor) carries darker(color)
+    # lines the model may paint back. Measured: at 2px they are ~7% of the
+    # foreground and far enough off-palette that the background cutoff would
+    # punch them straight through the regions they delineate — so the line
+    # color is part of the palette, mapping to the region it belongs to. The
+    # registration lineup shows an undelineated map, where this only ever
+    # rescues a drifted dark pixel into its own region.
+    from langslice.nonlinear.render import darker
 
-        color_to_id = {darker(c): uid for c, uid in color_to_id.items()} | color_to_id
+    color_to_id = {darker(c): uid for c, uid in color_to_id.items()} | color_to_id
 
     if not color_to_id:
         logger.warning("No atlas structure colors found; returning all-zero classification")
@@ -185,15 +285,42 @@ def _classify_pixels_to_region_ids(
     # untouched in edit mode, so it can be any color, not just black.
     background_mask = np.max(pixels, axis=1) < 20.0
 
-    diff = pixels[:, np.newaxis, :] - palette_colors[np.newaxis, :, :]
-    distances_sq = np.sum(diff * diff, axis=2)
-    nearest_idx = np.argmin(distances_sq, axis=1)
+    nearest_idx, residual_sq = _nearest_palette(pixels, palette_colors, paint=paint)
     classified = palette_ids[nearest_idx]
     if off_palette_background:
-        off = distances_sq[np.arange(len(pixels)), nearest_idx] > _BG_COLOR_DISTANCE**2
-        background_mask = background_mask | off
+        background_mask = background_mask | (residual_sq > _BG_COLOR_DISTANCE**2)
     classified[background_mask] = 0
     return classified.reshape(height, width)
+
+
+#: Paint mode: weight of the lightness axis in the color distance (1.0 = plain
+#: RGB). 0.25 measured best of {0.10, 0.15, 0.25, 0.5, 1.0} on 12 draws — see
+#: _classify_pixels_to_region_ids.
+_PAINT_LIGHTNESS_WEIGHT = 0.25
+
+
+def _nearest_palette(
+    pixels: np.ndarray, palette: np.ndarray, *, paint: bool, chunk: int = 8192
+) -> tuple[np.ndarray, np.ndarray]:
+    """(palette index, plain RGB distance^2) per pixel, chunked for memory."""
+    n = len(pixels)
+    idx_out = np.zeros(n, dtype=np.int64)
+    res_out = np.zeros(n, dtype=np.float32)
+    gray = np.ones(3, dtype=np.float32) / np.sqrt(3.0)
+    pal_light = palette @ gray
+    pal_chroma_vec = palette - pal_light[:, None] * gray[None, :]
+    for start in range(0, n, chunk):
+        p = pixels[start : start + chunk]
+        light = p @ gray
+        chroma_vec = p - light[:, None] * gray[None, :]
+        d_light = light[:, None] - pal_light[None, :]
+        d_chroma_sq = np.sum((chroma_vec[:, None, :] - pal_chroma_vec[None, :, :]) ** 2, axis=2)
+        plain_sq = d_chroma_sq + d_light * d_light
+        dist = d_chroma_sq + _PAINT_LIGHTNESS_WEIGHT * d_light * d_light if paint else plain_sq
+        idx = np.argmin(dist, axis=1)
+        idx_out[start : start + chunk] = idx
+        res_out[start : start + chunk] = plain_sq[np.arange(len(p)), idx]
+    return idx_out, res_out
 
 
 def _despeckle_classified(classified_2d: np.ndarray, min_px: int = 16) -> np.ndarray:
@@ -211,7 +338,7 @@ def _despeckle_classified(classified_2d: np.ndarray, min_px: int = 16) -> np.nda
         labels, n = ndimage.label(out == uid)  # type: ignore[misc]
         if not n:
             continue
-        sizes = np.bincount(labels.ravel())
+        sizes = np.bincount(np.asarray(labels, dtype=np.intp).ravel())
         boxes = ndimage.find_objects(labels)
         for comp in np.nonzero(sizes[1:] < min_px)[0] + 1:
             # Inside the speck's own bounding box (grown by the 1px ring):
@@ -247,9 +374,25 @@ def _classified_to_rgb(classified_2d: np.ndarray, atlas: Any) -> np.ndarray:
     return rgb
 
 
-def _merge_classified(
-    classified_2d: np.ndarray, atlas: Any, merge_eps: float = 40.0
-) -> np.ndarray:
+def _plane_families(annotation_slice: np.ndarray, atlas: Any) -> dict[int, int]:
+    """region id -> family representative, for every id one plane contains.
+
+    :func:`_family_mapping` is deterministic only in the id set it is given,
+    and a CLASSIFIED map carries one id per distinct COLOR (nearest-color
+    classification cannot tell two structures the palette paints alike
+    apart), not the raw annotation's ids. So the families are taken over that
+    reduced set — the classifier's own key set — and the representatives come
+    out as the ones ``_merge_classified`` picks downstream, which is what lets
+    a family-flat render and a family render merge to the same map.
+    """
+    lut = color_lut(atlas)
+    uids = [int(u) for u in np.unique(annotation_slice) if int(u) and int(u) in lut]
+    by_color = {lut[uid]: uid for uid in uids}
+    families = _family_mapping(by_color.values(), atlas)
+    return {uid: families[by_color[lut[uid]]] for uid in uids}
+
+
+def _merge_classified(classified_2d: np.ndarray, atlas: Any, merge_eps: float = 40.0) -> np.ndarray:
     """Map region ids onto one representative id per merged family color.
 
     An image model paints one flat shade per area, so the atlas render's thin
@@ -259,18 +402,14 @@ def _merge_classified(
     this granularity; classification, markers, and the ledger keep the full
     palette.
     """
-    mapping = _family_mapping(
-        (int(u) for u in np.unique(classified_2d)), atlas, merge_eps
-    )
+    mapping = _family_mapping((int(u) for u in np.unique(classified_2d)), atlas, merge_eps)
     merged = np.zeros_like(classified_2d)
     for uid, rep_id in mapping.items():
         merged[classified_2d == uid] = rep_id
     return merged
 
 
-def _registration_rgb(
-    classified_2d: np.ndarray, atlas: Any, merge_eps: float = 40.0
-) -> np.ndarray:
+def _registration_rgb(classified_2d: np.ndarray, atlas: Any, merge_eps: float = 40.0) -> np.ndarray:
     """RGB for the REGISTRATION pair: exact palette colors at merged granularity."""
     return _classified_to_rgb(_merge_classified(classified_2d, atlas, merge_eps), atlas)
 
@@ -346,8 +485,22 @@ def _grid_spacing_px(image_shape: tuple[int, ...]) -> int:
     return max(32, round(max(image_shape) / 36))
 
 
-def _build_elastix_parameter_object(grid_spacing: int = 32) -> Any:
-    """Build the standard affine+B-spline ParameterObject used for colored registration."""
+#: Benchmark-only overrides applied to the multi-channel parameter maps
+#: (``{"bspline": {"Metric3Weight": ("30.0",)}}``). Empty in production.
+ELASTIX_PARAM_OVERRIDES: dict[str, dict[str, tuple[str, ...]]] = {}
+#: Benchmark-only: AND-ed into the Elastix fixed mask (canvas-sized bool array).
+FIXED_MASK_AND: np.ndarray | None = None
+
+
+def _build_elastix_parameter_object(
+    grid_spacing: int = 32, deformation: Deformation = "bspline"
+) -> Any:
+    """Build the standard affine+B-spline ParameterObject used for colored registration.
+
+    With ``deformation="affine"`` the B-spline stage is left off entirely and
+    the object carries a single parameter map — the fit is the affine stage
+    alone (see :data:`langslice.nonlinear.types.Deformation`).
+    """
     import itk
 
     parameter_object = itk.ParameterObject.New()  # type: ignore[attr-defined]
@@ -359,6 +512,8 @@ def _build_elastix_parameter_object(grid_spacing: int = 32) -> Any:
     affine_map["AutomaticTransformInitialization"] = ("true",)
     affine_map["AutomaticTransformInitializationMethod"] = ("CenterOfGravity",)
     parameter_object.AddParameterMap(affine_map)
+    if deformation == "affine":
+        return parameter_object
 
     bspline_map = parameter_object.GetDefaultParameterMap("bspline")
     bspline_map["FinalGridSpacingInPhysicalUnits"] = (str(grid_spacing),)
@@ -397,8 +552,43 @@ def _run_elastix_registration(
     return result_transform, elapsed
 
 
+def _run_elastix_april_borders(
+    fixed_borders: np.ndarray, moving_borders: np.ndarray
+) -> tuple[Any, float]:
+    """The April 2026 Elastix stage (commit 6077972), on border images.
+
+    One B-spline map, no affine stage: FinalGridSpacingInPhysicalUnits 64,
+    AdvancedMeanSquares + TransformBendingEnergyPenalty (weight 10), 512
+    iterations, 4 resolutions. Fixed = the model's borders (slice space),
+    moving = the atlas plate's borders — the direction the rest of the
+    pipeline warps in. (April's code passed the atlas as FIXED and then
+    resampled the atlas through that transform, i.e. warped it by the
+    inverse of the fit; that is not reproduced here.)
+    """
+    import itk
+
+    start = time.perf_counter()
+    fixed_image = itk.image_from_array(fixed_borders.astype(np.float32))
+    moving_image = itk.image_from_array(moving_borders.astype(np.float32))
+    parameter_object = itk.ParameterObject.New()  # type: ignore[attr-defined]
+    parameter_map = parameter_object.GetDefaultParameterMap("bspline")
+    parameter_map["FinalGridSpacingInPhysicalUnits"] = ("64",)
+    parameter_map["Metric"] = ("AdvancedMeanSquares", "TransformBendingEnergyPenalty")
+    parameter_map["Metric0Weight"] = ("1.0",)
+    parameter_map["Metric1Weight"] = ("10.0",)
+    parameter_map["MaximumNumberOfIterations"] = ("512",)
+    parameter_map["NumberOfResolutions"] = ("4",)
+    parameter_object.AddParameterMap(parameter_map)
+    _result_image, result_transform = itk.elastix_registration_method(  # type: ignore[attr-defined]
+        fixed_image, moving_image, parameter_object=parameter_object, log_to_console=False
+    )
+    elapsed = time.perf_counter() - start
+    logger.info("Elastix (April borders B-spline) completed in %.1fs", elapsed)
+    return result_transform, elapsed
+
+
 def _build_multichannel_parameter_object(
-    grid_spacing: int = 32, n_channels: int = 3
+    grid_spacing: int = 32, n_channels: int = 3, deformation: Deformation = "bspline"
 ) -> Any:
     """Affine+B-spline ParameterObject registering *n_channels* jointly.
 
@@ -407,14 +597,19 @@ def _build_multichannel_parameter_object(
     Elastix's multi-metric machinery requires images == pyramids == metrics,
     and the bending-energy penalty counts as a metric without consuming an
     image, so a duplicate of channel 0 fills its slot (weight 0 in the affine
-    stage, where the penalty does not apply).
+    stage, where the penalty does not apply). The duplicate slot stays in the
+    affine-only object too, so the caller's channel list is built the same way
+    either way.
+
+    With ``deformation="affine"`` only the affine map is emitted.
     """
     import itk
 
     n_slots = n_channels + 1  # channels + the penalty's dummy slot
     parameter_object = itk.ParameterObject.New()  # type: ignore[attr-defined]
 
-    for kind in ("affine", "bspline"):
+    stages = ("affine",) if deformation == "affine" else ("affine", "bspline")
+    for kind in stages:
         param_map = parameter_object.GetDefaultParameterMap(kind)
         param_map["Registration"] = ("MultiMetricMultiResolutionRegistration",)
         if kind == "affine":
@@ -424,9 +619,7 @@ def _build_multichannel_parameter_object(
             param_map["AutomaticTransformInitialization"] = ("true",)
             param_map["AutomaticTransformInitializationMethod"] = ("CenterOfGravity",)
         else:
-            metrics = ("AdvancedMeanSquares",) * n_channels + (
-                "TransformBendingEnergyPenalty",
-            )
+            metrics = ("AdvancedMeanSquares",) * n_channels + ("TransformBendingEnergyPenalty",)
             # The data term is a SUM over channels, so the penalty must scale
             # with channel count to keep the same regularization strength the
             # 3-channel RGB setup was calibrated at (penalty 3.0 per 3
@@ -443,6 +636,9 @@ def _build_multichannel_parameter_object(
         param_map["Interpolator"] = ("LinearInterpolator",) * n_slots
         param_map["ImageSampler"] = ("RandomCoordinate",) * n_slots
         param_map["NumberOfResolutions"] = ("4",)
+        # Experiment hook (benchmarks only): per-stage parameter overrides.
+        for key, value in ELASTIX_PARAM_OVERRIDES.get(kind, {}).items():
+            param_map[key] = tuple(value)
         if n_channels > 8:
             # Every metric pays the full random-sample budget per iteration;
             # at one-channel-per-family counts, trim it so runtime does not
@@ -458,6 +654,7 @@ def _register_channel_stacks(
     fixed_channels: list[np.ndarray],
     moving_channels: list[np.ndarray],
     fixed_mask: np.ndarray | None = None,
+    deformation: Deformation = "bspline",
 ) -> tuple[Any, float]:
     """Elastix registration of N fixed/moving channel pairs under one transform.
 
@@ -491,6 +688,7 @@ def _register_channel_stacks(
         _build_multichannel_parameter_object(
             _grid_spacing_px(fixed_channels[0].shape),
             n_channels=len(fixed_channels),
+            deformation=deformation,
         )
     )
     elastix.SetLogToConsole(False)
@@ -499,8 +697,9 @@ def _register_channel_stacks(
 
     elapsed = time.perf_counter() - start
     logger.info(
-        "Elastix %d-channel affine+B-spline registration completed in %.1fs",
+        "Elastix %d-channel %s registration completed in %.1fs",
         len(fixed_channels),
+        "affine" if deformation == "affine" else "affine+B-spline",
         elapsed,
     )
     return result_transform, elapsed
@@ -530,6 +729,7 @@ def _register_region_maps(
     atlas: Any,
     fixed_mask: np.ndarray | None = None,
     merge_eps: float = 40.0,
+    deformation: Deformation = "bspline",
 ) -> tuple[Any, float]:
     """Register the atlas label map to the model's label map as joint RGB at
     merged-family granularity.
@@ -552,15 +752,14 @@ def _register_region_maps(
     regions' shades) can pull boundaries slightly. A dense-evaluation
     engine (NiftyReg 4-D SSD, ANTs label registration) is the candidate fix
     if that flaw matters more later. ``fixed_mask`` restricts the metric to
-    the model's segmented tissue.
+    the model's segmented tissue; ``deformation="affine"`` drops the B-spline
+    stage and returns the affine fit alone.
     """
     mapping = _family_mapping(
         (
             int(u)
             for u in np.unique(
-                np.concatenate(
-                    [atlas_classified.ravel(), generated_classified.ravel()]
-                )
+                np.concatenate([atlas_classified.ravel(), generated_classified.ravel()])
             )
         ),
         atlas,
@@ -580,8 +779,13 @@ def _register_region_maps(
         fixed_mask = ndimage.binary_dilation(
             fixed_mask.astype(bool), iterations=_FIXED_MASK_DILATE_PX
         )
+        if FIXED_MASK_AND is not None and FIXED_MASK_AND.shape == fixed_mask.shape:
+            fixed_mask = fixed_mask & FIXED_MASK_AND
     return _register_channel_stacks(
-        _rgb_channels(generated_classified), _rgb_channels(atlas_classified), fixed_mask
+        _rgb_channels(generated_classified),
+        _rgb_channels(atlas_classified),
+        fixed_mask,
+        deformation,
     )
 
 
@@ -773,9 +977,7 @@ def _elastix_report(
         jacobian_det = (1.0 + du_dx) * (1.0 + dv_dy) - du_dy * dv_dx
         folded = float(np.mean(jacobian_det[warped_fg] <= 0.0))
         if folded > _FOLD_FRACTION:
-            codes.append(
-                {"code": "WARP_FOLDS", "folded_fraction": round(folded, 4)}
-            )
+            codes.append({"code": "WARP_FOLDS", "folded_fraction": round(folded, 4)})
 
     if tissue_mask is not None:
         tissue_total = int(tissue_mask.sum())
@@ -866,9 +1068,7 @@ def _write_forward_transform_to_disk(
         if idx == 0:
             pmap["InitialTransformParameterFileName"] = ["NoInitialTransform"]
         else:
-            pmap["InitialTransformParameterFileName"] = [
-                str(written[-1]).replace("\\", "/")
-            ]
+            pmap["InitialTransformParameterFileName"] = [str(written[-1]).replace("\\", "/")]
         _write_param_map_to_disk(pmap, path)
         written.append(path)
     return str(written[-1])
@@ -902,14 +1102,12 @@ def _warp_slice_to_atlas(
     """
     import itk
 
-    _inverse_image, inverse_transform_parameters = (
-        itk.elastix_registration_method(  # type: ignore[attr-defined]
-            fixed_image_itk,
-            fixed_image_itk,
-            parameter_object=parameter_object,
-            initial_transform_parameter_file_name=forward_transform_params_path,
-            log_to_console=False,
-        )
+    _inverse_image, inverse_transform_parameters = itk.elastix_registration_method(  # type: ignore[attr-defined]
+        fixed_image_itk,
+        fixed_image_itk,
+        parameter_object=parameter_object,
+        initial_transform_parameter_file_name=forward_transform_params_path,
+        log_to_console=False,
     )
 
     warped_channels: list[np.ndarray] = []
@@ -918,9 +1116,7 @@ def _warp_slice_to_atlas(
         warped = itk.transformix_filter(  # type: ignore[attr-defined]
             channel_image, inverse_transform_parameters
         )
-        warped_channels.append(
-            np.clip(itk.array_from_image(warped), 0, 255).astype(np.uint8)
-        )
+        warped_channels.append(np.clip(itk.array_from_image(warped), 0, 255).astype(np.uint8))
     return np.stack(warped_channels, axis=-1), inverse_transform_parameters
 
 
@@ -930,20 +1126,22 @@ def _run_inverse_warp_for_slice(
     forward_fixed_gray: np.ndarray,
     forward_result_transform: Any,
     scratch_dir: Path | None = None,
+    deformation: Deformation = "bspline",
 ) -> tuple[np.ndarray, Any]:
     """Convenience: run the inverse warp end-to-end from in-memory forward outputs.
 
     Handles the small ceremony around the fixed-to-fixed inverse pattern:
     rebuilds the forward parameter object, writes the forward transform to a
     temp file, re-creates the forward fixed itk.Image, and delegates to
-    :func:`_warp_slice_to_atlas`.
+    :func:`_warp_slice_to_atlas`. ``deformation`` must match the forward run:
+    the inverse is fit with the same stages.
 
     Returns ``(warped_slice_rgb_uint8, inverse_transform_parameters)``.
     """
     import itk
 
     parameter_object = _build_elastix_parameter_object(
-        _grid_spacing_px(forward_fixed_gray.shape)
+        _grid_spacing_px(forward_fixed_gray.shape), deformation
     )
     fixed_image_itk = itk.image_from_array(forward_fixed_gray.astype(np.float32))
 
@@ -1012,17 +1210,8 @@ def _extract_visualign_markers(
             ny_pos = (y + float(dy) - origin_px[1]) * scale_to_slice
             markers.append([ox, oy, nx_pos, ny_pos])
 
-    logger.info(
-        "Extracted %d VisuAlign markers at %dpx field spacing", len(markers), spacing
-    )
+    logger.info("Extracted %d VisuAlign markers at %dpx field spacing", len(markers), spacing)
     return markers
-
-
-def _segmentation_prompt_for_plane(plane: Plane = "coronal") -> str:
-    """Deprecated alias — prompt text now lives in ``nonlinear.model_prompts``."""
-    from langslice.nonlinear.model_prompts import base_segmentation_prompt
-
-    return base_segmentation_prompt(plane)
 
 
 # --- generation report (human/benchmark diagnostics; never reaches the model) -
@@ -1070,9 +1259,7 @@ def _normalized_masks(classified_2d: np.ndarray) -> dict[int, np.ndarray]:
     resized = cv2.resize(
         crop.astype(np.float32), (_GEN_GRID, _GEN_GRID), interpolation=cv2.INTER_NEAREST
     ).astype(classified_2d.dtype)
-    return {
-        int(uid): resized == int(uid) for uid in np.unique(resized) if int(uid) != 0
-    }
+    return {int(uid): resized == int(uid) for uid in np.unique(resized) if int(uid) != 0}
 
 
 def _ectopic_masks(
@@ -1107,7 +1294,6 @@ def generation_report(
     atlas: Any,
     *,
     tissue_mask: np.ndarray | None = None,
-    preserved_fraction: float | None = None,
     structures: Any = None,
 ) -> dict[str, Any]:
     """Diagnose the GENERATED map against the atlas map — for humans only.
@@ -1219,9 +1405,7 @@ def generation_report(
     # legitimately be absent, so this is a ranking signal, never a flag.
     ref_total = sum(int(m.sum()) for m in ref_masks.values()) or 1
     missing = [
-        uid
-        for uid, m in ref_masks.items()
-        if m.sum() / ref_total >= 0.01 and uid not in gen_masks
+        uid for uid, m in ref_masks.items() if m.sum() / ref_total >= 0.01 and uid not in gen_masks
     ]
     report["families_missing"] = len(missing)
     if tissue_mask is not None and tissue_mask.any():
@@ -1235,6 +1419,4 @@ def generation_report(
         report["tissue_unpainted"] = round(
             float((tissue_mask & ~painted).sum() / max(int(tissue_mask.sum()), 1)), 4
         )
-    if preserved_fraction is not None:
-        report["preserved_background_fraction"] = round(float(preserved_fraction), 4)
     return report
