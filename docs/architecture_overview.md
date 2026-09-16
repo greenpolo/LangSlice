@@ -1,7 +1,8 @@
 # Architecture Overview
 
-LangSlice is one installable Python package, `langslice`, plus model projects
-under `models/`.
+LangSlice is one installable Python package, `langslice`. Local-model training
+lives in the sibling `LangSlice-Training` repository and the position benchmark
+in `SliceBench`; both depend on this package.
 
 ## Package Layout
 
@@ -11,10 +12,10 @@ other:
 - `src/langslice/linear/` -- order, position and one in-plane affine per
   section: the job spec, the stack state and its JSON checkpoint, the one
   toolbox, the job statement, the ADK session, and the run engine.
-- `src/langslice/nonlinear/` -- generative-image registration: candidate
-  generation, image provider adapters, Elastix runtime, optional ADK review,
-  affine/nonlinear result types, and the silhouette-based `quick_affine`
-  preview.
+- `src/langslice/nonlinear/` -- generative-image registration: placed-border
+  correction (with color-map initialization when no placement is supplied),
+  image provider adapters, Elastix runtime, affine/nonlinear result types, and
+  the silhouette-based `quick_affine` preview.
 
 The remaining top-level modules are shared by both:
 

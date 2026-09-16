@@ -90,8 +90,9 @@ Two methods live as sibling subpackages with no dependency on each other:
   at `submit` or the turn budget. Tasks (`reorder`/`position`/`transform`) are
   switched on task by task; a task that is OFF builds no tools and takes its
   answer from the host instead. Every write checkpoints and is undoable, order
-  and position must agree at submit, and the only nested session is the bounded
-  per-section `align_slice`. Spec: `docs/linear_design.md`. Code map, the lean-
+  and position must agree at submit, and in-plane alignment happens in the
+  main session through the transform tools (`fit_affine`,
+  `adjust_transforms`); there is no nested per-section session. Spec: `docs/linear_design.md`. Code map, the lean-
   harness rule, the submit gates and the known ceilings:
   `src/langslice/linear/CLAUDE.md` (loads when working there).
 - `nonlinear/` — generative-image registration (image model → Elastix → report).
