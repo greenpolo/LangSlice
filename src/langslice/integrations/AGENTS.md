@@ -12,8 +12,15 @@ here is a verbatim copy — edit one, mirror to the other.
   ABBA's `SimpleRegistrationPlugin` socket from Python via JPype: the fixed
   image requested from ABBA is its atlas *coordinate* channels (per-pixel
   AP/DV/ML mm), so the adapter samples the BrainGlobe volumes at exactly
-  those coordinates — no offset constants, no axis assumptions (the measured
-  ABBA↔brainglobe AP offset is ~0.99, not 1.0; never hardcode it). The
+  those coordinates — no offset constants or axis assumptions; the existing
+  host placement is retained. Those labels supply yellow borders over the
+  histology; the shared nonlinear boundary-refinement core sends that overlay
+  plus the clean histology for ONE image-model correction call. There is no
+  standalone color-map initialization or silhouette refit in this adapter.
+  The fit maps output histology coordinates to the rough atlas frame; ABBA
+  receives the paired coordinates in the opposite direction, not a negated
+  displacement field. The measured ABBA↔brainglobe AP offset is ~0.99, not
+  1.0; never hardcode it. The
   nonlinear result returns as a serializable invertible thin-plate-spline
   (`InvertibleWrapped2DTransformAs3D` — the plain wrapper is not invertible)
   sampled from the Elastix deformation field, and lands on the slice's

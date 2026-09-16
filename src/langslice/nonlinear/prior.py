@@ -88,10 +88,24 @@ def place_plane_on_tissue(
     principal axes, eigenvalue ratios for scale. Only the two rotations are
     tried; the one whose placed foreground overlaps the tissue better wins.
     """
+    placed, signs, iou, _matrix = place_plane_on_tissue_with_matrix(labels, tissue)
+    return placed, signs, iou
+
+
+def place_plane_on_tissue_with_matrix(
+    labels: np.ndarray, tissue: np.ndarray
+) -> tuple[np.ndarray, tuple[int, int], float, np.ndarray]:
+    """Return the moments placement and its native-label→tissue 3x3 affine.
+
+    Keeping this initial map lets nonlinear residuals compose with placement
+    when exporting correspondences. The original three-result API is retained.
+    """
+    if not np.any(labels) or not np.any(tissue):
+        raise ValueError("Atlas and tissue silhouettes must both contain foreground")
     src = _moments_pose((labels != 0).astype(np.uint8) * 255)
     dst = _moments_pose(tissue)
     height, width = tissue.shape
-    best: tuple[np.ndarray, tuple[int, int], float] | None = None
+    best: tuple[np.ndarray, tuple[int, int], float, np.ndarray] | None = None
     for signs in _SIGN_PATTERNS:
         matrix = _affine_from_pose(*src, *dst, signs)
         # float64 through cv2: it cannot warp integer label dtypes, and every
@@ -105,7 +119,7 @@ def place_plane_on_tissue(
         ).astype(labels.dtype)
         iou = silhouette_iou(placed != 0, tissue > 0)
         if best is None or iou > best[2]:
-            best = (placed, signs, iou)
+            best = (placed, signs, iou, np.vstack([matrix, [0.0, 0.0, 1.0]]))
     assert best is not None
     return best
 

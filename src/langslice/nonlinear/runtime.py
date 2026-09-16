@@ -5,10 +5,11 @@ from __future__ import annotations
 import json
 import logging
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
+from typing import Literal
 
 from PIL import Image
 
@@ -125,6 +126,10 @@ def _run_dense_registration(
     yaw_deg: float,
     draws: int,
     deformation: Deformation,
+    registration_mode: Literal["borders", "colormap"],
+    initial_atlas_to_slice: Sequence[Sequence[float]] | None,
+    initial_alignment_source: str,
+    atlas_mirror_lr: bool,
 ) -> RegistrationResult:
     dense_debug_root = _dense_registration_debug_root(atlas_name, debug_dir)
     runtime_debug_dir = str(dense_debug_root / "registration") if dense_debug_root else None
@@ -145,6 +150,10 @@ def _run_dense_registration(
         yaw_deg=yaw_deg,
         draws=draws,
         deformation=deformation,
+        registration_mode=registration_mode,
+        initial_atlas_to_slice=initial_atlas_to_slice,
+        initial_alignment_source=initial_alignment_source,
+        atlas_mirror_lr=atlas_mirror_lr,
         debug_dir=str(dense_debug_root) if dense_debug_root is not None else None,
         on_progress=on_progress,
         on_trace=on_trace,
@@ -177,11 +186,12 @@ def _run_dense_registration(
         runtime_event(
             stage="registration",
             title="Registration solve completed",
-            summary=f"Image-gen registration accepted with {len(markers)} markers",
+            summary=f"Image-gen registration completed with {len(markers)} markers",
             parts=[
                 image_part_from_pil(
                     candidate.generated_segmentation,
-                    label="Generated segmentation",
+                    label=("Raw border-correction reply" if registration_mode == "borders"
+                           else "Generated segmentation"),
                     image_format="PNG",
                     path=str(registration_dir / "generated_segmentation.png")
                     if registration_dir is not None
@@ -247,15 +257,23 @@ def estimate_registration(
     yaw_deg: float = 0.0,
     draws: int = 1,
     deformation: Deformation = "bspline",
+    registration_mode: Literal["borders", "colormap"] = "borders",
+    initial_atlas_to_slice: Sequence[Sequence[float]] | None = None,
+    initial_alignment_source: str = "supplied",
+    atlas_mirror_lr: bool = False,
 ) -> RegistrationResult:
-    """Run image-gen registration and return affine + nonlinear results.
+    """Run border correction and return affine + nonlinear results.
+
+    A supplied native-atlas-to-image affine skips the initial color-map pass.
+    Otherwise the first generation supplies the alignment to refine. Explicit
+    ``registration_mode="colormap"`` retains the original single-stage path.
 
     ``pitch_deg``/``yaw_deg`` are the block's cutting angles: every atlas
     render is resliced on that oblique plane instead of taken flat.
-    ``draws`` > 1 votes that many paintings per pixel; ``deformation`` picks
-    the Elastix stages (affine+B-spline, or the affine stage alone).
-    ``provider="none"`` calls no model: the silhouette prior is the whole
-    painting, and the rest of the chain runs on it unchanged.
+    ``draws`` must be one in border mode; explicit colormap mode supports votes
+    over multiple paintings. ``deformation`` picks the Elastix stages.
+    ``provider="none"`` calls no model: border mode retains supplied placement
+    or computes a silhouette placement, without fitting a residual deformation.
     """
     atlas = load_atlas(atlas_name)
     atlas_image = get_composite_slice(atlas, position_mm, plane=plane)
@@ -280,6 +298,10 @@ def estimate_registration(
         yaw_deg=yaw_deg,
         draws=draws,
         deformation=deformation,
+        registration_mode=registration_mode,
+        initial_atlas_to_slice=initial_atlas_to_slice,
+        initial_alignment_source=initial_alignment_source,
+        atlas_mirror_lr=atlas_mirror_lr,
     )
     _progress(
         on_progress,

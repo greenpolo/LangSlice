@@ -71,6 +71,12 @@ argument, so it can follow `langslice linear run` or a placement made in
 another tool — in QUINT/ABBA-style workflows it stands in for the manual
 spline/BigWarp deformation step.
 
+The preferred nonlinear route takes those roughly aligned atlas borders and asks
+the image model to adjust them to the tissue, using the clean histology as a
+second reference. With a supplied placement this takes one image-generation
+call. Standalone registration uses two: an initial color-map alignment, then
+border correction. See [the nonlinear design](docs/nonlinear_design.md).
+
 Full CLI: `langslice --help`. Pipeline detail: [`docs/index.md`](./docs/index.md).
 
 ## ABBA integration

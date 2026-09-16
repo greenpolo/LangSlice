@@ -80,22 +80,22 @@ re-oriented sections, `set_positions` each section beside the atlas at its
 new position, `fit_affine` and `adjust_transform` the overlay. There is no
 preview-then-apply anywhere; every write is undoable instead.
 
-## Nonlinear: Image-Gen Registration
+## Nonlinear: Border Refinement
 
-Registration has one active method: image-gen registration.
+1. Prefer the atlas placement supplied by the linear agent or host tool.
+   Without placement, generate and register a color map first.
+2. Send rough yellow atlas borders over histology plus the identical clean
+   histology to the image model; ask it to adjust the lines to the tissue.
+3. Extract corrected yellow lines and overlay them on the original photograph.
+4. Fit the residual deformation and warp the placed atlas labels.
+5. Compose the initial affine or nonlinear placement with that residual for
+   native-atlas correspondences and VisuAlign markers.
+6. Return separate raw, corrected-border and fitted-atlas review artifacts.
 
-1. Prepare the histology slice and, at the requested position, the atlas
-   region map of that plane plus its grayscale template. The two atlas
-   renders are letterboxed into the section's frame, so all three images
-   share one frame.
-2. Ask the image-generation provider to EDIT the region map: move its colored
-   regions onto the tissue in the section, answering in the same frame.
-3. Classify the answer back to region ids and register the atlas map to it
-   with itk-elastix (affine, then B-spline, on family-colored RGB).
-4. Warp the atlas RGB through the recovered transform.
-5. Extract VisuAlign markers from the composed deformation field.
-6. Return the model's painting, the warped atlas, the warped-border overlay
-   and the Elastix report.
+Supplied placement requires one image-generation call; standalone requires two.
+ABBA shares the border-correction core and retains its host placement.
+The top-level linear handoff adapter does not introduce a dependency between
+the sibling method packages. See [the design](nonlinear_design.md).
 
 ## Debugging
 

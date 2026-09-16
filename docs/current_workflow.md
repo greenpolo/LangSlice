@@ -131,90 +131,57 @@ at a known position, using the shared affine core (`src/langslice/affine.py`)
 that the linear `fit_affine` tool also runs on. No image generation, no
 B-spline.
 
-## Nonlinear: Image-Gen Registration
+## Nonlinear: Border Refinement
 
 ```bash
-langslice nonlinear register <image> --position <mm> [--image-model ...] [--review-model ...] [--preprocess auto|none] [--draws 1] [--deformation bspline|affine] [--canvas-pad 0..1.5] [--pitch-deg DEG] [--yaw-deg DEG] [--provider ...|none] [--out ...]
+# Standalone: initial color registration, then border correction (two model calls)
+langslice nonlinear register slice.png --position 3.9
+
+# Supplied placement: border correction directly (one model call)
+langslice nonlinear register slice.png --position 3.9 --initial-alignment placement.json
 ```
 
-Registration has one active method: image-gen registration. In QUINT/ABBA-style
-workflows, linear placement happens in the host tool and this step stands in for
-the manual spline/BigWarp deformation.
+The preferred input is the rough alignment already established by the linear
+agent or a host tool. The image model receives the placed yellow atlas borders
+over histology, followed by the same photograph without lines, and adjusts the
+boundaries to match the visible tissue. It is not asked for another color map.
 
-1. Load, normalize, and downsample the histology slice. `--preprocess auto`
-   (the default) then runs the shared adaptive preprocessing
-   (`image_prep.adaptive_preprocess`: per-channel CLAHE, a blend weighted
-   toward the structural channel, brightness normalization) — the same step
-   the linear path applies — so the image model sees the tissue's lamination
-   and banding, not one dim raw channel. `--preprocess none` sends the raw
-   image.
-2. Draw the atlas at the requested position: ONE colored region map of that
-   plane (flat Allen-organized colors, one per registration unit, pixel-exact
-   off the annotation, ventricles kept) plus the grayscale atlas template of
-   the same plane. Both are enlarged to a legible size and letterboxed onto
-   black so that they and the section share one frame.
-3. Send the model three images — the colored map (Image 1, the image it
-   edits), the template (Image 2), the section (Image 3) — and ask it to move
-   the map's regions onto the tissue, answering in that same frame. With
-   `--draws K` the same request is sampled K times and the paintings are
-   combined per pixel by majority vote (see below).
-4. Crop the answer back to the section's frame if the image lane returned a
-   different one, classify every pixel to the region color nearest it, and
-   register the atlas map to that painting with itk-elastix (affine +
-   B-spline, or the affine stage alone under `--deformation affine`).
-5. Warp the atlas through the recovered transform.
-6. Return the model's painting, the Elastix-warped atlas, warped-border overlay, and VisuAlign markers.
+When no placement is supplied, the standalone route first uses the existing
+three-image color-map request (color atlas, grayscale atlas, histology), registers
+that reply, then sends the registered borders and clean histology for correction.
+These are two prompts and two image-generation calls. Supplied placement bypasses
+the color-map stage; it is never replaced by automatic silhouette alignment.
 
-The model is given no other input: no neighbouring atlas planes, no borders
-drawn over the fills, no blacked-out ventricles, and nothing painted over the
-section itself. The working canvas is the image path's own output frame, so
-the section is resampled once and the model edits on the grid its answer
-comes back on.
+After correction, yellow lines are extracted and displayed on the original
+photograph. A residual Elastix fit transfers that correction to the atlas labels.
+Exports compose the complete initial placement and residual deformation.
+Keep the raw reply, corrected lines on original tissue, and fitted atlas overlay
+distinct when reviewing results.
 
-Draws and deformation:
+`placement.json` contains a 3×3 affine mapping oriented native atlas pixel
+centers to pixels in the input image. Position, cutting angles and atlas axes
+must agree with that placement. `--mirror-atlas-lr` applies an explicit atlas
+reflection; no reflection is inferred from the tissue. The top-level
+`registration_handoff` bridge prepares this contract from linear section state.
+ABBA uses its existing host alignment directly.
 
-- `--draws K` (default 1) asks the image model for K independent paintings of
-  the same inputs and registers their per-pixel majority vote, rebuilt into a
-  single painting in atlas colors; every raw draw is kept in the output
-  directory as `generated_segmentation_draw<i>.png`. Draws that half-preserve
-  the tissue texture instead of painting flat color ("translucent") are
-  dropped from the vote first, unless that would drop all of them. Measured
-  on hand-registered slices, the vote beats the average single draw by
-  0.04-0.08 family Dice and lands near the best draw of the set. Ties go to
-  the first draw, so ask for three or more (two kept draws tie on every
-  disagreement and reduce to the first one).
-- `--deformation affine` (default `bspline`) fits the affine stage alone,
-  without the B-spline stage. Measured on the same slices, the B-spline stage
-  driven by generated paintings scores below the affine stage alone; the
-  markers, overlays and reports are the same either way.
+`--preprocess auto` remains the default shared tissue-visibility enhancement;
+`none` disables it. In either case, both correction attachments use the identical
+prepared photograph. `--canvas-pad`, `--pitch-deg`, `--yaw-deg` and
+`--deformation bspline|affine` remain available. The border route requires
+`--draws 1` (one draw per stage), not color-map voting.
 
-The model-free backbone (`--provider none`):
+`--provider none` is an explicit model-free diagnostic: retain supplied placement
+or fit a silhouette placement, then return its borders and composed coordinates.
+It does not run image generation or residual Elastix fitting.
 
-- `--provider none` calls no image model at all. The atlas plane is placed on
-  the section's own outline by a moments (silhouette) fit and THAT placement
-  is the painting; the rest of the pipeline (Elastix, VisuAlign markers,
-  overlays, reports, exports) runs on it unchanged, and it is written to the
-  output directory as `input_prior.png`. The backbone is
-  `langslice nonlinear register slice.png --position 5.2 --provider none
-  --deformation affine`.
-- Measured against the LSD_910 hand registrations: the placement alone scores
-  0.82 mean family Dice, better than every image-model configuration tried
-  before the April lineup — the number a model run has to beat.
+Provider selection remains explicit: `google`/`gemini-api` for Gemini,
+`openai`/`openai-api` for API access, or `chatgpt`/`openai-oauth` for
+subscription access. API requests retain `--openai-image-route` and
+`--endpoint`. Both stages use the selected provider.
 
-Provider routing is explicit, not inferred from the model name:
-
-- `--provider google` (default) uses the Google/Gemini image adapter.
-- `--provider openai` uses the OpenAI-compatible path. `--openai-image-route`
-  picks the Images API (`images`, default) or the Responses API (`responses`),
-  and `--endpoint` points it at a non-OpenAI base URL. The default
-  OpenAI-compatible image model is `gpt-image-2`.
-- `--provider none` calls no image model (see the backbone above).
-- `--provider chatgpt` uses a ChatGPT subscription instead of an API key: it
-  sends `gpt-image-2` requests through the Codex images/edits endpoint with
-  the token stored by `langslice login`. The edited image is the colored
-  region map; the template and the histology section follow it as
-  references. That lane returns a fixed pixel budget at the input's aspect
-  ratio, which is the frame the canvas is built at.
+See [the nonlinear design](nonlinear_design.md) for coordinate contracts,
+artifact meanings, supported handoffs and review limitations.
 
 ## Sign In With ChatGPT
 

@@ -352,6 +352,10 @@ class RegistrationCandidate:
     markers: list[list[float]]
     annotation_session: RegistrationAnnotationSession
     metadata: dict[str, Any] = field(default_factory=dict)
+    # Integer atlas identities after registration, independent of palette colors.
+    warped_labels: np.ndarray | None = None
+    # Output canvas -> native oriented/mirrored atlas pixel centers, x then y.
+    atlas_coordinate_map: np.ndarray | None = None
 
 
 def candidate_to_registration_result(
