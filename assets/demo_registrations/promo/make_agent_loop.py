@@ -12,7 +12,6 @@ ROOT = Path(__file__).resolve().parent
 REPO = ROOT.parent.parent.parent
 SLICE_PATH = REPO / "web-demo" / "public" / "demo_brain" / "slice_06.png"
 ATLAS_DIR = REPO / "web-demo" / "public" / "atlas" / "allen_mouse_25um" / "sections"
-GEMMA_PATH = REPO / "assets" / "gemma_logo_synth.png"
 
 
 def fit_height(img: Image.Image, target_h: int) -> Image.Image:
@@ -50,14 +49,23 @@ TOOL_FONT_PT = 30
 CONTENT_TOP = GEM_TOP + GEM_SIZE + 40  # vertical anchor for content
 
 
-def place_gemma(panel: Image.Image, gemma: Image.Image) -> None:
-    gem = gemma.copy().resize((GEM_SIZE, GEM_SIZE), Image.LANCZOS)
-    panel.paste(gem, ((panel.width - GEM_SIZE) // 2, GEM_TOP))
+def place_agent_marker(panel: Image.Image) -> None:
+    """Provider-neutral '{ VLM }' marker in the slot the model icon used to fill."""
+    draw = ImageDraw.Draw(panel)
+    font = ImageFont.truetype(FONT_PATH, 64)
+    parts = [("{ ", BLUE), ("VLM", WHITE), (" }", BLUE)]
+    total = sum(draw.textlength(t, font=font) for t, _ in parts)
+    l, t, r, b = draw.textbbox((0, 0), "{ VLM }", font=font)
+    x = (panel.width - total) / 2
+    y = GEM_TOP + GEM_SIZE / 2 - (b - t) / 2 - t
+    for text, color in parts:
+        draw.text((x, y), text, font=font, fill=color)
+        x += draw.textlength(text, font=font)
 
 
-def make_inspect_panel(panel_w: int, panel_h: int, gemma: Image.Image) -> Image.Image:
+def make_inspect_panel(panel_w: int, panel_h: int) -> Image.Image:
     panel = Image.new("RGB", (panel_w, panel_h), BG)
-    place_gemma(panel, gemma)
+    place_agent_marker(panel)
 
     raw = Image.open(SLICE_PATH).convert("RGB")
     avail_h = panel_h - CONTENT_TOP - 40
@@ -71,10 +79,10 @@ def make_inspect_panel(panel_w: int, panel_h: int, gemma: Image.Image) -> Image.
     return panel
 
 
-def make_explore_panel(panel_w: int, panel_h: int, gemma: Image.Image) -> Image.Image:
+def make_explore_panel(panel_w: int, panel_h: int) -> Image.Image:
     panel = Image.new("RGB", (panel_w, panel_h), BG)
     pdraw = ImageDraw.Draw(panel)
-    place_gemma(panel, gemma)
+    place_agent_marker(panel)
 
     # 3 atlas sections at varied AP. Section index 156 ~= AP 3.9 mm (slice_06 target).
     samples = [(80, "AP 2.0"), (156, "AP 3.9"), (240, "AP 6.0")]
@@ -83,7 +91,7 @@ def make_explore_panel(panel_w: int, panel_h: int, gemma: Image.Image) -> Image.
         for i, _ in samples
     ]
 
-    # Tool-name caption sits between gemma and thumbs.
+    # Tool-name caption sits between the agent marker and thumbs.
     cap_font = ImageFont.truetype(FONT_PATH, 38)
     cap_y = CONTENT_TOP - 10
     pdraw.text((panel_w // 2, cap_y), "fetch_atlas(...)",
@@ -121,10 +129,10 @@ def make_explore_panel(panel_w: int, panel_h: int, gemma: Image.Image) -> Image.
     return panel
 
 
-def make_submit_panel(panel_w: int, panel_h: int, gemma: Image.Image) -> Image.Image:
+def make_submit_panel(panel_w: int, panel_h: int) -> Image.Image:
     panel = Image.new("RGB", (panel_w, panel_h), BG)
     pdraw = ImageDraw.Draw(panel)
-    place_gemma(panel, gemma)
+    place_agent_marker(panel)
 
     big_font = ImageFont.truetype(FONT_PATH, 88)
     bracket_font = ImageFont.truetype(FONT_PATH, 110)
@@ -151,8 +159,6 @@ def make_submit_panel(panel_w: int, panel_h: int, gemma: Image.Image) -> Image.I
 
 
 def build() -> Path:
-    gemma = Image.open(GEMMA_PATH).convert("RGB")
-
     inspect_w = 820
     explore_w = 1340
     submit_w = 820
@@ -167,9 +173,9 @@ def build() -> Path:
     canvas = Image.new("RGB", (canvas_w, canvas_h), BG)
 
     panels = [
-        ("Inspect", make_inspect_panel(inspect_w, panel_h, gemma)),
-        ("Explore", make_explore_panel(explore_w, panel_h, gemma)),
-        ("Submit", make_submit_panel(submit_w, panel_h, gemma)),
+        ("Inspect", make_inspect_panel(inspect_w, panel_h)),
+        ("Explore", make_explore_panel(explore_w, panel_h)),
+        ("Submit", make_submit_panel(submit_w, panel_h)),
     ]
 
     x = margin

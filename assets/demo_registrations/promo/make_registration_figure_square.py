@@ -4,7 +4,7 @@
 
   [ 1. Inputs ]                          [ 4. Fully registered slice ]
        |                                                ^
-       v  Nano Banana                                   |  Apply deformation
+       v  Image model                                   |  Apply deformation
                                                         |
   [ 2. Atlas warped onto slice ] -- Elastix --> [ 3. Extract deformation ]
 
@@ -258,7 +258,7 @@ def build(out_path: Path) -> None:
     a_shaft_top = gutter_h_y0 + label_h_zone + 10
     a_shaft_bot = gutter_h_y1 - 8
     draw_bracketed_label_at(canvas, left_col_cx, a_label_y,
-                            [("{ ", BLUE), ("Nano Banana", WHITE), (" }", BLUE)],
+                            [("{ ", BLUE), ("Image model", WHITE), (" }", BLUE)],
                             ARROW_LABEL_FONT)
     draw_down_arrow(canvas, left_col_cx, a_shaft_top, a_shaft_bot)
 

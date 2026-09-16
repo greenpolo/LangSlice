@@ -1,5 +1,9 @@
 <p align="center">
-  <img alt="LangSlice" src="assets/LangSlice_dark.png" width="780">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo/banner_dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="assets/logo/banner_light.svg">
+    <img alt="LangSlice" src="assets/logo/banner.svg" width="780">
+  </picture>
 </p>
 
 <p align="center">
@@ -7,7 +11,6 @@
   <a href="https://www.python.org/downloads/"><img alt="Python 3.10+" src="https://img.shields.io/badge/python-3.10+-blue.svg"></a>
   <a href="https://github.com/greenpolo/LangSlice/actions/workflows/tests.yml"><img alt="Tests" src="https://github.com/greenpolo/LangSlice/actions/workflows/tests.yml/badge.svg"></a>
   <a href="https://langslice.readthedocs.io"><img alt="Documentation Status" src="https://readthedocs.org/projects/langslice/badge/?version=latest"></a>
-  <a href="https://huggingface.co/greenpolo/langslice-gemma-4-E4B"><img alt="Hugging Face Model" src="https://img.shields.io/badge/%F0%9F%A4%97%20Model-langslice--gemma--4--E4B-yellow"></a>
 </p>
 
 <p align="center">
@@ -33,8 +36,7 @@
   <img alt="Agent loop: inspect, explore atlas candidates, submit AP" src="assets/agent_loop.png" width="780">
 </p>
 
-A VLM agent (default [`langslice-gemma-4-E4B`](https://huggingface.co/greenpolo/langslice-gemma-4-E4B))
-inspects the slice, explores candidate atlas planes through tool calls, and
+A VLM agent inspects the slice, explores candidate atlas planes through tool calls, and
 submits an AP coordinate. Image generation then produces an atlas-colored
 target from the histology, and itk-elastix recovers a dense B-spline
 deformation. Results export to VisuAlign-compatible JSON for QUINT / ABBA.
@@ -49,7 +51,7 @@ deformation. Results export to VisuAlign-compatible JSON for QUINT / ABBA.
 conda env create -f environment.yml
 conda activate langslice
 pip install -e .
-cp .env.example .env  # add AI Studio / Vertex / OpenAI keys
+cp .env.example .env  # add your model-provider API keys
 
 # Optional: pre-download an atlas (~500 MB) into ~/.brainglobe/
 python -c "from brainglobe_atlasapi import BrainGlobeAtlas; BrainGlobeAtlas('allen_mouse_25um')"
@@ -144,7 +146,6 @@ Both depend on LangSlice; neither is required to run it.
 ## Links
 
 - [**Documentation**](https://langslice.readthedocs.io) — full pipeline + harness internals
-- [**langslice-gemma-4-E4B**](https://huggingface.co/greenpolo/langslice-gemma-4-E4B) — the v1.0 fine-tune
 
 ## Citation
 

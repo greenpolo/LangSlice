@@ -23,6 +23,7 @@ from langslice.linear.render import (
     physical_views,
     scale_bar_px,
 )
+from tests.linear_tool_helpers import single_adjust
 
 _IDENTITY = {
     "rotation_deg": 0.0,
@@ -221,7 +222,7 @@ def _tools(tmp_path: Path):
 
 def test_the_adjust_payload_is_concise_while_local_history_stays_complete(tmp_path: Path):
     tools, box, _state = _tools(tmp_path)
-    preview = tools["adjust_transform"]
+    preview = single_adjust(tools["adjust_transforms"])
 
     first = preview("s.tif", 0.0, 1.0, 1.0, 0.25, 0.0)
     assert first["status"] == "ok"
@@ -251,7 +252,7 @@ def test_the_adjust_payload_is_concise_while_local_history_stays_complete(tmp_pa
 def test_the_adjust_tool_takes_the_view_controls(tmp_path: Path):
     from langslice.adk import TOOL_MEDIA_PARTS_KEY
 
-    preview = _tools(tmp_path)[0]["adjust_transform"]
+    preview = single_adjust(_tools(tmp_path)[0]["adjust_transforms"])
 
     pair = preview("s.tif", 0.0, 1.0, 1.0, 0.0, 0.0, "side_by_side")
     assert len(pair[TOOL_MEDIA_PARTS_KEY]) == 2
@@ -270,14 +271,18 @@ def test_ab_returns_the_candidate_and_what_is_stored(tmp_path: Path):
     from langslice.adk import TOOL_MEDIA_PARTS_KEY
 
     tools, _box, _state = _tools(tmp_path)
-    against_identity = tools["adjust_transform"]("s.tif", 6.0, 1.0, 1.0, 0.0, 0.0, "ab")
+    against_identity = single_adjust(tools["adjust_transforms"])(
+        "s.tif", 6.0, 1.0, 1.0, 0.0, 0.0, "ab"
+    )
     assert len(against_identity[TOOL_MEDIA_PARTS_KEY]) == 2
     assert against_identity["view"]["mode"] == "ab"
     assert "identity" in against_identity["description"]
     assert against_identity["ab_reference"]["source"] == "identity"
 
-    tools["adjust_transform"]("s.tif", 3.0, 1.0, 1.0, 0.0, 0.0)
-    against_stored = tools["adjust_transform"]("s.tif", 6.0, 1.0, 1.0, 0.0, 0.0, "ab")
+    single_adjust(tools["adjust_transforms"])("s.tif", 3.0, 1.0, 1.0, 0.0, 0.0)
+    against_stored = single_adjust(tools["adjust_transforms"])(
+        "s.tif", 6.0, 1.0, 1.0, 0.0, 0.0, "ab"
+    )
     assert len(against_stored[TOOL_MEDIA_PARTS_KEY]) == 2
     assert "before" in against_stored["description"]
     # The B side is what the section carried before this call, which is the
@@ -365,7 +370,7 @@ def test_a_tissue_pivot_turns_the_section_about_its_own_centroid(tmp_path: Path)
 
 def test_the_pivot_rides_into_the_six_numbers_and_the_payload(tmp_path: Path):
     tools, _box, state = _tools(tmp_path)
-    preview = tools["adjust_transform"]
+    preview = single_adjust(tools["adjust_transforms"])
 
     centred = preview("s.tif", 10.0, 1.0, 1.0, 0.0, 0.0, "overlay", [], 0.0, "canvas")
     corner = preview("s.tif", 10.0, 1.0, 1.0, 0.0, 0.0, "overlay", [], 0.0, [0.25, 0.75])
@@ -374,7 +379,9 @@ def test_the_pivot_rides_into_the_six_numbers_and_the_payload(tmp_path: Path):
         "error"
     ] == "BAD_PIVOT"
 
-    tools["adjust_transform"]("s.tif", 10.0, 1.0, 1.0, 0.0, 0.0, "overlay", [], 0.0, [0.25, 0.75])
+    single_adjust(tools["adjust_transforms"])(
+        "s.tif", 10.0, 1.0, 1.0, 0.0, 0.0, "overlay", [], 0.0, [0.25, 0.75]
+    )
     stored = state.slices[0].transform
     assert stored["physical"]["pivot"] == [0.25, 0.75]
     # Same rotation, different pivot: the same map only up to a translation,
@@ -382,7 +389,9 @@ def test_the_pivot_rides_into_the_six_numbers_and_the_payload(tmp_path: Path):
     assert stored["params"][:2] == pytest.approx(
         [np.cos(np.radians(10.0)), np.sin(np.radians(10.0)) * 512 / 512], abs=1e-6
     )
-    tools["adjust_transform"]("s.tif", 10.0, 1.0, 1.0, 0.0, 0.0, "overlay", [], 0.0, "canvas")
+    single_adjust(tools["adjust_transforms"])(
+        "s.tif", 10.0, 1.0, 1.0, 0.0, 0.0, "overlay", [], 0.0, "canvas"
+    )
     assert state.slices[0].transform["params"][2] != stored["params"][2]
     assert centred["physical"]["rotation_deg"] == pytest.approx(
         corner["physical"]["rotation_deg"]
@@ -405,7 +414,7 @@ def test_clean_section_and_template_views_carry_no_outlines():
 
 
 def test_the_adjust_tool_takes_the_outline_layer(tmp_path: Path):
-    preview = _tools(tmp_path)[0]["adjust_transform"]
+    preview = single_adjust(_tools(tmp_path)[0]["adjust_transforms"])
 
     plain = preview("s.tif", 0.0, 1.0, 1.0, 0.0, 0.0)
     assert plain["view"]["outlines"] == "all"
@@ -463,7 +472,7 @@ def test_border_thickness_is_measured_after_zoom_and_resize():
 def test_invalid_border_style_does_not_write_a_transform(tmp_path: Path, style):
     tools, box, state = _tools(tmp_path)
     before = state.to_dict()
-    response = tools["adjust_transform"]("s.tif", 5.0, 1.0, 1.0, 0.0, 0.0, **style)
+    response = single_adjust(tools["adjust_transforms"])("s.tif", 5.0, 1.0, 1.0, 0.0, 0.0, **style)
     assert response["error"] == "INVALID_BORDER_STYLE"
     assert state.to_dict() == before
     assert not box.undo_stack

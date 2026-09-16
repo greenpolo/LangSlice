@@ -147,7 +147,7 @@ def test_viewer_stays_open_for_single_and_multiple_targets(setup):
         setup.abba, setup.mapping, comparison_factory=lambda: comparison,
     )
     follower.on_event(_event(targets=("a", "b")))
-    follower.on_event(_event(name="adjust_transform", targets=("b",), execution="two"))
+    follower.on_event(_event(name="adjust_transforms", targets=("b",), execution="two"))
     assert comparison.hidden == 0
     assert setup.view.mode == 0
     assert comparison.batches[-1] == [("b", 1)]
@@ -192,7 +192,7 @@ def test_disabling_follow_hides_comparison_without_navigating(setup):
     )
     follower.on_event(_event(targets=("a", "b")))
     enabled[0] = False
-    follower.on_event(_event(name="adjust_transform"))
+    follower.on_event(_event(name="adjust_transforms"))
     assert comparison.hidden == 1
     assert not setup.view.navigated
     follower.finish()
@@ -242,13 +242,13 @@ def test_seed_fits_and_highlights_the_run_stack_before_the_first_tool(setup):
 
 def test_transforms_review_and_refit_after_mirror_changes(setup):
     follower = abba_follow.AbbaFollower(setup.abba, setup.mapping)
-    follower.on_event(_event(name="adjust_transform"))
+    follower.on_event(_event(name="adjust_transforms"))
     assert setup.view.mode == 1
     assert setup.view.display_mode == 1
     assert setup.view.centered == ["b"]
     # Simulate the independent checkpoint mirror finishing before tool_end.
     setup.slices[1].position = 4.5
-    follower.on_event(_event(kind="tool_end", name="adjust_transform"))
+    follower.on_event(_event(kind="tool_end", name="adjust_transforms"))
     assert setup.fits == [(["b"], True), (["b"], True)]
     assert setup.slices[1].position == 4.5
 
@@ -345,12 +345,12 @@ def test_camera_animation_fits_tiles_with_correct_review_sampling_plane(monkeypa
 
 
 @pytest.mark.parametrize("name", ["view_landmarks", "edit_landmarks", "warp_landmarks"])
-def test_landmark_tools_follow_native_comparison(setup, name):
+def test_removed_landmark_tools_do_not_drive_native_comparison(setup, name):
     comparison = _Comparison()
     follower = abba_follow.AbbaFollower(
         setup.abba, setup.mapping, comparison_factory=lambda: comparison,
     )
     follower.on_event(_event(name=name, targets=("b",)))
-    assert comparison.batches[-1] == [("b", 1)]
+    assert not comparison.batches
     assert not setup.view.navigated and not setup.fits
-    assert (name in abba_follow._WRITES) is (name == "warp_landmarks")
+    assert name not in abba_follow._WRITES

@@ -17,11 +17,11 @@ at the whole stack once yields the information for every task, and splitting
 that into separate sessions threw the shared reading away and re-paid for it.
 
 There are no sub-sessions left. The per-section interactive alignment
-(`adjust_transform`, `landmarks`) moved into the main toolbox on 2026-09-06:
+(`adjust_transforms`) moved into the main toolbox on 2026-09-06:
 GPT-6 Astra moved every parameter at once and finished a section in four
 previews, so the fan-out bought nothing and cost the shared reading. Later the
 same day preview and set became ONE tool, the computer-use pattern: every
-`adjust_transform` call writes the transform and returns the picture, so the
+`adjust_transforms` call writes the transform and returns the picture, so the
 agent always sees what it did and never spends a turn on a separate look or a
 separate commit. `adjust_transforms` batches up to four independent sections
 inside this same trajectory and one undo step; a dependent refinement waits
@@ -96,7 +96,7 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
   transform carries `physical` — the five knobs plus `shear`, about a pivot in
   canvas fractions — next to the six normalized numbers, whatever made it.
   There is no `confidence`: nothing downstream read it (Nash, 2026-09-06), and
-  the reasoning lives in `adjust_transform`'s note.
+  the reasoning lives in `adjust_transforms`'s note.
 - `checkpoint.py` — atomic JSON write to `<folder>/linear_state.json`.
 - `discovery.py` — natural-sorted image discovery.
 - `render.py` — `render_slice` (ROTATE first, then FLIP, then the display-only
@@ -141,12 +141,13 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
 - `toolbox.py` — `build_tools(state, ctx, spec)`: every tool, gated by the
   spec, plus the submit gates and the undo/redo snapshot stack. The interactive
   transform lives here: `_Staged` (one section, its calibrated canvas and the
-  resolved pivot), `adjust_transform` (the write AND the look, any positioned
+  resolved pivot), `adjust_transforms` (the write AND the look, any positioned
   section; `mode="ab"` draws the new parameters beside what the section
   carried before the call, a silhouette fit included; the same numbers again
-  re-draw without an undo step), `adjust_transforms` (up to four distinct
-  sections, one feedback image each). Paired landmark editing/warping lives in
-  `landmark_tools.py`; the old read-only `landmarks` tool is removed.
+  re-draw without an undo step). One to four distinct sections share one undo
+  step; each returns one image, or two for `ab`/`side_by_side`, mapped by
+  per-result `image_indexes`. Paired landmark tools are removed; interactive
+  alignment exposes direct affine adjustments only.
   `transform_history` on the ToolBox is per section and lasts the whole run,
   but is not repeated in tool replies. `commit(*touched)` is what ordinary writes answer with: the status rows of
   the sections it touched plus `n_sections`, never the whole table —
@@ -196,35 +197,37 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
 - `deepslice.py`, `trace.py` — the DeepSlice seam (reports `UNAVAILABLE`) and
   the full-content JSONL session trace.
 
-## Landmark warps
+## Tool consolidation (2026-09-15)
 
-`landmark_tools.py` exposes `view_landmarks` (stable unwarped slice, atlas,
-current overlay), `edit_landmarks` (persistent numbered pairs: add/move/delete),
-and `warp_landmarks` (default `method="affine"`, 3–64 pairs; `method="spline"`,
-4–64 pairs). The same persistent points drive both fits. Affine fitting uses
-least squares and preserves shear in the canonical matrix. It rejects
-rank-deficient, collapsed and mirrored fits. Spline fitting replaces that affine
-with the complete TPS rather than composing the affine twice. The prompt asks
-for affine first, inspection, then spline for remaining local discrepancies.
-Point edits return numbered reference images. Every application returns full
-before/after overlays and both numbered reference images before checkpointing.
-The old read-only `landmarks` measurement tool is removed. Coordinates are
-pixels in the returned reference images; caption, crop and resizing are handled
-by the harness. The unwarped slice reference stays fixed across applications.
-Editable point pairs persist separately from the applied transform, with undo
-and checkpoint support. Existing spline points can initialize the editor.
-Landmark images keep the current output resolution and OAuth high detail.
+The default full-task toolbox has 15 tools (9 for interactive-only transform
+refinement). `adjust_transforms` handles both one section and batches; the
+single-section implementation is private. `mark_damaged` accepts per-entry
+`damaged=False` to clear flags. `validate` and `unmark_damaged` are removed;
+failed `submit` reports unmet requirements without changing or ending the run.
+`reorder_slices(new_order, after="start")` moves a list of filenames as one
+block after an anchor or to the start; a full list sets the whole order. Unlisted
+sections retain relative order. `move_slice` and the three paired-landmark tools
+are removed. Direct adjustments replace the complete transform, including a
+historical spline or shear.
 
-Shared `landmark_warp.py` implements BigWarp's analytic target-to-source TPS
-and its numerical forward inverse. `transform.spline` is authoritative and
-stores normalized source/target pairs plus original `extent_mm`; affine
-`params` and `physical` are baseline metadata only while the spline exists.
-`physical_views(..., spline=...)` renders the complete map. Full before/after
-images are encoded before checkpointing; invalid landmarks and sampled folds
-refuse without writing. Undo/redo and resume preserve pairs. Later affine
-adjustments/fits replace the spline. A spline-only nonidentity correction can
-satisfy the damaged-section manual-transform gate. The native ABBA snapshot
-mirror emits an editable BigWarp registration; snapshot geometry is required.
+## Linear scope and saved spline compatibility (2026-09-15)
+
+The linear agent handles order, position and affine alignment. Paired landmark
+viewing, editing and warping were removed from the toolbox and prompt after the
+full-stack comparison did not establish a nonlinear quality gain. The dedicated
+linear landmark module and editable-point state are removed. Default full-task
+and interactive-only tool counts are 15 and 9.
+
+Local anatomical deformation remains the responsibility of the independent
+`nonlinear/` image-generation workflow. A bridge that lets the linear agent call
+image generation is undecided; no tool or cross-package dependency implements it.
+
+Historical `transform.spline` checkpoints remain supported: `landmark_warp.py`
+evaluates the exact stored Elastix or legacy TPS mapping, and rendering, undo,
+resume and calibrated native ABBA export retain that complete transform. The
+affine metadata is not applied twice. Later affine adjustments/fits replace the
+spline. Obsolete editable-point fields are ignored by `StackState.from_dict`.
+Shared spline code is compatibility infrastructure, not an agent tool.
 
 ## Context and tokens (2026-09-09)
 
@@ -349,14 +352,14 @@ statement's Method section, read off its trace: a complete hypothesis of
 order and every position from the opening images (it used the interleaved
 cutting series), one confirmation sweep four sections per call at one
 candidate each, one bulk write, targeted re-checks, damage notes, order,
-`view_stack`, validate, submit. That is coaching text and the one
+`view_stack`, submit. That is coaching text and the one
 exception to the lean-harness rule below; off for Astra. Run 9 (M11, same harness as
 Astra's run 8): Luna wrote all 36 positions in one uncompared call and
 submitted at call 7 (median 1.2 mm, 0 of 36 within 0.25); Gemini 3.8 Flash
 made 18 compares in 30 calls and never wrote. Astra passes the gates
 without noticing. Off by default so the Astra runs stay comparable.
 
-**Lean harness.** Tools return data. No interpretation in any payload. The job statement carries the job, the facts, one line per tool, the constraints and — when positioning is on — a short `Method` section (Nash, 2026-09-07): place each section on its own evidence and compare candidates before writing, review the whole stack afterwards, re-check both sides of a gap before reporting a break, validate, submit. When interactive transforms are enabled, Method also asks the agent to inspect
+**Lean harness.** Tools return data. No interpretation in any payload. The job statement carries the job, the facts, one line per tool, the constraints and — when positioning is on — a short `Method` section (Nash, 2026-09-07): place each section on its own evidence and compare candidates before writing, review the whole stack afterwards, re-check both sides of a gap before reporting a break, submit. When interactive transforms are enabled, Method also asks the agent to inspect
 each fitted/adjusted overlay against surviving internal anatomy and refine each
 slice until no further improvement is possible with the available transforms,
 keeping only changes that improve alignment; this is prompt guidance, not a
@@ -365,20 +368,20 @@ The default Method no longer prescribes batching (2026-09-11): grouping work is 
 benchmark failure tracking back to advice the harness injected; a per-slice
 estimation worker that ate 82% of the wall-clock carried ~no signal and was
 deleted; a landmark-tool pass for POSITION estimation benchmarked WORSE and was
-deleted rather than kept behind a flag. The paired landmark tools now serve
-in-plane spline registration, not position estimation.
+deleted rather than kept behind a flag. The later in-plane paired-landmark
+extension was also removed; nonlinear registration stays separate.
 
 **One transform representation.** Silhouette, interactive, elastix-someday:
 every stored transform and every fit payload carries `physical` (the five
-knobs `adjust_transform` takes, plus `shear`, about a pivot in canvas fractions)
+knobs `adjust_transforms` takes, plus `shear`, about a pivot in canvas fractions)
 next to the six normalized numbers. The fraction-based `decomposition` left
 the fit payload: "+0.04 mm entered, negative fraction reported" cost four
 sessions, and GPT-6 Astra could not hand a fit's numbers to the manual
-controls. A fit is now a starting point for `adjust_transform` and the B side
+controls. A fit is now a starting point for `adjust_transforms` and the B side
 of `mode="ab"`.
 
 **Gates are constraints, not coaching.** A refusal states the numbers that
-caused it and stops; `validate` runs the same gates without submitting.
+caused it; failed submission neither writes nor ends the run.
 `submit` refuses `MISSING_POSITIONS`,
 `ORDER_POSITION_MISMATCH` (positions must run one way along the corrected
 order; the offending neighbour pairs are named), `STRICT_INTERVAL` (spacing
@@ -389,7 +392,7 @@ damaged included). `DAMAGED_REQUIRES_MANUAL_TRANSFORM` additionally rejects
 missing, automatic, invalid or identity transforms on damaged sections and asks
 for interactive alignment of surviving anatomy. A note alone cannot satisfy it.
 The check uses the normalized matrix (identity tolerance 1e-9), not the physical
-parameter labels, and is shared by `validate` and `submit`. If interactive tools
+parameter labels, and runs during `submit`. If interactive tools
 are disabled, the refusal names that host setting as the blocker. It does not
 measure anatomical alignment quality. Gates only run for tasks that are on.
 
@@ -397,8 +400,8 @@ measure anatomical alignment quality. Gates only run for tasks that are on.
 and transforms are proposals on the state. The user's image files are never
 modified.
 
-**Order and position must agree.** Only at `submit`: `reorder_slices` and
-`move_slice` change nothing but `index_corrected`, and the
+**Order and position must agree.** Only at `submit`: `reorder_slices`
+changes nothing but `index_corrected`, and the
 `ORDER_POSITION_MISMATCH` gate is what holds order and position together.
 (Reordering used to CLEAR the positions of the sections that moved; every
 debriefed agent called that hazardous, and it made them re-enter numbers they
@@ -438,14 +441,14 @@ resumed run starts from the checkpoint, which is the state as it stood.
   9.05 x 6.68 mm, so the outlines land ~10% (ML) to ~15% (DV) outside the
   tissue at identity. That is the specimen-vs-Allen size difference, the same
   residual the nonlinear side measures, not a calibration bug.
-- `adjust_transform`'s pivot resolution runs its own `canvas_geometry`, so a
+- `adjust_transforms`'s pivot resolution runs its own `canvas_geometry`, so a
   call builds the atlas plane twice (once to place the pivot, once to draw).
   Flat sections are a numpy take; oblique ones resample twice.
 
 ### Host transform choices
 
 `TransformSpec.interactive` and `.automatic` default to true. Hosts such as the
-ABBA menu may independently remove direct adjustment/landmark tools or the
+ABBA menu may independently remove direct adjustment tools or the
 automatic `fit_affine` tool. `elastix` controls the optional backend within the
 automatic fitter. The transform task's submit requirement still applies; a
 host must enable at least one transform method when enabling that task.

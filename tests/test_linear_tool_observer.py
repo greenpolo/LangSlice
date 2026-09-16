@@ -22,7 +22,7 @@ def test_execution_events_run_inside_lock_and_resolve_current_indices():
         assert lock.locked()
         events.append(event)
 
-    def move_slice(slice_id: str):
+    def orient_slices(slice_id: str):
         record = state.resolve(slice_id)
         assert record is not None
         events.append({"body": record.id})
@@ -31,8 +31,8 @@ def test_execution_events_run_inside_lock_and_resolve_current_indices():
             item.index_corrected = index
         return {"status": "ok", "id": record.id}
 
-    wrapped = _serialized(move_slice, lock, state=state, on_event=observer)
-    assert inspect.signature(wrapped) == inspect.signature(move_slice)
+    wrapped = _serialized(orient_slices, lock, state=state, on_event=observer)
+    assert inspect.signature(wrapped) == inspect.signature(orient_slices)
     with ThreadPoolExecutor(max_workers=2) as pool:
         futures = [pool.submit(wrapped, "0") for _ in range(2)]
         for future in futures:

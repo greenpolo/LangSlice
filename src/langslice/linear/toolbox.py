@@ -96,7 +96,7 @@ STRICT_INTERVAL_TOLERANCE = 0.10
 #: Rotations ``orient_slices`` accepts.
 _ROTATIONS = (0, 90, 180, 270)
 
-#: Views ``adjust_transform`` composes on top of the renderer's own
+#: Views ``adjust_transforms`` composes on top of the renderer's own
 #: (:data:`~langslice.linear.render.VIEW_MODES`): the A/B toggle, which is two
 #: renders of one crop rather than one composition.
 PREVIEW_MODES = (*VIEW_MODES, "ab")
@@ -113,7 +113,7 @@ IDENTITY_PARAMS: dict[str, float] = {
 
 def _tool_target_ids(state: StackState, name: str, args: dict[str, Any]) -> list[str]:
     """Resolve host display targets before a tool can reorder the stack."""
-    if name in {"view_stack", "status", "undo", "redo", "submit", "validate",
+    if name in {"view_stack", "status", "undo", "redo", "submit",
                 "set_cutting_angles", "run_deepslice"}:
         return [record.id for record in state.in_order()]
     if name == "fit_affine" and not args.get("slice_ids"):
@@ -197,7 +197,7 @@ class ToolBox:
     submission: dict[str, Any] = field(default_factory=dict)
     undo_stack: list[dict[str, Any]] = field(default_factory=list)
     redo_stack: list[dict[str, Any]] = field(default_factory=list)
-    #: Every parameter set `adjust_transform` was given this run, per section
+    #: Every parameter set `adjust_transforms` was given this run, per section
     #: id, oldest first. Kept host-side; the growing history is not repeated
     #: in every tool result because it is already present in the trajectory.
     transform_history: dict[str, list[dict[str, float]]] = field(default_factory=dict)
@@ -500,12 +500,16 @@ def damaged_transform_error(state: StackState, spec: JobSpec) -> dict[str, Any] 
                     from langslice.landmark_warp import fit_spline
 
                     spline = transform["spline"]
-                    fit_spline(spline)
-                    if np.allclose(spline["source"], spline["target"], rtol=0, atol=1e-9):
+                    fitted = fit_spline(spline)
+                    is_identity = (
+                        fitted.is_identity() if spline.get("backend") == "elastix" else
+                        np.allclose(spline["source"], spline["target"], rtol=0, atol=1e-9)
+                    )
+                    if is_identity:
                         reason = "identity_transform"
                 elif np.allclose(params, identity, rtol=0, atol=1e-9):
                     reason = "identity_transform"
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, KeyError, RuntimeError, np.linalg.LinAlgError):
                 reason = "invalid_transform"
         if reason:
             failures.append({"id": record.id, "reason": reason})
@@ -519,8 +523,8 @@ def damaged_transform_error(state: StackState, spec: JobSpec) -> dict[str, Any] 
         "message": (
             "Damaged sections require a non-identity interactive transform. "
             + (
-                "Use adjust_transform or adjust_transforms to align the surviving "
-                "anatomy, inspect the returned overlays, then validate again."
+                "Use adjust_transforms to align the surviving "
+                "anatomy, inspect the returned overlays, then submit again."
                 if spec.transform.interactive else
                 "Interactive transform tools are disabled for this run; the host "
                 "must enable interactive transforms to resolve these sections."
@@ -728,8 +732,8 @@ def build_tools(
         save_checkpoint(state, ctx.checkpoint_path)
         return {"status": "ok", "redo_depth": len(box.redo_stack), **rows()}
 
-    def mark_damaged(entries: list[dict[str, str]]) -> dict[str, Any]:
-        """Record sections whose shape would break an outline-based fit.
+    def mark_damaged(entries: list[dict[str, Any]]) -> dict[str, Any]:
+        """Set or clear damage flags for sections with unreliable outlines.
 
         Damage here means the section outline massively deviates from the
         atlas: large missing chunks, a missing hemisphere or olfactory bulb,
@@ -738,15 +742,20 @@ def build_tools(
         are NOT damage.
 
         Args:
-            entries: ``[{"id": "<filename>", "note": "<what breaks the outline>"}]``
+            entries: Objects with id, damaged (boolean, default True), and note.
+                Set damaged=False to clear the flag and its note.
 
         Returns:
             The rows this call changed.
         """
         if not entries:
             return {"status": "error", "error": "BAD_ARGS"}
+        if any(not isinstance(entry, dict)
+               or not isinstance(entry.get("damaged", True), bool) for entry in entries):
+            return {"status": "error", "error": "BAD_ARGS"}
         snapshot()
         marked: list[str] = []
+        unmarked: list[str] = []
         unknown: list[str] = []
         for entry in entries:
             if not isinstance(entry, dict):
@@ -755,32 +764,11 @@ def build_tools(
             if record is None:
                 unknown.append(str(entry.get("id", "")))
                 continue
-            record.damaged = True
-            record.damage_note = str(entry.get("note", "")).strip()
-            marked.append(record.id)
-        return {"marked": marked, "unknown_ids": unknown, **commit(*marked)}
-
-    def unmark_damaged(slice_ids: list[str]) -> dict[str, Any]:
-        """Clear the damaged flag on the named sections.
-
-        Args:
-            slice_ids: Filenames or corrected indices.
-
-        Returns:
-            The rows this call changed.
-        """
-        if not slice_ids:
-            return {"status": "error", "error": "BAD_ARGS"}
-        snapshot()
-        known, unknown = resolve_many(list(slice_ids))
-        for record in known:
-            record.damaged = False
-            record.damage_note = ""
-        return {
-            "unmarked": [record.id for record in known],
-            "unknown_ids": unknown,
-            **commit(*[record.id for record in known]),
-        }
+            record.damaged = entry.get("damaged", True)
+            record.damage_note = str(entry.get("note", "")).strip() if record.damaged else ""
+            (marked if record.damaged else unmarked).append(record.id)
+        return {"marked": marked, "unmarked": unmarked, "unknown_ids": unknown,
+                **commit(*marked, *unmarked)}
 
     def submit(
         summary: str,
@@ -838,39 +826,14 @@ def build_tools(
             tool_context.actions.escalate = True
         return {"status": "ok", **rows()}
 
-    def validate(interval_breaks: list[int]) -> dict[str, Any]:
-        """Run the submit checks without submitting. Writes nothing.
-
-        Args:
-            interval_breaks: The corrected indices you would pass to `submit`.
-                Empty list for none.
-
-        Returns:
-            The refusal `submit` would return, or
-            ``{"status": "ok", "would_submit": true}``.
-        """
-        breaks: list[int] = []
-        for raw in interval_breaks if isinstance(interval_breaks, (list, tuple)) else []:
-            try:
-                breaks.append(int(raw))
-            except (TypeError, ValueError):
-                continue
-        refusal = submit_errors(state, spec, breaks)
-        return refusal or {
-            "status": "ok",
-            "would_submit": True,
-        }
-
     box.tools = [
         status,
-        validate,
         view_slices,
         make_fetch_atlas(state, ctx),
         note,
         undo,
         redo,
         mark_damaged,
-        unmark_damaged,
     ]
 
     # --- reorder --------------------------------------------------------
@@ -962,74 +925,48 @@ def build_tools(
             TOOL_MEDIA_PARTS_KEY: parts,
         }
 
-    def reorder_slices(new_order: list[str]) -> dict[str, Any]:
-        """Set the corrected order of the WHOLE stack in one call.
-
-        Only the corrected index changes: positions and transforms are kept.
+    def reorder_slices(new_order: list[str], after: str = "start") -> dict[str, Any]:
+        """Place one or more sections together in the requested order.
 
         Args:
-            new_order: Every section filename exactly once, in the order the
-                sections were cut. Filenames, not corrected indices: the
-                indices are what this call changes.
+            new_order: Nonempty list of unique section filenames. These sections
+                move as one block in the listed order; all unlisted sections
+                keep their relative order. List the whole stack to set its order.
+                Use filenames, never corrected indices: this call changes indices.
+            after: Filename the block should follow, or "start" (default) to
+                put it first. The anchor must not be in new_order.
 
         Returns:
-            The rows it changed, plus the ids whose corrected index changed.
+            Changed rows and moved ids. Only corrected indices change; positions
+            and transforms are kept. The whole call is one undoable write.
         """
-        ids = [s.id for s in state.slices]
-        # Filenames only: a corrected index is exactly what this call changes,
-        # so an index-addressed reorder can hit the wrong section next call.
-        if sorted(str(item) for item in new_order) != sorted(ids):
-            return {
-                "status": "error",
-                "error": "NOT_A_PERMUTATION",
-                "missing_ids": [i for i in ids if i not in set(map(str, new_order))],
-                "unknown_ids": [str(i) for i in new_order if str(i) not in set(ids)],
-                "message": (
-                    f"new_order must list all {len(ids)} section filenames "
-                    "exactly once."
-                ),
-            }
-        snapshot()
-        ordered = [state.by_id(str(item)) for item in new_order]
-        moved = renumber([record for record in ordered if record is not None])
-        return {"moved": moved, **commit(*moved)}
-
-    def move_slice(slice_id: str, after: str) -> dict[str, Any]:
-        """Move one section to a new place in the corrected order.
-
-        Only corrected indices change: positions and transforms are kept.
-
-        Args:
-            slice_id: Filename or corrected index of the section to move.
-            after: Filename (or corrected index) of the section it should
-                follow, or "start" to put it first.
-
-        Returns:
-            The rows it changed, plus the ids whose corrected index changed.
-        """
-        record = state.resolve(slice_id)
-        if record is None:
-            return {"status": "error", "error": "UNKNOWN_SLICE_IDS", "unknown": [slice_id]}
-        target = str(after).strip().lower()
-        anchor = None if target == "start" else state.resolve(after)
-        if anchor is None and target != "start":
+        if (not isinstance(new_order, list) or not new_order
+                or any(not isinstance(item, str) for item in new_order)
+                or not isinstance(after, str)):
+            return {"status": "error", "error": "BAD_ARGS"}
+        ids = {record.id for record in state.slices}
+        selected = set(new_order)
+        unknown = sorted(selected - ids)
+        if unknown:
+            return {"status": "error", "error": "UNKNOWN_SLICE_IDS", "unknown": unknown}
+        if len(selected) != len(new_order):
+            return {"status": "error", "error": "DUPLICATE_SLICE_IDS"}
+        if after != "start" and after not in ids:
             return {"status": "error", "error": "UNKNOWN_SLICE_IDS", "unknown": [after]}
-        if anchor is not None and anchor.id == record.id:
-            return {
-                "status": "error",
-                "error": "BAD_ARGS",
-                "message": "after names the section itself",
-            }
+        if after in selected:
+            return {"status": "error", "error": "BAD_ARGS",
+                    "message": "after must name a section outside new_order"}
 
+        records = {record.id: record for record in state.slices}
+        remaining = [record for record in state.in_order() if record.id not in selected]
+        index = 0 if after == "start" else remaining.index(records[after]) + 1
+        ordered = remaining[:index] + [records[name] for name in new_order] + remaining[index:]
         snapshot()
-        ordered = [s for s in state.in_order() if s.id != record.id]
-        index = 0 if anchor is None else ordered.index(anchor) + 1
-        ordered.insert(index, record)
         moved = renumber(ordered)
         return {"moved": moved, **commit(*moved)}
 
     if spec.has("reorder"):
-        box.tools += [orient_slices, reorder_slices, move_slice]
+        box.tools += [orient_slices, reorder_slices]
 
     # --- position -------------------------------------------------------
 
@@ -1538,7 +1475,7 @@ def build_tools(
 
         The whole tissue outline is matched against the whole atlas outline;
         a damaged section is refused. Each fit is written as the section's
-        transform (undoable, and `adjust_transform` overwrites it).
+        transform (undoable, and `adjust_transforms` overwrites it).
 
         Args:
             slice_ids: Filenames or corrected indices; empty means every
@@ -1734,7 +1671,7 @@ def build_tools(
 
     batching_adjustments = False
 
-    def adjust_transform(
+    def _adjust_transform(
         slice_id: str,
         rotation_deg: float,
         scale_x: float,
@@ -1976,27 +1913,27 @@ def build_tools(
         }
 
     def adjust_transforms(entries: list[dict[str, Any]]) -> dict[str, Any]:
-        """Set and show up to four independent sections in one undoable call.
+        """Set and show one to four independent sections in one undoable call.
 
-        Every section is evaluated from the state at the start of this call
-        and returns one labelled image. Use ``adjust_transform`` instead when
-        a second adjustment depends on seeing the first one's feedback, or for
-        the two-image ``side_by_side`` and ``ab`` views. Naming one section
-        more than once is refused because those edits would be dependent but
-        planned without intervening visual feedback.
+        Each entry replaces the complete transform, including any previous
+        spline or shear. A section may appear once per call; inspect its result
+        before making a dependent correction in a later call.
 
         Args:
-            entries: Up to four objects, each with ``id``, ``rotation_deg``,
-                ``scale_x``, ``scale_y``, ``translate_x_mm`` and
-                ``translate_y_mm``. Each may also include ``mode`` (overlay,
-                checkerboard, outlines, section or template), ``zoom``,
-                ``template_opacity``, ``border_color``, ``border_thickness``,
-                ``pivot``, ``outlines`` and ``note`` as
-                on ``adjust_transform``.
+            entries: One to four objects with id, rotation_deg (counter-clockwise),
+                scale_x, scale_y, translate_x_mm (right), translate_y_mm (down).
+                Optional per-entry controls: mode (overlay, checkerboard, outlines,
+                section, template, side_by_side or ab), zoom ([x0,y0,x1,y1] canvas
+                fractions), template_opacity (0..1), pivot (canvas, tissue or
+                [fx,fy]), outlines (all, outer or none), note, border_color
+                (named color or #RRGGBB), border_thickness (0.25..8 pixels).
+                side_by_side shows section and atlas; ab shows new and previous
+                transforms. Both return two images. Other modes return one.
 
         Returns:
-            One concise result and one labelled feedback image per successful
-            section, in entry order. All writes form one undo step.
+            Per-section results with zero-based image_indexes into the attached
+            labelled images, in entry order. All writes form one undo step.
+            Repeating unchanged parameters only redraws, without an undo step.
         """
         nonlocal batching_adjustments
         if not entries:
@@ -2037,15 +1974,7 @@ def build_tools(
                     results.append({"status": "error", "error": "BAD_ARGS"})
                     continue
                 mode = str(entry.get("mode", "overlay") or "overlay").strip().lower()
-                if mode in {"side_by_side", "ab"}:
-                    results.append({
-                        "status": "error",
-                        "error": "BATCH_VIEW_NEEDS_SINGLE_CALL",
-                        "id": str(entry.get("id", "")),
-                        "mode": mode,
-                    })
-                    continue
-                result = adjust_transform(
+                result = _adjust_transform(
                     str(entry.get("id", "")),
                     entry.get("rotation_deg"),  # type: ignore[arg-type]
                     entry.get("scale_x"),  # type: ignore[arg-type]
@@ -2062,7 +1991,7 @@ def build_tools(
                     border_thickness=entry.get("border_thickness", 0.5),
                 )
                 media = result.pop(TOOL_MEDIA_PARTS_KEY, [])
-                result.pop("description", None)
+                result["image_indexes"] = list(range(len(parts), len(parts) + len(media)))
                 parts.extend(media)
                 wrote_any = wrote_any or bool(result.get("written"))
                 results.append(result)
@@ -2078,7 +2007,8 @@ def build_tools(
             **({} if successful else {"error": "NOTHING_ADJUSTED"}),
             "results": results,
             "description": (
-                "Attached feedback images, in entry order, for "
+                "Attached feedback images (mapped by each result's image_indexes), "
+                "in entry order, for "
                 + ", ".join(successful)
                 + "; each image is labelled with its section and transform."
             ),
@@ -2089,10 +2019,7 @@ def build_tools(
         if spec.transform.automatic:
             box.tools.append(fit_affine)
         if spec.transform.interactive:
-            from langslice.linear.landmark_tools import make_landmark_tools
-
-            box.tools += [adjust_transform, adjust_transforms]
-            box.tools += make_landmark_tools(state, ctx, snapshot, commit)
+            box.tools.append(adjust_transforms)
         if spec.transform.angles:
             box.tools.append(set_cutting_angles)
 

@@ -61,7 +61,7 @@ class PositionSpec:
 class TransformSpec:
     """Knobs of the ``transform`` task."""
 
-    #: Offer direct visual adjustment and landmark tools.
+    #: Offer direct visual adjustment.
     interactive: bool = True
     #: Offer automatic silhouette / optional Elastix fitting.
     automatic: bool = True

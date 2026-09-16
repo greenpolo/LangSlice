@@ -250,7 +250,9 @@ def status_rows(state: StackState) -> list[dict[str, Any]]:
                 "damaged": record.damaged,
                 "damage_note": record.damage_note,
                 "transform": transform.get("kind"),
-                **({"transform_model": "thin_plate_spline",
+                **({"transform_model": (
+                    "elastix_bspline" if transform["spline"].get("backend") == "elastix"
+                    else "thin_plate_spline"),
                     "landmarks": len(transform["spline"]["source"])}
                    if transform.get("spline") else {}),
                 "transform_iou": transform.get("iou"),
@@ -1174,7 +1176,10 @@ def physical_views(
 
     box = zoom_box(zoom, geometry.size)
     if spline is not None:
-        knobs = "landmark thin-plate spline"
+        knobs = (
+            "landmark Elastix B-spline" if spline.get("backend") == "elastix"
+            else "landmark thin-plate spline"
+        )
     elif isinstance(params, np.ndarray):
         knobs = "fitted matrix"
     else:

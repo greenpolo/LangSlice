@@ -42,7 +42,7 @@ def main() -> None:
     name_font = ImageFont.truetype(FONT_PATH, 64)
     plus_font = ImageFont.truetype(FONT_PATH, 48)
 
-    names = ["Gemma 4", "Nano Banana", "Elastix"]
+    names = ["VLM", "Image model", "Elastix"]
     line_h = 80
     plus_h = 60
     stack_h = line_h * 3 + plus_h * 2

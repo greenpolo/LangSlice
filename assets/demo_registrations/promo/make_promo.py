@@ -60,7 +60,7 @@ def build_one(left_path: Path, right_path: Path, out_path: Path) -> None:
     name_font = ImageFont.truetype(FONT_PATH, 50)
     plus_font = ImageFont.truetype(FONT_PATH, 38)
 
-    names = ["Gemma 4", "Nano Banana", "Elastix"]
+    names = ["VLM", "Image model", "Elastix"]
     line_h = 64
     plus_h = 50
     # Stack: name | + | name | + | name (5 rows)

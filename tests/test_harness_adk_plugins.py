@@ -259,8 +259,7 @@ def test_the_first_transform_call_cuts_the_positioning_images():
     and write pictures then only cost their cached carry."""
     from langslice.adk.plugins import STAGE_BOUNDARY_TOOLS
 
-    assert "fit_affine" in STAGE_BOUNDARY_TOOLS
-    assert "adjust_transforms" in STAGE_BOUNDARY_TOOLS
+    assert STAGE_BOUNDARY_TOOLS == {"fit_affine", "adjust_transforms"}
     ws = WorkingSetImages()
 
     def _turn(name: str, n: int) -> types.Content:
@@ -272,7 +271,7 @@ def test_the_first_transform_call_cuts_the_positioning_images():
     assert ws(history) is history
     history.append(_turn("fit_affine", 3))
     assert _kept(ws(history)) == [0, 0, 3]
-    history.append(_turn("adjust_transform", 1))
+    history.append(_turn("adjust_transforms", 1))
     assert _kept(ws(history)) == [0, 0, 3, 1]  # transform images stay
     assert (history[0].parts or [])[1].inline_data is not None  # the seed stays
 

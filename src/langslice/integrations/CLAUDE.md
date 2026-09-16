@@ -176,12 +176,18 @@ The retained `follow_agent` settings field is for compatibility and no longer
 controls these window options. Native ABBA APIs verified against installed
 0.11.0 and upstream sources.
 
-## Landmark splines
+## Saved spline compatibility
 
-`warp_landmarks` writes paired source/target points normalized to the oriented
-section frame. `abba_spline.py` converts these to centred world millimetres from
-the original calibrated snapshot, then builds the same target-to-source TPS
-pullback used by the Python renderer and native BigWarp. The spline includes
+The linear agent no longer exposes paired-landmark tools. Historical applied
+spline checkpoints retain paired source/target points normalized to the oriented
+section frame; Elastix payloads save authoritative parameters and an explicit
+affine. `abba_spline.py` samples their complete target-to-source
+pullback into a dense TPS carrier, refining from 9² to at most 33² grid points
+and requiring at most 5 µm error at independent probes, with sampled fold
+checks. Failure refuses export before replacing the old registration. This
+grid is not the agent's anatomical landmark set. Legacy TPS checkpoints retain
+their original exact TPS. Both paths convert to centred world millimetres using
+the original calibrated snapshot. The spline includes
 its affine component; baseline affine parameters are not applied again.
 A completed native `SacBigWarp2DRegistration` carries this serialized transform
 through `RegisterSliceAction` without opening BigWarp. Save/reload uses ABBA's
@@ -190,11 +196,17 @@ undoing to an affine replaces the spline with the exact earlier affine.
 Geometry and native serialization are validated before deleting the old step.
 The fresh-import CLI path has no snapshot calibration and refuses spline
 mirroring with an actionable message directing users to the ABBA menu; it must
-never silently substitute an affine. `view_landmarks` and `edit_landmarks`
-route as inspection events; draft point edits do not change the native
-registration. `warp_landmarks` applies the saved pairs as a transform event.
+never silently substitute an affine. The follower has no routing for the
+removed landmark tools. Applied saved spline mappings are still synchronized
+through checkpoint writes.
 Registration failures remain available in `mirror.sync_errors` and retry on the
 next checkpoint even if the transform is unchanged. Native JVM validation on
 ABBA 0.11.0 confirmed the TPS against an independent fit at landmarks and other
 points, one owned step through revisions, and pixel-identical affine restoration
 and spline state reload.
+
+An isolated native Elastix-export serialization smoke additionally checked
+1,081 probes: Java agreed with the sampled Python TPS to numerical precision,
+remained within 1.6 µm of the exact synthetic Elastix map, and retained the map
+after native transform serialization/reload. This does not replace a full
+ABBA project save/reload test for the new backend.
