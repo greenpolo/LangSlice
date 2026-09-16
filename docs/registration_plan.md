@@ -1,33 +1,26 @@
 # Registration pipeline
 
-Registration has one active method: image-gen registration. It lives in
-`src/langslice/nonlinear/` and runs after a slice position is known, from
-`langslice linear ...` or from any other placement step.
+The supported design is [border refinement](nonlinear_design.md): correct the
+borders of an existing rough atlas placement against the original histology.
 
-## Active Files
+## Active files
 
-- `src/langslice/nonlinear/runtime.py` -- orchestration and debug artifacts.
-- `src/langslice/nonlinear/types.py` -- affine/nonlinear result and annotation data classes.
-- `src/langslice/nonlinear/image_gen_registration.py` -- candidate pipeline.
-- `src/langslice/nonlinear/providers.py` -- image generation provider adapters.
-- `src/langslice/nonlinear/router.py` -- optional hosted-router session.
-- `src/langslice/nonlinear/quick_affine.py` -- silhouette-based affine preview.
+- `nonlinear/image_gen_registration.py`: public dispatcher and retained color-map initialization.
+- `nonlinear/border_registration.py`: one-call supplied-placement or two-call standalone orchestration and transform composition.
+- `nonlinear/border_refinement.py`: shared correction prompt, extraction and residual fit.
+- `registration_handoff.py`: top-level bridge from linear state without coupling the sibling methods.
+- `integrations/abba.py`: host-placed borders through the shared correction core.
+- `nonlinear/runtime.py`: orchestration and debug artifacts.
+- `nonlinear/types.py`: result and annotation data classes.
+- `nonlinear/providers.py`: image-generation transport adapters.
 
 ## Pipeline
 
-1. Load the histology slice and atlas slice at the chosen AP coordinate.
-2. Generate an atlas-colored image aligned to the histology.
-3. Register the generated target to the atlas color map with itk-elastix.
-4. Warp the atlas through the recovered transform.
-5. Extract VisuAlign-compatible markers from the B-spline control points.
-6. Return all review outputs: generated atlas target, warped atlas, and warped-border overlay.
+Use supplied placement when available. Otherwise generate and register a color map
+first. Send placed borders on histology and the clean histology to the correction
+model, extract corrected lines, fit the residual deformation, and compose it with
+the complete initial registration.
 
-## Modes
-
-- `direct` -- generate one candidate and return it.
-- `agentic` -- hosted-router conversation (openai-oauth only); Elastix reports
-  are fed back as follow-up messages, capped at four candidates.
-
-## Notes
-
-The runtime exposes one registration path: image-gen registration.
+Markers are sampled from the composed mapping, not B-spline coefficients.
+Review the raw correction, extracted borders on original tissue, and fitted atlas
+separately. There is no hosted-router retry loop.

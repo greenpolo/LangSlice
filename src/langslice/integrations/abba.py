@@ -12,10 +12,10 @@ The fixed image requested for the registration is ABBA's atlas *coordinate*
 channels — per-pixel (AP, DV, ML) atlas position in mm — so the adapter never
 assumes an axis convention, offset, or slicing angle: it samples the
 BrainGlobe atlas volumes at exactly the coordinates ABBA reports and builds
-the colored region map + grayscale reference on ABBA's own grid. The moving
-image is the histology channel. Image-gen + Elastix then produce the
-fixed→moving pixel transform, returned as a thin-plate spline over a landmark
-grid sampled from the dense Elastix deformation field.
+the rough atlas labels on ABBA's own grid. The moving image is the histology
+channel. The model corrects yellow atlas boundaries drawn on that histology,
+with the unmarked histology as its second input. The residual atlas deformation
+is inverted through paired landmarks for ABBA's fixed→moving convention.
 
 Usage (inside an abba-python session)::
 
@@ -58,8 +58,6 @@ REGISTRATION_NAME = "LangSlice-Nonlinear"
 COORD_CHANNELS = (3, 4, 5)
 DEFAULT_MOVING_CHANNEL = 0
 
-_MAX_ATTEMPTS = 3
-
 
 @dataclass
 class LangSliceAbbaConfig:
@@ -69,6 +67,10 @@ class LangSliceAbbaConfig:
     route: str | None = None
     voxel_size_um: float = 40.0
     landmark_grid: int = 14
+    draws: int = 1
+    review_model: str | None = None
+    openai_image_route: str | None = None
+    thinking_level: str | None = None
 
 
 _config = LangSliceAbbaConfig()
@@ -189,105 +191,48 @@ def compute_registration_landmarks(
 
     Returns (src, tgt) landmark arrays in fixed-grid pixels such that the
     mapping src→tgt carries a fixed (atlas) pixel to its moving (histology)
-    pixel. Raises on Elastix error codes after exhausting attempts.
+    pixel. ABBA's existing alignment supplies the rough placement unchanged.
     """
     from langslice.atlas.core import load_atlas
-    from langslice.atlas.recolor import color_lut
-    from langslice.nonlinear.image_gen_helpers import (
-        _compute_deformation_field,
-        _elastix_report,
-        _register_rgb_pair,
-        _warp_atlas_rgb,
-    )
-    from langslice.nonlinear.image_gen_registration import (
-        crop_to_aspect,
-        upscale_to_min_long_edge,
-    )
-    from langslice.nonlinear.model_prompts import base_segmentation_prompt
-    from langslice.nonlinear.providers import (
-        SegmentationGenerationRequest,
-        generate_warped_segmentation_image,
-    )
+    from langslice.nonlinear.border_refinement import refine_borders
+    from langslice.providers.openai_oauth import DEFAULT_REVIEW_MODEL
 
+    if config.draws != 1:
+        raise ValueError("ABBA border refinement supports exactly one draw; set draws=1")
     atlas = load_atlas(config.atlas_name)
-    colored, reference_gray, ids = render_atlas_at_coords(atlas, coords_mm)
-    h, w = ids.shape
+    _, _, ids = render_atlas_at_coords(atlas, coords_mm)
+    if histology.shape != ids.shape:
+        raise ValueError("ABBA histology and atlas coordinates must share the same pixel grid")
     slice_image = normalize_to_rgb(histology)
-
-    lut = color_lut(atlas)
-    prompt = base_segmentation_prompt("coronal", config.provider)
-
-    # The same lineup the CLI sends: the colored map is the image the model
-    # edits, the template and the histology are its references. ABBA hands us
-    # all three on ONE grid (the fixed raster), so they already share a frame
-    # and only need enlarging to a legible size.
-    colored_input = upscale_to_min_long_edge(
-        Image.fromarray(colored, mode="RGB"), Image.Resampling.NEAREST
+    result = refine_borders(
+        slice_image,
+        ids,
+        atlas,
+        provider=config.provider,
+        model=config.model,
+        plane="coronal",
+        review_model=config.review_model or DEFAULT_REVIEW_MODEL,
+        openai_image_route=config.openai_image_route or config.route or "images",
+        thinking_level=config.thinking_level,
     )
-    template_input = upscale_to_min_long_edge(
-        Image.fromarray(reference_gray, mode="L").convert("RGB"),
-        Image.Resampling.LANCZOS,
+    _dump_debug_images(
+        1,
+        histology=np.asarray(slice_image),
+        rough_border_overlay=np.asarray(result.rough_border_overlay),
+        raw_border_correction=np.asarray(result.raw_model_image),
+        model_border_overlay=np.asarray(result.model_border_overlay),
+        fitted_border_overlay=np.asarray(result.fitted_border_overlay),
     )
-
-    last_codes: list[Any] = []
-    for attempt in range(1, _MAX_ATTEMPTS + 1):
-        generated = generate_warped_segmentation_image(
-            SegmentationGenerationRequest(
-                slice_image=colored_input,
-                reference_images=[template_input, slice_image],
-                prompt=prompt,
-                provider=config.provider,
-                model=config.model,
-                route=config.route,
-            )
-        )
-        # Crop back before resampling: a lane with fixed output frames
-        # letterboxes our frame inside its own, and stretching that would
-        # slide every painted boundary off the tissue.
-        model_rgb = np.asarray(
-            crop_to_aspect(generated.image.convert("RGB"), w / h).resize(
-                (w, h), Image.Resampling.LANCZOS
-            )
-        )
-        # fixed = atlas render, moving = model output (histology-shaped):
-        # the resulting transform maps fixed pixels -> moving pixels, which is
-        # exactly the direction ABBA's plugin contract requires.
-        transform, _elapsed = _register_rgb_pair(colored, model_rgb)
-        field = _compute_deformation_field(transform, model_rgb[:, :, 0])
-        if field is None:
-            last_codes = [{"code": "NO_DEFORMATION_FIELD"}]
-            continue
-
-        warped_model = _warp_atlas_rgb(model_rgb, transform)
-        _dump_debug_images(
-            attempt,
-            colored=colored,
-            reference=reference_gray,
-            histology=np.asarray(slice_image),
-            model_output=model_rgb,
-            warped_model=warped_model,
-        )
-        # Both sides classified through the same palette: Allen family colors
-        # are shared across sibling regions, so raw annotation ids would read
-        # as REGION_MISSING for every collapsed sibling.
-        report = _elastix_report(
-            atlas_classified=classify_to_ids(colored, ids, lut),
-            warped_classified=classify_to_ids(warped_model, ids, lut),
-            structures=getattr(atlas, "structures", None),
-            deformation_field=field,
-        )
-        codes = report.get("codes", [])
-        if not codes:
-            return landmarks_from_field(field, ids != 0, config.landmark_grid)
-        last_codes = codes
-        logger.warning(
-            "LangSlice-ABBA attempt %d/%d refused by Elastix report: %s",
-            attempt,
-            _MAX_ATTEMPTS,
-            codes,
-        )
-
-    raise RuntimeError(f"Registration refused after {_MAX_ATTEMPTS} attempts: {last_codes}")
+    field = result.deformation_field
+    if field is None or field.shape != (*ids.shape, 2) or not np.isfinite(field).all():
+        raise RuntimeError("Border refinement returned an unusable ABBA deformation field")
+    # The core is a pullback: corrected tissue q -> rough atlas p=q+u(q).
+    # ABBA needs p -> q. Swap corresponding points, not displacement signs:
+    # negating u at p would evaluate a spatially varying field at the wrong place.
+    tissue_points, atlas_points = landmarks_from_field(
+        field, np.asarray(result.fitted_labels) != 0, config.landmark_grid
+    )
+    return atlas_points, tissue_points
 
 
 # ---------------------------------------------------------------------------

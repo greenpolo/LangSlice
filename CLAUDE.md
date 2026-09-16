@@ -128,8 +128,8 @@ Shared, top-level:
   `openai_config.py`), `openai-oauth` (subscription OAuth,
   `openai_oauth.py`: `langslice login`, the `openai-oauth/*` ADK model
   strings — legacy `chatgpt/*` accepted — and gpt-image-2), and `none` (no
-  model at all: nonlinear's model-free backbone registers the silhouette
-  prior itself, so there is nothing to authenticate). The OAuth path is
+  model at all: nonlinear retains a supplied placement or fits a silhouette
+  prior, so there is nothing to authenticate). The OAuth path is
   NOT the OpenAI API: it talks to the separate Codex backend
   (`chatgpt.com/backend-api/codex`), whose image tool ignores
   `model`/`size`/`quality` and matches the input image's aspect exactly.
@@ -165,10 +165,12 @@ training or benchmark code happens in those repos, not here.
   (nonlinear) → Elastix B-spline → VisuAlign markers → export`.
 - `linear` and `nonlinear` are independent; `nonlinear` accepts a position
   from any source, not just `langslice linear`.
-- Registration has one active path (image-gen); can run directly or with the
-  ADK pilot loop. Each candidate returns the generated atlas target, the
-  Elastix-warped atlas, the warped-atlas border overlay, and the Elastix
-  error-code report.
+- Registration defaults to placed-border correction: one image-model call
+  with supplied linear/host placement; otherwise two calls (color-map
+  initialization, then border correction). Raw model replies, extracted
+  boundaries on original histology, and fitted atlas overlays are separate.
+  The initial placement and residual fit are composed in exported coordinates.
+  See `docs/nonlinear_design.md`; there is no hosted-router retry loop.
 - Positions are atlas-native millimeters from the anterior edge of the volume.
 - Atlas orientation assumptions are centralized in `src/langslice/space.py`,
   which derives AP/DV/ML axis indices from the atlas orientation via

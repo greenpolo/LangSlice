@@ -45,10 +45,19 @@ def _fake_atlas() -> SimpleNamespace:
 
 
 def _install_pipeline_fakes(monkeypatch, tmp_path: Path | None = None) -> dict[str, Any]:
+    from langslice.nonlinear import image_gen_helpers
+
     candidates = _candidates()
     calls: dict[str, Any] = {}
 
     monkeypatch.setattr(candidates, "load_atlas", lambda atlas_name: _fake_atlas())
+    monkeypatch.setattr(
+        image_gen_helpers, "_annotation_slice", lambda atlas, *args, **kwargs: atlas.annotation[0]
+    )
+    monkeypatch.setattr(
+        candidates, "_compute_deformation_field",
+        lambda transform, image: np.zeros((*image.shape[:2], 2), dtype=np.float64),
+    )
 
     def fake_model_facing_template(  # noqa: ANN001 - local fake
         atlas, position_mm, plane="coronal", pitch_deg=0.0, yaw_deg=0.0
@@ -162,6 +171,7 @@ def test_generate_registration_candidate_builds_candidate_and_metadata(monkeypat
     candidate = candidates.generate_registration_candidate(
         _make_slice(),
         native_canvas=False,  # toy section: keep the legacy long-edge layout
+        registration_mode="colormap",
         atlas_name="fake_mouse",
         position_mm=1.5,
         provider="openai",
@@ -243,6 +253,7 @@ def test_generate_registration_candidate_writes_debug_artifacts(monkeypatch, tmp
     candidate = candidates.generate_registration_candidate(
         _make_slice(),
         native_canvas=False,  # toy section: keep the legacy long-edge layout
+        registration_mode="colormap",
         atlas_name="fake_mouse",
         position_mm=1.5,
         candidate_id="debug-candidate",
@@ -356,6 +367,7 @@ def test_slice_warped_to_atlas_saved_as_rgba_with_root_mask_alpha(monkeypatch, t
     candidates.generate_registration_candidate(
         _make_slice(),
         native_canvas=False,  # toy section: keep the legacy long-edge layout
+        registration_mode="colormap",
         atlas_name="fake_mouse",
         position_mm=1.5,
         candidate_id="rgba-mask-candidate",
@@ -385,6 +397,7 @@ def test_warped_border_overlay_marks_border_pixels(monkeypatch):
     candidate = candidates.generate_registration_candidate(
         base,
         native_canvas=False,  # toy section: keep the legacy long-edge layout
+        registration_mode="colormap",
         atlas_name="fake_mouse",
         position_mm=1.5,
         candidate_id="overlay-candidate",
@@ -693,6 +706,7 @@ def test_generate_registration_candidate_handles_inverse_warp_failure(monkeypatc
     candidate = candidates.generate_registration_candidate(
         _make_slice(),
         native_canvas=False,  # toy section: keep the legacy long-edge layout
+        registration_mode="colormap",
         atlas_name="fake_mouse",
         position_mm=1.5,
         candidate_id="inverse-failure-candidate",
@@ -928,6 +942,7 @@ def test_canvas_pad_grows_working_canvas_and_reports_offsets(monkeypatch):
     candidate = candidates.generate_registration_candidate(
         _make_slice(),  # 12x8
         native_canvas=False,  # toy section: keep the legacy long-edge layout
+        registration_mode="colormap",
         atlas_name="fake_mouse",
         position_mm=1.5,
         candidate_id="pad-candidate",
@@ -973,6 +988,7 @@ def test_extreme_aspect_ratio_clamps_into_the_supported_range(monkeypatch):
     candidate = candidates.generate_registration_candidate(
         _make_slice((48, 12)),  # 4:1 -> pad height to reach 3:1
         native_canvas=False,  # toy section: keep the legacy long-edge layout
+        registration_mode="colormap",
         atlas_name="fake_mouse",
         position_mm=1.5,
         candidate_id="clamp-candidate",
@@ -990,6 +1006,7 @@ def test_in_range_aspect_ratio_is_left_untouched(monkeypatch):
     candidate = candidates.generate_registration_candidate(
         _make_slice((24, 9)),  # 2.67:1 — inside 1:3..3:1, no clamp
         native_canvas=False,  # toy section: keep the legacy long-edge layout
+        registration_mode="colormap",
         atlas_name="fake_mouse",
         position_mm=1.5,
         candidate_id="noop-candidate",
@@ -1127,6 +1144,7 @@ def test_draws_vote_per_pixel_and_report_the_kept_draws(monkeypatch):
     candidate = candidates.generate_registration_candidate(
         _make_slice(),
         native_canvas=False,  # toy section: keep the legacy long-edge layout
+        registration_mode="colormap",
         atlas_name="fake_mouse",
         position_mm=1.5,
         candidate_id="voted",
@@ -1152,6 +1170,7 @@ def test_translucency_gate_drops_the_off_palette_draw(monkeypatch):
     candidate = candidates.generate_registration_candidate(
         _make_slice(),
         native_canvas=False,  # toy section: keep the legacy long-edge layout
+        registration_mode="colormap",
         atlas_name="fake_mouse",
         position_mm=1.5,
         candidate_id="gated",
@@ -1173,6 +1192,7 @@ def test_translucency_gate_keeps_every_draw_when_all_of_them_fail(monkeypatch):
     candidate = candidates.generate_registration_candidate(
         _make_slice(),
         native_canvas=False,  # toy section: keep the legacy long-edge layout
+        registration_mode="colormap",
         atlas_name="fake_mouse",
         position_mm=1.5,
         candidate_id="all-translucent",
@@ -1220,6 +1240,7 @@ def test_single_draw_classification_matches_the_historical_path(monkeypatch):
         candidate = candidates.generate_registration_candidate(
             slice_image,
             native_canvas=False,  # toy section: keep the legacy long-edge layout
+            registration_mode="colormap",
             atlas_name="fake_mouse",
             position_mm=1.5,
             candidate_id="single",
@@ -1239,6 +1260,7 @@ def test_draws_write_every_raw_draw_as_a_debug_artifact(monkeypatch, tmp_path):
     candidates.generate_registration_candidate(
         _make_slice(),
         native_canvas=False,  # toy section: keep the legacy long-edge layout
+        registration_mode="colormap",
         atlas_name="fake_mouse",
         position_mm=1.5,
         candidate_id="draw-artifacts",
@@ -1302,6 +1324,7 @@ def test_affine_deformation_reaches_elastix_and_the_inverse_warp(monkeypatch):
     candidates.generate_registration_candidate(
         _make_slice(),
         native_canvas=False,  # toy section: keep the legacy long-edge layout
+        registration_mode="colormap",
         atlas_name="fake_mouse",
         position_mm=1.5,
         candidate_id="affine-only",

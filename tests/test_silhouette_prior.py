@@ -208,6 +208,7 @@ def test_model_free_backbone_registers_the_prior_end_to_end(
 
     candidate = reg.generate_registration_candidate(
         section,
+        registration_mode="colormap",
         atlas_name="toy_prior_atlas",
         position_mm=0.5,
         provider="none",

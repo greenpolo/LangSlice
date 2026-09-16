@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import math
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any, Literal
 
@@ -320,15 +320,54 @@ def _resize_if_needed(image: Image.Image, size: tuple[int, int]) -> Image.Image:
 
 
 def _orient_pil(
-    image: Image.Image, atlas: Any, plane: Plane, image_axes: str | None
+    image: Image.Image, atlas: Any, plane: Plane, image_axes: str | None,
+    atlas_mirror_lr: bool = False,
 ) -> Image.Image:
     """Rotate/flip an atlas render into the user's image frame (no-op if unset)."""
-    if not image_axes:
-        return image
-    from langslice.space import atlas_space_context, orient_slice_to_axes
+    if image_axes:
+        from langslice.space import atlas_space_context, orient_slice_to_axes
 
-    arr = orient_slice_to_axes(np.asarray(image), atlas_space_context(atlas), plane, image_axes)
-    return Image.fromarray(arr)
+        arr = orient_slice_to_axes(np.asarray(image), atlas_space_context(atlas), plane, image_axes)
+        image = Image.fromarray(arr)
+    return image.transpose(Image.Transpose.FLIP_LEFT_RIGHT) if atlas_mirror_lr else image
+
+
+def _canvas_from_native_matrix(
+    native_size: tuple[int, int], canvas_size: tuple[int, int]
+) -> np.ndarray:
+    """Exact pixel-center transform used by _fit_to_canvas, including rounded sizes."""
+    scale = min(canvas_size[0] / native_size[0], canvas_size[1] / native_size[1])
+    new = tuple(max(1, round(length * scale)) for length in native_size)
+    sx, sy = new[0] / native_size[0], new[1] / native_size[1]
+    ox, oy = (canvas_size[0] - new[0]) // 2, (canvas_size[1] - new[1]) // 2
+    return np.array([[sx, 0, ox + (sx - 1) / 2],
+                     [0, sy, oy + (sy - 1) / 2], [0, 0, 1]], dtype=np.float64)
+
+
+def _native_coordinate_map(
+    field: np.ndarray, native_size: tuple[int, int], prealign_matrix: np.ndarray | None
+) -> np.ndarray:
+    """Compose output→prealigned canvas→canonical canvas→native atlas pullback."""
+    h, w = field.shape[:2]
+    placement = np.eye(3)
+    if prealign_matrix is not None:
+        placement[:2] = prealign_matrix
+    inverse = np.linalg.inv(placement @ _canvas_from_native_matrix(native_size, (w, h)))
+    yy, xx = np.indices((h, w), dtype=np.float64)
+    displaced = np.stack((xx, yy), axis=-1) + field
+    return displaced @ inverse[:2, :2].T + inverse[:2, 2]
+
+
+def _gather_native_labels(labels: np.ndarray, coordinates: np.ndarray) -> np.ndarray:
+    """Nearest integer gather; atlas IDs never pass through floating-point images."""
+    finite = np.asarray(np.isfinite(coordinates).all(axis=-1), dtype=bool)
+    safe = np.where(finite[..., None], coordinates, 0)
+    indices = np.floor(safe + 0.5).astype(np.int64)
+    x, y = indices[..., 0], indices[..., 1]
+    valid = finite & (x >= 0) & (y >= 0) & (x < labels.shape[1]) & (y < labels.shape[0])
+    result = np.zeros(coordinates.shape[:2], dtype=labels.dtype)
+    result[valid] = labels[y[valid], x[valid]]
+    return result
 
 
 def _fit_to_canvas(
@@ -511,6 +550,8 @@ def _leaf_overlay_render(
     pitch_deg: float = 0.0,
     yaw_deg: float = 0.0,
     on_progress: Callable[[str], None] | None = None,
+    atlas_mirror_lr: bool = False,
+    warped_labels: np.ndarray | None = None,
 ) -> tuple[Image.Image | None, np.ndarray | None]:
     """Leaf-level review render: the RAW annotation warped through the fit.
 
@@ -528,6 +569,16 @@ def _leaf_overlay_render(
     from langslice.space import atlas_space_context
 
     try:
+        if warped_labels is not None:
+            structures = getattr(atlas, "structures", None)
+            names = {
+                int(uid): _region_label(structures, int(uid))
+                for uid in np.unique(warped_labels) if int(uid) != 0
+            }
+            return render.region_overlay(
+                slice_image, warped_labels, lut=color_lut(atlas), names=names,
+                families=_merge_classified(warped_labels, atlas), fill_alpha=0.15,
+            ), warped_labels
         context = atlas_space_context(atlas)
         leaf = _annotation_slice(
             atlas, position_mm, plane=plane, pitch_deg=pitch_deg, yaw_deg=yaw_deg,
@@ -537,6 +588,8 @@ def _leaf_overlay_render(
             from langslice.space import orient_slice_to_axes
 
             leaf = orient_slice_to_axes(leaf, context, plane, image_axes)
+        if atlas_mirror_lr:
+            leaf = np.fliplr(leaf)
         # Same frame as the Elastix moving render: uniform scale (physical
         # when known), centered — a stretched leaf map against a letterboxed
         # transform inflates every annotation off the tissue.
@@ -711,54 +764,34 @@ def generate_registration_candidate(
     native_canvas: bool = True,
     canvas_long_edge: int | None = None,
     elastix: ElastixStage = "rgb",
+    registration_mode: Literal["borders", "colormap"] = "borders",
+    initial_atlas_to_slice: Sequence[Sequence[float]] | np.ndarray | None = None,
+    initial_alignment_source: str = "supplied",
+    atlas_mirror_lr: bool = False,
 ) -> RegistrationCandidate:
     """Generate one dense registration candidate from a histology slice.
 
-    The model is sent three images in one frame: the colored atlas region
-    map of this plane (the image it edits), the grayscale atlas template of
-    the same plane, and the section. It returns the map deformed onto the
-    tissue; that painting is classified back to region ids and Elastix warps
-    the atlas onto it.
+    The default ``registration_mode="borders"`` corrects yellow atlas lines
+    on the histology, using the unmarked histology as the second image.
+    A supplied ``initial_atlas_to_slice`` maps native atlas pixel centers
+    (after ``image_axes`` orientation and optional ``atlas_mirror_lr``) to
+    original section pixels. Without that placement, a color-map generation
+    and atlas fit establish it before the border correction. Raw model lines
+    and the fitted atlas remain separate review artifacts.
 
-    ``pitch_deg``/``yaw_deg`` are the block's cutting angles (see
-    ``langslice.oblique``): every atlas render this call makes is resliced on
-    that plane instead of taken flat off the voxel grid. Zero — a flat
-    plane — is the default because nothing upstream fits them yet, but they
-    are the single largest lever measured on the LSD_910 hand registrations,
-    whose block was cut at 4 degrees: fit-only family dice 0.93 -> 0.96 and
-    boundary p95 34px -> 9px over 33 slices, dwarfing every fit-side knob.
+    ``registration_mode="colormap"`` runs only the legacy initial stage:
+    the model edits a colored atlas map with grayscale atlas and histology
+    references, then Elastix fits the atlas labels to the generated map.
+    Multiple ``draws`` and the off-palette vote gate apply only to this mode.
 
-    Every atlas render is fit-to-canvas at its own proportions — the
-    model-facing pair by letterbox, the Elastix-side map by
-    :func:`_fit_to_canvas` — so the map Elastix registers sits in exactly
-    the geometry the model was shown. True-physical placement was measured
-    (2026-09-05) as something the model COPIES rather than deforms: on
-    LSD_910 M01 A_02 a plate drawn at the tissue's own size was copied on 7
-    of 8 draws, while a smaller one was edited in place on 5 of 8. The April
-    lineup was benchmarked without it, and physical placement now lives only
-    in ``linear/``, where a person reads the overlay.
-
-    ``draws`` > 1 asks the provider for that many independent paintings of
-    the same request and registers their per-pixel majority vote (see
-    :func:`_majority_vote_classified`); draws whose off-palette foreground
-    fraction exceeds ``max_off_palette`` are dropped as translucent first
-    (:func:`_off_palette_fraction`), unless that would drop them all.
-    ``deformation="affine"`` fits the affine stage alone, without the
-    B-spline stage.
-
-    ``provider="none"`` calls no model at all: the silhouette prior — the
-    atlas plane placed on this section's own outline by a moments fit and
-    painted like an atlas render (:mod:`langslice.nonlinear.prior`) — IS the
-    painting, and the whole downstream chain (Elastix, markers, overlays,
-    report) runs on the placement alone. Measured on the LSD_910 hand
-    registrations, that placement scores 0.82 mean family dice, better than
-    every image-model configuration measured before the April lineup, which
-    makes it the backbone every model run has to beat. The prior is no
-    longer offered as a CANVAS to edit: Image 1 is the atlas map now.
+    ``provider="none"`` calls no model. The border route retains supplied
+    placement, or builds a silhouette placement when none is supplied.
+    ``pitch_deg`` and ``yaw_deg`` reslice every atlas input on the requested
+    cutting plane. Both modes return integer warped labels and an output
+    canvas-to-native-atlas coordinate map alongside registration artifacts.
     """
     with _pinned_registration_palette():
-        return _generate_registration_candidate(
-            image,
+        kwargs: dict[str, Any] = dict(
             atlas_name=atlas_name,
             position_mm=position_mm,
             plane=plane,
@@ -784,7 +817,27 @@ def generate_registration_candidate(
             native_canvas=native_canvas,
             canvas_long_edge=canvas_long_edge,
             elastix=elastix,
+            atlas_mirror_lr=atlas_mirror_lr,
         )
+        if registration_mode == "borders":
+            if draws != 1:
+                raise ValueError("Border refinement supports exactly one draw; set draws=1")
+            from langslice.nonlinear.border_registration import (
+                generate_border_registration_candidate,
+            )
+
+            for key in ("draws", "max_off_palette", "elastix"):
+                kwargs.pop(key)
+            return generate_border_registration_candidate(
+                image, **kwargs,
+                initial_atlas_to_slice=initial_atlas_to_slice,
+                initial_alignment_source=initial_alignment_source,
+            )
+        if registration_mode != "colormap":
+            raise ValueError(f"Unknown registration mode: {registration_mode}")
+        if initial_atlas_to_slice is not None:
+            raise ValueError("A supplied alignment requires registration_mode='borders'")
+        return _generate_registration_candidate(image, **kwargs)
 
 
 def _generate_registration_candidate(
@@ -817,6 +870,7 @@ def _generate_registration_candidate(
     native_canvas: bool = True,
     canvas_long_edge: int | None = None,
     elastix: ElastixStage = "rgb",
+    atlas_mirror_lr: bool = False,
 ) -> RegistrationCandidate:
     candidate_id = candidate_id or f"candidate-{uuid.uuid4().hex[:12]}"
     original_width, original_height = image.size
@@ -840,8 +894,24 @@ def _generate_registration_candidate(
             atlas, position_mm, None, plane=plane, smooth=False,
             pitch_deg=pitch_deg, yaw_deg=yaw_deg,
         ),
-        atlas, plane, image_axes,
+        atlas, plane, image_axes, atlas_mirror_lr,
     )
+    from langslice.nonlinear.image_gen_helpers import _annotation_slice
+
+    native_labels = _annotation_slice(
+        atlas, position_mm, plane=plane, pitch_deg=pitch_deg, yaw_deg=yaw_deg,
+        blackout=False,
+    )
+    if image_axes:
+        from langslice.space import atlas_space_context, orient_slice_to_axes
+
+        native_labels = orient_slice_to_axes(
+            native_labels, atlas_space_context(atlas), plane, image_axes
+        )
+    if atlas_mirror_lr:
+        native_labels = np.fliplr(native_labels)
+    if native_labels.shape != (map_native.height, map_native.width):
+        raise ValueError("Native atlas labels and region map must share a pixel frame")
     section_aspect = target_size[0] / target_size[1]
     # Model-facing Image 1: the map, NEAREST-upscaled to a legible size and
     # letterboxed to the section's aspect, so it and the section share one
@@ -862,7 +932,10 @@ def _generate_registration_candidate(
         if on_progress:
             on_progress("Image-gen registration: placing the silhouette prior...")
         prior_image, prior_metadata = build_silhouette_prior(
-            slice_image,
+            (
+                slice_image.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+                if atlas_mirror_lr else slice_image
+            ),
             atlas=atlas,
             position_mm=position_mm,
             plane=plane,
@@ -870,6 +943,8 @@ def _generate_registration_candidate(
             pitch_deg=pitch_deg,
             yaw_deg=yaw_deg,
         )
+        if atlas_mirror_lr:
+            prior_image = prior_image.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
         if on_progress:
             on_progress(
                 "Image-gen registration: prior placed, tissue IoU "
@@ -892,7 +967,7 @@ def _generate_registration_candidate(
                         _model_facing_template(
                             atlas, position_mm, plane, pitch_deg, yaw_deg
                         ),
-                        atlas, plane, image_axes,
+                        atlas, plane, image_axes, atlas_mirror_lr,
                     ),
                     Image.Resampling.LANCZOS,
                 ),
@@ -1078,6 +1153,16 @@ def _generate_registration_candidate(
     deformation_field = _compute_deformation_field(
         result_transform, cv2.cvtColor(atlas_target_rgb, cv2.COLOR_RGB2GRAY)
     )
+    if (
+        deformation_field is None
+        or deformation_field.shape != (target_size[1], target_size[0], 2)
+        or not np.isfinite(deformation_field).all()
+    ):
+        raise RuntimeError("Registration did not produce a finite atlas deformation field")
+    atlas_coordinate_map = _native_coordinate_map(
+        deformation_field, map_native.size, prealign_matrix
+    )
+    warped_labels = _gather_native_labels(native_labels, atlas_coordinate_map)
     elastix_report = _elastix_report(
         atlas_classified=atlas_classified,
         warped_classified=warped_classified,
@@ -1163,6 +1248,9 @@ def _generate_registration_candidate(
     )
 
     session_metadata: dict[str, Any] = {
+        "registration_mode": "colormap",
+        "native_atlas_size": list(map_native.size),
+        "atlas_mirror_lr": atlas_mirror_lr,
         "visualign_markers": markers,
         "n_markers": len(markers),
         "elastix_elapsed_s": round(float(elastix_elapsed), 2),
@@ -1199,6 +1287,9 @@ def _generate_registration_candidate(
     )
 
     candidate_metadata: dict[str, Any] = {
+        "registration_mode": "colormap",
+        "native_atlas_size": list(map_native.size),
+        "atlas_mirror_lr": atlas_mirror_lr,
         "workflow": "image_gen_registration",
         "candidate_id": candidate_id,
         "atlas_name": atlas_name,
@@ -1254,6 +1345,8 @@ def _generate_registration_candidate(
             pitch_deg=pitch_deg,
             yaw_deg=yaw_deg,
             on_progress=on_progress,
+            atlas_mirror_lr=atlas_mirror_lr,
+            warped_labels=warped_labels,
         )
         candidate_dir = Path(debug_dir) / "registration" / candidate_id
         candidate_dir.mkdir(parents=True, exist_ok=True)
@@ -1261,7 +1354,7 @@ def _generate_registration_candidate(
             # Leaf ids of the warped atlas, in canvas pixels: the artifact
             # landmark scoring reads (which structures landed where).
             np.savez_compressed(
-                candidate_dir / "warped_leaf_ids.npz", ids=warped_leaf_ids.astype(np.int32)
+                candidate_dir / "warped_leaf_ids.npz", ids=warped_leaf_ids
             )
             saved_artifact_paths["warped_leaf_ids.npz"] = str(
                 (candidate_dir / "warped_leaf_ids.npz").resolve()
@@ -1353,4 +1446,6 @@ def _generate_registration_candidate(
         markers=markers,
         annotation_session=session,
         metadata=candidate_metadata,
+        warped_labels=warped_labels,
+        atlas_coordinate_map=atlas_coordinate_map,
     )
