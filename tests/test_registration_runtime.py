@@ -4,11 +4,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
 import langslice.cli as cli
 import langslice.nonlinear.runtime as runtime
 from langslice.nonlinear.types import RegistrationAnnotationSession, RegistrationCandidate
+
+
+@pytest.fixture(autouse=True)
+def offline_atlas(monkeypatch):
+    monkeypatch.setattr(runtime, "load_atlas", lambda _: object())
+    monkeypatch.setattr(
+        runtime, "get_composite_slice", lambda *args, **kwargs: Image.new("RGB", (16, 16))
+    )
 
 
 def test_registration_runtime_direct_image_gen_registration_uses_dense_candidate(

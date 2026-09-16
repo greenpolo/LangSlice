@@ -13,13 +13,17 @@ Speak to the user in conceptual and strategic terms, rather than in code, functi
 
 ## Judging results: look, don't just measure
 
-Visual inspection and metrics carry equal weight. When judging a registration,
-a painting, a crop, a render, or any image the pipeline produces, open the
-output and describe what you see, then quote the number; do not let a Dice
-score, an IoU, or a boundary distance stand in for looking. A metric and a look
-at the overlay are two measurements of the same thing: report both, and when
-they disagree, say so and treat the disagreement as a finding, not noise.
-Subagents dispatched to evaluate outputs get the same instruction.
+For nonlinear experiments, generated-image quality is judged primarily by
+visual inspection against the original histology. Open the raw model output,
+describe anatomical successes and errors, and distinguish it from later
+classification or registration. Metrics and human agreement are secondary
+diagnostics, not acceptance criteria or a ranking of model quality. Read the
+nonlinear package guide for mandatory sentence-by-sentence prompt review.
+
+For other visual pipeline work, open the output and describe what you see as
+well as reporting relevant measurements. When the picture and measurements
+disagree, report the disagreement as a finding. Evaluating subagents follow the
+same standard.
 
 ## Before writing code (READ THIS FIRST)
 
@@ -123,7 +127,9 @@ Shared, top-level:
   API key, `vlm_config.py`), `openai-api` (API key / endpoint,
   `openai_config.py`), `openai-oauth` (subscription OAuth,
   `openai_oauth.py`: `langslice login`, the `openai-oauth/*` ADK model
-  strings — legacy `chatgpt/*` accepted — and gpt-image-2). The OAuth path is
+  strings — legacy `chatgpt/*` accepted — and gpt-image-2), and `none` (no
+  model at all: nonlinear retains a supplied placement or fits a silhouette
+  prior, so there is nothing to authenticate). The OAuth path is
   NOT the OpenAI API: it talks to the separate Codex backend
   (`chatgpt.com/backend-api/codex`), whose image tool ignores
   `model`/`size`/`quality` and matches the input image's aspect exactly.
@@ -159,10 +165,12 @@ training or benchmark code happens in those repos, not here.
   (nonlinear) → Elastix B-spline → VisuAlign markers → export`.
 - `linear` and `nonlinear` are independent; `nonlinear` accepts a position
   from any source, not just `langslice linear`.
-- Registration has one active path (image-gen); can run directly or with the
-  ADK pilot loop. Each candidate returns the generated atlas target, the
-  Elastix-warped atlas, the warped-atlas border overlay, and the Elastix
-  error-code report.
+- Registration defaults to placed-border correction: one image-model call
+  with supplied linear/host placement; otherwise two calls (color-map
+  initialization, then border correction). Raw model replies, extracted
+  boundaries on original histology, and fitted atlas overlays are separate.
+  The initial placement and residual fit are composed in exported coordinates.
+  See `docs/nonlinear_design.md`; there is no hosted-router retry loop.
 - Positions are atlas-native millimeters from the anterior edge of the volume.
 - Atlas orientation assumptions are centralized in `src/langslice/space.py`,
   which derives AP/DV/ML axis indices from the atlas orientation via

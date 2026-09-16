@@ -37,9 +37,10 @@
 </p>
 
 A VLM agent inspects the slice, explores candidate atlas planes through tool calls, and
-submits an AP coordinate. Image generation then produces an atlas-colored
-target from the histology, and itk-elastix recovers a dense B-spline
-deformation. Results export to VisuAlign-compatible JSON for QUINT / ABBA.
+submits an AP coordinate. An image model is then handed the atlas region map
+of that plane and asked to move its colored regions onto the tissue, and
+itk-elastix recovers a dense B-spline deformation from the result. Results
+export to VisuAlign-compatible JSON for QUINT / ABBA.
 
 <p align="center">
   <img alt="LangSlice registration pipeline: histology slice to atlas-colored target, dense warp, and overlay" src="assets/registration_pipeline_square.png" width="780">
@@ -72,6 +73,12 @@ The two are independent. `nonlinear register` takes the position as an
 argument, so it can follow `langslice linear run` or a placement made in
 another tool — in QUINT/ABBA-style workflows it stands in for the manual
 spline/BigWarp deformation step.
+
+The preferred nonlinear route takes those roughly aligned atlas borders and asks
+the image model to adjust them to the tissue, using the clean histology as a
+second reference. With a supplied placement this takes one image-generation
+call. Standalone registration uses two: an initial color-map alignment, then
+border correction. See [the nonlinear design](docs/nonlinear_design.md).
 
 Full CLI: `langslice --help`. Pipeline detail: [`docs/index.md`](./docs/index.md).
 

@@ -53,6 +53,7 @@ __all__ = [
     "filled_regions",
     "is_dark_background",
     "label_anchor",
+    "paint_labels",
     "region_contours",
     "region_overlay",
     "split_view",
@@ -109,6 +110,58 @@ def _scale_for(shape: tuple[int, ...]) -> float:
 #: Family boundaries are drawn this much heavier than leaf boundaries — the
 #: ARA hierarchy cue: a major division reads before its subdivisions do.
 _FAMILY_BORDER_SCALE = 1.8
+
+
+def paint_labels(
+    labels: np.ndarray,
+    *,
+    lut: Mapping[int, Rgb],
+    line_px: int = 1,
+    leaf_lines: bool = False,
+) -> np.ndarray:
+    """A flat label map painted in palette colors, with delineation lines.
+
+    THE model-facing look, shared by the atlas reference render
+    (:func:`~langslice.nonlinear.image_gen_helpers._generate_colored_region_slice`)
+    and the silhouette prior (:mod:`langslice.nonlinear.prior`): every label
+    filled with its exact palette color, and wherever the fill COLOR changes
+    a line in :func:`darker` of each side's own color, ``2 * line_px - 1``
+    dilations wide. One line per COLOR, not per label — two labels the
+    palette paints alike are one painted unit and get no line between them.
+    ``leaf_lines`` adds the finer per-LABEL hairlines on top (the
+    ``leaf-borders`` palette).
+
+    Every pixel stays an exact palette color, fill or line, so the map
+    classifies back losslessly (the classifier's palette carries
+    ``darker(color)`` for every region).
+    """
+    from scipy import ndimage
+
+    rgb = np.zeros((*labels.shape, 3), dtype=np.uint8)
+    for uid in np.unique(labels):
+        if int(uid):
+            rgb[labels == uid] = lut.get(int(uid), (128, 128, 128))
+
+    def _boundary(values: np.ndarray) -> np.ndarray:
+        b = np.zeros(values.shape, dtype=bool)
+        b[:, 1:] |= values[:, 1:] != values[:, :-1]
+        b[1:, :] |= values[1:, :] != values[:-1, :]
+        return b & (values != 0)
+
+    units = (rgb.astype(np.int64) * np.array([65536, 256, 1])).sum(axis=2)
+    leaf_b = np.zeros(labels.shape, dtype=bool)
+    if leaf_lines:
+        leaf_b = _boundary(labels)
+        if line_px > 1:
+            leaf_b = np.asarray(ndimage.binary_dilation(leaf_b, iterations=line_px - 1), dtype=bool)
+    unit_b = np.asarray(
+        ndimage.binary_dilation(_boundary(units), iterations=2 * line_px - 1), dtype=bool
+    )
+    border = (leaf_b | unit_b) & (labels != 0)
+    for uid in np.unique(labels[border]):
+        if int(uid):
+            rgb[border & (labels == uid)] = darker(lut.get(int(uid), (128, 128, 128)))
+    return rgb
 
 
 def filled_regions(
@@ -175,8 +228,7 @@ def filled_regions(
         # 1/16-pixel precision.
         for uid, polys in traced.items():
             points = [
-                np.round(poly * scale * 16.0).astype(np.int32).reshape(-1, 1, 2)
-                for poly in polys
+                np.round(poly * scale * 16.0).astype(np.int32).reshape(-1, 1, 2) for poly in polys
             ]
             color = darker(lut.get(uid, (128, 128, 128)))
             cv2.polylines(canvas, points, True, color, thickness, cv2.LINE_8, 4)
@@ -207,7 +259,7 @@ def _close_seams(canvas: np.ndarray, *, max_hole_px: int) -> np.ndarray:
     if not holes.any():
         return canvas
     labelled, count = ndimage.label(holes)  # type: ignore[misc]
-    sizes = np.bincount(np.asarray(labelled).ravel())
+    sizes = np.bincount(np.asarray(labelled, dtype=np.intp).ravel())
     small = np.isin(labelled, np.nonzero(sizes[1:] <= max_hole_px)[0] + 1)
     if not small.any():
         return canvas
@@ -238,9 +290,7 @@ def _draw_polys(
     for color, polys in colored_polys:
         points = [np.round(poly * 16.0).astype(np.int32) for poly in polys]
         if points:
-            cv2.polylines(
-                drawn, points, True, color, thickness, cv2.LINE_AA, 4
-            )
+            cv2.polylines(drawn, points, True, color, thickness, cv2.LINE_AA, 4)
     if opacity >= 1.0:
         return drawn
     return cv2.addWeighted(drawn, opacity, base, 1.0 - opacity, 0.0)
@@ -373,8 +423,10 @@ def region_overlay(
     fine = region_contours(labels, smooth_window=window)
     canvas = _draw_polys(
         canvas,
-        ((border_color(lut.get(uid, (128, 128, 128)), dark_background=dark), polys)
-         for uid, polys in fine.items()),
+        (
+            (border_color(lut.get(uid, (128, 128, 128)), dark_background=dark), polys)
+            for uid, polys in fine.items()
+        ),
         thickness=max(1, int(round(1.3 * scale))),
         opacity=0.55,
     )
@@ -382,8 +434,10 @@ def region_overlay(
         coarse = region_contours(families, smooth_window=window)
         canvas = _draw_polys(
             canvas,
-            ((border_color(lut.get(uid, (128, 128, 128)), dark_background=dark), polys)
-             for uid, polys in coarse.items()),
+            (
+                (border_color(lut.get(uid, (128, 128, 128)), dark_background=dark), polys)
+                for uid, polys in coarse.items()
+            ),
             thickness=max(1, int(round(2.6 * scale))),
             opacity=0.92,
         )
@@ -551,9 +605,7 @@ def deformation_grid(
         f"bulk shift {np.linalg.norm(bulk):.0f} px   "
         f"max local distortion {float(np.nanmax(magnitude)):.0f} px"
     )
-    return _draw_text(
-        image, [(readout, width * 0.5, height - size, size)], dark_background=dark
-    )
+    return _draw_text(image, [(readout, width * 0.5, height - size, size)], dark_background=dark)
 
 
 def contact_sheet(
@@ -568,18 +620,20 @@ def contact_sheet(
         raise ValueError("contact_sheet needs at least one panel")
     cols = max(1, min(columns, len(panels)))
     rows = (len(panels) + cols - 1) // cols
-    thumbs = [
-        (caption, image.convert("RGB"))
-        for caption, image in panels
-    ]
+    thumbs = [(caption, image.convert("RGB")) for caption, image in panels]
     scaled = [
-        (caption, image.resize(
-            (
-                max(1, round(image.width * min(cell_px / image.width, cell_px / image.height))),
-                max(1, round(image.height * min(cell_px / image.width, cell_px / image.height))),
+        (
+            caption,
+            image.resize(
+                (
+                    max(1, round(image.width * min(cell_px / image.width, cell_px / image.height))),
+                    max(
+                        1, round(image.height * min(cell_px / image.width, cell_px / image.height))
+                    ),
+                ),
+                resample=Image.Resampling.LANCZOS,
             ),
-            resample=Image.Resampling.LANCZOS,
-        ))
+        )
         for caption, image in thumbs
     ]
     cell_w = max(image.width for _, image in scaled)

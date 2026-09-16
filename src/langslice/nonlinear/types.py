@@ -6,12 +6,29 @@ import math
 from collections.abc import Sequence
 from copy import deepcopy
 from dataclasses import asdict, dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 from PIL import Image, ImageDraw
 
 AffineMatrixLike = Sequence[Sequence[float]] | np.ndarray
+
+#: Elastix deformation model. ``"bspline"`` is the historical affine +
+#: B-spline pair; ``"affine"`` stops after the affine stage, because the
+#: B-spline stage driven by generated paintings measured BELOW the affine
+#: stage alone on the hand-registered slices (family dice 0.65 vs 0.735 flat,
+#: 0.74 vs 0.80 oblique).
+Deformation = Literal["bspline", "affine"]
+
+#: What the pipeline starts from. ``"atlas"`` is the historical path: the
+#: model is shown the section and the atlas maps and paints from scratch.
+#: ``"silhouette"`` builds the silhouette prior first (the atlas plane placed
+#: on the section's own outline, see :mod:`langslice.nonlinear.prior`) and
+#: uses it as the canvas — or, with ``provider="none"``, as the painting
+#: itself. Measured on the LSD_910 hand registrations: the placement alone
+#: scores 0.82 family dice, above every image-model configuration, and as a
+#: canvas it lifts the painting floor from ~0.5 to ~0.8.
+Init = Literal["atlas", "silhouette"]
 
 
 def identity_affine_matrix() -> np.ndarray:
@@ -335,6 +352,10 @@ class RegistrationCandidate:
     markers: list[list[float]]
     annotation_session: RegistrationAnnotationSession
     metadata: dict[str, Any] = field(default_factory=dict)
+    # Integer atlas identities after registration, independent of palette colors.
+    warped_labels: np.ndarray | None = None
+    # Output canvas -> native oriented/mirrored atlas pixel centers, x then y.
+    atlas_coordinate_map: np.ndarray | None = None
 
 
 def candidate_to_registration_result(

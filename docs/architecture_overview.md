@@ -87,23 +87,22 @@ preview-then-apply anywhere; every write is undoable instead. Transform
 results send the useful physical parameters once; normalized matrices,
 derived representations and adjustment history stay local.
 
-## Nonlinear: Image-Gen Registration
+## Nonlinear: Border Refinement
 
-Registration has one active method: image-gen registration.
+1. Prefer the atlas placement supplied by the linear agent or host tool.
+   Without placement, generate and register a color map first.
+2. Send rough yellow atlas borders over histology plus the identical clean
+   histology to the image model; ask it to adjust the lines to the tissue.
+3. Extract corrected yellow lines and overlay them on the original photograph.
+4. Fit the residual deformation and warp the placed atlas labels.
+5. Compose the initial affine or nonlinear placement with that residual for
+   native-atlas correspondences and VisuAlign markers.
+6. Return separate raw, corrected-border and fitted-atlas review artifacts.
 
-1. Prepare a histology slice, atlas color map, and atlas reference image.
-2. Ask the image-generation provider to generate an atlas-colored target aligned to the histology.
-3. Register the generated target to the atlas color map with itk-elastix.
-4. Warp the atlas RGB through the recovered transform.
-5. Extract VisuAlign markers from B-spline control points.
-6. Return the generated atlas target, warped atlas, and warped-border overlay.
-
-Direct mode returns the first candidate. Agentic mode runs a hosted-router
-conversation (openai-oauth only): the task prompt and input images go to the
-hosted GPT model with the image_generation tool attached, the harness runs
-Elastix on each generated image and sends the report back as a follow-up
-message, and the loop accepts the first candidate whose report is clean
-(capped at four attempts; otherwise the fewest-codes candidate wins).
+Supplied placement requires one image-generation call; standalone requires two.
+ABBA shares the border-correction core and retains its host placement.
+The top-level linear handoff adapter does not introduce a dependency between
+the sibling method packages. See [the design](nonlinear_design.md).
 
 ## Debugging
 

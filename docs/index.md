@@ -12,6 +12,7 @@ session handoffs.
 
 ## Runtime References
 
+- [`nonlinear_design.md`](nonlinear_design.md) - preferred placed-border correction and two-call standalone route.
 - [`registration_plan.md`](registration_plan.md) - current image-generation registration pipeline.
 
 ## Repository Map

@@ -59,6 +59,9 @@ def test_run_register_surfaces_artifact_paths_from_metadata(monkeypatch) -> None
             "metadata": {
                 "warped_atlas_path": "/tmp/warped_atlas.png",
                 "candidate_metadata": {
+                    "raw_correction_path": "/tmp/raw_correction.png",
+                    "rough_border_overlay_path": "/tmp/rough.png",
+                    "corrected_border_overlay_path": "/tmp/corrected.png",
                     "warped_border_overlay_path": "/tmp/warped_border.png",
                     "generated_segmentation_path": "/tmp/generated_seg.png",
                     "generated_border_overlay_path": "/tmp/generated_border.png",
@@ -83,6 +86,9 @@ def test_run_register_surfaces_artifact_paths_from_metadata(monkeypatch) -> None
     assert result.slice_warped_to_atlas_path == "/tmp/inverse_slice.png"
     assert result.slice_atlas_border_overlay_path == "/tmp/inverse_border.png"
     assert result.inverse_warp_status == "ok"
+    assert result.raw_correction_path == "/tmp/raw_correction.png"
+    assert result.rough_border_overlay_path == "/tmp/rough.png"
+    assert result.corrected_border_overlay_path == "/tmp/corrected.png"
 
 
 def test_run_register_restores_runtime_globals_after_exception(monkeypatch) -> None:  # noqa: ANN001
@@ -166,5 +172,4 @@ def test_run_register_restores_runtime_globals_after_success(monkeypatch) -> Non
 
     assert vlm_config.TEMPERATURE == 0.7
     assert vlm_config.THINKING_LEVEL == "HIGH"
-
 
