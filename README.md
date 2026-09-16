@@ -37,10 +37,12 @@
 </p>
 
 A VLM agent inspects the slice, explores candidate atlas planes through tool calls, and
-submits an AP coordinate. An image model is then handed the atlas region map
-of that plane and asked to move its colored regions onto the tissue, and
-itk-elastix recovers a dense B-spline deformation from the result. Results
-export to VisuAlign-compatible JSON for QUINT / ABBA.
+submits an AP coordinate and an in-plane placement. An image model is then shown
+the atlas borders drawn on the tissue at that placement and asked to correct
+them; itk-elastix fits the residual deformation from the corrected borders.
+Without a supplied placement, a first image-model call moves the atlas region
+map onto the tissue to initialize it. Results export to VisuAlign-compatible
+JSON for QUINT / ABBA.
 
 <p align="center">
   <img alt="LangSlice registration pipeline: histology slice to atlas-colored target, dense warp, and overlay" src="assets/registration_pipeline_square.png" width="780">
