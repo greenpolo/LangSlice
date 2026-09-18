@@ -40,6 +40,8 @@ nav:
   - Overview: index.md
   - Architecture: architecture_overview.md
   - CLI usage: current_workflow.md
+  - Install in ABBA: abba_installation.md
+  - Fiji connector design: abba_plugin_design.md
   - Registration pipeline: registration_plan.md
   - Training overview: training_overview.md
 

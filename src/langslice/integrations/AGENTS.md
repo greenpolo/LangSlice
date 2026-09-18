@@ -217,3 +217,19 @@ An isolated native Elastix-export serialization smoke additionally checked
 remained within 1.6 µm of the exact synthetic Elastix map, and retained the map
 after native transform serialization/reload. This does not replace a full
 ABBA project save/reload test for the new backend.
+
+## Independent Fiji connector (2026-09-16)
+
+`fiji-plugin/` is a separate Java/SciJava plugin for an existing ABBA session.
+It starts a selected Python environment via `langslice serve --stdio`; it does
+not use `abba_python` or PyCommandBuilder. Setup loads without Python and owns
+environment selection; authentication runs in the worker. The existing modules
+above remain the Python-started ABBA route.
+
+`api/abba_worker.py` reuses the linear engine and nonlinear
+`compute_registration_landmarks` without importing Java. Linear snapshots are
+centred/calibrated; host AP mapping is measured, ingestion emits no mutations,
+and streamed updates express complete replacement corrections in world mm.
+The Java host owns native actions and persistence. Read
+`docs/abba_plugin_design.md` and `docs/abba_installation.md` for the protocol,
+current source-preview installation, and publication requirements.

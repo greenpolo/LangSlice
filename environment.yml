@@ -1,19 +1,11 @@
+# Run from the root of a downloaded LangSlice source archive or checkout:
+# conda env create -f environment.yml
+# This is the external Fiji worker; Fiji provides its own Java runtime.
 name: langslice
 channels:
   - conda-forge
 dependencies:
   - python=3.11
-  - openjdk=11  # for the ABBA integration (langslice abba)
-  - maven       # for the ABBA integration (langslice abba)
-  - numpy
-  - scipy
-  - pillow
-  - tifffile
   - pip
   - pip:
-    - google-genai
-    - google-adk
-    - openai
-    - brainglobe-atlasapi
-    - brainglobe-space
-    - python-dotenv
+      - .
