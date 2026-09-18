@@ -1,0 +1,54 @@
+name: Worker package
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  wheel:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Build wheel
+        run: |
+          python -m pip install build
+          python -m build --wheel
+      - name: Audit and install wheel
+        shell: bash
+        run: |
+          python packaging/check_wheel.py dist/*.whl
+          python -m pip install dist/*.whl
+          python -m pip check
+      - name: Exercise installed worker outside checkout
+        shell: bash
+        run: |
+          cd "$RUNNER_TEMP"
+          langslice version
+          python - <<'PY'
+          import json
+          import subprocess
+          import sys
+          result = subprocess.run(
+              [sys.executable, '-m', 'langslice', 'serve', '--stdio'],
+              input=json.dumps({"id": "smoke", "method": "version", "params": {}}) + "\n",
+              text=True, capture_output=True, check=True, timeout=60,
+          )
+          reply = json.loads(result.stdout)
+          assert reply['id'] == 'smoke' and reply['type'] == 'result', reply
+          assert reply['result']['version'], reply
+          print(result.stdout)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: langslice-worker-${{ matrix.os }}
+          path: dist/*.whl
