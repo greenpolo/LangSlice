@@ -160,6 +160,17 @@ Both depend on LangSlice as an editable sibling checkout via
 `[tool.uv.sources]`; training additionally depends on SliceBench. Work on
 training or benchmark code happens in those repos, not here.
 
+## Independent Fiji connector
+
+- `fiji-plugin/` — Java/SciJava connector loaded into the user's existing
+  ABBA. It starts a separate LangSlice Python environment, provides setup and
+  account dialogs, and applies worker results through native ABBA actions.
+- `src/langslice/api/` — JSON-lines worker protocol, desktop setup/authentication,
+  and JVM-free host adapters. Existing `abba_python` launchers remain separate.
+- `packaging/`, `environment.yml` — worker distribution and wheel checks.
+  Publication status and the accepted installation design are in
+  `docs/abba_installation.md` and `docs/abba_plugin_design.md`.
+
 ## Runtime facts
 
 - Main pipeline: `position estimate (linear) → image-gen registration
@@ -184,7 +195,8 @@ training or benchmark code happens in those repos, not here.
 
 ## Boundaries
 
-- Active surface: `src/langslice/`, `tests/`, `docs/`, `README.md`.
+- Active surface: `src/langslice/`, `tests/`, `docs/`, `README.md`,
+  `fiji-plugin/`, `packaging/`, and their build/environment configuration.
 - Local-only (do not ship, do not document publicly): `_local/`, `references/`,
   generated outputs, `out/`, `archive/`.
 - Keep markdown literal to the code it describes. Behavior change → update the

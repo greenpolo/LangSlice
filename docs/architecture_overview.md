@@ -49,9 +49,13 @@ The Python package is the source of truth for LangSlice runtime behavior. The
 engine contract is defined with Pydantic models in `src/langslice/api/models.py`.
 
 `langslice serve --stdio` runs the newline-delimited JSON engine service. It
-accepts request envelopes such as `version`, `register.run`,
-`quick_affine.run`, and `export.run`, emits progress/log event envelopes, and
-returns either result or error envelopes.
+accepts `version`, `register.run`, `quick_affine.run`, and `export.run`, plus
+`setup.status`, `setup.login`, `setup.api_key`, `linear.run`, and `nonlinear.abba`
+for the independent Fiji connector. It emits progress/log/data event envelopes
+and returns either result or error envelopes. The connector starts a worker in
+the selected Python environment; it does not require `abba_python`. See
+[the connector design](abba_plugin_design.md) and
+[installation instructions](abba_installation.md).
 
 ## Linear: Order, Position, Transform
 

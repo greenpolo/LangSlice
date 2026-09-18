@@ -50,15 +50,26 @@ JSON for QUINT / ABBA.
 
 ## Quick start
 
+For the new **plugin in an existing Fiji/ABBA installation**, follow
+[Install LangSlice in ABBA](docs/abba_installation.md). Setup and account login
+are available inside ABBA. This is currently a source-build preview; the Fiji
+update site and conda package are not yet published.
+
+For command-line use, download and extract the source and open a terminal in
+the folder containing `environment.yml`:
+
 ```bash
 conda env create -f environment.yml
 conda activate langslice
-pip install -e .
-cp .env.example .env  # add your model-provider API keys
+langslice login  # browser sign-in; optional when using account setup inside ABBA
 
 # Optional: pre-download an atlas (~500 MB) into ~/.brainglobe/
 python -c "from brainglobe_atlasapi import BrainGlobeAtlas; BrainGlobeAtlas('allen_mouse_25um')"
 ```
+
+For API-key providers, use the Fiji setup dialog or copy `.env.example` to `.env`
+and add your provider key. The environment file installs LangSlice itself and its
+dependencies; an editable install is only needed for development.
 
 The CLI is grouped by method — `linear` for position estimation and affine
 anchoring, `nonlinear` for generative-image registration:
@@ -85,6 +96,14 @@ border correction. See [the nonlinear design](docs/nonlinear_design.md).
 Full CLI: `langslice --help`. Pipeline detail: [`docs/index.md`](./docs/index.md).
 
 ## ABBA integration
+
+The independent [Fiji connector](fiji-plugin/README.md) adds
+**Register > LangSlice > LangSlice setup…** and **LangSlice agent…** to an existing
+ABBA installation. It launches the separately installed Python worker as needed.
+See [installation and supported sessions](docs/abba_installation.md).
+
+The following describes the older **Python-started ABBA launcher**, which remains
+available for development and its existing companion viewers:
 
 LangSlice runs inside [ABBA](https://abba-documentation.readthedocs.io) as a
 registration plugin: position slices however you like (DeepSlice, QuickNII
@@ -139,7 +158,8 @@ action. `Register > LangSlice` stays available in the same session.
 
 ```bash
 conda activate langslice
-pip install -e ".[abba]"   # adds abba-python (needs the env's OpenJDK + Maven)
+conda install -c conda-forge openjdk=11 maven
+pip install -e ".[abba]"   # optional Python-started ABBA route
 langslice abba             # launches the ABBA GUI with LangSlice installed
 langslice abba --linear ./sections --save-state ./sections/run.abba
 ```
