@@ -52,7 +52,7 @@ import time
 import urllib.parse
 import uuid
 import webbrowser
-from collections.abc import AsyncGenerator, Iterator, Sequence
+from collections.abc import AsyncGenerator, Callable, Iterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -862,10 +862,16 @@ def _callback_handler(result: dict[str, str]) -> type[http.server.BaseHTTPReques
     return Handler
 
 
-def login(timeout_s: float = 300.0, open_browser: bool = True) -> Path:
+def login(
+    timeout_s: float = 300.0,
+    open_browser: bool = True,
+    *,
+    on_url: Callable[[str], None] | None = None,
+) -> Path:
     """Run the "Sign in with ChatGPT" PKCE flow and store the token.
 
-    Returns the path the credentials were written to.
+    Returns the path the credentials were written to. Desktop hosts can supply
+    ``on_url`` to show the browser URL instead of printing it to stdout.
     """
     verifier, challenge = _pkce()
     state = secrets.token_urlsafe(16)
@@ -888,8 +894,11 @@ def login(timeout_s: float = 300.0, open_browser: bool = True) -> Path:
     server = http.server.HTTPServer(("127.0.0.1", _LOGIN_PORT), _callback_handler(result))
     threading.Thread(target=server.serve_forever, daemon=True).start()
     try:
-        print("Opening browser to sign in with ChatGPT...")
-        print(f"If it doesn't open, visit:\n  {url}")
+        if on_url is not None:
+            on_url(url)
+        else:
+            print("Opening browser to sign in with ChatGPT...")
+            print(f"If it doesn't open, visit:\n  {url}")
         if open_browser:
             try:
                 webbrowser.open(url)

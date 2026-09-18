@@ -806,6 +806,10 @@ def main(argv: list[str] | None = None):
     _load_dotenv()
     parser = _build_parser()
     args = parser.parse_args(argv)
+    if args.command not in {"serve", "login", "version"}:
+        from langslice.api.setup import apply_saved_credentials
+
+        apply_saved_credentials()
 
     # Group commands (`linear`, `nonlinear`) carry the leaf name in
     # `subcommand`; top-level commands only set `command`. Leaf names are
