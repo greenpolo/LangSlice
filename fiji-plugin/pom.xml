@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>org.langslice</groupId><artifactId>langslice-fiji</artifactId><version>0.1.0</version>
+  <name>LangSlice connector for ABBA</name>
+  <description>Connect an existing ABBA session to a separate LangSlice Python environment.</description>
+  <properties><maven.compiler.release>11</maven.compiler.release><project.build.sourceEncoding>UTF-8</project.build.sourceEncoding></properties>
+  <repositories><repository><id>scijava.public</id><url>https://maven.scijava.org/content/groups/public</url></repository></repositories>
+  <dependencies>
+    <dependency><groupId>ch.epfl.biop</groupId><artifactId>ImageToAtlasRegister</artifactId><version>0.11.0</version><scope>provided</scope></dependency>
+    <dependency><groupId>org.scijava</groupId><artifactId>scijava-common</artifactId><version>2.99.0</version><scope>provided</scope></dependency>
+    <dependency><groupId>com.google.code.gson</groupId><artifactId>gson</artifactId><version>2.10.1</version><scope>provided</scope></dependency>
+  </dependencies>
+  <build><plugins><plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><version>3.13.0</version></plugin></plugins></build>
+</project>
