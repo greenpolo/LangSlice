@@ -26,12 +26,22 @@ PreprocessMode = Literal["none", "auto"]
 Deformation = Literal["bspline", "affine"]
 EngineMethod = Literal[
     "version",
+    "setup.status",
+    "setup.login",
+    "setup.api_key",
+    "linear.run",
+    "nonlinear.abba",
     "register.run",
     "quick_affine.run",
     "export.run",
 ]
 ENGINE_METHODS: tuple[EngineMethod, ...] = (
     "version",
+    "setup.status",
+    "setup.login",
+    "setup.api_key",
+    "linear.run",
+    "nonlinear.abba",
     "register.run",
     "quick_affine.run",
     "export.run",
@@ -65,7 +75,25 @@ class EngineLogEvent(EngineBaseModel):
     message: str
 
 
-EngineEvent = Annotated[EngineProgressEvent | EngineLogEvent, Field(discriminator="kind")]
+class EngineDataEvent(EngineBaseModel):
+    """Host events: login URL, checkpoints and agent activity, never credentials."""
+
+    kind: Literal["data"] = "data"
+    payload: dict[str, object]
+
+
+EngineEvent = Annotated[
+    EngineProgressEvent | EngineLogEvent | EngineDataEvent, Field(discriminator="kind")
+]
+
+
+class SetupLoginRequest(EngineBaseModel):
+    timeout_s: float = Field(default=300, ge=10, le=900, allow_inf_nan=False)
+
+
+class SetupApiKeyRequest(EngineBaseModel):
+    provider: Literal["openai-api", "gemini-api"]
+    api_key: str = Field(min_length=1, max_length=8192, repr=False)
 
 
 class EngineEventEnvelope(EngineBaseModel):
@@ -202,6 +230,9 @@ def export_schema_bundle() -> dict[str, object]:
         "EngineError": EngineError,
         "EngineRequest": EngineRequest,
         "EngineProgressEvent": EngineProgressEvent,
+        "EngineDataEvent": EngineDataEvent,
+        "SetupLoginRequest": SetupLoginRequest,
+        "SetupApiKeyRequest": SetupApiKeyRequest,
         "EngineLogEvent": EngineLogEvent,
         "EngineEventEnvelope": EngineEventEnvelope,
         "EngineResultEnvelope": EngineResultEnvelope,
