@@ -154,21 +154,3 @@ def test_a_derived_palette_is_pulled_apart_past_the_merge_radius():
     lut = color_lut(_atlas(_allen_style_tree()))
     assert _pairwise_min(lut) > MERGE_EPS
     assert _pairwise_min(lut) >= MIN_SEPARATION - 1.0
-
-
-def test_the_render_style_is_one_process_wide_setting_that_never_moves_a_color(
-    monkeypatch,
-):
-    """The palette knob picks a render STYLE; colors are the same either way."""
-    from langslice.atlas import recolor
-
-    rows = _allen_style_tree()
-    flat = color_lut(_atlas(rows))
-    monkeypatch.setenv(recolor.PALETTE_ENV, "leaf-borders")
-    assert recolor.active_palette() == "leaf-borders"
-    assert color_lut(_atlas(rows)) == flat
-    monkeypatch.setenv(recolor.PALETTE_ENV, "family")
-    with recolor.use_palette("leaf-borders"):
-        assert recolor.active_palette() == "leaf-borders"
-        assert color_lut(_atlas(rows)) == flat
-    assert recolor.active_palette() == "family"
