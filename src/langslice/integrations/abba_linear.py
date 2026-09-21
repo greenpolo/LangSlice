@@ -29,7 +29,7 @@ mirrored.
 The module-level ``*_SIGN``/``*_AXIS`` constants carry the in-plane sign
 conventions. The flip axis, quarter-turn sign, in-plane rotation sign,
 translation signs and scale axis were MEASURED headlessly on 2026-09-10
-(``_local/abba_spike/spike8_sign_probe.py`` + ``spike9_axis_direction.py``):
+(headless probe registrations, scripts kept outside the repo):
 a probe registration reads back what ABBA itself resamples after each write,
 and ABBA's own coordinate channels say ML DECREASES with screen x while DV
 increases with screen y — so the probe grid (ML right) is a left-right mirror
@@ -126,15 +126,15 @@ def measure_axis_offset(
     UNVERIFIED-then-fixed once, live: the first version of this sampled
     ``mp.getReslicedAtlas().extendedSlicedSources`` directly at world points
     ``(0, 0, z1)``/``(0, 0, z2)``. A live diagnostic
-    (``_local/abba_spike/spike6b_offset_debug.py``) showed that source's own
+    (probe script kept outside the repo) showed that source's own
     Z axis is a static ~0.3 mm margin anchored at a FIXED reference plane
     (ABBA's own z=0), not a sweep across the atlas's whole AP range — both
     probes landed out of bounds and read back an identical background value.
     ``mp.getReslicedAtlas()`` is the shared cross-section VIEW, not a
     general 3D sampler.
 
-    What actually varies the coordinate channel with z, proven by
-    ``_local/abba_spike/spike3c_coord_fixed.py``: ``registerSelectedSlices``
+    What actually varies the coordinate channel with z, proven by a live
+    probe registration (script kept outside the repo): ``registerSelectedSlices``
     always composes a ``SourcesZOffset(slice)`` onto the fixed-image
     preprocessor (``MultiSlicePositioner.registerSelectedSlices``, and it is
     exactly what the nonlinear adapter in ``langslice.integrations.abba``
