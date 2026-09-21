@@ -1,27 +1,21 @@
-"""The silhouette prior: the atlas plane placed on the tissue, painted.
+"""The silhouette prior: the atlas plane placed on the tissue by outline alone.
 
-A model-free first guess at the registration. The atlas plane at
-(``position_mm``, ``pitch_deg``, ``yaw_deg``) is placed onto the section's
-own silhouette by a closed-form moments fit — centroid, principal axes,
-axis spreads — and painted exactly like the model-facing atlas references
-(flat palette fills, ventricles black, darker fill-change lines). It is a
+A model-free rough placement. The atlas plane at (``position_mm``,
+``pitch_deg``, ``yaw_deg``) is placed onto the section's own silhouette by a
+closed-form moments fit — centroid, principal axes, axis spreads. It is a
 LINEAR placement: the boundaries are the atlas's, moved rigidly onto the
 tissue, not deformed onto it.
 
 Measured against the LSD_910 hand registrations: the placement alone scores
-0.82 mean family dice, better than every image-model configuration tried,
-and handing it to the image model as the canvas to correct raises the
-painting floor from ~0.5 to ~0.8. Hence the two uses in
-:mod:`langslice.nonlinear.image_gen_registration`:
-
-* ``provider="none"`` — the prior IS the painting (the model-free backbone).
-* ``init="silhouette"`` with a real provider — the prior is the canvas the
-  model edits, with the tissue alongside it as the reference.
+0.82 mean family dice, better than every image-model configuration tried.
+Both border routes use it as the rough placement: route "supplied" only when
+no placement is supplied and ``provider="none"`` (the model-free backbone,
+:mod:`langslice.nonlinear.border_registration`); route "atlas" always (there
+is no placement to supply, so the silhouette fit stands in for one, and one
+or two model calls then draw/correct the boundaries against it).
 """
 
 from __future__ import annotations
-
-from typing import Any
 
 import cv2
 import numpy as np
@@ -29,18 +23,12 @@ from PIL import Image
 from scipy.ndimage import binary_fill_holes
 
 from langslice.affine import _affine_from_pose, _moments_pose, silhouette_iou
-from langslice.atlas.recolor import active_palette, color_lut
 from langslice.image_prep import foreground_mask
-from langslice.space import Plane
 
 #: Sign patterns tried for the source eigenvectors: pure ROTATIONS only.
 #: The two reflections score the same silhouette IoU on a near-symmetric
 #: section and land the anatomy on the wrong hemisphere.
 _SIGN_PATTERNS: tuple[tuple[int, int], ...] = ((1, 1), (-1, -1))
-
-#: Soft-label smoothing sigma as a fraction of the canvas long edge — just
-#: enough to take the voxel staircase off a 25um plane upscaled to canvas.
-_SMOOTH_SIGMA_FRACTION = 1.0 / 400.0
 
 
 def tissue_mask(image: Image.Image, size: tuple[int, int]) -> np.ndarray:
@@ -124,72 +112,3 @@ def place_plane_on_tissue_with_matrix(
     return best
 
 
-def smooth_labels(labels: np.ndarray, sigma: float) -> np.ndarray:
-    """Soft-label smoothing: blur each label's mask, take the per-pixel argmax.
-
-    The plane arrives at atlas resolution and is warped onto a canvas many
-    times larger, so every boundary is a voxel staircase. Blurring the
-    one-hot masks and arg-maxing them puts each boundary back on the smooth
-    curve the staircase samples, without ever blending two ids into a third.
-    """
-    if sigma <= 0:
-        return labels
-    from scipy import ndimage
-
-    # ponytail: one pass per label, keeping only the running best — the
-    # stacked version needs (labels x pixels) floats, ~1 GB on a real canvas.
-    out = np.zeros_like(labels)
-    best = np.zeros(labels.shape, dtype=np.float32)
-    for uid in np.unique(labels):
-        weight = ndimage.gaussian_filter((labels == uid).astype(np.float32), sigma)
-        take = weight > best
-        out[take] = uid
-        best[take] = weight[take]
-    return out
-
-
-def build_silhouette_prior(
-    canvas: Image.Image,
-    *,
-    atlas: Any,
-    position_mm: float,
-    plane: Plane = "coronal",
-    image_axes: str | None = None,
-    pitch_deg: float = 0.0,
-    yaw_deg: float = 0.0,
-) -> tuple[Image.Image, dict[str, Any]]:
-    """The atlas plane placed on *canvas*'s tissue and painted, canvas-sized.
-
-    *canvas* is the working canvas (already padded and aspect-snapped), and
-    the prior comes back in exactly that frame, so it can be sent as the
-    image to edit or registered as-is. The paint is
-    :func:`langslice.nonlinear.render.paint_labels` — the same call the
-    model-facing atlas reference makes — so every pixel is an exact palette
-    color and classifies back losslessly.
-    """
-    from langslice.nonlinear.image_gen_helpers import _annotation_slice, line_width_px
-    from langslice.nonlinear.render import paint_labels
-
-    size = canvas.size
-    tissue = tissue_mask(canvas, size)
-    labels = _annotation_slice(
-        atlas, position_mm, plane=plane, pitch_deg=pitch_deg, yaw_deg=yaw_deg
-    )
-    if image_axes:
-        from langslice.space import atlas_space_context, orient_slice_to_axes
-
-        labels = orient_slice_to_axes(labels, atlas_space_context(atlas), plane, image_axes)
-    placed, signs, iou = place_plane_on_tissue(labels, tissue)
-    placed = smooth_labels(placed, sigma=max(size) * _SMOOTH_SIGMA_FRACTION)
-    rgb = paint_labels(
-        placed,
-        lut=color_lut(atlas),
-        line_px=line_width_px(max(size)),
-        leaf_lines=active_palette() == "leaf-borders",
-    )
-    metadata = {
-        "sign_pattern": list(signs),
-        "tissue_iou": round(float(iou), 4),
-        "tissue_fraction": round(float((tissue > 0).mean()), 4),
-    }
-    return Image.fromarray(rgb, mode="RGB"), metadata

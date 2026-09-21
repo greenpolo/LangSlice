@@ -96,13 +96,16 @@ Two methods live as sibling subpackages with no dependency on each other:
   harness rule, the submit gates and the known ceilings:
   `src/langslice/linear/CLAUDE.md` (loads when working there).
 - `nonlinear/` — generative-image registration (image model → Elastix → report).
-  The one active path, its measured design choices, and the cutting-angle lever:
-  `src/langslice/nonlinear/CLAUDE.md` (loads when working there).
+  Exactly two border-based routes (a supplied placement corrected in one model
+  call, or a placement-free route that draws boundaries against an outlined
+  grayscale atlas template), its measured design choices, and the
+  cutting-angle lever: `src/langslice/nonlinear/CLAUDE.md` (loads when
+  working there).
 
 Shared, top-level:
 
 - `atlas/` — BrainGlobe loading, slice extraction, colored region maps, borders,
-  and the organized-color LUT / `--palette` render styles:
+  and the organized-color LUT for human-review renders:
   `src/langslice/atlas/CLAUDE.md` (loads when working there).
 - `integrations/` — QUINT JSON export and the ABBA registration plugin:
   `src/langslice/integrations/CLAUDE.md` (loads when working there).
@@ -177,12 +180,16 @@ training or benchmark code happens in those repos, not here.
   (nonlinear) → Elastix B-spline → VisuAlign markers → export`.
 - `linear` and `nonlinear` are independent; `nonlinear` accepts a position
   from any source, not just `langslice linear`.
-- Registration defaults to placed-border correction: one image-model call
-  with supplied linear/host placement; otherwise two calls (color-map
-  initialization, then border correction). Raw model replies, extracted
-  boundaries on original histology, and fitted atlas overlays are separate.
-  The initial placement and residual fit are composed in exported coordinates.
-  See `docs/nonlinear_design.md`; there is no hosted-router retry loop.
+- Registration is exactly two border-based routes, chosen automatically by
+  whether a placement is supplied: route "supplied" is one image-model call
+  that moves a supplied linear/host placement's drawn boundaries onto the
+  tissue; route "atlas" (no placement) fits a local silhouette placement and
+  asks the model to draw boundaries from nothing against an outlined
+  grayscale atlas template, with an optional second corrective call
+  (`passes=2`). Raw model replies, extracted boundaries on original histology,
+  and fitted atlas overlays are separate. The initial placement and residual
+  fit are composed in exported coordinates. See `docs/nonlinear_design.md`;
+  there is no hosted-router retry loop.
 - Positions are atlas-native millimeters from the anterior edge of the volume.
 - Atlas orientation assumptions are centralized in `src/langslice/space.py`,
   which derives AP/DV/ML axis indices from the atlas orientation via

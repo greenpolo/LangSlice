@@ -87,11 +87,14 @@ argument, so it can follow `langslice linear run` or a placement made in
 another tool — in QUINT/ABBA-style workflows it stands in for the manual
 spline/BigWarp deformation step.
 
-The preferred nonlinear route takes those roughly aligned atlas borders and asks
-the image model to adjust them to the tissue, using the clean histology as a
-second reference. With a supplied placement this takes one image-generation
-call. Standalone registration uses two: an initial color-map alignment, then
-border correction. See [the nonlinear design](docs/nonlinear_design.md).
+Nonlinear registration is exactly two border-based routes, chosen
+automatically by whether a placement is supplied. With a supplied placement,
+one image-generation call moves that placement's drawn atlas borders onto the
+visible tissue. Without one, a local silhouette fit stands in for the rough
+placement and the model instead draws boundaries from nothing against an
+outlined grayscale atlas template, in one call (optionally two, for an audit
+pass). Neither route shows the model a colored atlas map. See
+[the nonlinear design](docs/nonlinear_design.md).
 
 Full CLI: `langslice --help`. Pipeline detail: [`docs/index.md`](./docs/index.md).
 

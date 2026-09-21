@@ -1,64 +1,125 @@
-"""The registration prompt: one text per model family, verbatim from the bench."""
+"""Prompt selection and content for all three nonlinear model calls."""
 
 from __future__ import annotations
 
-import importlib.util
-from pathlib import Path
-
 import pytest
 
-from langslice.nonlinear.model_prompts import (
-    V14,
-    V14_EDIT_MOUSE,
-    base_segmentation_prompt,
+from langslice.nonlinear.prompts import (
+    border_refinement_prompt,
+    pass1_atlas_prompt,
+    pass2_atlas_prompt,
 )
 
-#: Where the prompts were written and measured. Local-only (never shipped), so
-#: this comparison runs on a working checkout and skips everywhere else.
-_BENCH_PROMPTS = Path(__file__).resolve().parents[1] / "_local" / "nonlinear_eval" / "prompts.py"
-
-
-@pytest.mark.parametrize(
-    ("constant", "bench_name"), [(V14, "V14"), (V14_EDIT_MOUSE, "V14_EDIT_MOUSE")]
+_PASS1_GPT_FINAL_PARAGRAPH = (
+    "This is an annotation overlay on a photograph. Change only by adding the yellow "
+    "lines; the lines are the only new thing in the image. Preserve everything else "
+    "exactly: every tissue pixel and its texture, the background, the brain's size and "
+    "position, the frame and aspect. The lines are thin bright yellow and form exactly "
+    "the partition of Image 2 on the tissue: every boundary of Image 2, no other line, "
+    "no fill, no label. Output one image."
 )
-def test_the_prompt_is_byte_identical_to_the_benchmarked_text(
-    constant: str, bench_name: str
-) -> None:
-    if not _BENCH_PROMPTS.exists():
-        pytest.skip(f"{_BENCH_PROMPTS} not present (local-only benchmark tree)")
-    spec = importlib.util.spec_from_file_location("_bench_prompts", _BENCH_PROMPTS)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
 
-    assert constant == getattr(module, bench_name)
-
-
-@pytest.mark.parametrize("provider", ["gemini-api", "google"])
-def test_gemini_gets_the_google_wording(provider: str) -> None:
-    assert base_segmentation_prompt("coronal", provider) == V14
-
-
-@pytest.mark.parametrize(
-    "provider", ["openai-oauth", "openai-api", "chatgpt", "openai", None]
+_PASS1_GEMINI_FINAL_PARAGRAPH = (
+    "This is an annotation overlay on a photograph. Using Image 1, change only by adding "
+    "the yellow lines and keep everything else exactly the same: every tissue pixel and "
+    "its texture, the background, the same brain size and position, the same frame; the "
+    "lines are the only new thing in the image. The lines are thin bright yellow, and the "
+    "set of lines is exactly the set of boundaries in Image 2, each drawn once on the "
+    "tissue. The output is one image: Image 1 with the yellow anatomical boundaries."
 )
-def test_every_gpt_image_lane_gets_the_codex_wording(provider: str | None) -> None:
-    expected = V14 if provider is None else V14_EDIT_MOUSE
-    assert base_segmentation_prompt("coronal", provider) == expected
+
+_PASS2_GPT_FINAL_PARAGRAPH = (
+    "This is an annotation overlay on a photograph. Change only the yellow lines; the "
+    "corrected lines are the only difference from Image 1. Preserve everything else "
+    "exactly: every tissue pixel and its texture, the background, the brain's size and "
+    "position, the frame and aspect. The lines are thin bright yellow and form exactly "
+    "the partition of Image 3 on the tissue: every boundary of Image 3, no other line, no "
+    "fill, no label. Output one image."
+)
+
+_PASS2_GPT_FEATURE_SENTENCE = (
+    "The drawing carries no line around a feature of the slide rather than of the brain, "
+    "such as a bubble, a stain or debris; the feature itself stays in the photograph as "
+    "it is."
+)
+
+_PASS2_GEMINI_FINAL_PARAGRAPH = (
+    "This is an annotation overlay on a photograph. Using Image 1, change only the yellow "
+    "lines and keep everything else exactly the same: every tissue pixel and its texture, "
+    "the background, the same brain size and position, the same frame; the corrected "
+    "lines are the only difference from Image 1. The lines are thin bright yellow, and "
+    "the set of lines is exactly the set of boundaries in Image 3, each drawn once on the "
+    "tissue. The output is one image: Image 1 with the corrected yellow boundaries."
+)
+
+_PASS2_GEMINI_FEATURE_SENTENCE = (
+    "Lines around features of the slide rather than of the brain, such as a bubble, a "
+    "stain or debris, are left out of the drawing; the feature itself stays in the "
+    "photograph as it is."
+)
 
 
-def test_the_prompt_names_the_section_plane() -> None:
-    sagittal = base_segmentation_prompt("sagittal", "openai-oauth")
+@pytest.mark.parametrize("provider", ["openai-oauth", "openai-api", "chatgpt", "openai"])
+def test_pass1_gpt_twin_for_every_gpt_image_lane(provider: str) -> None:
+    text = pass1_atlas_prompt("coronal", provider)
+    assert text.endswith(_PASS1_GPT_FINAL_PARAGRAPH)
+    assert "Image 2 alone decides which boundaries exist" in text
 
+
+@pytest.mark.parametrize("provider", ["gemini-api", "google", "none", None])
+def test_pass1_gemini_twin_for_every_other_provider(provider: str | None) -> None:
+    text = pass1_atlas_prompt("coronal", provider)
+    assert text.endswith(_PASS1_GEMINI_FINAL_PARAGRAPH)
+
+
+@pytest.mark.parametrize("provider", ["openai-oauth", "openai-api"])
+def test_pass2_gpt_twin_for_every_gpt_image_lane(provider: str) -> None:
+    text = pass2_atlas_prompt("coronal", provider)
+    assert text.endswith(_PASS2_GPT_FINAL_PARAGRAPH)
+    assert _PASS2_GPT_FEATURE_SENTENCE in text
+    assert "A line drawn around a feature of the slide" not in text
+
+
+@pytest.mark.parametrize("provider", ["gemini-api", "google", "none"])
+def test_pass2_gemini_twin_for_every_other_provider(provider: str) -> None:
+    text = pass2_atlas_prompt("coronal", provider)
+    assert text.endswith(_PASS2_GEMINI_FINAL_PARAGRAPH)
+    assert _PASS2_GEMINI_FEATURE_SENTENCE in text
+    assert "A line drawn around a feature of the slide" not in text
+
+
+def test_pass_prompts_name_the_section_plane() -> None:
+    for prompt_fn in (pass1_atlas_prompt, pass2_atlas_prompt):
+        for provider in ("openai-oauth", "gemini-api"):
+            sagittal = prompt_fn("sagittal", provider)
+            assert "sagittal section" in sagittal
+            assert "coronal" not in sagittal
+            assert sagittal.replace("sagittal", "coronal") == prompt_fn("coronal", provider)
+
+
+def test_pass2_uses_image_2_as_the_starting_point_and_image_3_as_the_atlas() -> None:
+    gpt = pass2_atlas_prompt("coronal", "openai-oauth")
+    gemini = pass2_atlas_prompt("coronal", "gemini-api")
+    for text in (gpt, gemini):
+        assert "Image 2" in text and "Image 3" in text
+        assert "starting point" in text
+        assert "Image 3 alone decides which boundaries exist" in text
+
+
+def test_border_refinement_prompt_is_unchanged_route_supplied_text() -> None:
+    text = border_refinement_prompt("coronal")
+    assert text.startswith(
+        "Image 1 is a photograph of a brain coronal section with thin yellow "
+        "anatomical region boundaries placed by a rough alignment."
+    )
+    assert text.endswith(
+        "The output is one image: the original photograph with the corrected yellow "
+        "boundaries replacing the supplied yellow boundaries."
+    )
+
+
+def test_border_refinement_prompt_names_the_section_plane() -> None:
+    sagittal = border_refinement_prompt("sagittal")
     assert "sagittal section" in sagittal
     assert "coronal" not in sagittal
-    # only the plane word moves; the task does not
-    assert sagittal.replace("sagittal", "coronal") == V14_EDIT_MOUSE
-
-
-def test_the_prompt_asks_for_the_map_moved_onto_the_tissue() -> None:
-    """The retired lineup asked the model to repaint the SECTION in place."""
-    for text in (V14, V14_EDIT_MOUSE):
-        assert text.startswith("Edit Image 1")
-        assert "IMAGE 1: A colored" in text or "IMAGE 1: A colored region map" in text
-        assert "histology photograph" in text.split("IMAGE 3:")[1]
+    assert sagittal.replace("sagittal", "coronal") == border_refinement_prompt("coronal")

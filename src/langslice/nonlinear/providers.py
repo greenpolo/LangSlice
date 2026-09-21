@@ -110,41 +110,6 @@ def _extract_last_inline_image(response: Any) -> Image.Image:
     raise RuntimeError("Gemini image generation did not return an inline image")
 
 
-def _extract_inline_images(response: Any) -> list[Image.Image]:
-    """EVERY inline image part of a Gemini response, in the order returned.
-
-    :func:`_extract_last_inline_image` keeps the single-image contract (the
-    last picture wins); this one is for prompts that ask for several pictures
-    in one reply, where the order of the parts IS the order of the outputs.
-    """
-    images: list[Image.Image] = []
-    for part in _response_parts(response):
-        inline_data = getattr(part, "inline_data", None)
-        image_bytes = getattr(inline_data, "data", None) if inline_data is not None else None
-        if image_bytes:
-            image = cast(Image.Image, Image.open(io.BytesIO(image_bytes)))
-            image.load()
-            images.append(image.convert("RGB"))
-            continue
-
-        # A text part has no picture to give; walking FORWARD over every part
-        # means asking that question of text parts too, and ``as_image()`` is
-        # not guaranteed to answer politely on one.
-        if getattr(part, "text", None):
-            continue
-        as_image = getattr(part, "as_image", None)
-        if callable(as_image):
-            try:
-                image = cast(Image.Image, as_image())
-            except Exception:  # noqa: BLE001 - a part that holds no image
-                continue
-            if image is not None:
-                if hasattr(image, "load"):
-                    image.load()
-                images.append(image.convert("RGB"))
-    return images
-
-
 def _extract_openai_image_b64(response: Any) -> str:
     data = getattr(response, "data", None) or []
     if not data:
@@ -277,66 +242,6 @@ def _generate_google_segmentation(request: SegmentationGenerationRequest) -> Gen
         route=route,
         metadata=_build_metadata(request, provider="google", route=route),
     )
-
-
-def _generate_google_segmentation_images(
-    request: SegmentationGenerationRequest,
-) -> list[GeneratedSegmentation]:
-    """Every image Gemini returns for one request, in reply order.
-
-    Same contents, config and one retry as :func:`_generate_google_segmentation`;
-    the retry fires only when the reply carried no picture at all (an imageless
-    reply, e.g. IMAGE_RECITATION). A prompt that asks for two images gets two
-    entries when the model obliges and one when it does not — the caller decides
-    what a short reply means.
-    """
-    model = request.model or vlm_config.MODEL_NAME
-    client = vlm_config.get_client()
-    contents = [
-        request.slice_image,
-        *request.reference_images,
-        request.prompt,
-    ]
-    # A reply carrying two pictures is a multi-part reply, and these models
-    # narrate the pictures they emit, so IMAGE-only output is a plausible
-    # reason a two-image request comes back as one blended picture. TEXT in
-    # the modalities silently caps the image at 1K, so it is added only when
-    # the run already asks for that tier or lower.
-    modalities = (
-        ("TEXT", "IMAGE")
-        if (request.thinking_level or "").upper() in ("", "512", "512P", "512PX", "1K")
-        else ("IMAGE",)
-    )
-    config = _gemini_image_config(request, modalities)
-    response = client.models.generate_content(  # type: ignore[attr-defined]
-        model=model, contents=contents, config=config
-    )
-    images = _extract_inline_images(response)
-    if not images:
-        response = client.models.generate_content(  # type: ignore[attr-defined]
-            model=model, contents=contents, config=config
-        )
-        images = _extract_inline_images(response)
-    if not images:
-        raise RuntimeError("Gemini image generation did not return an inline image")
-
-    route = "google_genai"
-    metadata = _build_metadata(request, provider="google", route=route)
-    return [
-        GeneratedSegmentation(
-            image=image,
-            provider="google",
-            model=model,
-            route=route,
-            metadata={
-                **metadata,
-                "image_index": index,
-                "images_returned": len(images),
-                "response_modalities": list(modalities),
-            },
-        )
-        for index, image in enumerate(images)
-    ]
 
 
 def _generate_openai_images_segmentation(
@@ -492,22 +397,3 @@ def generate_warped_segmentation_image(
         raise ValueError(f"Unknown openai_image_route: {request.openai_image_route}")
 
     raise ValueError(f"Unknown provider: {request.provider}")
-
-
-def generate_warped_segmentation_images(
-    request: SegmentationGenerationRequest,
-) -> list[GeneratedSegmentation]:
-    """All the images one request yields, in the order the provider returned them.
-
-    Only the Gemini lane can hand back more than one picture per reply, so only
-    it has its own multi-image path; every other lane returns the single image of
-    :func:`generate_warped_segmentation_image` as a one-element list. Callers that
-    asked for several outputs read the list length to learn how many arrived.
-    """
-    provider = canonical_provider(request.provider)
-    _validate_requested_route(request.route)
-
-    if provider == "gemini-api":
-        return _generate_google_segmentation_images(request)
-
-    return [generate_warped_segmentation_image(request)]

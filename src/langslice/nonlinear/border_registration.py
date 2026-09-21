@@ -11,17 +11,26 @@ from typing import Any
 import cv2
 import numpy as np
 from PIL import Image
-from scipy.ndimage import map_coordinates
 
 from langslice.atlas import load_atlas
 from langslice.atlas.render import annotation_slice
-from langslice.nonlinear.border_refinement import refine_borders
+from langslice.nonlinear.border_refinement import (
+    border_overlay,
+    extract_thinned_lines,
+    refine_borders,
+)
 from langslice.nonlinear.image_gen_helpers import (
     _classified_to_rgb,
     _elastix_report,
     _grid_spacing_px,
+    line_width_px,
 )
 from langslice.nonlinear.prior import place_plane_on_tissue_with_matrix, tissue_mask
+from langslice.nonlinear.prompts import pass1_atlas_prompt, pass2_atlas_prompt
+from langslice.nonlinear.providers import (
+    SegmentationGenerationRequest,
+    generate_warped_segmentation_image,
+)
 from langslice.nonlinear.types import (
     Deformation,
     RegistrationAnnotationSession,
@@ -64,10 +73,9 @@ def _affine(value: Sequence[Sequence[float]] | np.ndarray) -> np.ndarray:
 
 def composed_correspondences(
     field: np.ndarray,
-    atlas_to_canvas: np.ndarray | None,
+    atlas_to_canvas: np.ndarray,
     slice_to_canvas: np.ndarray,
     native_to_canonical: np.ndarray,
-    initial_coordinate_map: np.ndarray | None = None,
 ) -> tuple[list[list[float]], list[list[float]]]:
     """Sample slice→canonical atlas markers and slice→native atlas points.
 
@@ -84,15 +92,7 @@ def composed_correspondences(
     spacing = _grid_spacing_px(field.shape)
     ys = np.unique(np.append(np.arange(0, height, spacing), height - 1))
     xs = np.unique(np.append(np.arange(0, width, spacing), width - 1))
-    canvas_to_native = (
-        np.linalg.inv(_affine(atlas_to_canvas)) if atlas_to_canvas is not None else None
-    )
-    if initial_coordinate_map is not None:
-        if (initial_coordinate_map.shape != field.shape
-                or not np.isfinite(initial_coordinate_map).all()):
-            raise ValueError("Initial atlas coordinate map must match the finite canvas field")
-    elif canvas_to_native is None:
-        raise ValueError("Initial placement needs an affine or a dense native atlas coordinate map")
+    canvas_to_native = np.linalg.inv(_affine(atlas_to_canvas))
     canvas_to_slice = np.linalg.inv(_affine(slice_to_canvas))
     canonical = _affine(native_to_canonical)
     markers, direct = [], []
@@ -101,16 +101,7 @@ def composed_correspondences(
             q = np.array([float(x), float(y), 1.0])
             moved = q.copy()
             moved[:2] += field[y, x]
-            if initial_coordinate_map is not None:
-                native = np.array([
-                    float(map_coordinates(initial_coordinate_map[..., axis],
-                                          [[moved[1]], [moved[0]]], order=1,
-                                          mode="nearest", prefilter=False)[0])
-                    for axis in range(2)
-                ] + [1.0])
-            else:
-                assert canvas_to_native is not None
-                native = canvas_to_native @ moved
+            native = canvas_to_native @ moved
             source = canvas_to_slice @ q
             target = canvas_to_slice @ canonical @ native
             markers.append([float(source[0]), float(source[1]), float(target[0]), float(target[1])])
@@ -120,22 +111,10 @@ def composed_correspondences(
     return markers, direct
 
 
-def composed_native_map(
-    field: np.ndarray,
-    atlas_to_canvas: np.ndarray | None,
-    initial_coordinate_map: np.ndarray | None = None,
-) -> np.ndarray:
-    """Compose every residual sample with the initial native atlas mapping."""
+def composed_native_map(field: np.ndarray, atlas_to_canvas: np.ndarray) -> np.ndarray:
+    """Compose every residual sample with the initial native atlas placement."""
     yy, xx = np.indices(field.shape[:2], dtype=np.float64)
     x, y = xx + field[..., 0], yy + field[..., 1]
-    if initial_coordinate_map is not None:
-        return np.stack([
-            map_coordinates(initial_coordinate_map[..., axis], [y, x], order=1,
-                            mode="nearest", prefilter=False)
-            for axis in range(2)
-        ], axis=-1)
-    if atlas_to_canvas is None:
-        raise ValueError("Initial atlas placement is missing")
     inverse = np.linalg.inv(_affine(atlas_to_canvas))
     return np.stack([
         inverse[axis, 0] * x + inverse[axis, 1] * y + inverse[axis, 2]
@@ -197,6 +176,7 @@ def generate_border_registration_candidate(
     pitch_deg: float = 0.0,
     yaw_deg: float = 0.0,
     deformation: Deformation = "bspline",
+    passes: int = 1,
     previous_candidate_id: str | None = None,
     candidate_id: str | None = None,
     debug_dir: str | None = None,
@@ -208,23 +188,26 @@ def generate_border_registration_candidate(
     native_canvas: bool = True,
     canvas_long_edge: int | None = None,
 ) -> RegistrationCandidate:
-    """Correct rough atlas borders, retaining exact region ids and placement.
+    """Route to exactly one of two border-based placements, then correct.
 
-    ``initial_atlas_to_slice`` maps the annotation grid AFTER ``image_axes``
-    and ``atlas_mirror_lr`` into original image pixel centers. It takes
-    precedence over the automatic silhouette placement. No reflection is
-    inferred from symmetric tissue.
+    ``initial_atlas_to_slice`` (route "supplied") takes precedence. Without
+    it, ``provider="none"`` keeps its historical model-free diagnostic
+    (silhouette placement, zero residual). Otherwise (route "atlas"): the
+    rough placement is ALWAYS the local silhouette-moments fit — never a
+    remote call, since there is no placement to correct — and one model call
+    (``passes=2`` for two) draws/corrects boundaries on the clean tissue
+    against the outlined atlas template before the SAME residual border fit
+    as "supplied" runs (``generated_image`` is reassigned to the model's
+    output and passed to :func:`~langslice.nonlinear.border_refinement.refine_borders`
+    below; the fit is not duplicated). A caller-supplied ``generated_image``
+    with no placement replays route "atlas" without any model call: it is
+    treated as that route's own final output. No reflection is inferred from
+    symmetric tissue; ``atlas_mirror_lr`` is the only source of it.
     """
-    from langslice.nonlinear.image_gen_registration import (
-        generate_registration_candidate,
-        prepare_canvas,
-    )
-
+    if passes not in (1, 2):
+        raise ValueError("passes must be 1 or 2")
     if on_progress:
         on_progress("Preparing rough atlas boundaries on the original section...")
-    if (generated_image is not None and initial_atlas_to_slice is None
-            and canonical_provider(provider) != "none"):
-        raise ValueError("Border replay requires a supplied initial alignment")
     candidate_id = candidate_id or f"candidate-{uuid.uuid4().hex[:12]}"
     atlas = load_atlas(atlas_name)
     labels = annotation_slice(
@@ -238,6 +221,8 @@ def generate_border_registration_candidate(
     if labels.ndim != 2 or not np.issubdtype(labels.dtype, np.integer):
         raise ValueError("Atlas annotation must be a two-dimensional integer label map")
     native_size = (labels.shape[1], labels.shape[0])
+    from langslice.nonlinear.image_gen_registration import outlined_atlas_template, prepare_canvas
+
     canvas, unpadded, ox, oy, pad_px = prepare_canvas(
         image, canvas_pad=canvas_pad, image_model=image_model, provider=provider,
         native_canvas=native_canvas, canvas_long_edge=canvas_long_edge, quality=thinking_level,
@@ -245,8 +230,10 @@ def generate_border_registration_candidate(
     original_to_canvas = pixel_center_map(image.size, unpadded, (ox, oy))
     canonical = canonical_atlas_map(native_size, canvas.size)
     prior: dict[str, Any]
-    initial_coordinate_map = None
-    first = None
+    atlas_route_model_calls = 0
+    atlas_route_artifacts: dict[str, Image.Image] = {}
+    atlas_route_prompts: dict[str, str] = {}
+    atlas_route_transports: list[str | None] = []
     if initial_atlas_to_slice is not None:
         initial = _affine(initial_atlas_to_slice)
         atlas_to_canvas = original_to_canvas @ initial
@@ -265,41 +252,71 @@ def generate_border_registration_candidate(
             "sign_pattern": list(signs), "silhouette_iou": float(iou),
         }
     else:
-        # Standalone registration retains the two-call route: first generate
-        # and fit the color atlas; then correct its boundaries on raw tissue.
-        first = generate_registration_candidate(
-            image, atlas_name=atlas_name, position_mm=position_mm, plane=plane,
-            provider=provider, image_model=image_model, image_axes=image_axes,
-            atlas_mirror_lr=atlas_mirror_lr, canvas_pad=canvas_pad,
-            pitch_deg=pitch_deg, yaw_deg=yaw_deg, deformation=deformation,
-            candidate_id=f"{candidate_id}-initial", debug_dir=debug_dir,
-            on_progress=on_progress, on_trace=on_trace,
-            openai_image_route=openai_image_route, review_model=review_model,
-            thinking_level=thinking_level, native_canvas=native_canvas,
-            canvas_long_edge=canvas_long_edge, registration_mode="colormap",
+        # Route "atlas": no supplied placement. One model call draws
+        # boundaries on the clean tissue against the outlined atlas
+        # template; an optional second corrects them against the template
+        # plus the first attempt's lines redrawn on the tissue. A supplied
+        # `generated_image` replays this route with no model call at all
+        # (it IS this route's final output).
+        outlined_atlas = outlined_atlas_template(
+            atlas, position_mm, plane, pitch_deg=pitch_deg, yaw_deg=yaw_deg,
+            image_axes=image_axes, atlas_mirror_lr=atlas_mirror_lr,
+            section_aspect=canvas.width / canvas.height, native_labels=labels,
         )
-        if first.warped_labels is None or first.atlas_coordinate_map is None:
-            raise RuntimeError(
-                "Initial color registration did not retain atlas labels and coordinates"
-            )
-        rough = first.warped_labels
-        initial_coordinate_map = first.atlas_coordinate_map
-        if (rough.shape != (canvas.height, canvas.width)
-                or initial_coordinate_map.shape != (*rough.shape, 2)):
-            raise RuntimeError(
-                "Initial color registration and correction use different canvas frames"
-            )
-        for key, expected in (("target_size", list(canvas.size)),
-                              ("unpadded_size", list(unpadded)),
-                              ("canvas_origin_px", [ox, oy]),
-                              ("native_atlas_size", list(native_size))):
-            if first.metadata.get(key) != expected:
-                raise RuntimeError(f"Initial color registration has inconsistent {key}")
-        initial = None
-        atlas_to_canvas = None
-        prior = {"source": "colormap_registration", "automatic": True,
-                 "candidate_id": first.candidate_id, "image_generation_calls": 1,
-                 "coordinate_map_edge_mode": "nearest (clamp samples outside the initial canvas)"}
+        atlas_route_artifacts["outlined_atlas.png"] = outlined_atlas
+        # A caller's image_prompt replaces the pass-1 text on this route.
+        atlas_route_prompts["pass1"] = image_prompt or pass1_atlas_prompt(plane, provider)
+        if generated_image is not None:
+            atlas_route_output = generated_image
+        else:
+            if on_progress:
+                on_progress("Drawing atlas boundaries on the clean tissue (pass 1)...")
+            reply = generate_warped_segmentation_image(SegmentationGenerationRequest(
+                slice_image=canvas.convert("RGB"), reference_images=[outlined_atlas],
+                prompt=atlas_route_prompts["pass1"],
+                provider=provider, model=image_model, review_model=review_model,
+                openai_image_route=openai_image_route, thinking_level=thinking_level,
+                metadata={"workflow": "border_registration", "route": "atlas", "pass": 1},
+            ))
+            atlas_route_output = reply.image
+            atlas_route_transports.append(reply.route)
+            atlas_route_model_calls = 1
+            if passes == 2:
+                pass1_lines = extract_thinned_lines(atlas_route_output, canvas.size)
+                if not pass1_lines.any():
+                    raise ValueError(
+                        "Pass 1 returned no usable yellow anatomical boundaries; "
+                        "pass 2 has nothing to correct"
+                    )
+                if on_progress:
+                    on_progress("Correcting atlas boundaries (pass 2)...")
+                lines_on_tissue = border_overlay(
+                    canvas, pass1_lines, line_width_px(max(canvas.size))
+                )
+                atlas_route_artifacts["pass1_raw_correction.png"] = atlas_route_output
+                atlas_route_artifacts["pass1_lines_on_tissue.png"] = lines_on_tissue
+                atlas_route_prompts["pass2"] = pass2_atlas_prompt(plane, provider)
+                reply = generate_warped_segmentation_image(SegmentationGenerationRequest(
+                    slice_image=canvas.convert("RGB"),
+                    reference_images=[lines_on_tissue, outlined_atlas],
+                    prompt=atlas_route_prompts["pass2"],
+                    provider=provider, model=image_model, review_model=review_model,
+                    openai_image_route=openai_image_route, thinking_level=thinking_level,
+                    metadata={"workflow": "border_registration", "route": "atlas", "pass": 2},
+                ))
+                atlas_route_output = reply.image
+                atlas_route_transports.append(reply.route)
+                atlas_route_model_calls = 2
+        generated_image = atlas_route_output
+        rough, signs, iou, atlas_to_canvas = place_plane_on_tissue_with_matrix(
+            labels, tissue_mask(canvas, canvas.size)
+        )
+        initial = np.linalg.inv(original_to_canvas) @ atlas_to_canvas
+        prior = {
+            "source": "silhouette_moments_atlas_route", "automatic": True,
+            "sign_pattern": list(signs), "silhouette_iou": float(iou),
+            "passes": passes, "atlas_route_model_calls": atlas_route_model_calls,
+        }
     if on_progress:
         on_progress("Correcting atlas boundaries and fitting the residual deformation...")
     result = refine_borders(
@@ -308,16 +325,26 @@ def generate_border_registration_candidate(
         thinking_level=thinking_level, generated_image=generated_image,
         deformation=deformation, image_prompt=image_prompt,
     )
+    if prior["source"] == "silhouette_moments_atlas_route":
+        # refine_borders sees `generated_image` as a replay either way (it
+        # never calls the model itself on this route); record what actually
+        # happened above instead of leaving its generic replay bookkeeping.
+        result.metadata["model_called"] = atlas_route_model_calls > 0
+        result.metadata.pop("replayed", None)
+        result.metadata["atlas_route_model_calls"] = atlas_route_model_calls
+        result.metadata["route"] = atlas_route_transports
+        # refine_borders records the route-"supplied" prompt it would have
+        # sent; on this route the prompts actually sent are the atlas ones.
+        result.metadata["prompt"] = atlas_route_prompts["pass1"]
+        if "pass2" in atlas_route_prompts:
+            result.metadata["pass2_prompt"] = atlas_route_prompts["pass2"]
     fit_report = residual_fit_report(
         rough, result.fitted_labels, result.deformation_field, getattr(atlas, "structures", None)
     )
     markers, native_points = composed_correspondences(
         result.deformation_field, atlas_to_canvas, original_to_canvas, canonical,
-        initial_coordinate_map=initial_coordinate_map,
     )
-    final_native_map = composed_native_map(
-        result.deformation_field, atlas_to_canvas, initial_coordinate_map
-    )
+    final_native_map = composed_native_map(result.deformation_field, atlas_to_canvas)
     warped_atlas = Image.fromarray(_classified_to_rgb(result.fitted_labels, atlas))
     metadata: dict[str, Any] = {
         **result.metadata,
@@ -334,6 +361,7 @@ def generate_border_registration_candidate(
         "native_atlas_frame": "annotation_slice after image_axes and explicit atlas_mirror_lr",
         "initial_atlas_to_slice": initial.tolist() if initial is not None else None,
         "initial_alignment_source": prior["source"],
+        "passes": passes if prior["source"] == "silhouette_moments_atlas_route" else 1,
         "atlas_to_canvas": atlas_to_canvas.tolist() if atlas_to_canvas is not None else None,
         "slice_to_canvas": original_to_canvas.tolist(),
         "native_atlas_to_canonical_canvas": canonical.tolist(),
@@ -343,7 +371,7 @@ def generate_border_registration_candidate(
             "target": "canonical letterboxed atlas canvas mapped to original image units",
             "composition": (
                 "inverse(slice_to_canvas) @ native_atlas_to_canonical_canvas @ "
-                "initial_native_map(canvas_point + residual_displacement)"
+                "inverse(atlas_to_canvas) @ (canvas_point + residual_displacement)"
             ),
         },
         "slice_to_native_atlas_correspondences": native_points,
@@ -352,7 +380,6 @@ def generate_border_registration_candidate(
         "elastix_elapsed_s": float(result.elapsed),
         "elastix_stage": "border_residual",
         "elastix": fit_report,
-        "initial_stage_elastix": first.metadata.get("elastix") if first is not None else None,
     }
     if previous_candidate_id is not None:
         metadata["previous_candidate_id"] = previous_candidate_id
@@ -376,6 +403,7 @@ def generate_border_registration_candidate(
             "generated_border_overlay.png": result.model_border_overlay,
             "warped_atlas.png": warped_atlas,
             "warped_border_overlay.png": result.fitted_border_overlay,
+            **atlas_route_artifacts,
         }
         for filename, artifact in artifacts.items():
             artifact.save(directory / filename)
@@ -386,13 +414,12 @@ def generate_border_registration_candidate(
         np.savez_compressed(directory / "warped_leaf_ids.npz", ids=result.fitted_labels)
         np.savez_compressed(directory / "residual_field.npz", field=result.deformation_field)
         np.savez_compressed(directory / "atlas_coordinate_map.npz", coordinates=final_native_map)
-        if initial_coordinate_map is not None:
-            np.savez_compressed(directory / "initial_atlas_coordinate_map.npz",
-                                coordinates=initial_coordinate_map)
         Image.fromarray(result.model_border_mask.astype(np.uint8) * 255).save(
             directory / "corrected_border_mask.png"
         )
         (directory / "prompt.txt").write_text(str(result.metadata["prompt"]))
+        if "pass2_prompt" in result.metadata:
+            (directory / "pass2_prompt.txt").write_text(str(result.metadata["pass2_prompt"]))
     metadata["artifact_paths"] = dict(paths)
     metadata.update({key: value for key, value in paths.items() if value is not None})
     if debug_dir is not None:

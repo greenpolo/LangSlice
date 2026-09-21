@@ -16,7 +16,9 @@ from langslice.nonlinear.image_gen_helpers import (
     _register_channel_stacks,
     _run_elastix_april_borders,
     _warp_classified_labels,
+    line_width_px,
 )
+from langslice.nonlinear.prompts import border_refinement_prompt
 from langslice.nonlinear.providers import (
     SegmentationGenerationRequest,
     generate_warped_segmentation_image,
@@ -25,36 +27,15 @@ from langslice.nonlinear.types import Deformation
 from langslice.providers.registry import canonical_provider
 from langslice.space import Plane
 
-
-def border_refinement_prompt(plane: Plane = "coronal") -> str:
-    """The rough-plus-raw experiment wording, without a mouse-only assumption.
-
-    Sentence audit: the first two sentences identify actual attachments and
-    their order; the next four specify moving existing lines against visible
-    anatomy, retaining correct lines and resolving indistinct boundaries. The
-    last three pin the photograph, boundary identities, style and single-image
-    output. 'Mouse' is removed and the section plane is parameterized. 'Automatic'
-    is removed because supplied placement may come from an agent or a person;
-    this leaves the instruction to correct existing rough lines unchanged.
-    """
-    return (
-        f"Image 1 is a photograph of a brain {plane} section with thin yellow "
-        "anatomical region boundaries placed by a rough alignment. "
-        "Image 2 is the same photograph in exactly the same frame, without the lines, "
-        "so the underlying tissue edges are visible.\n\n"
-        "Edit Image 1 so that every yellow line lies on the edge of the region it "
-        "encloses, as that edge appears in Image 2. "
-        "Move a line by sliding or bending it to follow this specimen's anatomy. "
-        "A line that already sits on its edge stays as it is. "
-        "Where an internal boundary is indistinct, use the neighboring visible structures "
-        "and the supplied region arrangement to place it.\n\n"
-        "The photograph in the output is Image 2 unchanged beneath the corrected lines: "
-        "the same tissue and background, brain size and position, and frame. "
-        "The set of boundaries stays the same, each enclosing the corresponding region "
-        "in the same thin bright yellow. "
-        "The output is one image: the original photograph with the corrected yellow "
-        "boundaries replacing the supplied yellow boundaries."
-    )
+__all__ = [
+    "BorderRefinementResult",
+    "border_overlay",
+    "border_refinement_prompt",
+    "extract_thinned_lines",
+    "refine_borders",
+    "thin",
+    "yellow_mask",
+]
 
 
 def yellow_mask(rgb: np.ndarray) -> np.ndarray:
@@ -102,6 +83,24 @@ def border_overlay(image: Image.Image, mask: np.ndarray, width: int = 1) -> Imag
     return Image.fromarray(pixels)
 
 
+def extract_thinned_lines(raw: Image.Image, canvas_size: tuple[int, int]) -> np.ndarray:
+    """Boolean thinned yellow-line mask from a raw model reply, on *canvas_size*.
+
+    Shared by the residual-fit border extraction in :func:`refine_borders` and
+    route "atlas"'s pass-2 input construction (:mod:`border_registration`),
+    which needs pass 1's lines redrawn on the clean tissue at the same canvas
+    before the second call. Extracts before any interpolation, so tissue
+    colors cannot blend into yellow; crops back to the canvas aspect first —
+    a lane with a fixed output frame answers at its own aspect, ours
+    letterboxed inside it, so crop back rather than stretch.
+    """
+    from langslice.nonlinear.image_gen_registration import crop_to_aspect
+
+    raw_mask = Image.fromarray(yellow_mask(np.asarray(raw.convert("RGB"))))
+    framed = crop_to_aspect(raw_mask, canvas_size[0] / canvas_size[1])
+    return thin(np.asarray(framed.resize(canvas_size, Image.Resampling.NEAREST)))
+
+
 @dataclass
 class BorderRefinementResult:
     rough_border_overlay: Image.Image
@@ -147,7 +146,7 @@ def refine_borders(
         raise ValueError("Rough atlas placement contains no regions")
     original = image.convert("RGB")
     moving = _extract_borders_from_classified(_merge_classified(labels, atlas))
-    line_width = max(1, round(2 * max(image.size) / 2048))
+    line_width = line_width_px(max(image.size))
     rough = border_overlay(original, moving > 0, line_width)
     prompt = image_prompt or border_refinement_prompt(plane)
     metadata: dict[str, Any] = {
@@ -175,13 +174,7 @@ def refine_borders(
         raw = generated_image.copy()
         metadata.update({"model_called": False, "replayed": True})
 
-    # Import lazily: the candidate orchestrator may itself call this module.
-    from langslice.nonlinear.image_gen_registration import crop_to_aspect
-
-    # Extract before interpolation so tissue colors cannot blend into yellow.
-    raw_mask = Image.fromarray(yellow_mask(np.asarray(raw.convert("RGB"))))
-    framed = crop_to_aspect(raw_mask, image.width / image.height)
-    mask = thin(np.asarray(framed.resize(image.size, Image.Resampling.NEAREST)))
+    mask = extract_thinned_lines(raw, image.size)
     if not mask.any():
         raise ValueError("Image model returned no usable yellow anatomical boundaries")
     fixed = mask.astype(np.uint8) * 255
