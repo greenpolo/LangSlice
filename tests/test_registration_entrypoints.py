@@ -45,11 +45,11 @@ def test_api_resize_preserves_pixel_centres(tmp_path, monkeypatch, supplied):
         image_path=str(image_path), atlas="test", position_mm=1, provider="none",
         preprocess="none", vlm_resolution=100,
         initial_atlas_to_slice=affine.tolist() if supplied else None,
-        initial_alignment_source="test-placement", atlas_mirror_lr=True,
+        initial_alignment_source="test-placement", atlas_mirror_lr=True, passes=2,
     )
     with pytest.raises(CapturedRequest):
         run_register(request)
-    assert received["registration_mode"] == "borders"
+    assert received["passes"] == 2
     assert received["atlas_mirror_lr"] is True
     assert received["initial_alignment_source"] == "test-placement"
     if supplied:
@@ -81,11 +81,37 @@ def test_nonlinear_runtime_threads_supplied_placement(monkeypatch):
         runtime.estimate_registration(
             Image.new("RGB", (32, 24)), atlas_name="test", position_mm=2,
             initial_atlas_to_slice=matrix, initial_alignment_source="host",
-            atlas_mirror_lr=True,
+            atlas_mirror_lr=True, passes=2,
         )
-    assert received["registration_mode"] == "borders"
+    assert received["passes"] == 2
     assert received["initial_atlas_to_slice"] == matrix
     assert received["initial_alignment_source"] == "host"
+    assert received["atlas_mirror_lr"] is True
+
+
+def test_nonlinear_runtime_threads_omitted_placement_selects_atlas_route(monkeypatch):
+    """No ``initial_atlas_to_slice`` forwards ``None`` for it, which is what
+    selects route "atlas" inside `border_registration.py` (an explicitly
+    supplied placement selects route "supplied" instead; see the test above).
+    ``passes``/``atlas_mirror_lr`` still thread through on this route too."""
+    from langslice.nonlinear import runtime
+
+    monkeypatch.setattr(runtime, "load_atlas", lambda _: object())
+    monkeypatch.setattr(runtime, "get_composite_slice", lambda *a, **k: Image.new("RGB", (8, 8)))
+    received = {}
+
+    def capture(image, **kwargs):
+        received.update(kwargs)
+        raise CapturedRequest
+
+    monkeypatch.setattr(runtime, "generate_registration_candidate", capture)
+    with pytest.raises(CapturedRequest):
+        runtime.estimate_registration(
+            Image.new("RGB", (32, 24)), atlas_name="test", position_mm=2,
+            atlas_mirror_lr=True, passes=2,
+        )
+    assert received["initial_atlas_to_slice"] is None
+    assert received["passes"] == 2
     assert received["atlas_mirror_lr"] is True
 
 
@@ -147,7 +173,8 @@ def test_cli_alignment_json_and_mirror(tmp_path, monkeypatch, wrapped):
     cli._add_register_parser(parser.add_subparsers())
     args = parser.parse_args([
         "register", "unused.png", "--position", "2", "--provider", "none",
-        "--initial-alignment", str(path), "--mirror-atlas-lr", "--out", str(tmp_path / "out"),
+        "--initial-alignment", str(path), "--mirror-atlas-lr", "--passes", "2",
+        "--out", str(tmp_path / "out"),
     ])
     received = []
 
@@ -160,4 +187,4 @@ def test_cli_alignment_json_and_mirror(tmp_path, monkeypatch, wrapped):
         cli._run_register(args)
     assert received[0].initial_atlas_to_slice == matrix
     assert received[0].atlas_mirror_lr is True
-    assert received[0].registration_mode == "borders"
+    assert received[0].passes == 2

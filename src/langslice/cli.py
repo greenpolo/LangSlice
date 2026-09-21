@@ -45,13 +45,11 @@ def _add_register_parser(subparsers: argparse._SubParsersAction) -> None:
     reg.add_argument("--model", default=None, help="Gemini model name")
     reg.add_argument("--image-model", default=None, help="Image generation model name")
     reg.add_argument(
-        "--registration-mode", choices=["borders", "colormap"], default="borders",
-        help="Refine atlas borders on tissue, or run the original color-map generation only",
-    )
-    reg.add_argument(
         "--initial-alignment", default=None, metavar="JSON",
         help="JSON 3x3 affine (or object with atlas_to_slice): native atlas pixels to "
-        "original image pixels. Skips initial color-map generation in borders mode.",
+        "original image pixels. Selects route 'supplied' (one border-correction "
+        "call); omit it to use route 'atlas' (draw from nothing against the "
+        "outlined atlas template, see --passes).",
     )
     reg.add_argument(
         "--mirror-atlas-lr", action="store_true",
@@ -87,18 +85,21 @@ def _add_register_parser(subparsers: argparse._SubParsersAction) -> None:
         "component that samples a different level on each side.",
     )
     reg.add_argument(
-        "--draws",
-        type=int,
-        default=1,
-        help="Border mode requires 1 draw per stage. Explicit colormap mode supports "
-        "multiple independent draws with a per-pixel majority vote.",
-    )
-    reg.add_argument(
         "--deformation",
         default="bspline",
         choices=["bspline", "affine"],
         help="Elastix stages: 'bspline' is affine + B-spline; 'affine' fits "
         "the affine stage alone (measured higher on generated paintings).",
+    )
+    reg.add_argument(
+        "--passes",
+        type=int,
+        choices=[1, 2],
+        default=1,
+        help="Route 'atlas' (no supplied placement) only: draw boundaries once, "
+        "or twice with a second call that corrects the first pass against the "
+        "template. Ignored on route 'supplied' (--initial-alignment given), "
+        "which always makes exactly one call.",
     )
     reg.add_argument(
         "--vlm-resolution",
@@ -262,10 +263,9 @@ def _run_register(args: argparse.Namespace) -> None:
         image_axes=getattr(args, "image_axes", None),
         pitch_deg=getattr(args, "pitch_deg", 0.0),
         yaw_deg=getattr(args, "yaw_deg", 0.0),
-        draws=getattr(args, "draws", 1),
         deformation=getattr(args, "deformation", "bspline"),
+        passes=getattr(args, "passes", 1),
         vlm_resolution=args.vlm_resolution,
-        registration_mode=getattr(args, "registration_mode", "borders"),
         initial_atlas_to_slice=initial_alignment,
         initial_alignment_source=str(alignment_path) if alignment_path else "supplied",
         atlas_mirror_lr=getattr(args, "mirror_atlas_lr", False),

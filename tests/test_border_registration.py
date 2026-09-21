@@ -31,24 +31,6 @@ def test_zero_residual_retains_initial_affine_with_rounding_and_padding():
     assert not np.allclose(np.array(markers)[:, :2], np.array(markers)[:, 2:])
 
 
-def test_dense_initial_map_composes_residual_and_documents_edge_clamping():
-    yy, xx = np.mgrid[:41, :45]
-    initial = np.stack([xx * 2.0 + 3, yy * 3.0 - 4], axis=-1)
-    field = np.zeros_like(initial)
-    field[..., 0] = 1.5
-    field[..., 1] = -2.0
-    markers, pairs = registration.composed_correspondences(
-        field, None, np.eye(3), np.eye(3), initial_coordinate_map=initial
-    )
-    dense = registration.composed_native_map(field, None, initial)
-    for marker, pair in zip(markers, pairs, strict=True):
-        x, y = marker[:2]
-        expected = [min(x + 1.5, 44) * 2 + 3, max(y - 2, 0) * 3 - 4]
-        np.testing.assert_allclose(pair[2:], expected)
-        np.testing.assert_allclose(marker[2:], expected)
-        np.testing.assert_allclose(dense[int(y), int(x)], expected)
-
-
 @pytest.fixture
 def case(monkeypatch):
     import langslice.nonlinear.image_gen_registration as legacy
@@ -107,41 +89,119 @@ def test_mirror_is_explicit_and_applied_before_supplied_matrix(case):
     np.testing.assert_array_equal(received[0][0], np.fliplr(labels))
 
 
-def test_standalone_starts_with_color_registration(case, monkeypatch):
-    image, labels, received = case
-    import langslice.nonlinear.image_gen_registration as legacy
-    calls = []
-    yy, xx = np.mgrid[:20, :30]
-    first = SimpleNamespace(
-        candidate_id="initial", warped_labels=labels,
-        atlas_coordinate_map=np.stack([xx, yy], axis=-1).astype(float),
-        metadata={"target_size": [30, 20], "unpadded_size": [30, 20],
-                  "native_atlas_size": [30, 20],
-                  "canvas_origin_px": [0, 0], "elastix": {"codes": [{"code": "WARP_FOLDS"}]}},
+def _stub_silhouette_placement(monkeypatch, labels, iou=0.87):
+    """Route "atlas" needs no real tissue image: stand in for both the
+    tissue-outline step and the moments placement it feeds."""
+    monkeypatch.setattr(
+        registration, "tissue_mask", lambda *a, **k: np.ones(labels.shape, dtype=np.uint8) * 255
+    )
+    monkeypatch.setattr(
+        registration, "place_plane_on_tissue_with_matrix",
+        lambda labs, tissue: (labs.copy(), (1, 1), iou, np.eye(3)),
     )
 
-    def initial(*args, **kwargs):
-        calls.append(kwargs)
-        return first
 
-    monkeypatch.setattr(legacy, "generate_registration_candidate", initial)
+def test_atlas_route_draws_boundaries_then_places_and_fits(case, monkeypatch):
+    """No supplied placement, a real provider: route "atlas". One model call
+    against the outlined atlas template; the silhouette placement is local
+    (never the model), and the SAME refine_borders fit as route "supplied"
+    runs on the model's output."""
+    image, labels, received = case
+    import langslice.nonlinear.image_gen_registration as legacy
+
+    outlined = Image.new("RGB", (5, 5))
+    monkeypatch.setattr(legacy, "outlined_atlas_template", lambda *a, **k: outlined)
+    _stub_silhouette_placement(monkeypatch, labels)
+    calls = []
+    drawn = Image.new("RGB", image.size, (10, 20, 30))
+
+    def fake_generate(request):
+        calls.append(request)
+        return SimpleNamespace(image=drawn, route="test")
+
+    monkeypatch.setattr(registration, "generate_warped_segmentation_image", fake_generate)
     result = registration.generate_border_registration_candidate(
         image, atlas_name="test", position_mm=1, provider="openai-oauth"
     )
-    assert len(calls) == 1
-    assert calls[0]["registration_mode"] == "colormap"
+    assert len(calls) == 1, "passes defaults to 1: exactly one model call"
+    assert calls[0].reference_images == [outlined]
     np.testing.assert_array_equal(received[0][0], labels)
-    assert result.metadata["prior"]["source"] == "colormap_registration"
-    assert result.metadata["initial_stage_elastix"] == {"codes": [{"code": "WARP_FOLDS"}]}
+    assert received[0][1]["generated_image"] is drawn
+    assert result.metadata["prior"]["source"] == "silhouette_moments_atlas_route"
+    assert result.metadata["prior"]["silhouette_iou"] == 0.87
+    assert result.metadata["prior"]["passes"] == 1
+    assert result.metadata["prior"]["atlas_route_model_calls"] == 1
+    assert result.metadata["model_called"] is True
+    assert "replayed" not in result.metadata
     assert result.metadata["elastix"]["codes"] == []
 
 
-def test_replay_does_not_silently_generate_initial_alignment(case):
-    image, _, _ = case
-    with pytest.raises(ValueError, match="replay requires"):
+def test_atlas_route_passes_two_corrects_against_pass_one_and_the_template(case, monkeypatch):
+    image, labels, received = case
+    import langslice.nonlinear.image_gen_registration as legacy
+
+    template = Image.new("RGB", (5, 5))
+    monkeypatch.setattr(legacy, "outlined_atlas_template", lambda *a, **k: template)
+    _stub_silhouette_placement(monkeypatch, labels)
+    calls = []
+    pass1_reply = image.copy()
+    pass1_reply.putpixel((10, 10), (255, 255, 0))  # a drawn boundary pixel
+
+    def fake_generate(request):
+        calls.append(request)
+        if len(calls) == 1:
+            return SimpleNamespace(image=pass1_reply, route="test")
+        return SimpleNamespace(image=image.copy(), route="test")
+
+    monkeypatch.setattr(registration, "generate_warped_segmentation_image", fake_generate)
+    registration.generate_border_registration_candidate(
+        image, atlas_name="test", position_mm=1, provider="openai-oauth", passes=2,
+    )
+    assert len(calls) == 2
+    # Pass 2's Image 1 is the clean tissue, Image 2 pass 1's lines redrawn on
+    # it (same canvas), Image 3 the outlined atlas template again.
+    assert calls[1].reference_images[1] is template
+    redrawn = np.asarray(calls[1].reference_images[0])
+    assert redrawn[10, 10].tolist() == [255, 255, 0]
+    untouched = np.ones(redrawn.shape[:2], dtype=bool)
+    untouched[10, 10] = False
+    np.testing.assert_array_equal(redrawn[untouched], np.asarray(image)[untouched])
+
+
+@pytest.mark.parametrize("passes", [0, 3, -1])
+def test_passes_must_be_one_or_two(case, passes):
+    image, _labels, _received = case
+    with pytest.raises(ValueError, match="passes must be 1 or 2"):
         registration.generate_border_registration_candidate(
-            image, atlas_name="test", position_mm=1, generated_image=image
+            image, atlas_name="test", position_mm=1,
+            initial_atlas_to_slice=np.eye(3), passes=passes,
         )
+
+
+def test_replay_route_atlas_skips_every_model_call(case, monkeypatch):
+    """A supplied generated_image with no placement replays route "atlas"
+    end to end: it IS that route's final output, so no model call happens —
+    this is the offline-smoke-test contract."""
+    image, labels, received = case
+    import langslice.nonlinear.image_gen_registration as legacy
+
+    monkeypatch.setattr(
+        legacy, "outlined_atlas_template", lambda *a, **k: Image.new("RGB", (5, 5))
+    )
+    _stub_silhouette_placement(monkeypatch, labels)
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("A replayed atlas-route output must not call the model")
+
+    monkeypatch.setattr(registration, "generate_warped_segmentation_image", forbidden)
+    result = registration.generate_border_registration_candidate(
+        image, atlas_name="test", position_mm=1, provider="openai-oauth",
+        generated_image=image,
+    )
+    assert result.metadata["prior"]["source"] == "silhouette_moments_atlas_route"
+    assert result.metadata["prior"]["atlas_route_model_calls"] == 0
+    assert result.metadata["model_called"] is False
+    assert received[0][1]["generated_image"] is image
 
 
 def test_nonfinite_fields_and_singular_affines_fail():

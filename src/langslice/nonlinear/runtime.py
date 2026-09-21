@@ -9,7 +9,6 @@ from collections.abc import Callable, Sequence
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
 
 from PIL import Image
 
@@ -124,9 +123,8 @@ def _run_dense_registration(
     canvas_pad: float,
     pitch_deg: float,
     yaw_deg: float,
-    draws: int,
     deformation: Deformation,
-    registration_mode: Literal["borders", "colormap"],
+    passes: int,
     initial_atlas_to_slice: Sequence[Sequence[float]] | None,
     initial_alignment_source: str,
     atlas_mirror_lr: bool,
@@ -148,9 +146,8 @@ def _run_dense_registration(
         canvas_pad=canvas_pad,
         pitch_deg=pitch_deg,
         yaw_deg=yaw_deg,
-        draws=draws,
         deformation=deformation,
-        registration_mode=registration_mode,
+        passes=passes,
         initial_atlas_to_slice=initial_atlas_to_slice,
         initial_alignment_source=initial_alignment_source,
         atlas_mirror_lr=atlas_mirror_lr,
@@ -190,8 +187,7 @@ def _run_dense_registration(
             parts=[
                 image_part_from_pil(
                     candidate.generated_segmentation,
-                    label=("Raw border-correction reply" if registration_mode == "borders"
-                           else "Generated segmentation"),
+                    label="Raw border-correction reply",
                     image_format="PNG",
                     path=str(registration_dir / "generated_segmentation.png")
                     if registration_dir is not None
@@ -255,25 +251,25 @@ def estimate_registration(
     canvas_pad: float = 0.0,
     pitch_deg: float = 0.0,
     yaw_deg: float = 0.0,
-    draws: int = 1,
     deformation: Deformation = "bspline",
-    registration_mode: Literal["borders", "colormap"] = "borders",
+    passes: int = 1,
     initial_atlas_to_slice: Sequence[Sequence[float]] | None = None,
     initial_alignment_source: str = "supplied",
     atlas_mirror_lr: bool = False,
 ) -> RegistrationResult:
-    """Run border correction and return affine + nonlinear results.
+    """Run border-based registration and return affine + nonlinear results.
 
-    A supplied native-atlas-to-image affine skips the initial color-map pass.
-    Otherwise the first generation supplies the alignment to refine. Explicit
-    ``registration_mode="colormap"`` retains the original single-stage path.
+    A supplied ``initial_atlas_to_slice`` selects route "supplied" (one model
+    call moves its drawn boundaries onto the tissue). Without it, route
+    "atlas" fits a local silhouette placement and asks the model to draw
+    boundaries from nothing against the outlined atlas template, with an
+    optional second corrective call (``passes=2``).
 
     ``pitch_deg``/``yaw_deg`` are the block's cutting angles: every atlas
     render is resliced on that oblique plane instead of taken flat.
-    ``draws`` must be one in border mode; explicit colormap mode supports votes
-    over multiple paintings. ``deformation`` picks the Elastix stages.
-    ``provider="none"`` calls no model: border mode retains supplied placement
-    or computes a silhouette placement, without fitting a residual deformation.
+    ``deformation`` picks the Elastix stages. ``provider="none"`` calls no
+    model: it retains a supplied placement, or fits a silhouette placement,
+    without fitting a residual deformation.
     """
     atlas = load_atlas(atlas_name)
     atlas_image = get_composite_slice(atlas, position_mm, plane=plane)
@@ -296,9 +292,8 @@ def estimate_registration(
         canvas_pad=canvas_pad,
         pitch_deg=pitch_deg,
         yaw_deg=yaw_deg,
-        draws=draws,
         deformation=deformation,
-        registration_mode=registration_mode,
+        passes=passes,
         initial_atlas_to_slice=initial_atlas_to_slice,
         initial_alignment_source=initial_alignment_source,
         atlas_mirror_lr=atlas_mirror_lr,

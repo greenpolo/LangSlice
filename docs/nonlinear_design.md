@@ -1,102 +1,224 @@
-# Nonlinear registration: correct placed borders
+# Nonlinear registration: two border-based routes
 
-The default design starts from a rough atlas placement and asks the image model
-to move its yellow region boundaries onto the visible tissue. A supplied linear
-agent or host placement takes precedence; it is never replaced by a silhouette fit.
+Registration is exactly two border-based routes, selected automatically by
+whether an initial atlas placement is supplied. Both routes fit the SAME
+residual border deformation and compose it with their own initial placement.
+There is no colormap workflow: an image model never repaints a colored atlas
+region map, is never shown any colored atlas render, and no per-pixel
+classification, multi-draw voting or RGB Elastix stage exists in this
+package. BrainGlobe atlas colormaps vary too much in quality across atlases
+to depend on.
 
-## Two entry routes
+## The two routes
 
-| Starting information | Image-generation calls | Sequence |
-| --- | --- | --- |
-| Linear-agent or host placement | 1 | Placed borders + clean histology → corrected borders → residual fit |
-| Position only, standalone | 2 | Color atlas + grayscale atlas + histology → initial color registration → placed borders + clean histology → corrected borders → residual fit |
+| Route | Placement | Image-generation calls | What the model sees |
+| --- | --- | --- | --- |
+| "supplied" | `initial_atlas_to_slice` given | 1 | Image 1: tissue with the rough yellow family borders drawn on it. Image 2: the identical clean tissue. |
+| "atlas" | none given | 1 (2 with `passes=2`) | Pass 1 — Image 1: clean tissue. Image 2: the outlined grayscale atlas template. Pass 2 (optional) — Image 1: clean tissue. Image 2: pass 1's lines redrawn on the tissue. Image 3: the outlined grayscale atlas template. |
 
-The standalone first call retains the existing color-map prompt and registration.
-The second call is a separate edit request with two attachments, not a conversation
-claiming to remember the first reply. Automatic tissue-outline placement is only
-the explicit model-free `provider="none"` diagnostic, not the standalone default.
+Route "supplied" takes precedence whenever `initial_atlas_to_slice` is given.
+Without it, `provider="none"` keeps its historical model-free diagnostic
+(silhouette placement, zero model calls, zero residual). Any other provider
+runs route "atlas": the rough placement is ALWAYS the local
+silhouette-moments fit (`prior.place_plane_on_tissue_with_matrix`) — never a
+remote call, since there is nothing yet to correct — and one or two model
+calls draw or correct boundaries against it before the same residual fit
+that route "supplied" uses.
 
-## What the correction model sees
+A caller-supplied `generated_image` with no placement replays route "atlas"
+with zero model calls: it is treated as that route's own final output.
 
-1. The histology photograph with roughly placed, thin yellow atlas boundaries.
-2. The identical photograph and frame without those lines.
+## Route "supplied": correcting a placed border
 
-The prompt asks the model to slide or bend the lines to match visible anatomy,
-keep already-correct boundaries, and retain the photograph and boundary identities.
-It does not ask for another color map. The atlas position, cutting angles,
-orientation and supplied placement are established before this request.
+1. The atlas plane is rendered at the requested position, plane and cutting
+   angles, then warped onto the canvas by the supplied
+   `initial_atlas_to_slice` affine (`cv2.warpAffine`, nearest-neighbor).
+2. Its family-merged borders are drawn in thin yellow on the original
+   histology (`border_refinement.border_overlay`); the identical clean
+   histology is the second image.
+3. One model call with `prompts.border_refinement_prompt(plane)` asks the
+   model to slide or bend each line onto the tissue edge it belongs to,
+   keeping already-correct lines and resolving indistinct boundaries from
+   the supplied region arrangement.
+4. Yellow lines are extracted from the raw reply
+   (`border_refinement.extract_thinned_lines`: HSV threshold, crop back to
+   the canvas aspect if the lane returned a different frame, Zhang-Suen
+   thinning to a single-pixel skeleton) and displayed on the untouched
+   original photograph — never on the model's redrawn tissue.
+5. Elastix fits a B-spline (or affine, with `deformation="affine"`) residual
+   from the rough borders to the corrected ones
+   (`image_gen_helpers._run_elastix_april_borders`), and the atlas label map
+   is warped by nearest-neighbor sampling
+   (`image_gen_helpers._warp_classified_labels`) — never reconstructed from
+   the yellow lines themselves.
 
-The output photograph is not treated as anatomical ground truth: the raw reply
-is saved, its yellow boundaries are extracted, and those boundaries are displayed
-over the original input photograph. Elastix fits a residual deformation from
-the rough borders to the corrected ones. Original atlas region IDs are warped
-with nearest-neighbor sampling, not reconstructed from yellow lines.
+## Route "atlas": drawing a border from nothing
+
+1. `image_gen_registration.outlined_atlas_template` renders the plane's
+   grayscale reference plate (contrast-stretched on the plate's own 99.5th
+   percentile), oriented by `image_axes` then explicit `atlas_mirror_lr`
+   (never inferred from a symmetric silhouette), upscaled to at least
+   `MODEL_MAP_MIN_LONG_EDGE` (1024px) so thin bands stay legible, with its
+   family-merged region borders drawn in thin yellow
+   (`image_gen_helpers._extract_borders_from_classified` +
+   `_overlay_borders`), then letterboxed to the section's own aspect. This
+   is route "atlas"'s only atlas-facing model input — no colors, no filled
+   regions.
+2. Pass 1: one model call with `prompts.pass1_atlas_prompt(plane, provider)`
+   — Image 1 the clean tissue, Image 2 the outlined atlas — asks the model
+   to draw the atlas's boundaries onto the tissue from nothing, adapting
+   shape and position to this specimen's anatomy and asymmetry, leaving out
+   only tissue that is physically torn away or missing.
+3. Optional pass 2 (`passes=2`): pass 1's lines are extracted
+   (`extract_thinned_lines`) and redrawn on the clean tissue
+   (`border_overlay`) to build a second reference image; one more model call
+   with `prompts.pass2_atlas_prompt` — Image 1 clean tissue, Image 2 pass
+   1's lines on the tissue, Image 3 the outlined atlas — corrects the lines
+   three ways: remove a line with no counterpart in the atlas, leave a line
+   off a slide feature (bubble, stain, debris), and nudge a line that has a
+   counterpart but sits off its edge.
+4. The resulting lines feed the SAME residual fit as route "supplied", with
+   the silhouette-moments placement as the initial placement instead of a
+   supplied one.
+
+Pass 2 is optional. On clean coronal sections pass 1 alone produces a
+complete partition and pass 2 moves lines by about a pixel; its value on
+large sagittal and heavily damaged sections is untested.
+
+Metadata for route "atlas" records `prior["source"] =
+"silhouette_moments_atlas_route"`, top-level `passes` (1 or 2), and
+`prior["atlas_route_model_calls"]` (0, 1 or 2 — 0 only on a
+`generated_image` replay).
+
+## Prompts
+
+Prompt text lives in `nonlinear/prompts.py`: `border_refinement_prompt`
+(route "supplied", unchanged wording since production acceptance),
+`pass1_atlas_prompt` and `pass2_atlas_prompt` (route "atlas"). Provider
+selection follows `canonical_provider(provider)`: names starting with
+`"openai"` get the OpenAI GPT-image wording (roles by number and purpose,
+"change only X" plus an explicit preserve list, exclusions allowed);
+everything else gets the Google Gemini wording (positive framing only,
+"change only X, keep everything else exactly the same"). `model_prompts.py`
+now holds only canvas/aspect facts (`image_model_family`,
+`aspect_ratio_limits`, `gemini_aspect_for`, `native_output_size`) — no
+prompt text.
+
+Rules the route-"atlas" prompts follow, and that any future prompt edit must
+preserve: never write a visibility-conditioned rule ("no tissue, no line" or
+"border what you see") — a visible slide feature must NOT get a line, and an
+indistinct region MUST still get its atlas line, because the atlas image
+alone decides which boundaries exist; the only stated exclusion is tissue
+physically torn away or missing; every sentence is audited for alternative
+interpretations before it is sent.
 
 ## Supplying a placement
 
-The Python candidate entry point accepts `initial_atlas_to_slice`, a finite,
-invertible 3×3 affine mapping native atlas annotation pixel centers into pixels
-of the supplied photograph. The atlas grid is sampled at the requested position
-and cutting angles, then transformed by `image_axes` and the explicit
-`atlas_mirror_lr` option. The matrix refers to that oriented grid.
+`initial_atlas_to_slice` is a finite, invertible 3×3 affine mapping the
+oriented native atlas annotation grid's pixel centers into pixels of the
+supplied photograph. The atlas grid is sampled at the requested position and
+cutting angles, then transformed by `image_axes` and the explicit
+`atlas_mirror_lr` option; the matrix refers to that oriented grid.
 
 `langslice.registration_handoff.prepare_linear_registration` prepares this
 contract from an existing linear section state; `run_linear_registration`
-performs the handoff. These are callable host interfaces, not an automatically
-enabled tool in the linear agent's toolbox. They preserve the linear placement,
-including shear, physical calibration and section orientation, without changing
-the linear state. Their image frame is the oriented rendered section, not the
-original acquisition TIFF.
+performs the handoff. These are callable host interfaces, not an
+automatically enabled tool in the linear agent's toolbox. They preserve the
+linear placement, including shear, physical calibration and section
+orientation, without changing the linear state. Their image frame is the
+oriented rendered section, not the original acquisition TIFF.
 
-ABBA already provides aligned atlas-coordinate channels. Its adapter draws those
-placed labels directly on the section and uses the same one-call correction core.
+ABBA already provides aligned atlas-coordinate channels. Its adapter
+(`integrations/abba.py`) draws those placed labels directly on the section
+and uses the same route-"supplied" correction core — no standalone
+placement-free route or silhouette refit in that adapter.
 
-Do not infer left–right reflection from a nearly symmetric tissue silhouette.
+Do not infer left-right reflection from a nearly symmetric tissue silhouette.
 Mirroring must be explicit and consistent for labels, grayscale anatomy and
-reference maps. A correction request cannot repair an incorrectly specified
-atlas coordinate system reliably.
+reference maps (`atlas_mirror_lr`, one flag, applied identically everywhere
+an atlas render is built). A correction request cannot reliably repair an
+incorrectly specified atlas coordinate system.
 
-## Geometry and outputs
+## Geometry and coordinate contracts
 
-The final transform composes the initial placement with the residual fit.
-For the two-call route, this includes the first call's full nonlinear coordinate
-map, not just an affine approximation. Resize rounding, padding and pixel-center
-offsets are retained in both axes.
+Every route's final transform composes the initial placement (a supplied
+affine, or the silhouette-moments affine on route "atlas") with the residual
+border-fit deformation. Composition happens in
+`border_registration.composed_correspondences` and `composed_native_map`:
 
-Saved artifacts distinguish:
+- `composed_correspondences` samples the residual field on the fit's own
+  B-spline control-grid spacing (`image_gen_helpers._grid_spacing_px`) and
+  returns two coordinate lists: `markers` (slice pixel → canonical
+  letterboxed-atlas-canvas pixel, the VisuAlign convention) and `direct`
+  (slice pixel → native atlas pixel, unambiguous atlas-grid coordinates).
+  Both are reported in unpadded original-image pixel units.
+- `composed_native_map` composes every residual sample with the initial
+  placement to give a dense per-pixel native-atlas coordinate map
+  (`atlas_coordinate_map` on the returned `RegistrationCandidate`).
 
-- the rough borders and the exact correction prompt;
-- the untouched model reply;
-- extracted model borders over the original photograph;
-- the fitted atlas labels and their borders over that same photograph;
-- residual deformation and composed slice-to-native-atlas correspondences.
+Candidate metadata (`RegistrationCandidate.metadata`, written by
+`generate_border_registration_candidate`) carries: `original_size`,
+`target_size`, `unpadded_size`, `canvas_origin_px`, `canvas_pad`, `pad_px`,
+`canvas_native`, `native_atlas_size`, `initial_atlas_to_slice`,
+`initial_alignment_source` (default `"supplied"`; the top-level
+`registration_handoff` bridge passes `"linear_agent"`; no placement plus
+`provider="none"` sets `"silhouette_moments"`; no placement with an active
+provider — route "atlas" itself — sets
+`"silhouette_moments_atlas_route"`),
+`passes`, `atlas_to_canvas`, `slice_to_canvas`,
+`native_atlas_to_canonical_canvas`, `visualign_markers` + `n_markers`,
+`marker_frames` (the exact composition formula, in prose), and
+`slice_to_native_atlas_correspondences` +
+`native_correspondence_columns`. `prior` records how the rough placement was
+obtained (`source`, `automatic`, `sign_pattern`, `silhouette_iou`, and, on
+route "atlas", `atlas_route_model_calls`). `inverse_warp_status` is always
+`"not_computed"` — neither route currently produces a histology-to-atlas
+inverse render.
 
-Compatibility names such as `generated_segmentation.png` now contain the raw
-border-correction reply on the default route. Read `output_kind` and `workflow`
-metadata instead of assuming a color-map image. Canonical-frame VisuAlign markers
-and direct native-atlas correspondences include explicit coordinate-frame metadata.
-Inverse histology-to-atlas renders are not currently computed by the border route.
+Resize rounding, padding and pixel-center offsets are tracked through
+`pixel_center_map` / `canonical_atlas_map` and retained in both axes; nothing
+in the composition drops a rounding term silently.
 
-The file-based API may downsample the acquisition image before registration.
-It converts supplied placements into that prepared frame; returned markers retain
-the prepared-image coordinate convention. Session metadata `api_image_frame`
-records both image sizes and the exact acquisition-to-prepared resize matrix.
-Direct native-atlas coordinates are unaffected by that image resize.
+## Review artifacts
+
+`generate_border_registration_candidate` keeps these separate, both in the
+returned `RegistrationCandidate` and (with `debug_dir` set) on disk:
+
+- the rough border overlay on the original photograph
+  (`rough_border_overlay.png`);
+- the untouched raw model reply (`raw_correction.png` /
+  `generated_segmentation.png` — the same image; the compatibility name now
+  holds the raw border-correction reply, not a color map);
+- extracted model borders drawn on the original photograph
+  (`corrected_border_overlay.png` / `generated_border_overlay.png`);
+- the fitted atlas labels rendered as a colored RGB map purely for human
+  review (`warped_atlas.png`, built by `image_gen_helpers._classified_to_rgb`
+  from the atlas package's `color_lut` — this colored render is never shown
+  to the image model on either route) and its borders over the same
+  photograph (`warped_border_overlay.png`);
+- the residual deformation field, the rough/warped label arrays and the
+  composed native-atlas coordinate map (`residual_field.npz`,
+  `rough_leaf_ids.npz`, `warped_leaf_ids.npz`, `atlas_coordinate_map.npz`);
+- `meta.json` and `elastix_report.json` (the mechanical fit diagnostics from
+  `residual_fit_report` / `image_gen_helpers._elastix_report` — codes only
+  when the warp is physically implausible; anatomical quality is still a
+  human visual call, never a metric verdict).
+
+Read `output_kind` and `workflow` metadata rather than assuming a color-map
+image is present anywhere in this pipeline.
 
 ## Review and limits
 
-Inspect the raw reply first, then the extracted boundaries on original tissue,
-then the fitted atlas overlay. A good model correction can be degraded by its
-subsequent fit. Metrics complement these separate visual checks; neither fit
-success nor agreement with a reference proves anatomical correctness.
+Inspect the raw reply first, then the extracted boundaries on the original
+tissue, then the fitted atlas overlay. A good model correction can still be
+degraded by its subsequent fit. Metrics and fit-report codes complement
+these separate visual checks; neither fit success nor agreement with a
+reference proves anatomical correctness.
 
-Only one draw per stage is currently supported on the border route. The explicit
-Python `registration_mode="colormap"` route retains older color-map experiments.
-Offline correction replay via `generated_image` requires supplied placement;
-without it, replay is rejected rather than silently making the initial model call.
-
-The yellow extractor can confuse naturally saturated yellow tissue with drawn
-lines. Boundary fitting is not region-identity-aware and does not certify topology.
-For two-stage composition, sampling beyond the first-stage coordinate map uses
-nearest-edge extension, recorded in metadata. These remain review considerations,
-not claims that every visually excellent reply transfers perfectly to atlas labels.
+One draw per model call is supported. The yellow-line extractor can confuse
+naturally saturated yellow tissue with drawn lines. Boundary fitting is not
+region-identity-aware and does not certify topology. Route "atlas" needs an
+explicit `atlas_mirror_lr`; nothing infers reflection from the tissue.
+Neither route currently computes an inverse (atlas-to-histology) render.
+These remain review considerations, not claims that every visually
+excellent reply transfers perfectly to atlas labels.

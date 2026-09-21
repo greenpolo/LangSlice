@@ -174,42 +174,48 @@ B-spline.
 ## Nonlinear: Border Refinement
 
 ```bash
-# Standalone: initial color registration, then border correction (two model calls)
+# No placement: route "atlas" draws boundaries against the outlined atlas (one model call)
 langslice nonlinear register slice.png --position 3.9
 
-# Supplied placement: border correction directly (one model call)
+# Supplied placement: route "supplied" corrects the placed borders directly (one model call)
 langslice nonlinear register slice.png --position 3.9 --initial-alignment placement.json
 ```
 
-The preferred input is the rough alignment already established by the linear
-agent or a host tool. The image model receives the placed yellow atlas borders
-over histology, followed by the same photograph without lines, and adjusts the
-boundaries to match the visible tissue. It is not asked for another color map.
+There are exactly two border-based routes, chosen automatically by whether a
+placement is supplied. There is no colormap route left: an image model is
+never shown a colored atlas region map on either route.
 
-When no placement is supplied, the standalone route first uses the existing
-three-image color-map request (color atlas, grayscale atlas, histology), registers
-that reply, then sends the registered borders and clean histology for correction.
-These are two prompts and two image-generation calls. Supplied placement bypasses
-the color-map stage; it is never replaced by automatic silhouette alignment.
+With a supplied placement (route "supplied"), the image model receives the
+placed yellow atlas borders over histology, followed by the same photograph
+without lines, and adjusts the boundaries to match the visible tissue.
 
-After correction, yellow lines are extracted and displayed on the original
-photograph. A residual Elastix fit transfers that correction to the atlas labels.
-Exports compose the complete initial placement and residual deformation.
-Keep the raw reply, corrected lines on original tissue, and fitted atlas overlay
-distinct when reviewing results.
+Without a placement (route "atlas"), a local silhouette-moments fit stands in
+for the rough placement, and the model instead draws boundaries from nothing
+onto the clean tissue, using an outlined grayscale atlas template (the
+reference plate with its own thin yellow boundaries) as its only atlas
+reference. Add `--passes 2` for an optional second call that audits and
+corrects the first pass's lines against the same template; pass 1 alone was
+measured sufficient on undamaged coronal sections, so `--passes 1` (the
+default) is fine unless the first pass looks incomplete.
+
+After either route's model call(s), yellow lines are extracted and displayed
+on the original photograph. A residual Elastix fit transfers that correction
+to the atlas labels. Exports compose the complete initial placement and
+residual deformation. Keep the raw reply, corrected lines on original tissue,
+and fitted atlas overlay distinct when reviewing results.
 
 `placement.json` contains a 3×3 affine mapping oriented native atlas pixel
 centers to pixels in the input image. Position, cutting angles and atlas axes
 must agree with that placement. `--mirror-atlas-lr` applies an explicit atlas
-reflection; no reflection is inferred from the tissue. The top-level
-`registration_handoff` bridge prepares this contract from linear section state.
-ABBA uses its existing host alignment directly.
+reflection on either route; no reflection is inferred from the tissue. The
+top-level `registration_handoff` bridge prepares this contract from linear
+section state. ABBA uses its existing host alignment directly.
 
 `--preprocess auto` remains the default shared tissue-visibility enhancement;
-`none` disables it. In either case, both correction attachments use the identical
-prepared photograph. `--canvas-pad`, `--pitch-deg`, `--yaw-deg` and
-`--deformation bspline|affine` remain available. The border route requires
-`--draws 1` (one draw per stage), not color-map voting.
+`none` disables it. In either case, both correction attachments use the
+identical prepared photograph. `--canvas-pad`, `--pitch-deg`, `--yaw-deg` and
+`--deformation bspline|affine` remain available. One draw per model call is
+supported; there is no multi-draw voting.
 
 `--provider none` is an explicit model-free diagnostic: retain supplied placement
 or fit a silhouette placement, then return its borders and composed coordinates.

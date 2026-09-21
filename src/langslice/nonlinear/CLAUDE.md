@@ -1,38 +1,75 @@
 # LangSlice `nonlinear/` — generative-image registration
 
 Package guide; `AGENTS.md` is a verbatim twin of this file.
-See `docs/nonlinear_design.md` for the current design and coordinate contracts.
+See `docs/nonlinear_design.md` for the design and coordinate contracts.
 
 ## Supported design
 
-Prefer an existing linear-agent or host alignment. Draw its atlas family borders
-in yellow on the histology and send that image plus the identical clean histology
-to the image model. Ask it to move the borders to match tissue, not make a colormap.
-Fit the residual deformation and compose it with the complete initial placement.
+Exactly two border-based routes, chosen by whether a placement is supplied.
+No model is ever shown a colored region map: the model-facing atlas is a
+grayscale plate with thin yellow family borders, so atlas colormap quality
+never matters.
 
-Without supplied alignment, standalone registration uses TWO image-generation
-calls: the existing color-map generation and registration, then correction of the
-resulting placed borders. A silhouette-only initialization is NOT this default.
-`provider="none"` is the explicit model-free diagnostic and makes no model calls.
-
-- `image_gen_registration.generate_registration_candidate`: public dispatcher;
-  borders default, explicit `registration_mode="colormap"` for initialization
-  and historical experiments.
-- `border_registration.py`: placement precedence, two-stage orchestration,
-  coordinate composition, artifacts and candidate contract.
-- `border_refinement.py`: two-image correction request, yellow-line extraction,
-  residual fit and nearest-neighbor label warp. ABBA shares this core.
-- `registration_handoff.py` (top-level): independent bridge from linear state.
-  It does not install a new tool into the linear agent.
-- `prior.py`: moments placement for the explicit model-free route.
-- `model_prompts.py`: existing provider-specific color-map initialization prompts.
-- `image_gen_helpers.py`: classification, Elastix and geometry helpers.
+- **Route "supplied"** — `initial_atlas_to_slice` is given (linear agent, ABBA
+  host, or the top-level `registration_handoff` bridge). Image 1 is the tissue
+  with the rough yellow family borders drawn on it, Image 2 the identical clean
+  tissue; ONE model call with `prompts.border_refinement_prompt(plane)`, then
+  the residual border fit. Production; not under test.
+- **Route "atlas"** — no placement supplied. Image 1 is the clean tissue,
+  Image 2 the outlined grayscale atlas (`outlined_atlas_template`: grayscale
+  plate plus yellow family borders, oriented by `image_axes` then the explicit
+  `atlas_mirror_lr`). ONE model call with `prompts.pass1_atlas_prompt(plane,
+  provider)`; with `passes=2` a second call with `prompts.pass2_atlas_prompt`
+  sends Image 1 clean tissue, Image 2 pass 1's extracted lines redrawn on the
+  tissue, Image 3 the outlined atlas. The rough placement for the fit is the
+  local silhouette-moments fit (`prior.place_plane_on_tissue_with_matrix`); the
+  model's lines then go through the SAME residual fit as route "supplied".
+  Metadata: `prior["source"] = "silhouette_moments_atlas_route"`, `passes`,
+  `prior["atlas_route_model_calls"]`. Pass 2 is optional: on clean coronal
+  sections it moves lines by about a pixel; its value on large sagittal and
+  heavily damaged sections is untested. This route is under test.
+- `provider="none"` — model-free diagnostic: a supplied placement or the
+  silhouette placement, zero model calls, zero residual.
+- A caller-supplied `generated_image` with no placement replays route "atlas"
+  with zero model calls.
 
 Atlas labels and grayscale references must use the same position, plane, cutting
-angles and orientation. Reflection is explicit, never guessed from a symmetric
-silhouette. Supplied matrices map the oriented native annotation grid to original
-input-image pixel centers. Carry resize, padding, initial affine/nonlinear mapping
-and residual deformation through exports; never export the residual alone.
+angles and orientation. Reflection is explicit (`atlas_mirror_lr`), never guessed
+from a symmetric silhouette. Supplied matrices map the oriented native annotation
+grid to original input-image pixel centers. Carry resize, padding, initial
+affine/nonlinear mapping and residual deformation through exports; never export
+the residual alone.
+
+## File map
+
+- `image_gen_registration.py` — model-facing canvas geometry
+  (`prepare_canvas`, aspect helpers), `outlined_atlas_template`, and
+  `generate_registration_candidate`, the public dispatcher (thin; routing lives
+  in `border_registration.py`, imported lazily to avoid a circular import).
+- `border_registration.py` — `generate_border_registration_candidate`: route
+  selection, rough placement, the atlas-route model calls, the shared residual
+  fit, coordinate composition (`composed_correspondences`,
+  `composed_native_map`) and the candidate contract.
+- `border_refinement.py` — `refine_borders`: the correction request,
+  yellow-line extraction (`extract_thinned_lines`, `yellow_mask`, `thin`),
+  residual Elastix fit and nearest-neighbor label warp. `integrations/abba.py`
+  shares this core directly.
+- `prompts.py` — the three prompt functions; the OpenAI-GPT or Gemini wording
+  is selected by `canonical_provider(provider)`.
+- `prior.py` — `place_plane_on_tissue_with_matrix`, the silhouette-moments
+  placement.
+- `providers.py` — `SegmentationGenerationRequest` /
+  `generate_warped_segmentation_image`: the one-call-in, one-image-out
+  transport adapter every prompt call goes through. `mode` (default `"edit"`)
+  is the edit-vs-generate task semantic each transport translates its own way.
+- `model_prompts.py` — canvas/aspect facts only (`image_model_family`,
+  `aspect_ratio_limits`, `gemini_aspect_for`, `native_output_size`).
+- `image_gen_helpers.py` — Elastix and geometry helpers for the residual fit.
+- `render.py` — review-grade rendering only.
+- `runtime.py` — `estimate_registration`: orchestration, debug artifacts,
+  trace events.
+- `registration_handoff.py` (top-level) — bridge from linear state; installs
+  no tool into the linear agent.
 
 ## Visual review is essential
 
@@ -52,25 +89,34 @@ not publish local-only paths or make historical metric verdicts design requireme
 Before changing or sending a prompt:
 
 - State each sentence's intended effect and plausible alternative interpretations.
-  Remove ambiguity, redundancy and contradictions.
+  Remove ambiguity, redundancy and contradictions. No sentence is exempt.
 - Identify actual attachment order, content and role. Specify what is edited,
   preserved, and the output frame.
+- Never write a visibility-conditioned rule ("no tissue, no line", "border what
+  you see"). A visible slide feature (bubble, stain, debris) must NOT get a
+  line, and an indistinct region MUST still get its atlas line. The atlas image
+  alone decides which boundaries exist. The only exclusion a prompt may state
+  is tissue physically torn away or missing from the section.
 - Distinguish moving lines onto visible tissue from copying supplied lines.
-  Calling rough lines “correct” can imply retaining them unchanged.
-- Verify actual history before referring to an earlier reply. The standalone
-  second request supplies constructed images, not implicit conversational memory.
-- Prefer small targeted edits and positive descriptions. Save exact text and
-  attachments. Inspect the result before declaring an improvement.
+  Calling rough lines "correct" can imply retaining them unchanged.
+- Verify actual history before referring to an earlier reply. A second request
+  supplies constructed images, not conversational memory.
+- Follow the vendor guide for the lineage: OpenAI GPT-image (roles by number and
+  purpose, "change only X" plus an explicit preserve list, exclusions allowed)
+  or Google Gemini (positive framing only, "change only X, keep everything else
+  exactly the same"). State the intended use (an annotation overlay on a
+  photograph), that the yellow lines are the only new thing in the image, and
+  that every tissue pixel and its texture is preserved.
+- Save exact text and attachments. Inspect the result before declaring an
+  improvement.
 
-The correction prompt retains the accepted rough-plus-clean wording, with plane
-parameterized and without a species-only assumption. Provider adapters only
-translate requests; task semantics and prompt selection stay in nonlinear.
+Provider adapters only translate requests; task semantics and prompt selection
+stay in nonlinear.
 
 ## Known limits
 
-The default route supports one draw per stage. Yellow tissue can contaminate line
-extraction; the border fit does not itself certify region identity or topology.
-Dense first-stage coordinates use documented nearest-edge extension off canvas.
-Inverse renders are not computed on this route; do not invent them or silently
-report identity. Replay without supplied placement is rejected to avoid accidental
-remote initialization. Full details and output frame meanings are in the design doc.
+One draw per model call. Yellow tissue can contaminate line extraction; the
+border fit does not itself certify region identity or topology. Inverse renders are not computed on either route
+(`inverse_warp_status="not_computed"`); do not invent them or silently report
+identity. Route "atlas" cannot detect a mirrored section; the caller must pass
+`atlas_mirror_lr`. Full details and output frame meanings are in the design doc.

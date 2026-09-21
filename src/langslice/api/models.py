@@ -24,6 +24,9 @@ Provider = Literal[
 PreprocessMode = Literal["none", "auto"]
 # Elastix stages the fit runs (see nonlinear.types.Deformation).
 Deformation = Literal["bspline", "affine"]
+# Route "atlas" (no supplied placement) draws once, or twice with a
+# self-correction call (see nonlinear.image_gen_registration).
+Passes = Literal[1, 2]
 EngineMethod = Literal[
     "version",
     "setup.status",
@@ -141,10 +144,9 @@ class RegisterRequest(EngineBaseModel):
     # Block cutting angles; every atlas render is resliced on that plane.
     pitch_deg: float = 0.0
     yaw_deg: float = 0.0
-    # Border mode requires one draw per stage; colormap mode supports voting.
-    draws: int = 1
     deformation: Deformation = "bspline"
-    registration_mode: Literal["borders", "colormap"] = "borders"
+    # Route "atlas" only: one draw, or two with a self-correction call.
+    passes: Passes = 1
     # Native sampled atlas pixels (after image_axes/mirror) -> acquisition pixels.
     initial_atlas_to_slice: list[list[float]] | None = None
     initial_alignment_source: str = "supplied"

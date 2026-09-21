@@ -12,10 +12,12 @@ other:
 - `src/langslice/linear/` -- order, position and one in-plane affine per
   section: the job spec, the stack state and its JSON checkpoint, the one
   toolbox, the job statement, the ADK session, and the run engine.
-- `src/langslice/nonlinear/` -- generative-image registration: placed-border
-  correction (with color-map initialization when no placement is supplied),
-  image provider adapters, Elastix runtime, affine/nonlinear result types, and
-  the silhouette-based `quick_affine` preview.
+- `src/langslice/nonlinear/` -- generative-image registration: exactly two
+  border-based routes (placed-border correction when a placement is supplied;
+  otherwise a silhouette-placed, model-drawn-boundary route against an
+  outlined grayscale atlas template), image provider adapters, Elastix
+  runtime, affine/nonlinear result types, and the silhouette-based
+  `quick_affine` preview.
 
 The remaining top-level modules are shared by both:
 
@@ -95,19 +97,23 @@ derived representations and adjustment history stay local.
 ## Nonlinear: Border Refinement
 
 1. Prefer the atlas placement supplied by the linear agent or host tool.
-   Without placement, generate and register a color map first.
+   Without placement, fit a local silhouette placement instead.
 2. Send rough yellow atlas borders over histology plus the identical clean
-   histology to the image model; ask it to adjust the lines to the tissue.
+   histology to the image model (route "supplied"); or, with no placement,
+   send the clean histology plus an outlined grayscale atlas template and
+   ask the model to draw the boundaries from nothing (route "atlas", with an
+   optional second corrective call).
 3. Extract corrected yellow lines and overlay them on the original photograph.
 4. Fit the residual deformation and warp the placed atlas labels.
-5. Compose the initial affine or nonlinear placement with that residual for
-   native-atlas correspondences and VisuAlign markers.
+5. Compose the initial affine placement with that residual for native-atlas
+   correspondences and VisuAlign markers.
 6. Return separate raw, corrected-border and fitted-atlas review artifacts.
 
-Supplied placement requires one image-generation call; standalone requires two.
-ABBA shares the border-correction core and retains its host placement.
-The top-level linear handoff adapter does not introduce a dependency between
-the sibling method packages. See [the design](nonlinear_design.md).
+Each route uses one image-generation call, except route "atlas" with an
+optional second audit call. ABBA shares the border-correction core and
+retains its host placement. The top-level linear handoff adapter does not
+introduce a dependency between the sibling method packages. See
+[the design](nonlinear_design.md).
 
 ## Debugging
 

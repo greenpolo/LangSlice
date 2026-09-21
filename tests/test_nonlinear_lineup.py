@@ -1,20 +1,24 @@
 """The geometry rules of the model-facing lineup.
 
-Three images in ONE frame: the colored atlas map the model edits, the
-grayscale template, and the section. The atlas renders keep their own
-proportions and are letterboxed into the section's aspect; whatever comes
-back is cropped to that aspect, never stretched.
+Two images in ONE frame for route "atlas": the outlined grayscale atlas
+template, and the section. The atlas renders keep their own proportions and
+are letterboxed into the section's aspect; whatever comes back is cropped to
+that aspect, never stretched.
 """
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import numpy as np
+import pytest
 from PIL import Image
 
 from langslice.nonlinear.image_gen_registration import (
     MODEL_MAP_MIN_LONG_EDGE,
     crop_to_aspect,
     letterbox_to_aspect,
+    outlined_atlas_template,
     upscale_to_min_long_edge,
 )
 
@@ -83,3 +87,65 @@ def test_cropping_keeps_the_center_of_the_painting() -> None:
 
     assert cropped.size == (100, 100)
     assert {tuple(c) for c in np.asarray(cropped).reshape(-1, 3)} == {(255, 255, 255)}
+
+
+# -------------------------------------------------------- outlined atlas render
+
+
+@pytest.fixture
+def _toy_atlas_render(monkeypatch: pytest.MonkeyPatch):
+    """A tiny two-region plane, wired so outlined_atlas_template runs with no atlas I/O."""
+    import langslice.nonlinear.image_gen_helpers as helpers
+
+    labels = np.zeros((20, 30), dtype=np.int32)
+    labels[:, 15:] = 1
+    gray = np.full((20, 30), 120.0, dtype=np.float32)
+
+    atlas = SimpleNamespace(atlas_name="toy", structures={})
+    monkeypatch.setattr(helpers, "annotation_slice", lambda *a, **k: labels.copy())
+    monkeypatch.setattr("langslice.atlas.get_reference_slice", lambda *a, **k: gray.copy())
+    # No real structure tree to merge families from; the render only needs a
+    # boundary between two ids, so pass classified ids through unchanged.
+    monkeypatch.setattr(helpers, "_merge_classified", lambda ids, atlas, merge_eps=40.0: ids)
+    return atlas, labels
+
+
+def test_outlined_atlas_template_draws_only_yellow_on_a_grayscale_plate(
+    _toy_atlas_render,
+) -> None:
+    atlas, _labels = _toy_atlas_render
+
+    outlined = outlined_atlas_template(atlas, 1.0, "coronal")
+
+    assert max(outlined.size) >= MODEL_MAP_MIN_LONG_EDGE
+    assert outlined.size[0] / outlined.size[1] == pytest.approx(30 / 20, rel=0.02)
+    arr = np.asarray(outlined)
+    # Achromatic (r == g == b) is the grayscale plate or the border's black
+    # rim; the only chromatic pixels are the yellow line core.
+    chromatic = arr[(arr[..., 0] != arr[..., 1]) | (arr[..., 1] != arr[..., 2])]
+    assert chromatic.size, "no boundary line was drawn at all"
+    assert {tuple(c) for c in chromatic.reshape(-1, 3)} == {(255, 255, 0)}
+
+
+def test_outlined_atlas_template_letterboxes_to_the_section_aspect(
+    _toy_atlas_render,
+) -> None:
+    atlas, _labels = _toy_atlas_render
+
+    outlined = outlined_atlas_template(atlas, 1.0, "coronal", section_aspect=2.5)
+
+    assert outlined.size[0] / outlined.size[1] == pytest.approx(2.5, rel=0.02)
+
+
+def test_outlined_atlas_template_reflection_is_explicit_and_flips_the_render(
+    _toy_atlas_render,
+) -> None:
+    atlas, _labels = _toy_atlas_render
+
+    plain = np.asarray(outlined_atlas_template(atlas, 1.0, "coronal"))
+    mirrored = np.asarray(
+        outlined_atlas_template(atlas, 1.0, "coronal", atlas_mirror_lr=True)
+    )
+
+    assert not np.array_equal(plain, mirrored)
+    assert np.array_equal(mirrored, plain[:, ::-1])

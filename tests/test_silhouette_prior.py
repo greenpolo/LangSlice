@@ -17,11 +17,7 @@ from PIL import Image
 
 from langslice.affine import _affine_from_pose, _moments_pose, silhouette_iou
 from langslice.cli import _build_parser
-from langslice.nonlinear.prior import (
-    build_silhouette_prior,
-    place_plane_on_tissue,
-    tissue_mask,
-)
+from langslice.nonlinear.prior import place_plane_on_tissue, tissue_mask
 
 _H, _W = 120, 160
 _ROWS = {
@@ -88,21 +84,10 @@ def _synthetic_slice(size: tuple[int, int] = (240, 180)) -> Image.Image:
 
 
 def _install_atlas(monkeypatch: pytest.MonkeyPatch, atlas: SimpleNamespace):
-    import langslice.nonlinear.image_gen_registration as reg
+    import langslice.nonlinear.border_registration as reg
 
     monkeypatch.setattr(reg, "load_atlas", lambda atlas_name: atlas)
     return reg
-
-
-def _classify(atlas: SimpleNamespace, image: Image.Image) -> np.ndarray:
-    from langslice.nonlinear.image_gen_helpers import _classify_pixels_to_region_ids
-
-    return _classify_pixels_to_region_ids(
-        np.asarray(image.convert("RGB"), dtype=np.uint8),
-        atlas,
-        0.5,
-        off_palette_background=False,
-    )
 
 
 # --------------------------------------------------------------- tissue mask
@@ -175,40 +160,20 @@ def test_placement_picks_the_better_sign_and_lands_on_the_tissue(
     assert set(np.unique(placed)) == {0, 1, 2, 3}
 
 
-def test_the_prior_is_canvas_sized_and_classifies_back_to_its_own_labels(
-    atlas: SimpleNamespace,
-) -> None:
-    section = _synthetic_slice()
-
-    prior, metadata = build_silhouette_prior(
-        section, atlas=atlas, position_mm=0.5, plane="coronal"
-    )
-
-    assert prior.size == section.size
-    assert metadata["tissue_iou"] > 0.9
-    assert metadata["sign_pattern"] in ([1, 1], [-1, -1])
-    # Lossless by construction: fills and delineation lines are both exact
-    # palette colors, so nothing is invented at classification time.
-    classified = _classify(atlas, prior)
-    assert set(np.unique(classified)) == {0, 1, 2, 3}
-    painted = classified != 0
-    tissue = tissue_mask(section, section.size) > 0
-    assert silhouette_iou(painted, tissue) > 0.9
-
-
 # ------------------------------------------------------- model-free backbone
 
 
-def test_model_free_backbone_registers_the_prior_end_to_end(
+def test_model_free_backbone_registers_the_silhouette_placement_end_to_end(
     atlas: SimpleNamespace, monkeypatch: pytest.MonkeyPatch, tmp_path
 ) -> None:
-    """provider="none" + affine: real Elastix, no model, everything downstream."""
+    """provider="none", no supplied placement: local silhouette placement,
+    no model call, zero residual — the border route's model-free diagnostic
+    (unchanged branch; route "atlas"'s own model calls never run here)."""
     reg = _install_atlas(monkeypatch, atlas)
     section = _synthetic_slice()
 
-    candidate = reg.generate_registration_candidate(
+    candidate = reg.generate_border_registration_candidate(
         section,
-        registration_mode="colormap",
         atlas_name="toy_prior_atlas",
         position_mm=0.5,
         provider="none",
@@ -217,23 +182,23 @@ def test_model_free_backbone_registers_the_prior_end_to_end(
         debug_dir=str(tmp_path),
     )
 
-    assert candidate.metadata["provider"] == "none"
-    assert candidate.metadata["generated"]["route"] == "silhouette_prior"
+    assert candidate.metadata["prior"]["source"] == "silhouette_moments"
+    assert candidate.metadata["prior"]["automatic"] is True
     assert candidate.metadata["prior"]["sign_pattern"] in ([1, 1], [-1, -1])
-    assert candidate.metadata["prior"]["tissue_iou"] > 0.9
+    assert candidate.metadata["prior"]["silhouette_iou"] > 0.9
     assert candidate.markers, "no VisuAlign markers came out of the deformation field"
     assert candidate.metadata["deformation"] == "affine"
+    assert candidate.metadata["model_called"] is False
+    assert candidate.metadata["model_free"] is True
 
     artifacts = tmp_path / "registration" / "backbone"
-    prior = Image.open(artifacts / "input_prior.png").convert("RGB")
-    assert prior.size == candidate.warped_atlas.size
-    # The painting IS the prior, so the fit's only job is to move the atlas
-    # render onto it — the warped atlas has to come back as the prior's map.
-    prior_ids = _classify(atlas, prior)
-    warped_ids = _classify(atlas, candidate.warped_atlas)
-    foreground = prior_ids != 0
-    agreement = float((prior_ids[foreground] == warped_ids[foreground]).mean())
-    assert agreement > 0.95, f"warped atlas agrees with the prior on only {agreement:.3f}"
+    assert (artifacts / "input_slice.png").exists()
+    assert (artifacts / "warped_atlas.png").exists()
+
+    # No model call, no residual: the warped atlas IS the silhouette placement.
+    tissue = tissue_mask(section, section.size) > 0
+    warped_foreground = candidate.warped_labels != 0
+    assert silhouette_iou(warped_foreground, tissue) > 0.9
 
 
 def test_cli_parses_the_model_free_backbone() -> None:
