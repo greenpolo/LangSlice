@@ -1,9 +1,11 @@
-"""Organized structure colors for atlases whose native palettes mislead models.
+"""Organized structure colors for atlases whose native palettes mislead people.
 
-Image-gen registration keys on the Allen convention: hierarchically organized
+Human-review renders key on the Allen convention: hierarchically organized
 colors, where one brain division is one hue family and children inherit or
-shade their parent's color. Some atlases break this — all-white placeholders
-(Osten, Princeton, adult Kim) or real but hierarchy-uncorrelated colors (the
+shade their parent's color. (No image model is shown a colored map any more;
+nonlinear sends grayscale plates with yellow lines.) Some atlases break this —
+all-white placeholders (Osten, Princeton, adult Kim) or real but
+hierarchy-uncorrelated colors (the
 Waxholm rat family, ADMBA). :func:`color_lut` returns
 ``{structure_id: (r, g, b)}`` choosing, in order:
 
@@ -57,27 +59,14 @@ already runs at) and then pulls the surviving units at least
 :data:`MIN_SEPARATION` apart, nudging value and saturation before hue so a
 family keeps its identity. Native palettes are left exactly as the atlas
 authored them.
-
-Colors are the same whatever the palette setting says: the process-wide
-:func:`active_palette` knob selects how deep structure is DELINEATED in the
-model-facing render, not how anything is colored. ``"family"`` draws flat
-regions; ``"leaf-borders"`` adds Allen-Reference-Atlas-style hairlines at
-every leaf boundary, in a darker shade of the region's own color
-(``nonlinear.render.filled_regions``); ``"family-flat"`` (experimental)
-paints one flat color per registration family, so the model is shown exactly
-the granularity Elastix and the benchmark score at, delineated by the same
-darker hairlines. Nothing downstream of that render — the Elastix pair, the
-classifier's own colors, the merge, the ledger — sees a difference.
 """
 
 from __future__ import annotations
 
 import colorsys
 import json
-import os
 import re
 from collections.abc import Iterable, Iterator
-from contextlib import contextmanager
 from difflib import SequenceMatcher
 from functools import lru_cache
 from importlib import resources
@@ -87,10 +76,6 @@ import numpy as np
 
 Rgb = tuple[int, int, int]
 RecolorMode = Literal["auto", "always", "never"]
-Palette = Literal["family", "leaf-borders", "family-flat"]
-
-#: Every render style there is, in the order they are offered on the CLI.
-PALETTES: tuple[Palette, ...] = ("family", "leaf-borders", "family-flat")
 
 #: Colors closer than this are one registration unit: it is the merge radius
 #: ``nonlinear.image_gen_helpers._family_mapping`` folds a classified map
@@ -128,35 +113,6 @@ MAX_FAMILIES = 64
 
 #: ``{(atlas name, mode): colors}``.
 _LUT_CACHE: dict[tuple[str, str], dict[int, Rgb]] = {}
-
-#: How the atlas is DRAWN for the model, for the whole process. It is a
-#: setting rather than an argument on purpose: one run draws one way, and a
-#: dozen call sites threading a parameter is a dozen chances to disagree.
-PALETTE_ENV = "LANGSLICE_ATLAS_PALETTE"
-_PALETTE_OVERRIDE: Palette | None = None
-
-
-def active_palette() -> Palette:
-    """The render style in force; anything unrecognized means the default."""
-    if _PALETTE_OVERRIDE is not None:
-        return _PALETTE_OVERRIDE
-    requested = os.environ.get(PALETTE_ENV, "").strip().lower()
-    return cast("Palette", requested) if requested in PALETTES else "family"
-
-
-@contextmanager
-def use_palette(palette: Palette | None) -> Iterator[None]:
-    """Run a block with *palette* active (``None`` leaves the setting alone)."""
-    global _PALETTE_OVERRIDE
-    if palette is None:
-        yield
-        return
-    previous = _PALETTE_OVERRIDE
-    _PALETTE_OVERRIDE = palette
-    try:
-        yield
-    finally:
-        _PALETTE_OVERRIDE = previous
 
 #: Word-for-word synonyms, applied to both sides before names are compared:
 #: plurals and the British spelling atlases mix freely with Allen's.
@@ -635,11 +591,7 @@ def _organize(atlas: Any, lut: dict[int, Rgb]) -> dict[int, Rgb]:
 
 
 def color_lut(atlas: Any, mode: RecolorMode = "auto") -> dict[int, Rgb]:
-    """``{structure_id: (r, g, b)}`` for rendering *atlas*'s annotation.
-
-    One table, whatever :func:`active_palette` says: the palette setting picks
-    a render STYLE (flat regions, or leaf borders over them), never a color.
-    """
+    """``{structure_id: (r, g, b)}`` for rendering *atlas*'s annotation."""
     # ponytail: cache keyed by atlas NAME (load_atlas is lru_cached, one name =
     # one object); a nameless atlas (test fakes) is computed fresh every call.
     name = getattr(atlas, "atlas_name", None)
