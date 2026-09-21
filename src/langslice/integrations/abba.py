@@ -52,7 +52,8 @@ REGISTRATION_NAME = "LangSlice-Nonlinear"
 
 # Channel layout of ABBA's resliced atlas sources (legacy Allen CCFv3p1 java
 # atlas): 0 Nissl, 1 template, 2 ?, 3 AP-mm, 4 DV-mm, 5 ML-mm, 6 left/right,
-# 7 label ids. Verified empirically in _local/abba_spike/spike3*.
+# 7 label ids. Verified empirically against a live ABBA session (probe
+# scripts kept outside the repo).
 # ponytail: indices hardcoded for the legacy Allen atlas; make discoverable
 # per-atlas when a second atlas is actually used in ABBA.
 COORD_CHANNELS = (3, 4, 5)

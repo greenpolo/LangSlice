@@ -34,7 +34,7 @@ here is a verbatim copy — edit one, mirror to the other.
   Register menu, one command. Ships in the recommended
   `langslice` conda env — environment.yml carries openjdk 11 + maven, and
   `pip install -e ".[abba]"` adds abba-python (a separate env from the user's
-  `abba`/`deepslice` envs). Live-session spikes: `_local/abba_spike/`
+  `abba`/`deepslice` envs). Live-session probe scripts are kept outside the repo.
   `abba_linear.py`: a live mirror for the LINEAR agent (the nonlinear plugin
   above is a different door). `langslice abba --linear FOLDER [linear
   flags]` (`run_linear_in_abba`) launches the ABBA GUI with the nonlinear
@@ -59,8 +59,7 @@ here is a verbatim copy — edit one, mirror to the other.
   `(1.0, 1.0)` loudly.
   Signs: the in-plane constants (`FLIP_ROTATION_AXIS`, `QUARTER_TURN_SIGN`,
   `INPLANE_ROTATION_SIGN`, translation/scale axes) were MEASURED 2026-09-10
-  with the same probe trick (`_local/abba_spike/spike8_sign_probe.py`,
-  `spike9_axis_direction.py`): ABBA's ML coordinate DECREASES with screen x,
+  with the same probe trick (scripts kept outside the repo): ABBA's ML coordinate DECREASES with screen x,
   and ImgLib2 `rotate` is clockwise on ABBA's y-down screen, so both
   rotation signs are −1 and the translation signs are +1. COMPOSITION ORDER
   matters as much as sign: every ImgLib2 `scale`/`rotate`/`translate` acts
@@ -69,17 +68,17 @@ here is a verbatim copy — edit one, mirror to the other.
   mirror calls scale, rotate, translate (affine) and quarter-turn, then flip
   (pre-transform). The first live M01 run (2026-09-10) caught the affine
   order: with unequal scales rotate-then-scale differs, and single-knob
-  probes never see it. `_local/abba_spike/spike11_matrix_readback.py` reads
+  probes never see it. A probe script (kept outside the repo) reads
   the ImgLib2 matrices straight back for combined knobs and matches
-  LangSlice's blocks exactly; `spike10_verify_state.py` checks a saved
+  LangSlice's blocks exactly; another checks a saved
   `.abba` against the agent's `linear_state.json` slice by slice. Only the
   pitch/yaw ↔ `setRotateX/Y` mapping is still unverified. Do not rely on screenshots
   to check these on this Wayland box (Java Robot returns black; offscreen
   painting shows only overlays) — use the probe.
   Imports JPype/scyjava lazily like `abba.py`, so its diff logic is
   unit-tested in the plain `.venv` against a fake ABBA facade
-  (`tests/test_integrations_abba_linear.py`); the live/JVM smoke is
-  `_local/abba_spike/spike6_linear_mirror.py`.
+  (`tests/test_integrations_abba_linear.py`); the live/JVM smoke test is
+  kept outside the repo.
 
 ## Linear menu and existing sessions (2026-09-13)
 
