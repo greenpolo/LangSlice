@@ -1,9 +1,5 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/logo/banner_dark.svg">
-    <source media="(prefers-color-scheme: light)" srcset="assets/logo/banner_light.svg">
-    <img alt="LangSlice" src="assets/logo/banner.svg" width="780">
-  </picture>
+  <img alt="LangSlice" src="assets/logo/banner_black.svg" width="780">
 </p>
 
 <p align="center">
@@ -32,21 +28,14 @@
 
 ## How it works
 
-<p align="center">
-  <img alt="Agent loop: inspect, explore atlas candidates, submit AP" src="assets/agent_loop.png" width="780">
-</p>
-
 A VLM agent inspects the slice, explores candidate atlas planes through tool calls, and
 submits an AP coordinate and an in-plane placement. An image model is then shown
 the atlas borders drawn on the tissue at that placement and asked to correct
 them; itk-elastix fits the residual deformation from the corrected borders.
-Without a supplied placement, a first image-model call moves the atlas region
-map onto the tissue to initialize it. Results export to VisuAlign-compatible
-JSON for QUINT / ABBA.
-
-<p align="center">
-  <img alt="LangSlice registration pipeline: histology slice to atlas-colored target, dense warp, and overlay" src="assets/registration_pipeline_square.png" width="780">
-</p>
+Without a supplied placement, the image model instead draws the boundaries
+against an outlined grayscale atlas template. Results export to
+VisuAlign-compatible JSON for QUINT / ABBA. The registration stages are
+illustrated in [the nonlinear design](docs/nonlinear_design.md).
 
 ## Quick start
 
