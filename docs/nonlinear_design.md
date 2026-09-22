@@ -45,8 +45,12 @@ with zero model calls: it is treated as that route's own final output.
    the canvas aspect if the lane returned a different frame, Zhang-Suen
    thinning to a single-pixel skeleton) and displayed on the untouched
    original photograph — never on the model's redrawn tissue.
-5. Elastix fits a B-spline (or affine, with `deformation="affine"`) residual
-   from the rough borders to the corrected ones
+5. Optionally, Elastix fits a B-spline (or affine, with
+   `deformation="affine"`) residual from the rough borders to the corrected
+   ones. The CLI default is `--deformation none`: no fit runs, the residual is
+   identity, and the exported placement is the rough one. The model call is
+   judged on its lines alone while its design is open; the fit is a separate
+   question, taken up later. When a fit does run it goes
    (`image_gen_helpers._run_elastix_april_borders`), and the atlas label map
    is warped by nearest-neighbor sampling
    (`image_gen_helpers._warp_classified_labels`) — never reconstructed from

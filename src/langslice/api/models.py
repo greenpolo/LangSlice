@@ -23,7 +23,7 @@ Provider = Literal[
 # Adaptive CLAHE + DAPI-weighted grayscale on the section before it is sent.
 PreprocessMode = Literal["none", "auto"]
 # Elastix stages the fit runs (see nonlinear.types.Deformation).
-Deformation = Literal["bspline", "affine"]
+Deformation = Literal["none", "bspline", "affine"]
 # Route "atlas" (no supplied placement) draws once, or twice with a
 # self-correction call (see nonlinear.image_gen_registration).
 Passes = Literal[1, 2]

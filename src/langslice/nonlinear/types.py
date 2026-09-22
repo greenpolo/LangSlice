@@ -18,7 +18,7 @@ AffineMatrixLike = Sequence[Sequence[float]] | np.ndarray
 #: B-spline stage driven by generated paintings measured BELOW the affine
 #: stage alone on the hand-registered slices (family dice 0.65 vs 0.735 flat,
 #: 0.74 vs 0.80 oblique).
-Deformation = Literal["bspline", "affine"]
+Deformation = Literal["none", "bspline", "affine"]
 
 
 def identity_affine_matrix() -> np.ndarray:

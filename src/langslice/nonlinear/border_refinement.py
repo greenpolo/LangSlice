@@ -132,11 +132,16 @@ def refine_borders(
 ) -> BorderRefinementResult:
     """Fit label-preserving residual deformation to a model's corrected lines.
 
+    ``deformation="none"`` runs no Elastix at all: the model's lines are
+    extracted and drawn on the original, and the "fitted" outputs are the
+    rough placement with an identity residual. That is the default while the
+    model call itself is under design; the fit stage is judged separately.
+
     All arrays use the original input canvas. The returned displacement maps
     output coordinates back into that rough canvas; the caller composes it
     with initial placement for atlas-space exports. Raw replies are untouched.
     """
-    if deformation not in {"affine", "bspline"}:
+    if deformation not in {"none", "affine", "bspline"}:
         raise ValueError(f"Unsupported border deformation: {deformation}")
     labels = np.asarray(rough_labels)
     shape = (image.height, image.width)
@@ -177,6 +182,16 @@ def refine_borders(
     mask = extract_thinned_lines(raw, image.size)
     if not mask.any():
         raise ValueError("Image model returned no usable yellow anatomical boundaries")
+    metadata.update({
+        "raw_output_size": list(raw.size), "model_border_pixels": int(mask.sum()),
+        "rough_border_pixels": int((moving > 0).sum()),
+    })
+    if deformation == "none":
+        return BorderRefinementResult(
+            rough, raw, mask, border_overlay(original, mask), labels.copy(), rough.copy(),
+            None, np.zeros((*shape, 2), dtype=np.float64), 0.0,
+            {**metadata, "fit_skipped": True},
+        )
     fixed = mask.astype(np.uint8) * 255
     if deformation == "bspline":
         transform, elapsed = _run_elastix_april_borders(fixed, moving)
@@ -189,10 +204,6 @@ def refine_borders(
     if field is None or field.shape != (*shape, 2) or not np.isfinite(field).all():
         raise RuntimeError("Border registration did not produce a finite canvas deformation field")
     fitted_borders = _extract_borders_from_classified(_merge_classified(fitted, atlas)) > 0
-    metadata.update({
-        "raw_output_size": list(raw.size), "model_border_pixels": int(mask.sum()),
-        "rough_border_pixels": int((moving > 0).sum()),
-    })
     return BorderRefinementResult(
         rough, raw, mask, border_overlay(original, mask), fitted,
         border_overlay(original, fitted_borders), transform, field, elapsed, metadata,

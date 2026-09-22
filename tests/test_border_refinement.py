@@ -125,3 +125,23 @@ def test_thinning_keeps_connected_line_and_yellow_tolerance():
     assert mask.sum() > 10
     assert np.unique(np.nonzero(mask)[1]).size == 1
     assert not borders.yellow_mask(np.full((3, 3, 3), 150, dtype=np.uint8)).any()
+
+
+def test_refine_borders_none_skips_elastix(case, monkeypatch):
+    """``deformation="none"`` never touches Elastix and returns an identity residual."""
+    photo, labels, atlas = case
+
+    def boom(*a, **k):
+        raise AssertionError("Elastix must not run with deformation='none'")
+
+    monkeypatch.setattr(borders, "_run_elastix_april_borders", boom)
+    monkeypatch.setattr(borders, "_register_channel_stacks", boom)
+    lines = borders._extract_borders_from_classified(labels) > 0
+    reply = borders.border_overlay(photo, lines)
+    result = borders.refine_borders(photo, labels, atlas, generated_image=reply, deformation="none")
+    assert result.metadata["fit_skipped"] is True
+    assert result.result_transform is None
+    assert result.elapsed == 0.0
+    assert not result.deformation_field.any()
+    assert np.array_equal(result.fitted_labels, labels)
+    assert result.model_border_mask.any()
