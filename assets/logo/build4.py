@@ -132,6 +132,8 @@ def main():
         b3.write_mark(f"{o}/{names['mark']}{tag}.svg", pal)
         b3.write_lockup(f"{o}/{names['lockup']}{tag}.svg", pal)
         write_banner(f"{o}/{names['banner_ascii']}{tag}.svg", pal, uid="b" + (tag or "m"))
+    # README banner: the figures all sit on black, so the banner does too
+    write_banner(f"{o}/banner_black.svg", PAL["dark"], uid="bk", bg="#000000")
     for n, bg in (("logomark_dark", "#0d1117"), ("logomark_light", "#ffffff")):
         render(f"{o}/{n}.svg", f"{o}/{n}_512.png", 512, bg)
     print("done")

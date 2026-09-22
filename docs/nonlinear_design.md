@@ -1,5 +1,17 @@
 # Nonlinear registration: two border-based routes
 
+<p align="center">
+  <img alt="Registration stages: inputs, image-model output on the slice, Elastix deformation field, registered slice" src="assets/registration_pipeline.png" width="720">
+</p>
+
+The figure shows the stages every route passes through: an input slice and
+an atlas rendering, one image-model call that moves the atlas onto the
+tissue, an Elastix residual fit of the model's output, and the deformation
+applied to atlas coordinates. It predates the current design and shows the
+model repainting a colored region map; the routes below give it atlas
+borders instead, and the model draws or corrects boundary lines rather than
+fills.
+
 Registration is exactly two border-based routes, selected automatically by
 whether an initial atlas placement is supplied. Both routes fit the SAME
 residual border deformation and compose it with their own initial placement.
