@@ -71,8 +71,9 @@ here is a verbatim copy — edit one, mirror to the other.
   probes never see it. A probe script (kept outside the repo) reads
   the ImgLib2 matrices straight back for combined knobs and matches
   LangSlice's blocks exactly; another checks a saved
-  `.abba` against the agent's `linear_state.json` slice by slice. Only the
-  pitch/yaw ↔ `setRotateX/Y` mapping is still unverified. Do not rely on screenshots
+  `.abba` against the agent's `linear_state.json` slice by slice. The
+  pitch/yaw ↔ `setRotateX/Y` mapping was measured 2026-09-22 (pitch_deg =
+  −deg(rotateX), yaw_deg = +deg(rotateY)). Do not rely on screenshots
   to check these on this Wayland box (Java Robot returns black; offscreen
   painting shows only overlays) — use the probe.
   Imports JPype/scyjava lazily like `abba.py`, so its diff logic is
@@ -100,7 +101,7 @@ Snapshots, checkpoint and `abba_run.json` mapping remain in the reported run
 folder. Existing registrations stay underneath new corrections; disabled task
 properties are preserved. Source orientation on already registered sections is
 refused. This entry point currently requires flat coronal Allen mouse sessions;
-GUI cutting-angle control is not exposed while the sign mapping is unverified.
+GUI cutting-angle control is not exposed yet.
 Human edits during a run are not read back. Save results through ABBA's normal
 state-save UI.
 

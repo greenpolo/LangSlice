@@ -35,8 +35,9 @@ and ABBA's own coordinate channels say ML DECREASES with screen x while DV
 increases with screen y — so the probe grid (ML right) is a left-right mirror
 of the screen, and the two rotation signs come out NEGATIVE (ImgLib2's
 ``rotate`` is counter-clockwise in a y-up frame, i.e. clockwise on a y-down
-screen, where LangSlice's ``rotation_deg`` is counter-clockwise). Only the
-pitch/yaw mapping onto ``ReslicedAtlas.setRotateX/Y`` is still unverified.
+screen, where LangSlice's ``rotation_deg`` is counter-clockwise). The
+pitch/yaw mapping onto ``ReslicedAtlas.setRotateX/Y`` was measured on
+2026-09-22: pitch flips sign, yaw does not, magnitudes agree.
 
 This module imports JPype/scyjava/abba_python lazily, inside the functions
 that need them, exactly like :mod:`langslice.integrations.abba` — so it
@@ -77,8 +78,10 @@ PROVISIONAL_INTERVAL_MM = 0.1
 #   rotation_deg   -> needs sign -1                 (0.84 vs -0.16)
 #   translate_x/y  -> +3 mm moved +3.00 / +2.60 mm  (signs +1)
 #   scale_x        -> scales screen x               (0.90 vs -0.43 for y)
-# Still UNVERIFIED: pitch/yaw <-> setRotateX/setRotateY (low stakes; the
-# angles are off by default).
+# pitch/yaw <-> setRotateX/setRotateY MEASURED 2026-09-22 (spike 12,
+# _local/bench/abba_probes/spike12_rotation_mapping): rotateX is pitch with
+# the opposite sign, rotateY is yaw with the same sign, both in radians of
+# the same angle LangSlice uses (0.994 label agreement on the oblique plane).
 
 #: SliceSources.rotateSourceOrigin axis for SliceState.flip (mirror
 #: left-right): rotating pi about Y. SliceSources.java:547-551.
@@ -97,8 +100,9 @@ INPLANE_ROTATION_SIGN = -1.0
 #: down the screen, so no flip. Measured.
 INPLANE_TRANSLATE_Y_SIGN = 1.0
 #: Which of ReslicedAtlas.setRotateX/setRotateY is pitch vs yaw, and sign.
-#: ReslicedAtlas.java:333,356. UNVERIFIED.
-PITCH_TO_ROTATE_X_SIGN = 1.0
+#: ReslicedAtlas.java:333,356. Measured (spike 12): pitch_deg = -deg(rotateX),
+#: yaw_deg = +deg(rotateY).
+PITCH_TO_ROTATE_X_SIGN = -1.0
 YAW_TO_ROTATE_Y_SIGN = 1.0
 
 
