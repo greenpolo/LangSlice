@@ -267,7 +267,8 @@ def estimate_registration(
 
     ``pitch_deg``/``yaw_deg`` are the block's cutting angles: every atlas
     render is resliced on that oblique plane instead of taken flat.
-    ``deformation`` picks the Elastix stages. ``provider="none"`` calls no
+    ``deformation`` picks the Elastix stages, or ``"none"`` for no fit at all
+    (identity residual; the CLI default). ``provider="none"`` calls no
     model: it retains a supplied placement, or fits a silhouette placement,
     without fitting a residual deformation.
     """

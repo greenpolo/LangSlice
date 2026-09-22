@@ -2,12 +2,13 @@
 import argparse
 import sys
 import textwrap
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import langslice
 
 if TYPE_CHECKING:
     from langslice.linear.spec import JobSpec
+    from langslice.nonlinear.types import Deformation
 
 _PLANE_HELP = (
     "Slicing plane (normal axis). Position is interpreted along this axis "
@@ -86,10 +87,12 @@ def _add_register_parser(subparsers: argparse._SubParsersAction) -> None:
     )
     reg.add_argument(
         "--deformation",
-        default="bspline",
-        choices=["bspline", "affine"],
-        help="Elastix stages: 'bspline' is affine + B-spline; 'affine' fits "
-        "the affine stage alone (measured higher on generated paintings).",
+        default="none",
+        choices=["none", "bspline", "affine"],
+        help="Residual fit after the model call. 'none' (default) runs no "
+        "Elastix: outputs are the model's lines on the original plus the "
+        "rough placement with an identity residual. 'bspline' is affine + "
+        "B-spline; 'affine' fits the affine stage alone.",
     )
     reg.add_argument(
         "--passes",
@@ -263,7 +266,7 @@ def _run_register(args: argparse.Namespace) -> None:
         image_axes=getattr(args, "image_axes", None),
         pitch_deg=getattr(args, "pitch_deg", 0.0),
         yaw_deg=getattr(args, "yaw_deg", 0.0),
-        deformation=getattr(args, "deformation", "bspline"),
+        deformation=cast("Deformation", getattr(args, "deformation", "none")),
         passes=getattr(args, "passes", 1),
         vlm_resolution=args.vlm_resolution,
         initial_atlas_to_slice=initial_alignment,

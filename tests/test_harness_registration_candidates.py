@@ -215,7 +215,7 @@ def test_register_cli_parses_passes_deformation_and_mirror():
         ["nonlinear", "register", "tests/fixture.png", "--position", "5.0"]
     )
     assert defaults.passes == 1
-    assert defaults.deformation == "bspline"
+    assert defaults.deformation == "none"
     assert defaults.mirror_atlas_lr is False
 
     with pytest.raises(SystemExit):

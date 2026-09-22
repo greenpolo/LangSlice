@@ -52,8 +52,11 @@ the residual alone.
   `composed_native_map`) and the candidate contract.
 - `border_refinement.py` — `refine_borders`: the correction request,
   yellow-line extraction (`extract_thinned_lines`, `yellow_mask`, `thin`),
-  residual Elastix fit and nearest-neighbor label warp. `integrations/abba.py`
-  shares this core directly.
+  residual Elastix fit and nearest-neighbor label warp. `deformation="none"`
+  (the CLI default since 2026-09-22) skips the fit entirely and returns an
+  identity residual: the model call is judged on its raw lines while its
+  design is open, and the fit stage is not under evaluation.
+  `integrations/abba.py` shares this core directly.
 - `prompts.py` — the three prompt functions; the OpenAI-GPT or Gemini wording
   is selected by `canonical_provider(provider)`.
 - `prior.py` — `place_plane_on_tissue_with_matrix`, the silhouette-moments
