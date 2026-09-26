@@ -82,7 +82,8 @@ or pure docs/API verification (a research agent is faster).
 
 ### Runtime (`src/langslice/`)
 
-Two methods live as sibling subpackages with no dependency on each other:
+Two methods live as sibling subpackages, connected through top-level registration
+bridges rather than direct imports of each other:
 
 - `linear/` — order, position and one in-plane transform per section, as ONE
   agent environment (`langslice linear run FOLDER`): one `StackState`, one
@@ -103,6 +104,13 @@ Two methods live as sibling subpackages with no dependency on each other:
   working there).
 
 Shared, top-level:
+
+- `registration_tool.py` — optional stack-agent image tool, enabled by task
+  `nonlinear`: corrects a supplied linear placement using the fixed prompt plus
+  per-slice additional notes. No atlas search, replacement prompt, agent rejection
+  or fit. Saves the first result and exact artifacts separately from transforms.
+  `registration_handoff.py` supplies calibrated geometry; see
+  `docs/nonlinear_image_tool.md`.
 
 - `atlas/` — BrainGlobe loading, slice extraction, colored region maps, borders,
   and the organized-color LUT for human-review renders:

@@ -26,9 +26,8 @@ damage block (slide features, missing tissue, faint-vs-missing, displaced
 pieces) was expanded on 2026-09-21 ahead of the sagittal / damaged-section
 test, because route "atlas" has no agent to describe a section's defects.
 
-TODO (route "supplied"): expose the image model as a linear-agent tool that
-sends :func:`border_refinement_prompt` plus an agent-written paragraph
-describing this section's damage and artifacts. Not built.
+The stack agent's image tool uses :func:`border_correction_tool_prompt`: the
+unchanged supplied-placement prompt with optional per-section additional notes.
 """
 
 from __future__ import annotations
@@ -79,6 +78,25 @@ def border_refinement_prompt(plane: Plane = "coronal") -> str:
         "The output is one image: the original photograph with the corrected yellow "
         "boundaries replacing the supplied yellow boundaries."
     )
+
+
+def border_correction_tool_prompt(
+    plane: Plane = "coronal", additional_notes: str = ""
+) -> str:
+    """Fixed correction task with optional supplementary specimen observations.
+
+    The agent controls only the notes, never the base prompt or attachment roles.
+    Blank notes preserve the accepted prompt byte for byte. Sentence audit:
+    ``docs/nonlinear_image_tool.md``. Image 1 is the placed-border photograph;
+    Image 2 is the identical clean photograph, not a separate atlas plate.
+    """
+    if not isinstance(additional_notes, str):
+        raise ValueError("additional_notes must be text")
+    base = border_refinement_prompt(plane)
+    note = additional_notes.strip()
+    if not note:
+        return base
+    return base + "\n\nAdditional notes for this slice (supplement the task above):\n" + note
 
 
 # --------------------------------------------------------------- route "atlas"

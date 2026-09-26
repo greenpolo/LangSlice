@@ -67,11 +67,20 @@ anchoring, `nonlinear` for generative-image registration:
 # Linear: order, position and transform for a folder of sections
 langslice linear run sections/
 
-# Nonlinear: registration at a known atlas position
-langslice nonlinear register slice.png --position 3.9
+# Image-model border correction using the folder's saved linear alignment
+langslice linear run sections/ --tasks nonlinear
+
+# Standalone registration using a supplied linear placement
+langslice nonlinear register slice.png --position 3.9 --initial-alignment placement.json
 ```
 
-The two are independent. `nonlinear register` takes the position as an
+The image tool uses the fixed border-correction prompt plus optional per-slice
+agent notes. It retains the first result without agent rejection and returns raw
+output plus extracted borders on the original. It currently produces annotation
+images, with deformation fitting kept separate. See
+[the image-tool contract](docs/nonlinear_image_tool.md).
+
+`nonlinear register` takes the position as an
 argument, so it can follow `langslice linear run` or a placement made in
 another tool — in QUINT/ABBA-style workflows it stands in for the manual
 spline/BigWarp deformation step.

@@ -1,5 +1,12 @@
 # Nonlinear registration: two border-based routes
 
+The stack agent's supported image tool requires an existing linear placement and
+uses the supplied-border correction task below. It accepts only a slice identifier
+and optional additional notes, retains the first image reply automatically, and
+does not fit a deformation. See [the image-tool contract](nonlinear_image_tool.md).
+The standalone lower-level atlas route described here remains available for
+experiments; it is not exposed to the stack agent's correction tool.
+
 <p align="center">
   <img alt="Registration stages: inputs, image-model output on the slice, Elastix deformation field, registered slice" src="assets/registration_pipeline.png" width="720">
 </p>
@@ -139,7 +146,9 @@ cutting angles, then transformed by `image_axes` and the explicit
 `langslice.registration_handoff.prepare_linear_registration` prepares this
 contract from an existing linear section state; `run_linear_registration`
 performs the handoff. These are callable host interfaces, not an
-automatically enabled tool in the linear agent's toolbox. They preserve the
+automatically enabled tool in the linear agent's toolbox. The opt-in `nonlinear`
+task adds a separate annotation-only `registration_tool` using the same prepared
+linear geometry. The handoff functions preserve the
 linear placement, including shear, physical calibration and section
 orientation, without changing the linear state. Their image frame is the
 oriented rendered section, not the original acquisition TIFF.

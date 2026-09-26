@@ -20,10 +20,12 @@ import logging
 import threading
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 from google.genai import types
+from PIL import Image
 
 from langslice.adk import TOOL_MEDIA_DELIVERY_ID_KEY, TOOL_MEDIA_PARTS_KEY
 from langslice.affine import (
@@ -122,6 +124,8 @@ def _tool_target_ids(state: StackState, name: str, args: dict[str, Any]) -> list
     refs = list(args.get("slice_ids") or args.get("new_order") or [])
     if "slice_id" in args:
         refs.append(args["slice_id"])
+    if "id" in args:
+        refs.append(args["id"])
     for entry in args.get("entries") or []:
         if isinstance(entry, dict) and "id" in entry:
             refs.append(entry["id"])
@@ -793,6 +797,32 @@ def build_tools(
         refusal = submit_errors(state, spec, breaks)
         if refusal is not None:
             return refusal
+        if spec.has("nonlinear"):
+            from langslice.registration_tool import correction_fingerprint
+
+            pending: list[dict[str, str]] = []
+            for record in state.in_order():
+                result = record.image_correction or {}
+                try:
+                    current = correction_fingerprint(state, ctx, record.id)
+                except (OSError, ValueError) as exc:
+                    pending.append({"id": record.id, "reason": str(exc)})
+                    continue
+                if result.get("status") != "ok":
+                    pending.append({"id": record.id, "reason": "No completed image correction"})
+                elif result.get("geometry_fingerprint") != current:
+                    pending.append({
+                        "id": record.id, "reason": "Placement changed since image correction",
+                    })
+            if pending:
+                return {
+                    "status": "refused",
+                    "error": "MISSING_IMAGE_CORRECTIONS",
+                    "sections": pending,
+                    "message": "Each section requires a completed image correction at its current "
+                    "linear placement. This checks completion and geometry, "
+                    "not anatomical quality.",
+                }
         if spec.has("position") and spec.position.gated and not box.reviewed:
             return {
                 "status": "refused",
@@ -2022,6 +2052,66 @@ def build_tools(
             box.tools.append(adjust_transforms)
         if spec.transform.angles:
             box.tools.append(set_cutting_angles)
+
+    def correct_slice_borders(id: str, additional_notes: str = "") -> dict[str, Any]:
+        """Correct one slice's placed atlas borders with the fixed image-model prompt.
+
+        Args:
+            id: Section filename or corrected index, with a position and linear transform.
+            additional_notes: Optional specimen observations appended to the fixed prompt.
+                These supplement its instructions; they do not replace the prompt.
+
+        Saves the first result at this placement and returns raw output plus borders
+        on the original. Repeated calls reuse that result. Does not fit a deformation.
+        """
+        from langslice.registration_tool import correct_slice
+
+        record = state.resolve(id)
+        if record is None:
+            return {"status": "error", "error": "UNKNOWN_SECTION", "id": str(id)}
+        try:
+            result = correct_slice(
+                state, ctx, record.id,
+                additional_notes=additional_notes,
+                out=Path(ctx.results_path).parent / "nonlinear",
+                provider=spec.nonlinear.provider,
+                image_model=spec.nonlinear.image_model,
+            )
+        except ValueError as exc:
+            return {"status": "error", "error": "INVALID_LINEAR_PLACEMENT",
+                    "id": record.id, "message": str(exc)}
+        except OSError as exc:
+            return {"status": "error", "error": "IMAGE_CORRECTION_IO_ERROR",
+                    "id": record.id, "message": str(exc)}
+        if result != record.image_correction:
+            snapshot()
+            record.image_correction = result
+            save_checkpoint(state, ctx.checkpoint_path)
+        response = {**result, "id": record.id}
+        parts: list[types.Part] = []
+        image_indexes: dict[str, int] = {}
+        media_errors: list[str] = []
+        for key, label in (("raw_reply", "raw image-model output"),
+                           ("lines_on_original", "extracted borders on original")):
+            path = result.get("artifact_paths", {}).get(key)
+            if not path:
+                continue
+            try:
+                with Image.open(path) as opened:
+                    picture = opened.convert("RGB")
+                picture.thumbnail((OVERLAY_LONG_EDGE, OVERLAY_LONG_EDGE))
+                part = image_to_part(caption(picture, f"{record.id}: {label}"))
+                image_indexes[key] = len(parts)
+                parts.append(part)
+            except (OSError, ValueError) as exc:
+                media_errors.append(f"{key}: {exc}")
+        response.update(image_indexes=image_indexes, **{TOOL_MEDIA_PARTS_KEY: parts})
+        if media_errors:
+            response["render_failed"] = media_errors
+        return response
+
+    if spec.has("nonlinear"):
+        box.tools.append(correct_slice_borders)
 
     box.tools.append(submit)
     lock = threading.Lock()

@@ -218,9 +218,20 @@ full-stack comparison did not establish a nonlinear quality gain. The dedicated
 linear landmark module and editable-point state are removed. Default full-task
 and interactive-only tool counts are 15 and 9.
 
-Local anatomical deformation remains the responsibility of the independent
-`nonlinear/` image-generation workflow. A bridge that lets the linear agent call
-image generation is undecided; no tool or cross-package dependency implements it.
+Local anatomical deformation remains the responsibility of the nonlinear workflow.
+The optional `nonlinear` task now adds `correct_slice_borders(id,
+additional_notes="")` through the top-level `registration_tool` bridge. It uses
+the supplied linear placement, fixed correction prompt and optional per-slice notes.
+The first image reply is retained automatically in `SliceState.image_correction`,
+with raw output and extracted lines returned as separate images. No atlas search,
+replacement prompt, candidate selection or anatomical rejection is exposed.
+It does not fit a deformation or modify `transform`. Default task/tool counts stay
+unchanged; `DEFAULT_TASKS` is separate from `ALL_TASKS`. Hosts may supply calibrated
+`inputs.transforms` or resume saved linear transforms. Submit checks correction
+completion and current geometry when the new task is on. Exact artifacts and first
+reply caching survive checkpoint undo; no note-only regeneration occurs. A failed
+transport that returned no image may be retried.
+See `docs/nonlinear_image_tool.md` for the contract and prompt sentence audit.
 
 Historical `transform.spline` checkpoints remain supported: `landmark_warp.py`
 evaluates the exact stored Elastix or legacy TPS mapping, and rendering, undo,
