@@ -11,6 +11,21 @@ def test_parser_supports_serve_command() -> None:
     assert args.stdio is True
 
 
+def test_nonlinear_task_notes_tool_configuration_and_host_transforms() -> None:
+    parser = cli._build_parser()
+    args = parser.parse_args([
+        "linear", "run", "/stack", "--tasks", "nonlinear",
+        "--image-provider", "openai-oauth", "--image-model", "test-image",
+        "--transforms", '{"s.png": {"params": [1, 0, 0, 0, 1, 0]}}',
+    ])
+    spec = cli._build_linear_spec(args, args.image_folder)
+    assert spec.tasks == ["nonlinear"]
+    assert spec.nonlinear.image_model == "test-image"
+    assert spec.inputs["transforms"]["s.png"]["params"] == [1, 0, 0, 0, 1, 0]
+    defaults = cli._build_linear_spec(parser.parse_args(["linear", "run", "/stack"]), "/stack")
+    assert defaults.tasks == ["reorder", "position", "transform"]
+
+
 def test_serve_requires_stdio() -> None:
     with pytest.raises(SystemExit):
         cli.main(["serve"])

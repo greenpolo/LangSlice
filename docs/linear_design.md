@@ -3,7 +3,8 @@
 `langslice linear` places a stack of histology sections on a BrainGlobe atlas:
 order, position along the slicing axis, and one in-plane affine per section.
 It is ONE agent environment — one state, one toolbox, one job statement — that
-a host switches on task by task. Running everything is the default.
+a host switches on task by task. The three linear tasks run by default; an
+optional image-model border-correction task follows an existing linear placement.
 
 ## Why one environment
 
@@ -26,7 +27,7 @@ sees maps to a field here; nothing else is user-facing.
 ```
 JobSpec
   image_folder, atlas, plane, model, out, preprocess (auto|none)
-  tasks: subset of {reorder, position, transform}     # default: all three
+  tasks: subset of {reorder, position, transform, nonlinear} # default: first three
   reorder:
     flip: bool = True             # may flip sections across the midline
     hemisphere_cue: str = ""      # user text: what marks a hemisphere (notch, injection...)
@@ -41,12 +42,13 @@ JobSpec
     angles: bool = False          # may set the stack-wide cutting angles
     elastix: bool = False         # fit_affine may use Elastix intensity affine
   facts: free-form user facts, one line each, passed verbatim
-  inputs: order/positions/angles supplied by the host for tasks that are OFF
+  nonlinear: {provider: openai-oauth, image_model: null}
+  inputs: order/positions/angles/transforms supplied by the host for tasks that are OFF
 ```
 
 Task OFF means its outputs are inputs: reorder off → discovery order is fixed;
 position off → positions come from the host and are facts; transform off →
-no transform tools, no alignment.
+no transform tools, with existing transforms supplied by the host or checkpoint.
 
 ## State
 
@@ -73,6 +75,7 @@ SliceState
                      scale_y, shear, translate_x_mm, translate_y_mm, pivot),
                      calibration, iou?, mirrored?, note?}
   caveats: [str]
+  image_correction | null: first image-model reply, notes, geometry and artifact paths
 ```
 
 Order and position are separate fields that must agree at submit. Reordering
@@ -154,10 +157,14 @@ adjustment count or final-review hook.
 
 ### Linear and nonlinear scope
 
-The linear agent supplies order, position and affine alignment. Local anatomical
-deformation belongs to the separate nonlinear image-generation registration
-workflow. The linear toolbox has no paired-landmark or image-generation tools;
-an agent-callable bridge to image generation remains undecided.
+The linear agent supplies order, position and affine alignment. With the optional
+`nonlinear` task it also exposes `correct_slice_borders(id, additional_notes="")`.
+The top-level registration bridge sends placed borders plus the clean photograph
+to the image model using the fixed correction prompt and optional per-slice notes.
+The first result is retained without agent selection or rejection. Submit requires
+a completed correction at each section's current placement. No deformation is
+fitted and no transform is changed by this tool. See
+[the image-tool contract](nonlinear_image_tool.md).
 
 Historical checkpoints with applied spline transforms remain readable and render
 their complete saved mapping. Affine fitting or adjustment replaces that mapping;

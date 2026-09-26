@@ -15,7 +15,8 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 #: Every task, in the order they are listed everywhere else.
-ALL_TASKS: tuple[str, ...] = ("reorder", "position", "transform")
+DEFAULT_TASKS: tuple[str, ...] = ("reorder", "position", "transform")
+ALL_TASKS: tuple[str, ...] = (*DEFAULT_TASKS, "nonlinear")
 
 PLANES: tuple[str, ...] = ("coronal", "sagittal", "horizontal")
 
@@ -71,6 +72,14 @@ class TransformSpec:
     elastix: bool = False
 
 
+@dataclass
+class NonlinearSpec:
+    """Image-model border correction after a supplied linear placement."""
+
+    provider: str = "openai-oauth"
+    image_model: str | None = None
+
+
 #: Optional per-request context safeguard, disabled unless a host sets it.
 #: Cumulative input measures repeated processing, not context-window size.
 DEFAULT_MAX_INPUT_TOKENS: int | None = None
@@ -96,16 +105,18 @@ class JobSpec:
     #: "auto" runs :func:`langslice.image_prep.adaptive_preprocess`, "none"
     #: shows the raw section. Never written back to the user's files.
     preprocess: str = "auto"
-    tasks: list[str] = field(default_factory=lambda: list(ALL_TASKS))
+    tasks: list[str] = field(default_factory=lambda: list(DEFAULT_TASKS))
     reorder: ReorderSpec = field(default_factory=ReorderSpec)
     position: PositionSpec = field(default_factory=PositionSpec)
     transform: TransformSpec = field(default_factory=TransformSpec)
+    nonlinear: NonlinearSpec = field(default_factory=NonlinearSpec)
     #: Free-form user facts, one line each, passed to the agent verbatim.
     facts: list[str] = field(default_factory=list)
     #: Host-supplied answers for tasks that are OFF, plus the optional
     #: calibration override:
     #: ``{"positions": {filename: mm}, "order": [filename, ...],
-    #: "angles": {"pitch": deg, "yaw": deg}, "pixel_size_um": float}``.
+    #: "angles": {"pitch": deg, "yaw": deg}, "pixel_size_um": float,
+    #: "transforms": {filename: transform_dict}}``.
     inputs: dict[str, Any] = field(default_factory=dict)
     #: Resume from the folder checkpoint when one exists.
     resume: bool = True
@@ -158,6 +169,7 @@ class JobSpec:
             "reorder": ReorderSpec,
             "position": PositionSpec,
             "transform": TransformSpec,
+            "nonlinear": NonlinearSpec,
         }
         kwargs: dict[str, Any] = {}
         for name, value in data.items():

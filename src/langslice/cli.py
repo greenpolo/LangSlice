@@ -352,7 +352,8 @@ def _add_linear_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--tasks",
         default="reorder,position,transform",
-        help="Comma-separated subset of reorder,position,transform",
+        help="Comma-separated subset of reorder,position,transform,nonlinear; "
+        "nonlinear adds one image-model border correction per linearly aligned slice",
     )
     p.add_argument("--atlas", default="allen_mouse_25um", help="BrainGlobe atlas name")
     p.add_argument(
@@ -362,6 +363,14 @@ def _add_linear_arguments(p: argparse.ArgumentParser) -> None:
         help=_PLANE_HELP,
     )
     p.add_argument("--model", default=None, help="Model name for the agent session")
+    p.add_argument(
+        "--image-provider", default="openai-oauth",
+        help="Image provider used only when the nonlinear task is enabled",
+    )
+    p.add_argument(
+        "--image-model", default=None,
+        help="Image model for the nonlinear tool; default is the provider's image model",
+    )
     p.add_argument(
         "--reasoning",
         default=None,
@@ -438,6 +447,11 @@ def _add_linear_arguments(p: argparse.ArgumentParser) -> None:
         default=None,
         metavar="JSON",
         help="Host-supplied order: a JSON file path or inline JSON list of filenames",
+    )
+    p.add_argument(
+        "--transforms", default=None, metavar="JSON",
+        help="Host-supplied calibrated linear transforms: JSON file or inline mapping "
+        "of filenames to saved transform records",
     )
     p.add_argument(
         "--out",
@@ -527,7 +541,7 @@ def _build_linear_spec(args: argparse.Namespace, image_folder: str) -> "JobSpec"
     parsers add the same flags via :func:`_add_linear_arguments`.
     """
     from langslice.linear import JobSpec
-    from langslice.linear.spec import PositionSpec, ReorderSpec, TransformSpec
+    from langslice.linear.spec import NonlinearSpec, PositionSpec, ReorderSpec, TransformSpec
 
     inputs: dict[str, object] = {}
     positions = _load_json_arg(args.positions)
@@ -536,6 +550,9 @@ def _build_linear_spec(args: argparse.Namespace, image_folder: str) -> "JobSpec"
     order = _load_json_arg(args.order)
     if order is not None:
         inputs["order"] = order
+    transforms = _load_json_arg(args.transforms)
+    if transforms is not None:
+        inputs["transforms"] = transforms
     if args.pixel_size_um:
         inputs["pixel_size_um"] = float(args.pixel_size_um)
     if args.pitch is not None or args.yaw is not None:
@@ -561,6 +578,7 @@ def _build_linear_spec(args: argparse.Namespace, image_folder: str) -> "JobSpec"
             playbook=args.playbook,
         ),
         transform=TransformSpec(angles=args.angles, elastix=args.elastix),
+        nonlinear=NonlinearSpec(provider=args.image_provider, image_model=args.image_model),
         facts=list(args.facts),
         inputs=inputs,
         resume=args.resume,
@@ -706,11 +724,6 @@ def _add_abba_parser(subparsers: argparse._SubParsersAction) -> None:
         default="allen_mouse_10um",
         help="BrainGlobe atlas the nonlinear registration plugin samples for "
         "region maps (independent of the linear agent's --atlas)",
-    )
-    p.add_argument(
-        "--image-model",
-        default=None,
-        help="Image-gen model override for the nonlinear registration plugin",
     )
     p.add_argument(
         "--provider",

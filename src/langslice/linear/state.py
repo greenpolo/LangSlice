@@ -68,6 +68,8 @@ class SliceState:
     damage_note: str = ""
     position_mm: float | None = None
     transform: dict[str, Any] | None = None
+    #: Raw image-model correction and artifacts; does not replace the transform.
+    image_correction: dict[str, Any] | None = None
     caveats: list[str] = field(default_factory=list)
 
 

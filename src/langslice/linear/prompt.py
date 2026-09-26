@@ -85,6 +85,11 @@ TOOL_LINES: dict[str, str] = {
     "Results map their images with zero-based image_indexes. Each section may "
     "appear once; inspect before a dependent correction in a later call. "
     "This replaces the complete transform, including any spline or shear.",
+    "correct_slice_borders": "uses the fixed image-model border-correction prompt "
+    "on one section's existing linear placement, with optional additional_notes "
+    "for that slice; returns the raw generated image and extracted borders on "
+    "the original. The first result at each placement is saved and reused. "
+    "This records an annotation; it does not fit or change the transform.",
     "submit": "checks requirements and ends the run if they pass; otherwise "
     "returns the missing requirements without ending or changing the run.",
 }
@@ -123,6 +128,8 @@ def build_job_statement(
         )
     if spec.has("transform"):
         jobs.append("give every section one in-plane transform onto its atlas section")
+    if spec.has("nonlinear"):
+        jobs.append("use the image model to correct every section's placed atlas borders")
     job = "; ".join(jobs) if jobs else "review the stack"
 
     placed = [s for s in state.in_order() if s.position_mm is not None]
@@ -158,7 +165,10 @@ def build_job_statement(
     if not spec.has("position"):
         facts.append("- The positions shown are given; this run does not change them.")
     if not spec.has("transform"):
-        facts.append("- Transforms are not part of this run.")
+        facts.append(
+            "- Existing linear transforms are supplied and fixed for this run."
+            if spec.has("nonlinear") else "- Transforms are not part of this run."
+        )
     else:
         # The alignment frame, as facts: these lived in the deleted
         # sub-session prompt and the fold-in dropped them.
@@ -236,6 +246,21 @@ def build_job_statement(
                 "- Interactive transforms are disabled; unresolved damaged "
                 "sections require the host to enable them before submission."
             )
+    if spec.has("nonlinear"):
+        constraints.append(
+            "- Image correction requires a position and an existing linear transform. "
+            "Additional notes supplement the fixed correction prompt; no replacement "
+            "prompt or anatomical rejection step is available."
+        )
+        constraints.append(
+            "- Check each sentence of additional_notes against the fixed correction task: "
+            "describe this slice's displacement, damage or artifacts without selecting "
+            "a different set of atlas borders or omitting regions merely because they are faint."
+        )
+        constraints.append(
+            "- `submit` requires a completed image correction for every section at "
+            "its current placement. Completion does not certify anatomical quality."
+        )
     constraints.append(
         "- Corrections are recorded as data; the user's image files are never "
         "modified."
@@ -300,6 +325,18 @@ def build_job_statement(
             "transforms. Keep changes only if they improve the alignment."
         )
 
+    image_task: list[str] = []
+    if spec.has("nonlinear"):
+        from typing import cast
+
+        from langslice.registration_tool import correction_instructions
+        from langslice.space import Plane
+
+        image_task = [
+            "", "Fixed image-model task (image numbers refer to the tool's attachments):",
+            correction_instructions(cast(Plane, state.plane)),
+        ]
+
     return "\n".join(
         [
             f"You are an expert neuroanatomist working on a stack of "
@@ -317,6 +354,7 @@ def build_job_statement(
             "Constraints:",
             *constraints,
             *method,
+            *image_task,
             "",
             "Work with the tools, then call `submit`.",
         ]

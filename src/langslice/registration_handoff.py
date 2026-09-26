@@ -71,6 +71,8 @@ def prepare_linear_registration(
     transform = record.transform
     if not transform:
         raise ValueError("A written affine transform is required")
+    if transform.get("spline"):
+        raise ValueError("A linear placement is required; an existing spline cannot be discarded")
     if transform.get("stale"):
         raise ValueError("The written affine is marked stale")
     orientation = transform.get("orientation")

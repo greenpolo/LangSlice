@@ -10,6 +10,7 @@ replayed.
 from __future__ import annotations
 
 import contextlib
+import copy
 import json
 import logging
 import os
@@ -224,7 +225,8 @@ def apply_host_inputs(state: StackState, spec: JobSpec) -> None:
 
     Order arrives as a list of filenames, positions as a filename -> mm
     mapping, angles as ``{"pitch": deg, "yaw": deg}``, damage as a filename
-    -> note mapping. Anything the host
+    -> note mapping, and transforms as filename -> stored transform dictionaries.
+    Anything the host
     supplies for a task that IS on is applied too — it is a starting point,
     not a constraint.
     """
@@ -262,6 +264,19 @@ def apply_host_inputs(state: StackState, spec: JobSpec) -> None:
             f"inputs: cutting angles set by the host "
             f"(pitch {state.pitch_deg:.2f}, yaw {state.yaw_deg:.2f})"
         )
+
+    transforms = inputs.get("transforms") or {}
+    if transforms:
+        for name, value in transforms.items():
+            record = state.by_id(str(name))
+            if record is None:
+                raise ValueError(f"inputs.transforms names an unknown section: {name!r}")
+            if not isinstance(value, dict):
+                raise ValueError(f"inputs.transforms[{name!r}] must be a transform dictionary")
+            # Preserve complete historical mappings, including splines. The image
+            # correction handoff explicitly refuses unsupported spline inputs.
+            record.transform = copy.deepcopy(value)
+        state.notes.append(f"inputs: {len(transforms)} transform(s) set by the host")
 
     damaged = inputs.get("damaged") or {}
     if damaged:

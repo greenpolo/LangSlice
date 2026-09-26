@@ -9,12 +9,22 @@ toolbox, one job statement — that a host switches on task by task
 """
 
 from langslice.linear.engine import run
-from langslice.linear.spec import ALL_TASKS, JobSpec, PositionSpec, ReorderSpec, TransformSpec
+from langslice.linear.spec import (
+    ALL_TASKS,
+    DEFAULT_TASKS,
+    JobSpec,
+    NonlinearSpec,
+    PositionSpec,
+    ReorderSpec,
+    TransformSpec,
+)
 from langslice.linear.state import SliceState, StackState
 
 __all__ = [
     "ALL_TASKS",
+    "DEFAULT_TASKS",
     "JobSpec",
+    "NonlinearSpec",
     "PositionSpec",
     "ReorderSpec",
     "SliceState",

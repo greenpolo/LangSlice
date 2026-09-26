@@ -5,6 +5,14 @@ See `docs/nonlinear_design.md` for the design and coordinate contracts.
 
 ## Supported design
 
+The stack agent's optional `nonlinear` task uses a supplied linear placement via
+top-level `registration_tool.py`. Its only image tool is
+`correct_slice_borders(id, additional_notes="")`: fixed placed-border correction
+prompt plus optional notes, one retained reply per geometry, raw and extracted
+images returned separately, no fit, atlas search, prompt replacement or rejection.
+See `docs/nonlinear_image_tool.md` for its contract and prompt sentence review.
+The standalone atlas route below is not available through this agent tool.
+
 Exactly two border-based routes, chosen by whether a placement is supplied.
 No model is ever shown a colored region map: the model-facing atlas is a
 grayscale plate with thin yellow family borders, so atlas colormap quality
@@ -71,8 +79,9 @@ the residual alone.
 - `render.py` — review-grade rendering only.
 - `runtime.py` — `estimate_registration`: orchestration, debug artifacts,
   trace events.
-- `registration_handoff.py` (top-level) — bridge from linear state; installs
-  no tool into the linear agent.
+- `registration_handoff.py` (top-level) — prepares supplied linear geometry.
+  `registration_tool.py` uses it for the opt-in annotation tool, leaving residual
+  fitting and transformation export to the separate registration stage.
 
 ## Visual review is essential
 
