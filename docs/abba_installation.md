@@ -38,7 +38,7 @@ Use an existing ABBA installation with Java 11 or newer. The connector targets
 ABBA 0.11.0; compatibility with other ABBA versions needs testing.
 
 For this source preview, build the connector following
-[the connector instructions](https://github.com/greenpolo/LangSlice/blob/main/fiji-plugin/README.md),
+[the connector instructions](https://github.com/greenpolo/LangSlice/blob/main/connectors/fiji/README.md),
 copy `langslice-fiji-0.1.0.jar` into Fiji's `jars` folder, and restart Fiji before
 opening ABBA. Keep only one version of the connector installed.
 

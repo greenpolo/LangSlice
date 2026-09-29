@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -77,6 +78,11 @@ def _write_json(path: Path, value: dict[str, Any]) -> None:
     temporary.replace(path)
 
 
+#: Image-model requests one stack session keeps in flight at once. The agent
+#: never reads a reply, so calls run at the agent's pace rather than one by one.
+MAX_CONCURRENT_IMAGE_CALLS = 8
+
+
 def correct_slice(
     state: StackState,
     ctx: EngineContext,
@@ -87,7 +93,35 @@ def correct_slice(
     provider: str = "openai-oauth",
     image_model: str | None = None,
 ) -> dict[str, Any]:
-    """Make one fixed-prompt image edit from an existing calibrated linear placement.
+    """Make one fixed-prompt image edit and wait for its result.
+
+    The synchronous form of :func:`start_correction`: prepare, then run the
+    image call in this thread.
+    """
+    record, job = start_correction(
+        state, ctx, section_id, additional_notes=additional_notes, out=out,
+        provider=provider, image_model=image_model,
+    )
+    return job() if job is not None else record
+
+
+def start_correction(
+    state: StackState,
+    ctx: EngineContext,
+    section_id: str,
+    *,
+    additional_notes: str = "",
+    out: Path,
+    provider: str = "openai-oauth",
+    image_model: str | None = None,
+) -> tuple[dict[str, Any], Callable[[], dict[str, Any]] | None]:
+    """Prepare one fixed-prompt image edit from an existing calibrated linear placement.
+
+    Returns ``(record, job)``. Everything that reads the stack state happens
+    here, so ``job`` (the image call and its artifacts) may run in another
+    thread while the agent keeps working. ``job`` is ``None`` when there is
+    nothing to run: a saved reply at this geometry (returned with
+    ``cached``), or an attempt already in progress or interrupted.
 
     There is no atlas search, prompt override, model veto, or selection step.
     Repeated calls at the same geometry return the first image reply. Failed
@@ -115,7 +149,7 @@ def correct_slice(
             raise ValueError("Saved image correction result must be an object")
         previous = saved
         if previous.get("status") == "ok" or previous.get("raw_received"):
-            return {**previous, "cached": True}
+            return {**previous, "cached": True}, None
 
     canvas, unpadded, ox, oy, _ = prepare_canvas(
         prepared.image, provider=provider, image_model=model, canvas_pad=0,
@@ -151,7 +185,7 @@ def correct_slice(
             "status": "error", "error": "IMAGE_CALL_IN_PROGRESS_OR_INTERRUPTED",
             "id": section_id, "geometry_fingerprint": fingerprint,
             "artifact_dir": str(call_directory),
-        }
+        }, None
     attempt = int((previous or {}).get("attempt", 0)) + 1
     directory = call_directory / f"attempt-{attempt:02d}"
     directory.mkdir()
@@ -182,25 +216,30 @@ def correct_slice(
         "artifact_dir": str(directory), "artifact_paths": paths, "cached": False,
         "attempt": attempt, "raw_received": False,
     }
-    try:
-        generated = generate_warped_segmentation_image(SegmentationGenerationRequest(
-            slice_image=rough, reference_images=[canvas], prompt=prompt,
-            provider=provider, model=model, openai_image_route="images", mode="edit",
-        ))
-        result["raw_received"] = True
-        raw = generated.image.convert("RGB")
-        raw.save(paths["raw_reply"])
-        mask = extract_thinned_lines(raw, canvas.size)
-        Image.fromarray(mask.astype(np.uint8) * 255).save(directory / "extracted_lines.png")
-        border_overlay(canvas, mask).save(paths["lines_on_original"])
-        # Even an empty drawing is retained and shown; anatomy is not a submit gate.
-        result.update(
-            status="ok", route=generated.route, raw_size=list(raw.size),
-            model_border_pixels=int(mask.sum()),
-        )
-    except Exception as exc:
-        result.update(status="error", error=type(exc).__name__, message=str(exc))
-    _write_json(directory / "result.json", result)
-    _write_json(result_path, result)
-    in_progress.unlink()
-    return result
+    submitted = {**result, "status": "running"}
+
+    def job() -> dict[str, Any]:
+        try:
+            generated = generate_warped_segmentation_image(SegmentationGenerationRequest(
+                slice_image=rough, reference_images=[canvas], prompt=prompt,
+                provider=provider, model=model, openai_image_route="images", mode="edit",
+            ))
+            result["raw_received"] = True
+            raw = generated.image.convert("RGB")
+            raw.save(paths["raw_reply"])
+            mask = extract_thinned_lines(raw, canvas.size)
+            Image.fromarray(mask.astype(np.uint8) * 255).save(directory / "extracted_lines.png")
+            border_overlay(canvas, mask).save(paths["lines_on_original"])
+            # Even an empty drawing is retained; anatomy is not a submit gate.
+            result.update(
+                status="ok", route=generated.route, raw_size=list(raw.size),
+                model_border_pixels=int(mask.sum()),
+            )
+        except Exception as exc:
+            result.update(status="error", error=type(exc).__name__, message=str(exc))
+        _write_json(directory / "result.json", result)
+        _write_json(result_path, result)
+        in_progress.unlink()
+        return dict(result)
+
+    return submitted, job

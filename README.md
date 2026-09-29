@@ -102,15 +102,15 @@ Full CLI: `langslice --help`. Pipeline detail: [`docs/index.md`](./docs/index.md
 
 ## ABBA integration
 
-The independent [Fiji connector](fiji-plugin/README.md) adds
+The independent [Fiji connector](connectors/fiji/README.md) adds
 **Register > LangSlice > LangSlice Registration…** to an existing ABBA
 installation, with account setup under **Plugins > LangSlice > LangSlice
 setup…** and inside the dialog. The dialog runs the agent on the selected
 slices with **Positioning** and **Linear** tasks, per-slice damage marks,
 channel preprocessing with a preview, and an estimated cost; the result is
 applied to ABBA as one undoable step when the run ends. It launches the
-separately installed Python worker as needed.
-See [installation and supported sessions](docs/abba_installation.md).
+separately installed Python worker as needed. See
+[installation and supported sessions](docs/abba_installation.md).
 
 The following describes the older **Python-started ABBA launcher**, which remains
 available for development and its existing companion viewers:

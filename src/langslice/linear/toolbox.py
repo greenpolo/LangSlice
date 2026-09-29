@@ -19,13 +19,13 @@ import inspect
 import logging
 import threading
 import uuid
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 from google.genai import types
-from PIL import Image
 
 from langslice.adk import TOOL_MEDIA_DELIVERY_ID_KEY, TOOL_MEDIA_PARTS_KEY
 from langslice.affine import (
@@ -61,7 +61,6 @@ from langslice.linear.render import (
     reference_slice_part,
     render_slice,
     rescale_section_matrix,
-    shown_edge,
     shown_scale,
     shown_section,
     spacing_plot,
@@ -252,10 +251,56 @@ class ToolBox:
         default_factory=set
     )
     reviewed: bool = False
+    #: Image corrections still running, per section id: the geometry they
+    #: were started at and their future. The agent never waits on them;
+    #: `submit` and the end of the session do.
+    image_jobs: dict[str, tuple[str, Future[dict[str, Any]]]] = field(default_factory=dict)
+    image_executor: ThreadPoolExecutor | None = None
 
     @property
     def names(self) -> list[str]:
         return [tool.__name__ for tool in self.tools]
+
+    def start_image_job(
+        self, section_id: str, fingerprint: str, job: Any, *, workers: int
+    ) -> None:
+        """Run one image correction in the background."""
+        if self.image_executor is None:
+            self.image_executor = ThreadPoolExecutor(
+                max_workers=workers, thread_name_prefix="image-correction"
+            )
+        self.image_jobs[section_id] = (fingerprint, self.image_executor.submit(job))
+
+    def image_job_running(self, section_id: str, fingerprint: str) -> bool:
+        running = self.image_jobs.get(section_id)
+        return running is not None and running[0] == fingerprint and not running[1].done()
+
+    def settle_image_corrections(self, state: StackState) -> bool:
+        """Wait for every running correction and record its result.
+
+        A result lands only on a section that still holds the running record
+        for the same geometry; one undone or superseded meanwhile keeps what
+        it has (the reply stays on disk and is reused at that geometry).
+        Returns whether any section changed.
+        """
+        changed = False
+        for section_id, (fingerprint, future) in list(self.image_jobs.items()):
+            try:
+                result = future.result()
+            except Exception as exc:  # the job records its own failures; this is a backstop
+                result = {"id": section_id, "geometry_fingerprint": fingerprint,
+                          "status": "error", "error": type(exc).__name__, "message": str(exc)}
+            record = state.by_id(section_id)
+            held = (record.image_correction or {}) if record is not None else {}
+            if (record is not None and held.get("status") == "running"
+                    and held.get("geometry_fingerprint") == fingerprint):
+                record.image_correction = result
+                changed = True
+        self.image_jobs.clear()
+        if self.image_executor is not None:
+            self.image_executor.shutdown(wait=True)
+            self.image_executor = None
+        return changed
 
     def record_placement_view(
         self,
@@ -856,6 +901,8 @@ def build_tools(
         if spec.has("nonlinear"):
             from langslice.registration_tool import correction_fingerprint
 
+            if box.settle_image_corrections(state):
+                save_checkpoint(state, ctx.checkpoint_path)
             pending: list[dict[str, str]] = []
             for record in state.in_order():
                 result = record.image_correction or {}
@@ -2155,16 +2202,21 @@ def build_tools(
             additional_notes: Optional specimen observations appended to the fixed prompt.
                 These supplement its instructions; they do not replace the prompt.
 
-        Saves the first result at this placement and returns raw output plus borders
-        on the original. Repeated calls reuse that result. Does not fit a deformation.
+        Starts the image call in the background and returns at once; the result is
+        saved and checked at submit. The first result at a placement is reused.
+        Does not fit a deformation.
         """
-        from langslice.registration_tool import correct_slice
+        from langslice import registration_tool
 
         record = state.resolve(id)
         if record is None:
             return {"status": "error", "error": "UNKNOWN_SECTION", "id": str(id)}
         try:
-            result = correct_slice(
+            fingerprint = registration_tool.correction_fingerprint(state, ctx, record.id)
+            if box.image_job_running(record.id, fingerprint):
+                return {"status": "running", "id": record.id,
+                        "message": "This section's image correction is already running."}
+            result, job = registration_tool.start_correction(
                 state, ctx, record.id,
                 additional_notes=additional_notes,
                 out=Path(ctx.results_path).parent / "nonlinear",
@@ -2177,32 +2229,23 @@ def build_tools(
         except OSError as exc:
             return {"status": "error", "error": "IMAGE_CORRECTION_IO_ERROR",
                     "id": record.id, "message": str(exc)}
+        if job is not None:
+            box.start_image_job(
+                record.id, result["geometry_fingerprint"], job,
+                workers=registration_tool.MAX_CONCURRENT_IMAGE_CALLS,
+            )
         if result != record.image_correction:
             snapshot()
             record.image_correction = result
             save_checkpoint(state, ctx.checkpoint_path)
-        response = {**result, "id": record.id}
-        parts: list[types.Part] = []
-        image_indexes: dict[str, int] = {}
-        media_errors: list[str] = []
-        for key, label in (("raw_reply", "raw image-model output"),
-                           ("lines_on_original", "extracted borders on original")):
-            path = result.get("artifact_paths", {}).get(key)
-            if not path:
-                continue
-            try:
-                with Image.open(path) as opened:
-                    picture = opened.convert("RGB")
-                edge = shown_edge(ctx, OVERLAY_LONG_EDGE)
-                picture.thumbnail((edge, edge))
-                part = image_to_part(caption(picture, f"{record.id}: {label}"))
-                image_indexes[key] = len(parts)
-                parts.append(part)
-            except (OSError, ValueError) as exc:
-                media_errors.append(f"{key}: {exc}")
-        response.update(image_indexes=image_indexes, **{TOOL_MEDIA_PARTS_KEY: parts})
-        if media_errors:
-            response["render_failed"] = media_errors
+        response = {key: result[key] for key in (
+            "status", "error", "message", "cached", "additional_notes", "attempt",
+        ) if key in result}
+        response["id"] = record.id
+        if job is not None:
+            response["message"] = (
+                "Image call started in the background. Continue; submit waits for it."
+            )
         return response
 
     if spec.has("nonlinear"):

@@ -8,7 +8,7 @@ ABBA's distribution is optional.
 
 ## Responsibilities
 
-- `fiji-plugin/`: discover/select the environment, setup/account dialogs, the
+- `connectors/fiji/`: discover/select the environment, setup/account dialogs, the
   Registration dialog, start and stop worker processes, snapshot selected sections
   with calibration, and apply returned geometry using ABBA's native actions.
 - `src/langslice/api/setup.py`: offline installation/credential status, saved
@@ -37,6 +37,7 @@ New methods:
 | `setup.status` | Protocol/package version, environment location and offline credential presence |
 | `setup.login` | Browser OAuth; emits a `login_url` event and stores tokens in LangSlice |
 | `setup.api_key` | Save an OpenAI or Gemini key; no secret in the response |
+| `claude.prepare` | Validate the same host snapshots and save a Claude MCP job; return job_id, job_dir and copied prompt |
 | `linear.run` | Run calibrated host snapshots through the existing linear engine |
 | `linear.estimate` | Estimated cost of a `linear.run` spec; the connector shows "estimate unavailable" when a worker rejects the method |
 | `preprocess.preview` | Write the grayscale image the agent would see for one snapshot and preprocessing choice |
@@ -58,7 +59,7 @@ channels; it never hardcodes an offset. The initial checkpoint describes the
 snapshots and carries no host mutations. Later checkpoints carry replacement
 corrections in ABBA world millimetres relative to the previous checkpoint, plus
 `updates_since_start` relative to the initial state; the result carries
-`final_updates`, initial to final. The connector applies `final_updates` once when
+`final_updates`, initial to final. In ChatGPT mode the connector applies `final_updates` once when
 the run ends, and never changes the user's ABBA during a run. After a stop it
 offers to apply the last checkpoint's `updates_since_start`. The host keeps the
 original baseline beneath its owned native registration step and refuses a slice
@@ -73,7 +74,7 @@ controls map to the job spec as follows:
 
 | Control | Request |
 | --- | --- |
-| Provider: ChatGPT only; agent model; reasoning | `spec.model` (`openai-oauth/…`), `spec.reasoning` (omitted for "default") |
+| Provider: ChatGPT (default) / Claude; agent model; reasoning | `spec.model` (`openai-oauth/…`), `spec.reasoning` (omitted for "default") |
 | Image model | `spec.nonlinear.image_model` |
 | Image resolution Low/Medium/High | `spec.image_resolution` |
 | Show agent log | log window, or a compact status window with Stop and the final message |
@@ -96,6 +97,50 @@ Nonlinear inputs are a common-grid grayscale section and three AP/DV/ML coordina
 channels plus registration settings. Returned point pairs map fixed atlas pixels
 to moving tissue pixels. The Java host owns the pixel-to-world conversion and
 native registration serialization.
+
+## Claude job handoff and live channel
+
+`claude.prepare` accepts the exact `linear.run` parameters plus `notes` (text)
+and optional `host_channel` (`address`, `port`, `token`). It shares
+`abba_worker.prepare_linear` and the checkpoint delta translator with ADK;
+it does not load credentials or call a model. Nonlinear is refused.
+It returns `{job_id, job_dir, prompt}`. Java copies `prompt` verbatim.
+
+Jobs live under `~/.langslice/jobs/<12-hex-id>/job.json`, alongside LangSlice's
+existing per-user credentials location. Format version 1 records `job_id`,
+UTC `created_at`, the original request `params`, `notes` and `host_channel`.
+Job directories and job files are owner-only on POSIX. Exported snapshots are
+retained under `~/.langslice/snapshots/claude-*`; there is no automatic cleanup.
+The job file, not prose from the clipboard, enforces the selected tools,
+calibration, positions, locked geometry, damage and preprocessing.
+
+`langslice mcp` starts without a folder. `start_job(job_id=...)` loads the
+saved request and returns a Claude-specific factual statement and status table,
+without pictures. `show_stack(page)` serves individually labelled section
+pictures in corrected order, followed by one atlas-reference page. Pages are
+1-based and bounded to 680,000 serialized JSON bytes (including base64); an
+oversized image or atlas page is reduced in resolution, never made into a grid.
+The briefing asks Claude to read every page before writing. Folder-based
+`start_job(image_folder=...)` remains available for development.
+
+The Java listener binds only `127.0.0.1`, on an OS-selected port. Its first JSON
+line must contain `{"token":"..."}` matching a 256-bit random secret. Wrong
+tokens are refused; the first accepted connection consumes the listener.
+Subsequent JSON lines use the worker's event/result envelopes with job ID as
+`id`: checkpoint payloads include `host_updates` and `updates_since_start`.
+A shared Java event handler feeds live corrections into `AbbaHostSession.apply`,
+the same native-action implementation used by normal Run's final apply.
+The final result arrives after successful `submit`; checkpoint deltas have
+already applied it, so the Java listener does not apply the cumulative result twice.
+Closing the progress window closes the listener. This channel accepts only
+LangSlice result events, never Fiji scripts or arbitrary host commands.
+
+A refused or disconnected host is non-fatal to MCP tools. Each write saves
+`linear_state.json` in the job directory; submission writes `linear_results.json`
+and `result.json` (including final host updates). No reconnection is attempted.
+Restarting the MCP process and opening a job again starts from its original saved
+request, not a resume of its previous checkpoint; keep one session per job.
+MCP traces contain tool activity only, not Claude's private conversation.
 
 ## Credentials and setup
 

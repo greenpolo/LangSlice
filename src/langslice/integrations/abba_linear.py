@@ -78,10 +78,18 @@ PROVISIONAL_INTERVAL_MM = 0.1
 #   rotation_deg   -> needs sign -1                 (0.84 vs -0.16)
 #   translate_x/y  -> +3 mm moved +3.00 / +2.60 mm  (signs +1)
 #   scale_x        -> scales screen x               (0.90 vs -0.43 for y)
-# pitch/yaw <-> setRotateX/setRotateY MEASURED 2026-09-22 (spike 12,
-# _local/bench/abba_probes/spike12_rotation_mapping): rotateX is pitch with
-# the opposite sign, rotateY is yaw with the same sign, both in radians of
-# the same angle LangSlice uses (0.994 label agreement on the oblique plane).
+# pitch/yaw <-> setRotateX/setRotateY: rotateX is pitch and rotateY is yaw,
+# BOTH with the opposite sign, in radians of the same angle LangSlice uses.
+# Pinned 2026-09-29 to ABBA's own exported chains (SliceBench ABBA ingest:
+# stage 0 of every LSD_910 QuPath ABBA-Transform export; M12's plane normal
+# matches pitch=-rx, yaw=-ry to 0.0000 deg, yaw=+ry is 5.9 deg off) and to
+# screen sides: in ABBA a +rotateY cut puts the screen-LEFT half more
+# posterior; LangSlice's coronal display has the BrainGlobe ML index running
+# rightward, so that is yaw < 0. Spike 12 (2026-09-22) read yaw = +rotateY
+# because it took ABBA's ML coordinate channel as BrainGlobe ML; that channel
+# DECREASES with screen x (legacy Allen map: ML = 11.4 - 0.01*k, "Left" where
+# it is < 5.7), i.e. it is mirrored against the display. The Allen volume is
+# exactly left-right symmetric, so its label score could not see the mirror.
 
 #: SliceSources.rotateSourceOrigin axis for SliceState.flip (mirror
 #: left-right): rotating pi about Y. SliceSources.java:547-551.
@@ -100,10 +108,10 @@ INPLANE_ROTATION_SIGN = -1.0
 #: down the screen, so no flip. Measured.
 INPLANE_TRANSLATE_Y_SIGN = 1.0
 #: Which of ReslicedAtlas.setRotateX/setRotateY is pitch vs yaw, and sign.
-#: ReslicedAtlas.java:333,356. Measured (spike 12): pitch_deg = -deg(rotateX),
-#: yaw_deg = +deg(rotateY).
+#: ReslicedAtlas.java:333,356. pitch_deg = -deg(rotateX), yaw_deg =
+#: -deg(rotateY); see the note above and tests/test_integrations_abba_math.py.
 PITCH_TO_ROTATE_X_SIGN = -1.0
-YAW_TO_ROTATE_Y_SIGN = 1.0
+YAW_TO_ROTATE_Y_SIGN = -1.0
 
 
 # ---------------------------------------------------------------------------

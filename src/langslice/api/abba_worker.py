@@ -10,11 +10,13 @@ import asyncio
 import math
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from langslice.api.models import PreprocessPreviewRequest, PreprocessPreviewResult
+    from langslice.linear.spec import JobSpec
 
 Emit = Callable[[dict[str, Any]], None]
 _SUPPORTED_ATLASES = {"allen_mouse_10um", "allen_mouse_25um", "allen_mouse_50um"}
@@ -146,22 +148,21 @@ def _stage_agent_view(
     return staged
 
 
-def run_linear(params: dict[str, Any], emit: Emit) -> dict[str, Any]:
-    """Run exported snapshots; positions_mm are BrainGlobe AP millimetres.
+@dataclass
+class PreparedLinear:
+    """Validated host job and its native-world checkpoint translation."""
 
-    Required: image_folder, pixel_size_um, positions_mm (filename -> mm).
-    Optional: spec (JobSpec fields), registered_slices (snapshot filenames),
-    locked (snapshot filenames whose in-plane geometry the agent may not
-    change), damaged (filename -> note, flags the agent may not clear) and
-    preprocessing (``preprocess.preview`` settings for multi-page snapshots)
-    and trace_dir (save this run's full agent trace there; the result then
-    names the files written).
-    Checkpoint events carry initial=True with no mutations for ingestion.
-    Later host_updates are replacement corrections relative to the previous
-    checkpoint, never cumulative transforms; every checkpoint also carries
-    updates_since_start (from the ingested state), and the result carries
-    final_updates (ingested state -> final state), in the same row format.
-    """
+    folder: Path
+    spec: JobSpec
+    geometry: dict[str, tuple[int, int]]
+    calibration: float
+    locked: frozenset[str]
+    final_updates: list[dict[str, Any]]
+    trace_dir: Path | None
+
+
+def prepare_linear(params: dict[str, Any]) -> PreparedLinear:
+    """Validate and stage host snapshots identically for ADK and MCP."""
     from PIL import Image
 
     from langslice.linear import engine
@@ -233,7 +234,12 @@ def run_linear(params: dict[str, Any], emit: Emit) -> dict[str, Any]:
     registered = params.get("registered_slices") or []
     if not isinstance(registered, list) or any(name not in geometry for name in registered):
         raise ValueError("Registered slice names must identify exported snapshots")
-    locked_names = frozenset(locked)
+    return PreparedLinear(folder, spec, geometry, calibration, frozenset(locked), [],
+                          _trace_dir(params.get("trace_dir")))
+
+
+def checkpoint_callback(prepared: PreparedLinear, emit: Emit) -> Callable[[Any], None]:
+    """Create a per-job delta tracker; the first checkpoint is ingestion."""
     previous: dict[str, Any] | None = None
     start: dict[str, Any] | None = None
     since_start: list[dict[str, Any]] = []
@@ -248,16 +254,43 @@ def run_linear(params: dict[str, Any], emit: Emit) -> dict[str, Any]:
             since_start = []
         else:
             updates = _host_updates(
-                current, previous, spec.tasks, geometry, calibration, locked_names,
+                current, previous, prepared.spec.tasks, prepared.geometry,
+                prepared.calibration, prepared.locked,
             )
             since_start = _host_updates(
-                current, start, spec.tasks, geometry, calibration, locked_names,
+                current, start, prepared.spec.tasks, prepared.geometry,
+                prepared.calibration, prepared.locked,
             )
         emit({"kind": "checkpoint", "initial": initial, "state": current,
               "host_updates": updates, "updates_since_start": since_start})
         previous = current
+        prepared.final_updates = since_start
 
-    trace_dir = _trace_dir(params.get("trace_dir"))
+    return checkpoint
+
+
+def run_linear(params: dict[str, Any], emit: Emit) -> dict[str, Any]:
+    """Run exported snapshots; positions_mm are BrainGlobe AP millimetres.
+
+    Required: image_folder, pixel_size_um, positions_mm (filename -> mm).
+    Optional: spec (JobSpec fields), registered_slices (snapshot filenames),
+    locked (snapshot filenames whose in-plane geometry the agent may not
+    change), damaged (filename -> note, flags the agent may not clear) and
+    preprocessing (``preprocess.preview`` settings for multi-page snapshots)
+    and trace_dir (save this run's full agent trace there; the result then
+    names the files written).
+    Checkpoint events carry initial=True with no mutations for ingestion.
+    Later host_updates are replacement corrections relative to the previous
+    checkpoint, never cumulative transforms; every checkpoint also carries
+    updates_since_start (from the ingested state), and the result carries
+    final_updates (ingested state -> final state), in the same row format.
+    """
+    from langslice.linear import engine
+
+    prepared = prepare_linear(params)
+    folder, spec = prepared.folder, prepared.spec
+    checkpoint = checkpoint_callback(prepared, emit)
+    trace_dir = prepared.trace_dir
     before = set(trace_dir.glob("*.jsonl")) if trace_dir is not None else set()
     with _tracing(trace_dir):
         state = asyncio.run(engine.run(
@@ -269,7 +302,7 @@ def run_linear(params: dict[str, Any], emit: Emit) -> dict[str, Any]:
     # conversion ensures a failed native geometry export cannot report success.
     checkpoint(state)
     result: dict[str, Any] = {"state": state.to_dict(), "output_dir": str(folder),
-                              "final_updates": since_start}
+                              "final_updates": prepared.final_updates}
     if trace_dir is not None:
         result["trace_files"] = sorted(
             str(path) for path in set(trace_dir.glob("*.jsonl")) - before

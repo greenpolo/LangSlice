@@ -22,7 +22,7 @@ tools and takes its answer from the host. Nothing else is user-facing.
 
 | Control | Meaning | On main |
 | --- | --- | --- |
-| Provider | ChatGPT account only for now | `openai-oauth`; `setup.status` lists its `agent_models` and `image_models` with defaults |
+| Provider | ChatGPT (default) or Claude | ChatGPT runs through `openai-oauth`; Claude changes Run to Copy prompt and uses the LangSlice MCP connector in Claude Desktop or Claude Code |
 | Agent model, reasoning level | ADK model string and effort | `model`, reasoning |
 | Image model / provider | image transport and model for nonlinear | `nonlinear.provider`, `nonlinear.image_model` |
 | Image resolution: low / medium / high | scales every picture the agent sees by an opaque multiple of the calibrated sizes; low = today's calibration (judged good enough for the cost). Does not touch the image model's inputs | `image_resolution` low/medium/high; display only, fits and stored transforms unchanged |
@@ -144,12 +144,31 @@ CLI keeps `preprocess` auto/none.
 - Selected slices are the slices sent to LangSlice.
 - Existing transforms: any ABBA registration step counts as linear; spline
   steps (BigWarp, Elastix spline) are the only nonlinear ones.
-- Results land in the user's ABBA when the agent is done, as one undoable step;
+- In ChatGPT mode, results land in the user's ABBA when the agent is done, as one undoable step;
   a stopped run can apply its last checkpoint. The agent viewer, once ported to
   the connector, shows the work along the way.
 - Nonlinear is a facade in ABBA for now: shown, does nothing.
 - DeepSlice and Bayesian checkboxes are added later.
 - No over-saturation warning.
+
+### Claude mode
+
+Choose **Claude**, configure Positioning / Linear, and click **Copy prompt**.
+The dialog exports the same calibrated snapshots and preprocessing settings as
+Run, saves a local job, and copies a Python-generated prompt. Paste it into
+Claude Desktop or Claude Code with only the LangSlice connector enabled.
+No Claude credentials are collected by LangSlice and no ChatGPT sign-in is needed.
+Agent model, reasoning and image model controls are disabled; Nonlinear remains
+unavailable. Image resolution and preprocessing still control LangSlice's pictures.
+Usage belongs to Claude, so there is no LangSlice cost estimate.
+
+Keep the progress window open: section changes appear live in ABBA through its
+native actions. Close or Disconnect ends only the live connection, not Claude's
+work; checkpoints and completed results remain in the saved job directory.
+Each live checkpoint is an undoable ABBA step, unlike ChatGPT's single final apply.
+Avoid editing the selected slices until the connection is finished.
+The log shows LangSlice activity, not Claude's conversation. Saved MCP traces
+likewise record tool calls and pictures shown, not Claude's intervening words.
 
 ## Presets a host may expose
 

@@ -56,7 +56,38 @@ public final class ConnectorSmokeTest {
         public void status(String text) { lines.add("status: " + text); }
     }
 
+    static void claudeChannel() throws Exception {
+        Recorder progress = new Recorder();
+        AtomicReference<JsonArray> partial = new AtomicReference<>();
+        AtomicReference<JsonArray> applied = new AtomicReference<>();
+        try (ClaudeHostChannel channel = new ClaudeHostChannel()) {
+            JsonObject settings = channel.settings();
+            java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newSingleThreadExecutor();
+            try {
+                java.util.concurrent.Future<JsonObject> received = executor.submit(() -> channel.receive(
+                        event -> AgentRunner.handleEvent(event, partial, progress, new AtomicBoolean(), new int[]{0}, applied::set)));
+                int port = settings.get("port").getAsInt();
+                try (java.net.Socket wrong = new java.net.Socket("127.0.0.1", port)) {
+                    wrong.getOutputStream().write("{\"token\":\"wrong\"}\n".getBytes(StandardCharsets.UTF_8));
+                    wrong.setSoTimeout(3000);
+                    require(wrong.getInputStream().read() == -1, "Wrong token is rejected");
+                }
+                try (java.net.Socket socket = new java.net.Socket("127.0.0.1", port)) {
+                    JsonObject auth = new JsonObject(); auth.add("token", settings.get("token"));
+                    String messages = auth + "\n"
+                            + "{\"type\":\"event\",\"event\":{\"kind\":\"data\",\"payload\":{\"kind\":\"checkpoint\",\"initial\":false,\"host_updates\":[{\"id\":\"a\",\"position_mm\":2}],\"updates_since_start\":[{\"id\":\"a\",\"position_mm\":2}]}}}\n"
+                            + "{\"type\":\"result\",\"result\":{\"final_updates\":[]}}\n";
+                    socket.getOutputStream().write(messages.getBytes(StandardCharsets.UTF_8));
+                    require(received.get(5, java.util.concurrent.TimeUnit.SECONDS).has("final_updates"), "Authenticated final result");
+                    require(applied.get().get(0).getAsJsonObject().get("position_mm").getAsInt() == 2, "Live host update reaches common apply callback");
+                    require(partial.get().size() == 1, "Live path retains cumulative checkpoint");
+                }
+            } finally { executor.shutdownNow(); }
+        }
+    }
+
     public static void main(String[] args) throws Exception {
+        claudeChannel();
         Path prefix = Files.createTempDirectory("langslice connector space ");
         Path python = prefix.resolve("bin/python"); Files.createDirectories(python.getParent());
         Files.write(python, FAKE_WORKER.getBytes(StandardCharsets.UTF_8)); python.toFile().setExecutable(true);

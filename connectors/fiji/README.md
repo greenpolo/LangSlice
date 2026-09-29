@@ -14,7 +14,7 @@ not bundled into the plugin JAR.
 With JDK 11+ and Maven:
 
 ```bash
-cd fiji-plugin
+cd connectors/fiji
 mvn package dependency:build-classpath -Dmdep.outputFile=target/test-classpath.txt
 ```
 
@@ -22,7 +22,7 @@ After Maven has written the resolved dependency classpath, subsequent developmen
 builds can run offline:
 
 ```bash
-python fiji-plugin/build.py --java-home /path/to/jdk --test
+python connectors/fiji/build.py --java-home /path/to/jdk --test
 ```
 
 The offline build starts from empty `target/classes` and `target/test-classes`

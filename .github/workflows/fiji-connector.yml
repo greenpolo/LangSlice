@@ -4,12 +4,12 @@ on:
   push:
     branches: [main]
     paths:
-      - "fiji-plugin/**"
-      - ".github/workflows/fiji-plugin.yml"
+      - "connectors/fiji/**"
+      - ".github/workflows/fiji-connector.yml"
   pull_request:
     paths:
-      - "fiji-plugin/**"
-      - ".github/workflows/fiji-plugin.yml"
+      - "connectors/fiji/**"
+      - ".github/workflows/fiji-connector.yml"
   workflow_dispatch:
 
 permissions:
@@ -25,15 +25,15 @@ jobs:
           distribution: temurin
           java-version: "11"
           cache: maven
-          cache-dependency-path: fiji-plugin/pom.xml
+          cache-dependency-path: connectors/fiji/pom.xml
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
       - name: Build connector with declared Maven dependencies
-        working-directory: fiji-plugin
+        working-directory: connectors/fiji
         run: mvn --batch-mode package dependency:build-classpath -Dmdep.outputFile=target/test-classpath.txt
       - name: Exercise worker protocol and SciJava command discovery
-        working-directory: fiji-plugin
+        working-directory: connectors/fiji
         # These are executable smoke checks, not JUnit tests; invoke their main
         # explicitly rather than assuming Surefire discovers them.
         run: |
@@ -47,4 +47,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: langslice-fiji
-          path: fiji-plugin/target/langslice-fiji-*.jar
+          path: connectors/fiji/target/langslice-fiji-*.jar

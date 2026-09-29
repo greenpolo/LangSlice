@@ -24,7 +24,7 @@ def tool(name):
     return str(candidate)
 classpath_file = args.classpath_file or root / 'target/test-classpath.txt'
 if not classpath_file.is_file():
-    raise SystemExit('Resolve the declared dependency classpath once: cd fiji-plugin && mvn dependency:build-classpath -Dmdep.outputFile=target/test-classpath.txt')
+    raise SystemExit('Resolve the declared dependency classpath once: cd connectors/fiji && mvn dependency:build-classpath -Dmdep.outputFile=target/test-classpath.txt')
 classpath = classpath_file.read_text().strip()
 if not classpath:
     raise SystemExit('The Maven dependency classpath is empty.')

@@ -35,7 +35,7 @@ final class RegistrationDialog extends JDialog {
     private JsonObject status;
     private boolean statusStale, previewBusy, previewAgain, estimateBusy, estimateAgain, estimateSupported = true, previewShown;
 
-    final JComboBox<String> provider = new JComboBox<>(new String[]{"ChatGPT"});
+    final JComboBox<String> provider = new JComboBox<>(new String[]{"ChatGPT", "Claude"});
     final JLabel account = new JLabel();
     final JComboBox<String> model = new JComboBox<>(), imageModel = new JComboBox<>();
     final JComboBox<String> reasoning = new JComboBox<>(RegistrationSettings.REASONING);
@@ -134,7 +134,7 @@ final class RegistrationDialog extends JDialog {
         JPanel top = new JPanel(new GridBagLayout());
         JPanel account = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
         account.add(provider); account.add(this.account);
-        provider.setToolTipText("Other model accounts are coming later.");
+        provider.setToolTipText("Claude uses the LangSlice connector in Claude Desktop or Claude Code.");
         model.setEditable(true);
         model.setToolTipText("The model that runs the registration agent. You can type another model name.");
         imageModel.setToolTipText("The image model used by nonlinear registration.");
@@ -247,6 +247,7 @@ final class RegistrationDialog extends JDialog {
     // ---- state ----------------------------------------------------------------------------
 
     private void fill(RegistrationSettings s) {
+        provider.setSelectedItem(s.claude ? "Claude" : "ChatGPT");
         String defaultModel = RegistrationSettings.defaultValue(status, "default_agent_model", RegistrationSettings.DEFAULT_MODEL);
         String defaultImage = RegistrationSettings.defaultValue(status, "default_image_model", RegistrationSettings.DEFAULT_IMAGE_MODEL);
         for (String id : RegistrationSettings.models(status, "agent_models", RegistrationSettings.FALLBACK_MODELS)) model.addItem(RegistrationSettings.modelLabel(id));
@@ -273,6 +274,7 @@ final class RegistrationDialog extends JDialog {
 
     RegistrationSettings read() {
         RegistrationSettings s = new RegistrationSettings();
+        s.claude = "Claude".equals(provider.getSelectedItem());
         Object typed = model.getEditor().getItem();
         s.model = RegistrationSettings.modelId(typed == null ? "" : typed.toString());
         s.imageModel = String.valueOf(imageModel.getSelectedItem());
@@ -311,6 +313,11 @@ final class RegistrationDialog extends JDialog {
         clahe.setEnabled(c); strength.setEnabled(c && clahe.isSelected());
         viewer.setEnabled(false);
         traceDir.setEnabled(saveTraces.isSelected()); browseTraces.setEnabled(saveTraces.isSelected());
+        boolean claude = "Claude".equals(provider.getSelectedItem());
+        model.setEnabled(!claude); reasoning.setEnabled(!claude); imageModel.setEnabled(!claude);
+        nonlinear.setEnabled(false);
+        run.setText(claude ? "Copy prompt" : "Run");
+        updateAccount();
         run.setEnabled(p || l);
     }
 
@@ -318,7 +325,7 @@ final class RegistrationDialog extends JDialog {
         ActionListener tasks = e -> { sync(); estimateTimer.restart(); };
         for (AbstractButton b : new AbstractButton[]{positioning, flip, linear, affine, overwrite, agentDamage}) b.addActionListener(tasks);
         saveTraces.addActionListener(e -> sync());
-        for (JComboBox<?> box : Arrays.asList(model, reasoning, resolution)) box.addActionListener(tasks);
+        for (JComboBox<?> box : Arrays.asList(provider, model, reasoning, resolution)) box.addActionListener(tasks);
         parallel.addChangeListener(e -> estimateTimer.restart());
         ActionListener prep = e -> { sync(); estimateTimer.restart(); schedulePreview(); };
         for (AbstractButton b : new AbstractButton[]{auto, custom, clahe}) b.addActionListener(prep);
@@ -331,6 +338,10 @@ final class RegistrationDialog extends JDialog {
     private void schedulePreview() { if (previewShown) previewTimer.restart(); }
 
     private void updateAccount() {
+        if ("Claude".equals(provider.getSelectedItem())) {
+            account.setText("Use Claude Desktop or Claude Code");
+            account.setForeground(UIManager.getColor("Label.foreground")); return;
+        }
         boolean in = RegistrationSettings.signedIn(status);
         account.setText(in ? "signed in" : "not signed in: use Setup…");
         account.setForeground(in ? UIManager.getColor("Label.foreground") : new Color(0xB00020));
@@ -342,7 +353,7 @@ final class RegistrationDialog extends JDialog {
         RegistrationSettings s = read();
         String problem = s.problem(channelNames.size());
         if (problem != null) { JOptionPane.showMessageDialog(this, problem); return; }
-        if (RegistrationSettings.signedIn(status)) { launch(s); return; }
+        if (s.claude || RegistrationSettings.signedIn(status)) { launch(s); return; }
         refreshStatus(() -> {
             if (RegistrationSettings.signedIn(status)) launch(s);
             else { JOptionPane.showMessageDialog(this, "Sign in with ChatGPT in LangSlice Setup first."); statusStale = true; host.setup(); }
@@ -393,6 +404,7 @@ final class RegistrationDialog extends JDialog {
     boolean previewBusy() { return previewBusy || previewTimer.isRunning(); }
 
     private void refreshEstimate() {
+        if ("Claude".equals(provider.getSelectedItem())) { cost.setText("Usage is managed by Claude; no LangSlice estimate."); return; }
         if (!estimateSupported) { cost.setText("Estimated cost: estimate unavailable"); return; }
         RegistrationSettings s = read();
         String problem = s.problem(channelNames.size());
@@ -409,6 +421,7 @@ final class RegistrationDialog extends JDialog {
                 estimateBusy = false;
                 try {
                     JsonObject result = get();
+                    if ("Claude".equals(provider.getSelectedItem())) { refreshEstimate(); return; }
                     cost.setText(costText(result));
                     cost.setToolTipText(result.has("basis") ? result.get("basis").getAsString() : null);
                 } catch (Exception failure) {

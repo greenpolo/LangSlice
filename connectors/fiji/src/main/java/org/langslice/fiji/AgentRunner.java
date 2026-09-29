@@ -164,20 +164,29 @@ public final class AgentRunner {
     static JsonObject runLinear(WorkerClient connection, JsonObject request, AtomicReference<JsonArray> partial,
             Progress progress, AtomicBoolean stopping) throws Exception {
         int[] checkpoints = {0};
-        return connection.request("linear.run", request, event -> {
-            if (stopping.get()) throw new CancellationException();
-            if (event.has("payload")) {
-                JsonObject payload = event.getAsJsonObject("payload");
-                String kind = payload.has("kind") ? payload.get("kind").getAsString() : "";
-                if (kind.equals("checkpoint")) {
-                    if (payload.has("updates_since_start") && payload.get("updates_since_start").isJsonArray())
-                        partial.set(payload.getAsJsonArray("updates_since_start"));
-                    boolean initial = payload.has("initial") && payload.get("initial").getAsBoolean();
-                    if (!initial) progress.status("The agent is working. Saved steps: " + (++checkpoints[0]) + ". ABBA changes when the run ends.");
-                } else if (kind.equals("log") && payload.has("message")) progress.line(payload.get("message").getAsString());
-                else if (kind.equals("agent_event")) { String text = agentText(payload.getAsJsonObject("event")); if (!text.isEmpty()) progress.fragment(text); }
-            } else if (event.has("message")) progress.line(event.get("message").getAsString());
-        }, Duration.ofHours(12));
+        return connection.request("linear.run", request,
+                event -> handleEvent(event, partial, progress, stopping, checkpoints, null), Duration.ofHours(12));
+    }
+
+    /** Shared event handling; the external Claude session also applies each host update live. */
+    static void handleEvent(JsonObject event, AtomicReference<JsonArray> partial, Progress progress,
+            AtomicBoolean stopping, int[] checkpoints, java.util.function.Consumer<JsonArray> live) {
+        if (stopping.get()) throw new CancellationException();
+        if (event.has("payload")) {
+            JsonObject payload = event.getAsJsonObject("payload");
+            String kind = payload.has("kind") ? payload.get("kind").getAsString() : "";
+            if (kind.equals("checkpoint")) {
+                if (payload.has("updates_since_start") && payload.get("updates_since_start").isJsonArray())
+                    partial.set(payload.getAsJsonArray("updates_since_start"));
+                boolean initial = payload.has("initial") && payload.get("initial").getAsBoolean();
+                if (!initial) {
+                    if (live != null && payload.has("host_updates")) live.accept(payload.getAsJsonArray("host_updates"));
+                    progress.status("The agent is working. Saved steps: " + (++checkpoints[0])
+                            + (live == null ? ". ABBA changes when the run ends." : ". Changes are live in ABBA."));
+                }
+            } else if (kind.equals("log") && payload.has("message")) progress.line(payload.get("message").getAsString());
+            else if (kind.equals("agent_event")) { String text = agentText(payload.getAsJsonObject("event")); if (!text.isEmpty()) progress.fragment(text); }
+        } else if (event.has("message")) progress.line(event.get("message").getAsString());
     }
 
     /** Initial-to-final updates; older workers without final_updates fall back to the last checkpoint. */
@@ -192,6 +201,7 @@ public final class AgentRunner {
         if (RUNNING.contains(mp)) { JOptionPane.showMessageDialog(null, "A LangSlice run is already active in this session."); return; }
         final Path environment;
         try { environment = environment(); } catch (IllegalStateException missing) { JOptionPane.showMessageDialog(null, missing.getMessage()); return; }
+        if (settings.claude) { startClaude(mp, environment, settings, selected, damaged, channels); return; }
         RUNNING.add(mp);
         RunWindow window = new RunWindow(settings.showLog);
         window.open();
@@ -263,6 +273,72 @@ public final class AgentRunner {
             Thread thread = runningThread.get(); if (connection == null && thread != null && !applying.get()) thread.interrupt();
         });
         worker.execute();
+    }
+
+    private static void startClaude(MultiSlicePositioner mp, Path environment, RegistrationSettings settings,
+            List<SliceSources> selected, Map<SliceSources, String> damaged, int channels) {
+        RUNNING.add(mp);
+        RunWindow window = new RunWindow(settings.showLog);
+        AtomicReference<ClaudeHostChannel> listener = new AtomicReference<>();
+        AtomicBoolean stopping = new AtomicBoolean();
+        Runnable stop = () -> {
+            stopping.set(true);
+            ClaudeHostChannel channel = listener.get(); if (channel != null) channel.close();
+        };
+        window.stop.setText("Disconnect"); window.close.setEnabled(true);
+        window.stop.addActionListener(e -> stop.run());
+        window.close.addActionListener(e -> stop.run());
+        window.frame.addWindowListener(new java.awt.event.WindowAdapter() {
+            @Override public void windowClosing(java.awt.event.WindowEvent event) { stop.run(); }
+        });
+        window.open();
+        new SwingWorker<String, Void>() {
+            protected String doInBackground() throws Exception {
+                Path root = Paths.get(System.getProperty("user.home"), ".langslice", "snapshots");
+                Files.createDirectories(root);
+                Path folder = Files.createTempDirectory(root, "claude-");
+                window.status("Preparing calibrated snapshots…");
+                AbbaHostSession host = new AbbaHostSession(mp, folder);
+                JsonObject request = host.prepare(settings.spec(), selected, settings.exportChannels(channels),
+                        settings.pixelSize, damaged, !settings.overwrite);
+                request.add("preprocessing", settings.preprocessing(channels));
+                if (settings.saveTraces) request.addProperty("trace_dir", settings.traceDir);
+                request.addProperty("notes", "");
+                if (stopping.get()) throw new CancellationException();
+                try (ClaudeHostChannel channel = new ClaudeHostChannel()) {
+                    listener.set(channel);
+                    if (stopping.get()) throw new CancellationException();
+                    request.add("host_channel", channel.settings());
+                    JsonObject prepared;
+                    try (WorkerClient worker = new WorkerClient(environment)) {
+                        prepared = worker.request("claude.prepare", request, null, Duration.ofMinutes(5));
+                    }
+                    if (stopping.get()) throw new CancellationException();
+                    String prompt = prepared.get("prompt").getAsString();
+                    SwingUtilities.invokeAndWait(() -> java.awt.Toolkit.getDefaultToolkit().getSystemClipboard()
+                            .setContents(new java.awt.datatransfer.StringSelection(prompt), null));
+                    window.status("Prompt copied. Paste it into Claude Desktop or Claude Code. Keep this window open for live ABBA updates.");
+                    window.line("Saved job: " + prepared.get("job_dir").getAsString());
+                    window.line("Avoid editing the selected slices while Claude is working. Closing this window disconnects ABBA; Claude can continue saving results.");
+                    AtomicReference<JsonArray> partial = new AtomicReference<>(); int[] checkpoints = {0};
+                    JsonObject result = channel.receive(event -> handleEvent(event, partial, window, stopping, checkpoints, host::apply));
+                    // Checkpoints already applied every delta, including changes that were later undone.
+                    finalUpdates(result, partial.get());
+                    return "Claude submitted. Changes are live in ABBA; save using ABBA's Save command. Results: "
+                            + prepared.get("job_dir").getAsString();
+                } finally { listener.set(null); }
+            }
+            protected void done() {
+                RUNNING.remove(mp);
+                if (stopping.get()) { window.status("Disconnected. Applied changes remain in ABBA; Claude can continue saving results."); return; }
+                try { window.finish(get()); }
+                catch (Exception e) {
+                    Throwable cause = e.getCause() == null ? e : e.getCause();
+                    window.finish("Claude connection ended: " + cause.getMessage()
+                            + " Applied changes remain in ABBA; results remain in the saved job directory.");
+                }
+            }
+        }.execute();
     }
 
     private static void applyPartial(RunWindow window, AbbaHostSession host, JsonArray updates) {

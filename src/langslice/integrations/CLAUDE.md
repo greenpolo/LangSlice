@@ -72,8 +72,13 @@ here is a verbatim copy — edit one, mirror to the other.
   the ImgLib2 matrices straight back for combined knobs and matches
   LangSlice's blocks exactly; another checks a saved
   `.abba` against the agent's `linear_state.json` slice by slice. The
-  pitch/yaw ↔ `setRotateX/Y` mapping was measured 2026-09-22 (pitch_deg =
-  −deg(rotateX), yaw_deg = +deg(rotateY)). Do not rely on screenshots
+  pitch/yaw ↔ `setRotateX/Y` mapping is pitch_deg = −deg(rotateX), yaw_deg
+  = −deg(rotateY), pinned 2026-09-29 to stage 0 of ABBA's own exported
+  transform chains (`tests/test_integrations_abba_math.py`). The 2026-09-22
+  probe had yaw = +deg(rotateY) because it read ABBA's ML coordinate channel
+  as BrainGlobe ML; that channel runs against screen x (see above), and the
+  symmetric Allen labels cannot reveal the mirror, so never settle an ML
+  sign by label agreement. Do not rely on screenshots
   to check these on this Wayland box (Java Robot returns black; offscreen
   painting shows only overlays) — use the probe.
   Imports JPype/scyjava lazily like `abba.py`, so its diff logic is
@@ -220,7 +225,7 @@ ABBA project save/reload test for the new backend.
 
 ## Independent Fiji connector (2026-09-16)
 
-`fiji-plugin/` is a separate Java/SciJava plugin for an existing ABBA session.
+`connectors/fiji/` is a separate Java/SciJava plugin for an existing ABBA session.
 It starts a selected Python environment via `langslice serve --stdio`; it does
 not use `abba_python` or PyCommandBuilder. Setup loads without Python and owns
 environment selection; authentication runs in the worker. The existing modules
@@ -246,3 +251,15 @@ folder for the one run and returns the new files as `trace_files`.
 refused at medium/high resolution) without importing the engine. The Java host owns native actions and persistence. Read
 `docs/abba_plugin_design.md` and `docs/abba_installation.md` for the protocol,
 current source-preview installation, and publication requirements.
+
+### Claude mode in the independent connector
+
+The Fiji dialog's Claude choice saves a job via `claude.prepare` and copies
+a prompt for Claude Desktop/Code. `api.abba_worker.prepare_linear` and
+`checkpoint_callback` are shared by ADK and MCP; never duplicate their
+calibration or checkpoint-to-native geometry translation. An authenticated
+loopback listener passes MCP checkpoints to the same `AbbaHostSession.apply`
+native action path. Claude changes are live, while ChatGPT retains its existing
+final-only apply. Closing the Claude window disconnects the host, not the MCP
+job; saved results remain under `~/.langslice/jobs/`. No Fiji scripting tools
+are exposed. See `docs/abba_plugin_design.md` for the wire/file contracts.
