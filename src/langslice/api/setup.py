@@ -74,6 +74,18 @@ def _oauth_status() -> dict[str, object]:
     }
 
 
+def _oauth_models() -> dict[str, object]:
+    """The agent and image models a host may offer for the ChatGPT account."""
+    from langslice.providers import registry
+
+    return {
+        "agent_models": list(registry.OPENAI_OAUTH_AGENT_MODELS),
+        "default_agent_model": registry.OPENAI_OAUTH_DEFAULT_AGENT_MODEL,
+        "image_models": list(registry.OPENAI_OAUTH_IMAGE_MODELS),
+        "default_image_model": registry.OPENAI_OAUTH_DEFAULT_IMAGE_MODEL,
+    }
+
+
 def setup_status() -> dict[str, Any]:
     """Return installation and credential presence, without network access or secrets."""
     error = None
@@ -83,7 +95,7 @@ def setup_status() -> dict[str, Any]:
         keys = {}
         error = str(exc)
     providers = {provider: _api_status(provider, keys) for provider in _KEY_ENV}
-    providers["openai-oauth"] = _oauth_status()
+    providers["openai-oauth"] = {**_oauth_status(), **_oauth_models()}
     providers["none"] = {"configured": True, "source": None, "validated": False}
     return {
         "version": __version__,

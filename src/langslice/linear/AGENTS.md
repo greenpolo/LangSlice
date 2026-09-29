@@ -90,6 +90,9 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
   its answer from `spec.inputs` instead. `inputs["pixel_size_um"]` is the
   calibration override, and `reasoning` (`--reasoning`) rides through
   `session.build_agent` onto any resolved model exposing `reasoning_effort`.
+  Host dialog fields (2026-09-28, see "Host controls" below):
+  `image_resolution`, `agent_damage`, per-task `notes`,
+  `transform.max_parallel`, and `inputs["damaged"]` / `inputs["locked"]`.
 - `state.py` — `StackState`/`SliceState`. The checkpoint, the result and the
   thing every tool writes, one JSON shape for all three. `restore()` refills
   the same object in place, because tools close over one state. Every stored
@@ -197,10 +200,54 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
 - `deepslice.py`, `trace.py` — the DeepSlice seam (reports `UNAVAILABLE`) and
   the full-content JSONL session trace.
 
+## Host controls (2026-09-28)
+
+The ABBA dialog's controls, all plain `JobSpec` fields (not CLI flags yet):
+
+- **Per-task notes** (`position.notes`, `transform.notes`, `nonlinear.notes`):
+  `prompt.task_notes` renders each, verbatim one `- ` line per line, right
+  after the job line under "<task> notes from the user:", only when that task
+  is on and the note is non-empty. Global `facts` stay in the run facts.
+- **`transform.max_parallel`** (1..4, default 4). Below 4, `fit_affine` (an
+  empty list counts every eligible section) and `adjust_transforms` refuse a
+  call naming more sections with `TOO_MANY_SECTIONS` + `max_sections`, and the
+  job statement states the cap. At 4 nothing changes: `adjust_transforms`
+  keeps its own four, `fit_affine` any number.
+- **`agent_damage`** (default true) builds `mark_damaged`. Whatever it is, a
+  flag in `inputs["damaged"]` is the user's: clearing it is refused per entry
+  (`DAMAGE_SET_BY_USER`) and the job statement lists those sections.
+- **`inputs["locked"]`**: sections the user already aligned in-plane.
+  `apply_host_inputs` gives each without a supplied transform
+  `toolbox.host_transform()` (`kind` `"host"`, identity params, identity
+  `physical`). `orient_slices`, `fit_affine` and `adjust_transforms` refuse
+  them per section (`LOCKED`); `fit_affine`'s default target list skips them;
+  their positions still move. The host transform satisfies
+  `MISSING_TRANSFORMS` and locked sections are exempt from
+  `DAMAGED_REQUIRES_MANUAL_TRANSFORM`. The worker never emits orientation or
+  transform rows for them.
+- **`image_resolution`** (`low`|`medium`|`high`, default `low`):
+  `render.IMAGE_RESOLUTION_SCALE` 1.0/1.5/2.0 multiplies what the agent is
+  SHOWN, never what is computed. `atlas.render.model_long_edge(scale=)`
+  scales both the cap and the atlas-resolution target (still never
+  upsampling a section); the framed `render_slice` path (seed, `view_slices`,
+  `orient_slices`, separate references, placement pictures, contact-sheet
+  thumbnails) passes it; `atlas_fetch.atlas_sized(scale=)` resamples atlas
+  images by the same multiple so a section and its atlas keep equal pixels
+  per millimetre (no finer atlas detail exists); physical views
+  (`compare_placement`, `adjust_transforms`, the `fit_affine` panel) are drawn
+  by `render.shown_section` from a larger unframed render with the matrix
+  (`rescale_section_matrix`) and pivot carried onto it; the
+  `correct_slice_borders` thumbnails use `shown_edge`. Unchanged:
+  `PREVIEW_LONG_EDGE` working renders, `calibrate`, the silhouette fit, the six
+  stored numbers and every payload number, `fit_position`, the spacing plot,
+  caption font and the image model's inputs. At `low` every path returns the
+  same objects as before (an end-to-end hash of a toolbox session matched
+  HEAD on 2026-09-28). The multiples never appear in model-facing text.
+
 ## Tool consolidation (2026-09-15)
 
 The default full-task toolbox has 15 tools (9 for interactive-only transform
-refinement). `adjust_transforms` handles both one section and batches; the
+refinement; one fewer each with `agent_damage` off). `adjust_transforms` handles both one section and batches; the
 single-section implementation is private. `mark_damaged` accepts per-entry
 `damaged=False` to clear flags. `validate` and `unmark_damaged` are removed;
 failed `submit` reports unmet requirements without changing or ending the run.

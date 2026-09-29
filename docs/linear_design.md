@@ -27,6 +27,9 @@ sees maps to a field here; nothing else is user-facing.
 ```
 JobSpec
   image_folder, atlas, plane, model, out, preprocess (auto|none)
+  image_resolution: low|medium|high = low # size of every picture the agent sees;
+                                # display only, fits and stored transforms unchanged
+  agent_damage: bool = True     # build mark_damaged; host flags can never be cleared
   tasks: subset of {reorder, position, transform, nonlinear} # default: first three
   reorder:
     flip: bool = True             # may flip sections across the midline
@@ -36,15 +39,34 @@ JobSpec
     strict_interval: bool = False # sections must sit exactly one interval apart
     deepslice: bool = False       # run_deepslice tool available (coronal mouse/rat only)
     bayesian: bool = False        # fit_position tool available (oblique.py fitter)
+    notes: str = ""               # user notes, shown under this task in the job statement
   transform:
     interactive: bool = True      # direct visual affine adjustments
     automatic: bool = True        # automatic affine fitting tool
     angles: bool = False          # may set the stack-wide cutting angles
     elastix: bool = False         # fit_affine may use Elastix intensity affine
+    max_parallel: int = 4         # 1..4; below 4, fit_affine and adjust_transforms
+                                  # refuse calls naming more sections (TOO_MANY_SECTIONS)
+    notes: str = ""               # user notes, shown under this task
   facts: free-form user facts, one line each, passed verbatim
-  nonlinear: {provider: openai-oauth, image_model: null}
-  inputs: order/positions/angles/transforms supplied by the host for tasks that are OFF
+  nonlinear: {provider: openai-oauth, image_model: null, notes: ""}
+  inputs: order/positions/angles/transforms supplied by the host for tasks that are OFF,
+          plus pixel_size_um, damaged {id: note} (flags the agent cannot clear) and
+          locked [ids] (flip, rotation and transform the agent cannot change)
 ```
+
+Task notes are rendered right after the job line, each under its task's name,
+only when that task is on and the note is non-empty; `facts` stay in the run
+facts. A locked section carries a `"host"` identity transform (its snapshot is
+already aligned) unless `inputs.transforms` supplies one: it counts at submit,
+is exempt from the damaged-section transform gate, and its position still
+moves. `orient_slices`, `fit_affine` and `adjust_transforms` refuse it per
+section with `LOCKED`; `mark_damaged` refuses to clear a host flag with
+`DAMAGE_SET_BY_USER`. `image_resolution` multiplies the pictures only: seed,
+view, atlas, placement and contact-sheet images, fit panels and interactive
+overlays are drawn from a larger render of the same section, while the
+`PREVIEW_LONG_EDGE` working frame, calibration, fits and the six stored
+numbers are the same at every setting.
 
 Task OFF means its outputs are inputs: reorder off → discovery order is fixed;
 position off → positions come from the host and are facts; transform off →
@@ -70,7 +92,7 @@ SliceState
   damaged: bool, damage_note: str          # agent-internal: excludes from DeepSlice
                                            # and automatic affine; never a user option
   position_mm | null
-  transform | null: {kind: silhouette|elastix|interactive, params (six
+  transform | null: {kind: silhouette|elastix|interactive|host, params (six
                      normalized numbers), physical (rotation_deg, scale_x,
                      scale_y, shear, translate_x_mm, translate_y_mm, pivot),
                      calibration, iou?, mirrored?, note?}
@@ -107,7 +129,7 @@ in any payload or prompt (see `lean-harness` history in `linear/CLAUDE.md`).
 | `undo()` / `redo()` | always | snapshot stack; a batch call undoes as one. |
 | `orient_slices([{id, flip?, rotate_deg?}])` | reorder.flip (flip) / reorder (rotate) | toggle flip, add rotation; returns each changed section rendered as it now stands (≤8). |
 | `reorder_slices(new_order, after="start")` | reorder | move the listed filenames as a block, in the listed order, after a named section or at the start. One filename moves one slice; the full list sets the whole order. Unlisted sections keep their relative order. Corrected indices only; positions and transforms are kept. One undo step. |
-| `mark_damaged([{id, damaged?, note?}])` | always | set damage (default True), or clear with damaged=False; clearing also removes the note. |
+| `mark_damaged([{id, damaged?, note?}])` | agent_damage (default on) | set damage (default True), or clear with damaged=False; clearing also removes the note. A flag the host set (`inputs.damaged`) is never cleared (`DAMAGE_SET_BY_USER`). |
 | `set_positions([{id, position_mm}])` | position | batch write, clamped to the atlas range; returns a placement image only when that exact section, position, orientation and cutting-angle combination has not already reached the model in a full-canvas atlas-bearing view. A compare and write planned in the same model round both return their images. |
 | `compare_placement([{id, positions_mm?}], mode, zoom, template_opacity, outlines)` | position | ≤4 candidate pairs; no positions = current position. `side_by_side` returns separate original section and atlas reference images (one section per distinct id, one atlas per pair; ≤8 images), independently tissue-framed, full-view only. Other modes return one physical-canvas image per pair. Writes nothing. |
 | `view_stack()` | position | one contact sheet of every section in the order of its written position, each over the atlas at its position and captioned with index, filename, position and the distance to the next, plus a plot of position against corrected index (damaged in red): two images. Writes nothing. |
@@ -145,7 +167,8 @@ transform refinement).
   interactive tools and inspect the overlays. If those tools are disabled, the
   refusal reports that the host must enable them. This checks an applied manual
   correction, not anatomical alignment quality; intact identity transforms remain
-  valid. Position-only runs are unaffected.
+  valid. Position-only runs are unaffected. Locked sections (host `"host"`
+  transform) are exempt: their alignment is the user's and cannot change here.
 
 Refusals state the numbers and stop.
 

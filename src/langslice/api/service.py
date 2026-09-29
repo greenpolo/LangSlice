@@ -22,6 +22,9 @@ from langslice.api.models import (
     EngineRequest,
     EngineResultEnvelope,
     ExportRequest,
+    LinearEstimateRequest,
+    LinearEstimateResult,
+    PreprocessPreviewRequest,
     QuickAffineRequest,
     RegisterRequest,
     SetupApiKeyRequest,
@@ -78,6 +81,27 @@ def handle_request(request: EngineRequest, emit: EmitEventEnvelope) -> EngineRes
             credentials = SetupApiKeyRequest.model_validate(request.params)
             data = setup.save_api_key(credentials.provider, credentials.api_key)
         return EngineResultEnvelope(id=request.id, type="result", result=data)
+
+    if request.method == "linear.estimate":
+        # A table lookup: no model, no credentials, no engine import.
+        from langslice.linear.cost import estimate
+
+        wanted = LinearEstimateRequest.model_validate(request.params)
+        result = LinearEstimateResult.model_validate(
+            estimate(wanted.spec, wanted.n_slices, wanted.locked),
+        )
+        return EngineResultEnvelope(
+            id=request.id, type="result", result=result.model_dump(mode="json"),
+        )
+
+    if request.method == "preprocess.preview":
+        # Local image work only: no model, no credentials, no engine import.
+        from langslice.api.abba_worker import preview_preprocess
+
+        preview = preview_preprocess(PreprocessPreviewRequest.model_validate(request.params))
+        return EngineResultEnvelope(
+            id=request.id, type="result", result=preview.model_dump(mode="json"),
+        )
 
     if request.method != "version":
         from langslice.api.setup import apply_saved_credentials

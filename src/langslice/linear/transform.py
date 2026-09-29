@@ -42,6 +42,9 @@ from langslice.linear.render import (
     estimate_um_per_px,
     physical_overlay,
     render_slice,
+    rescale_section_matrix,
+    shown_scale,
+    shown_section,
 )
 from langslice.linear.state import SliceState, StackState
 from langslice.space import Plane
@@ -182,17 +185,21 @@ def fit_silhouette(
             "message": str(exc),
         }
 
+    # The panel may be drawn from a larger render (image_resolution); the fit
+    # above and the numbers below stay on the working frame.
+    shown, shown_um, (fx, fy) = shown_section(ctx, record, section, um_per_px)
     panel = physical_overlay(
-        section,
-        um_per_px,
+        shown,
+        shown_um,
         ctx.atlas,
         record.position_mm,
         cast(Plane, state.plane),
         state.pitch_deg,
         state.yaw_deg,
-        in_section,
+        in_section if shown is section else rescale_section_matrix(in_section, fx, fy),
         label=record.id,
         long_edge=OVERLAY_LONG_EDGE,
+        scale=shown_scale(ctx),
     )
     params = normalized_affine(in_section, section.size)
     width, height = geometry.size

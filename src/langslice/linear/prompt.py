@@ -11,7 +11,7 @@ species and plane.
 
 from __future__ import annotations
 
-from langslice.linear.spec import JobSpec
+from langslice.linear.spec import MAX_PARALLEL_TRANSFORMS, JobSpec
 from langslice.linear.state import StackState
 
 _PLANE_AXIS_LABEL: dict[str, str] = {
@@ -95,6 +95,31 @@ TOOL_LINES: dict[str, str] = {
 }
 
 
+#: Heading of each task's user notes, in the order the tasks are listed.
+_TASK_NOTES: tuple[tuple[str, str, str], ...] = (
+    ("position", "position", "Positioning"),
+    ("transform", "transform", "In-plane alignment"),
+    ("nonlinear", "nonlinear", "Image-model border correction"),
+)
+
+
+def task_notes(spec: JobSpec) -> list[str]:
+    """The user's notes for each task that is on, each under its task's name.
+
+    Verbatim, one ``- `` line per non-empty line of the note. A task that is
+    off, or has no note, contributes nothing.
+    """
+    lines: list[str] = []
+    for task, section, title in _TASK_NOTES:
+        if not spec.has(task):
+            continue
+        text = str(getattr(getattr(spec, section), "notes", "") or "")
+        body = [line.strip() for line in text.splitlines() if line.strip()]
+        if body:
+            lines += ["", f"{title} notes from the user:", *(f"- {line}" for line in body)]
+    return lines
+
+
 def build_job_statement(
     spec: JobSpec,
     state: StackState,
@@ -134,6 +159,10 @@ def build_job_statement(
 
     placed = [s for s in state.in_order() if s.position_mm is not None]
     damaged = [s.id for s in state.in_order() if s.damaged]
+    inputs = spec.inputs or {}
+    host_damaged = [s.id for s in state.in_order() if s.id in (inputs.get("damaged") or {})]
+    locked_ids = {str(name) for name in inputs.get("locked") or []}
+    locked = [s.id for s in state.in_order() if s.id in locked_ids]
 
     facts: list[str] = [
         f"- {len(state.slices)} sections, {state.plane} plane, atlas "
@@ -158,6 +187,18 @@ def build_job_statement(
     )
     if damaged:
         facts.append(f"- Sections marked damaged: {', '.join(damaged)}.")
+    if host_damaged:
+        facts.append(
+            f"- The user marked these sections damaged, and that flag cannot be "
+            f"cleared: {', '.join(host_damaged)}."
+        )
+    if locked:
+        facts.append(
+            "- In-plane alignment of these sections was already done by the "
+            "user, so their flip, rotation and transform are locked and count "
+            f"as done: {', '.join(locked)}."
+            + (" Their positions can still be changed." if spec.has("position") else "")
+        )
     if not spec.has("reorder"):
         facts.append("- The order and orientation shown are fixed for this run.")
     elif not spec.reorder.flip:
@@ -183,8 +224,15 @@ def build_job_statement(
             "canvas centre unless another is chosen), x runs right and y runs "
             "down, shifts are millimetres."
         )
-    if spec.reorder.hemisphere_cue.strip():
-        facts.append(f"- {spec.reorder.hemisphere_cue.strip()}")
+        cap = spec.transform.max_parallel
+        if cap < MAX_PARALLEL_TRANSFORMS:
+            facts.append(
+                f"- Each transform tool call takes at most {cap} "
+                f"section{'s' if cap != 1 else ''}."
+            )
+    cue = spec.reorder.hemisphere_cue.strip()
+    if cue:
+        facts.append(f"- What marks a hemisphere, from the user: {cue}")
     facts.extend(f"- {fact.strip()}" for fact in spec.facts if str(fact).strip())
 
     tools = [f"- `{name}`: {TOOL_LINES[name]}" for name in tool_names if name in TOOL_LINES]
@@ -344,6 +392,7 @@ def build_job_statement(
             f"{state.atlas} ({species}) reference atlas.",
             "",
             f"Your job: {job}.",
+            *task_notes(spec),
             "",
             "Run facts:",
             *facts,

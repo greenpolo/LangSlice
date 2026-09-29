@@ -77,7 +77,8 @@ MODEL_MIN_LONG_EDGE = 128
 
 
 def model_long_edge(
-    size: tuple[int, int], um_per_px: float | None, atlas: Any, *, cap: int = MODEL_LONG_EDGE
+    size: tuple[int, int], um_per_px: float | None, atlas: Any, *, cap: int = MODEL_LONG_EDGE,
+    scale: float = 1.0,
 ) -> int:
     """The long edge that puts an image of *size* at the atlas's own resolution.
 
@@ -88,12 +89,17 @@ def model_long_edge(
     long edge lands at the atlas's µm/px; without a calibration *cap*
     stands. Never above *cap*, never above the source (nothing is ever
     upsampled), never below :data:`MODEL_MIN_LONG_EDGE` unless the source is.
+
+    *scale* multiplies both the cap and the atlas-resolution target (a host's
+    larger picture setting); it still never upsamples. 1.0 is the rule as is.
     """
     long = max(1, int(max(size)))
-    edge = min(long, int(cap))
+    edge = min(long, int(cap) if scale == 1.0 else int(round(cap * scale)))
     if um_per_px and um_per_px > 0:
-        native = int(round(long * float(um_per_px) / atlas_um_per_px(atlas)))
-        edge = min(edge, native)
+        native = long * float(um_per_px) / atlas_um_per_px(atlas)
+        if scale != 1.0:
+            native *= scale
+        edge = min(edge, int(round(native)))
     return max(min(long, MODEL_MIN_LONG_EDGE), edge)
 
 

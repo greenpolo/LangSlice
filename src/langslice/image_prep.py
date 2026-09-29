@@ -235,6 +235,224 @@ def adaptive_preprocess(
     return Image.fromarray(gray_rgb)
 
 
+# --- host preprocessing: N exported channels -> the one image shown ---
+
+#: CLAHE clip limit per user-chosen strength in custom host preprocessing.
+#: "medium" is the automatic path's own clip (:func:`adaptive_preprocess`).
+HOST_CLAHE_CLIP: dict[str, float] = {"low": 2.0, "medium": 4.0, "high": 8.0}
+#: CLAHE tile grid for host preprocessing, the automatic path's own.
+HOST_CLAHE_TILE = (8, 8)
+HOST_PREPROCESS_MODES = ("auto", "custom")
+
+
+def read_pages(path: str | Path) -> list[np.ndarray]:
+    """Every page of an image file, first page first.
+
+    A multi-page TIFF (one page per exported channel) gives one array per
+    page; any other image, or a single-page TIFF, gives one.
+    """
+    if Path(path).suffix.lower() in (".tif", ".tiff"):
+        import tifffile
+
+        with tifffile.TiffFile(path) as handle:
+            pages = [np.asarray(page.asarray()) for page in handle.pages]
+        if pages:
+            return pages
+    with Image.open(path) as handle:
+        return [np.asarray(handle.copy())]
+
+
+def page_count(path: str | Path) -> int:
+    """How many pages :func:`read_pages` would return, without decoding them."""
+    if Path(path).suffix.lower() in (".tif", ".tiff"):
+        import tifffile
+
+        with tifffile.TiffFile(path) as handle:
+            count = len(handle.pages)
+        if count:
+            return count
+    return 1
+
+
+def _page_image(page: np.ndarray) -> Image.Image:
+    """One page as the 8-bit RGB image the single-file path reads."""
+    array = np.asarray(page)
+    if array.dtype == np.bool_:
+        array = array.astype(np.uint8) * 255
+    if array.ndim == 3 and array.shape[-1] == 1:
+        array = array[..., 0]
+    if array.ndim == 3:
+        if array.shape[-1] not in (3, 4):
+            raise ValueError(f"Unsupported page shape {array.shape}")
+        if array.dtype != np.uint8:
+            array = _stretch(array.astype(np.float32))
+    elif array.ndim != 2:
+        raise ValueError(f"Unsupported page shape {array.shape}")
+    elif array.dtype.kind == "u" and array.dtype.itemsize <= 2:
+        array = array.astype(np.uint8 if array.dtype.itemsize == 1 else np.uint16)
+    else:
+        array = array.astype(np.float32)
+    return normalize_image(Image.fromarray(array))
+
+
+def _stretch(array: np.ndarray) -> np.ndarray:
+    lo, hi = float(array.min()), float(array.max())
+    out = (array - lo) / (hi - lo) * 255.0 if hi > lo else np.zeros_like(array)
+    return out.astype(np.uint8)
+
+
+def _page_channel(page: np.ndarray) -> np.ndarray:
+    """One page as one 8-bit channel (a colour page counts as its luminance)."""
+    image = _page_image(page)
+    if np.asarray(page).ndim == 3 and np.asarray(page).shape[-1] in (3, 4):
+        return np.asarray(image.convert("L"), dtype=np.uint8)
+    return np.asarray(image, dtype=np.uint8)[..., 0]
+
+
+def host_preprocess_settings(
+    settings: dict[str, object] | None, n_pages: int
+) -> dict[str, object]:
+    """Validated host preprocessing settings for an image of *n_pages* pages.
+
+    ``{"mode": "auto"}`` (also for ``None``) or ``{"mode": "custom", "clahe":
+    bool, "clahe_strength": "low"|"medium"|"high", "channel_weights": [w, ...]}``
+    with one finite, non-negative weight per page, not all zero (absent means
+    equal weights). Custom-only keys are ignored in auto mode.
+    """
+    values = dict(settings or {})
+    mode = values.get("mode", "auto")
+    if mode not in HOST_PREPROCESS_MODES:
+        raise ValueError(f"Preprocessing mode must be one of {HOST_PREPROCESS_MODES}")
+    if mode == "auto":
+        return {"mode": "auto"}
+    clahe = values.get("clahe", True)
+    if not isinstance(clahe, bool):
+        raise ValueError("Preprocessing clahe must be true or false")
+    strength = values.get("clahe_strength", "medium")
+    if strength not in HOST_CLAHE_CLIP:
+        raise ValueError(f"CLAHE strength must be one of {tuple(HOST_CLAHE_CLIP)}")
+    raw = values.get("channel_weights")
+    if raw is None:
+        weights = [1.0] * n_pages
+    else:
+        if not isinstance(raw, (list, tuple)) or any(
+            isinstance(value, bool) or not isinstance(value, (int, float)) for value in raw
+        ):
+            raise ValueError("Channel weights must be a list of numbers")
+        weights = [float(value) for value in raw]
+        if len(weights) != n_pages:
+            raise ValueError(
+                f"Expected {n_pages} channel weight(s), one per page; got {len(weights)}"
+            )
+        if any(not math.isfinite(value) or value < 0 for value in weights):
+            raise ValueError("Channel weights must be finite and non-negative")
+        if sum(weights) <= 0:
+            raise ValueError("At least one channel weight must be above zero")
+    return {"mode": "custom", "clahe": clahe, "clahe_strength": strength,
+            "channel_weights": weights}
+
+
+def _blend_channels(
+    channels: list[np.ndarray],
+    weights: list[float],
+    *,
+    clahe_clip: float | None,
+    target_brightness: float = 90.0,
+    max_boost: float = 3.0,
+) -> Image.Image:
+    """Per-channel CLAHE (unless *clahe_clip* is None), weighted blend,
+    brightness boost: :func:`adaptive_preprocess`'s fluorescence path for any
+    number of channels."""
+    import cv2
+
+    total = float(sum(weights))
+    normalized = [value / total for value in weights] if total > 0 else weights
+    if clahe_clip is not None:
+        clahe = cv2.createCLAHE(clipLimit=clahe_clip, tileGridSize=HOST_CLAHE_TILE)
+        enhanced = [clahe.apply(channel).astype(np.float32) for channel in channels]
+    else:
+        enhanced = [channel.astype(np.float32) for channel in channels]
+    blended = np.zeros(channels[0].shape, dtype=np.float32)
+    for weight, channel in zip(normalized, enhanced, strict=True):
+        blended = blended + weight * channel
+    blended = np.clip(blended, 0, 255)
+    brain_mask = blended > 10
+    if brain_mask.sum() > 0:
+        current_mean = float(blended[brain_mask].mean())
+        boost = min(target_brightness / max(current_mean, 1.0), max_boost)
+    else:
+        boost = 1.0
+    if boost > 1.05:
+        blended = blended * boost
+    out = np.clip(blended, 0, 255).astype(np.uint8)
+    return Image.fromarray(np.stack([out, out, out], axis=-1))
+
+
+def host_preprocess(
+    pages: list[np.ndarray], settings: dict[str, object] | None = None
+) -> Image.Image:
+    """The one grayscale image the agent is shown, from a host's exported pages.
+
+    *pages* are the pages of one snapshot (one per exported channel, see
+    :func:`read_pages`); *settings* as :func:`host_preprocess_settings`.
+
+    - auto, one page: exactly :func:`adaptive_preprocess` on that page read
+      the way a single image file is read.
+    - auto, several pages: the same method over N channels — brightfield
+      (optical-density CLAHE on the mean channel) when the image border is
+      bright, else per-channel CLAHE blended by squared tissue coverage (the
+      channel lighting most of the tissue dominates) with the brightness boost.
+    - custom: per-channel CLAHE at the chosen strength (or none), blended by
+      the user's weights, with the same brightness boost.
+
+    Returned as 8-bit RGB with three equal channels, the form
+    :func:`adaptive_preprocess` returns.
+    """
+    if not pages:
+        raise ValueError("No image pages to preprocess")
+    shapes = {np.asarray(page).shape[:2] for page in pages}
+    if len(shapes) != 1:
+        raise ValueError(f"All pages must share one size; got {sorted(shapes)}")
+    chosen = host_preprocess_settings(settings, len(pages))
+    if chosen["mode"] == "auto" and len(pages) == 1:
+        return adaptive_preprocess(_page_image(pages[0]))
+
+    channels = [_page_channel(page) for page in pages]
+    if chosen["mode"] == "custom":
+        clip = HOST_CLAHE_CLIP[str(chosen["clahe_strength"])] if chosen["clahe"] else None
+        return _blend_channels(
+            channels, list(chosen["channel_weights"]),  # type: ignore[arg-type]
+            clahe_clip=clip,
+        )
+
+    stack = np.stack(channels, axis=-1)
+    ring = max(2, int(round(0.02 * max(stack.shape[:2]))))
+    border = np.concatenate([
+        stack[:ring].reshape(-1), stack[-ring:].reshape(-1),
+        stack[:, :ring].reshape(-1), stack[:, -ring:].reshape(-1),
+    ])
+    if float(np.median(border)) > 140.0:
+        gray = np.round(stack.astype(np.float32).mean(axis=-1)).astype(np.uint8)
+        return _brightfield_preprocess(np.stack([gray, gray, gray], axis=-1))
+    tissue = stack.max(axis=-1) > 15
+    weights = [1.0] * len(channels)
+    if tissue.any():
+        coverage = np.array(
+            [float((channel[tissue] > 40).mean()) for channel in channels], dtype=np.float64
+        )
+        squared = coverage**2
+        if squared.sum() > 0:
+            weights = [float(value) for value in squared / squared.sum()]
+    return _blend_channels(channels, weights, clahe_clip=4.0)
+
+
+def host_preprocess_file(
+    path: str | Path, settings: dict[str, object] | None = None
+) -> Image.Image:
+    """:func:`host_preprocess` over every page of the file at *path*."""
+    return host_preprocess(read_pages(path), settings)
+
+
 #: Margin left around the foreground when framing, as a fraction of the
 #: foreground's long side.
 FRAME_MARGIN = 0.06

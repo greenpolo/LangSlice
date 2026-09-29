@@ -133,7 +133,10 @@ Shared, top-level:
   downsampling, and foreground framing (`crop_to_tissue`, `crop_to_mask`), used
   by the linear visual path so histology and atlas sections fill their
   frames comparably. Tissue framing crops to the LARGEST connected blob, so a
-  fragment or a speck elsewhere on the slide cannot widen the box
+  fragment or a speck elsewhere on the slide cannot widen the box.
+  `host_preprocess` blends a host's multi-page snapshot (one page per channel)
+  into the one grayscale image the agent sees; the worker's `preprocess.preview`
+  writes that same image for the host's preview
 - `providers/` — model ACCESS methods, never task logic. `registry.py` is
   the taxonomy: canonical names pair vendor with auth — `gemini-api` (Google
   API key, `vlm_config.py`), `openai-api` (API key / endpoint,

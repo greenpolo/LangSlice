@@ -20,6 +20,15 @@ ALL_TASKS: tuple[str, ...] = (*DEFAULT_TASKS, "nonlinear")
 
 PLANES: tuple[str, ...] = ("coronal", "sagittal", "horizontal")
 
+#: How large the pictures the agent is shown are drawn. "low" is the
+#: calibrated size (the atlas's own resolution); the larger settings draw the
+#: same pictures bigger (:data:`langslice.linear.render.IMAGE_RESOLUTION_SCALE`).
+#: Nothing a fit computes or a transform stores depends on it.
+IMAGE_RESOLUTIONS: tuple[str, ...] = ("low", "medium", "high")
+
+#: Most sections one transform-tool call may take (``TransformSpec.max_parallel``).
+MAX_PARALLEL_TRANSFORMS = 4
+
 
 @dataclass
 class ReorderSpec:
@@ -56,6 +65,8 @@ class PositionSpec:
     #: call, write, re-check the doubtful, review, submit. Coaching text, so
     #: off for Astra and off by default.
     playbook: bool = False
+    #: The user's own notes for this task, shown to the agent with the task.
+    notes: str = ""
 
 
 @dataclass
@@ -70,6 +81,22 @@ class TransformSpec:
     angles: bool = False
     #: ``fit_affine`` may use the Elastix intensity affine.
     elastix: bool = False
+    #: Most sections one transform-tool call (``fit_affine``,
+    #: ``adjust_transforms``) may take, 1..4. At 4, the default, the tools
+    #: keep their own limits (``adjust_transforms`` four, ``fit_affine`` any
+    #: number); below 4 both refuse a call naming more sections.
+    max_parallel: int = MAX_PARALLEL_TRANSFORMS
+    #: The user's own notes for this task, shown to the agent with the task.
+    notes: str = ""
+
+    def __post_init__(self) -> None:
+        value = self.max_parallel
+        if (not isinstance(value, int) or isinstance(value, bool)
+                or not 1 <= value <= MAX_PARALLEL_TRANSFORMS):
+            raise ValueError(
+                f"transform.max_parallel must be an integer from 1 to "
+                f"{MAX_PARALLEL_TRANSFORMS}; got {value!r}"
+            )
 
 
 @dataclass
@@ -78,6 +105,8 @@ class NonlinearSpec:
 
     provider: str = "openai-oauth"
     image_model: str | None = None
+    #: The user's own notes for this task, shown to the agent with the task.
+    notes: str = ""
 
 
 #: Optional per-request context safeguard, disabled unless a host sets it.
@@ -105,6 +134,14 @@ class JobSpec:
     #: "auto" runs :func:`langslice.image_prep.adaptive_preprocess`, "none"
     #: shows the raw section. Never written back to the user's files.
     preprocess: str = "auto"
+    #: Size of every picture the agent sees: "low" (the calibrated size),
+    #: "medium" or "high". Display only: fits, working frames and stored
+    #: transforms are unchanged, and the image model's inputs are untouched.
+    image_resolution: str = "low"
+    #: Build ``mark_damaged``: the agent may flag damaged sections. Off, only
+    #: the host's ``inputs["damaged"]`` flags exist. Either way the agent can
+    #: never clear a flag the host set.
+    agent_damage: bool = True
     tasks: list[str] = field(default_factory=lambda: list(DEFAULT_TASKS))
     reorder: ReorderSpec = field(default_factory=ReorderSpec)
     position: PositionSpec = field(default_factory=PositionSpec)
@@ -116,7 +153,12 @@ class JobSpec:
     #: calibration override:
     #: ``{"positions": {filename: mm}, "order": [filename, ...],
     #: "angles": {"pitch": deg, "yaw": deg}, "pixel_size_um": float,
-    #: "transforms": {filename: transform_dict}}``.
+    #: "transforms": {filename: transform_dict},
+    #: "damaged": {filename: note}, "locked": [filename, ...]}``.
+    #: ``damaged`` flags cannot be cleared by the agent. ``locked`` sections
+    #: were aligned in-plane by the user: the agent cannot change their flip,
+    #: rotation or transform (a ``"host"`` identity transform unless
+    #: ``transforms`` supplies one), but their positions still move.
     inputs: dict[str, Any] = field(default_factory=dict)
     #: Resume from the folder checkpoint when one exists.
     resume: bool = True
@@ -137,6 +179,13 @@ class JobSpec:
     def __post_init__(self) -> None:
         if self.image_retention != "legacy":
             raise ValueError("image_retention must be legacy; completion retirement was removed")
+        if self.image_resolution not in IMAGE_RESOLUTIONS:
+            raise ValueError(
+                f"Unsupported image_resolution {self.image_resolution!r}; "
+                f"expected one of {IMAGE_RESOLUTIONS}"
+            )
+        if not isinstance(self.agent_damage, bool):
+            raise ValueError(f"agent_damage must be true or false; got {self.agent_damage!r}")
         if self.plane not in PLANES:
             raise ValueError(f"Unsupported plane {self.plane!r}; expected one of {PLANES}")
         unknown = [task for task in self.tasks if task not in ALL_TASKS]

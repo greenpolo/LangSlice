@@ -86,11 +86,44 @@ def test_oauth_presence_does_not_refresh_or_expose_token(isolated_home: Path) ->
     path.write_text(json.dumps({"tokens": {"access_token": "private-oauth-token"}}))
     original = path.read_text()
     status = setup.setup_status()
-    assert status["providers"]["openai-oauth"] == {
+    oauth = status["providers"]["openai-oauth"]
+    assert {key: oauth[key] for key in ("configured", "source", "validated")} == {
         "configured": True, "source": "codex", "validated": False,
     }
     assert "private-oauth-token" not in json.dumps(status)
     assert path.read_text() == original
+
+
+def test_status_lists_the_chatgpt_agent_and_image_models(isolated_home: Path) -> None:
+    from langslice.providers.registry import OPENAI_OAUTH_DEFAULT_AGENT_MODEL
+
+    oauth = setup.setup_status()["providers"]["openai-oauth"]
+    assert oauth["agent_models"] == [
+        "openai-oauth/gpt-6-astra", "openai-oauth/gpt-6-sol", "openai-oauth/gpt-6-luna",
+        "openai-oauth/gpt-5.6-sol", "openai-oauth/gpt-5.6-terra", "openai-oauth/gpt-5.6-luna",
+    ]
+    assert oauth["default_agent_model"] == OPENAI_OAUTH_DEFAULT_AGENT_MODEL
+    assert oauth["default_agent_model"] in oauth["agent_models"]
+    assert oauth["image_models"] == ["gpt-image-2"]
+    assert oauth["default_image_model"] == "gpt-image-2"
+    # One definition: the transport's defaults are the listed ones.
+    from langslice.providers import openai_oauth
+
+    assert openai_oauth.DEFAULT_REVIEW_MODEL == oauth["default_agent_model"]
+    assert openai_oauth.DEFAULT_IMAGE_MODEL == oauth["default_image_model"]
+
+
+def test_status_models_do_not_import_the_transport() -> None:
+    import subprocess
+    import sys
+
+    script = (
+        "import sys; from langslice.api import setup; setup.setup_status(); "
+        "print('langslice.providers.openai_oauth' in sys.modules, 'google.adk' in sys.modules)"
+    )
+    out = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True,
+                         timeout=60, check=True)
+    assert out.stdout.split() == ["False", "False"]
 
 
 def test_login_forwards_url_callback(isolated_home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
