@@ -84,8 +84,10 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
 
 ## Files
 
-- `spec.py` — `JobSpec` (+ `ReorderSpec`/`PositionSpec`/`TransformSpec`). Every
-  checkbox a host shows maps to a field here; nothing else is user-facing.
+- `spec.py` — `JobSpec` (+ `ReorderSpec`/`PositionSpec`/`TransformSpec`/
+  `NonlinearSpec`). Every checkbox a host shows maps to a field here; nothing
+  else is user-facing. Users see Positioning (`reorder` + `position`), Linear
+  (`transform`) and Nonlinear (`docs/interface_design.md`).
   `tasks` is the master switch: a task that is OFF builds no tools and takes
   its answer from `spec.inputs` instead. `inputs["pixel_size_um"]` is the
   calibration override, and `reasoning` (`--reasoning`) rides through
@@ -199,6 +201,11 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
   never enter model context; `tool_end` follows checkpoint/mirror writes.
 - `deepslice.py`, `trace.py` — the DeepSlice seam (reports `UNAVAILABLE`) and
   the full-content JSONL session trace.
+- `cost.py` — `estimate(spec, n_slices, locked)`: the pre-run usage-window
+  estimate the worker's `linear.estimate` serves, from measured runs only.
+  Refuses medium/high image resolution (nothing measured); single-run or
+  unmeasured settings get a widened band. Imports no engine: `linear/__init__`
+  loads `run` lazily so hosts can price a spec without the agent framework.
 
 ## Host controls (2026-09-28)
 

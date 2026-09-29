@@ -11,7 +11,7 @@
 
 <p align="center">
   <em>Register histological brain sections to BrainGlobe atlases.<br>
-  A VLM estimates position, an image-gen model lays down atlas colors, Elastix warps the rest.</em>
+  A VLM agent orders, positions and aligns the sections; an image model corrects the atlas borders.</em>
 </p>
 
 > [!WARNING]
@@ -28,14 +28,16 @@
 
 ## How it works
 
-A VLM agent inspects the slice, explores candidate atlas planes through tool calls, and
-submits an AP coordinate and an in-plane placement. An image model is then shown
+A VLM agent looks at the whole stack of sections through tool calls: it puts
+them in cutting order, places each one at its atlas position, and aligns each
+in-plane against the atlas at true physical scale. An image model is then shown
 the atlas borders drawn on the tissue at that placement and asked to correct
-them; itk-elastix fits the residual deformation from the corrected borders.
-Without a supplied placement, the image model instead draws the boundaries
-against an outlined grayscale atlas template. Results export to
-VisuAlign-compatible JSON for QUINT / ABBA. The registration stages are
-illustrated in [the nonlinear design](docs/nonlinear_design.md).
+them. Turning corrected borders into a nonlinear deformation is still being
+designed, so by default no deformation is fitted and the linear placement is
+what gets exported; an Elastix residual fit is available as an option. Results
+export to VisuAlign-compatible JSON for QUINT / ABBA. The registration stages are
+illustrated in [the nonlinear design](docs/nonlinear_design.md), and the planned
+user-facing options in [the interface design](docs/interface_design.md).
 
 ## Quick start
 
@@ -60,8 +62,8 @@ For API-key providers, use the Fiji setup dialog or copy `.env.example` to `.env
 and add your provider key. The environment file installs LangSlice itself and its
 dependencies; an editable install is only needed for development.
 
-The CLI is grouped by method — `linear` for position estimation and affine
-anchoring, `nonlinear` for generative-image registration:
+The CLI is grouped by method — `linear` for order, position and in-plane
+alignment, `nonlinear` for generative-image registration:
 
 ```bash
 # Linear: order, position and transform for a folder of sections
@@ -88,10 +90,12 @@ spline/BigWarp deformation step.
 Nonlinear registration is exactly two border-based routes, chosen
 automatically by whether a placement is supplied. With a supplied placement,
 one image-generation call moves that placement's drawn atlas borders onto the
-visible tissue. Without one, a local silhouette fit stands in for the rough
-placement and the model instead draws boundaries from nothing against an
-outlined grayscale atlas template, in one call (optionally two, for an audit
-pass). Neither route shows the model a colored atlas map. See
+visible tissue; this is the production path, because nonlinear correction
+needs a linear placement first. Without one, a local silhouette fit stands in
+for the rough placement and the model instead draws boundaries from nothing
+against an outlined grayscale atlas template, in one call (optionally two, for
+an audit pass); this route remains for experiments. Neither route shows the
+model a colored atlas map, and `--deformation` defaults to `none`. See
 [the nonlinear design](docs/nonlinear_design.md).
 
 Full CLI: `langslice --help`. Pipeline detail: [`docs/index.md`](./docs/index.md).
@@ -99,8 +103,13 @@ Full CLI: `langslice --help`. Pipeline detail: [`docs/index.md`](./docs/index.md
 ## ABBA integration
 
 The independent [Fiji connector](fiji-plugin/README.md) adds
-**Register > LangSlice Registration…** to an existing ABBA installation, with
-account setup under **Plugins > LangSlice > LangSlice setup…** and inside the dialog. It launches the separately installed Python worker as needed.
+**Register > LangSlice > LangSlice Registration…** to an existing ABBA
+installation, with account setup under **Plugins > LangSlice > LangSlice
+setup…** and inside the dialog. The dialog runs the agent on the selected
+slices with **Positioning** and **Linear** tasks, per-slice damage marks,
+channel preprocessing with a preview, and an estimated cost; the result is
+applied to ABBA as one undoable step when the run ends. It launches the
+separately installed Python worker as needed.
 See [installation and supported sessions](docs/abba_installation.md).
 
 The following describes the older **Python-started ABBA launcher**, which remains

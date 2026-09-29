@@ -39,9 +39,11 @@ is opt-in: the default remains reorder, position and transform. Image transport
 defaults to `openai-oauth`; `--image-provider` and `--image-model` select the host's
 image settings independently of the agent's `--model`.
 
-There is no new graphical checkbox or user notes widget in this change. The notes
-field is an agent tool argument. Existing Fiji nonlinear registration remains a
-separate host operation.
+The notes field is an agent tool argument. A host may also pass user notes for
+this task as `JobSpec.nonlinear.notes`; they appear under the task in the job
+statement. The ABBA Registration dialog shows the Nonlinear task but keeps it
+disabled ("Not yet available in ABBA") until the deformation stage exists, and
+the connector's older `nonlinear.abba` worker method is not called by the dialog.
 
 ## Retention and state
 

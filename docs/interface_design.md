@@ -9,8 +9,8 @@ Three things are separate and stay separate:
    image plus a placement, deformation fit, export). This is the Python API and
    what a batch pipeline, a volume host or a future GUI calls directly.
 2. **Agent environment** — the stack agent and its toolbox. Tools wrap
-   operations; every policy (undo, submit gates, damage as an internal
-   classification, "linear before nonlinear") lives here as a default.
+   operations; every policy (undo, submit gates, damage marks, "linear before
+   nonlinear") lives here as a default.
 3. **Hosts** — CLI, ABBA plugin, napari plugin, JSON-lines worker. A host
    fills a job spec, supplies what the user already did, and renders results.
    Hosts hold no registration logic.
@@ -27,9 +27,9 @@ tools and takes its answer from the host. Nothing else is user-facing.
 | Image model / provider | image transport and model for nonlinear | `nonlinear.provider`, `nonlinear.image_model` |
 | Image resolution: low / medium / high | scales every picture the agent sees by an opaque multiple of the calibrated sizes; low = today's calibration (judged good enough for the cost). Does not touch the image model's inputs | `image_resolution` low/medium/high; display only, fits and stored transforms unchanged |
 | Estimated cost | shown at the bottom once every box is chosen | worker `linear.estimate` (`linear/cost.py`): percent of the usage window from measured runs; refused at medium/high resolution, where nothing is measured |
-| View agent log | the run's trace log in a window | plugin log window, `--trace-dir` |
+| View agent log | the agent's activity in a window during the run | Fiji connector: a text log window (or a compact status window when off). The Python-started ABBA launcher has a richer browser log (`integrations/abba_chat.py`) |
 | Save traces | full record of what the agent was shown, said and did, saved to a chosen folder | worker `trace_dir` (`LANGSLICE_TRACE_DIR` for one run); ABBA dialog checkbox + folder |
-| Enable agent viewer | an ABBA-style brain display of the agent's work as it happens | linear live mirror |
+| Enable agent viewer | an ABBA-style brain display of the agent's work as it happens | built for the Python-started ABBA launcher (`integrations/abba_compare.py`, `abba_overview.py`, `abba_follow.py`); the Fiji connector shows the checkbox disabled until it is ported |
 | Atlas, plane, preprocess | as today | `atlas`, `plane`, `preprocess` |
 
 ## 1. Positioning (absorbs reorder)
@@ -60,7 +60,7 @@ internal, never user-facing).
 | --- | --- |
 | Enable affine tool. Off: every transform is X/Y movement and scaling by the agent | `transform.automatic` (+ `transform.elastix` for the intensity affine) |
 | Max parallel slice transforms, 1 to 4. 1 = one section per call | `transform.max_parallel`; below 4, `fit_affine` and `adjust_transforms` refuse larger calls (at 4, `fit_affine` stays uncapped) |
-| Enable slice angle estimation (yes/no); later tools: DeepSlice angle, Bayesian optimizer | `transform.angles` (manual only) |
+| Enable slice angle estimation (yes/no); later tools: DeepSlice angle, Bayesian optimizer | `transform.angles` builds `set_cutting_angles` (manual only); the Fiji connector still refuses angle changes and shows the box disabled |
 | Extra notes for the agent, attached to this task | `transform.notes` |
 
 The interactive tool is always on. Damaged sections refuse the automatic
@@ -75,7 +75,10 @@ Precondition: a linear placement for every section, either from the host
 run. Nonlinear ON with sections lacking a placement is a job-spec validation
 error naming those sections, before any model call. A host turns it into a
 dialog: "Slices a-z have no transform. Nonlinear requires a linear step first.
-Allow the agent to align them?" Yes = Linear ON for those sections only.
+Allow the agent to align them?" Yes = Linear ON for those sections only. On
+main this check is not in the spec yet: `correct_slice_borders` refuses a
+section without a usable placement one call at a time
+(`INVALID_LINEAR_PLACEMENT`).
 
 The deliverable is a registration, not drawings. Order of work: design the
 deformation algorithm, then settle the border output format it consumes, then
@@ -135,12 +138,15 @@ CLI keeps `preprocess` auto/none.
 
 ## ABBA host (settled 2026-09-28)
 
-- Menu: ABBA's Register menu, beside DeepSlice.
+- Menu: ABBA's Register menu, like DeepSlice: **Register > LangSlice > LangSlice
+  Registration…**. ABBA appends external entries at the end of that menu, so it
+  cannot sit directly beside DeepSlice.
 - Selected slices are the slices sent to LangSlice.
 - Existing transforms: any ABBA registration step counts as linear; spline
   steps (BigWarp, Elastix spline) are the only nonlinear ones.
-- Results land in the user's ABBA when the agent is done; the agent viewer shows
-  them along the way.
+- Results land in the user's ABBA when the agent is done, as one undoable step;
+  a stopped run can apply its last checkpoint. The agent viewer, once ported to
+  the connector, shows the work along the way.
 - Nonlinear is a facade in ABBA for now: shown, does nothing.
 - DeepSlice and Bayesian checkboxes are added later.
 - No over-saturation warning.

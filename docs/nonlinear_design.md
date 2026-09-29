@@ -5,7 +5,12 @@ uses the supplied-border correction task below. It accepts only a slice identifi
 and optional additional notes, retains the first image reply automatically, and
 does not fit a deformation. See [the image-tool contract](nonlinear_image_tool.md).
 The standalone lower-level atlas route described here remains available for
-experiments; it is not exposed to the stack agent's correction tool.
+experiments; it is not exposed to the stack agent's correction tool. Route
+"supplied" is the production path: nonlinear correction needs a linear
+placement first, because the silhouette placement route "atlas" starts from is
+broken by exactly the outline damage that matters most. How corrected borders
+become a deformation is still being designed; see
+[the interface design](interface_design.md).
 
 <p align="center">
   <img alt="Registration stages: inputs, image-model output on the slice, Elastix deformation field, registered slice" src="assets/registration_pipeline.png" width="720">

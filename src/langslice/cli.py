@@ -626,7 +626,7 @@ def _run_linear(args: argparse.Namespace) -> None:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="langslice",
-        description="VLM-based brain slice registration using Gemini and BrainGlobe atlases",
+        description="Register brain sections to BrainGlobe atlases with VLM agents and image-gen",
     )
     subparsers = parser.add_subparsers(dest="command")
 
@@ -642,7 +642,7 @@ def _build_parser() -> argparse.ArgumentParser:
     # langslice linear <cmd> — position / affine estimation
     linear = subparsers.add_parser(
         "linear",
-        help="Linear methods: slice position and affine estimation",
+        help="Linear methods: section order, position and in-plane alignment",
     )
     linear_sub = linear.add_subparsers(dest="subcommand", required=True)
     _add_linear_run_parser(linear_sub)

@@ -35,11 +35,19 @@ never matters.
   Metadata: `prior["source"] = "silhouette_moments_atlas_route"`, `passes`,
   `prior["atlas_route_model_calls"]`. Pass 2 is optional: on clean coronal
   sections it moves lines by about a pixel; its value on large sagittal and
-  heavily damaged sections is untested. This route is under test.
+  heavily damaged sections is untested. Kept for experiments, not the
+  production direction (Nash, 2026-09-23): the silhouette placement it starts
+  from is broken by exactly the outline damage that matters, and no local
+  correction recovers a global placement error. Nonlinear needs linear first.
 - `provider="none"` — model-free diagnostic: a supplied placement or the
   silhouette placement, zero model calls, zero residual.
 - A caller-supplied `generated_image` with no placement replays route "atlas"
   with zero model calls.
+
+How corrected borders become a deformation is not designed yet. The agreed
+order is: design the deformation algorithm, then settle the border output format
+it consumes, then test (`docs/interface_design.md`). Until then the residual fit
+is off by default and the model call is judged on its raw lines.
 
 Atlas labels and grayscale references must use the same position, plane, cutting
 angles and orientation. Reflection is explicit (`atlas_mirror_lr`), never guessed

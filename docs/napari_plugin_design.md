@@ -59,10 +59,12 @@ them, so the brainglobe-registration connector writes results in that shape.
 
 ## What each connector does
 
-Both connectors expose the same two actions the Fiji connector exposes:
-**Linear agent** (order, position, in-plane placement of the open sections)
-and **Nonlinear boundary refinement** (refine sections at their current
-placement). Setup and accounts live in the shared core dock.
+Both connectors follow the Fiji connector's Registration dialog, which
+implements [the interface design](interface_design.md): one dock with the
+Positioning, Linear and Nonlinear tasks, per-slice damage marks, channel
+preprocessing with a preview, and an estimated cost. Setup and accounts live
+in the shared core dock. (This proposal predates that dialog; its original two
+actions, a linear agent and nonlinear boundary refinement, map onto those tasks.)
 
 Worker methods used, all already in protocol version 1:
 
@@ -70,6 +72,7 @@ Worker methods used, all already in protocol version 1:
 | --- | --- |
 | `setup.status` / `setup.login` / `setup.api_key` | shared setup dock |
 | `linear.run` | positions and in-plane affines from calibrated section snapshots |
+| `linear.estimate` / `preprocess.preview` | the dock's cost line and preprocessing preview |
 | `register.run` | one section at a supplied position, angles and `initial_atlas_to_slice` |
 | `export.run` | QUINT JSON when a host has no native result store |
 

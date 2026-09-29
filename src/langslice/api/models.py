@@ -20,7 +20,7 @@ Provider = Literal[
     # No model at all: registration registers the silhouette prior itself.
     "none",
 ]
-# Adaptive CLAHE + DAPI-weighted grayscale on the section before it is sent.
+# Adaptive CLAHE + tissue-coverage-weighted grayscale on the section before it is sent.
 PreprocessMode = Literal["none", "auto"]
 # Elastix stages the fit runs (see nonlinear.types.Deformation).
 Deformation = Literal["none", "bspline", "affine"]
