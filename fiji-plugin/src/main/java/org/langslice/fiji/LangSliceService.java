@@ -12,19 +12,21 @@ import org.scijava.service.Service;
 /** Install before ABBA builds its registration menu; no Python dependency at startup. */
 @Plugin(type = Service.class)
 public final class LangSliceService extends AbstractService {
-    static final String SETUP = "LangSlice>LangSlice setup…";
-    static final String AGENT = "LangSlice>LangSlice agent…";
+    /** ABBA groups external entries under this key; the key itself is never shown. */
+    static final String MENU = "LangSlice";
+    /** ABBA shows each registered command string as "Register>" + string: a LangSlice submenu beside DeepSlice. */
+    static final String REGISTRATION = "LangSlice>LangSlice Registration…";
+    /** Setup lives in Fiji's Plugins>LangSlice menu and behind the dialog's Setup… button. */
+    static final String SETUP = "LangSlice setup";
     private static boolean registered;
     @Parameter private PluginService plugins;
     @Override public void initialize() {
         // ABBA uses CommandService.run(String), which looks up class identifiers,
-        // not the human-readable @Plugin name. Supply explicit callable aliases.
-        installAlias(SETUP, SetupCommand.class);
-        installAlias(AGENT, AgentCommand.class);
+        // not the human-readable @Plugin name. Supply an explicit callable alias.
+        installAlias(REGISTRATION, RegistrationCommand.class);
         synchronized (MultiSlicePositioner.class) {
             if (registered) return;
-            MultiSlicePositioner.registerRegistrationPluginUI("LangSlice connector", SETUP);
-            MultiSlicePositioner.registerRegistrationPluginUI("LangSlice connector", AGENT);
+            MultiSlicePositioner.registerRegistrationPluginUI(MENU, REGISTRATION);
             registered = true;
         }
     }

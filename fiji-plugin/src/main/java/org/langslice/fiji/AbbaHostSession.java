@@ -12,7 +12,10 @@ import ch.epfl.biop.sourceandconverter.processor.SourcesChannelsSelect;
 import ch.epfl.biop.sourceandconverter.processor.SourcesProcessorHelper;
 import com.google.gson.*;
 import ij.ImagePlus;
+import ij.ImageStack;
 import ij.io.FileSaver;
+import ij.measure.Calibration;
+import ij.process.ImageProcessor;
 import net.imglib2.realtransform.*;
 import net.imglib2.realtransform.inverse.WrappedIterativeInvertibleRealTransform;
 import org.scijava.plugin.PluginService;
@@ -36,45 +39,47 @@ final class AbbaHostSession {
         this.folder = folder;
     }
 
-    JsonObject prepare(JsonObject spec, int channel, double pixelSize) throws IOException {
+    /**
+     * Exports the listed slices as calibrated snapshots and builds the linear.run request.
+     * Each snapshot has one page per exported channel, in the order given. Nothing in ABBA changes.
+     */
+    JsonObject prepare(JsonObject spec, List<SliceSources> chosen, List<Integer> channels, double pixelSize,
+            Map<SliceSources, String> damaged, boolean lockRegistered) throws IOException {
         validateSession();
-        if (!Double.isFinite(pixelSize) || pixelSize <= 0 || channel < 0)
-            throw new IllegalArgumentException("Choose a positive pixel size and a valid channel.");
+        if (!Double.isFinite(pixelSize) || pixelSize <= 0 || channels.isEmpty() || channels.stream().anyMatch(c -> c < 0))
+            throw new IllegalArgumentException("Choose a positive pixel size and at least one channel.");
         mp.waitForTasks();
-        List<SliceSources> selected = new ArrayList<>(mp.getSelectedSlices());
-        if (selected.isEmpty()) selected.addAll(mp.getSlices());
+        List<SliceSources> selected = new ArrayList<>(chosen);
         selected.sort(Comparator.comparingDouble(SliceSources::getSlicingAxisPosition));
         if (selected.isEmpty()) throw new IllegalArgumentException("Import sections before running LangSlice.");
-        boolean reorder = spec.getAsJsonArray("tasks").contains(new JsonPrimitive("reorder"));
-        if (reorder && selected.stream().anyMatch(s -> s.getNumberOfRegistrations() > 0))
-            throw new IllegalArgumentException("Turn off ordering for sections with existing registrations.");
-        for (SliceSources slice : selected)
-            if (channel >= slice.getRegisteredSources().length)
-                throw new IllegalArgumentException("The selected channel is missing from " + slice.getName());
+        for (SliceSources slice : selected) {
+            if (!mp.getSlices().contains(slice))
+                throw new IllegalArgumentException("A listed slice was removed from ABBA. Reopen LangSlice Registration.");
+            for (int channel : channels)
+                if (channel >= slice.getRegisteredSources().length)
+                    throw new IllegalArgumentException("Channel " + (channel + 1) + " is missing from " + slice.getName());
+        }
         measureAxis(selected.get(0));
-        double[] roi = mp.getROI();
-        double spacing = pixelSize / 1000.0;
-        double halfX = Math.ceil(Math.max(Math.abs(roi[0]), Math.abs(roi[0] + roi[2])) / spacing) * spacing;
-        double halfY = Math.ceil(Math.max(Math.abs(roi[1]), Math.abs(roi[1] + roi[3])) / spacing) * spacing;
-        if (!Double.isFinite(halfX + halfY) || halfX <= 0 || halfY <= 0)
-            throw new IllegalArgumentException("ABBA's image region has no usable extent.");
+        double[] half = frame(pixelSize);
         Files.createDirectories(folder);
         JsonObject positions = new JsonObject();
-        JsonArray registered = new JsonArray();
+        JsonArray registered = new JsonArray(), locked = new JsonArray();
+        JsonObject marked = new JsonObject();
         JsonObject mapping = new JsonObject();
         for (int index = 0; index < selected.size(); index++) {
             checkInterrupted();
             SliceSources slice = selected.get(index);
             String name = String.format(Locale.ROOT, "section_%04d.tif", index + 1);
-            ImagePlus image = SliceToImagePlus.export(slice, new SourcesChannelsSelect(channel),
-                    -halfX, -halfY, 2 * halfX, 2 * halfY, spacing, 0, true);
-            try {
-                if (!new FileSaver(image).saveAsTiff(folder.resolve(name).toString()))
-                    throw new IOException("Could not save section snapshot " + name);
-            } finally { image.close(); }
+            ImagePlus image = snapshot(slice, channels, half[0], half[1], pixelSize / 1000.0);
+            try { save(image, folder.resolve(name)); } finally { image.close(); }
             slices.put(name, slice);
             baseline.put(name, slice.getNumberOfRegistrations());
-            if (slice.getNumberOfRegistrations() > 0) registered.add(name);
+            if (slice.getNumberOfRegistrations() > 0) {
+                registered.add(name);
+                // Their snapshot already carries the registration: the agent keeps its in-plane geometry.
+                if (lockRegistered) locked.add(name);
+            }
+            if (damaged.containsKey(slice)) marked.addProperty(name, damaged.get(slice) == null ? "" : damaged.get(slice));
             positions.addProperty(name, (slice.getSlicingAxisPosition() - axisOffset) / axisScale);
             mapping.addProperty(name, slice.getName());
         }
@@ -84,8 +89,87 @@ final class AbbaHostSession {
         request.addProperty("pixel_size_um", pixelSize);
         request.add("positions_mm", positions);
         request.add("registered_slices", registered);
+        request.add("locked", locked);
+        request.add("damaged", marked);
         request.add("spec", spec);
         return request;
+    }
+
+    /** Half extents of the snapshot frame: ABBA's image region, centred, on the pixel grid. */
+    private double[] frame(double pixelSize) {
+        double[] roi = mp.getROI();
+        double spacing = pixelSize / 1000.0;
+        double halfX = Math.ceil(Math.max(Math.abs(roi[0]), Math.abs(roi[0] + roi[2])) / spacing) * spacing;
+        double halfY = Math.ceil(Math.max(Math.abs(roi[1]), Math.abs(roi[1] + roi[3])) / spacing) * spacing;
+        if (!Double.isFinite(halfX + halfY) || halfX <= 0 || halfY <= 0)
+            throw new IllegalArgumentException("ABBA's image region has no usable extent.");
+        return new double[]{halfX, halfY};
+    }
+
+    /** One slice for the Preprocessing preview: the same framing as a run, written to file; returns its display. */
+    java.awt.image.BufferedImage exportPreview(SliceSources slice, List<Integer> channels, double pixelSize, Path file) throws IOException {
+        if (!Double.isFinite(pixelSize) || pixelSize <= 0) throw new IllegalArgumentException("Choose a positive pixel size.");
+        double[] half = frame(pixelSize);
+        ImagePlus image = snapshot(slice, channels, half[0], half[1], pixelSize / 1000.0);
+        try { save(image, file); return display(image); } finally { image.close(); }
+    }
+
+    /** Registered channels in the given order, one page each, on ABBA's calibrated grid. */
+    static ImagePlus snapshot(SliceSources slice, List<Integer> channels, double halfX, double halfY, double spacing) {
+        if (channels.size() == 1)
+            return SliceToImagePlus.export(slice, new SourcesChannelsSelect(channels.get(0)), -halfX, -halfY, 2 * halfX, 2 * halfY, spacing, 0, true);
+        List<ImageProcessor> pages = new ArrayList<>();
+        Calibration calibration = null;
+        for (int channel : channels) {
+            ImagePlus page = SliceToImagePlus.export(slice, new SourcesChannelsSelect(channel), -halfX, -halfY, 2 * halfX, 2 * halfY, spacing, 0, true);
+            try {
+                pages.add(page.getProcessor().duplicate());
+                if (calibration == null) calibration = page.getCalibration().copy();
+            } finally { page.close(); }
+        }
+        return stack(slice.getName(), pages, calibration);
+    }
+
+    /** Pages of different pixel types (or colour pages) become 32-bit grayscale so they share one TIFF. */
+    static ImagePlus stack(String title, List<ImageProcessor> pages, Calibration calibration) {
+        boolean convert = pages.stream().mapToInt(ImageProcessor::getBitDepth).distinct().count() > 1
+                || pages.stream().anyMatch(page -> page.getBitDepth() == 24);
+        ImageStack stack = new ImageStack(pages.get(0).getWidth(), pages.get(0).getHeight());
+        for (int i = 0; i < pages.size(); i++) stack.addSlice("channel " + (i + 1), convert ? pages.get(i).convertToFloat() : pages.get(i));
+        ImagePlus image = new ImagePlus(title, stack);
+        image.setDimensions(pages.size(), 1, 1);
+        if (calibration != null) image.setCalibration(calibration);
+        return image;
+    }
+
+    static void save(ImagePlus image, Path file) throws IOException {
+        FileSaver saver = new FileSaver(image);
+        boolean saved = image.getStackSize() > 1 ? saver.saveAsTiffStack(file.toString()) : saver.saveAsTiff(file.toString());
+        if (!saved) throw new IOException("Could not save section snapshot " + file.getFileName());
+    }
+
+    /** A plain display of the exported pages: gray for one channel, coloured overlay for several. */
+    static java.awt.image.BufferedImage display(ImagePlus image) {
+        int n = image.getStackSize(), w = image.getWidth(), h = image.getHeight();
+        int[][] colors = n == 1 ? new int[][]{{255, 255, 255}} : new int[][]{{0, 255, 0}, {255, 0, 255}, {0, 160, 255}, {255, 160, 0}, {255, 255, 255}};
+        float[] red = new float[w * h], green = new float[w * h], blue = new float[w * h];
+        for (int page = 1; page <= n; page++) {
+            float[] pixels = (float[]) image.getStack().getProcessor(page).convertToFloatProcessor().getPixels();
+            float[] sorted = pixels.clone(); Arrays.sort(sorted);
+            int finite = sorted.length; while (finite > 0 && Float.isNaN(sorted[finite - 1])) finite--;
+            if (finite == 0) continue;
+            float low = sorted[(int) (0.0035 * (finite - 1))], high = sorted[(int) (0.9965 * (finite - 1))];
+            if (!(high > low)) high = low + 1;
+            int[] color = colors[(page - 1) % colors.length];
+            for (int i = 0; i < pixels.length; i++) {
+                float value = Float.isNaN(pixels[i]) ? 0 : Math.max(0, Math.min(1, (pixels[i] - low) / (high - low)));
+                red[i] += value * color[0]; green[i] += value * color[1]; blue[i] += value * color[2];
+            }
+        }
+        java.awt.image.BufferedImage out = new java.awt.image.BufferedImage(w, h, java.awt.image.BufferedImage.TYPE_INT_RGB);
+        for (int i = 0; i < red.length; i++)
+            out.setRGB(i % w, i / w, (Math.min(255, (int) red[i]) << 16) | (Math.min(255, (int) green[i]) << 8) | Math.min(255, (int) blue[i]));
+        return out;
     }
 
     private void validateSession() {

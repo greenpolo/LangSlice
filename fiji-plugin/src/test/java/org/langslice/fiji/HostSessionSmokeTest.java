@@ -55,10 +55,12 @@ public final class HostSessionSmokeTest {
         if (position != null) value.addProperty("position_mm",position);
         JsonArray updates = new JsonArray(); updates.add(value); return updates;
     }
-    private static void translated(SliceSources slice, AffineTransform3D baseline, double delta) {
+    private static void translated(SliceSources slice, AffineTransform3D baseline, double delta) { translated(slice,baseline,delta,0); }
+    /** delta: in-plane x shift; dz: the slicing-axis move that a position update adds. */
+    private static void translated(SliceSources slice, AffineTransform3D baseline, double delta, double dz) {
         AffineTransform3D actual = world(slice);
         for(int r=0;r<3;r++) for(int c=0;c<4;c++) {
-            double expected=baseline.get(r,c)+(r==0 && c==3?delta:0);
+            double expected=baseline.get(r,c)+(r==0 && c==3?delta:0)+(r==2 && c==3?dz:0);
             require(Math.abs(actual.get(r,c)-expected)<1e-8,"Native affine entry "+r+","+c+" was "+actual.get(r,c)+" expected "+expected);
         }
     }
@@ -68,29 +70,46 @@ public final class HostSessionSmokeTest {
         AffineTransform3D original=world(slice); double initialZ=slice.getSlicingAxisPosition();
         int baseline=slice.getNumberOfRegistrations();
         AbbaHostSession host=new AbbaHostSession(mp,Paths.get(output,"snapshots"));
-        JsonObject spec=JsonParser.parseString("{\"tasks\":[\"position\",\"transform\"]}").getAsJsonObject();
-        JsonObject request=host.prepare(spec,0,25.0);
+        JsonObject spec=JsonParser.parseString("{\"tasks\":[\"reorder\",\"position\",\"transform\"]}").getAsJsonObject();
+        java.util.Map<SliceSources,String> damaged=new java.util.HashMap<>();damaged.put(slice,"torn");
+        JsonObject request=host.prepare(spec,mp.getSlices(),java.util.Arrays.asList(0),25.0,damaged,true);
         require(slice.getNumberOfRegistrations()==baseline,"Calibration leaves no registration");
         require(Math.abs(slice.getSlicingAxisPosition()-initialZ)<1e-8,"Calibration restores position");
         translated(slice,original,0);
         require(Files.isRegularFile(Paths.get(output,"snapshots","section_0001.tif")),"Snapshot exported");
+        require(request.getAsJsonArray("locked").size()==0,"Unregistered slices are never locked");
+        require(request.getAsJsonObject("damaged").get("section_0001.tif").getAsString().equals("torn"),"User damage check reaches the request");
+        AbbaHostSession pages=new AbbaHostSession(mp,Paths.get(output,"pages"));
+        pages.prepare(spec,mp.getSlices(),java.util.Arrays.asList(0,0),25.0,new java.util.HashMap<>(),true);
+        ij.ImagePlus multi=new ij.io.Opener().openImage(Paths.get(output,"pages","section_0001.tif").toString());
+        require(multi.getStackSize()==2,"One page per exported channel");
+        java.awt.image.BufferedImage shown=pages.exportPreview(slice,java.util.Arrays.asList(0),25.0,Paths.get(output,"preview.tif"));
+        require(shown.getWidth()==multi.getWidth() && Files.isRegularFile(Paths.get(output,"preview.tif")),"Preview snapshot shares the run framing");
         double ap=request.getAsJsonObject("positions_mm").get("section_0001.tif").getAsDouble();
         require(Double.isFinite(ap) && ap>0,"Measured AP coordinate finite");
-        host.apply(update(.25,null)); mp.waitForTasks();
-        require(slice.getNumberOfRegistrations()==baseline+1,"Native affine appended");
-        translated(slice,original,.25);
-        host.apply(update(.4,null)); mp.waitForTasks();
-        require(slice.getNumberOfRegistrations()==baseline+1,"Revision replaces owned affine");
-        translated(slice,original,.4);
-        mp.cancelLastAction(); mp.waitForTasks();
-        require(slice.getNumberOfRegistrations()==baseline+1,"Undo restores previous registration");
-        translated(slice,original,.25);
-        mp.redoAction(); mp.waitForTasks(); translated(slice,original,.4);
-        JsonObject position=new JsonObject();position.addProperty("id","section_0001.tif");position.addProperty("position_mm",ap+.2);
-        JsonArray positions=new JsonArray();positions.add(position);host.apply(positions);mp.waitForTasks();
+        // One final application per run: a single undoable batch replaces nothing and appends one registration.
+        host.apply(update(.4,ap+.2)); mp.waitForTasks();
+        require(slice.getNumberOfRegistrations()==baseline+1,"Final updates append one native affine");
+        translated(slice,original,.4,slice.getSlicingAxisPosition()-initialZ);
         require(Math.abs(slice.getSlicingAxisPosition()-initialZ-.2)<1e-5,"Calibrated AP update reaches ABBA");
+        mp.cancelLastAction(); mp.waitForTasks();
+        require(slice.getNumberOfRegistrations()==baseline,"One Undo reverts the whole run");
+        require(Math.abs(slice.getSlicingAxisPosition()-initialZ)<1e-5,"Undo restores the position");
+        translated(slice,original,0);
+        mp.redoAction(); mp.waitForTasks(); translated(slice,original,.4,slice.getSlicingAxisPosition()-initialZ);
+        require(Math.abs(slice.getSlicingAxisPosition()-initialZ-.2)<1e-5,"Redo restores the position");
+        require(slice.getNumberOfRegistrations()==baseline+1,"Redo restores the run");
+        AbbaHostSession locked=new AbbaHostSession(mp,Paths.get(output,"locked"));
+        require(locked.prepare(spec,mp.getSlices(),java.util.Arrays.asList(0),25.0,new java.util.HashMap<>(),true)
+                .getAsJsonArray("locked").get(0).getAsString().equals("section_0001.tif"),"Registered slices are locked when overwriting is off");
+        require(locked.prepare(spec,mp.getSlices(),java.util.Arrays.asList(0),25.0,new java.util.HashMap<>(),false)
+                .getAsJsonArray("locked").size()==0,"Overwrite on sends no locks");
+        // Registration changed outside the run: the stale session refuses to apply.
+        try { pages.apply(update(.1,null)); throw new AssertionError("Expected refusal"); }
+        catch (IllegalStateException expected) { require(expected.getMessage().contains("outside this run"),"Outside change is refused"); }
+        mp.waitForTasks();
         require(mp.saveState(Paths.get(output,"smoke.abba").toFile(),true),"Native ABBA state saves");
-        System.out.println("HOST_SESSION_PASS calibrated AP="+ap+", affine replace/undo/redo, position +0.2 mm, native save");
+        System.out.println("HOST_SESSION_PASS calibrated AP="+ap+", locked/damaged, multi-page, one-step apply/undo/redo, outside-change refusal, native save");
     }
     public static void verifyReload(MultiSlicePositioner before, MultiSlicePositioner after) {
         require(after.getSlices().size()==1,"Saved session reload retains section");
