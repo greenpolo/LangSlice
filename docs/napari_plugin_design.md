@@ -32,11 +32,11 @@ connector core carries what every host needs and depends on nothing but
 ## Layout
 
 ```
-napari/
+connectors/napari/
   README.md                       one-paragraph map, install matrix
   langslice-napari-core/          shared, host-agnostic (qtpy + napari only)
     langslice_napari_core/
-      worker.py                   Python port of fiji-plugin WorkerClient
+      worker.py                   Python port of connectors/fiji WorkerClient
       environments.py             Python port of EnvironmentDiscovery
       setup_widget.py             Setup dock: env picker, check, login, API key
       activity.py                 progress/transcript dock with cancel

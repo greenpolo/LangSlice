@@ -176,11 +176,26 @@ Both depend on LangSlice as an editable sibling checkout via
 `[tool.uv.sources]`; training additionally depends on SliceBench. Work on
 training or benchmark code happens in those repos, not here.
 
-## Independent Fiji connector
+## Host connectors
 
-- `fiji-plugin/` — Java/SciJava connector loaded into the user's existing
+`connectors/` holds what is installed into, or configured in, someone else's
+program. Code that runs in LangSlice's own environment lives in
+`src/langslice/` instead (`integrations/`, `api/`, `mcp_server/`).
+
+- `connectors/fiji/` — Java/SciJava connector loaded into the user's existing
   ABBA. It starts a separate LangSlice Python environment, provides setup and
   account dialogs, and applies worker results through native ABBA actions.
+- `connectors/napari/` — planned napari connectors (`docs/napari_plugin_design.md`).
+- `connectors/claude-desktop/` — host configuration for `langslice mcp`
+  (`src/langslice/mcp_server/`). This is the linear toolbox served over MCP to
+  a host that brings its own model: Claude Desktop, or Claude Code locked to
+  this one server. ABBA's Claude mode copies a saved-job prompt; `start_job`
+  returns a Claude-specific statement and status table, and `show_stack` pages
+  deliver the opening images. Authenticated localhost events update ABBA live;
+  checkpoints/results remain in `~/.langslice/jobs/<id>/` after disconnection.
+  The host owns the loop, so there is no turn budget, nudges or image working
+  set. This is the subscription-legal route for Claude; LangSlice never
+  handles Claude credentials.
 - `src/langslice/api/` — JSON-lines worker protocol, desktop setup/authentication,
   and JVM-free host adapters. Existing `abba_python` launchers remain separate.
 - `packaging/`, `environment.yml` — worker distribution and wheel checks.
@@ -217,7 +232,7 @@ training or benchmark code happens in those repos, not here.
 ## Boundaries
 
 - Active surface: `src/langslice/`, `tests/`, `docs/`, `README.md`,
-  `fiji-plugin/`, `packaging/`, and their build/environment configuration.
+  `connectors/`, `packaging/`, and their build/environment configuration.
 - Local-only (do not ship, do not document publicly): `_local/`, `references/`,
   generated outputs, `out/`, `archive/`.
 - Keep markdown literal to the code it describes. Behavior change → update the

@@ -243,8 +243,7 @@ The ABBA dialog's controls, all plain `JobSpec` fields (not CLI flags yet):
   per millimetre (no finer atlas detail exists); physical views
   (`compare_placement`, `adjust_transforms`, the `fit_affine` panel) are drawn
   by `render.shown_section` from a larger unframed render with the matrix
-  (`rescale_section_matrix`) and pivot carried onto it; the
-  `correct_slice_borders` thumbnails use `shown_edge`. Unchanged:
+  (`rescale_section_matrix`) and pivot carried onto it. Unchanged:
   `PREVIEW_LONG_EDGE` working renders, `calibrate`, the silhouette fit, the six
   stored numbers and every payload number, `fit_position`, the spacing plot,
   caption font and the image model's inputs. At `low` every path returns the
@@ -276,8 +275,9 @@ Local anatomical deformation remains the responsibility of the nonlinear workflo
 The optional `nonlinear` task now adds `correct_slice_borders(id,
 additional_notes="")` through the top-level `registration_tool` bridge. It uses
 the supplied linear placement, fixed correction prompt and optional per-slice notes.
-The first image reply is retained automatically in `SliceState.image_correction`,
-with raw output and extracted lines returned as separate images. No atlas search,
+The call runs in the background (`registration_tool.start_correction` prepares
+it; `ToolBox.settle_image_corrections` waits at submit and at session end) and
+returns no images. The first image reply is retained in `SliceState.image_correction`. No atlas search,
 replacement prompt, candidate selection or anatomical rejection is exposed.
 It does not fit a deformation or modify `transform`. Default task/tool counts stay
 unchanged; `DEFAULT_TASKS` is separate from `ALL_TASKS`. Hosts may supply calibrated
@@ -517,3 +517,12 @@ ABBA menu may independently remove direct adjustment tools or the
 automatic `fit_affine` tool. `elastix` controls the optional backend within the
 automatic fitter. The transform task's submit requirement still applies; a
 host must enable at least one transform method when enabling that task.
+
+## Claude host briefing
+
+`prompt.run_facts` is shared with `mcp_server/prompt.py`; keep the factual
+range, axis direction, protocol and calibration text identical across hosts.
+Claude's statement does not reuse the ADK method/playbook. MCP opens saved ABBA
+jobs through `api.abba_worker.prepare_linear`, exactly like `linear.run`,
+and supplies opening pictures separately with `show_stack` pages. No image
+model is available through the Claude connector.

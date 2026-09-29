@@ -103,6 +103,13 @@ def handle_request(request: EngineRequest, emit: EmitEventEnvelope) -> EngineRes
             id=request.id, type="result", result=preview.model_dump(mode="json"),
         )
 
+    if request.method == "claude.prepare":
+        from langslice.api.claude_jobs import prepare_claude
+
+        return EngineResultEnvelope(
+            id=request.id, type="result", result=prepare_claude(request.params),
+        )
+
     if request.method != "version":
         from langslice.api.setup import apply_saved_credentials
 

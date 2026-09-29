@@ -662,6 +662,9 @@ def _build_parser() -> argparse.ArgumentParser:
     # langslice serve
     _add_serve_parser(subparsers)
 
+    # langslice mcp
+    _add_mcp_parser(subparsers)
+
     return parser
 
 
@@ -814,6 +817,39 @@ def _run_serve(args: argparse.Namespace) -> None:
     raise SystemExit(run_stdio())
 
 
+def _add_mcp_parser(subparsers: argparse._SubParsersAction) -> None:
+    p = subparsers.add_parser(
+        "mcp",
+        help="Serve the linear tools over MCP (stdio) to a host that brings its "
+        "own model, such as Claude Desktop",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    p.add_argument(
+        "image_folder",
+        nargs="?",
+        default=None,
+        help="Open this folder at startup. Without it the host names the "
+        "folder through the start_job tool",
+    )
+    # The same job flags as `linear run`; they apply to every folder this
+    # server opens. --model, --reasoning and the budget flags are the host's
+    # business here and are ignored.
+    _add_linear_arguments(p)
+
+
+def _run_mcp(args: argparse.Namespace) -> None:
+    try:
+        from langslice.mcp_server.server import serve
+    except ImportError as exc:
+        raise SystemExit(
+            'The MCP SDK is not installed. Install it with\n  pip install "langslice[mcp]"'
+            f"\n({exc})"
+        ) from exc
+
+    _apply_trace_dir(args)
+    serve(lambda folder: _build_linear_spec(args, folder), args.image_folder)
+
+
 def main(argv: list[str] | None = None):
     # `.env` holds the API keys (GEMINI_API_KEY, OPENAI_API_KEY); every lane
     # reads it, not only the one whose module happens to be imported.
@@ -848,6 +884,8 @@ def main(argv: list[str] | None = None):
         _run_linear(args)
     elif command == "serve":
         _run_serve(args)
+    elif command == "mcp":
+        _run_mcp(args)
     else:
         parser.print_help()
         sys.exit(1)

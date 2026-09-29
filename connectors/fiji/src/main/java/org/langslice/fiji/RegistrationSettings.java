@@ -15,6 +15,7 @@ final class RegistrationSettings {
     static final String[] LEVELS = {"low", "medium", "high"};
     static final Preferences PREFS = Preferences.userNodeForPackage(RegistrationSettings.class).node("registration");
 
+    boolean claude = false;
     String model = DEFAULT_MODEL, imageModel = DEFAULT_IMAGE_MODEL, reasoning = "default", resolution = "low";
     boolean showLog = true, positioning = true, flip = true, linear = true, affine = true;
     boolean overwrite = false, agentDamage = true, custom = false, clahe = true, saveTraces = false;
@@ -29,6 +30,7 @@ final class RegistrationSettings {
 
     static RegistrationSettings load(Preferences p) {
         RegistrationSettings s = new RegistrationSettings();
+        s.claude = p.getBoolean("claude", false);
         s.fresh = p.get("model", null) == null;
         s.model = p.get("model", s.model); s.imageModel = p.get("imageModel", s.imageModel);
         s.reasoning = p.get("reasoning", s.reasoning); s.resolution = p.get("resolution", s.resolution);
@@ -50,6 +52,7 @@ final class RegistrationSettings {
     }
 
     void save(Preferences p) {
+        p.putBoolean("claude", claude);
         p.put("model", model); p.put("imageModel", imageModel); p.put("reasoning", reasoning); p.put("resolution", resolution);
         p.putBoolean("showLog", showLog); p.putBoolean("positioning", positioning); p.putBoolean("flip", flip);
         p.putBoolean("linear", linear); p.putBoolean("affine", affine); p.putBoolean("overwrite", overwrite);
@@ -101,7 +104,7 @@ final class RegistrationSettings {
     /** Null when runnable; otherwise a message for the user. */
     String problem(int channels) {
         if (!positioning && !linear) return "Turn on Positioning or Linear.";
-        if (modelId(model).isEmpty()) return "Choose an agent model.";
+        if (!claude && modelId(model).isEmpty()) return "Choose an agent model.";
         if (!(pixelSize > 0)) return "Choose a positive snapshot pixel size.";
         if (channels < 1) return "The selected slices have no image channel in common.";
         if (custom && exportChannels(channels).isEmpty()) return "Give at least one channel a weight above 0.";

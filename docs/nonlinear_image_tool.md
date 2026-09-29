@@ -9,8 +9,16 @@ selection, replacement prompt, candidate selection or anatomical rejection tool.
 The existing supplied-placement prompt owns the task. Image 1 is the original
 rendered photograph with the linearly placed atlas borders. Image 2 is the same
 clean photograph in the same frame. Optional notes are appended to that fixed
-prompt. The image model makes one correction; the first reply is retained and
-returned along with its extracted yellow borders on the unchanged photograph.
+prompt. The image model makes one correction; the first reply is retained with
+its extracted yellow borders on the unchanged photograph.
+
+The tool prepares the two images and prompt, starts the image call in the
+background and returns at once, with no images: the agent cannot act on a reply,
+so it does not wait for one. Calls therefore run at the agent's pace, up to
+`MAX_CONCURRENT_IMAGE_CALLS` (8) at a time, instead of one after another. A second
+call for a section whose correction is still running at the same placement
+reports that it is running. `submit`, and the end of the session, wait for every
+running call and record its result.
 
 This stage produces border-annotation images. It does not fit a deformation,
 modify the linear transform, or export a completed nonlinear registration.
@@ -61,8 +69,11 @@ that returned no image. Each attempt's artifacts remain separate. An interrupted
 request with an unknown outcome is reported explicitly.
 
 Submit checks that every section has a completed correction for its current
-placement. It checks completion and geometry, not anatomical quality. An empty or
-unhelpful drawing is still retained, shown and counted as a completed model call.
+placement, after waiting for running calls. It checks completion and geometry, not
+anatomical quality. An empty or unhelpful drawing is still retained and counted as
+a completed model call. A result arriving for a correction the agent has since
+undone or superseded does not overwrite that section's record; its artifacts stay
+on disk and are reused at that geometry.
 Raw output and extracted lines remain separate because the model can redraw tissue.
 
 ## Prompt sentence review

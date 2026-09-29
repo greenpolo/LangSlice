@@ -31,7 +31,11 @@ langslice = "langslice.cli:main"
 abba = [
     "abba-python",
 ]
+mcp = [
+    "mcp>=1.24,<2",
+]
 dev = [
+    "mcp>=1.24,<2",
     "pytest",
     "ruff",
     "basedpyright",

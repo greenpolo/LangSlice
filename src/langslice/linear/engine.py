@@ -428,7 +428,13 @@ async def run(
     box = build_tools(state, ctx, spec, on_event=on_event)
     watch = observe_checkpoints(on_write) if on_write is not None else contextlib.nullcontext()
     with watch:
-        tool_calls, turns = await run_session(state, ctx, spec, box, on_event=on_event)
+        try:
+            tool_calls, turns = await run_session(state, ctx, spec, box, on_event=on_event)
+        finally:
+            # Background image corrections finish and are recorded even when
+            # the session ends without a submit.
+            if box.settle_image_corrections(state):
+                save_checkpoint(state, ctx.checkpoint_path)
         ctx.progress(
             f"[session] {tool_calls} tool call(s) over {turns} turn(s); "
             + ("submitted" if state.submitted else "no submission")

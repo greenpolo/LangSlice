@@ -87,8 +87,9 @@ TOOL_LINES: dict[str, str] = {
     "This replaces the complete transform, including any spline or shear.",
     "correct_slice_borders": "uses the fixed image-model border-correction prompt "
     "on one section's existing linear placement, with optional additional_notes "
-    "for that slice; returns the raw generated image and extracted borders on "
-    "the original. The first result at each placement is saved and reused. "
+    "for that slice. The image call runs in the background and the tool returns "
+    "at once; the result is saved for the user and checked at submit, which waits "
+    "for running calls. The first result at each placement is saved and reused. "
     "This records an annotation; it does not fit or change the transform.",
     "submit": "checks requirements and ends the run if they pass; otherwise "
     "returns the missing requirements without ending or changing the run.",
@@ -136,7 +137,6 @@ def build_job_statement(
     :func:`langslice.space.slice_axis_ends` — what the two ends of the slicing
     axis are anatomically in THIS atlas.
     """
-    axis = _PLANE_AXIS_LABEL.get(state.plane, "AP")
     jobs: list[str] = []
     if spec.has("reorder"):
         jobs.append(
@@ -157,83 +157,8 @@ def build_job_statement(
         jobs.append("use the image model to correct every section's placed atlas borders")
     job = "; ".join(jobs) if jobs else "review the stack"
 
-    placed = [s for s in state.in_order() if s.position_mm is not None]
-    damaged = [s.id for s in state.in_order() if s.damaged]
-    inputs = spec.inputs or {}
-    host_damaged = [s.id for s in state.in_order() if s.id in (inputs.get("damaged") or {})]
-    locked_ids = {str(name) for name in inputs.get("locked") or []}
-    locked = [s.id for s in state.in_order() if s.id in locked_ids]
-
-    facts: list[str] = [
-        f"- {len(state.slices)} sections, {state.plane} plane, atlas "
-        f"{state.atlas} ({species}).",
-        f"- Valid {axis} range: {pos_lo:.2f}-{pos_hi:.2f} mm along the slicing "
-        f"axis, measured from the origin edge of the atlas volume "
-        f"({pos_lo:.2f} mm is its first section, {pos_hi:.2f} mm its last).",
-        f"- {pos_lo:.2f} mm is the {axis_ends[0]} edge of the volume; "
-        f"positions increase toward {axis_ends[1]}.",
-        f"- Cutting protocol: nominal section interval {state.interval_mm:.3f} "
-        f"mm center-to-center, section thickness {state.thickness_mm:.3f} mm. "
-        f"The nominal interval is a protocol value, not a measurement: sections "
-        f"can be missing anywhere in the stack, so the spacing between "
-        f"neighbours may differ from it.",
-        f"- Stack-wide cutting angles: pitch {state.pitch_deg:.2f} deg, yaw "
-        f"{state.yaw_deg:.2f} deg.",
-    ]
-    facts.append(
-        f"- {len(placed)} of {len(state.slices)} sections carry a position."
-        if placed
-        else "- No section carries a position yet."
-    )
-    if damaged:
-        facts.append(f"- Sections marked damaged: {', '.join(damaged)}.")
-    if host_damaged:
-        facts.append(
-            f"- The user marked these sections damaged, and that flag cannot be "
-            f"cleared: {', '.join(host_damaged)}."
-        )
-    if locked:
-        facts.append(
-            "- In-plane alignment of these sections was already done by the "
-            "user, so their flip, rotation and transform are locked and count "
-            f"as done: {', '.join(locked)}."
-            + (" Their positions can still be changed." if spec.has("position") else "")
-        )
-    if not spec.has("reorder"):
-        facts.append("- The order and orientation shown are fixed for this run.")
-    elif not spec.reorder.flip:
-        facts.append("- Flipping sections is switched off for this run.")
-    if not spec.has("position"):
-        facts.append("- The positions shown are given; this run does not change them.")
-    if not spec.has("transform"):
-        facts.append(
-            "- Existing linear transforms are supplied and fixed for this run."
-            if spec.has("nonlinear") else "- Transforms are not part of this run."
-        )
-    else:
-        # The alignment frame, as facts: these lived in the deleted
-        # sub-session prompt and the fold-in dropped them.
-        facts.append(
-            "- Alignment canvas: each section is drawn at its TRUE physical size "
-            "from its pixel size (read from the file, or given by the host, or "
-            "estimated — the tool payload says which), and the atlas at its "
-            "voxel size; scale 1.0 is the section's calibrated size."
-        )
-        facts.append(
-            "- Transform frame: rotation and scales act about the pivot (the "
-            "canvas centre unless another is chosen), x runs right and y runs "
-            "down, shifts are millimetres."
-        )
-        cap = spec.transform.max_parallel
-        if cap < MAX_PARALLEL_TRANSFORMS:
-            facts.append(
-                f"- Each transform tool call takes at most {cap} "
-                f"section{'s' if cap != 1 else ''}."
-            )
-    cue = spec.reorder.hemisphere_cue.strip()
-    if cue:
-        facts.append(f"- What marks a hemisphere, from the user: {cue}")
-    facts.extend(f"- {fact.strip()}" for fact in spec.facts if str(fact).strip())
+    facts = run_facts(spec, state, species=species, pos_lo=pos_lo, pos_hi=pos_hi,
+                      axis_ends=axis_ends)
 
     tools = [f"- `{name}`: {TOOL_LINES[name]}" for name in tool_names if name in TOOL_LINES]
 
@@ -408,3 +333,90 @@ def build_job_statement(
             "Work with the tools, then call `submit`.",
         ]
     )
+
+
+def run_facts(
+    spec: JobSpec, state: StackState, *, species: str, pos_lo: float,
+    pos_hi: float, axis_ends: tuple[str, str],
+) -> list[str]:
+    """Shared factual briefing, without any model-specific method advice."""
+    axis = _PLANE_AXIS_LABEL.get(state.plane, "AP")
+    placed = [s for s in state.in_order() if s.position_mm is not None]
+    damaged = [s.id for s in state.in_order() if s.damaged]
+    inputs = spec.inputs or {}
+    host_damaged = [s.id for s in state.in_order() if s.id in (inputs.get("damaged") or {})]
+    locked_ids = {str(name) for name in inputs.get("locked") or []}
+    locked = [s.id for s in state.in_order() if s.id in locked_ids]
+
+    facts: list[str] = [
+        f"- {len(state.slices)} sections, {state.plane} plane, atlas "
+        f"{state.atlas} ({species}).",
+        f"- Valid {axis} range: {pos_lo:.2f}-{pos_hi:.2f} mm along the slicing "
+        f"axis, measured from the origin edge of the atlas volume "
+        f"({pos_lo:.2f} mm is its first section, {pos_hi:.2f} mm its last).",
+        f"- {pos_lo:.2f} mm is the {axis_ends[0]} edge of the volume; "
+        f"positions increase toward {axis_ends[1]}.",
+        f"- Cutting protocol: nominal section interval {state.interval_mm:.3f} "
+        f"mm center-to-center, section thickness {state.thickness_mm:.3f} mm. "
+        f"The nominal interval is a protocol value, not a measurement: sections "
+        f"can be missing anywhere in the stack, so the spacing between "
+        f"neighbours may differ from it.",
+        f"- Stack-wide cutting angles: pitch {state.pitch_deg:.2f} deg, yaw "
+        f"{state.yaw_deg:.2f} deg.",
+    ]
+    facts.append(
+        f"- {len(placed)} of {len(state.slices)} sections carry a position."
+        if placed
+        else "- No section carries a position yet."
+    )
+    if damaged:
+        facts.append(f"- Sections marked damaged: {', '.join(damaged)}.")
+    if host_damaged:
+        facts.append(
+            f"- The user marked these sections damaged, and that flag cannot be "
+            f"cleared: {', '.join(host_damaged)}."
+        )
+    if locked:
+        facts.append(
+            "- In-plane alignment of these sections was already done by the "
+            "user, so their flip, rotation and transform are locked and count "
+            f"as done: {', '.join(locked)}."
+            + (" Their positions can still be changed." if spec.has("position") else "")
+        )
+    if not spec.has("reorder"):
+        facts.append("- The order and orientation shown are fixed for this run.")
+    elif not spec.reorder.flip:
+        facts.append("- Flipping sections is switched off for this run.")
+    if not spec.has("position"):
+        facts.append("- The positions shown are given; this run does not change them.")
+    if not spec.has("transform"):
+        facts.append(
+            "- Existing linear transforms are supplied and fixed for this run."
+            if spec.has("nonlinear") else "- Transforms are not part of this run."
+        )
+    else:
+        # The alignment frame, as facts: these lived in the deleted
+        # sub-session prompt and the fold-in dropped them.
+        facts.append(
+            "- Alignment canvas: each section is drawn at its TRUE physical size "
+            "from its pixel size (read from the file, or given by the host, or "
+            "estimated — the tool payload says which), and the atlas at its "
+            "voxel size; scale 1.0 is the section's calibrated size."
+        )
+        facts.append(
+            "- Transform frame: rotation and scales act about the pivot (the "
+            "canvas centre unless another is chosen), x runs right and y runs "
+            "down, shifts are millimetres."
+        )
+        cap = spec.transform.max_parallel
+        if cap < MAX_PARALLEL_TRANSFORMS:
+            facts.append(
+                f"- Each transform tool call takes at most {cap} "
+                f"section{'s' if cap != 1 else ''}."
+            )
+    cue = spec.reorder.hemisphere_cue.strip()
+    if cue:
+        facts.append(f"- What marks a hemisphere, from the user: {cue}")
+    facts.extend(f"- {fact.strip()}" for fact in spec.facts if str(fact).strip())
+
+    return facts

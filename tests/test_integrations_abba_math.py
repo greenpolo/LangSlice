@@ -166,3 +166,72 @@ def test_border_refinement_rejects_multiple_draws_before_loading_atlas(monkeypat
         compute_registration_landmarks(
             np.zeros((2, 2, 3)), np.zeros((2, 2)), LangSliceAbbaConfig(draws=2)
         )
+
+
+# --- ABBA slicing rotations <-> LangSlice pitch/yaw ---------------------------
+
+#: Stage 0 (atlas (ML, DV, AP) mm -> ABBA world) of ABBA's own QuPath
+#: ``ABBA-Transform-allen_mouse_10um_java.json`` exports (LSD_910, the lab's
+#: saves), with the save's rotationX/rotationY in radians. Only the 3x3 block;
+#: world z is the slicing axis, so its row is the cutting plane's normal.
+#: ABBA's ASR atlas names x > 5.7 "Left", BrainGlobe asr names the high ML index
+#: left, and the exported Left ROIs sit on the image's right for every
+#: unflipped section (M12: 38/38 with flips), so x IS BrainGlobe ML here.
+_ABBA_EXPORTS = {
+    "M11_B_01": (
+        0.22689280275926282,
+        0.03490658503988659,
+        [
+            [1.0006095442988217, -0.008062094885272547, 0.0],
+            [0.0, 1.0263041077933914, 0.0],
+            [0.03492076949174772, -0.23100891551524302, 0.9999999999999999],
+        ],
+    ),
+    "M12_C_01": (
+        -0.148352986419518,
+        0.05235987755982988,
+        [
+            [1.0013723459979211, 0.00783239509233458, 0.0],
+            [0.0, 1.0111061278640618, 0.0],
+            [0.052407779283041175, 0.14965609983271452, 1.0],
+        ],
+    ),
+}
+
+
+def _langslice_normal_ml_dv_ap(pitch_deg: float, yaw_deg: float) -> np.ndarray:
+    """LangSlice's coronal cutting-plane normal on an asr atlas, as (ML, DV, AP)."""
+    from langslice.oblique import build_rotation_matrix
+
+    # asr: axis 0 = AP (the coronal normal), 1 = DV (rows), 2 = ML (columns)
+    n = build_rotation_matrix(pitch_deg, yaw_deg, row_axis=1, col_axis=2) @ np.array(
+        [1.0, 0.0, 0.0]
+    )
+    return np.array([n[2], n[1], n[0]])
+
+
+def _angle_deg(a: np.ndarray, b: np.ndarray) -> float:
+    cos = abs(float(a @ b)) / float(np.linalg.norm(a) * np.linalg.norm(b))
+    return float(np.degrees(np.arccos(min(1.0, cos))))
+
+
+@pytest.mark.parametrize("section", sorted(_ABBA_EXPORTS))
+def test_rotate_sign_constants_reproduce_abba_exported_plane(section):
+    import math
+
+    from langslice.integrations.abba_linear import (
+        PITCH_TO_ROTATE_X_SIGN,
+        YAW_TO_ROTATE_Y_SIGN,
+    )
+
+    rx, ry, stage0 = _ABBA_EXPORTS[section]
+    abba_normal = np.asarray(stage0)[2]
+    # the read-back direction abba_linear uses (angle = deg(rotate) / sign)
+    pitch = math.degrees(rx) / PITCH_TO_ROTATE_X_SIGN
+    yaw = math.degrees(ry) / YAW_TO_ROTATE_Y_SIGN
+    assert _angle_deg(_langslice_normal_ml_dv_ap(pitch, yaw), abba_normal) < 1e-6
+    # the opposite yaw sign is measurably wrong (2-3 deg of yaw -> 4-6 deg off)
+    assert _angle_deg(_langslice_normal_ml_dv_ap(pitch, -yaw), abba_normal) > 3.0
+    # and the set direction is the exact inverse of the read-back
+    assert math.radians(pitch * PITCH_TO_ROTATE_X_SIGN) == pytest.approx(rx)
+    assert math.radians(yaw * YAW_TO_ROTATE_Y_SIGN) == pytest.approx(ry)

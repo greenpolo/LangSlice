@@ -7,7 +7,6 @@ import json
 from pathlib import Path
 
 import pytest
-from PIL import Image
 
 from langslice.adk import TOOL_MEDIA_PARTS_KEY
 from langslice.linear.checkpoint import load_checkpoint
@@ -45,30 +44,30 @@ def test_image_tool_is_opt_in_and_has_only_id_and_notes(tmp_path: Path):
     assert restored.nonlinear == NonlinearSpec()
 
 
-def test_image_correction_stores_notes_images_and_undo_without_changing_transform(
-    tmp_path: Path, monkeypatch,
-):
+def test_image_correction_runs_in_background_and_submit_waits(tmp_path: Path, monkeypatch):
+    import threading
+
     from langslice import registration_tool
 
     state, ctx, spec = _placed(tmp_path)
     transform = copy.deepcopy(state.slices[0].transform)
     spec.nonlinear = NonlinearSpec(provider="openai-api", image_model="test-model")
-    raw = tmp_path / "raw.png"
-    lines = tmp_path / "lines.png"
-    Image.new("RGB", (40, 30), "blue").save(raw)
-    Image.new("RGB", (40, 30), "yellow").save(lines)
+    release = threading.Event()
     calls = []
 
-    def fake_correct(actual_state, actual_ctx, section_id, **kwargs):
+    def fake_start(actual_state, actual_ctx, section_id, **kwargs):
         assert actual_state is state and actual_ctx is ctx
         calls.append((section_id, kwargs))
-        return {
-            "status": "ok", "geometry_fingerprint": "geometry",
-            "additional_notes": kwargs["additional_notes"],
-            "artifact_paths": {"raw_reply": str(raw), "lines_on_original": str(lines)},
-        }
+        running = {"status": "running", "geometry_fingerprint": "geometry",
+                   "additional_notes": kwargs["additional_notes"]}
 
-    monkeypatch.setattr(registration_tool, "correct_slice", fake_correct)
+        def job():
+            assert release.wait(5)
+            return {**running, "status": "ok"}
+
+        return running, job
+
+    monkeypatch.setattr(registration_tool, "start_correction", fake_start)
     monkeypatch.setattr(registration_tool, "correction_fingerprint", lambda *_: "geometry")
     box = build_tools(state, ctx, spec)
     result = _tool(box, "correct_slice_borders")("0", "Left fragment is displaced.")
@@ -77,8 +76,10 @@ def test_image_correction_stores_notes_images_and_undo_without_changing_transfor
         "out": Path(ctx.results_path).parent / "nonlinear",
         "provider": "openai-api", "image_model": "test-model",
     })]
-    assert len(result[TOOL_MEDIA_PARTS_KEY]) == 2
-    assert result["image_indexes"] == {"raw_reply": 0, "lines_on_original": 1}
+    # The tool returns while the image call is still running, with no images.
+    assert result["status"] == "running" and TOOL_MEDIA_PARTS_KEY not in result
+    assert _tool(box, "correct_slice_borders")("0")["status"] == "running"
+    assert len(calls) == 1
     saved = load_checkpoint(ctx.checkpoint_path)
     assert saved.slices[0].image_correction == state.slices[0].image_correction
     restored = StackState.from_dict(json.loads(json.dumps(state.to_dict())))
@@ -86,11 +87,29 @@ def test_image_correction_stores_notes_images_and_undo_without_changing_transfor
     assert state.slices[0].transform == transform
     _tool(box, "undo")()
     assert state.slices[0].image_correction is None
-    assert state.slices[0].transform == transform
     _tool(box, "redo")()
-    assert state.slices[0].image_correction["status"] == "ok"
+    assert state.slices[0].image_correction["status"] == "running"
+    release.set()
     assert _tool(box, "submit")("Done", [], [])["status"] == "ok"
+    assert state.slices[0].image_correction["status"] == "ok"
+    assert load_checkpoint(ctx.checkpoint_path).slices[0].image_correction["status"] == "ok"
+    assert state.slices[0].transform == transform
     assert _tool_target_ids(state, "correct_slice_borders", {"id": "0"}) == ["s0.png"]
+
+
+def test_result_of_an_undone_correction_does_not_land(tmp_path: Path, monkeypatch):
+    from langslice import registration_tool
+
+    state, ctx, spec = _placed(tmp_path)
+    running = {"status": "running", "geometry_fingerprint": "geometry"}
+    monkeypatch.setattr(registration_tool, "start_correction",
+                        lambda *a, **k: (running, lambda: {**running, "status": "ok"}))
+    monkeypatch.setattr(registration_tool, "correction_fingerprint", lambda *_: "geometry")
+    box = build_tools(state, ctx, spec)
+    _tool(box, "correct_slice_borders")("0")
+    _tool(box, "undo")()
+    assert box.settle_image_corrections(state) is False
+    assert state.slices[0].image_correction is None
 
 
 @pytest.mark.parametrize("result", [None, {"status": "error"}, {
@@ -117,7 +136,7 @@ def test_image_tool_reports_missing_placement_without_checkpoint_mutation(tmp_pa
     def missing(*args, **kwargs):
         raise ValueError("s0.png requires a position and linear transform")
 
-    monkeypatch.setattr(registration_tool, "correct_slice", missing)
+    monkeypatch.setattr(registration_tool, "start_correction", missing)
     monkeypatch.setattr(registration_tool, "correction_fingerprint", missing)
     box = build_tools(state, ctx, spec)
     response = _tool(box, "correct_slice_borders")("s0.png")
