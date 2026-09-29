@@ -29,6 +29,8 @@ classpath = classpath_file.read_text().strip()
 if not classpath:
     raise SystemExit('The Maven dependency classpath is empty.')
 classes = root / 'target/classes'
+# Start clean: a renamed or deleted class would otherwise stay in the JAR and the SciJava plugin index.
+shutil.rmtree(classes, ignore_errors=True)
 classes.mkdir(parents=True, exist_ok=True)
 sources = sorted((root / 'src/main/java').rglob('*.java'))
 run([tool('javac'), '--release', '11', '-encoding', 'UTF-8', '-cp', classpath, '-d', str(classes), *(str(p) for p in sources)])
@@ -37,6 +39,7 @@ run([tool('jar'), 'cf', str(artifact), '-C', str(classes), '.'])
 print(artifact)
 if args.test:
     tests = root / 'target/test-classes'
+    shutil.rmtree(tests, ignore_errors=True)
     tests.mkdir(parents=True, exist_ok=True)
     run([tool('javac'), '--release', '11', '-encoding', 'UTF-8', '-cp', str(classes) + os.pathsep + classpath, '-d', str(tests), *(str(p) for p in (root / 'src/test/java').rglob('*.java'))])
     for smoke in ('ConnectorSmokeTest', 'HostGeometrySmokeTest'):

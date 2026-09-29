@@ -1,8 +1,9 @@
 # LangSlice in your existing ABBA
 
 The Fiji connector runs LangSlice in a separate Python environment. Open your
-usual ABBA installation; its **Register > LangSlice** menu provides setup and
-agent controls. You may install the Fiji plugin or the Python environment first.
+usual ABBA installation; its **Register > LangSlice > LangSlice Registration…**
+entry opens LangSlice, and Fiji's **Plugins > LangSlice > LangSlice setup…** opens
+setup. You may install the Fiji plugin or the Python environment first.
 Account setup is done inside ABBA. Command-line login is optional.
 
 **Distribution status:** this is a source-build preview. A public Fiji update
@@ -49,7 +50,8 @@ the Fiji route.
 
 ## Set up LangSlice in ABBA
 
-Open **Register > LangSlice > LangSlice setup…**.
+Open Fiji's **Plugins > LangSlice > LangSlice setup…**, or click **Setup…** in the
+LangSlice Registration dialog.
 
 1. Select the environment folder containing LangSlice. The dialog discovers
    common conda environments; **Browse…** lets you select another location.
@@ -76,21 +78,36 @@ through setup first.
 ## Run and save
 
 Import sections into ABBA, select the sections to process (or leave none selected
-to use all), and open **Register > LangSlice > LangSlice agent…**. Review the
-workflow and model before starting. **Linear agent** handles section order,
-position and in-plane alignment; review its section spacing and enabled tasks.
-**Nonlinear boundary refinement** refines sections at their existing atlas
-positions. A progress window
-reports activity and provides cancellation. Completed changes remain in ABBA
-and can be saved using ABBA's normal state-save command.
-This preview shows a text activity transcript; the older Python launcher's
-comparison viewer is not included in the Fiji connector.
+to use all), and open **Register > LangSlice > LangSlice Registration…**. The
+dialog has three tabs:
+
+- **Tasks:** turn on **Positioning** (order, hemisphere flips and atlas positions;
+  check the section thickness and interval, which are filled in from ABBA) and/or
+  **Linear** (in-plane alignment). Each has a box for notes to the agent.
+  **Nonlinear** is not yet available in ABBA.
+- **Slices:** the slices that will be sent, with their number of ABBA
+  registrations. Tick **Damaged** for torn or folded slices. By default, slices that
+  already have ABBA registrations keep their in-plane alignment; their positions
+  can still move. Tick **Allow the agent to overwrite existing transforms** to let
+  the agent realign them too.
+- **Preprocessing:** **Auto** usually works. **Custom** lets you weight each image
+  channel and set local contrast (CLAHE). The preview shows each slice as exported
+  and as the agent will see it. Try to maximize contrast between different regions.
+
+Choose the model at the top, check the estimated cost at the bottom, and click
+**Run**. Your choices are remembered for the next run.
+
+Your ABBA session is not changed while the agent works. When the run finishes, the
+result is applied to ABBA as one step, which ABBA's **Undo** reverts. If you click
+**Stop run**, nothing is applied; the window then offers **Apply partial result to
+ABBA** when the agent had saved at least one step. With **Show agent log** on, the
+run window shows what the agent is doing; with it off, a small window shows only
+the status and the final message. Save the project using ABBA's normal Save
+command.
 
 The connector currently requires the Allen Mouse V3p1 atlas in a flat coronal
-session. Ordering/orientation is refused for slices with existing registrations;
-turn that task off to refine an already registered stack. Avoid manually changing
-the selected stack while an agent run is active. Cancelling stops the worker;
-it does not automatically undo completed ABBA actions.
+session. Avoid changing the listed slices' registrations while a run is active: the
+result is refused for a slice whose registrations changed outside the run.
 
 ## Optional terminal commands
 
