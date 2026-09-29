@@ -75,7 +75,8 @@ def _host_updates(
             if not math.isfinite(position):
                 raise ValueError("Agent position must be finite")
             update["position_mm"] = position
-        if "reorder" in tasks and name not in locked and any(
+        # Mirror and quarter-turn are part of the in-plane transform task.
+        if "transform" in tasks and name not in locked and any(
             row.get(key) != old.get(key) for key in ("flip", "rotation_deg")
         ):
             update.update(

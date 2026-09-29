@@ -27,7 +27,7 @@ def _placed(tmp_path: Path):
     return state, ctx, spec
 
 
-def test_image_tool_is_opt_in_and_has_only_id_and_notes(tmp_path: Path):
+def test_image_tool_is_opt_in_and_has_only_id_and_prompt(tmp_path: Path):
     from google.adk.tools import FunctionTool
 
     state, ctx, spec = _stack(tmp_path, n=1)
@@ -38,7 +38,7 @@ def test_image_tool_is_opt_in_and_has_only_id_and_notes(tmp_path: Path):
     schema = FunctionTool(_tool(box, "correct_slice_borders"))._get_declaration()
     declaration = schema.model_dump()
     parameters = declaration["parameters"] or declaration["parameters_json_schema"]
-    assert set(parameters["properties"]) == {"id", "additional_notes"}
+    assert set(parameters["properties"]) == {"id", "prompt"}
     assert not {"fit_affine", "adjust_transforms", "search_atlas", "reject"} & set(box.names)
     restored = JobSpec.from_dict(spec.to_dict())
     assert restored.nonlinear == NonlinearSpec()
@@ -59,7 +59,7 @@ def test_image_correction_runs_in_background_and_submit_waits(tmp_path: Path, mo
         assert actual_state is state and actual_ctx is ctx
         calls.append((section_id, kwargs))
         running = {"status": "running", "geometry_fingerprint": "geometry",
-                   "additional_notes": kwargs["additional_notes"]}
+                   "prompt_edited": bool(kwargs["prompt"])}
 
         def job():
             assert release.wait(5)
@@ -70,9 +70,9 @@ def test_image_correction_runs_in_background_and_submit_waits(tmp_path: Path, mo
     monkeypatch.setattr(registration_tool, "start_correction", fake_start)
     monkeypatch.setattr(registration_tool, "correction_fingerprint", lambda *_: "geometry")
     box = build_tools(state, ctx, spec)
-    result = _tool(box, "correct_slice_borders")("0", "Left fragment is displaced.")
+    result = _tool(box, "correct_slice_borders")("0", "Edited prompt.")
     assert calls == [("s0.png", {
-        "additional_notes": "Left fragment is displaced.",
+        "prompt": "Edited prompt.",
         "out": Path(ctx.results_path).parent / "nonlinear",
         "provider": "openai-api", "image_model": "test-model",
     })]
@@ -167,6 +167,5 @@ def test_nonlinear_only_prompt_describes_fixed_supplied_placement(tmp_path):
         species="mouse", pos_lo=0, pos_hi=10, axis_ends=("anterior", "posterior"),
     )
     assert "Existing linear transforms are supplied and fixed" in prompt
-    assert "additional_notes" in prompt
-    assert "no replacement prompt or anatomical rejection step" in prompt
+    assert "its format is good and tested" in prompt
     assert "Transforms are not part" not in prompt

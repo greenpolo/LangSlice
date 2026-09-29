@@ -87,7 +87,15 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
 - `spec.py` — `JobSpec` (+ `ReorderSpec`/`PositionSpec`/`TransformSpec`/
   `NonlinearSpec`). Every checkbox a host shows maps to a field here; nothing
   else is user-facing. Users see Positioning (`reorder` + `position`), Linear
-  (`transform`) and Nonlinear (`docs/interface_design.md`).
+  (`transform`) and Nonlinear (`docs/interface_design.md`). Flip and
+  hemisphere cue are `transform.flip` / `transform.hemisphere_cue` since
+  2026-09-29 (a mirror is the sign of the in-plane affine): `orient_slices`
+  is built with the transform task, a positioning-only run never mentions
+  mirroring, and `reorder.flip` / `reorder.hemisphere_cue` survive only as
+  aliases `JobSpec.__post_init__` folds in (and mirrors back for old readers;
+  `to_dict` writes them under `transform` only). A host transform in
+  `inputs.transforms` may be mirrored (negative determinant) and is kept as
+  supplied.
   `tasks` is the master switch: a task that is OFF builds no tools and takes
   its answer from `spec.inputs` instead. `inputs["pixel_size_um"]` is the
   calibration override, and `reasoning` (`--reasoning`) rides through
@@ -252,8 +260,9 @@ The ABBA dialog's controls, all plain `JobSpec` fields (not CLI flags yet):
 
 ## Tool consolidation (2026-09-15)
 
-The default full-task toolbox has 15 tools (9 for interactive-only transform
-refinement; one fewer each with `agent_damage` off). `adjust_transforms` handles both one section and batches; the
+The default full-task toolbox has 15 tools (10 for interactive-only transform
+refinement, `orient_slices` included since 2026-09-29; one fewer each with
+`agent_damage` off). `adjust_transforms` handles both one section and batches; the
 single-section implementation is private. `mark_damaged` accepts per-entry
 `damaged=False` to clear flags. `validate` and `unmark_damaged` are removed;
 failed `submit` reports unmet requirements without changing or ending the run.
@@ -269,7 +278,8 @@ The linear agent handles order, position and affine alignment. Paired landmark
 viewing, editing and warping were removed from the toolbox and prompt after the
 full-stack comparison did not establish a nonlinear quality gain. The dedicated
 linear landmark module and editable-point state are removed. Default full-task
-and interactive-only tool counts are 15 and 9.
+and interactive-only tool counts are 15 and 10 (`orient_slices` joined the
+transform task on 2026-09-29).
 
 Local anatomical deformation remains the responsibility of the nonlinear workflow.
 The optional `nonlinear` task now adds `correct_slice_borders(id,

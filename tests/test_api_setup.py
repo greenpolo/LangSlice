@@ -81,17 +81,24 @@ def test_corrupt_settings_report_generic_error_and_are_not_overwritten(isolated_
 
 
 def test_oauth_presence_does_not_refresh_or_expose_token(isolated_home: Path) -> None:
-    path = isolated_home / ".codex" / "auth.json"
-    path.parent.mkdir()
+    path = isolated_home / ".langslice" / "openai_auth.json"
+    path.parent.mkdir(exist_ok=True)
     path.write_text(json.dumps({"tokens": {"access_token": "private-oauth-token"}}))
     original = path.read_text()
     status = setup.setup_status()
     oauth = status["providers"]["openai-oauth"]
     assert {key: oauth[key] for key in ("configured", "source", "validated")} == {
-        "configured": True, "source": "codex", "validated": False,
+        "configured": True, "source": "saved", "validated": False,
     }
     assert "private-oauth-token" not in json.dumps(status)
     assert path.read_text() == original
+
+
+def test_a_codex_login_is_not_a_langslice_login(isolated_home: Path) -> None:
+    path = isolated_home / ".codex" / "auth.json"
+    path.parent.mkdir()
+    path.write_text(json.dumps({"tokens": {"access_token": "codex-token"}}))
+    assert setup.setup_status()["providers"]["openai-oauth"]["configured"] is False
 
 
 def test_status_lists_the_chatgpt_agent_and_image_models(isolated_home: Path) -> None:

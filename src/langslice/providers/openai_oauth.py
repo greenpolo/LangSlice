@@ -14,9 +14,11 @@ no API key:
   the nonlinear registration provider (the router session drives the hosted
   ``image_generation`` tool through the Responses body directly).
 
-Credentials come from ``~/.langslice/openai_auth.json`` (written by
-:func:`login`), falling back to the Codex CLI's ``~/.codex/auth.json`` and then
-its OS-keyring entry. Access tokens are refreshed automatically.
+Credentials come only from LangSlice's own file, ``~/.langslice/openai_auth.json``
+(written by :func:`login`); the Codex CLI's login is never read, so its account
+and rotating refresh token stay its own. ``LANGSLICE_OPENAI_AUTH`` names another
+file for one process (a second account). Access tokens are refreshed
+automatically.
 
 Wire format (Codex Responses, ``https://chatgpt.com/backend-api/codex``)
 matches the openai/codex client and RayBytes/ChatMock:
@@ -87,8 +89,14 @@ LEGACY_MODEL_PREFIX = "chatgpt/"  # accepted alias; older configs and docs use i
 REFRESH_SKEW_S = 5 * 60  # refresh when the access token expires within 5 min
 
 #: Where ``langslice login`` stores its token (mode 600).
-CREDENTIALS_PATH = Path.home() / ".langslice" / "openai_auth.json"
-_CODEX_AUTH = Path.home() / ".codex" / "auth.json"
+#: ``LANGSLICE_OPENAI_AUTH`` names another file for one process (a second
+#: account).
+_AUTH_OVERRIDE = os.environ.get("LANGSLICE_OPENAI_AUTH")
+CREDENTIALS_PATH = (
+    Path(_AUTH_OVERRIDE).expanduser()
+    if _AUTH_OVERRIDE
+    else Path.home() / ".langslice" / "openai_auth.json"
+)
 
 #: Routing model for image generation; the image itself is always rendered by
 #: ``gpt-image-2`` server-side.
@@ -176,25 +184,6 @@ def creds_from_doc(doc: dict[str, Any], source: str) -> Creds:
     )
 
 
-def _try_keyring() -> Creds | None:
-    """Best-effort read of the Codex CLI's OS-keyring credential."""
-    try:
-        import keyring  # type: ignore[import-untyped]
-    except Exception:
-        return None
-    codex_home = os.path.realpath(str(Path.home() / ".codex"))
-    key = "cli|" + hashlib.sha256(codex_home.encode()).hexdigest()[:16]
-    try:
-        secret = keyring.get_password("Codex Auth", key)
-    except Exception:
-        return None
-    if not secret:
-        return None
-    try:
-        return creds_from_doc(json.loads(secret), source="keyring")
-    except Exception:
-        return None
-
 
 def _write_creds(creds: Creds) -> None:
     """Persist tokens to :data:`CREDENTIALS_PATH` with owner-only permissions."""
@@ -249,24 +238,17 @@ def refresh(creds: Creds) -> Creds:
 def load_credentials() -> Creds:
     """Load subscription credentials, refreshing when near expiry.
 
-    Search order: ``~/.langslice/openai_auth.json``, the Codex CLI's
-    ``~/.codex/auth.json``, then the Codex keyring entry.
+    Reads only :data:`CREDENTIALS_PATH`.
     """
-    creds: Creds | None = None
-    for path in (CREDENTIALS_PATH, _CODEX_AUTH):
-        if path.exists():
-            try:
-                creds = creds_from_doc(json.loads(path.read_text()), source=str(path))
-                break
-            except Exception:
-                continue
-    if creds is None:
-        creds = _try_keyring()
-    if creds is None:
+    try:
+        creds = creds_from_doc(
+            json.loads(CREDENTIALS_PATH.read_text()), source=str(CREDENTIALS_PATH)
+        )
+    except (OSError, ValueError) as exc:
         raise RuntimeError(
             "No ChatGPT-subscription credentials found. Run `langslice login` "
-            f"(writes {CREDENTIALS_PATH}) or `codex login`, then retry."
-        )
+            f"(writes {CREDENTIALS_PATH}), then retry."
+        ) from exc
 
     expiry = _token_expiry(creds.access_token)
     if expiry is not None and expiry <= time.time() + REFRESH_SKEW_S:

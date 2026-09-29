@@ -117,7 +117,6 @@ def test_load_credentials_prefers_our_file_and_refreshes_when_expired(tmp_path, 
     expired = _fake_jwt({"exp": 0})
     creds_path.write_text(json.dumps({"tokens": {"access_token": expired, "refresh_token": "R"}}))
     monkeypatch.setattr(chatgpt, "CREDENTIALS_PATH", creds_path)
-    monkeypatch.setattr(chatgpt, "_CODEX_AUTH", tmp_path / "missing.json")
     monkeypatch.setattr(chatgpt, "refresh", lambda creds: chatgpt.Creds("FRESH"))
 
     assert chatgpt.load_credentials().access_token == "FRESH"
@@ -125,8 +124,6 @@ def test_load_credentials_prefers_our_file_and_refreshes_when_expired(tmp_path, 
 
 def test_load_credentials_without_any_source_is_actionable(tmp_path, monkeypatch):
     monkeypatch.setattr(chatgpt, "CREDENTIALS_PATH", tmp_path / "none.json")
-    monkeypatch.setattr(chatgpt, "_CODEX_AUTH", tmp_path / "also-none.json")
-    monkeypatch.setattr(chatgpt, "_try_keyring", lambda: None)
 
     with pytest.raises(RuntimeError, match="langslice login"):
         chatgpt.load_credentials()

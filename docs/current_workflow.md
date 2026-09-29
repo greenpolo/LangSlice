@@ -253,8 +253,11 @@ langslice login
 
 Runs the OAuth (PKCE) "Sign in with ChatGPT" flow in a browser, with a callback
 on `localhost:1455`, and writes the token to `~/.langslice/openai_auth.json`
-(mode 600). Access tokens are refreshed automatically; an existing Codex CLI
-login (`~/.codex/auth.json` or its keyring entry) is used as a fallback.
+(mode 600). Access tokens are refreshed automatically. This file is the only
+one read: a Codex CLI or Codex app login is never used, so the two keep separate
+accounts.
+To use a second account for one process, set `LANGSLICE_OPENAI_AUTH` to another
+file for both `langslice login` and the run; only that file is then read.
 
 Once signed in, no API key is needed for either model surface:
 

@@ -167,11 +167,21 @@ def describe_blocks(blocks: list[ContentBlock]) -> list[dict[str, Any]]:
 # --- the job ---------------------------------------------------------------
 
 
-def open_job(spec: JobSpec, atlas_loader: Callable[[str], Any] | None = None) -> Job:
-    """Open *spec*'s folder the way the engine does, without a model."""
+def open_job(
+    spec: JobSpec,
+    atlas_loader: Callable[[str], Any] | None = None,
+    checkpoint_path: str | None = None,
+) -> Job:
+    """Open *spec*'s folder the way the engine does, without a model.
+
+    *checkpoint_path* moves the checkpoint (and the resume point) out of the
+    image folder, into a saved job's own directory.
+    """
     if spec.has("nonlinear"):
         raise ValueError("Image generation is unavailable through the Claude connector")
     ctx = build_context(spec, atlas_loader=atlas_loader)
+    if checkpoint_path is not None:
+        ctx.checkpoint_path = checkpoint_path
     state = load_checkpoint(ctx.checkpoint_path) if spec.resume else None
     if state is not None:
         ctx.progress(f"[ingest] resuming from {ctx.checkpoint_path}")
@@ -246,12 +256,14 @@ def briefing(job: Job) -> list[ContentBlock]:
     if not job.pages:
         job.pages = opening_pages(job)
     return [TextContent(type="text", text=job_statement(
-        job.spec, job.state, job.ctx, len(job.pages), job.notes,
+        job.spec, job.state, job.ctx, len(job.pages), job.notes, job.box.names,
     ))]
 
 
 def open_saved_job(job_id: str, atlas_loader: Callable[[str], Any] | None) -> Job:
     folder, record = load_job(job_id)
+    if record["kind"] == "folder":
+        return open_folder_job(job_id, folder, record, atlas_loader)
     prepared = prepare_linear(record["params"])
     if prepared.spec.has("nonlinear"):
         raise ValueError("Image generation is unavailable in Claude mode")
@@ -267,6 +279,25 @@ def open_saved_job(job_id: str, atlas_loader: Callable[[str], Any] | None) -> Jo
     job.channel = HostChannel(job_id, record.get("host_channel"))
     job.checkpoint = checkpoint_callback(prepared, job.channel.event)
     job.checkpoint(job.state)
+    return job
+
+
+def open_folder_job(
+    job_id: str, folder: Path, record: dict[str, Any],
+    atlas_loader: Callable[[str], Any] | None,
+) -> Job:
+    """A plain-folder job: its checkpoint and results live in the job directory.
+
+    Reopening it (a restarted server, a new chat) resumes from that checkpoint.
+    """
+    spec = JobSpec.from_dict(record["spec"])
+    spec.resume = True
+    spec.out = str(folder / "linear_results.json")
+    job = open_job(spec, atlas_loader, checkpoint_path=str(folder / "linear_state.json"))
+    job.job_id, job.job_dir = job_id, folder
+    job.notes = record.get("notes", "")
+    if record.get("trace_dir"):
+        job.trace = McpTrace(record["trace_dir"], job.ctx.image_folder)
     return job
 
 
@@ -338,12 +369,15 @@ def build_server(
     spec_for: Callable[[str], JobSpec],
     folder: str | None = None,
     *,
+    job_id: str | None = None,
     atlas_loader: Callable[[str], Any] | None = None,
 ) -> FastMCP:
     """The server. *spec_for* turns a folder into this server's job spec.
 
     With *folder*, that job opens now and its tools are listed from the
     start; otherwise ``start_job`` names the folder and the tools appear then.
+    *job_id* opens that saved job now, for hosts that list tools only once, at
+    startup (Claude Code in print mode ignores a later tool-list change).
     *atlas_loader* is for tests and offline hosts, as in the engine.
     """
     server = FastMCP(SERVER_NAME, instructions=INSTRUCTIONS)
@@ -381,7 +415,7 @@ def build_server(
     async def start_job(
         image_folder: str = "", job_id: str = "", ctx: Context | None = None,
     ) -> list[ContentBlock]:
-        """Open a saved ABBA job by job_id, or a development image_folder.
+        """Open a saved LangSlice job by job_id, or a development image_folder.
 
         Returns the job facts and status table without images. Read every
         show_stack page before writing. Omit both arguments to repeat the
@@ -413,12 +447,16 @@ def build_server(
         return blocks
 
     server.add_tool(start_job, structured_output=False)
-    if folder is not None:
+    if job_id:
+        install(open_saved_job(job_id, atlas_loader))
+    elif folder is not None:
         install(open_job(spec_for(os.path.abspath(os.path.expanduser(folder))), atlas_loader))
     return server
 
 
-def serve(spec_for: Callable[[str], JobSpec], folder: str | None = None) -> None:
+def serve(
+    spec_for: Callable[[str], JobSpec], folder: str | None = None, job_id: str | None = None,
+) -> None:
     """Run the server over stdio until the host disconnects.
 
     Scientific libraries print through Python and native stdout alike, so
@@ -430,7 +468,7 @@ def serve(spec_for: Callable[[str], JobSpec], folder: str | None = None) -> None
     wire = os.fdopen(os.dup(sys.stdout.fileno()), "wb", buffering=0)
     os.dup2(sys.stderr.fileno(), sys.stdout.fileno())
     with redirect_stdout(sys.stderr):
-        server = build_server(spec_for, folder)
+        server = build_server(spec_for, folder, job_id=job_id)
         anyio.run(_run_stdio, server, wire)
 
 

@@ -40,7 +40,6 @@ from langslice.image_prep import (
     adaptive_preprocess,
     crop_to_tissue,
     foreground_mask,
-    normalize_image,
     prepare_image_for_vlm,
 )
 from langslice.linear.state import SliceState, StackState
@@ -144,16 +143,19 @@ def render_cache_key(
 
 
 def atlas_native_long_edge(
-    ctx: EngineContext, record: SliceState, source: Image.Image, cap: int
+    ctx: EngineContext, record: SliceState, source: Image.Image, cap: int,
+    file_px_per_px: float = 1.0,
 ) -> int:
     """The long edge that puts *source* at the atlas's own resolution, capped.
 
     :func:`langslice.atlas.render.model_long_edge` with the section's own
-    calibration; without one *cap* stands.
+    calibration; without one *cap* stands. *file_px_per_px* is how many file
+    pixels one *source* pixel spans (a working copy is smaller than the file).
     """
     um_per_px, _ = ctx.calibration(record.id)
     return model_long_edge(
-        source.size, um_per_px or None, ctx.atlas, cap=cap, scale=shown_scale(ctx)
+        source.size, um_per_px * file_px_per_px if um_per_px else None, ctx.atlas,
+        cap=cap, scale=shown_scale(ctx),
     )
 
 
@@ -186,20 +188,18 @@ def render_slice(
     if cached is not None:
         return cached
 
-    with Image.open(ctx.image_path(record.id)) as handle:
-        # Detach from the file handle: prepare_image_for_vlm can hand back the
-        # very object it was given when no resize is needed.
-        source = normalize_image(handle.copy())
+    # The working copy, not the file: a whole-slide scan is read once, small.
+    source, file_px_per_px = ctx.working_source(record.id)
     if frame:
         source = crop_to_tissue(source)
     # The atlas-resolution cap applies to the SHOW path only: a fit's
     # parameters are normalized against the render they were computed on.
     if frame:
-        long_edge = atlas_native_long_edge(ctx, record, source, long_edge)
+        long_edge = atlas_native_long_edge(ctx, record, source, long_edge, file_px_per_px)
     prepped = prepare_image_for_vlm(source, max_long_edge=long_edge).image
-    # How much the render shrank the pixels, before any quarter-turn: the
-    # section's own micrometres per pixel times this is the canvas's.
-    ctx.render_scale[key] = source.width / float(prepped.width)
+    # How many FILE pixels one render pixel spans, before any quarter-turn:
+    # the section's own micrometres per pixel times this is the canvas's.
+    ctx.render_scale[key] = file_px_per_px * source.width / float(prepped.width)
     if ctx.spec.preprocess == "auto":
         prepped = adaptive_preprocess(prepped)
     rotate = _ROTATE_OPS.get(int(record.rotation_deg) % 360)

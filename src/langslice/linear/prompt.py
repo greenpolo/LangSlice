@@ -85,9 +85,9 @@ TOOL_LINES: dict[str, str] = {
     "Results map their images with zero-based image_indexes. Each section may "
     "appear once; inspect before a dependent correction in a later call. "
     "This replaces the complete transform, including any spline or shear.",
-    "correct_slice_borders": "uses the fixed image-model border-correction prompt "
-    "on one section's existing linear placement, with optional additional_notes "
-    "for that slice. The image call runs in the background and the tool returns "
+    "correct_slice_borders": "runs the image-model border-correction prompt on one "
+    "section's existing linear placement, with your edited copy of the prompt "
+    "for that section. The image call runs in the background and the tool returns "
     "at once; the result is saved for the user and checked at submit, which waits "
     "for running calls. The first result at each placement is saved and reused. "
     "This records an annotation; it does not fit or change the transform.",
@@ -139,10 +139,7 @@ def build_job_statement(
     """
     jobs: list[str] = []
     if spec.has("reorder"):
-        jobs.append(
-            "put the stack in the order the sections were cut and correct the "
-            "orientation of any section that is mirrored or turned"
-        )
+        jobs.append("put the stack in the order the sections were cut")
     if spec.has("position"):
         jobs.append(
             "give every section its own position in millimetres along the "
@@ -152,7 +149,11 @@ def build_job_statement(
             "genuinely broken"
         )
     if spec.has("transform"):
-        jobs.append("give every section one in-plane transform onto its atlas section")
+        turned = "mirrored or turned" if spec.transform.flip else "turned"
+        jobs.append(
+            "give every section one in-plane transform onto its atlas section, "
+            f"correcting the orientation of any section that is {turned}"
+        )
     if spec.has("nonlinear"):
         jobs.append("use the image model to correct every section's placed atlas borders")
     job = "; ".join(jobs) if jobs else "review the stack"
@@ -222,13 +223,9 @@ def build_job_statement(
     if spec.has("nonlinear"):
         constraints.append(
             "- Image correction requires a position and an existing linear transform. "
-            "Additional notes supplement the fixed correction prompt; no replacement "
-            "prompt or anatomical rejection step is available."
-        )
-        constraints.append(
-            "- Check each sentence of additional_notes against the fixed correction task: "
-            "describe this slice's displacement, damage or artifacts without selecting "
-            "a different set of atlas borders or omitting regions merely because they are faint."
+            "Edit the base image prompt below for each section: its format is good and "
+            "tested, so make small changes or add a special instruction for that "
+            "particular section."
         )
         constraints.append(
             "- `submit` requires a completed image correction for every section at "
@@ -306,8 +303,8 @@ def build_job_statement(
         from langslice.space import Plane
 
         image_task = [
-            "", "Fixed image-model task (image numbers refer to the tool's attachments):",
-            correction_instructions(cast(Plane, state.plane)),
+            "", "Base image-model prompt (image numbers refer to the tool's attachments):",
+            correction_instructions(cast(Plane, state.plane), spec.nonlinear.provider),
         ]
 
     return "\n".join(
@@ -379,22 +376,24 @@ def run_facts(
     if locked:
         facts.append(
             "- In-plane alignment of these sections was already done by the "
-            "user, so their flip, rotation and transform are locked and count "
+            "user, so their orientation and transform are locked and count "
             f"as done: {', '.join(locked)}."
             + (" Their positions can still be changed." if spec.has("position") else "")
         )
     if not spec.has("reorder"):
-        facts.append("- The order and orientation shown are fixed for this run.")
-    elif not spec.reorder.flip:
-        facts.append("- Flipping sections is switched off for this run.")
+        facts.append("- The order shown is fixed for this run.")
     if not spec.has("position"):
         facts.append("- The positions shown are given; this run does not change them.")
     if not spec.has("transform"):
         facts.append(
-            "- Existing linear transforms are supplied and fixed for this run."
-            if spec.has("nonlinear") else "- Transforms are not part of this run."
+            "- Existing linear transforms are supplied and fixed for this run, "
+            "orientation included."
+            if spec.has("nonlinear")
+            else "- The orientation shown is fixed; transforms are not part of this run."
         )
     else:
+        if not spec.transform.flip:
+            facts.append("- Flipping sections is switched off for this run.")
         # The alignment frame, as facts: these lived in the deleted
         # sub-session prompt and the fold-in dropped them.
         facts.append(
@@ -414,8 +413,10 @@ def run_facts(
                 f"- Each transform tool call takes at most {cap} "
                 f"section{'s' if cap != 1 else ''}."
             )
-    cue = spec.reorder.hemisphere_cue.strip()
-    if cue:
+    # Mirroring belongs to in-plane alignment: the cue is shown only where the
+    # agent can flip, never in a positioning-only run.
+    cue = spec.transform.hemisphere_cue.strip()
+    if cue and spec.has("transform") and spec.transform.flip:
         facts.append(f"- What marks a hemisphere, from the user: {cue}")
     facts.extend(f"- {fact.strip()}" for fact in spec.facts if str(fact).strip())
 

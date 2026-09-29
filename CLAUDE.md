@@ -138,7 +138,12 @@ Shared, top-level:
   fragment or a speck elsewhere on the slide cannot widen the box.
   `host_preprocess` blends a host's multi-page snapshot (one page per channel)
   into the one grayscale image the agent sees; the worker's `preprocess.preview`
-  writes that same image for the host's preview
+  writes that same image for the host's preview. `read_working_image` gives
+  each section file's small working copy (the smallest TIFF pyramid level of
+  at least 1536 px, a JPEG draft decode, otherwise one downsample to 3072 px);
+  the linear renders are drawn from it (`EngineContext.working_source`) and
+  count file pixels through its scale, so a whole-slide scan is never decoded
+  at full size
 - `providers/` — model ACCESS methods, never task logic. `registry.py` is
   the taxonomy: canonical names pair vendor with auth — `gemini-api` (Google
   API key, `vlm_config.py`), `openai-api` (API key / endpoint,
@@ -189,7 +194,9 @@ program. Code that runs in LangSlice's own environment lives in
 - `connectors/claude-desktop/` — host configuration for `langslice mcp`
   (`src/langslice/mcp_server/`). This is the linear toolbox served over MCP to
   a host that brings its own model: Claude Desktop, or Claude Code locked to
-  this one server. ABBA's Claude mode copies a saved-job prompt; `start_job`
+  this one server. ABBA's Claude mode copies a saved-job prompt, and without a
+  host `langslice claude prepare FOLDER` saves the same kind of job (checkpoint
+  in the job directory, resumed on reopen) and prints the prompt; `start_job`
   returns a Claude-specific statement and status table, and `show_stack` pages
   deliver the opening images. Authenticated localhost events update ABBA live;
   checkpoints/results remain in `~/.langslice/jobs/<id>/` after disconnection.

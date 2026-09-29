@@ -132,3 +132,22 @@ def test_compact_rows_drops_null_and_empty_fields_only():
     ]
     assert compact_rows(rows) == [{"index": 0, "id": "a", "flip": False, "transform_iou": 0.0}]
     assert rows[0]["position_mm"] is None  # the input is not mutated
+
+
+def test_render_scale_counts_file_pixels_through_the_working_copy(tmp_path: Path):
+    """A large file is rendered from a smaller working copy; the recorded scale
+    (and so the canvas calibration) still counts pixels of the FILE."""
+    from langslice.image_prep import WORKING_MAX_EDGE
+    from langslice.linear.render import render_cache_key
+
+    width = WORKING_MAX_EDGE * 2
+    Image.fromarray(np.full((width // 2, width, 3), 90, dtype=np.uint8)).save(tmp_path / "big.png")
+    spec = JobSpec(image_folder=str(tmp_path), model="fake-model", preprocess="none")
+    ctx = build_context(spec, emit=lambda _m: None, atlas_loader=lambda _n: _ATLAS)
+    record = ingest(spec, ctx).slices[0]
+
+    render = render_slice(ctx, record, long_edge=512)
+    assert ctx.working_source(record.id)[0].width == WORKING_MAX_EDGE
+    key = render_cache_key(ctx, record, long_edge=512, frame=False)
+    assert render.width == 512
+    assert abs(ctx.render_scale[key] - width / 512) < 1e-9

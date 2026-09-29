@@ -33,24 +33,23 @@ def validate_channel(value: Any) -> dict[str, Any] | None:
 
 
 def copy_prompt(job_id: str, spec: Any, notes: str) -> str:
-    labels = {"reorder": "section order and orientation", "position": "Positioning",
-              "transform": "Linear alignment"}
+    labels = {"reorder": "section order", "position": "positioning",
+              "transform": "linear alignment"}
     selected = ", ".join(labels[task] for task in spec.tasks)
     lines = [f"Use the LangSlice connector for job {job_id}.",
              f'Call start_job(job_id="{job_id}") first.',
              f"Selected tasks: {selected}; atlas: {spec.atlas}; plane: {spec.plane}.",
-             "The saved job enforces the dialog settings; "
-             "use only LangSlice tools and finish with submit."]
+             "Use only the LangSlice tools and finish with submit."]
     if spec.has("position"):
         lines.append(
             f"Positioning: section thickness {spec.position.thickness_um:g} µm, "
-            f"interval {spec.position.interval_um:g} µm; "
-            f"hemisphere flipping {'enabled' if spec.reorder.flip else 'disabled'}."
+            f"interval {spec.position.interval_um:g} µm."
         )
     if spec.has("transform"):
         lines.append(
             f"Linear: automatic affine {'enabled' if spec.transform.automatic else 'disabled'}, "
-            f"up to {spec.transform.max_parallel} sections per interactive adjustment."
+            f"up to {spec.transform.max_parallel} sections per interactive adjustment; "
+            f"hemisphere flipping {'enabled' if spec.reorder.flip else 'disabled'}."
         )
     inputs = spec.inputs or {}
     if inputs.get("locked"):
@@ -78,18 +77,52 @@ def prepare_claude(params: dict[str, Any]) -> dict[str, Any]:
     prepared = prepare_linear(run_params)
     if prepared.spec.has("nonlinear"):
         raise ValueError("Image generation is unavailable in Claude mode")
+    job_id, folder = _write_job(
+        {"kind": "host", "params": run_params, "notes": notes, "host_channel": channel}
+    )
+    return {"job_id": job_id, "job_dir": str(folder),
+            "prompt": _save_prompt(folder, copy_prompt(job_id, prepared.spec, notes))}
+
+
+def prepare_folder(spec: Any, notes: str = "", trace_dir: str | None = None) -> dict[str, Any]:
+    """A saved job for a plain folder of sections: the CLI's Copy prompt.
+
+    No host and no live channel. The server resumes it from its own
+    checkpoint in the job directory, so the user's folder is never written.
+    """
+    from langslice.linear.discovery import discover_slices
+
+    if spec.has("nonlinear"):
+        raise ValueError("Image generation is unavailable in Claude mode")
+    folder = Path(spec.image_folder).expanduser().resolve(strict=True)
+    if not discover_slices(str(folder)):
+        raise ValueError(f"No section images found in {folder}")
+    spec.image_folder = str(folder)
+    job_id, job_dir = _write_job(
+        {"kind": "folder", "spec": spec.to_dict(), "notes": notes, "host_channel": None,
+         "trace_dir": str(Path(trace_dir).expanduser().resolve()) if trace_dir else None}
+    )
+    return {"job_id": job_id, "job_dir": str(job_dir),
+            "prompt": _save_prompt(job_dir, copy_prompt(job_id, spec, notes))}
+
+
+def _save_prompt(folder: Path, prompt: str) -> str:
+    """Keep the prompt beside the job, so it can be copied (or run) again."""
+    (folder / "prompt.txt").write_text(prompt + "\n", encoding="utf-8")
+    return prompt
+
+
+def _write_job(fields: dict[str, Any]) -> tuple[str, Path]:
     job_id = uuid.uuid4().hex[:12]
     folder = jobs_root() / job_id
     folder.mkdir(mode=0o700, parents=True)
     record = {"format_version": FORMAT_VERSION, "job_id": job_id,
-              "created_at": datetime.now(timezone.utc).isoformat(),
-              "params": run_params, "notes": notes, "host_channel": channel}
+              "created_at": datetime.now(timezone.utc).isoformat(), **fields}
     path = folder / "job.json"
     with path.open("x", encoding="utf-8") as handle:
         path.chmod(0o600)
         json.dump(record, handle, indent=2)
-    return {"job_id": job_id, "job_dir": str(folder),
-            "prompt": copy_prompt(job_id, prepared.spec, notes)}
+    return job_id, folder
 
 
 def load_job(job_id: str) -> tuple[Path, dict[str, Any]]:
@@ -100,4 +133,7 @@ def load_job(job_id: str) -> tuple[Path, dict[str, Any]]:
     if record.get("format_version") != FORMAT_VERSION or record.get("job_id") != job_id:
         raise ValueError("Unsupported or mismatched LangSlice job file")
     validate_channel(record.get("host_channel"))
+    record.setdefault("kind", "host")
+    if record["kind"] not in ("host", "folder"):
+        raise ValueError(f"Unknown LangSlice job kind {record['kind']!r}")
     return folder, record

@@ -1,31 +1,33 @@
-"""Claude's concise job statement, separate from the ADK model's method."""
+"""Claude's job statement: the ADK agent's, plus how the opening pictures arrive."""
 from __future__ import annotations
 
 from langslice.linear.engine import EngineContext
-from langslice.linear.prompt import run_facts, task_notes
+from langslice.linear.prompt import build_job_statement
 from langslice.linear.render import status_text
 from langslice.linear.spec import JobSpec
 from langslice.linear.state import StackState
 
 
 def job_statement(spec: JobSpec, state: StackState, ctx: EngineContext, pages: int,
-                  notes: str = "") -> str:
+                  notes: str = "", tool_names: list[str] | None = None) -> str:
+    """The same job, facts, tools, constraints and method the ADK agent is given.
+
+    Only the delivery differs: the ADK agent's seed message carries the opening
+    pictures, while here they arrive through ``show_stack`` pages.
+    """
     low, high = ctx.position_range
-    labels = {"reorder": "correct section order and orientation",
-              "position": "position every section in the atlas",
-              "transform": "align every unlocked section in-plane"}
-    lines = ["Register this histology stack against its reference atlas.",
-             "Selected work: " + "; ".join(labels[task] for task in spec.tasks) + ".",
-             "Work only through the LangSlice tools and finish with submit.",
-             "Read every opening-picture page with show_stack(page=1) through "
-             f"show_stack(page={pages}) before any write.",
-             "The last page is the atlas reference strip; preceding pages show individually "
-             "labelled sections in corrected order.",
-             "Run facts:",
-             *run_facts(spec, state, species=ctx.species, pos_lo=low, pos_hi=high,
-                        axis_ends=ctx.axis_ends),
-             *task_notes(spec)]
+    lines = [
+        build_job_statement(
+            spec, state, tool_names=tool_names or [], species=ctx.species,
+            pos_lo=low, pos_hi=high, axis_ends=ctx.axis_ends,
+        ),
+        "",
+        "Opening pictures: read every page with show_stack(page=1) through "
+        f"show_stack(page={pages}) before any write. The last page is the atlas "
+        "reference strip; the pages before it show every section, individually "
+        "labelled, in the stack's current order.",
+    ]
     if notes.strip():
-        lines.extend(["User notes:", notes])
-    lines.extend(["Status table:", status_text(state)])
+        lines.extend(["", "User notes:", notes])
+    lines.extend(["", "Status table:", status_text(state)])
     return "\n".join(lines)

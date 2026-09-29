@@ -34,9 +34,8 @@ JobSpec
                                 # display only, fits and stored transforms unchanged
   agent_damage: bool = True     # build mark_damaged; host flags can never be cleared
   tasks: subset of {reorder, position, transform, nonlinear} # default: first three
-  reorder:
-    flip: bool = True             # may flip sections across the midline
-    hemisphere_cue: str = ""      # user text: what marks a hemisphere (notch, injection...)
+  reorder:                        # the order only; reorder.flip / reorder.hemisphere_cue
+                                  # are accepted as aliases of the transform fields
   position:
     thickness_um, interval_um     # cutting protocol; passed as facts
     strict_interval: bool = False # sections must sit exactly one interval apart
@@ -44,6 +43,8 @@ JobSpec
     bayesian: bool = False        # fit_position tool available (oblique.py fitter)
     notes: str = ""               # user notes, shown under this task in the job statement
   transform:
+    flip: bool = True             # may mirror sections left-right (orient_slices)
+    hemisphere_cue: str = ""      # user text: what marks a hemisphere (notch, injection...)
     interactive: bool = True      # direct visual affine adjustments
     automatic: bool = True        # automatic affine fitting tool
     angles: bool = False          # may set the stack-wide cutting angles
@@ -57,6 +58,19 @@ JobSpec
           plus pixel_size_um, damaged {id: note} (flags the agent cannot clear) and
           locked [ids] (flip, rotation and transform the agent cannot change)
 ```
+
+**A mirror is a linear transform (2026-09-29).** A left-right mirror is the
+sign of the in-plane affine (a negative determinant): a host's own alignment
+(ABBA) carries it inside the transform, and a left-right symmetric brain
+gives positioning nothing to see it by. Flip and quarter-turn therefore
+belong to the `transform` task: `orient_slices` is built only when
+`transform` is on, and a positioning-only run (`reorder` + `position`) has
+no flip tool and its job statement never mentions mirroring or the
+hemisphere cue. A host transform in `inputs.transforms` may be mirrored; it
+is kept exactly as supplied (the section's own `flip` stays false), counts
+at submit, and reaches the nonlinear handoff unchanged. The silhouette fit
+never reflects, so an agent that refits such a section expresses the mirror
+with `orient_slices` instead.
 
 Task notes are rendered right after the job line, each under its task's name,
 only when that task is on and the note is non-empty; `facts` stay in the run
@@ -73,7 +87,8 @@ numbers are the same at every setting.
 
 Task OFF means its outputs are inputs: reorder off → discovery order is fixed;
 position off → positions come from the host and are facts; transform off →
-no transform tools, with existing transforms supplied by the host or checkpoint.
+no transform or orientation tools, with existing orientations and transforms
+supplied by the host or checkpoint.
 
 ## State
 
@@ -107,6 +122,10 @@ SliceState
 Order and position are separate fields that must agree at submit. Reordering
 touches ONLY `index_corrected` — positions and transforms are kept — and
 `submit` refuses positions that are not monotone along the corrected order.
+Direction is never the agent's concern: a stack cut posterior-first yields
+the same sections as one cut anterior-first, so at submit the code reverses a
+descending stack (`normalize_to_atlas_order`) and the emitted corrected order
+always runs the atlas way, positions increasing from the atlas origin end.
 The gate is the whole of the rule: clearing positions on a reorder cost the
 agent its work and forced it to re-enter numbers it still believed.
 Standalone reorder therefore outputs a permutation; unified runs output
@@ -131,7 +150,7 @@ in any payload or prompt (see `lean-harness` history in `linear/CLAUDE.md`).
 | `fetch_atlas(positions_mm)` | always | up to 4 atlas sections, rendered at the current cutting angles, each captioned with its position (and the angles when oblique). |
 | `note(text)` | always | append to the run notes. |
 | `undo()` / `redo()` | always | snapshot stack; a batch call undoes as one. |
-| `orient_slices([{id, flip?, rotate_deg?}])` | reorder.flip (flip) / reorder (rotate) | toggle flip, add rotation; returns each changed section rendered as it now stands (≤8). |
+| `orient_slices([{id, flip?, rotate_deg?}])` | transform (rotate) / transform.flip (flip) | set flip and rotation; an orientation change clears the section's transform; returns each changed section rendered as it now stands (≤4). |
 | `reorder_slices(new_order, after="start")` | reorder | move the listed filenames as a block, in the listed order, after a named section or at the start. One filename moves one slice; the full list sets the whole order. Unlisted sections keep their relative order. Corrected indices only; positions and transforms are kept. One undo step. |
 | `mark_damaged([{id, damaged?, note?}])` | agent_damage (default on) | set damage (default True), or clear with damaged=False; clearing also removes the note. A flag the host set (`inputs.damaged`) is never cleared (`DAMAGE_SET_BY_USER`). |
 | `set_positions([{id, position_mm}])` | position | batch write, clamped to the atlas range; returns a placement image only when that exact section, position, orientation and cutting-angle combination has not already reached the model in a full-canvas atlas-bearing view. A compare and write planned in the same model round both return their images. |
@@ -153,8 +172,8 @@ The image a fit MEASURES is never captioned — only what is shown. Seed
 message: every section as its own labelled image in corrected order plus the
 status table.
 
-The default full-task toolbox contains 15 tools (9 for interactive-only
-transform refinement).
+The default full-task toolbox contains 15 tools (10 for interactive-only
+transform refinement, `orient_slices` included).
 
 ## Submit gates (constraints, not coaching)
 

@@ -35,11 +35,11 @@ tools and takes its answer from the host. Nothing else is user-facing.
 ## 1. Positioning (absorbs reorder)
 
 Ordering and positioning are one act once positions exist; reorder stays an
-internal capability (order plus flip), not a user-facing task.
+internal capability (the order only), not a user-facing task. Flipping moved
+to Linear on 2026-09-29 (below).
 
 | Control | On main |
 | --- | --- |
-| Enable hemisphere flipping, with optional text describing the hemisphere cue | `reorder.flip`, `reorder.hemisphere_cue` |
 | Slice thickness (may be provided by the host) | `position.thickness_um` |
 | Slicing interval (ABBA often provides it) | `position.interval_um` |
 | Enable DeepSlice tool (TODO; coronal mouse/rat only) | `position.deepslice` |
@@ -58,13 +58,24 @@ internal, never user-facing).
 
 | Control | On main |
 | --- | --- |
+| Enable hemisphere flipping, with optional text describing the hemisphere cue (moved here from Positioning, 2026-09-29) | `transform.flip`, `transform.hemisphere_cue` (`reorder.flip` / `reorder.hemisphere_cue` still accepted as aliases); `orient_slices` is built with the transform task |
 | Enable affine tool. Off: every transform is X/Y movement and scaling by the agent | `transform.automatic` (+ `transform.elastix` for the intensity affine) |
 | Max parallel slice transforms, 1 to 4. 1 = one section per call | `transform.max_parallel`; below 4, `fit_affine` and `adjust_transforms` refuse larger calls (at 4, `fit_affine` stays uncapped) |
 | Enable slice angle estimation (yes/no); later tools: DeepSlice angle, Bayesian optimizer | `transform.angles` builds `set_cutting_angles` (manual only); the Fiji connector still refuses angle changes and shows the box disabled |
 | Extra notes for the agent, attached to this task | `transform.notes` |
 
 The interactive tool is always on. Damaged sections refuse the automatic
-affine and require an applied interactive transform (unchanged). Cutting
+affine and require an applied interactive transform (unchanged).
+
+**A mirror flip is a linear transform** (user decision, 2026-09-29, replacing
+the 2026-09-26 placement under Positioning). A mirror is the sign of the
+in-plane affine (negative determinant); a host's own alignment (ABBA) carries
+it inside the transform; and a left-right symmetric mouse brain gives
+positioning no way to see it. So flip and rotation (`orient_slices`) are
+built with Linear, a positioning-only run never mentions mirroring, and a
+host-supplied transform (`inputs.transforms`) may carry a mirror, which the
+harness keeps as supplied. Flips are scored in the Linear step, not in
+Positioning (SliceBench `mirror_accuracy`). Cutting
 angles are stack-wide and belong here because they change the atlas section
 every transform is fit against.
 
