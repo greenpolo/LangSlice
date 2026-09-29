@@ -245,6 +245,70 @@ HOST_CLAHE_TILE = (8, 8)
 HOST_PREPROCESS_MODES = ("auto", "custom")
 
 
+#: Smallest long edge a section's working copy may have: the largest picture a
+#: run shows, the 768 px overlay at "high". Every render is drawn from the
+#: working copy, so a whole-slide scan is never decoded at full size.
+WORKING_MIN_EDGE = 1536
+#: Largest long edge of a working copy decoded from a file without a usable
+#: pyramid level (it is downsampled once to this).
+WORKING_MAX_EDGE = 3072
+
+
+def read_working_image(
+    path: str | Path, min_edge: int = WORKING_MIN_EDGE, max_edge: int = WORKING_MAX_EDGE,
+) -> tuple[Image.Image, float]:
+    """``(8-bit RGB image, file pixels per image pixel)`` for one section file.
+
+    A whole-slide scan is read at its smallest pyramid level still at least
+    *min_edge* long (tifffile), a JPEG through PIL's draft decode; whatever
+    is still longer than *max_edge* is downsampled to it. The image is what
+    :func:`normalize_image` gives for the file, only smaller: callers that
+    measure in file pixels multiply by the returned factor.
+    """
+    image: Image.Image | None = None
+    full_width = 0
+    if Path(path).suffix.lower() in (".tif", ".tiff"):
+        image, full_width = _read_tiff_level(path, min_edge)
+    if image is None:
+        with Image.open(path) as handle:
+            full_width = handle.size[0]
+            if handle.format == "JPEG":
+                handle.draft("RGB", (max_edge, max_edge))
+            image = normalize_image(handle.copy())
+    if max(image.size) > max_edge:
+        scale = max_edge / float(max(image.size))
+        size = (max(1, round(image.width * scale)), max(1, round(image.height * scale)))
+        image = image.resize(size, _RESAMPLE_LANCZOS, reducing_gap=3.0)
+    return image, full_width / float(image.width)
+
+
+def _read_tiff_level(path: str | Path, min_edge: int) -> tuple[Image.Image | None, int]:
+    """The smallest plain YX / YXS pyramid level at least *min_edge* long.
+
+    ``(None, 0)`` for anything else (multi-channel planes, odd layouts): the
+    caller falls back to PIL, which reads the first page as before.
+    """
+    import tifffile
+
+    with tifffile.TiffFile(path) as handle:
+        if not handle.series:
+            return None, 0
+        series = handle.series[0]
+        axes = series.axes
+        if axes not in ("YX", "YXS") or series.dtype not in (np.uint8, np.uint16):
+            return None, 0
+        levels = list(series.levels)
+        full_width = int(levels[0].shape[1])
+        chosen = levels[0]
+        for level in levels[1:]:
+            if max(level.shape[0], level.shape[1]) >= min_edge:
+                chosen = level
+        array = np.asarray(chosen.asarray())
+    if array.ndim == 3 and array.shape[-1] not in (3, 4):
+        return None, 0
+    return _page_image(array), full_width
+
+
 def read_pages(path: str | Path) -> list[np.ndarray]:
     """Every page of an image file, first page first.
 

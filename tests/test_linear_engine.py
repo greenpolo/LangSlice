@@ -93,6 +93,31 @@ def test_host_inputs_set_the_order_positions_and_angles(tmp_path: Path):
     assert state.cutting_angles_deg == {"pitch": 2.5, "yaw": -1.0}
 
 
+def test_a_mirrored_host_transform_is_accepted_and_kept(tmp_path: Path):
+    # A host's own alignment (ABBA) carries a flip inside its affine: a
+    # negative determinant. The harness keeps it as supplied.
+    from langslice.linear.toolbox import submit_errors
+
+    names = _make_stack(tmp_path, n=2)
+    mirrored = {"kind": "host", "params": [-1.0, 0.0, 1.0, 0.0, 1.0, 0.0], "mirrored": True}
+    plain = {"kind": "host", "params": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0]}
+    spec = _spec(
+        tmp_path,
+        tasks=["transform"],
+        inputs={
+            "positions": {names[0]: 2.0, names[1]: 2.5},
+            "transforms": {names[0]: mirrored, names[1]: plain},
+        },
+    )
+    state = ingest(spec, _ctx(spec))
+    apply_host_inputs(state, spec)
+
+    record = state.by_id(names[0])
+    assert record.transform == mirrored and record.transform is not mirrored
+    assert record.flip is False  # the mirror stays inside the transform
+    assert submit_errors(state, spec, []) is None
+
+
 def test_host_inputs_reject_an_unknown_filename(tmp_path: Path):
     _make_stack(tmp_path, n=2)
     spec = _spec(tmp_path, inputs={"positions": {"ghost.png": 1.0}})
@@ -132,6 +157,38 @@ def test_the_job_statement_lists_only_the_tools_that_exist(tmp_path: Path):
     # atlas-agnostic: no region names, no strategy
     for banned in ("cortex", "hippocampus", "strategy", "tip:", "you should"):
         assert banned not in text.lower()
+
+
+def _statement(spec: JobSpec) -> str:
+    ctx = _ctx(spec)
+    state = ingest(spec, ctx)
+    pos_lo, pos_hi = ctx.position_range
+    return build_job_statement(
+        spec, state, tool_names=build_tools(state, ctx, spec).names, species="mouse",
+        pos_lo=pos_lo, pos_hi=pos_hi, axis_ends=ctx.axis_ends,
+    )
+
+
+def test_mirroring_is_part_of_linear_never_of_positioning(tmp_path: Path):
+    from langslice.linear.spec import TransformSpec
+
+    _make_stack(tmp_path, n=3)
+    cue = TransformSpec(hemisphere_cue="ink on the right")
+    positioning = _statement(_spec(tmp_path, tasks=["reorder", "position"], transform=cue))
+    for word in ("mirror", "flip", "hemisphere", "orient_slices"):
+        assert word not in positioning.lower()
+
+    linear = _statement(_spec(tmp_path, tasks=["transform"], transform=cue))
+    assert "`orient_slices`" in linear
+    assert "orientation of any section that is mirrored or turned" in linear
+    assert "ink on the right" in linear
+
+    no_flip = _statement(_spec(
+        tmp_path, tasks=["transform"],
+        transform=TransformSpec(flip=False, hemisphere_cue="ink on the right"),
+    ))
+    assert "Flipping sections is switched off" in no_flip
+    assert "mirrored or turned" not in no_flip and "ink on the right" not in no_flip
 
 
 # --- end to end ----------------------------------------------------------

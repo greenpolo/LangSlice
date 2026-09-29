@@ -665,6 +665,14 @@ def _build_parser() -> argparse.ArgumentParser:
     # langslice mcp
     _add_mcp_parser(subparsers)
 
+    # langslice claude <cmd> — jobs for the Claude connector
+    claude = subparsers.add_parser(
+        "claude",
+        help="Claude connector: prepare a job to paste into Claude Desktop or Claude Code",
+    )
+    claude_sub = claude.add_subparsers(dest="subcommand", required=True)
+    _add_claude_prepare_parser(claude_sub)
+
     return parser
 
 
@@ -831,6 +839,13 @@ def _add_mcp_parser(subparsers: argparse._SubParsersAction) -> None:
         help="Open this folder at startup. Without it the host names the "
         "folder through the start_job tool",
     )
+    p.add_argument(
+        "--job",
+        default=None,
+        metavar="JOB_ID",
+        help="Open this saved job at startup, so its tools are listed from the "
+        "first request (for hosts that do not follow tool-list changes)",
+    )
     # The same job flags as `linear run`; they apply to every folder this
     # server opens. --model, --reasoning and the budget flags are the host's
     # business here and are ignored.
@@ -847,7 +862,33 @@ def _run_mcp(args: argparse.Namespace) -> None:
         ) from exc
 
     _apply_trace_dir(args)
-    serve(lambda folder: _build_linear_spec(args, folder), args.image_folder)
+    serve(lambda folder: _build_linear_spec(args, folder), args.image_folder, args.job)
+
+
+def _add_claude_prepare_parser(subparsers: argparse._SubParsersAction) -> None:
+    p = subparsers.add_parser(
+        "prepare",
+        help="Save a job for a folder of sections and print the prompt to paste "
+        "into Claude (the command-line Copy prompt)",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    p.add_argument("image_folder", help="Folder containing the section images")
+    p.add_argument(
+        "--notes", default="", metavar="TEXT",
+        help="The user's notes for this job, passed to Claude verbatim",
+    )
+    # The same job flags as `linear run`; --model, --reasoning and the budget
+    # flags belong to LangSlice's own agent and do not reach Claude.
+    _add_linear_arguments(p)
+
+
+def _run_claude_prepare(args: argparse.Namespace) -> None:
+    from langslice.api.claude_jobs import prepare_folder
+
+    spec = _build_linear_spec(args, args.image_folder)
+    job = prepare_folder(spec, args.notes, trace_dir=args.trace_dir)
+    print(f"Saved job {job['job_id']} in {job['job_dir']}", file=sys.stderr)
+    print(job["prompt"])
 
 
 def main(argv: list[str] | None = None):
@@ -886,6 +927,8 @@ def main(argv: list[str] | None = None):
         _run_serve(args)
     elif command == "mcp":
         _run_mcp(args)
+    elif command == "prepare":
+        _run_claude_prepare(args)
     else:
         parser.print_help()
         sys.exit(1)

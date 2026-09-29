@@ -32,11 +32,21 @@ MAX_PARALLEL_TRANSFORMS = 4
 
 @dataclass
 class ReorderSpec:
-    """Knobs of the ``reorder`` task."""
+    """Knobs of the ``reorder`` task (the order only).
 
-    #: The agent may mirror sections across the midline.
+    ``flip`` and ``hemisphere_cue`` moved to :class:`TransformSpec` on
+    2026-09-29: a mirror is the sign of the in-plane affine, so it belongs to
+    the ``transform`` task. The two fields remain here only as aliases for
+    hosts that still fill them: :class:`JobSpec` folds them into
+    ``transform`` (flip off in either place switches it off; a cue given
+    only here is used) and then mirrors the effective values back for
+    readers, and :meth:`JobSpec.to_dict` writes them under ``transform``
+    only.
+    """
+
+    #: Deprecated alias of ``TransformSpec.flip``.
     flip: bool = True
-    #: User text describing what marks a hemisphere (a notch, an injection...).
+    #: Deprecated alias of ``TransformSpec.hemisphere_cue``.
     hemisphere_cue: str = ""
 
 
@@ -73,6 +83,11 @@ class PositionSpec:
 class TransformSpec:
     """Knobs of the ``transform`` task."""
 
+    #: The agent may mirror sections left-right (``orient_slices``). A mirror
+    #: is part of the in-plane alignment: the sign of the affine.
+    flip: bool = True
+    #: User text describing what marks a hemisphere (a notch, an injection...).
+    hemisphere_cue: str = ""
     #: Offer direct visual adjustment.
     interactive: bool = True
     #: Offer automatic silhouette / optional Elastix fitting.
@@ -155,6 +170,8 @@ class JobSpec:
     #: "angles": {"pitch": deg, "yaw": deg}, "pixel_size_um": float,
     #: "transforms": {filename: transform_dict},
     #: "damaged": {filename: note}, "locked": [filename, ...]}``.
+    #: A supplied transform may be mirrored (negative determinant, as a
+    #: host's own alignment carries a flip); it is kept as supplied.
     #: ``damaged`` flags cannot be cleared by the agent. ``locked`` sections
     #: were aligned in-plane by the user: the agent cannot change their flip,
     #: rotation or transform (a ``"host"`` identity transform unless
@@ -191,6 +208,15 @@ class JobSpec:
         unknown = [task for task in self.tasks if task not in ALL_TASKS]
         if unknown:
             raise ValueError(f"Unknown task(s) {unknown}; expected any of {list(ALL_TASKS)}")
+        # Flip moved from reorder to transform (2026-09-29); a host that still
+        # sets the old fields keeps working, and old readers see the values
+        # that apply.
+        self.transform.flip = bool(self.transform.flip and self.reorder.flip)
+        self.transform.hemisphere_cue = str(
+            self.transform.hemisphere_cue or self.reorder.hemisphere_cue or ""
+        )
+        self.reorder.flip = self.transform.flip
+        self.reorder.hemisphere_cue = self.transform.hemisphere_cue
 
     # --- views -----------------------------------------------------------
 
@@ -209,7 +235,12 @@ class JobSpec:
     # --- (de)serialization ----------------------------------------------
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        data = asdict(self)
+        # The flip lives under ``transform``; the reorder aliases are not
+        # written, so a reloaded spec has one source for it.
+        data["reorder"].pop("flip", None)
+        data["reorder"].pop("hemisphere_cue", None)
+        return data
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> JobSpec:

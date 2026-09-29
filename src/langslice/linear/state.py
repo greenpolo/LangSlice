@@ -6,7 +6,11 @@ stack, and the user's image files are never modified.
 
 Order and position are separate fields that must agree at submit: reordering
 changes only ``index_corrected``, and ``submit`` refuses positions that are not
-monotone along the corrected order.
+monotone along the corrected order. Direction is not the agent's concern: the
+sections of a stack cut posterior-first are identical to one cut
+anterior-first, so at submit :func:`normalize_to_atlas_order` reverses a
+descending stack, and the emitted corrected order always runs the atlas way
+(positions increasing from the atlas origin end).
 """
 
 from __future__ import annotations
@@ -164,3 +168,28 @@ class StackState:
         other = StackState.from_dict(data)
         for name in self.__dataclass_fields__:
             setattr(self, name, getattr(other, name))
+
+
+def normalize_to_atlas_order(state: StackState) -> bool:
+    """Make the corrected order run the atlas way (positions increasing).
+
+    Called at submit after the monotonicity gate has passed. When the placed
+    positions decrease along the corrected order, every ``index_corrected``
+    is mirrored (``n - 1 - i``) and each recorded interval break, the index of
+    the section after a gap, is mapped to the section after that same gap in
+    the new order (``n - i``). Returns True when the stack was reversed.
+    """
+    ordered = state.in_order()
+    placed = [s for s in ordered if s.position_mm is not None]
+    if len(placed) < 2:
+        return False
+    first = float(placed[0].position_mm)  # type: ignore[arg-type]
+    last = float(placed[-1].position_mm)  # type: ignore[arg-type]
+    if last >= first:
+        return False
+    n = len(ordered)
+    for record in ordered:
+        record.index_corrected = n - 1 - record.index_corrected
+    state.interval_breaks = sorted(n - i for i in state.interval_breaks if 0 < i < n)
+    return True
+

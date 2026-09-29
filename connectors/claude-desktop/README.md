@@ -31,10 +31,21 @@ open for live section moves. Closing it disconnects ABBA but does not stop
 Claude; results remain under `~/.langslice/jobs/<job-id>/`. Enable only LangSlice
 for this conversation, never a general Fiji scripting connector.
 
+Without a registration host, the command line is the Copy prompt:
+
+```bash
+langslice claude prepare FOLDER --interval 200 --notes "Section 12 has a large tear."
+```
+
+It takes every `langslice linear run` job flag, saves the job under
+`~/.langslice/jobs/<job-id>/` and prints the prompt to paste. The job's
+checkpoint and results live in that directory, never in the image folder, and
+reopening the job (a restarted Desktop, a new chat) resumes from the checkpoint.
+
 For development, ask Claude to register a folder of sections. Claude calls
 `start_job` with the folder path. `langslice mcp` takes every `langslice linear
 run` flag (`--tasks`, `--interval`, `--atlas`, `--trace-dir`, ...), and those
-flags apply to development folders, not saved ABBA jobs. Put them in `args`.
+flags apply to development folders, not saved jobs. Put them in `args`.
 Image-generation tasks are unavailable through this connector.
 
 ## Claude Code, locked to LangSlice

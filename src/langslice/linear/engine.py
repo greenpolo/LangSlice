@@ -22,7 +22,7 @@ from google.genai import types
 from PIL import Image
 
 from langslice.atlas.core import get_position_range_mm, load_atlas
-from langslice.image_prep import read_pixel_size_um
+from langslice.image_prep import read_pixel_size_um, read_working_image
 from langslice.linear.atlas_fetch import atlas_strip_parts
 from langslice.linear.checkpoint import (
     default_checkpoint_path,
@@ -105,6 +105,12 @@ class EngineContext:
     render_scale: dict[tuple[str, bool, int, int, str, bool], float] = field(
         default_factory=dict, repr=False
     )
+    #: Each file's working copy (:func:`langslice.image_prep.read_working_image`)
+    #: and how many file pixels one of its pixels spans. Every render above
+    #: is drawn from it, so a whole-slide scan is read once, small.
+    source_cache: dict[str, tuple[Image.Image, float]] = field(
+        default_factory=dict, repr=False
+    )
     #: Encoded, captioned reference images shared by the seed and comparison tools.
     reference_parts: dict[tuple[Any, ...], types.Part] = field(default_factory=dict, repr=False)
     _atlas: Any = field(default=None, repr=False)
@@ -118,6 +124,17 @@ class EngineContext:
     def image_path(self, slice_id: str) -> str:
         """Absolute path of a section image. Ids are folder-relative names."""
         return os.path.join(self.image_folder, slice_id)
+
+    def working_source(self, slice_id: str) -> tuple[Image.Image, float]:
+        """``(working copy, file pixels per working pixel)`` of one section.
+
+        Shared: read it, never mutate it in place.
+        """
+        cached = self.source_cache.get(slice_id)
+        if cached is None:
+            cached = read_working_image(self.image_path(slice_id))
+            self.source_cache[slice_id] = cached
+        return cached
 
     @property
     def atlas(self) -> Any:

@@ -27,7 +27,8 @@ pieces) was expanded on 2026-09-21 ahead of the sagittal / damaged-section
 test, because route "atlas" has no agent to describe a section's defects.
 
 The stack agent's image tool uses :func:`border_correction_tool_prompt`: the
-unchanged supplied-placement prompt with optional per-section additional notes.
+supplied-placement prompt (the GPT twin for OpenAI providers), which the agent
+may lightly edit for one section.
 """
 
 from __future__ import annotations
@@ -80,23 +81,61 @@ def border_refinement_prompt(plane: Plane = "coronal") -> str:
     )
 
 
-def border_correction_tool_prompt(
-    plane: Plane = "coronal", additional_notes: str = ""
-) -> str:
-    """Fixed correction task with optional supplementary specimen observations.
+#: Route "supplied" for the GPT image models, as the stack agent's tool sends it:
+#: ``_PASS2_GPT`` (owner-approved 2026-09-19, damage block 2026-09-21) with the
+#: atlas reference removed. The placed lines of Image 2 now carry the region
+#: arrangement the atlas image carried, so "no counterpart" removal and "add a
+#: missing boundary" go; everything else, including the damage block, is kept.
+#: Image 1 is the clean photograph (the edit target), Image 2 the same
+#: photograph with the linearly placed boundaries — pass 2's attachment order.
+_SUPPLIED_GPT = (
+    "Image 1: the photograph of a brain coronal section to edit. Image 2: the same "
+    "photograph in exactly the same frame, carrying thin yellow region boundaries placed "
+    "by a rough alignment of the atlas to this specimen; Image 2 alone decides which "
+    "boundaries exist.\n\n"
+    "Task: return Image 1 with the boundaries of Image 2 drawn on this specimen's "
+    "anatomy, using Image 2 as the starting point. Each boundary follows the edge of its "
+    "region where that edge shows in the photograph; where the region is faint or "
+    "indistinct, the boundary keeps the position and shape it has in Image 2, fitted to "
+    "the structures around it. Correct Image 2 two ways. The drawing carries no line "
+    "around a feature of the slide rather than of the brain, such as a bubble, a stain or "
+    "debris; the feature itself stays in the photograph as it is. A line that does not "
+    "hug its region's edge is adjusted by a shift or bend until it does. "
+    "Cracks and folds are likewise features of the slide: a boundary that meets one "
+    "continues along the anatomy beneath it. Tissue that is physically torn away or "
+    "missing from the section, where slide background shows in place of brain, is the "
+    "only place a boundary of Image 2 is left out: the part of a boundary that would lie "
+    "over missing tissue is omitted and the rest of that boundary is drawn; a torn or cut "
+    "edge is not a region edge and gets no line of its own. A region that is present but "
+    "faint is not missing, and its boundary is drawn. A piece of tissue that has shifted "
+    "or turned keeps its boundaries, drawn on the piece where it lies.\n\n"
+    "This is an annotation overlay on a photograph. Change only by adding the yellow "
+    "lines; the corrected lines are the only difference from Image 1. Preserve everything "
+    "else exactly: every tissue pixel and its texture, the background, the brain's size "
+    "and position, the frame and aspect. The lines are thin bright yellow and form "
+    "exactly the partition of Image 2 on the surviving tissue: every boundary of Image 2 "
+    "that lies on tissue, no other line, no fill, no label. Output one image."
+)
 
-    The agent controls only the notes, never the base prompt or attachment roles.
-    Blank notes preserve the accepted prompt byte for byte. Sentence audit:
-    ``docs/nonlinear_image_tool.md``. Image 1 is the placed-border photograph;
-    Image 2 is the identical clean photograph, not a separate atlas plate.
+
+def supplied_prompt_is_gpt_twin(provider: str | None) -> bool:
+    """Whether route "supplied" sends the GPT twin (clean photograph as Image 1)."""
+    return _is_gpt_twin(provider)
+
+
+def border_correction_tool_prompt(plane: Plane = "coronal", provider: str | None = None) -> str:
+    """Base correction prompt for route "supplied", before any per-section edit.
+
+    OpenAI providers get :data:`_SUPPLIED_GPT` (Image 1 the clean photograph,
+    Image 2 the placed borders); every other provider keeps the accepted
+    :func:`border_refinement_prompt` (Image 1 the placed borders, Image 2 the
+    clean photograph). The stack agent may send its own lightly edited copy
+    in place of this text. Sentence audit: ``docs/nonlinear_image_tool.md``.
     """
-    if not isinstance(additional_notes, str):
-        raise ValueError("additional_notes must be text")
-    base = border_refinement_prompt(plane)
-    note = additional_notes.strip()
-    if not note:
-        return base
-    return base + "\n\nAdditional notes for this slice (supplement the task above):\n" + note
+    return (
+        _for_plane(_SUPPLIED_GPT, plane) if _is_gpt_twin(provider)
+        else border_refinement_prompt(plane)
+    )
 
 
 # --------------------------------------------------------------- route "atlas"

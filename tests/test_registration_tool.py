@@ -1,8 +1,8 @@
-"""The agent controls slice notes, while the tool owns placement and first-result retention."""
+"""The agent controls minimal prompt edits; the tool owns placement and first-result retention."""
 
+from pathlib import Path
 from types import SimpleNamespace
 
-import cv2
 import numpy as np
 import pytest
 from PIL import Image
@@ -10,8 +10,8 @@ from PIL import Image
 from langslice import registration_tool as tool
 from langslice.linear.spec import JobSpec
 from langslice.linear.state import SliceState, StackState
-from langslice.nonlinear.border_refinement import border_overlay
-from langslice.nonlinear.prompts import border_refinement_prompt
+from langslice.nonlinear.border_refinement import border_overlay, smooth_border_overlay
+from langslice.nonlinear.prompts import border_correction_tool_prompt, border_refinement_prompt
 from langslice.registration_handoff import LinearRegistrationInput, prepare_linear_registration
 
 
@@ -54,19 +54,30 @@ def test_fixed_prompt_placed_input_and_raw_preservation(case, tmp_path, monkeypa
     monkeypatch.setattr(tool, "generate_warped_segmentation_image", generate)
     before = state.to_dict()
     result = tool.correct_slice(
-        state, ctx, record.id, additional_notes="The left piece has shifted.", out=tmp_path / "out",
+        state, ctx, record.id, out=tmp_path / "out", prompt=border_correction_tool_prompt(
+            provider="openai-oauth",
+        ).replace("Output one image.", "The left piece has shifted. Output one image."),
     )
     assert result["status"] == "ok" and len(calls) == 1
     request = calls[0]
-    assert request.prompt.startswith(border_refinement_prompt())
-    assert request.prompt.endswith("The left piece has shifted.")
+    # OpenAI providers get the GPT twin: Image 1 the clean photograph (edit target),
+    # Image 2 the smooth placed borders.
+    base = border_correction_tool_prompt(provider="openai-oauth")
+    assert request.prompt == base.replace(
+        "Output one image.", "The left piece has shifted. Output one image.",
+    )
+    assert result["prompt_edited"] is True
+    paths = result["artifact_paths"]
+    assert Path(paths["base_prompt"]).read_text() == base
+    assert Path(paths["prompt"]).read_text() == request.prompt
+    assert "{+The left piece has shifted.+}" in Path(paths["prompt_diff"]).read_text()
     assert len(request.reference_images) == 1
-    np.testing.assert_array_equal(request.reference_images[0], original)
-    projected = cv2.warpAffine(
-        labels.astype(np.float64), placement[:2], original.size, flags=cv2.INTER_NEAREST,
-    ).astype(np.int64)
-    expected = border_overlay(original, tool._extract_borders_from_classified(projected) > 0)
-    np.testing.assert_array_equal(request.slice_image, expected)
+    np.testing.assert_array_equal(request.slice_image, original)
+    expected = smooth_border_overlay(
+        original, labels, placement, width_px=tool.BORDER_WIDTH_PX * 60 / 1536,
+    )
+    np.testing.assert_array_equal(request.reference_images[0], expected)
+    assert not np.array_equal(np.asarray(expected), np.asarray(original))
     paths = result["artifact_paths"]
     np.testing.assert_array_equal(Image.open(paths["raw_reply"]), raw)
     overlay = np.asarray(Image.open(paths["lines_on_original"]))
@@ -75,7 +86,7 @@ def test_fixed_prompt_placed_input_and_raw_preservation(case, tmp_path, monkeypa
     assert result["fit_performed"] is False
 
 
-def test_first_result_is_kept_without_quality_veto_or_notes_retry(case, tmp_path, monkeypatch):
+def test_first_result_is_kept_without_quality_veto_or_edited_retry(case, tmp_path, monkeypatch):
     state, ctx, record, original, *_ = case
     calls = []
 
@@ -86,12 +97,13 @@ def test_first_result_is_kept_without_quality_veto_or_notes_retry(case, tmp_path
     monkeypatch.setattr(tool, "generate_warped_segmentation_image", generate)
     first = tool.correct_slice(state, ctx, record.id, out=tmp_path / "out")
     repeated = tool.correct_slice(
-        state, ctx, record.id, out=tmp_path / "out", additional_notes="Try something else.",
+        state, ctx, record.id, out=tmp_path / "out",
+        prompt="Try something else.",
     )
     assert len(calls) == 1
     assert first["status"] == "ok" and first["model_border_pixels"] == 0
-    assert calls[0].prompt == border_refinement_prompt()
-    assert repeated["cached"] is True and repeated["additional_notes"] == ""
+    assert calls[0].prompt == border_correction_tool_prompt(provider="openai-oauth")
+    assert repeated["cached"] is True and repeated["prompt_edited"] is False
     assert repeated["artifact_dir"] == first["artifact_dir"]
     # A changed linear alignment is a new input, not a veto of the first reply.
     record.position_mm = 4.5
@@ -138,3 +150,30 @@ def test_existing_spline_is_not_silently_reduced_to_affine(case, monkeypatch):
     record.transform["spline"] = {"backend": "elastix"}
     with pytest.raises(ValueError, match="spline"):
         prepare_linear_registration(state, ctx, record.id)
+
+
+def test_gemini_keeps_the_accepted_prompt_and_attachment_order(case, tmp_path, monkeypatch):
+    state, ctx, record, original, *_ = case
+    calls = []
+    monkeypatch.setattr(
+        tool, "generate_warped_segmentation_image",
+        lambda request: calls.append(request) or SimpleNamespace(image=original, route="test"),
+    )
+    tool.correct_slice(state, ctx, record.id, out=tmp_path / "out", provider="gemini-api")
+    assert calls[0].prompt == border_refinement_prompt()
+    np.testing.assert_array_equal(calls[0].reference_images[0], original)
+    assert not np.array_equal(np.asarray(calls[0].slice_image), np.asarray(original))
+
+
+def test_smooth_borders_draw_one_antialiased_line_per_shared_edge():
+    labels = np.zeros((20, 20), dtype=np.int64)
+    labels[4:16, 4:10] = 1
+    labels[4:16, 10:16] = 2
+    photo = Image.new("RGB", (100, 100), (0, 0, 0))
+    atlas_to_image = np.array([[5.0, 0, 2.0], [0, 5.0, 2.0], [0, 0, 1]])  # 5x magnification
+    drawn = np.asarray(smooth_border_overlay(photo, labels, atlas_to_image, width_px=2.0))
+    row = drawn[50, 30:70, 0].astype(int)  # across the shared edge at x ~ 52
+    lit = np.flatnonzero(row > 0)
+    # One stroke about two pixels wide, not one line per region an atlas pixel apart.
+    assert lit.size and lit.max() - lit.min() <= 3
+    assert ((row > 0) & (row < 255)).any()  # antialiased edge pixels

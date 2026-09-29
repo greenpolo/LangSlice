@@ -69,7 +69,7 @@ from langslice.linear.render import (
     status_rows,
 )
 from langslice.linear.spec import MAX_PARALLEL_TRANSFORMS, JobSpec
-from langslice.linear.state import SliceState, StackState
+from langslice.linear.state import SliceState, StackState, normalize_to_atlas_order
 from langslice.linear.transform import (
     calibrate,
     fit_silhouette,
@@ -935,6 +935,10 @@ def build_tools(
 
         snapshot()
         state.interval_breaks = sorted(set(breaks))
+        # Direction is a convention, not an inference: a posterior-first stack
+        # is emitted in atlas order without the agent being told about it.
+        if normalize_to_atlas_order(state):
+            state.notes.append("submit: corrected order reversed to run the atlas way")
         # Model output is a trust boundary: a malformed submission must not
         # take the run down.
         clean_notes = (
@@ -970,17 +974,18 @@ def build_tools(
     if spec.agent_damage:
         box.tools.append(mark_damaged)
 
-    # --- reorder --------------------------------------------------------
+    # --- orientation (part of the transform task) ------------------------
 
     def orient_slices(entries: list[dict[str, Any]]) -> dict[str, Any]:
         """Set the flip and rotation of one or more sections, and show them.
 
-        Corrections are recorded as data; the user's image files are never
-        modified. Rotation is applied first, then the flip. A section whose
-        orientation changes loses its transform. Determining hemisphere
-        orientation (whether a section is mirrored) is only possible when
-        there is a visible notch or a noticeable oblique cutting angle that
-        produces differences between the hemispheres' anatomy.
+        Orientation is part of in-plane alignment: a flip is the sign of the
+        section's affine. Corrections are recorded as data; the user's image
+        files are never modified. Rotation is applied first, then the flip. A
+        section whose orientation changes loses its transform. Determining
+        hemisphere orientation (whether a section is mirrored) is only
+        possible when there is a visible notch or a noticeable oblique cutting
+        angle that produces differences between the hemispheres' anatomy.
 
         Args:
             entries: ``[{"id": "<filename>", "flip": true|false,
@@ -1011,7 +1016,7 @@ def build_tools(
                 continue
             was = (record.flip, record.rotation_deg)
             if "flip" in entry and entry["flip"] is not None:
-                if not spec.reorder.flip:
+                if not spec.transform.flip:
                     rejected.append({"id": record.id, "error": "FLIP_DISABLED"})
                 else:
                     record.flip = bool(entry["flip"])
@@ -1062,6 +1067,8 @@ def build_tools(
             TOOL_MEDIA_PARTS_KEY: parts,
         }
 
+    # --- reorder --------------------------------------------------------
+
     def reorder_slices(new_order: list[str], after: str = "start") -> dict[str, Any]:
         """Place one or more sections together in the requested order.
 
@@ -1103,7 +1110,7 @@ def build_tools(
         return {"moved": moved, **commit(*moved)}
 
     if spec.has("reorder"):
-        box.tools += [orient_slices, reorder_slices]
+        box.tools.append(reorder_slices)
 
     # --- position -------------------------------------------------------
 
@@ -2187,6 +2194,8 @@ def build_tools(
         }
 
     if spec.has("transform"):
+        # Orientation (flip + quarter-turn) is part of in-plane alignment.
+        box.tools.append(orient_slices)
         if spec.transform.automatic:
             box.tools.append(fit_affine)
         if spec.transform.interactive:
@@ -2194,13 +2203,12 @@ def build_tools(
         if spec.transform.angles:
             box.tools.append(set_cutting_angles)
 
-    def correct_slice_borders(id: str, additional_notes: str = "") -> dict[str, Any]:
-        """Correct one slice's placed atlas borders with the fixed image-model prompt.
+    def correct_slice_borders(id: str, prompt: str = "") -> dict[str, Any]:
+        """Correct one slice's placed atlas borders with the image-model prompt.
 
         Args:
             id: Section filename or corrected index, with a position and linear transform.
-            additional_notes: Optional specimen observations appended to the fixed prompt.
-                These supplement its instructions; they do not replace the prompt.
+            prompt: The full image prompt for this section, edited from the base prompt.
 
         Starts the image call in the background and returns at once; the result is
         saved and checked at submit. The first result at a placement is reused.
@@ -2218,7 +2226,7 @@ def build_tools(
                         "message": "This section's image correction is already running."}
             result, job = registration_tool.start_correction(
                 state, ctx, record.id,
-                additional_notes=additional_notes,
+                prompt=prompt,
                 out=Path(ctx.results_path).parent / "nonlinear",
                 provider=spec.nonlinear.provider,
                 image_model=spec.nonlinear.image_model,
@@ -2239,7 +2247,7 @@ def build_tools(
             record.image_correction = result
             save_checkpoint(state, ctx.checkpoint_path)
         response = {key: result[key] for key in (
-            "status", "error", "message", "cached", "additional_notes", "attempt",
+            "status", "error", "message", "cached", "prompt_edited", "attempt",
         ) if key in result}
         response["id"] = record.id
         if job is not None:

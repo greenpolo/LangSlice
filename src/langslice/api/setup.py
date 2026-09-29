@@ -56,22 +56,16 @@ def _api_status(provider: str, keys: dict[str, str]) -> dict[str, object]:
 
 def _oauth_status() -> dict[str, object]:
     # Do not call load_credentials: status must never refresh tokens or contact a provider.
-    for folder, source in ((".langslice", "saved"), (".codex", "codex")):
-        filename = "openai_auth.json" if folder == ".langslice" else "auth.json"
-        try:
-            doc = json.loads((Path.home() / folder / filename).read_text(encoding="utf-8"))
-            tokens = doc.get("tokens", doc)
-            if isinstance(tokens, dict) and isinstance(tokens.get("access_token"), str):
-                if tokens["access_token"].strip():
-                    return {"configured": True, "source": source, "validated": False}
-        except (OSError, ValueError, AttributeError):
-            continue
-    return {
-        "configured": False,
-        "source": None,
-        "validated": False,
-        "note": "No token file found. Existing Codex keyring credentials are not checked here.",
-    }
+    try:
+        path = Path.home() / ".langslice" / "openai_auth.json"
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        tokens = doc.get("tokens", doc)
+        if isinstance(tokens, dict) and isinstance(tokens.get("access_token"), str):
+            if tokens["access_token"].strip():
+                return {"configured": True, "source": "saved", "validated": False}
+    except (OSError, ValueError, AttributeError):
+        pass
+    return {"configured": False, "source": None, "validated": False}
 
 
 def _oauth_models() -> dict[str, object]:

@@ -253,3 +253,67 @@ def test_saved_job_start_over_mcp_ignores_development_defaults(tmp_path: Path, m
     assert all(isinstance(block, TextContent) for block in first.content)
     assert "set_positions" not in tools
     assert {"adjust_transforms", "show_stack", "submit"} <= tools
+
+
+def test_cli_prepared_folder_job_keeps_the_folder_clean_and_resumes(
+    tmp_path: Path, monkeypatch: Any, capsys: Any
+):
+    from langslice.api import claude_jobs
+    from langslice.cli import main
+
+    monkeypatch.setattr(claude_jobs, "jobs_root", lambda: tmp_path / "jobs")
+    folder = _folder(tmp_path)
+    main(["claude", "prepare", str(folder), "--tasks", "position", "--interval", "150",
+          "--preprocess", "none", "--notes", "Section 2 is torn."])
+    prompt = capsys.readouterr().out
+    job_id = next(iter((tmp_path / "jobs").iterdir())).name
+    assert f'start_job(job_id="{job_id}")' in prompt
+    assert "interval 150 µm" in prompt and "Section 2 is torn." in prompt
+
+    def server() -> Any:
+        return build_server(lambda _folder: (_ for _ in ()).throw(
+            AssertionError("Saved jobs must not use development CLI settings")),
+            atlas_loader=lambda _n: _ATLAS)
+
+    async def first(client: Any) -> Any:
+        briefing = await client.call_tool("start_job", {"job_id": job_id})
+        tools = {tool.name for tool in (await client.list_tools()).tools}
+        note = await client.call_tool("note", {"text": "checked s0"})
+        return briefing, tools, note
+
+    briefing, tools, note = _session(server(), first)
+    assert not briefing.isError and not note.isError
+    assert "0.150 mm" in briefing.content[0].text  # the saved interval, not a default
+    assert "set_positions" in tools and "adjust_transforms" not in tools
+    job_dir = tmp_path / "jobs" / job_id
+    assert (job_dir / "linear_state.json").exists()
+    assert sorted(path.name for path in folder.iterdir()) == ["s0.png", "s1.png", "s2.png"]
+
+    # A new server (a restarted Claude Desktop) resumes the saved checkpoint.
+    async def again(client: Any) -> Any:
+        await client.call_tool("start_job", {"job_id": job_id})
+        return await client.call_tool("status", {})
+
+    _session(server(), again)
+    saved = json.loads((job_dir / "linear_state.json").read_text())
+    assert any("checked s0" in line for line in saved["notes"])
+
+
+def test_a_saved_job_opened_at_startup_lists_its_tools_from_the_first_request(
+    tmp_path: Path, monkeypatch: Any
+):
+    from langslice.api import claude_jobs
+
+    monkeypatch.setattr(claude_jobs, "jobs_root", lambda: tmp_path / "jobs")
+    job = claude_jobs.prepare_folder(
+        JobSpec(image_folder=str(_folder(tmp_path)), tasks=["reorder", "position"],
+                preprocess="none")
+    )
+    server = build_server(_spec_for, job_id=job["job_id"], atlas_loader=lambda _n: _ATLAS)
+
+    async def body(client: Any) -> Any:
+        return {tool.name for tool in (await client.list_tools()).tools}
+
+    assert {"start_job", "show_stack", "reorder_slices", "set_positions", "submit"} <= _session(
+        server, body
+    )

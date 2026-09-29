@@ -150,3 +150,17 @@ def test_no_trace_dir_means_no_trace(params, monkeypatch):
 
     monkeypatch.setattr(engine, "run", run)
     assert "trace_files" not in run_linear(params, lambda event: None)
+
+
+@pytest.mark.parametrize(("tasks", "sent"), [(["transform"], True), (["reorder"], False)])
+def test_orientation_reaches_the_host_with_the_transform_task(tasks, sent):
+    from langslice.api.abba_worker import _host_updates
+
+    before = {"slices": [{"id": "a.tif", "position_mm": 4.0, "index_corrected": 0,
+                          "flip": False, "rotation_deg": 0, "transform": None}]}
+    after = copy.deepcopy(before)
+    after["slices"][0].update(flip=True, rotation_deg=90)
+    updates = _host_updates(after, before, tasks, {"a.tif": (100, 80)}, 10.0)
+    assert bool(updates) is sent
+    if sent:
+        assert updates[0]["flip"] is True and updates[0]["rotation_deg"] == 90

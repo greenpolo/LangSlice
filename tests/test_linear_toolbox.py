@@ -92,17 +92,36 @@ def test_optional_tools_follow_their_flags(tmp_path: Path):
         tmp_path, tasks=["transform"],
         transform=TransformSpec(interactive=True, automatic=False),
     )
-    assert len(refinement.tools) == 9
+    assert len(refinement.tools) == 10
+    assert "orient_slices" in refinement.names
+
+
+def test_orientation_is_a_transform_tool_not_a_positioning_one(tmp_path: Path):
+    # 2026-09-29: a mirror is the sign of the in-plane affine, so flip and
+    # rotation belong to the transform task.
+    _, _, positioning = _box(tmp_path, tasks=["reorder", "position"])
+    assert "reorder_slices" in positioning.names
+    assert "orient_slices" not in positioning.names
+    _, _, linear = _box(tmp_path, tasks=["transform"])
+    assert "orient_slices" in linear.names
+    assert "reorder_slices" not in linear.names
 
 
 def test_flip_is_refused_when_the_spec_switches_it_off(tmp_path: Path):
-    state, _, box = _box(tmp_path, reorder=ReorderSpec(flip=False))
+    state, _, box = _box(tmp_path, transform=TransformSpec(flip=False))
     result = _tool(box, "orient_slices")(
         [{"id": "s0.png", "flip": True}, {"id": "s1.png", "rotate_deg": 90}]
     )
     assert result["rejected"] == [{"id": "s0.png", "error": "FLIP_DISABLED"}]
     assert state.by_id("s0.png").flip is False
     assert state.by_id("s1.png").rotation_deg == 90
+
+
+def test_the_old_reorder_flip_field_still_switches_the_flip_off(tmp_path: Path):
+    # Hosts that still fill ``reorder.flip`` keep working through the alias.
+    _, _, box = _box(tmp_path, reorder=ReorderSpec(flip=False))
+    result = _tool(box, "orient_slices")([{"id": "s0.png", "flip": True}])
+    assert result["rejected"] == [{"id": "s0.png", "error": "FLIP_DISABLED"}]
 
 
 # --- writes, checkpoints, undo/redo --------------------------------------
@@ -538,12 +557,27 @@ def test_submit_refuses_positions_that_run_against_the_order(tmp_path: Path):
     assert state.submitted is False
 
 
-def test_submit_accepts_a_stack_that_runs_backwards(tmp_path: Path):
+def test_submit_accepts_a_stack_that_runs_backwards_and_emits_atlas_order(tmp_path: Path):
+    """Direction is the code's job: a posterior-first stack is reversed at submit."""
     state, _, box = _box(tmp_path, tasks=["position"], placed=True)
-    for index, record in enumerate(state.in_order()):
+    ordered = state.in_order()
+    n = len(ordered)
+    for index, record in enumerate(ordered):
         record.position_mm = 10.0 - index
-    assert _submit(box)["status"] == "ok"
+    ids_before = [r.id for r in ordered]
+    # a real gap between old index 2 and 3 (positions 8.0 -> 3.0)
+    for record in ordered[3:]:
+        record.position_mm = float(record.position_mm) - 4.0
+    result = _submit(box, interval_breaks=[3])
+    assert result["status"] == "ok"
     assert state.submitted is True
+    after = state.in_order()
+    assert [r.id for r in after] == ids_before[::-1]
+    positions = [float(r.position_mm) for r in after]
+    assert positions == sorted(positions)
+    # the break still names the section after the same physical gap
+    assert state.interval_breaks == [n - 3]
+    assert any("reversed" in note for note in state.notes)
 
 
 def test_submit_refuses_a_break_the_positions_do_not_show(tmp_path: Path):
