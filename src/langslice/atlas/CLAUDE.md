@@ -25,7 +25,8 @@ here is a verbatim copy — edit one, mirror to the other.
   atlas reference on route "atlas" is a grayscale plate with thin yellow
   boundaries only (`nonlinear.image_gen_registration.outlined_atlas_template`).
   This LUT still colors renders people (not models) look at: the atlas
-  package's own colored region maps, linear's physical overlay, and
+  package's own colored region maps, the family grouping behind linear's
+  physical overlay (whose lines are drawn in one color, yellow by default), and
   nonlinear's human-review warped-atlas overlay
   (`nonlinear.image_gen_helpers._classified_to_rgb`). `color_lut(atlas)` keeps native colors
   when they are hierarchy-organized, joins the true Allen CCF colors

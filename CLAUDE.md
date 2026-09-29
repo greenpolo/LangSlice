@@ -88,19 +88,21 @@ bridges rather than direct imports of each other:
 - `linear/` — order, position and one in-plane transform per section, as ONE
   agent environment (`langslice linear run FOLDER`): one `StackState`, one
   toolbox built from a `JobSpec`, one job statement, one ADK session that ends
-  at `submit` or the turn budget. Tasks (`reorder`/`position`/`transform`) are
-  switched on task by task; a task that is OFF builds no tools and takes its
-  answer from the host instead. Every write checkpoints and is undoable, order
+  at `submit` or the turn budget. Tasks (`reorder`/`position`/`transform`, plus
+  the opt-in `nonlinear` image tool) are switched on task by task; a task that
+  is OFF builds no tools and takes its answer from the host instead. Users see
+  them as Positioning / Linear / Nonlinear: `docs/interface_design.md` is the
+  target user-facing design and what each host exposes. Every write checkpoints and is undoable, order
   and position must agree at submit, and in-plane alignment happens in the
   main session through the transform tools (`fit_affine`,
   `adjust_transforms`); there is no nested per-section session. Spec: `docs/linear_design.md`. Code map, the lean-
   harness rule, the submit gates and the known ceilings:
   `src/langslice/linear/CLAUDE.md` (loads when working there).
-- `nonlinear/` — generative-image registration (image model → Elastix → report).
+- `nonlinear/` — generative-image registration (image model → optional Elastix fit → report).
   Exactly two border-based routes (a supplied placement corrected in one model
-  call, or a placement-free route that draws boundaries against an outlined
-  grayscale atlas template), its measured design choices, and the
-  cutting-angle lever: `src/langslice/nonlinear/CLAUDE.md` (loads when
+  call, the production path; or a placement-free route, kept for experiments,
+  that draws boundaries against an outlined grayscale atlas template), its
+  measured design choices, and the cutting-angle lever: `src/langslice/nonlinear/CLAUDE.md` (loads when
   working there).
 
 Shared, top-level:
@@ -187,8 +189,9 @@ training or benchmark code happens in those repos, not here.
 
 ## Runtime facts
 
-- Main pipeline: `position estimate (linear) → image-gen registration
-  (nonlinear) → Elastix B-spline → VisuAlign markers → export`.
+- Main pipeline: `linear (order, position, in-plane affine) → image-model
+  border correction (nonlinear, needs the linear placement) → deformation
+  (not designed yet; off by default) → VisuAlign markers → export`.
 - `linear` and `nonlinear` are independent; `nonlinear` accepts a position
   from any source, not just `langslice linear`.
 - Registration is exactly two border-based routes, chosen automatically by

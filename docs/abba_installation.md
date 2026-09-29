@@ -62,7 +62,9 @@ LangSlice Registration dialog.
 3. Choose **Sign in with ChatGPT** and finish in your browser, or use
    **Save API key…** for OpenAI or Gemini. If the browser did not open, use
    **Open sign-in page**. API usage is billed by the provider. Model requests
-   send section images to the selected provider.
+   send section images to the selected provider. The Registration dialog
+   currently uses the ChatGPT account only; saved API keys are for the
+   command line and future providers.
 4. Save setup. The environment location is remembered for future sessions.
 
 Credentials stay in LangSlice's user settings, not the ABBA project. Setup
@@ -95,7 +97,9 @@ dialog has three tabs:
   and as the agent will see it. Try to maximize contrast between different regions.
 
 Choose the model at the top, check the estimated cost at the bottom, and click
-**Run**. Your choices are remembered for the next run.
+**Run**. Your choices are remembered for the next run. Tick **Save traces to**
+to keep a full record of what the agent saw and did in a folder of your choice;
+it is useful when reporting a problem.
 
 Your ABBA session is not changed while the agent works. When the run finishes, the
 result is applied to ABBA as one step, which ABBA's **Undo** reverts. If you click

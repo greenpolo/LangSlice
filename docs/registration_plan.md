@@ -2,7 +2,9 @@
 
 The supported design is [border refinement](nonlinear_design.md): correct the
 borders of an atlas placement against the original histology, on exactly two
-routes selected by whether a placement is supplied.
+routes selected by whether a placement is supplied. Route "supplied" is the
+production path: nonlinear correction needs a linear placement first, from the
+linear agent or the host. Route "atlas" remains for experiments.
 
 ## Active files
 
@@ -17,6 +19,8 @@ routes selected by whether a placement is supplied.
   "atlas" pass 1 / pass 2).
 - `registration_handoff.py`: top-level bridge from linear state without
   coupling the sibling methods.
+- `registration_tool.py`: the linear agent's `correct_slice_borders` tool, which
+  runs route "supplied" on the handoff and keeps the first reply (no fit).
 - `integrations/abba.py`: host-placed borders through the shared correction
   core (route "supplied" only).
 - `nonlinear/runtime.py`: orchestration and debug artifacts.
@@ -30,8 +34,11 @@ local silhouette placement and let the model draw boundaries from nothing
 against an outlined grayscale atlas template, with an optional second
 corrective call (route "atlas"). Either way: send the (rough or drawn)
 borders and the clean histology through the shared correction core, extract
-corrected lines, fit the residual deformation, and compose it with the
-complete initial placement.
+corrected lines, optionally fit the residual deformation, and compose it with
+the complete initial placement. The default is no fit (`deformation="none"`,
+an identity residual): the deformation algorithm is designed first, and the
+border output format it consumes is settled after it
+([interface design](interface_design.md)).
 
 Markers are sampled from the composed mapping, not B-spline coefficients.
 Review the raw correction, extracted borders on original tissue, and fitted

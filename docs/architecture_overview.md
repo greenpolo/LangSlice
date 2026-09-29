@@ -6,8 +6,8 @@ in `SliceBench`; both depend on this package.
 
 ## Package Layout
 
-The two registration methods are sibling subpackages with no dependency on each
-other:
+The two registration methods are sibling subpackages that never import each
+other; top-level bridge modules connect them:
 
 - `src/langslice/linear/` -- order, position and one in-plane affine per
   section: the job spec, the stack state and its JSON checkpoint, the one
@@ -29,9 +29,17 @@ The remaining top-level modules are shared by both:
   rotation/scale/translate matrix builder, and the normalized six-number
   parameter convention. Used by the linear transform tools and by
   `quick_affine`.
-- `src/langslice/image_prep.py` -- image normalization, metadata detection, and downsampling.
+- `src/langslice/oblique.py` -- arbitrary-plane (cutting-angle) sampling of an
+  atlas volume and the (pitch, yaw) fitter.
+- `src/langslice/registration_handoff.py` -- turns a linear section state into
+  the calibrated placement the nonlinear border correction takes.
+- `src/langslice/registration_tool.py` -- the linear agent's optional
+  image-model border-correction tool, built on that handoff.
+- `src/langslice/image_prep.py` -- image normalization, metadata detection,
+  downsampling, and the host multichannel blend (`host_preprocess`).
 - `src/langslice/integrations/` -- integration layers for external registration software: `quint.py` (QUINT/QuickNII/VisuAlign JSON export), `abba.py` (abba-python registration plugin).
-- `src/langslice/providers/` -- Gemini and OpenAI-compatible model configuration.
+- `src/langslice/providers/` -- model access: Gemini API keys, OpenAI API keys,
+  and ChatGPT subscription sign-in (`openai-oauth`), named in `registry.py`.
 - `src/langslice/adk/` -- ADK plugins, model resolution, and SDK helpers.
 - `src/langslice/api/` -- Pydantic engine contract, runtime wrappers, and the
   stdio service used by non-Python clients.
@@ -64,9 +72,11 @@ the selected Python environment; it does not require `abba_python`. See
 `langslice linear run` is ONE agent environment over a folder of sections: one
 `StackState`, one toolbox, one job statement, and one ADK session that ends at
 `submit` or the turn budget. A host fills a `JobSpec` -- which of `reorder`,
-`position` and `transform` are on, plus the knobs each one exposes -- and the
-toolbox is built from it: a task that is off contributes no tools, and its
-answer comes from `spec.inputs` instead.
+`position`, `transform` and the optional `nonlinear` are on, plus the knobs
+each one exposes -- and the toolbox is built from it: a task that is off
+contributes no tools, and its answer comes from `spec.inputs` instead. Hosts
+present these tasks to users as Positioning (`reorder` + `position`), Linear
+(`transform`) and Nonlinear; see [the interface design](interface_design.md).
 
 Every write tool checkpoints the whole state, so a run that dies resumes with
 the state it had (the agent is re-seeded, not replayed), and every write is
@@ -80,8 +90,10 @@ Interactive alignment runs in the main session, sharing the context that placed
 and ordered the stack. `adjust_transforms` writes and shows one to four sections
 in one undo step, including before/after or side-by-side views. A dependent
 refinement waits for its first picture. The linear agent handles affine
-alignment; local deformation belongs to the separate nonlinear image-generation
-workflow. An agent-callable bridge to image generation remains undecided.
+alignment. With the optional `nonlinear` task it also gets
+`correct_slice_borders`, which sends one section's placed atlas borders to the
+image model for correction and keeps the first reply; it fits no deformation
+and changes no transform. See [the image-tool contract](nonlinear_image_tool.md).
 
 Picture-returning writes show what they did: `orient_slices` the re-oriented
 sections, `set_positions` placements not already seen at the same position,
@@ -104,13 +116,17 @@ derived representations and adjustment history stay local.
    ask the model to draw the boundaries from nothing (route "atlas", with an
    optional second corrective call).
 3. Extract corrected yellow lines and overlay them on the original photograph.
-4. Fit the residual deformation and warp the placed atlas labels.
+4. Optionally fit the residual deformation (Elastix B-spline or affine) and
+   warp the placed atlas labels. The default is `deformation="none"`: the
+   residual is identity while the deformation algorithm is still being designed.
 5. Compose the initial affine placement with that residual for native-atlas
    correspondences and VisuAlign markers.
 6. Return separate raw, corrected-border and fitted-atlas review artifacts.
 
 Each route uses one image-generation call, except route "atlas" with an
-optional second audit call. ABBA shares the border-correction core and
+optional second audit call. Route "supplied" is the production path: nonlinear
+correction needs a linear placement first. Route "atlas" remains for
+experiments. ABBA shares the border-correction core and
 retains its host placement. The top-level linear handoff adapter does not
 introduce a dependency between the sibling method packages. See
 [the design](nonlinear_design.md).
@@ -118,4 +134,6 @@ introduce a dependency between the sibling method packages. See
 ## Debugging
 
 Set `LANGSLICE_VLM_DEBUG_DIR` for run artifacts. Set
-`LANGSLICE_ADK_CAPTURE_REQUESTS_DIR` for redacted ADK request captures.
+`LANGSLICE_ADK_CAPTURE_REQUESTS_DIR` for redacted ADK request captures. Set
+`LANGSLICE_TRACE_DIR` (or `langslice linear run --trace-dir`, or the worker's
+`trace_dir`) for a full-content trace of each linear agent session.

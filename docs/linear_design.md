@@ -22,7 +22,10 @@ pattern: every action writes and returns the picture of what it did.
 ## The job spec
 
 A host (CLI, ABBA plugin, engine service) fills one spec. Every checkbox a user
-sees maps to a field here; nothing else is user-facing.
+sees maps to a field here; nothing else is user-facing. Users see the tasks
+grouped as Positioning (`reorder` + `position`), Linear (`transform`) and
+Nonlinear; [the interface design](interface_design.md) holds that grouping and
+the ABBA dialog's mapping.
 
 ```
 JobSpec
@@ -89,8 +92,9 @@ StackState
 SliceState
   id, index_original, index_corrected
   flip: bool, rotation_deg: 0|90|180|270   # rotate first, then flip left-right
-  damaged: bool, damage_note: str          # agent-internal: excludes from DeepSlice
-                                           # and automatic affine; never a user option
+  damaged: bool, damage_note: str          # excludes from DeepSlice and automatic
+                                           # affine; set by the agent or by the user
+                                           # through the host (inputs.damaged)
   position_mm | null
   transform | null: {kind: silhouette|elastix|interactive|host, params (six
                      normalized numbers), physical (rotation_deg, scale_x,
@@ -138,6 +142,7 @@ in any payload or prompt (see `lean-harness` history in `linear/CLAUDE.md`).
 | `set_cutting_angles(pitch_deg, yaw_deg)` | transform.angles | stack-wide; subsequent atlas fetches and fits use them. |
 | `fit_affine(ids, method=silhouette\|elastix)` | transform | per-section in-plane affine against its atlas section, written as the section's transform; returns iou, the transform as the same five `physical` knobs `adjust_transforms` takes (plus `shear`, about the canvas centre) and a captioned overlay panel for every successful fit. Damaged sections are refused. |
 | `adjust_transforms(entries)` | transform.interactive | set one to four independent sections, each with rotation, per-axis scales and millimetre shifts. Per-entry mode, zoom, opacity, pivot and border controls; `ab` and `side_by_side` return two images, other modes one. Each result maps its images with `image_indexes`. One undo step; repeat unchanged parameters to redraw. Replaces the complete transform, including spline or shear. Inspect before a dependent correction in a later call. |
+| `correct_slice_borders(id, additional_notes)` | nonlinear | one image-model correction of the section's placed atlas borders, first reply kept; no fit, no transform change. See [the image-tool contract](nonlinear_image_tool.md). |
 | `submit(summary, notes, interval_breaks)` | always | ends the run; gated (below). |
 
 `fetch_atlas` and `view_slices` frame tissue the same way so apparent scale is
@@ -236,18 +241,13 @@ count failed renders, and works across providers that omit generated call ids.
 ## CLI
 
 ```
-langslice linear run FOLDER [--tasks reorder,position,transform]
-    [--atlas ..] [--plane ..] [--model ..] [--preprocess auto|none]
-    [--reasoning low|medium|high|xhigh|max] [--pixel-size-um UM]
-    [--pitch DEG] [--yaw DEG]
-    [--no-flip] [--hemisphere-cue TEXT]
-    [--thickness UM] [--interval UM] [--strict-interval] [--deepslice] [--bayesian]
-    [--angles] [--elastix]
-    [--fact TEXT ...] [--positions JSON] [--order JSON]
-    [--out PATH] [--fresh] [--trace-dir PATH]
-    [--image-retention legacy]
+langslice linear run FOLDER [--tasks reorder,position,transform[,nonlinear]] ...
 langslice linear quick-affine ...   (unchanged)
 ```
+
+The full flag list is in `docs/current_workflow.md`. `image_resolution`,
+`agent_damage`, the per-task `notes`, `transform.max_parallel` and
+`inputs.damaged` / `inputs.locked` are spec fields without CLI flags so far.
 
 `estimate`, `estimate-brain`, `--stop-after`, `--rerun-from` and
 `collect-traces` are removed. A single section is a stack of one.

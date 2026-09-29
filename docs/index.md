@@ -9,11 +9,24 @@ session handoffs.
 - [README](https://github.com/greenpolo/LangSlice#readme) - setup, quickstart, and high-level project behavior.
 - [`architecture_overview.md`](architecture_overview.md) - package boundaries, major modules, and end-to-end control flow.
 - [`current_workflow.md`](current_workflow.md) - current CLI workflows.
+- [`interface_design.md`](interface_design.md) - the target user-facing design: the Positioning, Linear and Nonlinear tasks, their options, and what each host exposes, with what is on main today.
 
 ## Runtime References
 
-- [`nonlinear_design.md`](nonlinear_design.md) - the two border-based registration routes (placed-border correction, and the placement-free atlas-driven route).
+- [`linear_design.md`](linear_design.md) - the linear agent environment: job spec, state, tools and submit gates.
+- [`nonlinear_design.md`](nonlinear_design.md) - the two border-based registration routes (placed-border correction, the production path, and the placement-free atlas-driven route).
+- [`nonlinear_image_tool.md`](nonlinear_image_tool.md) - the linear agent's image-model border-correction tool and its prompt review.
 - [`registration_plan.md`](registration_plan.md) - current image-generation registration pipeline.
+
+## Hosts
+
+- [`abba_installation.md`](abba_installation.md) - installing and using the Fiji connector in an existing ABBA.
+- [`abba_plugin_design.md`](abba_plugin_design.md) - the connector's design, worker protocol and dialog-to-spec mapping.
+- [`napari_plugin_design.md`](napari_plugin_design.md) - proposed napari connectors (not built).
+
+## Design Records
+
+- [`visual_context_design.md`](visual_context_design.md) - shelved image-retention experiment and the measurement-first direction.
 
 ## Repository Map
 

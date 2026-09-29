@@ -17,25 +17,35 @@ position as an argument and does not care where it came from, so it can follow
 ## Linear: Order, Position, Transform
 
 ```bash
-langslice linear run FOLDER [--tasks reorder,position,transform]
+langslice linear run FOLDER [--tasks reorder,position,transform[,nonlinear]]
     [--atlas ...] [--plane ...] [--model ...] [--preprocess auto|none]
+    [--image-provider NAME] [--image-model NAME]
     [--reasoning low|medium|high|xhigh|max] [--pixel-size-um UM]
     [--pitch DEG] [--yaw DEG]
     [--no-flip] [--hemisphere-cue TEXT]
     [--thickness UM] [--interval UM] [--strict-interval] [--deepslice] [--bayesian]
     [--angles] [--elastix]
-    [--fact TEXT ...] [--positions JSON] [--order JSON]
+    [--fact TEXT ...] [--positions JSON] [--order JSON] [--transforms JSON]
     [--out PATH] [--fresh] [--trace-dir PATH]
+    [--max-quota-percent N] [--max-input-tokens N] [--gates] [--playbook]
+    [--image-retention legacy] [--no-debrief]
 ```
 
 One agent environment over a whole folder of sections -- one state, one
 toolbox, one job statement, one session. A single section is a stack of one.
 The design is `docs/linear_design.md`; this page is the CLI surface.
 
-`--tasks` picks which of the three jobs are on (default: all three). A task
+`--tasks` picks which jobs are on (default: `reorder,position,transform`;
+`nonlinear` is opt-in and needs a linear placement for every section). A task
 that is OFF contributes no tools and takes its answer from the host instead:
-`--order` (a JSON list of filenames) and `--positions` (a JSON mapping
-filename to millimetres) are read as a file path or as inline JSON.
+`--order` (a JSON list of filenames), `--positions` (a JSON mapping filename to
+millimetres) and `--transforms` (filename to a transform record in the
+checkpoint format) are read as a file path or as inline JSON. Hosts present
+`reorder` + `position` as one Positioning task and `transform` as Linear; see
+[the interface design](interface_design.md). The ABBA dialog's extra controls
+(image resolution, per-task notes, the per-call section cap, user damage marks,
+locked sections, the agent's damage tool) are `JobSpec` fields, not CLI flags
+yet; see `docs/linear_design.md`.
 
 The toolbox is built from the spec, so the agent only ever sees the tools its
 run can use:
@@ -46,7 +56,7 @@ run can use:
 | `view_slices` | always | up to 4 sections at higher resolution, rendered as corrected, each captioned with its index and filename |
 | `fetch_atlas` | always | up to 4 atlas sections, rendered at the stack's current cutting angles, each captioned with its position |
 | `note`, `undo`, `redo` | always | run notes; snapshot undo where one tool call undoes as one step |
-| `mark_damaged` | always | set or clear damage per entry with `damaged` (default True); clearing also removes the note |
+| `mark_damaged` | `agent_damage` (on in the CLI) | set or clear damage per entry with `damaged` (default True); clearing also removes the note; a damage flag the host set cannot be cleared |
 | `orient_slices` | `reorder` | flip and quarter-turn per section (`--no-flip` refuses the flip half); returns the changed sections as they now stand |
 | `reorder_slices(new_order, after="start")` | reorder | move the listed filenames as a block, in the listed order, after a named section or at the start. One filename moves one slice; the full list sets the whole order. Unlisted sections keep their relative order. Corrected indices only; positions and transforms are kept. One undo step. |
 | `set_positions` | `position` | batch write, clamped to the atlas range; returns a placement image unless the model has already seen that exact section, position, orientation and cutting-angle combination in a full-canvas atlas-bearing view. Section-only and zoomed comparisons do not suppress the full placement. A compare and write requested together still return the write image because neither sibling result was visible when they were planned |
@@ -57,6 +67,7 @@ run can use:
 | `set_cutting_angles` | `--angles` | stack-wide pitch/yaw; later fetches and previews follow |
 | `fit_affine` | `transform` | silhouette affine per section, written as its transform, with the overlap, the transform as the five physical parameters (`rotation_deg`, `scale_x`, `scale_y`, `translate_x_mm`, `translate_y_mm`, plus `shear`) about the canvas centre, and a physical-scale overlay for every successful fit; damaged sections are refused and `--elastix`'s method is not wired yet |
 | `adjust_transforms(entries)` | transform.interactive | set one to four independent sections, each with rotation, per-axis scales and millimetre shifts. Per-entry mode, zoom, opacity, pivot and border controls; `ab` and `side_by_side` return two images, other modes one. Each result maps its images with `image_indexes`. One undo step; repeat unchanged parameters to redraw. Replaces the complete transform, including spline or shear. Inspect before a dependent correction in a later call. |
+| `correct_slice_borders(id, additional_notes)` | `nonlinear` | sends the section's placed atlas borders and the clean section to the image model with the fixed correction prompt plus the agent's notes; keeps the first reply and returns it with the extracted borders on the original. No deformation is fitted and no transform changes. See [the image-tool contract](nonlinear_image_tool.md) |
 | `submit` | always | ends the run; gated |
 
 Sections and fetched atlas sections are framed the same way (foreground plus a
@@ -118,11 +129,14 @@ the cheaper models and off by default.
 `--reasoning` sets the reasoning effort on models that expose one (the
 `openai-oauth/*` backend); unset leaves the provider's own default.
 
-`--preprocess auto` (the default) runs adaptive CLAHE plus a DAPI-weighted
-grayscale blend on every section the run renders -- the seed images, the
-`view_slices` images, the preview panels and the silhouette fits -- so dim
-fluorescence reads like the atlas instead of like a black field. Display only:
-the enhanced pixels are never written back to the user's files.
+`--preprocess auto` (the default) runs adaptive preprocessing on every section
+the run renders -- the seed images, the `view_slices` images, the preview panels
+and the silhouette fits -- so dim fluorescence reads like the atlas instead of
+like a black field. Fluorescence gets per-channel CLAHE and a grayscale blend
+weighted toward the channels that cover the most tissue (usually DAPI);
+brightfield stains, detected by a bright slide border, get CLAHE on optical
+density. Display only: the enhanced pixels are never written back to the user's
+files.
 
 Every write checkpoints the whole state to `<image_folder>/linear_state.json`,
 and the results file (default `<image_folder>/linear_results.json`, or `--out`)
@@ -199,9 +213,11 @@ measured sufficient on undamaged coronal sections, so `--passes 1` (the
 default) is fine unless the first pass looks incomplete.
 
 After either route's model call(s), yellow lines are extracted and displayed
-on the original photograph. A residual Elastix fit transfers that correction
-to the atlas labels. Exports compose the complete initial placement and
-residual deformation. Keep the raw reply, corrected lines on original tissue,
+on the original photograph. By default (`--deformation none`) no fit runs: the
+residual is identity and the exported placement is the rough one, while the
+deformation algorithm is still being designed. `--deformation bspline|affine`
+runs a residual Elastix fit that transfers the correction to the atlas labels.
+Exports compose the complete initial placement and residual deformation. Keep the raw reply, corrected lines on original tissue,
 and fitted atlas overlay distinct when reviewing results.
 
 `placement.json` contains a 3×3 affine mapping oriented native atlas pixel
@@ -213,17 +229,17 @@ section state. ABBA uses its existing host alignment directly.
 
 `--preprocess auto` remains the default shared tissue-visibility enhancement;
 `none` disables it. In either case, both correction attachments use the
-identical prepared photograph. `--canvas-pad`, `--pitch-deg`, `--yaw-deg` and
-`--deformation bspline|affine` remain available. One draw per model call is
+identical prepared photograph. `--canvas-pad`, `--pitch-deg` and `--yaw-deg`
+remain available. One draw per model call is
 supported; there is no multi-draw voting.
 
 `--provider none` is an explicit model-free diagnostic: retain supplied placement
 or fit a silhouette placement, then return its borders and composed coordinates.
 It does not run image generation or residual Elastix fitting.
 
-Provider selection remains explicit: `google`/`gemini-api` for Gemini,
-`openai`/`openai-api` for API access, or `chatgpt`/`openai-oauth` for
-subscription access. API requests retain `--openai-image-route` and
+Provider selection remains explicit: `gemini-api` for Gemini, `openai-api`
+for API access, or `openai-oauth` for subscription access (the legacy
+spellings `google`, `openai` and `chatgpt` still resolve). API requests retain `--openai-image-route` and
 `--endpoint`. Both stages use the selected provider.
 
 See [the nonlinear design](nonlinear_design.md) for coordinate contracts,
@@ -242,10 +258,10 @@ login (`~/.codex/auth.json` or its keyring entry) is used as a fallback.
 
 Once signed in, no API key is needed for either model surface:
 
-- chat/vision/tool-use agents accept `chatgpt/<model>` model strings, e.g.
-  `--model chatgpt/gpt-5.6-luna`, served by the ADK backend in
-  `src/langslice/providers/chatgpt.py`;
-- image-gen registration accepts `--provider chatgpt`.
+- chat/vision/tool-use agents accept `openai-oauth/<model>` model strings,
+  e.g. `--model openai-oauth/gpt-5.6-luna` (legacy `chatgpt/<model>` is
+  accepted), served by the ADK backend in `src/langslice/providers/openai_oauth.py`;
+- image-gen registration accepts `--provider openai-oauth`.
 
 ## Engine Service
 
@@ -257,8 +273,11 @@ langslice serve --stdio
 ```
 
 The service accepts `version`, `register.run`, `quick_affine.run`, and
-`export.run` request envelopes, streams progress/log
-events, and returns typed JSON result or error envelopes. The contract is
+`export.run` request envelopes, plus the Fiji connector's `setup.status`,
+`setup.login`, `setup.api_key`, `linear.run`, `linear.estimate`,
+`preprocess.preview` and `nonlinear.abba` (see
+[the connector design](abba_plugin_design.md)). It streams progress/log
+events and returns typed JSON result or error envelopes. The contract is
 defined by the Pydantic models in `src/langslice/api/models.py`.
 
 ## Debug And Request Capture
@@ -269,7 +288,8 @@ set `LANGSLICE_ADK_CAPTURE_REQUESTS_DIR` to write redacted JSONL request capture
 ### Linear agent traces
 
 `langslice linear run --trace-dir PATH` (or `LANGSLICE_TRACE_DIR`; the flag
-wins) writes one JSONL file per agent session —
+wins; the worker's `trace_dir` and the ABBA dialog's **Save traces to** set it
+for one run) writes one JSONL file per agent session —
 `<trace_dir>/<run_label>_<8 hex>.jsonl`, e.g. `linear_stack_1a2b3c4d.jsonl` for
 the main session, which is the only session a run has — with one record per
 event:
@@ -298,10 +318,10 @@ reference images from positioning `side_by_side` and the clean `section` /
 ### Linear and nonlinear scope
 
 The linear agent handles section order, atlas position and affine alignment.
-Local deformation is handled by the separate nonlinear image-generation
-registration workflow. The linear agent has no paired-landmark tools or
-image-generation tool. An agent-callable image-generation bridge remains
-undecided.
+It has no paired-landmark tools. With `--tasks ...,nonlinear` it also has the
+image-model border-correction tool described above, which produces corrected
+border drawings but no deformation; turning those into a registration is the
+separate, still-open deformation stage.
 
 Applied spline transforms in historical checkpoints still load, render and
 export with their saved mapping. A new affine fit or adjustment replaces a saved
