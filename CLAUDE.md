@@ -134,8 +134,9 @@ Shared, top-level:
 - `image_prep.py` — image normalization, pixel-size detection, VLM
   downsampling, and foreground framing (`crop_to_tissue`, `crop_to_mask`), used
   by the linear visual path so histology and atlas sections fill their
-  frames comparably. Tissue framing crops to the LARGEST connected blob, so a
-  fragment or a speck elsewhere on the slide cannot widen the box.
+  frames comparably. Tissue framing keeps every blob at least a fifth the
+  size of the biggest (both bulbs, cerebellum and brainstem, a torn piece), so
+  a speck elsewhere on the slide cannot widen the box.
   `host_preprocess` blends a host's multi-page snapshot (one page per channel)
   into the one grayscale image the agent sees; the worker's `preprocess.preview`
   writes that same image for the host's preview. `read_working_image` gives

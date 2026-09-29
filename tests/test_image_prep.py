@@ -81,6 +81,19 @@ def test_crop_to_tissue_ignores_debris_beside_the_section() -> None:
     assert _fill(framed, background=240) > 0.45
 
 
+def test_crop_to_tissue_keeps_both_pieces_of_a_parted_section() -> None:
+    """Two bulbs cut apart are one section: the frame holds both."""
+    canvas = np.full((400, 400, 3), 240, dtype=np.uint8)
+    cv2.ellipse(canvas, (110, 200), (50, 70), 0, 0, 360, (30, 30, 30), -1)
+    cv2.ellipse(canvas, (290, 200), (45, 65), 0, 0, 360, (30, 30, 30), -1)
+    slide = Image.fromarray(canvas, mode="RGB")
+
+    framed = crop_to_tissue(slide)
+
+    # Both bulbs span x 60..335: the box is wider than either bulb alone.
+    assert framed.width > 250
+
+
 def test_crop_to_tissue_leaves_a_frame_it_cannot_read() -> None:
     uniform = Image.new("RGB", (100, 80), (120, 120, 120))
     assert crop_to_tissue(uniform).size == uniform.size

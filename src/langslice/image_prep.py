@@ -557,17 +557,25 @@ def crop_to_mask(
     return image.crop(box)
 
 
-def _largest_component(mask: np.ndarray) -> np.ndarray:
-    """The biggest connected blob in *mask*, or *mask* itself if labeling fails.
+#: A blob at least this fraction of the biggest one's area is part of the
+#: section (a second olfactory bulb, a cerebellum parted from the brainstem, a
+#: torn-off piece); anything smaller is debris.
+SECTION_PIECE_FRACTION = 0.2
 
-    A slide carries more than the section: a neighbouring fragment, a dust
-    speck, a pen mark. The global bounding box stretches around all of it and
-    the section comes back rendered at a fraction of the frame — the worst
-    framing in a benchmark run was also its worst position.
+
+def _largest_component(mask: np.ndarray) -> np.ndarray:
+    """The section's blobs in *mask*: the biggest plus any piece of comparable size.
+
+    A slide carries more than the section: a dust speck, a pen mark, a sliver
+    of a neighbouring section. The global bounding box stretches around all of
+    it and the section comes back rendered at a fraction of the frame — the
+    worst framing in a benchmark run was also its worst position. But a
+    section is often in pieces (bulbs cut apart, the cerebellum parted from
+    the brainstem, a tear): keeping only the biggest blob showed the model one
+    bulb, or a cerebellum with no brainstem, and those sections were placed
+    200-400 um off. So every blob of at least :data:`SECTION_PIECE_FRACTION`
+    of the biggest one's area is kept.
     """
-    # ponytail: biggest blob wins, so a section torn clean in two keeps only
-    # the larger half. Dilate before labeling if that ever costs more than
-    # debris does.
     import cv2
 
     try:
@@ -576,8 +584,9 @@ def _largest_component(mask: np.ndarray) -> np.ndarray:
         )
         if count <= 2:  # background plus at most one blob: nothing to choose
             return mask
-        biggest = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
-        return labels == biggest
+        areas = stats[1:, cv2.CC_STAT_AREA]
+        keep = 1 + np.flatnonzero(areas >= SECTION_PIECE_FRACTION * areas.max())
+        return np.isin(labels, keep)
     except Exception:  # a labeling failure must not cost us the framing
         return mask
 
@@ -594,9 +603,10 @@ def crop_to_tissue(image: Image.Image, *, margin: float = FRAME_MARGIN) -> Image
     read off the frame's own border — which works for dark-on-light brightfield
     and light-on-dark fluorescence alike, and (unlike an Otsu split) will not
     mistake a dim half of the tissue for background. The box is then taken
-    around the LARGEST connected blob only, so a neighbouring fragment or a
-    speck of debris cannot drag the frame open. Falls back to the untouched
-    image when the result would be degenerate.
+    around the section's own pieces (every blob of at least
+    :data:`SECTION_PIECE_FRACTION` of the biggest one), so a speck of debris
+    cannot drag the frame open while a section in two pieces stays whole.
+    Falls back to the untouched image when the result would be degenerate.
     """
     mask = foreground_mask(image)
     if mask is None:
@@ -609,7 +619,7 @@ def foreground_mask(image: Image.Image) -> np.ndarray | None:
 
     The mask is measured on a small proxy (long edge ``_FRAME_PROXY_EDGE``) and
     returned at that proxy resolution — scale it onto whatever frame you need,
-    as :func:`crop_to_mask` does. Foreground rule and largest-blob selection
+    as :func:`crop_to_mask` does. Foreground rule and section-piece selection
     are shared with :func:`crop_to_tissue`.
     """
     proxy = image.convert("L")
