@@ -60,12 +60,16 @@ from langslice.linear.render import (
     pivot_on_canvas,
     reference_slice_part,
     render_slice,
+    rescale_section_matrix,
+    shown_edge,
+    shown_scale,
+    shown_section,
     spacing_plot,
     stack_sheet,
     stacked,
     status_rows,
 )
-from langslice.linear.spec import JobSpec
+from langslice.linear.spec import MAX_PARALLEL_TRANSFORMS, JobSpec
 from langslice.linear.state import SliceState, StackState
 from langslice.linear.transform import (
     calibrate,
@@ -113,6 +117,32 @@ IDENTITY_PARAMS: dict[str, float] = {
     "translate_y_mm": 0.0,
 }
 
+#: The transform a locked section carries: the host's snapshot is already
+#: registered in-plane, so the identity IS its alignment. ``kind`` ``"host"``
+#: counts as a transform at submit and is never written back to the host.
+HOST_TRANSFORM_KIND = "host"
+
+
+def locked_ids(spec: JobSpec) -> set[str]:
+    """Sections whose flip, rotation and transform the host locked."""
+    return {str(name) for name in (spec.inputs or {}).get("locked") or []}
+
+
+def host_damaged_ids(spec: JobSpec) -> set[str]:
+    """Sections the host marked damaged; the agent cannot clear these flags."""
+    return {str(name) for name in ((spec.inputs or {}).get("damaged") or {})}
+
+
+def host_transform() -> dict[str, Any]:
+    """The identity transform a locked section carries."""
+    return {
+        "kind": HOST_TRANSFORM_KIND,
+        "params": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+        "physical": {**IDENTITY_PARAMS, "shear": 0.0, "pivot": [0.5, 0.5]},
+        "mirrored": False,
+    }
+
+
 def _tool_target_ids(state: StackState, name: str, args: dict[str, Any]) -> list[str]:
     """Resolve host display targets before a tool can reorder the stack."""
     if name in {"view_stack", "status", "undo", "redo", "submit",
@@ -120,7 +150,8 @@ def _tool_target_ids(state: StackState, name: str, args: dict[str, Any]) -> list
         return [record.id for record in state.in_order()]
     if name == "fit_affine" and not args.get("slice_ids"):
         return [record.id for record in state.in_order()
-                if record.position_mm is not None and not record.damaged]
+                if record.position_mm is not None and not record.damaged
+                and (record.transform or {}).get("kind") != HOST_TRANSFORM_KIND]
     refs = list(args.get("slice_ids") or args.get("new_order") or [])
     if "slice_id" in args:
         refs.append(args["slice_id"])
@@ -486,8 +517,10 @@ def damaged_transform_error(state: StackState, spec: JobSpec) -> dict[str, Any] 
     """Damaged sections require an applied interactive correction, not identity."""
     failures = []
     identity = np.array([1.0, 0.0, 0.0, 0.0, 1.0, 0.0])
+    # A locked section was aligned by the user and cannot be changed here.
+    locked = locked_ids(spec)
     for record in state.in_order():
-        if not record.damaged:
+        if not record.damaged or record.id in locked:
             continue
         transform = record.transform or {}
         reason = None
@@ -568,6 +601,24 @@ def build_tools(
     """Build the tools this run's spec switches on, closed over *state*."""
     box = ToolBox()
     pos_lo, pos_hi = ctx.position_range
+    locked = locked_ids(spec)
+    host_damaged = host_damaged_ids(spec)
+    #: Below the maximum, the most sections one transform call may take.
+    transform_cap = (
+        spec.transform.max_parallel
+        if spec.transform.max_parallel < MAX_PARALLEL_TRANSFORMS else None
+    )
+
+    def over_cap(requested: int) -> dict[str, Any] | None:
+        """The refusal for a transform call naming more sections than allowed."""
+        if transform_cap is None or requested <= transform_cap:
+            return None
+        return {
+            "status": "error",
+            "error": "TOO_MANY_SECTIONS",
+            "max_sections": transform_cap,
+            "requested": requested,
+        }
 
     # --- shared plumbing ------------------------------------------------
 
@@ -761,6 +812,7 @@ def build_tools(
         marked: list[str] = []
         unmarked: list[str] = []
         unknown: list[str] = []
+        rejected: list[dict[str, str]] = []
         for entry in entries:
             if not isinstance(entry, dict):
                 continue
@@ -768,10 +820,14 @@ def build_tools(
             if record is None:
                 unknown.append(str(entry.get("id", "")))
                 continue
+            if record.id in host_damaged and not entry.get("damaged", True):
+                rejected.append({"id": record.id, "error": "DAMAGE_SET_BY_USER"})
+                continue
             record.damaged = entry.get("damaged", True)
             record.damage_note = str(entry.get("note", "")).strip() if record.damaged else ""
             (marked if record.damaged else unmarked).append(record.id)
         return {"marked": marked, "unmarked": unmarked, "unknown_ids": unknown,
+                **({"rejected": rejected} if rejected else {}),
                 **commit(*marked, *unmarked)}
 
     def submit(
@@ -863,8 +919,9 @@ def build_tools(
         note,
         undo,
         redo,
-        mark_damaged,
     ]
+    if spec.agent_damage:
+        box.tools.append(mark_damaged)
 
     # --- reorder --------------------------------------------------------
 
@@ -901,6 +958,9 @@ def build_tools(
             record = state.resolve(entry.get("id", ""))
             if record is None:
                 unknown.append(str(entry.get("id", "")))
+                continue
+            if record.id in locked:
+                rejected.append({"id": record.id, "error": "LOCKED"})
                 continue
             was = (record.flip, record.rotation_deg)
             if "flip" in entry and entry["flip"] is not None:
@@ -1106,7 +1166,8 @@ def build_tools(
             try:
                 picture = stacked(
                     render_slice(ctx, record, long_edge=ATLAS_LONG_EDGE, frame=True),
-                    atlas_sized(atlas_section(ctx, state, position, frame=True), ctx.atlas),
+                    atlas_sized(atlas_section(ctx, state, position, frame=True), ctx.atlas,
+                                scale=shown_scale(ctx)),
                 )
                 label = f"{record.id} over atlas {position:.2f} mm"
             except Exception as exc:
@@ -1358,13 +1419,16 @@ def build_tools(
                     media_indexes = {"section": section_indexes[record.id], "atlas": len(parts)}
                     parts.append(atlas_image)
                 else:
+                    # Identity at the canvas centre: the picture may be drawn
+                    # from a larger render with no change to what it shows.
+                    shown, shown_um, _factors = shown_section(ctx, record, section, um_per_px)
                     images, _ = physical_views(
-                        section, um_per_px, ctx.atlas, position, cast(Plane, state.plane),
+                        shown, shown_um, ctx.atlas, position, cast(Plane, state.plane),
                         state.pitch_deg, state.yaw_deg, dict(IDENTITY_PARAMS),
                         mode=view, zoom=window, template_opacity=opacity, outlines=layer,
                         border_color=border_color, border_thickness=border_thickness,
                         label=f"{record.id} vs atlas {position:.2f} mm",
-                        long_edge=VIEW_LONG_EDGE,
+                        long_edge=VIEW_LONG_EDGE, scale=shown_scale(ctx),
                     )
                     parts.extend(image_to_part(image) for image in images)
             except Exception as exc:
@@ -1437,7 +1501,7 @@ def build_tools(
             try:
                 return atlas_sized(
                     atlas_section(ctx, state, float(record.position_mm), frame=True),
-                    ctx.atlas,
+                    ctx.atlas, scale=shown_scale(ctx),
                 )
             except Exception as exc:
                 logger.warning("view_stack: atlas render failed for %s: %s", record.id, exc)
@@ -1542,13 +1606,20 @@ def build_tools(
                 record
                 for record in state.in_order()
                 if record.position_mm is not None and not record.damaged
+                and record.id not in locked
             ]
             unknown = []
+        refusal = over_cap(len(targets) + len(unknown))
+        if refusal is not None:
+            return refusal
 
         results: list[dict[str, Any]] = []
         parts: list[types.Part] = []
         fits: list[tuple[SliceState, dict[str, Any]]] = []
         for record in targets:
+            if record.id in locked:
+                results.append({"id": record.id, "status": "error", "error": "LOCKED"})
+                continue
             if record.damaged:
                 results.append({"id": record.id, "status": "error", "error": "DAMAGED"})
                 continue
@@ -1664,7 +1735,7 @@ def build_tools(
 
     def views(
         staged: _Staged,
-        params: dict[str, float],
+        params: dict[str, float] | np.ndarray,
         *,
         mode: str,
         zoom: list[float],
@@ -1677,9 +1748,23 @@ def build_tools(
         label: str = "",
         spline: dict[str, Any] | None = None,
     ) -> list[Any]:
+        # The written transform is computed on the working frame; the picture
+        # may be drawn from a larger render (image_resolution), which carries
+        # the same map: a matrix and the pivot are re-expressed on it, the
+        # millimetre knobs need nothing.
+        section, um_per_px, (fx, fy) = shown_section(
+            ctx, staged.record, staged.section, staged.um_per_px
+        )
+        in_section: tuple[float, float] | None = None
+        if section is not staged.section:
+            if isinstance(params, np.ndarray):
+                params = rescale_section_matrix(params, fx, fy)
+            if pivot is not None:
+                ox, oy = staged.geometry.section_offset
+                in_section = ((pivot[0] - ox) * fx, (pivot[1] - oy) * fy)
         images, _iou = physical_views(
-            staged.section,
-            staged.um_per_px,
+            section,
+            um_per_px,
             ctx.atlas,
             float(staged.record.position_mm or 0.0),
             cast(Plane, state.plane),
@@ -1691,11 +1776,13 @@ def build_tools(
             template_opacity=template_opacity,
             border_color=border_color, border_thickness=border_thickness,
             outlines=outlines,
-            pivot=pivot,
+            pivot=pivot if in_section is None else None,
+            pivot_in_section=in_section,
             markers=markers,
             label=label or staged.record.id,
             spline=spline,
             long_edge=OVERLAY_LONG_EDGE,
+            scale=shown_scale(ctx),
         )
         return images
 
@@ -1974,6 +2061,9 @@ def build_tools(
                 "error": "TOO_MANY_ENTRIES",
                 "max_entries": MAX_VIEW_SLICES,
             }
+        refusal = over_cap(len(entries))
+        if refusal is not None:
+            return refusal
         canonical: list[str] = []
         for entry in entries:
             if not isinstance(entry, dict):
@@ -2002,6 +2092,10 @@ def build_tools(
             for entry in entries:
                 if not isinstance(entry, dict):
                     results.append({"status": "error", "error": "BAD_ARGS"})
+                    continue
+                target = state.resolve(entry.get("id", ""))
+                if target is not None and target.id in locked:
+                    results.append({"status": "error", "error": "LOCKED", "id": target.id})
                     continue
                 mode = str(entry.get("mode", "overlay") or "overlay").strip().lower()
                 result = _adjust_transform(
@@ -2099,7 +2193,8 @@ def build_tools(
             try:
                 with Image.open(path) as opened:
                     picture = opened.convert("RGB")
-                picture.thumbnail((OVERLAY_LONG_EDGE, OVERLAY_LONG_EDGE))
+                edge = shown_edge(ctx, OVERLAY_LONG_EDGE)
+                picture.thumbnail((edge, edge))
                 part = image_to_part(caption(picture, f"{record.id}: {label}"))
                 image_indexes[key] = len(parts)
                 parts.append(part)

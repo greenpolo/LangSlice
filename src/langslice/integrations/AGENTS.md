@@ -230,6 +230,19 @@ above remain the Python-started ABBA route.
 `compute_registration_landmarks` without importing Java. Linear snapshots are
 centred/calibrated; host AP mapping is measured, ingestion emits no mutations,
 and streamed updates express complete replacement corrections in world mm.
-The Java host owns native actions and persistence. Read
+Every checkpoint also carries `updates_since_start` (ingested state to that
+checkpoint) and the result `final_updates` (ingested to final), which the
+connector applies once at the end. `locked` snapshots (existing registrations
+the user did not let the agent overwrite) never produce orientation or
+transform rows; `damaged` becomes `inputs.damaged`. With a `preprocessing`
+setting or multi-page snapshots (one page per ABBA channel), every snapshot is
+blended by `image_prep.host_preprocess` into `<folder>/agent_view/` and the
+engine runs on those with `preprocess="none"`, so the agent sees exactly what
+`preprocess.preview` shows; without either, the engine's own `auto` path runs
+on the snapshots as before. A `trace_dir` param points the session trace (`LANGSLICE_TRACE_DIR`) at that
+folder for the one run and returns the new files as `trace_files`.
+`linear.estimate` prices a spec from
+`linear/cost.py` (percent of the usage window per section, measured runs only;
+refused at medium/high resolution) without importing the engine. The Java host owns native actions and persistence. Read
 `docs/abba_plugin_design.md` and `docs/abba_installation.md` for the protocol,
 current source-preview installation, and publication requirements.

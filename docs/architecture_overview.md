@@ -52,8 +52,8 @@ engine contract is defined with Pydantic models in `src/langslice/api/models.py`
 
 `langslice serve --stdio` runs the newline-delimited JSON engine service. It
 accepts `version`, `register.run`, `quick_affine.run`, and `export.run`, plus
-`setup.status`, `setup.login`, `setup.api_key`, `linear.run`, and `nonlinear.abba`
-for the independent Fiji connector. It emits progress/log/data event envelopes
+`setup.status`, `setup.login`, `setup.api_key`, `linear.run`, `linear.estimate`,
+`preprocess.preview` and `nonlinear.abba` for the independent Fiji connector. It emits progress/log/data event envelopes
 and returns either result or error envelopes. The connector starts a worker in
 the selected Python environment; it does not require `abba_python`. See
 [the connector design](abba_plugin_design.md) and

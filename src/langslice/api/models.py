@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -34,6 +34,8 @@ EngineMethod = Literal[
     "setup.api_key",
     "linear.run",
     "nonlinear.abba",
+    "preprocess.preview",
+    "linear.estimate",
     "register.run",
     "quick_affine.run",
     "export.run",
@@ -45,6 +47,8 @@ ENGINE_METHODS: tuple[EngineMethod, ...] = (
     "setup.api_key",
     "linear.run",
     "nonlinear.abba",
+    "preprocess.preview",
+    "linear.estimate",
     "register.run",
     "quick_affine.run",
     "export.run",
@@ -97,6 +101,58 @@ class SetupLoginRequest(EngineBaseModel):
 class SetupApiKeyRequest(EngineBaseModel):
     provider: Literal["openai-api", "gemini-api"]
     api_key: str = Field(min_length=1, max_length=8192, repr=False)
+
+
+class PreprocessingSettings(EngineBaseModel):
+    """How a host's exported channels become the one image the agent sees.
+
+    "auto" is the automatic path; the other fields apply to "custom" only
+    (see :func:`langslice.image_prep.host_preprocess`). The weights' count is
+    checked against the snapshot's pages when an image is read.
+    """
+
+    mode: Literal["auto", "custom"] = "auto"
+    clahe: bool = True
+    clahe_strength: Literal["low", "medium", "high"] = "medium"
+    channel_weights: list[float] | None = None
+
+    @field_validator("channel_weights")
+    @classmethod
+    def validate_weights(cls, weights: list[float] | None):
+        if weights is None:
+            return None
+        if not weights:
+            raise ValueError("channel_weights must name at least one weight")
+        if any(not math.isfinite(value) or value < 0 for value in weights):
+            raise ValueError("channel_weights must be finite and non-negative")
+        if sum(weights) <= 0:
+            raise ValueError("at least one channel weight must be above zero")
+        return weights
+
+
+class PreprocessPreviewRequest(EngineBaseModel):
+    image_path: str
+    preprocessing: PreprocessingSettings = Field(default_factory=PreprocessingSettings)
+    output_path: str
+
+
+class LinearEstimateRequest(EngineBaseModel):
+    spec: dict[str, Any] = Field(default_factory=dict)
+    n_slices: int = Field(ge=1)
+    locked: int = Field(default=0, ge=0)
+
+
+class LinearEstimateResult(EngineBaseModel):
+    low: float
+    high: float
+    unit: Literal["percent_of_usage_window"]
+    basis: str
+
+
+class PreprocessPreviewResult(EngineBaseModel):
+    output_path: str
+    width: int
+    height: int
 
 
 class EngineEventEnvelope(EngineBaseModel):
@@ -235,6 +291,11 @@ def export_schema_bundle() -> dict[str, object]:
         "EngineDataEvent": EngineDataEvent,
         "SetupLoginRequest": SetupLoginRequest,
         "SetupApiKeyRequest": SetupApiKeyRequest,
+        "PreprocessingSettings": PreprocessingSettings,
+        "PreprocessPreviewRequest": PreprocessPreviewRequest,
+        "PreprocessPreviewResult": PreprocessPreviewResult,
+        "LinearEstimateRequest": LinearEstimateRequest,
+        "LinearEstimateResult": LinearEstimateResult,
         "EngineLogEvent": EngineLogEvent,
         "EngineEventEnvelope": EngineEventEnvelope,
         "EngineResultEnvelope": EngineResultEnvelope,

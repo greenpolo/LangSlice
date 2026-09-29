@@ -1,6 +1,7 @@
 """External worker keeps host calibration and initial state intact without Java."""
 import copy
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -61,9 +62,20 @@ def test_linear_initial_state_is_not_applied_and_affine_uses_snapshot_geometry(
     ({"spec": {"plane": "sagittal"}}, "coronal"),
     ({"host_angles_deg": {"pitch": 4.0}}, "flat atlas"),
     ({"spec": {"transform": {"angles": True}}}, "Cutting-angle"),
-    ({"spec": {}, "registered_slices": ["section_0001.tif"]}, "ordering"),
+    ({"registered_slices": ["missing.tif"]}, "Registered"),
+    ({"locked": ["missing.tif"]}, "Locked"),
+    ({"damaged": {"missing.tif": ""}}, "Damaged"),
+    ({"damaged": {"section_0001.tif": 3}}, "Damaged"),
+    ({"spec": {"image_resolution": "ultra"}}, "image_resolution"),
+    ({"spec": {"transform": {"max_parallel": 5}}}, "max_parallel"),
 ])
-def test_bad_host_inputs_refused_before_engine(params, change, message):
+def test_bad_host_inputs_refused_before_engine(params, change, message, monkeypatch):
+    from langslice.linear import engine
+
+    async def never(*args, **kwargs):
+        raise AssertionError("the engine must not start")
+
+    monkeypatch.setattr(engine, "run", never)
     params.update(change)
     with pytest.raises(ValueError, match=message):
         run_linear(params, lambda event: None)
@@ -91,3 +103,50 @@ def test_nonlinear_retains_pair_direction_and_grid(tmp_path, monkeypatch):
     assert result["source_points"] == source.tolist()
     assert result["target_points"] == target.tolist()
     assert result["coordinate_frame"] == "fixed_grid_pixels"
+
+
+def test_trace_dir_saves_this_runs_trace_and_names_it(params, monkeypatch, tmp_path):
+    import os
+
+    from langslice.linear import engine
+    from langslice.linear.trace import TRACE_DIR_ENV
+
+    traces = tmp_path / "traces" / "nested"
+    monkeypatch.delenv(TRACE_DIR_ENV, raising=False)
+
+    async def run(spec, *, on_write, on_event, emit):
+        # The engine's session opens its trace from the environment.
+        folder = Path(os.environ[TRACE_DIR_ENV])
+        (folder / "linear_stack_abcd1234.jsonl").write_text("{}\n")
+        value = {"slices": [{"id": "section_0001.tif", "position_mm": 4.0,
+                             "rotation_deg": 0, "transform": None}]}
+        state = SimpleNamespace(to_dict=lambda: copy.deepcopy(value))
+        on_write(state)
+        return state
+
+    monkeypatch.setattr(engine, "run", run)
+    (tmp_path / "traces" / "nested").mkdir(parents=True)
+    (traces / "older_run.jsonl").write_text("{}\n")
+    result = run_linear({**params, "trace_dir": str(traces)}, lambda event: None)
+    assert result["trace_files"] == [str(traces.resolve() / "linear_stack_abcd1234.jsonl")]
+    assert TRACE_DIR_ENV not in os.environ
+
+
+def test_no_trace_dir_means_no_trace(params, monkeypatch):
+    import os
+
+    from langslice.linear import engine
+    from langslice.linear.trace import TRACE_DIR_ENV
+
+    monkeypatch.delenv(TRACE_DIR_ENV, raising=False)
+
+    async def run(spec, *, on_write, on_event, emit):
+        assert TRACE_DIR_ENV not in os.environ
+        value = {"slices": [{"id": "section_0001.tif", "position_mm": 4.0,
+                             "rotation_deg": 0, "transform": None}]}
+        state = SimpleNamespace(to_dict=lambda: copy.deepcopy(value))
+        on_write(state)
+        return state
+
+    monkeypatch.setattr(engine, "run", run)
+    assert "trace_files" not in run_linear(params, lambda event: None)

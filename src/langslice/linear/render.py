@@ -68,6 +68,16 @@ MAX_IMAGES_PER_CALL = 4
 
 #: Long edge of one section in the ``view_stack`` contact sheet.
 SHEET_THUMB_LONG_EDGE = 256
+
+#: ``JobSpec.image_resolution`` -> the multiple applied to the size of every
+#: picture the agent is SHOWN: seed and view images, contact-sheet thumbnails,
+#: atlas images, placement pictures, fit panels and the interactive overlays.
+#: "low" is the calibrated size and changes nothing. Never applied to a
+#: working frame: :data:`PREVIEW_LONG_EDGE` renders, fits, calibration and the
+#: six stored numbers are the same at every setting; the larger pictures are
+#: drawn from a larger render of the same section (:func:`shown_section`).
+#: Kept out of every model-facing string.
+IMAGE_RESOLUTION_SCALE: dict[str, float] = {"low": 1.0, "medium": 1.5, "high": 2.0}
 #: Font size of the label strip :func:`caption` burns into an image.
 CAPTION_PX = 14
 
@@ -76,6 +86,17 @@ _ROTATE_OPS = {
     180: Image.Transpose.ROTATE_180,
     270: Image.Transpose.ROTATE_270,
 }
+
+
+def shown_scale(ctx: EngineContext) -> float:
+    """This run's multiple for the pictures the agent is shown (1.0 at "low")."""
+    return IMAGE_RESOLUTION_SCALE.get(str(getattr(ctx.spec, "image_resolution", "low")), 1.0)
+
+
+def shown_edge(ctx: EngineContext, long_edge: int) -> int:
+    """*long_edge* at this run's picture size; *long_edge* itself at "low"."""
+    scale = shown_scale(ctx)
+    return long_edge if scale == 1.0 else int(round(long_edge * scale))
 
 
 def image_to_part(img: Image.Image, *, quality: int = 85) -> types.Part:
@@ -131,7 +152,9 @@ def atlas_native_long_edge(
     calibration; without one *cap* stands.
     """
     um_per_px, _ = ctx.calibration(record.id)
-    return model_long_edge(source.size, um_per_px or None, ctx.atlas, cap=cap)
+    return model_long_edge(
+        source.size, um_per_px or None, ctx.atlas, cap=cap, scale=shown_scale(ctx)
+    )
 
 
 def render_slice(
@@ -208,6 +231,34 @@ def canvas_um_per_px(
     if key not in ctx.render_scale:
         render_slice(ctx, record, long_edge=long_edge, frame=frame)
     return from_file * ctx.render_scale.get(key, 1.0), source
+
+
+def shown_section(
+    ctx: EngineContext, record: SliceState, section: Image.Image, um_per_px: float,
+) -> tuple[Image.Image, float, tuple[float, float]]:
+    """The render a PICTURE of *section* is drawn from at this run's image size.
+
+    *section* is the :data:`PREVIEW_LONG_EDGE` working frame every fit and
+    every written transform is computed on, and *um_per_px* its calibration.
+    At "low" this returns them unchanged with factors ``(1.0, 1.0)``;
+    otherwise a larger render of the same section (never upsampled past the
+    file), its micrometres per pixel, and the ``(fx, fy)`` that carry
+    working-frame pixels onto it. Nothing computed is drawn from here.
+    """
+    scale = shown_scale(ctx)
+    if scale == 1.0:
+        return section, um_per_px, (1.0, 1.0)
+    shown = render_slice(ctx, record, long_edge=int(round(PREVIEW_LONG_EDGE * scale)))
+    fx = shown.width / float(section.width)
+    fy = shown.height / float(section.height)
+    return shown, um_per_px / fx, (fx, fy)
+
+
+def rescale_section_matrix(matrix: Any, fx: float, fy: float) -> np.ndarray:
+    """A 2x3 on a section frame, re-expressed on the same frame scaled by (fx, fy)."""
+    square = np.vstack([np.asarray(matrix, dtype=np.float64).reshape(2, 3), [0.0, 0.0, 1.0]])
+    scale = np.diag([fx, fy, 1.0])
+    return (scale @ square @ np.diag([1.0 / fx, 1.0 / fy, 1.0]))[:2]
 
 
 # --- the status table ----------------------------------------------------
@@ -368,7 +419,7 @@ def stack_pictures(
         picture = render_slice(ctx, record, long_edge=long_edge, frame=True)
         below = under(record) if under is not None else None
         if below is not None:
-            picture = stacked(picture, resize_long_edge(below, long_edge))
+            picture = stacked(picture, resize_long_edge(below, shown_edge(ctx, long_edge)))
         out.append((label, caption(picture, label)))
     return out
 
@@ -1047,6 +1098,8 @@ def physical_views(
     long_edge: int | None = None,
     spline: dict[str, Any] | None = None,
     frames: list[dict[str, Any]] | None = None,
+    scale: float = 1.0,
+    pivot_in_section: tuple[float, float] | None = None,
 ) -> tuple[list[Image.Image], float]:
     """The alignment screen in one of :data:`VIEW_MODES`, plus the overlap.
 
@@ -1075,7 +1128,13 @@ def physical_views(
 
     *pivot* is the rotation/scale centre in CANVAS pixels (``None`` is the
     canvas centre), and *markers* is ``(section points, atlas points)`` in
-    canvas pixels, drawn on every panel as landmark pairs.
+    canvas pixels, drawn on every panel as landmark pairs. *pivot_in_section*
+    gives the pivot on the SECTION's frame instead and wins over *pivot*: a
+    picture drawn from a larger render (:func:`shown_section`) knows its pivot
+    only relative to the section.
+
+    *scale* multiplies the screen size (:data:`IMAGE_RESOLUTION_SCALE`); it
+    is handed to :func:`langslice.atlas.render.model_long_edge` with the cap.
 
     Returns ``(images, silhouette_iou)`` — every image captioned, and the
     overlap between the warped section's tissue mask and the atlas anatomy at
@@ -1105,7 +1164,8 @@ def physical_views(
             um_per_px=geometry.um_per_px,
             # The pivot arrives on the canvas; the matrix is built on the
             # section's frame and conjugated onto the canvas below.
-            pivot=None if pivot is None else (pivot[0] - ox, pivot[1] - oy),
+            pivot=pivot_in_section if pivot_in_section is not None
+            else None if pivot is None else (pivot[0] - ox, pivot[1] - oy),
             **params,
         )
     matrix = (_shift((ox, oy)) @ _as_3x3(section_matrix) @ _shift((-ox, -oy)))[:2]
@@ -1196,7 +1256,8 @@ def physical_views(
     edge = None
     if long_edge is not None:
         edge = model_long_edge(
-            (box[2] - box[0], box[3] - box[1]), geometry.um_per_px, atlas, cap=long_edge
+            (box[2] - box[0], box[3] - box[1]), geometry.um_per_px, atlas, cap=long_edge,
+            scale=scale,
         )
     images: list[Image.Image] = []
     for panel, head in panels:
@@ -1266,6 +1327,7 @@ def physical_overlay(
     pivot: tuple[float, float] | None = None,
     label: str = "",
     long_edge: int | None = None,
+    scale: float = 1.0,
 ) -> Image.Image:
     """The ONE screen of the alignment loop: section and atlas in millimetres.
 
@@ -1297,6 +1359,7 @@ def physical_overlay(
         pivot=pivot,
         label=label,
         long_edge=long_edge,
+        scale=scale,
     )
     return images[0]
 

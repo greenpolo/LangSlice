@@ -228,7 +228,12 @@ def apply_host_inputs(state: StackState, spec: JobSpec) -> None:
     -> note mapping, and transforms as filename -> stored transform dictionaries.
     Anything the host
     supplies for a task that IS on is applied too — it is a starting point,
-    not a constraint.
+    not a constraint. Two exceptions are constraints: ``damaged`` flags the
+    agent cannot clear, and ``locked`` sections (a list of filenames) whose
+    flip, rotation and transform the agent cannot change; a locked section
+    without a supplied transform carries the ``"host"`` identity
+    (:func:`langslice.linear.toolbox.host_transform`), because its snapshot
+    is already aligned.
     """
     inputs = spec.inputs or {}
 
@@ -290,6 +295,22 @@ def apply_host_inputs(state: StackState, spec: JobSpec) -> None:
             record.damaged = True
             record.damage_note = str(note or "")
         state.notes.append(f"inputs: {len(damaged)} section(s) marked damaged by the host")
+
+    locked = inputs.get("locked") or []
+    if locked:
+        from langslice.linear.toolbox import host_transform
+
+        if not isinstance(locked, (list, tuple)):
+            raise ValueError("inputs.locked must be a list of section filenames")
+        for name in locked:
+            record = state.by_id(str(name))
+            if record is None:
+                raise ValueError(f"inputs.locked names an unknown section: {name!r}")
+            if record.transform is None:
+                record.transform = host_transform()
+        state.notes.append(
+            f"inputs: {len(locked)} section(s) locked by the host (in-plane alignment done)"
+        )
 
 
 # --- the session ---------------------------------------------------------

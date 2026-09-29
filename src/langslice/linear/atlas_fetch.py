@@ -16,10 +16,11 @@ from google.genai import types
 from PIL import Image
 
 from langslice.adk import TOOL_MEDIA_PARTS_KEY
+from langslice.affine import resize_long_edge
 from langslice.atlas.core import get_reference_slice, get_root_mask
 from langslice.atlas.render import at_model_scale, atlas_um_per_px
 from langslice.image_prep import crop_to_mask
-from langslice.linear.render import MAX_IMAGES_PER_CALL, caption, image_to_part
+from langslice.linear.render import MAX_IMAGES_PER_CALL, caption, image_to_part, shown_scale
 from langslice.linear.state import StackState
 from langslice.space import Plane
 
@@ -123,9 +124,20 @@ def atlas_section(
     return crop_to_mask(image, mask > 0)
 
 
-def atlas_sized(picture: Image.Image, atlas: Any) -> Image.Image:
-    """*picture*, an atlas render at native resolution, under the model cap."""
-    return at_model_scale(picture, atlas_um_per_px(atlas), atlas, cap=ATLAS_LONG_EDGE)
+def atlas_sized(picture: Image.Image, atlas: Any, *, scale: float = 1.0) -> Image.Image:
+    """*picture*, an atlas render at native resolution, under the model cap.
+
+    *scale* is the run's picture-size multiple
+    (:data:`langslice.linear.render.IMAGE_RESOLUTION_SCALE`). Above 1.0 the
+    atlas image is drawn that much larger, resampled from the render, so it
+    keeps the same pixels per millimetre as the sections shown beside it
+    (which are drawn larger from their finer files); it carries no detail
+    finer than the atlas voxel.
+    """
+    if scale == 1.0:
+        return at_model_scale(picture, atlas_um_per_px(atlas), atlas, cap=ATLAS_LONG_EDGE)
+    edge = min(max(picture.size), ATLAS_LONG_EDGE)
+    return resize_long_edge(picture, int(round(edge * scale)))
 
 
 def atlas_part(
@@ -146,6 +158,7 @@ def atlas_part(
         caption(
             prepared if prepared is not None else atlas_sized(
                 atlas_section(ctx, state, position_mm, frame=True), ctx.atlas,
+                scale=shown_scale(ctx),
             ),
             f"atlas {position_mm:.2f} mm{angles}",
         )
@@ -239,7 +252,7 @@ def atlas_strip_parts(
         picture = atlas_section(ctx, state, position, frame=True)
         if np.asarray(picture).max() < 8:
             continue  # an oblique plane through the volume's corner: nothing to show
-        pictures.append((position, atlas_sized(picture, ctx.atlas)))
+        pictures.append((position, atlas_sized(picture, ctx.atlas, scale=shown_scale(ctx))))
     if not pictures:
         return []
     parts: list[types.Part] = [

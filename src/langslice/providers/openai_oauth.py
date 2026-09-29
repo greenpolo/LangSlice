@@ -67,6 +67,10 @@ from google.genai import types
 from pydantic import Field, field_validator
 
 from langslice.adk import MEDIA_LAYOUT_ATTR
+from langslice.providers.registry import (
+    OPENAI_OAUTH_DEFAULT_AGENT_MODEL,
+    OPENAI_OAUTH_DEFAULT_IMAGE_MODEL,
+)
 from langslice.providers.usage import item_descriptor, request_descriptor, usage_diagnostics
 
 logger = logging.getLogger(__name__)
@@ -88,10 +92,10 @@ _CODEX_AUTH = Path.home() / ".codex" / "auth.json"
 
 #: Routing model for image generation; the image itself is always rendered by
 #: ``gpt-image-2`` server-side.
-DEFAULT_IMAGE_MODEL = "gpt-image-2"
+DEFAULT_IMAGE_MODEL = OPENAI_OAUTH_DEFAULT_IMAGE_MODEL
 
 #: Default review/mainline model for openai-oauth registration paths.
-DEFAULT_REVIEW_MODEL = "openai-oauth/gpt-5.6-sol"
+DEFAULT_REVIEW_MODEL = OPENAI_OAUTH_DEFAULT_AGENT_MODEL
 MAX_REFERENCE_IMAGES = 8
 
 # OAuth callback (the Codex client_id only whitelists this redirect).
