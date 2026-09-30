@@ -91,7 +91,7 @@ and ordered the stack. `adjust_transforms` writes and shows one to four sections
 in one undo step, including before/after or side-by-side views. A dependent
 refinement waits for its first picture. The linear agent handles affine
 alignment. With the optional `nonlinear` task it also gets
-`correct_slice_borders`, which sends one section's placed atlas borders to the
+`trace_borders`, which sends one section's placed atlas borders to the
 image model for correction and keeps the first reply; it fits no deformation
 and changes no transform. See [the image-tool contract](nonlinear_image_tool.md).
 

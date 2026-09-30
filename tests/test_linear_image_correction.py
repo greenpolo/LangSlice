@@ -32,10 +32,10 @@ def test_image_tool_is_opt_in_and_has_only_id_and_prompt(tmp_path: Path):
 
     state, ctx, spec = _stack(tmp_path, n=1)
     assert spec.tasks == list(DEFAULT_TASKS)
-    assert "correct_slice_borders" not in build_tools(state, ctx, spec).names
+    assert "trace_borders" not in build_tools(state, ctx, spec).names
     spec.tasks = ["nonlinear"]
     box = build_tools(state, ctx, spec)
-    schema = FunctionTool(_tool(box, "correct_slice_borders"))._get_declaration()
+    schema = FunctionTool(_tool(box, "trace_borders"))._get_declaration()
     declaration = schema.model_dump()
     parameters = declaration["parameters"] or declaration["parameters_json_schema"]
     assert set(parameters["properties"]) == {"id", "prompt"}
@@ -70,7 +70,7 @@ def test_image_correction_runs_in_background_and_submit_waits(tmp_path: Path, mo
     monkeypatch.setattr(registration_tool, "start_correction", fake_start)
     monkeypatch.setattr(registration_tool, "correction_fingerprint", lambda *_: "geometry")
     box = build_tools(state, ctx, spec)
-    result = _tool(box, "correct_slice_borders")("0", "Edited prompt.")
+    result = _tool(box, "trace_borders")("0", "Edited prompt.")
     assert calls == [("s0.png", {
         "prompt": "Edited prompt.",
         "out": Path(ctx.results_path).parent / "nonlinear",
@@ -78,7 +78,7 @@ def test_image_correction_runs_in_background_and_submit_waits(tmp_path: Path, mo
     })]
     # The tool returns while the image call is still running, with no images.
     assert result["status"] == "running" and TOOL_MEDIA_PARTS_KEY not in result
-    assert _tool(box, "correct_slice_borders")("0")["status"] == "running"
+    assert _tool(box, "trace_borders")("0")["status"] == "running"
     assert len(calls) == 1
     saved = load_checkpoint(ctx.checkpoint_path)
     assert saved.slices[0].image_correction == state.slices[0].image_correction
@@ -94,7 +94,7 @@ def test_image_correction_runs_in_background_and_submit_waits(tmp_path: Path, mo
     assert state.slices[0].image_correction["status"] == "ok"
     assert load_checkpoint(ctx.checkpoint_path).slices[0].image_correction["status"] == "ok"
     assert state.slices[0].transform == transform
-    assert _tool_target_ids(state, "correct_slice_borders", {"id": "0"}) == ["s0.png"]
+    assert _tool_target_ids(state, "trace_borders", {"id": "0"}) == ["s0.png"]
 
 
 def test_result_of_an_undone_correction_does_not_land(tmp_path: Path, monkeypatch):
@@ -106,7 +106,7 @@ def test_result_of_an_undone_correction_does_not_land(tmp_path: Path, monkeypatc
                         lambda *a, **k: (running, lambda: {**running, "status": "ok"}))
     monkeypatch.setattr(registration_tool, "correction_fingerprint", lambda *_: "geometry")
     box = build_tools(state, ctx, spec)
-    _tool(box, "correct_slice_borders")("0")
+    _tool(box, "trace_borders")("0")
     _tool(box, "undo")()
     assert box.settle_image_corrections(state) is False
     assert state.slices[0].image_correction is None
@@ -139,7 +139,7 @@ def test_image_tool_reports_missing_placement_without_checkpoint_mutation(tmp_pa
     monkeypatch.setattr(registration_tool, "start_correction", missing)
     monkeypatch.setattr(registration_tool, "correction_fingerprint", missing)
     box = build_tools(state, ctx, spec)
-    response = _tool(box, "correct_slice_borders")("s0.png")
+    response = _tool(box, "trace_borders")("s0.png")
     assert response["error"] == "INVALID_LINEAR_PLACEMENT"
     assert state.slices[0].image_correction is None
     assert not box.undo_stack

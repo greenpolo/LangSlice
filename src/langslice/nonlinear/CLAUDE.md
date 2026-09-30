@@ -7,9 +7,9 @@ See `docs/nonlinear_design.md` for the design and coordinate contracts.
 
 The stack agent's optional `nonlinear` task uses a supplied linear placement via
 top-level `registration_tool.py`. Its only image tool is
-`correct_slice_borders(id, additional_notes="")`: fixed placed-border correction
-prompt plus optional notes, one retained reply per geometry, raw and extracted
-images returned separately, no fit, atlas search, prompt replacement or rejection.
+`trace_borders(id, prompt="")`: placed-border correction with the agent's
+edited copy of the base prompt (blank = base), one retained reply per geometry,
+raw and extracted images returned separately, no fit, atlas search or rejection.
 See `docs/nonlinear_image_tool.md` for its contract and prompt sentence review.
 The standalone atlas route below is not available through this agent tool.
 

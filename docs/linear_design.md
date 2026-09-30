@@ -161,7 +161,7 @@ in any payload or prompt (see `lean-harness` history in `linear/CLAUDE.md`).
 | `set_cutting_angles(pitch_deg, yaw_deg)` | transform.angles | stack-wide; subsequent atlas fetches and fits use them. |
 | `fit_affine(ids, method=silhouette\|elastix)` | transform | per-section in-plane affine against its atlas section, written as the section's transform; returns iou, the transform as the same five `physical` knobs `adjust_transforms` takes (plus `shear`, about the canvas centre) and a captioned overlay panel for every successful fit. Damaged sections are refused. |
 | `adjust_transforms(entries)` | transform.interactive | set one to four independent sections, each with rotation, per-axis scales and millimetre shifts. Per-entry mode, zoom, opacity, pivot and border controls; `ab` and `side_by_side` return two images, other modes one. Each result maps its images with `image_indexes`. One undo step; repeat unchanged parameters to redraw. Replaces the complete transform, including spline or shear. Inspect before a dependent correction in a later call. |
-| `correct_slice_borders(id, additional_notes)` | nonlinear | one image-model correction of the section's placed atlas borders, run in the background (submit waits), first reply kept; no fit, no transform change. See [the image-tool contract](nonlinear_image_tool.md). |
+| `trace_borders(id, prompt)` | nonlinear | one image-model correction (agent edits the base prompt per section) of the section's placed atlas borders, run in the background (submit waits), first reply kept; no fit, no transform change. See [the image-tool contract](nonlinear_image_tool.md). |
 | `submit(summary, notes, interval_breaks)` | always | ends the run; gated (below). |
 
 `fetch_atlas` and `view_slices` frame tissue the same way so apparent scale is
@@ -205,9 +205,9 @@ adjustment count or final-review hook.
 ### Linear and nonlinear scope
 
 The linear agent supplies order, position and affine alignment. With the optional
-`nonlinear` task it also exposes `correct_slice_borders(id, additional_notes="")`.
+`nonlinear` task it also exposes `trace_borders(id, prompt="")`.
 The top-level registration bridge sends placed borders plus the clean photograph
-to the image model using the fixed correction prompt and optional per-slice notes.
+to the image model with the agent's per-slice edited copy of the base prompt.
 The first result is retained without agent selection or rejection. Submit requires
 a completed correction at each section's current placement. No deformation is
 fitted and no transform is changed by this tool. See

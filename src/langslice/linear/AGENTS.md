@@ -282,9 +282,9 @@ and interactive-only tool counts are 15 and 10 (`orient_slices` joined the
 transform task on 2026-09-29).
 
 Local anatomical deformation remains the responsibility of the nonlinear workflow.
-The optional `nonlinear` task now adds `correct_slice_borders(id,
-additional_notes="")` through the top-level `registration_tool` bridge. It uses
-the supplied linear placement, fixed correction prompt and optional per-slice notes.
+The optional `nonlinear` task now adds `trace_borders(id, prompt="")` through
+the top-level `registration_tool` bridge. It uses the supplied linear placement
+and the agent's per-slice edited copy of the base correction prompt.
 The call runs in the background (`registration_tool.start_correction` prepares
 it; `ToolBox.settle_image_corrections` waits at submit and at session end) and
 returns no images. The first image reply is retained in `SliceState.image_correction`. No atlas search,
