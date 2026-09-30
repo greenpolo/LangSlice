@@ -19,7 +19,7 @@ linear agent or the host. Route "atlas" remains for experiments.
   "atlas" pass 1 / pass 2).
 - `registration_handoff.py`: top-level bridge from linear state without
   coupling the sibling methods.
-- `registration_tool.py`: the linear agent's `correct_slice_borders` tool, which
+- `registration_tool.py`: the linear agent's `trace_borders` tool, which
   runs route "supplied" on the handoff and keeps the first reply (no fit).
 - `integrations/abba.py`: host-placed borders through the shared correction
   core (route "supplied" only).

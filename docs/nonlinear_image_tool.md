@@ -1,16 +1,19 @@
 # Image-model correction tool after linear registration
 
 The stack agent can correct atlas borders after linear alignment by enabling the
-optional `nonlinear` task. The tool is `correct_slice_borders(id,
-additional_notes="")`. Its two agent-controlled fields are the slice identifier
-and a supplementary text field for that slice. There is no atlas search, region
-selection, replacement prompt, candidate selection or anatomical rejection tool.
+optional `nonlinear` task. The tool is `trace_borders(id, prompt="")`. Its two
+agent-controlled fields are the slice identifier and the agent's edited copy of
+the base prompt for that slice; a blank prompt sends the base unchanged. There
+is no atlas search, region selection, candidate selection or anatomical
+rejection tool.
 
-The existing supplied-placement prompt owns the task. Image 1 is the original
-rendered photograph with the linearly placed atlas borders. Image 2 is the same
-clean photograph in the same frame. Optional notes are appended to that fixed
-prompt. The image model makes one correction; the first reply is retained with
-its extracted yellow borders on the unchanged photograph.
+The supplied-placement base prompt defines the task. Two images accompany it:
+the clean photograph and the same photograph in the same frame carrying the
+linearly placed atlas borders. The OpenAI prompt shows the clean photograph
+first; the Gemini prompt shows the bordered one first. The base prompt, the
+prompt sent and their word diff are saved with each attempt. The image model
+makes one correction; the first reply is retained with its extracted yellow
+borders on the unchanged photograph.
 
 The tool prepares the two images and prompt, starts the image call in the
 background and returns at once, with no images: the agent cannot act on a reply,
@@ -47,7 +50,7 @@ is opt-in: the default remains reorder, position and transform. Image transport
 defaults to `openai-oauth`; `--image-provider` and `--image-model` select the host's
 image settings independently of the agent's `--model`.
 
-The notes field is an agent tool argument. A host may also pass user notes for
+The edited prompt is an agent tool argument. A host may also pass user notes for
 this task as `JobSpec.nonlinear.notes`; they appear under the task in the job
 statement. The ABBA Registration dialog shows the Nonlinear task but keeps it
 disabled ("Not yet available in ABBA") until the deformation stage exists, and
@@ -57,11 +60,12 @@ the connector's older `nonlinear.abba` worker method is not called by the dialog
 
 `SliceState.image_correction` records the first result and artifact paths separately
 from `transform`. The artifacts live in `nonlinear/` beside the results JSON and
-contain exact image attachments, their hashes, full prompt, additional notes,
-placement provenance, raw reply, extracted lines and lines on the original.
+contain exact image attachments, their hashes, the prompt sent, the base prompt
+and their diff, placement provenance, raw reply, extracted lines and lines on
+the original.
 
 Calls at the same source image, geometry and image settings return the first saved
-image reply, even if the notes change or an undo removes its checkpoint reference.
+image reply, even if the prompt changes or an undo removes its checkpoint reference.
 Changing the linear placement requires a new correction; the previous artifacts
 remain. There is no automatic regeneration after a model reply. Transport failures
 are recorded without hidden retries; a later tool call may retry a failed transport

@@ -2203,8 +2203,8 @@ def build_tools(
         if spec.transform.angles:
             box.tools.append(set_cutting_angles)
 
-    def correct_slice_borders(id: str, prompt: str = "") -> dict[str, Any]:
-        """Correct one slice's placed atlas borders with the image-model prompt.
+    def trace_borders(id: str, prompt: str = "") -> dict[str, Any]:
+        """Trace one slice's atlas borders onto its anatomy with the image model.
 
         Args:
             id: Section filename or corrected index, with a position and linear transform.
@@ -2257,7 +2257,7 @@ def build_tools(
         return response
 
     if spec.has("nonlinear"):
-        box.tools.append(correct_slice_borders)
+        box.tools.append(trace_borders)
 
     box.tools.append(submit)
     lock = threading.Lock()

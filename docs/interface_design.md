@@ -87,7 +87,7 @@ run. Nonlinear ON with sections lacking a placement is a job-spec validation
 error naming those sections, before any model call. A host turns it into a
 dialog: "Slices a-z have no transform. Nonlinear requires a linear step first.
 Allow the agent to align them?" Yes = Linear ON for those sections only. On
-main this check is not in the spec yet: `correct_slice_borders` refuses a
+main this check is not in the spec yet: `trace_borders` refuses a
 section without a usable placement one call at a time
 (`INVALID_LINEAR_PLACEMENT`).
 
@@ -97,7 +97,7 @@ test. Drawings remain the review artifact.
 
 | Control | On main |
 | --- | --- |
-| Enable image-gen tool | task `nonlinear` builds `correct_slice_borders` |
+| Enable image-gen tool | task `nonlinear` builds `trace_borders` |
 | Use agent (GUI). The agent writes per-slice notes for the image model. The agent-free path (fixed prompt as a plain operation over supplied placements) stays in the API only; it is the 3D-volume path, where notes have no purpose | notes are a tool argument; the `nonlinear` CLI is the agent-free operation |
 | Further tools: open | (none) |
 

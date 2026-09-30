@@ -2,7 +2,7 @@
 
 The stack agent's supported image tool requires an existing linear placement and
 uses the supplied-border correction task below. It accepts only a slice identifier
-and optional additional notes, retains the first image reply automatically, and
+and an optional edited copy of the base prompt, retains the first image reply automatically, and
 does not fit a deformation. See [the image-tool contract](nonlinear_image_tool.md).
 The standalone lower-level atlas route described here remains available for
 experiments; it is not exposed to the stack agent's correction tool. Route

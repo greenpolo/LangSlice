@@ -85,7 +85,7 @@ TOOL_LINES: dict[str, str] = {
     "Results map their images with zero-based image_indexes. Each section may "
     "appear once; inspect before a dependent correction in a later call. "
     "This replaces the complete transform, including any spline or shear.",
-    "correct_slice_borders": "runs the image-model border-correction prompt on one "
+    "trace_borders": "runs the image-model border-correction prompt on one "
     "section's existing linear placement, with your edited copy of the prompt "
     "for that section. The image call runs in the background and the tool returns "
     "at once; the result is saved for the user and checked at submit, which waits "
