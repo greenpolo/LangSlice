@@ -38,13 +38,14 @@ def atlas() -> SyntheticAtlas:
 
 
 def _setup(folder: Path, atlas: SyntheticAtlas, *, engine: str = "either",
-           tasks: tuple[str, ...] = ("position", "transform", "nonlinear")):
+           tasks: tuple[str, ...] = ("position", "transform", "nonlinear"),
+           provider: str = "openai-oauth"):
     image, _ = render_section(atlas, SMOOTH_FIELD())
     image.save(folder / ID)
     spec = JobSpec(
         image_folder=str(folder), model="fake-model", preprocess="none", tasks=list(tasks),
         inputs={"pixel_size_um": 25.0}, transform=TransformSpec(angles=True),
-        nonlinear=NonlinearSpec(engine=engine),
+        nonlinear=NonlinearSpec(engine=engine, provider=provider),
     )
     ctx = build_context(spec, emit=lambda _m: None, atlas_loader=lambda _n: atlas)
     state = ingest(spec, ctx)
@@ -314,6 +315,13 @@ def test_the_job_statement_names_the_engine_and_the_tool(tmp_path: Path, atlas, 
 
 def _fake_trace(state: StackState, ctx: Any, folder: Path, *, fingerprint: str) -> None:
     """A completed trace_borders result whose lines are the placed atlas borders."""
+    state.slices[0].image_correction = _trace_artifacts(state, ctx, folder,
+                                                        fingerprint=fingerprint)
+
+
+def _trace_artifacts(state: StackState, ctx: Any, folder: Path, *,
+                     fingerprint: str) -> dict[str, Any]:
+    """Write a trace's artifacts (the placed atlas borders as lines); return its result."""
     grid = deformation.fit_grid(state, ctx, state.slices[0])
     canvas_size = (grid.image.width // 2, grid.image.height // 2)
     scale = np.diag([0.5, 0.5, 1.0])
@@ -326,9 +334,7 @@ def _fake_trace(state: StackState, ctx: Any, folder: Path, *, fingerprint: str) 
     folder.mkdir(parents=True)
     Image.fromarray(edges * 255).save(folder / "extracted_lines.png")
     (folder / "request.json").write_text(json.dumps({"atlas_to_canvas": atlas_to_canvas.tolist()}))
-    state.slices[0].image_correction = {
-        "status": "ok", "geometry_fingerprint": fingerprint, "artifact_dir": str(folder),
-    }
+    return {"status": "ok", "geometry_fingerprint": fingerprint, "artifact_dir": str(folder)}
 
 
 def test_traced_images_need_a_completed_trace_at_this_placement(tmp_path: Path, atlas,
@@ -362,3 +368,160 @@ def test_a_section_without_a_linear_placement_is_refused(tmp_path: Path, atlas):
     assert result["status"] == "error"
     assert result["results"][0]["error"] == "INVALID_LINEAR_PLACEMENT"
     assert state.slices[0].deformation is None
+
+
+# --- the nonlinear goal: a deformation (or keep_linear) per section ------------
+
+
+def _statement(spec: JobSpec, state: StackState, box: Any) -> str:
+    return build_job_statement(spec, state, tool_names=box.names, species="mouse",
+                               pos_lo=0, pos_hi=1, axis_ends=("anterior", "posterior"))
+
+
+def test_the_job_is_a_deformation_per_section_in_both_modes(tmp_path: Path, atlas):
+    state, _, spec, box = _setup(tmp_path, atlas)
+    text = _statement(spec, state, box)
+    assert ("give every section a deformation onto the atlas, on top of its linear "
+            "placement, with the section's stain and the borders the image model traces "
+            "on it as the evidence.") in text
+    assert "use the image model to correct" not in text
+    assert "or a `keep_linear` reason saying its linear placement stands" in text
+    assert "`trace_borders`:" in text and "completed image correction" in text
+    assert "a call waits for a trace that is still running" in text
+    assert "Base image-model prompt" in text
+    assert ("inspect the returned borders against the section's internal anatomy and its "
+            "traced borders") in text
+
+    (tmp_path / "none").mkdir()
+    none_state, _, none_spec, none_box = _setup(tmp_path / "none", atlas, provider="none")
+    text = _statement(none_spec, none_state, none_box)
+    assert ("give every section a deformation onto the atlas, on top of its linear "
+            "placement, with the section's stain as the evidence.") in text
+    assert "or a `keep_linear` reason saying its linear placement stands" in text
+    for absent in ("trace", "image correction", "image model", "Base image-model prompt"):
+        assert absent not in text, absent
+    assert "Choose the section image (the fit appearance or a raw channel)" in text
+    assert "inspect the returned borders against the section's internal anatomy. " in text
+
+
+def test_without_an_image_model_there_are_no_traces(tmp_path: Path, atlas, monkeypatch):
+    from langslice import registration_tool
+
+    _, _, spec, box = _setup(tmp_path, atlas, provider="none")
+    assert spec.nonlinear.uses_image_model is False
+    assert "trace_borders" not in box.names
+    assert {"grep_atlas", "fit_deformable"} <= set(box.names)
+    doc = _tool(box, "fit_deformable").__doc__ or ""
+    assert "traced" not in doc and "trace_borders" not in doc and "keep_linear" in doc
+    refused = _tool(box, "fit_deformable")([ID], section_image="traced_lines")
+    assert refused["error"] == "NO_IMAGE_MODEL"
+
+    def no_trace_check(*_a: Any, **_k: Any) -> Any:
+        raise AssertionError("submit looked for an image correction")
+
+    monkeypatch.setattr(registration_tool, "correction_fingerprint", no_trace_check)
+    submit = _tool(box, "submit")
+    first = submit("Done", [], [])
+    assert first["error"] == "MISSING_DEFORMATIONS"
+    assert first["sections"] == [{"id": ID,
+                                  "reason": "no deformation and no keep_linear reason"}]
+    _apply(box)
+    assert submit("Done", [], [])["status"] == "ok"
+    with pytest.raises(ValueError, match="nonlinear.provider"):
+        NonlinearSpec(provider="mystery")
+    assert JobSpec.from_dict(spec.to_dict()).nonlinear.provider == "none"
+
+
+def test_with_the_image_model_submit_wants_traces_then_deformations(tmp_path: Path, atlas,
+                                                                     monkeypatch):
+    from langslice import registration_tool
+
+    state, ctx, _, box = _setup(tmp_path, atlas)
+    monkeypatch.setattr(registration_tool, "correction_fingerprint", lambda *_: "now")
+    submit = _tool(box, "submit")
+    assert submit("Done", [], [])["error"] == "MISSING_IMAGE_CORRECTIONS"
+    _fake_trace(state, ctx, tmp_path / "trace", fingerprint="now")
+    assert submit("Done", [], [])["error"] == "MISSING_DEFORMATIONS"
+    _tool(box, "fit_deformable")([ID], keep_linear="Matches already.")
+    assert submit("Done", [], [])["status"] == "ok"
+
+
+def test_keep_linear_satisfies_submit_until_the_placement_moves(tmp_path: Path, atlas):
+    state, ctx, _, box = _setup(tmp_path, atlas, provider="none")
+    fit = _tool(box, "fit_deformable")
+    reply = fit([ID], keep_linear="The linear placement already matches.")
+    assert reply["status"] == "ok" and reply["applied"] is True
+    assert reply["changed"][0]["keep_linear"] == "The linear placement already matches."
+    held = state.slices[0].deformation
+    assert held["keep_linear"] == "The linear placement already matches."
+    assert load_checkpoint(ctx.checkpoint_path).slices[0].deformation == held
+    assert fit([ID], **FAST, start="current")["results"][0]["error"] == "NO_DEFORMATION"
+    # A placement change clears it, like an applied fit.
+    moved = _tool(box, "adjust_transforms")([{
+        "id": ID, "rotation_deg": 2.0, "scale_x": 1.0, "scale_y": 1.0,
+        "translate_x_mm": 0.0, "translate_y_mm": 0.0}])
+    assert moved["deformation_cleared"] == [ID]
+    assert _tool(box, "submit")("Done", [], [])["error"] == "MISSING_DEFORMATIONS"
+    _tool(box, "undo")()
+    assert state.slices[0].deformation == held
+    _tool(box, "undo")()
+    assert state.slices[0].deformation is None
+    state.slices[0].transform = None
+    assert fit([ID], keep_linear="x")["results"][0]["error"] == "INVALID_LINEAR_PLACEMENT"
+
+
+def test_a_traced_image_waits_for_its_running_trace_and_shows_it(tmp_path: Path, atlas,
+                                                                 monkeypatch):
+    import io
+    import time
+
+    from langslice import registration_tool
+
+    state, ctx, _, box = _setup(tmp_path, atlas)
+    monkeypatch.setattr(registration_tool, "correction_fingerprint", lambda *_: "now")
+    folder = tmp_path / "trace"
+    state.slices[0].image_correction = {"status": "running", "geometry_fingerprint": "now"}
+
+    def job() -> dict[str, Any]:
+        time.sleep(0.3)
+        return _trace_artifacts(state, ctx, folder, fingerprint="now")
+
+    box.start_image_job(ID, "now", job, workers=1)
+    result = _tool(box, "fit_deformable")([ID], **FAST, section_image="traced_lines")
+    assert result["status"] == "ok", result
+    assert result["results"][0]["status"] == "ok"
+    assert state.slices[0].image_correction["status"] == "ok"
+    assert load_checkpoint(ctx.checkpoint_path).slices[0].image_correction["status"] == "ok"
+    assert ID not in box.image_jobs
+    media = _media(result)
+    assert len(media) == 2 and result["traces"] == [{"id": ID, "image_indexes": [1]}]
+    assert "traced lines" in result["description"]
+    # The trace picture carries the lines in the border color on the section.
+    pixels = np.asarray(Image.open(io.BytesIO(media[1])).convert("RGB")).astype(int)
+    assert int(((pixels[..., 0] > 200) & (pixels[..., 1] > 200)
+                & (pixels[..., 2] < 80)).sum()) > 50
+
+
+def test_a_trace_still_running_after_the_wait_is_reported(tmp_path: Path, atlas, monkeypatch):
+    import threading
+
+    from langslice import registration_tool
+
+    state, _, _, box = _setup(tmp_path, atlas)
+    monkeypatch.setattr(registration_tool, "correction_fingerprint", lambda *_: "now")
+    monkeypatch.setattr(deformation, "TRACE_WAIT_S", 0.2)
+    state.slices[0].image_correction = {"status": "running", "geometry_fingerprint": "now"}
+    release = threading.Event()
+
+    def job() -> dict[str, Any]:
+        release.wait(5)
+        return {"status": "error", "error": "TransportError", "message": "no image",
+                "geometry_fingerprint": "now"}
+
+    box.start_image_job(ID, "now", job, workers=1)
+    fit = _tool(box, "fit_deformable")
+    late = fit([ID], **FAST, section_image="traced_lines")["results"][0]
+    assert late["error"] == "TRACE_TIMEOUT" and "0.2 s" in late["message"]
+    release.set()
+    failed = fit([ID], **FAST, section_image="traced_lines")["results"][0]
+    assert failed["error"] == "TRACE_FAILED" and "no image" in failed["message"]

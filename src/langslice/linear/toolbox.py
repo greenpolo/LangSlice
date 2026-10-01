@@ -20,6 +20,7 @@ import inspect
 import logging
 import math
 import threading
+import time
 import uuid
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -331,22 +332,45 @@ class ToolBox:
         """
         changed = False
         for section_id, (fingerprint, future) in list(self.image_jobs.items()):
-            try:
-                result = future.result()
-            except Exception as exc:  # the job records its own failures; this is a backstop
-                result = {"id": section_id, "geometry_fingerprint": fingerprint,
-                          "status": "error", "error": type(exc).__name__, "message": str(exc)}
-            record = state.by_id(section_id)
-            held = (record.image_correction or {}) if record is not None else {}
-            if (record is not None and held.get("status") == "running"
-                    and held.get("geometry_fingerprint") == fingerprint):
-                record.image_correction = result
-                changed = True
+            changed |= self._land(state, section_id, fingerprint, _job_result(
+                section_id, fingerprint, future, None))
         self.image_jobs.clear()
         if self.image_executor is not None:
             self.image_executor.shutdown(wait=True)
             self.image_executor = None
         return changed
+
+    def wait_image_job(self, state: StackState, section_id: str, timeout: float) -> bool:
+        """Wait up to *timeout* seconds for one section's running correction.
+
+        Records its result the way :meth:`settle_image_corrections` does and
+        returns True once nothing is running for the section; False when the
+        call is still running at the timeout.
+        """
+        running = self.image_jobs.get(section_id)
+        if running is None:
+            return True
+        fingerprint, future = running
+        try:
+            result = _job_result(section_id, fingerprint, future, max(0.0, timeout))
+        except TimeoutError:
+            return False
+        del self.image_jobs[section_id]
+        self._land(state, section_id, fingerprint, result)
+        return True
+
+    @staticmethod
+    def _land(
+        state: StackState, section_id: str, fingerprint: str, result: dict[str, Any],
+    ) -> bool:
+        """Record a finished correction on a section still waiting for it."""
+        record = state.by_id(section_id)
+        held = (record.image_correction or {}) if record is not None else {}
+        if (record is not None and held.get("status") == "running"
+                and held.get("geometry_fingerprint") == fingerprint):
+            record.image_correction = result
+            return True
+        return False
 
     def record_placement_view(
         self,
@@ -376,6 +400,45 @@ class ToolBox:
         direct = self.pending_placement_views.pop("__direct__", None)
         if direct is not None:
             self.seen_placement_views.update(direct)
+
+
+#: ``fit_deformable`` docstring passages about traced section images and their
+#: wording for a run without the image model (``nonlinear.provider`` "none").
+_STAIN_ONLY_DOC: tuple[tuple[str, str], ...] = (
+    (
+        '            section_image: "fit" (the section\'s fit appearance), a raw channel\n'
+        '                name, "traced_borders" (the section\'s trace_borders result at\n'
+        '                this placement, its lines turned into named regions; ANTs) or\n'
+        '                "traced_lines" (those lines as lines, against atlas borders).\n'
+        '                A traced image waits for a trace still running (up to\n'
+        '                TRACE_WAIT minutes) and the reply adds the trace drawn on the\n'
+        '                section.\n',
+        '            section_image: "fit" (the section\'s fit appearance) or a raw\n'
+        '                channel name.\n',
+    ),
+    ('Empty: "borders" for traced images, else "ara".', 'Empty: "ara".'),
+    (" Traced\n            sections add `traces`: each one's trace drawn on the section.", ""),
+)
+
+
+def _job_result(
+    section_id: str, fingerprint: str, future: Future[dict[str, Any]], timeout: float | None,
+) -> dict[str, Any]:
+    """A correction job's result; an exception becomes an error result.
+
+    Raises ``TimeoutError`` when *timeout* passes first.
+    """
+    try:
+        return future.result(timeout=timeout)
+    except TimeoutError:
+        if not future.done():  # the wait ran out; a job's own timeout is a result
+            raise
+        error: BaseException = future.exception() or TimeoutError()
+        return {"id": section_id, "geometry_fingerprint": fingerprint,
+                "status": "error", "error": type(error).__name__, "message": str(error)}
+    except Exception as exc:  # the job records its own failures; this is a backstop
+        return {"id": section_id, "geometry_fingerprint": fingerprint,
+                "status": "error", "error": type(exc).__name__, "message": str(exc)}
 
 
 @dataclass(frozen=True)
@@ -678,8 +741,36 @@ def submit_errors(
         if refusal is not None:
             return refusal
     if spec.has("transform"):
-        return damaged_transform_error(state, spec) or missing_transforms(state)
+        refusal = damaged_transform_error(state, spec) or missing_transforms(state)
+        if refusal is not None:
+            return refusal
+    if spec.has("nonlinear"):
+        return missing_deformations(state)
     return None
+
+
+def missing_deformations(state: StackState) -> dict[str, Any] | None:
+    """``None`` when every section carries a deformation, or a keep_linear
+    reason, at its current linear placement; else the rejection."""
+    missing: list[dict[str, str]] = []
+    for record in state.in_order():
+        held = record.deformation or {}
+        if not held:
+            missing.append({"id": record.id, "reason": "no deformation and no keep_linear reason"})
+        elif held.get("linear_key") != deformation.linear_key(state, record):
+            missing.append({"id": record.id, "reason": "made at a different linear placement"})
+    if not missing:
+        return None
+    return {
+        "status": "error",
+        "error": "MISSING_DEFORMATIONS",
+        "sections": missing,
+        "message": (
+            f"{len(missing)} of {len(state.slices)} section(s) carry no deformation at their "
+            "current placement. Apply one fit_deformable result per section, or give "
+            "fit_deformable keep_linear with a reason where the linear placement stands."
+        ),
+    }
 
 
 # --- the toolbox ---------------------------------------------------------
@@ -694,6 +785,8 @@ def build_tools(
     pos_lo, pos_hi = ctx.position_range
     locked = locked_ids(spec)
     host_damaged = host_damaged_ids(spec)
+    #: The image model is part of this run: trace_borders and traced images exist.
+    traces_on = spec.nonlinear.uses_image_model
     #: Below the maximum, the most sections one transform call may take.
     transform_cap = (
         spec.transform.max_parallel
@@ -821,6 +914,24 @@ def build_tools(
             sections=sections, zoom_ok=zoom_ok, framed_modes=framed_modes,
             resolution=args.get("resolution", 0),
         )
+
+    def region_names(values: Any, field_name: str) -> tuple[str, ...] | dict[str, Any]:
+        """Region acronyms or ids for `include`/`exclude`, checked against the atlas."""
+        from langslice.deformable.atlas_images import resolve_structures
+
+        if values is None:
+            return ()
+        if not isinstance(values, (list, tuple)):
+            return {"status": "error", "error": "BAD_ARGS",
+                    "message": f"{field_name} must be a list of acronyms or ids"}
+        names = tuple(str(value).strip() for value in values if str(value).strip())
+        if names:
+            try:
+                resolve_structures(ctx.atlas, names)
+            except ValueError as exc:
+                return {"status": "error", "error": "UNKNOWN_REGIONS", "message": str(exc),
+                        "argument": field_name}
+        return names
 
     def section_label(record: SliceState, options: DisplayOptions) -> str:
         label = f"{record.index_corrected}: {record.id}"
@@ -1097,9 +1208,12 @@ def build_tools(
             except (TypeError, ValueError):
                 continue
         refusal = submit_errors(state, spec, breaks)
-        if refusal is not None:
+        # With the image model, missing traces are reported before missing
+        # deformations: a deformation may be fitted to its section's trace.
+        if refusal is not None and not (
+                traces_on and refusal.get("error") == "MISSING_DEFORMATIONS"):
             return refusal
-        if spec.has("nonlinear"):
+        if spec.has("nonlinear") and traces_on:
             from langslice.registration_tool import correction_fingerprint
 
             if box.settle_image_corrections(state):
@@ -1127,6 +1241,8 @@ def build_tools(
                     "linear placement. This checks completion and geometry, "
                     "not anatomical quality.",
                 }
+        if refusal is not None:
+            return refusal
         if spec.has("position") and spec.position.gated and not box.reviewed:
             return {
                 "status": "refused",
@@ -2097,8 +2213,10 @@ def build_tools(
     def fit_affine(
         slice_ids: list[str],
         method: str,
+        include: list[str] = [],  # noqa: B006 — read, never mutated; ADK wants a value
+        exclude: list[str] = [],  # noqa: B006
         mode: str = "overlay",
-        zoom: list[float] = [],  # noqa: B006 — read, never mutated; ADK wants a value
+        zoom: list[float] = [],  # noqa: B006
         section_image: str = "current",
         atlas_image: str = "ara",
         atlas_opacity: float = 0.0,
@@ -2110,21 +2228,31 @@ def build_tools(
     ) -> dict[str, Any]:
         """Fit an in-plane affine per section against its atlas section.
 
-        The whole tissue outline is matched against the whole atlas outline;
-        a damaged section is refused. Each fit is written as the section's
-        transform (undoable, and `adjust_transforms` overwrites it).
+        The tissue outline is matched against the atlas outline (outlines
+        only, no internal anatomy). Without regions the whole of both is used
+        and a damaged section is refused. Each fit is written as the
+        section's transform (undoable, and `adjust_transforms` overwrites it).
 
         Args:
             slice_ids: Filenames or corrected indices; empty means every
                 positioned, undamaged section.
             method: "silhouette" (moments fit) or "elastix" (intensity affine).
+            include: Regions (acronyms or ids, descendants included) to fit
+                by: only the atlas within 300 um of them, against the tissue
+                the fit lays there. Counts only where they reach the outline.
+            exclude: Regions removed from the atlas side (e.g. tissue missing
+                from the section), descendants included; the tissue the fit
+                lays on them is left out too. With regions given, damaged
+                sections are fitted.
 
         Returns:
-            Per-section overlap (iou), the transform as the five physical
+            Per-section overlap (iou; with regions, of the kept atlas and the
+            tissue that corresponds), the transform as the five physical
             knobs about the canvas centre, the calibration the image was
-            drawn with, and an image of each fitted section under the atlas
-            outlines. The generic changed row is omitted because it repeats
-            the same fit identifiers and overlap.
+            drawn with, a `regions` report when regions were given, and an
+            image of each fitted section under the atlas outlines. The
+            generic changed row is omitted because it repeats the same fit
+            identifiers and overlap.
         """
         # ponytail: spec.transform.elastix is inert until the method lands;
         # asking for it answers UNAVAILABLE either way.
@@ -2141,6 +2269,18 @@ def build_tools(
                 "error": "BAD_ARGS",
                 "message": "method must be 'silhouette' or 'elastix'.",
             }
+        kept = region_names(include, "include")
+        if isinstance(kept, dict):
+            return kept
+        dropped = region_names(exclude, "exclude")
+        if isinstance(dropped, dict):
+            return dropped
+        overlap = sorted({name.lower() for name in kept} & {name.lower() for name in dropped})
+        if overlap:
+            return {"status": "error", "error": "BAD_ARGS",
+                    "message": "A region cannot be both included and excluded: "
+                    + ", ".join(overlap)}
+        restricted = bool(kept or dropped)
 
         if slice_ids:
             targets, unknown = resolve_many(list(slice_ids))
@@ -2157,7 +2297,7 @@ def build_tools(
             return refusal
         options = display(VIEW_MODES, dict(
             mode=mode or "overlay", zoom=zoom, section_image=section_image,
-            atlas_image=atlas_image, atlas_opacity=atlas_opacity, regions=regions,
+            atlas_image=atlas_image, atlas_opacity=atlas_opacity, regions=regions or list(kept),
             outlines=outlines, border_color=border_color, border_thickness=border_thickness,
             resolution=resolution,
         ), sections=targets)
@@ -2179,10 +2319,11 @@ def build_tools(
             if record.id in locked:
                 results.append({"id": record.id, "status": "error", "error": "LOCKED"})
                 continue
-            if record.damaged:
+            if record.damaged and not restricted:
                 results.append({"id": record.id, "status": "error", "error": "DAMAGED"})
                 continue
-            outcome = fit_silhouette(state, ctx, record, draw=draw_fit(record))
+            outcome = fit_silhouette(state, ctx, record, draw=draw_fit(record),
+                                     include=kept, exclude=dropped)
             panels = outcome.pop("panels", None) or []
             results.append(outcome)
             if outcome["status"] != "ok":
@@ -2209,6 +2350,8 @@ def build_tools(
                 + ", in that order (mapped by each result's image_indexes); "
                 "each shows the section under its fitted transform against "
                 "the atlas at true physical scale, in the requested view."
+                + (" The whole atlas is drawn; the fit used only the kept regions."
+                   if restricted else "")
             )
             payload[TOOL_MEDIA_PARTS_KEY] = parts
         snapshot()
@@ -2220,6 +2363,8 @@ def build_tools(
                 "iou": outcome["iou"],
                 "calibration": outcome["calibration"],
                 "mirrored": outcome["mirrored"],
+                **({"regions": {"include": list(kept), "exclude": list(dropped)}}
+                   if restricted else {}),
             }
         save_checkpoint(state, ctx.checkpoint_path)
         return payload
@@ -2735,6 +2880,10 @@ def build_tools(
             return {"status": "error", "error": "BAD_DETAIL", "detail": list(get_args(Detail))}
         picked = str(values.get("section_image") or deformation.FIT_LOOK).strip()
         traced = picked in deformation.TRACED
+        if traced and not traces_on:
+            return {"status": "error", "error": "NO_IMAGE_MODEL",
+                    "message": "This run has no image model, so there are no traced section "
+                    "images; use 'fit' or a raw channel."}
         atlas_kind = str(values.get("atlas_image") or "").strip().lower() or (
             "borders" if traced else "ara")
         if atlas_kind not in deformation.ATLAS_CHOICES:
@@ -2755,22 +2904,26 @@ def build_tools(
         return deformation.Choice(section_image=picked, atlas_image=atlas_kind, engine=chosen,
                                   stiffness=stiffness, detail=detail)
 
-    def region_names(values: Any, field_name: str) -> tuple[str, ...] | dict[str, Any]:
-        from langslice.deformable.atlas_images import resolve_structures
+    def keep_linear_placements(targets: list[SliceState], reason: str) -> dict[str, Any]:
+        """Record that each section's linear placement stands: no warp, a reason.
 
-        if values is None:
-            return ()
-        if not isinstance(values, (list, tuple)):
-            return {"status": "error", "error": "BAD_ARGS",
-                    "message": f"{field_name} must be a list of acronyms or ids"}
-        names = tuple(str(value).strip() for value in values if str(value).strip())
-        if names:
-            try:
-                resolve_structures(ctx.atlas, names)
-            except ValueError as exc:
-                return {"status": "error", "error": "UNKNOWN_REGIONS", "message": str(exc),
-                        "argument": field_name}
-        return names
+        Held on ``SliceState.deformation`` with the placement's ``linear_key``,
+        so it satisfies `submit` like an applied fit, and a later change to the
+        placement clears it the same way. One undo step.
+        """
+        refused = [
+            {"id": record.id, "status": "error", "error": "INVALID_LINEAR_PLACEMENT",
+             "message": "keep_linear needs a position and a transform."}
+            for record in targets if record.position_mm is None or record.transform is None
+        ]
+        if refused:
+            return {"status": "error", "error": "NOTHING_WRITTEN", "results": refused}
+        snapshot()
+        for record in targets:
+            record.deformation = {"keep_linear": reason,
+                                  "linear_key": deformation.linear_key(state, record)}
+        return {**commit(*(record.id for record in targets)), "applied": True,
+                "keep_linear": reason}
 
     def fit_deformable_impl(
         sections: list[str],
@@ -2791,6 +2944,7 @@ def build_tools(
         border_color: str,
         border_thickness: float,
         resolution: int = 0,
+        keep_linear: str = "",
     ) -> dict[str, Any]:
         store = deformation_store()
         if not isinstance(sections, (list, tuple)) or not sections:
@@ -2800,6 +2954,9 @@ def build_tools(
         if unknown:
             return {"status": "error", "error": "UNKNOWN_SLICE_IDS", "unknown": unknown}
         targets = list({record.id: record for record in named}.values())
+        reason = str(keep_linear or "").strip()
+        if reason:
+            return keep_linear_placements(targets, reason)
         if len(targets) > MAX_VIEW_SLICES:
             return {"status": "error", "error": "TOO_MANY_SECTIONS",
                     "max_sections": MAX_VIEW_SLICES}
@@ -2851,6 +3008,9 @@ def build_tools(
 
         rows: list[dict[str, Any]] = []
         jobs: list[deformation.Job] = []
+        #: Per traced section, the stain and the trace's lines on the fit grid.
+        traced_views: dict[str, tuple[Any, Any]] = {}
+        trace_deadline = time.monotonic() + deformation.TRACE_WAIT_S
         for record in targets:
             try:
                 grid = deformation.fit_grid(state, ctx, record)
@@ -2869,7 +3029,14 @@ def build_tools(
                     continue
                 previous_key = str((record.deformation or {}).get("key"))
             channels = ctx.section_channels(record.id)[0]
-            running = record.id in box.image_jobs and not box.image_jobs[record.id][1].done()
+            running = False
+            if any(choice.section_image in deformation.TRACED for choice in choices):
+                # A traced image waits for the section's trace still running.
+                landed = record.id in box.image_jobs
+                running = not box.wait_image_job(state, record.id,
+                                                 trace_deadline - time.monotonic())
+                if landed and not running:
+                    save_checkpoint(state, ctx.checkpoint_path)
             for number, choice in enumerate(choices, start=1):
                 failure = {"id": record.id, "status": "error", "settings": choice.echo(),
                            **({} if applying else {"candidate": number})}
@@ -2883,9 +3050,11 @@ def build_tools(
                                                               choice.section_image)
                     lines = None
                     if choice.section_image in deformation.TRACED:
-                        lines, trace = deformation.traced_lines(state, ctx, grid,
-                                                                running=running)
+                        lines, trace = deformation.traced_lines(
+                            state, ctx, grid, running=running,
+                            waited_s=deformation.TRACE_WAIT_S)
                         identity = {**identity, "trace": trace}
+                        traced_views.setdefault(record.id, (image, lines))
                     settings = choice.settings(kept, dropped)
                 except deformation.FitRefusal as refusal:
                     rows.append({**failure, **refusal.payload, "id": record.id})
@@ -2984,6 +3153,19 @@ def build_tools(
         if wrote_any:
             push(before)
             save_checkpoint(state, ctx.checkpoint_path)
+        # Each traced section's trace, once per call, so it can be reviewed.
+        traces: list[dict[str, Any]] = []
+        for section_id, (image, lines) in traced_views.items():
+            try:
+                picture = deformation.trace_picture(
+                    image, lines, style=style,
+                    title=f"{section_id}  trace_borders result: the image model's lines")
+            except Exception as exc:
+                logger.warning("trace picture failed for %s", section_id, exc_info=True)
+                failed.append({"id": section_id, "message": str(exc)})
+                continue
+            traces.append({"id": section_id, "image_indexes": [len(parts)]})
+            parts.append(image_to_part(picture))
         succeeded = [row for row in rows if row.get("status") == "ok"]
         view = {key: value for key, value in options.echo().items()
                 if key not in ("section_image", "atlas_image")}
@@ -2994,6 +3176,7 @@ def build_tools(
             "results": rows,
             "view": view,
             "render_failed": failed,
+            **({"traces": traces} if traces else {}),
             "description": (
                 ("Applied: each section's deformation is now this fit (one undo step). "
                  if applying else "Preview: nothing was written. ")
@@ -3002,6 +3185,8 @@ def build_tools(
                 + (", included/`regions` borders strong over faint outlines" if highlight else "")
                 + (", excluded regions in pink" if dropped else "")
                 + ("; in ab mode then what the fit started from" if options.mode == "ab" else "")
+                + ("; then, per traced section (`traces`), the image model's traced lines "
+                   "on the section" if traces else "")
                 + "."
             ),
             TOOL_MEDIA_PARTS_KEY: parts,
@@ -3019,6 +3204,7 @@ def build_tools(
         stiffness: str = "medium",
         detail: str = "standard",
         candidates: list[dict[str, Any]] = [],  # noqa: B006
+        keep_linear: str = "",
         mode: str = "borders",
         zoom: list[float] = [],  # noqa: B006
         atlas_opacity: float = 0.0,
@@ -3038,6 +3224,8 @@ def build_tools(
         of recomputing; that write is undoable and checkpointed. Any later
         change to a section's position, orientation, cutting angles or
         transform clears its deformation. Needs a position and a transform.
+        With keep_linear, no fit runs: each named section records that its
+        linear placement stands, with that reason.
 
         Args:
             sections: Filenames or corrected indices (up to 4; at most 8 fits
@@ -3050,9 +3238,12 @@ def build_tools(
             start: "linear" (from the linear placement) or "current" (compose
                 onto the section's applied deformation: region-by-region steps).
             section_image: "fit" (the section's fit appearance), a raw channel
-                name, "traced_borders" (the completed trace_borders result at
+                name, "traced_borders" (the section's trace_borders result at
                 this placement, its lines turned into named regions; ANTs) or
                 "traced_lines" (those lines as lines, against atlas borders).
+                A traced image waits for a trace still running (up to
+                TRACE_WAIT minutes) and the reply adds the trace drawn on the
+                section.
             atlas_image: "ara", "borders" or "nissl" (hosts with ABBA's
                 atlas). Empty: "borders" for traced images, else "ara".
             engine: "ants" or "elastix"; empty is ANTs when installed.
@@ -3060,6 +3251,10 @@ def build_tools(
             detail: "coarse" (40 um), "standard" (20 um) or "fine" (10 um).
             candidates: 2 to 4 objects, each overriding any of stiffness,
                 detail, section_image, atlas_image and engine for one variant.
+            keep_linear: A reason the named sections' linear placement stands
+                without a deformation. Given, nothing is fitted: each section
+                records it at its current placement (one undo step; submit
+                accepts it like an applied fit; a placement change clears it).
             mode: "borders" (the fitted borders on the section) or "ab" (that,
                 then what the fit started from).
             zoom: [x0, y0, x1, y1] fractions of the section; empty is all.
@@ -3075,12 +3270,13 @@ def build_tools(
             displacement (max and median, mm, over the tissue), fold fraction,
             plausibility flags (regions compressed, expanded, vanished or
             folded beyond limits) and image_indexes into the pictures: the
-            final borders drawn on the section image the fit read.
+            final borders drawn on the section image the fit read. Traced
+            sections add `traces`: each one's trace drawn on the section.
         """
         return fit_deformable_impl(
             sections, include, exclude, start, section_image, atlas_image, engine, stiffness,
             detail, candidates, mode, zoom, atlas_opacity, regions, outlines, border_color,
-            border_thickness, resolution,
+            border_thickness, resolution, keep_linear,
         )
 
     def fit_deformable_fixed(
@@ -3093,6 +3289,7 @@ def build_tools(
         stiffness: str = "medium",
         detail: str = "standard",
         candidates: list[dict[str, Any]] = [],  # noqa: B006
+        keep_linear: str = "",
         mode: str = "borders",
         zoom: list[float] = [],  # noqa: B006
         atlas_opacity: float = 0.0,
@@ -3105,9 +3302,17 @@ def build_tools(
         return fit_deformable_impl(
             sections, include, exclude, start, section_image, atlas_image, "", stiffness,
             detail, candidates, mode, zoom, atlas_opacity, regions, outlines, border_color,
-            border_thickness, resolution,
+            border_thickness, resolution, keep_linear,
         )
 
+    doc = (fit_deformable.__doc__ or "").replace(
+        "TRACE_WAIT minutes", f"{deformation.TRACE_WAIT_S / 60:g} minutes")
+    if not traces_on:
+        # No image model: no traced section images to offer.
+        for traced_text, stain_text in _STAIN_ONLY_DOC:
+            doc = doc.replace(traced_text.replace(
+                "TRACE_WAIT minutes", f"{deformation.TRACE_WAIT_S / 60:g} minutes"), stain_text)
+    fit_deformable.__doc__ = doc
     # The user fixed the engine: the same tool without the engine argument.
     fit_deformable_fixed.__name__ = fit_deformable_fixed.__qualname__ = "fit_deformable"
     fit_deformable_fixed.__doc__ = (fit_deformable.__doc__ or "").replace(
@@ -3115,7 +3320,8 @@ def build_tools(
     ).replace("A library engine", f"The {engine_option} engine")
 
     if spec.has("nonlinear"):
-        box.tools.append(trace_borders)
+        if traces_on:
+            box.tools.append(trace_borders)
         box.tools.append(grep_atlas)
         box.tools.append(fit_deformable if engine_option == "either" else fit_deformable_fixed)
 

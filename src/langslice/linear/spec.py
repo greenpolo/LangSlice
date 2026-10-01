@@ -121,7 +121,14 @@ class TransformSpec:
 
 @dataclass
 class NonlinearSpec:
-    """Image-model border correction after a supplied linear placement."""
+    """Knobs of the ``nonlinear`` task: a deformation per section on top of
+    its linear placement, fitted to the stain and, when an image provider is
+    set, to the borders the image model traces.
+
+    ``provider`` is the image model's access method (``providers/registry``);
+    ``"none"`` runs the task without an image model: no ``trace_borders``,
+    no traced section images, no trace requirement at submit.
+    """
 
     provider: str = "openai-oauth"
     image_model: str | None = None
@@ -132,10 +139,23 @@ class NonlinearSpec:
     notes: str = ""
 
     def __post_init__(self) -> None:
+        from langslice.providers.registry import CANONICAL_PROVIDERS, canonical_provider
+
         if self.engine not in DEFORMABLE_ENGINES:
             raise ValueError(
                 f"nonlinear.engine must be one of {DEFORMABLE_ENGINES}; got {self.engine!r}"
             )
+        if canonical_provider(str(self.provider or "")) not in CANONICAL_PROVIDERS:
+            raise ValueError(
+                f"nonlinear.provider must be one of {CANONICAL_PROVIDERS}; got {self.provider!r}"
+            )
+
+    @property
+    def uses_image_model(self) -> bool:
+        """Whether the image model is part of this run (provider is not ``none``)."""
+        from langslice.providers.registry import canonical_provider
+
+        return canonical_provider(str(self.provider or "")) != "none"
 
 
 #: Optional per-request context safeguard, disabled unless a host sets it.

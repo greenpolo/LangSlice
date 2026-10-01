@@ -59,7 +59,8 @@ JobSpec
                                   # refuse calls naming more sections (TOO_MANY_SECTIONS)
     notes: str = ""               # user notes, shown under this task
   facts: free-form user facts, one line each, passed verbatim
-  nonlinear: {provider: openai-oauth, image_model: null, notes: ""}
+  nonlinear: {provider: openai-oauth, image_model: null, engine: either, notes: ""}
+                                # provider "none": no image model (no trace_borders)
   inputs: order/positions/angles/transforms supplied by the host for tasks that are OFF,
           plus pixel_size_um, damaged {id: note} (flags the agent cannot clear),
           locked [ids] (flip, rotation and transform the agent cannot change) and
@@ -182,11 +183,11 @@ in any payload or prompt (see `lean-harness` history in `linear/CLAUDE.md`).
 | `run_deepslice(ids?, allow_angle_change, keep=[ids])` | position.deepslice | positions (+ angles) for undamaged sections; UNAVAILABLE unless installed and plane/atlas supported. |
 | `search_position(id, window_mm, angles?)` | position.bayesian | `oblique.fit_oblique` at the section's current position: best position (and angles) with score; writes nothing. |
 | `set_cutting_angles(pitch_deg, yaw_deg)` | transform.angles | stack-wide; subsequent atlas fetches and fits use them. |
-| `fit_affine(ids, method=silhouette\|elastix, +display)` | transform | per-section in-plane affine against its atlas section, written as the section's transform; returns iou, the transform as the same five `physical` knobs `adjust_transforms` takes (plus `shear`, about the canvas centre) and a captioned panel (default `overlay`; any physical mode) for every successful fit, mapped by `image_indexes`. Damaged sections are refused. The fit itself reads the default appearance. |
+| `fit_affine(ids, method=silhouette\|elastix, include=[], exclude=[], +display)` | transform | per-section in-plane affine against its atlas section, written as the section's transform; returns iou, the transform as the same five `physical` knobs `adjust_transforms` takes (plus `shear`, about the canvas centre) and a captioned panel (default `overlay`; any physical mode) for every successful fit, mapped by `image_indexes`. Damaged sections are refused unless regions are given. `include`/`exclude` (as in `fit_deformable`) restrict the outline fit to the kept atlas regions and the tissue the current placement lays on them, on the true-scale canvas (`transform.region_silhouette_fit`), with a `regions` report; without them the fit is unchanged. The fit itself reads the default appearance. |
 | `adjust_transforms(entries)` | transform.interactive | set one to four independent sections, each with rotation, per-axis scales and millimetre shifts. Per-entry pivot, note and every display option (modes as the physical views plus `ab`); `ab` and `side_by_side` return two images, other modes one. Each result maps its images with `image_indexes`. One undo step; repeat unchanged parameters to redraw. Replaces the complete transform, including spline or shear. Inspect before a dependent correction in a later call. |
-| `trace_borders(id, prompt)` | nonlinear | one image-model correction (agent edits the base prompt per section) of the section's placed atlas borders, run in the background (submit waits), first reply kept; no fit, no transform change. See [the image-tool contract](nonlinear_image_tool.md). |
+| `trace_borders(id, prompt)` | nonlinear, unless provider `none` | one image-model correction (agent edits the base prompt per section) of the section's placed atlas borders, run in the background (submit waits), first reply kept; no fit, no transform change. See [the image-tool contract](nonlinear_image_tool.md). |
 | `grep_atlas(query, section)` | nonlinear | text lookup of atlas regions by acronym, name substring or id (40 rows max): acronym, id, name, ancestry as acronyms, descendant count; with a positioned `section`, whether each region or a descendant is in the atlas plane at its placement. Writes nothing; for choosing regions to exclude from a later fit. |
-| `fit_deformable(sections, include=[], exclude=[], start="linear", section_image="fit", atlas_image="", engine="", stiffness="medium", detail="standard", candidates=[], mode="borders", zoom, atlas_opacity, regions, outlines, border_color, border_thickness=1.0)` — `engine` only when `nonlinear.engine` is `either`; modes: borders, ab | nonlinear | a library deformable fit (ANTs SyN or Elastix B-spline, `src/langslice/deformable/`) on top of each section's linear placement. `include` restricts the fit to those regions plus a margin, `exclude` removes regions from the atlas side; `start="current"` composes onto the applied deformation. Section image: the `fit` appearance, a raw channel, or a completed `trace_borders` result at this placement (`traced_borders` = named regions, ANTs; `traced_lines` = lines vs borders). 2–4 `candidates` preview and write nothing; one setting applies (one undo step), reusing an identical cached result. Returns per result the final borders drawn on the section image (included strong, excluded pink), displacement, fold fraction, flags and engine numbers. A later change to position, orientation, cutting angles or transform clears the deformation (`deformation_cleared` in that reply). |
+| `fit_deformable(sections, include=[], exclude=[], start="linear", section_image="fit", atlas_image="", engine="", stiffness="medium", detail="standard", candidates=[], keep_linear="", mode="borders", zoom, atlas_opacity, regions, outlines, border_color, border_thickness=1.0)` — `engine` only when `nonlinear.engine` is `either`; modes: borders, ab | nonlinear | a library deformable fit (ANTs SyN or Elastix B-spline, `src/langslice/deformable/`) on top of each section's linear placement. `include` restricts the fit to those regions plus a margin, `exclude` removes regions from the atlas side; `start="current"` composes onto the applied deformation. Section image: the `fit` appearance, a raw channel, or (image model only) the section's `trace_borders` result at this placement (`traced_borders` = named regions, ANTs; `traced_lines` = lines vs borders); a call waits up to 300 s for a trace still running and adds the trace drawn on the section (`traces`). `keep_linear="reason"` fits nothing and records that the named sections' linear placement stands. 2–4 `candidates` preview and write nothing; one setting applies (one undo step), reusing an identical cached result. Returns per result the final borders drawn on the section image (included strong, excluded pink), displacement, fold fraction, flags and engine numbers. A later change to position, orientation, cutting angles or transform clears the deformation (`deformation_cleared` in that reply). |
 | `submit(summary, notes, interval_breaks)` | always | ends the run; gated (below). |
 
 **Shared display options** (`linear/display.py`, one `DisplayOptions` parsed
@@ -255,6 +256,12 @@ transform refinement, `orient_slices` included); `agent_preprocessing` adds
   correction, not anatomical alignment quality; intact identity transforms remain
   valid. Position-only runs are unaffected. Locked sections (host `"host"`
   transform) are exempt: their alignment is the user's and cannot change here.
+- nonlinear on: every section carries a deformation applied at its current
+  linear placement, or a `keep_linear` reason given through `fit_deformable`
+  (`MISSING_DEFORMATIONS`, naming each section and why). With an image model,
+  a completed image correction at the current placement is required first
+  (`MISSING_IMAGE_CORRECTIONS`; submit waits for running calls); with provider
+  `none` traces are neither built nor required.
 
 Refusals state the numbers and stop.
 
@@ -266,18 +273,26 @@ adjustment count or final-review hook.
 
 ### Linear and nonlinear scope
 
-The linear agent supplies order, position and affine alignment. With the optional
-`nonlinear` task it also exposes `trace_borders(id, prompt="")`.
-The top-level registration bridge sends placed borders plus the clean photograph
-to the image model with the agent's per-slice edited copy of the base prompt.
-The first result is retained without agent selection or rejection. Submit requires
-a completed correction at each section's current placement. No deformation is
-fitted and no transform is changed by this tool. See
-[the image-tool contract](nonlinear_image_tool.md). The same task adds
-`fit_deformable`, which fits and stores a deformation per section on top of
-the linear placement (`SliceState.deformation`, the record under
-`<results dir>/deformable/`); see the tool table. Export adapters are to read
-that record; none exist yet.
+The linear agent supplies order, position and affine alignment. The optional
+`nonlinear` task's job (2026-10-01) is a deformation per section on top of its
+linear placement, with the stain (and, with the image model, the traced
+borders) as evidence: it builds `grep_atlas` and `fit_deformable`, which fits
+and stores a deformation per section (`SliceState.deformation`, the record
+under `<results dir>/deformable/`; see the tool table), or records with
+`keep_linear` that a section's linear placement stands. Submit requires one or
+the other for every section. Export adapters are to read that record; none
+exist yet.
+
+With an image model (any `nonlinear.provider` but `none`) the task also
+exposes `trace_borders(id, prompt="")`. The top-level registration bridge
+sends placed borders plus the clean photograph to the image model with the
+agent's per-slice edited copy of the base prompt. The first result is retained
+without agent selection or rejection. Submit also requires a completed
+correction at each section's current placement. No deformation is fitted and
+no transform is changed by this tool; `fit_deformable` can read its lines. See
+[the image-tool contract](nonlinear_image_tool.md). With provider `none`
+(CLI `--image-provider none`) there is no `trace_borders`, no traced section
+image and no trace gate, and the job statement never mentions them.
 
 Historical checkpoints with applied spline transforms remain readable and render
 their complete saved mapping. Affine fitting or adjustment replaces that mapping;

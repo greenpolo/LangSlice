@@ -153,6 +153,16 @@ def _moments_pose(mask: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]
     return np.array([cx, cy]), eigvals, eigvecs
 
 
+def axis_ratio(mask: np.ndarray) -> float:
+    """Long over short principal axis of a binary mask (1.0: no preferred axis).
+
+    The moments fit turns the section so the two masks' long axes meet; near
+    1.0 that axis, and so the fitted rotation, is set by small outline noise.
+    """
+    _centre, eigvals, _vectors = _moments_pose(mask)
+    return float(np.sqrt(max(eigvals[0], 1e-12) / max(eigvals[1], 1e-12)))
+
+
 def _affine_from_pose(
     src_c: np.ndarray, src_eigvals: np.ndarray, src_V: np.ndarray,
     dst_c: np.ndarray, dst_eigvals: np.ndarray, dst_V: np.ndarray,
@@ -230,6 +240,29 @@ def mask_affine(
     return best_affine, best_iou, best_pattern
 
 
+def tissue_silhouette(
+    image: Image.Image, long_edge: int = AFFINE_LONG_EDGE
+) -> tuple[np.ndarray, np.ndarray]:
+    """``(mask, rgb)``: the section's filled tissue silhouette in the fit frame.
+
+    The section resized to *long_edge* (the frame every silhouette fit works
+    in) and its Otsu silhouette, 0/255. Raises ``ValueError`` when the
+    silhouette is implausible (Otsu failed on a blank or uniform field).
+    """
+    slice_pil = resize_long_edge(image.convert("RGB"), long_edge)
+    slice_rgb = np.asarray(slice_pil, dtype=np.uint8)
+    slice_gray = cv2.cvtColor(slice_rgb, cv2.COLOR_RGB2GRAY)
+
+    slice_mask = extract_slice_silhouette(slice_gray)
+    area_frac = float((slice_mask > 0).sum()) / slice_mask.size
+    if area_frac < _MIN_AREA_FRAC or area_frac > _MAX_AREA_FRAC:
+        raise ValueError(
+            f"Slice silhouette area fraction {area_frac:.2%} out of range "
+            f"[{_MIN_AREA_FRAC:.0%}, {_MAX_AREA_FRAC:.0%}] — Otsu likely failed."
+        )
+    return slice_mask, slice_rgb
+
+
 def silhouette_affine(
     image: Image.Image,
     *,
@@ -250,18 +283,8 @@ def silhouette_affine(
     Raises ``ValueError`` when the tissue silhouette is implausible (Otsu
     failed on a blank or uniform field) or no candidate could be computed.
     """
-    slice_pil = resize_long_edge(image.convert("RGB"), long_edge)
-    size = slice_pil.size  # (w, h)
-    slice_rgb = np.asarray(slice_pil, dtype=np.uint8)
-    slice_gray = cv2.cvtColor(slice_rgb, cv2.COLOR_RGB2GRAY)
-
-    slice_mask = extract_slice_silhouette(slice_gray)
-    area_frac = float((slice_mask > 0).sum()) / slice_mask.size
-    if area_frac < _MIN_AREA_FRAC or area_frac > _MAX_AREA_FRAC:
-        raise ValueError(
-            f"Slice silhouette area fraction {area_frac:.2%} out of range "
-            f"[{_MIN_AREA_FRAC:.0%}, {_MAX_AREA_FRAC:.0%}] — Otsu likely failed."
-        )
+    slice_mask, slice_rgb = tissue_silhouette(image, long_edge)
+    size = (slice_mask.shape[1], slice_mask.shape[0])  # (w, h)
 
     atlas_mask = (
         atlas_mask_at(size)

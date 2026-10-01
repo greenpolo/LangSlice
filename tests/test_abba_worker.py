@@ -68,6 +68,8 @@ def test_linear_initial_state_is_not_applied_and_affine_uses_snapshot_geometry(
     ({"damaged": {"section_0001.tif": 3}}, "Damaged"),
     ({"spec": {"image_resolution": "ultra"}}, "image_resolution"),
     ({"spec": {"transform": {"max_parallel": 5}}}, "max_parallel"),
+    ({"spec": {"tasks": ["nonlinear"], "nonlinear": {"provider": "mystery"}}},
+     "nonlinear.provider"),
 ])
 def test_bad_host_inputs_refused_before_engine(params, change, message, monkeypatch):
     from langslice.linear import engine
@@ -164,3 +166,11 @@ def test_orientation_reaches_the_host_with_the_transform_task(tasks, sent):
     assert bool(updates) is sent
     if sent:
         assert updates[0]["flip"] is True and updates[0]["rotation_deg"] == 90
+
+
+def test_nonlinear_without_an_image_model_is_accepted(params):
+    from langslice.api.abba_worker import prepare_linear
+
+    params["spec"] = {"tasks": ["transform", "nonlinear"], "nonlinear": {"provider": "none"}}
+    spec = prepare_linear(params).spec
+    assert spec.has("nonlinear") and spec.nonlinear.uses_image_model is False

@@ -90,6 +90,8 @@ def test_image_correction_runs_in_background_and_submit_waits(tmp_path: Path, mo
     _tool(box, "redo")()
     assert state.slices[0].image_correction["status"] == "running"
     release.set()
+    assert _tool(box, "submit")("Done", [], [])["error"] == "MISSING_DEFORMATIONS"
+    _tool(box, "fit_deformable")(["0"], keep_linear="The placement already fits.")
     assert _tool(box, "submit")("Done", [], [])["status"] == "ok"
     assert state.slices[0].image_correction["status"] == "ok"
     assert load_checkpoint(ctx.checkpoint_path).slices[0].image_correction["status"] == "ok"

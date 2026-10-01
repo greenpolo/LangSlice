@@ -25,7 +25,13 @@ running call and record its result.
 
 This stage produces border-annotation images. It does not fit a deformation,
 modify the linear transform, or export a completed nonlinear registration.
-Deformation fitting remains a separate stage.
+`fit_deformable` fits the deformation (the nonlinear task's job since
+2026-10-01): with `section_image` `traced_borders` or `traced_lines` it reads
+this tool's extracted lines, waiting up to 300 s for a call still running at
+the current placement (recording its result as `submit` would), and its reply
+adds the lines drawn on the section so the agent can review the trace. With
+`nonlinear.provider` `none` this tool is not built and nothing requires a
+trace.
 
 ## Running it
 
@@ -48,7 +54,8 @@ existing linear checkpoint format, including calibration. A historical spline is
 refused rather than silently reduced to its stored affine baseline. The new task
 is opt-in: the default remains reorder, position and transform. Image transport
 defaults to `openai-oauth`; `--image-provider` and `--image-model` select the host's
-image settings independently of the agent's `--model`.
+image settings independently of the agent's `--model`; `--image-provider none`
+runs the nonlinear task without this tool.
 
 The edited prompt is an agent tool argument. A host may also pass user notes for
 this task as `JobSpec.nonlinear.notes`; they appear under the task in the job
@@ -73,7 +80,8 @@ that returned no image. Each attempt's artifacts remain separate. An interrupted
 request with an unknown outcome is reported explicitly.
 
 Submit checks that every section has a completed correction for its current
-placement, after waiting for running calls. It checks completion and geometry, not
+placement, after waiting for running calls (and then that every section has a
+deformation or a `keep_linear` reason). It checks completion and geometry, not
 anatomical quality. An empty or unhelpful drawing is still retained and counted as
 a completed model call. A result arriving for a correction the agent has since
 undone or superseded does not overwrite that section's record; its artifacts stay
