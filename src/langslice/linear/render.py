@@ -365,6 +365,8 @@ def status_rows(state: StackState) -> list[dict[str, Any]]:
                    if transform.get("spline") else {}),
                 "transform_iou": transform.get("iou"),
                 "transform_mirrored": transform.get("mirrored"),
+                **({"deformation_steps": len(record.deformation.get("steps") or [])}
+                   if record.deformation else {}),
                 "caveats": list(record.caveats),
             }
         )
@@ -414,6 +416,8 @@ def status_text(state: StackState) -> str:
                 transform += f" iou={float(row['transform_iou']):.3f}"
             if row["transform_mirrored"] is not None:
                 transform += f" mirrored={bool(row['transform_mirrored'])}"
+        if row.get("deformation_steps"):
+            transform += f"  deformation={row['deformation_steps']} step(s)"
         lines.append(
             f"{row['index']:>3}  {row['id']}  {position}  {delta}"
             + (f"  [{'; '.join(flags)}]" if flags else "")

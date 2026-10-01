@@ -74,6 +74,12 @@ class SliceState:
     transform: dict[str, Any] | None = None
     #: Raw image-model correction and artifacts; does not replace the transform.
     image_correction: dict[str, Any] | None = None
+    #: The applied deformable fit (``fit_deformable``): a reference to its
+    #: record on disk (``record``: the ``DeformableRecord`` directory, parent
+    #: steps inside it) plus a summary. It lives on top of the linear
+    #: placement it was fitted at (``linear_key``); any change to position,
+    #: orientation, cutting angles or transform clears it.
+    deformation: dict[str, Any] | None = None
     caveats: list[str] = field(default_factory=list)
 
 

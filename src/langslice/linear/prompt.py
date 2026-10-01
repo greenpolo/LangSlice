@@ -96,9 +96,41 @@ TOOL_LINES: dict[str, str] = {
     "ancestry as acronyms from the root and the number of descendants. With a "
     "section that has a position it also says whether the region, or any "
     "descendant, appears in the atlas plane at that placement. Text only; writes nothing.",
+    "fit_deformable": "fits a deformation of the placed atlas onto one or more "
+    "positioned, transformed sections with a library engine (ANTs SyN or Elastix "
+    "B-spline), on top of the linear placement. Choose the section image (the fit "
+    "appearance, a raw channel, or a completed trace_borders result at this "
+    "placement: traced_borders as named regions, traced_lines as lines), the atlas "
+    "image, stiffness, detail, regions to include (fit only them and a margin) and "
+    "to exclude (removed from the atlas side), and start (linear, or current to "
+    "compose onto the applied deformation, region by region). Several candidates "
+    "(2 to 4 setting variants, run concurrently) preview and write nothing; exactly "
+    "one setting applies it, reusing an identical earlier result. Returns per result "
+    "the final borders drawn on the section image (included regions strong, "
+    "excluded in pink), displacement, fold fraction, plausibility flags and the "
+    "engine numbers used; display options mode (borders or ab), zoom, "
+    "atlas_opacity, regions, outlines, border_color, border_thickness. A change "
+    "to a section's position, orientation, cutting angles or transform clears "
+    "its deformation. Undoable.",
     "submit": "checks requirements and ends the run if they pass; otherwise "
     "returns the missing requirements without ending or changing the run.",
 }
+
+
+def deformable_engine_fact(engine: str) -> str:
+    """The job statement's line on the deformable-fit engine and its availability."""
+    from langslice.linear.deformation import ants_available
+
+    if engine == "either":
+        if ants_available():
+            return ("`fit_deformable` engine: ants or elastix, your choice per call "
+                    "(default ants).")
+        return ("`fit_deformable` engine: elastix (ANTs is not installed on this host, so "
+                "traced_borders is unavailable).")
+    if engine == "ants" and not ants_available():
+        return ("`fit_deformable` engine: ants, set by the user, but ANTs is not installed on "
+                "this host, so `fit_deformable` cannot run.")
+    return f"`fit_deformable` engine: {engine}, set by the user for this run."
 
 
 #: Tools that return pictures and so take the shared display options.
@@ -284,6 +316,8 @@ def build_job_statement(
             "- `submit` requires a completed image correction for every section at "
             "its current placement. Completion does not certify anatomical quality."
         )
+        if "fit_deformable" in tool_names:
+            constraints.append("- " + deformable_engine_fact(spec.nonlinear.engine))
     constraints.append(
         "- Corrections are recorded as data; the user's image files are never "
         "modified."

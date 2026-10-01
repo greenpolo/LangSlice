@@ -167,6 +167,10 @@ class DeformableRecord:
     atlas: dict[str, Any]
     step: int = 0
     parent: DeformableRecord | None = field(default=None, repr=False)
+    #: Who made this record and from what: free-form, saved with the metadata
+    #: (the linear agent's tool stores its section id, the linear handoff
+    #: metadata and the fit inputs it chose).
+    provenance: dict[str, Any] = field(default_factory=dict)
 
     @property
     def mm_per_px(self) -> float:
@@ -216,6 +220,7 @@ class DeformableRecord:
             "labels": "leaf atlas ids under the composed warp, 0 outside tissue",
             "excluded_ids": list(self.excluded_ids),
             "engine": self.engine, "diagnostics": self.diagnostics, "atlas": self.atlas,
+            "provenance": self.provenance,
         }
 
     def save(self, directory: str | Path) -> Path:
@@ -251,7 +256,7 @@ class DeformableRecord:
             tissue=arrays["tissue"], torn_band=arrays["torn_band"],
             excluded_ids=[int(i) for i in meta["excluded_ids"]], engine=meta["engine"],
             diagnostics=meta["diagnostics"], atlas=meta["atlas"], step=int(meta["step"]),
-            parent=parent,
+            parent=parent, provenance=dict(meta.get("provenance") or {}),
         )
 
 

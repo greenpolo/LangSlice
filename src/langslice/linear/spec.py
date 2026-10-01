@@ -29,6 +29,10 @@ IMAGE_RESOLUTIONS: tuple[str, ...] = ("low", "medium", "high")
 #: Most sections one transform-tool call may take (``TransformSpec.max_parallel``).
 MAX_PARALLEL_TRANSFORMS = 4
 
+#: ``NonlinearSpec.engine`` values: a fixed deformable-fit engine, or the
+#: agent's choice per call.
+DEFORMABLE_ENGINES: tuple[str, ...] = ("ants", "elastix", "either")
+
 
 @dataclass
 class ReorderSpec:
@@ -120,8 +124,17 @@ class NonlinearSpec:
 
     provider: str = "openai-oauth"
     image_model: str | None = None
+    #: The deformable-fit engine (`fit_deformable`): "ants" or "elastix" fixes
+    #: it for the run; "either" (default) lets the agent choose per call.
+    engine: str = "either"
     #: The user's own notes for this task, shown to the agent with the task.
     notes: str = ""
+
+    def __post_init__(self) -> None:
+        if self.engine not in DEFORMABLE_ENGINES:
+            raise ValueError(
+                f"nonlinear.engine must be one of {DEFORMABLE_ENGINES}; got {self.engine!r}"
+            )
 
 
 #: Optional per-request context safeguard, disabled unless a host sets it.

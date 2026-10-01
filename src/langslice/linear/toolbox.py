@@ -35,6 +35,7 @@ from langslice.affine import (
     physical_affine_matrix,
 )
 from langslice.linear import appearance as looks
+from langslice.linear import deformation
 from langslice.linear.atlas_fetch import (
     atlas_part,
     make_view_atlas,
@@ -65,6 +66,7 @@ from langslice.linear.render import (
     caption,
     compact_rows,
     image_to_part,
+    normalize_border_style,
     physical_views,
     pivot_on_canvas,
     reference_slice_part,
@@ -242,6 +244,28 @@ def _serialized(
     return run
 
 
+def _clears_stale_deformations(tool: Any, state: StackState, ctx: EngineContext) -> Any:
+    """After any tool: drop deformations whose linear placement changed, and say so.
+
+    A deformation is fitted on top of one linear placement; a write that moves
+    the position, orientation, cutting angles or transform makes it stale. It
+    is cleared in the same undo step as that write (the snapshot was taken
+    before it), so `undo` restores the placement and the deformation together.
+    """
+
+    @functools.wraps(tool)
+    def run(*args: Any, **kwargs: Any) -> Any:
+        result = tool(*args, **kwargs)
+        cleared = deformation.clear_stale(state)
+        if cleared:
+            save_checkpoint(state, ctx.checkpoint_path)
+            if isinstance(result, dict):
+                result["deformation_cleared"] = cleared
+        return result
+
+    return run
+
+
 @dataclass
 class ToolBox:
     """The tools of one run plus the mutable results the engine reads back."""
@@ -275,6 +299,9 @@ class ToolBox:
     #: `submit` and the end of the session do.
     image_jobs: dict[str, tuple[str, Future[dict[str, Any]]]] = field(default_factory=dict)
     image_executor: ThreadPoolExecutor | None = None
+    #: Deformable-fit records: cached by input digest, applied ones on disk
+    #: under the results folder (`fit_deformable`, placement pictures).
+    deformations: deformation.RecordStore | None = None
 
     @property
     def names(self) -> list[str]:
@@ -824,6 +851,7 @@ def build_tools(
         spline: dict[str, Any] | None = None,
         long_edge: int = OVERLAY_LONG_EDGE,
         matrix_label: str = "fitted matrix",
+        warp: Any = None,
     ) -> list[Any]:
         """The physical canvas pictures of one section at one placement.
 
@@ -832,7 +860,10 @@ def build_tools(
         appearance or a raw channel, larger at medium/high resolution), with
         a matrix and the pivot carried onto it. The one renderer of every
         placement picture: `view_placement`, `set_positions`,
-        `adjust_transforms` and `fit_affine` all draw through here.
+        `adjust_transforms` and `fit_affine` all draw through here. *warp*
+        (a `DeformableRecord` on this placement) resamples the section into
+        its placed-atlas frame first, so the picture shows the full
+        registration: linear placement plus deformation.
         """
         shown, shown_um, (fx, fy) = shown_section(
             ctx, record, section, um_per_px, options.look(state, record),
@@ -844,6 +875,10 @@ def build_tools(
             if pivot is not None:
                 ox, oy = section_offset
                 in_section = ((pivot[0] - ox) * fx, (pivot[1] - oy) * fy)
+        if warp is not None:
+            from langslice.deformable import warp_section_image
+
+            shown = warp_section_image(shown, warp)
         images, _iou = physical_views(
             shown, shown_um, ctx.atlas, position, cast(Plane, state.plane),
             state.pitch_deg, state.yaw_deg, params,
@@ -871,6 +906,23 @@ def build_tools(
             return (denormalized_affine(values, section.size), transform.get("spline"),
                     str(transform.get("kind") or "stored"))
         return dict(IDENTITY_PARAMS), None, "identity"
+
+    def deformation_store() -> deformation.RecordStore:
+        """Fitted records of this run, saved under the results folder (made on first use)."""
+        if box.deformations is None:
+            box.deformations = deformation.RecordStore(
+                root=Path(ctx.results_path).parent / "deformable")
+        return box.deformations
+
+    def current_warp(record: SliceState) -> Any:
+        """The section's applied deformation record, or None (or unreadable)."""
+        if not record.deformation:
+            return None
+        try:
+            return deformation_store().current(state, record)
+        except Exception:  # a missing record must not break a placement picture
+            logger.warning("Deformation record unreadable for %s", record.id, exc_info=True)
+            return None
 
     def absent_regions(position: float, options: DisplayOptions) -> list[str]:
         present = regions_in_plane(ctx, state, position, options)
@@ -1470,12 +1522,20 @@ def build_tools(
             )))
             return row
         params, spline, kind = stored_placement(record, section)
+        # The section under its full placement: the stored warp too, at the
+        # position it was fitted at (the atlas-only view needs no section).
+        warp = (current_warp(record)
+                if position == record.position_mm and options.mode != "template" else None)
         parts.extend(image_to_part(image) for image in draw_canvas(
             record, section, um_per_px, position, params, options,
             label=f"{record.id} vs atlas {position:.2f} mm", spline=spline,
-            long_edge=VIEW_LONG_EDGE, matrix_label=f"{kind} transform",
+            long_edge=VIEW_LONG_EDGE,
+            matrix_label=f"{kind} transform" + (" + deformation" if warp is not None else ""),
+            warp=warp,
         ))
         row["transform"] = kind
+        if warp is not None:
+            row["deformation_drawn"] = True
         return row
 
     @with_display_doc(
@@ -2607,11 +2667,424 @@ def build_tools(
             result["note"] = note
         return result
 
+    # --- the deformable fit (nonlinear) -----------------------------------
+
+    engine_option = spec.nonlinear.engine
+
+    def resolve_choice(values: dict[str, Any]) -> deformation.Choice | dict[str, Any]:
+        """One candidate's settings, validated, or the refusal naming the fix."""
+        from typing import get_args
+
+        from langslice.deformable.settings import Detail, Stiffness
+        from langslice.linear.display import available_atlas_images
+
+        requested = str(values.get("engine") or "").strip().lower()
+        if engine_option != "either":
+            if requested and requested != engine_option:
+                return {"status": "error", "error": "ENGINE_FIXED", "engine": engine_option,
+                        "message": f"The user set the engine to {engine_option} for this run."}
+            chosen = engine_option
+        else:
+            chosen = requested or ("ants" if deformation.ants_available() else "elastix")
+        if chosen not in deformation.ENGINES:
+            return {"status": "error", "error": "BAD_ENGINE", "engines": list(deformation.ENGINES)}
+        if chosen == "ants" and not deformation.ants_available():
+            return {"status": "error", "error": "UNAVAILABLE", "message": deformation.ANTS_MISSING
+                    + ("; engine 'elastix' is available." if engine_option == "either" else ".")}
+        stiffness = str(values.get("stiffness") or "medium").strip().lower()
+        if stiffness not in get_args(Stiffness):
+            return {"status": "error", "error": "BAD_STIFFNESS",
+                    "stiffness": list(get_args(Stiffness))}
+        detail = str(values.get("detail") or "standard").strip().lower()
+        if detail not in get_args(Detail):
+            return {"status": "error", "error": "BAD_DETAIL", "detail": list(get_args(Detail))}
+        picked = str(values.get("section_image") or deformation.FIT_LOOK).strip()
+        traced = picked in deformation.TRACED
+        atlas_kind = str(values.get("atlas_image") or "").strip().lower() or (
+            "borders" if traced else "ara")
+        if atlas_kind not in deformation.ATLAS_CHOICES:
+            return {"status": "error", "error": "BAD_ATLAS_IMAGE",
+                    "atlas_images": list(available_atlas_images(ctx))}
+        if atlas_kind not in available_atlas_images(ctx):
+            return {"status": "error", "error": "ATLAS_IMAGE_UNAVAILABLE",
+                    "message": f"The {atlas_kind} atlas image needs ABBA's cached Allen atlas "
+                    f"matching {state.atlas}; this host has none.",
+                    "available": list(available_atlas_images(ctx))}
+        if traced and atlas_kind != "borders":
+            return {"status": "error", "error": "BAD_ARGS",
+                    "message": "Traced section images are fitted against atlas_image 'borders'."}
+        if picked == deformation.TRACED_BORDERS and chosen != "ants":
+            return {"status": "error", "error": "LABEL_MAP_ANTS_ONLY",
+                    "message": "traced_borders (the traced lines as named regions) needs the "
+                    "ANTs engine; traced_lines works with either engine."}
+        return deformation.Choice(section_image=picked, atlas_image=atlas_kind, engine=chosen,
+                                  stiffness=stiffness, detail=detail)
+
+    def region_names(values: Any, field_name: str) -> tuple[str, ...] | dict[str, Any]:
+        from langslice.deformable.atlas_images import resolve_structures
+
+        if values is None:
+            return ()
+        if not isinstance(values, (list, tuple)):
+            return {"status": "error", "error": "BAD_ARGS",
+                    "message": f"{field_name} must be a list of acronyms or ids"}
+        names = tuple(str(value).strip() for value in values if str(value).strip())
+        if names:
+            try:
+                resolve_structures(ctx.atlas, names)
+            except ValueError as exc:
+                return {"status": "error", "error": "UNKNOWN_REGIONS", "message": str(exc),
+                        "argument": field_name}
+        return names
+
+    def fit_deformable_impl(
+        sections: list[str],
+        include: list[str],
+        exclude: list[str],
+        start: str,
+        section_image: str,
+        atlas_image: str,
+        engine: str,
+        stiffness: str,
+        detail: str,
+        candidates: list[dict[str, Any]],
+        mode: str,
+        zoom: list[float],
+        atlas_opacity: float,
+        regions: list[str],
+        outlines: str,
+        border_color: str,
+        border_thickness: float,
+    ) -> dict[str, Any]:
+        store = deformation_store()
+        if not isinstance(sections, (list, tuple)) or not sections:
+            return {"status": "error", "error": "BAD_ARGS",
+                    "message": "sections must name one or more sections"}
+        named, unknown = resolve_many(list(sections))
+        if unknown:
+            return {"status": "error", "error": "UNKNOWN_SLICE_IDS", "unknown": unknown}
+        targets = list({record.id: record for record in named}.values())
+        if len(targets) > MAX_VIEW_SLICES:
+            return {"status": "error", "error": "TOO_MANY_SECTIONS",
+                    "max_sections": MAX_VIEW_SLICES}
+        begin = str(start or "linear").strip().lower()
+        if begin not in deformation.STARTS:
+            return {"status": "error", "error": "BAD_START", "starts": list(deformation.STARTS)}
+        kept = region_names(include, "include")
+        if isinstance(kept, dict):
+            return kept
+        dropped = region_names(exclude, "exclude")
+        if isinstance(dropped, dict):
+            return dropped
+        overlap = sorted({name.lower() for name in kept} & {name.lower() for name in dropped})
+        if overlap:
+            return {"status": "error", "error": "BAD_ARGS",
+                    "message": "A region cannot be both included and excluded: "
+                    + ", ".join(overlap)}
+        variants = list(candidates or [])
+        if len(variants) > deformation.MAX_CANDIDATES:
+            return {"status": "error", "error": "TOO_MANY_CANDIDATES",
+                    "max_candidates": deformation.MAX_CANDIDATES}
+        allowed = set(deformation.CANDIDATE_KEYS)
+        if engine_option != "either":
+            allowed.discard("engine")
+        for variant in variants:
+            if not isinstance(variant, dict) or set(variant) - allowed:
+                return {"status": "error", "error": "BAD_CANDIDATE",
+                        "candidate_keys": sorted(allowed)}
+        base = {"engine": engine, "stiffness": stiffness, "detail": detail,
+                "section_image": section_image, "atlas_image": atlas_image}
+        choices: list[deformation.Choice] = []
+        for variant in variants or [{}]:
+            choice = resolve_choice({**base, **variant})
+            if isinstance(choice, dict):
+                return choice
+            choices.append(choice)
+        if len(choices) * len(targets) > deformation.MAX_FITS_PER_CALL:
+            return {"status": "error", "error": "TOO_MANY_FITS",
+                    "max_fits": deformation.MAX_FITS_PER_CALL,
+                    "requested": len(choices) * len(targets)}
+        options = display(deformation.MODES, dict(
+            mode=mode, zoom=zoom, atlas_opacity=atlas_opacity, regions=regions,
+            outlines=outlines, border_color=border_color, border_thickness=border_thickness,
+        ))
+        if isinstance(options, dict):
+            return options
+        applying = len(choices) == 1
+
+        rows: list[dict[str, Any]] = []
+        jobs: list[deformation.Job] = []
+        for record in targets:
+            try:
+                grid = deformation.fit_grid(state, ctx, record)
+            except (ValueError, OSError) as exc:
+                rows.append({"id": record.id, "status": "error",
+                             "error": "INVALID_LINEAR_PLACEMENT", "message": str(exc)})
+                continue
+            previous = None
+            previous_key: str | None = None
+            if begin == "current":
+                previous = store.current(state, record)
+                if previous is None:
+                    rows.append({"id": record.id, "status": "error", "error": "NO_DEFORMATION",
+                                 "message": "start='current' composes onto the section's "
+                                 "applied deformation; this section has none."})
+                    continue
+                previous_key = str((record.deformation or {}).get("key"))
+            channels = ctx.section_channels(record.id)[0]
+            running = record.id in box.image_jobs and not box.image_jobs[record.id][1].done()
+            for number, choice in enumerate(choices, start=1):
+                failure = {"id": record.id, "status": "error", "settings": choice.echo(),
+                           **({} if applying else {"candidate": number})}
+                if (choice.section_image not in (deformation.FIT_LOOK, *deformation.TRACED)
+                        and choice.section_image not in channels):
+                    rows.append({**failure, "error": "UNKNOWN_CHANNEL",
+                                 "channels": list(channels)})
+                    continue
+                try:
+                    image, identity = deformation.stain_image(ctx, state, grid,
+                                                              choice.section_image)
+                    lines = None
+                    if choice.section_image in deformation.TRACED:
+                        lines, trace = deformation.traced_lines(state, ctx, grid,
+                                                                running=running)
+                        identity = {**identity, "trace": trace}
+                    settings = choice.settings(kept, dropped)
+                except deformation.FitRefusal as refusal:
+                    rows.append({**failure, **refusal.payload, "id": record.id})
+                    continue
+                except (ValueError, OSError) as exc:
+                    rows.append({**failure, "error": "BAD_SETTINGS", "message": str(exc)})
+                    continue
+                key = deformation.cache_key(state, grid, settings, identity, previous_key)
+                cached = store.get(record.id, key)
+                jobs.append(deformation.Job(
+                    grid=grid, choice=choice, settings=settings, key=key,
+                    image_identity=identity, previous=previous, image=image, lines=lines,
+                    result=cached, cached=cached is not None,
+                ))
+                rows.append({"id": record.id, "job": len(jobs) - 1,
+                             **({} if applying else {"candidate": number})})
+        deformation.run_jobs(ctx, jobs)
+
+        before = state.to_dict()
+        wrote_any = False
+        parts: list[types.Part] = []
+        failed: list[dict[str, str]] = []
+        highlight = [name for name, _ids in options.regions] or list(kept)
+        color, thickness = normalize_border_style(options.border_color, options.border_thickness)
+        style = deformation.Style(
+            zoom=() if options.full_view else tuple(options.zoom), highlight=tuple(highlight),
+            marked=dropped, outlines=options.outlines, color=color, thickness=thickness,
+            atlas_opacity=options.atlas_opacity,
+        )
+        for row in rows:
+            index = row.pop("job", None)
+            if index is None:
+                continue
+            job = jobs[index]
+            outcome = job.result
+            row["settings"] = job.choice.echo()
+            if not isinstance(outcome, deformation.DeformableRecord):
+                row.update(status="error", error="FIT_FAILED",
+                           message=getattr(outcome, "error", "no result"))
+                continue
+            store.put(job.key, outcome)
+            numbers = deformation.summary(outcome, job.previous)
+            record = job.grid.record
+            row.update(status="ok", engine_settings=deformation.engine_settings(job.settings),
+                       **numbers, runtime_s=round(float(outcome.engine.get("runtime_s", 0.0)), 1),
+                       cached=job.cached)
+            if applying:
+                linear = deformation.linear_key(state, record)
+                outcome.provenance = deformation.provenance(
+                    job.grid, job.choice, kept, dropped, begin, job.image_identity, linear)
+                held = record.deformation or {}
+                if held.get("key") == job.key:
+                    row["written"] = False
+                else:
+                    try:
+                        folder = store.save(record.id, job.key, outcome)
+                    except OSError as exc:
+                        row.update(status="error", error="RECORD_WRITE_FAILED", message=str(exc))
+                        continue
+                    record.deformation = deformation.reference(
+                        folder=folder, key=job.key, linear=linear, record=outcome,
+                        choice=job.choice, include=kept, exclude=dropped, start=begin,
+                        previous=held, numbers=numbers,
+                    )
+                    row["written"] = True
+                    wrote_any = True
+                row["steps"] = len((record.deformation or {}).get("steps") or [])
+            heading = (f"{record.id}  " + ("applied" if applying else
+                       f"candidate {row['candidate']}/{len(choices)}")
+                       + f": {job.choice.engine} {job.choice.stiffness} {job.choice.detail}")
+            detail_line = (f"{job.choice.section_image} vs {job.choice.atlas_image}, start {begin}"
+                           + (f", include {','.join(kept)}" if kept else "")
+                           + (f", exclude {','.join(dropped)}" if dropped else ""))
+            kind = job.choice.atlas_image
+            first = len(parts)
+            try:
+                images = [deformation.picture(ctx, job.image, outcome, warped=True, style=style,
+                                              atlas_image=kind, title=f"{heading}\n{detail_line}")]
+                if options.mode == "ab":
+                    if job.previous is not None:
+                        images.append(deformation.picture(
+                            ctx, job.image, job.previous, warped=True, style=style,
+                            atlas_image=kind,
+                            title=f"{record.id}  before: the deformation it started from"))
+                    else:
+                        images.append(deformation.picture(
+                            ctx, job.image, outcome, warped=False, style=style, atlas_image=kind,
+                            title=f"{record.id}  before: the linear placement"))
+                parts.extend(image_to_part(image) for image in images)
+            except Exception as exc:
+                logger.warning("fit_deformable picture failed for %s", record.id, exc_info=True)
+                del parts[first:]
+                failed.append({"id": record.id, "message": str(exc)})
+                continue
+            row["image_indexes"] = list(range(first, len(parts)))
+        if wrote_any:
+            push(before)
+            save_checkpoint(state, ctx.checkpoint_path)
+        succeeded = [row for row in rows if row.get("status") == "ok"]
+        view = {key: value for key, value in options.echo().items()
+                if key not in ("section_image", "atlas_image")}
+        result: dict[str, Any] = {
+            "status": "ok" if succeeded else "error",
+            **({} if succeeded else {"error": "NOTHING_FITTED"}),
+            "applied": applying,
+            "results": rows,
+            "view": view,
+            "render_failed": failed,
+            "description": (
+                ("Applied: each section's deformation is now this fit (one undo step). "
+                 if applying else "Preview: nothing was written. ")
+                + "One picture per result (image_indexes): the final atlas borders on the "
+                "section image the fit read"
+                + (", included/`regions` borders strong over faint outlines" if highlight else "")
+                + (", excluded regions in pink" if dropped else "")
+                + ("; in ab mode then what the fit started from" if options.mode == "ab" else "")
+                + "."
+            ),
+            TOOL_MEDIA_PARTS_KEY: parts,
+        }
+        return result
+
+    def fit_deformable(
+        sections: list[str],
+        include: list[str] = [],  # noqa: B006 — read, never mutated; ADK wants a value
+        exclude: list[str] = [],  # noqa: B006
+        start: str = "linear",
+        section_image: str = "fit",
+        atlas_image: str = "",
+        engine: str = "",
+        stiffness: str = "medium",
+        detail: str = "standard",
+        candidates: list[dict[str, Any]] = [],  # noqa: B006
+        mode: str = "borders",
+        zoom: list[float] = [],  # noqa: B006
+        atlas_opacity: float = 0.0,
+        regions: list[str] = [],  # noqa: B006
+        outlines: str = "",
+        border_color: str = "yellow",
+        border_thickness: float = 1.0,
+    ) -> dict[str, Any]:
+        """Fit a deformation of the placed atlas onto sections, on top of their linear placement.
+
+        A library engine bends the atlas, as linearly placed, onto the
+        section image. A call with several candidates previews them all
+        (run concurrently) and writes nothing. A call with exactly one
+        setting (no candidates, or one) APPLIES it as each section's
+        deformation, reusing the result of an identical earlier fit instead
+        of recomputing; that write is undoable and checkpointed. Any later
+        change to a section's position, orientation, cutting angles or
+        transform clears its deformation. Needs a position and a transform.
+
+        Args:
+            sections: Filenames or corrected indices (up to 4; at most 8 fits
+                per call, sections times candidates).
+            include: Regions (acronyms or ids, descendants included) to focus
+                on: only they and a 300 um margin are fitted. Empty fits the
+                whole section.
+            exclude: Regions removed from the atlas side (e.g. tissue that is
+                missing from the section), descendants included.
+            start: "linear" (from the linear placement) or "current" (compose
+                onto the section's applied deformation: region-by-region steps).
+            section_image: "fit" (the section's fit appearance), a raw channel
+                name, "traced_borders" (the completed trace_borders result at
+                this placement, its lines turned into named regions; ANTs) or
+                "traced_lines" (those lines as lines, against atlas borders).
+            atlas_image: "ara", "borders" or "nissl" (hosts with ABBA's
+                atlas). Empty: "borders" for traced images, else "ara".
+            engine: "ants" or "elastix"; empty is ANTs when installed.
+            stiffness: "soft", "medium", "firm" or "stiff".
+            detail: "coarse" (40 um), "standard" (20 um) or "fine" (10 um).
+            candidates: 2 to 4 objects, each overriding any of stiffness,
+                detail, section_image, atlas_image and engine for one variant.
+            mode: "borders" (the fitted borders on the section) or "ab" (that,
+                then what the fit started from).
+            zoom: [x0, y0, x1, y1] fractions of the section; empty is all.
+            atlas_opacity: 0..1, the warped atlas image (ara or nissl) under
+                the lines.
+            regions: Regions drawn at full strength; empty is the include list
+                (or every border). Excluded regions are drawn in pink.
+            outlines: "all", "outer" or "none" for the other borders.
+            border_color: Named or #RRGGBB. border_thickness: 0.25..8 px.
+
+        Returns:
+            Per section and candidate: the settings and engine numbers used,
+            displacement (max and median, mm, over the tissue), fold fraction,
+            plausibility flags (regions compressed, expanded, vanished or
+            folded beyond limits) and image_indexes into the pictures: the
+            final borders drawn on the section image the fit read.
+        """
+        return fit_deformable_impl(
+            sections, include, exclude, start, section_image, atlas_image, engine, stiffness,
+            detail, candidates, mode, zoom, atlas_opacity, regions, outlines, border_color,
+            border_thickness,
+        )
+
+    def fit_deformable_fixed(
+        sections: list[str],
+        include: list[str] = [],  # noqa: B006 — read, never mutated; ADK wants a value
+        exclude: list[str] = [],  # noqa: B006
+        start: str = "linear",
+        section_image: str = "fit",
+        atlas_image: str = "",
+        stiffness: str = "medium",
+        detail: str = "standard",
+        candidates: list[dict[str, Any]] = [],  # noqa: B006
+        mode: str = "borders",
+        zoom: list[float] = [],  # noqa: B006
+        atlas_opacity: float = 0.0,
+        regions: list[str] = [],  # noqa: B006
+        outlines: str = "",
+        border_color: str = "yellow",
+        border_thickness: float = 1.0,
+    ) -> dict[str, Any]:
+        return fit_deformable_impl(
+            sections, include, exclude, start, section_image, atlas_image, "", stiffness,
+            detail, candidates, mode, zoom, atlas_opacity, regions, outlines, border_color,
+            border_thickness,
+        )
+
+    # The user fixed the engine: the same tool without the engine argument.
+    fit_deformable_fixed.__name__ = fit_deformable_fixed.__qualname__ = "fit_deformable"
+    fit_deformable_fixed.__doc__ = (fit_deformable.__doc__ or "").replace(
+        '            engine: "ants" or "elastix"; empty is ANTs when installed.\n', "",
+    ).replace("A library engine", f"The {engine_option} engine")
+
     if spec.has("nonlinear"):
         box.tools.append(trace_borders)
         box.tools.append(grep_atlas)
+        box.tools.append(fit_deformable if engine_option == "either" else fit_deformable_fixed)
 
     box.tools.append(submit)
     lock = threading.Lock()
-    box.tools = [_serialized(tool, lock, state=state, on_event=on_event) for tool in box.tools]
+    box.tools = [
+        _serialized(_clears_stale_deformations(tool, state, ctx), lock, state=state,
+                    on_event=on_event)
+        for tool in box.tools
+    ]
     return box

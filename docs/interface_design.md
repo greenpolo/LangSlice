@@ -99,6 +99,7 @@ test. Drawings remain the review artifact.
 | --- | --- |
 | Enable image-gen tool | task `nonlinear` builds `trace_borders` |
 | Use agent (GUI). The agent writes per-slice notes for the image model. The agent-free path (fixed prompt as a plain operation over supplied placements) stays in the API only; it is the 3D-volume path, where notes have no purpose | notes are a tool argument; the `nonlinear` CLI is the agent-free operation |
+| Deformable-fit engine: ANTs, Elastix or either | `nonlinear.engine` (`ants`, `elastix`, `either` = default, the agent picks per call); the `fit_deformable` tool is built with task `nonlinear` |
 | Further tools: open | (none) |
 
 Candidates for the open slot, none committed: a deformation-fit choice for
@@ -186,8 +187,35 @@ display options below.
 | `adjust_transforms` | transform.interactive | `adjust_transforms(entries)`; each entry: id, rotation_deg, scale_x, scale_y, translate_x_mm, translate_y_mm, pivot, note, +display — modes as `fit_affine` plus ab |
 | `set_cutting_angles` | transform.angles | `set_cutting_angles(pitch_deg, yaw_deg)` |
 | `trace_borders`, `grep_atlas` | nonlinear | `trace_borders(id, prompt="")`, `grep_atlas(query, section="")` |
+| `fit_deformable` | nonlinear | `fit_deformable(sections, include=[], exclude=[], start="linear", section_image="fit", atlas_image="", engine="", stiffness="medium", detail="standard", candidates=[], mode="borders", zoom, atlas_opacity, regions, outlines, border_color, border_thickness=1.0)` — `engine` only when `nonlinear.engine` is `either`; modes: borders, ab |
 | `submit` | always | `submit(summary, notes, interval_breaks)` |
-| `fit_deformable` | (next) | the deformable fit (`src/langslice/deformable/`); takes the same display options and reads the fit appearance (`appearance.fit_image`) |
+
+**`fit_deformable`** (`linear/deformation.py` over `src/langslice/deformable/`).
+A library deformable fit on top of a section's linear placement (position and
+transform required). Fit inputs: `sections` (≤4, ≤8 fits per call),
+`include` (fit only these regions plus a 300 µm margin) and `exclude`
+(removed from the atlas side), descendants included; `start` `linear` or
+`current` (compose onto the applied deformation, region by region);
+`section_image` `fit` (the fit appearance, `appearance.fit_image`), a raw
+channel, `traced_borders` (the completed `trace_borders` result at this
+placement as named regions, ANTs label-map mode) or `traced_lines` (those
+lines against atlas borders); `atlas_image` `ara`, `borders`, `nissl` (same
+host rules as the display options; empty = borders for traced images, else
+ara); `engine` (only when the user left it open; missing ANTs is said plainly),
+`stiffness` soft/medium/firm/stiff, `detail` coarse/standard/fine. 2–4
+`candidates` (setting variants) run concurrently and write nothing; exactly one
+setting applies it (one undo step, checkpointed), reusing an identical earlier
+result. Pictures: one per result, the final borders drawn smoothly on the
+section image the fit read, at the atlas-resolution size rule, included (or
+`regions`) borders strong, excluded regions pink; `ab` adds what the fit
+started from. Text: settings and engine numbers, displacement max/median,
+fold fraction, plausibility flags. The deformation is stored per section
+(`SliceState.deformation` plus a record directory under the results folder);
+any change to that section's position, orientation, cutting angles or
+transform clears it and the tool's reply says `deformation_cleared` (undo
+restores both). `view_placement` and `set_positions` draw the current warp in
+their physical modes. Export adapters (ABBA, VisuAlign, BrainGlobe) will read
+the saved record; none is built.
 
 **Shared display options** (`+display`; one parser, `linear/display.py`; the
 same names on every picture tool and on each `adjust_transforms` entry; a
