@@ -218,24 +218,43 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
   fractions; `similarity_fit` (Umeyama, exact on two points), `affine_fit`
   (least squares) and `physical_params` (a canvas 2x3 back into the five knobs
   about a pivot) are shared affine geometry helpers.
+  `region_silhouette_fit` (2026-10-01) is `fit_affine`'s `include`/`exclude`
+  path: atlas regions resolved by the deformable package
+  (`deformable.atlas_images`, `deformable.masks`), the kept footprint (minus
+  excluded; with include, within `DEFAULT_NEIGHBOURHOOD_UM` of them) against
+  the tissue the section's CURRENT stored transform lays there, one pass of
+  `affine.mask_affine` on the TRUE-SCALE canvas (not the stretched fit frame
+  of the whole-outline fit). Iterating the tissue selection drifted (D_08: 10
+  degrees in 8 passes, never settling), so it is one pass per call. Reports a
+  `regions` dict (kept/used fractions, `affine.axis_ratio` of both masks,
+  `outline_share`, a note past a 45-degree turn or below `ROUND_AXIS_RATIO`);
+  `RegionRefusal` codes `REGIONS_INSIDE_OUTLINE`, `REGIONS_ABSENT`,
+  `REGIONS_LEAVE_NOTHING`, `NO_TISSUE_IN_REGIONS`. No regions: the old fit,
+  byte-identical (M04 B_05/A_01 params and pictures hashed against 5b873d3).
 - `deformation.py` — `fit_deformable`'s machinery (2026-10-01): the fit grid
   (`fit_grid`: `prepare_linear_registration` at `FIT_LONG_EDGE` 1536, the same
   handoff `trace_borders` uses), the image a fit reads (`stain_image`: the
   `fit` appearance or a raw channel; `traced_lines`: a completed
   `trace_borders` result at the CURRENT geometry fingerprint, its
-  `extracted_lines.png` mapped onto the grid through `atlas_to_canvas`),
+  `extracted_lines.png` mapped onto the grid through `atlas_to_canvas`;
+  `TRACE_TIMEOUT` after the call's wait, `TRACE_FAILED` with the error,
+  `TRACE_RUNNING` only for a running record no call backs, e.g. after resume),
+  `trace_picture` (those lines on the stain at the call's size and style),
   `Choice` (one candidate: section/atlas image, engine, stiffness, detail ->
   `FitSettings`; agent `borders` = engine `borders_merged`),
   `RecordStore` (results by `cache_key`, a digest of every input incl. the
   linear placement and the start record; 8 in memory, applied ones saved to
-  `<results dir>/deformable/<section>/<key[:24]>/`), `linear_key` /
+  `<results dir>/deformable/<section>/<key[:24]>/`; `current` is None for a
+  `keep_linear` record), `linear_key` /
   `clear_stale`, `summary` (displacement max/median, fold fraction, compact
   flags), `run_jobs` (one fit in process, several in the spawn pool,
   `USE_PROCESS_POOL`) and `picture` (the borders on the image the fit read at
   the call's picture size, `Style.long_edge`, never past the 1536 px fit
   image; included/`regions` strong, excluded pink).
 - `prompt.py` — `build_job_statement`: job, run facts, ONE factual line per
-  tool that exists, hard constraints. Nothing else.
+  tool that exists, hard constraints. Nothing else. `tool_line` words the
+  `fit_deformable` line for the run (traced section images only with an image
+  model).
 - `session.py` — the ADK agent builder, the plugins, the loop, and
   `TokenTally`: every call's usage is printed and traced, and
   `JobSpec.max_quota_percent` (25) ends the session when this run's share
@@ -346,8 +365,34 @@ linear landmark module and editable-point state are removed. Default full-task
 and interactive-only tool counts are 15 and 10 (`orient_slices` joined the
 transform task on 2026-09-29).
 
+**The nonlinear task's job (2026-10-01).** A live Astra run with the image
+model never called `fit_deformable`: the job line said "use the image model to
+correct every section's placed atlas borders" and submit only wanted a trace,
+so the deformation was optional. Now the job line is "give every section a
+deformation onto the atlas, on top of its linear placement, with the section's
+stain [and the borders the image model traces on it] as the evidence", one
+Method line asks it to inspect each fit's borders against internal anatomy
+(and the traced borders), apply the best and keep the linear placement only
+where no fit improves on it, and `submit` refuses `MISSING_DEFORMATIONS`
+(`toolbox.missing_deformations`, part of `submit_errors`) until every section
+holds a deformation at its current `linear_key` or a `keep_linear` record.
+`fit_deformable(sections, keep_linear="reason")` is that record: no fit,
+`SliceState.deformation = {"keep_linear": reason, "linear_key": ...}`, one
+undo step, cleared by `clear_stale` like a fit, status row `keep_linear`. It
+lives on the deformation field rather than a submit argument so it is
+undoable, checkpointed, visible in `status`, exported with the results and
+invalidated by a placement change. With an image model the trace gate
+(`MISSING_IMAGE_CORRECTIONS`) is reported before the deformation gate.
+`nonlinear.provider` `none` (`NonlinearSpec.uses_image_model` False; the
+provider is validated against `providers.registry`) builds `grep_atlas` and
+`fit_deformable` but no `trace_borders`, strips traced images from
+`fit_deformable`'s docstring (`toolbox._STAIN_ONLY_DOC`) and refuses them
+(`NO_IMAGE_MODEL`), requires no trace and drops every image-model line and
+the base prompt from the job statement. The task-notes heading is
+"Nonlinear deformation".
+
 Local anatomical deformation remains the responsibility of the nonlinear workflow.
-The optional `nonlinear` task now adds `trace_borders(id, prompt="")` through
+With an image model the `nonlinear` task also adds `trace_borders(id, prompt="")` through
 the top-level `registration_tool` bridge. It uses the supplied linear placement
 and the agent's per-slice edited copy of the base correction prompt.
 The call runs in the background (`registration_tool.start_correction` prepares
@@ -375,8 +420,12 @@ only re-draws (`written: false`). `include` -> the engine's `structures`
 (restricted step + 300 um), `exclude` -> its `exclude`; `start="current"`
 passes the applied record as `previous` (refused `NO_DEFORMATION` without
 one). `traced_borders` is the ANTs label-map mode (`labels="model"`),
-`traced_lines` lines vs borders; both refuse without a completed trace at this
-placement (`NO_TRACE`/`TRACE_STALE`/`TRACE_RUNNING`). Max 4 sections, 8 fits
+`traced_lines` lines vs borders; both need the trace at this placement
+(`NO_TRACE`/`TRACE_STALE`). A trace still running is waited for
+(`ToolBox.wait_image_job`, one `deformation.TRACE_WAIT_S` 300 s deadline per
+call; the result lands as `settle_image_corrections` lands it, checkpointed,
+no undo step), and the reply adds one picture per traced section of its lines
+on the stain (`traces` maps them); `TRACE_TIMEOUT` / `TRACE_FAILED` otherwise. Max 4 sections, 8 fits
 per call. `SliceState.deformation` holds `record` (absolute path), `key`,
 `linear_key`, `steps` (the chain for `current`), `summary`, `inverse_source`;
 the record directory holds the composed field, its inverse, the parent steps
@@ -392,8 +441,9 @@ export adapters (ABBA, VisuAlign, BrainGlobe) are to read them, none exist.
 
 Default task/tool counts stay
 unchanged; `DEFAULT_TASKS` is separate from `ALL_TASKS`. Hosts may supply calibrated
-`inputs.transforms` or resume saved linear transforms. Submit checks correction
-completion and current geometry when the new task is on. Exact artifacts and first
+`inputs.transforms` or resume saved linear transforms. With an image model, submit
+checks correction completion and current geometry, then the deformations (above).
+Exact artifacts and first
 reply caching survive checkpoint undo; no note-only regeneration occurs. A failed
 transport that returned no image may be retried.
 See `docs/nonlinear_image_tool.md` for the contract and prompt sentence audit.
@@ -560,8 +610,9 @@ caused it; failed submission neither writes nor ends the run.
 order; the offending neighbour pairs are named), `STRICT_INTERVAL` (spacing
 within 10% of the interval and no breaks, when `--strict-interval`),
 `INTERVAL_BREAKS_UNSUPPORTED` (a reported break must exceed 1.5x the stack's
-median written spacing) and `MISSING_TRANSFORMS` (every section carries one,
-damaged included). `DAMAGED_REQUIRES_MANUAL_TRANSFORM` additionally rejects
+median written spacing), `MISSING_TRANSFORMS` (every section carries one,
+damaged included) and, with task `nonlinear`, `MISSING_DEFORMATIONS` (a
+deformation or `keep_linear` record at the current placement per section). `DAMAGED_REQUIRES_MANUAL_TRANSFORM` additionally rejects
 missing, automatic, invalid or identity transforms on damaged sections and asks
 for interactive alignment of surviving anatomy. A note alone cannot satisfy it.
 The check uses the normalized matrix (identity tolerance 1e-9), not the physical
@@ -604,7 +655,14 @@ resumed run starts from the checkpoint, which is the state as it stood.
   is measured, not built: it would move a benchmarked path (`silhouette_affine`
   is `nonlinear/quick_affine`'s too). The fit's own panel is what catches it;
   look at it. Damaged sections never reach this path: `fit_affine` refuses
-  them outright.
+  them outright unless regions are given.
+- The moments core matches long axes. With regions on M04_D_08 (both
+  hemispheres missing; tissue axis ratio 1.13, taller than wide) excluding
+  Isocortex/OLF/ENT turned the section 90 degrees and excluding all of CTX
+  180 degrees (kept atlas ratio 1.02), each flagged in the reply's note;
+  `include=["MB"], exclude=["CTX"]` gave an upright fit at scales 1.17/1.22,
+  close to the agent's own manual 1.02/1.18. The whole-outline fit (refused
+  there as damaged) turned it -91 degrees.
 - `method="elastix"` and `run_deepslice` answer `UNAVAILABLE`; both are seams,
   not stubs to fill in casually.
 - `search_position` (was `fit_position`) is a thin wrapper over `oblique.fit_oblique` — correct, not

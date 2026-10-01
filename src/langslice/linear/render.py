@@ -408,7 +408,9 @@ def status_rows(state: StackState) -> list[dict[str, Any]]:
                    if transform.get("spline") else {}),
                 "transform_iou": transform.get("iou"),
                 "transform_mirrored": transform.get("mirrored"),
-                **({"deformation_steps": len(record.deformation.get("steps") or [])}
+                **({"keep_linear": record.deformation["keep_linear"]}
+                   if record.deformation and "keep_linear" in record.deformation
+                   else {"deformation_steps": len(record.deformation.get("steps") or [])}
                    if record.deformation else {}),
                 "caveats": list(record.caveats),
             }

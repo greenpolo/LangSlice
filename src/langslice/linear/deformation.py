@@ -95,6 +95,9 @@ CANDIDATE_KEYS = ("stiffness", "detail", "section_image", "atlas_image", "engine
 MODES = ("borders", "ab")
 #: Flags listed per candidate before the rest are only counted.
 MAX_FLAGS = 12
+#: Longest one ``fit_deformable`` call waits for running ``trace_borders``
+#: calls its traced section images need (an image call takes ~1-3 minutes).
+TRACE_WAIT_S = 300.0
 #: Run several fits in a process pool; a single fit runs in this process.
 #: Tests switch the pool off.
 USE_PROCESS_POOL = True
@@ -192,19 +195,31 @@ def stain_image(
 
 def traced_lines(
     state: StackState, ctx: EngineContext, grid: Grid, *, running: bool = False,
+    waited_s: float = TRACE_WAIT_S,
 ) -> tuple[np.ndarray, str]:
     """The image model's lines from ``trace_borders`` at THIS placement, on the grid.
 
     Refused unless the section holds a completed trace whose geometry is the
-    current one. Returns the line mask and the trace's artifact directory.
+    current one. *running* means the caller waited *waited_s* seconds for the
+    section's trace call and it is still running. Returns the line mask and
+    the trace's artifact directory.
     """
     from langslice.registration_tool import correction_fingerprint
 
     record = grid.record
     held = record.image_correction or {}
-    if running or held.get("status") == "running":
-        raise FitRefusal("TRACE_RUNNING", f"{record.id}'s trace_borders call is still "
-                         "running; its lines are not ready.", id=record.id)
+    if running:
+        raise FitRefusal("TRACE_TIMEOUT", f"{record.id}'s trace_borders call is still "
+                         f"running after {waited_s:g} s of waiting; call again later.",
+                         id=record.id)
+    if held.get("status") == "running":
+        raise FitRefusal("TRACE_RUNNING", f"{record.id}'s trace_borders result is recorded "
+                         "as running, but no call is running in this session; call "
+                         "trace_borders again.", id=record.id)
+    if held.get("status") == "error":
+        raise FitRefusal("TRACE_FAILED", f"{record.id}'s trace_borders call failed: "
+                         + str(held.get("message") or held.get("error") or "no image"),
+                         id=record.id)
     if held.get("status") != "ok":
         raise FitRefusal("NO_TRACE", f"{record.id} has no completed trace_borders "
                          "result; traced section images need one.", id=record.id)
@@ -339,7 +354,8 @@ class RecordStore:
     def current(self, state: StackState, record: SliceState) -> DeformableRecord | None:
         """The section's applied record, when it still sits on its placement."""
         held = record.deformation
-        if not held or held.get("linear_key") != linear_key(state, record):
+        if (not held or "keep_linear" in held
+                or held.get("linear_key") != linear_key(state, record)):
             return None
         return self.get(record.id, str(held.get("key", "")))
 
@@ -516,6 +532,34 @@ def picture(
         native=native_labels(ctx.atlas, record.placement),
     )
     return caption(drawn, title)
+
+
+def trace_picture(
+    image: Image.Image, lines: np.ndarray, *, style: Style, title: str,
+) -> Image.Image:
+    """The image model's traced lines on the section image, at ``style.long_edge``.
+
+    *image* and *lines* share the fit grid (:func:`traced_lines`); the zoom,
+    border color and thickness are the call's, and the picture is never drawn
+    past the fit image's own pixels, like :func:`picture`.
+    """
+    from langslice.linear.render import caption, zoom_box
+
+    width, height = image.size
+    box = zoom_box(list(style.zoom), (width, height)) if style.zoom else (0, 0, width, height)
+    crop = (box[2] - box[0], box[3] - box[1])
+    factor = min(1.0, int(style.long_edge) / float(max(crop)))
+    shown = (max(8, int(round(crop[0] * factor))), max(8, int(round(crop[1] * factor))))
+    base = image.convert("RGB").crop(box).resize(shown, Image.Resampling.LANCZOS)
+    mask = np.asarray(lines, dtype=np.float32)[box[1]:box[3], box[0]:box[2]]
+    # Area-averaged so a one-pixel line survives the shrink.
+    drawn = cv2.resize(mask, shown, interpolation=cv2.INTER_AREA) > 0.02
+    radius = int(round((float(style.thickness) - 1.0) / 2.0))
+    if radius > 0:
+        drawn = cv2.dilate(drawn.astype(np.uint8), np.ones((2 * radius + 1,) * 2, np.uint8)) > 0
+    pixels = np.array(base)
+    pixels[drawn] = style.color
+    return caption(Image.fromarray(pixels), title)
 
 
 def _unwarped(record: DeformableRecord) -> DeformableRecord:

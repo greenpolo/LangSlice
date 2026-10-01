@@ -36,7 +36,10 @@ toolbox, one job statement, one session. A single section is a stack of one.
 The design is `docs/linear_design.md`; this page is the CLI surface.
 
 `--tasks` picks which jobs are on (default: `reorder,position,transform`;
-`nonlinear` is opt-in and needs a linear placement for every section). A task
+`nonlinear` is opt-in and needs a linear placement for every section; its job
+is a deformation per section, fitted with `fit_deformable`, and
+`--image-provider none` runs it without the image model, so without
+`trace_borders`). A task
 that is OFF contributes no tools and takes its answer from the host instead:
 `--order` (a JSON list of filenames), `--positions` (a JSON mapping filename to
 millimetres) and `--transforms` (filename to a transform record in the
@@ -69,11 +72,11 @@ run can use:
 | `run_deepslice` | `--deepslice` | reports `UNAVAILABLE` until the optional extra lands |
 | `search_position` | `--bayesian` | `oblique.fit_oblique` around a section's current position; writes nothing |
 | `set_cutting_angles` | `--angles` | stack-wide pitch/yaw; later fetches and previews follow |
-| `fit_affine` | `transform` | silhouette affine per section, written as its transform, with the overlap, the transform as the five physical parameters (`rotation_deg`, `scale_x`, `scale_y`, `translate_x_mm`, `translate_y_mm`, plus `shear`) about the canvas centre, and a physical-scale overlay for every successful fit; damaged sections are refused and `--elastix`'s method is not wired yet |
+| `fit_affine` | `transform` | silhouette affine per section, written as its transform, with the overlap, the transform as the five physical parameters (`rotation_deg`, `scale_x`, `scale_y`, `translate_x_mm`, `translate_y_mm`, plus `shear`) about the canvas centre, and a physical-scale overlay for every successful fit; `include`/`exclude` regions (as in `fit_deformable`) fit only the kept atlas regions against the tissue the current placement lays there, with a `regions` report; damaged sections are refused unless regions are given, and `--elastix`'s method is not wired yet |
 | `adjust_transforms(entries)` | transform.interactive | set one to four independent sections, each with rotation, per-axis scales and millimetre shifts. Per-entry pivot, note and display options; `ab` and `side_by_side` return two images, other modes one. Each result maps its images with `image_indexes`. One undo step; repeat unchanged parameters to redraw. Replaces the complete transform, including spline or shear. Inspect before a dependent correction in a later call. |
-| `trace_borders(id, prompt)` | `nonlinear` | sends the section's placed atlas borders and the clean section to the image model with the agent's edited copy of the base correction prompt; runs in the background and returns at once; keeps the first reply with the extracted borders on the original, and `submit` waits for running calls. No deformation is fitted and no transform changes. See [the image-tool contract](nonlinear_image_tool.md) |
+| `trace_borders(id, prompt)` | `nonlinear` unless `--image-provider none` | sends the section's placed atlas borders and the clean section to the image model with the agent's edited copy of the base correction prompt; runs in the background and returns at once; keeps the first reply with the extracted borders on the original, and `submit` waits for running calls. No deformation is fitted and no transform changes. See [the image-tool contract](nonlinear_image_tool.md) |
 | `grep_atlas(query, section)` | `nonlinear` | looks regions up in the atlas hierarchy (acronym, name substring or id; 40 rows max, with a count of the rest): acronym, id, name, ancestry as acronyms, descendant count, and with a positioned `section` an `in_section` flag for the region or any descendant in the atlas plane at that placement. Text only, writes nothing |
-| `fit_deformable` | `nonlinear` | library deformable fit (ANTs SyN or Elastix B-spline) of the placed atlas onto sections, on top of their linear placement: include/exclude regions, start linear or current (composed steps), section image (fit appearance, raw channel, or a completed `trace_borders` result), atlas image (ara, borders, nissl on ABBA hosts), stiffness, detail, and `engine` when `nonlinear.engine` is `either`. 2–4 candidates preview and write nothing; one setting applies it (undoable, cached results reused). Returns the final borders on the section per result plus displacement, folds and flags. Any later linear change to a section clears its deformation (`deformation_cleared`); `view_placement` draws a stored warp. Records go to `<results dir>/deformable/` |
+| `fit_deformable` | `nonlinear` | library deformable fit (ANTs SyN or Elastix B-spline) of the placed atlas onto sections, on top of their linear placement: include/exclude regions, start linear or current (composed steps), section image (fit appearance, raw channel, or with an image model the section's `trace_borders` result, waited for up to 300 s while it runs and drawn on the section in the reply), atlas image (ara, borders, nissl on ABBA hosts), stiffness, detail, and `engine` when `nonlinear.engine` is `either`. 2–4 candidates preview and write nothing; one setting applies it (undoable, cached results reused); `keep_linear="reason"` records instead that a section's linear placement stands. `submit` requires a deformation or a `keep_linear` reason for every section (`MISSING_DEFORMATIONS`). Returns the final borders on the section per result plus displacement, folds and flags. Any later linear change to a section clears its deformation (`deformation_cleared`); `view_placement` draws a stored warp. Records go to `<results dir>/deformable/` |
 | `submit` | always | ends the run; gated |
 
 Sections and fetched atlas sections are framed the same way (foreground plus a
@@ -331,10 +334,11 @@ colors are unchanged.
 ### Linear and nonlinear scope
 
 The linear agent handles section order, atlas position and affine alignment.
-It has no paired-landmark tools. With `--tasks ...,nonlinear` it also has the
-image-model border-correction tool described above, which produces corrected
-border drawings but no deformation; turning those into a registration is the
-separate, still-open deformation stage.
+It has no paired-landmark tools. With `--tasks ...,nonlinear` its job also
+includes a deformation per section (`fit_deformable`, or a `keep_linear`
+reason), fitted to the stain and, unless `--image-provider none`, to the
+borders the image-model tool described above traces. Export adapters for the
+stored deformations are not built yet.
 
 Applied spline transforms in historical checkpoints still load, render and
 export with their saved mapping. A new affine fit or adjustment replaces a saved

@@ -74,8 +74,13 @@ TOOL_LINES: dict[str, str] = {
     "fit_affine": "fits an in-plane affine per section against its atlas "
     "section, writes it as the section's transform, and returns the overlap, "
     "the transform as the same five physical parameters `adjust_transforms` "
-    "takes, and a picture of the section under it at true physical scale; "
-    "damaged sections are refused.",
+    "takes, and a picture of the section under it at true physical scale. "
+    "The fit matches outlines only: the tissue's against the atlas's. "
+    "`exclude` regions (acronyms or ids, descendants included) are removed "
+    "from the atlas side, and the tissue the fit lays on them from the "
+    "section side; `include` restricts the fit to those regions plus 300 um, "
+    "which counts only where they reach the outline. Damaged sections are "
+    "refused unless regions are given.",
     "adjust_transforms": "sets and shows one to four independent positioned "
     "sections in one undoable call. Each entry supplies rotation_deg, scale_x, "
     "scale_y, translate_x_mm and translate_y_mm, plus optional pivot, note "
@@ -89,7 +94,8 @@ TOOL_LINES: dict[str, str] = {
     "section's existing linear placement, with your edited copy of the prompt "
     "for that section. The image call runs in the background and the tool returns "
     "at once; the result is saved for the user and checked at submit, which waits "
-    "for running calls. The first result at each placement is saved and reused. "
+    "for running calls, and `fit_deformable` with a traced section image waits for "
+    "it too. The first result at each placement is saved and reused. "
     "This records an annotation; it does not fit or change the transform.",
     "grep_atlas": "looks regions up in the atlas hierarchy by acronym, name "
     "substring or numeric id (at most 40 rows). Each row gives acronym, id, name, "
@@ -98,33 +104,62 @@ TOOL_LINES: dict[str, str] = {
     "descendant, appears in the atlas plane at that placement. Text only; writes nothing.",
     "fit_deformable": "fits a deformation of the placed atlas onto one or more "
     "positioned, transformed sections with a library engine (ANTs SyN or Elastix "
-    "B-spline), on top of the linear placement. Choose the section image (the fit "
-    "appearance, a raw channel, or a completed trace_borders result at this "
-    "placement: traced_borders as named regions, traced_lines as lines), the atlas "
+    "B-spline), on top of the linear placement. Choose the section image "
+    "{section_images}, the atlas "
     "image, stiffness, detail, regions to include (fit only them and a margin) and "
     "to exclude (removed from the atlas side), and start (linear, or current to "
     "compose onto the applied deformation, region by region). Several candidates "
     "(2 to 4 setting variants, run concurrently) preview and write nothing; exactly "
-    "one setting applies it, reusing an identical earlier result. Returns per result "
+    "one setting applies it, reusing an identical earlier result; `keep_linear` "
+    "with a reason instead records, without a fit, that a section's linear "
+    "placement stands. Returns per result "
     "the final borders drawn on the section image (included regions strong, "
     "excluded in pink), displacement, fold fraction, plausibility flags and the "
-    "engine numbers used; display options mode (borders or ab), zoom, "
+    "engine numbers used{trace_picture}; display options mode (borders or ab), zoom, "
     "atlas_opacity, regions, outlines, border_color, border_thickness. A change "
     "to a section's position, orientation, cutting angles or transform clears "
-    "its deformation. Undoable.",
+    "its deformation or keep_linear record. Undoable.",
     "submit": "checks requirements and ends the run if they pass; otherwise "
     "returns the missing requirements without ending or changing the run.",
 }
 
 
-def deformable_engine_fact(engine: str) -> str:
-    """The job statement's line on the deformable-fit engine and its availability."""
+#: ``fit_deformable``'s section images, with and without the image model.
+_SECTION_IMAGES_TRACED = (
+    "(the fit appearance, a raw channel, or the section's trace_borders result at "
+    "this placement: traced_borders as named regions, traced_lines as lines; a call "
+    "waits for a trace that is still running)"
+)
+_SECTION_IMAGES_STAIN = "(the fit appearance or a raw channel)"
+
+
+def tool_line(name: str, spec: JobSpec) -> str:
+    """The job statement's line for one tool, worded for this run's settings."""
+    line = TOOL_LINES[name]
+    if name == "fit_deformable":
+        traced = spec.nonlinear.uses_image_model
+        line = line.format(
+            section_images=_SECTION_IMAGES_TRACED if traced else _SECTION_IMAGES_STAIN,
+            trace_picture=(", plus each traced section's trace drawn on the section"
+                           if traced else ""),
+        )
+    return line
+
+
+def deformable_engine_fact(engine: str, *, traced: bool = True) -> str:
+    """The job statement's line on the deformable-fit engine and its availability.
+
+    *traced* (the image model is on) names what a missing ANTs costs the
+    traced section images; without the image model there are none to name.
+    """
     from langslice.linear.deformation import ants_available
 
     if engine == "either":
         if ants_available():
             return ("`fit_deformable` engine: ants or elastix, your choice per call "
                     "(default ants).")
+        if not traced:
+            return "`fit_deformable` engine: elastix (ANTs is not installed on this host)."
         return ("`fit_deformable` engine: elastix (ANTs is not installed on this host, so "
                 "traced_borders is unavailable).")
     if engine == "ants" and not ants_available():
@@ -199,7 +234,7 @@ def display_lines(
 _TASK_NOTES: tuple[tuple[str, str, str], ...] = (
     ("position", "position", "Positioning"),
     ("transform", "transform", "In-plane alignment"),
-    ("nonlinear", "nonlinear", "Image-model border correction"),
+    ("nonlinear", "nonlinear", "Nonlinear deformation"),
 )
 
 
@@ -256,13 +291,20 @@ def build_job_statement(
             f"correcting the orientation of any section that is {turned}"
         )
     if spec.has("nonlinear"):
-        jobs.append("use the image model to correct every section's placed atlas borders")
+        jobs.append(
+            "give every section a deformation onto the atlas, on top of its linear "
+            "placement, with the section's stain"
+            + (" and the borders the image model traces on it"
+               if spec.nonlinear.uses_image_model else "")
+            + " as the evidence"
+        )
     job = "; ".join(jobs) if jobs else "review the stack"
 
     facts = run_facts(spec, state, species=species, pos_lo=pos_lo, pos_hi=pos_hi,
                       axis_ends=axis_ends)
 
-    tools = [f"- `{name}`: {TOOL_LINES[name]}" for name in tool_names if name in TOOL_LINES]
+    tools = [f"- `{name}`: {tool_line(name, spec)}" for name in tool_names
+             if name in TOOL_LINES]
     tools += display_lines(tool_names, channels=channels, atlas_images=atlas_images,
                            resolution=spec.image_resolution == "auto")
 
@@ -300,7 +342,8 @@ def build_job_statement(
     if spec.has("transform"):
         if spec.transform.automatic:
             constraints.append(
-                "- Damaged sections are refused by `fit_affine`."
+                "- Damaged sections are refused by `fit_affine` unless it is given "
+                "regions to include or exclude."
             )
         constraints.append(
             "- `submit` is refused unless every section carries a transform, "
@@ -324,18 +367,26 @@ def build_job_statement(
                 "sections require the host to enable them before submission."
             )
     if spec.has("nonlinear"):
+        traced = spec.nonlinear.uses_image_model
+        if traced:
+            constraints.append(
+                "- Image correction requires a position and an existing linear transform. "
+                "Edit the base image prompt below for each section: its format is good and "
+                "tested, so make small changes or add a special instruction for that "
+                "particular section."
+            )
+            constraints.append(
+                "- `submit` requires a completed image correction for every section at "
+                "its current placement. Completion does not certify anatomical quality."
+            )
         constraints.append(
-            "- Image correction requires a position and an existing linear transform. "
-            "Edit the base image prompt below for each section: its format is good and "
-            "tested, so make small changes or add a special instruction for that "
-            "particular section."
-        )
-        constraints.append(
-            "- `submit` requires a completed image correction for every section at "
-            "its current placement. Completion does not certify anatomical quality."
+            "- `submit` is refused unless every section carries a deformation applied "
+            "at its current placement, or a `keep_linear` reason saying its linear "
+            "placement stands, damaged sections included."
         )
         if "fit_deformable" in tool_names:
-            constraints.append("- " + deformable_engine_fact(spec.nonlinear.engine))
+            constraints.append(
+                "- " + deformable_engine_fact(spec.nonlinear.engine, traced=traced))
     constraints.append(
         "- Corrections are recorded as data; the user's image files are never "
         "modified."
@@ -400,8 +451,19 @@ def build_job_statement(
             "transforms. Keep changes only if they improve the alignment."
         )
 
+    if spec.has("nonlinear") and "fit_deformable" in tool_names:
+        if not method:
+            method = ["", "Method:"]
+        method.append(
+            "- After each deformable fit, inspect the returned borders against the "
+            "section's internal anatomy"
+            + (" and its traced borders" if spec.nonlinear.uses_image_model else "")
+            + ". Apply the fit that matches best; keep the linear placement only "
+            "where no fit improves on it."
+        )
+
     image_task: list[str] = []
-    if spec.has("nonlinear"):
+    if spec.has("nonlinear") and spec.nonlinear.uses_image_model:
         from typing import cast
 
         from langslice.registration_tool import correction_instructions

@@ -89,7 +89,8 @@ bridges rather than direct imports of each other:
   agent environment (`langslice linear run FOLDER`): one `StackState`, one
   toolbox built from a `JobSpec`, one job statement, one ADK session that ends
   at `submit` or the turn budget. Tasks (`reorder`/`position`/`transform`, plus
-  the opt-in `nonlinear` image tool) are switched on task by task; a task that
+  the opt-in `nonlinear`: a deformation per section via `fit_deformable`, with
+  the image tool unless its provider is `none`) are switched on task by task; a task that
   is OFF builds no tools and takes its answer from the host instead. Users see
   them as Positioning / Linear / Nonlinear: `docs/interface_design.md` is the
   target user-facing design and what each host exposes. Every write checkpoints and is undoable, order
@@ -108,7 +109,7 @@ bridges rather than direct imports of each other:
 Shared, top-level:
 
 - `registration_tool.py` — optional stack-agent image tool, enabled by task
-  `nonlinear`: corrects a supplied linear placement using the fixed prompt plus
+  `nonlinear` with an image provider (not `none`): corrects a supplied linear placement using the fixed prompt plus
   per-slice additional notes. No atlas search, replacement prompt, agent rejection
   or fit. Saves the first result and exact artifacts separately from transforms.
   `registration_handoff.py` supplies calibrated geometry; see

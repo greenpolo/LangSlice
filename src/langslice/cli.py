@@ -353,7 +353,8 @@ def _add_linear_arguments(p: argparse.ArgumentParser) -> None:
         "--tasks",
         default="reorder,position,transform",
         help="Comma-separated subset of reorder,position,transform,nonlinear; "
-        "nonlinear adds one image-model border correction per linearly aligned slice",
+        "nonlinear gives every linearly aligned slice a deformation (fit_deformable), "
+        "with image-model border tracing unless --image-provider none",
     )
     p.add_argument("--atlas", default="allen_mouse_25um", help="BrainGlobe atlas name")
     p.add_argument(
@@ -365,7 +366,9 @@ def _add_linear_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument("--model", default=None, help="Model name for the agent session")
     p.add_argument(
         "--image-provider", default="openai-oauth",
-        help="Image provider used only when the nonlinear task is enabled",
+        help="Image provider for the nonlinear task's trace_borders (openai-oauth, "
+        "openai-api, gemini-api), or none: the nonlinear task then fits deformations "
+        "to the stain alone, with no image model",
     )
     p.add_argument(
         "--image-model", default=None,

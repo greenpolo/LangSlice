@@ -24,7 +24,7 @@ tools and takes its answer from the host. Nothing else is user-facing.
 | --- | --- | --- |
 | Provider | ChatGPT (default) or Claude | ChatGPT runs through `openai-oauth`; Claude changes Run to Copy prompt and uses the LangSlice MCP connector in Claude Desktop or Claude Code |
 | Agent model, reasoning level | ADK model string and effort | `model`, reasoning |
-| Image model / provider | image transport and model for nonlinear | `nonlinear.provider`, `nonlinear.image_model` |
+| Image model / provider | image transport and model for nonlinear, or none | `nonlinear.provider`, `nonlinear.image_model`; provider `none` (CLI `--image-provider none`) runs the Nonlinear task without the image model: no `trace_borders`, deformations fitted to the stain alone |
 | Image resolution: low / medium / high / auto | how large the pictures the agent sees are: a long edge for the opening images and one for every later picture (table below); auto lets the agent choose each later picture's size. Does not touch the image model's inputs | `image_resolution` low/medium/high/auto (`render.PICTURE_EDGES`); display only, fits and stored transforms unchanged; CLI `--image-resolution` |
 | Estimated cost | shown at the bottom once every box is chosen | worker `linear.estimate` (`linear/cost.py`): percent of the usage window from measured runs; refused at medium/high/auto resolution, where nothing is measured (the low runs were measured before the 2026-10-01 sizes) |
 | View agent log | the agent's activity in a window during the run | Fiji connector: a text log window (or a compact status window when off). The Python-started ABBA launcher has a richer browser log (`integrations/abba_chat.py`) |
@@ -87,9 +87,17 @@ run. Nonlinear ON with sections lacking a placement is a job-spec validation
 error naming those sections, before any model call. A host turns it into a
 dialog: "Slices a-z have no transform. Nonlinear requires a linear step first.
 Allow the agent to align them?" Yes = Linear ON for those sections only. On
-main this check is not in the spec yet: `trace_borders` refuses a
-section without a usable placement one call at a time
+main this check is not in the spec yet: `trace_borders` and `fit_deformable`
+refuse a section without a usable placement one call at a time
 (`INVALID_LINEAR_PLACEMENT`).
+
+The agent's job (2026-10-01): give every section a deformation onto the atlas
+on top of its linear placement, with the stain (and, with the image model, its
+traced borders) as the evidence. `submit` refuses (`MISSING_DEFORMATIONS`)
+until every section carries a deformation applied at its current placement or
+a `keep_linear` reason (`fit_deformable(sections, keep_linear="why")`) saying
+its linear placement stands. With the image model, traces are still required
+first (`MISSING_IMAGE_CORRECTIONS`).
 
 The deliverable is a registration, not drawings. Order of work: design the
 deformation algorithm, then settle the border output format it consumes, then
@@ -97,7 +105,7 @@ test. Drawings remain the review artifact.
 
 | Control | On main |
 | --- | --- |
-| Enable image-gen tool | task `nonlinear` builds `trace_borders` |
+| Enable image-gen tool | task `nonlinear` builds `grep_atlas` and `fit_deformable`, and `trace_borders` unless `nonlinear.provider` is `none` |
 | Use agent (GUI). The agent writes per-slice notes for the image model. The agent-free path (fixed prompt as a plain operation over supplied placements) stays in the API only; it is the 3D-volume path, where notes have no purpose | notes are a tool argument; the `nonlinear` CLI is the agent-free operation |
 | Deformable-fit engine: ANTs, Elastix or either | `nonlinear.engine` (`ants`, `elastix`, `either` = default, the agent picks per call; CLI `--engine`); the `fit_deformable` tool is built with task `nonlinear` |
 | Further tools: open | (none) |
@@ -183,11 +191,11 @@ display options below.
 | `run_deepslice` | position.deepslice | `run_deepslice(slice_ids, allow_angle_change, keep)` |
 | `search_position` | position.bayesian | `search_position(slice_id, window_mm, angles)` (was `fit_position`) |
 | `orient_slices` | transform | `orient_slices(entries, +display)` — modes: section |
-| `fit_affine` | transform.automatic | `fit_affine(slice_ids, method, +display)` — modes: overlay (default), side_by_side, checkerboard, outlines, section, template |
+| `fit_affine` | transform.automatic | `fit_affine(slice_ids, method, include=[], exclude=[], +display)` — modes: overlay (default), side_by_side, checkerboard, outlines, section, template |
 | `adjust_transforms` | transform.interactive | `adjust_transforms(entries)`; each entry: id, rotation_deg, scale_x, scale_y, translate_x_mm, translate_y_mm, pivot, note, +display — modes as `fit_affine` plus ab |
 | `set_cutting_angles` | transform.angles | `set_cutting_angles(pitch_deg, yaw_deg)` |
-| `trace_borders`, `grep_atlas` | nonlinear | `trace_borders(id, prompt="")`, `grep_atlas(query, section="")` |
-| `fit_deformable` | nonlinear | `fit_deformable(sections, include=[], exclude=[], start="linear", section_image="fit", atlas_image="", engine="", stiffness="medium", detail="standard", candidates=[], mode="borders", zoom, atlas_opacity, regions, outlines, border_color, border_thickness=1.0)` — `engine` only when `nonlinear.engine` is `either`; modes: borders, ab |
+| `trace_borders`, `grep_atlas` | nonlinear (`trace_borders` not with provider `none`) | `trace_borders(id, prompt="")`, `grep_atlas(query, section="")` |
+| `fit_deformable` | nonlinear | `fit_deformable(sections, include=[], exclude=[], start="linear", section_image="fit", atlas_image="", engine="", stiffness="medium", detail="standard", candidates=[], keep_linear="", mode="borders", zoom, atlas_opacity, regions, outlines, border_color, border_thickness=1.0)` — `engine` only when `nonlinear.engine` is `either`; modes: borders, ab |
 | `submit` | always | `submit(summary, notes, interval_breaks)` |
 
 **`fit_deformable`** (`linear/deformation.py` over `src/langslice/deformable/`).
@@ -199,7 +207,11 @@ transform required). Fit inputs: `sections` (≤4, ≤8 fits per call),
 `section_image` `fit` (the fit appearance, `appearance.fit_image`), a raw
 channel, `traced_borders` (the completed `trace_borders` result at this
 placement as named regions, ANTs label-map mode) or `traced_lines` (those
-lines against atlas borders); `atlas_image` `ara`, `borders`, `nissl` (same
+lines against atlas borders; both only with an image model, and a call
+waits up to `TRACE_WAIT_S` 300 s for that section's trace still running,
+answering `TRACE_TIMEOUT` / `TRACE_FAILED` otherwise, and adds one picture per
+traced section of the trace's lines on the section, mapped by `traces`);
+`atlas_image` `ara`, `borders`, `nissl` (same
 host rules as the display options; empty = borders for traced images, else
 ara); `engine` (only when the user left it open; missing ANTs is said plainly),
 `stiffness` soft/medium/firm/stiff, `detail` coarse/standard/fine. 2–4
@@ -215,7 +227,24 @@ any change to that section's position, orientation, cutting angles or
 transform clears it and the tool's reply says `deformation_cleared` (undo
 restores both). `view_placement` and `set_positions` draw the current warp in
 their physical modes. Export adapters (ABBA, VisuAlign, BrainGlobe) will read
-the saved record; none is built.
+the saved record; none is built. `keep_linear` (a reason) fits nothing: each
+named section records that its linear placement stands (one undo step;
+cleared like a deformation when the placement changes; satisfies `submit`).
+
+**`fit_affine` regions** (2026-10-01). `include` / `exclude` mean what they
+mean in `fit_deformable` and resolve through the same code (acronyms or ids,
+descendants included). Without them the fit is the whole-outline moments fit,
+unchanged. With them (`transform.region_silhouette_fit`) the atlas side is
+the kept footprint (minus excluded regions; with `include`, only the part
+within 300 µm of them) and the section side is the tissue the section's
+CURRENT placement lays there, one pass, on the true-scale canvas. The reply
+adds a `regions` report: kept atlas and used tissue fractions, the two axis
+ratios, `outline_share` for `include`, and a note when the fit turns the
+section more than 45° or an outline is nearly round (a moments fit turns the
+tissue's long axis onto the atlas's). An included zone that never reaches the
+atlas outline is refused (`REGIONS_INSIDE_OUTLINE`). With regions given,
+damaged sections are fitted (the submit gate on damaged sections still wants
+an interactive transform).
 
 **Shared display options** (`+display`; one parser, `linear/display.py`; the
 same names on every picture tool and on each `adjust_transforms` entry; a
