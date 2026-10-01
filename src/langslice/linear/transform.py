@@ -22,6 +22,7 @@ convention).
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
@@ -135,6 +136,8 @@ def fit_silhouette(
     state: StackState,
     ctx: EngineContext,
     record: SliceState,
+    *,
+    draw: Callable[[Image.Image, float, np.ndarray], list[Image.Image]] | None = None,
 ) -> dict[str, Any]:
     """Fit the silhouette affine for one positioned section.
 
@@ -144,8 +147,9 @@ def fit_silhouette(
 
     Returns the tool-shaped payload: on success ``params`` (six normalized
     numbers on the section's frame), ``iou``, the ``physical`` knobs about the
-    canvas centre, the ``calibration`` the panel was drawn with, and a
-    ``panel`` image labelled with the section id. The fit measures against
+    canvas centre, the ``calibration`` the panel was drawn with, and
+    ``panels`` (the overlay labelled with the section id, or what *draw*
+    returned for the working frame and fitted matrix). The fit measures against
     the atlas plane at the stack's cutting angles, the same plane every
     picture in the run shows.
     """
@@ -186,21 +190,26 @@ def fit_silhouette(
         }
 
     # The panel may be drawn from a larger render (image_resolution); the fit
-    # above and the numbers below stay on the working frame.
-    shown, shown_um, (fx, fy) = shown_section(ctx, record, section, um_per_px)
-    panel = physical_overlay(
-        shown,
-        shown_um,
-        ctx.atlas,
-        record.position_mm,
-        cast(Plane, state.plane),
-        state.pitch_deg,
-        state.yaw_deg,
-        in_section if shown is section else rescale_section_matrix(in_section, fx, fy),
-        label=record.id,
-        long_edge=OVERLAY_LONG_EDGE,
-        scale=shown_scale(ctx),
-    )
+    # above and the numbers below stay on the working frame. *draw* (the
+    # toolbox's display options) receives the working frame and the fitted
+    # matrix on it and carries both onto whatever it draws from.
+    if draw is not None:
+        panels = draw(section, um_per_px, in_section)
+    else:
+        shown, shown_um, (fx, fy) = shown_section(ctx, record, section, um_per_px)
+        panels = [physical_overlay(
+            shown,
+            shown_um,
+            ctx.atlas,
+            record.position_mm,
+            cast(Plane, state.plane),
+            state.pitch_deg,
+            state.yaw_deg,
+            in_section if shown is section else rescale_section_matrix(in_section, fx, fy),
+            label=record.id,
+            long_edge=OVERLAY_LONG_EDGE,
+            scale=shown_scale(ctx),
+        )]
     params = normalized_affine(in_section, section.size)
     width, height = geometry.size
     payload: dict[str, Any] = {
@@ -222,7 +231,7 @@ def fit_silhouette(
             "section_um_per_px": round(um_per_px, 4),
             "source": source,
         },
-        "panel": panel,
+        "panels": panels,
     }
     return payload
 

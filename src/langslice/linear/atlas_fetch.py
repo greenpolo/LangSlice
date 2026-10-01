@@ -27,9 +27,9 @@ from langslice.space import Plane
 if TYPE_CHECKING:  # ponytail: import cycle — engine builds the toolbox
     from langslice.linear.engine import EngineContext
 
-#: Atlas sections one ``fetch_atlas`` call may return. Anything past this is
+#: Atlas sections one ``view_atlas`` call may return. Anything past this is
 #: dropped — and reported back, never silently.
-MAX_FETCH_POSITIONS = MAX_IMAGES_PER_CALL
+MAX_VIEW_POSITIONS = MAX_IMAGES_PER_CALL
 
 #: Cap on the long edge of every atlas image the toolbox sends. A tissue-framed
 #: atlas render is at the atlas's own resolution (a mouse section at 25 um is
@@ -167,20 +167,43 @@ def atlas_part(
     return part.model_copy(deep=True)
 
 
-def make_fetch_atlas(state: StackState, ctx: EngineContext):
-    """Build the ``fetch_atlas`` tool, closed over the run's atlas and plane."""
+def make_view_atlas(state: StackState, ctx: EngineContext):
+    """Build the ``view_atlas`` tool, closed over the run's atlas and plane."""
+    from langslice.linear.display import (
+        atlas_caption,
+        framed_atlas,
+        parse_display,
+        regions_in_plane,
+        with_display_doc,
+    )
+
     pos_lo, pos_hi = ctx.position_range
 
-    def fetch_atlas(positions_mm: list[float]) -> dict[str, Any]:
-        """Fetch atlas sections at the positions you name, at most 4 per call.
+    @with_display_doc(
+        '"template" (the only mode here: the atlas image alone, framed to its '
+        "anatomy)."
+    )
+    def view_atlas(
+        positions_mm: list[float],
+        mode: str = "template",
+        zoom: list[float] = [],  # noqa: B006 — read, never mutated; ADK wants a value
+        section_image: str = "current",
+        atlas_image: str = "ara",
+        atlas_opacity: float = 0.0,
+        regions: list[str] = [],  # noqa: B006
+        outlines: str = "",
+        border_color: str = "yellow",
+        border_thickness: float = 0.5,
+    ) -> dict[str, Any]:
+        """Look at atlas sections at the positions you name, at most 4 per call.
 
         Sections are rendered at the stack's current cutting angles, each
         labelled with its position (and the angles, when the stack is oblique)
-        in its top-left corner. Ask for
-        more than 4 and only the first 4 are fetched; the rest come back under
-        ``dropped_positions_mm`` with ``truncated: true``. Positions outside
-        the atlas range are clamped, and positions within 0.02 mm of one
-        already in the same call are coalesced.
+        in its top-left corner. Ask for more than 4 and only the first 4 are
+        shown; the rest come back under ``dropped_positions_mm`` with
+        ``truncated: true``. Positions outside the atlas range are clamped,
+        and positions within 0.02 mm of one already in the same call are
+        coalesced.
 
         Args:
             positions_mm: Positions along the slicing axis, in millimetres.
@@ -191,15 +214,30 @@ def make_fetch_atlas(state: StackState, ctx: EngineContext):
         requested = _as_floats(list(positions_mm or []))
         if not requested:
             return {"status": "error", "error": "BAD_ARGS"}
-        dropped = [round(value, 2) for value in requested[MAX_FETCH_POSITIONS:]]
+        options = parse_display(
+            ctx, state, modes=("template",), mode=mode, zoom=zoom,
+            section_image=section_image, atlas_image=atlas_image,
+            atlas_opacity=atlas_opacity, regions=regions, outlines=outlines,
+            border_color=border_color, border_thickness=border_thickness,
+            framed_modes=("template",),
+        )
+        if isinstance(options, dict):
+            return options
+        dropped = [round(value, 2) for value in requested[MAX_VIEW_POSITIONS:]]
         positions = _clamp_and_dedupe(
-            requested[:MAX_FETCH_POSITIONS], pos_lo=pos_lo, pos_hi=pos_hi
+            requested[:MAX_VIEW_POSITIONS], pos_lo=pos_lo, pos_hi=pos_hi
         )
         if not positions:
             return {"status": "error", "error": "EMPTY_RESULT"}
 
+        plain = (options.atlas_image == "ara" and options.outlines == "none"
+                 and not options.regions and options.full_view)
         parts: list[types.Part] = [
-            atlas_part(ctx, state, position) for position in positions
+            atlas_part(ctx, state, position) if plain else image_to_part(caption(
+                framed_atlas(ctx, state, position, options),
+                atlas_caption(state, position, options),
+            ))
+            for position in positions
         ]
         plural = "s" if len(positions) != 1 else ""
         result: dict[str, Any] = {
@@ -209,26 +247,36 @@ def make_fetch_atlas(state: StackState, ctx: EngineContext):
             # Each image carries its own burned-in label; the ordering note
             # says the same thing in the payload.
             "description": (
-                f"Fetched {len(positions)} atlas section{plural}: "
+                f"Showing {len(positions)} atlas section{plural}: "
                 + ", ".join(f"{position:.2f} mm" for position in positions)
                 + ". The attached atlas images appear in that same order, each "
                 "labelled with its position in its top-left corner."
             ),
+            "view": options.echo(),
             TOOL_MEDIA_PARTS_KEY: parts,
         }
+        if options.regions:
+            absent = {
+                f"{position:.2f}": missing for position in positions
+                if (missing := [
+                    name for name, _ids in options.regions
+                    if name not in regions_in_plane(ctx, state, position, options)
+                ])
+            }
+            if absent:
+                result["regions_not_in_plane"] = absent
         if dropped:
             result["truncated"] = True
             result["dropped_positions_mm"] = dropped
             result["description"] += (
                 f" You asked for {len(requested)} positions; only the first "
-                f"{MAX_FETCH_POSITIONS} were fetched. NOT fetched, and not "
-                "shown to you: "
+                f"{MAX_VIEW_POSITIONS} were shown. NOT shown to you: "
                 + ", ".join(f"{position:.2f} mm" for position in dropped)
                 + "."
             )
         return result
 
-    return fetch_atlas
+    return view_atlas
 
 
 def atlas_strip_parts(
@@ -237,7 +285,7 @@ def atlas_strip_parts(
     """The atlas at evenly spaced positions, labelled, for the seed message.
 
     Until 2026-09-09 the model never saw the atlas as a set: four bare atlas
-    sections from one ``fetch_atlas`` and then only ever half of a
+    sections from one ``view_atlas`` and then only ever half of a
     comparison pair. The strip spans the atlas's valid range at the nominal
     interval, or coarser when that would exceed *max_images*, and heads the
     prefix with the section strip, cached for the whole run.

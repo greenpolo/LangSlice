@@ -50,10 +50,12 @@ Nash kept five of its ten asks:
   2026-09-09 — the separate user message they used to follow in opened a
   new turn and threw the replayed reasoning away), and the
   picture-returning writes report `render_failed`.
-- `compare_placement` (position stage): the section on the physical canvas
-  against the atlas at any positions, every `VIEW_MODES` view, zoom, opacity
-  — the "linked viewer" and the "placement preview / AP stepper" in one
-  read-only tool. `physical_views` at identity, same renderer as everything.
+- `view_placement` (was `compare_placement`, renamed 2026-10-01): the
+  section on the physical canvas against the atlas at any positions, every
+  `VIEW_MODES` view, zoom, opacity — the "linked viewer" and the "placement
+  preview / AP stepper" in one read-only tool. Since 2026-10-01 it draws the
+  section under its STORED transform (identity without one), so it shows the
+  full current placement. Same renderer as everything.
 - `view_stack`: the strip ordered by written position with position and
   spacing in the labels, plus `render.spacing_plot` (PIL, no matplotlib).
 - `reorder_slices` took corrected indices for one run; Astra then pointed
@@ -61,7 +63,7 @@ Nash kept five of its ten asks:
   reorder can hit the wrong section next call. Filenames only again.
 Run 2's new asks, built: `view_stack` pastes the atlas at each placed
 section's position beneath it in the SAME image (one picture per section, not
-two — the image budget counts); `compare_placement` takes a batch of
+two — the image budget counts); `view_placement` takes a batch of
 `{id, positions_mm}` entries, ≤4 pairs per call. Since 2026-09-11,
 positioning `side_by_side` returns separate seed-style reference images:
 one unchanged section per distinct id, one atlas per pair (up to 8 images),
@@ -131,7 +133,8 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
   `outlines` — atlas lines plus the section's own silhouette in neutral grey
   on black — and the line-free `section` / `template`), `zoom` ([x0, y0, x1, y1] fractions of the CANVAS, cropped BEFORE
   the resize so it magnifies, with the bar redrawn for the new µm/px),
-  `template_opacity` (0..1, replaced the `show_template` bool) and `outlines`
+  `atlas_opacity` (0..1; `template_opacity` until 2026-10-01, the
+  `show_template` bool before that) and `outlines`
   (`OUTLINE_LAYERS`: `all` family boundaries, `outer` — the root contour from
   `atlas.render.outer_outline` — or `none`; the caption names the layer when
   it is not `all`).
@@ -149,8 +152,30 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
   fit measures.
 - `atlas_fetch.py` — `atlas_section` (the one atlas renderer: flat at 0/0
   cutting angles, `oblique.sample_oblique_plane` otherwise) and the
-  `fetch_atlas` tool, closed over the run context. Sections and atlas sections
-  are framed the same way so apparent scale is not a cue.
+  `view_atlas` tool (was `fetch_atlas`), closed over the run context. Sections
+  and atlas sections are framed the same way so apparent scale is not a cue.
+- `display.py` — the shared display options (2026-10-01): `mode`, `zoom`,
+  `section_image`, `atlas_image` (`ara`/`borders`/`nissl`, nissl only with
+  ABBA's cached atlas, `EngineContext.abba_atlas`), `atlas_opacity`, `regions`
+  (descendants included, `render.region_polys`, context outlines at
+  `REGION_CONTEXT_ALPHA`), `outlines`, `border_color`, `border_thickness`.
+  `parse_display` validates them once into a frozen `DisplayOptions`; every
+  picture tool takes the same nine names (`with_display_doc` appends the
+  shared docstring), `adjust_transforms` per entry. It never writes state, so
+  a call's options never change a default. `framed_section` / `framed_atlas`
+  draw the tissue-framed pictures (default options = the old pixels exactly);
+  the toolbox's `draw_canvas` draws every physical picture.
+- `appearance.py` — the section's appearance per target (2026-10-01): `view`
+  (what the agent is shown) and `fit` (`fit_image`, what a deformable fit
+  reads), each a stack setting plus per-section overrides on
+  `StackState.appearance` (undone and checkpointed). `None` is the DEFAULT
+  appearance (today's `preprocess` auto, or the host's blend when
+  `spec.host_preprocessing` is set); anything else is drawn by
+  `render_slice(look=...)` from the raw channels
+  (`EngineContext.section_channels`) over the same frame and size. The
+  `preprocess` tool (gated by `spec.agent_preprocessing`) is the only writer.
+  Computation (silhouette fit, calibration, tissue pivot, `search_position`,
+  the image model's input) always reads the default.
 - `toolbox.py` — `build_tools(state, ctx, spec)`: every tool, gated by the
   spec, plus the submit gates and the undo/redo snapshot stack. The interactive
   transform lives here: `_Staged` (one section, its calibrated canvas and the
@@ -249,11 +274,11 @@ The ABBA dialog's controls, all plain `JobSpec` fields (not CLI flags yet):
   thumbnails) passes it; `atlas_fetch.atlas_sized(scale=)` resamples atlas
   images by the same multiple so a section and its atlas keep equal pixels
   per millimetre (no finer atlas detail exists); physical views
-  (`compare_placement`, `adjust_transforms`, the `fit_affine` panel) are drawn
+  (`view_placement`, `adjust_transforms`, the `fit_affine` panel) are drawn
   by `render.shown_section` from a larger unframed render with the matrix
   (`rescale_section_matrix`) and pivot carried onto it. Unchanged:
   `PREVIEW_LONG_EDGE` working renders, `calibrate`, the silhouette fit, the six
-  stored numbers and every payload number, `fit_position`, the spacing plot,
+  stored numbers and every payload number, `search_position`, the spacing plot,
   caption font and the image model's inputs. At `low` every path returns the
   same objects as before (an end-to-end hash of a toolbox session matched
   HEAD on 2026-09-28). The multiples never appear in model-facing text.
@@ -262,7 +287,10 @@ The ABBA dialog's controls, all plain `JobSpec` fields (not CLI flags yet):
 
 The default full-task toolbox has 15 tools (10 for interactive-only transform
 refinement, `orient_slices` included since 2026-09-29; one fewer each with
-`agent_damage` off). `adjust_transforms` handles both one section and batches; the
+`agent_damage` off, one more with `agent_preprocessing` on). Renamed
+2026-10-01 (Nash: names do not change performance): `fetch_atlas` ->
+`view_atlas`, `compare_placement` -> `view_placement`, `fit_position` ->
+`search_position`; `template_opacity` -> `atlas_opacity`. `adjust_transforms` handles both one section and batches; the
 single-section implementation is private. `mark_damaged` accepts per-entry
 `damaged=False` to clear flags. `validate` and `unmark_damaged` are removed;
 failed `submit` reports unmet requirements without changing or ending the run.
@@ -339,11 +367,11 @@ text plus prefix breaks. Design rules that follow:
   against the render; `physical_views(long_edge=None)` is canvas pixels for
   host-side use, every model-facing caller passes a cap). A zoom is a crop
   at that same scale, so it costs only the pixels it shows. `VIEW_LONG_EDGE` 512; atlas images
-  (seed strip, `fetch_atlas`, the atlas half of a write's picture) are sent
+  (seed strip, `view_atlas`, the atlas half of a write's picture) are sent
   at the atlas's own resolution and only ever shrunk to 512
   (`atlas_fetch.atlas_sized`; a mouse section at 25 um is ~100-200
   tokens — until 2026-09-10 they were upsampled to 512, a quarter of run
-  19's input); `compare_placement` panels 512 (~250 tokens; the default
+  19's input); `view_placement` panels 512 (~250 tokens; the default
   mode is `template`, the atlas alone on the section's canvas, because the
   section is already in the seed — the signature default was
   `side_by_side` until 2026-09-10, so every Astra compare re-sent the
@@ -378,7 +406,7 @@ text plus prefix breaks. Design rules that follow:
   absent from every tool payload (a position-only run carried null transform
   fields on every row of every result, a third of the paid text).
 - **A placement picture is sent once per geometry.** Successful
-  `compare_placement` and `set_positions` renders are associated with their
+  `view_placement` and `set_positions` renders are associated with their
   function result and become seen only when their media survives filtering
   into a later model request. `set_positions` suppresses a picture only when
   the same section, position, orientation and cutting angles were already
@@ -443,7 +471,7 @@ each fitted/adjusted overlay against surviving internal anatomy and refine each
 slice until no further improvement is possible with the available transforms,
 keeping only changes that improve alignment; this is prompt guidance, not a
 fixed-adjustment-count or submission-review hook.
-The default Method no longer prescribes batching (2026-09-11): grouping work is the model's choice; batch-capable tools remain available. The opt-in cheap-model playbook is unchanged. Asked from its own run-3 trace, Astra said it skipped `compare_placement` and `view_stack` by oversight, not wording, and asked for exactly this. Still out: rules of thumb, failure-mode warnings and region names (the same text runs against every BrainGlobe atlas, species and plane). Full-trace forensics found every major
+The default Method no longer prescribes batching (2026-09-11): grouping work is the model's choice; batch-capable tools remain available. The opt-in cheap-model playbook is unchanged. Asked from its own run-3 trace, Astra said it skipped `compare_placement` (now `view_placement`) and `view_stack` by oversight, not wording, and asked for exactly this. Still out: rules of thumb, failure-mode warnings and region names (the same text runs against every BrainGlobe atlas, species and plane). Full-trace forensics found every major
 benchmark failure tracking back to advice the harness injected; a per-slice
 estimation worker that ate 82% of the wall-clock carried ~no signal and was
 deleted; a landmark-tool pass for POSITION estimation benchmarked WORSE and was
@@ -513,7 +541,7 @@ resumed run starts from the checkpoint, which is the state as it stood.
   them outright.
 - `method="elastix"` and `run_deepslice` answer `UNAVAILABLE`; both are seams,
   not stubs to fill in casually.
-- `fit_position` is a thin wrapper over `oblique.fit_oblique` — correct, not
+- `search_position` (was `fit_position`) is a thin wrapper over `oblique.fit_oblique` — correct, not
   tuned. It has not been benchmarked.
 - True physical scale is honest, not flattering: measured on LSD_910 M04 at
   4.9 mm the specimen is 8.26 x 5.73 mm against the atlas section's

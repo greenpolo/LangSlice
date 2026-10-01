@@ -14,7 +14,7 @@ import pytest
 import tifffile
 from PIL import Image
 
-from langslice.api.abba_worker import AGENT_VIEW_FOLDER, run_linear
+from langslice.api.abba_worker import run_linear
 from langslice.api.service import run_stdio
 from langslice.image_prep import (
     adaptive_preprocess,
@@ -175,18 +175,39 @@ def _fake_engine(monkeypatch, steps, seen: dict[str, Any]):
 
 
 def test_multi_page_snapshots_show_the_agent_the_preview_blend(snapshots, monkeypatch):
+    """The host blend is the DEFAULT appearance; the pages stay raw channels."""
+    from langslice.linear.engine import build_context
+    from tests.fakes import SlabAtlas
+
     seen: dict[str, Any] = {}
     _fake_engine(monkeypatch, [], seen)
     settings = {"mode": "custom", "channel_weights": [1, 3]}
     run_linear({**snapshots, "preprocessing": settings}, lambda event: None)
     spec = seen["spec"]
     folder = Path(snapshots["image_folder"])
-    assert Path(spec.image_folder) == folder / AGENT_VIEW_FOLDER
-    assert spec.preprocess == "none"
-    assert Path(spec.out).parent == folder
-    staged = np.asarray(Image.open(folder / AGENT_VIEW_FOLDER / "a.tif"))
+    # Nothing is staged: the run reads the snapshots themselves.
+    assert Path(spec.image_folder) == folder
+    assert not (folder / "agent_view").exists()
+    assert spec.host_preprocessing["channel_weights"] == [1, 3]
+    ctx = build_context(spec, emit=lambda _m: None, atlas_loader=lambda _n: SlabAtlas())
+    shown = np.asarray(ctx.working_source("a.tif")[0].convert("L"))
     preview = np.asarray(host_preprocess(read_pages(folder / "a.tif"), settings).convert("L"))
-    assert np.array_equal(staged, preview)
+    assert np.array_equal(shown, preview)
+    names, planes = ctx.section_channels("a.tif")
+    assert names == ("ch1", "ch2")
+    broad, sparse = _two_channels()
+    assert np.array_equal(planes[0], broad) and np.array_equal(planes[1], sparse)
+
+
+def test_host_channel_names_name_the_raw_channels(snapshots, monkeypatch):
+    from langslice.linear.engine import build_context
+    from tests.fakes import SlabAtlas
+
+    seen: dict[str, Any] = {}
+    _fake_engine(monkeypatch, [], seen)
+    run_linear({**snapshots, "channel_names": ["DAPI", "tdTomato"]}, lambda event: None)
+    ctx = build_context(seen["spec"], emit=lambda _m: None, atlas_loader=lambda _n: SlabAtlas())
+    assert ctx.section_channels("b.tif")[0] == ("DAPI", "tdTomato")
 
 
 def test_single_page_snapshots_without_settings_keep_todays_path(tmp_path, monkeypatch):
@@ -198,7 +219,7 @@ def test_single_page_snapshots_without_settings_keep_todays_path(tmp_path, monke
                lambda event: None)
     assert Path(seen["spec"].image_folder) == tmp_path
     assert seen["spec"].preprocess == "auto"
-    assert not (tmp_path / AGENT_VIEW_FOLDER).exists()
+    assert seen["spec"].host_preprocessing is None
 
 
 def test_bad_weights_for_the_pages_are_refused_before_the_engine(snapshots, monkeypatch):

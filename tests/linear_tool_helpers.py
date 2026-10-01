@@ -7,7 +7,7 @@ def single_adjust(tool):
     """Call adjust_transforms with one entry and expose its row and images."""
     def adjust(slice_id, *args, **kwargs):
         fields = ("rotation_deg", "scale_x", "scale_y", "translate_x_mm",
-                  "translate_y_mm", "mode", "zoom", "template_opacity",
+                  "translate_y_mm", "mode", "zoom", "atlas_opacity",
                   "pivot", "outlines", "note")
         entry = {"id": slice_id, **dict(zip(fields, args, strict=False)), **kwargs}
         result = tool([entry])

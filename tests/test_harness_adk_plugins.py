@@ -20,7 +20,7 @@ from langslice.linear.session import build_plugins
 
 
 class _FakeTool:
-    name = "fetch_atlas"
+    name = "view_atlas"
     response_scheduling = None
 
 
@@ -111,7 +111,7 @@ def test_tool_media_delivery_reports_only_tagged_media_that_survived_filtering()
     plugin = ToolMediaDeliveryPlugin(delivered.append)
     kept = _media_part(1)
     assert kept.function_response is not None
-    kept.function_response.name = "compare_placement"
+    kept.function_response.name = "view_placement"
     kept.function_response.response[TOOL_MEDIA_DELIVERY_ID_KEY] = "compare-1"
     dropped = _media_part(1)
     assert dropped.function_response is not None
@@ -122,7 +122,7 @@ def test_tool_media_delivery_reports_only_tagged_media_that_survived_filtering()
     # belong to a new pending call merely because its tool name matches.
     anonymous = _media_part(1)
     assert anonymous.function_response is not None
-    anonymous.function_response.name = "compare_placement"
+    anonymous.function_response.name = "view_placement"
     request = LlmRequest(
         model="capture-model",
         contents=[types.Content(role="user", parts=[kept, dropped, anonymous])],
@@ -197,7 +197,7 @@ def _media_part(n: int) -> types.Part:
     ]
     return types.Part(
         function_response=types.FunctionResponse(
-            name="fetch_atlas", response={"status": "ok"}, parts=frp
+            name="view_atlas", response={"status": "ok"}, parts=frp
         )
     )
 
@@ -267,7 +267,7 @@ def test_the_first_transform_call_cuts_the_positioning_images():
         part.function_response.name = name  # type: ignore[union-attr]
         return types.Content(role="user", parts=[part])
 
-    history = [_seed(), _turn("compare_placement", 4), _turn("set_positions", 6)]
+    history = [_seed(), _turn("view_placement", 4), _turn("set_positions", 6)]
     assert ws(history) is history
     history.append(_turn("fit_affine", 3))
     assert _kept(ws(history)) == [0, 0, 3]

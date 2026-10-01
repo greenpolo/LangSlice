@@ -94,7 +94,7 @@ def make_explore_panel(panel_w: int, panel_h: int) -> Image.Image:
     # Tool-name caption sits between the agent marker and thumbs.
     cap_font = ImageFont.truetype(FONT_PATH, 38)
     cap_y = CONTENT_TOP - 10
-    pdraw.text((panel_w // 2, cap_y), "fetch_atlas(...)",
+    pdraw.text((panel_w // 2, cap_y), "view_atlas(...)",
                font=cap_font, fill=DIM, anchor="mm")
 
     thumbs_top = CONTENT_TOP + 50

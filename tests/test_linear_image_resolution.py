@@ -108,9 +108,9 @@ def test_pictures_grow_while_fits_and_transforms_stay(tmp_path: Path, resolution
 
     pairs = [
         (low["view_slices"](["s0.tif"]), big["view_slices"](["s0.tif"])),
-        (low["fetch_atlas"]([0.2]), big["fetch_atlas"]([0.2])),
-        (low["compare_placement"]([{"id": "s0.tif"}], mode="overlay"),
-         big["compare_placement"]([{"id": "s0.tif"}], mode="overlay")),
+        (low["view_atlas"]([0.2]), big["view_atlas"]([0.2])),
+        (low["view_placement"]([{"id": "s0.tif"}], mode="overlay"),
+         big["view_placement"]([{"id": "s0.tif"}], mode="overlay")),
         (low["view_stack"](), big["view_stack"]()),
     ]
     low_fit = low["fit_affine"](["s0.tif"], "silhouette")

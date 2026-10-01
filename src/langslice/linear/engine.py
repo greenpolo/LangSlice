@@ -22,7 +22,14 @@ from google.genai import types
 from PIL import Image
 
 from langslice.atlas.core import get_position_range_mm, load_atlas
-from langslice.image_prep import read_pixel_size_um, read_working_image
+from langslice.image_prep import (
+    channel_planes,
+    host_preprocess,
+    normalize_image,
+    read_pixel_size_um,
+    read_working_image,
+    read_working_pages,
+)
 from langslice.linear.atlas_fetch import atlas_strip_parts
 from langslice.linear.checkpoint import (
     default_checkpoint_path,
@@ -31,6 +38,7 @@ from langslice.linear.checkpoint import (
     save_checkpoint,
 )
 from langslice.linear.discovery import discover_slices
+from langslice.linear.display import display_facts
 from langslice.linear.live import LiveCallback
 from langslice.linear.prompt import build_job_statement
 from langslice.linear.render import stack_image_parts, status_text
@@ -111,9 +119,18 @@ class EngineContext:
     source_cache: dict[str, tuple[Image.Image, float]] = field(
         default_factory=dict, repr=False
     )
+    #: Each file's raw channels at working size: names and 8-bit planes
+    #: (:func:`langslice.image_prep.channel_planes`). Shared: read only.
+    channel_cache: dict[str, tuple[tuple[str, ...], list[Any]]] = field(
+        default_factory=dict, repr=False
+    )
     #: Encoded, captioned reference images shared by the seed and comparison tools.
     reference_parts: dict[tuple[Any, ...], types.Part] = field(default_factory=dict, repr=False)
     _atlas: Any = field(default=None, repr=False)
+    #: ABBA's cached Allen atlas when it matches this run's atlas (the
+    #: ``nissl`` atlas image); looked up once.
+    _abba: Any = field(default=None, repr=False)
+    _abba_checked: bool = field(default=False, repr=False)
     _range: tuple[float, float] | None = field(default=None, repr=False)
     _pixel_sizes: dict[str, float | None] = field(default_factory=dict, repr=False)
 
@@ -132,9 +149,49 @@ class EngineContext:
         """
         cached = self.source_cache.get(slice_id)
         if cached is None:
-            cached = read_working_image(self.image_path(slice_id))
+            settings = self.spec.host_preprocessing
+            if settings is not None:
+                # A host's snapshot, one page per channel: the default
+                # appearance is the host's blend of the pages (what
+                # ``preprocess.preview`` shows), drawn at working size. The
+                # pages stay readable as channels.
+                pages, factor = read_working_pages(self.image_path(slice_id))
+                blended = host_preprocess(pages, settings).convert("L")
+                cached = (normalize_image(blended), factor)
+            else:
+                cached = read_working_image(self.image_path(slice_id))
             self.source_cache[slice_id] = cached
         return cached
+
+    def section_channels(self, slice_id: str) -> tuple[tuple[str, ...], list[Any]]:
+        """``(names, raw 8-bit planes)`` of one section at working size.
+
+        A single colour file is red/green/blue (``gray`` when the three are
+        equal); a multi-page file is one plane per page, named by the host's
+        ``inputs["channel_names"]`` when it gave one per page, else ch1, ch2...
+        """
+        cached = self.channel_cache.get(slice_id)
+        if cached is None:
+            pages, _factor = read_working_pages(self.image_path(slice_id))
+            names = (self.spec.inputs or {}).get("channel_names")
+            cached = channel_planes(pages, list(names) if isinstance(names, list) else None)
+            self.channel_cache[slice_id] = cached
+        return cached
+
+    @property
+    def abba_atlas(self) -> Any:
+        """ABBA's cached Allen atlas when present and matching, else None."""
+        if not self._abba_checked:
+            self._abba_checked = True
+            try:
+                from langslice.deformable.abba_atlas import AbbaAtlas
+
+                found = AbbaAtlas.find()
+                self._abba = found if found is not None and found.compatible(self.atlas) else None
+            except Exception:  # an unreadable cache or a non-BrainGlobe atlas: no Nissl
+                logger.debug("ABBA atlas lookup failed", exc_info=True)
+                self._abba = None
+        return self._abba
 
     @property
     def atlas(self) -> Any:
@@ -373,6 +430,7 @@ async def run_session(
             pos_lo=pos_lo,
             pos_hi=pos_hi,
             axis_ends=ctx.axis_ends,
+            **display_facts(ctx, state),
         ),
         tools=box.tools,
         reasoning=spec.reasoning,
