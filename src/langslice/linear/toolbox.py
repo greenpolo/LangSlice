@@ -402,22 +402,40 @@ class ToolBox:
             self.seen_placement_views.update(direct)
 
 
+#: The ``fit_deformable`` docstring's recommendation for traced section images
+#: (the 2026-10-01 ceiling test's best pictures and numbers); dropped where it
+#: cannot apply (no image model, or the user fixed the engine to Elastix).
+_RECOMMENDED_TRACED = (
+    " With a completed trace, traced_borders with the ANTs\n"
+    "                engine at medium stiffness is the recommended pairing."
+)
+#: The ``fit_deformable`` docstring's line on the fit appearance, and the
+#: pointer to ``preprocess`` added when the agent may set appearances.
+_FIT_LOOK_DOC = '            section_image: "fit" (the section\'s fit appearance; default'
+_PREPROCESS_DOC = (
+    ";\n                the preprocess tool, target \"fit\", sets it, e.g. to one raw channel"
+)
 #: ``fit_deformable`` docstring passages about traced section images and their
 #: wording for a run without the image model (``nonlinear.provider`` "none").
 _STAIN_ONLY_DOC: tuple[tuple[str, str], ...] = (
     (
-        '            section_image: "fit" (the section\'s fit appearance), a raw channel\n'
-        '                name, "traced_borders" (the section\'s trace_borders result at\n'
+        '            section_image: "fit" (the section\'s fit appearance; default),\n'
+        '                "traced_borders" (the section\'s trace_borders result at\n'
         '                this placement, its lines turned into named regions; ANTs) or\n'
         '                "traced_lines" (those lines as lines, against atlas borders).\n'
         '                A traced image waits for a trace still running (up to\n'
         '                TRACE_WAIT minutes) and the reply adds the trace drawn on the\n'
-        '                section.\n',
-        '            section_image: "fit" (the section\'s fit appearance) or a raw\n'
-        '                channel name.\n',
+        '                section.' + _RECOMMENDED_TRACED + '\n',
+        _FIT_LOOK_DOC + ').\n',
     ),
-    ('Empty: "borders" for traced images, else "ara".', 'Empty: "ara".'),
-    (" Traced\n            sections add `traces`: each one's trace drawn on the section.", ""),
+    (
+        '            atlas_image: For "fit": "ara" (the atlas\'s reference template;\n'
+        '                default) or "nissl" (a Nissl-stained reference, hosts with\n'
+        '                ABBA\'s atlas). For traced images: "borders" (default).\n',
+        '            atlas_image: "ara" (the atlas\'s reference template; default)\n'
+        '                or "nissl" (a Nissl-stained reference, hosts with ABBA\'s atlas).\n',
+    ),
+    (" Traced sections add `traces`: each\n            one's trace drawn on the section.", ""),
 )
 
 
@@ -916,8 +934,13 @@ def build_tools(
         )
 
     def region_names(values: Any, field_name: str) -> tuple[str, ...] | dict[str, Any]:
-        """Region acronyms or ids for `include`/`exclude`, checked against the atlas."""
-        from langslice.deformable.atlas_images import resolve_structures
+        """Region entries for `include`/`exclude`, checked against the atlas.
+
+        An entry is an acronym or id, optionally with a side ("CTX:left",
+        :mod:`langslice.atlas.sides`).
+        """
+        from langslice.atlas.sides import has_sides
+        from langslice.deformable.atlas_images import resolve_entries
 
         if values is None:
             return ()
@@ -927,11 +950,25 @@ def build_tools(
         names = tuple(str(value).strip() for value in values if str(value).strip())
         if names:
             try:
-                resolve_structures(ctx.atlas, names)
+                resolve_entries(ctx.atlas, names)
             except ValueError as exc:
                 return {"status": "error", "error": "UNKNOWN_REGIONS", "message": str(exc),
                         "argument": field_name}
+            if state.plane == "sagittal" and has_sides(names):
+                return {"status": "error", "error": "NO_SIDES", "argument": field_name,
+                        "message": "A sagittal section lies within one hemisphere, so a "
+                        "region cannot be limited to one side."}
         return names
+
+    def region_overlap(kept: tuple[str, ...], dropped: tuple[str, ...]) -> dict[str, Any] | None:
+        """The refusal for regions both included and excluded (sides respected)."""
+        from langslice.atlas.sides import overlapping
+
+        overlap = overlapping(kept, dropped)
+        if not overlap:
+            return None
+        return {"status": "error", "error": "BAD_ARGS",
+                "message": "A region cannot be both included and excluded: " + ", ".join(overlap)}
 
     def section_label(record: SliceState, options: DisplayOptions) -> str:
         label = f"{record.index_corrected}: {record.id}"
@@ -2243,7 +2280,9 @@ def build_tools(
             exclude: Regions removed from the atlas side (e.g. tissue missing
                 from the section), descendants included; the tissue the fit
                 lays on them is left out too. With regions given, damaged
-                sections are fitted.
+                sections are fitted. An include or exclude entry may name one
+                side only, "CTX:left" or "CTX:right": left and right of the
+                section as view_slices shows it.
 
         Returns:
             Per-section overlap (iou; with regions, of the kept atlas and the
@@ -2275,11 +2314,9 @@ def build_tools(
         dropped = region_names(exclude, "exclude")
         if isinstance(dropped, dict):
             return dropped
-        overlap = sorted({name.lower() for name in kept} & {name.lower() for name in dropped})
-        if overlap:
-            return {"status": "error", "error": "BAD_ARGS",
-                    "message": "A region cannot be both included and excluded: "
-                    + ", ".join(overlap)}
+        refusal = region_overlap(kept, dropped)
+        if refusal is not None:
+            return refusal
         restricted = bool(kept or dropped)
 
         if slice_ids:
@@ -2855,7 +2892,7 @@ def build_tools(
         """One candidate's settings, validated, or the refusal naming the fix."""
         from typing import get_args
 
-        from langslice.deformable.settings import Detail, Stiffness
+        from langslice.deformable.settings import Stiffness
         from langslice.linear.display import available_atlas_images
 
         requested = str(values.get("engine") or "").strip().lower()
@@ -2875,15 +2912,19 @@ def build_tools(
         if stiffness not in get_args(Stiffness):
             return {"status": "error", "error": "BAD_STIFFNESS",
                     "stiffness": list(get_args(Stiffness))}
-        detail = str(values.get("detail") or "standard").strip().lower()
-        if detail not in get_args(Detail):
-            return {"status": "error", "error": "BAD_DETAIL", "detail": list(get_args(Detail))}
         picked = str(values.get("section_image") or deformation.FIT_LOOK).strip()
         traced = picked in deformation.TRACED
         if traced and not traces_on:
             return {"status": "error", "error": "NO_IMAGE_MODEL",
                     "message": "This run has no image model, so there are no traced section "
-                    "images; use 'fit' or a raw channel."}
+                    "images; use 'fit'."}
+        if picked not in deformation.SECTION_IMAGES:
+            offered = [deformation.FIT_LOOK, *(deformation.TRACED if traces_on else ())]
+            return {"status": "error", "error": "BAD_SECTION_IMAGE", "section_images": offered,
+                    "message": "A fit reads the section's fit appearance"
+                    + (" or its traced borders" if traces_on else "")
+                    + (". To fit one raw channel, set the fit appearance with preprocess "
+                       "(target 'fit')." if spec.agent_preprocessing else ".")}
         atlas_kind = str(values.get("atlas_image") or "").strip().lower() or (
             "borders" if traced else "ara")
         if atlas_kind not in deformation.ATLAS_CHOICES:
@@ -2897,12 +2938,17 @@ def build_tools(
         if traced and atlas_kind != "borders":
             return {"status": "error", "error": "BAD_ARGS",
                     "message": "Traced section images are fitted against atlas_image 'borders'."}
+        if not traced and atlas_kind == "borders":
+            return {"status": "error", "error": "BAD_ARGS",
+                    "message": "Atlas borders are for traced section images (the image model's "
+                    "lines against the atlas's lines); the fit appearance is fitted against "
+                    "a grayscale atlas image, 'ara' or 'nissl'."}
         if picked == deformation.TRACED_BORDERS and chosen != "ants":
             return {"status": "error", "error": "LABEL_MAP_ANTS_ONLY",
                     "message": "traced_borders (the traced lines as named regions) needs the "
                     "ANTs engine; traced_lines works with either engine."}
         return deformation.Choice(section_image=picked, atlas_image=atlas_kind, engine=chosen,
-                                  stiffness=stiffness, detail=detail)
+                                  stiffness=stiffness)
 
     def keep_linear_placements(targets: list[SliceState], reason: str) -> dict[str, Any]:
         """Record that each section's linear placement stands: no warp, a reason.
@@ -2934,7 +2980,6 @@ def build_tools(
         atlas_image: str,
         engine: str,
         stiffness: str,
-        detail: str,
         candidates: list[dict[str, Any]],
         mode: str,
         zoom: list[float],
@@ -2969,11 +3014,9 @@ def build_tools(
         dropped = region_names(exclude, "exclude")
         if isinstance(dropped, dict):
             return dropped
-        overlap = sorted({name.lower() for name in kept} & {name.lower() for name in dropped})
-        if overlap:
-            return {"status": "error", "error": "BAD_ARGS",
-                    "message": "A region cannot be both included and excluded: "
-                    + ", ".join(overlap)}
+        refusal = region_overlap(kept, dropped)
+        if refusal is not None:
+            return refusal
         variants = list(candidates or [])
         if len(variants) > deformation.MAX_CANDIDATES:
             return {"status": "error", "error": "TOO_MANY_CANDIDATES",
@@ -2985,7 +3028,7 @@ def build_tools(
             if not isinstance(variant, dict) or set(variant) - allowed:
                 return {"status": "error", "error": "BAD_CANDIDATE",
                         "candidate_keys": sorted(allowed)}
-        base = {"engine": engine, "stiffness": stiffness, "detail": detail,
+        base = {"engine": engine, "stiffness": stiffness,
                 "section_image": section_image, "atlas_image": atlas_image}
         choices: list[deformation.Choice] = []
         for variant in variants or [{}]:
@@ -3028,7 +3071,6 @@ def build_tools(
                                  "applied deformation; this section has none."})
                     continue
                 previous_key = str((record.deformation or {}).get("key"))
-            channels = ctx.section_channels(record.id)[0]
             running = False
             if any(choice.section_image in deformation.TRACED for choice in choices):
                 # A traced image waits for the section's trace still running.
@@ -3040,11 +3082,6 @@ def build_tools(
             for number, choice in enumerate(choices, start=1):
                 failure = {"id": record.id, "status": "error", "settings": choice.echo(),
                            **({} if applying else {"candidate": number})}
-                if (choice.section_image not in (deformation.FIT_LOOK, *deformation.TRACED)
-                        and choice.section_image not in channels):
-                    rows.append({**failure, "error": "UNKNOWN_CHANNEL",
-                                 "channels": list(channels)})
-                    continue
                 try:
                     image, identity = deformation.stain_image(ctx, state, grid,
                                                               choice.section_image)
@@ -3124,7 +3161,7 @@ def build_tools(
                 row["steps"] = len((record.deformation or {}).get("steps") or [])
             heading = (f"{record.id}  " + ("applied" if applying else
                        f"candidate {row['candidate']}/{len(choices)}")
-                       + f": {job.choice.engine} {job.choice.stiffness} {job.choice.detail}")
+                       + f": {job.choice.engine} {job.choice.stiffness}")
             detail_line = (f"{job.choice.section_image} vs {job.choice.atlas_image}, start {begin}"
                            + (f", include {','.join(kept)}" if kept else "")
                            + (f", exclude {','.join(dropped)}" if dropped else ""))
@@ -3202,7 +3239,6 @@ def build_tools(
         atlas_image: str = "",
         engine: str = "",
         stiffness: str = "medium",
-        detail: str = "standard",
         candidates: list[dict[str, Any]] = [],  # noqa: B006
         keep_linear: str = "",
         mode: str = "borders",
@@ -3234,23 +3270,27 @@ def build_tools(
                 on: only they and a 300 um margin are fitted. Empty fits the
                 whole section.
             exclude: Regions removed from the atlas side (e.g. tissue that is
-                missing from the section), descendants included.
+                missing from the section), descendants included. An include
+                or exclude entry may name one side only, "CTX:left" or
+                "CTX:right": left and right of the section as this tool's
+                pictures show it.
             start: "linear" (from the linear placement) or "current" (compose
                 onto the section's applied deformation: region-by-region steps).
-            section_image: "fit" (the section's fit appearance), a raw channel
-                name, "traced_borders" (the section's trace_borders result at
+            section_image: "fit" (the section's fit appearance; default),
+                "traced_borders" (the section's trace_borders result at
                 this placement, its lines turned into named regions; ANTs) or
                 "traced_lines" (those lines as lines, against atlas borders).
                 A traced image waits for a trace still running (up to
                 TRACE_WAIT minutes) and the reply adds the trace drawn on the
-                section.
-            atlas_image: "ara", "borders" or "nissl" (hosts with ABBA's
-                atlas). Empty: "borders" for traced images, else "ara".
+                section. With a completed trace, traced_borders with the ANTs
+                engine at medium stiffness is the recommended pairing.
+            atlas_image: For "fit": "ara" (the atlas's reference template;
+                default) or "nissl" (a Nissl-stained reference, hosts with
+                ABBA's atlas). For traced images: "borders" (default).
             engine: "ants" or "elastix"; empty is ANTs when installed.
-            stiffness: "soft", "medium", "firm" or "stiff".
-            detail: "coarse" (40 um), "standard" (20 um) or "fine" (10 um).
+            stiffness: "soft", "medium" (default) or "firm".
             candidates: 2 to 4 objects, each overriding any of stiffness,
-                detail, section_image, atlas_image and engine for one variant.
+                section_image, atlas_image and engine for one variant.
             keep_linear: A reason the named sections' linear placement stands
                 without a deformation. Given, nothing is fitted: each section
                 records it at its current placement (one undo step; submit
@@ -3260,8 +3300,9 @@ def build_tools(
             zoom: [x0, y0, x1, y1] fractions of the section; empty is all.
             atlas_opacity: 0..1, the warped atlas image (ara or nissl) under
                 the lines.
-            regions: Regions drawn at full strength; empty is the include list
-                (or every border). Excluded regions are drawn in pink.
+            regions: Regions drawn at full strength (sides as in exclude);
+                empty is the include list (or every border). Excluded regions
+                are drawn in pink.
             outlines: "all", "outer" or "none" for the other borders.
             border_color: Named or #RRGGBB. border_thickness: 0.25..8 px.
 
@@ -3269,13 +3310,14 @@ def build_tools(
             Per section and candidate: the settings and engine numbers used,
             displacement (max and median, mm, over the tissue), fold fraction,
             plausibility flags (regions compressed, expanded, vanished or
-            folded beyond limits) and image_indexes into the pictures: the
-            final borders drawn on the section image the fit read. Traced
-            sections add `traces`: each one's trace drawn on the section.
+            folded beyond limits; displacement outsized for the section) and
+            image_indexes into the pictures: the final borders drawn on the
+            section image the fit read. Traced sections add `traces`: each
+            one's trace drawn on the section.
         """
         return fit_deformable_impl(
             sections, include, exclude, start, section_image, atlas_image, engine, stiffness,
-            detail, candidates, mode, zoom, atlas_opacity, regions, outlines, border_color,
+            candidates, mode, zoom, atlas_opacity, regions, outlines, border_color,
             border_thickness, resolution, keep_linear,
         )
 
@@ -3287,7 +3329,6 @@ def build_tools(
         section_image: str = "fit",
         atlas_image: str = "",
         stiffness: str = "medium",
-        detail: str = "standard",
         candidates: list[dict[str, Any]] = [],  # noqa: B006
         keep_linear: str = "",
         mode: str = "borders",
@@ -3301,7 +3342,7 @@ def build_tools(
     ) -> dict[str, Any]:
         return fit_deformable_impl(
             sections, include, exclude, start, section_image, atlas_image, "", stiffness,
-            detail, candidates, mode, zoom, atlas_opacity, regions, outlines, border_color,
+            candidates, mode, zoom, atlas_opacity, regions, outlines, border_color,
             border_thickness, resolution, keep_linear,
         )
 
@@ -3312,12 +3353,18 @@ def build_tools(
         for traced_text, stain_text in _STAIN_ONLY_DOC:
             doc = doc.replace(traced_text.replace(
                 "TRACE_WAIT minutes", f"{deformation.TRACE_WAIT_S / 60:g} minutes"), stain_text)
+    if spec.agent_preprocessing:
+        doc = doc.replace(_FIT_LOOK_DOC, _FIT_LOOK_DOC + _PREPROCESS_DOC)
     fit_deformable.__doc__ = doc
     # The user fixed the engine: the same tool without the engine argument.
     fit_deformable_fixed.__name__ = fit_deformable_fixed.__qualname__ = "fit_deformable"
-    fit_deformable_fixed.__doc__ = (fit_deformable.__doc__ or "").replace(
+    fixed_doc = (fit_deformable.__doc__ or "").replace(
         '            engine: "ants" or "elastix"; empty is ANTs when installed.\n', "",
     ).replace("A library engine", f"The {engine_option} engine")
+    if engine_option != "ants":
+        # traced_borders is ANTs-only, so its recommendation does not apply.
+        fixed_doc = fixed_doc.replace(_RECOMMENDED_TRACED, "")
+    fit_deformable_fixed.__doc__ = fixed_doc
 
     if spec.has("nonlinear"):
         if traces_on:

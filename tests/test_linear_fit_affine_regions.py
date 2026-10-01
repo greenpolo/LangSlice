@@ -132,3 +132,31 @@ def test_include_restricts_and_says_what_it_cannot_measure(tmp_path: Path):
     state.slices[0].damaged = True
     assert _fit(box, ["s0.png"], "silhouette")["results"][0]["error"] == "DAMAGED"
     assert _fit(box, ["s0.png"], "silhouette", exclude=["R"])["status"] == "ok"
+
+
+class WholeAtlas(HalvesAtlas):
+    """The same ellipse as ONE region (``L``) across both hemispheres."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.annotation = np.where(self.annotation == RIGHT, LEFT, self.annotation)
+
+
+def test_a_one_sided_exclusion_keeps_the_other_hemisphere(tmp_path: Path):
+    """Excluding ``L:right`` drops only the right half of a region spanning both."""
+    state, box = _box(tmp_path, WholeAtlas(), _left_half_section(), pixel_size_um=50.0,
+                      position_mm=1.0)
+    row = _fit(box, ["s0.png"], "silhouette", exclude=["L:right"])["results"][0]
+    assert row["status"] == "ok", row
+    assert row["regions"]["atlas_kept_fraction"] == pytest.approx(0.5, abs=0.05)
+    assert abs(row["physical"]["rotation_deg"]) < 3.0
+    assert row["physical"]["scale_x"] == pytest.approx(1.0, abs=0.08)
+    assert row["iou"] > 0.9
+    assert state.slices[0].transform["regions"] == {"include": [], "exclude": ["L:right"]}
+    # Excluding the side the tissue IS on leaves the wrong half to fit against.
+    undo = next(t for t in box.tools if t.__name__ == "undo")
+    undo()
+    wrong = _fit(box, ["s0.png"], "silhouette", exclude=["L:left"])["results"][0]
+    assert wrong["status"] == "ok" and wrong["regions"]["tissue_used_fraction"] < 0.2
+    assert _fit(box, ["s0.png"], "silhouette", exclude=["L:middle"])["error"] == \
+        "UNKNOWN_REGIONS"

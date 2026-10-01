@@ -28,7 +28,7 @@ import numpy as np
 from PIL import Image
 
 from langslice.atlas.render import family_labels
-from langslice.deformable.atlas_images import native_labels, resolve_structures, with_descendants
+from langslice.deformable.atlas_images import native_labels, placement_left, regions_mask
 from langslice.deformable.record import DeformableRecord
 
 #: Atlas-grid blur of each region indicator before bilinear sampling.
@@ -157,11 +157,14 @@ def warped_border_layers(
     s = int(supersample)
     width, height = record.section_size
     leaf = native if native is not None else native_labels(atlas, record.placement)
-    ids = with_descendants(atlas, resolve_structures(atlas, highlight)) if highlight else ()
-    marks = with_descendants(atlas, resolve_structures(atlas, marked)) if marked else ()
+    highlight, marked = list(highlight), list(marked)
+    # One-sided entries ("CTX:left") are sides of the section as drawn here.
+    left = placement_left(atlas, record.placement, (*highlight, *marked))
     family = family_labels(leaf, atlas).astype(np.int64)
-    flagged = np.isin(leaf, list(ids)) if ids else np.zeros(leaf.shape, dtype=bool)
-    flagged_marks = np.isin(leaf, list(marks)) if marks else np.zeros(leaf.shape, dtype=bool)
+    flagged = (regions_mask(atlas, leaf, highlight, left) if highlight
+               else np.zeros(leaf.shape, dtype=bool))
+    flagged_marks = (regions_mask(atlas, leaf, marked, left) if marked
+                     else np.zeros(leaf.shape, dtype=bool))
     # Codes: a highlighted leaf is leaf*4+1, a marked leaf leaf*4+3, anything
     # else its color family *4 (background stays 0), so the sets never merge.
     big = leaf.astype(np.int64)
@@ -180,8 +183,8 @@ def warped_border_layers(
         return touch
 
     nothing = np.zeros(owner.shape, dtype=bool)
-    marked_edges = touching((owner & 3) == 3) if marks else nothing
-    strong_edges = (touching((owner & 3) == 1) if ids else edges) & ~marked_edges
+    marked_edges = touching((owner & 3) == 3) if marked else nothing
+    strong_edges = (touching((owner & 3) == 1) if highlight else edges) & ~marked_edges
     outer_edges = touching(owner == 0) & ~marked_edges
     fine_tissue = cv2.resize(record.tissue.astype(np.uint8), (width * s, height * s),
                              interpolation=cv2.INTER_NEAREST) > 0

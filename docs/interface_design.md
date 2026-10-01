@@ -195,33 +195,47 @@ display options below.
 | `adjust_transforms` | transform.interactive | `adjust_transforms(entries)`; each entry: id, rotation_deg, scale_x, scale_y, translate_x_mm, translate_y_mm, pivot, note, +display — modes as `fit_affine` plus ab |
 | `set_cutting_angles` | transform.angles | `set_cutting_angles(pitch_deg, yaw_deg)` |
 | `trace_borders`, `grep_atlas` | nonlinear (`trace_borders` not with provider `none`) | `trace_borders(id, prompt="")`, `grep_atlas(query, section="")` |
-| `fit_deformable` | nonlinear | `fit_deformable(sections, include=[], exclude=[], start="linear", section_image="fit", atlas_image="", engine="", stiffness="medium", detail="standard", candidates=[], keep_linear="", mode="borders", zoom, atlas_opacity, regions, outlines, border_color, border_thickness=1.0)` — `engine` only when `nonlinear.engine` is `either`; modes: borders, ab |
+| `fit_deformable` | nonlinear | `fit_deformable(sections, include=[], exclude=[], start="linear", section_image="fit", atlas_image="", engine="", stiffness="medium", candidates=[], keep_linear="", mode="borders", zoom, atlas_opacity, regions, outlines, border_color, border_thickness=1.0)` — `engine` only when `nonlinear.engine` is `either`; modes: borders, ab |
 | `submit` | always | `submit(summary, notes, interval_breaks)` |
 
 **`fit_deformable`** (`linear/deformation.py` over `src/langslice/deformable/`).
 A library deformable fit on top of a section's linear placement (position and
 transform required). Fit inputs: `sections` (≤4, ≤8 fits per call),
 `include` (fit only these regions plus a 300 µm margin) and `exclude`
-(removed from the atlas side), descendants included; `start` `linear` or
+(removed from the atlas side), descendants included; an entry may name one
+side, `"CTX:left"` / `"CTX:right"`, left and right of the section as the
+tool's pictures show it (the oriented section, rotation and flip applied),
+for damage on one side only; `start` `linear` or
 `current` (compose onto the applied deformation, region by region);
-`section_image` `fit` (the fit appearance, `appearance.fit_image`), a raw
-channel, `traced_borders` (the completed `trace_borders` result at this
+`section_image` `fit` (the fit appearance, `appearance.fit_image`; one raw
+channel is a fit appearance set with `preprocess`, not a section image),
+`traced_borders` (the completed `trace_borders` result at this
 placement as named regions, ANTs label-map mode) or `traced_lines` (those
 lines against atlas borders; both only with an image model, and a call
 waits up to `TRACE_WAIT_S` 300 s for that section's trace still running,
 answering `TRACE_TIMEOUT` / `TRACE_FAILED` otherwise, and adds one picture per
 traced section of the trace's lines on the section, mapped by `traces`);
-`atlas_image` `ara`, `borders`, `nissl` (same
-host rules as the display options; empty = borders for traced images, else
-ara); `engine` (only when the user left it open; missing ANTs is said plainly),
-`stiffness` soft/medium/firm/stiff, `detail` coarse/standard/fine. 2–4
+`atlas_image` `ara` or `nissl` for the fit appearance (a Nissl-stained
+reference; same host rules as the display options), `borders` for traced
+images only (the fit appearance against borders is refused); empty = borders
+for traced images, else ara; `engine` (only when the user left it open;
+missing ANTs is said plainly), `stiffness` soft/medium/firm. Defaults
+without a trace: fit appearance, ara, ANTs, medium; with a completed trace
+the agent chooses, and the tool description states that traced_borders with
+ANTs at medium is the recommended pairing. Detail (standard) and line
+softening (60 µm) are fixed, not arguments. On the fluorescent LSD_910
+sections of the 2026-10-01 ceiling test, the Nissl reference's outer edge
+sat 40-80 µm inside the tissue's bright surface rim where ara followed the
+edge. 2–4
 `candidates` (setting variants) run concurrently and write nothing; exactly one
 setting applies it (one undo step, checkpointed), reusing an identical earlier
 result. Pictures: one per result, the final borders drawn smoothly on the
 section image the fit read, at the call's picture size, included (or
 `regions`) borders strong, excluded regions pink; `ab` adds what the fit
 started from. Text: settings and engine numbers, displacement max/median,
-fold fraction, plausibility flags. The deformation is stored per section
+fold fraction, plausibility flags (regions compressed, expanded, vanished or
+folded; `DISPLACEMENT_OUTSIZED` when the largest displacement passes a tenth
+of the tissue's extent or the median passes 0.6 mm). The deformation is stored per section
 (`SliceState.deformation` plus a record directory under the results folder);
 any change to that section's position, orientation, cutting angles or
 transform clears it and the tool's reply says `deformation_cleared` (undo
@@ -233,7 +247,7 @@ cleared like a deformation when the placement changes; satisfies `submit`).
 
 **`fit_affine` regions** (2026-10-01). `include` / `exclude` mean what they
 mean in `fit_deformable` and resolve through the same code (acronyms or ids,
-descendants included). Without them the fit is the whole-outline moments fit,
+descendants included, optionally one side: `"CTX:left"`). Without them the fit is the whole-outline moments fit,
 unchanged. With them (`transform.region_silhouette_fit`) the atlas side is
 the kept footprint (minus excluded regions; with `include`, only the part
 within 300 µm of them) and the section side is the tissue the section's
@@ -267,7 +281,10 @@ call's options never change any stored setting):
 - `regions` — atlas acronyms or ids, descendants included: only these
   regions' borders are drawn at full strength, the `outlines` layer faint
   behind them for context; regions missing from a plane are named in
-  `regions_not_in_plane`.
+  `regions_not_in_plane`. `"CTX:left"` / `"CTX:right"` draws one side: the
+  section's side as `view_slices` shows it (on `view_placement`'s canvas a
+  mirrored placement shows it on the other side, said in the caption); on a
+  picture of the atlas alone, the picture's own side.
 - `outlines` — `all`, `outer` or `none`; empty is the mode's default (all on
   the physical canvas, none on tissue-framed pictures).
 - `border_color`, `border_thickness` — named or `#RRGGBB`; 0.25..8 output px.

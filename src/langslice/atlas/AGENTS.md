@@ -6,6 +6,19 @@ here is a verbatim copy — edit one, mirror to the other.
 
 - `atlas/` — BrainGlobe loading, position helpers, slice extraction, colored
   region maps, borders.
+  `sides.py` (2026-10-02) is one side of a region, `"CTX:left"`: the
+  grammar (`split_side`, `overlapping`), the native plane's two ML halves
+  (`ml_halves`: ML volume index per pixel from `oblique.plane_index_coordinates`
+  on the axis `space.atlas_space_context` derives; split where BrainGlobe
+  splits a symmetric atlas, at `round(n_ml / 2)`, or by the atlas's own
+  `hemispheres` volume when its metadata says it is not symmetric) and
+  `native_left` (which half the placement puts on the DISPLAYED section's
+  left: the ML gradient carried through the placement's linear part; a
+  mirror swaps the halves; `SideError` `NO_SIDES` on sagittal planes,
+  `SIDES_AMBIGUOUS` when the midline is turned past 45 degrees). BrainGlobe's
+  own "left"/"right" hemisphere values are never used: its `hemispheres`
+  docstring and code disagree, and on a symmetric atlas no label agreement
+  could settle which is which.
   `render.py` is the geometry BOTH methods draw from, and it belongs to
   neither: `annotation_slice` (the display-oriented annotation at a position,
   resliced obliquely when the block carries cutting angles), `atlas_um_per_px`,

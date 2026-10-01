@@ -7,8 +7,9 @@ engine package :mod:`langslice.deformable`. What lives here:
   :data:`FIT_LONG_EDGE` with its linear placement
   (:func:`langslice.registration_handoff.prepare_linear_registration`, the
   same handoff ``trace_borders`` uses), and the image the fit reads on it —
-  the section's ``fit`` appearance, one raw channel, or the image model's
-  traced lines mapped onto that grid;
+  the section's ``fit`` appearance (one raw channel is a fit appearance the
+  ``preprocess`` tool sets), or the image model's traced lines mapped onto
+  that grid;
 - one resolved :class:`Choice` per candidate and its engine settings;
 - :class:`RecordStore`: results cached by a digest of every input (so
   applying a previewed candidate reuses it), applied records saved under the
@@ -72,6 +73,10 @@ logger = logging.getLogger(__name__)
 #: engine works on a coarser grid (the detail level's micrometres); this grid
 #: carries the final field, the labels and the masks.
 FIT_LONG_EDGE = 1536
+#: The detail level every tool fit runs at. The 2026-10-01 ceiling test found
+#: detail never changed which candidate looked best, so the tool fixes it;
+#: tests set ``coarse`` here for speed.
+DETAIL_LEVEL = "standard"
 #: Setting variants one call may preview.
 MAX_CANDIDATES = 4
 #: Fits one call may run (sections x candidates).
@@ -82,19 +87,22 @@ CACHE_SIZE = 8
 #: name for each. ``borders`` is the colour-family boundaries the display
 #: options draw (and the image model is shown).
 ATLAS_CHOICES: dict[str, str] = {"borders": "borders_merged", "ara": "ara", "nissl": "nissl"}
-#: Section images besides a raw channel name.
+#: The section images a fit can read.
 FIT_LOOK = "fit"
 TRACED_BORDERS = "traced_borders"
 TRACED_LINES = "traced_lines"
 TRACED = (TRACED_BORDERS, TRACED_LINES)
+SECTION_IMAGES = (FIT_LOOK, *TRACED)
 STARTS = ("linear", "current")
 ENGINES = ("ants", "elastix")
 #: What a candidate may change.
-CANDIDATE_KEYS = ("stiffness", "detail", "section_image", "atlas_image", "engine")
+CANDIDATE_KEYS = ("stiffness", "section_image", "atlas_image", "engine")
 #: Picture modes: the fit alone, or the fit then what it started from.
 MODES = ("borders", "ab")
 #: Flags listed per candidate before the rest are only counted.
 MAX_FLAGS = 12
+#: Flags about the whole section, listed before any per-region flag.
+SECTION_FLAGS = ("DISPLACEMENT_OUTSIZED", "FOLDS")
 #: Longest one ``fit_deformable`` call waits for running ``trace_borders``
 #: calls its traced section images need (an image call takes ~1-3 minutes).
 TRACE_WAIT_S = 300.0
@@ -180,17 +188,17 @@ def _on_grid(image: Image.Image, grid: Grid) -> Image.Image:
 def stain_image(
     ctx: EngineContext, state: StackState, grid: Grid, section_image: str,
 ) -> tuple[Image.Image, Any]:
-    """``(image, identity)`` of the stain a fit reads: the fit look or a channel."""
-    record = grid.record
-    if section_image in (FIT_LOOK, *TRACED):
-        look = looks.section_settings(state, "fit", record.id)
-        image = looks.fit_image(ctx, state, record, long_edge=FIT_LONG_EDGE)
-        return _on_grid(image, grid), {"fit_look": look}
-    from langslice.linear.render import render_slice
+    """``(image, identity)`` of the stain a fit reads: the section's fit appearance.
 
-    image = render_slice(ctx, record, long_edge=FIT_LONG_EDGE, frame=False,
-                         look={"channel": section_image})
-    return _on_grid(image, grid), {"channel": section_image}
+    Traced section images draw their pictures on it too. A raw channel is a
+    fit appearance (``preprocess`` target ``fit``), not a section image.
+    """
+    if section_image not in SECTION_IMAGES:
+        raise ValueError(f"Unknown section image {section_image!r}")
+    record = grid.record
+    look = looks.section_settings(state, "fit", record.id)
+    image = looks.fit_image(ctx, state, record, long_edge=FIT_LONG_EDGE)
+    return _on_grid(image, grid), {"fit_look": look}
 
 
 def traced_lines(
@@ -254,14 +262,13 @@ class Choice:
     atlas_image: str
     engine: str
     stiffness: str
-    detail: str
 
     def settings(self, include: tuple[str, ...], exclude: tuple[str, ...]) -> FitSettings:
         traced = self.section_image in TRACED
         return FitSettings(
             engine=self.engine,  # type: ignore[arg-type]
             stiffness=self.stiffness,  # type: ignore[arg-type]
-            detail=self.detail,  # type: ignore[arg-type]
+            detail=DETAIL_LEVEL,  # type: ignore[arg-type]
             atlas_image=ATLAS_CHOICES[self.atlas_image],  # type: ignore[arg-type]
             section_image="lines" if traced else "stain",
             labels="model" if self.section_image == TRACED_BORDERS else "none",
@@ -269,7 +276,7 @@ class Choice:
         )
 
     def echo(self) -> dict[str, str]:
-        return {"engine": self.engine, "stiffness": self.stiffness, "detail": self.detail,
+        return {"engine": self.engine, "stiffness": self.stiffness,
                 "section_image": self.section_image, "atlas_image": self.atlas_image}
 
 
@@ -378,9 +385,16 @@ def summary(record: DeformableRecord, previous: DeformableRecord | None) -> dict
             "median": round(float(np.median(step)), 3) if step.size else 0.0,
         }
     flags: list[dict[str, Any]] = []
-    for flag in record.diagnostics.get("flags", []):
+    # Whole-section flags first, so the per-region cap never hides them.
+    for flag in sorted(record.diagnostics.get("flags", []),
+                       key=lambda item: item.get("code") not in SECTION_FLAGS):
         if flag.get("code") == "FOLDS":
             flags.append({"code": "FOLDS", "fold_fraction": round(float(flag["fold_fraction"]), 5)})
+            continue
+        if flag.get("code") == "DISPLACEMENT_OUTSIZED":
+            flags.append({"code": "DISPLACEMENT_OUTSIZED",
+                          **{key: round(float(flag[key]), 3) for key in (
+                              "max_mm", "median_mm", "max_limit_mm", "median_limit_mm")}})
             continue
         ratio = flag.get("area_ratio")
         flags.append({"code": flag["code"], "region": flag.get("acronym"),
