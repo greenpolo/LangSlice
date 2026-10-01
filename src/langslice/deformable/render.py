@@ -36,6 +36,8 @@ from langslice.deformable.record import DeformableRecord
 #: steps); 2.0 closes thin regions into dotted blobs.
 BORDER_SMOOTHING_PX = 1.4
 STRONG_COLOR = (255, 255, 0)
+#: Second ink, for a marked set of regions (those excluded from a fit).
+MARKED_COLOR = (255, 64, 160)
 FAINT_ALPHA = 0.35
 #: Stride of the coarse coordinate grid that finds each region's fine-pixel box.
 COARSE_STEP = 8
@@ -135,6 +137,66 @@ def _owner_edges(owner: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return horizontal, vertical
 
 
+def warped_border_layers(
+    record: DeformableRecord, atlas: Any, *,
+    highlight: Iterable[str | int] = (), marked: Iterable[str | int] = (),
+    warped: bool = True,
+    width_px: float = 2.0, smoothing_px: float = BORDER_SMOOTHING_PX, supersample: int = 3,
+    native: np.ndarray | None = None,
+) -> dict[str, np.ndarray]:
+    """Border coverage in [0, 1] on the section grid, per layer, tissue-clipped.
+
+    Layers: ``strong`` (edges touching a *highlight* region; every edge when
+    nothing is highlighted), ``marked`` (edges touching a *marked* region,
+    e.g. the regions excluded from a fit), ``faint`` (every other edge between
+    color-family regions) and ``outer`` (edges against the background: the
+    atlas's outer boundary). Highlighted and marked leaves keep their own
+    identity, so their edges show even inside one color family. With
+    ``warped=False`` the residual field is ignored (the linear placement alone).
+    """
+    s = int(supersample)
+    width, height = record.section_size
+    leaf = native if native is not None else native_labels(atlas, record.placement)
+    ids = with_descendants(atlas, resolve_structures(atlas, highlight)) if highlight else ()
+    marks = with_descendants(atlas, resolve_structures(atlas, marked)) if marked else ()
+    family = family_labels(leaf, atlas).astype(np.int64)
+    flagged = np.isin(leaf, list(ids)) if ids else np.zeros(leaf.shape, dtype=bool)
+    flagged_marks = np.isin(leaf, list(marks)) if marks else np.zeros(leaf.shape, dtype=bool)
+    # Codes: a highlighted leaf is leaf*4+1, a marked leaf leaf*4+3, anything
+    # else its color family *4 (background stays 0), so the sets never merge.
+    big = leaf.astype(np.int64)
+    grouped = np.where(flagged_marks, big * 4 + 3, np.where(flagged, big * 4 + 1, family * 4))
+    nx, ny = composed_native_grid(record if warped else _without_field(record), s)
+    owner = smooth_owner_map(grouped, nx, ny, smoothing_px=smoothing_px)
+    h_edge, v_edge = _owner_edges(owner)
+    edges = np.zeros(owner.shape, dtype=bool)
+    edges[:, 1:] |= h_edge
+    edges[1:, :] |= v_edge
+
+    def touching(flag: np.ndarray) -> np.ndarray:
+        touch = np.zeros(owner.shape, dtype=bool)
+        touch[:, 1:] |= h_edge & (flag[:, 1:] | flag[:, :-1])
+        touch[1:, :] |= v_edge & (flag[1:, :] | flag[:-1, :])
+        return touch
+
+    nothing = np.zeros(owner.shape, dtype=bool)
+    marked_edges = touching((owner & 3) == 3) if marks else nothing
+    strong_edges = (touching((owner & 3) == 1) if ids else edges) & ~marked_edges
+    outer_edges = touching(owner == 0) & ~marked_edges
+    fine_tissue = cv2.resize(record.tissue.astype(np.uint8), (width * s, height * s),
+                             interpolation=cv2.INTER_NEAREST) > 0
+    # One section pixel of slack so a border on the tissue edge itself shows.
+    reach = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * s + 1, 2 * s + 1))
+    fine_tissue = cv2.dilate(fine_tissue.astype(np.uint8), reach) > 0
+    size = (width, height)
+    return {
+        "faint": _stroke(edges & ~strong_edges & ~marked_edges & fine_tissue, size, s, width_px),
+        "strong": _stroke(strong_edges & fine_tissue, size, s, width_px),
+        "marked": _stroke(marked_edges & fine_tissue, size, s, width_px),
+        "outer": _stroke(outer_edges & fine_tissue, size, s, width_px),
+    }
+
+
 def warped_border_coverage(
     record: DeformableRecord, atlas: Any, *,
     highlight: Iterable[str | int] = (), warped: bool = True,
@@ -148,37 +210,11 @@ def warped_border_coverage(
     strong. *faint* is every other edge between color-family regions. With
     ``warped=False`` the residual field is ignored (the linear placement alone).
     """
-    s = int(supersample)
-    width, height = record.section_size
-    leaf = native if native is not None else native_labels(atlas, record.placement)
-    ids = with_descendants(atlas, resolve_structures(atlas, highlight)) if highlight else ()
-    family = family_labels(leaf, atlas).astype(np.int64)
-    flagged = np.isin(leaf, list(ids)) if ids else np.zeros(leaf.shape, dtype=bool)
-    # Highlighted leaves keep their own identity (odd codes), everything else
-    # is its color family (even codes), so the two sets never merge.
-    grouped = np.where(flagged, leaf.astype(np.int64) * 2 + 1, family * 2)
-    if warped:
-        nx, ny = composed_native_grid(record, s)
-    else:
-        nx, ny = composed_native_grid(_without_field(record), s)
-    owner = smooth_owner_map(grouped, nx, ny, smoothing_px=smoothing_px)
-    strong_flag = (owner & 1).astype(bool)
-    h_edge, v_edge = _owner_edges(owner)
-    edges = np.zeros(owner.shape, dtype=bool)
-    edges[:, 1:] |= h_edge
-    edges[1:, :] |= v_edge
-    touch = np.zeros(owner.shape, dtype=bool)
-    touch[:, 1:] |= h_edge & (strong_flag[:, 1:] | strong_flag[:, :-1])
-    touch[1:, :] |= v_edge & (strong_flag[1:, :] | strong_flag[:-1, :])
-    strong_edges = touch if ids else edges
-    fine_tissue = cv2.resize(record.tissue.astype(np.uint8), (width * s, height * s),
-                             interpolation=cv2.INTER_NEAREST) > 0
-    # One section pixel of slack so a border on the tissue edge itself shows.
-    reach = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * s + 1, 2 * s + 1))
-    fine_tissue = cv2.dilate(fine_tissue.astype(np.uint8), reach) > 0
-    faint = _stroke(edges & ~strong_edges & fine_tissue, (width, height), s, width_px)
-    strong = _stroke(strong_edges & fine_tissue, (width, height), s, width_px)
-    return faint, strong
+    layers = warped_border_layers(
+        record, atlas, highlight=highlight, warped=warped, width_px=width_px,
+        smoothing_px=smoothing_px, supersample=supersample, native=native,
+    )
+    return layers["faint"], layers["strong"]
 
 
 def _without_field(record: DeformableRecord) -> DeformableRecord:
@@ -189,26 +225,109 @@ def _without_field(record: DeformableRecord) -> DeformableRecord:
 
 def draw_warped_borders(
     image: Image.Image, record: DeformableRecord, atlas: Any, *,
-    highlight: Iterable[str | int] = (), warped: bool = True,
+    highlight: Iterable[str | int] = (), marked: Iterable[str | int] = (),
+    warped: bool = True, outlines: str = "all",
     width_px: float = 2.0, smoothing_px: float = BORDER_SMOOTHING_PX, supersample: int = 3,
-    color: tuple[int, int, int] = STRONG_COLOR, native: np.ndarray | None = None,
+    color: tuple[int, int, int] = STRONG_COLOR, marked_color: tuple[int, int, int] = MARKED_COLOR,
+    native: np.ndarray | None = None,
 ) -> Image.Image:
     """The fitted atlas borders, smooth and antialiased, on the original section.
 
     Without *highlight* every border between color-family regions is drawn in
     *color*. With it, only the selected structures' edges are strong, over a
-    faint outline of the rest. Clipped to the tissue.
+    faint outline of the rest. *marked* regions' edges are drawn in
+    *marked_color* (a second set, e.g. regions excluded from the fit).
+    *outlines* limits the other lines: ``all``, ``outer`` (only the atlas's
+    outer boundary) or ``none``. Clipped to the tissue.
     """
-    faint, strong = warped_border_coverage(
-        record, atlas, highlight=highlight, warped=warped, width_px=width_px,
+    if outlines not in ("all", "outer", "none"):
+        raise ValueError("outlines must be all, outer or none")
+    layers = warped_border_layers(
+        record, atlas, highlight=highlight, marked=marked, warped=warped, width_px=width_px,
         smoothing_px=smoothing_px, supersample=supersample, native=native,
     )
+    blank = np.zeros_like(layers["faint"])
+    if highlight:
+        strong = layers["strong"]
+        faint = {"all": layers["faint"], "outer": np.minimum(layers["faint"], layers["outer"]),
+                 "none": blank}[outlines]
+    else:
+        faint = blank
+        strong = {"all": layers["strong"], "outer": layers["outer"], "none": blank}[outlines]
     base = np.asarray(image.convert("RGB"), dtype=np.float32)
-    if base.shape[:2] != faint.shape:
+    if base.shape[:2] != strong.shape:
         raise ValueError("The image must be on the record's section grid")
-    ink = np.array(color, dtype=np.float32)
-    alpha = (FAINT_ALPHA * faint)[..., None]
-    base = base * (1.0 - alpha) + ink * alpha
-    alpha = strong[..., None]
-    base = base * (1.0 - alpha) + ink * alpha
+    for coverage, ink, weight in (
+        (faint, color, FAINT_ALPHA), (strong, color, 1.0), (layers["marked"], marked_color, 1.0),
+    ):
+        alpha = (weight * coverage)[..., None]
+        base = base * (1.0 - alpha) + np.array(ink, dtype=np.float32) * alpha
     return Image.fromarray(np.rint(base).astype(np.uint8))
+
+
+def resampled_record(
+    record: DeformableRecord, size: tuple[int, int],
+    box: tuple[int, int, int, int] | None = None,
+) -> DeformableRecord:
+    """The same deformation on a resized (and optionally cropped) section grid.
+
+    For drawing at picture size: the field is in millimetres, so it is only
+    resampled; the placement is carried onto the new pixel centres and the
+    tissue mask resized. *box* (x0, y0, x1, y1 on the resized grid) crops.
+    Only what drawing reads is carried: no inverse, labels or parent.
+    """
+    from dataclasses import replace
+
+    from langslice.deformable.geometry import pixel_center_map
+
+    width, height = record.section_size
+    field = np.stack([
+        cv2.resize(np.ascontiguousarray(record.field_mm[..., k], dtype=np.float32), size,
+                   interpolation=cv2.INTER_LINEAR) for k in range(2)
+    ], axis=-1)
+    tissue = cv2.resize(record.tissue.astype(np.uint8), size, interpolation=cv2.INTER_NEAREST) > 0
+    matrix = pixel_center_map((width, height), size) @ record.placement.atlas_to_section
+    mm = record.mm_per_px * width / float(size[0])
+    if box is not None:
+        x0, y0, x1, y1 = box
+        field, tissue = field[y0:y1, x0:x1], tissue[y0:y1, x0:x1]
+        matrix = np.array([[1.0, 0.0, -x0], [0.0, 1.0, -y0], [0.0, 0.0, 1.0]]) @ matrix
+        size = (x1 - x0, y1 - y0)
+    placement = replace(record.placement, atlas_to_section=matrix, section_mm_per_px=mm)
+    return replace(
+        record, placement=placement, section_size=size, field_mm=field,
+        inverse_field_mm=None, labels=np.zeros(tissue.shape, dtype=record.labels.dtype),
+        tissue=tissue, torn_band=np.zeros(tissue.shape, dtype=bool), parent=None,
+    )
+
+
+def warp_section_image(image: Image.Image, record: DeformableRecord) -> Image.Image:
+    """The section resampled into its placed-atlas frame by the residual warp.
+
+    *image* is the section on the record's frame at any size (the same
+    oriented, unframed render the fit grid is a resize of). Pixel q of the
+    result shows section point ``q + inverse_field(q)``, so drawing the result
+    under the LINEAR placement shows the full registration: the placement's
+    atlas lines then fall where the warp put them on the tissue. Without a
+    stored inverse one is approximated (fixed point) at picture size.
+    """
+    from langslice.deformable.engines import invert_field
+
+    width, height = image.size
+    mm = record.mm_per_px * record.section_size[0] / float(width)
+
+    def resized(field: np.ndarray) -> np.ndarray:
+        return np.stack([
+            cv2.resize(np.ascontiguousarray(field[..., k], dtype=np.float32), (width, height),
+                       interpolation=cv2.INTER_LINEAR) for k in range(2)
+        ], axis=-1)
+
+    if record.inverse_field_mm is not None:
+        inverse = resized(record.inverse_field_mm)
+    else:
+        inverse, _ = invert_field(resized(record.field_mm), (mm, mm))
+    yy, xx = np.indices((height, width), dtype=np.float32)
+    pixels = np.asarray(image.convert("RGB"), dtype=np.uint8)
+    out = cv2.remap(pixels, xx + inverse[..., 0] / mm, yy + inverse[..., 1] / mm,
+                    cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+    return Image.fromarray(out)

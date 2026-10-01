@@ -239,9 +239,16 @@ image is present anywhere in this pipeline.
 
 ## Deformable fit engine (`langslice.deformable`)
 
-A shared top-level package, not yet wired to the image tool, the linear agent
-or any host, holds the library fit that corrected borders (or the stain
-itself) will go through. `fit_section(image, atlas, placement, settings,
+A shared top-level package holds the library fit that corrected borders (or
+the stain itself) go through. The linear agent reaches it through
+`fit_deformable` (task `nonlinear`, `linear/deformation.py`): stain, raw
+channel or the `trace_borders` lines (`traced_borders` = label-map mode,
+`traced_lines` = lines vs borders) against ara/borders/nissl, include/exclude
+regions, sequential `start="current"` steps, preview candidates vs one applied
+setting; the engine is the user's `nonlinear.engine` choice or the agent's.
+Applied records are saved under `<results dir>/deformable/` and referenced from
+`SliceState.deformation`; export adapters (ABBA, VisuAlign, BrainGlobe) are to
+read them and are not built. No host wires the engine directly. `fit_section(image, atlas, placement, settings,
 lines=..., previous=...)` takes a `Placement` — the handoff's
 `atlas_to_slice` or the image tool's `atlas_to_canvas`, unchanged — and
 returns a `DeformableRecord`; `fit_candidates` runs up to eight settings in a

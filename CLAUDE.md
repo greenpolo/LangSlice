@@ -131,8 +131,9 @@ Shared, top-level:
   builder and the normalized 6-number parameter convention. Used by both
   `linear/transform.py` and `nonlinear/quick_affine.py`; belongs
   to neither
-- `deformable/` — the deformable-fit engine a future `fit_deformable` agent
-  tool will call (not wired to any tool or host yet): ANTs SyN (optional
+- `deformable/` — the deformable-fit engine behind the linear agent's
+  `fit_deformable` tool (task `nonlinear`; no host or export adapter reads
+  its records yet): ANTs SyN (optional
   `registration` extra) or Elastix B-spline residual fit of a linearly placed
   atlas plane onto one section — stain vs reference/ABBA Nissl, model lines
   vs merged borders, ANTs label-map channels, sequential per-structure steps,

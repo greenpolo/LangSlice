@@ -12,12 +12,19 @@ from langslice.deformable.fit import (
     PreparedFit,
     finish_fit,
     fit_candidates,
+    fit_prepared,
     fit_section,
     prepare_fit,
 )
 from langslice.deformable.geometry import Placement, placement_from_handoff
 from langslice.deformable.record import DeformableRecord, diagnose
-from langslice.deformable.render import draw_warped_borders, warped_border_coverage
+from langslice.deformable.render import (
+    draw_warped_borders,
+    resampled_record,
+    warp_section_image,
+    warped_border_coverage,
+    warped_border_layers,
+)
 from langslice.deformable.settings import FitSettings
 
 __all__ = [
@@ -33,9 +40,13 @@ __all__ = [
     "excluded_ids",
     "finish_fit",
     "fit_candidates",
+    "fit_prepared",
     "fit_section",
     "placement_from_handoff",
     "prepare_fit",
+    "resampled_record",
     "ventricle_ids",
+    "warp_section_image",
     "warped_border_coverage",
+    "warped_border_layers",
 ]

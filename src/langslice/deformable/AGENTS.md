@@ -2,8 +2,9 @@
 
 Package guide; `AGENTS.md` is a verbatim twin of this file. Shared top-level
 package, like `affine.py`: it belongs to neither `linear/` nor `nonlinear/`
-and imports neither. It is the engine a future agent tool (`fit_deformable`)
-will call; no tool, CLI or host wiring exists yet.
+and imports neither. It is the engine behind the linear agent's
+`fit_deformable` tool (`linear/deformation.py`, task `nonlinear`); no CLI,
+host or export adapter uses it yet.
 
 ## What it does
 
@@ -43,7 +44,8 @@ and returns a `record.DeformableRecord`. No custom solver.
 - Optional ANTs preprocessing of the stain (`preprocess=("n4", "denoise")`).
 - `fit_candidates` runs 1–8 settings in a spawn process pool (atlas work in
   the caller, engine calls in workers); a failing candidate is a
-  `CandidateFailure`, never an exception.
+  `CandidateFailure`, never an exception. `fit_prepared` is the same pool
+  over already prepared fits (different sections or section images).
 
 ## Settings (`settings.py`)
 
@@ -79,7 +81,10 @@ the total. Also: inverse field (or None), engine name/version/runtime/native
 parameters, working grid, warped leaf labels CLIPPED TO TISSUE, tissue and
 torn-band masks, excluded ids, `native_to_volume_index` (plane pixel → atlas
 volume index, so exports need no atlas object), `native_coordinates()`,
-`volume_coordinates()`, `save()`/`load()` (parent chain under `parent/`).
+`volume_coordinates()`, `save()`/`load()` (parent chain under `parent/`),
+and a free-form `provenance` dict saved with the metadata (the linear tool
+stores section id, linear handoff metadata and its inputs there). Export
+adapters (ABBA, VisuAlign, BrainGlobe) are to read this record; none exist.
 
 Diagnostics are reported, never enforced: per-region area ratio
 warped/placed from the Jacobian (`N_R / Σ_{p∈R} J`), raster ratio, fold
@@ -111,7 +116,13 @@ on a 3x supersampled grid (the approach of `atlas.render.placed_border_coverage`
 which is affine-only, so the composed sampling lives here), one shared line per
 edge, antialiased, clipped to tissue. `highlight` (acronyms/ids, descendants
 included) draws those regions' edges strongly over a faint outline of the
-colour-family regions. Never judge borders traced from `record.labels`: those
+colour-family regions; `marked` draws a second set (regions excluded from a
+fit) in `MARKED_COLOR`, and `outlines` (`all`/`outer`/`none`) limits the
+rest (`warped_border_layers` returns every layer). `resampled_record` carries a
+record onto a smaller or cropped grid for pictures; `warp_section_image`
+resamples a section render into its placed-atlas frame through the inverse
+field (fixed-point inverse when none is stored), so a picture drawn under the
+linear placement shows the full registration. Never judge borders traced from `record.labels`: those
 are nearest-sampled from the 25 um atlas grid and look staircased on fine
 section pixels (3.5 section px per step at 7 um/px), which was the whole of the
 zig-zag once seen along hippocampal arcs in label-map mode (the residual field

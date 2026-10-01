@@ -417,6 +417,20 @@ def fit_candidates(
     if not 1 <= len(candidates) <= 8:
         raise ValueError("Pass between one and eight candidate settings")
     prepared = [prepare_fit(section_image, atlas, placement, s, **options) for s in candidates]
+    return fit_prepared(prepared, max_workers=max_workers)
+
+
+def fit_prepared(
+    prepared: Sequence[PreparedFit], *, max_workers: int | None = None,
+) -> list[DeformableRecord | CandidateFailure]:
+    """Run already prepared fits concurrently (one process each), in order.
+
+    The prepared fits may come from different sections or section images
+    (:func:`fit_candidates` is this for one section). A failing fit comes
+    back as a :class:`CandidateFailure`.
+    """
+    if not prepared:
+        return []
     workers = max_workers or len(prepared)
     threads = max(1, (os.cpu_count() or 2) // workers)
     context = multiprocessing.get_context("spawn")

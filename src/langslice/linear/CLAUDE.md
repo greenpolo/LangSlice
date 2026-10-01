@@ -208,6 +208,21 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
   fractions; `similarity_fit` (Umeyama, exact on two points), `affine_fit`
   (least squares) and `physical_params` (a canvas 2x3 back into the five knobs
   about a pivot) are shared affine geometry helpers.
+- `deformation.py` — `fit_deformable`'s machinery (2026-10-01): the fit grid
+  (`fit_grid`: `prepare_linear_registration` at `FIT_LONG_EDGE` 1536, the same
+  handoff `trace_borders` uses), the image a fit reads (`stain_image`: the
+  `fit` appearance or a raw channel; `traced_lines`: a completed
+  `trace_borders` result at the CURRENT geometry fingerprint, its
+  `extracted_lines.png` mapped onto the grid through `atlas_to_canvas`),
+  `Choice` (one candidate: section/atlas image, engine, stiffness, detail ->
+  `FitSettings`; agent `borders` = engine `borders_merged`),
+  `RecordStore` (results by `cache_key`, a digest of every input incl. the
+  linear placement and the start record; 8 in memory, applied ones saved to
+  `<results dir>/deformable/<section>/<key[:24]>/`), `linear_key` /
+  `clear_stale`, `summary` (displacement max/median, fold fraction, compact
+  flags), `run_jobs` (one fit in process, several in the spawn pool,
+  `USE_PROCESS_POOL`) and `picture` (the borders on the image the fit read at
+  the atlas-resolution size rule, included/`regions` strong, excluded pink).
 - `prompt.py` — `build_job_statement`: job, run facts, ONE factual line per
   tool that exists, hard constraints. Nothing else.
 - `session.py` — the ADK agent builder, the plugins, the loop, and
@@ -321,7 +336,39 @@ The same task adds `grep_atlas(query, section="")` (`linear/atlas_grep.py`): a t
 lookup of atlas regions by acronym, name substring or id, with ancestry, descendant
 count and, for a positioned section, whether the region is in the atlas plane at its
 placement. It is for choosing regions a later deformable fit should exclude.
-It does not fit a deformation or modify `transform`. Default task/tool counts stay
+It does not fit a deformation or modify `transform`.
+
+**`fit_deformable` (2026-10-01, task `nonlinear`).** `fit_deformable(sections,
+include=[], exclude=[], start="linear"|"current", section_image="fit"|<channel>|
+"traced_borders"|"traced_lines", atlas_image=""|"ara"|"borders"|"nissl",
+[engine], stiffness, detail, candidates=[], mode="borders"|"ab", zoom,
+atlas_opacity, regions, outlines, border_color, border_thickness=1.0)`.
+`engine` exists only when `JobSpec.nonlinear.engine` is `"either"` (default);
+`"ants"`/`"elastix"` build the same tool without it (`fit_deformable_fixed`,
+renamed). ANTs missing answers `UNAVAILABLE` naming the extra. 2–4
+`candidates` (each overriding stiffness/detail/section_image/atlas_image/
+[engine]) PREVIEW and write nothing; one setting APPLIES it as one undo step,
+reusing an identical cached or saved result (`cached`); the same key again
+only re-draws (`written: false`). `include` -> the engine's `structures`
+(restricted step + 300 um), `exclude` -> its `exclude`; `start="current"`
+passes the applied record as `previous` (refused `NO_DEFORMATION` without
+one). `traced_borders` is the ANTs label-map mode (`labels="model"`),
+`traced_lines` lines vs borders; both refuse without a completed trace at this
+placement (`NO_TRACE`/`TRACE_STALE`/`TRACE_RUNNING`). Max 4 sections, 8 fits
+per call. `SliceState.deformation` holds `record` (absolute path), `key`,
+`linear_key`, `steps` (the chain for `current`), `summary`, `inverse_source`;
+the record directory holds the composed field, its inverse, the parent steps
+and `provenance` (section id, linear handoff metadata, inputs). Every tool is
+wrapped by `toolbox._clears_stale_deformations`: after any call, a
+deformation whose `linear_key` no longer matches (position, orientation,
+cutting angles, transform) is cleared in the same undo step and the reply
+carries `deformation_cleared`. `view_placement`/`set_positions` physical modes
+draw the section resampled by the stored warp (`deformable.warp_section_image`,
+row `deformation_drawn`) at the position it was fitted at. Records are written
+at apply time under the results folder and referenced from the results JSON;
+export adapters (ABBA, VisuAlign, BrainGlobe) are to read them, none exist.
+
+Default task/tool counts stay
 unchanged; `DEFAULT_TASKS` is separate from `ALL_TASKS`. Hosts may supply calibrated
 `inputs.transforms` or resume saved linear transforms. Submit checks correction
 completion and current geometry when the new task is on. Exact artifacts and first

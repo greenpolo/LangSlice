@@ -61,3 +61,55 @@ def test_highlight_is_strong_over_a_faint_outline(case):
     assert out.size == image.size
     with pytest.raises(ValueError):
         warped_border_coverage(record, atlas, highlight=["NOPE"])
+
+
+def test_marked_regions_get_their_own_layer_and_outlines_limit_the_rest(case):
+    from langslice.deformable import warped_border_layers
+
+    atlas, image, record = case
+    layers = warped_border_layers(record, atlas, highlight=["STR"], marked=["HY"])
+    assert layers["marked"].max() > 0.5 and layers["strong"].max() > 0.5
+    # No edge is drawn twice: marked edges leave the strong and faint layers.
+    assert ((layers["marked"] > 0.5) & (layers["strong"] > 0.5)).sum() == 0
+    plain = draw_warped_borders(image, record, atlas)
+    none = draw_warped_borders(image, record, atlas, outlines="none")
+    outer = draw_warped_borders(image, record, atlas, outlines="outer")
+    base = np.asarray(image.convert("RGB"), dtype=int)
+
+    def inked(out) -> int:
+        return int((np.abs(np.asarray(out, dtype=int) - base).sum(axis=-1) > 30).sum())
+
+    assert inked(none) == 0 < inked(outer) < inked(plain)
+    with pytest.raises(ValueError):
+        draw_warped_borders(image, record, atlas, outlines="some")
+
+
+def test_resampled_record_draws_the_same_borders_smaller(case):
+    from langslice.deformable import resampled_record
+
+    atlas, _, record = case
+    width, height = record.section_size
+    half = resampled_record(record, (width // 2, height // 2))
+    assert half.section_size == (width // 2, height // 2)
+    assert half.mm_per_px == pytest.approx(record.mm_per_px * width / (width // 2))
+    _, strong = warped_border_coverage(record, atlas, width_px=2.0)
+    _, small = warped_border_coverage(half, atlas, width_px=1.0)
+    shrunk = cv2.resize(strong, half.section_size, interpolation=cv2.INTER_AREA)
+    near = cv2.dilate((small > 0.3).astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
+    assert ((shrunk > 0.3) & near).sum() / max(1, (shrunk > 0.3).sum()) > 0.9
+    crop = resampled_record(record, (width // 2, height // 2), (10, 20, 90, 100))
+    assert crop.section_size == (80, 80) and crop.field_mm.shape[:2] == (80, 80)
+
+
+def test_warping_the_section_by_a_zero_field_changes_nothing(case):
+    from dataclasses import replace
+
+    from langslice.deformable import warp_section_image
+
+    _, image, record = case
+    still = replace(record, field_mm=np.zeros_like(record.field_mm),
+                    inverse_field_mm=np.zeros_like(record.field_mm))
+    out = warp_section_image(image, still)
+    assert np.array_equal(np.asarray(out), np.asarray(image.convert("RGB")))
+    moved = warp_section_image(image, record)
+    assert not np.array_equal(np.asarray(moved), np.asarray(image.convert("RGB")))
