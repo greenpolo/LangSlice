@@ -372,3 +372,12 @@ def test_abba_nissl_reader_matches_its_own_volume_on_a_flat_plane():
 
 def test_section_mm_per_px_constant_is_the_synthetic_scale():
     assert SECTION_MM_PER_PX == 0.025 and HY == 5
+
+
+def test_elastix_writes_nothing_into_the_working_directory(atlas, warped, tmp_path, monkeypatch):
+    _field, image, _truth = warped
+    monkeypatch.chdir(tmp_path)
+    record = fit_section(image, atlas, placement(),
+                         FitSettings(engine="elastix", detail="coarse", stiffness="firm"))
+    assert np.abs(record.field_mm).max() > 0
+    assert list(tmp_path.iterdir()) == []
