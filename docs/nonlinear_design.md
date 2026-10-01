@@ -258,9 +258,9 @@ process pool.
 | Choice | Options |
 | --- | --- |
 | engine | `ants` (SyN, optional `registration` extra, own inverse) or `elastix` (B-spline + bending penalty, inverse by fixed-point approximation) |
-| section image | `stain` (mutual information, against `ara`/`nissl`) or `lines`: the model's extracted lines (mean squares, against `borders`/`borders_merged`); the crossed pairings are refused |
+| section image | `stain` (against `ara`/`nissl`; `stain_metric` local correlation, 80 µm window, by default, Elastix's stand-in mutual information, or mutual information; `stain_edges` adds a gradient-magnitude edge channel, on by default) or `lines`: the model's extracted lines (mean squares, against `borders`/`borders_merged`); the crossed pairings are refused |
 | atlas image | `ara` (BrainGlobe reference), `nissl` (ABBA's cached Allen Nissl, ABBA hosts only), `borders`, `borders_merged` (the family set the image model is shown) |
-| labels (ANTs only) | `model`: the model's enclosed areas named by placed-region overlap; `auto`: tissue footprint and empty holes near placed ventricles |
+| labels (ANTs only) | `model`: the model's enclosed areas named by placed-region overlap; `auto`: tissue footprint and empty holes near placed ventricles (the linear tool's ANTs stain default) |
 | stiffness / detail | soft/medium/firm and coarse/standard, in physical units (the linear tool runs standard) |
 | other | `exclude` (acronyms or ids, descendants included, optionally one side of the section: `"CTX:left"`), `structures` + `neighbourhood_um` (a sequential step composed onto `previous`), `preprocess` (ANTs N4, denoise); line softening is fixed at 60 µm |
 
@@ -276,7 +276,13 @@ tissue's extent, or median above 0.6 mm). The 2026-10-01 ceiling test set
 these choices: no `stiff` level, detail and line softening fixed, the stain
 against borders refused; on its fluorescent sections the Nissl reference's
 outer edge sat 40-80 µm inside the tissue's bright surface rim, where ara
-followed the edge.
+followed the edge. The 2026-10-02 stain ceiling test chose the stain
+defaults by eye: local correlation (interior lines follow visible structure
+better than mutual information), an edge channel (fixes ventricles and a
+midline slit that correlation alone missed), and in the linear tool the
+automatic tissue/ventricle labels (continuous outline, enlarged ventricles
+filled). Fits are deterministic: fixed seed and a fixed thread count
+(`engines.FIT_THREADS`), identical inputs give identical fields.
 Details: `src/langslice/deformable/CLAUDE.md`.
 
 ## Review and limits

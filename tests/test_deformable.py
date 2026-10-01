@@ -23,7 +23,8 @@ from langslice.deformable import (
     ventricle_ids,
 )
 from langslice.deformable.abba_atlas import SHAPE_AP_DV_ML
-from langslice.deformable.engines import invert_field
+from langslice.deformable.engines import FIT_THREADS, RANDOM_SEED, invert_field, run_engine
+from langslice.deformable.fit import finish_fit, fit_prepared
 from langslice.deformable.masks import torn_edge_band
 from langslice.deformable.record import jacobian_determinant
 from langslice.deformable.regions import named_regions
@@ -56,6 +57,14 @@ def _settings(**options) -> FitSettings:
     return FitSettings(**{"engine": DEFAULT_ENGINE, **options})
 
 
+#: The synthetic sections are flat-intensity regions with no texture, where
+#: local correlation has little to work with (synthetic warp error 0.39 of the
+#: warp vs 0.12 for mutual information at standard detail). Tests of the fit's
+#: mechanics (direction, exclusion, steps, the pool) pin the pre-2026-10-02
+#: stain metric; the defaults have their own test.
+MI = {"stain_metric": "mutual_information", "stain_edges": False}
+
+
 @pytest.fixture(scope="module")
 def atlas() -> SyntheticAtlas:
     return SyntheticAtlas()
@@ -78,7 +87,8 @@ def _errors(record: DeformableRecord, field: np.ndarray, truth: np.ndarray):
 @pytest.mark.parametrize("engine", BOTH_ENGINES)
 def test_engine_recovers_a_known_warp_in_the_documented_direction(atlas, warped, engine):
     field, image, truth = warped
-    record = fit_section(image, atlas, placement(), FitSettings(engine=engine, detail="coarse"))
+    record = fit_section(image, atlas, placement(),
+                         FitSettings(engine=engine, detail="coarse", **MI))
     error, flipped, magnitude = _errors(record, field, truth)
     # atlas point = section point + field: the recovered field matches u, not -u.
     assert error < 0.4 * magnitude
@@ -140,9 +150,9 @@ def test_excluded_region_does_not_drive_the_fit(atlas, engine):
     image, _ = render_section(atlas, field)
     th = np.zeros((260, 340), dtype=bool)
     th[110:150, 205:245] = True
-    free = fit_section(image, atlas, placement(), FitSettings(engine=engine, detail="coarse"))
+    free = fit_section(image, atlas, placement(), FitSettings(engine=engine, detail="coarse", **MI))
     excluded = fit_section(image, atlas, placement(),
-                           FitSettings(engine=engine, detail="coarse", exclude=("TH",)))
+                           FitSettings(engine=engine, detail="coarse", exclude=("TH",), **MI))
     moved_free = np.linalg.norm(free.field_mm, axis=-1)[th].mean()
     moved_excluded = np.linalg.norm(excluded.field_mm, axis=-1)[th].mean()
     assert moved_free > 0.03
@@ -267,6 +277,58 @@ def test_trimmed_settings_refuse_what_the_ceiling_test_dropped():
     # A record saved while line softening was a setting still loads.
     old = {**FitSettings().to_dict(), "line_softening_um": 60.0}
     assert FitSettings.from_dict(old) == FitSettings()
+    # Records saved before the stain metric was a setting were fitted with
+    # mutual information and no edge channel, and load as such.
+    older = {k: v for k, v in FitSettings().to_dict().items()
+             if k not in ("stain_metric", "stain_edges")}
+    loaded = FitSettings.from_dict(older)
+    assert loaded.stain_metric == "mutual_information" and not loaded.stain_edges
+
+
+def test_stain_metric_per_engine_and_pairing():
+    assert FitSettings().metric == "local_correlation" and FitSettings().stain_edges
+    # Elastix has no local correlation: its stand-in.
+    assert FitSettings(engine="elastix").metric == "mutual_information"
+    assert FitSettings(stain_metric="mutual_information").metric == "mutual_information"
+    lines = FitSettings(section_image="lines", atlas_image="borders_merged")
+    assert lines.metric == "mean_squares"
+    with pytest.raises(ValueError, match="stain_metric"):
+        FitSettings(stain_metric="cc")  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("engine", BOTH_ENGINES)
+def test_default_stain_fit_recovers_the_warp_direction(atlas, warped, engine):
+    field, image, truth = warped
+    record = fit_section(image, atlas, placement(), FitSettings(engine=engine))
+    error, flipped, magnitude = _errors(record, field, truth)
+    assert error < 0.6 * magnitude and flipped > 1.4 * magnitude
+    parameters = record.engine["native_parameters"]
+    if engine == "ants":
+        used = parameters["antsRegistration"]
+        assert used["syn_metric"] == "CC" and used["edge_channel"]
+        assert used["correlation_radius_mm"] == pytest.approx(0.08, abs=0.011)
+        assert used["threads"] == FIT_THREADS and used["random_seed"] == RANDOM_SEED
+    else:
+        assert parameters["edge_channel"] and parameters["threads"] == FIT_THREADS
+        assert parameters["requested"]["RandomSeed"] == [str(RANDOM_SEED)]
+        assert any("no local correlation" in note for note in record.engine["notes"])
+
+
+@pytest.mark.parametrize("engine", BOTH_ENGINES)
+def test_identical_inputs_give_identical_fields(atlas, warped, engine):
+    """Same fit in this process twice and in a pool worker: the same field, bit for bit."""
+    _field, image, _truth = warped
+    settings = FitSettings(engine=engine, detail="coarse")
+    prepared = prepare_fit(image, atlas, placement(), settings)
+    first = run_engine(prepared.inputs, settings)
+    second = run_engine(prepared.inputs, settings)
+    pooled = fit_prepared([prepared, prepare_fit(image, atlas, placement(), settings)])
+    assert np.array_equal(first.field_mm, second.field_mm)
+    assert np.array_equal(first.inverse_field_mm, second.inverse_field_mm)
+    for record in pooled:
+        assert not isinstance(record, CandidateFailure), record
+        in_process = finish_fit(prepared, first)
+        assert np.array_equal(record.field_mm, in_process.field_mm)
 
 
 @needs_ants
@@ -282,10 +344,10 @@ def test_auto_labels_detect_the_ventricle_hole(atlas, warped):
 def test_sequential_steps_compose_and_undo(atlas, warped, tmp_path: Path):
     field, image, truth = warped
     first = fit_section(image, atlas, placement(), _settings(detail="coarse",
-                                                               stiffness="firm"))
+                                                               stiffness="firm", **MI))
     second = fit_section(image, atlas, placement(),
                          _settings(detail="coarse", structures=("STR",),
-                                     neighbourhood_um=250), previous=first)
+                                   neighbourhood_um=250, **MI), previous=first)
     assert second.step == 1 and second.undo() is first
     assert second.engine["step_details"]["structures"] == [STR]
     # Far from the striatum the second step leaves the first one's field alone.
@@ -320,8 +382,8 @@ def test_record_carries_volume_coordinates(atlas, warped):
 def test_candidates_run_concurrently_and_all_return(atlas, warped):
     field, image, truth = warped
     results = fit_candidates(image, atlas, placement(), [
-        FitSettings(engine="ants", detail="coarse"),
-        FitSettings(engine="elastix", detail="coarse", stiffness="firm"),
+        FitSettings(engine="ants", detail="coarse", **MI),
+        FitSettings(engine="elastix", detail="coarse", stiffness="firm", **MI),
     ])
     assert len(results) == 2
     for result in results:

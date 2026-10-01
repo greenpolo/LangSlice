@@ -56,10 +56,10 @@ from langslice.deformable.engines import run_engine
 from langslice.deformable.render import composed_native_grid
 from langslice.deformable.settings import (
     ANTS_STIFFNESS,
+    CORRELATION_RADIUS_UM,
     DETAIL,
     ELASTIX_MEAN_SQUARES_BENDING_SCALE,
     ELASTIX_STIFFNESS,
-    metric_for,
 )
 from langslice.linear import appearance as looks
 from langslice.linear.state import SliceState, StackState
@@ -264,14 +264,24 @@ class Choice:
     stiffness: str
 
     def settings(self, include: tuple[str, ...], exclude: tuple[str, ...]) -> FitSettings:
+        """The engine settings. A stain fit with ANTs adds the automatic tissue
+        and ventricle label channels (``labels="auto"``): the 2026-10-02
+        stain ceiling test's clearest gain (outline and enlarged ventricles);
+        Elastix has no label channels."""
         traced = self.section_image in TRACED
+        if self.section_image == TRACED_BORDERS:
+            labels = "model"
+        elif not traced and self.engine == "ants":
+            labels = "auto"
+        else:
+            labels = "none"
         return FitSettings(
             engine=self.engine,  # type: ignore[arg-type]
             stiffness=self.stiffness,  # type: ignore[arg-type]
             detail=DETAIL_LEVEL,  # type: ignore[arg-type]
             atlas_image=ATLAS_CHOICES[self.atlas_image],  # type: ignore[arg-type]
             section_image="lines" if traced else "stain",
-            labels="model" if self.section_image == TRACED_BORDERS else "none",
+            labels=labels,  # type: ignore[arg-type]
             exclude=exclude, structures=include,
         )
 
@@ -283,8 +293,12 @@ class Choice:
 def engine_settings(settings: FitSettings) -> dict[str, Any]:
     """The engine numbers a setting stands for, in physical units."""
     level = DETAIL[settings.detail]
-    metric = metric_for(settings.section_image, settings.atlas_image)
+    metric = settings.metric
     used: dict[str, Any] = {"metric": metric, "working_um": level.working_um}
+    if metric == "local_correlation":
+        used["correlation_radius_um"] = CORRELATION_RADIUS_UM
+    if settings.section_image == "stain" and settings.stain_edges:
+        used["edge_channel"] = True
     if settings.engine == "ants":
         stiffness = ANTS_STIFFNESS[settings.stiffness]
         used.update(update_sigma_mm=stiffness.update_sigma_mm,
