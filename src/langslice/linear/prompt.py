@@ -106,8 +106,9 @@ TOOL_LINES: dict[str, str] = {
     "positioned, transformed sections with a library engine (ANTs SyN or Elastix "
     "B-spline), on top of the linear placement. Choose the section image "
     "{section_images}, the atlas "
-    "image, stiffness, detail, regions to include (fit only them and a margin) and "
-    "to exclude (removed from the atlas side), and start (linear, or current to "
+    "image, stiffness, regions to include (fit only them and a margin) and "
+    "to exclude (removed from the atlas side; \"CTX:left\" or \"CTX:right\" names "
+    "one side of the section as shown), and start (linear, or current to "
     "compose onto the applied deformation, region by region). Several candidates "
     "(2 to 4 setting variants, run concurrently) preview and write nothing; exactly "
     "one setting applies it, reusing an identical earlier result; `keep_linear` "
@@ -126,11 +127,11 @@ TOOL_LINES: dict[str, str] = {
 
 #: ``fit_deformable``'s section images, with and without the image model.
 _SECTION_IMAGES_TRACED = (
-    "(the fit appearance, a raw channel, or the section's trace_borders result at "
+    "(the fit appearance, or the section's trace_borders result at "
     "this placement: traced_borders as named regions, traced_lines as lines; a call "
     "waits for a trace that is still running)"
 )
-_SECTION_IMAGES_STAIN = "(the fit appearance or a raw channel)"
+_SECTION_IMAGES_STAIN = "(the fit appearance)"
 
 
 def tool_line(name: str, spec: JobSpec) -> str:

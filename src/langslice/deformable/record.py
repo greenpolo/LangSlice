@@ -46,6 +46,22 @@ VENTRICLE_AREA_RATIO_LIMITS = (0.1, 10.0)
 MIN_FLAG_AREA_MM2 = 0.02
 #: Fraction of tissue pixels with a non-positive Jacobian above which FOLDS is flagged.
 FOLD_FRACTION_LIMIT = 0.001
+#: DISPLACEMENT_OUTSIZED: the largest displacement in tissue above this
+#: fraction of the tissue's longest extent (about 1 mm on a 10 mm coronal
+#: section). In the 2026-10-01 ceiling test (400 fits, eight sections) the
+#: one blow-up (Elastix on a raw channel, M11_C_08) reached 1.31 mm on a
+#: section ~10 mm wide with no fold or area flag, and every ANTs fit stayed
+#: at or below 0.78 mm; the next largest, 1.08 mm (Elastix, M11_B_08), had
+#: pulled the atlas outline onto a displaced tissue flap.
+OUTSIZED_MAX_FRACTION = 0.1
+#: DISPLACEMENT_OUTSIZED also fires when the median displacement in tissue
+#: exceeds this, in mm: a wholesale drift a uniform field would hide from the
+#: maximum rule. The recommended pairings (ANTs medium) sat at medians of
+#: 0.01-0.33 mm and the largest ceiling-test median was 0.52 mm (Elastix
+#: stiff on M11_B_08); 0.4 mm would
+#: have flagged Elastix fits on M11_C_08 whose borders looked as plausible
+#: as ANTs's, so the limit sits above every observed median.
+OUTSIZED_MEDIAN_MM = 0.6
 
 RECORD_VERSION = 1
 
@@ -57,6 +73,29 @@ def jacobian_determinant(field_mm: np.ndarray, mm_per_px: float) -> np.ndarray:
     du_dy, du_dx = np.gradient(u)
     dv_dy, dv_dx = np.gradient(v)
     return (1.0 + du_dx) * (1.0 + dv_dy) - du_dy * dv_dx
+
+
+def displacement_report(
+    field_mm: np.ndarray, mm_per_px: float, tissue: np.ndarray,
+) -> dict[str, Any]:
+    """Max and median displacement in tissue, their limits, and whether either is passed.
+
+    The maximum's limit is :data:`OUTSIZED_MAX_FRACTION` of the tissue's
+    longest extent (the longer side of its bounding box); the median's is
+    :data:`OUTSIZED_MEDIAN_MM`.
+    """
+    magnitude = np.linalg.norm(field_mm, axis=-1)[tissue]
+    rows, cols = np.nonzero(tissue)
+    extent_mm = (float(max(rows.max() - rows.min(), cols.max() - cols.min()) + 1) * mm_per_px
+                 if rows.size else 0.0)
+    largest = float(magnitude.max()) if magnitude.size else 0.0
+    median = float(np.median(magnitude)) if magnitude.size else 0.0
+    max_limit = OUTSIZED_MAX_FRACTION * extent_mm
+    return {
+        "max_mm": largest, "median_mm": median, "tissue_extent_mm": extent_mm,
+        "max_limit_mm": max_limit, "median_limit_mm": OUTSIZED_MEDIAN_MM,
+        "outsized": bool(magnitude.size) and (largest > max_limit or median > OUTSIZED_MEDIAN_MM),
+    }
 
 
 def diagnose(
@@ -126,6 +165,11 @@ def diagnose(
     if fold_fraction > FOLD_FRACTION_LIMIT:
         flags.append({"code": "FOLDS", "fold_fraction": fold_fraction,
                       "limit": FOLD_FRACTION_LIMIT})
+    displacement = displacement_report(field_mm, mm_per_px, tissue)
+    if displacement["outsized"]:
+        flags.append({"code": "DISPLACEMENT_OUTSIZED",
+                      **{key: displacement[key] for key in (
+                          "max_mm", "median_mm", "max_limit_mm", "median_limit_mm")}})
     return {
         "fold_fraction": fold_fraction,
         "jacobian_in_tissue": {
@@ -136,6 +180,7 @@ def diagnose(
         },
         "max_displacement_mm": float(np.linalg.norm(field_mm, axis=-1)[tissue].max())
         if tissue.any() else 0.0,
+        "displacement": displacement,
         "regions": regions,
         "flags": flags,
         "thresholds": {
@@ -143,6 +188,8 @@ def diagnose(
             "ventricle_area_ratio": list(VENTRICLE_AREA_RATIO_LIMITS),
             "min_flag_area_mm2": MIN_FLAG_AREA_MM2,
             "fold_fraction": FOLD_FRACTION_LIMIT,
+            "outsized_max_fraction": OUTSIZED_MAX_FRACTION,
+            "outsized_median_mm": OUTSIZED_MEDIAN_MM,
         },
         "note": "Reported, never enforced; thresholds are rough biological defaults.",
     }

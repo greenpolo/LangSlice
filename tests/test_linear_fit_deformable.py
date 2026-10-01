@@ -23,13 +23,15 @@ from langslice.linear.toolbox import build_tools
 from tests.deformable_synthetic import SMOOTH_FIELD, SyntheticAtlas, render_section
 
 ID = "s0.png"
-FAST = {"engine": "elastix", "detail": "coarse"}
+FAST = {"engine": "elastix"}
 
 
 @pytest.fixture(autouse=True)
 def _in_process(monkeypatch):
-    """Fits run in this process (no spawn pool) to keep the tests quick."""
+    """Fits run in this process (no spawn pool) at the coarse detail level, to
+    keep the tests quick (the tool itself always runs at standard)."""
     monkeypatch.setattr(deformation, "USE_PROCESS_POOL", False)
+    monkeypatch.setattr(deformation, "DETAIL_LEVEL", "coarse")
 
 
 @pytest.fixture(scope="module")
@@ -90,10 +92,16 @@ def test_engine_argument_exists_only_when_the_user_left_it_open(tmp_path: Path, 
 
     *_, open_box = _setup(tmp_path, atlas)
     assert {"sections", "include", "exclude", "start", "section_image", "atlas_image",
-            "engine", "stiffness", "detail", "candidates", "mode", "zoom"} <= parameters(open_box)
+            "engine", "stiffness", "candidates", "mode", "zoom"} <= parameters(open_box)
+    # Detail and line softening are fixed, not arguments.
+    assert not {"detail", "line_softening_um"} & parameters(open_box)
     *_, fixed = _setup(tmp_path, atlas, engine="elastix")
     assert "engine" not in parameters(fixed)
-    result = _tool(fixed, "fit_deformable")([ID], detail="coarse")
+    # The traced recommendation names ANTs, so a run fixed to Elastix drops it.
+    recommended = "traced_borders with the ANTs\n                engine at medium stiffness"
+    assert recommended in (_tool(open_box, "fit_deformable").__doc__ or "")
+    assert "recommended" not in (_tool(fixed, "fit_deformable").__doc__ or "")
+    result = _tool(fixed, "fit_deformable")([ID])
     assert result["results"][0]["settings"]["engine"] == "elastix"
     refused = _tool(fixed, "fit_deformable")([ID], candidates=[{"engine": "ants"}, {}])
     assert refused["error"] == "BAD_CANDIDATE"
@@ -110,7 +118,7 @@ def test_missing_ants_is_said_plainly(tmp_path: Path, atlas, monkeypatch):
     assert refused["error"] == "UNAVAILABLE"
     assert "ANTs" in refused["message"] and "elastix" in refused["message"]
     # Left open, the default falls back to Elastix.
-    result = _tool(box, "fit_deformable")([ID], detail="coarse")
+    result = _tool(box, "fit_deformable")([ID])
     assert result["results"][0]["settings"]["engine"] == "elastix"
     *_, fixed = _setup(tmp_path, atlas, engine="ants")
     assert _tool(fixed, "fit_deformable")([ID])["error"] == "UNAVAILABLE"
@@ -123,12 +131,12 @@ def test_several_candidates_preview_and_write_nothing(tmp_path: Path, atlas):
     state, ctx, _, box = _setup(tmp_path, atlas)
     before = json.dumps(state.to_dict(), sort_keys=True)
     result = _tool(box, "fit_deformable")(
-        [ID], **FAST, candidates=[{"stiffness": "soft"}, {"stiffness": "stiff"}],
+        [ID], **FAST, candidates=[{"stiffness": "soft"}, {"stiffness": "firm"}],
     )
     assert result["status"] == "ok" and result["applied"] is False
     rows = result["results"]
     assert [row["candidate"] for row in rows] == [1, 2]
-    assert [row["settings"]["stiffness"] for row in rows] == ["soft", "stiff"]
+    assert [row["settings"]["stiffness"] for row in rows] == ["soft", "firm"]
     for row in rows:
         assert row["displacement_mm"]["max"] > 0 and "fold_fraction" in row
         assert row["engine_settings"]["working_um"] == 40.0
@@ -214,15 +222,19 @@ def test_include_and_exclude_reach_the_engine(tmp_path: Path, atlas, monkeypatch
         return real(image, atlas_, placement, settings, **kwargs)
 
     monkeypatch.setattr(deformation, "prepare_fit", spy)
-    result = _tool(box, "fit_deformable")([ID], **FAST, include=["STR"], exclude=["HY"],
-                                          candidates=[{}, {"atlas_image": "borders"}])
+    result = _tool(box, "fit_deformable")([ID], **FAST, include=["STR"], exclude=["HY:left"],
+                                          candidates=[{}, {"stiffness": "firm"}])
     assert result["status"] == "ok", result
     assert [s.structures for s in seen] == [("STR",), ("STR",)]
-    assert [s.exclude for s in seen] == [("HY",), ("HY",)]
-    assert [s.atlas_image for s in seen] == ["ara", "borders_merged"]
+    assert [s.exclude for s in seen] == [("HY:left",), ("HY:left",)]
+    assert [s.atlas_image for s in seen] == ["ara", "ara"]
+    assert all(s.detail == "coarse" for s in seen)
     fit = _tool(box, "fit_deformable")
     assert fit([ID], include=["NOPE"])["error"] == "UNKNOWN_REGIONS"
+    assert fit([ID], include=["STR:up"])["error"] == "UNKNOWN_REGIONS"
     assert fit([ID], include=["STR"], exclude=["str"])["error"] == "BAD_ARGS"
+    assert fit([ID], include=["STR"], exclude=["STR:right"])["error"] == "BAD_ARGS"
+    assert fit([ID], include=["STR:left"], exclude=["STR:right"])["status"] == "ok"
     assert fit([ID], atlas_image="nissl")["error"] in ("ATLAS_IMAGE_UNAVAILABLE",)
     assert fit([ID], candidates=[{}] * 5)["error"] == "TOO_MANY_CANDIDATES"
 
@@ -295,6 +307,30 @@ def test_view_placement_draws_the_current_warp(tmp_path: Path, atlas):
     assert state.slices[0].deformation is not None
 
 
+def test_view_placement_highlights_one_side_of_a_region(tmp_path: Path, atlas):
+    *_, box = _setup(tmp_path, atlas)
+    view = _tool(box, "view_placement")
+    style = {"mode": "overlay", "outlines": "none", "border_color": "#ff00ff",
+             "border_thickness": 3.0}
+    both = view([{"id": ID}], regions=["CTX"], **style)
+    left = view([{"id": ID}], regions=["CTX:left"], **style)
+    right = view([{"id": ID}], regions=["CTX:right"], **style)
+    assert left["view"]["regions"] == ["CTX:left"]
+    images = [np.asarray(Image.open(__import__("io").BytesIO(_media(r)[0])).convert("RGB"))
+              for r in (both, left, right)]
+
+    def magenta_columns(pixels: np.ndarray) -> np.ndarray:
+        mask = (pixels[..., 0] > 180) & (pixels[..., 1] < 90) & (pixels[..., 2] > 180)
+        return np.nonzero(mask[40:].any(axis=0))[0]  # below the caption
+
+    whole, only_left, only_right = (magenta_columns(pixels) for pixels in images)
+    middle = (whole.min() + whole.max()) / 2.0
+    assert only_left.max() <= middle + 3 and only_left.min() <= whole.min() + 3
+    assert only_right.min() >= middle - 3 and only_right.max() >= whole.max() - 3
+    refused = view([{"id": ID}], regions=["CTX:up"])
+    assert refused["error"] == "UNKNOWN_REGIONS"
+
+
 def test_the_job_statement_names_the_engine_and_the_tool(tmp_path: Path, atlas, monkeypatch):
     state, _, spec, box = _setup(tmp_path, atlas)
     monkeypatch.setattr(deformation, "ants_available", lambda: True)
@@ -357,8 +393,12 @@ def test_traced_images_need_a_completed_trace_at_this_placement(tmp_path: Path, 
     assert row["engine_settings"]["metric"] == "mean_squares"
     assert fit([ID], **FAST, section_image="traced_borders")["error"] == "LABEL_MAP_ANTS_ONLY"
     assert fit([ID], section_image="traced_lines", atlas_image="ara")["error"] == "BAD_ARGS"
+    # The stain against atlas borders is refused: borders are for traced lines.
+    stain_borders = fit([ID], **FAST, atlas_image="borders")
+    assert stain_borders["error"] == "BAD_ARGS" and "traced" in stain_borders["message"]
     unknown = fit([ID], **FAST, section_image="nope")
-    assert unknown["results"][0]["error"] == "UNKNOWN_CHANNEL"
+    assert unknown["error"] == "BAD_SECTION_IMAGE"
+    assert unknown["section_images"] == ["fit", "traced_borders", "traced_lines"]
 
 
 def test_a_section_without_a_linear_placement_is_refused(tmp_path: Path, atlas):
@@ -400,7 +440,7 @@ def test_the_job_is_a_deformation_per_section_in_both_modes(tmp_path: Path, atla
     assert "or a `keep_linear` reason saying its linear placement stands" in text
     for absent in ("trace", "image correction", "image model", "Base image-model prompt"):
         assert absent not in text, absent
-    assert "Choose the section image (the fit appearance or a raw channel)" in text
+    assert "Choose the section image (the fit appearance)" in text
     assert "inspect the returned borders against the section's internal anatomy. " in text
 
 

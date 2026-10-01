@@ -969,18 +969,38 @@ def _draw_outlines(
 REGION_CONTEXT_ALPHA = 0.35
 
 
+def regions_left(
+    atlas: Any, regions: Any, position_mm: float, plane: str, pitch_deg: float,
+    yaw_deg: float, native_to_display: np.ndarray,
+) -> np.ndarray | None:
+    """Native pixels on the picture's left when a region names a side, else None.
+
+    *regions* is ``[(name, ids)]``; *native_to_display* the linear map from the
+    native atlas plane to the frame whose left and right the sides name
+    (:func:`langslice.atlas.sides.native_left`).
+    """
+    from langslice.atlas.sides import has_sides, native_left
+
+    if not has_sides([name for name, _ids in regions]):
+        return None
+    return native_left(atlas, position_mm, plane, pitch_deg, yaw_deg, native_to_display)
+
+
 def region_polys(
-    annotation: np.ndarray, regions: Any,
+    annotation: np.ndarray, regions: Any, left: np.ndarray | None = None,
 ) -> list[np.ndarray]:
     """Smoothed outlines of each highlighted region, in atlas-native pixels.
 
     *regions* is ``[(name, ids)]``; each region is traced as the union of its
     ids (the region and its descendants), with the same tracer and smoothing
-    as the family outlines.
+    as the family outlines. A name with a side (``"CTX:left"``) keeps only
+    that side, *left* being the native pixels on the left (:func:`regions_left`).
     """
+    from langslice.atlas.sides import restrict, split_side
+
     polys: list[np.ndarray] = []
-    for _name, ids in regions:
-        mask = np.isin(annotation, list(ids))
+    for name, ids in regions:
+        mask = restrict(np.isin(annotation, list(ids)), split_side(name)[1], left)
         if mask.any():
             polys.extend(region_contours(mask.astype(np.int32)).get(1, []))
     return polys
@@ -1366,7 +1386,17 @@ def physical_views(
         else draw(atlas, position_mm, plane=plane, pitch_deg=pitch_deg, yaw_deg=yaw_deg)
     )
 
-    highlighted = region_polys(geometry.annotation, regions) if regions else []
+    highlighted: list[np.ndarray] = []
+    sides_note = ""
+    if regions:
+        # A side is the SECTION's: carry the native plane onto the section
+        # frame (native -> canvas is the atlas scale; section -> canvas the matrix).
+        linear = _as_3x3(section_matrix)[:2, :2]
+        left = regions_left(atlas, regions, position_mm, plane, pitch_deg, yaw_deg,
+                            np.linalg.inv(linear) * geometry.atlas_scale)
+        highlighted = region_polys(geometry.annotation, regions, left)
+        if left is not None and np.linalg.det(linear) < 0:
+            sides_note = " (the section's sides; this placement mirrors it)"
     atlas_head = f"atlas {atlas_name}"
 
     def _template_canvas() -> np.ndarray:
@@ -1474,7 +1504,7 @@ def physical_views(
         if layer != "all":
             text += f"  outlines {layer}"
         if regions:
-            text += "  regions " + ",".join(str(name) for name, _ids in regions)
+            text += "  regions " + ",".join(str(name) for name, _ids in regions) + sides_note
         labelled = caption(Image.fromarray(screen, mode="RGB"), text)
         if frames is not None:
             frames.append({

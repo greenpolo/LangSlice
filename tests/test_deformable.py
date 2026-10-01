@@ -255,6 +255,20 @@ def test_label_channels_are_ants_only():
         _settings(section_image="lines", atlas_image="ara")
 
 
+def test_trimmed_settings_refuse_what_the_ceiling_test_dropped():
+    # A stain against atlas borders: borders are for the image model's lines.
+    for kind in ("borders", "borders_merged"):
+        with pytest.raises(ValueError, match="traced lines only"):
+            FitSettings(section_image="stain", atlas_image=kind)
+    with pytest.raises(ValueError, match="stiffness"):
+        FitSettings(stiffness="stiff")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="detail"):
+        FitSettings(detail="fine")  # type: ignore[arg-type]
+    # A record saved while line softening was a setting still loads.
+    old = {**FitSettings().to_dict(), "line_softening_um": 60.0}
+    assert FitSettings.from_dict(old) == FitSettings()
+
+
 @needs_ants
 def test_auto_labels_detect_the_ventricle_hole(atlas, warped):
     _, image, _ = warped
@@ -268,7 +282,7 @@ def test_auto_labels_detect_the_ventricle_hole(atlas, warped):
 def test_sequential_steps_compose_and_undo(atlas, warped, tmp_path: Path):
     field, image, truth = warped
     first = fit_section(image, atlas, placement(), _settings(detail="coarse",
-                                                               stiffness="stiff"))
+                                                               stiffness="firm"))
     second = fit_section(image, atlas, placement(),
                          _settings(detail="coarse", structures=("STR",),
                                      neighbourhood_um=250), previous=first)

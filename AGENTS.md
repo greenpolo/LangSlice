@@ -116,7 +116,8 @@ Shared, top-level:
   `docs/nonlinear_image_tool.md`.
 
 - `atlas/` — BrainGlobe loading, slice extraction, colored region maps, borders,
-  and the organized-color LUT for human-review renders:
+  the organized-color LUT for human-review renders, and one side of a region
+  (`"CTX:left"`, the section's displayed side, `sides.py`):
   `src/langslice/atlas/CLAUDE.md` (loads when working there).
 - `integrations/` — QUINT JSON export and the ABBA registration plugin:
   `src/langslice/integrations/CLAUDE.md` (loads when working there).

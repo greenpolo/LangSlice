@@ -44,6 +44,7 @@ from langslice.linear.render import (
     normalize_border_style,
     picture_edge,
     region_polys,
+    regions_left,
     render_slice,
     resolution_level,
 )
@@ -75,6 +76,8 @@ DISPLAY_DOC = """
             atlas_opacity: 0..1, the atlas image under the lines in overlay.
             regions: acronyms or ids, descendants included: only their
                 borders at full strength, the outlines layer faint behind.
+                "CTX:left" / "CTX:right" draws one side of the section as
+                view_slices shows it (an atlas-only picture: its own sides).
             outlines: "all", "outer" or "none"; empty is the mode's default
                 (all on the physical canvas, none on framed pictures).
             border_color: named or #RRGGBB. border_thickness: 0.25..8 px.
@@ -184,7 +187,9 @@ class DisplayOptions:
     section_image: str
     atlas_image: str
     atlas_opacity: float
-    #: ``(name as asked, ids including descendants)`` per highlighted region.
+    #: ``(name as asked, ids including descendants)`` per highlighted region;
+    #: a name may carry a side (``"CTX:left"``, :mod:`langslice.atlas.sides`),
+    #: which the renderers resolve against the picture's placement.
     regions: tuple[tuple[str, frozenset[int]], ...]
     outlines: str
     border_color: str
@@ -356,16 +361,20 @@ def parse_display(
     if regions:
         if not isinstance(regions, (list, tuple)):
             return _error("BAD_ARGS", "regions must be a list of acronyms or ids")
-        from langslice.deformable.atlas_images import resolve_structures, with_descendants
+        from langslice.atlas.sides import has_sides
+        from langslice.deformable.atlas_images import resolve_entries
 
         if not getattr(ctx.atlas, "structures", None):
             return _error("NO_STRUCTURES", "This atlas has no region hierarchy.")
         try:
             for name in regions:
-                ids = with_descendants(ctx.atlas, resolve_structures(ctx.atlas, [name]))
+                ((_region, _side, ids),) = resolve_entries(ctx.atlas, [name])
                 resolved.append((str(name).strip(), ids))
         except ValueError as exc:
             return _error("UNKNOWN_REGIONS", str(exc))
+        if state.plane == "sagittal" and has_sides(regions):
+            return _error("NO_SIDES", "A sagittal section lies within one hemisphere, so a "
+                          "region cannot be limited to one side.")
     return DisplayOptions(
         mode=view,
         zoom=window,
@@ -537,7 +546,10 @@ def framed_atlas(
         _draw_polys(canvas, context, rgb, thickness=options.border_thickness, origin=origin,
                     factor=factor, alpha=REGION_CONTEXT_ALPHA if options.regions else 1.0)
     if options.regions:
-        _draw_polys(canvas, region_polys(labels, options.regions), rgb,
+        # An atlas-only picture has no section: a side is the picture's own.
+        left = regions_left(ctx.atlas, options.regions, position_mm, plane,
+                            state.pitch_deg, state.yaw_deg, np.eye(2))
+        _draw_polys(canvas, region_polys(labels, options.regions, left), rgb,
                     thickness=options.border_thickness, origin=origin, factor=factor)
     return Image.fromarray(canvas, mode="RGB")
 

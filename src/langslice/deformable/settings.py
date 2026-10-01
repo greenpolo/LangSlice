@@ -14,12 +14,20 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Literal, cast, get_args
 
 Engine = Literal["ants", "elastix"]
-Stiffness = Literal["soft", "medium", "firm", "stiff"]
-Detail = Literal["coarse", "standard", "fine"]
+#: The 2026-10-01 ceiling test dropped ``stiff`` (never the best-looking fit; it
+#: left enlarged ventricles unfilled).
+Stiffness = Literal["soft", "medium", "firm"]
+#: ``standard`` is what the linear tool always uses. ``coarse`` looked the same
+#: in the ceiling test at a fraction of the time and stays for quick previews
+#: and tests; ``fine`` (10 um) was 4-5x slower with no visible gain and was
+#: dropped.
+Detail = Literal["coarse", "standard"]
 #: ``ara``: the atlas's own BrainGlobe reference (for Allen, the ARA average
 #: template). ``nissl``: ABBA's cached Allen Nissl volume (ABBA hosts only).
 #: ``borders``: every region boundary from the annotation. ``borders_merged``:
-#: the color-family set the image model is shown (``trace_borders``).
+#: the color-family set the image model is shown (``trace_borders``). The
+#: grayscale images pair with the stain, the border images with model lines
+#: (:func:`metric_for`).
 AtlasImage = Literal["ara", "nissl", "borders", "borders_merged"]
 #: ``stain``: the preprocessed section photograph. ``lines``: the image
 #: model's extracted boundary lines on that photograph's grid.
@@ -60,19 +68,17 @@ class ElastixStiffness:
     bending_weight: float
 
 
-#: Soft lets a region bend at roughly the scale of a large nucleus; stiff keeps
-#: the residual to smooth, brain-scale shape change.
+#: Soft lets a region bend at roughly the scale of a large nucleus; firm keeps
+#: the residual to smooth, larger-scale shape change.
 ANTS_STIFFNESS: dict[str, AntsStiffness] = {
     "soft": AntsStiffness(update_sigma_mm=0.05, total_sigma_mm=0.0),
     "medium": AntsStiffness(update_sigma_mm=0.08, total_sigma_mm=0.02),
     "firm": AntsStiffness(update_sigma_mm=0.12, total_sigma_mm=0.04),
-    "stiff": AntsStiffness(update_sigma_mm=0.18, total_sigma_mm=0.08),
 }
 ELASTIX_STIFFNESS: dict[str, ElastixStiffness] = {
     "soft": ElastixStiffness(grid_spacing_mm=0.25, bending_weight=0.01),
     "medium": ElastixStiffness(grid_spacing_mm=0.4, bending_weight=0.05),
     "firm": ElastixStiffness(grid_spacing_mm=0.6, bending_weight=0.2),
-    "stiff": ElastixStiffness(grid_spacing_mm=1.0, bending_weight=1.0),
 }
 #: Mean squares on soft line images is orders of magnitude smaller than mutual
 #: information, so the same bending weight would freeze the fit. The penalty
@@ -100,19 +106,18 @@ DETAIL: dict[str, DetailLevel] = {
                           elastix_resolutions=2, elastix_iterations=300),
     "standard": DetailLevel(working_um=20.0, ants_iterations=(100, 70, 50, 25),
                             elastix_resolutions=3, elastix_iterations=500),
-    "fine": DetailLevel(working_um=10.0, ants_iterations=(100, 100, 70, 50, 25),
-                        elastix_resolutions=4, elastix_iterations=800),
 }
 #: ANTs halves the grid at each level before the last (shrink factors
 #: 2^(n-1)..1, smoothing n-1..0 voxels): the extra coarse levels are what give
 #: SyN its capture range; more iterations at a level rarely change the result
 #: because its convergence test stops it first.
 
-#: Default Gaussian sigma, in micrometres, that turns a one-pixel line into a
-#: soft ridge both images share. A wider ridge widens the capture range (how
-#: far a misplaced border can be and still be pulled in) at the cost of
-#: precision.
-DEFAULT_LINE_SOFTENING_UM = 60.0
+#: Gaussian sigma, in micrometres, that turns a one-pixel line into a soft
+#: ridge both images share. A wider ridge widens the capture range (how far a
+#: misplaced border can be and still be pulled in) at the cost of precision.
+#: Fixed since the 2026-10-01 ceiling test: 30 and 60 um looked the same,
+#: 120 um slightly worse and added folds with Elastix.
+LINE_SOFTENING_UM = 60.0
 
 #: Default margin, in micrometres, around the structures a restricted
 #: (sequential) fit is limited to: their own edges plus enough surroundings to
@@ -123,14 +128,15 @@ DEFAULT_NEIGHBOURHOOD_UM = 300.0
 @dataclass(frozen=True)
 class FitSettings:
     """One candidate's choices. ``exclude`` names regions (BrainGlobe acronyms
-    or ids) left out of the fit with all their descendants."""
+    or ids) left out of the fit with all their descendants; an entry may name
+    one side only (``"CTX:left"``, :mod:`langslice.atlas.sides`), as may a
+    ``structures`` entry."""
 
     engine: Engine = "ants"
     stiffness: Stiffness = "medium"
     detail: Detail = "standard"
     atlas_image: AtlasImage = "ara"
     section_image: SectionImage = "stain"
-    line_softening_um: float = DEFAULT_LINE_SOFTENING_UM
     exclude: tuple[str | int, ...] = field(default_factory=tuple)
     labels: Labels = "none"
     #: Restrict this fit to these structures' neighbourhood (acronyms or ids,
@@ -148,8 +154,6 @@ class FitSettings:
             value = getattr(self, name)
             if value not in get_args(kind):
                 raise ValueError(f"{name} must be one of {get_args(kind)}, got {value!r}")
-        if not (self.line_softening_um > 0 and self.line_softening_um < 1000):
-            raise ValueError("line_softening_um must be a positive width below 1 mm")
         if not (self.neighbourhood_um >= 0 and self.neighbourhood_um < 5000):
             raise ValueError("neighbourhood_um must be a non-negative width below 5 mm")
         for name in ("exclude", "structures", "preprocess"):
@@ -177,6 +181,8 @@ class FitSettings:
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> FitSettings:
         data = dict(value)
+        # Records saved before 2026-10-02 carry the then-adjustable softening.
+        data.pop("line_softening_um", None)
         for name in ("exclude", "structures", "preprocess"):
             data[name] = tuple(data.get(name, ()))
         return cls(**cast(dict[str, Any], data))
@@ -186,13 +192,19 @@ def metric_for(section_image: str, atlas_image: str) -> Metric:
     """The fixed similarity metric for an image pairing.
 
     Lines against borders are the same kind of picture (soft ridges on zero),
-    so intensities should simply agree: mean squares. A photograph against
-    any atlas image has an unknown intensity relationship (brightfield tissue
-    is dark where the template is bright): mutual information. Model lines
-    against a grayscale atlas image have no shared structure and are refused.
+    so intensities should simply agree: mean squares. A photograph against a
+    grayscale atlas image has an unknown intensity relationship (brightfield
+    tissue is dark where the template is bright): mutual information. The
+    crossed pairings are refused: model lines against a grayscale image share
+    no structure, and a stain against atlas borders is the pairing the
+    2026-10-01 ceiling test found worst (it stayed at the linear placement and
+    left enlarged ventricles unfilled) — borders are for traced lines.
     """
     if section_image == "lines":
         if atlas_image not in BORDER_IMAGES:
             raise ValueError("Model lines can only be fitted against a borders atlas image")
         return "mean_squares"
+    if atlas_image in BORDER_IMAGES:
+        raise ValueError("Atlas borders are fitted against traced lines only; fit a stain "
+                         "against a grayscale atlas image (ara or nissl)")
     return "mutual_information"

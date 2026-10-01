@@ -139,6 +139,7 @@ def region_silhouette_fit(
     include: Sequence[str] = (),
     exclude: Sequence[str] = (),
     long_edge: int = AFFINE_LONG_EDGE,
+    plane_at: tuple[float, str, float, float] = (0.0, "coronal", 0.0, 0.0),
 ) -> RegionFit:
     """The moments fit with atlas regions removed or singled out.
 
@@ -158,14 +159,31 @@ def region_silhouette_fit(
     rotation and scales are physical. A silhouette carries only its
     outline, so an included zone that never reaches the atlas outline gives
     the fit nothing to measure (``REGIONS_INSIDE_OUTLINE``).
+
+    An entry may name one side (``"CTX:left"``, :mod:`langslice.atlas.sides`):
+    the section's side, carried onto the atlas plane through *current*;
+    *plane_at* is the plane *geometry* was drawn at (position mm, plane,
+    pitch, yaw), which the sides are derived from.
     """
-    from langslice.deformable.atlas_images import excluded_ids, resolve_structures, with_descendants
+    from langslice.atlas.sides import SideError, has_sides, native_left
+    from langslice.deformable.atlas_images import regions_mask
     from langslice.deformable.masks import dilate, outline
     from langslice.deformable.settings import DEFAULT_NEIGHBOURHOOD_UM
 
     labels = np.asarray(geometry.annotation)
     footprint = labels != 0
-    dropped = (np.isin(labels, list(excluded_ids(atlas, exclude))) & footprint
+    left: np.ndarray | None = None
+    if has_sides([*include, *exclude]):
+        # Sides are the section's: carry the native plane onto the section
+        # frame through the CURRENT placement (native -> canvas is the atlas
+        # scale; the section reaches the canvas through *current*).
+        native_to_section = (np.linalg.inv(_square(current))[:2, :2]
+                             * float(geometry.atlas_scale))
+        try:
+            left = native_left(atlas, *plane_at, native_to_section)
+        except SideError as error:
+            raise RegionRefusal(error.code, str(error)) from error
+    dropped = (regions_mask(atlas, labels, exclude, left) & footprint
                if exclude else np.zeros(labels.shape, dtype=bool))
     kept = footprint & ~dropped
     if not kept.any():
@@ -179,8 +197,7 @@ def region_silhouette_fit(
     near: np.ndarray | None = None
     zone = kept
     if include:
-        ids = with_descendants(atlas, resolve_structures(atlas, include))
-        wanted = np.isin(labels, list(ids)) & kept
+        wanted = regions_mask(atlas, labels, include, left) & kept
         if not wanted.any():
             raise RegionRefusal("REGIONS_ABSENT", "None of the included regions is in the "
                                 "atlas plane at this position.")
@@ -348,6 +365,8 @@ def fit_silhouette(
             current = (denormalized_affine(stored, section.size)
                        if stored is not None and len(stored) == 6 else np.eye(3)[:2])
             restricted = region_silhouette_fit(section, geometry, ctx.atlas, current,
+                                               plane_at=(position, str(state.plane),
+                                                         state.pitch_deg, state.yaw_deg),
                                                include=include, exclude=exclude)
             regions = restricted.report
             iou = restricted.iou

@@ -241,10 +241,11 @@ image is present anywhere in this pipeline.
 
 A shared top-level package holds the library fit that corrected borders (or
 the stain itself) go through. The linear agent reaches it through
-`fit_deformable` (task `nonlinear`, `linear/deformation.py`): stain, raw
-channel or the `trace_borders` lines (`traced_borders` = label-map mode,
-`traced_lines` = lines vs borders) against ara/borders/nissl, include/exclude
-regions, sequential `start="current"` steps, preview candidates vs one applied
+`fit_deformable` (task `nonlinear`, `linear/deformation.py`): the stain's
+fit appearance against ara/nissl, or the `trace_borders` lines
+(`traced_borders` = label-map mode, `traced_lines` = lines vs borders)
+against borders, include/exclude regions (optionally one side,
+`"CTX:left"`), sequential `start="current"` steps, preview candidates vs one applied
 setting; the engine is the user's `nonlinear.engine` choice or the agent's.
 Applied records are saved under `<results dir>/deformable/` and referenced from
 `SliceState.deformation`; export adapters (ABBA, VisuAlign, BrainGlobe) are to
@@ -257,11 +258,11 @@ process pool.
 | Choice | Options |
 | --- | --- |
 | engine | `ants` (SyN, optional `registration` extra, own inverse) or `elastix` (B-spline + bending penalty, inverse by fixed-point approximation) |
-| section image | `stain` (mutual information) or `lines`: the model's extracted lines (mean squares) |
+| section image | `stain` (mutual information, against `ara`/`nissl`) or `lines`: the model's extracted lines (mean squares, against `borders`/`borders_merged`); the crossed pairings are refused |
 | atlas image | `ara` (BrainGlobe reference), `nissl` (ABBA's cached Allen Nissl, ABBA hosts only), `borders`, `borders_merged` (the family set the image model is shown) |
 | labels (ANTs only) | `model`: the model's enclosed areas named by placed-region overlap; `auto`: tissue footprint and empty holes near placed ventricles |
-| stiffness / detail | four and three named levels in physical units |
-| other | `line_softening_um`, `exclude` (acronyms or ids, descendants included), `structures` + `neighbourhood_um` (a sequential step composed onto `previous`), `preprocess` (ANTs N4, denoise) |
+| stiffness / detail | soft/medium/firm and coarse/standard, in physical units (the linear tool runs standard) |
+| other | `exclude` (acronyms or ids, descendants included, optionally one side of the section: `"CTX:left"`), `structures` + `neighbourhood_um` (a sequential step composed onto `previous`), `preprocess` (ANTs N4, denoise); line softening is fixed at 60 µm |
 
 Masks: tissue widened past its outline, minus a band along torn edges (outline
 lying well inside the placed atlas footprint); the atlas footprint minus
@@ -269,7 +270,13 @@ excluded regions, which are also blanked for every image kind. The record's
 field points section → placed atlas in millimetres (`atlas = section +
 field`), composes with the placement as `composed_native_map` does, carries
 warped labels clipped to tissue and reports, never enforces, per-region area
-ratios from the Jacobian, folds and loose/strict limits for ventricles/tissue.
+ratios from the Jacobian, folds and loose/strict limits for ventricles/tissue,
+and `DISPLACEMENT_OUTSIZED` (largest displacement above a tenth of the
+tissue's extent, or median above 0.6 mm). The 2026-10-01 ceiling test set
+these choices: no `stiff` level, detail and line softening fixed, the stain
+against borders refused; on its fluorescent sections the Nissl reference's
+outer edge sat 40-80 µm inside the tissue's bright surface rim, where ara
+followed the edge.
 Details: `src/langslice/deformable/CLAUDE.md`.
 
 ## Review and limits

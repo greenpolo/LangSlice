@@ -163,7 +163,12 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
   `section_image`, `atlas_image` (`ara`/`borders`/`nissl`, nissl only with
   ABBA's cached atlas, `EngineContext.abba_atlas`), `atlas_opacity`, `regions`
   (descendants included, `render.region_polys`, context outlines at
-  `REGION_CONTEXT_ALPHA`), `outlines`, `border_color`, `border_thickness`.
+  `REGION_CONTEXT_ALPHA`; an entry may name one side, `"CTX:left"`, which
+  `render.regions_left` resolves per picture: on a physical canvas the
+  SECTION's side through the section matrix — a mirrored placement shows it
+  on the canvas's other side and the caption says so — and on an atlas-only
+  picture the picture's own side; `NO_SIDES` on sagittal stacks),
+  `outlines`, `border_color`, `border_thickness`.
   `parse_display` validates them once into a frozen `DisplayOptions`; every
   picture tool takes the same nine names (`with_display_doc` appends the
   shared docstring), `adjust_transforms` per entry. A tenth, `resolution`, is
@@ -220,7 +225,10 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
   about a pivot) are shared affine geometry helpers.
   `region_silhouette_fit` (2026-10-01) is `fit_affine`'s `include`/`exclude`
   path: atlas regions resolved by the deformable package
-  (`deformable.atlas_images`, `deformable.masks`), the kept footprint (minus
+  (`deformable.atlas_images.regions_mask`, `deformable.masks`; a one-sided
+  entry such as `"CTX:left"` is the section's side, carried onto the atlas
+  plane through the CURRENT stored transform, `atlas.sides.native_left`,
+  with the plane passed as `plane_at`), the kept footprint (minus
   excluded; with include, within `DEFAULT_NEIGHBOURHOOD_UM` of them) against
   the tissue the section's CURRENT stored transform lays there, one pass of
   `affine.mask_affine` on the TRUE-SCALE canvas (not the stretched fit frame
@@ -234,20 +242,24 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
 - `deformation.py` — `fit_deformable`'s machinery (2026-10-01): the fit grid
   (`fit_grid`: `prepare_linear_registration` at `FIT_LONG_EDGE` 1536, the same
   handoff `trace_borders` uses), the image a fit reads (`stain_image`: the
-  `fit` appearance or a raw channel; `traced_lines`: a completed
+  `fit` appearance — a raw channel is a fit appearance `preprocess` sets, no
+  longer a section image of its own; `traced_lines`: a completed
   `trace_borders` result at the CURRENT geometry fingerprint, its
   `extracted_lines.png` mapped onto the grid through `atlas_to_canvas`;
   `TRACE_TIMEOUT` after the call's wait, `TRACE_FAILED` with the error,
   `TRACE_RUNNING` only for a running record no call backs, e.g. after resume),
   `trace_picture` (those lines on the stain at the call's size and style),
-  `Choice` (one candidate: section/atlas image, engine, stiffness, detail ->
-  `FitSettings`; agent `borders` = engine `borders_merged`),
+  `Choice` (one candidate: section/atlas image, engine, stiffness ->
+  `FitSettings` at `DETAIL_LEVEL` "standard", which tests set to "coarse";
+  agent `borders` = engine `borders_merged`),
   `RecordStore` (results by `cache_key`, a digest of every input incl. the
   linear placement and the start record; 8 in memory, applied ones saved to
   `<results dir>/deformable/<section>/<key[:24]>/`; `current` is None for a
   `keep_linear` record), `linear_key` /
   `clear_stale`, `summary` (displacement max/median, fold fraction, compact
-  flags), `run_jobs` (one fit in process, several in the spawn pool,
+  flags, the whole-section `SECTION_FLAGS` DISPLACEMENT_OUTSIZED and FOLDS
+  listed before the per-region ones so `MAX_FLAGS` never hides them),
+  `run_jobs` (one fit in process, several in the spawn pool,
   `USE_PROCESS_POOL`) and `picture` (the borders on the image the fit read at
   the call's picture size, `Style.long_edge`, never past the 1536 px fit
   image; included/`regions` strong, excluded pink).
@@ -406,14 +418,32 @@ placement. It is for choosing regions a later deformable fit should exclude.
 It does not fit a deformation or modify `transform`.
 
 **`fit_deformable` (2026-10-01, task `nonlinear`).** `fit_deformable(sections,
-include=[], exclude=[], start="linear"|"current", section_image="fit"|<channel>|
+include=[], exclude=[], start="linear"|"current", section_image="fit"|
 "traced_borders"|"traced_lines", atlas_image=""|"ara"|"borders"|"nissl",
-[engine], stiffness, detail, candidates=[], mode="borders"|"ab", zoom,
-atlas_opacity, regions, outlines, border_color, border_thickness=1.0)`.
+[engine], stiffness="soft"|"medium"|"firm", candidates=[], keep_linear="",
+mode="borders"|"ab", zoom, atlas_opacity, regions, outlines, border_color,
+border_thickness=1.0, [resolution])`. Defaults without a trace: the fit
+appearance against `ara`, ANTs (when the user left the engine open and it is
+installed), medium. With a completed trace the agent chooses; the docstring
+states that traced_borders + ANTs + medium is the recommended pairing
+(`toolbox._RECOMMENDED_TRACED`, dropped where the engine is fixed to Elastix
+or there is no image model). The 2026-10-01 ceiling test (deformable
+`CLAUDE.md`) removed `detail` (fixed at standard), the `stiff` level, line
+softening as a knob, and raw channels as section images: a channel is a fit
+appearance (`preprocess` target `fit`; the docstring points there when
+`spec.agent_preprocessing` is on), so an unknown section image answers
+`BAD_SECTION_IMAGE`. The stain against `borders` is refused (`BAD_ARGS`:
+borders are for traced images). `nissl` is described neutrally as a
+Nissl-stained reference. Region entries (`include`, `exclude`, `regions`)
+may name one side, `"CTX:left"` / `"CTX:right"` (`atlas.sides`): the
+section's side as this tool's pictures draw it; `region_names` validates
+them (`UNKNOWN_REGIONS` for a bad side, `NO_SIDES` on a sagittal stack) and
+`region_overlap` refuses `CTX` with `CTX:left` but not `CTX:left` with
+`CTX:right`.
 `engine` exists only when `JobSpec.nonlinear.engine` is `"either"` (default);
 `"ants"`/`"elastix"` build the same tool without it (`fit_deformable_fixed`,
 renamed). ANTs missing answers `UNAVAILABLE` naming the extra. 2–4
-`candidates` (each overriding stiffness/detail/section_image/atlas_image/
+`candidates` (each overriding stiffness/section_image/atlas_image/
 [engine]) PREVIEW and write nothing; one setting APPLIES it as one undo step,
 reusing an identical cached or saved result (`cached`); the same key again
 only re-draws (`written: false`). `include` -> the engine's `structures`

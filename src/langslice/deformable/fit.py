@@ -28,16 +28,18 @@ from PIL import Image
 from scipy import ndimage as ndi
 
 from langslice.atlas.render import family_labels
+from langslice.atlas.sides import split_side
 from langslice.deformable.abba_atlas import AbbaAtlas
 from langslice.deformable.atlas_images import (
-    excluded_ids,
     native_labels,
     placed_atlas_image,
+    placement_left,
+    regions_mask,
     resolve_structures,
     soft_lines,
     structure_acronyms,
     ventricle_ids,
-    with_descendants,
+    whole_region_ids,
 )
 from langslice.deformable.engines import (
     EngineInputs,
@@ -56,7 +58,7 @@ from langslice.deformable.masks import (
 )
 from langslice.deformable.record import DeformableRecord, diagnose
 from langslice.deformable.regions import named_regions
-from langslice.deformable.settings import DETAIL, FitSettings
+from langslice.deformable.settings import DETAIL, LINE_SOFTENING_UM, FitSettings
 from langslice.oblique import plane_index_coordinates
 from langslice.space import atlas_space_context
 
@@ -78,11 +80,14 @@ class PreparedFit:
     native: np.ndarray
     tissue: np.ndarray
     torn_band: np.ndarray
+    #: Ids excluded on both sides (whole regions; diagnostics skip them).
     excluded: frozenset[int]
     ventricles: frozenset[int]
     atlas_meta: dict[str, Any]
     previous: DeformableRecord | None = None
     details: dict[str, Any] = field(default_factory=dict)
+    #: Native-plane pixels excluded from the fit, one-sided entries included.
+    excluded_mask: np.ndarray | None = None
 
 
 @dataclass
@@ -193,7 +198,11 @@ def prepare_fit(
     spacing = float(np.mean(grid.spacing_mm))
     atlas_to_working = grid.section_to_working @ placement.atlas_to_section
     native = native_labels(atlas, placement)
-    excluded = excluded_ids(atlas, settings.exclude)
+    # One-sided entries ("CTX:left") need the placement's displayed left.
+    left = placement_left(atlas, placement, (*settings.exclude, *settings.structures))
+    excluded = whole_region_ids(atlas, settings.exclude)
+    excluded_native = (regions_mask(atlas, native, settings.exclude, left)
+                       if settings.exclude else None)
     ventricles = ventricle_ids(atlas)
 
     # The atlas's current frame on the working grid: placed, or where the
@@ -203,13 +212,15 @@ def prepare_fit(
         prev_w = cv2.resize(previous.field_mm, grid.size, interpolation=cv2.INTER_LINEAR)
         offset = np.stack([prev_w[..., 0] / grid.spacing_mm[0],
                            prev_w[..., 1] / grid.spacing_mm[1]], axis=-1)
-    current = sample_native(
-        native, _native_coords(atlas_to_working, offset, (grid.size[1], grid.size[0])))
-    softening_px = settings.line_softening_um / 1000.0 / spacing
+    working_coords = _native_coords(atlas_to_working, offset, (grid.size[1], grid.size[0]))
+    current = sample_native(native, working_coords)
+    excluded_w = (sample_native(excluded_native, working_coords) if excluded_native is not None
+                  else np.zeros(current.shape, dtype=bool))
+    softening_px = LINE_SOFTENING_UM / 1000.0 / spacing
 
     moving = placed_atlas_image(
-        settings.atlas_image, native, atlas, placement, atlas_to_working, grid.size, excluded,
-        softening_px=softening_px, abba=abba,
+        settings.atlas_image, native, atlas, placement, atlas_to_working, grid.size,
+        excluded_native, softening_px=softening_px, abba=abba,
     )
     if offset is not None:
         moving = _remap(moving, offset)
@@ -227,7 +238,7 @@ def prepare_fit(
         fixed = ants_preprocess(fixed, tissue_w, settings.preprocess, grid.spacing_mm)
         fixed = _normalize_stain(fixed, tissue_w)
 
-    kept = (current != 0) & ~np.isin(current, list(excluded))
+    kept = (current != 0) & ~excluded_w
     if torn_band is not None:
         torn_w = grid.to_working(torn_band.astype(np.uint8), nearest=True) > 0
         torn_section = torn_band.astype(bool)
@@ -239,20 +250,22 @@ def prepare_fit(
     fixed_mask = dilate(tissue_w, margin_px) & ~torn_w
     # Blanking leaves an edge where an excluded region was; a margin around
     # it stays out of the moving mask so that edge cannot attract the tissue.
-    excluded_zone = dilate(np.isin(current, list(excluded)), EXCLUSION_MARGIN_MM / spacing)
+    excluded_zone = dilate(excluded_w, EXCLUSION_MARGIN_MM / spacing)
     moving_mask = dilate(current != 0, margin_px) & ~excluded_zone
 
     details: dict[str, Any] = {}
-    region_ids: frozenset[int] = frozenset()
+    region: np.ndarray | None = None
     if settings.structures:
-        region_ids = with_descendants(atlas, resolve_structures(atlas, settings.structures))
-        region = np.isin(current, list(region_ids)) & kept
-        if not region.any():
+        chosen = regions_mask(atlas, native, settings.structures, left)
+        in_reach = sample_native(chosen, working_coords) & kept
+        if not in_reach.any():
             raise ValueError("None of the chosen structures is present at this placement")
-        neighbourhood = dilate(region, settings.neighbourhood_um / 1000.0 / spacing)
+        region = in_reach
+        neighbourhood = dilate(in_reach, settings.neighbourhood_um / 1000.0 / spacing)
         fixed_mask &= neighbourhood
         moving_mask &= neighbourhood
-        details["structures"] = sorted(resolve_structures(atlas, settings.structures))
+        details["structures"] = sorted(resolve_structures(
+            atlas, [split_side(entry)[0] for entry in settings.structures]))
         details["neighbourhood_um"] = settings.neighbourhood_um
 
     fixed_labels: list[np.ndarray] = []
@@ -282,8 +295,8 @@ def prepare_fit(
         fixed_mask &= ~unnamed
         allowed = set(np.unique(section_regions)) & set(np.unique(merged))
         allowed.discard(0)
-        if region_ids:
-            allowed &= {int(i) for i in np.unique(merged[np.isin(current, list(region_ids))])}
+        if region is not None:
+            allowed &= {int(i) for i in np.unique(merged[region])}
         for uid in sorted(int(i) for i in allowed):
             add_channel(str(uid), section_regions == uid, merged == uid)
         details["model_regions"] = {
@@ -308,7 +321,7 @@ def prepare_fit(
         atlas_meta={**_atlas_meta(atlas, placement, native),
                     "acronyms": {str(k): v for k, v in structure_acronyms(
                         atlas, np.unique(native)).items()}},
-        previous=previous, details=details,
+        previous=previous, details=details, excluded_mask=excluded_native,
     )
 
 
@@ -341,8 +354,17 @@ def finish_fit(prepared: PreparedFit, result: EngineResult) -> DeformableRecord:
                            _native_coords(prepared.placement.atlas_to_section, None,
                                           (height, width)))
     acronyms = {int(k): v for k, v in prepared.atlas_meta["acronyms"].items()}
+    diag_warped, diag_placed = warped, placed
+    if prepared.excluded_mask is not None and prepared.excluded_mask.any():
+        # Area diagnostics leave excluded pixels out, so a region excluded on
+        # one side is still judged on the side the fit used.
+        kept_native = np.where(prepared.excluded_mask, 0, prepared.native)
+        diag_warped = sample_native(kept_native, _native_coords(
+            prepared.placement.atlas_to_section, offset, (height, width)))
+        diag_placed = sample_native(kept_native, _native_coords(
+            prepared.placement.atlas_to_section, None, (height, width)))
     diagnostics = diagnose(
-        total, mm, warped, placed, prepared.tissue, ventricles=prepared.ventricles,
+        total, mm, diag_warped, diag_placed, prepared.tissue, ventricles=prepared.ventricles,
         excluded=prepared.excluded, acronyms=acronyms,
     )
     if inverse is not None:

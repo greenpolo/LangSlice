@@ -107,6 +107,58 @@ def excluded_ids(atlas: Any, names: Iterable[str | int]) -> frozenset[int]:
     return with_descendants(atlas, resolve_structures(atlas, names))
 
 
+def resolve_entries(
+    atlas: Any, entries: Iterable[str | int],
+) -> list[tuple[str, str | None, frozenset[int]]]:
+    """``(region, side, ids with descendants)`` per entry; unknown names or sides refused.
+
+    An entry is an acronym or id, optionally with a side (``"CTX:left"``,
+    :mod:`langslice.atlas.sides`).
+    """
+    from langslice.atlas.sides import split_side
+
+    parsed = [split_side(entry) for entry in entries]
+    resolve_structures(atlas, [region for region, _side in parsed])
+    return [(region, side, with_descendants(atlas, resolve_structures(atlas, [region])))
+            for region, side in parsed]
+
+
+def whole_region_ids(atlas: Any, entries: Iterable[str | int]) -> frozenset[int]:
+    """Ids (with descendants) of the entries that name no side: both hemispheres."""
+    return frozenset().union(*(
+        ids for _region, side, ids in resolve_entries(atlas, entries) if side is None))
+
+
+def regions_mask(
+    atlas: Any, labels: np.ndarray, entries: Iterable[str | int],
+    left: np.ndarray | None = None,
+) -> np.ndarray:
+    """Pixels of *labels* (native plane) covered by *entries*, sides included.
+
+    *left* is the native pixels on the section's displayed left
+    (:func:`langslice.atlas.sides.native_left`); needed only when an entry
+    names a side.
+    """
+    from langslice.atlas.sides import restrict
+
+    mask = np.zeros(labels.shape, dtype=bool)
+    for _region, side, ids in resolve_entries(atlas, entries):
+        mask |= restrict(np.isin(labels, list(ids)), side, left)
+    return mask
+
+
+def placement_left(
+    atlas: Any, placement: Placement, entries: Iterable[str | int],
+) -> np.ndarray | None:
+    """The placement's displayed-left native pixels, when an entry names a side."""
+    from langslice.atlas.sides import has_sides, native_left
+
+    if not has_sides(list(entries)):
+        return None
+    return native_left(atlas, placement.position_mm, placement.plane, placement.pitch_deg,
+                       placement.yaw_deg, placement.atlas_to_section)
+
+
 def ventricle_ids(atlas: Any) -> frozenset[int]:
     """The ventricular system (``VS`` and descendants), or a name-based fallback."""
     records = _structure_records(atlas)
@@ -200,13 +252,17 @@ def placed_atlas_image(
     placement: Placement,
     atlas_to_working: np.ndarray,
     working_size: tuple[int, int],
-    excluded: frozenset[int],
+    excluded: np.ndarray | None,
     *,
     softening_px: float,
     abba: AbbaAtlas | None = None,
 ) -> np.ndarray:
-    """The moving image on the working grid, excluded regions blanked first."""
-    keep = ~np.isin(labels, list(excluded)) if excluded else np.ones(labels.shape, bool)
+    """The moving image on the working grid, excluded regions blanked first.
+
+    *excluded* is the native-plane mask of excluded pixels (a one-sided
+    exclusion covers one half of its region), or None.
+    """
+    keep = ~excluded if excluded is not None else np.ones(labels.shape, bool)
     if kind in BORDER_IMAGES:
         source = family_labels(labels, atlas) if kind == "borders_merged" else labels
         # Excluded regions join the background, so their internal lines vanish
