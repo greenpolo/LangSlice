@@ -28,10 +28,12 @@ __all__ = [
     "atlas_um_per_px",
     "border_color",
     "darker",
+    "family_labels",
     "family_mapping",
     "family_outlines",
     "is_dark_background",
     "outer_outline",
+    "placed_border_coverage",
     "region_contours",
 ]
 
@@ -135,6 +137,73 @@ def family_mapping(
             reps.append((color, uid))
             mapping[uid] = uid
     return mapping
+
+
+def family_labels(labels: np.ndarray, atlas: Any, merge_eps: float = MERGE_EPS) -> np.ndarray:
+    """*labels* with every region replaced by its color family's representative.
+
+    The merged set the image model is shown: the image tool's placed borders
+    are drawn from exactly this map (``nonlinear``'s ``_merge_classified`` is
+    the same mapping), so a fit against the model's lines must use it too.
+    """
+    merged = np.zeros_like(labels)
+    for uid, rep_id in family_mapping(np.unique(labels), atlas, merge_eps).items():
+        merged[labels == uid] = rep_id
+    return merged
+
+
+def placed_border_coverage(
+    labels: np.ndarray,
+    atlas_to_image: np.ndarray,
+    size: tuple[int, int],
+    *,
+    width_px: float = 2.0,
+    smoothing_px: float = 0.8,
+    supersample: int = 3,
+) -> np.ndarray:
+    """Coverage in [0, 1] of the placed region boundaries on a *size* image.
+
+    *labels* is an atlas-resolution region map and *atlas_to_image* the 3x3
+    (or 2x3) map from its pixel centres to the image's. A nearest-neighbour
+    warp of the label map magnifies the atlas grid into a staircase; instead
+    each region's indicator is blurred by *smoothing_px* atlas pixels, warped
+    bilinearly onto a *supersample*-times finer grid, and every fine pixel
+    takes the region that covers it most. Boundaries between neighbouring
+    fine pixels are one shared line (tracing each region separately draws a
+    shared edge twice, one atlas pixel apart), widened to *width_px* image
+    pixels and area-averaged back down, so the edges are antialiased.
+    """
+    width, height = size
+    s = int(supersample)
+    fine = np.array([[s, 0, (s - 1) / 2], [0, s, (s - 1) / 2], [0, 0, 1]], dtype=np.float64)
+    matrix = np.asarray(atlas_to_image, dtype=np.float64)
+    if matrix.shape == (2, 3):
+        matrix = np.vstack([matrix, [0.0, 0.0, 1.0]])
+    to_fine = (fine @ matrix)[:2]
+    fine_size = (width * s, height * s)
+    best = np.full((height * s, width * s), -1.0, dtype=np.float32)
+    owner = np.zeros((height * s, width * s), dtype=np.int32)
+    for index, region in enumerate(np.unique(labels)):
+        indicator = (labels == region).astype(np.float32)
+        if smoothing_px > 0:
+            indicator = cv2.GaussianBlur(indicator, (0, 0), smoothing_px)
+        cover = cv2.warpAffine(
+            indicator, to_fine, fine_size, flags=cv2.INTER_LINEAR,
+            borderMode=cv2.BORDER_CONSTANT, borderValue=float(region == 0),
+        )
+        wins = cover > best
+        best[wins] = cover[wins]
+        owner[wins] = index
+    edges = np.zeros(owner.shape, dtype=np.uint8)
+    edges[:, 1:] |= (owner[:, 1:] != owner[:, :-1]).astype(np.uint8)
+    edges[1:, :] |= (owner[1:, :] != owner[:-1, :]).astype(np.uint8)
+    radius = max(0.5, width_px * s / 2.0)
+    kernel = cv2.getStructuringElement(
+        cv2.MORPH_ELLIPSE, (2 * int(np.ceil(radius)) + 1,) * 2,
+    )
+    stroke = cv2.dilate(edges * 255, kernel)
+    coverage = cv2.resize(stroke, (width, height), interpolation=cv2.INTER_AREA)
+    return coverage.astype(np.float32) / 255.0
 
 
 def is_dark_background(image: Any) -> bool:

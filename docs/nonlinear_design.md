@@ -237,6 +237,34 @@ returned `RegistrationCandidate` and (with `debug_dir` set) on disk:
 Read `output_kind` and `workflow` metadata rather than assuming a color-map
 image is present anywhere in this pipeline.
 
+## Deformable fit engine (`langslice.deformable`)
+
+A shared top-level package, not yet wired to the image tool, the linear agent
+or any host, holds the library fit that corrected borders (or the stain
+itself) will go through. `fit_section(image, atlas, placement, settings,
+lines=..., previous=...)` takes a `Placement` — the handoff's
+`atlas_to_slice` or the image tool's `atlas_to_canvas`, unchanged — and
+returns a `DeformableRecord`; `fit_candidates` runs up to eight settings in a
+process pool.
+
+| Choice | Options |
+| --- | --- |
+| engine | `ants` (SyN, optional `registration` extra, own inverse) or `elastix` (B-spline + bending penalty, inverse by fixed-point approximation) |
+| section image | `stain` (mutual information) or `lines`: the model's extracted lines (mean squares) |
+| atlas image | `ara` (BrainGlobe reference), `nissl` (ABBA's cached Allen Nissl, ABBA hosts only), `borders`, `borders_merged` (the family set the image model is shown) |
+| labels (ANTs only) | `model`: the model's enclosed areas named by placed-region overlap; `auto`: tissue footprint and empty holes near placed ventricles |
+| stiffness / detail | four and three named levels in physical units |
+| other | `line_softening_um`, `exclude` (acronyms or ids, descendants included), `structures` + `neighbourhood_um` (a sequential step composed onto `previous`), `preprocess` (ANTs N4, denoise) |
+
+Masks: tissue widened past its outline, minus a band along torn edges (outline
+lying well inside the placed atlas footprint); the atlas footprint minus
+excluded regions, which are also blanked for every image kind. The record's
+field points section → placed atlas in millimetres (`atlas = section +
+field`), composes with the placement as `composed_native_map` does, carries
+warped labels clipped to tissue and reports, never enforces, per-region area
+ratios from the Jacobian, folds and loose/strict limits for ventricles/tissue.
+Details: `src/langslice/deformable/CLAUDE.md`.
+
 ## Review and limits
 
 Inspect the raw reply first, then the extracted boundaries on the original
