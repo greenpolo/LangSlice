@@ -40,6 +40,7 @@ from langslice.linear.atlas_fetch import (
     atlas_sized,
     make_fetch_atlas,
 )
+from langslice.linear.atlas_grep import GREP_ATLAS_LIMIT, grep_structures, plane_structure_ids
 from langslice.linear.checkpoint import save_checkpoint
 from langslice.linear.deepslice import run_deepslice as _run_deepslice
 from langslice.linear.live import LiveCallback, _plain
@@ -2256,8 +2257,49 @@ def build_tools(
             )
         return response
 
+    def grep_atlas(query: str, section: str = "") -> dict[str, Any]:
+        """Look regions up in the atlas hierarchy, like grepping the ontology.
+
+        Args:
+            query: Text matched case-insensitively against region acronyms and
+                names (substring), or an exact acronym or numeric id.
+            section: Optional filename or corrected index of a section with a
+                position; each row then says whether the region (or any
+                descendant) appears in the atlas plane at that placement.
+
+        Returns:
+            Rows of acronym, id, name, ancestry (root to parent, as acronyms)
+            and descendant count, capped at 40 with the number left over.
+        """
+        text = str(query).strip()
+        if not text:
+            return {"status": "error", "error": "BAD_ARGS", "message": "Empty query."}
+        structures = getattr(ctx.atlas, "structures", None)
+        entries = list(structures.values()) if structures else []
+        if not entries:
+            return {"status": "error", "error": "NO_STRUCTURES",
+                    "message": "This atlas has no region hierarchy."}
+        present: set[int] | None = None
+        note = ""
+        if section != "":
+            record = state.resolve(section)
+            if record is None:
+                return {"status": "error", "error": "UNKNOWN_SLICE_IDS", "unknown": [section]}
+            if record.position_mm is None:
+                note = f"{record.id} has no position yet, so in_section is omitted."
+            else:
+                present = plane_structure_ids(state, ctx, record.position_mm)
+        rows, total = grep_structures(entries, text, present, limit=GREP_ATLAS_LIMIT)
+        result: dict[str, Any] = {"status": "ok", "query": text, "matches": total, "rows": rows}
+        if total > len(rows):
+            result["more"] = total - len(rows)
+        if note:
+            result["note"] = note
+        return result
+
     if spec.has("nonlinear"):
         box.tools.append(trace_borders)
+        box.tools.append(grep_atlas)
 
     box.tools.append(submit)
     lock = threading.Lock()

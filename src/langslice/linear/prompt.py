@@ -91,6 +91,11 @@ TOOL_LINES: dict[str, str] = {
     "at once; the result is saved for the user and checked at submit, which waits "
     "for running calls. The first result at each placement is saved and reused. "
     "This records an annotation; it does not fit or change the transform.",
+    "grep_atlas": "looks regions up in the atlas hierarchy by acronym, name "
+    "substring or numeric id (at most 40 rows). Each row gives acronym, id, name, "
+    "ancestry as acronyms from the root and the number of descendants. With a "
+    "section that has a position it also says whether the region, or any "
+    "descendant, appears in the atlas plane at that placement. Text only; writes nothing.",
     "submit": "checks requirements and ends the run if they pass; otherwise "
     "returns the missing requirements without ending or changing the run.",
 }
