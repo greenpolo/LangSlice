@@ -87,7 +87,7 @@ when none is selected. It is not modal; the run starts from **Run**.
 
 - **Top:** provider (ChatGPT only), agent model (from the worker's `setup.status`
   list, editable; the connector's own list when an older worker gives none), image
-  model, reasoning level, image resolution (Low/Medium/High), **Show agent log**,
+  model, reasoning level, image resolution (Low/Medium/High/Auto), **Show agent log**,
   **Open agent viewer** (disabled, "Coming soon"), and **Save traces to** a folder
   (default `~/LangSlice/traces`), which keeps the run's full agent trace; the final
   message names the file.

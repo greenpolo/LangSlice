@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any, cast
 import numpy as np
 from PIL import Image
 
+from langslice.affine import resize_long_edge
 from langslice.atlas.core import get_reference_slice
 from langslice.atlas.render import (
     annotation_slice,
@@ -34,14 +35,17 @@ from langslice.atlas.render import (
 from langslice.image_prep import mask_box
 from langslice.linear.appearance import Look, section_settings, view_look
 from langslice.linear.render import (
+    AUTO_RESOLUTION,
     OUTLINE_LAYERS,
+    PICTURE_EDGES,
     REGION_CONTEXT_ALPHA,
-    VIEW_LONG_EDGE,
+    RESOLUTION_RANGE,
     _draw_polys,
     normalize_border_style,
+    picture_edge,
     region_polys,
     render_slice,
-    shown_scale,
+    resolution_level,
 )
 from langslice.linear.state import SliceState, StackState
 from langslice.space import Plane
@@ -76,6 +80,16 @@ DISPLAY_DOC = """
             border_color: named or #RRGGBB. border_thickness: 0.25..8 px.
 """
 
+#: The ``resolution`` argument's line, present only when the host level is
+#: "auto" (:func:`resolution_argument`).
+RESOLUTION_DOC = (
+    "            resolution: long edge in pixels of each picture this call "
+    "returns (of each section\n"
+    "                tile in view_stack), {low}..{high}; 0 is {default}. "
+    "Never larger than the\n"
+    "                image it is drawn from.\n"
+)
+
 
 def with_display_doc(modes: str):
     """Append :data:`DISPLAY_DOC` (this tool's *modes*) to a tool's docstring."""
@@ -85,6 +99,80 @@ def with_display_doc(modes: str):
         return tool
 
     return apply
+
+
+def resolution_doc() -> str:
+    """:data:`RESOLUTION_DOC` with its numbers filled in."""
+    low, high = RESOLUTION_RANGE
+    return RESOLUTION_DOC.format(low=low, high=high, default=PICTURE_EDGES[AUTO_RESOLUTION][1])
+
+
+def resolution_argument(tool: Any, level: str) -> Any:
+    """*tool* with its ``resolution`` argument only where the host level is "auto".
+
+    Every picture tool is written with ``resolution: int = 0``. At "auto" the
+    tool is returned with the argument's line added to its docstring (after
+    the display options, or before ``Returns:`` when it lists its own); at
+    every other level a wrapper is returned whose signature, annotations and
+    docstring have no ``resolution`` at all, so the model never sees it, and
+    the body always receives 0. A tool without the argument is returned as
+    it is, its docstring gaining the line at "auto" when it documents the
+    display options as per-entry keys (``adjust_transforms``).
+    """
+    import functools
+    import inspect
+
+    signature = inspect.signature(tool, eval_str=True)
+    if "resolution" not in signature.parameters:
+        # A tool taking the display options per entry (`adjust_transforms`)
+        # documents the entry key the same way.
+        if level == AUTO_RESOLUTION and "Display options" in (tool.__doc__ or ""):
+            tool.__doc__ = (tool.__doc__ or "").rstrip("\n ") + "\n" + resolution_doc()
+        return tool
+    if level == AUTO_RESOLUTION:
+        doc = (tool.__doc__ or "").rstrip("\n ") + "\n"
+        if "Display options" not in doc and "\n        Returns:" in doc:
+            head, tail = doc.split("\n        Returns:", 1)
+            doc = head.rstrip("\n") + "\n" + resolution_doc() + "\n        Returns:" + tail
+        else:
+            doc += resolution_doc()
+        tool.__doc__ = doc
+        return tool
+
+    @functools.wraps(tool)
+    def without(*args: Any, **kwargs: Any) -> Any:
+        kwargs.pop("resolution", None)
+        return tool(*args, **kwargs)
+
+    without.__signature__ = signature.replace(  # type: ignore[attr-defined]
+        parameters=[p for name, p in signature.parameters.items() if name != "resolution"],
+    )
+    without.__annotations__ = {
+        name: value for name, value in inspect.get_annotations(tool, eval_str=True).items()
+        if name != "resolution"
+    }
+    del without.__wrapped__  # the signature above is the whole truth
+    return without
+
+
+def clamp_resolution(value: Any) -> tuple[int | None, str]:
+    """``(long edge, note)`` for a requested ``resolution``; None for "default".
+
+    0, None and "" are the default. A number outside :data:`RESOLUTION_RANGE`
+    is clamped into it and *note* says so; a value that is not a number
+    raises ``ValueError``.
+    """
+    if value in (None, "", 0):
+        return None, ""
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError("resolution must be a number of pixels")
+    low, high = RESOLUTION_RANGE
+    edge = int(round(number))
+    if edge < low or edge > high:
+        clamped = min(high, max(low, edge))
+        return clamped, f"resolution {edge} is outside {low}..{high}; used {clamped}"
+    return edge, ""
 
 
 @dataclass(frozen=True)
@@ -101,6 +189,16 @@ class DisplayOptions:
     outlines: str
     border_color: str
     border_thickness: float
+    #: Long edge of each picture this call returns
+    #: (:func:`langslice.linear.render.picture_edge`).
+    long_edge: int = PICTURE_EDGES["low"][1]
+    #: The clamped ``resolution`` the agent asked for ("auto" only; None when
+    #: it asked for none). A contact sheet sizes its tiles by it.
+    resolution: int | None = None
+    #: Whether the run's level is "auto" (the payload then echoes the size).
+    auto: bool = False
+    #: Why the asked resolution was changed ("" when it was not).
+    resolution_note: str = ""
 
     @property
     def full_view(self) -> bool:
@@ -123,6 +221,10 @@ class DisplayOptions:
             "outlines": self.outlines,
             "border_color": self.border_color,
             "border_thickness": self.border_thickness,
+            # The size is the agent's to choose only at "auto"; any other
+            # level keeps it out of model-facing text.
+            **({"resolution": self.resolution or self.long_edge} if self.auto else {}),
+            **({"resolution_note": self.resolution_note} if self.resolution_note else {}),
         }
 
     def look(self, state: StackState, record: SliceState) -> Look:
@@ -176,6 +278,7 @@ def parse_display(
     sections: list[SliceState] = (),  # type: ignore[assignment]
     zoom_ok: bool = True,
     framed_modes: tuple[str, ...] = (),
+    resolution: Any = 0,
 ) -> DisplayOptions | dict[str, Any]:
     """Validate one call's options; a refusal dict names every bad argument's fix.
 
@@ -184,7 +287,20 @@ def parse_display(
     view (pictures whose pieces are framed independently). An empty
     *outlines* is the mode's own default: ``none`` for the tissue-framed
     pictures in *framed_modes*, ``all`` on the physical canvas.
+
+    *resolution* is read only when the run's level is "auto"
+    (:func:`clamp_resolution`); every other level sizes the pictures itself.
     """
+    auto = resolution_level(ctx) == AUTO_RESOLUTION
+    asked: int | None = None
+    note = ""
+    if auto:
+        try:
+            asked, note = clamp_resolution(resolution)
+        except (TypeError, ValueError):
+            low, high = RESOLUTION_RANGE
+            return _error("BAD_RESOLUTION",
+                          f"resolution must be a whole number of pixels, {low}..{high}")
     view = str(mode or modes[0]).strip().lower()
     if view not in modes:
         return {"status": "error", "error": "BAD_MODE", "modes": list(modes)}
@@ -260,6 +376,10 @@ def parse_display(
         outlines=layer,
         border_color="#" + "".join(f"{channel:02x}" for channel in rgb),
         border_thickness=thickness,
+        long_edge=picture_edge(ctx, asked),
+        resolution=asked,
+        auto=auto,
+        resolution_note=note,
     )
 
 
@@ -330,15 +450,17 @@ def _crop_fraction(image: Image.Image, zoom: tuple[float, ...]) -> Image.Image:
 
 def framed_section(
     ctx: EngineContext, state: StackState, record: SliceState, options: DisplayOptions,
-    *, long_edge: int = VIEW_LONG_EDGE, target: str = "view",
+    *, long_edge: int | None = None, target: str = "view",
 ) -> Image.Image:
     """One section as corrected, tissue-framed, in the call's look and zoom.
 
+    *long_edge* None is the call's picture size (``options.long_edge``).
     *target* ``"fit"`` shows the fit appearance instead of the view one (a
     named raw channel wins either way). A zoom renders the framed section
-    larger (the atlas-resolution rule still caps it) and crops the requested
-    fraction, so it magnifies.
+    larger (never past its working copy) and crops the requested fraction,
+    so it magnifies.
     """
+    long_edge = long_edge or options.long_edge
     look = options.look(state, record)
     if target == "fit" and options.section_image == CURRENT:
         look = section_settings(state, "fit", record.id)
@@ -354,19 +476,26 @@ def framed_section(
 
 def framed_atlas(
     ctx: EngineContext, state: StackState, position_mm: float, options: DisplayOptions,
+    *, long_edge: int | None = None, fill: bool = False,
 ) -> Image.Image:
     """The atlas at *position_mm*, framed to its anatomy, with the call's lines.
 
-    With the default options (``ara``, no lines, no regions, no zoom) this is
-    exactly the picture the atlas tools always sent.
+    At most *long_edge* (None: ``options.long_edge``) and never upsampled
+    past the plane's own voxels, unless *fill*: then drawn at exactly
+    *long_edge*, lines included, for a picture that puts the atlas beside a
+    section of that size. With the default options (``ara``, no lines, no
+    regions, no zoom) and no *fill* this is the picture ``view_atlas`` sends.
     """
     from langslice.linear.atlas_fetch import atlas_mask, atlas_section, atlas_sized
 
-    scale = shown_scale(ctx)
+    edge = int(long_edge or options.long_edge)
+
+    def sized(picture: Image.Image) -> Image.Image:
+        return resize_long_edge(picture, edge) if fill else atlas_sized(picture, edge)
+
     drawn = options.outlines != "none" or bool(options.regions)
     if options.atlas_image == "ara" and not drawn and options.full_view:
-        return atlas_sized(atlas_section(ctx, state, position_mm, frame=True), ctx.atlas,
-                           scale=scale)
+        return sized(atlas_section(ctx, state, position_mm, frame=True))
     plane = cast(Plane, state.plane)
     labels = np.asarray(annotation_slice(
         ctx.atlas, position_mm, plane=plane, pitch_deg=state.pitch_deg, yaw_deg=state.yaw_deg,
@@ -391,11 +520,11 @@ def framed_atlas(
         inner = zoom_box(list(options.zoom), (box[2] - box[0], box[3] - box[1]))
         box = (box[0] + inner[0], box[1] + inner[1], box[0] + inner[2], box[1] + inner[3])
     cropped = picture.crop(box)
-    sized = atlas_sized(cropped, ctx.atlas, scale=scale).convert("RGB")
+    shown = sized(cropped).convert("RGB")
     if not drawn:
-        return sized
-    factor = sized.width / float(cropped.width)
-    canvas = np.asarray(sized, dtype=np.uint8).copy()
+        return shown
+    factor = shown.width / float(cropped.width)
+    canvas = np.asarray(shown, dtype=np.uint8).copy()
     rgb, _ = normalize_border_style(options.border_color, options.border_thickness)
     context: list[np.ndarray] = []
     if options.outlines != "none":
@@ -424,9 +553,12 @@ def atlas_caption(state: StackState, position_mm: float, options: DisplayOptions
     return f"atlas {position_mm:.2f} mm{angles}{extra}"
 
 
-def default_options(mode: str, *, outlines: str = "all") -> DisplayOptions:
+def default_options(
+    mode: str, *, outlines: str = "all", long_edge: int = PICTURE_EDGES["low"][1],
+) -> DisplayOptions:
     """The options a tool uses when it is called with none (internal callers)."""
     return DisplayOptions(
         mode=mode, zoom=(), section_image=CURRENT, atlas_image="ara", atlas_opacity=0.0,
         regions=(), outlines=outlines, border_color="#ffff00", border_thickness=0.5,
+        long_edge=long_edge,
     )

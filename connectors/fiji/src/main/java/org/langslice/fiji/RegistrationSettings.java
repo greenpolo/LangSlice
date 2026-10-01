@@ -13,6 +13,7 @@ final class RegistrationSettings {
             "openai-oauth/gpt-6-luna", "openai-oauth/gpt-5.6-sol", "openai-oauth/gpt-5.6-terra", "openai-oauth/gpt-5.6-luna");
     static final String[] REASONING = {"default", "low", "medium", "high", "xhigh", "max"};
     static final String[] LEVELS = {"low", "medium", "high"};
+    static final String[] RESOLUTIONS = {"low", "medium", "high", "auto"};
     static final Preferences PREFS = Preferences.userNodeForPackage(RegistrationSettings.class).node("registration");
 
     boolean claude = false;

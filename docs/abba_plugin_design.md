@@ -76,7 +76,7 @@ controls map to the job spec as follows:
 | --- | --- |
 | Provider: ChatGPT (default) / Claude; agent model; reasoning | `spec.model` (`openai-oauth/…`), `spec.reasoning` (omitted for "default") |
 | Image model | `spec.nonlinear.image_model` |
-| Image resolution Low/Medium/High | `spec.image_resolution` |
+| Image resolution Low/Medium/High/Auto | `spec.image_resolution` |
 | Show agent log | log window, or a compact status window with Stop and the final message |
 | Open agent viewer | disabled ("Coming soon") |
 | Save traces to FOLDER (default `~/LangSlice/traces`) | `trace_dir`; the final message names the saved trace |

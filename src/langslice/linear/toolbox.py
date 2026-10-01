@@ -18,6 +18,7 @@ import functools
 import importlib.util
 import inspect
 import logging
+import math
 import threading
 import uuid
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -52,14 +53,13 @@ from langslice.linear.display import (
     framed_section,
     parse_display,
     regions_in_plane,
+    resolution_argument,
     with_display_doc,
 )
 from langslice.linear.live import LiveCallback, _plain
 from langslice.linear.render import (
     MAX_IMAGES_PER_CALL,
-    OVERLAY_LONG_EDGE,
     PREVIEW_LONG_EDGE,
-    VIEW_LONG_EDGE,
     VIEW_MODES,
     CanvasGeometry,
     canvas_geometry,
@@ -72,7 +72,7 @@ from langslice.linear.render import (
     reference_slice_part,
     render_slice,
     rescale_section_matrix,
-    shown_scale,
+    resolution_level,
     shown_section,
     spacing_plot,
     stack_sheet,
@@ -819,6 +819,7 @@ def build_tools(
             border_color=args.get("border_color", "yellow"),
             border_thickness=args.get("border_thickness", 0.5),
             sections=sections, zoom_ok=zoom_ok, framed_modes=framed_modes,
+            resolution=args.get("resolution", 0),
         )
 
     def section_label(record: SliceState, options: DisplayOptions) -> str:
@@ -849,7 +850,7 @@ def build_tools(
         section_offset: tuple[int, int] = (0, 0),
         label: str = "",
         spline: dict[str, Any] | None = None,
-        long_edge: int = OVERLAY_LONG_EDGE,
+        long_edge: int | None = None,
         matrix_label: str = "fitted matrix",
         warp: Any = None,
     ) -> list[Any]:
@@ -857,16 +858,31 @@ def build_tools(
 
         *section* is the working frame a transform is computed on; the
         picture is drawn from the render the options ask for (the view
-        appearance or a raw channel, larger at medium/high resolution), with
-        a matrix and the pivot carried onto it. The one renderer of every
-        placement picture: `view_placement`, `set_positions`,
-        `adjust_transforms` and `fit_affine` all draw through here. *warp*
-        (a `DeformableRecord` on this placement) resamples the section into
-        its placed-atlas frame first, so the picture shows the full
-        registration: linear placement plus deformation.
+        appearance or a raw channel), large enough that each panel, zoom
+        included, comes out at *long_edge* (None: ``options.long_edge``)
+        unless the section's working copy has fewer pixels, with a matrix and
+        the pivot carried onto it. The one renderer of every placement
+        picture: `view_placement`, `set_positions`, `adjust_transforms` and
+        `fit_affine` all draw through here. *warp* (a `DeformableRecord` on
+        this placement) resamples the section into its placed-atlas frame
+        first, so the picture shows the full registration: linear placement
+        plus deformation.
         """
+        edge = int(long_edge or options.long_edge)
+        window = options.window
+        # The canvas is at least the section on each axis, so a section
+        # render 1/span times the panel puts at least the panel's pixels
+        # inside the zoom (render_slice stops at the working copy).
+        span = (min(max(window[2] - window[0], 1e-3), max(window[3] - window[1], 1e-3), 1.0)
+                if window else 1.0)
+        render_edge = int(math.ceil(edge / span))
+        if render_edge > PREVIEW_LONG_EDGE:
+            # Past the working copy every request is the same render: one
+            # cache entry, however deep the zoom.
+            render_edge = min(render_edge, max(ctx.working_source(record.id)[0].size))
         shown, shown_um, (fx, fy) = shown_section(
             ctx, record, section, um_per_px, options.look(state, record),
+            long_edge=render_edge,
         )
         in_section: tuple[float, float] | None = None
         if shown is not section:
@@ -886,8 +902,7 @@ def build_tools(
             atlas_opacity=options.atlas_opacity, outlines=options.outlines,
             border_color=options.border_color, border_thickness=options.border_thickness,
             pivot=pivot if in_section is None else None, pivot_in_section=in_section,
-            label=label or record.id, spline=spline, long_edge=long_edge,
-            scale=shown_scale(ctx),
+            label=label or record.id, spline=spline, long_edge=edge,
             atlas_picture=atlas_plane_picture(ctx, state, options.atlas_image, position),
             atlas_name=atlas_name(options), regions=options.regions,
             matrix_label=matrix_label,
@@ -940,6 +955,7 @@ def build_tools(
         outlines: str = "",
         border_color: str = "yellow",
         border_thickness: float = 0.5,
+        resolution: int = 0,
     ) -> dict[str, Any]:
         """Look at up to 4 named sections at higher resolution.
 
@@ -963,6 +979,7 @@ def build_tools(
             mode=mode, zoom=zoom, section_image=section_image, atlas_image=atlas_image,
             atlas_opacity=atlas_opacity, regions=regions, outlines=outlines,
             border_color=border_color, border_thickness=border_thickness,
+            resolution=resolution,
         ), sections=known)
         if isinstance(options, dict):
             return options
@@ -1174,6 +1191,7 @@ def build_tools(
         outlines: str = "",
         border_color: str = "yellow",
         border_thickness: float = 0.5,
+        resolution: int = 0,
     ) -> dict[str, Any]:
         """Set how sections look: for what you view, for what a fit reads, or both.
 
@@ -1252,6 +1270,7 @@ def build_tools(
             mode=mode, zoom=zoom, section_image=section_image, atlas_image=atlas_image,
             atlas_opacity=atlas_opacity, regions=regions, outlines=outlines,
             border_color=border_color, border_thickness=border_thickness,
+            resolution=resolution,
         ), sections=shown)
         if isinstance(options, dict):
             return options
@@ -1324,6 +1343,7 @@ def build_tools(
         outlines: str = "",
         border_color: str = "yellow",
         border_thickness: float = 0.5,
+        resolution: int = 0,
     ) -> dict[str, Any]:
         """Set the flip and rotation of one or more sections, and show them.
 
@@ -1353,6 +1373,7 @@ def build_tools(
             mode=mode, zoom=zoom, section_image=section_image, atlas_image=atlas_image,
             atlas_opacity=atlas_opacity, regions=regions, outlines=outlines,
             border_color=border_color, border_thickness=border_thickness,
+            resolution=resolution,
         ), sections=named)
         if isinstance(options, dict):
             return options
@@ -1499,12 +1520,15 @@ def build_tools(
         if options.mode == "side_by_side":
             # Resolve/encode both before mutating delivery bookkeeping.
             atlas_image = (
-                atlas_part(ctx, state, position) if default_atlas else image_to_part(caption(
+                atlas_part(ctx, state, position, long_edge=options.long_edge)
+                if default_atlas else image_to_part(caption(
                     framed_atlas(ctx, state, position, options),
                     atlas_caption(state, position, options),
                 ))
             )
-            tissue_image = reference_slice_part(ctx, record, look=options.look(state, record))
+            tissue_image = reference_slice_part(
+                ctx, record, long_edge=options.long_edge, look=options.look(state, record),
+            )
             if record.id not in section_indexes:
                 section_indexes[record.id] = len(parts)
                 parts.append(tissue_image)
@@ -1512,9 +1536,12 @@ def build_tools(
             parts.append(atlas_image)
             return row
         if options.mode == "stacked":
+            # One picture: the atlas is drawn to the section's long edge so
+            # the two read at the same size, as in `view_stack`.
+            top = framed_section(ctx, state, record, options)
             picture = stacked(
-                framed_section(ctx, state, record, options),
-                framed_atlas(ctx, state, position, options),
+                top, framed_atlas(ctx, state, position, options, long_edge=max(top.size),
+                                  fill=True),
             )
             parts.append(image_to_part(caption(
                 picture, f"{record.id} over atlas {position:.2f} mm"
@@ -1529,7 +1556,6 @@ def build_tools(
         parts.extend(image_to_part(image) for image in draw_canvas(
             record, section, um_per_px, position, params, options,
             label=f"{record.id} vs atlas {position:.2f} mm", spline=spline,
-            long_edge=VIEW_LONG_EDGE,
             matrix_label=f"{kind} transform" + (" + deformation" if warp is not None else ""),
             warp=warp,
         ))
@@ -1555,6 +1581,7 @@ def build_tools(
         outlines: str = "",
         border_color: str = "yellow",
         border_thickness: float = 0.5,
+        resolution: int = 0,
         tool_context: Any = None,
     ) -> dict[str, Any]:
         """Write positions for one or more sections, and show each placement.
@@ -1579,6 +1606,7 @@ def build_tools(
             mode=mode, zoom=zoom, section_image=section_image, atlas_image=atlas_image,
             atlas_opacity=atlas_opacity, regions=regions, outlines=outlines,
             border_color=border_color, border_thickness=border_thickness,
+            resolution=resolution,
         ), sections=named, framed_modes=FRAMED_PLACEMENT_MODES)
         if isinstance(options, dict):
             return options
@@ -1821,6 +1849,7 @@ def build_tools(
         outlines: str = "",
         border_color: str = "yellow",
         border_thickness: float = 0.5,
+        resolution: int = 0,
         tool_context: Any = None,
     ) -> dict[str, Any]:
         """Show sections in their full current placement, or at candidate positions.
@@ -1867,6 +1896,7 @@ def build_tools(
             mode=mode, zoom=zoom, section_image=section_image, atlas_image=atlas_image,
             atlas_opacity=atlas_opacity, regions=regions, outlines=outlines,
             border_color=border_color, border_thickness=border_thickness,
+            resolution=resolution,
         ), sections=list({record.id: record for record, _p in pairs}.values()),
             framed_modes=FRAMED_PLACEMENT_MODES)
         if isinstance(options, dict):
@@ -1965,6 +1995,7 @@ def build_tools(
         outlines: str = "",
         border_color: str = "yellow",
         border_thickness: float = 0.5,
+        resolution: int = 0,
     ) -> dict[str, Any]:
         """The whole stack ordered by written position, each over its atlas match.
 
@@ -1983,6 +2014,7 @@ def build_tools(
             mode=mode, zoom=zoom, section_image=section_image, atlas_image=atlas_image,
             atlas_opacity=atlas_opacity, regions=regions, outlines=outlines,
             border_color=border_color, border_thickness=border_thickness,
+            resolution=resolution,
         ), sections=state.in_order(), zoom_ok=False, framed_modes=("stacked",))
         if isinstance(options, dict):
             return options
@@ -2007,6 +2039,7 @@ def build_tools(
             ),
             image_to_part(stack_sheet(
                 state, ctx, under=atlas_under, section_image=options.section_image,
+                tile_edge=options.resolution,
             )),
             types.Part.from_text(text="Position against corrected index:"),
             image_to_part(spacing_plot(state)),
@@ -2073,6 +2106,7 @@ def build_tools(
         outlines: str = "",
         border_color: str = "yellow",
         border_thickness: float = 0.5,
+        resolution: int = 0,
     ) -> dict[str, Any]:
         """Fit an in-plane affine per section against its atlas section.
 
@@ -2125,6 +2159,7 @@ def build_tools(
             mode=mode or "overlay", zoom=zoom, section_image=section_image,
             atlas_image=atlas_image, atlas_opacity=atlas_opacity, regions=regions,
             outlines=outlines, border_color=border_color, border_thickness=border_thickness,
+            resolution=resolution,
         ), sections=targets)
         if isinstance(options, dict):
             return options
@@ -2281,7 +2316,7 @@ def build_tools(
     #: Per-entry keys of `adjust_transforms` beyond the transform itself.
     entry_display_keys = (
         "mode", "zoom", "section_image", "atlas_image", "atlas_opacity", "regions",
-        "outlines", "border_color", "border_thickness",
+        "outlines", "border_color", "border_thickness", "resolution",
     )
 
     def _adjust_transform(
@@ -2755,6 +2790,7 @@ def build_tools(
         outlines: str,
         border_color: str,
         border_thickness: float,
+        resolution: int = 0,
     ) -> dict[str, Any]:
         store = deformation_store()
         if not isinstance(sections, (list, tuple)) or not sections:
@@ -2807,6 +2843,7 @@ def build_tools(
         options = display(deformation.MODES, dict(
             mode=mode, zoom=zoom, atlas_opacity=atlas_opacity, regions=regions,
             outlines=outlines, border_color=border_color, border_thickness=border_thickness,
+            resolution=resolution,
         ))
         if isinstance(options, dict):
             return options
@@ -2876,7 +2913,7 @@ def build_tools(
         style = deformation.Style(
             zoom=() if options.full_view else tuple(options.zoom), highlight=tuple(highlight),
             marked=dropped, outlines=options.outlines, color=color, thickness=thickness,
-            atlas_opacity=options.atlas_opacity,
+            atlas_opacity=options.atlas_opacity, long_edge=options.long_edge,
         )
         for row in rows:
             index = row.pop("job", None)
@@ -2989,6 +3026,7 @@ def build_tools(
         outlines: str = "",
         border_color: str = "yellow",
         border_thickness: float = 1.0,
+        resolution: int = 0,
     ) -> dict[str, Any]:
         """Fit a deformation of the placed atlas onto sections, on top of their linear placement.
 
@@ -3042,7 +3080,7 @@ def build_tools(
         return fit_deformable_impl(
             sections, include, exclude, start, section_image, atlas_image, engine, stiffness,
             detail, candidates, mode, zoom, atlas_opacity, regions, outlines, border_color,
-            border_thickness,
+            border_thickness, resolution,
         )
 
     def fit_deformable_fixed(
@@ -3062,11 +3100,12 @@ def build_tools(
         outlines: str = "",
         border_color: str = "yellow",
         border_thickness: float = 1.0,
+        resolution: int = 0,
     ) -> dict[str, Any]:
         return fit_deformable_impl(
             sections, include, exclude, start, section_image, atlas_image, "", stiffness,
             detail, candidates, mode, zoom, atlas_opacity, regions, outlines, border_color,
-            border_thickness,
+            border_thickness, resolution,
         )
 
     # The user fixed the engine: the same tool without the engine argument.
@@ -3082,9 +3121,11 @@ def build_tools(
 
     box.tools.append(submit)
     lock = threading.Lock()
+    # `resolution` exists only where the user left picture size to the agent.
+    level = resolution_level(ctx)
     box.tools = [
-        _serialized(_clears_stale_deformations(tool, state, ctx), lock, state=state,
-                    on_event=on_event)
+        _serialized(_clears_stale_deformations(resolution_argument(tool, level), state, ctx),
+                    lock, state=state, on_event=on_event)
         for tool in box.tools
     ]
     return box

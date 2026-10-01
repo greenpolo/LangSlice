@@ -32,7 +32,6 @@ from langslice.atlas.render import (
     atlas_um_per_px,
     family_outlines,
     is_dark_background,
-    model_long_edge,
     outer_outline,
     region_contours,
 )
@@ -50,35 +49,45 @@ from langslice.space import Plane
 if TYPE_CHECKING:  # ponytail: import cycle — engine builds the toolbox that renders
     from langslice.linear.engine import EngineContext
 
-#: Long edge for ``view_slices`` images: enough to zoom past the seed-message
-#: stack images without paying full-resolution tokens.
-VIEW_LONG_EDGE = 512
-#: Long edge for the per-section images in the seed message. Small on purpose:
-#: the whole stack (40-odd sections) rides in one user message and stays in
-#: context for the whole session.
-SEED_IMAGE_LONG_EDGE = 512
-#: Working frame for transform fits and their preview panels.
+#: Working frame for transform fits and their preview panels. A COMPUTE
+#: size: fits, calibration and the six stored numbers are normalized against
+#: this render, whatever size the pictures are shown at.
 PREVIEW_LONG_EDGE = 512
-#: Long edge of the ONE image the interactive alignment loop looks at.
-OVERLAY_LONG_EDGE = 768
+
+#: Long edge, in pixels, of every picture the agent is SHOWN, per
+#: ``JobSpec.image_resolution``: ``(opening, later)``. *Opening* is each image
+#: of the seed message (every section, every atlas section of the strip);
+#: *later* is each picture a tool returns (each panel of a multi-panel
+#: picture). "auto" opens at 256 and lets the agent pass ``resolution`` per
+#: call (:data:`RESOLUTION_RANGE`), 512 when it does not. The only other
+#: bound is the source: nothing is upsampled past the pixels it is drawn from
+#: (a section's working copy, the atlas plane at its own voxel size), so a
+#: small snapshot stays small. Never a working frame (:data:`PREVIEW_LONG_EDGE`)
+#: and never the image model's input.
+PICTURE_EDGES: dict[str, tuple[int, int]] = {
+    "low": (256, 512),
+    "medium": (384, 768),
+    "high": (512, 1024),
+    "auto": (256, 512),
+}
+#: The level that lets the agent choose each picture's size.
+AUTO_RESOLUTION = "auto"
+#: ``(smallest, largest)`` long edge the agent may ask for at "auto"; a value
+#: outside is clamped into it and the reply says so.
+RESOLUTION_RANGE = (128, 1536)
 
 #: Default image/pair batch size. Separate positioning comparisons may return
 #: two references per pair (up to eight images); retained context is governed
 #: by the session's image-retention policy, not this per-tool batch size.
 MAX_IMAGES_PER_CALL = 4
 
-#: Long edge of one section in the ``view_stack`` contact sheet.
-SHEET_THUMB_LONG_EDGE = 256
+#: Largest long edge of the ``view_stack`` contact sheet. Each section tile is
+#: drawn at the level's opening size, then shrunk until the whole sheet fits:
+#: a 40-section stack at 8 columns lands near ~250 px tiles at every level,
+#: while a short stack gets the full tile size. Past this a vision encoder
+#: shrinks the sheet itself, captions included.
+SHEET_MAX_LONG_EDGE = 2048
 
-#: ``JobSpec.image_resolution`` -> the multiple applied to the size of every
-#: picture the agent is SHOWN: seed and view images, contact-sheet thumbnails,
-#: atlas images, placement pictures, fit panels and the interactive overlays.
-#: "low" is the calibrated size and changes nothing. Never applied to a
-#: working frame: :data:`PREVIEW_LONG_EDGE` renders, fits, calibration and the
-#: six stored numbers are the same at every setting; the larger pictures are
-#: drawn from a larger render of the same section (:func:`shown_section`).
-#: Kept out of every model-facing string.
-IMAGE_RESOLUTION_SCALE: dict[str, float] = {"low": 1.0, "medium": 1.5, "high": 2.0}
 #: Font size of the label strip :func:`caption` burns into an image.
 CAPTION_PX = 14
 
@@ -89,15 +98,28 @@ _ROTATE_OPS = {
 }
 
 
-def shown_scale(ctx: EngineContext) -> float:
-    """This run's multiple for the pictures the agent is shown (1.0 at "low")."""
-    return IMAGE_RESOLUTION_SCALE.get(str(getattr(ctx.spec, "image_resolution", "low")), 1.0)
+def resolution_level(ctx: EngineContext) -> str:
+    """This run's ``image_resolution`` ("low" when the spec has none)."""
+    level = str(getattr(getattr(ctx, "spec", None), "image_resolution", "low") or "low")
+    return level if level in PICTURE_EDGES else "low"
 
 
-def shown_edge(ctx: EngineContext, long_edge: int) -> int:
-    """*long_edge* at this run's picture size; *long_edge* itself at "low"."""
-    scale = shown_scale(ctx)
-    return long_edge if scale == 1.0 else int(round(long_edge * scale))
+def opening_edge(ctx: EngineContext) -> int:
+    """Long edge of each seed-message image at this run's level."""
+    return PICTURE_EDGES[resolution_level(ctx)][0]
+
+
+def picture_edge(ctx: EngineContext, requested: int | None = None) -> int:
+    """Long edge of each later picture: the level's, or *requested* at "auto".
+
+    *requested* must already be clamped into :data:`RESOLUTION_RANGE`
+    (:func:`langslice.linear.display.parse_display` does it); every level but
+    "auto" ignores it.
+    """
+    level = resolution_level(ctx)
+    if level == AUTO_RESOLUTION and requested:
+        return int(requested)
+    return PICTURE_EDGES[level][1]
 
 
 def image_to_part(img: Image.Image, *, quality: int = 85) -> types.Part:
@@ -122,9 +144,13 @@ def caption(image: Image.Image, text: str) -> Image.Image:
     image to its section or its position has to ride in the pixels. Caption
     only what is SHOWN: an image a fit measures must never be captioned, since
     the strip changes the pixels the fit reads.
+
+    Text wider than the picture wraps (:func:`wrap_caption`) instead of
+    running off its right edge, so a small picture keeps its whole label.
     """
     source = image.convert("RGB")
     font = _caption_font()
+    text = wrap_caption(text, font, source.width - 6)
     probe = ImageDraw.Draw(source)
     left, top, right, bottom = probe.textbbox((0, 0), text, font=font)
     band = int(bottom - top + 6)
@@ -135,6 +161,44 @@ def caption(image: Image.Image, text: str) -> Image.Image:
     draw = ImageDraw.Draw(labelled)
     draw.text((3 - left, 3 - top), text, fill=(255, 255, 255), font=font)
     return labelled
+
+
+def wrap_caption(text: str, font: Any, width: int) -> str:
+    """*text* with every line broken to fit *width* pixels in *font*.
+
+    Lines break at spaces; a single word wider than *width* breaks between
+    characters. A line that already fits is left exactly as it was, so a
+    caption that fit before draws the same pixels.
+    """
+    width = max(int(width), 24)
+
+    def fits(piece: str) -> bool:
+        return float(font.getlength(piece)) <= width
+
+    out: list[str] = []
+    for raw in text.split("\n"):
+        if fits(raw):
+            out.append(raw)
+            continue
+        line: str | None = None
+        for word in raw.split(" "):
+            candidate = word if line is None else f"{line} {word}"
+            if fits(candidate):
+                line = candidate
+                continue
+            if line is not None and line.strip():
+                out.append(line.rstrip())
+                line = word or None
+            else:
+                line = candidate.lstrip() or None
+            while line is not None and not fits(line):
+                cut = max(1, max((k for k in range(1, len(line) + 1) if fits(line[:k])),
+                                 default=1))
+                out.append(line[:cut])
+                line = line[cut:] or None
+        if line is not None and line.strip():
+            out.append(line.rstrip())
+    return "\n".join(out)
 
 
 def render_cache_key(
@@ -149,28 +213,11 @@ def render_cache_key(
             look_token(ctx, look), frame)
 
 
-def atlas_native_long_edge(
-    ctx: EngineContext, record: SliceState, source: Image.Image, cap: int,
-    file_px_per_px: float = 1.0,
-) -> int:
-    """The long edge that puts *source* at the atlas's own resolution, capped.
-
-    :func:`langslice.atlas.render.model_long_edge` with the section's own
-    calibration; without one *cap* stands. *file_px_per_px* is how many file
-    pixels one *source* pixel spans (a working copy is smaller than the file).
-    """
-    um_per_px, _ = ctx.calibration(record.id)
-    return model_long_edge(
-        source.size, um_per_px * file_px_per_px if um_per_px else None, ctx.atlas,
-        cap=cap, scale=shown_scale(ctx),
-    )
-
-
 def render_slice(
     ctx: EngineContext,
     record: SliceState,
     *,
-    long_edge: int = VIEW_LONG_EDGE,
+    long_edge: int = PREVIEW_LONG_EDGE,
     frame: bool = False,
     look: Look = None,
 ) -> Image.Image:
@@ -192,6 +239,9 @@ def render_slice(
     paths that SHOW a section to a model set it, never a fit, whose parameters
     are normalized against the render they were computed on.
 
+    *long_edge* is a ceiling, never a target: a source smaller than it is
+    returned at its own size (nothing is upsampled).
+
     Renders are cached on *ctx*, so the returned image is shared: read it,
     never mutate it in place.
     """
@@ -206,10 +256,6 @@ def render_slice(
     box = tissue_box(source) if frame else None
     if box is not None:
         source = source.crop(box)
-    # The atlas-resolution cap applies to the SHOW path only: a fit's
-    # parameters are normalized against the render they were computed on.
-    if frame:
-        long_edge = atlas_native_long_edge(ctx, record, source, long_edge, file_px_per_px)
     prepped = prepare_image_for_vlm(source, max_long_edge=long_edge).image
     # How many FILE pixels one render pixel spans, before any quarter-turn:
     # the section's own micrometres per pixel times this is the canvas's.
@@ -288,24 +334,21 @@ def canvas_um_per_px(
 
 def shown_section(
     ctx: EngineContext, record: SliceState, section: Image.Image, um_per_px: float,
-    look: Look = None,
+    look: Look = None, *, long_edge: int = PREVIEW_LONG_EDGE,
 ) -> tuple[Image.Image, float, tuple[float, float]]:
-    """The render a PICTURE of *section* is drawn from at this run's image size.
+    """The render a PICTURE of *section* is drawn from, *long_edge* at most.
 
     *section* is the :data:`PREVIEW_LONG_EDGE` working frame every fit and
     every written transform is computed on, and *um_per_px* its calibration.
-    At "low" with the default *look* this returns them unchanged with factors
-    ``(1.0, 1.0)``; otherwise a render of the same section in *look* (larger
-    at medium/high, never upsampled past the file), its micrometres per
-    pixel, and the ``(fx, fy)`` that carry working-frame pixels onto it.
-    Nothing computed is drawn from here.
+    At the working frame's own size with the default *look* this returns them
+    unchanged with factors ``(1.0, 1.0)``; otherwise a render of the same
+    section in *look* at *long_edge* (never upsampled past the working copy),
+    its micrometres per pixel, and the ``(fx, fy)`` that carry working-frame
+    pixels onto it. Nothing computed is drawn from here.
     """
-    scale = shown_scale(ctx)
-    if scale == 1.0 and look is None:
+    if long_edge == PREVIEW_LONG_EDGE and look is None:
         return section, um_per_px, (1.0, 1.0)
-    shown = render_slice(
-        ctx, record, long_edge=int(round(PREVIEW_LONG_EDGE * scale)), look=look,
-    )
+    shown = render_slice(ctx, record, long_edge=int(long_edge), look=look)
     fx = shown.width / float(section.width)
     fy = shown.height / float(section.height)
     return shown, um_per_px / fx, (fx, fy)
@@ -444,7 +487,7 @@ def stack_pictures(
     state: StackState,
     ctx: EngineContext,
     *,
-    long_edge: int = SEED_IMAGE_LONG_EDGE,
+    long_edge: int | None = None,
     by_position: bool = False,
     under: Callable[[SliceState], Image.Image | None] | None = None,
     section_image: str = "current",
@@ -455,10 +498,12 @@ def stack_pictures(
     each section's position and the signed distance to the next placed one in
     its label. *under* returns a second image to paste beneath a section's
     own in the same picture (None for none), so a section and its atlas match
-    travel as ONE captioned image. The label is burned into the picture
-    (:func:`caption`), so it survives any transport that drops the text next
-    to an attachment.
+    travel as ONE captioned image, the atlas drawn to the section's long edge.
+    The label is burned into the picture (:func:`caption`), so it survives
+    any transport that drops the text next to an attachment. *long_edge*
+    None is the run's opening size (:func:`opening_edge`).
     """
+    long_edge = long_edge or opening_edge(ctx)
     ordered = list(state.in_order())
     if by_position:
         ordered.sort(key=lambda r: (r.position_mm is None, r.position_mm or 0.0))
@@ -484,7 +529,7 @@ def stack_pictures(
         )
         below = under(record) if under is not None else None
         if below is not None:
-            picture = stacked(picture, resize_long_edge(below, shown_edge(ctx, long_edge)))
+            picture = stacked(picture, resize_long_edge(below, max(picture.size)))
         out.append((label, caption(picture, label)))
     return out
 
@@ -493,7 +538,7 @@ def stack_image_parts(
     state: StackState,
     ctx: EngineContext,
     *,
-    long_edge: int = SEED_IMAGE_LONG_EDGE,
+    long_edge: int | None = None,
 ) -> list[types.Part]:
     """The whole stack as labelled text+image pairs, in corrected order.
 
@@ -506,8 +551,10 @@ def stack_image_parts(
     neighbouring sections share patch boundaries. A labelled sequence at a
     modest resolution reads better, and the label is what binds each set of
     pixels to a filename the model can quote back. The strip heads the
-    prefix and is never edited, so it is cached for the whole run.
+    prefix and is never edited, so it is cached for the whole run. *long_edge*
+    None is the run's opening size (:func:`opening_edge`).
     """
+    long_edge = long_edge or opening_edge(ctx)
     parts: list[types.Part] = [
         types.Part.from_text(
             text=(
@@ -531,7 +578,7 @@ def stack_image_parts(
 
 
 def reference_slice_part(
-    ctx: EngineContext, record: SliceState, *, long_edge: int = SEED_IMAGE_LONG_EDGE,
+    ctx: EngineContext, record: SliceState, *, long_edge: int | None = None,
     look: Look = None,
 ) -> types.Part:
     """Reuse the original captioned seed image for this display orientation.
@@ -539,7 +586,9 @@ def reference_slice_part(
     Ordering and damage annotations do not change the pixels being compared.
     The cached caption retains the index/flags at first display; current state
     is carried separately in tool text. Filename remains the stable identity.
+    *long_edge* None is the run's opening size; another size is its own entry.
     """
+    long_edge = long_edge or opening_edge(ctx)
     key = ("section", *render_cache_key(ctx, record, long_edge=long_edge, frame=True, look=look))
     if key not in ctx.reference_parts:
         label = f"{record.index_corrected}: {record.id}"
@@ -559,6 +608,7 @@ def stack_sheet(
     under: Callable[[SliceState], Image.Image | None] | None = None,
     columns: int = 8,
     section_image: str = "current",
+    tile_edge: int | None = None,
 ) -> Image.Image:
     """One contact sheet of the stack in written-position order, each
     section (over its atlas match, via *under*) captioned with its label.
@@ -567,15 +617,24 @@ def stack_sheet(
     the review picture of a stack the model has already read section by
     section, and one image is what keeps the whole-stack review inside the
     per-call image budget. Detail is one ``view_slices`` call away.
+
+    Each section is drawn at *tile_edge* (None: the run's opening size); when
+    the sheet would pass :data:`SHEET_MAX_LONG_EDGE` the tiles are redrawn
+    smaller until it fits, so the captions stay at their own font size.
     """
-    pictures = [
-        picture
-        for _, picture in stack_pictures(
-            state, ctx, long_edge=SHEET_THUMB_LONG_EDGE, by_position=True, under=under,
+    tile = int(tile_edge or opening_edge(ctx))
+    sheet = grid([picture for _, picture in stack_pictures(
+        state, ctx, long_edge=tile, by_position=True, under=under, section_image=section_image,
+    )], columns=columns)
+    for _attempt in range(4):
+        if max(sheet.size) <= SHEET_MAX_LONG_EDGE or tile <= 64:
+            break
+        tile = max(64, int(tile * SHEET_MAX_LONG_EDGE / float(max(sheet.size))) - 4)
+        sheet = grid([picture for _, picture in stack_pictures(
+            state, ctx, long_edge=tile, by_position=True, under=under,
             section_image=section_image,
-        )
-    ]
-    return grid(pictures, columns=columns)
+        )], columns=columns)
+    return sheet
 
 
 def grid(images: list[Image.Image], *, columns: int) -> Image.Image:
@@ -1199,7 +1258,6 @@ def physical_views(
     long_edge: int | None = None,
     spline: dict[str, Any] | None = None,
     frames: list[dict[str, Any]] | None = None,
-    scale: float = 1.0,
     pivot_in_section: tuple[float, float] | None = None,
     atlas_picture: Image.Image | None = None,
     atlas_name: str = "template",
@@ -1221,10 +1279,11 @@ def physical_views(
       in a second grey, on black. No pixels.
 
     *zoom* is ``[x0, y0, x1, y1]`` in fractions of the CANVAS; the crop happens
-    before the screen is sized, so it is real magnification up to the atlas's
-    own resolution (:func:`langslice.atlas.render.model_long_edge`; *long_edge*
-    is only a cap, and ``None`` is canvas pixels one to one), and the scale
-    bar is redrawn for the magnified micrometres per pixel.
+    before the screen is sized, so it is real magnification up to the canvas's
+    own pixels: each panel's long edge is *long_edge*, or the crop's when that
+    is smaller (never upsampled; ``None`` is canvas pixels one to one). A
+    caller wanting a magnified zoom draws the canvas from a larger render.
+    The scale bar is redrawn for the magnified micrometres per pixel.
 
     *outlines* picks which atlas lines are drawn (:data:`OUTLINE_LAYERS`):
     every family boundary, the root silhouette alone, or none. *border_color*
@@ -1237,9 +1296,6 @@ def physical_views(
     gives the pivot on the SECTION's frame instead and wins over *pivot*: a
     picture drawn from a larger render (:func:`shown_section`) knows its pivot
     only relative to the section.
-
-    *scale* multiplies the screen size (:data:`IMAGE_RESOLUTION_SCALE`); it
-    is handed to :func:`langslice.atlas.render.model_long_edge` with the cap.
 
     *atlas_picture* is the atlas image on the native plane grid (None: the
     reference template), named *atlas_name* in captions. *regions*
@@ -1365,16 +1421,12 @@ def physical_views(
             f"shift {params['translate_x_mm']:+.2f}/{params['translate_y_mm']:+.2f} mm"
         )
 
-    # The crop happens first, then the screen is sized by the pixel-size rule:
-    # a zoom magnifies until the atlas's own resolution and no further. No
-    # *long_edge* means canvas pixels one to one (host-side use, never a
-    # model's screen).
+    # The crop happens first, then the screen is sized: *long_edge*, or the
+    # crop's own pixels when fewer (never upsampled). No *long_edge* means
+    # canvas pixels one to one (host-side use, never a model's screen).
     edge = None
     if long_edge is not None:
-        edge = model_long_edge(
-            (box[2] - box[0], box[3] - box[1]), geometry.um_per_px, atlas, cap=long_edge,
-            scale=scale,
-        )
+        edge = max(1, min(int(long_edge), max(box[2] - box[0], box[3] - box[1])))
     images: list[Image.Image] = []
     for panel, head in panels:
         screen, factor = _to_screen(panel, box, edge)
@@ -1401,8 +1453,7 @@ def physical_views(
         if markers is not None and len(markers[0]):
             _draw_markers(screen, markers[0], markers[1], origin=box[:2], factor=factor)
         _draw_scale_bar(screen, geometry.um_per_px / factor, dark)
-        # Two lines: one caption wide enough for all of it would run off a
-        # 512px canvas, and `caption` clips rather than wraps.
+        # Two lines by meaning; `caption` wraps any line wider than the panel.
         text = (
             f"{head} @ {position_mm:.3f} mm  pitch {pitch_deg:.2f} yaw {yaw_deg:.2f}\n"
             f"{knobs}  canvas {geometry.um_per_px:.2f} um/px"
@@ -1452,7 +1503,6 @@ def physical_overlay(
     pivot: tuple[float, float] | None = None,
     label: str = "",
     long_edge: int | None = None,
-    scale: float = 1.0,
 ) -> Image.Image:
     """The ONE screen of the alignment loop: section and atlas in millimetres.
 
@@ -1484,7 +1534,6 @@ def physical_overlay(
         pivot=pivot,
         label=label,
         long_edge=long_edge,
-        scale=scale,
     )
     return images[0]
 

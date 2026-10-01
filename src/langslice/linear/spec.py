@@ -20,11 +20,12 @@ ALL_TASKS: tuple[str, ...] = (*DEFAULT_TASKS, "nonlinear")
 
 PLANES: tuple[str, ...] = ("coronal", "sagittal", "horizontal")
 
-#: How large the pictures the agent is shown are drawn. "low" is the
-#: calibrated size (the atlas's own resolution); the larger settings draw the
-#: same pictures bigger (:data:`langslice.linear.render.IMAGE_RESOLUTION_SCALE`).
-#: Nothing a fit computes or a transform stores depends on it.
-IMAGE_RESOLUTIONS: tuple[str, ...] = ("low", "medium", "high")
+#: How large the pictures the agent is shown are drawn: a long edge for the
+#: opening images and one for every later picture per level
+#: (:data:`langslice.linear.render.PICTURE_EDGES`); "auto" lets the agent pass
+#: ``resolution`` per call. Nothing a fit computes or a transform stores
+#: depends on it, and the image model's inputs do not change.
+IMAGE_RESOLUTIONS: tuple[str, ...] = ("low", "medium", "high", "auto")
 
 #: Most sections one transform-tool call may take (``TransformSpec.max_parallel``).
 MAX_PARALLEL_TRANSFORMS = 4
@@ -173,9 +174,10 @@ class JobSpec:
     #: N4 and denoising for what it views and what a fit reads. Off, both stay
     #: the default appearance above.
     agent_preprocessing: bool = False
-    #: Size of every picture the agent sees: "low" (the calibrated size),
-    #: "medium" or "high". Display only: fits, working frames and stored
-    #: transforms are unchanged, and the image model's inputs are untouched.
+    #: Size of every picture the agent sees: "low", "medium", "high" or
+    #: "auto" (:data:`IMAGE_RESOLUTIONS`). Display only: fits, working frames
+    #: and stored transforms are unchanged, and the image model's inputs are
+    #: untouched.
     image_resolution: str = "low"
     #: Build ``mark_damaged``: the agent may flag damaged sections. Off, only
     #: the host's ``inputs["damaged"]`` flags exist. Either way the agent can

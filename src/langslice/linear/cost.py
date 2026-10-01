@@ -3,10 +3,14 @@
 The unit is percent of the ChatGPT usage window, the only cost the OAuth lane
 reports. Rates are percent per section, measured from 92 past runs whose logs
 carry usage-window readings (2026-09-09 to 2026-09-23). Every one of those runs
-had 36 or 38 sections and used today's image sizes, so the estimate is a linear
-extrapolation in stack size and is not offered at medium or high image
-resolution. The window reading is shared by the whole account and has
-one-percent resolution, so every figure here is an estimate, not a meter.
+had 36 or 38 sections and used the picture sizes of that period (every
+picture at the atlas's 25 um, roughly 200-450 px), so the estimate is a linear
+extrapolation in stack size and is offered only at "low". Since 2026-10-01
+"low" opens at 256 px and draws later pictures at 512 px
+(``render.PICTURE_EDGES``), larger than those runs saw: no run has been
+measured at the new sizes yet. Medium, high and auto are refused. The window
+reading is shared by the whole account and has one-percent resolution, so every
+figure here is an estimate, not a meter.
 """
 
 from __future__ import annotations

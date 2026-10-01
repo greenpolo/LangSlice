@@ -870,13 +870,16 @@ def test_view_atlas_images_are_section_sized(tmp_path: Path):
     from PIL import Image
 
     from langslice.adk import TOOL_MEDIA_PARTS_KEY
-    from langslice.linear.atlas_fetch import ATLAS_LONG_EDGE
+    from langslice.linear.atlas_fetch import atlas_section
 
-    _, _, box = _box(tmp_path)
+    state, ctx, box = _box(tmp_path)
     result = _tool(box, "view_atlas")([1.0])
     assert result["status"] == "ok"
     image = Image.open(io.BytesIO(result[TOOL_MEDIA_PARTS_KEY][0].inline_data.data))
-    assert max(image.size) <= ATLAS_LONG_EDGE  # native atlas resolution, never upsampled
+    native = atlas_section(ctx, state, 1.0, frame=True)
+    # The later-picture size at most, and never upsampled past the plane's voxels.
+    shrink = min(1.0, 512 / max(native.size))
+    assert abs(image.width - native.width * shrink) <= 1
 
 
 def test_tools_keep_their_identity_and_run_one_at_a_time():

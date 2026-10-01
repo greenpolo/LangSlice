@@ -43,9 +43,12 @@ millimetres) and `--transforms` (filename to a transform record in the
 checkpoint format) are read as a file path or as inline JSON. Hosts present
 `reorder` + `position` as one Positioning task and `transform` as Linear; see
 [the interface design](interface_design.md). The ABBA dialog's extra controls
-(image resolution, per-task notes, the per-call section cap, user damage marks,
-locked sections, the agent's damage tool) are `JobSpec` fields, not CLI flags
-yet; see `docs/linear_design.md`.
+(image resolution low/medium/high/auto, per-task notes, the per-call section
+cap, user damage marks, locked sections, the agent's damage tool) are `JobSpec`
+fields, not CLI flags yet; see `docs/linear_design.md`. Image resolution sets
+the long edge of the opening images and of every later picture the agent sees
+(low 256/512 px, medium 384/768, high 512/1024; auto 256 and then the agent's
+own `resolution` per call, up to 1536).
 
 The toolbox is built from the spec, so the agent only ever sees the tools its
 run can use:

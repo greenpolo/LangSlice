@@ -1,61 +1,82 @@
-"""image_resolution scales what the agent is shown, never what is computed."""
+"""image_resolution sizes what the agent is shown, never what is computed.
+
+Each level is two long edges (``render.PICTURE_EDGES``): the opening images of
+the seed message and every later picture; "auto" adds a ``resolution``
+argument to the picture tools. Nothing is upsampled past its source.
+"""
 
 from __future__ import annotations
 
+import hashlib
+import inspect
 import io
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pytest
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from langslice.adk import TOOL_MEDIA_PARTS_KEY
-from langslice.atlas.render import MODEL_MIN_LONG_EDGE, atlas_um_per_px, model_long_edge
 from langslice.linear.engine import build_context, build_seed_message, ingest
 from langslice.linear.render import (
+    CAPTION_PX,
+    PICTURE_EDGES,
     PREVIEW_LONG_EDGE,
+    SHEET_MAX_LONG_EDGE,
+    _caption_font,
+    caption,
     render_slice,
     shown_section,
+    stack_sheet,
+    wrap_caption,
 )
 from langslice.linear.spec import JobSpec
 from langslice.linear.toolbox import build_tools
 from langslice.linear.transform import calibrate
 from tests.test_linear_physical import TwoRegionAtlas
 
-_UM_PER_PX = 5.0
+#: A 6 x 4.5 mm field at 2.5 um/px (2400 x 1800 px) with 4 x 3 mm of tissue:
+#: large enough that every level's sizes are reached without upsampling.
+_UM_PER_PX = 2.5
 
 
-def _section() -> Image.Image:
-    """A 6 x 4.5 mm field at 5 um/px with a bright 4 x 3 mm block of tissue."""
-    arr = np.zeros((900, 1200, 3), dtype=np.uint8)
-    arr[150:750, 200:1000] = 120
-    arr[300:500, 400:700, 1] = 220
+def _section(size: tuple[int, int] = (2400, 1800)) -> Image.Image:
+    width, height = size
+    arr = np.zeros((height, width, 3), dtype=np.uint8)
+    arr[height // 6 : height * 5 // 6, width // 6 : width * 5 // 6] = 120
+    arr[height // 3 : height * 5 // 9, width // 3 : width * 7 // 12, 1] = 220
+    arr[height * 11 // 18 : height * 13 // 18, width * 5 // 8 : width * 3 // 4, 0] = 250
     return Image.fromarray(arr)
 
 
-def _run(folder: Path, resolution: str) -> tuple[Any, Any, dict[str, Any]]:
+def _run(folder: Path, resolution: str, *, size: tuple[int, int] = (2400, 1800),
+         count: int = 2, um_per_px: float = _UM_PER_PX,
+         tasks: tuple[str, ...] = ("reorder", "position", "transform"),
+         ) -> tuple[Any, Any, dict[str, Any], JobSpec]:
     folder.mkdir()
-    for index in range(2):
-        _section().save(folder / f"s{index}.tif", dpi=(25400 / _UM_PER_PX,) * 2)
+    for index in range(count):
+        _section(size).rotate(7 * index, fillcolor=(0, 0, 0)).save(
+            folder / f"s{index}.tif", dpi=(25400 / um_per_px,) * 2)
     spec = JobSpec(image_folder=str(folder), model="fake", preprocess="none",
-                   image_resolution=resolution)
+                   image_resolution=resolution, tasks=list(tasks))
     ctx = build_context(spec, emit=lambda _m: None, atlas_loader=lambda _n: TwoRegionAtlas())
     state = ingest(spec, ctx)
     for index, record in enumerate(state.in_order()):
         record.position_mm = 0.2 + 0.1 * index
     box = build_tools(state, ctx, spec)
-    return state, ctx, {tool.__name__: tool for tool in box.tools}
+    return state, ctx, {tool.__name__: tool for tool in box.tools}, spec
 
 
-def _sizes(result: dict[str, Any]) -> list[tuple[int, int]]:
-    return [Image.open(io.BytesIO(part.inline_data.data)).size
+def _images(result: dict[str, Any]) -> list[Image.Image]:
+    return [Image.open(io.BytesIO(part.inline_data.data))
             for part in result[TOOL_MEDIA_PARTS_KEY] if part.inline_data]
 
 
-def _widths(sizes: list[tuple[int, int]]) -> list[int]:
-    # Widths: a caption adds a band of fixed height above every picture.
-    return [size[0] for size in sizes]
+def _widths(result: dict[str, Any]) -> list[int]:
+    # Widths: a caption adds a band above every picture; the tissue here is
+    # wider than tall, so a picture's width is its long edge.
+    return [image.width for image in _images(result)]
 
 
 def _entry(**extra: Any) -> dict[str, Any]:
@@ -63,70 +84,180 @@ def _entry(**extra: Any) -> dict[str, Any]:
             "translate_x_mm": 0.12, "translate_y_mm": -0.05, "pivot": "tissue", **extra}
 
 
-def test_the_size_rule_is_unchanged_at_scale_one_and_multiplies_above():
-    atlas = TwoRegionAtlas()
-
-    def old_rule(size, um, cap):
-        long = max(1, int(max(size)))
-        edge = min(long, int(cap))
-        if um and um > 0:
-            edge = min(edge, int(round(long * float(um) / atlas_um_per_px(atlas))))
-        return max(min(long, MODEL_MIN_LONG_EDGE), edge)
-
-    for size in [(90, 60), (512, 300), (1200, 900), (3000, 2000)]:
-        for um in [None, 2.5, 7.3, 25.0, 60.0]:
-            for cap in (256, 512, 768):
-                assert model_long_edge(size, um, atlas, cap=cap) == old_rule(size, um, cap)
-                doubled = model_long_edge(size, um, atlas, cap=cap, scale=2.0)
-                assert doubled <= max(size)  # never upsampled
-                assert doubled >= model_long_edge(size, um, atlas, cap=cap)
-    assert model_long_edge((3000, 2000), 2.5, atlas, cap=512, scale=2.0) == 600
-    assert model_long_edge((3000, 2000), 2.5, atlas, cap=512) == 300
+def _seed_sections(state: Any, ctx: Any) -> list[Image.Image]:
+    parts = build_seed_message(state, ctx).parts or []
+    images = [Image.open(io.BytesIO(p.inline_data.data)) for p in parts if p.inline_data]
+    return images[: len(state.slices)]
 
 
-def test_low_draws_from_the_working_render_itself(tmp_path: Path):
-    state, ctx, _tools = _run(tmp_path / "low", "low")
-    record = state.slices[0]
-    section = render_slice(ctx, record, long_edge=PREVIEW_LONG_EDGE)
-    shown, um, factors = shown_section(ctx, record, section, 9.0)
-    assert shown is section and um == 9.0 and factors == (1.0, 1.0)
+# --- each level's two sizes ------------------------------------------------
 
 
-@pytest.mark.parametrize("resolution, multiple", [("medium", 1.5), ("high", 2.0)])
-def test_pictures_grow_while_fits_and_transforms_stay(tmp_path: Path, resolution, multiple):
-    low_state, low_ctx, low = _run(tmp_path / "low", "low")
-    big_state, big_ctx, big = _run(tmp_path / resolution, resolution)
+@pytest.mark.parametrize("level", ["low", "medium", "high", "auto"])
+def test_each_level_opens_at_one_size_and_shows_later_pictures_at_another(
+    tmp_path: Path, level: str,
+):
+    opening, later = PICTURE_EDGES[level]
+    state, ctx, tools, _spec = _run(tmp_path / level, level)
 
-    def seed_long(state, ctx):
-        parts = build_seed_message(state, ctx).parts or []
-        return [Image.open(io.BytesIO(p.inline_data.data)).size[0]
-                for p in parts if p.inline_data]
+    assert [image.width for image in _seed_sections(state, ctx)] == [opening] * 2
+    assert _widths(tools["view_slices"](["s0.tif"])) == [later]
+    assert _widths(tools["view_placement"]([{"id": "s0.tif"}], mode="overlay")) == [later]
+    assert _widths(tools["view_placement"]([{"id": "s0.tif"}], mode="side_by_side"))[0] == later
+    assert _widths(tools["fit_affine"](["s0.tif"], "silhouette")) == [later]
+    # Every panel of a two-panel picture is the later size.
+    assert _widths(tools["adjust_transforms"]([_entry(mode="ab")])) == [later, later]
 
-    ratios = [b / a for a, b in zip(seed_long(low_state, low_ctx),
-                                    seed_long(big_state, big_ctx), strict=True)]
-    assert all(r == pytest.approx(multiple, rel=0.05) for r in ratios)
 
-    pairs = [
-        (low["view_slices"](["s0.tif"]), big["view_slices"](["s0.tif"])),
-        (low["view_atlas"]([0.2]), big["view_atlas"]([0.2])),
-        (low["view_placement"]([{"id": "s0.tif"}], mode="overlay"),
-         big["view_placement"]([{"id": "s0.tif"}], mode="overlay")),
-        (low["view_stack"](), big["view_stack"]()),
-    ]
+def test_the_levels_are_the_designed_numbers():
+    assert PICTURE_EDGES == {
+        "low": (256, 512), "medium": (384, 768), "high": (512, 1024), "auto": (256, 512),
+    }
+
+
+def test_a_small_snapshot_is_never_upsampled(tmp_path: Path):
+    """A 300 x 225 px snapshot stays at most its own pixels at every size."""
+    state, ctx, tools, _spec = _run(tmp_path / "small", "high", size=(300, 225),
+                                    um_per_px=20.0)
+    framed = render_slice(ctx, state.slices[0], long_edge=4096, frame=True)
+    assert max(framed.size) < 300
+    assert _seed_sections(state, ctx)[0].width == framed.width
+    assert _widths(tools["view_slices"](["s0.tif"])) == [framed.width]
+    (overlay,) = _images(tools["view_placement"]([{"id": "s0.tif"}], mode="overlay"))
+    assert overlay.width < PICTURE_EDGES["high"][1]
+
+
+def test_a_zoom_magnifies_the_section_up_to_the_picture_size(tmp_path: Path):
+    """A zoomed physical picture is drawn from a larger render, not upsampled."""
+    _state, _ctx, tools, _spec = _run(tmp_path / "zoom", "low")
+    (whole,) = _images(tools["view_placement"]([{"id": "s0.tif"}], mode="overlay"))
+    (zoomed,) = _images(tools["view_placement"](
+        [{"id": "s0.tif"}], mode="overlay", zoom=[0.25, 0.25, 0.75, 0.75]))
+    assert whole.width == zoomed.width == PICTURE_EDGES["low"][1]
+
+
+def test_the_contact_sheet_tiles_follow_the_level_and_stay_bounded(tmp_path: Path):
+    state, ctx, _tools, _spec = _run(tmp_path / "few", "medium", count=2)
+    few = stack_sheet(state, ctx)
+    # Two tiles at the medium opening size plus the gap between them.
+    assert few.width == 2 * PICTURE_EDGES["medium"][0] + 6
+    state, ctx, _tools, _spec = _run(tmp_path / "many", "high", count=24,
+                                     size=(1200, 900), um_per_px=5.0)
+    many = stack_sheet(state, ctx)
+    assert max(many.size) <= SHEET_MAX_LONG_EDGE
+    assert many.width > 0.8 * SHEET_MAX_LONG_EDGE  # shrunk to fit, not to a stamp
+
+
+# --- auto -------------------------------------------------------------------
+
+
+def _has_resolution(tool: Any) -> bool:
+    return "resolution" in inspect.signature(tool).parameters
+
+
+@pytest.mark.parametrize("level", ["low", "medium", "high", "auto"])
+def test_resolution_exists_only_at_auto(tmp_path: Path, level: str):
+    _state, _ctx, tools, _spec = _run(
+        tmp_path / level, level, tasks=("reorder", "position", "transform", "nonlinear"))
+    pictured = ["view_slices", "view_atlas", "view_placement", "view_stack", "set_positions",
+                "orient_slices", "fit_affine", "fit_deformable"]
+    auto = level == "auto"
+    for name in pictured:
+        assert _has_resolution(tools[name]) is auto, name
+        assert ("resolution:" in (tools[name].__doc__ or "")) is auto, name
+    assert not _has_resolution(tools["status"])
+    assert ("resolution" in (tools["adjust_transforms"].__doc__ or "")) is auto
+
+
+def test_the_job_statement_names_resolution_only_at_auto(tmp_path: Path):
+    from langslice.linear.prompt import display_lines
+
+    names = ["view_slices", "fit_deformable"]
+    assert not any("resolution" in line for line in display_lines(names))
+    (line,) = [line for line in display_lines(names, resolution=True) if "resolution" in line]
+    assert "1536" in line and "512" in line and "`fit_deformable` included" in line
+
+
+def test_auto_sizes_each_call_and_clamps(tmp_path: Path):
+    _state, _ctx, tools, _spec = _run(tmp_path / "auto", "auto")
+    plain = tools["view_slices"](["s0.tif"])
+    assert _widths(plain) == [512] and plain["view"]["resolution"] == 512
+    chosen = tools["view_slices"](["s0.tif"], resolution=1200)
+    assert _widths(chosen) == [1200] and "resolution_note" not in chosen["view"]
+    big = tools["view_placement"]([{"id": "s0.tif"}], mode="overlay", resolution=5000)
+    assert _widths(big) == [1536]
+    assert "1536" in big["view"]["resolution_note"]
+    small = tools["view_slices"](["s0.tif"], resolution=20)
+    assert _widths(small) == [128] and "128" in small["view"]["resolution_note"]
+    refused = tools["view_slices"](["s0.tif"], resolution="large")
+    assert refused["error"] == "BAD_RESOLUTION"
+    per_entry = tools["adjust_transforms"]([_entry(resolution=900)])
+    assert _widths(per_entry) == [900]
+    sheet = tools["view_stack"](resolution=200)
+    assert _images(sheet)[0].width == 2 * 200 + 6
+
+
+def test_resolution_is_ignored_and_invisible_below_auto(tmp_path: Path):
+    _state, _ctx, tools, _spec = _run(tmp_path / "high", "high")
+    result = tools["view_slices"](["s0.tif"])
+    assert "resolution" not in result["view"]
+    # Not in the schema, so a model cannot send it; a direct caller's value
+    # is dropped, never applied.
+    forced = tools["view_slices"](["s0.tif"], resolution=1200)
+    assert _widths(forced) == [PICTURE_EDGES["high"][1]]
+
+
+# --- what is computed does not move ------------------------------------------
+
+
+#: fit_affine and adjust_transforms on this stack, computed with the code
+#: BEFORE the picture-size change (2026-10-01): the stored numbers must match.
+_PINNED_S0_FIT = [-0.24853608803995778, 9.56406142034393e-16, 0.6245949944548352,
+                  -2.2479381284208716e-15, -0.3341968926388023, 0.6672419978191492]
+_PINNED_S1_ADJUST = [1.0973204552858067, 0.04970148754268928, -0.053191461442875475,
+                     -0.10230949482471711, 0.947685847746833, 0.06586465442425882]
+
+
+def _fixed_stack(folder: Path, level: str) -> tuple[Any, dict[str, Any]]:
+    """The stack the pinned numbers were computed on (two 2400 x 1800 sections)."""
+    folder.mkdir()
+    for index in range(2):
+        arr = np.zeros((1800, 2400, 3), dtype=np.uint8)
+        arr[300:1500, 400:2000] = 120
+        arr[600:1000, 800:1400, 1] = 220
+        arr[1100:1300, 1500:1800, 0] = 250
+        Image.fromarray(arr).rotate(7 * index, fillcolor=(0, 0, 0)).save(
+            folder / f"s{index}.tif", dpi=(25400 / 2.5,) * 2)
+    spec = JobSpec(image_folder=str(folder), model="fake", preprocess="none",
+                   image_resolution=level)
+    ctx = build_context(spec, emit=lambda _m: None, atlas_loader=lambda _n: TwoRegionAtlas())
+    state = ingest(spec, ctx)
+    for index, record in enumerate(state.in_order()):
+        record.position_mm = 0.2 + 0.1 * index
+    return state, {tool.__name__: tool for tool in build_tools(state, ctx, spec).tools}
+
+
+@pytest.mark.parametrize("level", ["low", "high", "auto"])
+def test_fits_and_written_transforms_are_the_numbers_from_before(tmp_path: Path, level: str):
+    state, tools = _fixed_stack(tmp_path / level, level)
+    fit = tools["fit_affine"]([], "silhouette", **({"resolution": 1400} if level == "auto" else {}))
+    assert [row["iou"] for row in fit["results"]] == [1.0, 1.0]
+    assert state.by_id("s0.tif").transform["params"] == _PINNED_S0_FIT
+    tools["adjust_transforms"]([{
+        "id": "s1.tif", "rotation_deg": 4.0, "scale_x": 1.1, "scale_y": 0.95,
+        "translate_x_mm": 0.12, "translate_y_mm": -0.05, "pivot": "tissue"}])
+    assert state.by_id("s1.tif").transform["params"] == _PINNED_S1_ADJUST
+
+
+@pytest.mark.parametrize("level", ["medium", "high", "auto"])
+def test_pictures_change_while_fits_and_transforms_stay(tmp_path: Path, level: str):
+    low_state, low_ctx, low, _ = _run(tmp_path / "low", "low")
+    big_state, big_ctx, big, _ = _run(tmp_path / level, level)
+    extra = {"resolution": 1100} if level == "auto" else {}
     low_fit = low["fit_affine"](["s0.tif"], "silhouette")
-    big_fit = big["fit_affine"](["s0.tif"], "silhouette")
-    pairs.append((low_fit, big_fit))
+    big_fit = big["fit_affine"](["s0.tif"], "silhouette", **extra)
     low_adjust = low["adjust_transforms"]([_entry(mode="ab")])
-    big_adjust = big["adjust_transforms"]([_entry(mode="ab")])
-    pairs.append((low_adjust, big_adjust))
-    for small, large in pairs:
-        for a, b in zip(_widths(_sizes(small)), _widths(_sizes(large)), strict=True):
-            # The plot beside the contact sheet is not a picture of tissue.
-            if a == 768 and b == 768:
-                continue
-            assert b / a == pytest.approx(multiple, rel=0.06), (a, b)
-
-    # What is computed does not move: calibration, the fit, the stored numbers.
+    big_adjust = big["adjust_transforms"]([_entry(mode="ab", **extra)])
     for record_low, record_big in zip(low_state.slices, big_state.slices, strict=True):
         section_low = render_slice(low_ctx, record_low, long_edge=PREVIEW_LONG_EDGE)
         section_big = render_slice(big_ctx, record_big, long_edge=PREVIEW_LONG_EDGE)
@@ -136,6 +267,32 @@ def test_pictures_grow_while_fits_and_transforms_stay(tmp_path: Path, resolution
     assert low_fit["results"] == big_fit["results"]
     assert low_state.slices[0].transform == big_state.slices[0].transform
     assert low_adjust["results"][0]["physical"] == big_adjust["results"][0]["physical"]
+
+
+def _digest(image: Image.Image) -> str:
+    return hashlib.sha256(np.asarray(image).tobytes()).hexdigest()
+
+
+def test_the_image_model_and_deformable_fit_inputs_do_not_depend_on_the_level(tmp_path: Path):
+    from langslice.linear import deformation
+    from langslice.registration_handoff import prepare_linear_registration
+
+    seen: dict[str, tuple[str, str, Any]] = {}
+    for level in ("low", "high", "auto"):
+        state, ctx, tools, _ = _run(tmp_path / level, level)
+        tools["fit_affine"](["s0.tif"], "silhouette")
+        prepared = prepare_linear_registration(state, ctx, "s0.tif")
+        grid = deformation.fit_grid(state, ctx, state.by_id("s0.tif"))
+        seen[level] = (_digest(prepared.image), _digest(grid.image), prepared.metadata)
+    assert seen["low"] == seen["high"] == seen["auto"]
+
+
+def test_low_draws_from_the_working_render_itself(tmp_path: Path):
+    state, ctx, _tools, _spec = _run(tmp_path / "low", "low")
+    record = state.slices[0]
+    section = render_slice(ctx, record, long_edge=PREVIEW_LONG_EDGE)
+    shown, um, factors = shown_section(ctx, record, section, 9.0)
+    assert shown is section and um == 9.0 and factors == (1.0, 1.0)
 
 
 def test_a_larger_picture_shows_the_same_map(tmp_path: Path, monkeypatch):
@@ -152,8 +309,8 @@ def test_a_larger_picture_shows_the_same_map(tmp_path: Path, monkeypatch):
         return images, iou
 
     monkeypatch.setattr(toolbox, "physical_views", capture)
-    _low_state, _low_ctx, low = _run(tmp_path / "low", "low")
-    _big_state, _big_ctx, big = _run(tmp_path / "high", "high")
+    _low_state, _low_ctx, low, _ = _run(tmp_path / "low", "low")
+    _big_state, _big_ctx, big, _ = _run(tmp_path / "high", "high")
     entry = _entry(mode="section", pivot=[0.3, 0.6], rotation_deg=12.0)
     low["adjust_transforms"]([entry])
     big["adjust_transforms"]([entry])
@@ -165,3 +322,41 @@ def test_a_larger_picture_shows_the_same_map(tmp_path: Path, monkeypatch):
     small, large = tissue(drawn[0]), tissue(drawn[1])
     assert drawn[1].shape[1] / drawn[0].shape[1] == pytest.approx(2.0, rel=0.02)
     assert small == pytest.approx(large, abs=0.005)
+
+
+# --- captions ------------------------------------------------------------------
+
+
+def test_a_long_caption_wraps_instead_of_running_off_a_small_picture():
+    font = _caption_font()
+    text = "12: M04_D_08_Overlay.tif  9.00 mm (+0.40 to next)  [damaged: dorsal cortex torn]"
+    picture = Image.new("RGB", (160, 120), (40, 40, 40))
+    labelled = caption(picture, text)
+    wrapped = wrap_caption(text, font, picture.width - 6)
+    lines = wrapped.split("\n")
+    assert len(lines) > 2
+    assert all(font.getlength(line) <= picture.width - 6 for line in lines)
+    # Nothing is dropped: the words come back in order.
+    assert " ".join(wrapped.split()) == " ".join(text.split())
+    # The band grows to hold every line; the picture keeps its width.
+    assert labelled.width == picture.width
+    assert labelled.height - picture.height >= len(lines) * CAPTION_PX
+    # A word wider than the picture breaks between characters.
+    assert all(font.getlength(line) <= 30 for line in
+               wrap_caption("M04_D_08_Overlay.tif", font, 30).split("\n"))
+
+
+def test_a_caption_that_fits_is_drawn_as_before():
+    font = _caption_font()
+    picture = Image.new("RGB", (512, 80), (0, 0, 0))
+    text = "3: s0.tif  [flipped]\nsecond line"
+    assert wrap_caption(text, font, 506) == text
+    labelled = caption(picture, text)
+    # The old caption: the text drawn as given, band sized to its box.
+    probe = ImageDraw.Draw(picture.copy())
+    left, top, right, bottom = probe.textbbox((0, 0), text, font=font)
+    band = int(bottom - top + 6)
+    expected = Image.new("RGB", (512, 80 + band), (0, 0, 0))
+    expected.paste(picture, (0, band))
+    ImageDraw.Draw(expected).text((3 - left, 3 - top), text, fill=(255, 255, 255), font=font)
+    assert np.array_equal(np.asarray(labelled), np.asarray(expected))
