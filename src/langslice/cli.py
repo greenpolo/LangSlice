@@ -400,6 +400,18 @@ def _add_linear_arguments(p: argparse.ArgumentParser) -> None:
         "N4 and denoising for what it views and what a fit reads",
     )
     p.add_argument(
+        "--image-resolution",
+        default="low",
+        choices=["low", "medium", "high", "auto"],
+        help="Size of the pictures the agent is shown; auto lets it choose per call",
+    )
+    p.add_argument(
+        "--engine",
+        default="either",
+        choices=["ants", "elastix", "either"],
+        help="Deformable-fit engine for fit_deformable; either lets the agent choose",
+    )
+    p.add_argument(
         "--no-flip",
         dest="flip",
         action="store_false",
@@ -585,7 +597,12 @@ def _build_linear_spec(args: argparse.Namespace, image_folder: str) -> "JobSpec"
             playbook=args.playbook,
         ),
         transform=TransformSpec(angles=args.angles, elastix=args.elastix),
-        nonlinear=NonlinearSpec(provider=args.image_provider, image_model=args.image_model),
+        nonlinear=NonlinearSpec(
+            provider=args.image_provider,
+            image_model=args.image_model,
+            engine=getattr(args, "engine", "either"),
+        ),
+        image_resolution=getattr(args, "image_resolution", "low"),
         facts=list(args.facts),
         inputs=inputs,
         resume=args.resume,

@@ -25,7 +25,7 @@ tools and takes its answer from the host. Nothing else is user-facing.
 | Provider | ChatGPT (default) or Claude | ChatGPT runs through `openai-oauth`; Claude changes Run to Copy prompt and uses the LangSlice MCP connector in Claude Desktop or Claude Code |
 | Agent model, reasoning level | ADK model string and effort | `model`, reasoning |
 | Image model / provider | image transport and model for nonlinear | `nonlinear.provider`, `nonlinear.image_model` |
-| Image resolution: low / medium / high / auto | how large the pictures the agent sees are: a long edge for the opening images and one for every later picture (table below); auto lets the agent choose each later picture's size. Does not touch the image model's inputs | `image_resolution` low/medium/high/auto (`render.PICTURE_EDGES`); display only, fits and stored transforms unchanged |
+| Image resolution: low / medium / high / auto | how large the pictures the agent sees are: a long edge for the opening images and one for every later picture (table below); auto lets the agent choose each later picture's size. Does not touch the image model's inputs | `image_resolution` low/medium/high/auto (`render.PICTURE_EDGES`); display only, fits and stored transforms unchanged; CLI `--image-resolution` |
 | Estimated cost | shown at the bottom once every box is chosen | worker `linear.estimate` (`linear/cost.py`): percent of the usage window from measured runs; refused at medium/high/auto resolution, where nothing is measured (the low runs were measured before the 2026-10-01 sizes) |
 | View agent log | the agent's activity in a window during the run | Fiji connector: a text log window (or a compact status window when off). The Python-started ABBA launcher has a richer browser log (`integrations/abba_chat.py`) |
 | Save traces | full record of what the agent was shown, said and did, saved to a chosen folder | worker `trace_dir` (`LANGSLICE_TRACE_DIR` for one run); ABBA dialog checkbox + folder |
@@ -99,7 +99,7 @@ test. Drawings remain the review artifact.
 | --- | --- |
 | Enable image-gen tool | task `nonlinear` builds `trace_borders` |
 | Use agent (GUI). The agent writes per-slice notes for the image model. The agent-free path (fixed prompt as a plain operation over supplied placements) stays in the API only; it is the 3D-volume path, where notes have no purpose | notes are a tool argument; the `nonlinear` CLI is the agent-free operation |
-| Deformable-fit engine: ANTs, Elastix or either | `nonlinear.engine` (`ants`, `elastix`, `either` = default, the agent picks per call); the `fit_deformable` tool is built with task `nonlinear` |
+| Deformable-fit engine: ANTs, Elastix or either | `nonlinear.engine` (`ants`, `elastix`, `either` = default, the agent picks per call; CLI `--engine`); the `fit_deformable` tool is built with task `nonlinear` |
 | Further tools: open | (none) |
 
 Candidates for the open slot, none committed: a deformation-fit choice for
