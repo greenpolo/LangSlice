@@ -229,8 +229,13 @@ def _run_elastix(inputs: EngineInputs, settings: FitSettings, metric: Metric) ->
     method.SetLogToConsole(False)
     method.UpdateLargestPossibleRegion()
     transform = method.GetTransformParameterObject()
-    deformation = itk.transformix_deformation_field(moving, transform)  # type: ignore[attr-defined]
-    forward = np.asarray(itk.array_from_image(deformation), dtype=np.float32)
+    # Transformix writes deformationField.nii to its output directory, the
+    # process's working directory by default (the user's folder, shared by
+    # every pool worker); point it at a private scratch directory instead.
+    with tempfile.TemporaryDirectory(prefix="langslice-transformix-") as scratch:
+        deformation = itk.transformix_deformation_field(  # type: ignore[attr-defined]
+            moving, transform, output_directory=scratch)
+        forward = np.array(itk.array_from_image(deformation), dtype=np.float32)
     maps = [
         {key: list(transform.GetParameterMap(i)[key])
          for key in transform.GetParameterMap(i).keys()}
