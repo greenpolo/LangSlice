@@ -251,7 +251,11 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
   `trace_picture` (those lines on the stain at the call's size and style),
   `Choice` (one candidate: section/atlas image, engine, stiffness ->
   `FitSettings` at `DETAIL_LEVEL` "standard", which tests set to "coarse";
-  agent `borders` = engine `borders_merged`),
+  agent `borders` = engine `borders_merged`; a stain fit gets the engine's
+  stain defaults, local correlation + edge channel, and with ANTs also the
+  automatic tissue/ventricle label channels `labels="auto"`, per the
+  2026-10-02 stain ceiling test; `engine_settings` reports the metric,
+  correlation radius, edge channel and label map),
   `RecordStore` (results by `cache_key`, a digest of every input incl. the
   linear placement and the start record; 8 in memory, applied ones saved to
   `<results dir>/deformable/<section>/<key[:24]>/`; `current` is None for a
@@ -424,7 +428,12 @@ include=[], exclude=[], start="linear"|"current", section_image="fit"|
 mode="borders"|"ab", zoom, atlas_opacity, regions, outlines, border_color,
 border_thickness=1.0, [resolution])`. Defaults without a trace: the fit
 appearance against `ara`, ANTs (when the user left the engine open and it is
-installed), medium. With a completed trace the agent chooses; the docstring
+installed), medium; the stain fit itself is ANTs local correlation (80 µm
+window) + an edge channel + the automatic tissue/ventricle label channels
+(Elastix: mutual information + edges, no label channels), chosen by eye in
+the 2026-10-02 stain ceiling test (deformable `CLAUDE.md`). Every fit runs
+on a fixed thread count with a fixed seed, so the same inputs give the same
+warp. With a completed trace the agent chooses; the docstring
 states that traced_borders + ANTs + medium is the recommended pairing
 (`toolbox._RECOMMENDED_TRACED`, dropped where the engine is fixed to Elastix
 or there is no image model). The 2026-10-01 ceiling test (deformable

@@ -220,7 +220,12 @@ reference; same host rules as the display options), `borders` for traced
 images only (the fit appearance against borders is refused); empty = borders
 for traced images, else ara; `engine` (only when the user left it open;
 missing ANTs is said plainly), `stiffness` soft/medium/firm. Defaults
-without a trace: fit appearance, ara, ANTs, medium; with a completed trace
+without a trace: fit appearance, ara, ANTs, medium. A fit of the fit
+appearance compares the section and the atlas image by local correlation
+(small 80 µm windows; Elastix, which has none, uses mutual information) plus
+their edges, and with ANTs also matches the tissue outline and empty
+ventricles found in the section; these are fixed, not arguments (2026-10-02
+stain ceiling test). The same inputs always give the same warp; with a completed trace
 the agent chooses, and the tool description states that traced_borders with
 ANTs at medium is the recommended pairing. Detail (standard) and line
 softening (60 µm) are fixed, not arguments. On the fluorescent LSD_910

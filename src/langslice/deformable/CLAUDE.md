@@ -16,7 +16,21 @@ and returns a `record.DeformableRecord`. No custom solver.
 
 - Route A (no image model): the stain image (`section_image="stain"`) against
   an atlas image — `ara` (BrainGlobe reference), or `nissl` (ABBA's cached
-  Allen Nissl, ABBA hosts only, `atlas_images_for_host`). Mutual information.
+  Allen Nissl, ABBA hosts only, `atlas_images_for_host`). Metric
+  (`stain_metric`, default `local_correlation`): ANTs' neighbourhood
+  cross-correlation `CC` over a window of radius `CORRELATION_RADIUS_UM`
+  (80 µm, rounded to working pixels: 4 at standard, 2 at coarse); Elastix has
+  no local correlation and uses `ELASTIX_STAIN_METRIC` (mutual information)
+  and says so in `engine["notes"]`; `mutual_information` is the pre-2026-10-02
+  metric. Plus, by default (`stain_edges`), an EDGE channel: the gradient
+  magnitude after a `EDGE_SIGMA_UM` (30 µm) Gaussian of the stain and of the
+  atlas image (`fit.edge_image`, scaled by its 99th percentile in each mask),
+  a second metric of the same kind at `EDGE_CHANNEL_WEIGHT` 1.0. The
+  magnitude ignores which side of an edge is brighter, so fluorescent and
+  brightfield stains and the template share pial surface, ventricle walls
+  and layer boundaries. Excluded regions are inpainted from their
+  surroundings before the atlas edges are taken (`fit._fill_from_surroundings`):
+  the blanked region's rim otherwise pulled tissue in (Elastix).
   Optionally SEQUENTIAL: each call with `structures=(...)` (acronyms/ids,
   descendants included, optionally one-sided) restricts both masks to those
   structures plus
@@ -35,19 +49,42 @@ and returns a `record.DeformableRecord`. No custom solver.
   (`regions.named_regions`, small loops around bubbles dropped, joint
   one-to-one renaming) and pairs each region's indicator with the atlas's;
   `auto` adds the stain's tissue footprint and empty interior holes near
-  placed ventricles. Built as `ants.registration` `multivariate_extras` (the
-  same per-label MeanSquares construction `ants.label_image_registration`
-  uses, which hard-codes `SyN[0.2,3,0]` and so would ignore stiffness).
+  placed ventricles (the linear tool adds `auto` to every ANTs stain fit,
+  `linear/deformation.Choice`). Built as `ants.registration`
+  `multivariate_extras` (the same per-label MeanSquares construction
+  `ants.label_image_registration` uses, which hard-codes `SyN[0.2,3,0]` and
+  so would ignore stiffness); the edge channel is the first extra.
 - Engines (`engines.py`): ANTs `SyNOnly` with an identity initial transform
   (antspyx, optional `registration` extra, imported lazily with an install
   hint), or Elastix B-spline with a bending-energy penalty (itk-elastix,
   core dependency). Both see the same working-grid images, masks, spacing and
   origin and return millimetre fields. ANTs supplies its own inverse; Elastix
   has none, so its inverse is a fixed-point approximation, said so in
-  `inverse_source` and `engine["notes"]`.
+  `inverse_source` and `engine["notes"]`. Elastix's edge channel is a
+  second image pair (`AddFixedImage`/`AddMovingImage`, masks per pair); its
+  multi-image rules want pyramids, interpolators and samplers numbering one
+  per metric, the bending penalty included, and so an image pair per metric:
+  the intensity pair is passed again for the penalty.
+- DETERMINISM: identical inputs give identical fields, bit for bit (test
+  `test_identical_inputs_give_identical_fields`: twice in process and in a
+  pool worker). Fixed seed `engines.RANDOM_SEED` (antsRegistration
+  `--random-seed` through `ants.config._random_seed`, restored after the
+  call; Elastix `RandomSeed`, which its random sampler reads). Fixed thread
+  count `engines.FIT_THREADS` (8), because a multithreaded metric's sums
+  depend on the split (ANTs fields moved ~2 µm between 1 and 8 threads,
+  Elastix ~1e-9 mm). ANTs' bundled ITK reads
+  `ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS` once per process at first use, so
+  `engines.import_ants` (also used by `image_prep.ants_enhance`) sets it,
+  runs one tiny filter and restores the environment; pool workers set it in
+  `engines.ants_worker`. If something outside LangSlice loaded ANTs first the
+  count is unknown: `threads` is None and a note says so. Elastix's own
+  `SetNumberOfThreads` segfaults in itk-elastix 0.25.4, so the call sets
+  ITK's global default for its duration instead. Single-fit runtime at 8
+  threads ~5 s (local correlation + edges, M04_B_05), 9 s at 4, 15 s at 2.
 - Optional ANTs preprocessing of the stain (`preprocess=("n4", "denoise")`).
 - `fit_candidates` runs 1–8 settings in a spawn process pool (atlas work in
-  the caller, engine calls in workers); a failing candidate is a
+  the caller, engine calls in workers, `cpu_count // FIT_THREADS` workers at
+  most, one per fit); a failing candidate is a
   `CandidateFailure`, never an exception. `fit_prepared` is the same pool
   over already prepared fits (different sections or section images).
 
@@ -59,9 +96,35 @@ control spacing in mm and bending weight, scaled by
 `ELASTIX_MEAN_SQUARES_BENDING_SCALE` for mean squares); `detail`
 coarse/standard (working µm and pyramid depth/iterations — the extra ANTs
 levels are its capture range); `atlas_image`, `section_image`, `exclude`,
-`labels`, `structures`, `neighbourhood_um`, `preprocess`. Metric and step
-size are fixed per pairing (`metric_for`); lines against `ara`/`nissl` and
-the stain against `borders`/`borders_merged` are refused.
+`labels`, `structures`, `neighbourhood_um`, `preprocess`, and for stain fits
+`stain_metric` (`local_correlation` | `mutual_information`) and
+`stain_edges` (lines ignore both). `FitSettings.metric` resolves the metric
+from pairing, engine and stain metric (`metric_for`); lines against
+`ara`/`nissl` and the stain against `borders`/`borders_merged` are refused.
+`FitSettings.from_dict` loads records saved before 2026-10-02 (no
+`stain_metric`/`stain_edges` keys) as mutual information without edges,
+which is what they were fitted with. The step size is fixed.
+
+The 2026-10-02 stain ceiling test (`_local/runs/20261001_ceiling_test_stain2`,
+the same eight sections, 15 stain settings each, judged by eye) set the
+stain defaults. Local correlation at 40 µm radius was unstable (the one ANTs
+DISPLACEMENT_OUTSIZED, stray bands); at 80 and 120 µm (indistinguishable)
+interior lines followed visible structure better than mutual information
+(olfactory-bulb cores, thalamic nuclei) but on its own still crossed
+enlarged ventricles and missed a midline slit; the edge channel fixed most
+of that and put a Nissl outline back on the edge (~1.8x the runtime). The
+automatic label channels were the clearest gain (continuous pial outline,
+enlarged ventricles filled), hence the tool's ANTs stain default; their one
+error: small lateral-ventricle pieces pulled into a dorsal third-ventricle
+hole (the ventricle channel pairs all ventricles with all holes). Elastix
+mutual information blew up again on M11_B_08 (1.07 mm); with edges it
+stayed under the flag but still stretched cortex over the displaced flap,
+as did AdvancedNormalizedCorrelation (one global correlation) + edges. On
+the synthetic sections (flat regions, no texture) local correlation
+recovers a known warp worse than mutual information (error 0.39 vs 0.12 of
+the warp at standard), so the mechanism tests pin mutual information, and
+Elastix exclusion leaks more with edges (0.29 vs 0.12 of the free fit's
+movement inside the excluded region).
 
 The 2026-10-01 ceiling test (eight LSD_910 sections, 400 fits, judged by
 eye) trimmed the ladders: `stiff` was never the best-looking fit and left

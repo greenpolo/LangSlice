@@ -42,9 +42,11 @@ from langslice.deformable.atlas_images import (
     whole_region_ids,
 )
 from langslice.deformable.engines import (
+    FIT_THREADS,
     EngineInputs,
     EngineResult,
     ants_preprocess,
+    ants_worker,
     run_engine,
 )
 from langslice.deformable.geometry import Placement, WorkingGrid, sample_native
@@ -58,7 +60,14 @@ from langslice.deformable.masks import (
 )
 from langslice.deformable.record import DeformableRecord, diagnose
 from langslice.deformable.regions import named_regions
-from langslice.deformable.settings import DETAIL, LINE_SOFTENING_UM, FitSettings
+from langslice.deformable.settings import (
+    CORRELATION_RADIUS_UM,
+    DETAIL,
+    EDGE_CHANNEL_WEIGHT,
+    EDGE_SIGMA_UM,
+    LINE_SOFTENING_UM,
+    FitSettings,
+)
 from langslice.oblique import plane_index_coordinates
 from langslice.space import atlas_space_context
 
@@ -106,6 +115,34 @@ def _normalize_stain(gray: np.ndarray, tissue: np.ndarray) -> np.ndarray:
     values = gray[tissue] if tissue.any() else gray.ravel()
     lo, hi = np.percentile(values, STAIN_PERCENTILES)
     return np.clip((gray - lo) / max(float(hi - lo), 1e-6), 0.0, 1.0).astype(np.float32)
+
+
+def edge_image(image: np.ndarray, region: np.ndarray, sigma_px: float) -> np.ndarray:
+    """Gradient magnitude after a light Gaussian, scaled to [0, 1] inside *region*.
+
+    The edge channel of a stain fit. The magnitude ignores which side of an
+    edge is brighter, so a fluorescent section (bright tissue), a brightfield
+    one (dark tissue) and the atlas image all show the same pial surface,
+    ventricle walls, fibre-tract and layer boundaries, whatever their
+    intensities do region by region.
+    """
+    smooth = cv2.GaussianBlur(np.asarray(image, dtype=np.float32), (0, 0), max(sigma_px, 0.5))
+    gx = cv2.Sobel(smooth, cv2.CV_32F, 1, 0, ksize=3)
+    gy = cv2.Sobel(smooth, cv2.CV_32F, 0, 1, ksize=3)
+    magnitude = np.hypot(gx, gy)
+    values = magnitude[region] if region.any() else magnitude.ravel()
+    top = float(np.percentile(values, STAIN_PERCENTILES[1])) if values.size else 0.0
+    if top <= 0:
+        return np.zeros(magnitude.shape, dtype=np.float32)
+    return np.clip(magnitude / top, 0.0, 1.0).astype(np.float32)
+
+
+def _fill_from_surroundings(image: np.ndarray, hole: np.ndarray) -> np.ndarray:
+    """*image* with *hole* filled by OpenCV's Telea inpainting (no step at its rim)."""
+    top = float(image.max()) or 1.0
+    scaled = np.clip(image / top * 255.0, 0, 255).astype(np.uint8)
+    filled = cv2.inpaint(scaled, hole.astype(np.uint8), 3, cv2.INPAINT_TELEA)
+    return np.where(hole, filled.astype(np.float32) / 255.0 * top, image).astype(np.float32)
 
 
 def _remap(image: np.ndarray, offset_px: np.ndarray, *, nearest: bool = False) -> np.ndarray:
@@ -307,6 +344,19 @@ def prepare_fit(
     if not fixed_mask.any() or not moving_mask.any():
         raise ValueError("The fit masks are empty: no tissue overlaps the placed atlas")
 
+    fixed_edges = moving_edges = None
+    if settings.section_image == "stain" and settings.stain_edges:
+        sigma_px = EDGE_SIGMA_UM / 1000.0 / spacing
+        fixed_edges = edge_image(fixed, fixed_mask, sigma_px)
+        source = moving
+        if excluded_w.any():
+            # Blanking an excluded region draws a false edge around it, which
+            # pulled the tissue in (Elastix); fill the region from its
+            # surroundings first so only real edges remain.
+            source = _fill_from_surroundings(moving, dilate(excluded_w, 1.0))
+        moving_edges = edge_image(source, moving_mask, sigma_px)
+        details["edge_channel"] = {"sigma_um": EDGE_SIGMA_UM, "weight": EDGE_CHANNEL_WEIGHT}
+
     inputs = EngineInputs(
         fixed=np.ascontiguousarray(fixed, dtype=np.float32),
         moving=np.ascontiguousarray(moving, dtype=np.float32),
@@ -314,6 +364,9 @@ def prepare_fit(
         spacing_mm=grid.spacing_mm, origin_mm=grid.origin_mm,
         fixed_labels=fixed_labels, moving_labels=moving_labels,
         label_weights=[LABEL_CHANNEL_WEIGHT] * len(fixed_labels),
+        fixed_edges=fixed_edges, moving_edges=moving_edges,
+        edge_weight=EDGE_CHANNEL_WEIGHT if fixed_edges is not None else 0.0,
+        correlation_radius_px=max(1, round(CORRELATION_RADIUS_UM / 1000.0 / spacing)),
     )
     return PreparedFit(
         settings=settings, placement=placement, grid=grid, inputs=inputs, native=native,
@@ -413,10 +466,6 @@ def fit_section(
     return finish_fit(prepared, run_engine(prepared.inputs, prepared.settings))
 
 
-def _limit_threads(threads: int) -> None:
-    os.environ["ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS"] = str(threads)
-
-
 def _run_candidate(inputs: EngineInputs, settings: FitSettings) -> EngineResult:
     return run_engine(inputs, settings)
 
@@ -449,16 +498,18 @@ def fit_prepared(
 
     The prepared fits may come from different sections or section images
     (:func:`fit_candidates` is this for one section). A failing fit comes
-    back as a :class:`CandidateFailure`.
+    back as a :class:`CandidateFailure`. Every worker fits on
+    :data:`~langslice.deformable.engines.FIT_THREADS` threads (identical
+    inputs give identical fields), so by default there are as many workers as
+    that leaves room for, at most one per fit.
     """
     if not prepared:
         return []
-    workers = max_workers or len(prepared)
-    threads = max(1, (os.cpu_count() or 2) // workers)
+    workers = max_workers or min(len(prepared), max(1, (os.cpu_count() or 2) // FIT_THREADS))
     context = multiprocessing.get_context("spawn")
     results: list[DeformableRecord | CandidateFailure] = []
     with ProcessPoolExecutor(max_workers=workers, mp_context=context,
-                             initializer=_limit_threads, initargs=(threads,)) as pool:
+                             initializer=ants_worker) as pool:
         futures = [pool.submit(_run_candidate, p.inputs, p.settings) for p in prepared]
         for item, future in zip(prepared, futures, strict=True):
             try:

@@ -4,8 +4,8 @@ Every knob is a short named ladder rather than a raw engine number, so an agent
 or a host dialog can pick "firmer" without knowing that ANTs and Elastix
 regularize in different units. Physical units (millimetres) are used wherever
 an engine allows it, so changing the detail level does not change how stiff a
-fit is. The similarity metric and step size are fixed per engine and image
-pairing (:func:`metric_for`), not exposed.
+fit is. The similarity metric follows from the image pairing, the engine and,
+for stain fits, ``stain_metric`` (:func:`metric_for`); the step size is fixed.
 """
 
 from __future__ import annotations
@@ -32,7 +32,15 @@ AtlasImage = Literal["ara", "nissl", "borders", "borders_merged"]
 #: ``stain``: the preprocessed section photograph. ``lines``: the image
 #: model's extracted boundary lines on that photograph's grid.
 SectionImage = Literal["stain", "lines"]
-Metric = Literal["mutual_information", "mean_squares"]
+Metric = Literal["local_correlation", "mutual_information", "normalized_correlation",
+                 "mean_squares"]
+#: The similarity metric of a stain fit. ``local_correlation``: ANTs'
+#: neighbourhood cross-correlation (``CC``) over a small window
+#: (:data:`CORRELATION_RADIUS_UM`); Elastix has no local correlation metric
+#: and uses :data:`ELASTIX_STAIN_METRIC` instead. ``mutual_information``: one
+#: joint histogram over the whole masked section (the default until
+#: 2026-10-02).
+StainMetric = Literal["local_correlation", "mutual_information"]
 #: Label-map channels added to the image pair (ANTs only). ``none``: the image
 #: pair alone. ``auto``: what can be detected from the stain without a model —
 #: the tissue footprint and empty interior holes near atlas ventricles, paired
@@ -119,6 +127,21 @@ DETAIL: dict[str, DetailLevel] = {
 #: 120 um slightly worse and added folds with Elastix.
 LINE_SOFTENING_UM = 60.0
 
+#: Radius, in micrometres, of the window ANTs' local correlation compares
+#: (window side = 2 x radius + 1 working pixels at the finest level; coarser
+#: pyramid levels widen it in proportion).
+CORRELATION_RADIUS_UM = 80.0
+#: Elastix's stand-in for local correlation on stain fits (it has no local
+#: correlation metric; AdvancedNormalizedCorrelation is one global
+#: correlation over the whole mask).
+ELASTIX_STAIN_METRIC: Metric = "mutual_information"
+#: Gaussian sigma, in micrometres, applied before the gradient magnitude of
+#: the edge channel: enough to quiet pixel noise, small enough to keep a
+#: layer or a ventricle wall as one edge.
+EDGE_SIGMA_UM = 30.0
+#: Metric weight of the edge channel next to 1.0 for the intensities.
+EDGE_CHANNEL_WEIGHT = 1.0
+
 #: Default margin, in micrometres, around the structures a restricted
 #: (sequential) fit is limited to: their own edges plus enough surroundings to
 #: show where those edges should go.
@@ -146,11 +169,17 @@ class FitSettings:
     #: Margin around *structures* the restricted fit may see and move, in um.
     neighbourhood_um: float = DEFAULT_NEIGHBOURHOOD_UM
     preprocess: tuple[Preprocess, ...] = field(default_factory=tuple)
+    #: Stain fits only (lines ignore it): the intensity metric.
+    stain_metric: StainMetric = "local_correlation"
+    #: Stain fits only (lines ignore it): add an edge channel, the smoothed
+    #: gradient magnitude of the stain and of the atlas image, as a second
+    #: metric next to the intensities (:func:`langslice.deformable.fit.edge_image`).
+    stain_edges: bool = True
 
     def __post_init__(self) -> None:
         for name, kind in (("engine", Engine), ("stiffness", Stiffness), ("detail", Detail),
                            ("atlas_image", AtlasImage), ("section_image", SectionImage),
-                           ("labels", Labels)):
+                           ("labels", Labels), ("stain_metric", StainMetric)):
             value = getattr(self, name)
             if value not in get_args(kind):
                 raise ValueError(f"{name} must be one of {get_args(kind)}, got {value!r}")
@@ -172,6 +201,12 @@ class FitSettings:
             raise ValueError("Automatic labels are detected from the stain image")
         metric_for(self.section_image, self.atlas_image)
 
+    @property
+    def metric(self) -> Metric:
+        """The similarity metric this setting fits with (:func:`metric_for`)."""
+        return metric_for(self.section_image, self.atlas_image, engine=self.engine,
+                          stain_metric=self.stain_metric)
+
     def to_dict(self) -> dict[str, Any]:
         result = asdict(self)
         for name in ("exclude", "structures", "preprocess"):
@@ -181,24 +216,36 @@ class FitSettings:
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> FitSettings:
         data = dict(value)
-        # Records saved before 2026-10-02 carry the then-adjustable softening.
+        # Records saved before 2026-10-02 carry the then-adjustable softening,
+        # and were fitted with mutual information and no edge channel.
         data.pop("line_softening_um", None)
+        data.setdefault("stain_metric", "mutual_information")
+        data.setdefault("stain_edges", False)
         for name in ("exclude", "structures", "preprocess"):
             data[name] = tuple(data.get(name, ()))
         return cls(**cast(dict[str, Any], data))
 
 
-def metric_for(section_image: str, atlas_image: str) -> Metric:
-    """The fixed similarity metric for an image pairing.
+def metric_for(
+    section_image: str, atlas_image: str, *, engine: str = "ants",
+    stain_metric: str = "local_correlation",
+) -> Metric:
+    """The similarity metric for an image pairing, engine and stain metric.
 
     Lines against borders are the same kind of picture (soft ridges on zero),
     so intensities should simply agree: mean squares. A photograph against a
     grayscale atlas image has an unknown intensity relationship (brightfield
-    tissue is dark where the template is bright): mutual information. The
-    crossed pairings are refused: model lines against a grayscale image share
-    no structure, and a stain against atlas borders is the pairing the
-    2026-10-01 ceiling test found worst (it stayed at the linear placement and
-    left enlarged ventricles unfilled) — borders are for traced lines.
+    tissue is dark where the template is bright, and stains differ region by
+    region): ANTs' local correlation by default, which only asks that
+    intensities agree up to a scale and offset within each small window (the
+    linear placement is always the starting point, so a local metric is
+    enough), or mutual information over the whole section. Elastix has no
+    local correlation metric, so its stain fits use
+    :data:`ELASTIX_STAIN_METRIC`. The crossed pairings are refused: model
+    lines against a grayscale image share no structure, and a stain against
+    atlas borders is the pairing the 2026-10-01 ceiling test found worst (it
+    stayed at the linear placement and left enlarged ventricles unfilled) —
+    borders are for traced lines.
     """
     if section_image == "lines":
         if atlas_image not in BORDER_IMAGES:
@@ -207,4 +254,6 @@ def metric_for(section_image: str, atlas_image: str) -> Metric:
     if atlas_image in BORDER_IMAGES:
         raise ValueError("Atlas borders are fitted against traced lines only; fit a stain "
                          "against a grayscale atlas image (ara or nissl)")
-    return "mutual_information"
+    if stain_metric == "mutual_information":
+        return "mutual_information"
+    return "local_correlation" if engine == "ants" else ELASTIX_STAIN_METRIC

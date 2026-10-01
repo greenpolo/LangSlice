@@ -611,20 +611,19 @@ def ants_enhance(plane: np.ndarray, *, n4: bool, denoise: bool) -> np.ndarray:
     """ANTs N4 bias-field correction and/or denoising of one 8-bit plane.
 
     antspyx ships in LangSlice's optional ``registration`` extra and is
-    imported only here; without it this raises with the install hint.
+    imported on first use (``deformable.engines.import_ants``); without it
+    this raises with the install hint.
     Intensities are shifted positive first (N4 works on their logarithm) and
     the result is scaled back to the plane's own mean inside the tissue, so a
     dim channel stays dim; outside the tissue the plane is kept.
     """
     if not (n4 or denoise):
         return plane
-    try:
-        import ants
-    except ImportError as exc:  # pragma: no cover - depends on the environment
-        raise RuntimeError(
-            "N4 and denoising need antspyx: install LangSlice's 'registration' "
-            "extra (pip install 'langslice[registration]')"
-        ) from exc
+    # The deformable engine's import fixes ANTs' thread count for the process
+    # (deterministic fits), whichever of the two loads ANTs first.
+    from langslice.deformable.engines import import_ants
+
+    ants = import_ants("N4 and denoising")
     array = plane.astype(np.float32) + 1.0
     image = ants.from_numpy(np.ascontiguousarray(array))
     tissue = plane > 15
