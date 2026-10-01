@@ -145,6 +145,16 @@ def test_transport_can_retry_without_discarding_any_image_reply(case, tmp_path, 
     assert cached["cached"] and len(calls) == 2
 
 
+def test_deformable_engine_choice_does_not_make_a_trace_stale(case):
+    state, ctx, record, *_ = case
+    first = tool.correction_fingerprint(state, ctx, record.id)
+    for engine in ("ants", "elastix"):
+        ctx.spec.nonlinear.engine = engine
+        assert tool.correction_fingerprint(state, ctx, record.id) == first
+    ctx.spec.nonlinear.provider = "gemini-api"
+    assert tool.correction_fingerprint(state, ctx, record.id) != first
+
+
 def test_existing_spline_is_not_silently_reduced_to_affine(case, monkeypatch):
     state, ctx, record, *_ = case
     record.transform["spline"] = {"backend": "elastix"}

@@ -94,6 +94,11 @@ def correction_fingerprint(state: StackState, ctx: EngineContext, section_id: st
     source = Path(ctx.image_path(record.id)).resolve()
     stat = source.stat()
     transform = record.transform or {}
+    nonlinear = dict(ctx.spec.to_dict().get("nonlinear") or {})
+    # The deformable-fit engine never reaches the image call; leaving it in
+    # made every trace saved before the field existed (or under another
+    # engine choice) stale at an unchanged placement.
+    nonlinear.pop("engine", None)
     return _digest({
         "source": str(source), "source_size": stat.st_size, "source_mtime": stat.st_mtime_ns,
         "section_id": record.id, "atlas": state.atlas, "plane": state.plane,
@@ -104,7 +109,7 @@ def correction_fingerprint(state: StackState, ctx: EngineContext, section_id: st
         )},
         "preprocess": ctx.spec.preprocess,
         "pixel_size_um": ctx.spec.inputs.get("pixel_size_um"),
-        "nonlinear": ctx.spec.to_dict().get("nonlinear"),
+        "nonlinear": nonlinear,
     })
 
 
