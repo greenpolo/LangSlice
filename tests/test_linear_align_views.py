@@ -162,7 +162,7 @@ def test_outlines_mode_is_black_outside_the_lines():
     assert max(values) >= 200 and any(90 < v < 190 for v in values)
 
 
-def test_the_template_opacity_is_a_dial_not_a_switch():
+def test_the_atlas_opacity_is_a_dial_not_a_switch():
     # Inside the anatomy, outside the tissue: the atlas square is 1 mm (100 px)
     # and the tissue 80 px, both centred on the canvas, so the 10 px band just
     # inside the anatomy's left edge is template-only.
@@ -170,8 +170,8 @@ def test_the_template_opacity_is_a_dial_not_a_switch():
     cx, cy = geometry.size[0] // 2, geometry.size[1] // 2
     box = (slice(cy - 30, cy + 30), slice(cx - 49, cx - 42))
     (none,), _ = _views()
-    (half,), _ = _views(template_opacity=0.5)
-    (full,), _ = _views(template_opacity=1.0)
+    (half,), _ = _views(atlas_opacity=0.5)
+    (full,), _ = _views(atlas_opacity=1.0)
     assert none[box].mean() < half[box].mean() < full[box].mean()
 
 
@@ -291,11 +291,11 @@ def test_ab_returns_the_candidate_and_what_is_stored(tmp_path: Path):
     assert _state.slices[0].transform["physical"]["rotation_deg"] == 6.0
 
 
-def test_compare_placement_draws_the_section_on_each_atlas_position(tmp_path: Path):
+def test_view_placement_draws_the_section_on_each_atlas_position(tmp_path: Path):
     from langslice.adk import TOOL_MEDIA_PARTS_KEY
 
     tools, _box, state = _tools(tmp_path)
-    compare = tools["compare_placement"]
+    compare = tools["view_placement"]
 
     current = compare([{"id": "s.tif"}])
     assert current["status"] == "ok"
@@ -303,7 +303,9 @@ def test_compare_placement_draws_the_section_on_each_atlas_position(tmp_path: Pa
     assert current["compared"][0]["current_position_mm"] == 0.2
     assert len(current[TOOL_MEDIA_PARTS_KEY]) == 1  # side_by_side: one stitched image
 
-    stepped = compare([{"id": "s.tif", "positions_mm": [0.1, 0.2, 0.3]}], "overlay", [], 0.3)
+    stepped = compare(
+        [{"id": "s.tif", "positions_mm": [0.1, 0.2, 0.3]}], "overlay", [], atlas_opacity=0.3,
+    )
     assert [row["position_mm"] for row in stepped["compared"]] == [0.1, 0.2, 0.3]
     assert len(stepped[TOOL_MEDIA_PARTS_KEY]) == 3
     assert stepped["render_failed"] == []

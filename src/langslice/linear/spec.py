@@ -60,7 +60,7 @@ class PositionSpec:
     strict_interval: bool = False
     #: Build the ``run_deepslice`` tool (coronal mouse/rat only).
     deepslice: bool = False
-    #: Build the ``fit_position`` tool (the oblique fitter).
+    #: Build the ``search_position`` tool (the oblique fitter).
     bayesian: bool = False
     #: Look-before-you-write gates (2026-09-09, for the cheaper models):
     #: ``set_positions`` is refused for a section not compared at any
@@ -149,6 +149,17 @@ class JobSpec:
     #: "auto" runs :func:`langslice.image_prep.adaptive_preprocess`, "none"
     #: shows the raw section. Never written back to the user's files.
     preprocess: str = "auto"
+    #: A host's channel-blend settings (``preprocess.preview``'s
+    #: ``PreprocessingSettings``: auto, or custom weights and CLAHE) for
+    #: snapshots exported one page per channel. Set, every section's DEFAULT
+    #: appearance is :func:`langslice.image_prep.host_preprocess` over its raw
+    #: pages; the pages themselves stay readable as channels. None: the file
+    #: is shown through ``preprocess`` as above.
+    host_preprocessing: dict[str, Any] | None = None
+    #: Build the ``preprocess`` tool: the agent may set channel weights, CLAHE,
+    #: N4 and denoising for what it views and what a fit reads. Off, both stay
+    #: the default appearance above.
+    agent_preprocessing: bool = False
     #: Size of every picture the agent sees: "low" (the calibrated size),
     #: "medium" or "high". Display only: fits, working frames and stored
     #: transforms are unchanged, and the image model's inputs are untouched.
@@ -203,6 +214,12 @@ class JobSpec:
             )
         if not isinstance(self.agent_damage, bool):
             raise ValueError(f"agent_damage must be true or false; got {self.agent_damage!r}")
+        if not isinstance(self.agent_preprocessing, bool):
+            raise ValueError(
+                f"agent_preprocessing must be true or false; got {self.agent_preprocessing!r}"
+            )
+        if self.host_preprocessing is not None and not isinstance(self.host_preprocessing, dict):
+            raise ValueError("host_preprocessing must be a settings object or null")
         if self.plane not in PLANES:
             raise ValueError(f"Unsupported plane {self.plane!r}; expected one of {PLANES}")
         unknown = [task for task in self.tasks if task not in ALL_TASKS]

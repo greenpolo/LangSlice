@@ -60,7 +60,7 @@ def _tool(box, name: str) -> Any:
 def test_a_position_only_spec_has_no_reorder_or_transform_tools(tmp_path: Path):
     _, _, box = _box(tmp_path, tasks=["position"])
     names = set(box.names)
-    assert {"status", "view_slices", "fetch_atlas", "set_positions", "submit"} <= names
+    assert {"status", "view_slices", "view_atlas", "set_positions", "submit"} <= names
     assert not names & {"reorder_slices", "move_slice", "orient_slices"}
     assert not names & {"fit_affine", "adjust_transforms", "view_landmarks",
         "edit_landmarks", "warp_landmarks"}
@@ -73,10 +73,10 @@ def test_optional_tools_follow_their_flags(tmp_path: Path):
         transform=TransformSpec(angles=True),
     )
     names = set(box.names)
-    assert {"run_deepslice", "fit_position", "set_cutting_angles"} <= names
+    assert {"run_deepslice", "search_position", "set_cutting_angles"} <= names
 
     _, _, plain = _box(tmp_path)
-    assert not set(plain.names) & {"run_deepslice", "fit_position", "set_cutting_angles"}
+    assert not set(plain.names) & {"run_deepslice", "search_position", "set_cutting_angles"}
     # The interactive transform rides in the main trajectory, always on with
     # the task.
     assert not {"adjust_transform", "unmark_damaged", "validate", "move_slice"} & set(plain.names)
@@ -198,7 +198,7 @@ def test_set_positions_suppresses_only_a_placement_seen_in_an_earlier_round(
     from langslice.adk import TOOL_MEDIA_PARTS_KEY
 
     state, _, box = _box(tmp_path, tasks=["position"])
-    compare = _tool(box, "compare_placement")
+    compare = _tool(box, "view_placement")
     write = _tool(box, "set_positions")
 
     compared = compare(
@@ -233,7 +233,7 @@ def test_seen_placement_identity_includes_orientation_and_cutting_angles(
     from langslice.adk import TOOL_MEDIA_PARTS_KEY
 
     state, _, box = _box(tmp_path, tasks=["position"])
-    compare = _tool(box, "compare_placement")
+    compare = _tool(box, "view_placement")
     write = _tool(box, "set_positions")
     compare(
         [{"id": "s0.png", "positions_mm": [3.0]}],
@@ -263,7 +263,7 @@ def test_seen_placement_uses_the_actual_position_not_rounded_reply_text(
     from langslice.adk import TOOL_MEDIA_PARTS_KEY
 
     _state, _, box = _box(tmp_path, tasks=["position"])
-    compare = _tool(box, "compare_placement")
+    compare = _tool(box, "view_placement")
     write = _tool(box, "set_positions")
     compare(
         [{"id": "s0.png", "positions_mm": [3.0004]}],
@@ -284,7 +284,7 @@ def test_only_a_full_atlas_bearing_compare_suppresses_the_write_image(
     from langslice.adk import TOOL_MEDIA_DELIVERY_ID_KEY, TOOL_MEDIA_PARTS_KEY
 
     _state, _, box = _box(tmp_path, tasks=["position"])
-    compare = _tool(box, "compare_placement")
+    compare = _tool(box, "view_placement")
     write = _tool(box, "set_positions")
 
     section_only = compare(
@@ -332,7 +332,7 @@ def test_historical_delivery_token_cannot_promote_a_new_pending_call(
     from langslice.adk import TOOL_MEDIA_PARTS_KEY
 
     _state, _, box = _box(tmp_path, tasks=["position"])
-    compare = _tool(box, "compare_placement")
+    compare = _tool(box, "view_placement")
     compare(
         [{"id": "s0.png", "positions_mm": [3.0]}],
         tool_context=_ToolContext("new-call"),
@@ -359,7 +359,7 @@ def test_failed_compare_is_not_counted_as_seen_or_compared(
         raise RuntimeError("render broke")
 
     monkeypatch.setattr("langslice.linear.toolbox.physical_views", fail_render)
-    result = _tool(box, "compare_placement")(
+    result = _tool(box, "view_placement")(
         [{"id": "s0.png", "positions_mm": [3.0]}],
         tool_context=_ToolContext("compare-1"),
     )
@@ -864,7 +864,7 @@ def test_orient_change_clears_a_stale_transform(tmp_path: Path):
     assert state.by_id("s1.png").transform is not None  # unchanged orientation
 
 
-def test_fetch_atlas_images_are_section_sized(tmp_path: Path):
+def test_view_atlas_images_are_section_sized(tmp_path: Path):
     import io
 
     from PIL import Image
@@ -873,7 +873,7 @@ def test_fetch_atlas_images_are_section_sized(tmp_path: Path):
     from langslice.linear.atlas_fetch import ATLAS_LONG_EDGE
 
     _, _, box = _box(tmp_path)
-    result = _tool(box, "fetch_atlas")([1.0])
+    result = _tool(box, "view_atlas")([1.0])
     assert result["status"] == "ok"
     image = Image.open(io.BytesIO(result[TOOL_MEDIA_PARTS_KEY][0].inline_data.data))
     assert max(image.size) <= ATLAS_LONG_EDGE  # native atlas resolution, never upsampled
@@ -917,11 +917,11 @@ def test_gated_set_positions_refuses_an_uncompared_section(tmp_path: Path):
     state, _, box = _box(tmp_path, tasks=["position"], position=PositionSpec(gated=True))
     result = _tool(box, "set_positions")([{"id": "s0.png", "position_mm": 3.0}])
     assert result["status"] == "error" and result["error"] == "NOTHING_WRITTEN"
-    assert "compare_placement first" in result["rejected"][0]["reason"]
+    assert "view_placement first" in result["rejected"][0]["reason"]
     assert state.by_id("s0.png").position_mm is None
     # one compare is enough (Astra confirms at one hypothesised position);
     # the write then resets the record
-    _tool(box, "compare_placement")([{"id": "s0.png", "positions_mm": [3.0]}])
+    _tool(box, "view_placement")([{"id": "s0.png", "positions_mm": [3.0]}])
     result = _tool(box, "set_positions")([{"id": "s0.png", "position_mm": 3.0}])
     assert result["status"] == "ok" and state.by_id("s0.png").position_mm == 3.0
     result = _tool(box, "set_positions")([{"id": "s0.png", "position_mm": 3.2}])
@@ -937,7 +937,7 @@ def test_gated_submit_waits_for_a_review_after_the_last_write(tmp_path: Path):
     result = _submit(box)
     assert result["status"] == "refused" and result["error"] == "NOT_REVIEWED"
     _tool(box, "view_stack")()
-    _tool(box, "compare_placement")([{"id": "s1.png", "positions_mm": [2.6]}])
+    _tool(box, "view_placement")([{"id": "s1.png", "positions_mm": [2.6]}])
     _tool(box, "set_positions")([{"id": "s1.png", "position_mm": 2.6}])
     assert _submit(box)["error"] == "NOT_REVIEWED"  # the write undid the review
     _tool(box, "view_stack")()
@@ -948,7 +948,7 @@ def test_the_playbook_puts_astras_method_in_the_job_statement(tmp_path: Path):
     from langslice.linear.prompt import build_job_statement
     from langslice.linear.spec import PositionSpec
 
-    kwargs = dict(tool_names=["set_positions", "compare_placement", "view_stack", "submit"],
+    kwargs = dict(tool_names=["set_positions", "view_placement", "view_stack", "submit"],
                   species="mouse", pos_lo=0.0, pos_hi=10.0, axis_ends=("anterior", "posterior"))
     state, _, spec = _stack(tmp_path, tasks=["position"], position=PositionSpec(playbook=True))
     text = build_job_statement(spec, state, **kwargs)

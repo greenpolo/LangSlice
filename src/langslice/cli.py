@@ -394,6 +394,12 @@ def _add_linear_arguments(p: argparse.ArgumentParser) -> None:
         "only - the image files are never modified",
     )
     p.add_argument(
+        "--agent-preprocessing",
+        action="store_true",
+        help="Offer the preprocess tool: the agent may set channel weights, CLAHE, "
+        "N4 and denoising for what it views and what a fit reads",
+    )
+    p.add_argument(
         "--no-flip",
         dest="flip",
         action="store_false",
@@ -417,7 +423,7 @@ def _add_linear_arguments(p: argparse.ArgumentParser) -> None:
         "--deepslice", action="store_true", help="Offer the run_deepslice tool"
     )
     p.add_argument(
-        "--bayesian", action="store_true", help="Offer the fit_position tool"
+        "--bayesian", action="store_true", help="Offer the search_position tool"
     )
     p.add_argument(
         "--angles", action="store_true", help="Let the agent set the cutting angles"
@@ -566,6 +572,7 @@ def _build_linear_spec(args: argparse.Namespace, image_folder: str) -> "JobSpec"
         reasoning=args.reasoning,
         out=args.out,
         preprocess=args.preprocess,
+        agent_preprocessing=bool(getattr(args, "agent_preprocessing", False)),
         tasks=[task.strip() for task in args.tasks.split(",") if task.strip()],
         reorder=ReorderSpec(flip=args.flip, hemisphere_cue=args.hemisphere_cue),
         position=PositionSpec(

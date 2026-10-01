@@ -15,6 +15,7 @@ stop there.
 from __future__ import annotations
 
 import functools
+import importlib.util
 import inspect
 import logging
 import threading
@@ -33,20 +34,28 @@ from langslice.affine import (
     normalized_physical_affine,
     physical_affine_matrix,
 )
+from langslice.linear import appearance as looks
 from langslice.linear.atlas_fetch import (
-    ATLAS_LONG_EDGE,
     atlas_part,
-    atlas_section,
-    atlas_sized,
-    make_fetch_atlas,
+    make_view_atlas,
 )
 from langslice.linear.atlas_grep import GREP_ATLAS_LIMIT, grep_structures, plane_structure_ids
 from langslice.linear.checkpoint import save_checkpoint
 from langslice.linear.deepslice import run_deepslice as _run_deepslice
+from langslice.linear.display import (
+    CURRENT,
+    DisplayOptions,
+    atlas_caption,
+    atlas_plane_picture,
+    framed_atlas,
+    framed_section,
+    parse_display,
+    regions_in_plane,
+    with_display_doc,
+)
 from langslice.linear.live import LiveCallback, _plain
 from langslice.linear.render import (
     MAX_IMAGES_PER_CALL,
-    OUTLINE_LAYERS,
     OVERLAY_LONG_EDGE,
     PREVIEW_LONG_EDGE,
     VIEW_LONG_EDGE,
@@ -56,7 +65,6 @@ from langslice.linear.render import (
     caption,
     compact_rows,
     image_to_part,
-    normalize_border_style,
     physical_views,
     pivot_on_canvas,
     reference_slice_part,
@@ -106,6 +114,15 @@ _ROTATIONS = (0, 90, 180, 270)
 #: (:data:`~langslice.linear.render.VIEW_MODES`): the A/B toggle, which is two
 #: renders of one crop rather than one composition.
 PREVIEW_MODES = (*VIEW_MODES, "ab")
+#: Placement pictures (``view_placement``, ``set_positions``): the physical
+#: views plus ``stacked`` — the section over the atlas, each tissue-framed.
+PLACEMENT_MODES = ("template", "stacked", *[m for m in VIEW_MODES if m != "template"])
+#: Placement modes whose pictures are tissue-framed rather than drawn on the
+#: physical canvas (no zoom; outlines default to none).
+FRAMED_PLACEMENT_MODES = ("stacked", "side_by_side")
+#: Pictures of sections alone and of the atlas alone.
+SECTION_MODES = ("section",)
+ATLAS_MODES = ("template",)
 
 #: The transform every section starts from, and the B side of an A/B preview
 #: when a section carries nothing yet.
@@ -146,13 +163,14 @@ def host_transform() -> dict[str, Any]:
 def _tool_target_ids(state: StackState, name: str, args: dict[str, Any]) -> list[str]:
     """Resolve host display targets before a tool can reorder the stack."""
     if name in {"view_stack", "status", "undo", "redo", "submit",
-                "set_cutting_angles", "run_deepslice"}:
+                "set_cutting_angles", "run_deepslice"} or (
+                    name == "preprocess" and not args.get("sections")):
         return [record.id for record in state.in_order()]
     if name == "fit_affine" and not args.get("slice_ids"):
         return [record.id for record in state.in_order()
                 if record.position_mm is not None and not record.damaged
                 and (record.transform or {}).get("kind") != HOST_TRANSFORM_KIND]
-    refs = list(args.get("slice_ids") or args.get("new_order") or [])
+    refs = list(args.get("slice_ids") or args.get("new_order") or args.get("sections") or [])
     if "slice_id" in args:
         refs.append(args["slice_id"])
     if "id" in args:
@@ -756,22 +774,127 @@ def build_tools(
         """
         return {"status": "ok", **rows()}
 
-    def section_part(record: SliceState, *, long_edge: int = VIEW_LONG_EDGE) -> types.Part:
-        """One section as corrected, tissue-framed, its index and id burned in."""
-        return image_to_part(
-            caption(
-                render_slice(ctx, record, long_edge=long_edge, frame=True),
-                f"{record.index_corrected}: {record.id}",
-            )
+    def display(
+        modes: tuple[str, ...], args: dict[str, Any], *,
+        sections: list[SliceState] = (),  # type: ignore[assignment]
+        zoom_ok: bool = True, framed_modes: tuple[str, ...] = (),
+    ) -> DisplayOptions | dict[str, Any]:
+        """One call's display options, validated once for every picture tool."""
+        return parse_display(
+            ctx, state, modes=modes,
+            mode=args.get("mode", modes[0]),
+            zoom=args.get("zoom") or [],
+            section_image=args.get("section_image", CURRENT),
+            atlas_image=args.get("atlas_image", "ara"),
+            atlas_opacity=args.get("atlas_opacity", 0.0),
+            regions=args.get("regions") or [],
+            outlines=args.get("outlines", ""),
+            border_color=args.get("border_color", "yellow"),
+            border_thickness=args.get("border_thickness", 0.5),
+            sections=sections, zoom_ok=zoom_ok, framed_modes=framed_modes,
         )
 
-    def view_slices(slice_ids: list[str]) -> dict[str, Any]:
+    def section_label(record: SliceState, options: DisplayOptions) -> str:
+        label = f"{record.index_corrected}: {record.id}"
+        if options.section_image != CURRENT:
+            label += f"  [{options.section_image} channel]"
+        return label
+
+    def section_part(record: SliceState, options: DisplayOptions) -> types.Part:
+        """One section as corrected, tissue-framed, its index and id burned in."""
+        return image_to_part(
+            caption(framed_section(ctx, state, record, options), section_label(record, options))
+        )
+
+    def atlas_name(options: DisplayOptions) -> str:
+        return "template" if options.atlas_image == "ara" else options.atlas_image
+
+    def draw_canvas(
+        record: SliceState,
+        section: Any,
+        um_per_px: float,
+        position: float,
+        params: dict[str, float] | np.ndarray,
+        options: DisplayOptions,
+        *,
+        mode: str | None = None,
+        pivot: tuple[float, float] | None = None,
+        section_offset: tuple[int, int] = (0, 0),
+        label: str = "",
+        spline: dict[str, Any] | None = None,
+        long_edge: int = OVERLAY_LONG_EDGE,
+        matrix_label: str = "fitted matrix",
+    ) -> list[Any]:
+        """The physical canvas pictures of one section at one placement.
+
+        *section* is the working frame a transform is computed on; the
+        picture is drawn from the render the options ask for (the view
+        appearance or a raw channel, larger at medium/high resolution), with
+        a matrix and the pivot carried onto it. The one renderer of every
+        placement picture: `view_placement`, `set_positions`,
+        `adjust_transforms` and `fit_affine` all draw through here.
+        """
+        shown, shown_um, (fx, fy) = shown_section(
+            ctx, record, section, um_per_px, options.look(state, record),
+        )
+        in_section: tuple[float, float] | None = None
+        if shown is not section:
+            if isinstance(params, np.ndarray):
+                params = rescale_section_matrix(params, fx, fy)
+            if pivot is not None:
+                ox, oy = section_offset
+                in_section = ((pivot[0] - ox) * fx, (pivot[1] - oy) * fy)
+        images, _iou = physical_views(
+            shown, shown_um, ctx.atlas, position, cast(Plane, state.plane),
+            state.pitch_deg, state.yaw_deg, params,
+            mode=mode or options.mode, zoom=options.window,
+            atlas_opacity=options.atlas_opacity, outlines=options.outlines,
+            border_color=options.border_color, border_thickness=options.border_thickness,
+            pivot=pivot if in_section is None else None, pivot_in_section=in_section,
+            label=label or record.id, spline=spline, long_edge=long_edge,
+            scale=shown_scale(ctx),
+            atlas_picture=atlas_plane_picture(ctx, state, options.atlas_image, position),
+            atlas_name=atlas_name(options), regions=options.regions,
+            matrix_label=matrix_label,
+        )
+        return images
+
+    def stored_placement(record: SliceState, section: Any) -> tuple[Any, Any, str]:
+        """``(params or matrix, spline, kind)`` of the section's in-plane transform.
+
+        The six stored numbers are the exact map (shear included); a section
+        without a transform is drawn at identity.
+        """
+        transform = record.transform or {}
+        values = transform.get("params")
+        if values is not None and len(values) == 6:
+            return (denormalized_affine(values, section.size), transform.get("spline"),
+                    str(transform.get("kind") or "stored"))
+        return dict(IDENTITY_PARAMS), None, "identity"
+
+    def absent_regions(position: float, options: DisplayOptions) -> list[str]:
+        present = regions_in_plane(ctx, state, position, options)
+        return [name for name, _ids in options.regions if name not in present]
+
+    @with_display_doc('"section" (the only mode here).')
+    def view_slices(
+        slice_ids: list[str],
+        mode: str = "section",
+        zoom: list[float] = [],  # noqa: B006 — read, never mutated; ADK wants a value
+        section_image: str = "current",
+        atlas_image: str = "ara",
+        atlas_opacity: float = 0.0,
+        regions: list[str] = [],  # noqa: B006
+        outlines: str = "",
+        border_color: str = "yellow",
+        border_thickness: float = 0.5,
+    ) -> dict[str, Any]:
         """Look at up to 4 named sections at higher resolution.
 
         Sections are rendered as corrected: any rotation and flip already
-        applied, framed to their tissue the same way fetched atlas sections
-        are. Each image carries its corrected index and filename burned into
-        its top-left corner.
+        applied, framed to their tissue the same way atlas sections are.
+        Each image carries its corrected index and filename burned into its
+        top-left corner.
 
         Args:
             slice_ids: Filenames or corrected indices (max 4 per call).
@@ -784,7 +907,14 @@ def build_tools(
         known, unknown = resolve_many(list(slice_ids)[:MAX_VIEW_SLICES])
         if not known:
             return {"status": "error", "error": "UNKNOWN_SLICE_IDS", "unknown": unknown}
-        parts = [section_part(record) for record in known]
+        options = display(SECTION_MODES, dict(
+            mode=mode, zoom=zoom, section_image=section_image, atlas_image=atlas_image,
+            atlas_opacity=atlas_opacity, regions=regions, outlines=outlines,
+            border_color=border_color, border_thickness=border_thickness,
+        ), sections=known)
+        if isinstance(options, dict):
+            return options
+        parts = [section_part(record, options) for record in known]
         return {
             "status": "ok",
             "slice_ids": [record.id for record in known],
@@ -797,6 +927,7 @@ def build_tools(
                 + ", in that order, rendered as corrected, each labelled "
                 "'<corrected index>: <filename>' in its top-left corner."
             ),
+            "view": options.echo(),
             TOOL_MEDIA_PARTS_KEY: parts,
         }
 
@@ -964,20 +1095,184 @@ def build_tools(
             tool_context.actions.escalate = True
         return {"status": "ok", **rows()}
 
+    # --- appearance (JobSpec.agent_preprocessing) ----------------------
+
+    def channel_summary(records: list[SliceState]) -> Any:
+        """The raw channel names: one list when every section shares it."""
+        named = {record.id: list(ctx.section_channels(record.id)[0]) for record in records}
+        distinct = {tuple(names) for names in named.values()}
+        return list(next(iter(distinct))) if len(distinct) == 1 else named
+
+    @with_display_doc('"section" (the only mode here).')
+    def preprocess(
+        target: str = "both",
+        sections: list[str] = [],  # noqa: B006 — read, never mutated; ADK wants a value
+        channel_weights: list[float] = [],  # noqa: B006
+        clahe_clip: float = looks.DEFAULT_CLAHE_CLIP,
+        clahe_tiles: int = looks.DEFAULT_CLAHE_TILES,
+        n4: bool = False,
+        denoise: bool = False,
+        reset: bool = False,
+        mode: str = "section",
+        zoom: list[float] = [],  # noqa: B006
+        section_image: str = "current",
+        atlas_image: str = "ara",
+        atlas_opacity: float = 0.0,
+        regions: list[str] = [],  # noqa: B006
+        outlines: str = "",
+        border_color: str = "yellow",
+        border_thickness: float = 0.5,
+    ) -> dict[str, Any]:
+        """Set how sections look: for what you view, for what a fit reads, or both.
+
+        Sets the appearance of the whole stack (no sections) or of named
+        sections (overriding the stack's), for target "view" (every picture
+        you are shown from now on), "fit" (the image a deformable fit reads)
+        or "both"; each target keeps its own setting. The image is built from
+        the section's raw channels: each channel with weight above zero is
+        optionally N4 bias-field corrected and denoised (ANTs), contrast-
+        enhanced by CLAHE, then the channels are blended by their weights.
+        Until this is called both targets use the default appearance.
+        Writes, checkpoints and can be undone; another call replaces the
+        setting. Display options never change it.
+
+        Args:
+            target: "view", "fit" or "both".
+            sections: Filenames or corrected indices; empty sets the stack.
+            channel_weights: One weight per raw channel, in the order the
+                result's `channels` lists them; 0 leaves a channel out. Give
+                the counterstain that lights all the tissue (DAPI, Nissl) the
+                most weight and sparse labels (tracers, reporters) little or
+                none. Empty: automatic weights by tissue coverage.
+            clahe_clip: CLAHE clip limit, 0 (no CLAHE) to 40; the default
+                appearance uses 4.
+            clahe_tiles: CLAHE tiles per side, 1 to 32; the default uses 8.
+            n4: ANTs N4 bias-field correction of uneven illumination.
+            denoise: ANTs denoising.
+            reset: True returns the target to the default appearance (named
+                sections: back to the stack's setting); other settings are
+                ignored.
+
+        Returns:
+            The settings in force per target, the raw channels, and the
+            affected sections (up to 4) rendered as the target now sees them,
+            each labelled.
+        """
+        chosen = str(target or "both").strip().lower()
+        if chosen not in looks.TARGET_CHOICES:
+            return {"status": "error", "error": "BAD_TARGET",
+                    "targets": list(looks.TARGET_CHOICES)}
+        targets = list(looks.TARGETS) if chosen == "both" else [chosen]
+        if sections:
+            scope, unknown = resolve_many(list(sections))
+            if unknown or not scope:
+                return {"status": "error", "error": "UNKNOWN_SLICE_IDS", "unknown": unknown}
+        else:
+            scope = state.in_order()
+        settings: dict[str, Any] | None = None
+        if not reset:
+            try:
+                settings = looks.validate_settings(
+                    channel_weights=list(channel_weights or []) or None,
+                    clahe_clip=clahe_clip, clahe_tiles=clahe_tiles, n4=n4, denoise=denoise,
+                )
+            except ValueError as exc:
+                return {"status": "error", "error": "BAD_ARGS", "message": str(exc)}
+            weights = settings["channel_weights"]
+            if weights is not None:
+                mismatched = {
+                    record.id: list(names) for record in scope
+                    if len(names := ctx.section_channels(record.id)[0]) != len(weights)
+                }
+                if mismatched:
+                    return {"status": "error", "error": "CHANNEL_COUNT_MISMATCH",
+                            "weights": len(weights), "channels": mismatched}
+            if (n4 or denoise) and importlib.util.find_spec("ants") is None:
+                return {"status": "error", "error": "UNAVAILABLE",
+                        "message": "N4 and denoising need antspyx: install LangSlice's "
+                        "'registration' extra (pip install 'langslice[registration]')."}
+        if sections:
+            shown = scope[:MAX_VIEW_SLICES]
+        else:  # up to four sections spread evenly over the stack
+            picks = np.linspace(0, len(scope) - 1, min(len(scope), MAX_VIEW_SLICES))
+            shown = [scope[index] for index in sorted({int(round(v)) for v in picks})]
+        options = display(SECTION_MODES, dict(
+            mode=mode, zoom=zoom, section_image=section_image, atlas_image=atlas_image,
+            atlas_opacity=atlas_opacity, regions=regions, outlines=outlines,
+            border_color=border_color, border_thickness=border_thickness,
+        ), sections=shown)
+        if isinstance(options, dict):
+            return options
+
+        before = state.to_dict()
+        ids = [record.id for record in scope] if sections else None
+        for name in targets:
+            looks.set_settings(state, name, ids, settings)
+        pictured = targets[0]  # "both" writes one setting to both targets
+        parts: list[types.Part] = []
+        try:
+            for record in shown:
+                label = section_label(record, options) + f"  [{pictured} appearance]"
+                parts.append(image_to_part(caption(
+                    framed_section(ctx, state, record, options, target=pictured), label,
+                )))
+        except Exception as exc:
+            state.restore(before)
+            return {"status": "error", "error": "RENDER_FAILED", "message": str(exc)}
+        push(before)
+        save_checkpoint(state, ctx.checkpoint_path)
+        in_force = {
+            name: (
+                {"sections": {record.id: looks.section_settings(state, name, record.id)
+                              for record in scope}}
+                if ids else {"stack": looks.section_settings(state, name, "")}
+            )
+            for name in targets
+        }
+        return {
+            "status": "ok",
+            "targets": targets,
+            "scope": ids or "stack",
+            "settings": in_force,
+            "channels": channel_summary(scope),
+            "shown": [record.id for record in shown],
+            "description": (
+                "Attached: " + ", ".join(record.id for record in shown)
+                + f", in that order, as the {pictured} target now sees them; a null "
+                "setting is the default appearance."
+            ),
+            "view": options.echo(),
+            TOOL_MEDIA_PARTS_KEY: parts,
+        }
+
     box.tools = [
         status,
         view_slices,
-        make_fetch_atlas(state, ctx),
+        make_view_atlas(state, ctx),
         note,
         undo,
         redo,
     ]
     if spec.agent_damage:
         box.tools.append(mark_damaged)
+    if spec.agent_preprocessing:
+        box.tools.append(preprocess)
 
     # --- orientation (part of the transform task) ------------------------
 
-    def orient_slices(entries: list[dict[str, Any]]) -> dict[str, Any]:
+    @with_display_doc('"section" (the only mode here).')
+    def orient_slices(
+        entries: list[dict[str, Any]],
+        mode: str = "section",
+        zoom: list[float] = [],  # noqa: B006 — read, never mutated; ADK wants a value
+        section_image: str = "current",
+        atlas_image: str = "ara",
+        atlas_opacity: float = 0.0,
+        regions: list[str] = [],  # noqa: B006
+        outlines: str = "",
+        border_color: str = "yellow",
+        border_thickness: float = 0.5,
+    ) -> dict[str, Any]:
         """Set the flip and rotation of one or more sections, and show them.
 
         Orientation is part of in-plane alignment: a flip is the sign of the
@@ -1000,6 +1295,15 @@ def build_tools(
         """
         if not entries:
             return {"status": "error", "error": "BAD_ARGS"}
+        named, _ = resolve_many([entry.get("id", "") for entry in entries
+                                 if isinstance(entry, dict)])
+        options = display(SECTION_MODES, dict(
+            mode=mode, zoom=zoom, section_image=section_image, atlas_image=atlas_image,
+            atlas_opacity=atlas_opacity, regions=regions, outlines=outlines,
+            border_color=border_color, border_thickness=border_thickness,
+        ), sections=named)
+        if isinstance(options, dict):
+            return options
         snapshot()
         applied: list[str] = []
         unknown: list[str] = []
@@ -1049,7 +1353,7 @@ def build_tools(
             if record is None:
                 continue
             try:
-                parts.append(section_part(record))
+                parts.append(section_part(record, options))
             except Exception as exc:
                 failed.append({"id": name, "message": str(exc)})
         return {
@@ -1065,6 +1369,7 @@ def build_tools(
                 "'<corrected index>: <filename>' in its top-left corner."
             ),
             "render_failed": failed,
+            "view": options.echo(),
             TOOL_MEDIA_PARTS_KEY: parts,
         }
 
@@ -1115,8 +1420,82 @@ def build_tools(
 
     # --- position -------------------------------------------------------
 
+    def placement_pictures(
+        record: SliceState,
+        position: float,
+        options: DisplayOptions,
+        parts: list[types.Part],
+        section_indexes: dict[str, int],
+        working: dict[str, tuple[Any, float, str]],
+    ) -> dict[str, Any]:
+        """Append one section-position pair's pictures to *parts*.
+
+        ``side_by_side``: separate tissue-framed references (one section per
+        distinct id, one atlas per pair), mapped by the returned
+        ``image_indexes``. ``stacked``: one image, the framed section over the
+        framed atlas. Every other mode: the physical canvas, the section under
+        its stored in-plane transform (identity when it has none). Returns the
+        pair's row fields (calibration, transform drawn, image indexes).
+        """
+        if record.id not in working:
+            section = render_slice(ctx, record, long_edge=PREVIEW_LONG_EDGE)
+            working[record.id] = (section, *calibrate(state, ctx, record, section))
+        section, um_per_px, source = working[record.id]
+        row: dict[str, Any] = {"calibration": {"um_per_px": round(um_per_px, 3), "source": source}}
+        default_atlas = (options.atlas_image == "ara" and options.outlines == "none"
+                         and not options.regions)
+        if options.mode == "side_by_side":
+            # Resolve/encode both before mutating delivery bookkeeping.
+            atlas_image = (
+                atlas_part(ctx, state, position) if default_atlas else image_to_part(caption(
+                    framed_atlas(ctx, state, position, options),
+                    atlas_caption(state, position, options),
+                ))
+            )
+            tissue_image = reference_slice_part(ctx, record, look=options.look(state, record))
+            if record.id not in section_indexes:
+                section_indexes[record.id] = len(parts)
+                parts.append(tissue_image)
+            row["image_indexes"] = {"section": section_indexes[record.id], "atlas": len(parts)}
+            parts.append(atlas_image)
+            return row
+        if options.mode == "stacked":
+            picture = stacked(
+                framed_section(ctx, state, record, options),
+                framed_atlas(ctx, state, position, options),
+            )
+            parts.append(image_to_part(caption(
+                picture, f"{record.id} over atlas {position:.2f} mm"
+                + ("" if options.atlas_image == "ara" else f" ({options.atlas_image})"),
+            )))
+            return row
+        params, spline, kind = stored_placement(record, section)
+        parts.extend(image_to_part(image) for image in draw_canvas(
+            record, section, um_per_px, position, params, options,
+            label=f"{record.id} vs atlas {position:.2f} mm", spline=spline,
+            long_edge=VIEW_LONG_EDGE, matrix_label=f"{kind} transform",
+        ))
+        row["transform"] = kind
+        return row
+
+    @with_display_doc(
+        '"stacked" (default: the section as corrected over the atlas at the '
+        'position given, each tissue-framed), "template", "side_by_side", '
+        '"overlay", "checkerboard", "outlines" or "section" — as in '
+        '`view_placement`.'
+    )
     def set_positions(
-        entries: list[dict[str, Any]], tool_context: Any = None
+        entries: list[dict[str, Any]],
+        mode: str = "stacked",
+        zoom: list[float] = [],  # noqa: B006 — read, never mutated; ADK wants a value
+        section_image: str = "current",
+        atlas_image: str = "ara",
+        atlas_opacity: float = 0.0,
+        regions: list[str] = [],  # noqa: B006
+        outlines: str = "",
+        border_color: str = "yellow",
+        border_thickness: float = 0.5,
+        tool_context: Any = None,
     ) -> dict[str, Any]:
         """Write positions for one or more sections, and show each placement.
 
@@ -1128,14 +1507,24 @@ def build_tools(
 
         Returns:
             What was written, what was clamped, the rows it changed, and one
-            image per placement not already seen in a full-canvas,
+            picture per placement not already seen in a full-canvas,
             atlas-bearing view with this orientation and these cutting
-            angles: the section as corrected over the atlas section at the
-            position it was given, both tissue-framed and labelled in the
-            top-left corner.
+            angles, labelled in the top-left corner.
         """
         if not entries:
             return {"status": "error", "error": "BAD_ARGS"}
+        named, _ = resolve_many([entry.get("id", "") for entry in entries
+                                 if isinstance(entry, dict)])
+        options = display(PLACEMENT_MODES, dict(
+            mode=mode, zoom=zoom, section_image=section_image, atlas_image=atlas_image,
+            atlas_opacity=atlas_opacity, regions=regions, outlines=outlines,
+            border_color=border_color, border_thickness=border_thickness,
+        ), sections=named, framed_modes=FRAMED_PLACEMENT_MODES)
+        if isinstance(options, dict):
+            return options
+        if options.mode in ("stacked", "side_by_side") and not options.full_view:
+            return {"status": "error", "error": "ZOOM_UNSUPPORTED", "mode": options.mode,
+                    "supported_zoom": [0.0, 0.0, 1.0, 1.0]}
         before = state.to_dict()
         written: list[dict[str, Any]] = []
         written_positions: list[float] = []
@@ -1162,7 +1551,7 @@ def build_tools(
                     {
                         "id": record.id,
                         "reason": "not compared since its last write; "
-                        "compare_placement first",
+                        "view_placement first",
                     }
                 )
                 continue
@@ -1214,34 +1603,39 @@ def build_tools(
         failed: list[dict[str, str]] = []
         rendered: list[str] = []
         delivery_id: str | None = None
+        section_indexes: dict[str, int] = {}
+        working: dict[str, tuple[Any, float, str]] = {}
+        image_indexes: dict[str, Any] = {}
+        atlas_bearing = options.mode != "section" and options.full_view
         for row, position in shown:
             record = state.by_id(row["id"])
             if record is None:
                 continue
+            first = len(parts)
             try:
-                picture = stacked(
-                    render_slice(ctx, record, long_edge=ATLAS_LONG_EDGE, frame=True),
-                    atlas_sized(atlas_section(ctx, state, position, frame=True), ctx.atlas,
-                                scale=shown_scale(ctx)),
+                extras = placement_pictures(
+                    record, position, options, parts, section_indexes, working,
                 )
-                label = f"{record.id} over atlas {position:.2f} mm"
             except Exception as exc:
+                del parts[first:]
                 failed.append({"id": row["id"], "message": str(exc)})
                 continue
-            parts.append(image_to_part(caption(picture, label)))
-            rendered.append(record.id)
-            delivery_id = box.record_placement_view(
-                tool_context, placement_view_key(record, position)
+            image_indexes[record.id] = extras.get(
+                "image_indexes", list(range(first, len(parts))),
             )
+            rendered.append(record.id)
+            if atlas_bearing:
+                delivery_id = box.record_placement_view(
+                    tool_context, placement_view_key(record, position)
+                )
         result["render_failed"] = failed
         shown_rows = [row for row, _position in shown]
         suppressed = [row["id"] for row in written if row not in shown_rows]
         result["description"] = (
             (
-                "Attached: one placement image per section not already seen "
-                "at this position, orientation and cutting angle, in the "
-                "order written, the section as corrected over the atlas section "
-                "at the position it was given, for "
+                "Attached: the placement pictures of each section not already "
+                "seen at this position, orientation and cutting angle, in the "
+                "order written (mapped by image_indexes), for "
                 + ", ".join(rendered)
                 + "."
                 if rendered
@@ -1257,6 +1651,9 @@ def build_tools(
                 else ""
             )
         )
+        if rendered:
+            result["image_indexes"] = image_indexes
+            result["view"] = options.echo()
         result["images_suppressed_seen"] = suppressed
         if delivery_id is not None:
             result[TOOL_MEDIA_DELIVERY_ID_KEY] = delivery_id
@@ -1285,7 +1682,7 @@ def build_tools(
             allow_angle_change=bool(allow_angle_change),
         )
 
-    def fit_position(slice_id: str, window_mm: float, angles: bool) -> dict[str, Any]:
+    def search_position(slice_id: str, window_mm: float, angles: bool) -> dict[str, Any]:
         """Search the atlas around a section's current position. Writes nothing.
 
         Scores the section against resampled atlas planes and returns the best
@@ -1328,7 +1725,7 @@ def build_tools(
                 allow_mirror=False,
             )
         except Exception as exc:
-            logger.warning("fit_position failed for %s: %s", record.id, exc)
+            logger.warning("search_position failed for %s: %s", record.id, exc)
             return {"status": "error", "error": "FIT_FAILED", "message": str(exc)}
         return {
             "status": "ok",
@@ -1342,77 +1739,49 @@ def build_tools(
             "searched_angles": bool(angles),
         }
 
-    def compare_placement(
+    @with_display_doc(
+        '"template" (default: the atlas image at that position on the '
+        "section's own canvas, at the section's scale — the section itself is "
+        'in the opening message and `view_slices`), "stacked" (one picture: '
+        'the section over the atlas, each tissue-framed), "side_by_side" '
+        "(separate original section and atlas images, independently "
+        'tissue-framed, full view only), "overlay" (the section under its '
+        'transform with the atlas lines on it), "checkerboard" (section and '
+        'atlas image in alternating tiles), "outlines" (atlas lines and the '
+        "section's silhouette on black) or \"section\"."
+    )
+    def view_placement(
         entries: list[dict[str, Any]],
         mode: str = "template",
         zoom: list[float] = [],  # noqa: B006 — read, never mutated; ADK wants a value
-        template_opacity: float = 0.0,
-        outlines: str = "all",
-        tool_context: Any = None,
+        section_image: str = "current",
+        atlas_image: str = "ara",
+        atlas_opacity: float = 0.0,
+        regions: list[str] = [],  # noqa: B006
+        outlines: str = "",
         border_color: str = "yellow",
         border_thickness: float = 0.5,
+        tool_context: Any = None,
     ) -> dict[str, Any]:
-        """Show sections against the atlas at candidate positions. Writes nothing.
+        """Show sections in their full current placement, or at candidate positions.
 
-        At most 4 section-position pairs per call. Physical views return one
-        image per pair. side_by_side returns separate tissue-framed reference
-        images: one original section per distinct id plus one atlas per pair
-        (up to 8 images), without overlaying or re-drawing the section.
+        Writes nothing. At most 4 section-position pairs per call. A section
+        is drawn under its current in-plane transform (identity when it has
+        none) on a millimetre-true canvas: physical views return one image per
+        pair. side_by_side returns separate tissue-framed reference images:
+        one original section per distinct id plus one atlas per pair (up to 8
+        images), without overlaying or re-drawing the section.
 
         Args:
             entries: ``[{"id": "<filename or corrected index>",
                 "positions_mm": [<mm>, ...]}]``. An empty or missing
                 ``positions_mm`` means that section's current position.
-            mode: "template" (default: the atlas at that position on the
-                section's own canvas, at the section's scale — the section
-                itself is in the opening message and `view_slices`),
-                "side_by_side" (separate original section and atlas images,
-                independently tissue-framed, not a shared physical canvas),
-                "overlay" (the section with the
-                outlines on it), "checkerboard" (section and template in
-                alternating tiles), "outlines" (atlas lines and the section's
-                silhouette on black) or "section".
-            zoom: [x0, y0, x1, y1] as fractions of the canvas; empty is all.
-                side_by_side supports only the full view.
-            template_opacity: 0..1, the atlas template blended under the
-                outlines in "overlay".
-            border_color: Atlas border color, a named color or #RRGGBB; yellow
-                by default. Display only; does not change the transform.
-            border_thickness: Atlas border width in output pixels, 0.25..8;
-                default 0.5. Fractional widths are antialiased. Applies only
-                where atlas outlines are drawn.
-            outlines: "all" (every family boundary), "outer" (the atlas
-                outline only) or "none". Outlines and template_opacity apply
-                only to physical views, not side_by_side reference images.
 
         Returns:
-            The section-position pairs compared, in order, each with its
-            calibration, and the images per pair in that order.
+            The section-position pairs shown, in order, each with its
+            calibration and the transform drawn, and the images per pair in
+            that order.
         """
-        try:
-            rgb, border_thickness = normalize_border_style(border_color, border_thickness)
-        except ValueError as exc:
-            return {"status": "error", "error": "INVALID_BORDER_STYLE", "message": str(exc)}
-        border_color = "#" + "".join(f"{channel:02x}" for channel in rgb)
-        view = str(mode or "template").strip().lower()
-        if view not in VIEW_MODES:
-            return {"status": "error", "error": "BAD_MODE", "modes": list(VIEW_MODES)}
-        layer = str(outlines or "all").strip().lower()
-        if layer not in OUTLINE_LAYERS:
-            return {"status": "error", "error": "BAD_OUTLINES", "layers": list(OUTLINE_LAYERS)}
-        try:
-            window = [float(value) for value in (zoom or [])]
-            opacity = float(template_opacity)
-        except (TypeError, ValueError):
-            return {"status": "error", "error": "BAD_ARGS"}
-        if window and len(window) != 4:
-            return {"status": "error", "error": "BAD_ZOOM",
-                    "expected": "[x0, y0, x1, y1] as fractions of the canvas"}
-        separate = view == "side_by_side"
-        if separate and window and window != [0.0, 0.0, 1.0, 1.0]:
-            return {"status": "error", "error": "ZOOM_UNSUPPORTED",
-                    "mode": view, "supported_zoom": [0.0, 0.0, 1.0, 1.0]}
-
         # Resolve every pair first, so the errors name every problem at once.
         pairs: list[tuple[SliceState, float]] = []
         unknown: list[str] = []
@@ -1434,6 +1803,17 @@ def build_tools(
                     continue
                 wanted = [float(record.position_mm)]
             pairs.extend((record, min(pos_hi, max(pos_lo, value))) for value in wanted)
+        options = display(PLACEMENT_MODES, dict(
+            mode=mode, zoom=zoom, section_image=section_image, atlas_image=atlas_image,
+            atlas_opacity=atlas_opacity, regions=regions, outlines=outlines,
+            border_color=border_color, border_thickness=border_thickness,
+        ), sections=list({record.id: record for record, _p in pairs}.values()),
+            framed_modes=FRAMED_PLACEMENT_MODES)
+        if isinstance(options, dict):
+            return options
+        if options.mode in FRAMED_PLACEMENT_MODES and not options.full_view:
+            return {"status": "error", "error": "ZOOM_UNSUPPORTED",
+                    "mode": options.mode, "supported_zoom": [0.0, 0.0, 1.0, 1.0]}
         if not pairs:
             return {
                 "status": "error",
@@ -1448,45 +1828,21 @@ def build_tools(
         dropped = len(pairs) - MAX_VIEW_SLICES
         pairs = pairs[:MAX_VIEW_SLICES]
 
-        sections: dict[str, tuple[Any, float, str]] = {}
+        working: dict[str, tuple[Any, float, str]] = {}
         compared: list[dict[str, Any]] = []
         parts: list[types.Part] = []
         failed: list[dict[str, Any]] = []
         delivery_id: str | None = None
-        full_atlas_view = view != "section" and (
-            not window or window == [0.0, 0.0, 1.0, 1.0]
-        )
+        full_atlas_view = options.mode != "section" and options.full_view
         section_indexes: dict[str, int] = {}
         for record, position in pairs:
-            if record.id not in sections:
-                section = render_slice(ctx, record, long_edge=PREVIEW_LONG_EDGE)
-                sections[record.id] = (section, *calibrate(state, ctx, record, section))
-            section, um_per_px, source = sections[record.id]
-            media_indexes: dict[str, int] = {}
+            first = len(parts)
             try:
-                if separate:
-                    # Resolve/encode both before mutating delivery bookkeeping.
-                    atlas_image = atlas_part(ctx, state, position)
-                    tissue_image = reference_slice_part(ctx, record)
-                    if record.id not in section_indexes:
-                        section_indexes[record.id] = len(parts)
-                        parts.append(tissue_image)
-                    media_indexes = {"section": section_indexes[record.id], "atlas": len(parts)}
-                    parts.append(atlas_image)
-                else:
-                    # Identity at the canvas centre: the picture may be drawn
-                    # from a larger render with no change to what it shows.
-                    shown, shown_um, _factors = shown_section(ctx, record, section, um_per_px)
-                    images, _ = physical_views(
-                        shown, shown_um, ctx.atlas, position, cast(Plane, state.plane),
-                        state.pitch_deg, state.yaw_deg, dict(IDENTITY_PARAMS),
-                        mode=view, zoom=window, template_opacity=opacity, outlines=layer,
-                        border_color=border_color, border_thickness=border_thickness,
-                        label=f"{record.id} vs atlas {position:.2f} mm",
-                        long_edge=VIEW_LONG_EDGE, scale=shown_scale(ctx),
-                    )
-                    parts.extend(image_to_part(image) for image in images)
+                extras = placement_pictures(
+                    record, position, options, parts, section_indexes, working,
+                )
             except Exception as exc:
+                del parts[first:]
                 failed.append({"id": record.id, "position_mm": round(position, 3),
                                "message": str(exc)})
                 continue
@@ -1497,34 +1853,34 @@ def build_tools(
                 delivery_id = box.record_placement_view(
                     tool_context, placement_view_key(record, position)
                 )
+            absent = absent_regions(position, options)
             compared.append({
                 "id": record.id,
                 "position_mm": round(position, 3),
                 "current_position_mm": (
                     None if record.position_mm is None else round(record.position_mm, 3)
                 ),
-                "calibration": {"um_per_px": round(um_per_px, 3), "source": source},
-                **({"image_indexes": media_indexes} if separate else {}),
+                **extras,
+                **({"regions_not_in_plane": absent} if absent else {}),
             })
+        separate = options.mode == "side_by_side"
         result: dict[str, Any] = {
             "status": "ok" if parts else "error",
             **({} if parts else {"error": "RENDER_FAILED"}),
             "compared": compared,
             "unknown_ids": unknown,
             "no_position": unplaced,
-            "view": {"mode": view, "zoom": window or [0.0, 0.0, 1.0, 1.0],
-                     "outlines": layer, "border_color": border_color,
-                     "border_thickness": border_thickness},
+            "view": options.echo(),
             "render_failed": failed,
             "description": (
-                "Compared, in order: "
+                "Shown, in order: "
                 + ", ".join(f"{row['id']} at {row['position_mm']:.2f} mm" for row in compared)
                 + ("; separate reference images mapped by zero-based image_indexes. "
                    "Section captions retain their original display index/flags; "
                    "filenames identify sections. Independently tissue-framed, not "
-                   "a shared physical canvas. Outlines/opacity do not apply."
-                   if separate else "; one image per pair in that order, each captioned "
-                   "with the section and the position it is compared with.")
+                   "a shared physical canvas."
+                   if separate else "; the images of each pair in that order, each "
+                   "captioned with the section and the position it is shown at.")
             ),
             TOOL_MEDIA_PARTS_KEY: parts,
         }
@@ -1535,7 +1891,21 @@ def build_tools(
             result[TOOL_MEDIA_DELIVERY_ID_KEY] = delivery_id
         return result
 
-    def view_stack() -> dict[str, Any]:
+    @with_display_doc(
+        '"stacked" (the only mode here: each section over the atlas at its '
+        "position). zoom is not supported."
+    )
+    def view_stack(
+        mode: str = "stacked",
+        zoom: list[float] = [],  # noqa: B006 — read, never mutated; ADK wants a value
+        section_image: str = "current",
+        atlas_image: str = "ara",
+        atlas_opacity: float = 0.0,
+        regions: list[str] = [],  # noqa: B006
+        outlines: str = "",
+        border_color: str = "yellow",
+        border_thickness: float = 0.5,
+    ) -> dict[str, Any]:
         """The whole stack ordered by written position, each over its atlas match.
 
         One contact sheet: every section as a labelled thumbnail, in the
@@ -1549,15 +1919,20 @@ def build_tools(
         Returns:
             The rows in that order and the two images.
         """
+        options = display(("stacked",), dict(
+            mode=mode, zoom=zoom, section_image=section_image, atlas_image=atlas_image,
+            atlas_opacity=atlas_opacity, regions=regions, outlines=outlines,
+            border_color=border_color, border_thickness=border_thickness,
+        ), sections=state.in_order(), zoom_ok=False, framed_modes=("stacked",))
+        if isinstance(options, dict):
+            return options
         box.reviewed = True
+
         def atlas_under(record: SliceState) -> Any:
             if record.position_mm is None:
                 return None
             try:
-                return atlas_sized(
-                    atlas_section(ctx, state, float(record.position_mm), frame=True),
-                    ctx.atlas, scale=shown_scale(ctx),
-                )
+                return framed_atlas(ctx, state, float(record.position_mm), options)
             except Exception as exc:
                 logger.warning("view_stack: atlas render failed for %s: %s", record.id, exc)
                 return None
@@ -1570,7 +1945,9 @@ def build_tools(
                     "'<index>: <filename>  <position>', over its atlas match:"
                 )
             ),
-            image_to_part(stack_sheet(state, ctx, under=atlas_under)),
+            image_to_part(stack_sheet(
+                state, ctx, under=atlas_under, section_image=options.section_image,
+            )),
             types.Part.from_text(text="Position against corrected index:"),
             image_to_part(spacing_plot(state)),
         ]
@@ -1586,15 +1963,16 @@ def build_tools(
                 "at its position beneath it when it has one; then a plot of "
                 "position against corrected index."
             ),
+            "view": options.echo(),
             TOOL_MEDIA_PARTS_KEY: parts,
         }
 
     if spec.has("position"):
-        box.tools += [set_positions, compare_placement, view_stack]
+        box.tools += [set_positions, view_placement, view_stack]
         if spec.position.deepslice:
             box.tools.append(run_deepslice)
         if spec.position.bayesian:
-            box.tools.append(fit_position)
+            box.tools.append(search_position)
 
     # --- transform ------------------------------------------------------
 
@@ -1619,7 +1997,23 @@ def build_tools(
         ctx.render_cache.clear()
         return commit()  # stack-wide: no section row changes
 
-    def fit_affine(slice_ids: list[str], method: str) -> dict[str, Any]:
+    @with_display_doc(
+        '"overlay" (default), "side_by_side", "checkerboard", "outlines", '
+        '"section" or "template", as in `adjust_transforms`.'
+    )
+    def fit_affine(
+        slice_ids: list[str],
+        method: str,
+        mode: str = "overlay",
+        zoom: list[float] = [],  # noqa: B006 — read, never mutated; ADK wants a value
+        section_image: str = "current",
+        atlas_image: str = "ara",
+        atlas_opacity: float = 0.0,
+        regions: list[str] = [],  # noqa: B006
+        outlines: str = "",
+        border_color: str = "yellow",
+        border_thickness: float = 0.5,
+    ) -> dict[str, Any]:
         """Fit an in-plane affine per section against its atlas section.
 
         The whole tissue outline is matched against the whole atlas outline;
@@ -1667,6 +2061,21 @@ def build_tools(
         refusal = over_cap(len(targets) + len(unknown))
         if refusal is not None:
             return refusal
+        options = display(VIEW_MODES, dict(
+            mode=mode or "overlay", zoom=zoom, section_image=section_image,
+            atlas_image=atlas_image, atlas_opacity=atlas_opacity, regions=regions,
+            outlines=outlines, border_color=border_color, border_thickness=border_thickness,
+        ), sections=targets)
+        if isinstance(options, dict):
+            return options
+
+        def draw_fit(record: SliceState) -> Any:
+            def draw(section: Any, um_per_px: float, matrix: np.ndarray) -> list[Any]:
+                return draw_canvas(
+                    record, section, um_per_px, float(record.position_mm or 0.0),
+                    matrix, options, label=record.id,
+                )
+            return draw
 
         results: list[dict[str, Any]] = []
         parts: list[types.Part] = []
@@ -1678,21 +2087,22 @@ def build_tools(
             if record.damaged:
                 results.append({"id": record.id, "status": "error", "error": "DAMAGED"})
                 continue
-            outcome = fit_silhouette(state, ctx, record)
-            panel = outcome.pop("panel", None)
+            outcome = fit_silhouette(state, ctx, record, draw=draw_fit(record))
+            panels = outcome.pop("panels", None) or []
             results.append(outcome)
             if outcome["status"] != "ok":
                 continue
             fits.append((record, outcome))
-            if panel is not None:
-                # Every fit returns its picture (run 15, 2026-09-10: a
-                # 25-section fit pictured 4 and the model never saw 21).
-                parts.append(image_to_part(panel))
+            # Every fit returns its picture (run 15, 2026-09-10: a
+            # 25-section fit pictured 4 and the model never saw 21).
+            outcome["image_indexes"] = list(range(len(parts), len(parts) + len(panels)))
+            parts.extend(image_to_part(panel) for panel in panels)
 
         payload: dict[str, Any] = {
             "status": "ok" if fits else "error",
             "results": results,
             "unknown_ids": unknown,
+            "view": options.echo(),
         }
         if not fits:
             payload["error"] = "NOTHING_FITTED"
@@ -1701,9 +2111,9 @@ def build_tools(
             payload["description"] = (
                 "Attached panels are "
                 + ", ".join(record.id for record, _ in fits)
-                + ", in that order; each shows the section under its fitted "
-                "transform with the atlas region outlines over it at true "
-                "physical scale."
+                + ", in that order (mapped by each result's image_indexes); "
+                "each shows the section under its fitted transform against "
+                "the atlas at true physical scale, in the requested view."
             )
             payload[TOOL_MEDIA_PARTS_KEY] = parts
         snapshot()
@@ -1788,60 +2198,31 @@ def build_tools(
             pivot_mode=mode,
         )
 
-    def views(
+    def staged_views(
         staged: _Staged,
         params: dict[str, float] | np.ndarray,
+        options: DisplayOptions,
         *,
         mode: str,
-        zoom: list[float],
-        template_opacity: float,
         pivot: tuple[float, float] | None,
-        outlines: str = "all",
-        border_color: str = "yellow",
-        border_thickness: float = 0.5,
-        markers: Any = None,
         label: str = "",
         spline: dict[str, Any] | None = None,
     ) -> list[Any]:
-        # The written transform is computed on the working frame; the picture
-        # may be drawn from a larger render (image_resolution), which carries
-        # the same map: a matrix and the pivot are re-expressed on it, the
-        # millimetre knobs need nothing.
-        section, um_per_px, (fx, fy) = shown_section(
-            ctx, staged.record, staged.section, staged.um_per_px
+        """One staged section's canvas pictures (the write is on its working frame)."""
+        return draw_canvas(
+            staged.record, staged.section, staged.um_per_px,
+            float(staged.record.position_mm or 0.0), params, options,
+            mode=mode, pivot=pivot, section_offset=staged.geometry.section_offset,
+            label=label, spline=spline,
         )
-        in_section: tuple[float, float] | None = None
-        if section is not staged.section:
-            if isinstance(params, np.ndarray):
-                params = rescale_section_matrix(params, fx, fy)
-            if pivot is not None:
-                ox, oy = staged.geometry.section_offset
-                in_section = ((pivot[0] - ox) * fx, (pivot[1] - oy) * fy)
-        images, _iou = physical_views(
-            section,
-            um_per_px,
-            ctx.atlas,
-            float(staged.record.position_mm or 0.0),
-            cast(Plane, state.plane),
-            state.pitch_deg,
-            state.yaw_deg,
-            params,
-            mode=mode,
-            zoom=zoom,
-            template_opacity=template_opacity,
-            border_color=border_color, border_thickness=border_thickness,
-            outlines=outlines,
-            pivot=pivot if in_section is None else None,
-            pivot_in_section=in_section,
-            markers=markers,
-            label=label or staged.record.id,
-            spline=spline,
-            long_edge=OVERLAY_LONG_EDGE,
-            scale=shown_scale(ctx),
-        )
-        return images
 
     batching_adjustments = False
+
+    #: Per-entry keys of `adjust_transforms` beyond the transform itself.
+    entry_display_keys = (
+        "mode", "zoom", "section_image", "atlas_image", "atlas_opacity", "regions",
+        "outlines", "border_color", "border_thickness",
+    )
 
     def _adjust_transform(
         slice_id: str,
@@ -1850,92 +2231,19 @@ def build_tools(
         scale_y: float,
         translate_x_mm: float,
         translate_y_mm: float,
-        mode: str = "overlay",
-        zoom: list[float] = [],  # noqa: B006 — read, never mutated; ADK wants a value
-        template_opacity: float = 0.0,
+        options: DisplayOptions,
         pivot: str | list[float] = "canvas",
-        outlines: str = "all",
         note: str = "",
-        border_color: str = "yellow",
-        border_thickness: float = 0.5,
     ) -> dict[str, Any]:
         """Set one section's in-plane transform and show the result.
 
         Every call writes the parameters as the section's transform and
-        returns the section drawn under them with the atlas outlines. Call it
-        as often as you need, on any section that has a position; the last
-        call is what stays. The same parameters again only re-draws. The
-        section's flip and rotation flags are not touched. Writes,
-        checkpoints, and can be undone.
-
-        Args:
-            slice_id: Filename or corrected index.
-            rotation_deg: Counter-clockwise rotation about the pivot, in
-                degrees. Negative turns it clockwise.
-            scale_x: Horizontal scale multiplier about the pivot. 1.0 leaves
-                the width alone.
-            scale_y: Vertical scale multiplier, same convention.
-            translate_x_mm: Horizontal shift in millimetres; positive moves
-                right.
-            translate_y_mm: Vertical shift in millimetres; positive moves down.
-            mode: "overlay" (the section with the outlines on it),
-                "side_by_side" (two images: the section, then the atlas
-                template, same scale and same crop), "checkerboard" (section
-                and template in alternating tiles), "outlines" (the atlas
-                lines and the section's own silhouette contour on black),
-                "section" (the section alone, no lines), "template" (the atlas
-                template alone) or "ab" (two overlays at the same crop: these
-                parameters, then the section's stored transform, or identity
-                when it has none).
-            zoom: [x0, y0, x1, y1] as fractions of the CANVAS, cropped before
-                the image is sized down, so it is real magnification. An empty
-                list is the whole canvas.
-            template_opacity: 0..1, how strongly the atlas template is blended
-                under the outlines in "overlay". 0.0 draws no template.
-            border_color: Atlas border color, a named color or #RRGGBB; yellow
-                by default. Display only; does not change the transform.
-            border_thickness: Atlas border width in output pixels, 0.25..8;
-                default 0.5. Fractional widths are antialiased. Applies only
-                where atlas outlines are drawn.
-            pivot: What the rotation and the scales turn about: "canvas" (the
-                canvas centre), "tissue" (the section's tissue centroid) or
-                [fx, fy] fractions of the canvas.
-            outlines: Which atlas lines to draw: "all" (every family
-                boundary), "outer" (the atlas outline only) or "none".
-            note: Short remark for the record. May be empty.
-
-        Returns:
-            The physical parameters written, whether state changed, the view
-            requested, and its image(s). The normalized matrix, decomposition
-            and full adjustment history remain in local state rather than
-            being repeated in every result.
+        returns the section drawn under them in the requested view. The same
+        parameters again only re-draw. The section's flip and rotation flags
+        are not touched. Writes, checkpoints, and can be undone (the batch
+        tool owns the undo step).
         """
-        try:
-            rgb, border_thickness = normalize_border_style(border_color, border_thickness)
-        except ValueError as exc:
-            return {"status": "error", "error": "INVALID_BORDER_STYLE", "message": str(exc)}
-        border_color = "#" + "".join(f"{channel:02x}" for channel in rgb)
-        view = str(mode or "overlay").strip().lower()
-        if view not in PREVIEW_MODES:
-            return {"status": "error", "error": "BAD_MODE", "modes": list(PREVIEW_MODES)}
-        layer = str(outlines or "all").strip().lower()
-        if layer not in OUTLINE_LAYERS:
-            return {
-                "status": "error",
-                "error": "BAD_OUTLINES",
-                "layers": list(OUTLINE_LAYERS),
-            }
-        try:
-            window = [float(value) for value in (zoom or [])]
-            opacity = float(template_opacity)
-        except (TypeError, ValueError):
-            return {"status": "error", "error": "BAD_ARGS"}
-        if window and len(window) != 4:
-            return {
-                "status": "error",
-                "error": "BAD_ZOOM",
-                "expected": "[x0, y0, x1, y1] as fractions of the canvas",
-            }
+        view = options.mode
         staged = stage(
             slice_id, rotation_deg, scale_x, scale_y, translate_x_mm,
             translate_y_mm, pivot,
@@ -1984,15 +2292,11 @@ def build_tools(
                         fractions[1] * staged.geometry.size[1],
                     )
                 held = previous is not None
-                images = views(
-                    staged, staged.params, mode="overlay", zoom=window,
-                    template_opacity=opacity, pivot=staged.pivot, outlines=layer,
-                    border_color=border_color, border_thickness=border_thickness,
+                images = staged_views(
+                    staged, staged.params, options, mode="overlay", pivot=staged.pivot,
                     label=f"{record.id} candidate",
-                ) + views(
-                    staged, other, mode="overlay", zoom=window,
-                    template_opacity=opacity, pivot=other_pivot, outlines=layer,
-                    border_color=border_color, border_thickness=border_thickness,
+                ) + staged_views(
+                    staged, other, options, mode="overlay", pivot=other_pivot,
                     label=f"{record.id} {'stored' if held else 'identity'}",
                     spline=(previous or {}).get("spline"),
                 )
@@ -2003,10 +2307,8 @@ def build_tools(
                 if held:
                     reference["stored_kind"] = (previous or {}).get("kind")
             else:
-                images = views(
-                    staged, staged.params, mode=view, zoom=window,
-                    template_opacity=opacity, pivot=staged.pivot, outlines=layer,
-                    border_color=border_color, border_thickness=border_thickness,
+                images = staged_views(
+                    staged, staged.params, options, mode=view, pivot=staged.pivot,
                 )
         except Exception as exc:
             logger.warning("adjust_transform failed for %s: %s", record.id, exc)
@@ -2029,19 +2331,19 @@ def build_tools(
             record.transform = written
             if not batching_adjustments:
                 save_checkpoint(state, ctx.checkpoint_path)
+        image = "atlas template" if options.atlas_image == "ara" else f"atlas {options.atlas_image}"
         described = {
             "overlay": "the section with the atlas outlines over it",
             "side_by_side": (
-                "two images at the same scale and the same crop: the section, "
-                "then the atlas template"
+                f"two images at the same scale and the same crop: the section, then the {image}"
             ),
-            "checkerboard": "the section and the atlas template in alternating tiles",
+            "checkerboard": f"the section and the {image} in alternating tiles",
             "outlines": (
                 "the atlas outlines and the section's own silhouette contour, "
                 "on black"
             ),
             "section": "the section alone, no outlines",
-            "template": "the atlas template alone, no outlines",
+            "template": f"the {image} alone, no outlines",
             "ab": (
                 "two overlays at the same crop: first these parameters, then "
                 + (
@@ -2051,20 +2353,18 @@ def build_tools(
                 )
             ),
         }[view]
+        layer = options.outlines
+        position = float(record.position_mm or 0.0)
+        absent = absent_regions(position, options)
         return {
             "status": "ok",
             "id": record.id,
-            "position_mm": round(float(record.position_mm or 0.0), 3),
+            "position_mm": round(position, 3),
             "physical": written["physical"],
             "written": wrote,
-            "view": {
-                "mode": view,
-                "zoom": window or [0.0, 0.0, 1.0, 1.0],
-                "outlines": layer,
-                "border_color": border_color,
-                "border_thickness": border_thickness,
-            },
+            "view": options.echo(),
             **({"ab_reference": reference} if reference is not None else {}),
+            **({"regions_not_in_plane": absent} if absent else {}),
             "description": (
                 f"{record.id} under the transform above, {described}. "
                 + (
@@ -2075,32 +2375,40 @@ def build_tools(
                          if layer == "outer"
                          else "The outlines are the FAMILY regions of ")
                         + f"the {state.plane} atlas section at "
-                        f"{float(record.position_mm or 0.0):.3f} mm, drawn at "
-                        f"true physical scale with {border_color} borders "
-                        f"{border_thickness} output pixel(s) wide."
+                        f"{position:.3f} mm, drawn at "
+                        f"true physical scale with {options.border_color} borders "
+                        f"{options.border_thickness} output pixel(s) wide."
                     )
                 )
             ),
             TOOL_MEDIA_PARTS_KEY: media_parts,
         }
 
+    @with_display_doc(
+        'per entry (every display option is an entry key): "overlay" '
+        '(default: the section with the outlines on it), "side_by_side" (two '
+        "images: the section, then the atlas image, same scale and crop), "
+        '"checkerboard", "outlines" (the atlas lines and the section\'s own '
+        'silhouette on black), "section", "template" (the atlas image alone) '
+        'or "ab" (two overlays at the same crop: these parameters, then the '
+        "section's stored transform, or identity when it has none)."
+    )
     def adjust_transforms(entries: list[dict[str, Any]]) -> dict[str, Any]:
         """Set and show one to four independent sections in one undoable call.
 
         Each entry replaces the complete transform, including any previous
         spline or shear. A section may appear once per call; inspect its result
-        before making a dependent correction in a later call.
+        before making a dependent correction in a later call. Call it as often
+        as you need, on any section that has a position; the last call is what
+        stays.
 
         Args:
-            entries: One to four objects with id, rotation_deg (counter-clockwise),
-                scale_x, scale_y, translate_x_mm (right), translate_y_mm (down).
-                Optional per-entry controls: mode (overlay, checkerboard, outlines,
-                section, template, side_by_side or ab), zoom ([x0,y0,x1,y1] canvas
-                fractions), template_opacity (0..1), pivot (canvas, tissue or
-                [fx,fy]), outlines (all, outer or none), note, border_color
-                (named color or #RRGGBB), border_thickness (0.25..8 pixels).
-                side_by_side shows section and atlas; ab shows new and previous
-                transforms. Both return two images. Other modes return one.
+            entries: One to four objects with id, rotation_deg (counter-clockwise
+                about the pivot, degrees), scale_x, scale_y (multipliers about
+                the pivot; 1.0 leaves the size alone), translate_x_mm (right),
+                translate_y_mm (down). Optional per entry: pivot ("canvas",
+                "tissue" or [fx, fy] fractions of the canvas), note, and any
+                display option below.
 
         Returns:
             Per-section results with zero-based image_indexes into the attached
@@ -2152,7 +2460,14 @@ def build_tools(
                 if target is not None and target.id in locked:
                     results.append({"status": "error", "error": "LOCKED", "id": target.id})
                     continue
-                mode = str(entry.get("mode", "overlay") or "overlay").strip().lower()
+                options = display(
+                    PREVIEW_MODES,
+                    {key: entry[key] for key in entry_display_keys if key in entry},
+                    sections=[target] if target is not None else [],
+                )
+                if isinstance(options, dict):
+                    results.append({**options, "id": str(entry.get("id", ""))})
+                    continue
                 result = _adjust_transform(
                     str(entry.get("id", "")),
                     entry.get("rotation_deg"),  # type: ignore[arg-type]
@@ -2160,14 +2475,9 @@ def build_tools(
                     entry.get("scale_y"),  # type: ignore[arg-type]
                     entry.get("translate_x_mm"),  # type: ignore[arg-type]
                     entry.get("translate_y_mm"),  # type: ignore[arg-type]
-                    mode,
-                    entry.get("zoom", []),  # type: ignore[arg-type]
-                    entry.get("template_opacity", 0.0),  # type: ignore[arg-type]
+                    options,
                     entry.get("pivot", "canvas"),  # type: ignore[arg-type]
-                    str(entry.get("outlines", "all")),
                     str(entry.get("note", "")),
-                    border_color=entry.get("border_color", "yellow"),
-                    border_thickness=entry.get("border_thickness", 0.5),
                 )
                 media = result.pop(TOOL_MEDIA_PARTS_KEY, [])
                 result["image_indexes"] = list(range(len(parts), len(parts) + len(media)))

@@ -15,7 +15,7 @@ def test_separate_comparison_reuses_seed_bytes_and_maps_each_pair(tmp_path):
     seed = _images(stack_image_parts(state, ctx))
     atlas_seed = atlas_strip_parts(ctx, state)
     position = float(atlas_seed[1].text.split()[1])
-    result = _tool(box, "compare_placement")([
+    result = _tool(box, "view_placement")([
         {"id": "s0.png", "positions_mm": [position, position]},
         {"id": "s1.png", "positions_mm": [position]},
     ], mode="side_by_side")
@@ -72,7 +72,7 @@ def test_atlas_reuse_keys_on_exact_position_and_cutting_angles(tmp_path, monkeyp
 
 def test_separate_full_views_suppress_only_after_delivery_and_reject_zoom(tmp_path):
     _, _, box = _box(tmp_path)
-    compare = _tool(box, "compare_placement")
+    compare = _tool(box, "view_placement")
     args = [{"id": "s0.png", "positions_mm": [3.0]}]
     assert compare(args, mode="side_by_side", zoom=[0, 0, .5, .5])["error"] == (
         "ZOOM_UNSUPPORTED"
@@ -89,7 +89,7 @@ def test_separate_full_views_suppress_only_after_delivery_and_reject_zoom(tmp_pa
 
 def test_separate_comparison_caps_pairs(tmp_path):
     state, _, box = _box(tmp_path)
-    result = _tool(box, "compare_placement")([
+    result = _tool(box, "view_placement")([
         {"id": record.id, "positions_mm": [3.0]} for record in state.in_order()
     ], mode="side_by_side")
     assert len(result[TOOL_MEDIA_PARTS_KEY]) == 8

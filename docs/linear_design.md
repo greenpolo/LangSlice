@@ -30,6 +30,10 @@ the ABBA dialog's mapping.
 ```
 JobSpec
   image_folder, atlas, plane, model, out, preprocess (auto|none)
+  host_preprocessing: dict|None = None # a host's channel blend (preprocess.preview
+                                # settings) for snapshots exported one page per
+                                # channel: the DEFAULT appearance; pages stay raw channels
+  agent_preprocessing: bool = False # build `preprocess` (agent-set appearance)
   image_resolution: low|medium|high = low # size of every picture the agent sees;
                                 # display only, fits and stored transforms unchanged
   agent_damage: bool = True     # build mark_damaged; host flags can never be cleared
@@ -40,7 +44,7 @@ JobSpec
     thickness_um, interval_um     # cutting protocol; passed as facts
     strict_interval: bool = False # sections must sit exactly one interval apart
     deepslice: bool = False       # run_deepslice tool available (coronal mouse/rat only)
-    bayesian: bool = False        # fit_position tool available (oblique.py fitter)
+    bayesian: bool = False        # search_position tool available (oblique.py fitter)
     notes: str = ""               # user notes, shown under this task in the job statement
   transform:
     flip: bool = True             # may mirror sections left-right (orient_slices)
@@ -55,8 +59,9 @@ JobSpec
   facts: free-form user facts, one line each, passed verbatim
   nonlinear: {provider: openai-oauth, image_model: null, notes: ""}
   inputs: order/positions/angles/transforms supplied by the host for tasks that are OFF,
-          plus pixel_size_um, damaged {id: note} (flags the agent cannot clear) and
-          locked [ids] (flip, rotation and transform the agent cannot change)
+          plus pixel_size_um, damaged {id: note} (flags the agent cannot clear),
+          locked [ids] (flip, rotation and transform the agent cannot change) and
+          channel_names [one per exported page] (names of the raw channels)
 ```
 
 **A mirror is a linear transform (2026-09-29).** A left-right mirror is the
@@ -146,26 +151,61 @@ in any payload or prompt (see `lean-harness` history in `linear/CLAUDE.md`).
 | tool | task gate | does |
 | --- | --- | --- |
 | `status` | always | one row per section in corrected order: index, id, position_mm, delta_to_next_mm (signed), flip, rotation_deg, damaged(+note), transform kind, transform_iou, transform_mirrored, caveats; plus cutting angles and interval breaks. The `ls` of the environment. |
-| `view_slices(ids)` | always | up to 4 sections at higher resolution, rendered as corrected, each captioned with its index and filename. |
-| `fetch_atlas(positions_mm)` | always | up to 4 atlas sections, rendered at the current cutting angles, each captioned with its position (and the angles when oblique). |
+| `view_slices(ids, +display)` | always | up to 4 sections at higher resolution, rendered as corrected, each captioned with its index and filename. Mode `section`; `zoom` crops a larger render (magnifies up to the atlas resolution). |
+| `view_atlas(positions_mm, +display)` | always | up to 4 atlas sections, rendered at the current cutting angles, each captioned with its position (and the angles when oblique), framed to the anatomy. Mode `template`; outlines default `none`; `regions` draws those regions' borders; `regions_not_in_plane` names any absent at a position. |
 | `note(text)` | always | append to the run notes. |
 | `undo()` / `redo()` | always | snapshot stack; a batch call undoes as one. |
 | `orient_slices([{id, flip?, rotate_deg?}])` | transform (rotate) / transform.flip (flip) | set flip and rotation; an orientation change clears the section's transform; returns each changed section rendered as it now stands (≤4). |
 | `reorder_slices(new_order, after="start")` | reorder | move the listed filenames as a block, in the listed order, after a named section or at the start. One filename moves one slice; the full list sets the whole order. Unlisted sections keep their relative order. Corrected indices only; positions and transforms are kept. One undo step. |
 | `mark_damaged([{id, damaged?, note?}])` | agent_damage (default on) | set damage (default True), or clear with damaged=False; clearing also removes the note. A flag the host set (`inputs.damaged`) is never cleared (`DAMAGE_SET_BY_USER`). |
-| `set_positions([{id, position_mm}])` | position | batch write, clamped to the atlas range; returns a placement image only when that exact section, position, orientation and cutting-angle combination has not already reached the model in a full-canvas atlas-bearing view. A compare and write planned in the same model round both return their images. |
-| `compare_placement([{id, positions_mm?}], mode, zoom, template_opacity, outlines)` | position | ≤4 candidate pairs; no positions = current position. `side_by_side` returns separate original section and atlas reference images (one section per distinct id, one atlas per pair; ≤8 images), independently tissue-framed, full-view only. Other modes return one physical-canvas image per pair. Writes nothing. |
-| `view_stack()` | position | one contact sheet of every section in the order of its written position, each over the atlas at its position and captioned with index, filename, position and the distance to the next, plus a plot of position against corrected index (damaged in red): two images. Writes nothing. |
+| `preprocess(target="both", sections=[], channel_weights=[], clahe_clip=4, clahe_tiles=8, n4=False, denoise=False, reset=False, +display)` | agent_preprocessing (default off) | sets the appearance for target `view` (every picture shown), `fit` (what a deformable fit reads, `appearance.fit_image`) or `both`, stack-wide or per section (overrides); from the raw channels: optional ANTs N4 and denoising per weighted channel, CLAHE (clip 0 = off), weighted blend (empty weights = tissue-coverage auto). `reset` returns to the default (a section to the stack's). Refuses a weight count that does not match a section's channels (`CHANNEL_COUNT_MISMATCH`) and N4/denoise without antspyx (`UNAVAILABLE`). One undo step, checkpointed (`StackState.appearance`); returns the settings in force, the channels and up to 4 sections as that target now sees them. |
+| `set_positions([{id, position_mm}], +display)` | position | batch write, clamped to the atlas range; returns a placement picture (any `view_placement` mode, default `stacked`; mapped by `image_indexes`) only when that exact section, position, orientation and cutting-angle combination has not already reached the model in a full-canvas atlas-bearing view. A compare and write planned in the same model round both return their images. |
+| `view_placement([{id, positions_mm?}], +display)` | position | the full current placement, or ≤4 candidate pairs; no positions = current position. Physical modes (`template` default, `overlay`, `checkerboard`, `outlines`, `section`) draw the section under its STORED in-plane transform (the six numbers, spline included; identity without one; `transform` in each row) on the millimetre canvas. `stacked` is one picture, the framed section over the framed atlas; `side_by_side` returns separate original section and atlas reference images (one section per distinct id, one atlas per pair; ≤8 images). Both framed modes are full-view only. Writes nothing. A deformable warp is drawn here once warps are stored. |
+| `view_stack(+display)` | position | one contact sheet of every section in the order of its written position, each over the atlas at its position and captioned with index, filename, position and the distance to the next, plus a plot of position against corrected index (damaged in red): two images. Mode `stacked`; no zoom. Writes nothing. |
 | `run_deepslice(ids?, allow_angle_change, keep=[ids])` | position.deepslice | positions (+ angles) for undamaged sections; UNAVAILABLE unless installed and plane/atlas supported. |
-| `fit_position(id, window_mm, angles?)` | position.bayesian | `oblique.fit_oblique` at the section's current position: best position (and angles) with score; writes nothing. |
+| `search_position(id, window_mm, angles?)` | position.bayesian | `oblique.fit_oblique` at the section's current position: best position (and angles) with score; writes nothing. |
 | `set_cutting_angles(pitch_deg, yaw_deg)` | transform.angles | stack-wide; subsequent atlas fetches and fits use them. |
-| `fit_affine(ids, method=silhouette\|elastix)` | transform | per-section in-plane affine against its atlas section, written as the section's transform; returns iou, the transform as the same five `physical` knobs `adjust_transforms` takes (plus `shear`, about the canvas centre) and a captioned overlay panel for every successful fit. Damaged sections are refused. |
-| `adjust_transforms(entries)` | transform.interactive | set one to four independent sections, each with rotation, per-axis scales and millimetre shifts. Per-entry mode, zoom, opacity, pivot and border controls; `ab` and `side_by_side` return two images, other modes one. Each result maps its images with `image_indexes`. One undo step; repeat unchanged parameters to redraw. Replaces the complete transform, including spline or shear. Inspect before a dependent correction in a later call. |
+| `fit_affine(ids, method=silhouette\|elastix, +display)` | transform | per-section in-plane affine against its atlas section, written as the section's transform; returns iou, the transform as the same five `physical` knobs `adjust_transforms` takes (plus `shear`, about the canvas centre) and a captioned panel (default `overlay`; any physical mode) for every successful fit, mapped by `image_indexes`. Damaged sections are refused. The fit itself reads the default appearance. |
+| `adjust_transforms(entries)` | transform.interactive | set one to four independent sections, each with rotation, per-axis scales and millimetre shifts. Per-entry pivot, note and every display option (modes as the physical views plus `ab`); `ab` and `side_by_side` return two images, other modes one. Each result maps its images with `image_indexes`. One undo step; repeat unchanged parameters to redraw. Replaces the complete transform, including spline or shear. Inspect before a dependent correction in a later call. |
 | `trace_borders(id, prompt)` | nonlinear | one image-model correction (agent edits the base prompt per section) of the section's placed atlas borders, run in the background (submit waits), first reply kept; no fit, no transform change. See [the image-tool contract](nonlinear_image_tool.md). |
 | `grep_atlas(query, section)` | nonlinear | text lookup of atlas regions by acronym, name substring or id (40 rows max): acronym, id, name, ancestry as acronyms, descendant count; with a positioned `section`, whether each region or a descendant is in the atlas plane at its placement. Writes nothing; for choosing regions to exclude from a later fit. |
 | `submit(summary, notes, interval_breaks)` | always | ends the run; gated (below). |
 
-`fetch_atlas` and `view_slices` frame tissue the same way so apparent scale is
+**Shared display options** (`linear/display.py`, one `DisplayOptions` parsed
+once per call; the same nine argument names on every picture tool, per entry
+on `adjust_transforms`; the docstring block is `display.DISPLAY_DOC`):
+
+| option | values | applies to |
+| --- | --- | --- |
+| `mode` | per tool (above) | which composition |
+| `zoom` | `[x0, y0, x1, y1]` fractions; empty = all | crop before sizing (physical canvas, framed sections, framed atlas); refused on `stacked`/`side_by_side` |
+| `section_image` | `current` (the view appearance) or one raw channel name | every section picture; unknown channel → `UNKNOWN_CHANNEL` |
+| `atlas_image` | `ara` (BrainGlobe reference, default), `borders` (family boundaries as white lines), `nissl` (ABBA's cached Allen Nissl) | every atlas picture; `nissl` only when `~/cached_atlas` holds ABBA's Allen volume matching the atlas, else `ATLAS_IMAGE_UNAVAILABLE` with the available list |
+| `atlas_opacity` | 0..1 (default 0) | the atlas image under the lines in `overlay` (was `template_opacity`) |
+| `regions` | acronyms or ids, descendants included | only those regions' borders at full strength; the `outlines` layer then drawn at 0.35 strength; `UNKNOWN_REGIONS`; `regions_not_in_plane` names absent ones |
+| `outlines` | `all`, `outer`, `none`; empty = the mode's default | `all` on the physical canvas, `none` on tissue-framed pictures |
+| `border_color`, `border_thickness` | named or `#RRGGBB`; 0.25..8 output px | every drawn line |
+
+Options apply to their call only: nothing in `display.py` writes state, so a
+call never changes a stored default. The job statement lists the options once,
+with this run's raw channel names and the atlas images this host has
+(`display.display_facts`).
+
+**Raw channels and appearance** (`linear/appearance.py`). A section's DEFAULT
+appearance is today's: `preprocess` auto (`adaptive_preprocess`) for a plain
+file, or the host's blend (`host_preprocess`) when `host_preprocessing` is set
+— the ABBA worker no longer stages blended copies; it passes its settings and
+the run reads the snapshots themselves. The raw channels stay readable
+(`EngineContext.section_channels`: red/green/blue, or `gray`, for one page;
+one plane per page, named by `inputs.channel_names` or ch1.., for several),
+read at working size (`image_prep.read_working_pages`: pyramid level or
+per-page downsample, never a whole-slide decode). `render_slice(look=...)`
+draws any other look from those channels over the same frame, crop and size,
+so geometry never depends on appearance. Pictures use the view look; the
+silhouette fit, calibration, the tissue pivot, `search_position` and
+`trace_borders`' input (`registration_handoff`) always read the default.
+
+`view_atlas` and `view_slices` frame tissue the same way so apparent scale is
 not a cue. Every image a tool returns carries its label burned into the pixels
 (`render.caption`): tool images reach the model as bare attachments, so the
 text that ties an image to a section or a position has to ride in the image.
@@ -174,7 +214,8 @@ message: every section as its own labelled image in corrected order plus the
 status table.
 
 The default full-task toolbox contains 15 tools (10 for interactive-only
-transform refinement, `orient_slices` included).
+transform refinement, `orient_slices` included); `agent_preprocessing` adds
+`preprocess`.
 
 ## Submit gates (constraints, not coaching)
 
@@ -344,7 +385,7 @@ registration-software practice (ABBA) exactly.
 organized `color_lut`, families merged at `MERGE_EPS`; leaf boundaries are
 omitted). Borders default to yellow, 0.5 anti-aliased output pixels, without a
 rim. Agent overlay tools expose `border_color` (named color or `#RRGGBB`) and
-`border_thickness` (0.25–8 output pixels, including fractional widths) alongside `template_opacity`.
+`border_thickness` (0.25–8 output pixels, including fractional widths) alongside `atlas_opacity`.
 Lines are drawn after crop/resize so zoom does not change their pixel thickness.
 These controls affect display only; changing style with the same transform
 redraws without an undo step. Automatic fit feedback uses the yellow/0.5 px default.
@@ -376,8 +417,9 @@ older single overlay exactly.
   outlines on both), `checkerboard` (the two in alternating tiles, 8 across),
   `outlines` (the atlas lines plus the section's own silhouette contour in a
   second grey, on black — no pixels).
-- `template_opacity` (0..1, default 0.0) replaces the old `show_template`
-  bool and dials the template blended under the outlines in `overlay`.
+- `atlas_opacity` (0..1, default 0.0; `template_opacity` until 2026-10-01,
+  `show_template` before that) dials the atlas image blended under the
+  outlines in `overlay`.
 
 **The agents' wishlist, built 2026-09-06.** If Astra wants it, it gets it.
 - `pivot` on `adjust_transforms`: `"canvas"`

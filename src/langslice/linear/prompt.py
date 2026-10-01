@@ -25,13 +25,19 @@ TOOL_LINES: dict[str, str] = {
     "status": "the stack as it stands, one row per section in corrected order; "
     "every write returns only the rows it changed, this returns them all.",
     "view_slices": "up to 4 named sections at higher resolution, as corrected.",
-    "fetch_atlas": "up to 4 atlas sections at the positions you name, rendered "
+    "view_atlas": "up to 4 atlas sections at the positions you name, rendered "
     "at the stack's cutting angles.",
     "note": "appends one line to the run notes.",
     "undo": "reverses the last write; one tool call undoes as one step.",
     "redo": "reapplies the write `undo` reversed.",
     "mark_damaged": "records sections whose outline would break an "
     "outline-based fit, with a note each; damaged=False clears the flag and note.",
+    "preprocess": "sets how sections look, from their raw channels: channel "
+    "weights (the counterstain that lights all tissue, e.g. DAPI or Nissl, "
+    "usually deserves the most), CLAHE clip and tiles, ANTs N4 and denoising; "
+    "for target view (what you are shown), fit (what a deformable fit reads) "
+    "or both, independently, for the stack or named sections; returns the "
+    "sections as they now look. Undoable.",
     "orient_slices": "sets the flip and the rotation of named sections and "
     "returns them rendered as they now stand; a section whose orientation "
     "changes loses its transform.",
@@ -39,24 +45,17 @@ TOOL_LINES: dict[str, str] = {
     "order, after a named section or at start (default). A one-item list moves "
     "one section; a complete list sets the whole order. Unlisted sections keep "
     "their relative order. Positions and transforms are kept.",
-    "compare_placement": "tests candidate positions before you commit to one: "
-    "name a section with several positions (or none for its current one) and "
-    "it is compared with the atlas at each, up to 4 pairs per call; "
-    "e.g. one section at 4.6, 4.8 and "
-    "5.0 mm. `mode` "
-    "is template (default: the atlas at that position on the section's own "
-    "canvas and scale; the section itself is in the opening message), "
-    "side_by_side (separate original section plus atlas references, "
-    "one section per distinct id and one atlas per pair, up to 8 images; "
-    "independently tissue-framed, full view only, no outlines/opacity), "
-    "overlay, checkerboard, outlines or section (one physical-canvas image per pair), "
-    "`zoom` is [x0, y0, x1, y1] of the canvas and magnifies (the crop comes "
-    "before the resize, so small structures get more pixels), "
-    "`template_opacity` is 0..1, `border_color` is a named color or #RRGGBB "
-    "(default yellow), `border_thickness` is 0.25..8 output pixels (default 0.5), "
-    "and `outlines` is all, outer or none; border controls affect only drawn "
-    "atlas outlines, not separate reference images; "
-    "writes nothing.",
+    "view_placement": "shows sections in their full current placement (position "
+    "and in-plane transform), or tests candidate positions before you commit "
+    "to one: name a section with several positions (or none for its current "
+    "one), up to 4 pairs per call; e.g. one section at 4.6, 4.8 and 5.0 mm. "
+    "`mode` is template (default: the atlas at that position on the section's "
+    "own canvas and scale; the section itself is in the opening message), "
+    "stacked (the section over the atlas, each tissue-framed), side_by_side "
+    "(separate original section plus atlas references, one section per "
+    "distinct id and one atlas per pair, up to 8 images; full view only), "
+    "overlay, checkerboard, outlines or section (one physical-canvas image per "
+    "pair); writes nothing.",
     "view_stack": "whole-stack review, meant for after the positions are "
     "written and before `submit`: one contact sheet of every section in the "
     "order of its written position with the atlas at that position beneath "
@@ -64,27 +63,28 @@ TOOL_LINES: dict[str, str] = {
     "the next, plus a plot of position against corrected index; writes "
     "nothing.",
     "set_positions": "writes positions for one or more sections, clamped to "
-    "the atlas range, and returns a placement image unless that exact section, "
-    "position, orientation and cutting-angle combination was already seen in "
-    "a full-canvas atlas-bearing placement view.",
+    "the atlas range, and returns a placement picture (any `view_placement` "
+    "mode; default stacked) unless that exact section, position, orientation "
+    "and cutting-angle combination was already seen in a full-canvas "
+    "atlas-bearing placement view.",
     "run_deepslice": "seeds positions (and optionally angles) with DeepSlice.",
-    "fit_position": "searches the atlas around one section's current position "
+    "search_position": "searches the atlas around one section's current position "
     "and reports the best it found; writes nothing.",
     "set_cutting_angles": "sets the stack-wide cutting angles.",
     "fit_affine": "fits an in-plane affine per section against its atlas "
     "section, writes it as the section's transform, and returns the overlap, "
     "the transform as the same five physical parameters `adjust_transforms` "
-    "takes, and an image of the section under the atlas outlines at true "
-    "physical scale; damaged sections are refused.",
+    "takes, and a picture of the section under it at true physical scale; "
+    "damaged sections are refused.",
     "adjust_transforms": "sets and shows one to four independent positioned "
     "sections in one undoable call. Each entry supplies rotation_deg, scale_x, "
-    "scale_y, translate_x_mm and translate_y_mm, plus optional mode (overlay, "
-    "side_by_side, checkerboard, outlines, section, template or ab), zoom, "
-    "template_opacity, pivot, outlines, note, border_color and border_thickness. "
-    "ab shows new and previous transforms; side_by_side shows section and atlas. "
-    "Results map their images with zero-based image_indexes. Each section may "
-    "appear once; inspect before a dependent correction in a later call. "
-    "This replaces the complete transform, including any spline or shear.",
+    "scale_y, translate_x_mm and translate_y_mm, plus optional pivot, note "
+    "and display options (mode: overlay, side_by_side, checkerboard, outlines, "
+    "section, template or ab). ab shows new and previous transforms; "
+    "side_by_side shows section and atlas. Results map their images with "
+    "zero-based image_indexes. Each section may appear once; inspect before a "
+    "dependent correction in a later call. This replaces the complete "
+    "transform, including any spline or shear.",
     "trace_borders": "runs the image-model border-correction prompt on one "
     "section's existing linear placement, with your edited copy of the prompt "
     "for that section. The image call runs in the background and the tool returns "
@@ -99,6 +99,51 @@ TOOL_LINES: dict[str, str] = {
     "submit": "checks requirements and ends the run if they pass; otherwise "
     "returns the missing requirements without ending or changing the run.",
 }
+
+
+#: Tools that return pictures and so take the shared display options.
+PICTURE_TOOLS: tuple[str, ...] = (
+    "view_slices", "view_atlas", "view_placement", "view_stack", "set_positions",
+    "orient_slices", "fit_affine", "adjust_transforms", "preprocess",
+)
+
+
+def display_lines(
+    tool_names: list[str],
+    *,
+    channels: list[str] | dict[str, list[str]] | None = None,
+    atlas_images: tuple[str, ...] | None = None,
+) -> list[str]:
+    """The shared display options, once, with this run's channels and atlas images."""
+    if not any(name in PICTURE_TOOLS for name in tool_names):
+        return []
+    lines = [
+        "- Every tool that returns a picture also takes the same display "
+        "options, for that call only: `mode` (per tool), `zoom` ([x0, y0, x1, "
+        "y1] fractions; the crop comes before the resize, so it magnifies), "
+        "`section_image` (current, or one raw channel by name), `atlas_image`, "
+        "`atlas_opacity` (0..1, the atlas image under the lines in overlay), "
+        "`regions` (atlas acronyms or ids, descendants included: only their "
+        "borders at full strength, the outlines layer faint behind them), "
+        "`outlines` (all, outer or none), `border_color` (named or #RRGGBB) "
+        "and `border_thickness` (0.25..8 output pixels).",
+    ]
+    if atlas_images:
+        lines.append(
+            "- Atlas images on this host: " + ", ".join(atlas_images)
+            + " (ara: the atlas reference image; borders: the atlas regions as "
+            "lines" + ("; nissl: the Allen Nissl stain" if "nissl" in atlas_images else "")
+            + ")."
+        )
+    if isinstance(channels, list) and channels:
+        lines.append("- Raw channels of every section: " + ", ".join(channels) + ".")
+    elif isinstance(channels, dict) and channels:
+        lines.append(
+            "- Raw channels per section: "
+            + "; ".join(f"{name}: {', '.join(names)}" for name, names in channels.items())
+            + "."
+        )
+    return lines
 
 
 #: Heading of each task's user notes, in the order the tasks are listed.
@@ -135,6 +180,8 @@ def build_job_statement(
     pos_lo: float,
     pos_hi: float,
     axis_ends: tuple[str, str],
+    channels: list[str] | dict[str, list[str]] | None = None,
+    atlas_images: tuple[str, ...] | None = None,
 ) -> str:
     """The system instruction for one run, built from the spec and the state.
 
@@ -167,6 +214,7 @@ def build_job_statement(
                       axis_ends=axis_ends)
 
     tools = [f"- `{name}`: {TOOL_LINES[name]}" for name in tool_names if name in TOOL_LINES]
+    tools += display_lines(tool_names, channels=channels, atlas_images=atlas_images)
 
     constraints: list[str] = []
     if spec.has("position"):
@@ -255,21 +303,21 @@ def build_job_statement(
             "the whole stack and a position for every section. Look for the "
             "structure of how the sections were cut (series that interleave, "
             "missing sections) and use it.",
-            "- Then confirm the hypothesis: `compare_placement` every section "
+            "- Then confirm the hypothesis: `view_placement` every section "
             "at its hypothesised position, four sections per call, walking the "
             "stack in order; where the atlas at that position does not match "
             "the section, change the position.",
             "- Write every position in one `set_positions`, then re-check the "
-            "sections you were unsure about with `compare_placement` and "
+            "sections you were unsure about with `view_placement` and "
             "correct them.",
             *(
                 [
-                    "- After the first write, run `fit_position` on every "
+                    "- After the first write, run `search_position` on every "
                     "section (window 3 mm, angles false) and write its best "
                     "position where the fit disagrees with yours; confirm "
-                    "with `compare_placement`."
+                    "with `view_placement`."
                 ]
-                if "fit_position" in tool_names
+                if "search_position" in tool_names
                 else []
             ),
             "- Mark damaged sections with a note each, set the order, run "

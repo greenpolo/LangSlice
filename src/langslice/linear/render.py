@@ -38,10 +38,12 @@ from langslice.atlas.render import (
 )
 from langslice.image_prep import (
     adaptive_preprocess,
-    crop_to_tissue,
+    custom_appearance,
     foreground_mask,
     prepare_image_for_vlm,
+    tissue_box,
 )
+from langslice.linear.appearance import Look, look_token, view_look
 from langslice.linear.state import SliceState, StackState
 from langslice.space import Plane
 
@@ -136,10 +138,15 @@ def caption(image: Image.Image, text: str) -> Image.Image:
 
 
 def render_cache_key(
-    ctx: EngineContext, record: SliceState, *, long_edge: int, frame: bool
+    ctx: EngineContext, record: SliceState, *, long_edge: int, frame: bool, look: Look = None,
 ) -> tuple[str, bool, int, int, str, bool]:
-    """The key a render is cached under: the section plus everything it shows."""
-    return (record.id, record.flip, record.rotation_deg, long_edge, ctx.spec.preprocess, frame)
+    """The key a render is cached under: the section plus everything it shows.
+
+    The default appearance keeps ``spec.preprocess`` in the look slot, so its
+    keys are the ones every earlier caller computed.
+    """
+    return (record.id, record.flip, record.rotation_deg, long_edge,
+            look_token(ctx, look), frame)
 
 
 def atlas_native_long_edge(
@@ -165,14 +172,19 @@ def render_slice(
     *,
     long_edge: int = VIEW_LONG_EDGE,
     frame: bool = False,
+    look: Look = None,
 ) -> Image.Image:
     """One section as the run sees it: normalized, framed, enhanced, corrected.
 
-    With ``spec.preprocess == "auto"`` (the default) the section is run through
+    *look* None is the DEFAULT appearance: with ``spec.preprocess == "auto"``
+    the section is run through
     :func:`~langslice.image_prep.adaptive_preprocess` — per-channel CLAHE plus a
     DAPI-weighted grayscale blend — so dim fluorescence reads like the atlas
-    instead of like a black field. Display only: the user's file is never
-    touched.
+    instead of like a black field; a host's multi-channel snapshot arrives
+    already blended (``spec.host_preprocessing``). Any other look
+    (:mod:`langslice.linear.appearance`) is drawn from the section's raw
+    channels over the SAME frame, crop and size, so geometry never depends on
+    appearance. Display only: the user's file is never touched.
 
     *frame* crops to the tissue plus a small margin before the resize, so the
     section fills its frame about as much as a cropped atlas render does. It is
@@ -183,15 +195,17 @@ def render_slice(
     Renders are cached on *ctx*, so the returned image is shared: read it,
     never mutate it in place.
     """
-    key = render_cache_key(ctx, record, long_edge=long_edge, frame=frame)
+    key = render_cache_key(ctx, record, long_edge=long_edge, frame=frame, look=look)
     cached = ctx.render_cache.get(key)
     if cached is not None:
         return cached
 
     # The working copy, not the file: a whole-slide scan is read once, small.
     source, file_px_per_px = ctx.working_source(record.id)
-    if frame:
-        source = crop_to_tissue(source)
+    working_size = source.size
+    box = tissue_box(source) if frame else None
+    if box is not None:
+        source = source.crop(box)
     # The atlas-resolution cap applies to the SHOW path only: a fit's
     # parameters are normalized against the render they were computed on.
     if frame:
@@ -200,7 +214,9 @@ def render_slice(
     # How many FILE pixels one render pixel spans, before any quarter-turn:
     # the section's own micrometres per pixel times this is the canvas's.
     ctx.render_scale[key] = file_px_per_px * source.width / float(prepped.width)
-    if ctx.spec.preprocess == "auto":
+    if look is not None:
+        prepped = _look_image(ctx, record, look, working_size, box, prepped.size)
+    elif ctx.spec.preprocess == "auto" and ctx.spec.host_preprocessing is None:
         prepped = adaptive_preprocess(prepped)
     rotate = _ROTATE_OPS.get(int(record.rotation_deg) % 360)
     if rotate is not None:
@@ -209,6 +225,43 @@ def render_slice(
         prepped = prepped.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
     ctx.render_cache[key] = prepped
     return prepped
+
+
+def _look_image(
+    ctx: EngineContext,
+    record: SliceState,
+    look: dict[str, Any],
+    working_size: tuple[int, int],
+    box: tuple[int, int, int, int] | None,
+    size: tuple[int, int],
+) -> Image.Image:
+    """*look* drawn from the raw channels, cropped and sized like the default."""
+    names, planes = ctx.section_channels(record.id)
+
+    def placed(plane: np.ndarray) -> np.ndarray:
+        image = Image.fromarray(plane)
+        if image.size != working_size:
+            image = image.resize(working_size, Image.Resampling.LANCZOS)
+        if box is not None:
+            image = image.crop(box)
+        if image.size != size:
+            image = image.resize(size, Image.Resampling.LANCZOS)
+        return np.asarray(image, dtype=np.uint8)
+
+    if "channel" in look:
+        name = str(look["channel"])
+        if name not in names:
+            raise ValueError(f"{record.id} has no channel {name!r}; channels: {', '.join(names)}")
+        plane = placed(planes[names.index(name)])
+        return Image.fromarray(np.stack([plane, plane, plane], axis=-1))
+    return custom_appearance(
+        [placed(plane) for plane in planes],
+        channel_weights=look.get("channel_weights"),
+        clahe_clip=float(look.get("clahe_clip", 4.0)),
+        clahe_tiles=int(look.get("clahe_tiles", 8)),
+        n4=bool(look.get("n4")),
+        denoise=bool(look.get("denoise")),
+    )
 
 
 def canvas_um_per_px(
@@ -235,20 +288,24 @@ def canvas_um_per_px(
 
 def shown_section(
     ctx: EngineContext, record: SliceState, section: Image.Image, um_per_px: float,
+    look: Look = None,
 ) -> tuple[Image.Image, float, tuple[float, float]]:
     """The render a PICTURE of *section* is drawn from at this run's image size.
 
     *section* is the :data:`PREVIEW_LONG_EDGE` working frame every fit and
     every written transform is computed on, and *um_per_px* its calibration.
-    At "low" this returns them unchanged with factors ``(1.0, 1.0)``;
-    otherwise a larger render of the same section (never upsampled past the
-    file), its micrometres per pixel, and the ``(fx, fy)`` that carry
-    working-frame pixels onto it. Nothing computed is drawn from here.
+    At "low" with the default *look* this returns them unchanged with factors
+    ``(1.0, 1.0)``; otherwise a render of the same section in *look* (larger
+    at medium/high, never upsampled past the file), its micrometres per
+    pixel, and the ``(fx, fy)`` that carry working-frame pixels onto it.
+    Nothing computed is drawn from here.
     """
     scale = shown_scale(ctx)
-    if scale == 1.0:
+    if scale == 1.0 and look is None:
         return section, um_per_px, (1.0, 1.0)
-    shown = render_slice(ctx, record, long_edge=int(round(PREVIEW_LONG_EDGE * scale)))
+    shown = render_slice(
+        ctx, record, long_edge=int(round(PREVIEW_LONG_EDGE * scale)), look=look,
+    )
     fx = shown.width / float(section.width)
     fy = shown.height / float(section.height)
     return shown, um_per_px / fx, (fx, fy)
@@ -386,6 +443,7 @@ def stack_pictures(
     long_edge: int = SEED_IMAGE_LONG_EDGE,
     by_position: bool = False,
     under: Callable[[SliceState], Image.Image | None] | None = None,
+    section_image: str = "current",
 ) -> list[tuple[str, Image.Image]]:
     """``(label, captioned picture)`` per section, in corrected order.
 
@@ -416,7 +474,10 @@ def stack_pictures(
                     label += f" ({following.position_mm - record.position_mm:+.2f} to next)"
         if flags:
             label += f"  [{'; '.join(flags)}]"
-        picture = render_slice(ctx, record, long_edge=long_edge, frame=True)
+        picture = render_slice(
+            ctx, record, long_edge=long_edge, frame=True,
+            look=view_look(state, record, section_image),
+        )
         below = under(record) if under is not None else None
         if below is not None:
             picture = stacked(picture, resize_long_edge(below, shown_edge(ctx, long_edge)))
@@ -459,12 +520,15 @@ def stack_image_parts(
         if flags:
             label += f"  [{'; '.join(flags)}]"
         parts.append(types.Part.from_text(text=label))
-        parts.append(reference_slice_part(ctx, record, long_edge=long_edge))
+        parts.append(reference_slice_part(
+            ctx, record, long_edge=long_edge, look=view_look(state, record),
+        ))
     return parts
 
 
 def reference_slice_part(
     ctx: EngineContext, record: SliceState, *, long_edge: int = SEED_IMAGE_LONG_EDGE,
+    look: Look = None,
 ) -> types.Part:
     """Reuse the original captioned seed image for this display orientation.
 
@@ -472,14 +536,14 @@ def reference_slice_part(
     The cached caption retains the index/flags at first display; current state
     is carried separately in tool text. Filename remains the stable identity.
     """
-    key = ("section", *render_cache_key(ctx, record, long_edge=long_edge, frame=True))
+    key = ("section", *render_cache_key(ctx, record, long_edge=long_edge, frame=True, look=look))
     if key not in ctx.reference_parts:
         label = f"{record.index_corrected}: {record.id}"
         flags = slice_flags(record)
         if flags:
             label += f"  [{'; '.join(flags)}]"
         ctx.reference_parts[key] = image_to_part(caption(
-            render_slice(ctx, record, long_edge=long_edge, frame=True), label,
+            render_slice(ctx, record, long_edge=long_edge, frame=True, look=look), label,
         ))
     return ctx.reference_parts[key].model_copy(deep=True)
 
@@ -490,6 +554,7 @@ def stack_sheet(
     *,
     under: Callable[[SliceState], Image.Image | None] | None = None,
     columns: int = 8,
+    section_image: str = "current",
 ) -> Image.Image:
     """One contact sheet of the stack in written-position order, each
     section (over its atlas match, via *under*) captioned with its label.
@@ -502,7 +567,8 @@ def stack_sheet(
     pictures = [
         picture
         for _, picture in stack_pictures(
-            state, ctx, long_edge=SHEET_THUMB_LONG_EDGE, by_position=True, under=under
+            state, ctx, long_edge=SHEET_THUMB_LONG_EDGE, by_position=True, under=under,
+            section_image=section_image,
         )
     ]
     return grid(pictures, columns=columns)
@@ -777,12 +843,14 @@ def _draw_polys(
     offset: tuple[float, float] = (0.0, 0.0),
     origin: tuple[int, int] = (0, 0),
     factor: float = 1.0,
+    alpha: float = 1.0,
 ) -> None:
     """Closed x/y polylines with anti-aliased thickness at OUTPUT resolution.
 
     Each point runs through the same chain the pixels did: its own frame ->
     canvas (*scale*, *offset*), minus the zoom crop's *origin*, times *factor*,
     the canvas-px -> output-px ratio. Sub-pixel via OpenCV's 4-bit shift.
+    *alpha* below 1 draws the lines faint (context under highlighted regions).
     """
     ox, oy = float(origin[0]), float(origin[1])
     # Supersample all stroke widths consistently, keeping tissue at its
@@ -802,7 +870,7 @@ def _draw_polys(
         )
     coverage = cv2.resize(
         target, (canvas.shape[1], canvas.shape[0]), interpolation=cv2.INTER_AREA,
-    ).astype(np.float32)[..., None] / 255.0
+    ).astype(np.float32)[..., None] / 255.0 * float(alpha)
     blended = canvas * (1.0 - coverage) + np.asarray(color) * coverage
     canvas[:] = np.rint(blended).astype(np.uint8)
 
@@ -816,6 +884,7 @@ def _draw_outlines(
     thickness: float = 1,
     factor: float = 1.0,
     origin: tuple[int, int] = (0, 0),
+    alpha: float = 1.0,
 ) -> None:
     """One atlas-border color, with width set after crop and display resizing."""
     _draw_polys(
@@ -827,7 +896,29 @@ def _draw_outlines(
         offset=geometry.atlas_offset,
         origin=origin,
         factor=factor,
+        alpha=alpha,
     )
+
+
+#: Strength of the context outlines drawn under highlighted regions.
+REGION_CONTEXT_ALPHA = 0.35
+
+
+def region_polys(
+    annotation: np.ndarray, regions: Any,
+) -> list[np.ndarray]:
+    """Smoothed outlines of each highlighted region, in atlas-native pixels.
+
+    *regions* is ``[(name, ids)]``; each region is traced as the union of its
+    ids (the region and its descendants), with the same tracer and smoothing
+    as the family outlines.
+    """
+    polys: list[np.ndarray] = []
+    for _name, ids in regions:
+        mask = np.isin(annotation, list(ids))
+        if mask.any():
+            polys.extend(region_contours(mask.astype(np.int32)).get(1, []))
+    return polys
 
 
 def _patch_window(
@@ -853,9 +944,14 @@ def _template_patch(
     pitch_deg: float,
     yaw_deg: float,
     geometry: CanvasGeometry,
+    picture: Image.Image | None = None,
 ) -> tuple[int, int, np.ndarray]:
-    """The atlas template resized to the canvas's scale, ready to paste."""
-    template = get_reference_slice(
+    """The atlas image resized to the canvas's scale, ready to paste.
+
+    *picture* is the atlas image on the native plane grid; None is the atlas
+    reference template.
+    """
+    template = picture if picture is not None else get_reference_slice(
         atlas, position_mm, plane=plane, pitch_deg=pitch_deg, yaw_deg=yaw_deg
     )
     rows, cols = geometry.annotation.shape[:2]
@@ -881,10 +977,11 @@ def _blend_template(
     yaw_deg: float,
     geometry: CanvasGeometry,
     opacity: float = 0.35,
+    picture: Image.Image | None = None,
 ) -> None:
-    """Blend the atlas template under the outlines, at the same placement."""
+    """Blend the atlas image under the outlines, at the same placement."""
     y0, x0, patch = _template_patch(
-        atlas, position_mm, plane, pitch_deg, yaw_deg, geometry
+        atlas, position_mm, plane, pitch_deg, yaw_deg, geometry, picture
     )
     if patch.size == 0:
         return
@@ -1087,7 +1184,7 @@ def physical_views(
     *,
     mode: str = "overlay",
     zoom: list[float] | None = None,
-    template_opacity: float = 0.0,
+    atlas_opacity: float = 0.0,
     border_color: str = "yellow",
     border_thickness: float = 0.5,
     outlines: str = "all",
@@ -1100,6 +1197,10 @@ def physical_views(
     frames: list[dict[str, Any]] | None = None,
     scale: float = 1.0,
     pivot_in_section: tuple[float, float] | None = None,
+    atlas_picture: Image.Image | None = None,
+    atlas_name: str = "template",
+    regions: Any = (),
+    matrix_label: str = "fitted matrix",
 ) -> tuple[list[Image.Image], float]:
     """The alignment screen in one of :data:`VIEW_MODES`, plus the overlap.
 
@@ -1108,7 +1209,7 @@ def physical_views(
     a number read off one is the number on the others:
 
     * ``overlay`` — the warped section with the atlas family outlines on it,
-      and the atlas template blended under them at *template_opacity*.
+      and the atlas image blended under them at *atlas_opacity*.
     * ``side_by_side`` — two images, the warped section and the atlas template,
       at the same micrometres per pixel and the same crop, outlines on both.
     * ``checkerboard`` — section and template in alternating tiles.
@@ -1135,6 +1236,12 @@ def physical_views(
 
     *scale* multiplies the screen size (:data:`IMAGE_RESOLUTION_SCALE`); it
     is handed to :func:`langslice.atlas.render.model_long_edge` with the cap.
+
+    *atlas_picture* is the atlas image on the native plane grid (None: the
+    reference template), named *atlas_name* in captions. *regions*
+    (``[(name, ids)]``) are drawn at full strength in every mode, the
+    *outlines* layer then at :data:`REGION_CONTEXT_ALPHA` for context.
+    *matrix_label* names a ready matrix in the caption.
 
     Returns ``(images, silhouette_iou)`` — every image captioned, and the
     overlap between the warped section's tissue mask and the atlas anatomy at
@@ -1197,10 +1304,14 @@ def physical_views(
         else draw(atlas, position_mm, plane=plane, pitch_deg=pitch_deg, yaw_deg=yaw_deg)
     )
 
+    highlighted = region_polys(geometry.annotation, regions) if regions else []
+    atlas_head = f"atlas {atlas_name}"
+
     def _template_canvas() -> np.ndarray:
         plate = np.zeros_like(warped)
         _blend_template(
-            plate, atlas, position_mm, plane, pitch_deg, yaw_deg, geometry, opacity=1.0
+            plate, atlas, position_mm, plane, pitch_deg, yaw_deg, geometry, opacity=1.0,
+            picture=atlas_picture,
         )
         return plate
 
@@ -1210,10 +1321,10 @@ def physical_views(
         panels = [(warped, label or "section")]
         lines = False  # ...except the clean views, which show one source alone
     elif mode == "template":
-        panels = [(_template_canvas(), "atlas template")]
+        panels = [(_template_canvas(), atlas_head)]
         lines = False
     elif mode == "side_by_side":
-        panels = [(warped, label or "section"), (_template_canvas(), "atlas template")]
+        panels = [(warped, label or "section"), (_template_canvas(), atlas_head)]
     elif mode == "checkerboard":
         panels = [(_checkerboard(warped, _template_canvas()), label or "section")]
     elif mode == "outlines":
@@ -1221,7 +1332,7 @@ def physical_views(
         panels = [(np.zeros_like(warped), label or "section")]
         dark = True  # the canvas is black whatever the section is
     else:
-        if template_opacity > 0.0:
+        if atlas_opacity > 0.0:
             _blend_template(
                 warped,
                 atlas,
@@ -1230,7 +1341,8 @@ def physical_views(
                 pitch_deg,
                 yaw_deg,
                 geometry,
-                opacity=float(np.clip(template_opacity, 0.0, 1.0)),
+                opacity=float(np.clip(atlas_opacity, 0.0, 1.0)),
+                picture=atlas_picture,
             )
         panels = [(warped, label or "section")]
 
@@ -1241,7 +1353,7 @@ def physical_views(
             else "landmark thin-plate spline"
         )
     elif isinstance(params, np.ndarray):
-        knobs = "fitted matrix"
+        knobs = matrix_label
     else:
         knobs = (
             f"rot {params['rotation_deg']:.1f}  "
@@ -1265,7 +1377,14 @@ def physical_views(
         if lines:
             _draw_outlines(
                 screen, atlas_lines, geometry, color=line_color, thickness=line_width,
-                factor=factor, origin=box[:2]
+                factor=factor, origin=box[:2],
+                alpha=REGION_CONTEXT_ALPHA if regions else 1.0,
+            )
+        if highlighted:
+            _draw_polys(
+                screen, highlighted, line_color, thickness=line_width,
+                scale=geometry.atlas_scale, offset=geometry.atlas_offset,
+                origin=box[:2], factor=factor,
             )
         if silhouette:
             _draw_polys(
@@ -1297,6 +1416,8 @@ def physical_views(
             )
         if layer != "all":
             text += f"  outlines {layer}"
+        if regions:
+            text += "  regions " + ",".join(str(name) for name, _ids in regions)
         labelled = caption(Image.fromarray(screen, mode="RGB"), text)
         if frames is not None:
             frames.append({
@@ -1320,7 +1441,7 @@ def physical_overlay(
     yaw_deg: float,
     params: dict[str, float] | np.ndarray,
     *,
-    template_opacity: float = 0.0,
+    atlas_opacity: float = 0.0,
     border_color: str = "yellow",
     border_thickness: float = 0.5,
     pad_to_fit_atlas: bool = True,
@@ -1352,7 +1473,7 @@ def physical_overlay(
         pitch_deg,
         yaw_deg,
         params,
-        template_opacity=template_opacity,
+        atlas_opacity=atlas_opacity,
         border_color=border_color,
         border_thickness=border_thickness,
         pad_to_fit_atlas=pad_to_fit_atlas,

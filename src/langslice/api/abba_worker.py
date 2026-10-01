@@ -22,7 +22,6 @@ Emit = Callable[[dict[str, Any]], None]
 _SUPPORTED_ATLASES = {"allen_mouse_10um", "allen_mouse_25um", "allen_mouse_50um"}
 #: Subfolder of the snapshot folder holding the blended images the agent is
 #: shown, when the host sends preprocessing settings or multi-page snapshots.
-AGENT_VIEW_FOLDER = "agent_view"
 
 
 def _finite_positive(value: Any, name: str) -> float:
@@ -112,41 +111,41 @@ def _preprocessing(value: Any) -> dict[str, Any] | None:
     return PreprocessingSettings.model_validate(value).model_dump()
 
 
-def _stage_agent_view(
-    folder: Path, paths: list[str], settings: dict[str, Any] | None,
-) -> Path | None:
-    """Blend every snapshot into the one grayscale image the agent is shown.
+def _host_appearance(
+    paths: list[str], settings: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """The default appearance a host's snapshots are shown in, validated.
 
     Snapshots may be multi-page TIFFs, one page per exported channel. When the
-    host sends preprocessing settings, or any snapshot has several pages, each
-    snapshot is blended by :func:`langslice.image_prep.host_preprocess` — the
-    function ``preprocess.preview`` shows the user — and written under
-    ``agent_view/`` with its own filename; the engine then shows those files
-    with no further preprocessing. Otherwise (no settings, single pages) None:
-    the run shows the snapshots through the engine's own automatic path, as
-    before these settings existed.
+    host sends preprocessing settings, or any snapshot has several pages, the
+    run shows each section as :func:`langslice.image_prep.host_preprocess`
+    blends it — the function ``preprocess.preview`` shows the user — but the
+    blend is only the DEFAULT appearance (``JobSpec.host_preprocessing``): the
+    snapshots stay the run's images and their pages stay readable as raw
+    channels, for the agent's ``section_image`` and ``preprocess``. Otherwise
+    (no settings, single pages) None: the engine's own automatic path.
     """
-
-    from langslice.image_prep import (
-        host_preprocess,
-        host_preprocess_settings,
-        page_count,
-        read_pages,
-    )
+    from langslice.image_prep import host_preprocess_settings, page_count
 
     counts = {path: page_count(path) for path in paths}
     if settings is None and all(count == 1 for count in counts.values()):
         return None
-    # Validate every snapshot's settings before writing any file.
+    # Validate every snapshot's settings before the run starts.
     for count in counts.values():
         host_preprocess_settings(settings, count)
-    staged = folder / AGENT_VIEW_FOLDER
-    staged.mkdir(exist_ok=True)
-    for path in paths:
-        blended = host_preprocess(read_pages(path), settings).convert("L")
-        # Same filename: the filename is the section's identity.
-        blended.save(staged / Path(path).name, format="TIFF")
-    return staged
+    return dict(settings or {"mode": "auto"})
+
+
+def _channel_names(value: Any) -> list[str] | None:
+    """Optional host names for the exported pages, one per page."""
+    if value is None:
+        return None
+    if not isinstance(value, list) or any(not isinstance(name, str) for name in value):
+        raise ValueError("channel_names must be a list of names, one per exported page")
+    cleaned = [name.strip() or f"ch{index + 1}" for index, name in enumerate(value)]
+    if len(set(cleaned)) != len(cleaned):
+        raise ValueError("channel_names must be distinct")
+    return cleaned
 
 
 @dataclass
@@ -163,10 +162,9 @@ class PreparedLinear:
 
 
 def prepare_linear(params: dict[str, Any]) -> PreparedLinear:
-    """Validate and stage host snapshots identically for ADK and MCP."""
+    """Validate host snapshots and build their job identically for ADK and MCP."""
     from PIL import Image
 
-    from langslice.linear import engine
     from langslice.linear.discovery import discover_slices
     from langslice.linear.spec import JobSpec
 
@@ -204,6 +202,7 @@ def prepare_linear(params: dict[str, Any]) -> PreparedLinear:
     ):
         raise ValueError("Damaged slices must map exported snapshot names to note text")
     preprocessing = _preprocessing(params.get("preprocessing"))
+    channel_names = _channel_names(params.get("channel_names"))
     spec_data = dict(params.get("spec") or {})
     if spec_data.get("inputs"):
         raise ValueError("Snapshot inputs are supplied by the host, not agent settings")
@@ -215,6 +214,8 @@ def prepare_linear(params: dict[str, Any]) -> PreparedLinear:
         inputs["locked"] = sorted(set(locked))
     if damaged:
         inputs["damaged"] = dict(damaged)
+    if channel_names:
+        inputs["channel_names"] = channel_names
     spec_data.update(image_folder=str(folder), resume=False, inputs=inputs)
     spec_data.setdefault("debrief", False)
     spec = JobSpec.from_dict(spec_data)
@@ -224,14 +225,9 @@ def prepare_linear(params: dict[str, Any]) -> PreparedLinear:
         raise ValueError("Cutting-angle updates are not verified for the Fiji connector")
     if not spec.tasks:
         raise ValueError("Select at least one LangSlice task")
-    # Blend last: every refusal above comes before any file is written.
-    staged = _stage_agent_view(folder, paths, preprocessing)
-    if staged is not None:
-        # The agent is shown exactly the blended images; results stay beside
-        # the snapshots.
-        spec.image_folder = str(staged)
-        spec.preprocess = "none"
-        spec.out = spec.out or str(folder / engine.RESULTS_FILENAME)
+    # The host's blend is the default appearance; the snapshots and their
+    # channels stay the run's images (nothing is staged or rewritten).
+    spec.host_preprocessing = _host_appearance(paths, preprocessing)
     registered = params.get("registered_slices") or []
     if not isinstance(registered, list) or any(name not in geometry for name in registered):
         raise ValueError("Registered slice names must identify exported snapshots")
@@ -277,9 +273,10 @@ def run_linear(params: dict[str, Any], emit: Emit) -> dict[str, Any]:
     Optional: spec (JobSpec fields), registered_slices (snapshot filenames),
     locked (snapshot filenames whose in-plane geometry the agent may not
     change), damaged (filename -> note, flags the agent may not clear) and
-    preprocessing (``preprocess.preview`` settings for multi-page snapshots)
-    and trace_dir (save this run's full agent trace there; the result then
-    names the files written).
+    preprocessing (``preprocess.preview`` settings for multi-page snapshots:
+    the default appearance; the pages stay readable as channels),
+    channel_names (one name per exported page) and trace_dir (save this
+    run's full agent trace there; the result then names the files written).
     Checkpoint events carry initial=True with no mutations for ingestion.
     Later host_updates are replacement corrections relative to the previous
     checkpoint, never cumulative transforms; every checkpoint also carries

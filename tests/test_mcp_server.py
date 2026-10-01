@@ -54,7 +54,7 @@ def test_a_folder_given_at_startup_lists_the_toolbox_without_adk_context(tmp_pat
         return (await client.list_tools()).tools
 
     tools = {tool.name: tool for tool in _session(server, body)}
-    assert {"start_job", "status", "view_slices", "fetch_atlas", "set_positions",
+    assert {"start_job", "status", "view_slices", "view_atlas", "set_positions",
             "submit"} <= set(tools)
     for tool in tools.values():
         assert "tool_context" not in tool.inputSchema.get("properties", {})
@@ -169,7 +169,8 @@ def test_saved_job_settings_and_offline_submission(tmp_path: Path, monkeypatch: 
     job = open_saved_job(prepared["job_id"], lambda _n: _ATLAS)
     assert job.spec.tasks == ["transform"]
     assert job.state.in_order()[0].damaged
-    assert Path(job.ctx.image_folder).name == "agent_view"
+    assert Path(job.ctx.image_folder).name != "agent_view"  # snapshots are read as they are
+    assert job.spec.host_preprocessing["mode"] == "auto"
     submit = next(tool for tool in job.box.tools if tool.__name__ == "submit")
     result = asyncio.run(host_tool(job, submit)(summary="done", notes=[], interval_breaks=[]))
     assert result and job.state.submitted

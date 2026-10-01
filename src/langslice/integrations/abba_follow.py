@@ -11,12 +11,12 @@ logger = logging.getLogger(__name__)
 
 _TRANSFORMS = {"adjust_transforms", "fit_affine"}
 _POSITIONING = {
-    "view_slices", "compare_placement", "view_stack", "set_positions", "fit_position",
+    "view_slices", "view_placement", "view_stack", "set_positions", "search_position",
     "run_deepslice", "orient_slices", "reorder_slices", "set_cutting_angles",
     "undo", "redo",
 }
 _WRITES = _TRANSFORMS | (_POSITIONING - {
-    "view_slices", "compare_placement", "view_stack",
+    "view_slices", "view_placement", "view_stack",
 })
 
 

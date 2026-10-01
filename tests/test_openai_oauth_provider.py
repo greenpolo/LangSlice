@@ -265,7 +265,7 @@ def test_each_tool_image_is_labelled_before_it():
             types.Part(
                 function_response=types.FunctionResponse(
                     id="call_1",
-                    name="fetch_atlas",
+                    name="view_atlas",
                     response={"status": "ok"},
                     parts=[blob, blob, blob],
                 )
@@ -283,9 +283,9 @@ def test_each_tool_image_is_labelled_before_it():
         "input_image",
     ]
     assert [item["text"] for item in content[1::2]] == [
-        "fetch_atlas image 1 of 3",
-        "fetch_atlas image 2 of 3",
-        "fetch_atlas image 3 of 3",
+        "view_atlas image 1 of 3",
+        "view_atlas image 2 of 3",
+        "view_atlas image 3 of 3",
     ]
 
 

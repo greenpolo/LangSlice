@@ -55,7 +55,7 @@ SERVER_NAME = "langslice"
 
 #: Tools that only look. Hosts may use the hint to skip a confirmation.
 READ_ONLY_TOOLS = frozenset(
-    {"status", "view_slices", "fetch_atlas", "compare_placement", "view_stack"}
+    {"status", "view_slices", "view_atlas", "view_placement", "view_stack"}
 )
 
 INSTRUCTIONS = (

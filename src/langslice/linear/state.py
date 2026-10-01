@@ -103,6 +103,11 @@ class StackState:
     interval_breaks: list[int] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     slices: list[SliceState] = field(default_factory=list)
+    #: The agent's appearance settings (``preprocess`` tool), per target:
+    #: ``{"view"|"fit": {"stack": settings, "sections": {id: settings}}}``.
+    #: Empty means the default appearance everywhere. Undone and checkpointed
+    #: with everything else (:mod:`langslice.linear.appearance`).
+    appearance: dict[str, Any] = field(default_factory=dict)
     submitted: bool = False
     #: The agent's post-submit debrief (what it reached for that was not
     #: there), verbatim. Data for the environment's builders, not for the run.

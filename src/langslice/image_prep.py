@@ -421,6 +421,7 @@ def _blend_channels(
     weights: list[float],
     *,
     clahe_clip: float | None,
+    tile: tuple[int, int] = HOST_CLAHE_TILE,
     target_brightness: float = 90.0,
     max_boost: float = 3.0,
 ) -> Image.Image:
@@ -432,7 +433,7 @@ def _blend_channels(
     total = float(sum(weights))
     normalized = [value / total for value in weights] if total > 0 else weights
     if clahe_clip is not None:
-        clahe = cv2.createCLAHE(clipLimit=clahe_clip, tileGridSize=HOST_CLAHE_TILE)
+        clahe = cv2.createCLAHE(clipLimit=clahe_clip, tileGridSize=tile)
         enhanced = [clahe.apply(channel).astype(np.float32) for channel in channels]
     else:
         enhanced = [channel.astype(np.float32) for channel in channels]
@@ -498,6 +499,17 @@ def host_preprocess(
     if float(np.median(border)) > 140.0:
         gray = np.round(stack.astype(np.float32).mean(axis=-1)).astype(np.uint8)
         return _brightfield_preprocess(np.stack([gray, gray, gray], axis=-1))
+    return _blend_channels(channels, coverage_weights(channels), clahe_clip=4.0)
+
+
+def coverage_weights(channels: list[np.ndarray]) -> list[float]:
+    """Automatic channel weights: squared tissue coverage, normalized.
+
+    The structural stain (DAPI, Nissl, a fill) lights most of the tissue and
+    dominates; a sparse tracer lighting small patches gets little weight. The
+    automatic path of :func:`host_preprocess` and :func:`adaptive_preprocess`.
+    """
+    stack = np.stack(channels, axis=-1)
     tissue = stack.max(axis=-1) > 15
     weights = [1.0] * len(channels)
     if tissue.any():
@@ -507,7 +519,7 @@ def host_preprocess(
         squared = coverage**2
         if squared.sum() > 0:
             weights = [float(value) for value in squared / squared.sum()]
-    return _blend_channels(channels, weights, clahe_clip=4.0)
+    return weights
 
 
 def host_preprocess_file(
@@ -515,6 +527,154 @@ def host_preprocess_file(
 ) -> Image.Image:
     """:func:`host_preprocess` over every page of the file at *path*."""
     return host_preprocess(read_pages(path), settings)
+
+
+# --- raw channels and the agent-chosen appearance ---------------------------
+
+
+def read_working_pages(
+    path: str | Path, min_edge: int = WORKING_MIN_EDGE, max_edge: int = WORKING_MAX_EDGE,
+) -> tuple[list[np.ndarray], float]:
+    """``(pages, file pixels per page pixel)`` of one section file, working size.
+
+    A single-page file gives one page: :func:`read_working_image`'s RGB array,
+    so its pixels are exactly the working copy every render is drawn from. A
+    multi-page file (one page per exported channel) gives one 8-bit 2D array
+    per page: a pyramidal series is read at its smallest level at least
+    *min_edge* long; otherwise each page is decoded on its own and downsampled
+    to *max_edge* before the next one is read.
+    """
+    if page_count(path) <= 1:
+        image, factor = read_working_image(path, min_edge, max_edge)
+        return [np.asarray(image)], factor
+    import tifffile
+
+    pages: list[np.ndarray] = []
+    full_width = 0
+    with tifffile.TiffFile(path) as handle:
+        series = handle.series[0] if handle.series else None
+        levels = list(series.levels) if series is not None else []
+        if (series is not None and len(levels) > 1 and len(series.axes) == 3
+                and series.axes.endswith("YX")):
+            full_width = int(levels[0].shape[-1])
+            chosen = levels[0]
+            for level in levels[1:]:
+                if max(level.shape[-2], level.shape[-1]) >= min_edge:
+                    chosen = level
+            pages = [_page_channel(plane) for plane in np.asarray(chosen.asarray())]
+        else:
+            for page in handle.pages:
+                channel = _page_channel(np.asarray(page.asarray()))
+                full_width = full_width or int(channel.shape[1])
+                pages.append(_shrink_channel(channel, max_edge))
+    return pages, full_width / float(pages[0].shape[1])
+
+
+def _shrink_channel(channel: np.ndarray, max_edge: int) -> np.ndarray:
+    if max(channel.shape) <= max_edge:
+        return channel
+    scale = max_edge / float(max(channel.shape))
+    size = (max(1, round(channel.shape[1] * scale)), max(1, round(channel.shape[0] * scale)))
+    resized = Image.fromarray(channel).resize(size, _RESAMPLE_LANCZOS, reducing_gap=3.0)
+    return np.asarray(resized, dtype=np.uint8)
+
+
+#: Names of a single-page colour file's channels, in order.
+RGB_CHANNEL_NAMES = ("red", "green", "blue")
+
+
+def channel_planes(
+    pages: list[np.ndarray], names: list[str] | None = None,
+) -> tuple[tuple[str, ...], list[np.ndarray]]:
+    """``(names, 8-bit 2D planes)``: the raw channels of one section.
+
+    One colour page is its red, green and blue planes (one ``gray`` plane
+    when the three are identical); several pages are one plane each, named
+    by *names* when the host supplied one per page, else ``ch1``, ``ch2``...
+    """
+    if len(pages) == 1:
+        array = np.asarray(pages[0])
+        if array.ndim == 2:
+            return ("gray",), [_page_channel(array)]
+        rgb = np.asarray(_page_image(array), dtype=np.uint8)
+        planes = [np.ascontiguousarray(rgb[..., index]) for index in range(3)]
+        if np.array_equal(planes[0], planes[1]) and np.array_equal(planes[1], planes[2]):
+            return ("gray",), [planes[0]]
+        return RGB_CHANNEL_NAMES, planes
+    planes = [_page_channel(page) for page in pages]
+    if names is not None and len(names) == len(planes):
+        return tuple(str(name) for name in names), planes
+    return tuple(f"ch{index + 1}" for index in range(len(planes))), planes
+
+
+def ants_enhance(plane: np.ndarray, *, n4: bool, denoise: bool) -> np.ndarray:
+    """ANTs N4 bias-field correction and/or denoising of one 8-bit plane.
+
+    antspyx ships in LangSlice's optional ``registration`` extra and is
+    imported only here; without it this raises with the install hint.
+    Intensities are shifted positive first (N4 works on their logarithm) and
+    the result is scaled back to the plane's own mean inside the tissue, so a
+    dim channel stays dim; outside the tissue the plane is kept.
+    """
+    if not (n4 or denoise):
+        return plane
+    try:
+        import ants
+    except ImportError as exc:  # pragma: no cover - depends on the environment
+        raise RuntimeError(
+            "N4 and denoising need antspyx: install LangSlice's 'registration' "
+            "extra (pip install 'langslice[registration]')"
+        ) from exc
+    array = plane.astype(np.float32) + 1.0
+    image = ants.from_numpy(np.ascontiguousarray(array))
+    tissue = plane > 15
+    mask = (
+        ants.from_numpy(np.ascontiguousarray(tissue.astype(np.float32)))
+        if tissue.any() else None
+    )
+    if n4:
+        image = ants.n4_bias_field_correction(image, mask=mask)
+    if denoise:
+        image = ants.denoise_image(image, mask=mask)
+    out = np.asarray(image.numpy(), dtype=np.float32)
+    region = tissue if tissue.any() else np.ones(plane.shape, dtype=bool)
+    # Keep the channel's own brightness: a dim channel stays dim, so the
+    # weights still mean what they say and its noise is not stretched up.
+    level = float(out[region].mean())
+    if not np.isfinite(level) or level <= 0:
+        return plane
+    scaled = out * (float(array[region].mean()) / level) - 1.0
+    return np.where(region, np.clip(scaled, 0, 255), plane).astype(np.uint8)
+
+
+def custom_appearance(
+    planes: list[np.ndarray],
+    *,
+    channel_weights: list[float] | None = None,
+    clahe_clip: float = 4.0,
+    clahe_tiles: int = HOST_CLAHE_TILE[0],
+    n4: bool = False,
+    denoise: bool = False,
+) -> Image.Image:
+    """The grayscale image an explicit appearance draws from raw planes.
+
+    Each plane with weight above zero is optionally N4-corrected and denoised
+    (:func:`ants_enhance`), CLAHE-enhanced at *clahe_clip* over a
+    *clahe_tiles* x *clahe_tiles* grid (0 = no CLAHE), then the planes are
+    blended by *channel_weights* (None = :func:`coverage_weights`) and
+    brightened like the automatic path. 8-bit RGB with three equal channels.
+    """
+    weights = list(channel_weights) if channel_weights is not None else coverage_weights(planes)
+    if len(weights) != len(planes):
+        raise ValueError(f"Expected {len(planes)} channel weight(s); got {len(weights)}")
+    used = [
+        ants_enhance(plane, n4=n4, denoise=denoise) if weight > 0 else plane
+        for plane, weight in zip(planes, weights, strict=True)
+    ]
+    tiles = max(1, int(clahe_tiles))
+    return _blend_channels(
+        used, weights, clahe_clip=clahe_clip if clahe_clip > 0 else None, tile=(tiles, tiles),
+    )
 
 
 #: Margin left around the foreground when framing, as a fraction of the
@@ -536,11 +696,23 @@ def crop_to_mask(
     *image*. Returns *image* untouched when the mask is empty or the resulting
     box is degenerate.
     """
+    box = mask_box(image.size, mask, margin=margin)
+    return image if box is None else image.crop(box)
+
+
+def mask_box(
+    size: tuple[int, int], mask: np.ndarray, *, margin: float = FRAME_MARGIN
+) -> tuple[int, int, int, int] | None:
+    """The crop box :func:`crop_to_mask` uses on an image of *size*, or None.
+
+    None when the mask is empty or the box would be degenerate (the image is
+    then kept whole).
+    """
     ys, xs = np.nonzero(mask)
     if ys.size == 0:
-        return image
+        return None
     height, width = mask.shape[:2]
-    scale_x, scale_y = image.width / float(width), image.height / float(height)
+    scale_x, scale_y = size[0] / float(width), size[1] / float(height)
     x0, x1 = float(xs.min()) * scale_x, (float(xs.max()) + 1.0) * scale_x
     y0, y1 = float(ys.min()) * scale_y, (float(ys.max()) + 1.0) * scale_y
     # One padding distance for both axes so framing cannot change the apparent
@@ -549,12 +721,12 @@ def crop_to_mask(
     box = (
         max(0, int(x0 - pad)),
         max(0, int(y0 - pad)),
-        min(image.width, int(round(x1 + pad))),
-        min(image.height, int(round(y1 + pad))),
+        min(size[0], int(round(x1 + pad))),
+        min(size[1], int(round(y1 + pad))),
     )
     if box[2] - box[0] < 2 or box[3] - box[1] < 2:
-        return image
-    return image.crop(box)
+        return None
+    return box
 
 
 #: A blob at least this fraction of the biggest one's area is part of the
@@ -608,10 +780,18 @@ def crop_to_tissue(image: Image.Image, *, margin: float = FRAME_MARGIN) -> Image
     cannot drag the frame open while a section in two pieces stays whole.
     Falls back to the untouched image when the result would be degenerate.
     """
+    box = tissue_box(image, margin=margin)
+    return image if box is None else image.crop(box)
+
+
+def tissue_box(
+    image: Image.Image, *, margin: float = FRAME_MARGIN
+) -> tuple[int, int, int, int] | None:
+    """The crop box :func:`crop_to_tissue` uses, or None to keep the image whole."""
     mask = foreground_mask(image)
     if mask is None:
-        return image
-    return crop_to_mask(image, mask, margin=margin)
+        return None
+    return mask_box(image.size, mask, margin=margin)
 
 
 def foreground_mask(

@@ -43,7 +43,7 @@ to Linear on 2026-09-29 (below).
 | Slice thickness (may be provided by the host) | `position.thickness_um` |
 | Slicing interval (ABBA often provides it) | `position.interval_um` |
 | Enable DeepSlice tool (TODO; coronal mouse/rat only) | `position.deepslice` |
-| Enable Bayesian optimizer tool (not implemented; needs design) | `position.bayesian` builds `fit_position` |
+| Enable Bayesian optimizer tool (not implemented; needs design) | `position.bayesian` builds `search_position` |
 | Extra notes for the agent, attached to this task | `position.notes`, shown under the task in the job statement (global `facts` remain) |
 
 Positioning ON means the agent moves positions freely; there is no separate
@@ -142,10 +142,98 @@ edits); a bounded redo with new notes per section.
 Tunes what the agent sees for the selected slices: per-channel CLAHE weights,
 CLAHE off, and other preprocessing steps. Tip shown: "Try to maximize contrast
 between different regions." On main: `image_prep.host_preprocess` blends a
-snapshot's pages (one per channel) into the image the agent sees: auto, or
-custom per-channel weights, CLAHE on/off and strength. `linear.run` takes it as
-`preprocessing`; `preprocess.preview` writes the same image for the dialog. The
-CLI keeps `preprocess` auto/none.
+snapshot's pages (one per channel) into the section's DEFAULT appearance:
+auto, or custom per-channel weights, CLAHE on/off and strength. `linear.run`
+takes it as `preprocessing` (the run's `host_preprocessing`); `preprocess.preview`
+writes the same image for the dialog. The blend is an appearance, not a lossy
+step: the snapshots are read as they are (nothing is staged), and their pages
+stay available to the agent and to fitting as raw channels, named by the
+optional `channel_names` (one per exported page) or ch1, ch2... The CLI keeps
+`preprocess` auto/none.
+
+| Control | On main |
+| --- | --- |
+| Let the agent drive preprocessing (checkbox, default off) | `agent_preprocessing` (worker `spec`, CLI `--agent-preprocessing`) builds the `preprocess` tool; off, what the agent views and what a fit reads both stay the default appearance above |
+
+TODO (Fiji connector): the checkbox is not in the Java dialog yet. Adding it
+means a `RegistrationSettings` field saved with the others, `spec.agent_preprocessing`,
+and exporting EVERY channel (weight 0 included) when it is on, since custom
+mode exports only weighted channels today; sending `channel_names` from the
+dialog's channel list is the matching one-liner.
+
+## Agent tool surface (locked 2026-10-01)
+
+The linear stack agent's tools, as built (`linear/toolbox.py`). Every write is
+undoable and checkpointed; every tool that returns a picture takes the shared
+display options below.
+
+| Tool | Built when | Signature |
+| --- | --- | --- |
+| `status` | always | `status()` |
+| `view_slices` | always | `view_slices(slice_ids, +display)` — modes: section |
+| `view_atlas` | always | `view_atlas(positions_mm, +display)` — modes: template (was `fetch_atlas`) |
+| `note`, `undo`, `redo` | always | `note(text)`, `undo()`, `redo()` |
+| `mark_damaged` | `agent_damage` | `mark_damaged(entries)` |
+| `preprocess` | `agent_preprocessing` | `preprocess(target="both", sections=[], channel_weights=[], clahe_clip=4, clahe_tiles=8, n4=False, denoise=False, reset=False, +display)` |
+| `reorder_slices` | reorder | `reorder_slices(new_order, after="start")` |
+| `set_positions` | position | `set_positions(entries, +display)` — modes as `view_placement`, default stacked |
+| `view_placement` | position | `view_placement(entries, +display)` — modes: template (default), stacked, side_by_side, overlay, checkerboard, outlines, section (was `compare_placement`) |
+| `view_stack` | position | `view_stack(+display)` — modes: stacked |
+| `run_deepslice` | position.deepslice | `run_deepslice(slice_ids, allow_angle_change, keep)` |
+| `search_position` | position.bayesian | `search_position(slice_id, window_mm, angles)` (was `fit_position`) |
+| `orient_slices` | transform | `orient_slices(entries, +display)` — modes: section |
+| `fit_affine` | transform.automatic | `fit_affine(slice_ids, method, +display)` — modes: overlay (default), side_by_side, checkerboard, outlines, section, template |
+| `adjust_transforms` | transform.interactive | `adjust_transforms(entries)`; each entry: id, rotation_deg, scale_x, scale_y, translate_x_mm, translate_y_mm, pivot, note, +display — modes as `fit_affine` plus ab |
+| `set_cutting_angles` | transform.angles | `set_cutting_angles(pitch_deg, yaw_deg)` |
+| `trace_borders`, `grep_atlas` | nonlinear | `trace_borders(id, prompt="")`, `grep_atlas(query, section="")` |
+| `submit` | always | `submit(summary, notes, interval_breaks)` |
+| `fit_deformable` | (next) | the deformable fit (`src/langslice/deformable/`); takes the same display options and reads the fit appearance (`appearance.fit_image`) |
+
+**Shared display options** (`+display`; one parser, `linear/display.py`; the
+same names on every picture tool and on each `adjust_transforms` entry; a
+call's options never change any stored setting):
+
+- `mode` — the tool's compositions (above).
+- `zoom` — `[x0, y0, x1, y1]` fractions; cropped before sizing, so it
+  magnifies up to the atlas's resolution. Refused on tissue-framed pair
+  pictures (`stacked`, `side_by_side`) and `view_stack`.
+- `section_image` — `current` (the section's view appearance, default) or one
+  raw channel by name, unenhanced.
+- `atlas_image` — `ara` (BrainGlobe reference, default), `borders` (the atlas
+  family boundaries as lines) or `nissl` (ABBA's cached Allen Nissl). Hosts
+  with ABBA's cached atlas (`~/cached_atlas`, matching the run's atlas) get
+  nissl; others get ara and borders, and asking for nissl answers
+  `ATLAS_IMAGE_UNAVAILABLE` with the available list.
+- `atlas_opacity` — 0..1, the atlas image blended under the lines over the
+  section (`overlay`); was `template_opacity`.
+- `regions` — atlas acronyms or ids, descendants included: only these
+  regions' borders are drawn at full strength, the `outlines` layer faint
+  behind them for context; regions missing from a plane are named in
+  `regions_not_in_plane`.
+- `outlines` — `all`, `outer` or `none`; empty is the mode's default (all on
+  the physical canvas, none on tissue-framed pictures).
+- `border_color`, `border_thickness` — named or `#RRGGBB`; 0.25..8 output px.
+
+**Appearance (`preprocess`).** Two targets, set independently: `view` (every
+picture the agent is shown: seed on resume, views, write pictures) and `fit`
+(what a deformable fit reads). Each holds a stack-wide setting and per-section
+overrides; with no call both are the default appearance (`preprocess` auto
+CLAHE, or the host's blend), so nothing changes. A setting is built from the
+raw channels: per weighted channel optional ANTs N4 bias-field correction and
+denoising (antspyx, the optional `registration` extra, imported only when
+asked; without it the tool answers `UNAVAILABLE`), CLAHE (clip 0..40, tiles
+1..32), then the weighted blend (no weights = automatic by tissue coverage).
+The tool returns the affected sections as that target now sees them. The
+image model's input (`trace_borders`), the silhouette fit, calibration and
+`search_position` always use the default appearance.
+
+**Raw channels from host to views and fit.** Host snapshot pages (or a plain
+file's red/green/blue) are read once at working size
+(`image_prep.read_working_pages`: a pyramid level or a per-page downsample,
+never a full-size whole-slide decode) and kept as named 8-bit planes
+(`EngineContext.section_channels`). The default appearance is drawn from the
+same working copy, so every look shares one frame, crop and size; a look only
+changes intensities.
 
 ## ABBA host (settled 2026-09-28)
 

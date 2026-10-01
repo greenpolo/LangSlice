@@ -148,8 +148,11 @@ Shared, top-level:
   size of the biggest (both bulbs, cerebellum and brainstem, a torn piece), so
   a speck elsewhere on the slide cannot widen the box.
   `host_preprocess` blends a host's multi-page snapshot (one page per channel)
-  into the one grayscale image the agent sees; the worker's `preprocess.preview`
-  writes that same image for the host's preview. `read_working_image` gives
+  into a section's DEFAULT appearance (the worker's `preprocess.preview` writes
+  that same image for the host's preview); the pages stay raw channels
+  (`read_working_pages`, `channel_planes`) for the agent's display options,
+  its optional `preprocess` tool (`custom_appearance`: weights, CLAHE, ANTs
+  N4/denoise) and fitting. `read_working_image` gives
   each section file's small working copy (the smallest TIFF pyramid level of
   at least 1536 px, a JPEG draft decode, otherwise one downsample to 3072 px);
   the linear renders are drawn from it (`EngineContext.working_source`) and
