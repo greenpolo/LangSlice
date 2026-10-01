@@ -145,6 +145,81 @@ def _scaled_volume(
     return volume, res_mm
 
 
+def _plane_coordinates(
+    shape: tuple[int, ...],
+    res_mm: tuple[float, float, float],
+    axes: tuple[int, int, int],
+    normal_index: float,
+    pitch_deg: float,
+    yaw_deg: float,
+) -> np.ndarray:
+    """(3, H, W) volume index coordinates of a plane, in raw (undisplayed) order.
+
+    The plane passes through the volume's in-plane centre at *normal_index*
+    along the normal axis. In-plane unit directions in physical space,
+    expressed on the atlas axes, are converted to index steps one voxel wide
+    along their own axis; dividing component-wise by the per-axis resolution
+    keeps anisotropic atlases square.
+    """
+    normal_axis, row_axis, col_axis = axes
+    height, width = shape[row_axis], shape[col_axis]
+    rotation = build_rotation_matrix(pitch_deg, yaw_deg, row_axis=row_axis, col_axis=col_axis)
+    res = np.asarray(res_mm, dtype=np.float64)
+    basis_row = np.zeros(3)
+    basis_row[row_axis] = 1.0
+    basis_col = np.zeros(3)
+    basis_col[col_axis] = 1.0
+    step_row = (rotation @ basis_row) * res[row_axis] / res
+    step_col = (rotation @ basis_col) * res[col_axis] / res
+
+    centre = np.zeros(3)
+    centre[normal_axis] = normal_index
+    centre[row_axis] = (height - 1) / 2.0
+    centre[col_axis] = (width - 1) / 2.0
+
+    rows = (np.arange(height, dtype=np.float64) - (height - 1) / 2.0)[:, None]
+    cols = (np.arange(width, dtype=np.float64) - (width - 1) / 2.0)[None, :]
+    coords = np.empty((3, height, width), dtype=np.float64)
+    for axis in range(3):
+        coords[axis] = centre[axis] + rows * step_row[axis] + cols * step_col[axis]
+    return coords
+
+
+def plane_index_coordinates(
+    atlas: Any,
+    position_mm: float,
+    plane: Plane = "coronal",
+    pitch_deg: float = 0.0,
+    yaw_deg: float = 0.0,
+) -> np.ndarray:
+    """(3, H, W) full-resolution atlas index of every pixel of a display-oriented plane.
+
+    The pixel grid is exactly :func:`langslice.atlas.render.annotation_slice`'s
+    at the same arguments: a flat plane sits on the rounded voxel index that
+    function takes, a tilted plane on :func:`sample_oblique_plane`'s geometry.
+    Use it to sample any volume co-registered with the atlas but stored on
+    its own grid (a different resolution, another file) at the same points.
+    """
+    normal_axis, row_axis, col_axis = plane_axes(atlas, plane)
+    context = atlas_space_context(atlas)
+    res_mm = cast(
+        "tuple[float, float, float]", tuple(r / 1000.0 for r in context.resolution_um)
+    )
+    if pitch_deg or yaw_deg:
+        normal_index = position_mm / res_mm[normal_axis]
+    else:
+        from langslice.atlas.core import position_mm_to_index
+
+        normal_index = float(position_mm_to_index(atlas, position_mm, plane=plane))
+    coords = _plane_coordinates(
+        context.shape, res_mm, (normal_axis, row_axis, col_axis),
+        normal_index, pitch_deg, yaw_deg,
+    )
+    if plane in {"sagittal", "horizontal"}:
+        coords = np.swapaxes(coords, 1, 2)
+    return np.ascontiguousarray(coords)
+
+
 def sample_oblique_plane(
     atlas: Any,
     position_mm: float,
@@ -195,31 +270,10 @@ def sample_oblique_plane(
             tuple(r / 1000.0 * step for r in context.resolution_um),
         )
 
-    height, width = vol.shape[row_axis], vol.shape[col_axis]
-    rotation = build_rotation_matrix(pitch_deg, yaw_deg, row_axis=row_axis, col_axis=col_axis)
-
-    # In-plane unit directions in physical space, expressed on the atlas axes,
-    # converted to index steps one voxel wide along their own axis. Dividing
-    # component-wise by the per-axis resolution keeps anisotropic atlases square.
-    res = np.asarray(res_mm, dtype=np.float64)
-    basis_row = np.zeros(3)
-    basis_row[row_axis] = 1.0
-    basis_col = np.zeros(3)
-    basis_col[col_axis] = 1.0
-    step_row = (rotation @ basis_row) * res[row_axis] / res
-    step_col = (rotation @ basis_col) * res[col_axis] / res
-
-    centre = np.zeros(3)
-    centre[normal_axis] = position_mm / res[normal_axis]
-    centre[row_axis] = (height - 1) / 2.0
-    centre[col_axis] = (width - 1) / 2.0
-
-    rows = (np.arange(height, dtype=np.float64) - (height - 1) / 2.0)[:, None]
-    cols = (np.arange(width, dtype=np.float64) - (width - 1) / 2.0)[None, :]
-    coords = np.empty((3, height, width), dtype=np.float64)
-    for axis in range(3):
-        coords[axis] = centre[axis] + rows * step_row[axis] + cols * step_col[axis]
-
+    coords = _plane_coordinates(
+        vol.shape, res_mm, (normal_axis, row_axis, col_axis),
+        position_mm / res_mm[normal_axis], pitch_deg, yaw_deg,
+    )
     sampled = map_coordinates(vol, coords, order=order, mode="constant", cval=0.0)
     return np.asarray(orient_slice_for_display(sampled, plane), dtype=np.float32)
 

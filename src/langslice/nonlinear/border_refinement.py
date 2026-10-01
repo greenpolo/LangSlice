@@ -9,6 +9,7 @@ import cv2
 import numpy as np
 from PIL import Image
 
+from langslice.atlas.render import placed_border_coverage
 from langslice.nonlinear.image_gen_helpers import (
     _compute_deformation_field,
     _extract_borders_from_classified,
@@ -92,40 +93,16 @@ def smooth_border_overlay(
     takes the region that covers it most. Boundaries between neighbouring
     fine pixels are one shared line (tracing each region separately draws a
     shared edge twice, one atlas pixel apart), widened to *width_px* image
-    pixels and area-averaged back down, so the edges are antialiased.
+    pixels and area-averaged back down, so the edges are antialiased. The
+    coverage itself is :func:`langslice.atlas.render.placed_border_coverage`,
+    shared with the deformable fit's border images.
     """
     base = np.asarray(image.convert("RGB"), dtype=np.float32)
-    height, width = base.shape[:2]
-    s = int(supersample)
-    fine = np.array([[s, 0, (s - 1) / 2], [0, s, (s - 1) / 2], [0, 0, 1]], dtype=np.float64)
-    matrix = np.asarray(atlas_to_image, dtype=np.float64)
-    if matrix.shape == (2, 3):
-        matrix = np.vstack([matrix, [0.0, 0.0, 1.0]])
-    to_fine = (fine @ matrix)[:2]
-    size = (width * s, height * s)
-    best = np.full((height * s, width * s), -1.0, dtype=np.float32)
-    owner = np.zeros((height * s, width * s), dtype=np.int32)
-    for index, region in enumerate(np.unique(labels)):
-        indicator = (labels == region).astype(np.float32)
-        if smoothing_px > 0:
-            indicator = cv2.GaussianBlur(indicator, (0, 0), smoothing_px)
-        cover = cv2.warpAffine(
-            indicator, to_fine, size, flags=cv2.INTER_LINEAR,
-            borderMode=cv2.BORDER_CONSTANT, borderValue=float(region == 0),
-        )
-        wins = cover > best
-        best[wins] = cover[wins]
-        owner[wins] = index
-    edges = np.zeros(owner.shape, dtype=np.uint8)
-    edges[:, 1:] |= (owner[:, 1:] != owner[:, :-1]).astype(np.uint8)
-    edges[1:, :] |= (owner[1:, :] != owner[:-1, :]).astype(np.uint8)
-    radius = max(0.5, width_px * s / 2.0)
-    kernel = cv2.getStructuringElement(
-        cv2.MORPH_ELLIPSE, (2 * int(np.ceil(radius)) + 1,) * 2,
+    coverage = placed_border_coverage(
+        labels, atlas_to_image, image.size, width_px=width_px,
+        smoothing_px=smoothing_px, supersample=supersample,
     )
-    stroke = cv2.dilate(edges * 255, kernel)
-    coverage = cv2.resize(stroke, (width, height), interpolation=cv2.INTER_AREA)
-    alpha = coverage.astype(np.float32)[..., None] / 255.0
+    alpha = coverage[..., None]
     blended = base * (1.0 - alpha) + np.array([255.0, 255.0, 0.0]) * alpha
     return Image.fromarray(np.rint(blended).astype(np.uint8))
 

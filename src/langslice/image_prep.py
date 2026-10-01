@@ -614,18 +614,22 @@ def crop_to_tissue(image: Image.Image, *, margin: float = FRAME_MARGIN) -> Image
     return crop_to_mask(image, mask, margin=margin)
 
 
-def foreground_mask(image: Image.Image) -> np.ndarray | None:
+def foreground_mask(
+    image: Image.Image, *, proxy_edge: int = _FRAME_PROXY_EDGE
+) -> np.ndarray | None:
     """Boolean tissue mask for *image*, or None when detection is degenerate.
 
-    The mask is measured on a small proxy (long edge ``_FRAME_PROXY_EDGE``) and
-    returned at that proxy resolution — scale it onto whatever frame you need,
-    as :func:`crop_to_mask` does. Foreground rule and section-piece selection
-    are shared with :func:`crop_to_tissue`.
+    The mask is measured on a small proxy (long edge *proxy_edge*, by default
+    ``_FRAME_PROXY_EDGE``) and returned at that proxy resolution — scale it
+    onto whatever frame you need, as :func:`crop_to_mask` does. Foreground
+    rule and section-piece selection are shared with :func:`crop_to_tissue`.
+    The deformable fit asks for a finer proxy, because its masks bound a
+    metric rather than a framing box.
     """
     proxy = image.convert("L")
     long_edge = max(proxy.size)
-    if long_edge > _FRAME_PROXY_EDGE:
-        scale = _FRAME_PROXY_EDGE / float(long_edge)
+    if long_edge > proxy_edge:
+        scale = proxy_edge / float(long_edge)
         proxy = proxy.resize(
             (max(1, round(proxy.width * scale)), max(1, round(proxy.height * scale))),
             Image.Resampling.BILINEAR,

@@ -131,6 +131,16 @@ Shared, top-level:
   builder and the normalized 6-number parameter convention. Used by both
   `linear/transform.py` and `nonlinear/quick_affine.py`; belongs
   to neither
+- `deformable/` — the deformable-fit engine a future `fit_deformable` agent
+  tool will call (not wired to any tool or host yet): ANTs SyN (optional
+  `registration` extra) or Elastix B-spline residual fit of a linearly placed
+  atlas plane onto one section — stain vs reference/ABBA Nissl, model lines
+  vs merged borders, ANTs label-map channels, sequential per-structure steps,
+  masks for tissue/torn edges/exclusions, and the canonical per-section
+  record with plausibility diagnostics. Belongs to neither method:
+  `src/langslice/deformable/CLAUDE.md` (loads when working there).
+  `oblique.plane_index_coordinates` gives any co-registered volume the
+  annotation plane's exact pixel grid
 - `image_prep.py` — image normalization, pixel-size detection, VLM
   downsampling, and foreground framing (`crop_to_tissue`, `crop_to_mask`), used
   by the linear visual path so histology and atlas sections fill their

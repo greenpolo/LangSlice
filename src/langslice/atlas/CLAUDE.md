@@ -10,6 +10,9 @@ here is a verbatim copy — edit one, mirror to the other.
   neither: `annotation_slice` (the display-oriented annotation at a position,
   resliced obliquely when the block carries cutting angles), `atlas_um_per_px`,
   `family_mapping` (region id -> its merged color family's representative),
+  `family_labels` (a label map rewritten to those representatives — the set
+  the image model is shown), `placed_border_coverage` (antialiased placed
+  boundaries; the image tool's overlay and the deformable fit's border images),
   `region_contours` + `_smooth_closed` (smoothed per-region polygons, holes
   included, confetti dropped), `family_outlines` (one `(family color,
   polyline)` per family region, in atlas-native pixels), and the shade rules
