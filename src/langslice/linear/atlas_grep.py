@@ -37,10 +37,11 @@ def grep_structures(
 ) -> tuple[list[dict[str, Any]], int]:
     """Rows for the regions matching *query*, and the total match count.
 
-    Matches are a numeric id, an exact acronym, then acronym or name
-    substrings (case-insensitive), in that order and by ontology depth within
-    each. *present* is the set of annotation ids in a section's atlas plane;
-    a region counts as in the section when it or any descendant is in it.
+    Matches are a numeric id, an exact acronym, an acronym substring, a name
+    starting with the query, then any name substring (case-insensitive), in
+    that order and by ontology depth within each. *present* is the set of
+    annotation ids in a section's atlas plane; a region counts as in the
+    section when it or any descendant is in it.
     """
     structures = {int(e["id"]): e for e in entries}
     acronym = {sid: str(e["acronym"]) for sid, e in structures.items()}
@@ -61,8 +62,10 @@ def grep_structures(
             tier = 1
         elif needle in short:
             tier = 2
-        elif needle in name:
+        elif name.startswith(needle):
             tier = 3
+        elif needle in name:
+            tier = 4
         else:
             continue
         ranked.append((tier, len(e["structure_id_path"]), sid))
