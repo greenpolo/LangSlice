@@ -289,6 +289,10 @@ The call runs in the background (`registration_tool.start_correction` prepares
 it; `ToolBox.settle_image_corrections` waits at submit and at session end) and
 returns no images. The first image reply is retained in `SliceState.image_correction`. No atlas search,
 replacement prompt, candidate selection or anatomical rejection is exposed.
+The same task adds `grep_atlas(query, section="")` (`linear/atlas_grep.py`): a text-only
+lookup of atlas regions by acronym, name substring or id, with ancestry, descendant
+count and, for a positioned section, whether the region is in the atlas plane at its
+placement. It is for choosing regions a later deformable fit should exclude.
 It does not fit a deformation or modify `transform`. Default task/tool counts stay
 unchanged; `DEFAULT_TASKS` is separate from `ALL_TASKS`. Hosts may supply calibrated
 `inputs.transforms` or resume saved linear transforms. Submit checks correction
