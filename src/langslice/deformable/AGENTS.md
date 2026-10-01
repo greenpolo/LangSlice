@@ -104,8 +104,20 @@ packaging of the symmetric volume. An XML with a different affine is refused.
 
 Judge fits by drawing the final borders on the ORIGINAL section next to the
 linear-only borders, region by region; diagnostics and synthetic recovery are
-secondary. Labels are nearest-sampled from the atlas grid, so borders look
-staircased on fine section pixels — a rendering effect, not the warp.
+secondary. Use `render.draw_warped_borders(image, record, atlas, highlight=...,
+warped=...)` (exported from the package): it composes the linear placement and
+the residual field and draws per-region blurred indicators sampled bilinearly
+on a 3x supersampled grid (the approach of `atlas.render.placed_border_coverage`,
+which is affine-only, so the composed sampling lives here), one shared line per
+edge, antialiased, clipped to tissue. `highlight` (acronyms/ids, descendants
+included) draws those regions' edges strongly over a faint outline of the
+colour-family regions. Never judge borders traced from `record.labels`: those
+are nearest-sampled from the 25 um atlas grid and look staircased on fine
+section pixels (3.5 section px per step at 7 um/px), which was the whole of the
+zig-zag once seen along hippocampal arcs in label-map mode (the residual field
+there has under 1 um of high-frequency content). Smoothing is 1.4 atlas px:
+1.0 leaves a ripple along shallow edges (the annotation's own steps), 2.0
+turns thin regions into dotted blobs.
 
 ## Known limits
 
