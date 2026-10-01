@@ -14,11 +14,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 from PIL import Image
-from test_linear_physical import ATLAS_UM, TwoRegionAtlas, _ctx
+from test_linear_physical import TwoRegionAtlas, _ctx
 
-from langslice.atlas.render import MODEL_MIN_LONG_EDGE, model_long_edge
 from langslice.linear.render import (
-    OVERLAY_LONG_EDGE,
     canvas_geometry,
     physical_views,
     scale_bar_px,
@@ -61,27 +59,18 @@ def _views(value: int = 120, **kwargs) -> tuple[list[np.ndarray], float]:
     return [np.asarray(image.convert("RGB")) for image in images], iou
 
 
-def test_the_model_screen_is_sized_by_the_atlas_resolution():
-    """A 10 um/px canvas on a 25 um atlas is shown at 0.4x: never finer than
-    the atlas, never upsampled to the cap, and a zoom is a crop at that
-    same scale, so it costs only the pixels it shows."""
+def test_the_screen_is_the_long_edge_and_never_an_upsample():
+    """Each panel's long edge is *long_edge*, or the crop's own pixels when it
+    has fewer: a small canvas stays small, and a zoom on it is a crop at the
+    same scale (magnification needs a larger render, the toolbox's job)."""
     geometry = _geometry()
-    native = model_long_edge(geometry.size, UM_PER_PX, TwoRegionAtlas(), cap=OVERLAY_LONG_EDGE)
-    assert native == round(max(geometry.size) * UM_PER_PX / ATLAS_UM)
-    (whole,), _ = _views_capped()
-    (zoomed,), _ = _views_capped(zoom=[0.3, 0.3, 0.7, 0.7])
-    assert max(whole.shape[1], whole.shape[0] - 60) <= native + 1  # minus the caption band
-    assert whole.shape[1] == native or whole.shape[0] - 60 >= native - 1
-    assert zoomed.shape[1] < whole.shape[1], "a zoom is a crop, not an upsample"
-    assert zoomed.shape[1] >= MODEL_MIN_LONG_EDGE
-
-
-def _views_capped(**kwargs):
-    images, iou = physical_views(
-        _section(), UM_PER_PX, TwoRegionAtlas(), 0.2, "coronal", 0.0, 0.0, _IDENTITY,
-        long_edge=OVERLAY_LONG_EDGE, **kwargs,
-    )
-    return [np.asarray(image.convert("RGB")) for image in images], iou
+    canvas_long = max(geometry.size)
+    (shrunk,) = _bodies(long_edge=128)
+    assert max(shrunk.shape[:2]) == 128
+    (whole,) = _bodies(long_edge=4 * canvas_long)
+    assert whole.shape[1] == geometry.size[0], "never upsampled past the canvas"
+    (zoomed,) = _bodies(long_edge=4 * canvas_long, zoom=[0.3, 0.3, 0.7, 0.7])
+    assert zoomed.shape[1] == pytest.approx(0.4 * geometry.size[0], abs=2)
 
 
 def _geometry():
@@ -400,19 +389,31 @@ def test_the_pivot_rides_into_the_six_numbers_and_the_payload(tmp_path: Path):
     )
 
 
+def _bodies(**kwargs) -> list[np.ndarray]:
+    """Each panel below its caption band (the band's height varies with wrapping)."""
+    frames: list[dict] = []
+    long_edge = kwargs.pop("long_edge", None)
+    images, _iou = physical_views(
+        _section(), UM_PER_PX, TwoRegionAtlas(), 0.2, "coronal", 0.0, 0.0, _IDENTITY,
+        long_edge=long_edge, frames=frames, **kwargs,
+    )
+    return [np.asarray(image.convert("RGB"))[frame["content_box"][1]:]
+            for image, frame in zip(images, frames, strict=True)]
+
+
 def test_clean_section_and_template_views_carry_no_outlines():
-    (section_only,), _ = _views(mode="section")
-    (template_only,), _ = _views(mode="template")
-    (overlaid,), _ = _views(mode="overlay")
-    pair, _ = _views(mode="side_by_side")
+    (section_only,) = _bodies(mode="section")
+    (template_only,) = _bodies(mode="template")
+    (overlaid,) = _bodies(mode="overlay")
+    pair = _bodies(mode="side_by_side")
 
     # The synthetic tissue is 120 grey; anti-aliased hairlines are far brighter.
     # Picture area only: below the caption band, above the scale bar.
-    assert overlaid[60:-40].max() >= 200
-    assert section_only[60:-40].max() < 200
+    assert overlaid[:-40].max() >= 200
+    assert section_only[:-40].max() < 200
     # The template alone is the side-by-side's second panel minus its lines.
     assert template_only.shape == pair[1].shape
-    assert not np.array_equal(template_only[60:-40], pair[1][60:-40])
+    assert not np.array_equal(template_only[:-40], pair[1][:-40])
 
 
 def test_the_adjust_tool_takes_the_outline_layer(tmp_path: Path):

@@ -36,15 +36,14 @@ from langslice.affine import (
 from langslice.atlas.render import atlas_um_per_px
 from langslice.linear.atlas_fetch import atlas_mask
 from langslice.linear.render import (
-    OVERLAY_LONG_EDGE,
     PREVIEW_LONG_EDGE,
     canvas_geometry,
     canvas_um_per_px,
     estimate_um_per_px,
     physical_overlay,
+    picture_edge,
     render_slice,
     rescale_section_matrix,
-    shown_scale,
     shown_section,
 )
 from langslice.linear.state import SliceState, StackState
@@ -196,7 +195,9 @@ def fit_silhouette(
     if draw is not None:
         panels = draw(section, um_per_px, in_section)
     else:
-        shown, shown_um, (fx, fy) = shown_section(ctx, record, section, um_per_px)
+        shown, shown_um, (fx, fy) = shown_section(
+            ctx, record, section, um_per_px, long_edge=picture_edge(ctx),
+        )
         panels = [physical_overlay(
             shown,
             shown_um,
@@ -207,8 +208,7 @@ def fit_silhouette(
             state.yaw_deg,
             in_section if shown is section else rescale_section_matrix(in_section, fx, fy),
             label=record.id,
-            long_edge=OVERLAY_LONG_EDGE,
-            scale=shown_scale(ctx),
+            long_edge=picture_edge(ctx),
         )]
     params = normalized_affine(in_section, section.size)
     width, height = geometry.size

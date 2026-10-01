@@ -18,9 +18,14 @@ from PIL import Image
 from langslice.adk import TOOL_MEDIA_PARTS_KEY
 from langslice.affine import resize_long_edge
 from langslice.atlas.core import get_reference_slice, get_root_mask
-from langslice.atlas.render import at_model_scale, atlas_um_per_px
 from langslice.image_prep import crop_to_mask
-from langslice.linear.render import MAX_IMAGES_PER_CALL, caption, image_to_part, shown_scale
+from langslice.linear.render import (
+    MAX_IMAGES_PER_CALL,
+    caption,
+    image_to_part,
+    opening_edge,
+    picture_edge,
+)
 from langslice.linear.state import StackState
 from langslice.space import Plane
 
@@ -31,16 +36,8 @@ if TYPE_CHECKING:  # ponytail: import cycle — engine builds the toolbox
 #: dropped — and reported back, never silently.
 MAX_VIEW_POSITIONS = MAX_IMAGES_PER_CALL
 
-#: Cap on the long edge of every atlas image the toolbox sends. A tissue-framed
-#: atlas render is at the atlas's own resolution (a mouse section at 25 um is
-#: ~300-450 px), and the stack images are calibrated to that same resolution
-#: (:func:`langslice.linear.render.atlas_native_long_edge`), so an atlas image
-#: is sent as rendered and only ever shrunk to this cap. Until 2026-09-10 it
-#: was upsampled to 512 px, which cost ~2.5x the tokens of the section beside
-#: it for no more information (a quarter of run 19's input tokens).
-ATLAS_LONG_EDGE = 512
-#: Most atlas sections in the seed strip. At the atlas's resolution a mouse
-#: section is ~100-200 tokens, so 48 is ~7k raw once and ~1k a call cached.
+#: Most atlas sections in the seed strip. At the 256 px opening size a mouse
+#: section is ~100-150 tokens, so 48 is ~6k raw once and ~1k a call cached.
 SEED_ATLAS_MAX_IMAGES = 48
 
 
@@ -124,29 +121,31 @@ def atlas_section(
     return crop_to_mask(image, mask > 0)
 
 
-def atlas_sized(picture: Image.Image, atlas: Any, *, scale: float = 1.0) -> Image.Image:
-    """*picture*, an atlas render at native resolution, under the model cap.
+def atlas_sized(picture: Image.Image, long_edge: int) -> Image.Image:
+    """*picture*, an atlas render at its own voxel size, at most *long_edge*.
 
-    *scale* is the run's picture-size multiple
-    (:data:`langslice.linear.render.IMAGE_RESOLUTION_SCALE`). Above 1.0 the
-    atlas image is drawn that much larger, resampled from the render, so it
-    keeps the same pixels per millimetre as the sections shown beside it
-    (which are drawn larger from their finer files); it carries no detail
-    finer than the atlas voxel.
+    Shrunk to *long_edge* when larger; never upsampled, since the plane holds
+    no detail finer than its voxels (a mouse section at 25 um is ~300-450 px).
+    The same object when nothing changes.
     """
-    if scale == 1.0:
-        return at_model_scale(picture, atlas_um_per_px(atlas), atlas, cap=ATLAS_LONG_EDGE)
-    edge = min(max(picture.size), ATLAS_LONG_EDGE)
-    return resize_long_edge(picture, int(round(edge * scale)))
+    if max(picture.size) <= int(long_edge):
+        return picture
+    return resize_long_edge(picture, int(long_edge))
 
 
 def atlas_part(
     ctx: EngineContext, state: StackState, position_mm: float, *,
-    prepared: Image.Image | None = None,
+    long_edge: int | None = None, prepared: Image.Image | None = None,
 ) -> types.Part:
-    """One tissue-framed atlas section at *position_mm*, section-sized and captioned."""
+    """One tissue-framed atlas section at *position_mm*, sized and captioned.
+
+    *long_edge* None is the run's later-picture size
+    (:func:`langslice.linear.render.picture_edge`); *prepared* is a picture
+    already drawn at *long_edge*.
+    """
+    long_edge = long_edge or picture_edge(ctx)
     key = ("atlas", state.plane, float(position_mm), state.pitch_deg, state.yaw_deg,
-           ATLAS_LONG_EDGE)
+           int(long_edge))
     if key in ctx.reference_parts:
         return ctx.reference_parts[key].model_copy(deep=True)
     angles = (
@@ -157,8 +156,7 @@ def atlas_part(
     part = image_to_part(
         caption(
             prepared if prepared is not None else atlas_sized(
-                atlas_section(ctx, state, position_mm, frame=True), ctx.atlas,
-                scale=shown_scale(ctx),
+                atlas_section(ctx, state, position_mm, frame=True), long_edge,
             ),
             f"atlas {position_mm:.2f} mm{angles}",
         )
@@ -194,6 +192,7 @@ def make_view_atlas(state: StackState, ctx: EngineContext):
         outlines: str = "",
         border_color: str = "yellow",
         border_thickness: float = 0.5,
+        resolution: int = 0,
     ) -> dict[str, Any]:
         """Look at atlas sections at the positions you name, at most 4 per call.
 
@@ -219,7 +218,7 @@ def make_view_atlas(state: StackState, ctx: EngineContext):
             section_image=section_image, atlas_image=atlas_image,
             atlas_opacity=atlas_opacity, regions=regions, outlines=outlines,
             border_color=border_color, border_thickness=border_thickness,
-            framed_modes=("template",),
+            framed_modes=("template",), resolution=resolution,
         )
         if isinstance(options, dict):
             return options
@@ -233,7 +232,8 @@ def make_view_atlas(state: StackState, ctx: EngineContext):
         plain = (options.atlas_image == "ara" and options.outlines == "none"
                  and not options.regions and options.full_view)
         parts: list[types.Part] = [
-            atlas_part(ctx, state, position) if plain else image_to_part(caption(
+            atlas_part(ctx, state, position, long_edge=options.long_edge)
+            if plain else image_to_part(caption(
                 framed_atlas(ctx, state, position, options),
                 atlas_caption(state, position, options),
             ))
@@ -294,13 +294,14 @@ def atlas_strip_parts(
     span = pos_hi - pos_lo
     step = max(state.interval_mm, span / max(1, max_images - 1))
     step = math.ceil(step / 0.05) * 0.05  # a round number of 50 um
+    edge = opening_edge(ctx)
     pictures: list[tuple[float, Image.Image]] = []
     for k in range(int(span / step) + 1):
         position = pos_lo + k * step
         picture = atlas_section(ctx, state, position, frame=True)
         if np.asarray(picture).max() < 8:
             continue  # an oblique plane through the volume's corner: nothing to show
-        pictures.append((position, atlas_sized(picture, ctx.atlas, scale=shown_scale(ctx))))
+        pictures.append((position, atlas_sized(picture, edge)))
     if not pictures:
         return []
     parts: list[types.Part] = [
@@ -316,5 +317,5 @@ def atlas_strip_parts(
     for position, picture in pictures:
         label = f"atlas {position:.2f} mm"
         parts.append(types.Part.from_text(text=label))
-        parts.append(atlas_part(ctx, state, position, prepared=picture))
+        parts.append(atlas_part(ctx, state, position, long_edge=edge, prepared=picture))
     return parts

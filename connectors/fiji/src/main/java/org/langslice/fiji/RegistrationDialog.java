@@ -39,7 +39,7 @@ final class RegistrationDialog extends JDialog {
     final JLabel account = new JLabel();
     final JComboBox<String> model = new JComboBox<>(), imageModel = new JComboBox<>();
     final JComboBox<String> reasoning = new JComboBox<>(RegistrationSettings.REASONING);
-    final JComboBox<String> resolution = new JComboBox<>(new String[]{"Low", "Medium", "High"});
+    final JComboBox<String> resolution = new JComboBox<>(new String[]{"Low", "Medium", "High", "Auto"});
     final JCheckBox showLog = new JCheckBox("Show agent log"), viewer = new JCheckBox("Open agent viewer");
     final JCheckBox saveTraces = new JCheckBox("Save traces to");
     final JTextField traceDir = new JTextField(24);
@@ -138,7 +138,7 @@ final class RegistrationDialog extends JDialog {
         model.setEditable(true);
         model.setToolTipText("The model that runs the registration agent. You can type another model name.");
         imageModel.setToolTipText("The image model used by nonlinear registration.");
-        resolution.setToolTipText("How detailed the pictures the agent looks at are. Low is usually enough and costs least.");
+        resolution.setToolTipText("How detailed the pictures the agent looks at are. Low is usually enough and costs least; Auto lets the agent choose each picture's size.");
         viewer.setToolTipText(SOON);
         cell(top, label("Provider"), 0, 0, 1, false); cell(top, account, 1, 0, 1, true);
         cell(top, label("Agent model"), 2, 0, 1, false); cell(top, model, 3, 0, 1, true);
@@ -255,7 +255,7 @@ final class RegistrationDialog extends JDialog {
         select(model, RegistrationSettings.modelLabel(s.fresh ? defaultModel : s.model));
         select(imageModel, s.fresh ? defaultImage : s.imageModel);
         reasoning.setSelectedItem(s.reasoning);
-        resolution.setSelectedIndex(Math.max(0, Arrays.asList(RegistrationSettings.LEVELS).indexOf(s.resolution)));
+        resolution.setSelectedIndex(Math.max(0, Arrays.asList(RegistrationSettings.RESOLUTIONS).indexOf(s.resolution)));
         showLog.setSelected(s.showLog); viewer.setSelected(false);
         saveTraces.setSelected(s.saveTraces); traceDir.setText(s.traceDir);
         positioning.setSelected(s.positioning); flip.setSelected(s.flip); cue.setText(s.cue);
@@ -279,7 +279,7 @@ final class RegistrationDialog extends JDialog {
         s.model = RegistrationSettings.modelId(typed == null ? "" : typed.toString());
         s.imageModel = String.valueOf(imageModel.getSelectedItem());
         s.reasoning = String.valueOf(reasoning.getSelectedItem());
-        s.resolution = RegistrationSettings.LEVELS[resolution.getSelectedIndex()];
+        s.resolution = RegistrationSettings.RESOLUTIONS[resolution.getSelectedIndex()];
         s.showLog = showLog.isSelected();
         s.saveTraces = saveTraces.isSelected(); s.traceDir = traceDir.getText().trim();
         s.positioning = positioning.isSelected(); s.flip = flip.isSelected(); s.cue = cue.getText();

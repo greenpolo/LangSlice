@@ -74,7 +74,9 @@ canvas per pair. Interactive-transform `side_by_side` is unchanged.
 Seed, comparison and atlas-fetch paths share encoded reference caches:
 section captions retain their first display index/flags across reorder,
 filenames are the stable identity, and orientation/preprocessing/size changes
-get distinct entries. Atlas entries include exact position, plane and angles.
+get distinct entries (since 2026-10-01 a comparison is the later-picture size
+and the seed the opening size, so they no longer share bytes). Atlas entries
+include exact position, plane, angles and size.
 Reusing bytes avoids recomposition, not new-image input charges. An image
 replayed in its original unchanged history prefix is eligible for prompt-cache
 reuse; another copy appended after new conversation content is new input,
@@ -139,6 +141,9 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
   `atlas.render.outer_outline` — or `none`; the caption names the layer when
   it is not `all`).
   `physical_overlay` is the one-image `overlay` wrapper `fit_affine` uses.
+  `caption` wraps any line wider than its picture (`wrap_caption`: at spaces,
+  mid-word for one long word), so a small picture keeps its whole label; a
+  caption that fits draws the same pixels as before.
   `pivot` (canvas px, `pivot_on_canvas` resolves "canvas"/"tissue"/[fx, fy]
   onto it) and `markers` (the landmark pairs, a cross per section point and a
   ring per atlas point in their own two colors) ride through both.
@@ -161,8 +166,13 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
   `REGION_CONTEXT_ALPHA`), `outlines`, `border_color`, `border_thickness`.
   `parse_display` validates them once into a frozen `DisplayOptions`; every
   picture tool takes the same nine names (`with_display_doc` appends the
-  shared docstring), `adjust_transforms` per entry. It never writes state, so
-  a call's options never change a default. `framed_section` / `framed_atlas`
+  shared docstring), `adjust_transforms` per entry. A tenth, `resolution`, is
+  written into every picture tool (`fit_deformable` included) but exists only
+  at image resolution `auto`: `resolution_argument` (applied to every tool in
+  `build_tools`) strips it from the signature, annotations and docstring at
+  every other level, and `clamp_resolution` clamps it to 128..1536 with a
+  `view.resolution_note`. `DisplayOptions.long_edge` is the call's picture
+  size. It never writes state, so a call's options never change a default. `framed_section` / `framed_atlas`
   draw the tissue-framed pictures (default options = the old pixels exactly);
   the toolbox's `draw_canvas` draws every physical picture.
 - `appearance.py` — the section's appearance per target (2026-10-01): `view`
@@ -222,7 +232,8 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
   `clear_stale`, `summary` (displacement max/median, fold fraction, compact
   flags), `run_jobs` (one fit in process, several in the spawn pool,
   `USE_PROCESS_POOL`) and `picture` (the borders on the image the fit read at
-  the atlas-resolution size rule, included/`regions` strong, excluded pink).
+  the call's picture size, `Style.long_edge`, never past the 1536 px fit
+  image; included/`regions` strong, excluded pink).
 - `prompt.py` — `build_job_statement`: job, run facts, ONE factual line per
   tool that exists, hard constraints. Nothing else.
 - `session.py` — the ADK agent builder, the plugins, the loop, and
@@ -251,7 +262,8 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
   the full-content JSONL session trace.
 - `cost.py` — `estimate(spec, n_slices, locked)`: the pre-run usage-window
   estimate the worker's `linear.estimate` serves, from measured runs only.
-  Refuses medium/high image resolution (nothing measured); single-run or
+  Refuses medium/high/auto image resolution (nothing measured; the low runs
+  predate the 2026-10-01 picture sizes); single-run or
   unmeasured settings get a widened band. Imports no engine: `linear/__init__`
   loads `run` lazily so hosts can price a spec without the agent framework.
 
@@ -280,23 +292,33 @@ The ABBA dialog's controls, all plain `JobSpec` fields (not CLI flags yet):
   `MISSING_TRANSFORMS` and locked sections are exempt from
   `DAMAGED_REQUIRES_MANUAL_TRANSFORM`. The worker never emits orientation or
   transform rows for them.
-- **`image_resolution`** (`low`|`medium`|`high`, default `low`):
-  `render.IMAGE_RESOLUTION_SCALE` 1.0/1.5/2.0 multiplies what the agent is
-  SHOWN, never what is computed. `atlas.render.model_long_edge(scale=)`
-  scales both the cap and the atlas-resolution target (still never
-  upsampling a section); the framed `render_slice` path (seed, `view_slices`,
-  `orient_slices`, separate references, placement pictures, contact-sheet
-  thumbnails) passes it; `atlas_fetch.atlas_sized(scale=)` resamples atlas
-  images by the same multiple so a section and its atlas keep equal pixels
-  per millimetre (no finer atlas detail exists); physical views
-  (`view_placement`, `adjust_transforms`, the `fit_affine` panel) are drawn
-  by `render.shown_section` from a larger unframed render with the matrix
-  (`rescale_section_matrix`) and pivot carried onto it. Unchanged:
-  `PREVIEW_LONG_EDGE` working renders, `calibrate`, the silhouette fit, the six
-  stored numbers and every payload number, `search_position`, the spacing plot,
-  caption font and the image model's inputs. At `low` every path returns the
-  same objects as before (an end-to-end hash of a toolbox session matched
-  HEAD on 2026-09-28). The multiples never appear in model-facing text.
+- **`image_resolution`** (`low`|`medium`|`high`|`auto`, default `low`;
+  2026-10-01): `render.PICTURE_EDGES` gives each level two long edges, the
+  opening images (`render.opening_edge`: seed sections and atlas strip) and
+  every later picture (`render.picture_edge`: each panel a tool returns):
+  low 256/512, medium 384/768, high 512/1024, auto 256 then the agent's
+  `resolution` per call (128..1536, 512 when it gives none). Only what the
+  agent is SHOWN changes. Nothing is upsampled past its source: a framed
+  `render_slice` treats `long_edge` as a ceiling over the working copy, a
+  physical picture (`draw_canvas`) renders the section at the panel size
+  divided by the zoom span (`render.shown_section`, the matrix and pivot
+  carried onto it by `rescale_section_matrix`) and `physical_views` shows
+  the crop at `long_edge` or its own pixels, `atlas_fetch.atlas_sized`
+  only shrinks the atlas plane, and `deformation.picture` stops at the
+  fit image. The atlas under a section in ONE picture (`stacked`,
+  `view_stack`) is drawn to the section's size (`framed_atlas(fill=True)`,
+  `stack_pictures`).
+  `view_stack` tiles are the opening size (or `resolution` at auto), shrunk
+  until the sheet is at most `SHEET_MAX_LONG_EDGE` 2048. The old
+  `OVERLAY_LONG_EDGE` 768 (the interactive loop's cap) is gone: the
+  atlas-voxel rule had already put that canvas at ~450 px, so it now
+  follows the later size like every other picture. Unchanged:
+  `PREVIEW_LONG_EDGE` working renders, `calibrate`, the silhouette fit, the
+  six stored numbers and every payload number, `search_position`, the
+  spacing plot, the deformable fit grid (`FIT_LONG_EDGE`) and the image
+  model's inputs (fit_affine/adjust_transforms numbers, the image-model
+  input and the fit grid on M04 hashed identical before and after,
+  2026-10-01). Below `auto` the sizes never appear in model-facing text.
 
 ## Tool consolidation (2026-09-15)
 
@@ -406,25 +428,22 @@ sits after a prefix edit, is full price. Run 5 (M11, 39 calls): 786k raw,
 560k cached, ~298k paid = 28% of a Plus 5-hour window; of the paid part 58%
 was NEW IMAGES (each paid once, in full, the call it arrives) and 42% new
 text plus prefix breaks. Design rules that follow:
-- **Every image at the atlas's resolution, 512 px long edge at most** — one
-  rule, `atlas.render.model_long_edge`, sizes every screen from its
-  micrometres per pixel (never finer than the atlas, never upsampled, never
-  above the cap; `render.atlas_native_long_edge` is it with the section's
-  calibration; the fit path is not capped, its parameters are normalized
-  against the render; `physical_views(long_edge=None)` is canvas pixels for
-  host-side use, every model-facing caller passes a cap). A zoom is a crop
-  at that same scale, so it costs only the pixels it shows. `VIEW_LONG_EDGE` 512; atlas images
-  (seed strip, `view_atlas`, the atlas half of a write's picture) are sent
-  at the atlas's own resolution and only ever shrunk to 512
-  (`atlas_fetch.atlas_sized`; a mouse section at 25 um is ~100-200
-  tokens — until 2026-09-10 they were upsampled to 512, a quarter of run
-  19's input); `view_placement` panels 512 (~250 tokens; the default
-  mode is `template`, the atlas alone on the section's canvas, because the
-  section is already in the seed — the signature default was
-  `side_by_side` until 2026-09-10, so every Astra compare re-sent the
-  section at ~515 tokens a pair); `OVERLAY_LONG_EDGE` 768 is only the cap on
-  the interactive-transform canvas, which the rule puts at ~450 px on a
-  25 um mouse atlas (it was drawn at raw canvas size before 2026-09-10).
+- **Picture sizes are the host's level** (`image_resolution`, see Host
+  controls): from 2026-09-09 to 2026-10-01 every picture was instead sized
+  so one pixel was never finer than the atlas voxel, capped at 512 px
+  (`atlas.render.model_long_edge`, deleted), which showed a 6 mm section at
+  ~220-360 px everywhere, too small to judge a fit. On M04 at low the opening
+  message is now ~5k 32-px patches for a 40-section stack plus the atlas
+  strip (it was ~8.5k: the strip shrank to 256 px while sections grew
+  slightly); medium ~9.6k, high ~14.6k. Later pictures cost more than
+  before (a fit_deformable panel 512 px instead of ~260). Atlas images are
+  never upsampled past the plane (until 2026-09-10 they were upsampled to
+  512, a quarter of run 19's input); `view_placement`'s default mode is
+  `template`, the atlas alone on the section's canvas, because the section
+  is already in the seed (the default was `side_by_side` until 2026-09-10,
+  so every Astra compare re-sent the section). `physical_views(long_edge=
+  None)` is canvas pixels for host-side use; every model-facing caller
+  passes a size.
 - **Images stay** (`adk/plugins.py WorkingSetImages`): every tool image is
   kept until 256 are live, then the oldest media-bearing calls are cut in
   ONE batch to 128 (`DEFAULT_MAX_IMAGES` / `DEFAULT_KEEP_IMAGES`, a cut

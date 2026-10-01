@@ -25,8 +25,8 @@ tools and takes its answer from the host. Nothing else is user-facing.
 | Provider | ChatGPT (default) or Claude | ChatGPT runs through `openai-oauth`; Claude changes Run to Copy prompt and uses the LangSlice MCP connector in Claude Desktop or Claude Code |
 | Agent model, reasoning level | ADK model string and effort | `model`, reasoning |
 | Image model / provider | image transport and model for nonlinear | `nonlinear.provider`, `nonlinear.image_model` |
-| Image resolution: low / medium / high | scales every picture the agent sees by an opaque multiple of the calibrated sizes; low = today's calibration (judged good enough for the cost). Does not touch the image model's inputs | `image_resolution` low/medium/high; display only, fits and stored transforms unchanged |
-| Estimated cost | shown at the bottom once every box is chosen | worker `linear.estimate` (`linear/cost.py`): percent of the usage window from measured runs; refused at medium/high resolution, where nothing is measured |
+| Image resolution: low / medium / high / auto | how large the pictures the agent sees are: a long edge for the opening images and one for every later picture (table below); auto lets the agent choose each later picture's size. Does not touch the image model's inputs | `image_resolution` low/medium/high/auto (`render.PICTURE_EDGES`); display only, fits and stored transforms unchanged |
+| Estimated cost | shown at the bottom once every box is chosen | worker `linear.estimate` (`linear/cost.py`): percent of the usage window from measured runs; refused at medium/high/auto resolution, where nothing is measured (the low runs were measured before the 2026-10-01 sizes) |
 | View agent log | the agent's activity in a window during the run | Fiji connector: a text log window (or a compact status window when off). The Python-started ABBA launcher has a richer browser log (`integrations/abba_chat.py`) |
 | Save traces | full record of what the agent was shown, said and did, saved to a chosen folder | worker `trace_dir` (`LANGSLICE_TRACE_DIR` for one run); ABBA dialog checkbox + folder |
 | Enable agent viewer | an ABBA-style brain display of the agent's work as it happens | built for the Python-started ABBA launcher (`integrations/abba_compare.py`, `abba_overview.py`, `abba_follow.py`); the Fiji connector shows the checkbox disabled until it is ported |
@@ -206,7 +206,7 @@ ara); `engine` (only when the user left it open; missing ANTs is said plainly),
 `candidates` (setting variants) run concurrently and write nothing; exactly one
 setting applies it (one undo step, checkpointed), reusing an identical earlier
 result. Pictures: one per result, the final borders drawn smoothly on the
-section image the fit read, at the atlas-resolution size rule, included (or
+section image the fit read, at the call's picture size, included (or
 `regions`) borders strong, excluded regions pink; `ab` adds what the fit
 started from. Text: settings and engine numbers, displacement max/median,
 fold fraction, plausibility flags. The deformation is stored per section
@@ -223,7 +223,8 @@ call's options never change any stored setting):
 
 - `mode` — the tool's compositions (above).
 - `zoom` — `[x0, y0, x1, y1]` fractions; cropped before sizing, so it
-  magnifies up to the atlas's resolution. Refused on tissue-framed pair
+  magnifies up to the section's own pixels (its working copy). Refused on
+  tissue-framed pair
   pictures (`stacked`, `side_by_side`) and `view_stack`.
 - `section_image` — `current` (the section's view appearance, default) or one
   raw channel by name, unenhanced.
@@ -241,6 +242,31 @@ call's options never change any stored setting):
 - `outlines` — `all`, `outer` or `none`; empty is the mode's default (all on
   the physical canvas, none on tissue-framed pictures).
 - `border_color`, `border_thickness` — named or `#RRGGBB`; 0.25..8 output px.
+- `resolution` — only when the user chose image resolution `auto`: the long
+  edge in pixels of each picture this call returns (of each section tile in
+  `view_stack`), 128..1536, 0 = 512. Out of range is clamped and the reply's
+  `view.resolution_note` says so. At every other level the argument does not
+  exist and picture size never appears in model-facing text.
+
+**Picture sizes** (`image_resolution`, `render.PICTURE_EDGES`). Each size is
+the long edge of one picture, or of each panel of a multi-panel picture:
+
+| level | opening images (seed message) | every later picture |
+| --- | --- | --- |
+| low (default) | 256 px | 512 px |
+| medium | 384 px | 768 px |
+| high | 512 px | 1024 px |
+| auto | 256 px | the agent's `resolution` per call, 128..1536 px; 512 px when it gives none |
+
+Nothing is drawn larger than its source: a section never past its working
+copy (a small snapshot stays small), an atlas image never past the plane's
+own voxels except where it sits under a section in one picture (`stacked`,
+`view_stack`), where it is drawn to the section's size. The `view_stack`
+contact sheet draws each tile at the opening size and shrinks the tiles until
+the sheet is at most 2048 px (a 40-section stack lands near 250 px tiles at
+every level). Fits and stored numbers are computed on fixed working frames
+(512 px for affine fits, 1536 px for deformable fits), never on a picture.
+Captions wrap onto as many lines as a small picture needs.
 
 **Appearance (`preprocess`).** Two targets, set independently: `view` (every
 picture the agent is shown: seed on resume, views, write pictures) and `fit`
@@ -286,7 +312,8 @@ Run, saves a local job, and copies a Python-generated prompt. Paste it into
 Claude Desktop or Claude Code with only the LangSlice connector enabled.
 No Claude credentials are collected by LangSlice and no ChatGPT sign-in is needed.
 Agent model, reasoning and image model controls are disabled; Nonlinear remains
-unavailable. Image resolution and preprocessing still control LangSlice's pictures.
+unavailable. Image resolution and preprocessing still control LangSlice's pictures
+(auto gives the `resolution` argument to Claude's tools).
 Usage belongs to Claude, so there is no LangSlice cost estimate.
 
 Keep the progress window open: section changes appear live in ABBA through its

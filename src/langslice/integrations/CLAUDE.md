@@ -250,7 +250,7 @@ agent's `section_image` and `preprocess`. Without either, the engine's own
 folder for the one run and returns the new files as `trace_files`.
 `linear.estimate` prices a spec from
 `linear/cost.py` (percent of the usage window per section, measured runs only;
-refused at medium/high resolution) without importing the engine. The Java host owns native actions and persistence. Read
+refused at medium/high/auto resolution) without importing the engine. The Java host owns native actions and persistence. Read
 `docs/abba_plugin_design.md` and `docs/abba_installation.md` for the protocol,
 current source-preview installation, and publication requirements.
 

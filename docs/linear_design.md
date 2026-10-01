@@ -34,8 +34,10 @@ JobSpec
                                 # settings) for snapshots exported one page per
                                 # channel: the DEFAULT appearance; pages stay raw channels
   agent_preprocessing: bool = False # build `preprocess` (agent-set appearance)
-  image_resolution: low|medium|high = low # size of every picture the agent sees;
-                                # display only, fits and stored transforms unchanged
+  image_resolution: low|medium|high|auto = low # long edge of the opening images
+                                # and of every later picture (render.PICTURE_EDGES);
+                                # auto: the agent's `resolution` per call; display
+                                # only, fits and stored transforms unchanged
   agent_damage: bool = True     # build mark_damaged; host flags can never be cleared
   tasks: subset of {reorder, position, transform, nonlinear} # default: first three
   reorder:                        # the order only; reorder.flip / reorder.hemisphere_cue
@@ -84,11 +86,26 @@ already aligned) unless `inputs.transforms` supplies one: it counts at submit,
 is exempt from the damaged-section transform gate, and its position still
 moves. `orient_slices`, `fit_affine` and `adjust_transforms` refuse it per
 section with `LOCKED`; `mark_damaged` refuses to clear a host flag with
-`DAMAGE_SET_BY_USER`. `image_resolution` multiplies the pictures only: seed,
-view, atlas, placement and contact-sheet images, fit panels and interactive
-overlays are drawn from a larger render of the same section, while the
-`PREVIEW_LONG_EDGE` working frame, calibration, fits and the six stored
-numbers are the same at every setting.
+`DAMAGE_SET_BY_USER`. `image_resolution` sizes the pictures only
+(`render.PICTURE_EDGES`, long edges):
+
+| level | opening images (seed message) | every later picture |
+| --- | --- | --- |
+| low (default) | 256 px | 512 px |
+| medium | 384 px | 768 px |
+| high | 512 px | 1024 px |
+| auto | 256 px | the agent's `resolution` per call, 128..1536 px; 512 px when it gives none |
+
+Opening = every seed-message image (sections and the atlas strip); later =
+every picture a tool returns, each panel of a multi-panel picture
+(`view_slices`, `view_atlas`, placement pictures, fit panels,
+`adjust_transforms`, `fit_deformable`). Larger pictures are drawn from a
+larger render of the same section; nothing is upsampled past its source (a
+section's working copy, the atlas plane's voxels). The `PREVIEW_LONG_EDGE`
+working frame, calibration, fits, the six stored numbers, the deformable fit
+grid and the image model's inputs are the same at every setting. Until
+2026-10-01 every picture was instead sized to the atlas voxel (25 um on the
+Allen mouse), capped at 512 px, so a 6 mm section showed at ~220-360 px.
 
 Task OFF means its outputs are inputs: reorder off → discovery order is fixed;
 position off → positions come from the host and are facts; transform off →
@@ -151,7 +168,7 @@ in any payload or prompt (see `lean-harness` history in `linear/CLAUDE.md`).
 | tool | task gate | does |
 | --- | --- | --- |
 | `status` | always | one row per section in corrected order: index, id, position_mm, delta_to_next_mm (signed), flip, rotation_deg, damaged(+note), transform kind, transform_iou, transform_mirrored, caveats; plus cutting angles and interval breaks. The `ls` of the environment. |
-| `view_slices(ids, +display)` | always | up to 4 sections at higher resolution, rendered as corrected, each captioned with its index and filename. Mode `section`; `zoom` crops a larger render (magnifies up to the atlas resolution). |
+| `view_slices(ids, +display)` | always | up to 4 sections at the later-picture size, rendered as corrected, each captioned with its index and filename. Mode `section`; `zoom` crops a larger render (magnifies up to the section's working copy). |
 | `view_atlas(positions_mm, +display)` | always | up to 4 atlas sections, rendered at the current cutting angles, each captioned with its position (and the angles when oblique), framed to the anatomy. Mode `template`; outlines default `none`; `regions` draws those regions' borders; `regions_not_in_plane` names any absent at a position. |
 | `note(text)` | always | append to the run notes. |
 | `undo()` / `redo()` | always | snapshot stack; a batch call undoes as one. |
@@ -174,7 +191,8 @@ in any payload or prompt (see `lean-harness` history in `linear/CLAUDE.md`).
 
 **Shared display options** (`linear/display.py`, one `DisplayOptions` parsed
 once per call; the same nine argument names on every picture tool, per entry
-on `adjust_transforms`; the docstring block is `display.DISPLAY_DOC`):
+on `adjust_transforms`; the docstring block is `display.DISPLAY_DOC`; a tenth,
+`resolution`, exists only at image resolution `auto`):
 
 | option | values | applies to |
 | --- | --- | --- |
@@ -186,6 +204,7 @@ on `adjust_transforms`; the docstring block is `display.DISPLAY_DOC`):
 | `regions` | acronyms or ids, descendants included | only those regions' borders at full strength; the `outlines` layer then drawn at 0.35 strength; `UNKNOWN_REGIONS`; `regions_not_in_plane` names absent ones |
 | `outlines` | `all`, `outer`, `none`; empty = the mode's default | `all` on the physical canvas, `none` on tissue-framed pictures |
 | `border_color`, `border_thickness` | named or `#RRGGBB`; 0.25..8 output px | every drawn line |
+| `resolution` (auto only) | long edge in px, 128..1536; 0 = 512; clamped with `view.resolution_note` | each picture of the call (each tile of `view_stack`); also `fit_deformable`. `display.resolution_argument` removes it from the signature, annotations and docstring at every other level |
 
 Options apply to their call only: nothing in `display.py` writes state, so a
 call never changes a stored default. The job statement lists the options once,

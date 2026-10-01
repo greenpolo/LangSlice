@@ -145,8 +145,13 @@ def display_lines(
     *,
     channels: list[str] | dict[str, list[str]] | None = None,
     atlas_images: tuple[str, ...] | None = None,
+    resolution: bool = False,
 ) -> list[str]:
-    """The shared display options, once, with this run's channels and atlas images."""
+    """The shared display options, once, with this run's channels and atlas images.
+
+    *resolution* (the host left picture size to the agent, level "auto") adds
+    the ``resolution`` argument; otherwise picture size is never mentioned.
+    """
     if not any(name in PICTURE_TOOLS for name in tool_names):
         return []
     lines = [
@@ -160,6 +165,18 @@ def display_lines(
         "`outlines` (all, outer or none), `border_color` (named or #RRGGBB) "
         "and `border_thickness` (0.25..8 output pixels).",
     ]
+    if resolution:
+        from langslice.linear.render import AUTO_RESOLUTION, PICTURE_EDGES, RESOLUTION_RANGE
+
+        low, high = RESOLUTION_RANGE
+        deformable = " (`fit_deformable` included)" if "fit_deformable" in tool_names else ""
+        lines.append(
+            f"- Every tool that returns a picture{deformable} also "
+            "takes `resolution`: the long edge in pixels of each picture the call "
+            f"returns (of each section tile in `view_stack`), {low} to {high}; 0 or "
+            f"omitted is {PICTURE_EDGES[AUTO_RESOLUTION][1]}. A picture is never "
+            "drawn larger than the image it comes from."
+        )
     if atlas_images:
         lines.append(
             "- Atlas images on this host: " + ", ".join(atlas_images)
@@ -246,7 +263,8 @@ def build_job_statement(
                       axis_ends=axis_ends)
 
     tools = [f"- `{name}`: {TOOL_LINES[name]}" for name in tool_names if name in TOOL_LINES]
-    tools += display_lines(tool_names, channels=channels, atlas_images=atlas_images)
+    tools += display_lines(tool_names, channels=channels, atlas_images=atlas_images,
+                           resolution=spec.image_resolution == "auto")
 
     constraints: list[str] = []
     if spec.has("position"):

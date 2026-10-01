@@ -473,6 +473,9 @@ class Style:
     color: tuple[int, int, int]
     thickness: float
     atlas_opacity: float
+    #: Long edge of the picture (of the zoomed crop when zoomed), in pixels;
+    #: never more than the fit image's own pixels.
+    long_edge: int = 512
 
 
 def picture(
@@ -485,17 +488,19 @@ def picture(
     atlas_image: str,
     title: str,
 ) -> Image.Image:
-    """The record's borders on the section at the atlas's resolution, captioned."""
-    from langslice.atlas.render import model_long_edge
-    from langslice.linear.render import VIEW_LONG_EDGE, caption, shown_scale, zoom_box
+    """The record's borders on the section at ``style.long_edge``, captioned.
+
+    The crop (the zoom, or the whole fit image) is shown at ``style.long_edge``
+    on its long side, or at its own pixels when it has fewer: the fit image
+    (:data:`FIT_LONG_EDGE`) is never upsampled.
+    """
+    from langslice.linear.render import caption, zoom_box
 
     width, height = record.section_size
-    um = record.mm_per_px * 1000.0
     zoom = style.zoom
     box = zoom_box(list(zoom), (width, height)) if zoom else (0, 0, width, height)
     crop = (box[2] - box[0], box[3] - box[1])
-    edge = model_long_edge(crop, um, ctx.atlas, cap=VIEW_LONG_EDGE, scale=shown_scale(ctx))
-    factor = min(1.0, edge / float(max(crop)))
+    factor = min(1.0, int(style.long_edge) / float(max(crop)))
     full = (max(8, int(round(width * factor))), max(8, int(round(height * factor))))
     shown = (0, 0, full[0], full[1])
     if zoom:
