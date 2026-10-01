@@ -17,6 +17,7 @@ from langslice.deformable.fit import (
 )
 from langslice.deformable.geometry import Placement, placement_from_handoff
 from langslice.deformable.record import DeformableRecord, diagnose
+from langslice.deformable.render import draw_warped_borders, warped_border_coverage
 from langslice.deformable.settings import FitSettings
 
 __all__ = [
@@ -28,6 +29,7 @@ __all__ = [
     "PreparedFit",
     "atlas_images_for_host",
     "diagnose",
+    "draw_warped_borders",
     "excluded_ids",
     "finish_fit",
     "fit_candidates",
@@ -35,4 +37,5 @@ __all__ = [
     "placement_from_handoff",
     "prepare_fit",
     "ventricle_ids",
+    "warped_border_coverage",
 ]
