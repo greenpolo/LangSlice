@@ -187,7 +187,9 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
   `channels` — raw channel names (look `{"overlay": names}`: each stretched
   by percentile 1..99.5 on the whole working plane, `render._look_image`; one
   in gray, several added in `appearance.channel_colors`, a channel named
-  after a colour keeping it) or one version, `view` (default) / `fit`;
+  after a colour keeping it, each dimmed by its `render.fine_detail`
+  relative to the most detailed one — on M11_B_03 the flat green
+  autofluorescence, stretched alone, washed out the nuclear stain) or one version, `view` (default) / `fit`;
   `atlas_channels` — `ara`, `nissl` (ABBA's cached atlas only,
   `EngineContext.abba_atlas`), `borders` (the lines); `atlas_image_picture`
   composes the images (ara alone = the renderers' own reference path, none =

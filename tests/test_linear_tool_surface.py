@@ -282,12 +282,22 @@ def test_raw_channels_one_in_gray_several_overlaid_in_colour(tmp_path: Path):
     both = view(["s0.png"], view={"channels": ["red", "blue"]})
     assert both["view"]["channel_colors"] == {"red": "red", "blue": "blue"}
     mixed = _pixels(both)[-40:]  # tissue rows, clear of the white caption text
-    assert mixed[..., 0].max() > 200 and mixed[..., 2].max() > 120
+    # Both present; each is dimmed by its fine detail relative to the other.
+    assert mixed[..., 0].max() > 200 and mixed[..., 2].max() > 40
     # No green channel in a red + blue overlay (JPEG chroma leaves a little at edges).
     assert np.percentile(mixed[..., 1], 99) < 40 and mixed[..., 1].mean() < 10
     assert view(["s0.png"], view={"channels": ["dapi"]})["error"] == "UNKNOWN_CHANNEL"
     assert view(["s0.png"], view={"channels": ["red", "fit"]})["error"] == "BAD_CHANNELS"
     assert state.appearance == {}
+
+
+def test_a_flat_channel_is_dimmed_in_an_overlay():
+    from langslice.linear.render import fine_detail
+
+    rng = np.random.default_rng(0)
+    textured = rng.uniform(0.2, 1.0, (64, 64)).astype(np.float32)
+    flat = np.full((64, 64), 0.9, dtype=np.float32)
+    assert fine_detail(flat) < 0.01 < fine_detail(textured)
 
 
 def test_the_fit_version_shows_what_registration_reads(tmp_path: Path):
