@@ -2370,6 +2370,7 @@ def build_tools(
         options = display(FIT_AFFINE_VIEW, view, sections=targets)
         if isinstance(options, dict):
             return options
+        plain = options
         if (kept and isinstance(view, dict) and "regions" not in view
                 and MODE_RULES[options.mode].atlas):
             # The included regions are highlighted unless the call names others.
@@ -2379,10 +2380,19 @@ def build_tools(
 
         def draw_fit(record: SliceState) -> Any:
             def draw(section: Any, um_per_px: float, matrix: np.ndarray) -> list[Any]:
-                return draw_canvas(
-                    record, section, um_per_px, float(record.position_mm or 0.0),
-                    matrix, options, label=record.id,
-                )
+                def drawn(chosen: Any) -> list[Any]:
+                    return draw_canvas(
+                        record, section, um_per_px, float(record.position_mm or 0.0),
+                        matrix, chosen, label=record.id,
+                    )
+                if options is plain:
+                    return drawn(options)
+                try:
+                    return drawn(options)
+                except ValueError:
+                    # The automatic highlight of a one-sided region cannot be
+                    # drawn once the fit turns the midline past 45 degrees.
+                    return drawn(plain)
             return draw
 
         results: list[dict[str, Any]] = []
@@ -2395,8 +2405,15 @@ def build_tools(
             if record.damaged and not restricted:
                 results.append({"id": record.id, "status": "error", "error": "DAMAGED"})
                 continue
-            outcome = fitter(state, ctx, record, draw=draw_fit(record),
-                             include=kept, exclude=dropped)
+            try:
+                outcome = fitter(state, ctx, record, draw=draw_fit(record),
+                                 include=kept, exclude=dropped)
+            except Exception as exc:  # nothing is written for this section
+                logger.warning("fit_affine failed for %s: %s", record.id, exc)
+                results.append({"id": record.id, "status": "error",
+                                "error": getattr(exc, "code", "RENDER_FAILED"),
+                                "message": str(exc)})
+                continue
             panels = outcome.pop("panels", None) or []
             results.append(outcome)
             if outcome["status"] != "ok":
@@ -3026,10 +3043,18 @@ def build_tools(
         targets = list({record.id: record for record in named}.values())
         reason = str(keep_linear or "").strip()
         if reason:
-            if candidates or view:
-                return {"status": "error", "error": "BAD_ARGS",
+            given = [name for name, value, default in (
+                ("include", include, None), ("exclude", exclude, None),
+                ("start", start, "linear"), ("fit_section", fit_section, "fit"),
+                ("fit_atlas", fit_atlas, ""), ("engine", engine, ""),
+                ("stiffness", stiffness, "medium"), ("candidates", candidates, None),
+                ("view", view, None),
+            ) if (value if default is None else (value or default) != default)]
+            if given:
+                return {"status": "error", "error": "BAD_ARGS", "given": given,
                         "message": "keep_linear records that the linear placement stands: it "
-                        "runs no fit and draws no picture, so leave candidates and view out."}
+                        "runs no fit and draws no picture, so leave the fit settings, "
+                        "candidates and view out."}
             return keep_linear_placements(targets, reason)
         if len(targets) > MAX_VIEW_SLICES:
             return {"status": "error", "error": "TOO_MANY_SECTIONS",

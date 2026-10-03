@@ -206,7 +206,11 @@ def stain_image(
     record = grid.record
     look = looks.section_settings(state, "fit", record.id)
     image = looks.fit_image(ctx, state, record, long_edge=FIT_LONG_EDGE)
-    return _on_grid(image, grid), {"fit_look": look}
+    identity: dict[str, Any] = {"fit_look": look}
+    if look is None:  # the default appearance: what it is drawn from, so a
+        # saved fit is not reused after the run's preprocessing changes
+        identity["default"] = [looks.look_token(ctx, None), ctx.spec.host_preprocessing]
+    return _on_grid(image, grid), identity
 
 
 def traced_lines(
