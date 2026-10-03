@@ -213,7 +213,7 @@ def display_lines(
         "argument, `view` (an object; this call only, nothing is stored). Its keys: "
         "`mode` (each tool lists its own; the first is its default); "
         "`channels`, what of the section is shown: one or more raw channel names "
-        "(one is grayscale exactly as read; several are each stretched and added in "
+        "(each stretched by percentile; one is shown in gray, several are added in "
         "distinct colours, and the reply's `view.channel_colors` says which is "
         "which), or one version, [\"view\"] (your viewing appearance, the default) or "
         "[\"fit\"] (the appearance registration reads); "

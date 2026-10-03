@@ -8,8 +8,8 @@ below):
 
 - ``mode`` — per tool (its :class:`Profile`), default per tool.
 - ``channels`` — what of the SECTION is shown: one or more raw channel names
-  (one is grayscale, unmodified; several are each stretched by percentile and
-  added in distinct colours, ABBA's multichannel display), or ONE version:
+  (each stretched by percentile; one is gray, several are added in distinct
+  colours, ABBA's multichannel display), or ONE version:
   ``view`` (the agent's own appearance, the default) or ``fit`` (what
   registration reads). Raw channels and a version cannot be mixed.
 - ``atlas_channels`` — what of the ATLAS is shown: any of ``ara`` (the

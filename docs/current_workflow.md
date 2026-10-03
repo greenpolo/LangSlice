@@ -51,7 +51,7 @@ cap, user damage marks, locked sections, the agent's damage tool) are `JobSpec`
 fields, not CLI flags yet; see `docs/linear_design.md`. Image resolution sets
 the long edge of the opening images and of every later picture the agent sees
 (low 256/512 px, medium 384/768, high 512/1024; auto 256 and then the agent's
-own `resolution` per call, up to 1536).
+own `view.resolution` per call, up to 1536).
 
 The toolbox is built from the spec, so the agent only ever sees the tools its
 run can use:
@@ -59,24 +59,24 @@ run can use:
 | tool | on when | does |
 | --- | --- | --- |
 | `status` | always | one row per section in corrected order: index, id, `position_mm`, `delta_to_next_mm` (signed), flip, rotation, damaged (+note), transform kind, `transform_iou`, `transform_mirrored`, caveats; plus the stack's cutting angles and interval breaks. Ordinary writes answer with only the rows they changed; transform writes use their physical result instead. This is the whole table |
-| `view_slices` | always | up to 4 sections at higher resolution, rendered as corrected, each captioned with its index and filename |
+| `view_slices` | always | up to 4 sections at higher resolution, rendered as corrected, each captioned with its index and filename; `view` mode `channels` shows each section's raw channels side by side, unmodified and labelled |
 | `view_atlas` | always | up to 4 atlas sections, rendered at the stack's current cutting angles, each captioned with its position |
 | `note`, `undo`, `redo` | always | run notes; snapshot undo where one tool call undoes as one step |
 | `mark_damaged` | `agent_damage` (on in the CLI) | set or clear damage per entry with `damaged` (default True); clearing also removes the note; a damage flag the host set cannot be cleared |
-| `preprocess` | `--agent-preprocessing` (`agent_preprocessing`) | the section appearance (channel weights, CLAHE, ANTs N4/denoise) for target `view`, `fit` or both, stack-wide or per section; undoable; returns the sections as that target now sees them |
-| `orient_slices` | `reorder` | flip and quarter-turn per section (`--no-flip` refuses the flip half); returns the changed sections as they now stand |
-| `reorder_slices(new_order, after="start")` | reorder | move the listed filenames as a block, in the listed order, after a named section or at the start. One filename moves one slice; the full list sets the whole order. Unlisted sections keep their relative order. Corrected indices only; positions and transforms are kept. One undo step. |
+| `preprocess` | `--agent-preprocessing` (`agent_preprocessing`) | the section appearance (channel weights, CLAHE, ANTs N4/denoise) for target `view`, `fit` or both, stack-wide or per section; undoable; returns each pictured section (up to 4) BEFORE and AFTER the call, labelled |
+| `orient_slices` | `transform` | flip and quarter-turn per section (`--no-flip` refuses the flip half); returns the changed sections as they now stand |
+| `reorder_slices(slices, after="start")` | reorder | move the listed filenames as a block, in the listed order, after a named section or at the start. One filename moves one slice; the full list sets the whole order. Unlisted sections keep their relative order. Corrected indices only; positions and transforms are kept. One undo step. |
 | `set_positions` | `position` | batch write, clamped to the atlas range; returns a placement picture (any `view_placement` mode, default `stacked`) unless the model has already seen that exact section, position, orientation and cutting-angle combination in a full-canvas atlas-bearing view. Section-only and zoomed comparisons do not suppress the full placement. A compare and write requested together still return the write image because neither sibling result was visible when they were planned |
-| `view_placement` | `position` | the full current placement (the section under its stored transform) or up to 4 candidate pairs; `stacked` and `side_by_side` are tissue-framed and full-view only (`side_by_side` up to 8 separate images); other modes return one physical-canvas image per pair; writes nothing |
+| `view_placement` | `position`, `transform` or `nonlinear` | the complete current registration (the section under its stored transform and, in the modes that draw the section under its placement, its applied deformation unless `view.deformation` is `none`) or up to 4 candidate pairs; `stacked` and `side_by_side` are tissue-framed and full-view only (`side_by_side` up to 8 separate images); other modes return one physical-canvas image per pair; writes nothing |
 | `view_stack` | `position` | one contact sheet of every section in the order of its written position over the atlas at that position, captioned with position and the distance to the next, plus a position-vs-index plot (two images); writes nothing |
 | `run_deepslice` | `--deepslice` | reports `UNAVAILABLE` until the optional extra lands |
 | `search_position` | `--bayesian` | `oblique.fit_oblique` around a section's current position; writes nothing |
 | `set_cutting_angles` | `--angles` | stack-wide pitch/yaw; later fetches and previews follow |
-| `fit_affine` | `transform` | in-plane affine per section, written as its transform: by default the Elastix intensity affine refining the section's current transform (stain and edges against the ARA template, never a search from scratch), or `method="silhouette"` (outline moments fit from scratch); with the overlap, the transform as the five physical parameters (`rotation_deg`, `scale_x`, `scale_y`, `translate_x_mm`, `translate_y_mm`, plus `shear`) about the canvas centre, and a physical-scale overlay for every successful fit; `include`/`exclude` regions (as in `fit_deformable`) fit only the kept atlas regions against the tissue the current placement lays there, with a `regions` report; damaged sections are refused unless regions are given |
-| `adjust_transforms(entries)` | transform.interactive | set one to four independent sections, each with rotation, per-axis scales and millimetre shifts. Per-entry pivot, note and display options; `ab` and `side_by_side` return two images, other modes one. Each result maps its images with `image_indexes`. One undo step; repeat unchanged parameters to redraw. Replaces the complete transform, including spline or shear. Inspect before a dependent correction in a later call. |
+| `fit_affine` | `transform` | in-plane affine per section, written as its transform: by default the Elastix intensity affine refining the section's current transform (stain and edges against `fit_atlas`: the ARA template by default, ABBA's Nissl where installed; never a search from scratch), or `method="silhouette"` (outline moments fit from scratch); with the overlap, the transform as the five physical parameters (`rotation_deg`, `scale_x`, `scale_y`, `translate_x_mm`, `translate_y_mm`, plus `shear`) about the canvas centre, and a physical-scale overlay for every successful fit; `include`/`exclude` regions (as in `fit_deformable`) fit only the kept atlas regions against the tissue the current placement lays there, with a `regions` report; damaged sections are refused unless regions are given |
+| `adjust_transforms(entries, view)` | transform.interactive | set one to four independent sections, each with rotation, per-axis scales and millimetre shifts. Per-entry pivot and note; one `view` draws every entry; `ab` and `side_by_side` return two images, other modes one. Each result maps its images with `image_indexes`. One undo step; repeat unchanged parameters to redraw. Replaces the complete transform, including spline or shear. Inspect before a dependent correction in a later call. |
 | `trace_borders(id, prompt)` | `nonlinear` unless `--image-provider none` | sends the section's placed atlas borders and the clean section to the image model with the agent's edited copy of the base correction prompt; runs in the background and returns at once; keeps the first reply with the extracted borders on the original, and `submit` waits for running calls. No deformation is fitted and no transform changes. See [the image-tool contract](nonlinear_image_tool.md) |
-| `grep_atlas(query, section)` | `nonlinear` | looks regions up in the atlas hierarchy (acronym, name substring or id; 40 rows max, with a count of the rest): acronym, id, name, ancestry as acronyms, descendant count, and with a positioned `section` an `in_section` flag for the region or any descendant in the atlas plane at that placement. Text only, writes nothing |
-| `fit_deformable` | `nonlinear` | library deformable fit (ANTs SyN or Elastix B-spline) of the placed atlas onto sections, on top of their linear placement: include/exclude regions (an entry may name one side of the section, `"CTX:left"`), start linear or current (composed steps), section image (the fit appearance, or with an image model the section's `trace_borders` result, waited for up to 300 s while it runs and drawn on the section in the reply), atlas image (ara or nissl on ABBA hosts for the fit appearance, borders for traced images), stiffness (soft, medium, firm), and `engine` when `nonlinear.engine` is `either`; detail and line softening are fixed. 2–4 candidates preview and write nothing; one setting applies it (undoable, cached results reused); `keep_linear="reason"` records instead that a section's linear placement stands. `submit` requires a deformation or a `keep_linear` reason for every section (`MISSING_DEFORMATIONS`). Returns the final borders on the section per result plus displacement, folds and flags (including `DISPLACEMENT_OUTSIZED`). Any later linear change to a section clears its deformation (`deformation_cleared`); `view_placement` draws a stored warp. Records go to `<results dir>/deformable/` |
+| `grep_atlas(query, id)` | `nonlinear` | looks regions up in the atlas hierarchy (acronym, name substring or id; 40 rows max, with a count of the rest): acronym, id, name, ancestry as acronyms, descendant count, and with a positioned section `id` an `in_section` flag for the region or any descendant in the atlas plane at that placement. Text only, writes nothing |
+| `fit_deformable` | `nonlinear` | library deformable fit (ANTs SyN or Elastix B-spline) of the placed atlas onto sections, on top of their linear placement: include/exclude regions (an entry may name one side of the section, `"CTX:left"`), start linear or current (composed steps), `fit_section` (the fit appearance, or with an image model the section's `trace_borders` result, waited for up to 300 s while it runs and drawn on the section in the reply), `fit_atlas` (ara or nissl on ABBA hosts for the fit appearance, borders for traced fit sections), stiffness (soft, medium, firm), and `engine` when `nonlinear.engine` is `either`; detail and line softening are fixed. 2–4 candidates preview and write nothing; one setting applies it (undoable, cached results reused); `keep_linear="reason"` records instead that a section's linear placement stands. `submit` requires a deformation or a `keep_linear` reason for every section (`MISSING_DEFORMATIONS`). Returns the final borders on the section per result plus displacement, folds and flags (including `DISPLACEMENT_OUTSIZED`). Any later linear change to a section clears its deformation (`deformation_cleared`); `view_placement` draws the applied warp. Records go to `<results dir>/deformable/` |
 | `submit` | always | ends the run; gated |
 
 Sections and fetched atlas sections are framed the same way (foreground plus a
@@ -119,7 +119,7 @@ to the canvas. With no pixel size anywhere the run estimates one from the
 tissue's width against the atlas anatomy's and records
 `calibration.source = "estimated"` on the transform. The interactive preview
 and `fit_affine` draw the same picture: the transformed section under
-the atlas's family-level region outlines in yellow (0.5 px by default), with a 1 mm
+the atlas's family-level region outlines in yellow (1 px by default), with a 1 mm
 scale bar. The alignment parameters (`rotation_deg`, `scale_x`, `scale_y`,
 `translate_x_mm`, `translate_y_mm`) are stored alongside the host-facing six
 normalized numbers -- on every transform, silhouette fits included, so a fit
@@ -321,15 +321,19 @@ type, byte count, pixel size) — never bytes — so a trace stays small. Nothin
 but content, the prompt and a model name is read, so no credentials are
 written. Unset, the recorder is never constructed.
 
-Every tool that returns a picture takes the same display options (`mode`,
-`zoom`, `section_image`, `atlas_image`, `atlas_opacity`, `regions`,
-`outlines`, `border_color`, `border_thickness`; `linear/display.py`), per
-entry on `adjust_transforms`; they apply to that call only. By default the
-tissue-framed pictures (`view_atlas`, `stacked`, `side_by_side`) and the clean
-`section` / `template` modes stay free of outlines, and automatic-fit feedback
-uses yellow 0.5 px borders. Fractional widths are antialiased. `nissl` is
-offered only where ABBA's cached Allen atlas is installed. Native ABBA display
-colors are unchanged.
+Every tool that returns a picture takes all its picture options in one
+argument, `view` (`mode`, `channels`, `atlas_channels`, `atlas_opacity`,
+`regions`, `outlines`, `border_color`, `border_thickness`, `zoom`,
+`deformation`, and `resolution` at image resolution `auto`;
+`linear/display.py`), one per call on `adjust_transforms`; they apply to that
+call only. `channels` is raw channels (several overlaid in colours) or the
+`view`/`fit` version; `atlas_channels` is any of `ara`, `nissl` (only where
+ABBA's cached Allen atlas is installed) and `borders` (the lines). By default
+the tissue-framed pictures (`view_atlas`, `stacked`, `side_by_side`) and the
+clean `section` / `template` modes stay free of outlines; borders are yellow,
+1 px. Fractional widths are antialiased. A key that means nothing for the tool
+or mode, and any unknown argument or key, is refused with the reason. Native
+ABBA display colors are unchanged.
 
 ### Linear and nonlinear scope
 

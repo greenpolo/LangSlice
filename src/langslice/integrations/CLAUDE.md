@@ -245,7 +245,7 @@ become `JobSpec.host_preprocessing`: the engine reads the snapshots themselves
 (nothing is staged) and shows each as `image_prep.host_preprocess` blends it,
 exactly what `preprocess.preview` shows, as the DEFAULT appearance; the pages
 stay raw channels (named by the optional `channel_names` param) for the
-agent's `section_image` and `preprocess`. Without either, the engine's own
+agent's `view.channels` and `preprocess`. Without either, the engine's own
 `auto` path runs on the snapshots as before. A `trace_dir` param points the session trace (`LANGSLICE_TRACE_DIR`) at that
 folder for the one run and returns the new files as `trace_files`.
 `linear.estimate` prices a spec from
