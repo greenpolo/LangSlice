@@ -454,7 +454,7 @@ def test_the_job_is_a_deformation_per_section_in_both_modes(tmp_path: Path, atla
     assert "`trace_borders`:" in text and "completed image correction" in text
     assert "a call waits for a trace that is still running" in text
     assert "Base image-model prompt" in text
-    assert ("inspect the returned borders against the section's internal anatomy and its "
+    assert ("inspect each returned fit's borders against the section's internal anatomy and its "
             "traced borders") in text
 
     (tmp_path / "none").mkdir()
@@ -466,7 +466,8 @@ def test_the_job_is_a_deformation_per_section_in_both_modes(tmp_path: Path, atla
     for absent in ("trace", "image correction", "image model", "Base image-model prompt"):
         assert absent not in text, absent
     assert "reads, `fit_section` (the fit appearance)" in text
-    assert "inspect the returned borders against the section's internal anatomy. " in text
+    assert "inspect each returned fit's borders against the section's internal anatomy. " in text
+    assert "exclude the regions it has lost rather than restricting the fit" in text
 
 
 def test_without_an_image_model_there_are_no_traces(tmp_path: Path, atlas, monkeypatch):

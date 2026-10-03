@@ -476,10 +476,13 @@ model never called `fit_deformable`: the job line said "use the image model to
 correct every section's placed atlas borders" and submit only wanted a trace,
 so the deformation was optional. Now the job line is "give every section a
 deformation onto the atlas, on top of its linear placement, with the section's
-stain [and the borders the image model traces on it] as the evidence", one
-Method line asks it to inspect each fit's borders against internal anatomy
-(and the traced borders), apply the best and keep the linear placement only
-where no fit improves on it, and `submit` refuses `MISSING_DEFORMATIONS`
+stain [and the borders the image model traces on it] as the evidence", two
+Method lines ask it to let every region a section still has drive its fit
+(exclude what is lost rather than include a few survivors, damaged sections
+included; added 2026-10-03 after M11_B_08/C_08, Nash: "Astra knows, it was
+just lazy") and to compare candidates, inspect each fit's borders against
+internal anatomy (and the traced borders), apply the best and keep the linear
+placement only where no fit improves on it, and `submit` refuses `MISSING_DEFORMATIONS`
 (`toolbox.missing_deformations`, part of `submit_errors`) until every section
 holds a deformation at its current `linear_key` or a `keep_linear` record.
 `fit_deformable(slices, keep_linear="reason")` is that record: no fit,
@@ -738,7 +741,7 @@ without noticing. Off by default so the Astra runs stay comparable.
 
 **Lean harness.** Tools return data. No interpretation in any payload. The job statement carries the job, the facts, one line per tool, the constraints and — when positioning is on — a short `Method` section (Nash, 2026-09-07): place each section on its own evidence and compare candidates before writing, review the whole stack afterwards, re-check both sides of a gap before reporting a break, submit. When interactive transforms are enabled, Method also asks the agent to inspect
 each fitted/adjusted overlay against surviving internal anatomy and refine each
-slice until no further improvement is possible with the available transforms,
+slice, damaged ones included, until no further improvement is possible with the available transforms,
 keeping only changes that improve alignment; this is prompt guidance, not a
 fixed-adjustment-count or submission-review hook.
 The default Method no longer prescribes batching (2026-09-11): grouping work is the model's choice; batch-capable tools remain available. The opt-in cheap-model playbook is unchanged. Asked from its own run-3 trace, Astra said it skipped `compare_placement` (now `view_placement`) and `view_stack` by oversight, not wording, and asked for exactly this. Still out: rules of thumb, failure-mode warnings and region names (the same text runs against every BrainGlobe atlas, species and plane). Full-trace forensics found every major
