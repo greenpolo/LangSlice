@@ -273,6 +273,17 @@ def render_slice(
     return prepped
 
 
+def fine_detail(stretched: np.ndarray) -> float:
+    """Fine structure of one stretched channel (0..1): the spread of what a
+    3 px blur removes, over the pixels brighter than the background. Nuclei,
+    layers and fibre edges score high; flat autofluorescence scores low."""
+    tissue = stretched > 0.05
+    if not tissue.any():
+        return 0.0
+    fine = stretched - cv2.GaussianBlur(stretched, (0, 0), 3.0)
+    return float(fine[tissue].std())
+
+
 def _look_image(
     ctx: EngineContext,
     record: SliceState,
@@ -318,15 +329,27 @@ def _look_image(
         # One channel is gray; several are each added in their colour.
         colors = ([(names_shown[0], "gray", (255, 255, 255))] if len(names_shown) == 1
                   else channel_colors(names_shown))
-        for name, _word, rgb in colors:
+        stretched_planes: list[np.ndarray] = []
+        detail: list[float] = []
+        for name, _word, _rgb in colors:
             whole = np.asarray(at_working(named(name)), dtype=np.float32)
             low, high = (float(v) for v in np.percentile(whole, OVERLAY_STRETCH))
             if high <= low:
                 high = low + 1.0
             stretched = np.clip((whole - low) / (high - low), 0.0, 1.0)
+            stretched_planes.append(stretched)
+            detail.append(fine_detail(stretched))
+        # Several channels: each is dimmed by its fine detail relative to the
+        # most detailed one, so a flat autofluorescence channel (stretched to
+        # full brightness on its own) cannot wash out the stain under it.
+        top = max(detail) if len(colors) > 1 else 0.0
+        for (_name, _word, rgb), stretched, amount in zip(
+            colors, stretched_planes, detail, strict=True
+        ):
+            gain = amount / top if top > 0 else 1.0
             shown = np.asarray(framed(Image.fromarray((stretched * 255.0).astype(np.uint8))),
                                dtype=np.float32) / 255.0
-            total += shown[..., None] * np.asarray(rgb, dtype=np.float32)
+            total += gain * shown[..., None] * np.asarray(rgb, dtype=np.float32)
         return Image.fromarray(np.clip(total, 0.0, 255.0).astype(np.uint8), mode="RGB")
     return custom_appearance(
         [placed(plane) for plane in planes],
