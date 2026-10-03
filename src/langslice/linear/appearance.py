@@ -47,8 +47,9 @@ MAX_CLAHE_CLIP = 40.0
 MAX_CLAHE_TILES = 32
 
 #: A look: ``None`` (the default appearance), ``{"channel": name}`` (one raw
-#: channel, unenhanced), ``{"overlay": [names]}`` (several raw channels, each
-#: stretched by percentile and added in its colour, :func:`channel_colors`)
+#: channel, unenhanced: the `channels` strip), ``{"overlay": [names]}`` (raw
+#: channels, each stretched by percentile; one in gray, several added in their
+#: colours, :func:`channel_colors`)
 #: or a settings dict from :func:`validate_settings`.
 Look = dict[str, Any] | None
 
@@ -204,8 +205,10 @@ def describe(look: Look) -> str:
     if "channel" in look:
         return f"raw {look['channel']}"
     if "overlay" in look:
-        return "raw " + " + ".join(f"{name} {word}" for name, word, _rgb
-                                   in channel_colors(look["overlay"]))
+        if len(look["overlay"]) == 1:
+            return f"raw {look['overlay'][0]}, stretched"
+        return "raw " + " + ".join(name if name.lower() == word else f"{name} {word}"
+                                   for name, word, _rgb in channel_colors(look["overlay"]))
     weights = look.get("channel_weights")
     parts = [
         "weights " + ("auto" if not weights else "/".join(f"{w:g}" for w in weights)),

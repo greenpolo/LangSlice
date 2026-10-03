@@ -237,8 +237,8 @@ class DisplayOptions:
             return section_settings(state, "fit", record.id)
         if self.version or not self.channels:
             return section_settings(state, "view", record.id)
-        if len(self.channels) == 1:
-            return {"channel": self.channels[0]}
+        # One channel is stretched too, in gray (the `channels` strip is the
+        # unmodified picture).
         return {"overlay": list(self.channels)}
 
     def channel_colors(self) -> dict[str, str]:
@@ -254,9 +254,10 @@ class DisplayOptions:
         if self.version or not self.channels:
             return ""
         if len(self.channels) == 1:
-            return f"  [raw {self.channels[0]}]"
-        return "  [" + " + ".join(f"{name} {word}" for name, word in
-                                   self.channel_colors().items()) + "]"
+            return f"  [raw {self.channels[0]}, stretched]"
+        return "  [raw " + " + ".join(
+            name if name.lower() == word else f"{name} {word}"
+            for name, word in self.channel_colors().items()) + "]"
 
     def atlas_name(self) -> str:
         """How captions name the atlas picture."""
