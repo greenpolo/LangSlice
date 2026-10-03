@@ -247,7 +247,8 @@ def test_the_adjust_tool_takes_the_view_controls(tmp_path: Path):
     assert len(pair[TOOL_MEDIA_PARTS_KEY]) == 2
     assert pair["view"]["mode"] == "side_by_side"
 
-    zoomed = preview("s.tif", 0.0, 1.0, 1.0, 0.0, 0.0, "overlay", [0.3, 0.3, 0.7, 0.7], 0.5)
+    zoomed = preview("s.tif", 0.0, 1.0, 1.0, 0.0, 0.0, "overlay", [0.3, 0.3, 0.7, 0.7], 0.5,
+                     atlas_channels=["ara", "borders"])
     assert len(zoomed[TOOL_MEDIA_PARTS_KEY]) == 1
     assert zoomed["view"]["zoom"] == [0.3, 0.3, 0.7, 0.7]
 
@@ -293,7 +294,8 @@ def test_view_placement_draws_the_section_on_each_atlas_position(tmp_path: Path)
     assert len(current[TOOL_MEDIA_PARTS_KEY]) == 1  # side_by_side: one stitched image
 
     stepped = compare(
-        [{"id": "s.tif", "positions_mm": [0.1, 0.2, 0.3]}], "overlay", [], atlas_opacity=0.3,
+        [{"id": "s.tif", "positions_mm": [0.1, 0.2, 0.3]}],
+        view={"mode": "overlay", "atlas_channels": ["ara", "borders"], "atlas_opacity": 0.3},
     )
     assert [row["position_mm"] for row in stepped["compared"]] == [0.1, 0.2, 0.3]
     assert len(stepped[TOOL_MEDIA_PARTS_KEY]) == 3
@@ -305,12 +307,12 @@ def test_view_placement_draws_the_section_on_each_atlas_position(tmp_path: Path)
     # (one image each: the most any call returns).
     many = compare(
         [{"id": "s.tif", "positions_mm": [0.1] * 3}, {"id": "0", "positions_mm": [0.3] * 3}],
-        "overlay",
+        view={"mode": "overlay"},
     )
     assert len(many["compared"]) == 4 and many["truncated"] and many["dropped_pairs"] == 2
     assert len(many[TOOL_MEDIA_PARTS_KEY]) == 4
 
-    assert compare([{"id": "s.tif"}], "flicker")["error"] == "BAD_MODE"
+    assert compare([{"id": "s.tif"}], view={"mode": "flicker"})["error"] == "BAD_MODE"
     assert compare([{"id": "ghost.tif"}])["error"] == "UNKNOWN_SLICE_IDS"
     state.slices[0].position_mm = None
     assert compare([{"id": "s.tif"}])["error"] == "NO_POSITION"
@@ -430,7 +432,7 @@ def test_the_adjust_tool_takes_the_outline_layer(tmp_path: Path):
     assert "No atlas outlines" in bare["description"]
 
     bad = preview("s.tif", 0.0, 1.0, 1.0, 0.0, 0.0, "overlay", [], 0.0, "canvas", "midline")
-    assert bad["error"] == "BAD_OUTLINES"
+    assert bad["error"] == "BAD_VIEW"
 
 
 @pytest.mark.parametrize("color", ["cyan", "#00ffff"])
@@ -489,9 +491,9 @@ def test_batch_border_style_changes_only_the_render(tmp_path: Path):
     first = tools["adjust_transforms"]([entry])
     before = state.to_dict()
     undo_depth = len(box.undo_stack)
-    second = tools["adjust_transforms"]([
-        {**entry, "border_color": "cyan", "border_thickness": 3},
-    ])
+    second = tools["adjust_transforms"](
+        [entry], view={"border_color": "cyan", "border_thickness": 3},
+    )
     assert first["status"] == second["status"] == "ok"
     assert state.to_dict() == before
     assert len(box.undo_stack) == undo_depth

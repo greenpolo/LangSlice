@@ -113,7 +113,7 @@ def picture_edge(ctx: EngineContext, requested: int | None = None) -> int:
     """Long edge of each later picture: the level's, or *requested* at "auto".
 
     *requested* must already be clamped into :data:`RESOLUTION_RANGE`
-    (:func:`langslice.linear.display.parse_display` does it); every level but
+    (:func:`langslice.linear.display.parse_view` does it); every level but
     "auto" ignores it.
     """
     level = resolution_level(ctx)
@@ -284,22 +284,46 @@ def _look_image(
     """*look* drawn from the raw channels, cropped and sized like the default."""
     names, planes = ctx.section_channels(record.id)
 
-    def placed(plane: np.ndarray) -> np.ndarray:
+    def at_working(plane: np.ndarray) -> Image.Image:
         image = Image.fromarray(plane)
         if image.size != working_size:
             image = image.resize(working_size, Image.Resampling.LANCZOS)
+        return image
+
+    def framed(image: Image.Image) -> Image.Image:
         if box is not None:
             image = image.crop(box)
         if image.size != size:
             image = image.resize(size, Image.Resampling.LANCZOS)
-        return np.asarray(image, dtype=np.uint8)
+        return image
 
-    if "channel" in look:
-        name = str(look["channel"])
+    def placed(plane: np.ndarray) -> np.ndarray:
+        return np.asarray(framed(at_working(plane)), dtype=np.uint8)
+
+    def named(name: str) -> np.ndarray:
         if name not in names:
             raise ValueError(f"{record.id} has no channel {name!r}; channels: {', '.join(names)}")
-        plane = placed(planes[names.index(name)])
+        return planes[names.index(name)]
+
+    if "channel" in look:
+        plane = placed(named(str(look["channel"])))
         return Image.fromarray(np.stack([plane, plane, plane], axis=-1))
+    if "overlay" in look:
+        # Each channel stretched on its WHOLE working plane (so a framed and
+        # an unframed picture share one stretch), then added in its colour.
+        from langslice.linear.appearance import OVERLAY_STRETCH, channel_colors
+
+        total = np.zeros((size[1], size[0], 3), dtype=np.float32)
+        for name, _word, rgb in channel_colors(look["overlay"]):
+            whole = np.asarray(at_working(named(name)), dtype=np.float32)
+            low, high = (float(v) for v in np.percentile(whole, OVERLAY_STRETCH))
+            if high <= low:
+                high = low + 1.0
+            stretched = np.clip((whole - low) / (high - low), 0.0, 1.0)
+            shown = np.asarray(framed(Image.fromarray((stretched * 255.0).astype(np.uint8))),
+                               dtype=np.float32) / 255.0
+            total += shown[..., None] * np.asarray(rgb, dtype=np.float32)
+        return Image.fromarray(np.clip(total, 0.0, 255.0).astype(np.uint8), mode="RGB")
     return custom_appearance(
         [placed(plane) for plane in planes],
         channel_weights=look.get("channel_weights"),
@@ -492,7 +516,7 @@ def stack_pictures(
     long_edge: int | None = None,
     by_position: bool = False,
     under: Callable[[SliceState], Image.Image | None] | None = None,
-    section_image: str = "current",
+    look: Callable[[SliceState], Look] | None = None,
 ) -> list[tuple[str, Image.Image]]:
     """``(label, captioned picture)`` per section, in corrected order.
 
@@ -503,7 +527,8 @@ def stack_pictures(
     travel as ONE captioned image, the atlas drawn to the section's long edge.
     The label is burned into the picture (:func:`caption`), so it survives
     any transport that drops the text next to an attachment. *long_edge*
-    None is the run's opening size (:func:`opening_edge`).
+    None is the run's opening size (:func:`opening_edge`). *look* gives each
+    section's look (None: its view appearance).
     """
     long_edge = long_edge or opening_edge(ctx)
     ordered = list(state.in_order())
@@ -527,7 +552,7 @@ def stack_pictures(
             label += f"  [{'; '.join(flags)}]"
         picture = render_slice(
             ctx, record, long_edge=long_edge, frame=True,
-            look=view_look(state, record, section_image),
+            look=look(record) if look is not None else view_look(state, record),
         )
         below = under(record) if under is not None else None
         if below is not None:
@@ -609,7 +634,7 @@ def stack_sheet(
     *,
     under: Callable[[SliceState], Image.Image | None] | None = None,
     columns: int = 8,
-    section_image: str = "current",
+    look: Callable[[SliceState], Look] | None = None,
     tile_edge: int | None = None,
 ) -> Image.Image:
     """One contact sheet of the stack in written-position order, each
@@ -626,7 +651,7 @@ def stack_sheet(
     """
     tile = int(tile_edge or opening_edge(ctx))
     sheet = grid([picture for _, picture in stack_pictures(
-        state, ctx, long_edge=tile, by_position=True, under=under, section_image=section_image,
+        state, ctx, long_edge=tile, by_position=True, under=under, look=look,
     )], columns=columns)
     for _attempt in range(4):
         if max(sheet.size) <= SHEET_MAX_LONG_EDGE or tile <= 64:
@@ -634,7 +659,7 @@ def stack_sheet(
         tile = max(64, int(tile * SHEET_MAX_LONG_EDGE / float(max(sheet.size))) - 4)
         sheet = grid([picture for _, picture in stack_pictures(
             state, ctx, long_edge=tile, by_position=True, under=under,
-            section_image=section_image,
+            look=look,
         )], columns=columns)
     return sheet
 
@@ -1285,6 +1310,7 @@ def physical_views(
     atlas_name: str = "template",
     regions: Any = (),
     matrix_label: str = "fitted matrix",
+    template_lines: bool = False,
 ) -> tuple[list[Image.Image], float]:
     """The alignment screen in one of :data:`VIEW_MODES`, plus the overlap.
 
@@ -1323,7 +1349,8 @@ def physical_views(
     reference template), named *atlas_name* in captions. *regions*
     (``[(name, ids)]``) are drawn at full strength in every mode, the
     *outlines* layer then at :data:`REGION_CONTEXT_ALPHA` for context.
-    *matrix_label* names a ready matrix in the caption.
+    *matrix_label* names a ready matrix in the caption. ``template`` draws
+    the atlas image alone; *template_lines* adds the *outlines* layer to it.
 
     Returns ``(images, silhouette_iou)`` — every image captioned, and the
     overlap between the warped section's tissue mask and the atlas anatomy at
@@ -1414,7 +1441,7 @@ def physical_views(
         lines = False  # ...except the clean views, which show one source alone
     elif mode == "template":
         panels = [(_template_canvas(), atlas_head)]
-        lines = False
+        lines = template_lines
     elif mode == "side_by_side":
         panels = [(warped, label or "section"), (_template_canvas(), atlas_head)]
     elif mode == "checkerboard":
@@ -1501,8 +1528,8 @@ def physical_views(
                 f"\n{mode}  zoom {zoomed}  "
                 f"view {geometry.um_per_px / factor:.2f} um/px"
             )
-        if layer != "all":
-            text += f"  outlines {layer}"
+        if layer == "outer" and lines:
+            text += "  outlines outer"
         if regions:
             text += "  regions " + ",".join(str(name) for name, _ids in regions) + sides_note
         labelled = caption(Image.fromarray(screen, mode="RGB"), text)

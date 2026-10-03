@@ -89,7 +89,7 @@ def test_tool_results_carry_json_text_and_pictures(tmp_path: Path):
     async def body(client: Any) -> Any:
         return (
             await client.call_tool("status", {}),
-            await client.call_tool("view_slices", {"slice_ids": ["s0.png", "s1.png"]}),
+            await client.call_tool("view_slices", {"slices": ["s0.png", "s1.png"]}),
             await client.call_tool(
                 "submit", {"summary": "done", "notes": [], "interval_breaks": []}
             ),
@@ -101,6 +101,34 @@ def test_tool_results_carry_json_text_and_pictures(tmp_path: Path):
     assert sum(isinstance(block, ImageContent) for block in view.content) == 2
     # The submit gates hold: nothing is positioned yet.
     assert _text(submit)["error"] == "MISSING_POSITIONS"
+
+
+def test_unknown_and_misplaced_arguments_are_refused_over_mcp(tmp_path: Path):
+    server = build_server(_spec_for, str(_folder(tmp_path)), atlas_loader=lambda _n: _ATLAS)
+
+    async def body(client: Any) -> Any:
+        return (
+            await client.call_tool("view_slices", {"slices": ["s0.png"], "mode": "section"}),
+            await client.call_tool("view_slices", {"slices": ["s0.png"],
+                                                   "view": {"mode": "section", "glow": 1}}),
+            # Claude Desktop may send a nested object as a JSON string.
+            await client.call_tool("view_slices", {"slices": ["s0.png"],
+                                                   "view": '{"mode": "channels"}'}),
+        )
+
+    top, nested, encoded = _session(server, body)
+    refused = _text(top)
+    assert refused["error"] == "UNKNOWN_ARGUMENTS"
+    assert refused["problems"][0]["unknown"] == ["mode"]
+    assert "`mode` belongs inside `view`." in refused["message"]
+    assert not any(isinstance(block, ImageContent) for block in top.content)
+    assert _text(nested)["problems"][0] == {
+        "argument": "view", "unknown": ["glow"],
+        "accepted": ["mode", "channels", "atlas_channels", "atlas_opacity", "regions",
+                     "outlines", "border_color", "border_thickness", "zoom", "deformation"],
+    }
+    assert _text(encoded)["view"]["mode"] == "channels"
+    assert sum(isinstance(block, ImageContent) for block in encoded.content) == 1
 
 
 def test_without_a_folder_start_job_opens_one_and_the_tools_appear(tmp_path: Path):

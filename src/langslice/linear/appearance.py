@@ -47,8 +47,42 @@ MAX_CLAHE_CLIP = 40.0
 MAX_CLAHE_TILES = 32
 
 #: A look: ``None`` (the default appearance), ``{"channel": name}`` (one raw
-#: channel, unenhanced) or a settings dict from :func:`validate_settings`.
+#: channel, unenhanced), ``{"overlay": [names]}`` (several raw channels, each
+#: stretched by percentile and added in its colour, :func:`channel_colors`)
+#: or a settings dict from :func:`validate_settings`.
 Look = dict[str, Any] | None
+
+#: Colours an overlay gives its channels, in order. A channel NAMED after a
+#: colour (an RGB file's ``red``/``green``/``blue``) keeps that colour, so
+#: the three planes of a colour image overlay back into it.
+OVERLAY_PALETTE: tuple[tuple[str, tuple[int, int, int]], ...] = (
+    ("green", (0, 255, 0)),
+    ("magenta", (255, 0, 255)),
+    ("cyan", (0, 255, 255)),
+    ("yellow", (255, 255, 0)),
+    ("red", (255, 0, 0)),
+    ("blue", (0, 96, 255)),
+)
+_NAMED_COLORS: dict[str, tuple[int, int, int]] = {
+    "red": (255, 0, 0), "green": (0, 255, 0), "blue": (0, 0, 255),
+}
+#: Percentiles an overlay maps to black and white, per channel.
+OVERLAY_STRETCH = (1.0, 99.5)
+
+
+def channel_colors(names: Any) -> list[tuple[str, str, tuple[int, int, int]]]:
+    """``(name, colour word, rgb)`` per channel of an overlay, in order."""
+    out: list[tuple[str, str, tuple[int, int, int]]] = []
+    taken = {str(name).lower() for name in names if str(name).lower() in _NAMED_COLORS}
+    palette = [entry for entry in OVERLAY_PALETTE if entry[0] not in taken]
+    for name in names:
+        key = str(name).lower()
+        if key in _NAMED_COLORS:
+            out.append((str(name), key, _NAMED_COLORS[key]))
+        else:
+            word, rgb = palette.pop(0) if palette else ("white", (255, 255, 255))
+            out.append((str(name), word, rgb))
+    return out
 
 
 def validate_settings(
@@ -142,10 +176,8 @@ def look_token(ctx: EngineContext, look: Look) -> str:
     return json.dumps(look, sort_keys=True)
 
 
-def view_look(state: StackState, record: SliceState, section_image: str = "current") -> Look:
-    """What a picture of *record* shows: its view appearance or one raw channel."""
-    if section_image and section_image != "current":
-        return {"channel": section_image}
+def view_look(state: StackState, record: SliceState) -> Look:
+    """What a picture of *record* shows by default: its view appearance."""
     return section_settings(state, "view", record.id)
 
 
@@ -171,6 +203,9 @@ def describe(look: Look) -> str:
         return "default appearance"
     if "channel" in look:
         return f"raw {look['channel']}"
+    if "overlay" in look:
+        return "raw " + " + ".join(f"{name} {word}" for name, word, _rgb
+                                   in channel_colors(look["overlay"]))
     weights = look.get("channel_weights")
     parts = [
         "weights " + ("auto" if not weights else "/".join(f"{w:g}" for w in weights)),

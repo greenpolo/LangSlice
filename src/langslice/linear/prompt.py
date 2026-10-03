@@ -24,7 +24,9 @@ _PLANE_AXIS_LABEL: dict[str, str] = {
 TOOL_LINES: dict[str, str] = {
     "status": "the stack as it stands, one row per section in corrected order; "
     "every write returns only the rows it changed, this returns them all.",
-    "view_slices": "up to 4 named sections at higher resolution, as corrected.",
+    "view_slices": "up to 4 named sections at higher resolution, as corrected; "
+    "view mode channels shows each section's raw channels side by side instead, "
+    "unmodified and labelled.",
     "view_atlas": "up to 4 atlas sections at the positions you name, rendered "
     "at the stack's cutting angles.",
     "note": "appends one line to the run notes.",
@@ -36,26 +38,28 @@ TOOL_LINES: dict[str, str] = {
     "weights (the counterstain that lights all tissue, e.g. DAPI or Nissl, "
     "usually deserves the most), CLAHE clip and tiles, ANTs N4 and denoising; "
     "for target view (what you are shown), fit (what a deformable fit reads) "
-    "or both, independently, for the stack or named sections; returns the "
-    "sections as they now look. Undoable.",
+    "or both, independently, for the stack or named sections; returns each "
+    "pictured section (up to 4) twice, labelled: BEFORE this call and AFTER it. "
+    "Undoable.",
     "orient_slices": "sets the flip and the rotation of named sections and "
     "returns them rendered as they now stand; a section whose orientation "
     "changes loses its transform.",
-    "reorder_slices": "places the filenames in new_order together, in that "
+    "reorder_slices": "places the filenames in `slices` together, in that "
     "order, after a named section or at start (default). A one-item list moves "
     "one section; a complete list sets the whole order. Unlisted sections keep "
     "their relative order. Positions and transforms are kept.",
-    "view_placement": "shows sections in their full current placement (position "
-    "and in-plane transform), or tests candidate positions before you commit "
-    "to one: name a section with several positions (or none for its current "
-    "one), up to 4 pairs per call; e.g. one section at 4.6, 4.8 and 5.0 mm. "
-    "`mode` is template (default: the atlas at that position on the section's "
-    "own canvas and scale; the section itself is in the opening message), "
-    "stacked (the section over the atlas, each tissue-framed), side_by_side "
-    "(separate original section plus atlas references, one section per "
-    "distinct id and one atlas per pair, up to 8 images; full view only), "
-    "overlay, checkerboard, outlines or section (one physical-canvas image per "
-    "pair); writes nothing.",
+    "view_placement": "shows sections in their complete current registration "
+    "(position, in-plane transform and any applied deformation), or tests "
+    "candidate positions before you commit to one: name a section with several "
+    "positions (or none for its current one), up to 4 pairs per call; e.g. one "
+    "section at 4.6, 4.8 and 5.0 mm. view modes: template (default: the atlas at "
+    "that position on the section's own canvas and scale; the section itself is "
+    "in the opening message), overlay, checkerboard, outlines or section (the "
+    "section under its registration on that canvas, one image per pair), "
+    "stacked (the section as corrected over the atlas, each tissue-framed) or "
+    "side_by_side (separate original section plus atlas references, one section "
+    "per distinct id and one atlas per pair, up to 8 images; full view only); "
+    "writes nothing.",
     "view_stack": "whole-stack review, meant for after the positions are "
     "written and before `submit`: one contact sheet of every section in the "
     "order of its written position with the atlas at that position beneath "
@@ -76,8 +80,9 @@ TOOL_LINES: dict[str, str] = {
     "the transform as the same five physical parameters `adjust_transforms` "
     "takes, and a picture of the section under it at true physical scale. "
     "The default method, elastix, refines the section's current transform by "
-    "matching the section's image against the atlas reference image, inner "
-    "anatomy included, starting where the section is; method silhouette fits "
+    "matching the section's fit appearance against an atlas image (`fit_atlas`: "
+    "ara, or nissl where offered), inner anatomy included, starting where the "
+    "section is; method silhouette fits "
     "the tissue outline to the atlas outline from scratch. "
     "`exclude` regions (acronyms or ids, descendants included) are removed "
     "from the atlas side, and the tissue the fit lays on them from the "
@@ -86,9 +91,9 @@ TOOL_LINES: dict[str, str] = {
     "sections are refused unless regions are given.",
     "adjust_transforms": "sets and shows one to four independent positioned "
     "sections in one undoable call. Each entry supplies rotation_deg, scale_x, "
-    "scale_y, translate_x_mm and translate_y_mm, plus optional pivot, note "
-    "and display options (mode: overlay, side_by_side, checkerboard, outlines, "
-    "section, template or ab). ab shows new and previous transforms; "
+    "scale_y, translate_x_mm and translate_y_mm, plus optional pivot and note; "
+    "one `view` draws every entry (modes overlay, side_by_side, checkerboard, "
+    "outlines, section, template or ab). ab shows new and previous transforms; "
     "side_by_side shows section and atlas. Results map their images with "
     "zero-based image_indexes. Each section may appear once; inspect before a "
     "dependent correction in a later call. This replaces the complete "
@@ -97,7 +102,7 @@ TOOL_LINES: dict[str, str] = {
     "section's existing linear placement, with your edited copy of the prompt "
     "for that section. The image call runs in the background and the tool returns "
     "at once; the result is saved for the user and checked at submit, which waits "
-    "for running calls, and `fit_deformable` with a traced section image waits for "
+    "for running calls, and `fit_deformable` with a traced `fit_section` waits for "
     "it too. The first result at each placement is saved and reused. "
     "This records an annotation; it does not fit or change the transform.",
     "grep_atlas": "looks regions up in the atlas hierarchy by acronym, name "
@@ -107,9 +112,9 @@ TOOL_LINES: dict[str, str] = {
     "descendant, appears in the atlas plane at that placement. Text only; writes nothing.",
     "fit_deformable": "fits a deformation of the placed atlas onto one or more "
     "positioned, transformed sections with a library engine (ANTs SyN or Elastix "
-    "B-spline), on top of the linear placement. Choose the section image "
-    "{section_images}, the atlas "
-    "image, stiffness, regions to include (fit only them and a margin) and "
+    "B-spline), on top of the linear placement. Choose what of the section it "
+    "reads, `fit_section` {fit_sections}, what of the atlas it reads, "
+    "`fit_atlas`, the stiffness, regions to include (fit only them and a margin) and "
     "to exclude (removed from the atlas side; \"CTX:left\" or \"CTX:right\" names "
     "one side of the section as shown), and start (linear, or current to "
     "compose onto the applied deformation, region by region). Several candidates "
@@ -119,8 +124,8 @@ TOOL_LINES: dict[str, str] = {
     "placement stands. Returns per result "
     "the final borders drawn on the section image (included regions strong, "
     "excluded in pink), displacement, fold fraction, plausibility flags and the "
-    "engine numbers used{trace_picture}; display options mode (borders or ab), zoom, "
-    "atlas_opacity, regions, outlines, border_color, border_thickness. A change "
+    "engine numbers used{trace_picture}; view modes borders (default) or ab "
+    "(then what the fit started from). A change "
     "to a section's position, orientation, cutting angles or transform clears "
     "its deformation or keep_linear record. Undoable.",
     "submit": "checks requirements and ends the run if they pass; otherwise "
@@ -128,13 +133,13 @@ TOOL_LINES: dict[str, str] = {
 }
 
 
-#: ``fit_deformable``'s section images, with and without the image model.
-_SECTION_IMAGES_TRACED = (
+#: ``fit_deformable``'s fit sections, with and without the image model.
+_FIT_SECTIONS_TRACED = (
     "(the fit appearance, or the section's trace_borders result at "
     "this placement: traced_borders as named regions, traced_lines as lines; a call "
     "waits for a trace that is still running)"
 )
-_SECTION_IMAGES_STAIN = "(the fit appearance)"
+_FIT_SECTIONS_STAIN = "(the fit appearance)"
 
 
 def tool_line(name: str, spec: JobSpec) -> str:
@@ -143,7 +148,7 @@ def tool_line(name: str, spec: JobSpec) -> str:
     if name == "fit_deformable":
         traced = spec.nonlinear.uses_image_model
         line = line.format(
-            section_images=_SECTION_IMAGES_TRACED if traced else _SECTION_IMAGES_STAIN,
+            fit_sections=_FIT_SECTIONS_TRACED if traced else _FIT_SECTIONS_STAIN,
             trace_picture=(", plus each traced section's trace drawn on the section"
                            if traced else ""),
         )
@@ -172,62 +177,90 @@ def deformable_engine_fact(engine: str, *, traced: bool = True) -> str:
     return f"`fit_deformable` engine: {engine}, set by the user for this run."
 
 
-#: Tools that return pictures and so take the shared display options.
+#: Tools that return pictures and so take the shared ``view`` argument.
 PICTURE_TOOLS: tuple[str, ...] = (
     "view_slices", "view_atlas", "view_placement", "view_stack", "set_positions",
-    "orient_slices", "fit_affine", "adjust_transforms", "preprocess",
+    "orient_slices", "fit_affine", "adjust_transforms", "preprocess", "fit_deformable",
 )
+
+#: One line per atlas channel, as the job statement describes it.
+ATLAS_CHANNEL_LINES: dict[str, str] = {
+    "ara": "the atlas's reference image, the template its regions were drawn on",
+    "nissl": "a Nissl-stained reference, ABBA's cached Allen atlas",
+    "borders": "the atlas regions, drawn as lines",
+}
 
 
 def display_lines(
     tool_names: list[str],
     *,
     channels: list[str] | dict[str, list[str]] | None = None,
-    atlas_images: tuple[str, ...] | None = None,
+    atlas_channels: tuple[str, ...] | None = None,
     resolution: bool = False,
 ) -> list[str]:
-    """The shared display options, once, with this run's channels and atlas images.
+    """``view``, described once, with this run's raw and atlas channels.
 
-    *resolution* (the host left picture size to the agent, level "auto") adds
-    the ``resolution`` argument; otherwise picture size is never mentioned.
+    Tool docstrings name their own modes and point here. *resolution* (the
+    host left picture size to the agent, level "auto") adds the
+    ``resolution`` key; otherwise picture size is never mentioned.
     """
     if not any(name in PICTURE_TOOLS for name in tool_names):
         return []
+    from langslice.linear.display import DEFAULT_ATLAS_OPACITY, DEFAULT_BORDER_THICKNESS
+
     lines = [
-        "- Every tool that returns a picture also takes the same display "
-        "options, for that call only: `mode` (per tool), `zoom` ([x0, y0, x1, "
-        "y1] fractions; the crop comes before the resize, so it magnifies), "
-        "`section_image` (current, or one raw channel by name), `atlas_image`, "
-        "`atlas_opacity` (0..1, the atlas image under the lines in overlay), "
-        "`regions` (atlas acronyms or ids, descendants included: only their "
-        "borders at full strength, the outlines layer faint behind them), "
-        "`outlines` (all, outer or none), `border_color` (named or #RRGGBB) "
-        "and `border_thickness` (0.25..8 output pixels).",
+        "- Picture options: every tool that returns a picture takes them in ONE "
+        "argument, `view` (an object; this call only, nothing is stored). Its keys: "
+        "`mode` (each tool lists its own; the first is its default); "
+        "`channels`, what of the section is shown: one or more raw channel names "
+        "(one is grayscale exactly as read; several are each stretched and added in "
+        "distinct colours, and the reply's `view.channel_colors` says which is "
+        "which), or one version, [\"view\"] (your viewing appearance, the default) or "
+        "[\"fit\"] (the appearance registration reads); "
+        "`atlas_channels`, what of the atlas is shown, any of the atlas channels "
+        "below: images are drawn under the section at `atlas_opacity` (0..1, "
+        f"default {DEFAULT_ATLAS_OPACITY:g}) in overlay, ab, outlines and borders modes "
+        "and as the atlas picture in the others (two images are added in two "
+        "colours); leave out borders for no lines. Defaults: [borders] in overlay, ab, "
+        "outlines and borders; [ara] in template, stacked and the framed "
+        "side_by_side of view_placement/set_positions; [ara, borders] in checkerboard "
+        "and the physical side_by_side; "
+        "`regions` (atlas acronyms or ids, descendants included, \"CTX:left\" / "
+        "\"CTX:right\" for one side of the section: their borders at full strength, "
+        "other lines faint); `outlines` (all or outer: which lines borders draws); "
+        f"`border_color` (named or #RRGGBB, default yellow); `border_thickness` "
+        f"(0.25..8 output pixels, default {DEFAULT_BORDER_THICKNESS:g}); `zoom` "
+        "([x0, y0, x1, y1] fractions; the crop comes before the resize, so it "
+        "magnifies); `deformation` (view_placement and set_positions: applied, the "
+        "default, draws the section's applied deformation; none, the linear placement "
+        "alone). A key that means nothing for a tool or a mode is refused with the "
+        "reason, and so is any unknown argument.",
     ]
     if resolution:
         from langslice.linear.render import AUTO_RESOLUTION, PICTURE_EDGES, RESOLUTION_RANGE
 
         low, high = RESOLUTION_RANGE
-        deformable = " (`fit_deformable` included)" if "fit_deformable" in tool_names else ""
         lines.append(
-            f"- Every tool that returns a picture{deformable} also "
-            "takes `resolution`: the long edge in pixels of each picture the call "
-            f"returns (of each section tile in `view_stack`), {low} to {high}; 0 or "
-            f"omitted is {PICTURE_EDGES[AUTO_RESOLUTION][1]}. A picture is never "
+            "- `view` also takes `resolution`: the long edge in pixels of each picture "
+            f"the call returns (of each section tile in `view_stack`), {low} to {high}; "
+            f"0 or omitted is {PICTURE_EDGES[AUTO_RESOLUTION][1]}. A picture is never "
             "drawn larger than the image it comes from."
         )
-    if atlas_images:
+    if atlas_channels:
         lines.append(
-            "- Atlas images on this host: " + ", ".join(atlas_images)
-            + " (ara: the atlas reference image; borders: the atlas regions as "
-            "lines" + ("; nissl: the Allen Nissl stain" if "nissl" in atlas_images else "")
-            + ")."
+            "- Atlas channels on this host: "
+            + "; ".join(f"{name} ({ATLAS_CHANNEL_LINES.get(name, name)})"
+                        for name in atlas_channels) + "."
         )
+    raw = ("the planes of each section's file as read; the names come from the file or "
+           "the host and may not say which is the stain, so `view_slices` with mode "
+           "channels shows each one, unmodified, side by side")
     if isinstance(channels, list) and channels:
-        lines.append("- Raw channels of every section: " + ", ".join(channels) + ".")
+        lines.append(f"- Raw image channels of every section ({raw}): "
+                     + ", ".join(channels) + ".")
     elif isinstance(channels, dict) and channels:
         lines.append(
-            "- Raw channels per section: "
+            f"- Raw image channels per section ({raw}): "
             + "; ".join(f"{name}: {', '.join(names)}" for name, names in channels.items())
             + "."
         )
@@ -269,7 +302,7 @@ def build_job_statement(
     pos_hi: float,
     axis_ends: tuple[str, str],
     channels: list[str] | dict[str, list[str]] | None = None,
-    atlas_images: tuple[str, ...] | None = None,
+    atlas_channels: tuple[str, ...] | None = None,
 ) -> str:
     """The system instruction for one run, built from the spec and the state.
 
@@ -309,7 +342,7 @@ def build_job_statement(
 
     tools = [f"- `{name}`: {tool_line(name, spec)}" for name in tool_names
              if name in TOOL_LINES]
-    tools += display_lines(tool_names, channels=channels, atlas_images=atlas_images,
+    tools += display_lines(tool_names, channels=channels, atlas_channels=atlas_channels,
                            resolution=spec.image_resolution == "auto")
 
     constraints: list[str] = []

@@ -92,8 +92,10 @@ def test_optional_tools_follow_their_flags(tmp_path: Path):
         tmp_path, tasks=["transform"],
         transform=TransformSpec(interactive=True, automatic=False),
     )
-    assert len(refinement.tools) == 10
+    assert len(refinement.tools) == 11
     assert "orient_slices" in refinement.names
+    # The read-only view of the complete registration exists without positioning.
+    assert "view_placement" in refinement.names and "set_positions" not in refinement.names
 
 
 def test_orientation_is_a_transform_tool_not_a_positioning_one(tmp_path: Path):
@@ -289,7 +291,7 @@ def test_only_a_full_atlas_bearing_compare_suppresses_the_write_image(
 
     section_only = compare(
         [{"id": "s0.png", "positions_mm": [3.0]}],
-        mode="section",
+        view={"mode": "section"},
         tool_context=_ToolContext("section-only"),
     )
     assert TOOL_MEDIA_DELIVERY_ID_KEY not in section_only
@@ -301,8 +303,7 @@ def test_only_a_full_atlas_bearing_compare_suppresses_the_write_image(
 
     zoomed = compare(
         [{"id": "s1.png", "positions_mm": [3.5]}],
-        mode="overlay",
-        zoom=[0.0, 0.0, 0.5, 0.5],
+        view={"mode": "overlay", "zoom": [0.0, 0.0, 0.5, 0.5]},
         tool_context=_ToolContext("zoomed"),
     )
     assert TOOL_MEDIA_DELIVERY_ID_KEY not in zoomed
@@ -314,7 +315,7 @@ def test_only_a_full_atlas_bearing_compare_suppresses_the_write_image(
 
     full = compare(
         [{"id": "s2.png", "positions_mm": [4.0]}],
-        mode="template",
+        view={"mode": "template"},
         tool_context=_ToolContext("full"),
     )
     assert full[TOOL_MEDIA_DELIVERY_ID_KEY] == "full"
@@ -749,9 +750,9 @@ def test_adjust_transforms_batches_independent_sections_as_one_undo_step(
                 "scale_y": 0.9,
                 "translate_x_mm": 0.0,
                 "translate_y_mm": -0.1,
-                "mode": "outlines",
             },
-        ]
+        ],
+        view={"mode": "outlines"},
     )
     assert result["status"] == "ok"
     assert [row["id"] for row in result["results"]] == ["s0.png", "s1.png"]
@@ -991,20 +992,23 @@ def test_damage_flags_can_be_set_and_cleared_together_with_undo(tmp_path: Path):
     assert state.to_dict() == before
 
 
-def test_adjust_transforms_mixed_views_map_all_images_to_their_sections(tmp_path: Path):
+def test_adjust_transforms_one_view_draws_every_entry(tmp_path: Path):
     from langslice.adk import TOOL_MEDIA_PARTS_KEY
 
     state, _, box = _box(tmp_path, placed=True)
     base = {"rotation_deg": 2, "scale_x": 1, "scale_y": 1,
             "translate_x_mm": 0, "translate_y_mm": 0}
-    modes = ["overlay", "ab", "side_by_side", "outlines"]
-    result = _tool(box, "adjust_transforms")([
-        {"id": f"s{i}.png", **base, "mode": mode}
-        for i, mode in enumerate(modes)
-    ])
+    entries = [{"id": f"s{i}.png", **base} for i in range(3)]
+    # Picture options belong to the call, not to an entry: refused, nothing written.
+    misplaced = _tool(box, "adjust_transforms")([{**entries[0], "mode": "ab"}])
+    assert misplaced["error"] == "UNKNOWN_ARGUMENTS"
+    assert misplaced["problems"][0]["argument"] == "entries[0]"
+    assert "`mode` belongs inside `view`." in misplaced["message"]
+    assert all(record.transform is None for record in state.slices)
+    result = _tool(box, "adjust_transforms")(entries, view={"mode": "ab"})
     assert result["status"] == "ok"
-    assert [row["image_indexes"] for row in result["results"]] == [[0], [1, 2], [3, 4], [5]]
-    assert [row["view"]["mode"] for row in result["results"]] == modes
+    assert [row["image_indexes"] for row in result["results"]] == [[0, 1], [2, 3], [4, 5]]
+    assert result["view"]["mode"] == "ab"
     assert len(result[TOOL_MEDIA_PARTS_KEY]) == 6
     assert len(box.undo_stack) == 1
     _tool(box, "undo")()

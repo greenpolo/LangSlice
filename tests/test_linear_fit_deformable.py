@@ -91,20 +91,23 @@ def test_engine_argument_exists_only_when_the_user_left_it_open(tmp_path: Path, 
         return set(schema["properties"])
 
     *_, open_box = _setup(tmp_path, atlas)
-    assert {"sections", "include", "exclude", "start", "section_image", "atlas_image",
-            "engine", "stiffness", "candidates", "mode", "zoom"} <= parameters(open_box)
+    assert {"slices", "include", "exclude", "start", "fit_section", "fit_atlas",
+            "engine", "stiffness", "candidates", "view"} == parameters(open_box) - {
+                "keep_linear"}
     # Detail and line softening are fixed, not arguments.
     assert not {"detail", "line_softening_um"} & parameters(open_box)
     *_, fixed = _setup(tmp_path, atlas, engine="elastix")
     assert "engine" not in parameters(fixed)
     # The traced recommendation names ANTs, so a run fixed to Elastix drops it.
-    recommended = "traced_borders with the ANTs\n                engine at medium stiffness"
+    recommended = "traced_borders with the ANTs engine at medium\n                stiffness"
     assert recommended in (_tool(open_box, "fit_deformable").__doc__ or "")
     assert "recommended" not in (_tool(fixed, "fit_deformable").__doc__ or "")
     result = _tool(fixed, "fit_deformable")([ID])
     assert result["results"][0]["settings"]["engine"] == "elastix"
     refused = _tool(fixed, "fit_deformable")([ID], candidates=[{"engine": "ants"}, {}])
-    assert refused["error"] == "BAD_CANDIDATE"
+    assert refused["error"] == "UNKNOWN_ARGUMENTS"
+    assert refused["problems"][0]["argument"] == "candidates[0]"
+    assert "The user fixed the engine for this run." in refused["message"]
     with pytest.raises(ValueError, match="nonlinear.engine"):
         NonlinearSpec(engine="spline")
     assert JobSpec.from_dict(JobSpec(image_folder=".", nonlinear=NonlinearSpec(
@@ -197,7 +200,7 @@ def test_start_current_composes_onto_the_applied_deformation(tmp_path: Path, atl
     assert refused["results"][0]["error"] == "NO_DEFORMATION"
     _apply(box)
     first = state.slices[0].deformation
-    result = _apply(box, start="current", include=["STR"], mode="ab")
+    result = _apply(box, start="current", include=["STR"], view={"mode": "ab"})
     row = result["results"][0]
     assert row["steps"] == 2 and "step_displacement_mm" in row
     assert len(row["image_indexes"]) == 2  # the step, then what it started from
@@ -235,7 +238,7 @@ def test_include_and_exclude_reach_the_engine(tmp_path: Path, atlas, monkeypatch
     assert fit([ID], include=["STR"], exclude=["str"])["error"] == "BAD_ARGS"
     assert fit([ID], include=["STR"], exclude=["STR:right"])["error"] == "BAD_ARGS"
     assert fit([ID], include=["STR:left"], exclude=["STR:right"])["status"] == "ok"
-    assert fit([ID], atlas_image="nissl")["error"] in ("ATLAS_IMAGE_UNAVAILABLE",)
+    assert fit([ID], fit_atlas="nissl")["error"] in ("FIT_ATLAS_UNAVAILABLE",)
     assert fit([ID], candidates=[{}] * 5)["error"] == "TOO_MANY_CANDIDATES"
 
 
@@ -295,26 +298,48 @@ def test_reads_and_unchanged_redraws_keep_the_warp(tmp_path: Path, atlas):
 def test_view_placement_draws_the_current_warp(tmp_path: Path, atlas):
     state, _, _, box = _setup(tmp_path, atlas)
     view = _tool(box, "view_placement")
-    before = view([{"id": ID}], mode="overlay")
+    before = view([{"id": ID}], view={"mode": "overlay"})
     assert "deformation_drawn" not in before["compared"][0]
     _apply(box, stiffness="soft")
-    after = view([{"id": ID}], mode="overlay")
+    after = view([{"id": ID}], view={"mode": "overlay"})
     assert after["compared"][0]["deformation_drawn"] is True
     assert _media(after)[0] != _media(before)[0]
     # Another position than the fitted one shows no warp.
-    other = view([{"id": ID, "positions_mm": [0.2]}], mode="overlay")
+    other = view([{"id": ID, "positions_mm": [0.2]}], view={"mode": "overlay"})
     assert "deformation_drawn" not in other["compared"][0]
     assert state.slices[0].deformation is not None
+
+
+def test_view_placement_draws_the_warp_in_every_mode_that_draws_the_section(
+    tmp_path: Path, atlas,
+):
+    _, _, _, box = _setup(tmp_path, atlas)
+    view = _tool(box, "view_placement")
+    _apply(box, stiffness="soft")
+    for mode in ("overlay", "checkerboard", "outlines", "section"):
+        warped = view([{"id": ID}], view={"mode": mode})
+        linear = view([{"id": ID}], view={"mode": mode, "deformation": "none"})
+        assert warped["compared"][0]["deformation_drawn"] is True, mode
+        assert "deformation_drawn" not in linear["compared"][0], mode
+        assert warped["view"]["deformation"] == "applied"
+        assert _media(warped)[0] != _media(linear)[0], mode
+    for mode in ("template", "stacked", "side_by_side"):
+        assert "deformation_drawn" not in view([{"id": ID}], view={"mode": mode})["compared"][0]
+    # Built for a run without positioning, too: the read-only registration view.
+    (tmp_path / "only").mkdir()
+    *_, nonlinear_only = _setup(tmp_path / "only", atlas, tasks=("nonlinear",))
+    assert "view_placement" in nonlinear_only.names
+    assert "set_positions" not in nonlinear_only.names
 
 
 def test_view_placement_highlights_one_side_of_a_region(tmp_path: Path, atlas):
     *_, box = _setup(tmp_path, atlas)
     view = _tool(box, "view_placement")
-    style = {"mode": "overlay", "outlines": "none", "border_color": "#ff00ff",
+    style = {"mode": "overlay", "atlas_channels": [], "border_color": "#ff00ff",
              "border_thickness": 3.0}
-    both = view([{"id": ID}], regions=["CTX"], **style)
-    left = view([{"id": ID}], regions=["CTX:left"], **style)
-    right = view([{"id": ID}], regions=["CTX:right"], **style)
+    both = view([{"id": ID}], view={"regions": ["CTX"], **style})
+    left = view([{"id": ID}], view={"regions": ["CTX:left"], **style})
+    right = view([{"id": ID}], view={"regions": ["CTX:right"], **style})
     assert left["view"]["regions"] == ["CTX:left"]
     images = [np.asarray(Image.open(__import__("io").BytesIO(_media(r)[0])).convert("RGB"))
               for r in (both, left, right)]
@@ -327,7 +352,7 @@ def test_view_placement_highlights_one_side_of_a_region(tmp_path: Path, atlas):
     middle = (whole.min() + whole.max()) / 2.0
     assert only_left.max() <= middle + 3 and only_left.min() <= whole.min() + 3
     assert only_right.min() >= middle - 3 and only_right.max() >= whole.max() - 3
-    refused = view([{"id": ID}], regions=["CTX:up"])
+    refused = view([{"id": ID}], view={"mode": "overlay", "regions": ["CTX:up"]})
     assert refused["error"] == "UNKNOWN_REGIONS"
 
 
@@ -336,10 +361,10 @@ def test_the_job_statement_names_the_engine_and_the_tool(tmp_path: Path, atlas, 
     monkeypatch.setattr(deformation, "ants_available", lambda: True)
     text = build_job_statement(spec, state, tool_names=box.names, species="mouse",
                                pos_lo=0, pos_hi=1, axis_ends=("anterior", "posterior"),
-                               atlas_images=("ara", "borders"))
+                               atlas_channels=("ara", "borders"))
     assert "`fit_deformable`:" in text
     assert "engine: ants or elastix, your choice per call" in text
-    assert "Atlas images on this host: ara, borders" in text
+    assert "Atlas channels on this host: ara (" in text and "; borders (" in text
     spec.nonlinear.engine = "elastix"
     text = build_job_statement(spec, state, tool_names=box.names, species="mouse",
                                pos_lo=0, pos_hi=1, axis_ends=("anterior", "posterior"))
@@ -379,26 +404,26 @@ def test_traced_images_need_a_completed_trace_at_this_placement(tmp_path: Path, 
 
     state, ctx, _, box = _setup(tmp_path, atlas)
     fit = _tool(box, "fit_deformable")
-    missing = fit([ID], **FAST, section_image="traced_lines")
+    missing = fit([ID], **FAST, fit_section="traced_lines")
     assert missing["results"][0]["error"] == "NO_TRACE"
     monkeypatch.setattr(registration_tool, "correction_fingerprint", lambda *_: "now")
     _fake_trace(state, ctx, tmp_path / "trace", fingerprint="earlier")
-    assert fit([ID], **FAST, section_image="traced_lines")["results"][0]["error"] \
+    assert fit([ID], **FAST, fit_section="traced_lines")["results"][0]["error"] \
         == "TRACE_STALE"
     state.slices[0].image_correction["geometry_fingerprint"] = "now"
-    result = fit([ID], **FAST, section_image="traced_lines")
+    result = fit([ID], **FAST, fit_section="traced_lines")
     assert result["status"] == "ok", result
     row = result["results"][0]
-    assert row["settings"]["atlas_image"] == "borders"  # traced lines fit against borders
+    assert row["settings"]["fit_atlas"] == "borders"  # traced lines fit against borders
     assert row["engine_settings"]["metric"] == "mean_squares"
-    assert fit([ID], **FAST, section_image="traced_borders")["error"] == "LABEL_MAP_ANTS_ONLY"
-    assert fit([ID], section_image="traced_lines", atlas_image="ara")["error"] == "BAD_ARGS"
+    assert fit([ID], **FAST, fit_section="traced_borders")["error"] == "LABEL_MAP_ANTS_ONLY"
+    assert fit([ID], fit_section="traced_lines", fit_atlas="ara")["error"] == "BAD_ARGS"
     # The stain against atlas borders is refused: borders are for traced lines.
-    stain_borders = fit([ID], **FAST, atlas_image="borders")
+    stain_borders = fit([ID], **FAST, fit_atlas="borders")
     assert stain_borders["error"] == "BAD_ARGS" and "traced" in stain_borders["message"]
-    unknown = fit([ID], **FAST, section_image="nope")
-    assert unknown["error"] == "BAD_SECTION_IMAGE"
-    assert unknown["section_images"] == ["fit", "traced_borders", "traced_lines"]
+    unknown = fit([ID], **FAST, fit_section="nope")
+    assert unknown["error"] == "BAD_FIT_SECTION"
+    assert unknown["fit_sections"] == ["fit", "traced_borders", "traced_lines"]
 
 
 def test_a_section_without_a_linear_placement_is_refused(tmp_path: Path, atlas):
@@ -440,7 +465,7 @@ def test_the_job_is_a_deformation_per_section_in_both_modes(tmp_path: Path, atla
     assert "or a `keep_linear` reason saying its linear placement stands" in text
     for absent in ("trace", "image correction", "image model", "Base image-model prompt"):
         assert absent not in text, absent
-    assert "Choose the section image (the fit appearance)" in text
+    assert "reads, `fit_section` (the fit appearance)" in text
     assert "inspect the returned borders against the section's internal anatomy. " in text
 
 
@@ -453,7 +478,7 @@ def test_without_an_image_model_there_are_no_traces(tmp_path: Path, atlas, monke
     assert {"grep_atlas", "fit_deformable"} <= set(box.names)
     doc = _tool(box, "fit_deformable").__doc__ or ""
     assert "traced" not in doc and "trace_borders" not in doc and "keep_linear" in doc
-    refused = _tool(box, "fit_deformable")([ID], section_image="traced_lines")
+    refused = _tool(box, "fit_deformable")([ID], fit_section="traced_lines")
     assert refused["error"] == "NO_IMAGE_MODEL"
 
     def no_trace_check(*_a: Any, **_k: Any) -> Any:
@@ -527,7 +552,7 @@ def test_a_traced_image_waits_for_its_running_trace_and_shows_it(tmp_path: Path,
         return _trace_artifacts(state, ctx, folder, fingerprint="now")
 
     box.start_image_job(ID, "now", job, workers=1)
-    result = _tool(box, "fit_deformable")([ID], **FAST, section_image="traced_lines")
+    result = _tool(box, "fit_deformable")([ID], **FAST, fit_section="traced_lines")
     assert result["status"] == "ok", result
     assert result["results"][0]["status"] == "ok"
     assert state.slices[0].image_correction["status"] == "ok"
@@ -560,8 +585,8 @@ def test_a_trace_still_running_after_the_wait_is_reported(tmp_path: Path, atlas,
 
     box.start_image_job(ID, "now", job, workers=1)
     fit = _tool(box, "fit_deformable")
-    late = fit([ID], **FAST, section_image="traced_lines")["results"][0]
+    late = fit([ID], **FAST, fit_section="traced_lines")["results"][0]
     assert late["error"] == "TRACE_TIMEOUT" and "0.2 s" in late["message"]
     release.set()
-    failed = fit([ID], **FAST, section_image="traced_lines")["results"][0]
+    failed = fit([ID], **FAST, fit_section="traced_lines")["results"][0]
     assert failed["error"] == "TRACE_FAILED" and "no image" in failed["message"]

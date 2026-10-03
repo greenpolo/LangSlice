@@ -141,6 +141,36 @@ class ModelCallPacingPlugin(BasePlugin):
         return None
 
 
+class StrictArgumentsPlugin(BasePlugin):
+    """Refuse a tool call that carries arguments the tool does not take.
+
+    ADK's ``FunctionTool`` keeps only the arguments its function names and
+    drops the rest without a word, so a misplaced argument (a picture option
+    outside ``view``) used to run the tool with its default. This answers such
+    a call instead, before it runs, with
+    :func:`langslice.linear.arguments.argument_refusal`: the stray keys named
+    and the accepted ones listed. Tools without a Python function are left
+    alone.
+    """
+
+    def __init__(self, *, name: str = "langslice_strict_arguments") -> None:
+        super().__init__(name)
+
+    async def before_tool_callback(
+        self, *, tool: Any, tool_args: dict[str, Any], tool_context: Any,
+    ) -> dict[str, Any] | None:
+        del tool_context
+        func = getattr(tool, "func", None)
+        if func is None:
+            return None
+        from langslice.linear.arguments import argument_refusal
+
+        try:
+            return argument_refusal(func, dict(tool_args or {}))
+        except (TypeError, ValueError):  # an unintrospectable tool keeps ADK's behaviour
+            return None
+
+
 class ToolMediaDeliveryPlugin(BasePlugin):
     """Report media-bearing function responses present in a model request.
 

@@ -560,15 +560,55 @@ def _reasoning_part(item: dict[str, Any]) -> types.Part:
     )
 
 
+def _inline_refs(schema: dict[str, Any]) -> dict[str, Any]:
+    """*schema* with every local ``#/$defs/...`` reference replaced by its definition.
+
+    A typed-dict argument (``view``, ``entries``) reaches ADK's declaration
+    as a ``$ref`` into ``$defs``; the tool is sent with each object written
+    out where it is used, so every key and type sits next to its argument.
+    Recursive definitions are left as references.
+    """
+    definitions = schema.get("$defs") or {}
+    if not isinstance(definitions, dict) or not definitions:
+        return schema
+
+    def resolve(node: Any, seen: tuple[str, ...]) -> Any:
+        if isinstance(node, list):
+            return [resolve(item, seen) for item in node]
+        if not isinstance(node, dict):
+            return node
+        ref = node.get("$ref")
+        if isinstance(ref, str) and ref.startswith("#/$defs/"):
+            name = ref.split("/")[-1]
+            if name in definitions and name not in seen:
+                merged = {**definitions[name], **{k: v for k, v in node.items() if k != "$ref"}}
+                return resolve(merged, (*seen, name))
+        return {key: resolve(value, seen) for key, value in node.items() if key != "$defs"}
+
+    inlined = resolve(schema, ())
+    if any(isinstance(ref, str) for ref in _refs(inlined)):
+        inlined["$defs"] = definitions  # a recursive definition still needs its target
+    return inlined
+
+
+def _refs(node: Any) -> list[Any]:
+    if isinstance(node, list):
+        return [ref for item in node for ref in _refs(item)]
+    if isinstance(node, dict):
+        return [node.get("$ref"), *[ref for value in node.values() for ref in _refs(value)]]
+    return []
+
+
 def _json_schema_dict(declaration: types.FunctionDeclaration) -> dict[str, Any]:
     if declaration.parameters_json_schema is not None:
         schema = declaration.parameters_json_schema
-        return dict(schema) if isinstance(schema, dict) else {"type": "object", "properties": {}}
+        return (_inline_refs(dict(schema)) if isinstance(schema, dict)
+                else {"type": "object", "properties": {}})
     if declaration.parameters is not None:
         dumped = declaration.parameters.json_schema.model_dump(
             mode="json", exclude_none=True, by_alias=True
         )
-        return dumped
+        return _inline_refs(dumped)
     return {"type": "object", "properties": {}}
 
 

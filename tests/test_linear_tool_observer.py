@@ -22,8 +22,8 @@ def test_execution_events_run_inside_lock_and_resolve_current_indices():
         assert lock.locked()
         events.append(event)
 
-    def orient_slices(slice_id: str):
-        record = state.resolve(slice_id)
+    def orient_slices(id: str):  # noqa: A002 — the toolbox's single-section name
+        record = state.resolve(id)
         assert record is not None
         events.append({"body": record.id})
         state.slices.reverse()

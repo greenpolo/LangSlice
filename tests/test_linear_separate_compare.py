@@ -18,7 +18,7 @@ def test_separate_comparison_reuses_seed_bytes_and_maps_each_pair(tmp_path):
     result = _tool(box, "view_placement")([
         {"id": "s0.png", "positions_mm": [position, position]},
         {"id": "s1.png", "positions_mm": [position]},
-    ], mode="side_by_side")
+    ], view={"mode": "side_by_side"})
     images = _images(result[TOOL_MEDIA_PARTS_KEY])
     assert len(images) == 5
     assert images[0] == seed[0] and images[3] == seed[1]
@@ -74,11 +74,11 @@ def test_separate_full_views_suppress_only_after_delivery_and_reject_zoom(tmp_pa
     _, _, box = _box(tmp_path)
     compare = _tool(box, "view_placement")
     args = [{"id": "s0.png", "positions_mm": [3.0]}]
-    assert compare(args, mode="side_by_side", zoom=[0, 0, .5, .5])["error"] == (
+    assert compare(args, view={"mode": "side_by_side", "zoom": [0, 0, .5, .5]})["error"] == (
         "ZOOM_UNSUPPORTED"
     )
     assert not box.compared
-    result = compare(args, mode="side_by_side", tool_context=_ToolContext("pair"))
+    result = compare(args, view={"mode": "side_by_side"}, tool_context=_ToolContext("pair"))
     assert result[TOOL_MEDIA_DELIVERY_ID_KEY] == "pair"
     assert len(result[TOOL_MEDIA_PARTS_KEY]) == 2
     write = _tool(box, "set_positions")
@@ -91,6 +91,6 @@ def test_separate_comparison_caps_pairs(tmp_path):
     state, _, box = _box(tmp_path)
     result = _tool(box, "view_placement")([
         {"id": record.id, "positions_mm": [3.0]} for record in state.in_order()
-    ], mode="side_by_side")
+    ], view={"mode": "side_by_side"})
     assert len(result[TOOL_MEDIA_PARTS_KEY]) == 8
     assert result["dropped_pairs"] == 1

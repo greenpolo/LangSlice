@@ -34,6 +34,7 @@ from langslice.adk.model_resolver import (
 from langslice.adk.plugins import (
     ModelCallPacingPlugin,
     RequestCapturePlugin,
+    StrictArgumentsPlugin,
     ToolMediaDeliveryPlugin,
     WorkingSetImages,
 )
@@ -57,7 +58,7 @@ def build_plugins(
     """The ADK plugins every LangSlice session runs with."""
     plugins: list[BasePlugin] = [
         # One working set per session: the instance remembers its cut.
-        ContextFilterPlugin(custom_filter=WorkingSetImages())
+        ContextFilterPlugin(custom_filter=WorkingSetImages()),
     ]
     if tool_media_delivered is not None:
         # Must follow the context filter: only media that survived pruning is
@@ -69,6 +70,8 @@ def build_plugins(
     capture_dir = _env("LANGSLICE_ADK_CAPTURE_REQUESTS_DIR")
     if capture_dir is not None:
         plugins.append(RequestCapturePlugin(capture_dir, run_label=run_label))
+    # Unknown or misplaced arguments are refused, never silently dropped.
+    plugins.append(StrictArgumentsPlugin())
     return plugins
 
 
