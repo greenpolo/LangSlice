@@ -134,7 +134,7 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
   picture, and returns `(images, silhouette_iou)`. Its view controls:
   `mode` (`overlay`, `side_by_side` — two physical images, `checkerboard`,
   `outlines` — atlas lines plus the section's own silhouette in neutral grey
-  on black — and the line-free `section` / `template`), `zoom` ([x0, y0, x1, y1] fractions of the CANVAS, cropped BEFORE
+  on black, over any atlas image the call lists at `atlas_opacity` — and the line-free `section` / `template`), `zoom` ([x0, y0, x1, y1] fractions of the CANVAS, cropped BEFORE
   the resize so it magnifies, with the bar redrawn for the new µm/px),
   `atlas_opacity` (0..1; `template_opacity` until 2026-10-01, the
   `show_template` bool before that) and `outlines`
@@ -520,11 +520,14 @@ include=[], exclude=[], start="linear"|"current", fit_section="fit"|
 [engine], stiffness="soft"|"medium"|"firm", candidates=[], keep_linear="",
 view)` (`fit_section`/`fit_atlas` were `section_image`/`atlas_image` until
 2026-10-03, named apart from the picture options; `Choice` and the stored
-`steps` use the new names, the cache keys are unchanged so saved records are
-reused); `view` modes `borders` (default) / `ab`, atlas channels default
+`steps` use the new names; a fit on the DEFAULT appearance also keys on
+what that appearance is drawn from, `--preprocess` and the host's channel
+blend, so a resumed or rerun job with other preprocessing does not reuse a
+saved warp, 2026-10-03); `view` modes `borders` (default) / `ab`, atlas channels default
 `[borders]`, `ara`/`nissl` blending that atlas image, warped, under the lines
 (`deformation._blend_atlas`); `channels` and `deformation` do not apply, and
-`keep_linear` refuses `view`/`candidates`. Defaults without a trace: the fit
+`keep_linear` refuses any fit setting, `view` or `candidates` with `BAD_ARGS`
+and the `given` names. Defaults without a trace: the fit
 appearance against `ara`, ANTs (when the user left the engine open and it is
 installed), medium; the stain fit itself is ANTs local correlation (80 µm
 window) + an edge channel + the automatic tissue/ventricle label channels

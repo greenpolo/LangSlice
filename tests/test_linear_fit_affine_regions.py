@@ -160,3 +160,42 @@ def test_a_one_sided_exclusion_keeps_the_other_hemisphere(tmp_path: Path):
     assert wrong["status"] == "ok" and wrong["regions"]["tissue_used_fraction"] < 0.2
     assert _fit(box, ["s0.png"], "silhouette", exclude=["L:middle"])["error"] == \
         "UNKNOWN_REGIONS"
+
+
+def _tall_section() -> Image.Image:
+    canvas = np.full((200, 160, 3), 240, dtype=np.uint8)
+    cv2.ellipse(canvas, (80, 100), (60, 92), 0, 0, 360, (30, 30, 30), -1)
+    return Image.fromarray(canvas, mode="RGB")
+
+
+def test_a_picture_that_cannot_be_drawn_is_a_refusal_not_an_exception(tmp_path: Path):
+    """A one-sided highlight on a placement turned past 45 degrees has no side."""
+    state, box = _box(tmp_path, HalvesAtlas(), _tall_section(), pixel_size_um=50.0,
+                      position_mm=1.0)
+    adjust = next(t for t in box.tools if t.__name__ == "adjust_transforms")
+    assert adjust([{"id": "s0.png", "rotation_deg": 90, "scale_x": 1, "scale_y": 1,
+                    "translate_x_mm": 0, "translate_y_mm": 0}])["status"] == "ok"
+    before = dict(state.slices[0].transform or {})
+    result = _fit(box, ["s0.png"], "elastix", view={"regions": ["L:left"]})
+    assert result["error"] == "NOTHING_FITTED"
+    assert result["results"][0]["error"] == "SIDES_AMBIGUOUS"
+    assert state.slices[0].transform == before
+
+
+def test_outlines_mode_draws_a_listed_atlas_image(tmp_path: Path):
+    import io
+
+    from langslice.adk import TOOL_MEDIA_PARTS_KEY
+
+    _, box = _box(tmp_path, HalvesAtlas(), _left_half_section(), pixel_size_um=50.0,
+                  position_mm=1.0)
+    view_placement = next(t for t in box.tools if t.__name__ == "view_placement")
+
+    def mean(view: dict[str, Any]) -> float:
+        part = view_placement([{"id": "s0.png"}], view=view)[TOOL_MEDIA_PARTS_KEY][0]
+        return float(np.asarray(Image.open(io.BytesIO(part.inline_data.data)).convert("L")).mean())
+
+    lines = mean({"mode": "outlines"})
+    blended = mean({"mode": "outlines", "atlas_channels": ["ara", "borders"],
+                    "atlas_opacity": 1.0})
+    assert blended > lines + 20

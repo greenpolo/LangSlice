@@ -520,6 +520,10 @@ def test_keep_linear_satisfies_submit_until_the_placement_moves(tmp_path: Path, 
     assert reply["changed"][0]["keep_linear"] == "The linear placement already matches."
     held = state.slices[0].deformation
     assert held["keep_linear"] == "The linear placement already matches."
+    # Fit settings with keep_linear are refused, not dropped.
+    refused = fit([ID], keep_linear="x", exclude=["CTX"], stiffness="firm")
+    assert refused["error"] == "BAD_ARGS" and refused["given"] == ["exclude", "stiffness"]
+    assert state.slices[0].deformation == held
     assert load_checkpoint(ctx.checkpoint_path).slices[0].deformation == held
     assert fit([ID], **FAST, start="current")["results"][0]["error"] == "NO_DEFORMATION"
     # A placement change clears it, like an applied fit.

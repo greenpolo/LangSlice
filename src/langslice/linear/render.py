@@ -1435,7 +1435,13 @@ def physical_views(
         panels = [(_checkerboard(warped, _template_canvas()), label or "section")]
     elif mode == "outlines":
         silhouette = _silhouette_polys(tissue)
-        panels = [(np.zeros_like(warped), label or "section")]
+        black = np.zeros_like(warped)
+        if atlas_opacity > 0.0:  # an atlas image the call listed, on the black
+            _blend_template(
+                black, atlas, position_mm, plane, pitch_deg, yaw_deg, geometry,
+                opacity=float(np.clip(atlas_opacity, 0.0, 1.0)), picture=atlas_picture,
+            )
+        panels = [(black, label or "section")]
         dark = True  # the canvas is black whatever the section is
     else:
         if atlas_opacity > 0.0:
