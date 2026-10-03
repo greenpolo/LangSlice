@@ -254,12 +254,9 @@ def test_working_set_dropped_results_say_so_and_do_not_mutate_the_input():
     assert _kept(contents) == [3, 3]
 
 
-def test_the_first_transform_call_cuts_the_positioning_images():
-    """Positions are written and reviewed before fit_affine runs; the compare
-    and write pictures then only cost their cached carry."""
-    from langslice.adk.plugins import STAGE_BOUNDARY_TOOLS
-
-    assert STAGE_BOUNDARY_TOOLS == {"fit_affine", "adjust_transforms"}
+def test_transform_calls_do_not_cut_earlier_images():
+    """No stage-boundary cut (2026-10-03): channel strips and preprocess
+    pictures seen before alignment stay in context."""
     ws = WorkingSetImages()
 
     def _turn(name: str, n: int) -> types.Content:
@@ -267,13 +264,9 @@ def test_the_first_transform_call_cuts_the_positioning_images():
         part.function_response.name = name  # type: ignore[union-attr]
         return types.Content(role="user", parts=[part])
 
-    history = [_seed(), _turn("view_placement", 4), _turn("set_positions", 6)]
+    history = [_seed(), _turn("view_slices", 4), _turn("preprocess", 6),
+               _turn("fit_affine", 3), _turn("adjust_transforms", 1)]
     assert ws(history) is history
-    history.append(_turn("fit_affine", 3))
-    assert _kept(ws(history)) == [0, 0, 3]
-    history.append(_turn("adjust_transforms", 1))
-    assert _kept(ws(history)) == [0, 0, 3, 1]  # transform images stay
-    assert (history[0].parts or [])[1].inline_data is not None  # the seed stays
 
 
 def test_working_set_never_touches_the_seed_strip():

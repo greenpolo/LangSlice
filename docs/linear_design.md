@@ -325,8 +325,10 @@ response and allows one grace submission call if exceeded. It does not limit
 cumulative usage. Logs report cumulative input for cost and peak request input
 for context pressure separately.
 
-The established working-set policy is the only active policy: its first
-transform-media stage cut and 256-to-128 image-count cuts are unchanged.
+The established working-set policy is the only active policy: one
+500-to-250 image-count backstop (the transform-media stage cut was removed
+2026-10-03, matching Codex CLI and Claude Code, which keep images until a
+hard request limit).
 There is no image-acceptance tool, additional inspection gate, or predictive
 cost trigger. `--image-retention legacy` remains a compatibility option;
 the removed `completion` value is rejected rather than silently remapped.
