@@ -1,8 +1,11 @@
 """In-plane transforms: the closed-form fit and the interactive tools' core.
 
-Two routes to the same field. :func:`fit_silhouette` is plain code — the shared
-moments fit (:func:`langslice.affine.silhouette_affine`) of a section's
-silhouette onto its atlas section. The interactive route is the main agent's
+Three routes to the same field. :func:`fit_elastix` (``fit_affine``'s default)
+refines the section's current placement with an Elastix intensity affine on
+the deformable package's prepared stain and atlas images.
+:func:`fit_silhouette` is plain code — the shared moments fit
+(:func:`langslice.affine.silhouette_affine`) of a section's silhouette onto
+its atlas section. The interactive route is the main agent's
 own hand: `adjust_transforms` in :mod:`langslice.linear.toolbox`, whose
 arithmetic (calibration and the decomposition it reports) lives here. Shared
 point-fit geometry helpers are retained for analysis and historical results.
@@ -383,7 +386,6 @@ def fit_silhouette(
             in_section = _fit_matrix_in_section_frame(
                 fit.matrix, fit.size, section, geometry
             )
-        on_canvas = _conjugate(in_section, geometry.section_offset)
     except RegionRefusal as refusal:
         return {"status": "error", "error": refusal.code, "id": record.id,
                 "message": str(refusal)}
@@ -396,6 +398,30 @@ def fit_silhouette(
             "message": str(exc),
         }
 
+    return _fit_payload(state, ctx, record, section, um_per_px, source, geometry,
+                        in_section, iou, draw=draw, regions=regions)
+
+
+def _fit_payload(
+    state: StackState,
+    ctx: EngineContext,
+    record: SliceState,
+    section: Image.Image,
+    um_per_px: float,
+    source: str,
+    geometry: Any,
+    in_section: np.ndarray,
+    iou: float,
+    *,
+    draw: Callable[[Image.Image, float, np.ndarray], list[Image.Image]] | None,
+    regions: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """The tool-shaped payload of one fit, whichever method made it.
+
+    *in_section* is the fitted 2x3 on the working frame *section*.
+    """
+    assert record.position_mm is not None
+    on_canvas = _conjugate(in_section, geometry.section_offset)
     # The panel may be drawn from a larger render (image_resolution); the fit
     # above and the numbers below stay on the working frame. *draw* (the
     # toolbox's display options) receives the working frame and the fitted
@@ -444,6 +470,249 @@ def fit_silhouette(
     if regions is not None:
         payload["regions"] = regions
     return payload
+
+
+# --- the Elastix affine ----------------------------------------------------
+
+#: The atlas image the Elastix affine fits the section to. The 2026-10-02
+#: stain ceiling test (deformable ``CLAUDE.md``) found the ARA template's pial
+#: outline on the fluorescent sections' bright rim, where ABBA's Nissl sat
+#: 40-80 um inside it.
+ELASTIX_ATLAS_IMAGE = "ara"
+#: Working grid of the Elastix affine (``deformable.settings.DETAIL``: 20 um).
+ELASTIX_DETAIL = "standard"
+#: The identity transform's six normalized numbers.
+IDENTITY_PARAMS = (1.0, 0.0, 0.0, 0.0, 1.0, 0.0)
+
+
+def elastix_settings(include: Sequence[str] = (), exclude: Sequence[str] = ()) -> Any:
+    """The deformable package's stain-fit inputs the Elastix affine reads.
+
+    The section's ``fit`` appearance against :data:`ELASTIX_ATLAS_IMAGE`,
+    mutual information plus the edge channel (the Elastix stain fit's own
+    pairing). *include* becomes the restricted ``structures`` (the regions
+    plus 300 um), *exclude* the excluded regions; one-sided entries such as
+    ``"CTX:left"`` resolve as in ``fit_deformable``.
+    """
+    from langslice.deformable import FitSettings
+
+    return FitSettings(
+        engine="elastix", detail=ELASTIX_DETAIL,  # type: ignore[arg-type]
+        atlas_image=ELASTIX_ATLAS_IMAGE,  # type: ignore[arg-type]
+        section_image="stain", stain_metric="mutual_information", stain_edges=True,
+        exclude=tuple(exclude), structures=tuple(include),
+    )
+
+
+@dataclass
+class ElastixFit:
+    """One Elastix affine on the section's fit grid.
+
+    ``params`` and ``start_params`` are the six normalized numbers (the
+    section's frame, as stored); the placements map native atlas-plane pixels
+    onto the fit grid (``deformable.Placement``) before and after.
+    """
+
+    params: list[float]
+    start_params: list[float]
+    iou: float
+    start_iou: float
+    report: dict[str, Any]
+    placement: Any
+    start_placement: Any
+    grid_image: Image.Image
+    fit_image: Image.Image
+    engine: dict[str, Any]
+
+
+def _overlap(prepared: Any, atlas: Any, atlas_to_section: np.ndarray,
+             include: Sequence[str]) -> float:
+    """Tissue against the kept atlas footprint under *atlas_to_section*.
+
+    Mirrors the silhouette fit's region overlap: excluded regions leave the
+    atlas side, the tissue laid on them leaves the section side, and with
+    *include* both are limited to those regions plus 300 um.
+    """
+    from langslice.deformable.atlas_images import placement_left, regions_mask
+    from langslice.deformable.geometry import warp_affine
+    from langslice.deformable.masks import dilate
+    from langslice.deformable.settings import DEFAULT_NEIGHBOURHOOD_UM
+
+    native = prepared.native
+    dropped = prepared.excluded_mask
+    kept_native = native != 0
+    if dropped is not None:
+        kept_native &= ~dropped
+    zone = None
+    if include:
+        left = placement_left(atlas, prepared.placement, include)
+        chosen = regions_mask(atlas, native, include, left) & kept_native
+        zone = dilate(chosen, DEFAULT_NEIGHBOURHOOD_UM / atlas_um_per_px(atlas))
+    height, width = prepared.tissue.shape
+
+    def placed(mask: np.ndarray) -> np.ndarray:
+        return warp_affine(mask.astype(np.uint8), atlas_to_section, (width, height),
+                           nearest=True) > 0
+
+    kept = placed(kept_native)
+    tissue = prepared.tissue.copy()
+    if dropped is not None:
+        tissue &= ~placed(dropped)
+    if zone is not None:
+        near = placed(zone)
+        kept &= near
+        tissue &= near
+    union = float((kept | tissue).sum())
+    return float((kept & tissue).sum()) / union if union else 0.0
+
+
+def elastix_affine(
+    state: StackState,
+    ctx: EngineContext,
+    record: SliceState,
+    start_params: Sequence[float],
+    calibration: dict[str, Any],
+    *,
+    include: Sequence[str] = (),
+    exclude: Sequence[str] = (),
+) -> ElastixFit:
+    """Refine one section's placement with an Elastix intensity affine.
+
+    Starts from *start_params* (the section's current six numbers, drawn
+    with *calibration*) and never searches from scratch: the atlas plane is
+    placed there on the deformable fit grid (``deformation.fit_grid``), the
+    section's ``fit`` appearance and the placed ARA template are prepared
+    exactly as a deformable stain fit prepares them (tissue and atlas masks,
+    excluded regions blanked, the edge channel; ``deformable.prepare_fit``),
+    and :func:`langslice.deformable.engines.run_elastix_affine` fits an affine
+    from the identity. An intact section gets no torn-edge band (its whole
+    outline is real, and the band's rule would also mark outline the start
+    placement merely overhangs); a damaged one gets the deformable fit's
+    automatic band. Raises on a placement, region or engine failure.
+    """
+    from dataclasses import replace
+
+    from langslice.deformable import prepare_fit
+    from langslice.deformable.engines import run_elastix_affine
+    from langslice.linear import deformation
+
+    start = [float(v) for v in start_params]
+    grid = deformation.fit_grid(state, ctx, record,
+                                transform={"params": start, "calibration": dict(calibration)})
+    image, look = deformation.stain_image(ctx, state, grid, deformation.FIT_LOOK)
+    width, height = grid.image.size
+    torn = None if record.damaged else np.zeros((height, width), dtype=bool)
+    prepared = prepare_fit(image, ctx.atlas, grid.placement, elastix_settings(include, exclude),
+                           torn_band=torn)
+    result = run_elastix_affine(prepared.inputs)
+    # Millimetres on the fit grid are pixel index x mm/px (geometry.py), so
+    # the engine's map becomes a map of grid pixels: section -> placed atlas.
+    mm = grid.placement.section_mm_per_px
+    to_mm = np.diag([mm, mm, 1.0])
+    step = np.linalg.inv(to_mm) @ result.matrix_mm @ to_mm
+    # The stored matrix M draws the section onto the atlas's frame; a section
+    # point p now meets the atlas where p's step lands, so the new matrix is
+    # M @ step and the atlas reaches the section through inv(step).
+    matrix = np.vstack([denormalized_affine(start, (width, height)), [0.0, 0.0, 1.0]]) @ step
+    params = normalized_affine(matrix[:2], (width, height))
+    fitted = replace(grid.placement,
+                     atlas_to_section=np.linalg.inv(step) @ grid.placement.atlas_to_section)
+    footprint = float((prepared.native != 0).sum())
+    kept = footprint - (float((prepared.excluded_mask & (prepared.native != 0)).sum())
+                        if prepared.excluded_mask is not None else 0.0)
+    report: dict[str, Any] = {
+        "include": list(include), "exclude": list(exclude),
+        "atlas_kept_fraction": round(kept / footprint, 3) if footprint else 0.0,
+    }
+    return ElastixFit(
+        params=params, start_params=start,
+        iou=_overlap(prepared, ctx.atlas, fitted.atlas_to_section, include),
+        start_iou=_overlap(prepared, ctx.atlas, grid.placement.atlas_to_section, include),
+        report=report, placement=fitted, start_placement=grid.placement,
+        grid_image=grid.image, fit_image=image,
+        engine={"version": result.engine_version, "runtime_s": round(result.runtime_s, 2),
+                "fit_look": look, "native_parameters": result.native_parameters},
+    )
+
+
+def _start_calibration(
+    state: StackState, ctx: EngineContext, record: SliceState, section: Image.Image,
+    stored: bool,
+) -> tuple[float, str]:
+    """The calibration the section's current placement was drawn with.
+
+    The file's or host's answer when there is one; otherwise the stored
+    transform's own (its six numbers mean that placement only at that
+    scale), and only without either a fresh :func:`calibrate`.
+    """
+    known, source = canvas_um_per_px(ctx, record, long_edge=PREVIEW_LONG_EDGE)
+    if known is not None:
+        return known, source
+    if stored:
+        held = (record.transform or {}).get("calibration") or {}
+        try:
+            value = float(held["section_um_per_px"])
+        except (KeyError, TypeError, ValueError):
+            value = float("nan")
+        if np.isfinite(value) and value > 0:
+            return value, str(held.get("source") or "stored")
+    return calibrate(state, ctx, record, section)
+
+
+def fit_elastix(
+    state: StackState,
+    ctx: EngineContext,
+    record: SliceState,
+    *,
+    draw: Callable[[Image.Image, float, np.ndarray], list[Image.Image]] | None = None,
+    include: Sequence[str] = (),
+    exclude: Sequence[str] = (),
+) -> dict[str, Any]:
+    """`fit_affine`'s Elastix method for one positioned section.
+
+    A local refinement of the section's CURRENT placement (its stored six
+    numbers, or the identity without a transform) by :func:`elastix_affine`;
+    the payload is :func:`fit_silhouette`'s, with ``iou`` the overlap of the
+    tissue and the kept atlas footprint under the fitted placement, and a
+    ``regions`` report when regions were given.
+    """
+    from langslice.atlas.sides import SideError
+
+    if record.position_mm is None:
+        return {"status": "error", "error": "NO_POSITION", "id": record.id}
+    section = render_slice(ctx, record, long_edge=PREVIEW_LONG_EDGE)
+    stored = (record.transform or {}).get("params")
+    start = (list(stored) if stored is not None and len(stored) == 6
+             else list(IDENTITY_PARAMS))
+    has_stored = stored is not None and len(stored) == 6
+    um_per_px, source = _start_calibration(state, ctx, record, section, has_stored)
+    try:
+        geometry = canvas_geometry(
+            section.size,
+            um_per_px,
+            ctx.atlas,
+            record.position_mm,
+            cast(Plane, state.plane),
+            state.pitch_deg,
+            state.yaw_deg,
+        )
+        fit = elastix_affine(state, ctx, record, start,
+                             {"section_um_per_px": um_per_px, "source": source},
+                             include=include, exclude=exclude)
+    except SideError as error:
+        return {"status": "error", "error": error.code, "id": record.id, "message": str(error)}
+    except Exception as exc:
+        logger.warning("fit_affine: elastix fit failed for %s: %s", record.id, exc)
+        return {
+            "status": "error",
+            "error": "FIT_FAILED",
+            "id": record.id,
+            "message": f"The Elastix affine failed: {exc}",
+        }
+    in_section = denormalized_affine(fit.params, section.size)
+    return _fit_payload(state, ctx, record, section, um_per_px, source, geometry,
+                        in_section, fit.iou, draw=draw,
+                        regions=fit.report if (include or exclude) else None)
 
 
 # --- what the interactive tools share ------------------------------------

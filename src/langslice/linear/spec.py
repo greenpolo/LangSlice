@@ -95,12 +95,13 @@ class TransformSpec:
     hemisphere_cue: str = ""
     #: Offer direct visual adjustment.
     interactive: bool = True
-    #: Offer automatic silhouette / optional Elastix fitting.
+    #: Offer the automatic affine fit (``fit_affine``: Elastix by default,
+    #: silhouette as an option). The former ``elastix`` switch is gone
+    #: (2026-10-03, Elastix became the default method); saved specs and hosts
+    #: that still send it load unchanged, the key ignored.
     automatic: bool = True
     #: The agent may set the stack-wide cutting angles.
     angles: bool = False
-    #: ``fit_affine`` may use the Elastix intensity affine.
-    elastix: bool = False
     #: Most sections one transform-tool call (``fit_affine``,
     #: ``adjust_transforms``) may take, 1..4. At 4, the default, the tools
     #: keep their own limits (``adjust_transforms`` four, ``fit_affine`` any

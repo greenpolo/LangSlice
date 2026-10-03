@@ -24,7 +24,7 @@ langslice linear run FOLDER [--tasks reorder,position,transform[,nonlinear]]
     [--pitch DEG] [--yaw DEG]
     [--no-flip] [--hemisphere-cue TEXT]
     [--thickness UM] [--interval UM] [--strict-interval] [--deepslice] [--bayesian]
-    [--angles] [--elastix]
+    [--angles]
     [--fact TEXT ...] [--positions JSON] [--order JSON] [--transforms JSON]
     [--out PATH] [--fresh] [--trace-dir PATH]
     [--max-quota-percent N] [--max-input-tokens N] [--gates] [--playbook]
@@ -72,7 +72,7 @@ run can use:
 | `run_deepslice` | `--deepslice` | reports `UNAVAILABLE` until the optional extra lands |
 | `search_position` | `--bayesian` | `oblique.fit_oblique` around a section's current position; writes nothing |
 | `set_cutting_angles` | `--angles` | stack-wide pitch/yaw; later fetches and previews follow |
-| `fit_affine` | `transform` | silhouette affine per section, written as its transform, with the overlap, the transform as the five physical parameters (`rotation_deg`, `scale_x`, `scale_y`, `translate_x_mm`, `translate_y_mm`, plus `shear`) about the canvas centre, and a physical-scale overlay for every successful fit; `include`/`exclude` regions (as in `fit_deformable`) fit only the kept atlas regions against the tissue the current placement lays there, with a `regions` report; damaged sections are refused unless regions are given, and `--elastix`'s method is not wired yet |
+| `fit_affine` | `transform` | in-plane affine per section, written as its transform: by default the Elastix intensity affine refining the section's current transform (stain and edges against the ARA template, never a search from scratch), or `method="silhouette"` (outline moments fit from scratch); with the overlap, the transform as the five physical parameters (`rotation_deg`, `scale_x`, `scale_y`, `translate_x_mm`, `translate_y_mm`, plus `shear`) about the canvas centre, and a physical-scale overlay for every successful fit; `include`/`exclude` regions (as in `fit_deformable`) fit only the kept atlas regions against the tissue the current placement lays there, with a `regions` report; damaged sections are refused unless regions are given |
 | `adjust_transforms(entries)` | transform.interactive | set one to four independent sections, each with rotation, per-axis scales and millimetre shifts. Per-entry pivot, note and display options; `ab` and `side_by_side` return two images, other modes one. Each result maps its images with `image_indexes`. One undo step; repeat unchanged parameters to redraw. Replaces the complete transform, including spline or shear. Inspect before a dependent correction in a later call. |
 | `trace_borders(id, prompt)` | `nonlinear` unless `--image-provider none` | sends the section's placed atlas borders and the clean section to the image model with the agent's edited copy of the base correction prompt; runs in the background and returns at once; keeps the first reply with the extracted borders on the original, and `submit` waits for running calls. No deformation is fitted and no transform changes. See [the image-tool contract](nonlinear_image_tool.md) |
 | `grep_atlas(query, section)` | `nonlinear` | looks regions up in the atlas hierarchy (acronym, name substring or id; 40 rows max, with a count of the rest): acronym, id, name, ancestry as acronyms, descendant count, and with a positioned `section` an `in_section` flag for the region or any descendant in the atlas plane at that placement. Text only, writes nothing |

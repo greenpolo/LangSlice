@@ -95,8 +95,9 @@ bridges rather than direct imports of each other:
   them as Positioning / Linear / Nonlinear: `docs/interface_design.md` is the
   target user-facing design and what each host exposes. Every write checkpoints and is undoable, order
   and position must agree at submit, and in-plane alignment happens in the
-  main session through the transform tools (`fit_affine`,
-  `adjust_transforms`); there is no nested per-section session. Spec: `docs/linear_design.md`. Code map, the lean-
+  main session through the transform tools (`fit_affine`: by default an
+  Elastix intensity affine refining the current placement, or the
+  silhouette fit; `adjust_transforms`); there is no nested per-section session. Spec: `docs/linear_design.md`. Code map, the lean-
   harness rule, the submit gates and the known ceilings:
   `src/langslice/linear/CLAUDE.md` (loads when working there).
 - `nonlinear/` — generative-image registration (image model → optional Elastix fit → report).
@@ -135,7 +136,8 @@ Shared, top-level:
   to neither
 - `deformable/` — the deformable-fit engine behind the linear agent's
   `fit_deformable` tool (task `nonlinear`; no host or export adapter reads
-  its records yet): ANTs SyN (optional
+  its records yet), whose prepared images and Elastix plumbing also run
+  `fit_affine`'s Elastix affine: ANTs SyN (optional
   `registration` extra) or Elastix B-spline residual fit of a linearly placed
   atlas plane onto one section — stain vs reference/ABBA Nissl, model lines
   vs merged borders, ANTs label-map channels, sequential per-structure steps,

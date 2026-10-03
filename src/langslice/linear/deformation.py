@@ -171,11 +171,19 @@ class Grid:
     image: Image.Image
 
 
-def fit_grid(state: StackState, ctx: EngineContext, record: SliceState) -> Grid:
-    """The section's fit grid (``ValueError`` without a usable linear placement)."""
+def fit_grid(
+    state: StackState, ctx: EngineContext, record: SliceState,
+    transform: dict[str, Any] | None = None,
+) -> Grid:
+    """The section's fit grid (``ValueError`` without a usable linear placement).
+
+    *transform* stands in for the written one (``fit_affine``'s Elastix
+    method starts from it).
+    """
     from langslice.registration_handoff import prepare_linear_registration
 
-    prepared = prepare_linear_registration(state, ctx, record.id, long_edge=FIT_LONG_EDGE)
+    prepared = prepare_linear_registration(state, ctx, record.id, long_edge=FIT_LONG_EDGE,
+                                           transform=transform)
     return Grid(record=record, placement=placement_from_handoff(prepared),
                 handoff=dict(prepared.metadata), image=prepared.image)
 

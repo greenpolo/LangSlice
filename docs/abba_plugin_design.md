@@ -81,7 +81,7 @@ controls map to the job spec as follows:
 | Open agent viewer | disabled ("Coming soon") |
 | Save traces to FOLDER (default `~/LangSlice/traces`) | `trace_dir`; the final message names the saved trace |
 | Positioning | `spec.tasks` += `reorder`, `position`; `reorder.flip`, `reorder.hemisphere_cue`, `position.thickness_um`, `position.interval_um` (prefilled from ABBA), `position.notes`; DeepSlice and Bayesian shown disabled |
-| Linear | `spec.tasks` += `transform`; `transform.automatic` = affine tool, `interactive` true, `elastix` false, `angles` false (shown disabled), `max_parallel` 1–4, `transform.notes` |
+| Linear | `spec.tasks` += `transform`; `transform.automatic` = affine tool, `interactive` true, `angles` false (shown disabled), `max_parallel` 1–4, `transform.notes` |
 | Nonlinear | shown disabled: "Not yet available in ABBA" |
 | Slices tab: Damaged + note | `damaged` |
 | Let the agent flag damaged slices | `spec.agent_damage` |
