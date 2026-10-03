@@ -287,9 +287,14 @@ Refusals state the numbers and stop.
 
 When interactive transforms are enabled, the prompt asks for inspection of each
 fit or adjustment against surviving internal anatomy, then refinement of each
-slice until no further improvement is possible with the available transforms.
+slice, damaged slices included, until no further improvement is possible with the available transforms.
 Changes should be kept only if they improve alignment. This adds no mandatory
-adjustment count or final-review hook.
+adjustment count or final-review hook. With a deformable fit, Method asks that
+every region a section still has drive its fit (exclude the lost regions rather
+than include a few survivors) and that candidates be compared before applying
+(2026-10-03: on M11_B_08/C_08 Astra included only MB/HPF and applied one
+setting unseen, where on M04_C_08 it excluded the lost cortex and compared;
+Nash: "Astra knows, it was just lazy").
 
 ### Linear and nonlinear scope
 

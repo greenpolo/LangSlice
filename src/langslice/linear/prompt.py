@@ -484,16 +484,22 @@ def build_job_statement(
         method.append(
             "- After each automatic fit or manual adjustment, inspect the returned "
             "overlay against surviving internal anatomy. Refine each slice's "
-            "alignment until no further improvement is possible with the available "
-            "transforms. Keep changes only if they improve the alignment."
+            "alignment, damaged slices included, until no further improvement is "
+            "possible with the available transforms. Keep changes only if they "
+            "improve the alignment."
         )
 
     if spec.has("nonlinear") and "fit_deformable" in tool_names:
         if not method:
             method = ["", "Method:"]
         method.append(
-            "- After each deformable fit, inspect the returned borders against the "
-            "section's internal anatomy"
+            "- Let every region a section still has drive its deformable fit, "
+            "damaged sections included: exclude the regions it has lost rather "
+            "than restricting the fit to a few that survive."
+        )
+        method.append(
+            "- Compare candidates before applying, and inspect each returned fit's "
+            "borders against the section's internal anatomy"
             + (" and its traced borders" if spec.nonlinear.uses_image_model else "")
             + ". Apply the fit that matches best; keep the linear placement only "
             "where no fit improves on it."
