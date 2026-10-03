@@ -67,8 +67,10 @@ claude --strict-mcp-config --mcp-config connectors/claude-desktop/langslice.mcp.
   translation.
 - **Claude briefing:** `start_job` returns a compact factual statement and status
   table without images. Read every `show_stack(page=...)` page before writing.
-  Sections are individually labelled, never mosaics; the final page holds the
-  atlas references. Every page stays below 680,000 serialized bytes.
+  Sections arrive as labelled strips in the stack's order (1568 px long, Claude's
+  recommended largest image), the atlas at each section's current position
+  beneath it; atlas reference strips follow when a section has no position.
+  Every page stays below 680,000 serialized bytes.
 - **Different from the ADK run:**
   - There is no turn budget and no nudges.
   - There is no image working set, so the host keeps every picture for the

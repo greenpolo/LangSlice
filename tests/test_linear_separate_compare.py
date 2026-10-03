@@ -1,8 +1,8 @@
-"""Separate positioning references reuse seed bytes, not composed canvases."""
+"""Separate positioning references reuse cached bytes, not composed canvases."""
 
 from langslice.adk import TOOL_MEDIA_DELIVERY_ID_KEY, TOOL_MEDIA_PARTS_KEY
-from langslice.linear.atlas_fetch import atlas_part, atlas_strip_parts
-from langslice.linear.render import reference_slice_part, stack_image_parts
+from langslice.linear.atlas_fetch import atlas_part
+from langslice.linear.render import picture_edge, reference_slice_part
 from tests.test_linear_toolbox import _box, _tool, _ToolContext
 
 
@@ -10,19 +10,22 @@ def _images(parts):
     return [part.inline_data.data for part in parts if part.inline_data is not None]
 
 
-def test_separate_comparison_reuses_seed_bytes_and_maps_each_pair(tmp_path):
+def test_separate_comparison_reuses_cached_bytes_and_maps_each_pair(tmp_path):
     state, ctx, box = _box(tmp_path)
-    seed = _images(stack_image_parts(state, ctx))
-    atlas_seed = atlas_strip_parts(ctx, state)
-    position = float(atlas_seed[1].text.split()[1])
+    position = 3.0
     result = _tool(box, "view_placement")([
         {"id": "s0.png", "positions_mm": [position, position]},
         {"id": "s1.png", "positions_mm": [position]},
     ], view={"mode": "side_by_side"})
     images = _images(result[TOOL_MEDIA_PARTS_KEY])
     assert len(images) == 5
-    assert images[0] == seed[0] and images[3] == seed[1]
-    assert images[1] == images[2] == images[4] == _images(atlas_seed)[0]
+    edge = picture_edge(ctx)
+    assert images[0] == _images([reference_slice_part(ctx, state.by_id("s0.png"),
+                                                      long_edge=edge)])[0]
+    assert images[3] == _images([reference_slice_part(ctx, state.by_id("s1.png"),
+                                                      long_edge=edge)])[0]
+    assert images[1] == images[2] == images[4] == _images(
+        [atlas_part(ctx, state, position, long_edge=edge)])[0]
     assert [row["image_indexes"] for row in result["compared"]] == [
         {"section": 0, "atlas": 1}, {"section": 0, "atlas": 2},
         {"section": 3, "atlas": 4},
@@ -31,7 +34,7 @@ def test_separate_comparison_reuses_seed_bytes_and_maps_each_pair(tmp_path):
 
 def test_reference_reuse_survives_reorder_but_not_orientation_or_preprocess(tmp_path):
     state, ctx, box = _box(tmp_path)
-    original = _images(stack_image_parts(state, ctx))[0]
+    original = _images([reference_slice_part(ctx, state.by_id("s0.png"))])[0]
     record = state.by_id("s0.png")
     _tool(box, "reorder_slices")([r.id for r in reversed(state.in_order())])
     assert reference_slice_part(ctx, record).inline_data.data == original

@@ -37,8 +37,8 @@ if TYPE_CHECKING:  # ponytail: import cycle — engine builds the toolbox
 #: dropped — and reported back, never silently.
 MAX_VIEW_POSITIONS = MAX_IMAGES_PER_CALL
 
-#: Most atlas sections in the seed strip. At the 256 px opening size a mouse
-#: section is ~100-150 tokens, so 48 is ~6k raw once and ~1k a call cached.
+#: Most atlas sections in the opening's atlas reference (laid out as strips by
+#: :mod:`langslice.linear.opening`, sent when a section has no position).
 SEED_ATLAS_MAX_IMAGES = 48
 
 
@@ -273,22 +273,26 @@ def make_view_atlas(state: StackState, ctx: EngineContext):
     return view_atlas
 
 
-def atlas_strip_parts(
-    ctx: EngineContext, state: StackState, *, max_images: int = SEED_ATLAS_MAX_IMAGES
-) -> list[types.Part]:
-    """The atlas at evenly spaced positions, labelled, for the seed message.
+def reference_atlas(
+    ctx: EngineContext, state: StackState, *, long_edge: int | None = None,
+    max_images: int = SEED_ATLAS_MAX_IMAGES,
+) -> tuple[float, list[tuple[float, Image.Image]]]:
+    """The atlas at evenly spaced positions for the opening: ``(step, pictures)``.
 
     Until 2026-09-09 the model never saw the atlas as a set: four bare atlas
     sections from one ``view_atlas`` and then only ever half of a
-    comparison pair. The strip spans the atlas's valid range at the nominal
-    interval, or coarser when that would exceed *max_images*, and heads the
-    prefix with the section strip, cached for the whole run.
+    comparison pair. The reference spans the atlas's valid range at the
+    nominal interval, or coarser when that would exceed *max_images*. Each
+    picture is tissue-framed at the stack's cutting angles and at most
+    *long_edge* (None: the run's opening size), never upsampled; a plane with
+    nothing in it (an oblique plane through the volume's corner) is skipped.
+    :mod:`langslice.linear.opening` lays the pictures out as strips.
     """
     pos_lo, pos_hi = ctx.position_range
     span = pos_hi - pos_lo
     step = max(state.interval_mm, span / max(1, max_images - 1))
     step = math.ceil(step / 0.05) * 0.05  # a round number of 50 um
-    edge = opening_edge(ctx)
+    edge = int(long_edge or opening_edge(ctx))
     pictures: list[tuple[float, Image.Image]] = []
     for k in range(int(span / step) + 1):
         position = pos_lo + k * step
@@ -296,20 +300,4 @@ def atlas_strip_parts(
         if np.asarray(picture).max() < 8:
             continue  # an oblique plane through the volume's corner: nothing to show
         pictures.append((position, atlas_sized(picture, edge)))
-    if not pictures:
-        return []
-    parts: list[types.Part] = [
-        types.Part.from_text(
-            text=(
-                f"The atlas follows at {len(pictures)} positions, every "
-                f"{step:.2f} mm from {pictures[0][0]:.2f} to {pictures[-1][0]:.2f} mm, "
-                "at the stack's cutting angles, one image each preceded by its "
-                "label 'atlas <position> mm'."
-            )
-        )
-    ]
-    for position, picture in pictures:
-        label = f"atlas {position:.2f} mm"
-        parts.append(types.Part.from_text(text=label))
-        parts.append(atlas_part(ctx, state, position, long_edge=edge, prepared=picture))
-    return parts
+    return step, pictures

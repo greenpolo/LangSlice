@@ -55,8 +55,9 @@ if TYPE_CHECKING:  # ponytail: import cycle — engine builds the toolbox that r
 PREVIEW_LONG_EDGE = 512
 
 #: Long edge, in pixels, of every picture the agent is SHOWN, per
-#: ``JobSpec.image_resolution``: ``(opening, later)``. *Opening* is each image
-#: of the seed message (every section, every atlas section of the strip);
+#: ``JobSpec.image_resolution``: ``(opening, later)``. *Opening* is each tile
+#: of the opening strips (every section, every atlas section beneath it or in
+#: the atlas reference; :mod:`langslice.linear.opening`);
 #: *later* is each picture a tool returns (each panel of a multi-panel
 #: picture). "auto" opens at 256 and lets the agent pass ``resolution`` per
 #: call (:data:`RESOLUTION_RANGE`), 512 when it does not. The only other
@@ -105,7 +106,7 @@ def resolution_level(ctx: EngineContext) -> str:
 
 
 def opening_edge(ctx: EngineContext) -> int:
-    """Long edge of each seed-message image at this run's level."""
+    """Long edge of each opening-strip tile at this run's level."""
     return PICTURE_EDGES[resolution_level(ctx)][0]
 
 
@@ -588,59 +589,18 @@ def stack_pictures(
     return out
 
 
-def stack_image_parts(
-    state: StackState,
-    ctx: EngineContext,
-    *,
-    long_edge: int | None = None,
-) -> list[types.Part]:
-    """The whole stack as labelled text+image pairs, in corrected order.
-
-    Each section gets a one-line label — ``"<corrected index>: <filename>"``
-    plus any flags — immediately followed by its own image, rendered through
-    :func:`render_slice` so preprocessing and corrections are already applied.
-
-    One image per section rather than one thumbnail grid: a grid splits a fixed
-    vision-encoder patch budget across every section at once and lets
-    neighbouring sections share patch boundaries. A labelled sequence at a
-    modest resolution reads better, and the label is what binds each set of
-    pixels to a filename the model can quote back. The strip heads the
-    prefix and is never edited, so it is cached for the whole run. *long_edge*
-    None is the run's opening size (:func:`opening_edge`).
-    """
-    long_edge = long_edge or opening_edge(ctx)
-    parts: list[types.Part] = [
-        types.Part.from_text(
-            text=(
-                f"The {len(state.slices)} sections of the stack follow, in "
-                "their current corrected order, one image each. Every image is "
-                "preceded by its label '<index>: <filename>' and is rendered "
-                "with any rotation and flip already applied."
-            )
-        )
-    ]
-    for record in state.in_order():
-        label = f"{record.index_corrected}: {record.id}"
-        flags = slice_flags(record)
-        if flags:
-            label += f"  [{'; '.join(flags)}]"
-        parts.append(types.Part.from_text(text=label))
-        parts.append(reference_slice_part(
-            ctx, record, long_edge=long_edge, look=view_look(state, record),
-        ))
-    return parts
-
-
 def reference_slice_part(
     ctx: EngineContext, record: SliceState, *, long_edge: int | None = None,
     look: Look = None,
 ) -> types.Part:
-    """Reuse the original captioned seed image for this display orientation.
+    """One captioned, tissue-framed section picture, cached per display state.
 
     Ordering and damage annotations do not change the pixels being compared.
     The cached caption retains the index/flags at first display; current state
     is carried separately in tool text. Filename remains the stable identity.
     *long_edge* None is the run's opening size; another size is its own entry.
+    (Since 2026-10-03 the opening shows sections in strips,
+    :mod:`langslice.linear.opening`, so this cache is the tools' own.)
     """
     long_edge = long_edge or opening_edge(ctx)
     key = ("section", *render_cache_key(ctx, record, long_edge=long_edge, frame=True, look=look))
@@ -667,9 +627,9 @@ def stack_sheet(
     """One contact sheet of the stack in written-position order, each
     section (over its atlas match, via *under*) captioned with its label.
 
-    A grid, against the one-image-per-section rule of the seed strip: this is
-    the review picture of a stack the model has already read section by
-    section, and one image is what keeps the whole-stack review inside the
+    A grid, unlike the opening's strips in corrected order: this is the
+    review picture of a stack the model has already read, ordered by written
+    position, and one image is what keeps the whole-stack review inside the
     per-call image budget. Detail is one ``view_slices`` call away.
 
     Each section is drawn at *tile_edge* (None: the run's opening size); when
