@@ -34,8 +34,8 @@ JobSpec
                                 # settings) for snapshots exported one page per
                                 # channel: the DEFAULT appearance; pages stay raw channels
   agent_preprocessing: bool = False # build `preprocess` (agent-set appearance)
-  image_resolution: low|medium|high|auto = low # long edge of the opening images
-                                # and of every later picture (render.PICTURE_EDGES);
+  image_resolution: low|medium|high|auto = low # long edge of each opening-strip
+                                # tile and of every later picture (render.PICTURE_EDGES);
                                 # auto: the agent's `view.resolution` per call; display
                                 # only, fits and stored transforms unchanged
   agent_damage: bool = True     # build mark_damaged; host flags can never be cleared
@@ -89,14 +89,29 @@ section with `LOCKED`; `mark_damaged` refuses to clear a host flag with
 `DAMAGE_SET_BY_USER`. `image_resolution` sizes the pictures only
 (`render.PICTURE_EDGES`, long edges):
 
-| level | opening images (seed message) | every later picture |
+| level | opening strip tiles (seed message) | every later picture |
 | --- | --- | --- |
 | low (default) | 256 px | 512 px |
 | medium | 384 px | 768 px |
 | high | 512 px | 1024 px |
 | auto | 256 px | the agent's `view.resolution` per call, 128..1536 px; 512 px when it gives none |
 
-Opening = every seed-message image (sections and the atlas strip); later =
+Opening = each tile of the opening strips. The seed message shows the stack
+the way ABBA's slice strip does (`linear/opening.py`, 2026-10-03): horizontal
+strips in corrected order, the sections on top and, directly beneath each,
+the atlas at that section's current position and the stack's cutting angles
+(drawn to the section's size). Every tile is labelled in its pixels
+(`<index>: <filename>`, `atlas <mm> mm`, `no position`), columns are split by
+a thin line, and a text part before each strip lists its sections. A strip's
+long edge is the model lane's largest image, 2048 px on the OpenAI lanes and
+1568 px for Claude (`show_stack`), and stays inside the lane's patch budget
+(2500 32-px patches on OpenAI, ~1.2 MP for Claude), so a strip holds 8 / 5 / 4
+tiles at low / medium / high on OpenAI (6 / 4 / 3 for Claude) and a larger
+level means more strips: 5 / 8 / 10 for a 40-section stack on OpenAI. When no
+section has a position the strips are section-only and the atlas reference
+(evenly spaced positions, labelled in mm) follows as atlas-only strips; when
+every section has one the reference is not sent; a partly placed stack gets
+both. Later =
 every picture a tool returns, each panel of a multi-panel picture
 (`view_slices`, `view_atlas`, placement pictures, fit panels,
 `adjust_transforms`, `fit_deformable`). Larger pictures are drawn from a

@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
+import re
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +15,7 @@ from mcp.shared.memory import create_connected_server_and_client_session
 from mcp.types import ImageContent, TextContent
 from PIL import Image
 
+from langslice.linear.opening import CLAUDE_MAX_IMAGE_EDGE, CLAUDE_MAX_IMAGE_PATCHES, patches
 from langslice.linear.spec import JobSpec
 from langslice.mcp_server.server import build_server
 from tests.fakes import SlabAtlas
@@ -68,8 +72,11 @@ def test_start_job_is_text_only_and_show_stack_has_every_section(tmp_path: Path)
 
     async def body(client: Any) -> Any:
         result = await client.call_tool("start_job", {})
+        first = result.content[0]
+        assert isinstance(first, TextContent)
+        count = int(re.search(r"show_stack\(page=(\d+)\) before", first.text).group(1))
         pages = []
-        for page in range(1, 3):
+        for page in range(1, count + 1):
             pages.extend((await client.call_tool("show_stack", {"page": page})).content)
         return result, pages
 
@@ -78,9 +85,15 @@ def test_start_job_is_text_only_and_show_stack_has_every_section(tmp_path: Path)
     assert "submit" in result.content[0].text
     assert not any(isinstance(block, ImageContent) for block in result.content)
     images = [block for block in pages if isinstance(block, ImageContent)]
-    # One per section, plus the atlas strip.
-    assert len(images) >= 3
+    texts = [block.text for block in pages if isinstance(block, TextContent)]
+    # One strip of the three sections, then the atlas reference strip(s).
+    assert "Strip 1 of 1: 0: s0.png, 1: s1.png, 2: s2.png" in texts
+    assert any(text.startswith("Atlas reference strip") for text in texts)
+    assert len(images) >= 2
     assert all(image.mimeType.startswith("image/") and image.data for image in images)
+    for image in images:
+        with Image.open(BytesIO(base64.b64decode(image.data))) as picture:
+            assert max(picture.size) <= CLAUDE_MAX_IMAGE_EDGE
 
 
 def test_tool_results_carry_json_text_and_pictures(tmp_path: Path):
@@ -166,14 +179,23 @@ def test_show_stack_page_budget_and_corrected_order(tmp_path: Path):
     briefing(job)
     sizes = [page_size(page) for page in job.pages]
     print(f"show_stack serialized page bytes: {sizes}")
-    assert len(sizes) > 2
     assert all(size <= PAGE_BYTES for size in sizes)
-    labels = [block.text for page in job.pages[:-1] for block in page
-              if isinstance(block, TextContent) and ": s" in block.text]
-    assert labels == [f"{record.index_corrected}: {record.id}" for record in job.state.in_order()]
-    assert sum(isinstance(block, ImageContent) for page in job.pages[:-1] for block in page) == 36
-    assert isinstance(job.pages[-1][0], TextContent)
-    assert "Atlas reference" in job.pages[-1][0].text
+    blocks = [block for page in job.pages for block in page]
+    strips = [block.text for block in blocks
+              if isinstance(block, TextContent) and block.text.startswith("Strip ")]
+    named = [name for text in strips for name in text.split(": ", 1)[1].split(", ")]
+    assert named == [f"{record.index_corrected}: {record.id}" for record in job.state.in_order()]
+    assert len(strips) > 1
+    # Every strip text is followed by its picture, at Claude's size and area.
+    for index, block in enumerate(blocks):
+        if isinstance(block, TextContent) and block.text.startswith(("Strip ", "Atlas strip ")):
+            picture = blocks[index + 1]
+            assert isinstance(picture, ImageContent)
+            with Image.open(BytesIO(base64.b64decode(picture.data))) as image:
+                assert max(image.size) <= CLAUDE_MAX_IMAGE_EDGE
+                assert patches(image.size) <= CLAUDE_MAX_IMAGE_PATCHES
+    assert any(isinstance(block, TextContent) and block.text.startswith("Atlas reference")
+               for block in job.pages[-1])
 
 
 def test_saved_job_settings_and_offline_submission(tmp_path: Path, monkeypatch: Any):

@@ -25,9 +25,11 @@ def job_statement(spec: JobSpec, state: StackState, ctx: EngineContext, pages: i
         ),
         "",
         "Opening pictures: read every page with show_stack(page=1) through "
-        f"show_stack(page={pages}) before any write. The last page is the atlas "
-        "reference strip; the pages before it show every section, individually "
-        "labelled, in the stack's current order.",
+        f"show_stack(page={pages}) before any write. They show every section in "
+        "strips, in the stack's current order, each labelled, with the atlas at "
+        "its current position beneath it when the stack has positions; when a "
+        "section has none, atlas reference strips at evenly spaced positions "
+        "follow.",
     ]
     if notes.strip():
         lines.extend(["", "User notes:", notes])

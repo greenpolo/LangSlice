@@ -116,10 +116,12 @@ calibration, positions, locked geometry, damage and preprocessing.
 
 `langslice mcp` starts without a folder. `start_job(job_id=...)` loads the
 saved request and returns a Claude-specific factual statement and status table,
-without pictures. `show_stack(page)` serves individually labelled section
-pictures in corrected order, followed by one atlas-reference page. Pages are
-1-based and bounded to 680,000 serialized JSON bytes (including base64); an
-oversized image or atlas page is reduced in resolution, never made into a grid.
+without pictures. `show_stack(page)` serves the opening strips (as in the ADK
+seed, `linear/opening.py`, at Claude's 1568 px long edge): labelled sections in
+corrected order with the atlas at each current position beneath it, then atlas
+reference strips when a section has no position. Pages are 1-based and bounded
+to 680,000 serialized JSON bytes (including base64); a strip and its text stay
+on one page, and an oversized strip is reduced in resolution.
 The briefing asks Claude to read every page before writing. Folder-based
 `start_job(image_folder=...)` remains available for development.
 

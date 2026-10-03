@@ -25,7 +25,7 @@ tools and takes its answer from the host. Nothing else is user-facing.
 | Provider | ChatGPT (default) or Claude | ChatGPT runs through `openai-oauth`; Claude changes Run to Copy prompt and uses the LangSlice MCP connector in Claude Desktop or Claude Code |
 | Agent model, reasoning level | ADK model string and effort | `model`, reasoning |
 | Image model / provider | image transport and model for nonlinear, or none | `nonlinear.provider`, `nonlinear.image_model`; provider `none` (CLI `--image-provider none`) runs the Nonlinear task without the image model: no `trace_borders`, deformations fitted to the stain alone |
-| Image resolution: low / medium / high / auto | how large the pictures the agent sees are: a long edge for the opening images and one for every later picture (table below); auto lets the agent choose each later picture's size. Does not touch the image model's inputs | `image_resolution` low/medium/high/auto (`render.PICTURE_EDGES`); display only, fits and stored transforms unchanged; CLI `--image-resolution` |
+| Image resolution: low / medium / high / auto | how large the pictures the agent sees are: a long edge for each section in the opening strips (more strips at a higher level) and one for every later picture (table below); auto lets the agent choose each later picture's size. Does not touch the image model's inputs | `image_resolution` low/medium/high/auto (`render.PICTURE_EDGES`); display only, fits and stored transforms unchanged; CLI `--image-resolution` |
 | Estimated cost | shown at the bottom once every box is chosen | worker `linear.estimate` (`linear/cost.py`): percent of the usage window from measured runs; refused at medium/high/auto resolution, where nothing is measured (the low runs were measured before the 2026-10-01 sizes) |
 | View agent log | the agent's activity in a window during the run | Fiji connector: a text log window (or a compact status window when off). The Python-started ABBA launcher has a richer browser log (`integrations/abba_chat.py`) |
 | Save traces | full record of what the agent was shown, said and did, saved to a chosen folder | worker `trace_dir` (`LANGSLICE_TRACE_DIR` for one run); ABBA dialog checkbox + folder |
@@ -362,17 +362,23 @@ AFTER for each pictured section (up to 4), labelled, mapped by
 **Picture sizes** (`image_resolution`, `render.PICTURE_EDGES`). Each size is
 the long edge of one picture, or of each panel of a multi-panel picture:
 
-| level | opening images (seed message) | every later picture |
+| level | each tile of the opening strips (seed message) | every later picture |
 | --- | --- | --- |
 | low (default) | 256 px | 512 px |
 | medium | 384 px | 768 px |
 | high | 512 px | 1024 px |
 | auto | 256 px | the agent's `view.resolution` per call, 128..1536 px; 512 px when it gives none |
 
+The opening shows the stack as ABBA-style strips, sections over the atlas at
+their current positions (atlas reference strips instead when nothing is
+placed); each strip is as long as the model's largest image (2048 px on the
+OpenAI lanes, 1568 px for Claude), so a 40-section stack is 5 / 8 / 10 strips
+at low / medium / high on the OpenAI lanes.
+
 Nothing is drawn larger than its source: a section never past its working
 copy (a small snapshot stays small), an atlas image never past the plane's
 own voxels except where it sits under a section in one picture (`stacked`,
-`view_stack`), where it is drawn to the section's size. The `view_stack`
+`view_stack`, the opening strips), where it is drawn to the section's size. The `view_stack`
 contact sheet draws each tile at the opening size and shrinks the tiles until
 the sheet is at most 2048 px (a 40-section stack lands near 250 px tiles at
 every level). Fits and stored numbers are computed on fixed working frames

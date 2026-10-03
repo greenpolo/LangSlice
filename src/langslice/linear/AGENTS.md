@@ -65,23 +65,24 @@ Run 2's new asks, built: `view_stack` pastes the atlas at each placed
 section's position beneath it in the SAME image (one picture per section, not
 two — the image budget counts); `view_placement` takes a batch of
 `{id, positions_mm}` entries, ≤4 pairs per call. Since 2026-09-11,
-positioning `side_by_side` returns separate seed-style reference images:
+positioning `side_by_side` returns separate tissue-framed reference images:
 one unchanged section per distinct id, one atlas per pair (up to 8 images),
 mapped by zero-based `image_indexes` in each compared row. These are
 independently tissue-framed, not a common physical canvas; zoom is refused
 and outlines/opacity do not apply. Other modes still return one physical
 canvas per pair. Interactive-transform `side_by_side` is unchanged.
-Seed, comparison and atlas-fetch paths share encoded reference caches:
+Comparison and atlas-fetch paths share encoded reference caches:
 section captions retain their first display index/flags across reorder,
 filenames are the stable identity, and orientation/preprocessing/size changes
-get distinct entries (since 2026-10-01 a comparison is the later-picture size
-and the seed the opening size, so they no longer share bytes). Atlas entries
-include exact position, plane, angles and size.
+get distinct entries. Atlas entries include exact position, plane, angles and
+size. The opening no longer feeds them: since 2026-10-03 it is strips
+(`opening.py`), and since 2026-10-01 a comparison was the later-picture size
+anyway, so the two never shared bytes.
 Reusing bytes avoids recomposition, not new-image input charges. An image
 replayed in its original unchanged history prefix is eligible for prompt-cache
 reuse; another copy appended after new conversation content is new input,
 even when byte-identical. Do not budget a cached-input discount for that copy
-merely because the seed contains it. Later requests can reuse its new prefix
+merely because the opening showed it. Later requests can reuse its new prefix
 if history stays unchanged and the backend retains a matching cache entry.
 Rejected: labelled anatomy/landmarks, confidence and verification states,
 damage masks, an anatomy-based gap review, a validity-vs-verification audit.
@@ -117,7 +118,7 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
 - `checkpoint.py` — atomic JSON write to `<folder>/linear_state.json`.
 - `discovery.py` — natural-sorted image discovery.
 - `render.py` — `render_slice` (ROTATE first, then FLIP, then the display-only
-  `--preprocess auto` enhancement), `stack_image_parts`, the status rows and
+  `--preprocess auto` enhancement), `stack_pictures`, the status rows and
   their text form, `caption`, the JPEG `types.Part` encoder, and the PHYSICAL
   overlay: `canvas_geometry` places an atlas section on a section's frame at
   true scale (`atlas um/px / canvas um/px`, anatomy centred, canvas grown to
@@ -156,9 +157,35 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
   tool images reach the model as bare attachments; never caption an image a
   fit measures.
 - `atlas_fetch.py` — `atlas_section` (the one atlas renderer: flat at 0/0
-  cutting angles, `oblique.sample_oblique_plane` otherwise) and the
-  `view_atlas` tool (was `fetch_atlas`), closed over the run context. Sections
-  and atlas sections are framed the same way so apparent scale is not a cue.
+  cutting angles, `oblique.sample_oblique_plane` otherwise), the
+  `view_atlas` tool (was `fetch_atlas`), closed over the run context, and
+  `reference_atlas` (the opening's evenly spaced atlas positions, at most
+  `SEED_ATLAS_MAX_IMAGES` 48, never upsampled). Sections and atlas sections
+  are framed the same way so apparent scale is not a cue.
+- `opening.py` — the opening images (2026-10-03, Nash: "a strip of atlas
+  images and slice images, just like how abba does it"): `opening_parts`
+  lays the stack out as horizontal strips in corrected order, the sections
+  on top and, directly beneath each, the atlas at its CURRENT position and
+  the stack's cutting angles (`atlas_tile`, drawn to the section's long edge
+  as `view_stack` does, so an olfactory-bulb plane is not a thumbnail).
+  Every tile is labelled in its pixels (`tile_label`: `"<index>:
+  <filename>"` plus short flags `rot N`/`flipped`/`damaged`, the damage note
+  stays in the status table; atlas tiles `atlas <mm> mm`, a section without
+  a position gets `no position`), columns are split by a thin grey line,
+  and a text part before each strip lists its sections. A strip's long edge
+  is the model lane's largest image (`image_limit`: `OPENAI_MAX_IMAGE_EDGE`
+  2048 for openai-oauth/openai-api, any other lane uses it too, unmeasured;
+  `CLAUDE_MAX_IMAGE_EDGE` 1568 for the MCP host), tiles the level's opening
+  size (`strip_layout`: as many as fit, shrunk by at most a few pixels so a
+  full strip fills the edge): 8/5/4 per strip at low/medium/high on the
+  OpenAI lanes, 6/4/3 for Claude. `pack_strips` also keeps every strip
+  inside the lane's patch budget (`OPENAI_MAX_IMAGE_PATCHES` 2500 32-px
+  patches at detail high, verified 2026-10-03; `CLAUDE_MAX_IMAGE_PATCHES`
+  ~1.2 MP), past which the encoder would shrink the strip, labels included:
+  a column that would cross it starts the next strip. With no position at
+  all the strips are section-only and the atlas reference
+  (`reference_atlas`) follows as atlas-only strips; when every section has
+  a position the reference is not sent; a partly placed stack gets both.
 - `arguments.py` — the shapes of the arguments (2026-10-03): `View` (the
   picture options) and `ViewAuto` (+ `resolution`), and the `entries` /
   `candidates` dicts (`DamageEntry`, `OrientEntry`, `PositionEntry`,
@@ -391,7 +418,8 @@ The ABBA dialog's controls, all plain `JobSpec` fields (not CLI flags yet):
   transform rows for them.
 - **`image_resolution`** (`low`|`medium`|`high`|`auto`, default `low`;
   2026-10-01): `render.PICTURE_EDGES` gives each level two long edges, the
-  opening images (`render.opening_edge`: seed sections and atlas strip) and
+  opening images (`render.opening_edge`: each tile of the opening strips,
+  sections and atlas, `opening.py`) and
   every later picture (`render.picture_edge`: each panel a tool returns):
   low 256/512, medium 384/768, high 512/1024, auto 256 then the agent's
   `view.resolution` per call (128..1536, 512 when it gives none). Only what the
@@ -595,15 +623,20 @@ text plus prefix breaks. Design rules that follow:
   controls): from 2026-09-09 to 2026-10-01 every picture was instead sized
   so one pixel was never finer than the atlas voxel, capped at 512 px
   (`atlas.render.model_long_edge`, deleted), which showed a 6 mm section at
-  ~220-360 px everywhere, too small to judge a fit. On M04 at low the opening
-  message is now ~5k 32-px patches for a 40-section stack plus the atlas
-  strip (it was ~8.5k: the strip shrank to 256 px while sections grew
-  slightly); medium ~9.6k, high ~14.6k. Later pictures cost more than
+  ~220-360 px everywhere, too small to judge a fit. The opening on M04
+  (38 sections) since the strips (2026-10-03), as 32-px patches: no
+  positions 5.0k / 10.2k / 15.6k at low / medium / high in 11 / 17 / 21
+  images (section strips plus the atlas reference); host positions 4.4k /
+  9.6k / 16.2k in 5 / 8 / 10 images. Before (one image per section and per
+  atlas section, 81 images, positions or not): 4.5k / 8.8k / 13.1k. The
+  extra patches are row padding (a strip row is as tall as its tallest
+  tile, and anterior sections stand taller) and, with positions, the atlas
+  drawn to the section's size; the per-image count fell 4-16x. Later pictures cost more than
   before (a fit_deformable panel 512 px instead of ~260). Atlas images are
   never upsampled past the plane (until 2026-09-10 they were upsampled to
   512, a quarter of run 19's input); `view_placement`'s default mode is
   `template`, the atlas alone on the section's canvas, because the section
-  is already in the seed (the default was `side_by_side` until 2026-09-10,
+  is already in the opening (the default was `side_by_side` until 2026-09-10,
   so every Astra compare re-sent the section). `physical_views(long_edge=
   None)` is canvas pixels for host-side use; every model-facing caller
   passes a size.
@@ -611,7 +644,7 @@ text plus prefix breaks. Design rules that follow:
   kept until 500 are live, then the oldest media-bearing calls are cut in
   ONE batch to 250 (`DEFAULT_MAX_IMAGES` / `DEFAULT_KEEP_IMAGES`, a cut
   result says "dropped from context"); the cut only moves forward and the
-  seed strip is never touched. Measured on M11 at low effort, 2026-09-09:
+  opening strips are never touched. Measured on M11 at low effort, 2026-09-09:
   keep-all (run 6, killed at call 16) had median 0.10 mm / 30 of 36 within
   0.25 with positions written by call 15; newest-call-only (run 7, 21
   calls, submitted) 0.30 mm / 14 of 36, and its debrief said the "dropped
@@ -619,7 +652,7 @@ text plus prefix breaks. Design rules that follow:
   image is 0.13x on every later call, so keep-all grows quadratically
   (2.4k -> 8.8k paid a call by call 15), but a batched run submits in ~21
   calls, where keep-all is ~16% of a window against newest-only's 14%.
-  A normal run (seed 80, ~50 compares, ~40 write pictures) never reaches
+  A normal run (opening 5-21 strips, ~50 compares, ~40 write pictures) never reaches
   the cut; it is the safety for a run that goes long; cutting old images
   re-reads everything after the cut once, so it must stay rare. The
   stage-boundary cut (every earlier tool image dropped at the first
@@ -824,7 +857,9 @@ host must enable at least one transform method when enabling that task.
 range, axis direction, protocol and calibration text identical across hosts.
 Claude's statement does not reuse the ADK method/playbook. MCP opens saved ABBA
 jobs through `api.abba_worker.prepare_linear`, exactly like `linear.run`,
-and supplies opening pictures separately with `show_stack` pages. No image
+and supplies the opening strips separately with `show_stack` pages
+(`opening_pages`: `opening_parts` at `CLAUDE_IMAGE_LIMIT`, paged under
+`PAGE_BYTES`, a strip and its text kept together). No image
 model is available through the Claude connector. The MCP tools are the same
 functions with the same `view` and the same strict-argument rule
 (`mcp_server.server.strict_arguments`; a nested object Claude Desktop sends

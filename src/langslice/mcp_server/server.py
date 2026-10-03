@@ -32,7 +32,6 @@ from mcp.types import ContentBlock, ImageContent, TextContent, ToolAnnotations
 from langslice.adk import TOOL_MEDIA_PARTS_KEY
 from langslice.api.abba_worker import PreparedLinear, checkpoint_callback, prepare_linear
 from langslice.api.claude_jobs import load_job
-from langslice.linear.atlas_fetch import atlas_strip_parts
 from langslice.linear.checkpoint import load_checkpoint, observe_checkpoints, save_checkpoint
 from langslice.linear.engine import (
     EngineContext,
@@ -41,7 +40,7 @@ from langslice.linear.engine import (
     emit_results,
     ingest,
 )
-from langslice.linear.render import stack_image_parts
+from langslice.linear.opening import CLAUDE_IMAGE_LIMIT, opening_parts
 from langslice.linear.spec import JobSpec
 from langslice.linear.state import StackState
 from langslice.linear.toolbox import ToolBox, build_tools
@@ -228,11 +227,12 @@ def _fit_page(blocks: list[ContentBlock]) -> list[ContentBlock]:
 
 
 def opening_pages(job: Job) -> list[list[ContentBlock]]:
-    sections = stack_image_parts(job.state, job.ctx)
+    """The opening strips (:mod:`langslice.linear.opening`) at Claude's image
+    size, paged under :data:`PAGE_BYTES`; a strip and its text stay together."""
     pages: list[list[ContentBlock]] = []
     page: list[ContentBlock] = []
     pending: list[ContentBlock] = []
-    for part in sections:
+    for part in opening_parts(job.state, job.ctx, limit=CLAUDE_IMAGE_LIMIT):
         pending.extend(part_blocks(part))
         if part.inline_data is None:
             continue
@@ -244,10 +244,6 @@ def opening_pages(job: Job) -> list[list[ContentBlock]]:
         pending = []
     if page or pending:
         pages.append(page + pending)
-    atlas: list[ContentBlock] = [TextContent(type="text", text="Atlas reference strip")]
-    for part in atlas_strip_parts(job.ctx, job.state):
-        atlas.extend(part_blocks(part))
-    pages.append(_fit_page(atlas))
     return pages
 
 

@@ -350,7 +350,7 @@ def test_the_quota_budget_is_measured_from_the_first_call(tmp_path: Path, monkey
     assert any("run total: 5 calls" in line for line in lines)  # the stop + one grace call
 
 
-def test_the_seed_carries_the_atlas_strip_after_the_sections(tmp_path: Path):
+def test_the_seed_carries_section_strips_then_the_atlas_reference(tmp_path: Path):
     from langslice.linear.engine import build_context, build_seed_message, ingest
 
     _make_stack(tmp_path, n=3)
@@ -359,13 +359,18 @@ def test_the_seed_carries_the_atlas_strip_after_the_sections(tmp_path: Path):
     state = ingest(spec, ctx)
     parts = build_seed_message(state, ctx).parts or []
     texts = [p.text for p in parts if p.text]
-    intro = next(t for t in texts if t.startswith("The atlas follows at"))
-    n_atlas = sum(1 for t in texts if t.startswith("atlas ") and t.endswith(" mm"))
-    assert f"at {n_atlas} positions" in intro and 1 < n_atlas <= 48
+    # No positions: one section-only strip, then the atlas reference strips.
+    assert texts[0].startswith("The 3 sections of the stack follow in 1 strip,")
+    assert "Beneath each section" not in texts[0]
+    assert texts[1] == "Strip 1 of 1: " + ", ".join(
+        f"{r.index_corrected}: {r.id}" for r in state.in_order())
+    reference = next(t for t in texts if t.startswith("Atlas reference strip"))
+    n_atlas = int(reference.split("the atlas at ")[1].split()[0])
+    assert 1 < n_atlas <= 48
+    atlas_strips = [t for t in texts if t.startswith("Atlas strip ")]
     images = [p for p in parts if p.inline_data is not None]
-    assert len(images) == 3 + n_atlas
-    # sections first, then the atlas, then the table
-    assert texts.index(intro) > texts.index("0: " + state.in_order()[0].id)
+    assert len(images) == 1 + len(atlas_strips) >= 2
+    assert texts.index(reference) > 1
     assert texts[-1].startswith("Status table")
 
 

@@ -49,7 +49,7 @@ checkpoint format) are read as a file path or as inline JSON. Hosts present
 (image resolution low/medium/high/auto, per-task notes, the per-call section
 cap, user damage marks, locked sections, the agent's damage tool) are `JobSpec`
 fields, not CLI flags yet; see `docs/linear_design.md`. Image resolution sets
-the long edge of the opening images and of every later picture the agent sees
+the long edge of each opening-strip tile and of every later picture the agent sees
 (low 256/512 px, medium 384/768, high 512/1024; auto 256 and then the agent's
 own `view.resolution` per call, up to 1536).
 
@@ -82,10 +82,15 @@ run can use:
 Sections and fetched atlas sections are framed the same way (foreground plus a
 6% margin) so apparent scale is not a cue. Every image a tool returns has its
 label burned into the pixels (section id, atlas position), because tool images
-arrive as bare attachments with no text beside them. The seed message is every section as
-its own labelled image in corrected order plus the status table -- not a
-thumbnail grid, which splits one vision-encoder patch budget across the whole
-stack at once.
+arrive as bare attachments with no text beside them. The seed message shows the
+stack as ABBA-style strips (`linear/opening.py`, since 2026-10-03): rows of
+labelled sections in corrected order with the atlas at each section's current
+position beneath it, each strip as long as the model's largest image (2048 px
+on the OpenAI lanes) and inside its patch budget, so nothing is shrunk by the
+encoder; without positions the strips are section-only and atlas reference
+strips (evenly spaced positions, labelled in mm) follow. Then the status
+table. Until 2026-10-03 every section and atlas section was its own image
+(about 80 for a 40-section stack).
 
 The job statement carries the job, the run's facts (`--fact`,
 `--hemisphere-cue`), one factual line per tool that exists, the hard

@@ -30,7 +30,6 @@ from langslice.image_prep import (
     read_working_image,
     read_working_pages,
 )
-from langslice.linear.atlas_fetch import atlas_strip_parts
 from langslice.linear.checkpoint import (
     default_checkpoint_path,
     load_checkpoint,
@@ -40,8 +39,9 @@ from langslice.linear.checkpoint import (
 from langslice.linear.discovery import discover_slices
 from langslice.linear.display import display_facts
 from langslice.linear.live import LiveCallback
+from langslice.linear.opening import opening_parts
 from langslice.linear.prompt import build_job_statement
-from langslice.linear.render import stack_image_parts, status_text
+from langslice.linear.render import status_text
 from langslice.linear.session import (
     DEFAULT_MAX_ITERATIONS,
     build_agent,
@@ -391,9 +391,8 @@ def apply_host_inputs(state: StackState, spec: JobSpec) -> None:
 
 
 def build_seed_message(state: StackState, ctx: EngineContext) -> types.Content:
-    """Every section as its own labelled image, the atlas strip, the table."""
-    parts: list[types.Part] = stack_image_parts(state, ctx)
-    parts.extend(atlas_strip_parts(ctx, state))
+    """The stack as ABBA-style strips (:mod:`langslice.linear.opening`), the table."""
+    parts: list[types.Part] = opening_parts(state, ctx)
     parts.append(
         types.Part.from_text(
             text=(

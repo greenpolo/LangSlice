@@ -439,7 +439,7 @@ def build_job_statement(
             "",
             "Method:",
             "- First, from the opening images alone — every section and the "
-            "atlas strip — form a complete hypothesis: the corrected order of "
+            "atlas reference strips — form a complete hypothesis: the corrected order of "
             "the whole stack and a position for every section. Look for the "
             "structure of how the sections were cut (series that interleave, "
             "missing sections) and use it.",

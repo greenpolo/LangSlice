@@ -1,7 +1,7 @@
 """image_resolution sizes what the agent is shown, never what is computed.
 
 Each level is two long edges (``render.PICTURE_EDGES``): the opening images of
-the seed message and every later picture; "auto" adds a ``resolution``
+the opening strips' tiles and every later picture; "auto" adds a ``resolution``
 argument to the picture tools. Nothing is upsampled past its source.
 """
 
@@ -19,6 +19,7 @@ from PIL import Image, ImageDraw
 
 from langslice.adk import TOOL_MEDIA_PARTS_KEY
 from langslice.linear.engine import build_context, build_seed_message, ingest
+from langslice.linear.opening import COLUMN_GAP, section_tile, strip_edge, strip_layout
 from langslice.linear.render import (
     CAPTION_PX,
     PICTURE_EDGES,
@@ -26,6 +27,7 @@ from langslice.linear.render import (
     SHEET_MAX_LONG_EDGE,
     _caption_font,
     caption,
+    opening_edge,
     render_slice,
     shown_section,
     stack_sheet,
@@ -87,9 +89,12 @@ def _entry(**extra: Any) -> dict[str, Any]:
 
 
 def _seed_sections(state: Any, ctx: Any) -> list[Image.Image]:
+    """The opening strip(s), and each section's tile as the strip draws it."""
     parts = build_seed_message(state, ctx).parts or []
-    images = [Image.open(io.BytesIO(p.inline_data.data)) for p in parts if p.inline_data]
-    return images[: len(state.slices)]
+    strips = [Image.open(io.BytesIO(p.inline_data.data)) for p in parts if p.inline_data]
+    _count, tile = strip_layout(strip_edge(ctx), opening_edge(ctx))
+    assert strips[0].width == len(state.slices) * tile + (len(state.slices) - 1) * COLUMN_GAP
+    return [section_tile(ctx, state, record, tile) for record in state.in_order()]
 
 
 # --- each level's two sizes ------------------------------------------------
@@ -102,7 +107,8 @@ def test_each_level_opens_at_one_size_and_shows_later_pictures_at_another(
     opening, later = PICTURE_EDGES[level]
     state, ctx, tools, _spec = _run(tmp_path / level, level)
 
-    assert [image.width for image in _seed_sections(state, ctx)] == [opening] * 2
+    # Each tile is the opening size, shrunk by at most a few pixels to fill the strip.
+    assert all(opening - 8 <= image.width <= opening for image in _seed_sections(state, ctx))
     assert _widths(tools["view_slices"](["s0.tif"])) == [later]
     assert _widths(tools["view_placement"]([{"id": "s0.tif"}], mode="overlay")) == [later]
     assert _widths(tools["view_placement"]([{"id": "s0.tif"}], mode="side_by_side"))[0] == later
