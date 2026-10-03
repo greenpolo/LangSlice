@@ -1001,7 +1001,6 @@ def run_linear_in_abba(
         hemisphere_cue=spec.reorder.hemisphere_cue,
         strict_interval=spec.position.strict_interval,
         interactive=spec.transform.interactive, automatic=spec.transform.automatic,
-        elastix=spec.transform.elastix,
     ))
 
     folder = os.path.abspath(spec.image_folder)

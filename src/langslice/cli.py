@@ -446,9 +446,6 @@ def _add_linear_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument("--pitch", type=float, default=None, help="Host-given cutting pitch, degrees")
     p.add_argument("--yaw", type=float, default=None, help="Host-given cutting yaw, degrees")
     p.add_argument(
-        "--elastix", action="store_true", help="Let fit_affine use the Elastix affine"
-    )
-    p.add_argument(
         "--fact",
         dest="facts",
         action="append",
@@ -599,7 +596,7 @@ def _build_linear_spec(args: argparse.Namespace, image_folder: str) -> "JobSpec"
             gated=args.gates,
             playbook=args.playbook,
         ),
-        transform=TransformSpec(angles=args.angles, elastix=args.elastix),
+        transform=TransformSpec(angles=args.angles),
         nonlinear=NonlinearSpec(
             provider=args.image_provider,
             image_model=args.image_model,

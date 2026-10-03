@@ -29,7 +29,6 @@ class MenuSettings:
     strict_interval: bool = False
     interactive: bool = True
     automatic: bool = True
-    elastix: bool = False
     facts: str = ""
     open_agent_viewer: bool = True
     open_agent_log: bool = True
@@ -55,7 +54,7 @@ class MenuSettings:
                 strict_interval=self.strict_interval,
             ),
             transform=TransformSpec(
-                interactive=self.interactive, automatic=self.automatic, elastix=self.elastix,
+                interactive=self.interactive, automatic=self.automatic,
             ),
             facts=[line for line in self.facts.splitlines() if line.strip()],
         )
@@ -301,7 +300,6 @@ def install_menu(abba: Any, *, settings: MenuSettings | None = None) -> MenuCont
         checkbox(transform, "Enable transforms", "transform")
         checkbox(transform, "Interactive adjustment by agent", "interactive")
         checkbox(transform, "Automatic affine fitting", "automatic")
-        checkbox(transform, "Allow Elastix affine fitting", "elastix")
         menu.add(transform)
         menu.addSeparator()
         checkbox(menu, "Open agent viewer in ABBA", "open_agent_viewer")

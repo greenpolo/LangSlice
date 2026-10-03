@@ -53,6 +53,7 @@ def prepare_linear_registration(
     section_id: str,
     *,
     long_edge: int = 2048,
+    transform: dict[str, Any] | None = None,
 ) -> LinearRegistrationInput:
     """Prepare a supplied affine placement, preserving shear and physical scale.
 
@@ -60,6 +61,11 @@ def prepare_linear_registration(
     Legacy records do not retain an orientation snapshot; when supplied, an
     ``orientation`` dictionary or ``stale`` flag is checked before using a fit.
     Missing calibration is never replaced with a new silhouette estimate.
+
+    *transform* stands in for the section's written transform (same keys:
+    ``params``, ``calibration``), for a fit that starts from a placement it
+    has not written: ``fit_affine``'s Elastix method on a section with no
+    transform yet starts from the identity.
     """
     if isinstance(long_edge, bool) or not isinstance(long_edge, int) or long_edge <= 0:
         raise ValueError("long_edge must be a positive integer")
@@ -68,7 +74,8 @@ def prepare_linear_registration(
         raise ValueError(f"Unknown section: {section_id}")
     if record.position_mm is None or not np.isfinite(record.position_mm):
         raise ValueError("A finite written position is required")
-    transform = record.transform
+    if transform is None:
+        transform = record.transform
     if not transform:
         raise ValueError("A written affine transform is required")
     if transform.get("spline"):

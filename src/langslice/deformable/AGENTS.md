@@ -3,8 +3,11 @@
 Package guide; `AGENTS.md` is a verbatim twin of this file. Shared top-level
 package, like `affine.py`: it belongs to neither `linear/` nor `nonlinear/`
 and imports neither. It is the engine behind the linear agent's
-`fit_deformable` tool (`linear/deformation.py`, task `nonlinear`); no CLI,
-host or export adapter uses it yet.
+`fit_deformable` tool (`linear/deformation.py`, task `nonlinear`) and, since
+2026-10-03, behind `fit_affine`'s default Elastix method
+(`linear/transform.elastix_affine`: `prepare_fit` builds its images and
+masks, `engines.run_elastix_affine` fits); no CLI, host or export adapter
+uses it yet.
 
 ## What it does
 
@@ -81,6 +84,16 @@ and returns a `record.DeformableRecord`. No custom solver.
   `SetNumberOfThreads` segfaults in itk-elastix 0.25.4, so the call sets
   ITK's global default for its duration instead. Single-fit runtime at 8
   threads ~5 s (local correlation + edges, M04_B_05), 9 s at 4, 15 s at 2.
+- `engines.run_elastix_affine` (the linear affine, not a deformation): an
+  Elastix `AffineTransform` from the identity on the same prepared inputs
+  (intensity pair, edge pair, masks; `AutomaticTransformInitialization` off,
+  so it refines the placement the moving image was drawn at), mutual
+  information, `ELASTIX_AFFINE_RESOLUTIONS` 3 x `ELASTIX_AFFINE_ITERATIONS`
+  500, the same seed and thread count. Returns `AffineResult.matrix_mm`
+  (section mm -> placed-atlas mm, the field's direction); a non-finite or
+  singular matrix raises. `_elastix_register` is the one Elastix call both
+  runners share (images, masks, extra pairs, the global thread count). The
+  affine stays Elastix-only; ANTs is a deformable option.
 - Optional ANTs preprocessing of the stain (`preprocess=("n4", "denoise")`).
 - `fit_candidates` runs 1–8 settings in a spawn process pool (atlas work in
   the caller, engine calls in workers, `cpu_count // FIT_THREADS` workers at

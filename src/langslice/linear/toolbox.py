@@ -84,6 +84,7 @@ from langslice.linear.spec import MAX_PARALLEL_TRANSFORMS, JobSpec
 from langslice.linear.state import SliceState, StackState, normalize_to_atlas_order
 from langslice.linear.transform import (
     calibrate,
+    fit_elastix,
     fit_silhouette,
     physical_decomposition,
 )
@@ -2249,7 +2250,7 @@ def build_tools(
     )
     def fit_affine(
         slice_ids: list[str],
-        method: str,
+        method: str = "elastix",
         include: list[str] = [],  # noqa: B006 — read, never mutated; ADK wants a value
         exclude: list[str] = [],  # noqa: B006
         mode: str = "overlay",
@@ -2265,18 +2266,22 @@ def build_tools(
     ) -> dict[str, Any]:
         """Fit an in-plane affine per section against its atlas section.
 
-        The tissue outline is matched against the atlas outline (outlines
-        only, no internal anatomy). Without regions the whole of both is used
-        and a damaged section is refused. Each fit is written as the
+        "elastix" (default) refines the section's current transform (none
+        yet: from no transform) by matching the section's image against the
+        atlas reference image, inner anatomy included; it adjusts from there
+        and does not search from scratch. "silhouette" fits the tissue
+        outline to the atlas outline from scratch (outlines only). Without
+        regions a damaged section is refused. Each fit is written as the
         section's transform (undoable, and `adjust_transforms` overwrites it).
 
         Args:
             slice_ids: Filenames or corrected indices; empty means every
                 positioned, undamaged section.
-            method: "silhouette" (moments fit) or "elastix" (intensity affine).
+            method: "elastix" (default) or "silhouette".
             include: Regions (acronyms or ids, descendants included) to fit
                 by: only the atlas within 300 um of them, against the tissue
-                the fit lays there. Counts only where they reach the outline.
+                the fit lays there. With "silhouette" they count only where
+                they reach the outline.
             exclude: Regions removed from the atlas side (e.g. tissue missing
                 from the section), descendants included; the tissue the fit
                 lays on them is left out too. With regions given, damaged
@@ -2293,21 +2298,14 @@ def build_tools(
             generic changed row is omitted because it repeats the same fit
             identifiers and overlap.
         """
-        # ponytail: spec.transform.elastix is inert until the method lands;
-        # asking for it answers UNAVAILABLE either way.
-        chosen = str(method or "silhouette").strip().lower()
-        if chosen == "elastix":
-            return {
-                "status": "error",
-                "error": "UNAVAILABLE",
-                "message": "The elastix affine method is not wired in this build.",
-            }
-        if chosen != "silhouette":
+        chosen = str(method or "elastix").strip().lower()
+        if chosen not in ("elastix", "silhouette"):
             return {
                 "status": "error",
                 "error": "BAD_ARGS",
-                "message": "method must be 'silhouette' or 'elastix'.",
+                "message": "method must be 'elastix' or 'silhouette'.",
             }
+        fitter = fit_elastix if chosen == "elastix" else fit_silhouette
         kept = region_names(include, "include")
         if isinstance(kept, dict):
             return kept
@@ -2359,8 +2357,8 @@ def build_tools(
             if record.damaged and not restricted:
                 results.append({"id": record.id, "status": "error", "error": "DAMAGED"})
                 continue
-            outcome = fit_silhouette(state, ctx, record, draw=draw_fit(record),
-                                     include=kept, exclude=dropped)
+            outcome = fitter(state, ctx, record, draw=draw_fit(record),
+                             include=kept, exclude=dropped)
             panels = outcome.pop("panels", None) or []
             results.append(outcome)
             if outcome["status"] != "ok":
@@ -2394,7 +2392,7 @@ def build_tools(
         snapshot()
         for record, outcome in fits:
             record.transform = {
-                "kind": "silhouette",
+                "kind": chosen,
                 "params": outcome.pop("params"),  # the six raw numbers stay host-side
                 "physical": outcome["physical"],
                 "iou": outcome["iou"],

@@ -59,7 +59,7 @@ internal, never user-facing).
 | Control | On main |
 | --- | --- |
 | Enable hemisphere flipping, with optional text describing the hemisphere cue (moved here from Positioning, 2026-09-29) | `transform.flip`, `transform.hemisphere_cue` (`reorder.flip` / `reorder.hemisphere_cue` still accepted as aliases); `orient_slices` is built with the transform task |
-| Enable affine tool. Off: every transform is X/Y movement and scaling by the agent | `transform.automatic` (+ `transform.elastix` for the intensity affine) |
+| Enable affine tool. Off: every transform is X/Y movement and scaling by the agent | `transform.automatic` (`fit_affine`: Elastix intensity affine by default, silhouette as an option; the former `transform.elastix` switch is gone) |
 | Max parallel slice transforms, 1 to 4. 1 = one section per call | `transform.max_parallel`; below 4, `fit_affine` and `adjust_transforms` refuse larger calls (at 4, `fit_affine` stays uncapped) |
 | Enable slice angle estimation (yes/no); later tools: DeepSlice angle, Bayesian optimizer | `transform.angles` builds `set_cutting_angles` (manual only); the Fiji connector still refuses angle changes and shows the box disabled |
 | Extra notes for the agent, attached to this task | `transform.notes` |

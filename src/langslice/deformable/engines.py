@@ -319,34 +319,30 @@ def _elastix_parameters(
     return parameter_object, {key: list(value) for key, value in pm.items()}
 
 
-def _run_elastix(inputs: EngineInputs, settings: FitSettings, metric: Metric) -> EngineResult:
+def _elastix_image(array: np.ndarray, inputs: EngineInputs, pixel: type = np.float32) -> Any:
+    """An ITK image on the working grid (x = columns, y = rows, millimetres)."""
     import itk
 
-    if inputs.fixed_labels:
-        raise ValueError("Label-map channels are ANTs-only")
+    result = itk.image_from_array(np.ascontiguousarray(array, dtype=pixel))
+    result.SetSpacing([float(v) for v in inputs.spacing_mm])
+    result.SetOrigin([float(v) for v in inputs.origin_mm])
+    return result
 
-    start = time.perf_counter()
 
-    def image(array: np.ndarray, pixel: type = np.float32) -> Any:
-        result = itk.image_from_array(np.ascontiguousarray(array, dtype=pixel))
-        result.SetSpacing([float(v) for v in inputs.spacing_mm])
-        result.SetOrigin([float(v) for v in inputs.origin_mm])
-        return result
+def _elastix_register(
+    inputs: EngineInputs, parameter_object: Any, extra_pairs: list[tuple[Any, Any]],
+) -> tuple[Any, Any]:
+    """Run one Elastix registration of the intensity pair plus *extra_pairs*.
 
-    fixed = image(inputs.fixed)
-    moving = image(inputs.moving)
-    edges = inputs.fixed_edges is not None and inputs.moving_edges is not None
-    parameter_object, requested = _elastix_parameters(
-        settings, metric, inputs.spacing_mm,
-        edge_weight=inputs.edge_weight if edges else None)
-    fixed_mask = image(inputs.fixed_mask.astype(np.uint8), np.uint8)
-    moving_mask = image(inputs.moving_mask.astype(np.uint8), np.uint8)
-    pairs = [(fixed, moving)]
-    if edges:
-        assert inputs.fixed_edges is not None and inputs.moving_edges is not None
-        # The bending penalty (metric 2) reads no image, but with several
-        # pairs Elastix wants one per metric: the intensity pair again.
-        pairs += [(image(inputs.fixed_edges), image(inputs.moving_edges)), (fixed, moving)]
+    Every pair shares the fixed and moving masks. Returns the moving image
+    and the transform parameter object.
+    """
+    import itk
+
+    fixed = _elastix_image(inputs.fixed, inputs)
+    moving = _elastix_image(inputs.moving, inputs)
+    fixed_mask = _elastix_image(inputs.fixed_mask.astype(np.uint8), inputs, np.uint8)
+    moving_mask = _elastix_image(inputs.moving_mask.astype(np.uint8), inputs, np.uint8)
     # The method's own SetNumberOfThreads crashes this itk-elastix build
     # (segfault in the optimizer's parameter estimation); every component
     # takes ITK's global default when it is built, so that is set instead,
@@ -358,7 +354,7 @@ def _run_elastix(inputs: EngineInputs, settings: FitSettings, metric: Metric) ->
         method = itk.ElastixRegistrationMethod.New(fixed, moving)  # type: ignore[attr-defined]
         method.SetFixedMask(fixed_mask)
         method.SetMovingMask(moving_mask)
-        for extra_fixed, extra_moving in pairs[1:]:
+        for extra_fixed, extra_moving in extra_pairs:
             method.AddFixedImage(extra_fixed)
             method.AddMovingImage(extra_moving)
             method.AddFixedMask(fixed_mask)
@@ -368,7 +364,38 @@ def _run_elastix(inputs: EngineInputs, settings: FitSettings, metric: Metric) ->
         method.UpdateLargestPossibleRegion()
     finally:
         threader.SetGlobalDefaultNumberOfThreads(held_threads)
-    transform = method.GetTransformParameterObject()
+    return moving, method.GetTransformParameterObject()
+
+
+def _parameter_maps(transform: Any) -> list[dict[str, list[str]]]:
+    return [
+        {key: list(transform.GetParameterMap(i)[key])
+         for key in transform.GetParameterMap(i).keys()}
+        for i in range(transform.GetNumberOfParameterMaps())
+    ]
+
+
+def _run_elastix(inputs: EngineInputs, settings: FitSettings, metric: Metric) -> EngineResult:
+    import itk
+
+    if inputs.fixed_labels:
+        raise ValueError("Label-map channels are ANTs-only")
+
+    start = time.perf_counter()
+    edges = inputs.fixed_edges is not None and inputs.moving_edges is not None
+    parameter_object, requested = _elastix_parameters(
+        settings, metric, inputs.spacing_mm,
+        edge_weight=inputs.edge_weight if edges else None)
+    extra_pairs: list[tuple[Any, Any]] = []
+    if edges:
+        assert inputs.fixed_edges is not None and inputs.moving_edges is not None
+        # The bending penalty (metric 2) reads no image, but with several
+        # pairs Elastix wants one per metric: the intensity pair again.
+        extra_pairs = [(_elastix_image(inputs.fixed_edges, inputs),
+                        _elastix_image(inputs.moving_edges, inputs)),
+                       (_elastix_image(inputs.fixed, inputs),
+                        _elastix_image(inputs.moving, inputs))]
+    moving, transform = _elastix_register(inputs, parameter_object, extra_pairs)
     # Transformix writes deformationField.nii to its output directory, the
     # process's working directory by default (the user's folder, shared by
     # every pool worker); point it at a private scratch directory instead.
@@ -376,11 +403,7 @@ def _run_elastix(inputs: EngineInputs, settings: FitSettings, metric: Metric) ->
         deformation = itk.transformix_deformation_field(  # type: ignore[attr-defined]
             moving, transform, output_directory=scratch)
         forward = np.array(itk.array_from_image(deformation), dtype=np.float32)
-    maps = [
-        {key: list(transform.GetParameterMap(i)[key])
-         for key in transform.GetParameterMap(i).keys()}
-        for i in range(transform.GetNumberOfParameterMaps())
-    ]
+    maps = _parameter_maps(transform)
     inverse, residual = invert_field(forward, inputs.spacing_mm)
     notes = []
     if settings.section_image == "stain" and settings.stain_metric == "local_correlation":
@@ -401,6 +424,108 @@ def _run_elastix(inputs: EngineInputs, settings: FitSettings, metric: Metric) ->
             "approximated by fixed-point iteration on the working grid "
             f"(max residual {residual:.4g} mm over the grid)",
         ],
+    )
+
+
+#: Pyramid levels and iterations per level of the Elastix affine refinement
+#: (``fit_affine``'s default method): the B-spline fit's standard depth, since
+#: both start from a placement that is already close.
+ELASTIX_AFFINE_RESOLUTIONS = 3
+ELASTIX_AFFINE_ITERATIONS = 500
+
+
+@dataclass
+class AffineResult:
+    """An affine on the working grid's millimetres, section -> placed atlas.
+
+    ``matrix_mm`` (3x3) maps a section point (fixed) to the placed-atlas point
+    it corresponds to (moving), the direction of a deformable field:
+    ``atlas_point = matrix_mm @ section_point``.
+    """
+
+    matrix_mm: np.ndarray
+    native_parameters: dict[str, Any]
+    runtime_s: float
+    engine_version: str
+
+
+def run_elastix_affine(
+    inputs: EngineInputs, metric: Metric = "mutual_information",
+) -> AffineResult:
+    """An Elastix affine (rotation, scales, shear, shift) starting at the identity.
+
+    The identity is the placement the moving image was drawn at, so this is a
+    local refinement of that placement, never a search from scratch
+    (``AutomaticTransformInitialization`` off). Same images, masks, edge
+    channel, seed and thread count as the B-spline fit. Raises when Elastix
+    fails or returns a non-finite or singular matrix.
+    """
+    import itk
+
+    if inputs.fixed_labels:
+        raise ValueError("Label-map channels are ANTs-only")
+    if metric not in ELASTIX_METRICS:
+        raise ValueError(f"Elastix has no {metric!r} metric")
+    start = time.perf_counter()
+    edges = inputs.fixed_edges is not None and inputs.moving_edges is not None
+    metrics = 2 if edges else 1
+    parameter_object = itk.ParameterObject.New()  # type: ignore[attr-defined]
+    pm = parameter_object.GetDefaultParameterMap("affine")
+    pm["Transform"] = ("AffineTransform",)
+    pm["AutomaticTransformInitialization"] = ("false",)
+    pm["AutomaticScalesEstimation"] = ("true",)
+    pm["Metric"] = (ELASTIX_METRICS[metric],) * metrics
+    if edges:
+        # Metric k reads image pair k; pyramids, interpolators and samplers
+        # number one per metric (Elastix's multi-image rules).
+        pm["Registration"] = ("MultiMetricMultiResolutionRegistration",)
+        pm["Metric0Weight"] = ("1.0",)
+        pm["Metric1Weight"] = (repr(float(inputs.edge_weight)),)
+    for key in ("FixedImagePyramid", "MovingImagePyramid", "Interpolator"):
+        pm[key] = (pm[key][0],) * metrics
+    pm["ImageSampler"] = ("RandomCoordinate",) * metrics
+    pm["NumberOfHistogramBins"] = (str(MUTUAL_INFORMATION_BINS),)
+    pm["NumberOfResolutions"] = (str(ELASTIX_AFFINE_RESOLUTIONS),)
+    pm["MaximumNumberOfIterations"] = (str(ELASTIX_AFFINE_ITERATIONS),)
+    pm["NumberOfSpatialSamples"] = (str(ELASTIX_SPATIAL_SAMPLES),)
+    pm["NewSamplesEveryIteration"] = ("true",)
+    pm["RandomSeed"] = (str(RANDOM_SEED),)
+    # As in the B-spline fit: the masks are already widened past the outline.
+    pm["ErodeMask"] = ("false",)
+    pm["ErodeFixedMask"] = ("false",)
+    pm["ErodeMovingMask"] = ("false",)
+    pm["WriteResultImage"] = ("false",)
+    parameter_object.AddParameterMap(pm)
+    requested = {key: list(value) for key, value in pm.items()}
+    extra_pairs: list[tuple[Any, Any]] = []
+    if edges:
+        assert inputs.fixed_edges is not None and inputs.moving_edges is not None
+        extra_pairs = [(_elastix_image(inputs.fixed_edges, inputs),
+                        _elastix_image(inputs.moving_edges, inputs))]
+    _moving, transform = _elastix_register(inputs, parameter_object, extra_pairs)
+    maps = _parameter_maps(transform)
+    final = maps[-1]
+    try:
+        values = [float(v) for v in final["TransformParameters"]]
+        centre = [float(v) for v in final["CenterOfRotationPoint"]]
+    except (KeyError, ValueError) as exc:
+        raise RuntimeError("Elastix returned no affine parameters") from exc
+    if len(values) != 6 or len(centre) != 2:
+        raise RuntimeError(f"Unexpected Elastix affine parameters: {values}, {centre}")
+    # Elastix's affine: T(x) = A (x - c) + c + t, A row-major.
+    linear = np.array(values[:4], dtype=np.float64).reshape(2, 2)
+    pivot = np.array(centre, dtype=np.float64)
+    shift = pivot + np.array(values[4:], dtype=np.float64) - linear @ pivot
+    matrix = np.array([[*linear[0], shift[0]], [*linear[1], shift[1]], [0.0, 0.0, 1.0]])
+    if not np.isfinite(matrix).all() or abs(np.linalg.det(linear)) < 1e-6:
+        raise RuntimeError("Elastix returned a non-finite or singular affine")
+    return AffineResult(
+        matrix_mm=matrix,
+        native_parameters={"requested": requested, "transform_parameter_maps": maps,
+                           "metric": metric, "edge_channel": edges,
+                           "threads": FIT_THREADS, "random_seed": RANDOM_SEED},
+        runtime_s=time.perf_counter() - start,
+        engine_version=f"itk-elastix (itk {itk.__version__})",
     )
 
 

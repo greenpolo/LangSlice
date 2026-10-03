@@ -239,6 +239,28 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
   `RegionRefusal` codes `REGIONS_INSIDE_OUTLINE`, `REGIONS_ABSENT`,
   `REGIONS_LEAVE_NOTHING`, `NO_TISSUE_IN_REGIONS`. No regions: the old fit,
   byte-identical (M04 B_05/A_01 params and pictures hashed against 5b873d3).
+  `fit_elastix` (2026-10-03) is `fit_affine`'s DEFAULT method, an intensity
+  affine that refines the section's CURRENT placement (stored six numbers,
+  identity without; never a search from scratch). `elastix_affine` places
+  the atlas plane there on the deformable fit grid (`deformation.fit_grid`
+  with a stand-in `transform`, so a section without one starts from
+  identity; `_start_calibration` keeps the calibration those numbers were
+  drawn with), prepares the `fit` appearance against the ARA template
+  exactly as a deformable stain fit does (`deformable.prepare_fit` with
+  `elastix_settings`: mutual information + edge channel, `include` ->
+  `structures`, `exclude` -> `exclude`, one-sided entries included; an
+  INTACT section gets no torn-edge band, since the band's rule also marks
+  outline the start merely overhangs), runs
+  `deformable.engines.run_elastix_affine` (Elastix `AffineTransform` from
+  the identity, fixed seed and threads: identical inputs give identical
+  numbers) and composes the result onto the start (new matrix = start @
+  step, step the engine's mm map in grid pixels). A full affine: the six
+  numbers carry its shear exactly and `physical` reports it. `iou` is the
+  tissue against the kept atlas footprint (`_overlap`, the silhouette
+  fit's region rule) under the fitted placement. The payload is
+  `_fit_payload`, shared with `fit_silhouette`, so both methods reply,
+  draw, checkpoint and undo identically; the stored `kind` is the method.
+  Elastix errors and failed preparation answer `FIT_FAILED` per section.
 - `deformation.py` — `fit_deformable`'s machinery (2026-10-01): the fit grid
   (`fit_grid`: `prepare_linear_registration` at `FIT_LONG_EDGE` 1536, the same
   handoff `trace_borders` uses), the image a fit reads (`stain_image`: the
@@ -633,7 +655,7 @@ deleted; a landmark-tool pass for POSITION estimation benchmarked WORSE and was
 deleted rather than kept behind a flag. The later in-plane paired-landmark
 extension was also removed; nonlinear registration stays separate.
 
-**One transform representation.** Silhouette, interactive, elastix-someday:
+**One transform representation.** Elastix, silhouette, interactive:
 every stored transform and every fit payload carries `physical` (the five
 knobs `adjust_transforms` takes, plus `shear`, about a pivot in canvas fractions)
 next to the six normalized numbers. The fraction-based `decomposition` left
@@ -702,8 +724,20 @@ resumed run starts from the checkpoint, which is the state as it stood.
   `include=["MB"], exclude=["CTX"]` gave an upright fit at scales 1.17/1.22,
   close to the agent's own manual 1.02/1.18. The whole-outline fit (refused
   there as damaged) turned it -91 degrees.
-- `method="elastix"` and `run_deepslice` answer `UNAVAILABLE`; both are seams,
-  not stubs to fill in casually.
+- `run_deepslice` answers `UNAVAILABLE`; it is a seam, not a stub to fill in
+  casually.
+- The Elastix method (2026-10-03, `_local/runs/20261003_elastix_affine`, the
+  eight ceiling-test sections from Astra's applied placements, judged by eye
+  on borders drawn on the section): it never turned a section (largest turn
+  from the start 5 degrees, median movement 0.08-0.31 mm), where the
+  silhouette fit turned M04_A_01 (olfactory bulbs) 95 degrees and M04_D_08
+  (round tissue, with exclusions) 179 degrees, upside down. Clearly better
+  than Astra's placement on M04_A_01 (bulb and frontal outlines),
+  M11_C_08 and M11_B_08 (midline and interior centred, the silhouette fit
+  there inflated the atlas onto displaced flaps); about the same on
+  M04_B_05, M11_D_05, M04_C_08 and M04_D_08; on M11_B_03 slightly worse at
+  one lateral ventricle (tens of micrometres). Engine time under 1.2 s a
+  section; a whole call ~1-6 s a section (grid render included), sequential.
 - `search_position` (was `fit_position`) is a thin wrapper over `oblique.fit_oblique` — correct, not
   tuned. It has not been benchmarked.
 - True physical scale is honest, not flattering: measured on LSD_910 M04 at
@@ -719,8 +753,9 @@ resumed run starts from the checkpoint, which is the state as it stood.
 
 `TransformSpec.interactive` and `.automatic` default to true. Hosts such as the
 ABBA menu may independently remove direct adjustment tools or the
-automatic `fit_affine` tool. `elastix` controls the optional backend within the
-automatic fitter. The transform task's submit requirement still applies; a
+automatic `fit_affine` tool (Elastix by default, silhouette as an option; the
+former `transform.elastix` switch was removed 2026-10-03, and saved specs or
+hosts that still send it load with the key ignored). The transform task's submit requirement still applies; a
 host must enable at least one transform method when enabling that task.
 
 ## Claude host briefing

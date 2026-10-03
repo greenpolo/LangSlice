@@ -30,7 +30,7 @@ def test_transform_controls_independently_gate_tools(
 def test_disabled_transform_task_overrides_enabled_fitting_switches(tmp_path: Path):
     _, _, box = _box(
         tmp_path, tasks=["position"],
-        transform=TransformSpec(interactive=True, automatic=True, angles=True, elastix=True),
+        transform=TransformSpec(interactive=True, automatic=True, angles=True),
     )
     assert not set(box.names) & {
         "adjust_transform", "adjust_transforms", "view_landmarks",

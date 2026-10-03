@@ -677,7 +677,9 @@ def test_fit_affine_records_a_transform_and_refuses_damaged_sections(tmp_path: P
     named = _tool(box, "fit_affine")(["s1.png"], "silhouette")
     assert named["results"][0]["error"] == "DAMAGED"
 
-    assert _tool(box, "fit_affine")([], "elastix")["error"] == "UNAVAILABLE"
+    # The default method (elastix) refuses damaged sections the same way.
+    assert _tool(box, "fit_affine")(["s1.png"])["results"][0]["error"] == "DAMAGED"
+    assert _tool(box, "fit_affine")([], "spline")["error"] == "BAD_ARGS"
 
 
 def test_one_entry_adjustment_writes_shows_and_undoes(tmp_path: Path):
