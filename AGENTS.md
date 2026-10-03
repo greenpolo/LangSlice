@@ -155,7 +155,7 @@ Shared, top-level:
   `host_preprocess` blends a host's multi-page snapshot (one page per channel)
   into a section's DEFAULT appearance (the worker's `preprocess.preview` writes
   that same image for the host's preview); the pages stay raw channels
-  (`read_working_pages`, `channel_planes`) for the agent's display options,
+  (`read_working_pages`, `channel_planes`) for the agent's picture options (`view.channels`),
   its optional `preprocess` tool (`custom_appearance`: weights, CLAHE, ANTs
   N4/denoise) and fitting. `read_working_image` gives
   each section file's small working copy (the smallest TIFF pyramid level of

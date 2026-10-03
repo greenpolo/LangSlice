@@ -123,9 +123,9 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
   true scale (`atlas um/px / canvas um/px`, anatomy centred, canvas grown to
   hold it — never fit-to-canvas, which is not a calibration), and
   `physical_views` draws the alignment picture on it (family outlines
-  from `atlas.render.family_outlines` as yellow 0.5 px lines by default, drawn
-  at OUTPUT size. Agent tools expose `border_color` (named color/#RRGGBB) and
-  `border_thickness` (0.25–8 output pixels, including fractional widths) alongside template opacity;
+  from `atlas.render.family_outlines` as yellow 1 px lines by default, drawn
+  at OUTPUT size. Agent tools expose `view.border_color` (named color/#RRGGBB) and
+  `view.border_thickness` (0.25–8 output pixels, including fractional widths) alongside `view.atlas_opacity`;
   these are display-only and do not change transforms or IoU. The native ABBA
   viewer keeps its own display settings. Includes a 1 mm scale bar and two-line
   caption). It takes either the five physical knobs or a ready 2x3 in the
@@ -159,27 +159,60 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
   cutting angles, `oblique.sample_oblique_plane` otherwise) and the
   `view_atlas` tool (was `fetch_atlas`), closed over the run context. Sections
   and atlas sections are framed the same way so apparent scale is not a cue.
-- `display.py` — the shared display options (2026-10-01): `mode`, `zoom`,
-  `section_image`, `atlas_image` (`ara`/`borders`/`nissl`, nissl only with
-  ABBA's cached atlas, `EngineContext.abba_atlas`), `atlas_opacity`, `regions`
-  (descendants included, `render.region_polys`, context outlines at
-  `REGION_CONTEXT_ALPHA`; an entry may name one side, `"CTX:left"`, which
-  `render.regions_left` resolves per picture: on a physical canvas the
-  SECTION's side through the section matrix — a mirrored placement shows it
-  on the canvas's other side and the caption says so — and on an atlas-only
-  picture the picture's own side; `NO_SIDES` on sagittal stacks),
-  `outlines`, `border_color`, `border_thickness`.
-  `parse_display` validates them once into a frozen `DisplayOptions`; every
-  picture tool takes the same nine names (`with_display_doc` appends the
-  shared docstring), `adjust_transforms` per entry. A tenth, `resolution`, is
-  written into every picture tool (`fit_deformable` included) but exists only
-  at image resolution `auto`: `resolution_argument` (applied to every tool in
-  `build_tools`) strips it from the signature, annotations and docstring at
-  every other level, and `clamp_resolution` clamps it to 128..1536 with a
-  `view.resolution_note`. `DisplayOptions.long_edge` is the call's picture
-  size. It never writes state, so a call's options never change a default. `framed_section` / `framed_atlas`
-  draw the tissue-framed pictures (default options = the old pixels exactly);
-  the toolbox's `draw_canvas` draws every physical picture.
+- `arguments.py` — the shapes of the arguments (2026-10-03): `View` (the
+  picture options) and `ViewAuto` (+ `resolution`), and the `entries` /
+  `candidates` dicts (`DamageEntry`, `OrientEntry`, `PositionEntry`,
+  `PlacementEntry`, `TransformEntry`, `Candidate`, `FixedCandidate`), all
+  pydantic-configured typed dicts with `extra="forbid"`, so ADK's and
+  FastMCP's schemas name every key and type (the OAuth lane inlines the
+  `$defs`, `openai_oauth._inline_refs`). `argument_refusal(func, args)` is the
+  one strictness rule: unknown top-level names, and unknown keys inside any
+  typed-dict argument, answer `UNKNOWN_ARGUMENTS` with the keys, where a
+  stray key belongs (`` `mode` belongs inside `view` ``) and `KEY_NOTES` (a
+  `resolution` below "auto": the user fixed the picture size; a candidate
+  `engine` when the engine is fixed). Applied by `toolbox._strict` (every
+  call, direct ones included), `adk.plugins.StrictArgumentsPlugin` (ADK's
+  `FunctionTool` drops unknown top-level arguments before a tool runs; the
+  plugin's `before_tool_callback` answers first) and
+  `mcp_server.server.strict_arguments` (FastMCP drops them too; checked
+  after its JSON pre-parse).
+- `display.py` — `view`, the picture options (2026-10-01 as nine flat
+  arguments; one `view` object since 2026-10-03, Nash: "Our tools have been
+  really messy"; ABBA's image-channel / atlas-channel design). `parse_view`
+  validates one call's `view` against the tool's `Profile` (its modes, first
+  = default; whether `channels`, the atlas keys and `deformation` apply; zoom
+  and deformation modes; per-mode atlas defaults) and `MODE_RULES` (what each
+  mode draws) into a frozen `DisplayOptions`; a key that means nothing for the
+  tool or the mode answers `VIEW_KEY_UNUSED` with each reason. Keys: `mode`;
+  `channels` — raw channel names (look `{"overlay": names}`: each stretched
+  by percentile 1..99.5 on the whole working plane, `render._look_image`; one
+  in gray, several added in `appearance.channel_colors`, a channel named
+  after a colour keeping it) or one version, `view` (default) / `fit`;
+  `atlas_channels` — `ara`, `nissl` (ABBA's cached atlas only,
+  `EngineContext.abba_atlas`), `borders` (the lines); `atlas_image_picture`
+  composes the images (ara alone = the renderers' own reference path, none =
+  black, two = green + magenta); `atlas_opacity` (default 0.5 when an image
+  is listed in a blending mode); `regions` (descendants included,
+  `render.region_polys`, context outlines at `REGION_CONTEXT_ALPHA`; an entry
+  may name one side, `"CTX:left"`, which `render.regions_left` resolves per
+  picture: on a physical canvas the SECTION's side through the section matrix
+  — a mirrored placement shows it on the canvas's other side and the caption
+  says so — and on an atlas-only picture the picture's own side; `NO_SIDES`
+  on sagittal stacks); `outlines` (`all`/`outer`, only with `borders`);
+  `border_color`, `border_thickness` (default `DEFAULT_BORDER_THICKNESS` 1.0
+  everywhere, picked by eye on M11_B_03: 0.5 faded into bright tissue, 1.5
+  covered ventricle edges); `zoom`; `deformation` (`applied`/`none`,
+  placement tools); `resolution` only at image resolution `auto`:
+  `view_schema` (applied to every tool in `build_tools`) swaps `view`'s
+  annotation for `ViewAuto` there, and `clamp_resolution` clamps it to
+  128..1536 with a `view.resolution_note`. `DisplayOptions.long_edge` is the
+  call's picture size; `echo()` is what the call drew. It never writes state,
+  so a call's options never change a default. `framed_section` /
+  `framed_atlas` draw the tissue-framed pictures (default options = the old
+  pixels exactly), `channel_strip` the `view_slices` channels mode (each raw
+  channel unmodified, labelled); the toolbox's `draw_canvas` draws every
+  physical picture (its caption names the channels and any atlas under the
+  section, `canvas_label`).
 - `appearance.py` — the section's appearance per target (2026-10-01): `view`
   (what the agent is shown) and `fit` (`fit_image`, what a deformable fit
   reads), each a stack setting plus per-section overrides on
@@ -188,7 +221,9 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
   `spec.host_preprocessing` is set); anything else is drawn by
   `render_slice(look=...)` from the raw channels
   (`EngineContext.section_channels`) over the same frame and size. The
-  `preprocess` tool (gated by `spec.agent_preprocessing`) is the only writer.
+  `preprocess` tool (gated by `spec.agent_preprocessing`) is the only writer;
+  it returns each pictured section BEFORE (the target's look before the call,
+  drawn first) and AFTER, labelled.
   Computation (silhouette fit, calibration, tissue pivot, `search_position`,
   the image model's input) always reads the default.
 - `toolbox.py` — `build_tools(state, ctx, spec)`: every tool, gated by the
@@ -198,7 +233,7 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
   section; `mode="ab"` draws the new parameters beside what the section
   carried before the call, a silhouette fit included; the same numbers again
   re-draw without an undo step). One to four distinct sections share one undo
-  step; each returns one image, or two for `ab`/`side_by_side`, mapped by
+  step and one `view`; each returns one image, or two for `ab`/`side_by_side`, mapped by
   per-result `image_indexes`. Paired landmark tools are removed; interactive
   alignment exposes direct affine adjustments only.
   `transform_history` on the ToolBox is per section and lasts the whole run,
@@ -291,8 +326,11 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
   image; included/`regions` strong, excluded pink).
 - `prompt.py` — `build_job_statement`: job, run facts, ONE factual line per
   tool that exists, hard constraints. Nothing else. `tool_line` words the
-  `fit_deformable` line for the run (traced section images only with an image
-  model).
+  `fit_deformable` line for the run (traced fit sections only with an image
+  model). `display_lines` describes `view` ONCE, with the raw channels (and
+  that their names may not identify the stain; `view_slices` mode channels
+  shows each) and the atlas channels this host has, each with one line
+  (`ATLAS_CHANNEL_LINES`); `PICTURE_TOOLS` includes `fit_deformable`.
 - `session.py` — the ADK agent builder, the plugins, the loop, and
   `TokenTally`: every call's usage is printed and traced, and
   `JobSpec.max_quota_percent` (25) ends the session when this run's share
@@ -354,7 +392,7 @@ The ABBA dialog's controls, all plain `JobSpec` fields (not CLI flags yet):
   opening images (`render.opening_edge`: seed sections and atlas strip) and
   every later picture (`render.picture_edge`: each panel a tool returns):
   low 256/512, medium 384/768, high 512/1024, auto 256 then the agent's
-  `resolution` per call (128..1536, 512 when it gives none). Only what the
+  `view.resolution` per call (128..1536, 512 when it gives none). Only what the
   agent is SHOWN changes. Nothing is upsampled past its source: a framed
   `render_slice` treats `long_edge` as a ceiling over the working copy, a
   physical picture (`draw_canvas`) renders the section at the panel size
@@ -365,7 +403,7 @@ The ABBA dialog's controls, all plain `JobSpec` fields (not CLI flags yet):
   fit image. The atlas under a section in ONE picture (`stacked`,
   `view_stack`) is drawn to the section's size (`framed_atlas(fill=True)`,
   `stack_pictures`).
-  `view_stack` tiles are the opening size (or `resolution` at auto), shrunk
+  `view_stack` tiles are the opening size (or `view.resolution` at auto), shrunk
   until the sheet is at most `SHEET_MAX_LONG_EDGE` 2048. The old
   `OVERLAY_LONG_EDGE` 768 (the interactive loop's cap) is gone: the
   atlas-voxel rule had already put that canvas at ~450 px, so it now
@@ -379,7 +417,7 @@ The ABBA dialog's controls, all plain `JobSpec` fields (not CLI flags yet):
 
 ## Tool consolidation (2026-09-15)
 
-The default full-task toolbox has 15 tools (10 for interactive-only transform
+The default full-task toolbox has 15 tools (11 for interactive-only transform
 refinement, `orient_slices` included since 2026-09-29; one fewer each with
 `agent_damage` off, one more with `agent_preprocessing` on). Renamed
 2026-10-01 (Nash: names do not change performance): `fetch_atlas` ->
@@ -400,7 +438,7 @@ The linear agent handles order, position and affine alignment. Paired landmark
 viewing, editing and warping were removed from the toolbox and prompt after the
 full-stack comparison did not establish a nonlinear quality gain. The dedicated
 linear landmark module and editable-point state are removed. Default full-task
-and interactive-only tool counts are 15 and 10 (`orient_slices` joined the
+and interactive-only tool counts are 15 and 11 (`orient_slices` joined the
 transform task on 2026-09-29).
 
 **The nonlinear task's job (2026-10-01).** A live Astra run with the image
@@ -414,7 +452,7 @@ Method line asks it to inspect each fit's borders against internal anatomy
 where no fit improves on it, and `submit` refuses `MISSING_DEFORMATIONS`
 (`toolbox.missing_deformations`, part of `submit_errors`) until every section
 holds a deformation at its current `linear_key` or a `keep_linear` record.
-`fit_deformable(sections, keep_linear="reason")` is that record: no fit,
+`fit_deformable(slices, keep_linear="reason")` is that record: no fit,
 `SliceState.deformation = {"keep_linear": reason, "linear_key": ...}`, one
 undo step, cleared by `clear_stale` like a fit, status row `keep_linear`. It
 lives on the deformation field rather than a submit argument so it is
@@ -443,12 +481,17 @@ count and, for a positioned section, whether the region is in the atlas plane at
 placement. It is for choosing regions a later deformable fit should exclude.
 It does not fit a deformation or modify `transform`.
 
-**`fit_deformable` (2026-10-01, task `nonlinear`).** `fit_deformable(sections,
-include=[], exclude=[], start="linear"|"current", section_image="fit"|
-"traced_borders"|"traced_lines", atlas_image=""|"ara"|"borders"|"nissl",
+**`fit_deformable` (2026-10-01, task `nonlinear`).** `fit_deformable(slices,
+include=[], exclude=[], start="linear"|"current", fit_section="fit"|
+"traced_borders"|"traced_lines", fit_atlas=""|"ara"|"borders"|"nissl",
 [engine], stiffness="soft"|"medium"|"firm", candidates=[], keep_linear="",
-mode="borders"|"ab", zoom, atlas_opacity, regions, outlines, border_color,
-border_thickness=1.0, [resolution])`. Defaults without a trace: the fit
+view)` (`fit_section`/`fit_atlas` were `section_image`/`atlas_image` until
+2026-10-03, named apart from the picture options; `Choice` and the stored
+`steps` use the new names, the cache keys are unchanged so saved records are
+reused); `view` modes `borders` (default) / `ab`, atlas channels default
+`[borders]`, `ara`/`nissl` blending that atlas image, warped, under the lines
+(`deformation._blend_atlas`); `channels` and `deformation` do not apply, and
+`keep_linear` refuses `view`/`candidates`. Defaults without a trace: the fit
 appearance against `ara`, ANTs (when the user left the engine open and it is
 installed), medium; the stain fit itself is ANTs local correlation (80 µm
 window) + an edge channel + the automatic tissue/ventricle label channels
@@ -462,9 +505,9 @@ or there is no image model). The 2026-10-01 ceiling test (deformable
 `CLAUDE.md`) removed `detail` (fixed at standard), the `stiff` level, line
 softening as a knob, and raw channels as section images: a channel is a fit
 appearance (`preprocess` target `fit`; the docstring points there when
-`spec.agent_preprocessing` is on), so an unknown section image answers
-`BAD_SECTION_IMAGE`. The stain against `borders` is refused (`BAD_ARGS`:
-borders are for traced images). `nissl` is described neutrally as a
+`spec.agent_preprocessing` is on), so an unknown fit section answers
+`BAD_FIT_SECTION`. The stain against `borders` is refused (`BAD_ARGS`:
+borders are for traced fit sections). `nissl` is described neutrally as a
 Nissl-stained reference. Region entries (`include`, `exclude`, `regions`)
 may name one side, `"CTX:left"` / `"CTX:right"` (`atlas.sides`): the
 section's side as this tool's pictures draw it; `region_names` validates
@@ -474,8 +517,8 @@ them (`UNKNOWN_REGIONS` for a bad side, `NO_SIDES` on a sagittal stack) and
 `engine` exists only when `JobSpec.nonlinear.engine` is `"either"` (default);
 `"ants"`/`"elastix"` build the same tool without it (`fit_deformable_fixed`,
 renamed). ANTs missing answers `UNAVAILABLE` naming the extra. 2–4
-`candidates` (each overriding stiffness/section_image/atlas_image/
-[engine]) PREVIEW and write nothing; one setting APPLIES it as one undo step,
+`candidates` (each overriding stiffness/fit_section/fit_atlas/
+[engine]; another key is refused by the strict check) PREVIEW and write nothing; one setting APPLIES it as one undo step,
 reusing an identical cached or saved result (`cached`); the same key again
 only re-draws (`written: false`). `include` -> the engine's `structures`
 (restricted step + 300 um), `exclude` -> its `exclude`; `start="current"`
@@ -494,9 +537,15 @@ and `provenance` (section id, linear handoff metadata, inputs). Every tool is
 wrapped by `toolbox._clears_stale_deformations`: after any call, a
 deformation whose `linear_key` no longer matches (position, orientation,
 cutting angles, transform) is cleared in the same undo step and the reply
-carries `deformation_cleared`. `view_placement`/`set_positions` physical modes
-draw the section resampled by the stored warp (`deformable.warp_section_image`,
-row `deformation_drawn`) at the position it was fitted at. Records are written
+carries `deformation_cleared`. `view_placement`/`set_positions` draw the
+section resampled by the applied warp (`deformable.warp_section_image`, row
+`deformation_drawn`) at the position it was fitted at, in every mode that
+draws the section under its placement (`WARPED_PLACEMENT_MODES`: overlay,
+checkerboard, outlines, section) unless `view.deformation` is `none`; a held
+but unreadable or stale record says `deformation_drawn: false`.
+`view_placement` is built whenever position, transform or nonlinear is on
+(2026-10-03: Astra asked for a read-only view of the complete
+registration). Records are written
 at apply time under the results folder and referenced from the results JSON;
 export adapters (ABBA, VisuAlign, BrainGlobe) are to read them, none exist.
 
@@ -765,4 +814,7 @@ range, axis direction, protocol and calibration text identical across hosts.
 Claude's statement does not reuse the ADK method/playbook. MCP opens saved ABBA
 jobs through `api.abba_worker.prepare_linear`, exactly like `linear.run`,
 and supplies opening pictures separately with `show_stack` pages. No image
-model is available through the Claude connector.
+model is available through the Claude connector. The MCP tools are the same
+functions with the same `view` and the same strict-argument rule
+(`mcp_server.server.strict_arguments`; a nested object Claude Desktop sends
+as a JSON string is parsed first).

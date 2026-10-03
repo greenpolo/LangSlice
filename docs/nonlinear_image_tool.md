@@ -26,7 +26,7 @@ running call and record its result.
 This stage produces border-annotation images. It does not fit a deformation,
 modify the linear transform, or export a completed nonlinear registration.
 `fit_deformable` fits the deformation (the nonlinear task's job since
-2026-10-01): with `section_image` `traced_borders` or `traced_lines` it reads
+2026-10-01): with `fit_section` `traced_borders` or `traced_lines` it reads
 this tool's extracted lines, waiting up to 300 s for a call still running at
 the current placement (recording its result as `submit` would), and its reply
 adds the lines drawn on the section so the agent can review the trace. With
