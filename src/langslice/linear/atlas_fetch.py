@@ -19,6 +19,7 @@ from langslice.adk import TOOL_MEDIA_PARTS_KEY
 from langslice.affine import resize_long_edge
 from langslice.atlas.core import get_reference_slice, get_root_mask
 from langslice.image_prep import crop_to_mask
+from langslice.linear.arguments import View
 from langslice.linear.render import (
     MAX_IMAGES_PER_CALL,
     caption,
@@ -165,34 +166,29 @@ def atlas_part(
     return part.model_copy(deep=True)
 
 
+#: ``view_atlas``'s picture options: the atlas alone, framed to its anatomy.
+VIEW_ATLAS_PROFILE_MODES = ("template",)
+
+
 def make_view_atlas(state: StackState, ctx: EngineContext):
     """Build the ``view_atlas`` tool, closed over the run's atlas and plane."""
     from langslice.linear.display import (
+        Profile,
         atlas_caption,
         framed_atlas,
-        parse_display,
+        parse_view,
         regions_in_plane,
-        with_display_doc,
     )
 
     pos_lo, pos_hi = ctx.position_range
-
-    @with_display_doc(
-        '"template" (the only mode here: the atlas image alone, framed to its '
-        "anatomy)."
+    profile = Profile(
+        VIEW_ATLAS_PROFILE_MODES, channels=False,
+        channels_reason="view_atlas draws the atlas alone, no section",
     )
+
     def view_atlas(
         positions_mm: list[float],
-        mode: str = "template",
-        zoom: list[float] = [],  # noqa: B006 — read, never mutated; ADK wants a value
-        section_image: str = "current",
-        atlas_image: str = "ara",
-        atlas_opacity: float = 0.0,
-        regions: list[str] = [],  # noqa: B006
-        outlines: str = "",
-        border_color: str = "yellow",
-        border_thickness: float = 0.5,
-        resolution: int = 0,
+        view: View = {},  # noqa: B006 — read, never mutated; ADK wants a value
     ) -> dict[str, Any]:
         """Look at atlas sections at the positions you name, at most 4 per call.
 
@@ -206,6 +202,10 @@ def make_view_atlas(state: StackState, ctx: EngineContext):
 
         Args:
             positions_mm: Positions along the slicing axis, in millimetres.
+            view: Picture options (described once in the job statement).
+                Mode "template" only: the atlas alone, framed to its anatomy;
+                atlas_channels default ["ara"], add "borders" for the region
+                lines. No section is drawn, so channels does not apply.
 
         Returns:
             status/positions plus the atlas images, in the order requested.
@@ -213,13 +213,7 @@ def make_view_atlas(state: StackState, ctx: EngineContext):
         requested = _as_floats(list(positions_mm or []))
         if not requested:
             return {"status": "error", "error": "BAD_ARGS"}
-        options = parse_display(
-            ctx, state, modes=("template",), mode=mode, zoom=zoom,
-            section_image=section_image, atlas_image=atlas_image,
-            atlas_opacity=atlas_opacity, regions=regions, outlines=outlines,
-            border_color=border_color, border_thickness=border_thickness,
-            framed_modes=("template",), resolution=resolution,
-        )
+        options = parse_view(ctx, state, view, profile)
         if isinstance(options, dict):
             return options
         dropped = [round(value, 2) for value in requested[MAX_VIEW_POSITIONS:]]
@@ -229,8 +223,8 @@ def make_view_atlas(state: StackState, ctx: EngineContext):
         if not positions:
             return {"status": "error", "error": "EMPTY_RESULT"}
 
-        plain = (options.atlas_image == "ara" and options.outlines == "none"
-                 and not options.regions and options.full_view)
+        plain = (options.atlas_images == ("ara",) and not options.lines
+                 and options.full_view)
         parts: list[types.Part] = [
             atlas_part(ctx, state, position, long_edge=options.long_edge)
             if plain else image_to_part(caption(

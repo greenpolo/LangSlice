@@ -12,21 +12,16 @@ from PIL import Image
 
 from langslice.adk import TOOL_MEDIA_PARTS_KEY
 from langslice.linear import appearance as looks
-from langslice.linear.display import DISPLAY_DOC
 from langslice.linear.engine import build_context, ingest
 from langslice.linear.prompt import TOOL_LINES
 from langslice.linear.render import render_slice
-from langslice.linear.spec import JobSpec, PositionSpec
+from langslice.linear.spec import JobSpec, NonlinearSpec, PositionSpec
 from langslice.linear.toolbox import build_tools
 from tests.fakes import SlabAtlas
 
-DISPLAY_ARGS = (
-    "mode", "zoom", "section_image", "atlas_image", "atlas_opacity", "regions",
-    "outlines", "border_color", "border_thickness",
-)
 PICTURE_TOOLS = (
     "view_slices", "view_atlas", "view_placement", "view_stack", "set_positions",
-    "orient_slices", "fit_affine", "preprocess",
+    "orient_slices", "fit_affine", "adjust_transforms", "preprocess",
 )
 _REGIONS = [
     (1, "root", "root", [1]),
@@ -123,13 +118,13 @@ def test_section_overrides_win_and_a_reset_returns_to_the_stack(tmp_path: Path):
     state, _, _, box = _setup(tmp_path, agent_preprocessing=True)
     tool = _tool(box, "preprocess")
     assert tool(channel_weights=[1, 0, 0])["status"] == "ok"
-    assert tool(sections=["s1.png"], channel_weights=[0, 1, 0], clahe_tiles=4)["scope"] == [
+    assert tool(slices=["s1.png"], channel_weights=[0, 1, 0], clahe_tiles=4)["scope"] == [
         "s1.png"
     ]
     for target in looks.TARGETS:
         assert looks.section_settings(state, target, "s0.png")["channel_weights"] == [1, 0, 0]
         assert looks.section_settings(state, target, "s1.png")["clahe_tiles"] == 4
-    tool(sections=["s1.png"], target="view", reset=True)
+    tool(slices=["s1.png"], target="view", reset=True)
     assert looks.section_settings(state, "view", "s1.png")["channel_weights"] == [1, 0, 0]
     assert looks.section_settings(state, "fit", "s1.png")["channel_weights"] == [0, 1, 0]
     tool(reset=True)
@@ -155,14 +150,14 @@ def test_preprocess_refuses_bad_settings_before_writing(tmp_path: Path):
     assert tool(channel_weights=[1, 1])["error"] == "CHANNEL_COUNT_MISMATCH"
     assert tool(clahe_clip=-1)["error"] == "BAD_ARGS"
     assert tool(target="atlas")["error"] == "BAD_TARGET"
-    assert tool(sections=["nope.png"])["error"] == "UNKNOWN_SLICE_IDS"
+    assert tool(slices=["nope.png"])["error"] == "UNKNOWN_SLICE_IDS"
     assert state.appearance == {} and not box.undo_stack
 
 
 def test_ants_steps_run_when_the_extra_is_installed(tmp_path: Path):
     pytest.importorskip("ants")
     state, _, _, box = _setup(tmp_path, agent_preprocessing=True)
-    result = _tool(box, "preprocess")(sections=["s0.png"], n4=True, denoise=True)
+    result = _tool(box, "preprocess")(slices=["s0.png"], n4=True, denoise=True)
     assert result["status"] == "ok", result
     assert looks.section_settings(state, "view", "s0.png")["n4"] is True
 
@@ -177,73 +172,177 @@ def test_the_image_model_input_ignores_the_agents_appearance(tmp_path: Path):
     assert np.array_equal(before, after)
 
 
-# --- display options -------------------------------------------------------
 
 
-def test_every_picture_tool_takes_the_same_display_options(tmp_path: Path):
+# --- one `view` argument ---------------------------------------------------
+
+
+def _pixels(result: dict[str, Any], index: int = 0) -> np.ndarray:
+    import io
+
+    return np.asarray(Image.open(io.BytesIO(_bytes(result)[index])).convert("RGB")).astype(int)
+
+
+def test_every_picture_tool_takes_one_view_argument(tmp_path: Path):
+    from google.adk.tools import FunctionTool
+
+    from langslice.providers.openai_oauth import _json_schema_dict
+
     _, _, _, box = _setup(
         tmp_path, agent_preprocessing=True, position=PositionSpec(bayesian=True),
     )
+    old = {"mode", "zoom", "section_image", "atlas_image", "atlas_opacity", "regions",
+           "outlines", "border_color", "border_thickness", "resolution", "slice_ids",
+           "sections"}
     for name in PICTURE_TOOLS:
         tool = _tool(box, name)
-        assert set(DISPLAY_ARGS) <= set(inspect.signature(tool).parameters), name
-        assert "regions:" in (tool.__doc__ or ""), name
-    assert "regions:" in (_tool(box, "adjust_transforms").__doc__ or "")
-    assert DISPLAY_DOC.strip().splitlines()[0] in (_tool(box, "view_atlas").__doc__ or "")
-    result = _tool(box, "adjust_transforms")([{
-        "id": "s0.png", "rotation_deg": 0, "scale_x": 1, "scale_y": 1,
-        "translate_x_mm": 0, "translate_y_mm": 0, "mode": "overlay", "zoom": [],
-        "section_image": "blue", "atlas_image": "borders", "atlas_opacity": 0.4,
-        "regions": ["TH"], "outlines": "outer", "border_color": "#00ff00",
-        "border_thickness": 1.0,
-    }])
-    row = result["results"][0]
-    assert row["status"] == "ok", row
-    assert row["view"]["regions"] == ["TH"] and row["view"]["atlas_image"] == "borders"
+        parameters = set(inspect.signature(tool).parameters)
+        assert "view" in parameters and not parameters & old, name
+        # The model is sent every view key with its type, not an opaque object.
+        schema = _json_schema_dict(FunctionTool(tool)._get_declaration())
+        view = schema["properties"]["view"]
+        assert view["type"] == "object" and view.get("additionalProperties") is False, name
+        assert view["properties"]["channels"]["type"] == "array", name
+        assert view["properties"]["atlas_opacity"]["type"] == "number", name
+        assert "$ref" not in str(schema), name
+        assert "described once in the job statement" in (tool.__doc__ or ""), name
 
 
-def test_per_call_options_never_change_the_stored_defaults(tmp_path: Path):
-    state, _, _, box = _setup(tmp_path, agent_preprocessing=True)
+def test_unknown_and_misplaced_arguments_are_refused(tmp_path: Path):
+    import asyncio
+
+    from google.adk.tools import FunctionTool
+
+    from langslice.adk.plugins import StrictArgumentsPlugin
+
+    state, _, _, box = _setup(tmp_path)
+    before = state.to_dict()
     view = _tool(box, "view_slices")
-    default = _bytes(view(["s0.png"]))
-    red = view(["s0.png"], section_image="red")
-    assert red["view"]["section_image"] == "red"
-    assert _bytes(red) != default
-    assert state.appearance == {}
-    assert _bytes(view(["s0.png"])) == default
-    assert view(["s0.png"], section_image="dapi")["error"] == "UNKNOWN_CHANNEL"
+    top = view(["s0.png"], mode="section")
+    assert top["error"] == "UNKNOWN_ARGUMENTS"
+    assert top["problems"][0] == {"argument": "(top level)", "unknown": ["mode"],
+                                  "accepted": ["slices", "view"],
+                                  "notes": ["`mode` belongs inside `view`."]}
+    nested = view(["s0.png"], view={"mode": "section", "colour": "red"})
+    assert nested["problems"][0]["argument"] == "view"
+    assert nested["problems"][0]["unknown"] == ["colour"]
+    entry = _tool(box, "set_positions")([{"id": "s0.png", "position": 4.0}])
+    assert entry["error"] == "UNKNOWN_ARGUMENTS"
+    assert entry["problems"][0]["argument"] == "entries[0]"
+    assert entry["problems"][0]["accepted"] == ["id", "position_mm"]
+    assert state.to_dict() == before and not box.undo_stack
+    # ADK drops unknown top-level arguments before a tool runs; the plugin
+    # answers the call first.
+    plugin = StrictArgumentsPlugin()
+    answer = asyncio.run(plugin.before_tool_callback(
+        tool=FunctionTool(view), tool_args={"slices": ["s0.png"], "zoom": [0, 0, 1, 1]},
+        tool_context=None))
+    assert answer is not None and answer["error"] == "UNKNOWN_ARGUMENTS"
+    assert asyncio.run(plugin.before_tool_callback(
+        tool=FunctionTool(view), tool_args={"slices": ["s0.png"]}, tool_context=None)) is None
 
 
-def test_regions_highlight_only_their_borders(tmp_path: Path):
-    _, _, _, box = _setup(tmp_path)
+def test_view_keys_that_mean_nothing_are_refused_with_the_reason(tmp_path: Path):
+    _, _, _, box = _setup(tmp_path, tasks=["position", "transform", "nonlinear"],
+                          nonlinear=NonlinearSpec(provider="none"))
     show = _tool(box, "view_placement")
-    plain = show([{"id": "s0.png"}], mode="overlay")
-    highlighted = show([{"id": "s0.png"}], mode="overlay", regions=["HPF"])
-    assert highlighted["status"] == "ok", highlighted
-    assert highlighted["view"]["regions"] == ["HPF"]
-    assert _bytes(highlighted) != _bytes(plain)
-    assert "regions_not_in_plane" not in highlighted["compared"][0]
-    # HPF (here only its descendant CA1) is not in the posterior half.
-    later = show([{"id": "s0.png", "positions_mm": [15.0]}], mode="template", regions=["HPF"])
-    assert later["compared"][0]["regions_not_in_plane"] == ["HPF"]
-    assert show([{"id": "s0.png"}], regions=["XYZ"])["error"] == "UNKNOWN_REGIONS"
-    atlas_view = _tool(box, "view_atlas")([5.0], regions=["CA1"], outlines="all")
-    assert atlas_view["status"] == "ok" and atlas_view[TOOL_MEDIA_PARTS_KEY]
+
+    def unused(result: dict[str, Any]) -> list[str]:
+        assert result["error"] == "VIEW_KEY_UNUSED", result
+        return [item["key"] for item in result["unused"]]
+
+    assert unused(_tool(box, "view_slices")(["s0.png"], view={"atlas_channels": ["ara"]})) \
+        == ["atlas_channels"]
+    assert unused(_tool(box, "view_atlas")([5.0], view={"channels": ["red"]})) == ["channels"]
+    assert unused(show([{"id": "s0.png"}], view={"mode": "template", "channels": ["red"]})) \
+        == ["channels"]
+    assert unused(show([{"id": "s0.png"}], view={"mode": "overlay", "outlines": "outer",
+                                                  "atlas_channels": ["ara"]})) == ["outlines"]
+    assert unused(show([{"id": "s0.png"}], view={"mode": "overlay", "atlas_opacity": 0.5})) \
+        == ["atlas_opacity"]
+    assert unused(show([{"id": "s0.png"}], view={"mode": "stacked", "deformation": "none"})) \
+        == ["deformation"]
+    assert unused(_tool(box, "fit_affine")(["s0.png"], view={"deformation": "none"})) \
+        == ["deformation"]
+    assert show([{"id": "s0.png"}], view={"mode": "overlay", "atlas_channels": ["ara"],
+                                          "outlines": "none"})["error"] == "VIEW_KEY_UNUSED"
+    assert show([{"id": "s0.png"}], view={"mode": "checkerboard",
+                                          "atlas_channels": ["borders"]})[
+        "error"] == "BAD_ATLAS_CHANNELS"
 
 
-def test_atlas_image_choice_and_the_host_without_nissl(tmp_path: Path):
+def test_raw_channels_one_in_gray_several_overlaid_in_colour(tmp_path: Path):
+    state, _, _, box = _setup(tmp_path)
+    view = _tool(box, "view_slices")
+    default = view(["s0.png"])
+    assert default["view"]["channels"] == ["view"]
+    green = view(["s0.png"], view={"channels": ["green"]})
+    pixels = _pixels(green)[30:]  # below the caption
+    assert np.abs(pixels[..., 0] - pixels[..., 1]).max() <= 12  # grayscale
+    both = view(["s0.png"], view={"channels": ["red", "blue"]})
+    assert both["view"]["channel_colors"] == {"red": "red", "blue": "blue"}
+    mixed = _pixels(both)[-40:]  # tissue rows, clear of the white caption text
+    assert mixed[..., 0].max() > 200 and mixed[..., 2].max() > 120
+    # No green channel in a red + blue overlay (JPEG chroma leaves a little at edges).
+    assert np.percentile(mixed[..., 1], 99) < 40 and mixed[..., 1].mean() < 10
+    assert view(["s0.png"], view={"channels": ["dapi"]})["error"] == "UNKNOWN_CHANNEL"
+    assert view(["s0.png"], view={"channels": ["red", "fit"]})["error"] == "BAD_CHANNELS"
+    assert state.appearance == {}
+
+
+def test_the_fit_version_shows_what_registration_reads(tmp_path: Path):
+    _, _, _, box = _setup(tmp_path, agent_preprocessing=True)
+    _tool(box, "preprocess")(target="fit", channel_weights=[0, 1, 0], clahe_clip=0)
+    view = _tool(box, "view_slices")
+    seen = view(["s0.png"], view={"channels": ["view"]})
+    fit = view(["s0.png"], view={"channels": ["fit"]})
+    assert fit["view"]["channels"] == ["fit"] and _bytes(fit) != _bytes(seen)
+    assert _bytes(seen) == _bytes(view(["s0.png"]))
+
+
+def test_view_slices_channels_mode_shows_every_raw_channel(tmp_path: Path):
+    _, _, _, box = _setup(tmp_path)
+    result = _tool(box, "view_slices")(["s0.png", "s1.png"], view={"mode": "channels"})
+    assert result["status"] == "ok", result
+    assert result["channels"] == {"s0.png": ["red", "green", "blue"],
+                                  "s1.png": ["red", "green", "blue"]}
+    assert len(_bytes(result)) == 2  # one strip per section
+    strip = _pixels(result)
+    single = _pixels(_tool(box, "view_slices")(["s0.png"]))
+    assert strip.shape[1] > 2 * strip.shape[0]  # three tiles side by side
+    assert strip.shape[1] > single.shape[1]
+
+
+def test_preprocess_returns_before_and_after(tmp_path: Path):
+    _, _, _, box = _setup(tmp_path, agent_preprocessing=True)
+    result = _tool(box, "preprocess")(slices=["s0.png"], target="view",
+                                      channel_weights=[0, 0, 1])
+    assert result["status"] == "ok", result
+    assert result["image_indexes"] == {"s0.png": {"before": 0, "after": 1}}
+    before, after = _bytes(result)
+    assert before != after
+    assert "BEFORE" in result["description"] and "AFTER" in result["description"]
+    assert _tool(box, "preprocess")(view={"channels": ["red"]})["error"] == "VIEW_KEY_UNUSED"
+
+
+def test_atlas_channels_overlay_and_the_host_without_nissl(tmp_path: Path):
     _, ctx, _, box = _setup(tmp_path)
     show = _tool(box, "view_placement")
-    ara = _bytes(show([{"id": "s0.png"}], mode="template"))
-    borders = show([{"id": "s0.png"}], mode="template", atlas_image="borders")
-    assert borders["status"] == "ok" and _bytes(borders) != ara
+    ara = show([{"id": "s0.png"}], view={"mode": "template"})
+    assert ara["view"]["atlas_channels"] == ["ara"]
+    lined = show([{"id": "s0.png"}], view={"mode": "template",
+                                           "atlas_channels": ["ara", "borders"]})
+    lines_only = show([{"id": "s0.png"}], view={"mode": "template",
+                                                "atlas_channels": ["borders"]})
+    assert len({_bytes(ara)[0], _bytes(lined)[0], _bytes(lines_only)[0]}) == 3
+    under = show([{"id": "s0.png"}], view={"mode": "overlay",
+                                           "atlas_channels": ["ara", "borders"],
+                                           "atlas_opacity": 0.6})
+    assert under["view"]["atlas_opacity"] == 0.6
     ctx._abba, ctx._abba_checked = None, True
-    refused = show([{"id": "s0.png"}], atlas_image="nissl")
-    assert refused["error"] == "ATLAS_IMAGE_UNAVAILABLE"
+    refused = show([{"id": "s0.png"}], view={"mode": "template", "atlas_channels": ["nissl"]})
+    assert refused["error"] == "ATLAS_CHANNEL_UNAVAILABLE"
     assert refused["available"] == ["ara", "borders"]
-    assert _tool(box, "view_atlas")([5.0], atlas_image="nissl")["error"] == (
-        "ATLAS_IMAGE_UNAVAILABLE"
-    )
 
     class _Nissl:
         def sample_plane(self, channel, atlas, position_mm, plane, pitch, yaw):
@@ -251,20 +350,42 @@ def test_atlas_image_choice_and_the_host_without_nissl(tmp_path: Path):
             return np.linspace(0, 500, 48 * 64, dtype=np.float32).reshape(48, 64)
 
     ctx._abba = _Nissl()
-    nissl = show([{"id": "s0.png"}], mode="template", atlas_image="nissl")
-    assert nissl["status"] == "ok" and _bytes(nissl) not in (ara, _bytes(borders))
+    both = show([{"id": "s0.png"}], view={"mode": "template",
+                                          "atlas_channels": ["ara", "nissl"]})
+    assert both["status"] == "ok", both
+    assert both["view"]["atlas_colors"] == {"ara": "green", "nissl": "magenta"}
+    assert _bytes(both) != _bytes(ara)
+
+
+def test_regions_highlight_only_their_borders(tmp_path: Path):
+    _, _, _, box = _setup(tmp_path)
+    show = _tool(box, "view_placement")
+    plain = show([{"id": "s0.png"}], view={"mode": "overlay"})
+    highlighted = show([{"id": "s0.png"}], view={"mode": "overlay", "regions": ["HPF"]})
+    assert highlighted["status"] == "ok", highlighted
+    assert highlighted["view"]["regions"] == ["HPF"]
+    assert _bytes(highlighted) != _bytes(plain)
+    assert "regions_not_in_plane" not in highlighted["compared"][0]
+    # HPF (here only its descendant CA1) is not in the posterior half.
+    later = show([{"id": "s0.png", "positions_mm": [15.0]}],
+                 view={"mode": "template", "regions": ["HPF"]})
+    assert later["compared"][0]["regions_not_in_plane"] == ["HPF"]
+    assert show([{"id": "s0.png"}], view={"regions": ["XYZ"]})["error"] == "UNKNOWN_REGIONS"
+    atlas_view = _tool(box, "view_atlas")([5.0], view={"regions": ["CA1"],
+                                                       "atlas_channels": ["ara", "borders"]})
+    assert atlas_view["status"] == "ok" and atlas_view[TOOL_MEDIA_PARTS_KEY]
 
 
 def test_view_placement_shows_the_stored_transform(tmp_path: Path):
     _, _, _, box = _setup(tmp_path)
     show = _tool(box, "view_placement")
-    before = show([{"id": "s0.png"}], mode="overlay")
+    before = show([{"id": "s0.png"}], view={"mode": "overlay"})
     assert before["compared"][0]["transform"] == "identity"
     _tool(box, "adjust_transforms")([{
         "id": "s0.png", "rotation_deg": 20, "scale_x": 1, "scale_y": 1,
         "translate_x_mm": 3, "translate_y_mm": 0,
     }])
-    after = show([{"id": "s0.png"}], mode="overlay")
+    after = show([{"id": "s0.png"}], view={"mode": "overlay"})
     assert after["compared"][0]["transform"] == "interactive"
     assert _bytes(after) != _bytes(before)
 
@@ -272,24 +393,48 @@ def test_view_placement_shows_the_stored_transform(tmp_path: Path):
 def test_set_positions_pictures_take_the_placement_modes(tmp_path: Path):
     _, _, _, box = _setup(tmp_path)
     result = _tool(box, "set_positions")(
-        [{"id": "s0.png", "position_mm": 4.0}], mode="overlay", regions=["TH"],
+        [{"id": "s0.png", "position_mm": 4.0}], view={"mode": "overlay", "regions": ["TH"]},
     )
     assert result["status"] == "ok", result
     assert result["view"]["mode"] == "overlay" and len(_bytes(result)) == 1
     refused = _tool(box, "set_positions")(
-        [{"id": "s1.png", "position_mm": 4.5}], zoom=[0, 0, 0.5, 0.5],
+        [{"id": "s1.png", "position_mm": 4.5}], view={"zoom": [0, 0, 0.5, 0.5]},
     )
     assert refused["error"] == "ZOOM_UNSUPPORTED"
+
+
+def test_the_job_statement_describes_view_once_with_the_channels():
+    from langslice.linear.prompt import PICTURE_TOOLS as PROMPT_PICTURE_TOOLS
+    from langslice.linear.prompt import display_lines
+
+    assert "fit_deformable" in PROMPT_PICTURE_TOOLS
+    lines = display_lines(["view_slices"], channels=["red", "green", "blue"],
+                          atlas_channels=("ara", "nissl", "borders"))
+    text = "\n".join(lines)
+    assert text.count("ONE argument, `view`") == 1
+    for key in ("`channels`", "`atlas_channels`", "`atlas_opacity`", "`regions`",
+                "`outlines`", "`border_color`", "`border_thickness`", "`zoom`",
+                "`deformation`"):
+        assert key in text, key
+    assert "may not say which is the stain" in text and "mode channels" in text
+    assert "Raw image channels of every section" in text and "red, green, blue." in text
+    assert "nissl (a Nissl-stained reference" in text and "borders (the atlas regions" in text
+    assert "resolution" not in text
+    assert display_lines(["status"]) == []
 
 
 # --- renames ---------------------------------------------------------------
 
 
-def test_renamed_tools_replace_the_old_names(tmp_path: Path):
+def test_renamed_tools_and_arguments_replace_the_old_names(tmp_path: Path):
     _, _, _, box = _setup(tmp_path, position=PositionSpec(bayesian=True))
     names = set(box.names)
     assert {"view_atlas", "view_placement", "search_position"} <= names
     assert not names & {"fetch_atlas", "compare_placement", "fit_position"}
     lines = " ".join(TOOL_LINES.values()) + " ".join(TOOL_LINES)
-    for old in ("fetch_atlas", "compare_placement", "fit_position", "template_opacity"):
-        assert old not in lines
+    for old in ("fetch_atlas", "compare_placement", "fit_position", "template_opacity",
+                "new_order", "section_image", "atlas_image", "slice_ids"):
+        assert old not in lines, old
+    for name in ("reorder_slices", "fit_affine", "view_slices"):
+        assert "slices" in inspect.signature(_tool(box, name)).parameters, name
+    assert "id" in inspect.signature(_tool(box, "search_position")).parameters

@@ -362,6 +362,40 @@ def host_tool(job: Job, tool: Callable[..., Any]) -> Callable[..., Any]:
     return run
 
 
+def strict_arguments(server: FastMCP, name: str, tool: Callable[..., Any]) -> None:
+    """Refuse unknown or misplaced arguments on the registered tool *name*.
+
+    FastMCP validates arguments against a model built from the signature and
+    drops keys it does not know, so a stray argument would run the tool with
+    its default. The registered tool's argument check is replaced by one that
+    first applies :func:`langslice.linear.arguments.argument_refusal` (the
+    same rule the ADK plugin and the toolbox apply) to the arguments as sent,
+    after FastMCP's JSON pre-parse of string-encoded objects.
+    """
+    from langslice.linear.arguments import argument_refusal
+
+    registered = server._tool_manager.get_tool(name)  # noqa: SLF001 — FastMCP has no hook
+    if registered is None:
+        return
+    metadata = registered.fn_metadata
+    base = type(metadata)
+
+    class Strict(base):  # type: ignore[valid-type, misc]
+        async def call_fn_with_arg_validation(
+            self, fn: Callable[..., Any], fn_is_async: bool,
+            arguments_to_validate: dict[str, Any],
+            arguments_to_pass_directly: dict[str, Any] | None,
+        ) -> Any:
+            refusal = argument_refusal(tool, self.pre_parse_json(arguments_to_validate))
+            if refusal is not None:
+                return result_blocks(refusal)
+            return await super().call_fn_with_arg_validation(
+                fn, fn_is_async, arguments_to_validate, arguments_to_pass_directly)
+
+    registered.fn_metadata = Strict.model_construct(
+        **{field: getattr(metadata, field) for field in base.model_fields})
+
+
 # --- the server ------------------------------------------------------------
 
 
@@ -397,6 +431,7 @@ def build_server(
                 annotations=ToolAnnotations(readOnlyHint=tool.__name__ in READ_ONLY_TOOLS),
                 structured_output=False,
             )
+            strict_arguments(server, tool.__name__, tool)
         async def show_stack(page: int) -> list[ContentBlock]:
             """Read an opening-picture page (1-based); read every page before writes."""
             if not job.pages:

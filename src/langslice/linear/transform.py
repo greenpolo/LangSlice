@@ -485,10 +485,15 @@ ELASTIX_DETAIL = "standard"
 IDENTITY_PARAMS = (1.0, 0.0, 0.0, 0.0, 1.0, 0.0)
 
 
-def elastix_settings(include: Sequence[str] = (), exclude: Sequence[str] = ()) -> Any:
+def elastix_settings(
+    include: Sequence[str] = (), exclude: Sequence[str] = (),
+    atlas_image: str = ELASTIX_ATLAS_IMAGE,
+) -> Any:
     """The deformable package's stain-fit inputs the Elastix affine reads.
 
-    The section's ``fit`` appearance against :data:`ELASTIX_ATLAS_IMAGE`,
+    The section's ``fit`` appearance against *atlas_image* (``ara``, the
+    default :data:`ELASTIX_ATLAS_IMAGE`, or ``nissl`` where ABBA's atlas is
+    installed: ``fit_affine``'s ``fit_atlas``),
     mutual information plus the edge channel (the Elastix stain fit's own
     pairing). *include* becomes the restricted ``structures`` (the regions
     plus 300 um), *exclude* the excluded regions; one-sided entries such as
@@ -498,7 +503,7 @@ def elastix_settings(include: Sequence[str] = (), exclude: Sequence[str] = ()) -
 
     return FitSettings(
         engine="elastix", detail=ELASTIX_DETAIL,  # type: ignore[arg-type]
-        atlas_image=ELASTIX_ATLAS_IMAGE,  # type: ignore[arg-type]
+        atlas_image=atlas_image,  # type: ignore[arg-type]
         section_image="stain", stain_metric="mutual_information", stain_edges=True,
         exclude=tuple(exclude), structures=tuple(include),
     )
@@ -575,6 +580,7 @@ def elastix_affine(
     *,
     include: Sequence[str] = (),
     exclude: Sequence[str] = (),
+    atlas_image: str = ELASTIX_ATLAS_IMAGE,
 ) -> ElastixFit:
     """Refine one section's placement with an Elastix intensity affine.
 
@@ -602,8 +608,9 @@ def elastix_affine(
     image, look = deformation.stain_image(ctx, state, grid, deformation.FIT_LOOK)
     width, height = grid.image.size
     torn = None if record.damaged else np.zeros((height, width), dtype=bool)
-    prepared = prepare_fit(image, ctx.atlas, grid.placement, elastix_settings(include, exclude),
-                           torn_band=torn)
+    prepared = prepare_fit(image, ctx.atlas, grid.placement,
+                           elastix_settings(include, exclude, atlas_image), torn_band=torn,
+                           abba=ctx.abba_atlas if atlas_image == "nissl" else None)
     result = run_elastix_affine(prepared.inputs)
     # Millimetres on the fit grid are pixel index x mm/px (geometry.py), so
     # the engine's map becomes a map of grid pixels: section -> placed atlas.
@@ -667,6 +674,7 @@ def fit_elastix(
     draw: Callable[[Image.Image, float, np.ndarray], list[Image.Image]] | None = None,
     include: Sequence[str] = (),
     exclude: Sequence[str] = (),
+    atlas_image: str = ELASTIX_ATLAS_IMAGE,
 ) -> dict[str, Any]:
     """`fit_affine`'s Elastix method for one positioned section.
 
@@ -698,7 +706,7 @@ def fit_elastix(
         )
         fit = elastix_affine(state, ctx, record, start,
                              {"section_um_per_px": um_per_px, "source": source},
-                             include=include, exclude=exclude)
+                             include=include, exclude=exclude, atlas_image=atlas_image)
     except SideError as error:
         return {"status": "error", "error": error.code, "id": record.id, "message": str(error)}
     except Exception as exc:

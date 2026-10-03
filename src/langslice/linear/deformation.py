@@ -83,20 +83,20 @@ MAX_CANDIDATES = 4
 MAX_FITS_PER_CALL = 8
 #: Fitted records kept in memory for reuse (a record is tens of megabytes).
 CACHE_SIZE = 8
-#: The atlas images a fit can use, as the agent names them, and the engine's
-#: name for each. ``borders`` is the colour-family boundaries the display
-#: options draw (and the image model is shown).
-ATLAS_CHOICES: dict[str, str] = {"borders": "borders_merged", "ara": "ara", "nissl": "nissl"}
-#: The section images a fit can read.
+#: The atlas a fit can read (``fit_atlas``), as the agent names it, and the
+#: engine's name for each. ``borders`` is the colour-family boundaries the
+#: pictures draw (and the image model is shown).
+FIT_ATLASES: dict[str, str] = {"borders": "borders_merged", "ara": "ara", "nissl": "nissl"}
+#: What of the section a fit can read (``fit_section``).
 FIT_LOOK = "fit"
 TRACED_BORDERS = "traced_borders"
 TRACED_LINES = "traced_lines"
 TRACED = (TRACED_BORDERS, TRACED_LINES)
-SECTION_IMAGES = (FIT_LOOK, *TRACED)
+FIT_SECTIONS = (FIT_LOOK, *TRACED)
 STARTS = ("linear", "current")
 ENGINES = ("ants", "elastix")
 #: What a candidate may change.
-CANDIDATE_KEYS = ("stiffness", "section_image", "atlas_image", "engine")
+CANDIDATE_KEYS = ("stiffness", "fit_section", "fit_atlas", "engine")
 #: Picture modes: the fit alone, or the fit then what it started from.
 MODES = ("borders", "ab")
 #: Flags listed per candidate before the rest are only counted.
@@ -194,15 +194,15 @@ def _on_grid(image: Image.Image, grid: Grid) -> Image.Image:
 
 
 def stain_image(
-    ctx: EngineContext, state: StackState, grid: Grid, section_image: str,
+    ctx: EngineContext, state: StackState, grid: Grid, fit_section: str,
 ) -> tuple[Image.Image, Any]:
     """``(image, identity)`` of the stain a fit reads: the section's fit appearance.
 
-    Traced section images draw their pictures on it too. A raw channel is a
-    fit appearance (``preprocess`` target ``fit``), not a section image.
+    Traced fit sections draw their pictures on it too. A raw channel is a
+    fit appearance (``preprocess`` target ``fit``), not a fit section.
     """
-    if section_image not in SECTION_IMAGES:
-        raise ValueError(f"Unknown section image {section_image!r}")
+    if fit_section not in FIT_SECTIONS:
+        raise ValueError(f"Unknown fit section {fit_section!r}")
     record = grid.record
     look = looks.section_settings(state, "fit", record.id)
     image = looks.fit_image(ctx, state, record, long_edge=FIT_LONG_EDGE)
@@ -266,8 +266,8 @@ def traced_lines(
 class Choice:
     """One candidate as resolved: what the agent named, and the engine's settings."""
 
-    section_image: str
-    atlas_image: str
+    fit_section: str
+    fit_atlas: str
     engine: str
     stiffness: str
 
@@ -276,8 +276,8 @@ class Choice:
         and ventricle label channels (``labels="auto"``): the 2026-10-02
         stain ceiling test's clearest gain (outline and enlarged ventricles);
         Elastix has no label channels."""
-        traced = self.section_image in TRACED
-        if self.section_image == TRACED_BORDERS:
+        traced = self.fit_section in TRACED
+        if self.fit_section == TRACED_BORDERS:
             labels = "model"
         elif not traced and self.engine == "ants":
             labels = "auto"
@@ -287,7 +287,7 @@ class Choice:
             engine=self.engine,  # type: ignore[arg-type]
             stiffness=self.stiffness,  # type: ignore[arg-type]
             detail=DETAIL_LEVEL,  # type: ignore[arg-type]
-            atlas_image=ATLAS_CHOICES[self.atlas_image],  # type: ignore[arg-type]
+            atlas_image=FIT_ATLASES[self.fit_atlas],  # type: ignore[arg-type]
             section_image="lines" if traced else "stain",
             labels=labels,  # type: ignore[arg-type]
             exclude=exclude, structures=include,
@@ -295,7 +295,7 @@ class Choice:
 
     def echo(self) -> dict[str, str]:
         return {"engine": self.engine, "stiffness": self.stiffness,
-                "section_image": self.section_image, "atlas_image": self.atlas_image}
+                "fit_section": self.fit_section, "fit_atlas": self.fit_atlas}
 
 
 def engine_settings(settings: FitSettings) -> dict[str, Any]:
@@ -488,7 +488,7 @@ def run_jobs(ctx: EngineContext, jobs: list[Job]) -> None:
             prepared.append(prepare_fit(
                 job.image, ctx.atlas, job.grid.placement, job.settings, lines=job.lines,
                 previous=job.previous,
-                abba=ctx.abba_atlas if job.choice.atlas_image == "nissl" else None,
+                abba=ctx.abba_atlas if job.choice.fit_atlas == "nissl" else None,
             ))
             waiting.append(job)
         except Exception as exc:  # noqa: BLE001 - a bad candidate must not sink the rest
@@ -537,14 +537,16 @@ def picture(
     *,
     warped: bool,
     style: Style,
-    atlas_image: str,
+    atlas_images: tuple[str, ...],
     title: str,
 ) -> Image.Image:
     """The record's borders on the section at ``style.long_edge``, captioned.
 
     The crop (the zoom, or the whole fit image) is shown at ``style.long_edge``
     on its long side, or at its own pixels when it has fewer: the fit image
-    (:data:`FIT_LONG_EDGE`) is never upsampled.
+    (:data:`FIT_LONG_EDGE`) is never upsampled. *atlas_images* (``ara``,
+    ``nissl``; the call's ``view.atlas_channels``) are pulled through the
+    record's map and blended under the lines at ``style.atlas_opacity``.
     """
     from langslice.linear.render import caption, zoom_box
 
@@ -559,8 +561,9 @@ def picture(
         shown = zoom_box(list(zoom), full)
     small = resampled_record(record, full, shown)
     base = image.convert("RGB").resize(full, Image.Resampling.LANCZOS).crop(shown)
-    if style.atlas_opacity > 0 and atlas_image in ("ara", "nissl"):
-        base = _blend_atlas(ctx, base, small if warped else _unwarped(small), atlas_image,
+    kinds = tuple(kind for kind in atlas_images if kind in ("ara", "nissl"))
+    if style.atlas_opacity > 0 and kinds:
+        base = _blend_atlas(ctx, base, small if warped else _unwarped(small), kinds,
                             style.atlas_opacity)
     drawn = draw_warped_borders(
         base, small, ctx.atlas, highlight=style.highlight, marked=style.marked, warped=warped,
@@ -605,16 +608,29 @@ def _unwarped(record: DeformableRecord) -> DeformableRecord:
 
 
 def _blend_atlas(
-    ctx: EngineContext, base: Image.Image, record: DeformableRecord, kind: str, opacity: float,
+    ctx: EngineContext, base: Image.Image, record: DeformableRecord, kinds: tuple[str, ...],
+    opacity: float,
 ) -> Image.Image:
-    """The atlas image pulled through the record's map, blended under the lines."""
-    native = native_intensity(ctx.atlas, record.placement, kind,
-                              abba=ctx.abba_atlas if kind == "nissl" else None)
+    """The atlas images pulled through the record's map, blended under the lines.
+
+    One image is gray; two are added in their colours
+    (:func:`langslice.linear.appearance.channel_colors`), as everywhere else.
+    """
     labels = native_labels(ctx.atlas, record.placement)
-    native = normalize_intensity(native, labels > 0)
     nx, ny = composed_native_grid(record, 1)
-    gray = cv2.remap(native.astype(np.float32), nx, ny, cv2.INTER_LINEAR,
-                     borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+
+    def pulled(kind: str) -> np.ndarray:
+        native = native_intensity(ctx.atlas, record.placement, kind,
+                                  abba=ctx.abba_atlas if kind == "nissl" else None)
+        native = normalize_intensity(native, labels > 0)
+        return cv2.remap(native.astype(np.float32), nx, ny, cv2.INTER_LINEAR,
+                         borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+
+    if len(kinds) == 1:
+        atlas = pulled(kinds[0])[..., None] * 255.0
+    else:
+        atlas = sum(pulled(kind)[..., None] * np.asarray(rgb, dtype=np.float32)
+                    for kind, _word, rgb in looks.channel_colors(kinds))
     pixels = np.asarray(base, dtype=np.float32)
-    mixed = pixels * (1.0 - opacity) + (gray[..., None] * 255.0) * opacity
+    mixed = pixels * (1.0 - opacity) + atlas * opacity
     return Image.fromarray(np.rint(np.clip(mixed, 0, 255)).astype(np.uint8))
