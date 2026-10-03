@@ -20,25 +20,19 @@ from PIL import Image
 from langslice.adk import TOOL_MEDIA_DELIVERY_ID_KEY
 
 #: Images in context before the working set is cut, and what it is cut to.
-#: The upstream cache prices a token that sits unchanged in the prefix at
-#: ~0.13x (measured against the quota headers, run 5, 2026-09-09), and an
-#: image at the atlas's resolution is ~260 tokens, so images that STAY are
-#: cheap and images that are removed cost a cache break at the removal point
-#: on every later call. So: keep everything, cut rarely and in one batch, and
-#: never touch the seed strip at the head of the prefix. 256 images at ~260
-#: tokens is ~67k raw, ~8.7k paid per call at the 0.13x cache rate; a normal
-#: run (seed 80, ~50 compares, ~40 write pictures) stays under it.
-DEFAULT_MAX_IMAGES = 256
-DEFAULT_KEEP_IMAGES = 128
-#: Tools that open the transform stage. The first media-bearing call to one
-#: of them is a stage boundary: every older tool image (the compares and
-#: write pictures of positioning) is cut in one batch. Positions are written
-#: and reviewed by then, so those pictures only cost their cached carry —
-#: ~45k tokens a call on Astra's run 17 (2026-09-10), ~9% of a window over
-#: the transform stage — against one re-read of the positioning text.
-STAGE_BOUNDARY_TOOLS = frozenset(
-    {"fit_affine", "adjust_transforms"}
-)
+#: Industry practice (verified 2026-10-03): Codex CLI never prunes images by
+#: age (only whole images at compaction, by token budget); Claude Code keeps
+#: every image and drops the oldest batch only when a request would pass the
+#: API's image-count or size limit. So: keep everything, and cut oldest-first
+#: in ONE batch only at a hard backstop far above any LangSlice run (Astra
+#: accepts 1,500 images a request; this is a third of that). The stage-boundary
+#: cut (every earlier tool image dropped at the first fit_affine /
+#: adjust_transforms) is gone: on 2026-10-03 it threw away the channel strip and
+#: preprocess pictures both agents had chosen their stain from. A cached image
+#: costs ~0.13x on each later call (run 5, 2026-09-09), and a cut breaks the
+#: cache at the cut point, so cutting rarely is also the cheap choice.
+DEFAULT_MAX_IMAGES = 500
+DEFAULT_KEEP_IMAGES = 250
 
 #: Astra's run-19 debrief read the old wording ("dropped from context") as
 #: "never delivered" and doubted comparisons it had actually made.
@@ -78,17 +72,6 @@ class WorkingSetImages:
         ]
         if not sites:
             return contents
-        boundary = next(
-            (
-                k
-                for k, (ci, pi, _) in enumerate(sites)
-                if (contents[ci].parts or [])[pi].function_response.name  # type: ignore[union-attr]
-                in STAGE_BOUNDARY_TOOLS
-            ),
-            None,
-        )
-        if boundary is not None:
-            self.cut = max(self.cut, boundary)
         live = sum(n for _, _, n in sites[self.cut :])
         if live > self.max_images:
             cut = self.cut

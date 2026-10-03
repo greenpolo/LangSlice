@@ -7,8 +7,8 @@ they are not instructions for the current runtime.
 ## Current direction
 
 Keep the established `WorkingSetImages` policy unchanged: protect the seed,
-perform the first transform-media stage cut, and trim at a 256-image high /
-128-image low working set. The only supported `image_retention` value is
+and trim only at a 500-image high / 250-image low backstop (the first
+transform-media stage cut was removed 2026-10-03). The only supported `image_retention` value is
 `legacy`; requesting the removed `completion` policy fails explicitly.
 
 There is no `accept_views` tool or added final-view inspection requirement.

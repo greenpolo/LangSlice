@@ -570,7 +570,8 @@ Shared spline code is compatibility infrastructure, not an agent tool.
 ## Context and tokens (2026-09-09)
 
 **Established working set only (2026-09-13).** `WorkingSetImages` retains
-its first transform-media stage cut and 256-to-128 high/low image-count cuts.
+only a 500-to-250 image-count backstop (the transform-media stage cut was
+removed 2026-10-03; see "Images stay" below).
 The acceptance-based completion experiment has been removed: no
 `accept_views`, final-view inspection gate, or acceptance-only post-submit
 closure remains. `JobSpec.image_retention` / `--image-retention` accepts only
@@ -607,8 +608,8 @@ text plus prefix breaks. Design rules that follow:
   None)` is canvas pixels for host-side use; every model-facing caller
   passes a size.
 - **Images stay** (`adk/plugins.py WorkingSetImages`): every tool image is
-  kept until 256 are live, then the oldest media-bearing calls are cut in
-  ONE batch to 128 (`DEFAULT_MAX_IMAGES` / `DEFAULT_KEEP_IMAGES`, a cut
+  kept until 500 are live, then the oldest media-bearing calls are cut in
+  ONE batch to 250 (`DEFAULT_MAX_IMAGES` / `DEFAULT_KEEP_IMAGES`, a cut
   result says "dropped from context"); the cut only moves forward and the
   seed strip is never touched. Measured on M11 at low effort, 2026-09-09:
   keep-all (run 6, killed at call 16) had median 0.10 mm / 30 of 36 within
@@ -620,7 +621,15 @@ text plus prefix breaks. Design rules that follow:
   calls, where keep-all is ~16% of a window against newest-only's 14%.
   A normal run (seed 80, ~50 compares, ~40 write pictures) never reaches
   the cut; it is the safety for a run that goes long; cutting old images
-  re-reads everything after the cut once, so it must stay rare.
+  re-reads everything after the cut once, so it must stay rare. The
+  stage-boundary cut (every earlier tool image dropped at the first
+  `fit_affine`/`adjust_transforms`) was removed 2026-10-03: in the
+  no-image-model runs it discarded the channel strip and preprocess
+  pictures both agents had chosen their stain from, and both complained.
+  Industry practice, verified that day: Codex CLI never prunes images by
+  age (whole images only, at compaction); Claude Code drops its oldest
+  batch only when a request would pass the API's image-count or size
+  limit. Astra takes 1,500 images a request; the backstop is a third.
 - **A tool's images ride inside its `function_call_output`** as labelled
   `input_image` parts (`openai_oauth._function_call_output`); the separate
   user message they used to follow in opened a new turn and, under the
