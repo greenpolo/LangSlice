@@ -314,7 +314,11 @@ def _look_image(
         from langslice.linear.appearance import OVERLAY_STRETCH, channel_colors
 
         total = np.zeros((size[1], size[0], 3), dtype=np.float32)
-        for name, _word, rgb in channel_colors(look["overlay"]):
+        names_shown = list(look["overlay"])
+        # One channel is gray; several are each added in their colour.
+        colors = ([(names_shown[0], "gray", (255, 255, 255))] if len(names_shown) == 1
+                  else channel_colors(names_shown))
+        for name, _word, rgb in colors:
             whole = np.asarray(at_working(named(name)), dtype=np.float32)
             low, high = (float(v) for v in np.percentile(whole, OVERLAY_STRETCH))
             if high <= low:

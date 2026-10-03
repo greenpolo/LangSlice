@@ -1117,12 +1117,20 @@ def build_tools(
             atlas_opacity=options.atlas_opacity, outlines=options.layer,
             border_color=options.border_color, border_thickness=options.border_thickness,
             pivot=pivot if in_section is None else None, pivot_in_section=in_section,
-            label=label or record.id, spline=spline, long_edge=edge,
+            label=canvas_label(label or record.id, options), spline=spline, long_edge=edge,
             atlas_picture=atlas_image_picture(ctx, state, options.atlas_channels, position),
             atlas_name=options.atlas_name(), regions=options.regions,
             matrix_label=matrix_label, template_lines=options.borders,
         )
         return images
+
+    def canvas_label(label: str, options: DisplayOptions) -> str:
+        """A physical picture's caption head: what of the section, and any atlas under it."""
+        under = ""
+        if (options.atlas_images and options.atlas_opacity > 0
+                and MODE_RULES[options.mode].opacity):
+            under = f"  atlas {options.atlas_name()} under at {options.atlas_opacity:g}"
+        return label + options.section_tag() + under
 
     def stored_placement(record: SliceState, section: Any) -> tuple[Any, Any, str]:
         """``(params or matrix, spline, kind)`` of the section's in-plane transform.
@@ -1766,7 +1774,7 @@ def build_tools(
                 and options.mode in WARPED_PLACEMENT_MODES else None)
         parts.extend(image_to_part(image) for image in draw_canvas(
             record, section, um_per_px, position, params, options,
-            label=f"{record.id}{options.section_tag()} vs atlas {position:.2f} mm",
+            label=f"{record.id} vs atlas {position:.2f} mm",
             spline=spline,
             matrix_label=f"{kind} transform" + (" + deformation" if warp is not None else ""),
             warp=warp,
