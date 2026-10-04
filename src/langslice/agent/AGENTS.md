@@ -1150,7 +1150,7 @@ host must enable at least one transform method when enabling that task.
 `prompt.run_facts` is shared with `doors/mcp/prompt.py`; keep the factual
 range, axis direction, protocol and calibration text identical across hosts.
 Claude's statement does not reuse the ADK method/playbook. MCP opens saved ABBA
-jobs through `hosts.api.abba_worker.prepare_linear`, exactly like `linear.run`,
+jobs through `doors.api.abba_worker.prepare_linear`, exactly like `linear.run`,
 and supplies the opening strips separately with `show_stack` pages
 (`opening_pages`: `opening.opening_items` at `CLAUDE_IMAGE_LIMIT`, each
 strip encoded by `doors/tools/media.encode_jpeg` straight into an MCP image block,

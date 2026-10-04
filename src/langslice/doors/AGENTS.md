@@ -26,12 +26,11 @@ job layer, the operations, the agent driver (`agent/`, the same layer: the
 CLI's `linear run` and the MCP server start its engine) and the providers
 (a door resolves a provider name); never a host (`hosts/`). Only the ADK
 packaging (`tools/media.py`) imports `google.*`. import-linter's layers
-contract (`pyproject.toml`, `tests/test_import_layers.py`) checks it.
-Known violations, listed in its `ignore_imports`: the CLI's host commands
-(`cli/__init__.py` -> `hosts.api.setup`; `cli/hosts.py` -> `hosts.api` and
-`hosts.integrations`; `cli/register.py` -> `hosts.api.models`/`runtime`)
-and the MCP door (`mcp/server.py`, `mcp/host_channel.py` ->
-`hosts.api.claude_jobs`, `hosts.api.abba_worker.prepare_linear`).
+contract (`pyproject.toml`, `tests/test_import_layers.py`) checks it, with
+no exceptions listed. The host commands (`abba`, `serve`) live in
+`hosts/cli.py`; `cli/__init__.py` names them by module path
+(`HOST_COMMANDS`) and imports that module when it builds the parser, never
+statically.
 `tests/test_core_imports.py` loads `declarations`, `jobs`, `library`, `card`,
 `cli`, `cli.job`, `tools.toolbox` and `tools.view_options` in a fresh
 interpreter and checks, and runs `import langslice;
@@ -42,9 +41,20 @@ Two sub-packages moved in with the folder move (2026-10-04), each described
 in the linear agent environment's guide (`src/langslice/agent/CLAUDE.md`):
 `tools/` (formerly in `linear/` and `adk/`): `toolbox.py` (the tool
 bodies), `arguments.py`, `view_options.py`, `media.py` (the ADK message
-parts) and, in `__init__.py`, the media keys; `mcp/` (formerly
+parts) and, in `__init__.py`, the media keys re-exported from
+`core/media_keys.py`; `mcp/` (formerly
 `mcp_server/`): the MCP server (`server.py`, `prompt.py`,
-`host_channel.py`; `connectors/claude-desktop/`).
+`host_channel.py`; `connectors/claude-desktop/`). And `api/` (formerly in
+`hosts/api/`, moved down 2026-10-04 because the MCP door and the CLI use
+it and none of it drives a host): `models.py` (the engine contract's
+Pydantic models, `export_schema_bundle`), `runtime.py` (`register.run`,
+`quick_affine.run`, `export.run`, `nonlinear register`'s runtime),
+`setup.py` (offline setup status, saved credentials, login),
+`claude_jobs.py` (saved Claude jobs: the id index and the host channel)
+and `abba_worker.py` (the JVM-free linear snapshot worker:
+`prepare_linear`, `checkpoint_callback` with its ABBA-world host rows,
+`run_linear`, `preview_preprocess`). The engine service and the ABBA
+plugin's `nonlinear.abba` worker stay in `hosts/api/`.
 
 ## Files
 
@@ -92,14 +102,15 @@ parts) and, in `__init__.py`, the media keys; `mcp/` (formerly
   (writes where missing or worded differently; never raises). Written by
   every door that opens or makes a job: the CLI and the library
   (`jobs.open_folder`, `jobs.create`), the agent run (`engine.run`), the MCP
-  door (`open_job`) and a saved Claude job (`hosts.api.claude_jobs._write_job`).
+  door (`open_job`) and a saved Claude job (`doors.api.claude_jobs._write_job`).
 - `cli/` — every `langslice` command, one module per group;
   `langslice/cli.py` keeps the entry point `langslice.cli:main`.
   `__init__.py` (`build_parser`, `main`: the agent commands return their
   exit code), `linear.py` (`linear run`, `linear quick-affine`, and the job
   flags every stack-opening command shares: `add_linear_arguments`,
-  `build_linear_spec`), `register.py` (`nonlinear register`), `hosts.py`
-  (`abba`, `serve`, `mcp`, `claude prepare`), and the agent CLI
+  `build_linear_spec`), `register.py` (`nonlinear register`), `claude.py`
+  (`mcp`, `claude prepare`), the host commands by module path
+  (`HOST_COMMANDS`: `abba`, `serve` in `hosts/cli.py`), and the agent CLI
   (`docs/agent_cli.md`):
   - `envelope.py` — `Envelope` (`ok`, `result`, `artifacts`, `warnings`,
     `next`, `error` {code, message, fix}), `EXIT_OK` 0, `EXIT_ARGUMENTS` 2,

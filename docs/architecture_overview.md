@@ -9,8 +9,8 @@ in `SliceBench`; both depend on this package.
 The package is laid out by layer (folder move, 2026-10-04). Each layer
 imports only the layers below it; import-linter enforces it
 (`[tool.importlinter]` in `pyproject.toml`, run by
-`tests/test_import_layers.py`), and every `ignore_imports` entry there is a
-known violation to be removed by moving code.
+`tests/test_import_layers.py`) with no exceptions listed: a violation is
+fixed by moving code.
 
 | Layer | Package | May import |
 |---|---|---|
@@ -71,7 +71,9 @@ border route (`core/nonlinear/`).
   verb (`declarations.py`) that the agent tools, the MCP tools, the agent
   CLI and the library are built from; `tools/` (the native agent tools:
   toolbox, argument shapes, `view` options, ADK message packaging), `mcp/`
-  (the MCP server), `cli/` (every `langslice` command, one module per
+  (the MCP server), `api/` (the engine contract's Pydantic models, the
+  register/quick-affine/export runtime, setup, saved Claude jobs and the
+  JVM-free linear snapshot worker), `cli/` (every `langslice` command, one module per
   group, including the agent CLI `langslice job FOLDER VERB`, `ops`,
   `schema`; `docs/agent_cli.md`), `library.py` (`langslice.open_job`),
   `card.py` (the job folder's `AGENTS.md` / `CLAUDE.md`).
@@ -85,8 +87,9 @@ border route (`core/nonlinear/`).
   transport.
 - `src/langslice/hosts/` -- host connectors in LangSlice's own environment:
   `integrations/` (the abba-python registration plugin and the live linear
-  mirror) and `api/` (the Pydantic engine contract, runtime wrappers, and the
-  stdio service used by non-Python clients).
+  mirror), `api/` (the stdio service used by non-Python clients and the ABBA
+  plugin's `nonlinear.abba` worker) and `cli.py` (the `abba` and `serve`
+  commands, which the `langslice` command loads by module path).
 - `src/langslice/cli.py` -- the `langslice` command's entry point
   (`langslice.cli:main`).
 - `src/langslice/linear/`, `atlas/`, `nonlinear/`, `integrations/`, `adk/`
@@ -105,7 +108,7 @@ LangSlice-nonlinear stands in for the manual spline/BigWarp deformation step.
 ## Engine Contract
 
 The Python package is the source of truth for LangSlice runtime behavior. The
-engine contract is defined with Pydantic models in `src/langslice/hosts/api/models.py`.
+engine contract is defined with Pydantic models in `src/langslice/doors/api/models.py`.
 
 `langslice serve --stdio` runs the newline-delimited JSON engine service. It
 accepts `version`, `register.run`, `quick_affine.run`, and `export.run`, plus

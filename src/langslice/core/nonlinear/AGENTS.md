@@ -101,7 +101,8 @@ the residual alone.
   `placement_on_canvas`. The ABBA plugin passes its own label grid as
   `native=` (placed by an identity).
 - `prompts.py` — the three prompt functions; the OpenAI-GPT or Gemini wording
-  is selected by `canonical_provider(provider)`.
+  is selected by `canonical_provider(provider)` (the core's name table,
+  `core/provider_names.py`).
 - `prior.py` — `place_plane_on_tissue_with_matrix`, the silhouette-moments
   placement.
 - `providers/images.py` (in the providers package since the folder move) —
@@ -113,7 +114,9 @@ the residual alone.
   translates its own way. A door resolves a provider name to this call once
   (`providers.registry.resolve_image_model`) and passes it in as
   `image_call` (`refine_borders`, `generate_registration_candidate`,
-  `estimate_registration`); without one they fall back to this adapter.
+  `estimate_registration`); a model call without one is refused
+  (`provider="none"` and a replayed reply need none), so the core never
+  imports this adapter.
 - `model_prompts.py` — canvas/aspect facts only (`image_model_family`,
   `aspect_ratio_limits`, `gemini_aspect_for`, `native_output_size`).
 - `image_gen_helpers.py` — label-map helpers: families (`_merge_classified`),
