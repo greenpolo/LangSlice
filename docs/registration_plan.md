@@ -23,8 +23,9 @@ linear agent or the host. Route "atlas" remains for experiments.
   linear state without coupling the sibling methods.
 - `core/nonlinear/registration_tool.py`: the linear agent's `trace_borders` tool, which
   runs route "supplied" on the handoff and keeps the first reply (no fit).
-- `hosts/integrations/abba.py`: host-placed borders through the shared correction
-  core and fit (route "supplied" only).
+- ABBA: the Fiji connector's runs use the linear agent's own tools (an
+  applied deformation lands in ABBA as a warp step on top of the affine,
+  `core/abba_warp.py`); the abba-python plugin was removed 2026-10-04.
 - `core/nonlinear/runtime.py`: orchestration and debug artifacts.
 - `core/nonlinear/types.py`: result and annotation data classes.
 - `providers/images.py`: image-generation transport adapters.

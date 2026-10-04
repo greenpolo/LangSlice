@@ -123,7 +123,7 @@ deformation) and the image-model border route (`core/nonlinear/`).
     `sides.py`): `src/langslice/core/atlas/CLAUDE.md`.
   - `core/deformable/` — the deformable-fit engine behind the linear agent's
     `fit_deformable` tool (task `nonlinear`) and behind the fit of the image
-    model's lines in the core border routes and the ABBA registration plugin
+    model's lines in the core border routes
     (`core/nonlinear/border_fit.py`; no
     export adapter reads its records yet), whose prepared images and Elastix
     plumbing (the one itk-elastix wrapper, `engines.py`) also run
@@ -191,9 +191,11 @@ deformation) and the image-model border route (`core/nonlinear/`).
   - plain shared tables: `provider_names.py` (canonical provider names and
     aliases, re-exported by `providers.registry`) and `media_keys.py` (the
     keys a tool's media travels under, re-exported by `doors.tools`).
-  - `abba_affine.py`, `abba_spline.py` — a stored affine or landmark spline
-    in ABBA's centred world millimetres: the host rows the linear snapshot
-    worker (`doors/api/abba_worker.py`) emits.
+  - `abba_affine.py`, `abba_spline.py`, `abba_warp.py`, `abba_angles.py` —
+    a stored affine, a legacy landmark spline, and an applied deformation
+    (as a warp step on top of the affine) in ABBA's centred world
+    millimetres, and ABBA's slicing rotations <-> pitch/yaw: the host rows
+    the snapshot worker (`doors/api/abba_worker.py`) emits.
 - `job/` — the job layer: the `Job` (`job.py`: state, undo/redo, the
   checkpoint `checkpoint.py`, the submit gates, background corrections) and
   the job folder. Everything a job writes lives in `<images>/langslice/`,
@@ -278,7 +280,7 @@ deformation) and the image-model border route (`core/nonlinear/`).
   `nonlinear/providers.py`). `registry.resolve_image_model` is the one place
   a provider name becomes an image-edit call (`ImageModel`: provider,
   model, `call`); only a door resolves it (the toolbox binding
-  `build_tools(image_model=...)`, the CLI and API runtime, the ABBA plugin),
+  `build_tools(image_model=...)`, the CLI and API runtime),
   and the operations (`registration_tool`, `ops.traces`) receive it. `profiles.py` makes model
   PROFILES for the library (`langslice.image_model`: a provider's model with
   its built-in prompt, or a model and prompt of the caller's own, marked
@@ -299,19 +301,20 @@ deformation) and the image-model border route (`core/nonlinear/`).
   transport merely translates it (`images.edit` endpoint, `action` on the
   Responses image_generation tool).
 - `hosts/` — host connectors that run in LangSlice's own environment:
-  `hosts/integrations/` (the ABBA registration plugin, the live linear
-  mirror, the ABBA viewer and log: `src/langslice/hosts/integrations/CLAUDE.md`)
-  `hosts/api/` (the engine service the Fiji connector starts; its
-  `nonlinear.abba` worker and the Fiji connector's uncalled Java
-  `nonlinear(...)` were removed 2026-10-04) and `hosts/cli.py` (`abba`,
-  `serve`):
+  `hosts/integrations/` (`abba_launch.py`, what `langslice abba` starts:
+  ABBA 0.24.1 from Python with the connector jar, and the passive ABBA
+  viewer and log fed by the connector's run messages:
+  `src/langslice/hosts/integrations/CLAUDE.md`; the abba-python
+  registration plugin, its settings menu and the Python live mirror were
+  removed 2026-10-04), `hosts/api/` (the engine service the Fiji connector
+  starts) and `hosts/cli.py` (`abba`, `serve`):
   `src/langslice/hosts/CLAUDE.md`.
 - Compatibility shims, for the sibling repos only (LangSlice imports none;
   import-linter's `no-shims-inside` contract): `linear/` (`JobSpec` & co.,
   `run`, `engine`, `spec`, `state`, `toolbox`, `trace`, `transform`,
   `render`), `atlas/` (+ `core`), `nonlinear/` (+ `image_gen_helpers`,
   `image_gen_registration`, `border_refinement`), `integrations/` (+
-  `abba_linear`), `adk/` (the media keys), `space.py`, `oblique.py`,
+  `abba_linear`: only the two cutting-angle sign constants), `adk/` (the media keys), `space.py`, `oblique.py`,
   `affine.py`, `image_prep.py`, `registration_handoff.py`. Each hands back
   the moved module (or re-exports a package's public names).
 
@@ -336,8 +339,12 @@ program. Code that runs in LangSlice's own environment lives in
 `src/langslice/` instead (`hosts/`, `doors/mcp/`).
 
 - `connectors/fiji/` — Java/SciJava connector loaded into the user's existing
-  ABBA. It starts a separate LangSlice Python environment, provides setup and
-  account dialogs, and applies worker results through native ABBA actions.
+  ABBA 0.24.x, the ONE ABBA integration. It starts a separate LangSlice
+  Python environment, provides setup and account dialogs, and applies every
+  checkpoint live (ChatGPT and Claude modes) through native ABBA actions:
+  positions, LangSlice's affine step and, with Nonlinear, a warp step on
+  top of it. `langslice abba` starts ABBA from Python with this connector
+  on the classpath and listens to its runs (`hosts/integrations/`).
 - `connectors/napari/` — planned napari connectors (`docs/napari_plugin_design.md`).
 - `connectors/claude-desktop/` — host configuration for `langslice mcp`
   (`src/langslice/doors/mcp/`). This is the linear toolbox served over MCP to
@@ -354,7 +361,7 @@ program. Code that runs in LangSlice's own environment lives in
   handles Claude credentials.
 - `src/langslice/hosts/api/` (the engine service) and
   `src/langslice/doors/api/` (its JSON-lines protocol models, desktop
-  setup/authentication and the JVM-free host adapters). Existing `abba_python` launchers remain separate.
+  setup/authentication and the JVM-free host adapters).
 - `packaging/`, `environment.yml` — worker distribution and wheel checks.
   Publication status and the accepted installation design are in
   `docs/abba_installation.md` and `docs/abba_plugin_design.md`.

@@ -66,24 +66,37 @@ linear quick-affine`, a one-shot silhouette alignment outside the job
 `setup.py` (offline setup status, saved credentials, login, and
 `image_model_connected(provider)`: the provider is not `none` and its key
 or login is present, an offline presence check the MCP door and Claude
-mode ask before offering `trace_borders`),
+mode ask before offering `trace_borders`; `setup_status()["image_models"]`,
+`image_model_choices()`, lists the dialog's image-model choices,
+`IMAGE_MODEL_CHOICES`: the ChatGPT image lane, Gemini API, OpenAI API and
+None, each `connected` or not, with the models to offer),
 `claude_jobs.py` (saved Claude jobs: the id index and the host channel;
 `prepare_folder` refuses a folder whose checkpoint was made from other
 inputs, `job.refuse_changed_inputs`, and with `--fresh` marks the job
 `fresh` so `mcp.server.open_folder_job`'s first open starts it over and
 clears the mark)
-and `abba_worker.py` (the JVM-free linear snapshot worker:
-`prepare_linear`, `checkpoint_callback` with its ABBA-world host rows,
-`run_linear`, `preview_preprocess`; ABBA shows one atlas angle per stack,
-so `checkpoint_callback` refuses a state whose sections differ in cutting
-angle before emitting anything (`refuse_mixed_angles`,
-`ABBA_MIXED_ANGLES`: the job was made elsewhere with an angle per section,
-which ABBA cannot show), which also fails `run_linear`'s final checkpoint
-and the MCP door's opening of a saved ABBA job (`server.open_saved_job`);
-`refuse_mixed_job(spec)` refuses differing supplied per-section angles, and
-a resumed checkpoint that has them, for the Python launcher. The worker's
-own jobs are flat). The engine service stays in
-`hosts/api/`.
+and `abba_worker.py` (the JVM-free snapshot worker of the Fiji connector:
+`prepare_linear` (snapshots, BrainGlobe AP positions, `angles_deg` as the
+stack-wide `inputs.angles`, `z_offset_mm` / `existing_warp` kept as the
+job's `host.abba`, `locked`, `damaged`, `existing_warp` & `locked` ->
+`inputs.keep_warp`, `nonlinear_skip` -> `inputs.nonlinear_skip`,
+`channel_names`, `preprocessing`), `checkpoint_callback` (a
+`HostCheckpoints` tracker: ABBA-world linear rows, a job with the
+`nonlinear` task adds `warp` rows from `core/abba_warp.py`, `host_angles`
+on a stack-wide angle change; `attach(job, workspace)` gives it the job's
+records), `run_linear` (ends with a checkpoint of the final state),
+`public_event` (an event without bytes or private reasoning),
+`preview_preprocess`. ABBA shows one atlas angle per stack, so the tracker
+refuses a state whose sections differ in cutting angle before emitting
+anything (`refuse_mixed_angles`, `ABBA_MIXED_ANGLES`: the job was made
+elsewhere with an angle per section, which ABBA cannot show), which also
+fails `run_linear`'s final checkpoint and the MCP door's opening of a saved
+ABBA job (`server.open_saved_job`); `refuse_mixed_job(spec)` refuses
+differing supplied per-section angles, and a resumed checkpoint that has
+them). The engine service stays in `hosts/api/`. The MCP door's
+`EventRelay` forwards a saved ABBA job's tool events (and one `seed` per
+`show_stack` page) over its host channel as `agent_event`s; the toolbox's
+`tool_end` events carry `views`, the saved pictures' paths.
 
 ## Files
 

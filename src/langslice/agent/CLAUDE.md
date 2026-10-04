@@ -677,7 +677,11 @@ decides `view`'s type and `fit_deformable`'s description and arguments, as
   remains independently opt-in.
   Actual execution emits `tool_start`/`tool_end` inside the toolbox serialization
   lock, with resolved filename `target_ids`, sanitized arguments/results and a
-  unique execution ID. These host-only events follow real execution order and
+  unique execution ID; `tool_end` adds `views`, the paths of the pictures the
+  call saved in the job folder, and the seed event the opening's
+  (`engine.with_seed_views`). `engine.run(on_open=...)` hands a host the
+  opened job and context before the first `on_write` (the ABBA worker's
+  warp rows read deformation records through them). These host-only events follow real execution order and
   never enter model context; `tool_end` follows checkpoint/mirror writes.
 - `core/deepslice.py`, `agent/trace.py` — the DeepSlice seam (reports `UNAVAILABLE`) and
   the full-content JSONL session trace.
@@ -712,7 +716,13 @@ The ABBA dialog's controls, all plain `JobSpec` fields (not CLI flags yet):
   their positions still move. The host transform satisfies
   `MISSING_TRANSFORMS` and locked sections are exempt from
   `DAMAGED_REQUIRES_MANUAL_TRANSFORM`. The worker never emits orientation or
-  transform rows for them.
+  transform rows for them (warp rows it does).
+- **`inputs["keep_warp"]`** / **`inputs["nonlinear_skip"]`** (ABBA, 2026-10-04):
+  sections the host keeps out of the Nonlinear task: the user's own warp
+  that the user did not let the agent overwrite, or sections the user chose
+  not to have aligned first. `fit_deformable` refuses them per section and
+  `trace_borders` refuses the call (`KEEPS_HOST_WARP`, `NONLINEAR_SKIPPED`;
+  `Job.nonlinear_refusal`).
 - **`image_resolution`** (`low`|`medium`|`high`|`auto`, default `low`;
   2026-10-01): `core.sizes.PICTURE_EDGES` gives each level two long edges, the
   opening images (`core.sizes.opening_edge`: each tile of the opening strips,

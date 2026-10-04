@@ -8,7 +8,7 @@ plane as ``pitch_deg`` / ``yaw_deg``. The mapping is a sign per axis::
     rotateY = radians(yaw_deg * YAW_TO_ROTATE_Y_SIGN)
 
 Pinned 2026-09-29 against stage 0 of ABBA's own exported transform chains
-(``tests/test_integrations_abba_math.py``): both signs are -1. A +rotateY
+(``tests/test_abba_angles.py``): both signs are -1. A +rotateY
 cut puts the screen-LEFT half more posterior; LangSlice's coronal display
 has the BrainGlobe ML index running rightward, so that is yaw < 0. An
 earlier probe (2026-09-22) read yaw = +rotateY because it took ABBA's ML
