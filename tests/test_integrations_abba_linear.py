@@ -473,7 +473,7 @@ def test_existing_runner_seeds_host_state_without_reset_or_resume(tmp_path, monk
         return state
 
     monkeypatch.setattr(engine, "run", fake_run)
-    original = JobSpec(str(tmp_path), tasks=["position"], inputs={"fact": "retained"})
+    original = JobSpec(str(tmp_path), tasks=["position"], inputs={"pixel_size_um": 0.5})
     state = run_existing_in_abba(
         abba,
         original,
@@ -483,7 +483,7 @@ def test_existing_runner_seeds_host_state_without_reset_or_resume(tmp_path, monk
         on_write=lambda state, mapping: displayed.append((state.to_dict(), mapping)),
     )
     assert original.resume is True
-    assert original.inputs == {"fact": "retained"}
+    assert original.inputs == {"pixel_size_um": 0.5}
     assert seen[0].resume is False
     assert seen[0].inputs["order"] == ["b.png", "a.png"]
     assert seen[0].inputs["positions"] == {"a.png": 5, "b.png": 2}

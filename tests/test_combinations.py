@@ -606,13 +606,13 @@ def test_6_a_supplied_orientation_is_kept(images):
         assert job.state.by_id(ID1).rotation_deg == 90
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "Unknown keys in JobSpec.inputs are ignored without a word (job/job.py:163-250): "
-    "a misspelled 'transfroms' leaves every section without its supplied placement."))
 def test_6_an_unknown_input_is_refused(images):
-    with pytest.raises(ValueError, match="transfroms"):
+    with pytest.raises(ValueError, match="transfroms") as refused:
         create(spec_for(images, ["nonlinear"], positions=dict(POSITIONS),
                         transfroms=EXTERNAL_TRANSFORMS))
+    assert "'transforms'" in str(refused.value)  # the allowed keys are named
+    with pytest.raises(ValueError, match="transfroms"):  # a saved spec too
+        JobSpec.from_dict({"image_folder": str(images), "inputs": {"transfroms": {}}})
 
 
 @pytest.mark.xfail(strict=True, reason=(

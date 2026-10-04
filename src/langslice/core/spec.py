@@ -30,6 +30,13 @@ IMAGE_RESOLUTIONS: tuple[str, ...] = ("low", "medium", "high", "auto")
 #: Most sections one transform-tool call may take (``TransformSpec.max_parallel``).
 MAX_PARALLEL_TRANSFORMS = 4
 
+#: The keys :attr:`JobSpec.inputs` takes; any other is refused (a misspelled
+#: key would otherwise drop the supplied answer without a word).
+INPUT_KEYS: tuple[str, ...] = (
+    "order", "positions", "angles", "transforms", "damaged", "locked",
+    "pixel_size_um", "channel_names",
+)
+
 #: ``NonlinearSpec.engine`` values: a fixed deformable-fit engine, or the
 #: agent's choice per call.
 DEFORMABLE_ENGINES: tuple[str, ...] = ("ants", "elastix", "either")
@@ -222,6 +229,8 @@ class JobSpec:
     #: "damaged": {filename: note}, "locked": [filename, ...]}``.
     #: A supplied transform may be mirrored (negative determinant, as a
     #: host's own alignment carries a flip); it is kept as supplied.
+    #: ``channel_names`` (one name per page of a host's multi-page snapshot)
+    #: names its channels. Any other key is refused (:data:`INPUT_KEYS`).
     #: ``damaged`` flags cannot be cleared by the agent. ``locked`` sections
     #: were aligned in-plane by the user: the agent cannot change their flip,
     #: rotation or transform (a ``"host"`` identity transform unless
@@ -264,6 +273,14 @@ class JobSpec:
         unknown = [task for task in self.tasks if task not in ALL_TASKS]
         if unknown:
             raise ValueError(f"Unknown task(s) {unknown}; expected any of {list(ALL_TASKS)}")
+        if self.inputs is not None:
+            if not isinstance(self.inputs, dict):
+                raise ValueError(f"inputs must be a mapping of {list(INPUT_KEYS)}")
+            strange = sorted(str(key) for key in self.inputs if key not in INPUT_KEYS)
+            if strange:
+                raise ValueError(
+                    f"Unknown inputs key(s) {strange}; inputs takes only {list(INPUT_KEYS)}"
+                )
         # Flip moved from reorder to transform (2026-09-29); a host that still
         # sets the old fields keeps working, and old readers see the values
         # that apply.
