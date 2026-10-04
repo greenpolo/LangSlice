@@ -73,9 +73,9 @@ sections/<stem>/     per section; <stem> is the image filename's stem (the whole
   image_correction/<key>/    trace_borders calls, attempt-NN inside
   views/<seq>_<tool>_<mode>/ pictures of this section the model saw
   coords.tif, labels.tif,    the section's maps (formats.py), written at submit
-  labels_fiji.tif,           and by export_maps, never on an ordinary write
-  labels.csv, residual.tif,
-  maps.json
+  labels_fiji.tif,           and by export_maps, never on an ordinary write;
+  labels.csv, tissue.png,    over the section's filled outline (tissue.png: the
+  residual.tif, maps.json    threshold's tissue estimate, not used to cut them)
 views/<seq>_<tool>_<mode>/   pictures of several sections or none (atlas, sheets,
                              opening strips, show_stack pages)
 views.jsonl          append-only index of every saved picture
@@ -102,7 +102,7 @@ numbers and their knobs, the applied deformation's record), the file
 pixel -> atlas matrix of its linear placement (`core.maps`), why it has none
 (`problem`), and its written maps with whether they are still `current`
 (`maps.json`'s `parameters_digest`). The maps (`write_section_maps`:
-`coords.tif`, `labels.tif`, `labels_fiji.tif` + `labels.csv`,
+`coords.tif`, `labels.tif`, `labels_fiji.tif` + `labels.csv`, `tissue.png`,
 `residual.tif`, `maps.json`) and the exports are written by
 `ops.exports.export_maps`, at submit and on demand. `Job.persist` False
 writes none of it.

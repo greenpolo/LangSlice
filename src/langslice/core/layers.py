@@ -301,8 +301,10 @@ def warp_layers(atlas: Any, note: PictureNote, picture_size: tuple[int, int]) ->
     in picture pixels, zero in the caption band; None when the picture shows
     the linear placement alone) completes it: a pixel ``[r, c]`` shows atlas
     point ``pixel_to_atlas_um @ [r + drow, c + dcol, 1]``. Labels are the
-    native atlas plane's ids under that map (nearest), 0 outside the tissue
-    the record keeps; borders the drawn lines' coverage at full strength.
+    native atlas plane's ids under that map (nearest) at every content pixel,
+    as a placement picture's labels: no tissue rule cuts them (the drawn
+    lines stop at the tissue; the labels do not); borders the drawn lines'
+    coverage at full strength.
     """
     from langslice.deformable.geometry import sample_native
     from langslice.deformable.render import drawn_border_coverage
@@ -340,7 +342,6 @@ def warp_layers(atlas: Any, note: PictureNote, picture_size: tuple[int, int]) ->
 
         native = native_labels(atlas, placement)
     ids = sample_native(np.asarray(native), np.stack([native_x, native_y], axis=-1))
-    ids = np.where(np.asarray(record.tissue, dtype=bool), ids, 0)
     labels = np.zeros((height, width), dtype=np.uint32)
     labels[band:band + rows, :cols] = ids.astype(np.uint32)
     coverage = drawn_border_coverage(
