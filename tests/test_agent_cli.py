@@ -46,7 +46,7 @@ def images(stack: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path
     """A fresh copy of the stack, the synthetic atlas installed, HOME private."""
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     apply_patches()
-    install(atlas_loader())
+    install(atlas_loader(), monkeypatch.setattr)
     folder = tmp_path / "stack"
     shutil.copytree(stack, folder)
     return folder
@@ -232,8 +232,8 @@ def test_a_background_run_answers_at_once_then_status_and_wait(capsys, images, m
     from langslice.doors.cli import background
 
     init(capsys, images)
-    monkeypatch.setattr(background, "CHILD_COMMAND", [os.sys.executable, "-m",
-                                                      "tests.cli_child"])
+    # install() pointed background runs at tests.cli_child (the synthetic atlas).
+    assert background.CHILD_COMMAND[-1] == "tests.cli_child"
     monkeypatch.setenv("PYTHONPATH", str(REPO))
     monkeypatch.chdir(REPO)
     code, envelope = cli(capsys, "job", str(images), "view_slices", "--slices", ID0,

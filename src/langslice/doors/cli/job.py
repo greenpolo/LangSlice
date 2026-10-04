@@ -378,6 +378,10 @@ def _run(opened: Any, verb: str, tool: Any, arguments: dict[str, Any], *,
     if not ok:
         code = str(reply.get("error") or "ERROR")
         message = str(reply.get("message") or reply.get("detail") or "")
+        rows = reply.get("results")
+        if not message and isinstance(rows, list):  # per-section refusals
+            message = "; ".join(f"{row.get('id')}: {row.get('error')}" for row in rows
+                                if isinstance(row, dict) and row.get("error"))
         failed = Envelope.failure(code, message, result=result, job=job_folder, verb=verb)
         failed.artifacts, failed.warnings = artifacts, warnings
         return failed
