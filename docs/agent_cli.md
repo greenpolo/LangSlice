@@ -165,3 +165,11 @@ langslice.load_atlas("allen_mouse_25um")     # a BrainGlobe atlas
 `import langslice` and `open_job` load no agent framework or model client
 (`tests/test_core_imports.py`). A scripted pipeline (making jobs, image-model
 profiles, `register_section` / `register_job`): [`library.md`](library.md).
+
+## Ready-made agent setups
+
+`connectors/claude-code/` (a Claude Code plugin: skills for the main session and
+registration subagents with MCP, CLI or scripting access) and
+`connectors/codex/` (skills, custom agents, rules) wrap this CLI and the MCP
+server for one-brain registration runs; their READMEs say how to restrict the
+shell.
