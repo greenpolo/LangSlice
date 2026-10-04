@@ -25,13 +25,17 @@ logger = logging.getLogger(__name__)
 
 #: The card's two names (Codex reads the first, Claude Code the second).
 CARD_FILES = ("AGENTS.md", "CLAUDE.md")
+#: The brief the agent CLI writes beside the card (``langslice job FOLDER
+#: brief``, :mod:`langslice.doors.cli.brief`), which the card names first.
+BRIEF_FILE = "BRIEF.md"
 
 
 def card_text(layout: JobLayout) -> str:
     """The card for the job folder *layout* (see the module text)."""
     images = str(layout.image_folder) if layout.image_folder is not None else "the images"
     verbs = "\n".join(
-        f"- `{name}` ({verb.kind}, {verb.group}): {summary(name)}"
+        f"- `{name}` ({verb.kind}, {verb.group}{', long' if verb.long else ''}): "
+        f"{summary(name)}"
         for name, verb in listed().items()
     )
     return f"""# LangSlice job folder
@@ -39,6 +43,10 @@ def card_text(layout: JobLayout) -> str:
 One registration job: the sections in `{images}` placed in a BrainGlobe atlas.
 Written by LangSlice {langslice.__version__} from its code; regenerated on open,
 so do not edit it.
+
+Registering it? Start with `langslice job {layout.folder} brief`: the job
+statement LangSlice's own agent gets, the user's notes and the opening pictures
+as files, also written to `{BRIEF_FILE}` here. Open every picture, then work as it says.
 
 ## Files: state is truth, everything else is derived
 - `state.json`: THE TRUTH. Order, positions, flips, transforms and the applied
@@ -78,6 +86,8 @@ in `state.json` and the verbs are millimetres along the slicing axis.
 background runs), `--verbose`.
 Pictures come back as file paths under `artifacts`. Exit codes: 0 ok,
 2 bad arguments, 3 refused by the job (`error.code`, `error.fix`), 4 internal.
+Calls may run in parallel (each write holds the folder's lock; a long verb
+re-checks each section first: `STALE_INPUT`, run it again for that section).
 `langslice ops` lists the verbs; `langslice schema VERB` gives the arguments.
 {verbs}
 

@@ -3,8 +3,25 @@
 `langslice job FOLDER VERB` runs one verb on a job folder and answers with one
 JSON object on stdout. It is built for coding agents (Claude Code, Codex)
 working in their own sandbox; no person is expected to use it over a GUI.
-Code: `src/langslice/doors/cli/` (`job.py`, `catalog.py`, `envelope.py`,
-`background.py`).
+Code: `src/langslice/doors/cli/` (`job.py`, `brief.py`, `catalog.py`,
+`envelope.py`, `background.py`).
+
+## Start with `brief`
+
+`langslice job FOLDER brief` gives a coding agent what LangSlice's own agent
+gets when it starts (`src/langslice/doors/statement.py`, shared by every
+door): the job statement (the job, the run facts, one line per tool, the
+constraints, the method; worded for this door where it says where the
+opening pictures are and how a long command answers), the user's notes
+(`job.json` `notes`), and the status table with the recent run notes, under
+`result.statement`; the opening pictures (the strips the agent's first
+message carries, same captions and order) saved in the job folder and listed
+under `artifacts` as kind `opening` with `index` (reading order) and `label`
+(the strip's text), and under `result.opening` with every text in reading
+order. All of it is also written to `BRIEF.md` in the job folder, which the
+job folder's card names first. `result` also says the `viewer`, the
+`resolution` range a call may ask for and the job's `image_model` (provider,
+`connected`, `trace_borders`). Run it again for the stack as it stands.
 
 ## The verbs
 
@@ -41,7 +58,12 @@ Besides the verbs, `FOLDER` takes:
   (`--fresh` starts over); one made from other supplied inputs
   (`--positions`, `--transforms`, `--orientation`, `--order`,
   `--pitch`/`--yaw`, `--section-angles`, `--locked`, `--damaged`, `--pixel-size-um`, ...) is refused with `INPUTS_CHANGED` (exit 3), which
-  names the inputs that differ and `--fresh`.
+  names the inputs that differ and `--fresh`. `--notes TEXT` keeps the
+  user's notes for the job in `job.json` (every door gives them to the
+  registration agent); `--viewer claude|codex|openai` (see "Pictures")
+  says which model reads the pictures. The answer carries the job
+  statement (`result.statement`, without opening pictures: `brief` saves
+  them) and `BRIEF.md` is written; `next` is `brief`.
 
   `--registration FILE` starts from a linear registration made elsewhere: a
   QuickNII or VisuAlign JSON/XML, a DeepSlice CSV/JSON/XML, or a LangSlice
@@ -89,9 +111,37 @@ Besides the verbs, `FOLDER` takes:
   descriptions written for a model, a picture's text lines).
 
 Pictures take the same `view` options as the tools, `view.resolution`
-included: any long edge from 128 px up to the source's own pixels (nothing is
-upsampled past them). The look-before-commit gates of `position.gated` do not
-apply: they are tool-only.
+included: any long edge from 128 px up to the viewer's largest (below), and
+never past the source's own pixels (nothing is upsampled). A larger request
+is clamped and the reply's `view.resolution_note` says so. The
+look-before-commit gates of `position.gated` do not apply: they are
+tool-only.
+
+## Pictures and the viewer
+
+A CLI picture is a file the coding agent opens with its own image reader, so
+the job's viewer (`init --viewer`, `job.json` `viewer`, default `claude`)
+sets the opening strips' size and the largest picture a call may ask for
+(`core/opening.py` `VIEWER_LIMITS`), the numbers of the door that serves the
+same models:
+
+| Viewer | Opening strips | Largest picture | Why |
+| --- | --- | --- | --- |
+| `claude` | 1568 px, ~1.2 MP | 2000 px | Claude Code's Read sends the file to the Claude API. Read's own resize rule is not published; the API takes no image past 2000 px once a request holds more than 20 images (any working session) and shrinks past 1568 px (~1.15 MP) on models before Claude 4.7 (2576 px on 4.7+). |
+| `codex`, `openai` | 2048 px, 2,500 32-px patches | 2048 px | Codex's `view_image` resizes a file to fit 2048 px and 2,500 patches (detail "high", its default; codex-rs `utils/image`). |
+
+The library (`langslice.open_job`) has no viewer: its pictures are capped
+only by their source.
+
+## The image model
+
+A job whose nonlinear task names an image model offers `trace_borders` only
+when that model is connected to LangSlice here (a key or login present, the
+MCP door's check, `doors.api.setup.image_model_connected`); `status` and
+`brief` report it under `image_model`, the statement says the tool is off,
+and calling it is refused with `IMAGE_MODEL_OFF` (exit 3). On this door
+`trace_borders` answers once the image call has landed (with `--background`
+at once; `wait` collects the answer).
 
 ## The answer
 
@@ -127,7 +177,8 @@ gives each pixel's atlas micrometres), and for a section on its atlas
 `fit_deformable` picture; `results`, `registration`, `quicknii`,
 `visualign` and each section's `coords`, `labels`, `labels_fiji`,
 `labels_csv`, `tissue`, `residual` and `maps` (after `submit` and `export_maps`);
-`card` and `state` (after `init`). Progress and library output go to stderr.
+`card`, `state` and `brief` (after `init`); `opening` and `brief` (after
+`brief`). Progress and library output go to stderr.
 
 ## Live shared editing
 
@@ -148,10 +199,13 @@ sections apply; the envelope lists it under `warnings`.
 ## The reference card and the library
 
 Every job folder holds `AGENTS.md` and `CLAUDE.md` (identical, generated by
-`src/langslice/doors/card.py`, rewritten when stale): what the folder holds,
+`src/langslice/doors/card.py`, rewritten when stale): first, to run `brief`
+and read `BRIEF.md`; what the folder holds,
 that `state.json` is the truth and `registration.json`, pictures and maps
 are derived (one line per file), the coordinate convention (BrainGlobe micrometres, the atlas's axis order, voxel
-`i`'s centre at `i * resolution`), the verbs, and the Python entry point:
+`i`'s centre at `i * resolution`), that calls may run in parallel, the
+verbs (each marked `long` where it computes outside the lock), and the
+Python entry point:
 
 ```python
 import langslice

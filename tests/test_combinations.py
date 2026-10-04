@@ -92,9 +92,13 @@ def _no_network(*_args: Any, **_kwargs: Any) -> Any:
 @pytest.fixture
 def images(stack: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """A fresh copy of the stack; the synthetic atlas wherever a door opens a
-    job; the stub image model wherever a door resolves one; no network."""
+    job; the stub image model wherever a door resolves one, which counts as
+    connected (a test of the opposite says so: :func:`connected`); no network."""
     import langslice.doors.tools.toolbox as toolbox
     import langslice.providers.images as transport
+    from langslice.doors.api import setup
+
+    monkeypatch.setattr(setup, "image_model_connected", lambda _provider: True)
 
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     apply_patches()

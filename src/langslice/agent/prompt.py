@@ -366,6 +366,7 @@ def build_job_statement(
     max_resolution: int | None = None,
     door: str = "agent",
     auto: bool | None = None,
+    gates: bool = True,
 ) -> str:
     """The system instruction for one run, built from the spec and the state.
 
@@ -375,7 +376,9 @@ def build_job_statement(
     (``agent``, ``mcp``, ``cli``: where the opening pictures are, how a long
     call answers); *auto* whether the caller sizes each picture
     (``view.resolution``; None: the spec's image resolution is "auto", the
-    agent CLI always does). *axis_ends* is ``(low, high)`` from
+    agent CLI always does); *gates* False leaves out the look-before-commit
+    gates (``position.gated``), which a door without them (the agent CLI)
+    never applies. *axis_ends* is ``(low, high)`` from
     :func:`langslice.core.space.slice_axis_ends` — what the two ends of the slicing
     axis are anatomically in THIS atlas.
     """
@@ -431,7 +434,7 @@ def build_job_statement(
             "- `submit` is refused unless the positions run one way along the "
             "corrected order."
         )
-        if spec.position.gated:
+        if spec.position.gated and gates:
             constraints.append(
                 "- `set_positions` is refused for a section that has not been "
                 "compared since it was last written."

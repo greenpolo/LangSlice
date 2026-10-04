@@ -422,6 +422,12 @@ decides `view`'s type and `fit_deformable`'s description and arguments, as
   all the strips are section-only and the atlas reference
   (`reference_atlas`) follows as atlas-only strips; when every section has
   a position the reference is not sent; a partly placed stack gets both.
+  `VIEWER_LIMITS` (2026-10-04): the agent CLI's viewers, the coding agent
+  that opens its picture files (`claude`: Claude Code's Read, the MCP
+  door's numbers, strips at `CLAUDE_IMAGE_LIMIT` and pictures up to
+  `CLAUDE_MAX_VIEW_EDGE` 2000; `codex` / `openai`: Codex's `view_image`,
+  which resizes to fit 2048 px and 2,500 patches, the OpenAI lanes'
+  numbers); `DEFAULT_VIEWER` `claude`.
 - `doors/tools/arguments.py` — the shapes of the arguments (2026-10-03): `View` (the
   picture options) and `ViewAuto` (+ `resolution`), and the `entries` /
   `candidates` dicts (`DamageEntry`, `OrientEntry`, `PositionEntry`,

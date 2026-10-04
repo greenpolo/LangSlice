@@ -38,10 +38,12 @@ checking and import/export; each agent file has a minimal
 card (`AGENTS.md` in the job folder). Ask Codex to spawn the agent by name,
 for example "have register_cli register the job in /data/M04".
 
-**Depends on a verb that has not landed:** the agents start with
-`langslice job <folder> brief` (LangSlice's job statement plus the saved
-opening pictures). That verb is being built on another branch, its name is not
-final, and until it lands the agents cannot follow their first step.
+The agents start with `langslice job <folder> brief`: LangSlice's job
+statement for the job (the one its own agent gets), the user's notes, the
+status table and the opening pictures saved as files, also written to
+`BRIEF.md` in the job folder ([`docs/agent_cli.md`](../../docs/agent_cli.md)).
+Create the job with `init --viewer codex`, so the pictures are sized for
+Codex's `view_image` (2048 px).
 
 ## Sandboxing, and the gaps
 
