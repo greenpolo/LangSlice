@@ -200,3 +200,45 @@ def test_outlines_mode_draws_a_listed_atlas_image(tmp_path: Path):
     blended = mean({"mode": "outlines", "atlas_channels": ["ara", "borders"],
                     "atlas_opacity": 1.0})
     assert blended > lines + 20
+
+
+def _flat_section() -> Image.Image:
+    """A wide, flat ellipse: its included half turns ~90 degrees onto the atlas's."""
+    canvas = np.full((200, 260, 3), 240, dtype=np.uint8)
+    cv2.ellipse(canvas, (130, 100), (120, 30), 0, 0, 360, (30, 30, 30), -1)
+    return Image.fromarray(canvas, mode="RGB")
+
+
+@pytest.mark.parametrize("side", ["left", "right"])
+def test_a_large_turn_keeps_the_one_sided_highlight_the_fit_used(tmp_path: Path, side: str):
+    """Sides are resolved once, by the fit, and the picture reuses them: a
+    fit that turns the midline past 45 degrees still highlights its region
+    (it used to fall back to no highlight at all)."""
+    import io
+
+    from langslice.adk import TOOL_MEDIA_PARTS_KEY
+
+    def picture(view: dict[str, Any]) -> tuple[float, np.ndarray]:
+        state, box = _box(tmp_path / f"{side}{len(view)}", WholeAtlas(), _flat_section(),
+                          pixel_size_um=50.0, position_mm=1.0)
+        result = _fit(box, ["s0.png"], "silhouette", include=[f"L:{side}"],
+                      view={"mode": "outlines", **view})
+        assert result["status"] == "ok", result
+        part = result[TOOL_MEDIA_PARTS_KEY][0]
+        image = np.asarray(Image.open(io.BytesIO(part.inline_data.data)).convert("RGB"))
+        return result["results"][0]["physical"]["rotation_deg"], image
+
+    for folder in ("left0", "left1", "right0", "right1"):
+        (tmp_path / folder).mkdir()
+    turned, highlighted = picture({})
+    _same, plain = picture({"regions": []})
+    assert abs(turned) > 45
+    # Full-strength yellow (the highlight) only where the region is drawn,
+    # on the half of the canvas that side names.
+    strong = (highlighted[..., 0] > 200) & (highlighted[..., 1] > 200) & (
+        highlighted[..., 2] < 80)
+    assert strong.sum() > 2 * ((plain[..., 0] > 200) & (plain[..., 1] > 200)
+                               & (plain[..., 2] < 80)).sum()
+    columns = np.nonzero(strong[60:].any(axis=0))[0]
+    middle = highlighted.shape[1] / 2
+    assert (columns.mean() < middle) == (side == "left")

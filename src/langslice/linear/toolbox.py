@@ -796,6 +796,7 @@ def build_tools(
         long_edge: int | None = None,
         matrix_label: str = "fitted matrix",
         warp: Any = None,
+        left: np.ndarray | None = None,
     ) -> list[Any]:
         """The physical canvas pictures of one section at one placement.
 
@@ -809,7 +810,8 @@ def build_tools(
         `fit_affine` all draw through here. *warp* (a `DeformableRecord` on
         this placement) resamples the section into its placed-atlas frame
         first, so the picture shows the full registration: linear placement
-        plus deformation.
+        plus deformation. *left* is a fit's own side split for one-sided
+        regions (:class:`~langslice.linear.transform.FitFrame`).
         """
         edge = int(long_edge or options.long_edge)
         window = options.window
@@ -848,7 +850,7 @@ def build_tools(
             label=canvas_label(label or record.id, options), spline=spline, long_edge=edge,
             atlas_picture=atlas_image_picture(ctx, state, options.atlas_channels, position),
             atlas_name=options.atlas_name(), regions=options.regions,
-            matrix_label=matrix_label, template_lines=options.borders,
+            matrix_label=matrix_label, template_lines=options.borders, left=left,
         )
         return images
 
@@ -1975,7 +1977,6 @@ def build_tools(
         options = display(FIT_AFFINE_VIEW, view, sections=targets)
         if isinstance(options, dict):
             return options
-        plain = options
         if (kept and isinstance(view, dict) and "regions" not in view
                 and MODE_RULES[options.mode].atlas):
             # The included regions are highlighted unless the call names others.
@@ -1984,20 +1985,16 @@ def build_tools(
                 return options
 
         def draw_fit(record: SliceState, frame: FitFrame) -> list[Any]:
-            """The fitted section, drawn from the fit's working frame and matrix."""
-            def drawn(chosen: Any) -> list[Any]:
-                return draw_canvas(
-                    record, frame.section, frame.um_per_px, float(record.position_mm or 0.0),
-                    frame.matrix, chosen, label=record.id,
-                )
-            if options is plain:
-                return drawn(options)
-            try:
-                return drawn(options)
-            except ValueError:
-                # The automatic highlight of a one-sided region cannot be
-                # drawn once the fit turns the midline past 45 degrees.
-                return drawn(plain)
+            """The fitted section, drawn from the fit's working frame and matrix.
+
+            One-sided regions are highlighted with the sides the fit resolved
+            (``frame.left``), so the picture shows what the fit used even
+            after a large turn.
+            """
+            return draw_canvas(
+                record, frame.section, frame.um_per_px, float(record.position_mm or 0.0),
+                frame.matrix, options, label=record.id, left=frame.left,
+            )
 
         results: list[dict[str, Any]] = []
         parts: list[types.Part] = []

@@ -1286,6 +1286,7 @@ def physical_views(
     regions: Any = (),
     matrix_label: str = "fitted matrix",
     template_lines: bool = False,
+    left: np.ndarray | None = None,
 ) -> tuple[list[Image.Image], float]:
     """The alignment screen in one of :data:`VIEW_MODES`, plus the overlap.
 
@@ -1326,6 +1327,10 @@ def physical_views(
     *outlines* layer then at :data:`REGION_CONTEXT_ALPHA` for context.
     *matrix_label* names a ready matrix in the caption. ``template`` draws
     the atlas image alone; *template_lines* adds the *outlines* layer to it.
+    *left* is the section's displayed left on the native plane as resolved
+    elsewhere (a fit's own split, :class:`langslice.linear.transform.FitFrame`);
+    a one-sided region then uses it instead of resolving the sides through
+    this placement, which has none once it turns the midline past 45 degrees.
 
     Returns ``(images, silhouette_iou)`` — every image captioned, and the
     overlap between the warped section's tissue mask and the atlas anatomy at
@@ -1394,10 +1399,15 @@ def physical_views(
         # A side is the SECTION's: carry the native plane onto the section
         # frame (native -> canvas is the atlas scale; section -> canvas the matrix).
         linear = _as_3x3(section_matrix)[:2, :2]
-        left = regions_left(atlas, regions, position_mm, plane, pitch_deg, yaw_deg,
-                            np.linalg.inv(linear) * geometry.atlas_scale)
-        highlighted = region_polys(geometry.annotation, regions, left)
-        if left is not None and np.linalg.det(linear) < 0:
+        if left is not None and left.shape == geometry.annotation.shape[:2]:
+            from langslice.atlas.sides import has_sides
+
+            sides = left if has_sides([name for name, _ids in regions]) else None
+        else:
+            sides = regions_left(atlas, regions, position_mm, plane, pitch_deg, yaw_deg,
+                                 np.linalg.inv(linear) * geometry.atlas_scale)
+        highlighted = region_polys(geometry.annotation, regions, sides)
+        if sides is not None and np.linalg.det(linear) < 0:
             sides_note = " (the section's sides; this placement mirrors it)"
     atlas_head = f"atlas {atlas_name}"
 
