@@ -1,0 +1,10 @@
+{
+  "name": "langslice",
+  "displayName": "LangSlice",
+  "version": "0.1.0",
+  "description": "Register histology brain sections to a BrainGlobe atlas: skills for the main Claude Code session and registration subagents that each register one brain.",
+  "author": { "name": "LangSlice" },
+  "homepage": "https://github.com/greenpolo/LangSlice",
+  "repository": "https://github.com/greenpolo/LangSlice",
+  "keywords": ["histology", "atlas", "registration", "brainglobe", "abba"]
+}

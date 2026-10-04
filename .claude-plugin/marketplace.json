@@ -1,0 +1,14 @@
+{
+  "name": "langslice",
+  "description": "LangSlice: register histology brain sections to a BrainGlobe atlas from Claude Code",
+  "owner": {
+    "name": "LangSlice"
+  },
+  "plugins": [
+    {
+      "name": "langslice",
+      "source": "./connectors/claude-code",
+      "description": "Skills for setting up a LangSlice registration job, and registration subagents (MCP, CLI, scripting variants) that register one brain each"
+    }
+  ]
+}
