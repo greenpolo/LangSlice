@@ -85,6 +85,7 @@ sections/<stem>/     per section; <stem> is the image filename's stem (the whole
 views/<seq>_<tool>_<mode>/   pictures of several sections or none (atlas, sheets,
                              opening strips, show_stack pages)
 views.jsonl          append-only index of every saved picture
+views.seq            the picture/call numbers handed out (+ views.seq.lock)
 exports/             linear_results.json (the run's result; spec.out overrides
                      the path), result.json (a saved host job's final result),
                      quicknii.json and visualign.json (with the maps)
@@ -256,8 +257,11 @@ longer exist be taken over by the images it is opened with.
   whether it gets layers and a residual; `files()` lists `view.jpg`,
   `view.json` and the layers with their kinds): the agent CLI's `artifacts`. The numbering reads the index as it grows
   (each save reads the lines appended since the last), so two stores on one
-  folder (a running agent and a CLI call) continue each other's numbers; two
-  pictures queued by both before either is written can still share one.
+  folder (a running agent and a CLI call) continue each other's numbers, and the numbers are reserved
+  across processes before anything is written (`views.seq`, the next picture
+  and last call numbers, under its own file lock `views.seq.lock`;
+  `ViewStore._numbering`), so two stores that queue pictures before either
+  writes never share one.
 
 The frame record and the on-demand coordinate map are the core's
 (`core/layers.py`, `core/CLAUDE.md`).

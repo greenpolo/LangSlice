@@ -61,6 +61,12 @@ from langslice.core.layers import (
 )
 from langslice.job.layout import JobLayout
 
+#: Beside ``views.jsonl``: the numbers handed out so far (``seq``: the next
+#: picture's, ``call``: the last call's), and its lock ``views.seq.lock``.
+VIEWS_COUNTER = "views.seq"
+#: How long a store waits for another to finish numbering its pictures.
+NUMBERING_TIMEOUT_S = 30.0
+
 logger = logging.getLogger(__name__)
 
 #: ``view.json``'s format. 1 (2026-10-03).
@@ -219,6 +225,41 @@ class ViewStore:
             pass
         return self._seq, self._call
 
+    @contextlib.contextmanager
+    def _numbering(self) -> Iterator[tuple[int, int]]:
+        """The next picture and call numbers, reserved across processes.
+
+        Numbers handed out are recorded in ``views.seq`` (the next picture
+        and the last call) under its own file lock, before any picture is
+        written, so two stores on one folder (two processes) that queue
+        pictures before either writes never share a number. The block
+        records the numbers it used (``self._seq`` / ``self._call``) on
+        exit. Without a usable folder: the index alone, as before."""
+        from filelock import FileLock, Timeout
+
+        from langslice.job.checkpoint import write_json_atomic
+
+        counter = self.layout.folder / VIEWS_COUNTER
+        try:
+            lock: Any = FileLock(str(counter) + ".lock", timeout=NUMBERING_TIMEOUT_S)
+            lock.acquire()
+        except (OSError, Timeout):
+            yield self._next_numbers()
+            return
+        try:
+            seq, call = self._next_numbers()
+            try:
+                held = json.loads(counter.read_text(encoding="utf-8"))
+                seq = max(seq, int(held.get("seq", 0)))
+                call = max(call, int(held.get("call", 0)))
+            except (OSError, ValueError, TypeError, AttributeError):
+                pass
+            self._seq, self._call = seq, call
+            yield seq, call
+            write_json_atomic(str(counter), {"seq": self._seq, "call": self._call})
+        finally:
+            lock.release()
+
     # --- saving -------------------------------------------------------------------
 
     def save(
@@ -235,8 +276,7 @@ class ViewStore:
         if not pictures:
             return []
         started = time.perf_counter()
-        with self._lock:
-            seq, call = self._next_numbers()
+        with self._lock, self._numbering() as (seq, call):
             call += 1
             items: list[_Picture] = []
             for index, (image, held) in enumerate(pictures):
