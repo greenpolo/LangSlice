@@ -4,8 +4,8 @@ Package guide for `src/langslice/ops/`. The repo-level `CLAUDE.md` holds the
 project-wide rules. `AGENTS.md` here is a verbatim copy — edit one, mirror to
 the other.
 
-Every write to a stack is a function here (layered refactor, phase 3a,
-2026-10-03).
+Every write to a stack is a function here (layered refactor, phases 3a and
+3b, 2026-10-03).
 The agent tools, the MCP server and, later, the per-operation CLI and
 scripts call the same functions, so a tool and a script do exactly the same
 write.
@@ -52,6 +52,24 @@ write.
   (`fit_affine`'s record), `set_transforms(job, {id: record})` (one undo step
   for the batch; locked sections refused). `KNOBS` lists the knobs in
   payload order. The shear convention is `affine.decompose_affine`'s.
+- `deformable.py` (phase 3b) — `fit_deformable(job, workspace, records,
+  choices, include=, exclude=, start=)`: the deformation on top of each
+  section's linear placement. The door validates the arguments and resolves
+  each candidate into a `deformation.Choice`; this runs every fit (the fit
+  grid, the image each fit reads, a traced fit section waiting for its
+  running trace under one `TRACE_WAIT_S` deadline, the record cache, the
+  engines) and, with exactly one choice, applies each section's result as
+  ONE undo step (an unchanged key writes nothing, `written: false`).
+  Several choices are a preview, nothing written. Per-section problems
+  (`INVALID_LINEAR_PLACEMENT`, `NO_DEFORMATION`, `NO_TRACE`/`TRACE_*`,
+  `BAD_SETTINGS`, `FIT_FAILED`, `RECORD_WRITE_FAILED`) are rows, not
+  refusals. Returns `DeformableFit`: `rows` (call order), `fitted` (each
+  row with its fit and record, for the door's pictures), `traced` (per
+  traced section, the image read and the trace's lines on the fit grid),
+  `written`. `keep_linear(job, records, reason)`: the "linear placement
+  stands" record, one undo step; `NOTHING_WRITTEN` (each offending section
+  under `results`) when one lacks a position or a transform.
 
-Not here yet (phase 3b): the placement pictures, the deformable fit
-(`toolbox.fit_deformable_impl`) and saving renders to the job folder.
+The pictures are not here: they are the core's (`src/langslice/core/`,
+its own `CLAUDE.md`). Still to come (phase 3c): saving every render, with
+its layers, to the job folder.

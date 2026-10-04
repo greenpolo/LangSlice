@@ -20,5 +20,6 @@ cutting angles), :mod:`.order` (corrected order), :mod:`.orientation` (flip
 and quarter turns), :mod:`.damage` (damage flags), :mod:`.appearance` (how
 sections look for viewing and for fits), :mod:`.notes` (run notes),
 :mod:`.transforms` (the in-plane transform: knobs to stored numbers, fit
-records, the write).
+records, the write), :mod:`.deformable` (the deformation on top of the
+linear placement: fit, apply, or keep the linear placement).
 """
