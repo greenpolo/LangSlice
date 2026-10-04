@@ -18,9 +18,11 @@ import re
 from pathlib import Path
 from typing import Any
 
+from langslice.core.spec import JobSpec
 from langslice.doors.api import setup as provider_setup
 from langslice.doors.api.abba_worker import prepare_linear
 from langslice.job import index, migrate
+from langslice.job.job import refuse_changed_inputs
 from langslice.job.layout import (
     JobLayout,
     check_owner,
@@ -110,7 +112,7 @@ def prepare_claude(params: dict[str, Any]) -> dict[str, Any]:
     prepared = prepare_linear(run_params)
     job_id, layout = _write_job(
         prepared.folder, {"kind": "host", "params": run_params, "notes": notes},
-        spec=prepared.spec.to_dict(), channel=channel,
+        spec=prepared.spec, channel=channel,
     )
     return {"job_id": job_id, "job_dir": str(layout.folder),
             "prompt": _save_prompt(layout, copy_prompt(job_id, prepared.spec, notes))}
@@ -121,7 +123,14 @@ def prepare_folder(spec: Any, notes: str = "", trace_dir: str | None = None) -> 
 
     No host and no live channel. The job folder next to the sections holds
     it; the server resumes it from the checkpoint there (a job folder that
-    already holds a checkpoint is continued: one folder, one job).
+    already holds a checkpoint is continued: one folder, one job). A
+    checkpoint made from other supplied inputs is refused here, when the job
+    is saved (``job.refuse_changed_inputs``: ``InputsChanged``, naming
+    ``--fresh``). With ``spec.resume`` False (``--fresh``) nothing is
+    checked and the saved job is marked ``fresh``: the server's first open
+    starts it over exactly as ``linear run --fresh`` does (``Job.open``
+    without resume: a new ingest, the old checkpoint and history replaced),
+    then clears the mark so later opens resume.
     """
     from langslice.core.discovery import discover_slices
 
@@ -131,8 +140,9 @@ def prepare_folder(spec: Any, notes: str = "", trace_dir: str | None = None) -> 
     spec.image_folder = str(folder)
     job_id, layout = _write_job(
         folder, {"kind": "folder", "notes": notes,
-                 "trace_dir": str(Path(trace_dir).expanduser().resolve()) if trace_dir else None},
-        spec=spec.to_dict(), channel=None,
+                 "trace_dir": str(Path(trace_dir).expanduser().resolve()) if trace_dir else None,
+                 **({} if spec.resume else {"fresh": True})},
+        spec=spec, channel=None,
     )
     return {"job_id": job_id, "job_dir": str(layout.folder),
             "prompt": _save_prompt(layout, copy_prompt(job_id, spec, notes))}
@@ -145,19 +155,25 @@ def _save_prompt(layout: JobLayout, prompt: str) -> str:
 
 
 def _write_job(
-    image_folder: Path, host: dict[str, Any], *, spec: dict[str, Any],
+    image_folder: Path, host: dict[str, Any], *, spec: JobSpec,
     channel: dict[str, Any] | None,
 ) -> tuple[str, JobLayout]:
+    """Save the job: its folder located, upgraded and checked (another image
+    folder's job, and with ``spec.resume`` a checkpoint made from other
+    inputs, are refused before anything is written), ``job.json`` and the
+    index entry."""
     job_id = index.new_id()
     images = Path(image_folder).expanduser().resolve()
-    folder, fallback = locate_job_folder(images, spec.get("job_dir"), root=jobs_root(),
+    folder, fallback = locate_job_folder(images, spec.job_dir, root=jobs_root(),
                                          job_id=job_id, register=False)
     layout = JobLayout(folder, images)
     check_owner(layout)
     if layout.folder == job_folder_for(images):
         migrate.migrate_beside_images(layout)
+    if spec.resume:
+        refuse_changed_inputs(layout, spec)
     layout.ensure()
-    write_job_file(layout, job_id=job_id, spec=spec,
+    write_job_file(layout, job_id=job_id, spec=spec.to_dict(),
                    host={"format": FORMAT_VERSION, **host})
     index.register(jobs_root(), job_id, layout.folder, host_channel=channel, fallback=fallback)
     from langslice.doors.card import write_card

@@ -44,6 +44,7 @@ from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.media import encode_jpeg
 from langslice.doors.tools.toolbox import ToolBox, build_tools
 from langslice.job.job import Job
+from langslice.job.layout import read_job_file, write_job_file
 from langslice.ops.registry import VERBS
 
 logger = logging.getLogger(__name__)
@@ -315,11 +316,20 @@ def open_folder_job(
     """A plain-folder job: its checkpoint and results live in its job folder.
 
     Reopening it (a restarted server, a new chat) resumes from that checkpoint.
+    A job saved with ``claude prepare --fresh`` (``fresh`` in its record)
+    starts over on its first open, as ``linear run --fresh`` does (``Job.open``
+    without resume), and the mark is then cleared so later opens resume.
     """
     spec = JobSpec.from_dict(record["spec"])
-    spec.resume = True
+    fresh = bool(record.get("fresh"))
+    spec.resume = not fresh
     spec.out = None
     session = open_job(spec, atlas_loader, folder)
+    if fresh:
+        layout = session.job.layout
+        host = dict((read_job_file(layout) or {}).get("host") or {})
+        host.pop("fresh", None)
+        write_job_file(layout, host=host)
     session.job_id, session.job_dir = job_id, folder
     session.notes = record.get("notes", "")
     if record.get("trace_dir"):

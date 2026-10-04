@@ -685,6 +685,63 @@ def test_6_a_second_init_with_new_inputs_is_not_silently_ignored(capsys, images)
     assert positions() == moved
 
 
+def test_claude_prepare_refuses_other_inputs_and_fresh_starts_over_once(images):
+    """`claude prepare` on a folder whose job was made from other inputs is
+    refused when the job is saved (not later at start_job), naming --fresh;
+    with --fresh the server's FIRST open starts over (Job.open without resume,
+    as `linear run --fresh`), and later opens resume."""
+    import langslice
+    from langslice.doors.api.claude_jobs import load_job, prepare_folder
+    from langslice.doors.mcp.server import build_server
+    from langslice.job.checkpoint import load_checkpoint
+    from langslice.job.job import InputsChanged
+
+    create(spec_for(images, ["nonlinear"], **external_inputs()))
+    with langslice.open_job(images) as job:  # the old job has work and history
+        assert job.fit_deformable(slices=[ID0], keep_linear="old")["status"] == "ok"
+    moved = {name: round(mm + 0.02, 6) for name, mm in POSITIONS.items()}
+    other = {**external_inputs(), "positions": moved}
+    state_file = images / "langslice" / "state.json"
+
+    with pytest.raises(InputsChanged, match="--fresh"):
+        prepare_folder(spec_for(images, ["nonlinear"], **other))
+    assert prepare_folder(spec_for(images, ["nonlinear"], **external_inputs()))["job_id"]
+
+    fresh = spec_for(images, ["nonlinear"], **other)
+    fresh.resume = False
+    job_id = prepare_folder(fresh)["job_id"]
+    assert load_job(job_id)[1]["fresh"] is True
+
+    def serve() -> Any:
+        return build_server(lambda _folder: fresh, job_id=job_id, atlas_loader=atlas_loader())
+
+    first = _mcp(serve(), [("undo", {}),
+                           ("fit_deformable", {"slices": [ID1], "keep_linear": "new"})])
+    assert first[0]["status"] != "ok", first  # a fresh job: no history to undo
+    assert first[1]["status"] == "ok", first
+    state = load_checkpoint(str(state_file))
+    assert state is not None
+    assert {r.id: r.position_mm for r in state.slices} == moved
+    assert state.by_id(ID0).deformation is None  # the old work is gone
+    assert "fresh" not in load_job(job_id)[1]  # the mark is cleared
+
+    second = _mcp(serve(), [("status", {})])  # a later open resumes
+    assert second[0]["status"] == "ok"
+    state = load_checkpoint(str(state_file))
+    assert state is not None and state.by_id(ID1).deformation is not None
+    assert {r.id: r.position_mm for r in state.slices} == moved
+
+
+def test_claude_prepare_cli_refuses_other_inputs(images):
+    init_spec = spec_for(images, ["nonlinear"], positions=dict(POSITIONS))
+    create(init_spec)
+    moved = {name: round(mm + 0.02, 6) for name, mm in POSITIONS.items()}
+    with pytest.raises(SystemExit, match="--fresh"):
+        main(["claude", "prepare", str(images), "--tasks", "nonlinear",
+              "--image-provider", "none", "--preprocess", "none", "--no-debrief",
+              "--pixel-size-um", str(PIXEL_SIZE_UM), "--positions", json.dumps(moved)])
+
+
 def test_6_cli_init_takes_locked_and_damaged_sections(capsys, images):
     damaged = images.parent / "damaged.json"
     damaged.write_text(json.dumps({ID2: "torn"}))
