@@ -18,6 +18,7 @@ from typing import Any
 
 from PIL import Image
 
+from langslice.core.layers import note
 from langslice.linear.appearance import Look
 from langslice.linear.atlas_fetch import atlas_picture
 from langslice.linear.display import (
@@ -79,9 +80,11 @@ def atlas_view_picture(
     any other options draw it afresh with the call's lines and regions.
     """
     if options.atlas_images == ("ara",) and not options.lines and options.full_view:
-        return reference_atlas_picture(ws, state, position_mm, long_edge=options.long_edge)
-    return caption(framed_atlas(ws, state, position_mm, options),
-                   atlas_caption(state, position_mm, options))
+        picture = reference_atlas_picture(ws, state, position_mm, long_edge=options.long_edge)
+    else:
+        picture = caption(framed_atlas(ws, state, position_mm, options),
+                          atlas_caption(state, position_mm, options))
+    return note(picture, mode="atlas", extra={"position_mm": float(position_mm)})
 
 
 def section_label(record: SliceState, options: DisplayOptions) -> str:
@@ -106,8 +109,11 @@ def section_picture(
     if options.mode == "channels":
         strip, _names = channel_strip(ws, state, record, options,
                                       tile_edge=channel_tile_edge(ws, record, options))
-        return caption(strip, f"{record.index_corrected}: {record.id}  raw channels, unmodified")
-    return caption(framed_section(ws, state, record, options), section_label(record, options))
+        return note(caption(strip, f"{record.index_corrected}: {record.id}  raw channels, "
+                            "unmodified"), sections=(record.id,), mode="channels")
+    return note(caption(framed_section(ws, state, record, options),
+                        section_label(record, options)),
+                sections=(record.id,), mode=options.mode)
 
 
 def stack_review(
@@ -131,4 +137,6 @@ def stack_review(
         look=lambda record: options.look(state, record),
         tile_edge=options.resolution,
     )
-    return sheet, spacing_plot(state)
+    ids = tuple(record.id for record in state.in_order())
+    return (note(sheet, sections=ids, mode="sheet"),
+            note(spacing_plot(state), sections=ids, mode="spacing"))

@@ -35,6 +35,7 @@ import numpy as np
 from PIL import Image
 
 from langslice.affine import denormalized_affine, physical_affine_matrix
+from langslice.core.layers import note
 from langslice.core.pictures import reference_atlas_picture, reference_section_picture
 from langslice.linear.display import (
     MODE_RULES,
@@ -48,6 +49,7 @@ from langslice.linear.render import (
     PREVIEW_LONG_EDGE,
     VIEW_MODES,
     CanvasGeometry,
+    PanelFrame,
     canvas_geometry,
     caption,
     physical_views,
@@ -112,10 +114,13 @@ class CanvasFrame:
 
 @dataclass(frozen=True)
 class Canvas:
-    """One placement's panels (captioned) and the frame they were drawn in."""
+    """One placement's panels (captioned), the frame they were drawn in, and
+    where each panel's pixels sit (:class:`~langslice.linear.render.PanelFrame`,
+    one per image: what :mod:`langslice.core.layers` computes the layers from)."""
 
     images: list[Image.Image]
     frame: CanvasFrame
+    panels: list[PanelFrame] = field(default_factory=list)
 
 
 def canvas_label(label: str, options: DisplayOptions) -> str:
@@ -195,10 +200,12 @@ def draw_canvas(
         from langslice.deformable import warp_section_image
 
         shown = warp_section_image(shown, warp)
+    panels: list[PanelFrame] = []
+    drawn_mode = mode or options.mode
     images, _iou = physical_views(
         shown, shown_um, ws.atlas, position, cast(Plane, state.plane),
         state.pitch_deg, state.yaw_deg, params,
-        mode=mode or options.mode, zoom=options.window,
+        mode=drawn_mode, zoom=options.window,
         atlas_opacity=options.atlas_opacity, outlines=options.layer,
         border_color=options.border_color, border_thickness=options.border_thickness,
         pivot=frame.pivot, pivot_in_section=in_section,
@@ -206,8 +213,13 @@ def draw_canvas(
         atlas_picture=atlas_image_picture(ws, state, options.atlas_channels, position),
         atlas_name=options.atlas_name(), regions=options.regions,
         matrix_label=matrix_label, template_lines=options.borders, left=left,
+        panel_frames=panels,
     )
-    return Canvas(images=images, frame=frame)
+    applied = (record.deformation or {}).get("record") if warp is not None else None
+    for image, panel in zip(images, panels, strict=True):
+        note(image, sections=(record.id,), mode=drawn_mode, frame=frame, panel=panel,
+             deformation=applied if isinstance(applied, str) else None)
+    return Canvas(images=images, frame=frame, panels=panels)
 
 
 def stored_placement(record: SliceState, section: Any) -> tuple[Any, Any, str]:
@@ -298,6 +310,10 @@ def placement_pictures(
         tissue_image = reference_section_picture(
             ws, record, long_edge=options.long_edge, look=options.look(state, record),
         )
+        note(tissue_image, sections=(record.id,), mode="side_by_side",
+             extra={"panel": "section"})
+        note(atlas_image, sections=(record.id,), mode="side_by_side",
+             extra={"panel": "atlas", "position_mm": float(position)})
         return Placed(images=[tissue_image, atlas_image], row=row, separate=True)
     if options.mode == "stacked":
         # One picture: the atlas is drawn to the section's long edge so
@@ -307,10 +323,11 @@ def placement_pictures(
             top, framed_atlas(ws, state, position, options, long_edge=max(top.size), fill=True),
         )
         name = options.atlas_name()
-        return Placed(images=[caption(
+        return Placed(images=[note(caption(
             picture, f"{record.id}{options.section_tag()} over atlas {position:.2f} mm"
             + ("" if name == "template" else f" ({name})"),
-        )], row=row)
+        ), sections=(record.id,), mode="stacked", extra={"position_mm": float(position)})],
+            row=row)
     params, spline, kind = stored_placement(record, section)
     # The section under its full placement: the stored warp too, at the
     # position it was fitted at (the atlas-only view needs no section).

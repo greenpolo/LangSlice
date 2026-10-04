@@ -917,13 +917,37 @@ def _draw_polys(
     the canvas-px -> output-px ratio. Sub-pixel via OpenCV's 4-bit shift.
     *alpha* below 1 draws the lines faint (context under highlighted regions).
     """
+    coverage = line_coverage(
+        canvas.shape[:2], polys, thickness=thickness, scale=scale, offset=offset,
+        origin=origin, factor=factor,
+    )[..., None] * float(alpha)
+    blended = canvas * (1.0 - coverage) + np.asarray(color) * coverage
+    canvas[:] = np.rint(blended).astype(np.uint8)
+
+
+def line_coverage(
+    shape: tuple[int, ...],
+    polys: list[np.ndarray] | tuple[np.ndarray, ...],
+    *,
+    thickness: float = 1,
+    scale: float = 1.0,
+    offset: tuple[float, float] = (0.0, 0.0),
+    origin: tuple[int, int] = (0, 0),
+    factor: float = 1.0,
+) -> np.ndarray:
+    """How much of each output pixel the polylines cover, float32 in [0, 1].
+
+    The one rasteriser of every atlas border a picture draws
+    (:func:`_draw_polys` blends it in) and of the picture's border layer
+    (:func:`langslice.core.layers.picture_layers`), so the two cannot
+    disagree. *shape* is ``(rows, cols)``; the chain is :func:`_draw_polys`'s.
+    """
     ox, oy = float(origin[0]), float(origin[1])
+    rows, cols = int(shape[0]), int(shape[1])
     # Supersample all stroke widths consistently, keeping tissue at its
     # original resolution and compositing each border pixel only once.
     supersample = 8
-    target = np.zeros(
-        (canvas.shape[0] * supersample, canvas.shape[1] * supersample), dtype=np.uint8,
-    )
+    target = np.zeros((rows * supersample, cols * supersample), dtype=np.uint8)
     for poly in polys:
         points = np.round(
             ((poly * scale + np.asarray(offset, dtype=np.float64)) - (ox, oy))
@@ -933,11 +957,9 @@ def _draw_polys(
             target, [points], True, 255,
             max(1, round(thickness * supersample)), cv2.LINE_AA, 4,
         )
-    coverage = cv2.resize(
-        target, (canvas.shape[1], canvas.shape[0]), interpolation=cv2.INTER_AREA,
-    ).astype(np.float32)[..., None] / 255.0 * float(alpha)
-    blended = canvas * (1.0 - coverage) + np.asarray(color) * coverage
-    canvas[:] = np.rint(blended).astype(np.uint8)
+    return cv2.resize(
+        target, (cols, rows), interpolation=cv2.INTER_AREA,
+    ).astype(np.float32) / 255.0
 
 
 def _draw_outlines(
@@ -1257,6 +1279,69 @@ def _silhouette_polys(mask: np.ndarray) -> list[np.ndarray]:
     ).get(1, [])
 
 
+def placement_matrices(
+    section_size: tuple[int, int],
+    um_per_px: float,
+    section_offset: tuple[int, int],
+    params: dict[str, float] | np.ndarray,
+    *,
+    pivot: tuple[float, float] | None = None,
+    pivot_in_section: tuple[float, float] | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """``(section matrix, canvas matrix)`` of one placement on its canvas.
+
+    The section matrix maps the section's own frame (pixels of the render of
+    *section_size*, x/y) onto itself, the knobs about the pivot or a ready
+    2x3; the canvas matrix (2x3) is the same map with the section pasted at
+    *section_offset* on the canvas. *pivot* is on the canvas,
+    *pivot_in_section* on the section's frame (it wins). The one place the
+    placement is built: :func:`physical_views` draws with it and the
+    picture's frame (:class:`PanelFrame`) carries what it returned.
+    """
+    ox, oy = (float(v) for v in section_offset)
+    if isinstance(params, np.ndarray):
+        section_matrix = np.asarray(params, dtype=np.float64)
+    else:
+        section_matrix = physical_affine_matrix(
+            size=section_size,
+            um_per_px=um_per_px,
+            # The pivot arrives on the canvas; the matrix is built on the
+            # section's frame and conjugated onto the canvas below.
+            pivot=pivot_in_section if pivot_in_section is not None
+            else None if pivot is None else (pivot[0] - ox, pivot[1] - oy),
+            **params,
+        )
+    matrix = (_shift((ox, oy)) @ _as_3x3(section_matrix) @ _shift((-ox, -oy)))[:2]
+    return section_matrix, matrix
+
+
+@dataclass(frozen=True)
+class PanelFrame:
+    """Where one drawn placement panel's pixels sit, kept as it was drawn.
+
+    What the picture's layers (:mod:`langslice.core.layers`) are computed
+    from: the captioned picture's *size* ``(width, height)``, the
+    *content_box* holding the canvas crop below the caption, the *crop_box*
+    on the canvas and *factor* (canvas px -> picture px, one for both axes,
+    as the borders are drawn), the canvas *geometry*, the placement's
+    *section_matrix* (3x3, the section render's frame -> canvas,
+    :func:`placement_matrices`), and the atlas *lines* and *highlighted*
+    region outlines drawn on it (native plane pixels, x/y; empty when none
+    were drawn) at *line_width*.
+    """
+
+    size: tuple[int, int]
+    content_box: tuple[int, int, int, int]
+    crop_box: tuple[int, int, int, int]
+    factor: float
+    geometry: CanvasGeometry
+    section_matrix: np.ndarray
+    lines: tuple[np.ndarray, ...]
+    highlighted: tuple[np.ndarray, ...]
+    line_width: float
+    mode: str
+
+
 def physical_views(
     section: Image.Image,
     section_um_per_px: float,
@@ -1280,6 +1365,7 @@ def physical_views(
     long_edge: int | None = None,
     spline: dict[str, Any] | None = None,
     frames: list[dict[str, Any]] | None = None,
+    panel_frames: list[PanelFrame] | None = None,
     pivot_in_section: tuple[float, float] | None = None,
     atlas_picture: Image.Image | None = None,
     atlas_name: str = "template",
@@ -1332,6 +1418,9 @@ def physical_views(
     a one-sided region then uses it instead of resolving the sides through
     this placement, which has none once it turns the midline past 45 degrees.
 
+    *panel_frames*, when given, receives one :class:`PanelFrame` per image:
+    where its pixels sit, for the picture's layers.
+
     Returns ``(images, silhouette_iou)`` — every image captioned, and the
     overlap between the warped section's tissue mask and the atlas anatomy at
     this placement.
@@ -1351,20 +1440,10 @@ def physical_views(
     canvas = Image.new("RGB", geometry.size, fill)
     canvas.paste(section.convert("RGB"), geometry.section_offset)
 
-    ox, oy = (float(v) for v in geometry.section_offset)
-    if isinstance(params, np.ndarray):
-        section_matrix = np.asarray(params, dtype=np.float64)
-    else:
-        section_matrix = physical_affine_matrix(
-            size=section.size,
-            um_per_px=geometry.um_per_px,
-            # The pivot arrives on the canvas; the matrix is built on the
-            # section's frame and conjugated onto the canvas below.
-            pivot=pivot_in_section if pivot_in_section is not None
-            else None if pivot is None else (pivot[0] - ox, pivot[1] - oy),
-            **params,
-        )
-    matrix = (_shift((ox, oy)) @ _as_3x3(section_matrix) @ _shift((-ox, -oy)))[:2]
+    section_matrix, matrix = placement_matrices(
+        section.size, geometry.um_per_px, geometry.section_offset, params,
+        pivot=pivot, pivot_in_section=pivot_in_section,
+    )
     if spline is not None:
         from langslice.landmark_warp import warp_section
 
@@ -1525,6 +1604,16 @@ def physical_views(
         if regions:
             text += "  regions " + ",".join(str(name) for name, _ids in regions) + sides_note
         labelled = caption(Image.fromarray(screen, mode="RGB"), text)
+        if panel_frames is not None:
+            panel_frames.append(PanelFrame(
+                size=labelled.size,
+                content_box=(0, labelled.height - screen.shape[0], labelled.width,
+                             labelled.height),
+                crop_box=box, factor=float(factor), geometry=geometry,
+                section_matrix=_shift(geometry.section_offset) @ _as_3x3(section_matrix),
+                lines=tuple(poly for _color, poly in atlas_lines) if lines else (),
+                highlighted=tuple(highlighted), line_width=float(line_width), mode=mode,
+            ))
         if frames is not None:
             frames.append({
                 "width": labelled.width, "height": labelled.height,
