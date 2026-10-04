@@ -151,7 +151,7 @@ def test_several_candidates_preview_and_write_nothing(tmp_path: Path, atlas):
     assert len(_media(result)) == 2
     assert json.dumps(state.to_dict(), sort_keys=True) == before
     assert not box.job.undo_stack
-    assert not (Path(ctx.results_path).parent / "deformable").exists()
+    assert not list((Path(ctx.job_folder) / "sections").glob("*/deformable"))
 
 
 def test_one_setting_applies_and_undo_redo_restore_it(tmp_path: Path, atlas):
@@ -162,8 +162,9 @@ def test_one_setting_applies_and_undo_redo_restore_it(tmp_path: Path, atlas):
     assert row["written"] is True and row["steps"] == 1
     held = state.slices[0].deformation
     assert held is not None and held["steps"][0]["stiffness"] == "soft"
-    record_dir = Path(held["record"])
-    assert record_dir.parent.parent == Path(ctx.results_path).parent / "deformable"
+    assert not Path(held["record"]).is_absolute()  # relative to the job folder
+    record_dir = Path(ctx.job_folder) / held["record"]
+    assert record_dir.parent == Path(ctx.job_folder) / "sections" / Path(ID).stem / "deformable"
     saved = json.loads((record_dir / "record.json").read_text())
     assert saved["provenance"]["section_id"] == ID
     assert saved["provenance"]["linear_handoff"]["section_um_per_px"] > 0
@@ -211,7 +212,7 @@ def test_start_current_composes_onto_the_applied_deformation(tmp_path: Path, atl
     held = state.slices[0].deformation
     assert [step["start"] for step in held["steps"]] == ["linear", "current"]
     assert held["steps"][1]["include"] == ["STR"]
-    record = DeformableRecord.load(held["record"])
+    record = DeformableRecord.load(box.job.layout.resolve(held["record"]))
     assert record.step == 1 and record.parent is not None
     assert record.parent.settings.structures == ()
     assert record.settings.structures == ("STR",)

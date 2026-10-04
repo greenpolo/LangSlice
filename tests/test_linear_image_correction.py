@@ -73,7 +73,7 @@ def test_image_correction_runs_in_background_and_submit_waits(tmp_path: Path, mo
     result = _tool(box, "trace_borders")("0", "Edited prompt.")
     assert calls == [("s0.png", {
         "prompt": "Edited prompt.",
-        "out": Path(ctx.results_path).parent / "nonlinear",
+        "calls_dir": Path(ctx.job_folder) / "sections" / "s0" / "image_correction",
         "provider": "openai-api", "image_model": "test-model",
     })]
     # The tool returns while the image call is still running, with no images.

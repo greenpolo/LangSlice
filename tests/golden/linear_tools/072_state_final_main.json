@@ -39,7 +39,7 @@
      "inverse_source": "engine",
      "key": "<hex>",
      "linear_key": "<hex>",
-     "record": "<ROOT>/tools/deformable/s0.png/<hex>",
+     "record": "sections/s0/deformable/<hex>",
      "steps": [
       {
        "engine": "ants",
@@ -63,15 +63,15 @@
     "flip": false,
     "id": "s0.png",
     "image_correction": {
-     "artifact_dir": "<ROOT>/tools/nonlinear/s0.png/<hex>/attempt-01",
+     "artifact_dir": "sections/s0/image_correction/<hex>/attempt-01",
      "artifact_paths": {
-      "base_prompt": "<ROOT>/tools/nonlinear/s0.png/<hex>/attempt-01/base_prompt.txt",
-      "lines_on_original": "<ROOT>/tools/nonlinear/s0.png/<hex>/attempt-01/lines_on_original.png",
-      "original": "<ROOT>/tools/nonlinear/s0.png/<hex>/attempt-01/input_slice.png",
-      "prompt": "<ROOT>/tools/nonlinear/s0.png/<hex>/attempt-01/prompt.txt",
-      "prompt_diff": "<ROOT>/tools/nonlinear/s0.png/<hex>/attempt-01/prompt_diff.txt",
-      "raw_reply": "<ROOT>/tools/nonlinear/s0.png/<hex>/attempt-01/raw_reply.png",
-      "rough_overlay": "<ROOT>/tools/nonlinear/s0.png/<hex>/attempt-01/rough_border_overlay.png"
+      "base_prompt": "sections/s0/image_correction/<hex>/attempt-01/base_prompt.txt",
+      "lines_on_original": "sections/s0/image_correction/<hex>/attempt-01/lines_on_original.png",
+      "original": "sections/s0/image_correction/<hex>/attempt-01/input_slice.png",
+      "prompt": "sections/s0/image_correction/<hex>/attempt-01/prompt.txt",
+      "prompt_diff": "sections/s0/image_correction/<hex>/attempt-01/prompt_diff.txt",
+      "raw_reply": "sections/s0/image_correction/<hex>/attempt-01/raw_reply.png",
+      "rough_overlay": "sections/s0/image_correction/<hex>/attempt-01/rough_border_overlay.png"
      },
      "attempt": 1,
      "cached": false,
@@ -133,7 +133,7 @@
      "inverse_source": "composed: numerical_fixed_point then numerical_fixed_point",
      "key": "<hex>",
      "linear_key": "<hex>",
-     "record": "<ROOT>/tools/deformable/s1.png/<hex>",
+     "record": "sections/s1/deformable/<hex>",
      "steps": [
       {
        "engine": "elastix",
@@ -175,15 +175,15 @@
     "flip": false,
     "id": "s1.png",
     "image_correction": {
-     "artifact_dir": "<ROOT>/tools/nonlinear/s1.png/<hex>/attempt-01",
+     "artifact_dir": "sections/s1/image_correction/<hex>/attempt-01",
      "artifact_paths": {
-      "base_prompt": "<ROOT>/tools/nonlinear/s1.png/<hex>/attempt-01/base_prompt.txt",
-      "lines_on_original": "<ROOT>/tools/nonlinear/s1.png/<hex>/attempt-01/lines_on_original.png",
-      "original": "<ROOT>/tools/nonlinear/s1.png/<hex>/attempt-01/input_slice.png",
-      "prompt": "<ROOT>/tools/nonlinear/s1.png/<hex>/attempt-01/prompt.txt",
-      "prompt_diff": "<ROOT>/tools/nonlinear/s1.png/<hex>/attempt-01/prompt_diff.txt",
-      "raw_reply": "<ROOT>/tools/nonlinear/s1.png/<hex>/attempt-01/raw_reply.png",
-      "rough_overlay": "<ROOT>/tools/nonlinear/s1.png/<hex>/attempt-01/rough_border_overlay.png"
+      "base_prompt": "sections/s1/image_correction/<hex>/attempt-01/base_prompt.txt",
+      "lines_on_original": "sections/s1/image_correction/<hex>/attempt-01/lines_on_original.png",
+      "original": "sections/s1/image_correction/<hex>/attempt-01/input_slice.png",
+      "prompt": "sections/s1/image_correction/<hex>/attempt-01/prompt.txt",
+      "prompt_diff": "sections/s1/image_correction/<hex>/attempt-01/prompt_diff.txt",
+      "raw_reply": "sections/s1/image_correction/<hex>/attempt-01/raw_reply.png",
+      "rough_overlay": "sections/s1/image_correction/<hex>/attempt-01/rough_border_overlay.png"
      },
      "attempt": 1,
      "cached": false,
@@ -248,15 +248,15 @@
     "flip": false,
     "id": "s2.png",
     "image_correction": {
-     "artifact_dir": "<ROOT>/tools/nonlinear/s2.png/<hex>/attempt-01",
+     "artifact_dir": "sections/s2/image_correction/<hex>/attempt-01",
      "artifact_paths": {
-      "base_prompt": "<ROOT>/tools/nonlinear/s2.png/<hex>/attempt-01/base_prompt.txt",
-      "lines_on_original": "<ROOT>/tools/nonlinear/s2.png/<hex>/attempt-01/lines_on_original.png",
-      "original": "<ROOT>/tools/nonlinear/s2.png/<hex>/attempt-01/input_slice.png",
-      "prompt": "<ROOT>/tools/nonlinear/s2.png/<hex>/attempt-01/prompt.txt",
-      "prompt_diff": "<ROOT>/tools/nonlinear/s2.png/<hex>/attempt-01/prompt_diff.txt",
-      "raw_reply": "<ROOT>/tools/nonlinear/s2.png/<hex>/attempt-01/raw_reply.png",
-      "rough_overlay": "<ROOT>/tools/nonlinear/s2.png/<hex>/attempt-01/rough_border_overlay.png"
+      "base_prompt": "sections/s2/image_correction/<hex>/attempt-01/base_prompt.txt",
+      "lines_on_original": "sections/s2/image_correction/<hex>/attempt-01/lines_on_original.png",
+      "original": "sections/s2/image_correction/<hex>/attempt-01/input_slice.png",
+      "prompt": "sections/s2/image_correction/<hex>/attempt-01/prompt.txt",
+      "prompt_diff": "sections/s2/image_correction/<hex>/attempt-01/prompt_diff.txt",
+      "raw_reply": "sections/s2/image_correction/<hex>/attempt-01/raw_reply.png",
+      "rough_overlay": "sections/s2/image_correction/<hex>/attempt-01/rough_border_overlay.png"
      },
      "attempt": 1,
      "cached": false,

@@ -28,8 +28,7 @@ def _open(tmp_path: Path, n: int = 3, **spec_kwargs: Any) -> tuple[Job, Any]:
     spec = JobSpec(image_folder=str(tmp_path), model="fake-model", preprocess="none",
                    **spec_kwargs)
     ctx = build_context(spec, emit=lambda _m: None, atlas_loader=lambda _n: _ATLAS)
-    job = Job.open(spec, ctx, checkpoint_path=ctx.checkpoint_path,
-                   results_path=ctx.results_path)
+    job = Job.open(spec, ctx, folder=ctx.job_folder, results_path=ctx.results_path)
     return job, ctx
 
 

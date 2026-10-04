@@ -1,20 +1,35 @@
-"""Local, immutable host job handoffs; no model or credential access."""
+"""Saved Claude jobs: a job folder next to the images, found by id.
+
+``prepare_claude`` (ABBA's Claude mode) and ``prepare_folder`` (``langslice
+claude prepare``) save a job the MCP server opens later by id. The job lives
+in the job folder next to its images (``<images>/langslice/``,
+:mod:`langslice.job.layout`): ``job.json`` there holds the settings and,
+under ``host``, the kind (``host`` or ``folder``), the host's parameters,
+the notes and the trace folder; ``prompt.txt`` the copy prompt. The id leads
+there through the index (:mod:`langslice.job.index`,
+``~/.langslice/jobs/<id>.json``), which also holds the host's loopback
+channel. A phase-2 saved job (the whole job under ``~/.langslice/jobs/<id>/``)
+is moved into its job folder on first open. No model or credential access.
+"""
 from __future__ import annotations
 
-import json
 import re
-import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from langslice.api.abba_worker import prepare_linear
+from langslice.job import index, migrate
+from langslice.job.layout import JobLayout, read_job_file, write_job_file
 
-FORMAT_VERSION = 1
+#: The saved job's own format inside ``job.json`` (``host``). 2 (2026-10-03):
+#: the job folder next to the images; 1 was the whole job under
+#: ``~/.langslice/jobs/<id>/``.
+FORMAT_VERSION = 2
 
 
 def jobs_root() -> Path:
-    return Path.home() / ".langslice" / "jobs"
+    """Where the id index lives (``~/.langslice/jobs``)."""
+    return index.default_root()
 
 
 def validate_channel(value: Any) -> dict[str, Any] | None:
@@ -77,18 +92,20 @@ def prepare_claude(params: dict[str, Any]) -> dict[str, Any]:
     prepared = prepare_linear(run_params)
     if prepared.spec.has("nonlinear"):
         raise ValueError("Image generation is unavailable in Claude mode")
-    job_id, folder = _write_job(
-        {"kind": "host", "params": run_params, "notes": notes, "host_channel": channel}
+    job_id, layout = _write_job(
+        prepared.folder, {"kind": "host", "params": run_params, "notes": notes},
+        spec=prepared.spec.to_dict(), channel=channel,
     )
-    return {"job_id": job_id, "job_dir": str(folder),
-            "prompt": _save_prompt(folder, copy_prompt(job_id, prepared.spec, notes))}
+    return {"job_id": job_id, "job_dir": str(layout.folder),
+            "prompt": _save_prompt(layout, copy_prompt(job_id, prepared.spec, notes))}
 
 
 def prepare_folder(spec: Any, notes: str = "", trace_dir: str | None = None) -> dict[str, Any]:
     """A saved job for a plain folder of sections: the CLI's Copy prompt.
 
-    No host and no live channel. The server resumes it from its own
-    checkpoint in the job directory, so the user's folder is never written.
+    No host and no live channel. The job folder next to the sections holds
+    it; the server resumes it from the checkpoint there (a job folder that
+    already holds a checkpoint is continued: one folder, one job).
     """
     from langslice.linear.discovery import discover_slices
 
@@ -98,42 +115,63 @@ def prepare_folder(spec: Any, notes: str = "", trace_dir: str | None = None) -> 
     if not discover_slices(str(folder)):
         raise ValueError(f"No section images found in {folder}")
     spec.image_folder = str(folder)
-    job_id, job_dir = _write_job(
-        {"kind": "folder", "spec": spec.to_dict(), "notes": notes, "host_channel": None,
-         "trace_dir": str(Path(trace_dir).expanduser().resolve()) if trace_dir else None}
+    job_id, layout = _write_job(
+        folder, {"kind": "folder", "notes": notes,
+                 "trace_dir": str(Path(trace_dir).expanduser().resolve()) if trace_dir else None},
+        spec=spec.to_dict(), channel=None,
     )
-    return {"job_id": job_id, "job_dir": str(job_dir),
-            "prompt": _save_prompt(job_dir, copy_prompt(job_id, spec, notes))}
+    return {"job_id": job_id, "job_dir": str(layout.folder),
+            "prompt": _save_prompt(layout, copy_prompt(job_id, spec, notes))}
 
 
-def _save_prompt(folder: Path, prompt: str) -> str:
-    """Keep the prompt beside the job, so it can be copied (or run) again."""
-    (folder / "prompt.txt").write_text(prompt + "\n", encoding="utf-8")
+def _save_prompt(layout: JobLayout, prompt: str) -> str:
+    """Keep the prompt in the job folder, so it can be copied (or run) again."""
+    layout.prompt_file.write_text(prompt + "\n", encoding="utf-8")
     return prompt
 
 
-def _write_job(fields: dict[str, Any]) -> tuple[str, Path]:
-    job_id = uuid.uuid4().hex[:12]
-    folder = jobs_root() / job_id
-    folder.mkdir(mode=0o700, parents=True)
-    record = {"format_version": FORMAT_VERSION, "job_id": job_id,
-              "created_at": datetime.now(timezone.utc).isoformat(), **fields}
-    path = folder / "job.json"
-    with path.open("x", encoding="utf-8") as handle:
-        path.chmod(0o600)
-        json.dump(record, handle, indent=2)
-    return job_id, folder
+def _write_job(
+    image_folder: Path, host: dict[str, Any], *, spec: dict[str, Any],
+    channel: dict[str, Any] | None,
+) -> tuple[str, JobLayout]:
+    job_id = index.new_id()
+    layout = JobLayout.for_images(image_folder)
+    migrate.migrate_beside_images(layout)
+    layout.ensure()
+    write_job_file(layout, job_id=job_id, spec=spec,
+                   host={"format": FORMAT_VERSION, **host})
+    index.register(jobs_root(), job_id, layout.folder, host_channel=channel)
+    return job_id, layout
 
 
 def load_job(job_id: str) -> tuple[Path, dict[str, Any]]:
-    if re.fullmatch(r"[0-9a-f]{12}", job_id) is None:
+    """``(job folder, record)`` of a saved job; the record is the job file's
+    ``host`` fields plus ``job_id``, ``spec`` and ``host_channel``.
+
+    A phase-2 saved job is moved into its job folder first.
+    """
+    if not isinstance(job_id, str) or re.fullmatch(r"[0-9a-f]{12}", job_id) is None:
         raise ValueError("Invalid LangSlice job id")
-    folder = jobs_root() / job_id
-    record = json.loads((folder / "job.json").read_text(encoding="utf-8"))
-    if record.get("format_version") != FORMAT_VERSION or record.get("job_id") != job_id:
-        raise ValueError("Unsupported or mismatched LangSlice job file")
-    validate_channel(record.get("host_channel"))
+    root = jobs_root()
+    entry = index.lookup(root, job_id)
+    if entry is None:
+        if not (index.legacy_dir(root, job_id) / "job.json").exists():
+            raise ValueError(f"No saved LangSlice job {job_id}")
+        entry = migrate.migrate_saved_job(root, job_id)
+    layout = JobLayout(Path(entry["job_folder"]))
+    data = read_job_file(layout)
+    if data is None or not isinstance(data.get("host"), dict):
+        raise ValueError(f"Saved job {job_id}: {layout.folder} holds no saved job")
+    if data.get("job_id") != job_id:
+        raise ValueError(f"Saved job {job_id} was replaced by job {data.get('job_id')} in "
+                         f"{layout.folder} (one job folder per image folder)")
+    host = dict(data["host"])
+    if int(host.get("format", 1)) > FORMAT_VERSION:
+        raise ValueError("This saved job was written by a newer LangSlice. Update LangSlice "
+                         "to open it.")
+    record = {**host, "job_id": job_id, "spec": data.get("spec"),
+              "host_channel": validate_channel(entry.get("host_channel"))}
     record.setdefault("kind", "host")
     if record["kind"] not in ("host", "folder"):
         raise ValueError(f"Unknown LangSlice job kind {record['kind']!r}")
-    return folder, record
+    return layout.folder, record

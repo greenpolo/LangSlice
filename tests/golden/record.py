@@ -27,6 +27,11 @@ Four doors are covered:
   door: one server writes, a second server on the same folder resumes from
   the checkpoint and carries on (including ``undo``/``redo`` across it).
 - the final stack state of the main toolbox and of the resumed job.
+- ``job_folders``: each door's job folder (``<images>/langslice``) after
+  the run: its file list, the views index, ``job.json``, a hash of every
+  saved picture's label and border layers (decoded pixels) and of its
+  ``view.json``, and whether every saved ``view.jpg`` is byte for byte the
+  JPEG the door sent, in order.
 
 Everything goes through public entry points (``build_tools``, ``engine.run``,
 ``mcp_server.server.build_server``). The few internals touched are listed in
@@ -257,6 +262,8 @@ class Recorder:
         self.count = 0
         self.called: set[str] = set()
         self.started = time.perf_counter()
+        #: Per door, the JPEG bytes of every picture it sent, in order.
+        self.sent: dict[str, list[bytes]] = {}
 
     def _name(self, door: str, label: str) -> str:
         self.count += 1
@@ -297,6 +304,7 @@ class Recorder:
         if isinstance(media, list):
             for part in media:
                 if isinstance(part, types.Part) and part.inline_data is not None:
+                    self.sent.setdefault(door, []).append(part.inline_data.data or b"")
                     images.append(decode_image(part.inline_data.data or b""))
                 elif isinstance(part, types.Part) and part.text is not None:
                     texts.append(self.norm.text(part.text))
@@ -327,6 +335,7 @@ class Recorder:
                 content.append({"text": self.norm.text(block.text)})
             elif isinstance(block, ImageContent):
                 content.append({"image": len(images), "mime": block.mimeType})
+                self.sent.setdefault(door, []).append(base64.b64decode(block.data))
                 images.append(decode_image(base64.b64decode(block.data)))
             else:
                 content.append({"other": self.norm.text(repr(block))})
@@ -670,6 +679,7 @@ def record_engine_request(rec: Recorder, folder: Path) -> None:
             if part.inline_data is not None:
                 contents.append({"role": content.role, "image": len(images),
                                  "mime": part.inline_data.mime_type})
+                rec.sent.setdefault("engine", []).append(part.inline_data.data or b"")
                 images.append(decode_image(part.inline_data.data or b""))
             elif part.text is not None:
                 contents.append({"role": content.role, "text": part.text})
@@ -795,6 +805,64 @@ def record_mcp_resume(rec: Recorder, folder: Path) -> None:
     rec.raw("state", "final_resumed", {"state": saved.to_dict() if saved else None})
 
 
+# --- the job folders ------------------------------------------------------------------
+
+
+def _pixels_digest(array: np.ndarray) -> str:
+    import hashlib
+
+    data = np.ascontiguousarray(array)
+    head = f"{data.dtype.str}{list(data.shape)}".encode()
+    return hashlib.sha256(head + data.tobytes()).hexdigest()
+
+
+def snapshot_job_folders(rec: Recorder, folders: dict[str, Path]) -> None:
+    """Each door's job folder after the run (see the module text)."""
+    import hashlib
+
+    import tifffile
+
+    from langslice.job.layout import JOB_DIRNAME, read_job_file
+    from langslice.job.layout import JobLayout as Layout
+    from langslice.job.views import flush_all
+
+    flush_all()
+    summary: dict[str, Any] = {}
+    for door, folder in folders.items():
+        root = folder / JOB_DIRNAME
+        files = sorted(rec.norm.text(path.relative_to(root).as_posix())
+                       for path in root.rglob("*") if path.is_file())
+        index_path = root / "views.jsonl"
+        entries = ([json.loads(line) for line in index_path.read_text().splitlines() if line]
+                   if index_path.exists() else [])
+        layers: dict[str, Any] = {}
+        for entry in entries:
+            view = root / entry["path"]
+            record = json.loads((view / "view.json").read_text())
+            digest = {"view_json": hashlib.sha256(
+                canonical(rec.norm.data(record)).encode()).hexdigest()}
+            if (view / "labels.tif").exists():
+                labels = tifffile.imread(view / "labels.tif")
+                with Image.open(view / "borders.png") as opened:
+                    borders = np.asarray(opened)
+                digest.update(labels=_pixels_digest(labels), borders=_pixels_digest(borders),
+                              labels_dtype=str(labels.dtype), size=list(labels.shape[::-1]))
+            layers[rec.norm.text(entry["path"])] = digest
+        saved = [(root / entry["path"] / "view.jpg").read_bytes() for entry in entries]
+        sent = rec.sent.get(door, [])
+        job_file = read_job_file(Layout(root)) or {}
+        job_file.pop("created_at", None)
+        summary[door] = {
+            "files": files,
+            "views_index": rec.norm.data(entries),
+            "job_file": rec.norm.data(job_file),
+            "layers": layers,
+            "pictures_sent": len(sent),
+            "saved_jpegs_equal_sent": saved == sent,
+        }
+    rec.raw("job", "folders", {"folders": summary})
+
+
 # --- everything -------------------------------------------------------------------------
 
 
@@ -820,6 +888,7 @@ def record(out: Path) -> dict[str, Any]:
         record_engine_request(rec, folders["engine"])
         record_mcp(rec, folders["mcp"])
         record_mcp_resume(rec, folders["resume"])
+        snapshot_job_folders(rec, folders)
         built = sorted(set(main_names) | set(auto_names) | set(gated_names))
         missing = sorted(set(built) - rec.called)
         if missing:

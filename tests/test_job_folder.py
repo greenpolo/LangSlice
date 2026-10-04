@@ -1,0 +1,384 @@
+"""The job folder: layout, per-step undo files, migration of the old layouts,
+and every picture the model is shown saved with its layers."""
+
+from __future__ import annotations
+
+import json
+import shutil
+from pathlib import Path
+from typing import Any
+
+import cv2
+import numpy as np
+import pytest
+import tifffile
+from PIL import Image
+
+from langslice.core.jpeg import encode_jpeg
+from langslice.core.layers import coordinate_map
+from langslice.job.history import UNDO_DEPTH
+from langslice.job.layout import JOB_FORMAT_VERSION, JobLayout, section_dirname
+from langslice.job.views import flush_all
+from langslice.linear.checkpoint import STATE_FORMAT_VERSION
+from langslice.linear.engine import build_context
+from langslice.linear.job import Job
+from langslice.linear.spec import JobSpec
+from langslice.linear.toolbox import build_tools
+from tests.fakes import SlabAtlas
+
+_ATLAS = SlabAtlas()
+KEY = "0123456789abcdef01234567"
+CALL = "fedcba9876543210fedcba98"
+
+
+def _folder(root: Path, n: int = 3) -> Path:
+    root.mkdir(parents=True, exist_ok=True)
+    for index in range(n):
+        Image.fromarray(np.full((30, 40, 3), 40 + 10 * index, dtype=np.uint8)).save(
+            root / f"s{index}.png")
+    return root
+
+
+def _open(folder: Path, **spec_kwargs: Any) -> tuple[Job, Any]:
+    spec = JobSpec(image_folder=str(folder), model="fake-model", preprocess="none",
+                   **spec_kwargs)
+    ctx = build_context(spec, emit=lambda _m: None, atlas_loader=lambda _n: _ATLAS)
+    return Job.open(spec, ctx, folder=ctx.job_folder, results_path=ctx.results_path), ctx
+
+
+def _tool(box: Any, name: str) -> Any:
+    return next(tool for tool in box.tools if tool.__name__ == name)
+
+
+# --- the layout --------------------------------------------------------------------------
+
+
+def test_section_folders_are_stems_unless_two_images_share_one(tmp_path: Path):
+    assert section_dirname("s1.png", ["s0.png", "s1.png"]) == "s1"
+    assert section_dirname("s1.png", ["s1.png", "s1.tif"]) == "s1.png"
+    assert section_dirname("odd:name?.tif") == "odd_name_"
+    layout = JobLayout.for_images(tmp_path)
+    assert layout.folder == tmp_path / "langslice"
+    assert layout.relative(layout.folder / "sections" / "s0" / "x") == "sections/s0/x"
+    assert layout.relative("/elsewhere/file") == "/elsewhere/file"
+    assert layout.resolve("sections/s0") == layout.folder / "sections" / "s0"
+
+
+def test_open_lays_out_the_job_folder_next_to_the_images(tmp_path: Path):
+    folder = _folder(tmp_path / "stack")
+    job, _ctx = _open(folder)
+    root = folder / "langslice"
+    assert job.folder == root
+    assert sorted(path.name for path in folder.iterdir()) == [
+        "langslice", "s0.png", "s1.png", "s2.png"]
+    for name in ("history", "sections", "views", "exports", "logs"):
+        assert (root / name).is_dir()
+    record = json.loads((root / "job.json").read_text())
+    assert record["format_version"] == JOB_FORMAT_VERSION
+    assert record["spec"]["image_folder"] == str(folder)
+    assert json.loads((root / "state.json").read_text())["format_version"] == STATE_FORMAT_VERSION
+    assert "open" in (root / "logs" / "events.jsonl").read_text()
+    # Reserved for the formats phase: not written yet.
+    assert not (root / "registration.json").exists()
+
+
+def test_a_job_folder_from_a_newer_langslice_is_refused(tmp_path: Path):
+    folder = _folder(tmp_path / "stack")
+    _open(folder)
+    path = folder / "langslice" / "job.json"
+    record = json.loads(path.read_text())
+    record["format_version"] = JOB_FORMAT_VERSION + 1
+    path.write_text(json.dumps(record))
+    with pytest.raises(ValueError, match="newer LangSlice"):
+        _open(folder)
+    assert json.loads(path.read_text())["format_version"] == JOB_FORMAT_VERSION + 1
+
+
+def test_undo_is_one_file_per_step_and_bounded(tmp_path: Path):
+    folder = _folder(tmp_path / "stack")
+    job, _ctx = _open(folder)
+    history = folder / "langslice" / "history"
+
+    def steps() -> list[str]:
+        return sorted(path.name for path in history.glob("step-*.json"))
+
+    before = job.snapshot()
+    job.state.notes.append("first")
+    job.commit(before)
+    first = steps()
+    assert len(first) == 1
+    stamp = (history / first[0]).stat()
+    before = job.snapshot()
+    job.state.notes.append("second")
+    job.commit(before)
+    assert steps()[:1] == first and len(steps()) == 2
+    again_stamp = (history / first[0]).stat()  # the old step is not rewritten
+    assert (again_stamp.st_ino, again_stamp.st_mtime_ns) == (stamp.st_ino, stamp.st_mtime_ns)
+    for index in range(UNDO_DEPTH + 5):
+        before = job.snapshot()
+        job.state.notes.append(f"note {index}")
+        job.commit(before)
+    assert len(steps()) == UNDO_DEPTH and first[0] not in steps()
+    index = json.loads((history / "index.json").read_text())
+    assert index["undo"] == steps() and index["redo"] == []
+    assert job.undo() and len(steps()) == UNDO_DEPTH  # one leaves undo, one joins redo
+    again, _ = _open(folder)
+    assert len(again.undo_stack) == UNDO_DEPTH - 1 and len(again.redo_stack) == 1
+    assert again.redo() and again.state.notes[-1] == f"note {UNDO_DEPTH + 4}"
+
+
+# --- migration -------------------------------------------------------------------------------
+
+
+def _legacy_state(folder: Path, base: Path) -> dict[str, Any]:
+    """A phase-2 checkpoint (format 1) whose paths point under *base*."""
+    job, _ = _open(folder)
+    state = job.state.to_dict()
+    shutil.rmtree(folder / "langslice")
+    record_dir = base / "deformable" / "s0.png" / KEY
+    attempt = base / "nonlinear" / "s0.png" / CALL / "attempt-01"
+    state["slices"][0]["deformation"] = {"record": str(record_dir), "key": KEY,
+                                         "linear_key": "x", "steps": []}
+    state["slices"][0]["image_correction"] = {
+        "status": "ok", "artifact_dir": str(attempt),
+        "artifact_paths": {"raw_reply": str(attempt / "raw_reply.png")}}
+    record_dir.mkdir(parents=True)
+    (record_dir / "record.json").write_text("{}")
+    attempt.mkdir(parents=True)
+    (attempt / "extracted_lines.png").write_bytes(b"png")
+    (attempt.parent / "result.json").write_text(json.dumps(
+        state["slices"][0]["image_correction"]))
+    return state
+
+
+def _write_legacy(base: Path, state: dict[str, Any], *, version: int | None = 1) -> None:
+    saved = dict(state) if version is None else {"format_version": version, **state}
+    (base / "linear_state.json").write_text(json.dumps(saved))
+    older = json.loads(json.dumps(state))
+    older["notes"] = [*older["notes"], "older"]
+    (base / "linear_undo.json").write_text(json.dumps({
+        "format_version": 1, "state_format_version": 1, "depth": 50,
+        "undo": [older], "redo": []}))
+    (base / "linear_results.json").write_text(json.dumps(state))
+
+
+def test_the_old_files_beside_the_images_move_into_the_job_folder(tmp_path: Path):
+    folder = _folder(tmp_path / "stack")
+    _write_legacy(folder, _legacy_state(folder, folder))
+    job, _ = _open(folder)
+    root = folder / "langslice"
+    for old in ("linear_state.json", "linear_undo.json", "linear_results.json",
+                "deformable", "nonlinear"):
+        assert not (folder / old).exists(), old
+    saved = json.loads((root / "state.json").read_text())
+    assert saved["format_version"] == STATE_FORMAT_VERSION
+    held = job.state.slices[0]
+    assert held.deformation["record"] == f"sections/s0/deformable/{KEY}"
+    assert (root / held.deformation["record"] / "record.json").exists()
+    correction = held.image_correction
+    assert correction["artifact_dir"] == f"sections/s0/image_correction/{CALL}/attempt-01"
+    assert correction["artifact_paths"]["raw_reply"].startswith("sections/s0/image_correction/")
+    assert (root / correction["artifact_dir"] / "extracted_lines.png").exists()
+    # The saved reply a cached trace_borders returns points at the new place too.
+    reply = json.loads((root / "sections/s0/image_correction" / CALL / "result.json").read_text())
+    assert reply["artifact_dir"] == correction["artifact_dir"]
+    results = json.loads((root / "exports" / "linear_results.json").read_text())
+    assert results["slices"][0]["deformation"]["record"] == held.deformation["record"]
+    # The history came along, one file per step, its paths moved too.
+    assert len(job.undo_stack) == 1
+    assert job.undo() and job.state.notes[-1] == "older"
+    assert job.state.slices[0].deformation["record"] == f"sections/s0/deformable/{KEY}"
+    assert "migrated" in (root / "logs" / "events.jsonl").read_text()
+
+
+def test_an_unversioned_checkpoint_beside_the_images_migrates(tmp_path: Path):
+    folder = _folder(tmp_path / "stack")
+    state = _legacy_state(folder, folder)
+    _write_legacy(folder, state, version=None)
+    job, _ = _open(folder)
+    assert job.state.slices[0].deformation["record"] == f"sections/s0/deformable/{KEY}"
+
+
+def test_a_newer_checkpoint_beside_the_images_is_refused_and_left_alone(tmp_path: Path):
+    folder = _folder(tmp_path / "stack")
+    state = _legacy_state(folder, folder)
+    _write_legacy(folder, state, version=STATE_FORMAT_VERSION + 1)
+    with pytest.raises(ValueError, match="newer LangSlice"):
+        _open(folder)
+    assert (folder / "linear_state.json").exists() and (folder / "deformable").is_dir()
+
+
+def _saved_job(root: Path, folder: Path, job_id: str) -> Path:
+    """A phase-2 saved Claude job: the whole job under ``<root>/<id>/``."""
+    old = root / job_id
+    old.mkdir(parents=True)
+    state = _legacy_state(folder, old)
+    _write_legacy(old, state)
+    spec = JobSpec(image_folder=str(folder), preprocess="none", tasks=["position"]).to_dict()
+    (old / "job.json").write_text(json.dumps({
+        "format_version": 1, "job_id": job_id, "created_at": "2026-10-01T00:00:00+00:00",
+        "kind": "folder", "spec": spec, "notes": "old notes", "host_channel": None,
+        "trace_dir": None}))
+    (old / "prompt.txt").write_text("the prompt\n")
+    (old / "result.json").write_text("{}")
+    return old
+
+
+def test_an_old_saved_claude_job_moves_next_to_its_images(tmp_path: Path, monkeypatch: Any):
+    from langslice.api import claude_jobs
+    from langslice.mcp_server.server import open_saved_job
+
+    monkeypatch.setattr(claude_jobs, "jobs_root", lambda: tmp_path / "jobs")
+    folder = _folder(tmp_path / "stack")
+    job_id = "abcdef012345"
+    old = _saved_job(tmp_path / "jobs", folder, job_id)
+    job_folder, record = claude_jobs.load_job(job_id)
+    root = folder / "langslice"
+    assert job_folder == root and not old.exists()
+    assert record["kind"] == "folder" and record["notes"] == "old notes"
+    entry = json.loads((tmp_path / "jobs" / f"{job_id}.json").read_text())
+    assert entry["job_folder"] == str(root)
+    assert (root / "prompt.txt").read_text() == "the prompt\n"
+    assert (root / "exports" / "result.json").exists()
+    saved = json.loads((root / "state.json").read_text())
+    assert saved["slices"][0]["deformation"]["record"] == f"sections/s0/deformable/{KEY}"
+    assert (root / f"sections/s0/deformable/{KEY}/record.json").exists()
+    session = open_saved_job(job_id, lambda _n: _ATLAS)
+    assert session.job.folder == root and len(session.job.undo_stack) == 1
+
+
+def test_an_old_saved_job_does_not_move_onto_another_job(tmp_path: Path, monkeypatch: Any):
+    from langslice.api import claude_jobs
+
+    monkeypatch.setattr(claude_jobs, "jobs_root", lambda: tmp_path / "jobs")
+    folder = _folder(tmp_path / "stack")
+    job_id = "abcdef012345"
+    old = _saved_job(tmp_path / "jobs", folder, job_id)
+    _open(folder)  # the folder already has its own job
+    with pytest.raises(ValueError, match="already holds a LangSlice job"):
+        claude_jobs.load_job(job_id)
+    assert (old / "job.json").exists() and (old / "linear_state.json").exists()
+
+
+# --- the saved pictures ---------------------------------------------------------------------
+
+
+def _golden_toolbox(folder: Path) -> tuple[Any, Any]:
+    from langslice.linear.job import ingest
+    from tests.golden.record import atlas_loader, full_spec, write_sections
+
+    write_sections(folder)
+    spec = full_spec(folder)
+    ctx = build_context(spec, emit=lambda _m: None, atlas_loader=atlas_loader())
+    state = ingest(spec, ctx)
+    return build_tools(state, ctx, spec), ctx
+
+
+def _place(box: Any) -> None:
+    from tests.golden.record import ID0, ID1, ID2
+
+    _tool(box, "set_positions")([{"id": ID0, "position_mm": 0.1},
+                                 {"id": ID1, "position_mm": 0.15},
+                                 {"id": ID2, "position_mm": 0.2}])
+
+
+def test_every_picture_is_saved_as_sent_with_layers_for_placements(tmp_path: Path):
+    from langslice.adk import TOOL_MEDIA_PARTS_KEY
+
+    box, _ctx = _golden_toolbox(tmp_path / "stack")
+    shown = _tool(box, "view_slices")(["s0.png", "s1.png"])[TOOL_MEDIA_PARTS_KEY]
+    _place(box)
+    placed = _tool(box, "view_placement")([{"id": "s1.png", "positions_mm": [0.15]}],
+                                          view={"mode": "overlay"})[TOOL_MEDIA_PARTS_KEY]
+    sheet = _tool(box, "view_stack")()[TOOL_MEDIA_PARTS_KEY]
+    flush_all()
+    root = tmp_path / "stack" / "langslice"
+    index = [json.loads(line) for line in (root / "views.jsonl").read_text().splitlines()]
+    assert [entry["seq"] for entry in index] == list(range(1, len(index) + 1))
+    first = root / index[0]["path"]
+    assert index[0]["path"] == "sections/s0/views/000001_view_slices_section"
+    assert (first / "view.jpg").read_bytes() == encode_jpeg(shown[0])
+    assert not (first / "labels.tif").exists()
+    overlay = next(entry for entry in index if entry["tool"] == "view_placement")
+    assert overlay["layers"] and overlay["sections"] == ["s1.png"]
+    view = root / overlay["path"]
+    assert (view / "view.jpg").read_bytes() == encode_jpeg(placed[0])
+    labels = tifffile.imread(view / "labels.tif")
+    assert labels.dtype == np.uint32 and labels.shape == placed[0].size[::-1]
+    record = json.loads((view / "view.json").read_text())
+    assert record["tool"] == "view_placement" and record["arguments"]["view"]["mode"] == "overlay"
+    assert record["frame"]["plane"]["position_mm"] == pytest.approx(0.15)
+    stacked = [entry for entry in index if entry["tool"] == "view_stack"]
+    assert [entry["path"].split("/")[0] for entry in stacked] == ["views", "views"]
+    assert len(stacked) == len([item for item in sheet if not isinstance(item, str)])
+
+
+def test_the_layers_agree_with_the_borders_drawn_on_a_golden_picture(tmp_path: Path):
+    from tests.golden.record import GOLDEN_DIR, ID2
+
+    box, _ctx = _golden_toolbox(tmp_path / "stack")
+    _place(box)
+    # Golden call 024: the outlines picture, atlas template under the lines.
+    _tool(box, "view_placement")([{"id": ID2, "positions_mm": [0.2]}],
+                                 view={"mode": "outlines", "atlas_channels": ["ara", "borders"]})
+    flush_all()
+    view = next((tmp_path / "stack" / "langslice").glob("sections/s2/views/*view_placement*"))
+    picture = np.asarray(Image.open(view / "view.jpg").convert("RGB")).astype(int)
+    golden = np.asarray(Image.open(GOLDEN_DIR / "024_tools_view_placement.0.png")
+                        .convert("RGB")).astype(int)
+    assert picture.shape == golden.shape and np.array_equal(picture, golden)
+
+    borders = np.asarray(Image.open(view / "borders.png")).astype(int)
+    labels = tifffile.imread(view / "labels.tif")
+    yellow = ((picture[..., 0] + picture[..., 1]) / 2 - picture[..., 2]) > 80
+    strong = borders >= 128
+    assert strong.sum() > 500
+    assert (yellow & strong).sum() / strong.sum() > 0.85  # the layer is where lines are drawn
+    assert (yellow & (borders > 0)).sum() / yellow.sum() > 0.98  # and every drawn line is in it
+    change = np.zeros(labels.shape, dtype=bool)
+    change[:-1] |= labels[:-1] != labels[1:]
+    change[1:] |= labels[:-1] != labels[1:]
+    change[:, :-1] |= labels[:, :-1] != labels[:, 1:]
+    change[:, 1:] |= labels[:, :-1] != labels[:, 1:]
+    near = cv2.dilate(change.astype(np.uint8), np.ones((5, 5), np.uint8)) > 0
+    assert (strong & near).sum() / strong.sum() > 0.98  # the lines are label boundaries
+
+
+@pytest.mark.parametrize("angles", [(0.0, 0.0), (1.0, 0.5)])
+def test_the_coordinate_map_lands_on_the_labels(tmp_path: Path, angles: tuple[float, float]):
+    from tests.deformable_synthetic import SyntheticAtlas
+    from tests.golden.record import ID1
+
+    box, _ctx = _golden_toolbox(tmp_path / "stack")
+    _place(box)
+    if angles != (0.0, 0.0):
+        _tool(box, "set_cutting_angles")(*angles)
+    _tool(box, "view_placement")([{"id": ID1, "positions_mm": [0.15]}],
+                                 view={"mode": "overlay", "zoom": [0.1, 0.1, 0.8, 0.9]})
+    flush_all()
+    view = next((tmp_path / "stack" / "langslice").glob("sections/s1/views/*view_placement*"))
+    coords = coordinate_map(view / "view.json")
+    labels = tifffile.imread(view / "labels.tif")
+    record = json.loads((view / "view.json").read_text())
+    assert coords.shape == labels.shape + (3,) and coords.dtype == np.float32
+    top = record["frame"]["content_box"][1]
+    assert np.isnan(coords[:top]).all() and np.isfinite(coords[top:]).all()
+    annotation = np.asarray(SyntheticAtlas().annotation)
+    voxel = np.rint(coords[top:] / np.asarray(record["frame"]["atlas"]["resolution_um"]))
+    inside = ((voxel >= 0) & (voxel < np.asarray(annotation.shape))).all(axis=-1)
+    found = np.zeros(voxel.shape[:2], dtype=np.int64)
+    hit = voxel[inside].astype(int)
+    found[inside] = annotation[hit[:, 0], hit[:, 1], hit[:, 2]]
+    assert (found == labels[top:]).mean() > 0.99
+
+
+def test_saving_does_not_hold_up_a_tool(tmp_path: Path):
+    box, _ctx = _golden_toolbox(tmp_path / "stack")
+    _place(box)
+    for _ in range(5):
+        _tool(box, "view_placement")([{"id": "s0.png", "positions_mm": [0.1]}],
+                                     view={"mode": "overlay"})
+    views = box.job.views
+    assert views.queue_seconds / 6 < 0.02  # numbering and queueing only
+    flush_all()
+    assert views.write_seconds > 0

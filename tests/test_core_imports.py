@@ -7,7 +7,8 @@ loaded would hide the leak) and must leave no ``google.adk``,
 the ADK and MCP doors (``langslice.adk``, the MCP server), the agent driver
 and the providers; the tool door itself (the toolbox, the ``view`` options)
 returns plain pictures and is checked too. The operations
-(``langslice.ops``) must also leave no door module behind.
+(``langslice.ops``) must also leave no door module behind, and the job
+layer's files (``langslice.job``) neither a door nor an operation.
 """
 
 from __future__ import annotations
@@ -36,6 +37,14 @@ CORE_MODULES = (
     "langslice.core",
     "langslice.core.pictures",
     "langslice.core.placement",
+    "langslice.core.layers",
+    "langslice.core.jpeg",
+    "langslice.job",
+    "langslice.job.layout",
+    "langslice.job.history",
+    "langslice.job.index",
+    "langslice.job.migrate",
+    "langslice.job.views",
     "langslice.ops",
     "langslice.ops.refusal",
     "langslice.ops.positions",
@@ -87,11 +96,16 @@ def test_core_module_loads_no_agent_or_model_client(module: str):
     assert loaded == [], f"{module} loads {loaded[:5]}"
 
 
+#: What the job layer's own package may not load: a door or an operation.
+OPERATIONS = ("langslice.ops",)
+
+
 @pytest.mark.parametrize("module", [name for name in CORE_MODULES
-                                    if name.startswith("langslice.ops")])
-def test_operations_load_no_door(module: str):
+                                    if name.startswith(("langslice.ops", "langslice.job"))])
+def test_operations_and_job_files_load_no_door(module: str):
+    forbidden = DOORS + (OPERATIONS if module.startswith("langslice.job") else ())
     done = subprocess.run(
-        [sys.executable, "-c", _PROBE, module, *DOORS],
+        [sys.executable, "-c", _PROBE, module, *forbidden],
         capture_output=True, text=True, timeout=300, check=False,
     )
     assert done.returncode == 0, done.stderr

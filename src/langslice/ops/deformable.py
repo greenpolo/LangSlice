@@ -129,7 +129,7 @@ def fit_deformable(
                 if choice.fit_section in deformation.TRACED:
                     lines, trace = deformation.traced_lines(
                         state, workspace, grid, running=running,
-                        waited_s=deformation.TRACE_WAIT_S)
+                        waited_s=deformation.TRACE_WAIT_S, root=job.folder)
                     identity = {**identity, "trace": trace}
                     traced.setdefault(record.id, (image, lines))
                 settings = choice.settings(include, exclude)
@@ -184,7 +184,7 @@ def fit_deformable(
                     row.update(status="error", error="RECORD_WRITE_FAILED", message=str(exc))
                     continue
                 record.deformation = deformation.reference(
-                    folder=folder, key=fit.key, linear=linear, record=outcome,
+                    folder=job.layout.relative(folder), key=fit.key, linear=linear, record=outcome,
                     choice=fit.choice, include=include, exclude=exclude, start=start,
                     previous=held, numbers=numbers,
                 )

@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
+from langslice.job.history import HISTORY_FORMAT_VERSION
 from langslice.linear.checkpoint import (
     STATE_FORMAT_VERSION,
     load_checkpoint,
@@ -18,7 +19,7 @@ from langslice.linear.checkpoint import (
     save_checkpoint,
 )
 from langslice.linear.engine import build_context
-from langslice.linear.job import UNDO_DEPTH, UNDO_FORMAT_VERSION, Job
+from langslice.linear.job import UNDO_DEPTH, Job
 from langslice.linear.spec import JobSpec, PositionSpec
 from langslice.linear.toolbox import build_tools
 from tests.fakes import SlabAtlas
@@ -37,8 +38,7 @@ def _open(folder: Path, **spec_kwargs: Any) -> tuple[Job, Any]:
     spec = JobSpec(image_folder=str(folder), model="fake-model", preprocess="none",
                    **spec_kwargs)
     ctx = build_context(spec, emit=lambda _m: None, atlas_loader=lambda _n: _ATLAS)
-    job = Job.open(spec, ctx, checkpoint_path=ctx.checkpoint_path,
-                   results_path=ctx.results_path)
+    job = Job.open(spec, ctx, folder=ctx.job_folder, results_path=ctx.results_path)
     return job, ctx
 
 
@@ -67,7 +67,7 @@ def test_undo_history_survives_a_reopen(tmp_path: Path):
     job.commit(before)
 
     history = json.loads(Path(job.undo_path).read_text())
-    assert history["format_version"] == UNDO_FORMAT_VERSION
+    assert history["format_version"] == HISTORY_FORMAT_VERSION
     assert history["state_format_version"] == STATE_FORMAT_VERSION
     assert len(history["undo"]) == 2 and history["redo"] == []
 

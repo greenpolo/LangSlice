@@ -182,21 +182,17 @@ def describe_blocks(blocks: list[ContentBlock]) -> list[dict[str, Any]]:
 def open_job(
     spec: JobSpec,
     atlas_loader: Callable[[str], Any] | None = None,
-    checkpoint_path: str | None = None,
+    folder: Path | None = None,
 ) -> Session:
-    """Open *spec*'s folder the way the engine does, without a model.
-
-    *checkpoint_path* moves the checkpoint (and the resume point, and the undo
-    history beside it) out of the image folder, into a saved job's own
-    directory.
-    """
+    """Open *spec*'s folder the way the engine does, without a model: its
+    job folder next to the images (``<images>/langslice``), or *folder*, a
+    saved job's (the same place, as its index names it)."""
     if spec.has("nonlinear"):
         raise ValueError("Image generation is unavailable through the Claude connector")
     ctx = build_context(spec, atlas_loader=atlas_loader)
-    if checkpoint_path is not None:
-        ctx.checkpoint_path = checkpoint_path
-    job = Job.open(spec, ctx, checkpoint_path=ctx.checkpoint_path,
-                   results_path=ctx.results_path)
+    if folder is not None:
+        ctx.job_folder = str(folder)
+    job = Job.open(spec, ctx, folder=ctx.job_folder, results_path=ctx.results_path)
     trace_dir = os.environ.get(TRACE_DIR_ENV)
     trace = McpTrace(trace_dir, ctx.image_folder) if trace_dir else None
     # The host is Claude: its pictures are capped at Claude's largest image.
@@ -255,6 +251,18 @@ def opening_pages(session: Session) -> list[list[ContentBlock]]:
     return pages
 
 
+def save_page(session: Session, page: int, blocks: list[ContentBlock]) -> None:
+    """Save the page's pictures in the job folder, as the bytes the host got."""
+    pictures = [base64.b64decode(block.data) for block in blocks
+                if isinstance(block, ImageContent)]
+    try:
+        session.job.views.save(tool="show_stack", arguments={"page": page},
+                               pictures=[(data, None) for data in pictures])
+    except Exception:  # saving must never break a page
+        logger.warning("Could not queue the pictures of show_stack page %s", page,
+                       exc_info=True)
+
+
 def briefing(session: Session) -> list[ContentBlock]:
     """Text only; opening pictures are available through show_stack."""
     if not session.pages:
@@ -272,9 +280,7 @@ def open_saved_job(job_id: str, atlas_loader: Callable[[str], Any] | None) -> Se
     prepared = prepare_linear(record["params"])
     if prepared.spec.has("nonlinear"):
         raise ValueError("Image generation is unavailable in Claude mode")
-    prepared.spec.out = str(folder / "linear_results.json")
-    session = open_job(prepared.spec, atlas_loader,
-                   checkpoint_path=str(folder / "linear_state.json"))
+    session = open_job(prepared.spec, atlas_loader, folder)
     session.job_id, session.job_dir, session.prepared = job_id, folder, prepared
     session.notes = record.get("notes", "")
     trace_dir = prepared.trace_dir
@@ -290,14 +296,14 @@ def open_folder_job(
     job_id: str, folder: Path, record: dict[str, Any],
     atlas_loader: Callable[[str], Any] | None,
 ) -> Session:
-    """A plain-folder job: its checkpoint and results live in the job directory.
+    """A plain-folder job: its checkpoint and results live in its job folder.
 
     Reopening it (a restarted server, a new chat) resumes from that checkpoint.
     """
     spec = JobSpec.from_dict(record["spec"])
     spec.resume = True
-    spec.out = str(folder / "linear_results.json")
-    session = open_job(spec, atlas_loader, checkpoint_path=str(folder / "linear_state.json"))
+    spec.out = None
+    session = open_job(spec, atlas_loader, folder)
     session.job_id, session.job_dir = job_id, folder
     session.notes = record.get("notes", "")
     if record.get("trace_dir"):
@@ -312,7 +318,9 @@ def finish(session: Session) -> None:
     if session.job_dir is not None and session.prepared is not None:
         result = {"state": session.state.to_dict(), "output_dir": str(session.job_dir),
                   "final_updates": session.prepared.final_updates}
-        (session.job_dir / "result.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
+        target = session.job.layout.host_result_file
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps(result, indent=2), encoding="utf-8")
         if session.channel is not None:
             session.channel.send({"type": "result", "result": result})
             session.channel.close()
@@ -448,6 +456,7 @@ def build_server(
             if not 1 <= page <= len(session.pages):
                 raise ValueError(f"page must be between 1 and {len(session.pages)}")
             blocks = session.pages[page - 1]
+            save_page(session, page, blocks)
             if session.trace is not None:
                 session.trace.write("show_stack", page=page, content=describe_blocks(blocks))
             return blocks
