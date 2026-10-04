@@ -74,6 +74,11 @@ class Workspace:
     channel_cache: dict[str, tuple[tuple[str, ...], list[Any]]] = field(
         default_factory=dict, repr=False
     )
+    #: The captioned reference pictures the comparison tools send (a section
+    #: tissue-framed, an atlas section), keyed by everything they draw
+    #: (:mod:`langslice.core.pictures`); a section's keeps the caption of its
+    #: first display. Shared: read only.
+    picture_cache: dict[tuple[Any, ...], Image.Image] = field(default_factory=dict, repr=False)
     _atlas: Any = field(default=None, repr=False)
     #: ABBA's cached Allen atlas when it matches this run's atlas (the
     #: ``nissl`` atlas image); looked up once.

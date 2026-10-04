@@ -32,6 +32,9 @@ CORE_MODULES = (
     "langslice.space",
     "langslice.affine",
     "langslice.atlas",
+    "langslice.core",
+    "langslice.core.pictures",
+    "langslice.core.placement",
     "langslice.ops",
     "langslice.ops.refusal",
     "langslice.ops.positions",
@@ -41,6 +44,7 @@ CORE_MODULES = (
     "langslice.ops.appearance",
     "langslice.ops.notes",
     "langslice.ops.transforms",
+    "langslice.ops.deformable",
 )
 
 #: The doors: an operation (``langslice.ops``) must load none of them.

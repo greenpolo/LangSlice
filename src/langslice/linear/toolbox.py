@@ -20,7 +20,6 @@ import inspect
 import logging
 import math
 import threading
-import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
@@ -31,10 +30,14 @@ import numpy as np
 from google.genai import types
 
 from langslice.adk import TOOL_MEDIA_DELIVERY_ID_KEY, TOOL_MEDIA_PARTS_KEY
-from langslice.adk.media import atlas_part, image_to_part, reference_slice_part, view_edge_limit
-from langslice.affine import (
-    denormalized_affine,
-    physical_affine_matrix,
+from langslice.adk.media import image_to_part, view_edge_limit
+from langslice.affine import denormalized_affine
+from langslice.core import placement
+from langslice.core.pictures import atlas_view_picture, section_picture, stack_review
+from langslice.core.placement import (
+    FRAMED_PLACEMENT_MODES,
+    PLACEMENT_MODES,
+    WARPED_PLACEMENT_MODES,
 )
 from langslice.linear import appearance as looks
 from langslice.linear import deformation
@@ -54,11 +57,7 @@ from langslice.linear.deepslice import run_deepslice as _run_deepslice
 from langslice.linear.display import (
     MODE_RULES,
     DisplayOptions,
-    atlas_caption,
-    atlas_image_picture,
     available_atlas_channels,
-    channel_strip,
-    framed_atlas,
     framed_section,
     regions_in_plane,
 )
@@ -67,23 +66,12 @@ from langslice.linear.live import LiveCallback, _plain
 from langslice.linear.opening import DEFAULT_IMAGE_LIMIT
 from langslice.linear.render import (
     MAX_IMAGES_PER_CALL,
-    PREVIEW_LONG_EDGE,
     VIEW_MODES,
-    CanvasGeometry,
-    canvas_geometry,
     caption,
     compact_rows,
     normalize_border_style,
-    opening_edge,
-    physical_views,
-    pivot_on_canvas,
     render_slice,
-    rescale_section_matrix,
     resolution_level,
-    shown_section,
-    spacing_plot,
-    stack_sheet,
-    stacked,
     status_rows,
 )
 from langslice.linear.spec import JobSpec
@@ -96,13 +84,13 @@ from langslice.linear.state import (
 from langslice.linear.transform import (
     FIT_FRAME_KEY,
     FitFrame,
-    calibrate,
     fit_elastix,
     fit_silhouette,
 )
 from langslice.linear.view_options import Profile, parse_view, view_schema
 from langslice.ops import appearance as ops_appearance
 from langslice.ops import damage as ops_damage
+from langslice.ops import deformable as ops_deformable
 from langslice.ops import notes as ops_notes
 from langslice.ops import order as ops_order
 from langslice.ops import orientation as ops_orientation
@@ -124,15 +112,6 @@ MAX_VIEW_SLICES = MAX_IMAGES_PER_CALL
 #: (:data:`~langslice.linear.render.VIEW_MODES`): the A/B toggle, which is two
 #: renders of one crop rather than one composition.
 PREVIEW_MODES = (*VIEW_MODES, "ab")
-#: Placement pictures (``view_placement``, ``set_positions``): the physical
-#: views plus ``stacked`` — the section over the atlas, each tissue-framed.
-PLACEMENT_MODES = ("template", "stacked", *[m for m in VIEW_MODES if m != "template"])
-#: Placement modes whose pictures are tissue-framed rather than drawn on the
-#: physical canvas (no zoom, no stored placement drawn).
-FRAMED_PLACEMENT_MODES = ("stacked", "side_by_side")
-#: Placement modes that draw the section under its stored placement, where an
-#: applied deformation can be drawn too.
-WARPED_PLACEMENT_MODES = ("overlay", "checkerboard", "outlines", "section")
 
 #: Why a transform write's picture takes no ``deformation``.
 _NEW_TRANSFORM = ("this tool writes a new linear transform, which clears any deformation; "
@@ -253,14 +232,8 @@ def make_view_atlas(state: StackState, ctx: EngineContext, max_view_edge: int):
         if not positions:
             return {"status": "error", "error": "EMPTY_RESULT"}
 
-        plain = (options.atlas_images == ("ara",) and not options.lines
-                 and options.full_view)
         parts: list[types.Part] = [
-            atlas_part(ctx, state, position, long_edge=options.long_edge)
-            if plain else image_to_part(caption(
-                framed_atlas(ctx, state, position, options),
-                atlas_caption(state, position, options),
-            ))
+            image_to_part(atlas_view_picture(ctx, state, position, options))
             for position in positions
         ]
         plural = "s" if len(positions) != 1 else ""
@@ -546,52 +519,6 @@ _STAIN_ONLY_DOC: tuple[tuple[str, str], ...] = (
     (" Traced sections add `traces`: each\n            one's trace drawn on the section.", ""),
 )
 
-@dataclass(frozen=True)
-class _Staged:
-    """One section ready to be drawn or measured on its physical canvas."""
-
-    record: SliceState
-    section: Any
-    um_per_px: float
-    calibration_source: str
-    geometry: CanvasGeometry
-    params: dict[str, float]
-    #: Rotation/scale centre in CANVAS pixels; None is the canvas centre.
-    pivot: tuple[float, float] | None
-    #: The same pivot as fractions of the canvas, for the payload.
-    pivot_frac: list[float]
-    #: What was asked for: "canvas", "tissue" or "fractions".
-    pivot_mode: str
-
-    @property
-    def pivot_in_section(self) -> tuple[float, float] | None:
-        """The pivot on the SECTION's frame, which the six numbers live on."""
-        if self.pivot is None:
-            return None
-        ox, oy = self.geometry.section_offset
-        return (self.pivot[0] - ox, self.pivot[1] - oy)
-
-    @property
-    def calibration(self) -> dict[str, Any]:
-        return {
-            "section_um_per_px": round(self.um_per_px, 4),
-            "source": self.calibration_source,
-        }
-
-    def matrix(self, params: dict[str, float] | None = None) -> Any:
-        """The canvas-pixel 2x3 of *params* (default: the staged ones).
-
-        Built on the canvas frame directly: width and height cancel out of the
-        physical translation, so this is the very map the picture shows.
-        """
-        return physical_affine_matrix(
-            size=self.geometry.size,
-            um_per_px=self.um_per_px,
-            pivot=self.pivot,
-            **(params if params is not None else self.params),
-        )
-
-
 # --- the toolbox ---------------------------------------------------------
 
 
@@ -649,13 +576,6 @@ def build_tools(
         """A write's answer: ``ok`` and the rows it changed (the operation
         itself took the undo step and the checkpoint)."""
         return {"status": "ok", **changed(list(touched))}
-
-    def commit(before: dict[str, Any], *touched: str) -> dict[str, Any]:
-        """One undo step (*before*: the job's snapshot) and the checkpoint;
-        answer with the rows the write changed. One tool call = one step,
-        batch included."""
-        job.commit(before)
-        return answered(*touched)
 
     def forget_looks(before: dict[str, Any]) -> None:
         """A position moved by undo, redo or a reload is a write to it: that
@@ -757,133 +677,9 @@ def build_tools(
         return {"status": "error", "error": "BAD_ARGS",
                 "message": "A region cannot be both included and excluded: " + ", ".join(overlap)}
 
-    def section_label(record: SliceState, options: DisplayOptions) -> str:
-        return f"{record.index_corrected}: {record.id}" + options.section_tag()
-
     def section_part(record: SliceState, options: DisplayOptions) -> types.Part:
-        """One section as corrected, tissue-framed, its index and id burned in.
-
-        Mode ``channels``: the section's raw channels side by side instead,
-        each unmodified and labelled with its name.
-        """
-        if options.mode == "channels":
-            strip, _names = channel_strip(ctx, state, record, options,
-                                          tile_edge=channel_tile_edge(record, options))
-            return image_to_part(caption(
-                strip, f"{record.index_corrected}: {record.id}  raw channels, unmodified"))
-        return image_to_part(
-            caption(framed_section(ctx, state, record, options), section_label(record, options))
-        )
-
-    def channel_tile_edge(record: SliceState, options: DisplayOptions) -> int:
-        """Each raw-channel tile's long edge: the strip is about one picture wide."""
-        count = max(1, len(ctx.section_channels(record.id)[0]))
-        return max(128, min(opening_edge(ctx), options.long_edge // min(count, 2)))
-
-    def draw_canvas(
-        record: SliceState,
-        section: Any,
-        um_per_px: float,
-        position: float,
-        params: dict[str, float] | np.ndarray,
-        options: DisplayOptions,
-        *,
-        mode: str | None = None,
-        pivot: tuple[float, float] | None = None,
-        section_offset: tuple[int, int] = (0, 0),
-        label: str = "",
-        spline: dict[str, Any] | None = None,
-        long_edge: int | None = None,
-        matrix_label: str = "fitted matrix",
-        warp: Any = None,
-        left: np.ndarray | None = None,
-    ) -> list[Any]:
-        """The physical canvas pictures of one section at one placement.
-
-        *section* is the working frame a transform is computed on; the
-        picture is drawn from the render the options ask for (the view
-        appearance or a raw channel), large enough that each panel, zoom
-        included, comes out at *long_edge* (None: ``options.long_edge``)
-        unless the section's working copy has fewer pixels, with a matrix and
-        the pivot carried onto it. The one renderer of every placement
-        picture: `view_placement`, `set_positions`, `adjust_transforms` and
-        `fit_affine` all draw through here. *warp* (a `DeformableRecord` on
-        this placement) resamples the section into its placed-atlas frame
-        first, so the picture shows the full registration: linear placement
-        plus deformation. *left* is a fit's own side split for one-sided
-        regions (:class:`~langslice.linear.transform.FitFrame`).
-        """
-        edge = int(long_edge or options.long_edge)
-        window = options.window
-        # The canvas is at least the section on each axis, so a section
-        # render 1/span times the panel puts at least the panel's pixels
-        # inside the zoom (render_slice stops at the working copy).
-        span = (min(max(window[2] - window[0], 1e-3), max(window[3] - window[1], 1e-3), 1.0)
-                if window else 1.0)
-        render_edge = int(math.ceil(edge / span))
-        if render_edge > PREVIEW_LONG_EDGE:
-            # Past the working copy every request is the same render: one
-            # cache entry, however deep the zoom.
-            render_edge = min(render_edge, max(ctx.working_source(record.id)[0].size))
-        shown, shown_um, (fx, fy) = shown_section(
-            ctx, record, section, um_per_px, options.look(state, record),
-            long_edge=render_edge,
-        )
-        in_section: tuple[float, float] | None = None
-        if shown is not section:
-            if isinstance(params, np.ndarray):
-                params = rescale_section_matrix(params, fx, fy)
-            if pivot is not None:
-                ox, oy = section_offset
-                in_section = ((pivot[0] - ox) * fx, (pivot[1] - oy) * fy)
-        if warp is not None:
-            from langslice.deformable import warp_section_image
-
-            shown = warp_section_image(shown, warp)
-        images, _iou = physical_views(
-            shown, shown_um, ctx.atlas, position, cast(Plane, state.plane),
-            state.pitch_deg, state.yaw_deg, params,
-            mode=mode or options.mode, zoom=options.window,
-            atlas_opacity=options.atlas_opacity, outlines=options.layer,
-            border_color=options.border_color, border_thickness=options.border_thickness,
-            pivot=pivot if in_section is None else None, pivot_in_section=in_section,
-            label=canvas_label(label or record.id, options), spline=spline, long_edge=edge,
-            atlas_picture=atlas_image_picture(ctx, state, options.atlas_channels, position),
-            atlas_name=options.atlas_name(), regions=options.regions,
-            matrix_label=matrix_label, template_lines=options.borders, left=left,
-        )
-        return images
-
-    def canvas_label(label: str, options: DisplayOptions) -> str:
-        """A physical picture's caption head: what of the section, and any atlas under it."""
-        under = ""
-        if (options.atlas_images and options.atlas_opacity > 0
-                and MODE_RULES[options.mode].opacity):
-            under = f"  atlas {options.atlas_name()} under at {options.atlas_opacity:g}"
-        return label + options.section_tag() + under
-
-    def stored_placement(record: SliceState, section: Any) -> tuple[Any, Any, str]:
-        """``(params or matrix, spline, kind)`` of the section's in-plane transform.
-
-        The six stored numbers are the exact map (shear included); a section
-        without a transform is drawn at identity.
-        """
-        transform = record.transform or {}
-        values = transform.get("params")
-        if values is not None and len(values) == 6:
-            return (denormalized_affine(values, section.size), transform.get("spline"),
-                    str(transform.get("kind") or "stored"))
-        return dict(IDENTITY_PARAMS), None, "identity"
-
-    def current_warp(record: SliceState) -> Any:
-        """The section's applied deformation record, or None (or unreadable)."""
-        if not record.deformation:
-            return None
-        try:
-            return job.deformations.current(state, record)
-        except Exception:  # a missing record must not break a placement picture
-            logger.warning("Deformation record unreadable for %s", record.id, exc_info=True)
-            return None
+        """One section as corrected (:func:`langslice.core.pictures.section_picture`)."""
+        return image_to_part(section_picture(ctx, state, record, options))
 
     def absent_regions(position: float, options: DisplayOptions) -> list[str]:
         present = regions_in_plane(ctx, state, position, options)
@@ -1330,79 +1126,29 @@ def build_tools(
         options: DisplayOptions,
         parts: list[types.Part],
         section_indexes: dict[str, int],
-        working: dict[str, tuple[Any, float, str]],
+        working: placement.Working,
     ) -> dict[str, Any]:
-        """Append one section-position pair's pictures to *parts*.
+        """Append one section-position pair's pictures
+        (:func:`langslice.core.placement.placement_pictures`) to *parts*.
 
-        ``side_by_side``: separate tissue-framed references (one section per
-        distinct id, one atlas per pair), mapped by the returned
-        ``image_indexes``. ``stacked``: one image, the framed section over the
-        framed atlas. Every other mode: the physical canvas, the section under
-        its complete current registration — the stored in-plane transform
-        (identity when it has none) and, at the position it was fitted at,
-        the applied deformation (unless ``view.deformation`` is ``none``).
-        Returns the pair's row fields (calibration, transform drawn,
-        deformation drawn, image indexes).
+        ``side_by_side``: the section once per distinct id and one atlas per
+        pair, mapped by the returned ``image_indexes``. Returns the pair's
+        row fields (calibration, transform drawn, deformation drawn, image
+        indexes).
         """
-        if record.id not in working:
-            section = render_slice(ctx, record, long_edge=PREVIEW_LONG_EDGE)
-            working[record.id] = (section, *calibrate(state, ctx, record, section))
-        section, um_per_px, source = working[record.id]
-        row: dict[str, Any] = {"calibration": {"um_per_px": round(um_per_px, 3), "source": source}}
-        default_atlas = options.atlas_images == ("ara",) and not options.lines
-        if options.mode == "side_by_side":
-            # Resolve/encode both before mutating delivery bookkeeping.
-            atlas_image = (
-                atlas_part(ctx, state, position, long_edge=options.long_edge)
-                if default_atlas else image_to_part(caption(
-                    framed_atlas(ctx, state, position, options),
-                    atlas_caption(state, position, options),
-                ))
-            )
-            tissue_image = reference_slice_part(
-                ctx, record, long_edge=options.long_edge, look=options.look(state, record),
-            )
+        placed = placement.placement_pictures(ctx, state, record, position, options, working,
+                                              store=job.deformations)
+        row = placed.row
+        if placed.separate:
+            # Encode both before mutating delivery bookkeeping.
+            tissue_part, atlas_part = (image_to_part(image) for image in placed.images)
             if record.id not in section_indexes:
                 section_indexes[record.id] = len(parts)
-                parts.append(tissue_image)
+                parts.append(tissue_part)
             row["image_indexes"] = {"section": section_indexes[record.id], "atlas": len(parts)}
-            parts.append(atlas_image)
+            parts.append(atlas_part)
             return row
-        if options.mode == "stacked":
-            # One picture: the atlas is drawn to the section's long edge so
-            # the two read at the same size, as in `view_stack`.
-            top = framed_section(ctx, state, record, options)
-            picture = stacked(
-                top, framed_atlas(ctx, state, position, options, long_edge=max(top.size),
-                                  fill=True),
-            )
-            name = options.atlas_name()
-            parts.append(image_to_part(caption(
-                picture, f"{record.id}{options.section_tag()} over atlas {position:.2f} mm"
-                + ("" if name == "template" else f" ({name})"),
-            )))
-            return row
-        params, spline, kind = stored_placement(record, section)
-        # The section under its full placement: the stored warp too, at the
-        # position it was fitted at (the atlas-only view needs no section).
-        warp = (current_warp(record)
-                if options.deformation == "applied" and position == record.position_mm
-                and options.mode in WARPED_PLACEMENT_MODES else None)
-        parts.extend(image_to_part(image) for image in draw_canvas(
-            record, section, um_per_px, position, params, options,
-            label=f"{record.id} vs atlas {position:.2f} mm",
-            spline=spline,
-            matrix_label=f"{kind} transform" + (" + deformation" if warp is not None else ""),
-            warp=warp,
-        ))
-        row["transform"] = kind
-        if warp is not None:
-            row["deformation_drawn"] = True
-        elif (options.mode in WARPED_PLACEMENT_MODES and record.deformation
-              and "keep_linear" not in record.deformation and position == record.position_mm
-              and options.deformation == "applied"):
-            # Held but not drawable (stale or unreadable): say so, never pretend.
-            row["deformation_drawn"] = False
+        parts.extend(image_to_part(image) for image in placed.images)
         return row
 
     def set_positions(
@@ -1805,15 +1551,7 @@ def build_tools(
             return options
         box.reviewed = True
 
-        def atlas_under(record: SliceState) -> Any:
-            if record.position_mm is None:
-                return None
-            try:
-                return framed_atlas(ctx, state, float(record.position_mm), options)
-            except Exception as exc:
-                logger.warning("view_stack: atlas render failed for %s: %s", record.id, exc)
-                return None
-
+        sheet, plot = stack_review(ctx, state, options)
         parts = [
             types.Part.from_text(
                 text=(
@@ -1822,13 +1560,9 @@ def build_tools(
                     "'<index>: <filename>  <position>', over its atlas match:"
                 )
             ),
-            image_to_part(stack_sheet(
-                state, ctx, under=atlas_under,
-                look=lambda record: options.look(state, record),
-                tile_edge=options.resolution,
-            )),
+            image_to_part(sheet),
             types.Part.from_text(text="Position against corrected index:"),
-            image_to_part(spacing_plot(state)),
+            image_to_part(plot),
         ]
         ordered = sorted(
             status_rows(state), key=lambda r: (r["position_mm"] is None, r["position_mm"] or 0.0)
@@ -1991,10 +1725,11 @@ def build_tools(
             (``frame.left``), so the picture shows what the fit used even
             after a large turn.
             """
-            return draw_canvas(
-                record, frame.section, frame.um_per_px, float(record.position_mm or 0.0),
-                frame.matrix, options, label=record.id, left=frame.left,
-            )
+            return placement.draw_canvas(
+                ctx, state, record, frame.section, frame.um_per_px,
+                float(record.position_mm or 0.0), frame.matrix, options, label=record.id,
+                left=frame.left,
+            ).images
 
         results: list[dict[str, Any]] = []
         parts: list[types.Part] = []
@@ -2065,8 +1800,9 @@ def build_tools(
         translate_y_mm: float,
         pivot: Any,
         shear: float | None = None,
-    ) -> _Staged | dict[str, Any]:
-        """One section, its calibrated canvas and the pivot, or a refusal."""
+    ) -> placement.Staged | dict[str, Any]:
+        """One section, its calibrated canvas and the pivot
+        (:func:`langslice.core.placement.stage`), or a refusal."""
         record = state.resolve(slice_id)
         if record is None:
             return {"status": "error", "error": "UNKNOWN_SLICE_IDS", "unknown": [slice_id]}
@@ -2090,50 +1826,13 @@ def build_tools(
         if not all(math.isfinite(value) for value in params.values()):
             return {"status": "error", "error": "BAD_ARGS",
                     "message": "every transform number must be finite"}
-        section = render_slice(ctx, record, long_edge=PREVIEW_LONG_EDGE)
-        um_per_px, source = calibrate(state, ctx, record, section)
         try:
-            geometry = canvas_geometry(
-                section.size,
-                um_per_px,
-                ctx.atlas,
-                record.position_mm,
-                cast(Plane, state.plane),
-                state.pitch_deg,
-                state.yaw_deg,
-            )
-        except Exception as exc:
-            logger.warning("transform: atlas render failed for %s: %s", record.id, exc)
-            return {
-                "status": "error",
-                "error": "ATLAS_RENDER_FAILED",
-                "message": str(exc),
-            }
-        try:
-            point = pivot_on_canvas(pivot, section, geometry)
-        except ValueError as exc:
-            return {"status": "error", "error": "BAD_PIVOT", "message": str(exc)}
-        width, height = geometry.size
-        centre = point or (width / 2.0, height / 2.0)
-        mode = "canvas"
-        if isinstance(pivot, str):
-            mode = (pivot.strip().lower() or "canvas")
-        elif pivot:
-            mode = "fractions"
-        return _Staged(
-            record=record,
-            section=section,
-            um_per_px=um_per_px,
-            calibration_source=source,
-            geometry=geometry,
-            params=params,
-            pivot=point,
-            pivot_frac=[round(centre[0] / width, 4), round(centre[1] / height, 4)],
-            pivot_mode=mode,
-        )
+            return placement.stage(ctx, state, record, params, pivot)
+        except placement.StageFailure as failure:
+            return {"status": "error", "error": failure.code, "message": str(failure)}
 
     def staged_views(
-        staged: _Staged,
+        staged: placement.Staged,
         params: dict[str, float] | np.ndarray,
         options: DisplayOptions,
         *,
@@ -2143,12 +1842,8 @@ def build_tools(
         spline: dict[str, Any] | None = None,
     ) -> list[Any]:
         """One staged section's canvas pictures (the write is on its working frame)."""
-        return draw_canvas(
-            staged.record, staged.section, staged.um_per_px,
-            float(staged.record.position_mm or 0.0), params, options,
-            mode=mode, pivot=pivot, section_offset=staged.geometry.section_offset,
-            label=label, spline=spline,
-        )
+        return placement.staged_views(ctx, state, staged, params, options, mode=mode,
+                                      pivot=pivot, label=label, spline=spline).images
 
     def _adjust_transform(
         slice_id: str,
@@ -2583,27 +2278,6 @@ def build_tools(
         return deformation.Choice(fit_section=picked, fit_atlas=atlas_kind, engine=chosen,
                                   stiffness=stiffness)
 
-    def keep_linear_placements(targets: list[SliceState], reason: str) -> dict[str, Any]:
-        """Record that each section's linear placement stands: no warp, a reason.
-
-        Held on ``SliceState.deformation`` with the placement's ``linear_key``,
-        so it satisfies `submit` like an applied fit, and a later change to the
-        placement clears it the same way. One undo step.
-        """
-        refused = [
-            {"id": record.id, "status": "error", "error": "INVALID_LINEAR_PLACEMENT",
-             "message": "keep_linear needs a position and a transform."}
-            for record in targets if record.position_mm is None or record.transform is None
-        ]
-        if refused:
-            return {"status": "error", "error": "NOTHING_WRITTEN", "results": refused}
-        before = job.snapshot()
-        for record in targets:
-            record.deformation = {"keep_linear": reason,
-                                  "linear_key": deformation.linear_key(state, record)}
-        return {**commit(before, *(record.id for record in targets)), "applied": True,
-                "keep_linear": reason}
-
     def fit_deformable_impl(
         slices: list[str],
         include: list[str],
@@ -2617,7 +2291,6 @@ def build_tools(
         keep_linear: str,
         view: Any,
     ) -> dict[str, Any]:
-        store = job.deformations
         if not isinstance(slices, (list, tuple)) or not slices:
             return {"status": "error", "error": "BAD_ARGS",
                     "message": "slices must name one or more sections"}
@@ -2639,7 +2312,12 @@ def build_tools(
                         "message": "keep_linear records that the linear placement stands: it "
                         "runs no fit and draws no picture, so leave the fit settings, "
                         "candidates and view out."}
-            return keep_linear_placements(targets, reason)
+            try:
+                kept_linear = ops_deformable.keep_linear(job, targets, reason)
+            except Refused as refusal:
+                return refusal.payload()
+            return {**answered(*kept_linear.touched), "applied": True,
+                    "keep_linear": kept_linear.reason}
         if len(targets) > MAX_VIEW_SLICES:
             return {"status": "error", "error": "TOO_MANY_SECTIONS",
                     "max_sections": MAX_VIEW_SLICES}
@@ -2681,70 +2359,11 @@ def build_tools(
         options = display(FIT_DEFORMABLE_VIEW, view, sections=targets)
         if isinstance(options, dict):
             return options
-        applying = len(choices) == 1
+        done = ops_deformable.fit_deformable(job, ctx, targets, choices, include=kept,
+                                             exclude=dropped, start=begin)
+        applying = done.applied
+        rows = done.rows
 
-        rows: list[dict[str, Any]] = []
-        jobs: list[deformation.Job] = []
-        #: Per traced section, the stain and the trace's lines on the fit grid.
-        traced_views: dict[str, tuple[Any, Any]] = {}
-        trace_deadline = time.monotonic() + deformation.TRACE_WAIT_S
-        for record in targets:
-            try:
-                grid = deformation.fit_grid(state, ctx, record)
-            except (ValueError, OSError) as exc:
-                rows.append({"id": record.id, "status": "error",
-                             "error": "INVALID_LINEAR_PLACEMENT", "message": str(exc)})
-                continue
-            previous = None
-            previous_key: str | None = None
-            if begin == "current":
-                previous = store.current(state, record)
-                if previous is None:
-                    rows.append({"id": record.id, "status": "error", "error": "NO_DEFORMATION",
-                                 "message": "start='current' composes onto the section's "
-                                 "applied deformation; this section has none."})
-                    continue
-                previous_key = str((record.deformation or {}).get("key"))
-            running = False
-            if any(choice.fit_section in deformation.TRACED for choice in choices):
-                # A traced image waits for the section's trace still running.
-                landed = record.id in job.image_jobs
-                running = not job.wait_image_job(record.id, trace_deadline - time.monotonic())
-                if landed and not running:
-                    job.checkpoint()
-            for number, choice in enumerate(choices, start=1):
-                failure = {"id": record.id, "status": "error", "settings": choice.echo(),
-                           **({} if applying else {"candidate": number})}
-                try:
-                    image, identity = deformation.stain_image(ctx, state, grid,
-                                                              choice.fit_section)
-                    lines = None
-                    if choice.fit_section in deformation.TRACED:
-                        lines, trace = deformation.traced_lines(
-                            state, ctx, grid, running=running,
-                            waited_s=deformation.TRACE_WAIT_S)
-                        identity = {**identity, "trace": trace}
-                        traced_views.setdefault(record.id, (image, lines))
-                    settings = choice.settings(kept, dropped)
-                except deformation.FitRefusal as refusal:
-                    rows.append({**failure, **refusal.payload, "id": record.id})
-                    continue
-                except (ValueError, OSError) as exc:
-                    rows.append({**failure, "error": "BAD_SETTINGS", "message": str(exc)})
-                    continue
-                key = deformation.cache_key(state, grid, settings, identity, previous_key)
-                cached = store.get(record.id, key)
-                jobs.append(deformation.Job(
-                    grid=grid, choice=choice, settings=settings, key=key,
-                    image_identity=identity, previous=previous, image=image, lines=lines,
-                    result=cached, cached=cached is not None,
-                ))
-                rows.append({"id": record.id, "job": len(jobs) - 1,
-                             **({} if applying else {"candidate": number})})
-        deformation.run_jobs(ctx, jobs)
-
-        before = state.to_dict()
-        wrote_any = False
         parts: list[types.Part] = []
         failed: list[dict[str, str]] = []
         highlight = [name for name, _ids in options.regions] or list(kept)
@@ -2754,44 +2373,9 @@ def build_tools(
             marked=dropped, outlines=options.layer, color=color, thickness=thickness,
             atlas_opacity=options.atlas_opacity, long_edge=options.long_edge,
         )
-        for row in rows:
-            index = row.pop("job", None)
-            if index is None:
-                continue
-            fit = jobs[index]
-            outcome = fit.result
-            row["settings"] = fit.choice.echo()
-            if not isinstance(outcome, deformation.DeformableRecord):
-                row.update(status="error", error="FIT_FAILED",
-                           message=getattr(outcome, "error", "no result"))
-                continue
-            store.put(fit.key, outcome)
-            numbers = deformation.summary(outcome, fit.previous)
+        for fitted in done.fitted:
+            row, fit, outcome = fitted.row, fitted.fit, fitted.outcome
             record = fit.grid.record
-            row.update(status="ok", engine_settings=deformation.engine_settings(fit.settings),
-                       **numbers, runtime_s=round(float(outcome.engine.get("runtime_s", 0.0)), 1),
-                       cached=fit.cached)
-            if applying:
-                linear = deformation.linear_key(state, record)
-                outcome.provenance = deformation.provenance(
-                    fit.grid, fit.choice, kept, dropped, begin, fit.image_identity, linear)
-                held = record.deformation or {}
-                if held.get("key") == fit.key:
-                    row["written"] = False
-                else:
-                    try:
-                        folder = store.save(record.id, fit.key, outcome)
-                    except OSError as exc:
-                        row.update(status="error", error="RECORD_WRITE_FAILED", message=str(exc))
-                        continue
-                    record.deformation = deformation.reference(
-                        folder=folder, key=fit.key, linear=linear, record=outcome,
-                        choice=fit.choice, include=kept, exclude=dropped, start=begin,
-                        previous=held, numbers=numbers,
-                    )
-                    row["written"] = True
-                    wrote_any = True
-                row["steps"] = len((record.deformation or {}).get("steps") or [])
             heading = (f"{record.id}  " + ("applied" if applying else
                        f"candidate {row['candidate']}/{len(choices)}")
                        + f": {fit.choice.engine} {fit.choice.stiffness}")
@@ -2822,11 +2406,9 @@ def build_tools(
                 failed.append({"id": record.id, "message": str(exc)})
                 continue
             row["image_indexes"] = list(range(first, len(parts)))
-        if wrote_any:
-            job.commit(before)
         # Each traced section's trace, once per call, so it can be reviewed.
         traces: list[dict[str, Any]] = []
-        for section_id, (image, lines) in traced_views.items():
+        for section_id, (image, lines) in done.traced.items():
             try:
                 picture = deformation.trace_picture(
                     image, lines, style=style,

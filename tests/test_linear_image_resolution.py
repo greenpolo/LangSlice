@@ -324,7 +324,8 @@ def test_low_draws_from_the_working_render_itself(tmp_path: Path):
 
 def test_a_larger_picture_shows_the_same_map(tmp_path: Path, monkeypatch):
     """Drawn larger, the adjusted section lands where the small picture puts it."""
-    from langslice.linear import render, toolbox
+    from langslice.core import placement
+    from langslice.linear import render
 
     drawn: list[np.ndarray] = []
 
@@ -335,7 +336,7 @@ def test_a_larger_picture_shows_the_same_map(tmp_path: Path, monkeypatch):
         drawn.append(np.asarray(images[0].convert("L"))[y0:y1, x0:x1])
         return images, iou
 
-    monkeypatch.setattr(toolbox, "physical_views", capture)
+    monkeypatch.setattr(placement, "physical_views", capture)
     _low_state, _low_ctx, low, _ = _run(tmp_path / "low", "low")
     _big_state, _big_ctx, big, _ = _run(tmp_path / "high", "high")
     entry = _entry(mode="section", pivot=[0.3, 0.6], rotation_deg=12.0)
