@@ -671,9 +671,11 @@ class Variant:
     auto: bool = False
 
     @classmethod
-    def of(cls, spec: Any, *, auto: bool) -> Variant:
-        """The variant of a :class:`~langslice.core.spec.JobSpec`'s run."""
-        return cls(traces=bool(spec.nonlinear.uses_image_model),
+    def of(cls, spec: Any, *, auto: bool, image_model: bool = True) -> Variant:
+        """The variant of a :class:`~langslice.core.spec.JobSpec`'s run;
+        *image_model* False: the door cannot reach its image model, so the
+        run is declared as one without it."""
+        return cls(traces=bool(spec.nonlinear.uses_image_model and image_model),
                    preprocessing=bool(spec.agent_preprocessing),
                    engine=str(spec.nonlinear.engine), auto=bool(auto))
 

@@ -71,6 +71,10 @@ class Verb:
     #: uses (the agent CLI, the library) and never to a model through the
     #: agent tools or MCP (:func:`enabled` with ``scripting``).
     scripting: bool = False
+    #: The verb calls the run's image model (``trace_borders``): a door that
+    #: cannot reach one leaves it out (:func:`enabled` with ``image_model``
+    #: False).
+    image_model: bool = False
 
 
 def _verbs(*verbs: Verb) -> dict[str, Verb]:
@@ -114,6 +118,7 @@ VERBS: dict[str, Verb] = _verbs(
     Verb("set_cutting_angles", positions.set_cutting_angles, "write", "Linear",
          when=lambda spec: spec.has("transform") and spec.transform.angles),
     Verb("trace_borders", traces.trace_borders, "write", "Nonlinear", long=True,
+         image_model=True,
          when=lambda spec: spec.has("nonlinear") and spec.nonlinear.uses_image_model),
     Verb("grep_atlas", atlas.grep_atlas, "read", "Nonlinear",
          when=lambda spec: spec.has("nonlinear")),
@@ -128,13 +133,17 @@ VERBS: dict[str, Verb] = _verbs(
 )
 
 
-def enabled(spec: Any, *, scripting: bool = False) -> list[str]:
+def enabled(spec: Any, *, scripting: bool = False, image_model: bool = True) -> list[str]:
     """The verbs a run of *spec* (a :class:`~langslice.core.spec.JobSpec`)
     has, in :data:`VERBS` order: the tools every door builds for it. The
     scripting verbs (``Verb.scripting``) only with *scripting*: the agent
-    CLI's and the library's toolbox, never the agent tools or MCP."""
+    CLI's and the library's toolbox, never the agent tools or MCP.
+    *image_model* False: the door cannot reach the spec's image model (MCP
+    with none connected), so the verbs that call it (``Verb.image_model``)
+    are left out."""
     return [name for name, verb in VERBS.items()
-            if verb.when(spec) and (scripting or not verb.scripting)]
+            if verb.when(spec) and (scripting or not verb.scripting)
+            and (image_model or not verb.image_model)]
 
 
 def table() -> list[dict[str, str]]:

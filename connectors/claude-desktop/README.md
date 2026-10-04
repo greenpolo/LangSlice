@@ -57,7 +57,16 @@ For development, ask Claude to register a folder of sections. Claude calls
 `start_job` with the folder path. `langslice mcp` takes every `langslice linear
 run` flag (`--tasks`, `--interval`, `--atlas`, `--trace-dir`, ...), and those
 flags apply to development folders, not saved jobs. Put them in `args`.
-Image-generation tasks are unavailable through this connector.
+
+The Nonlinear task (`--tasks ...,nonlinear`) works through this connector:
+its fitting tools (`fit_deformable`, including `keep_linear`, and
+`grep_atlas`) are always offered with it. The image-model tool
+(`trace_borders`) is offered only when the job's image provider is not
+`none` and its key or login is present on this machine (`langslice login`,
+or a saved or environment API key); otherwise it is simply not listed, and
+the job statement and the copy prompt say that the image-model tool is off
+because no image model is connected. The job keeps its provider setting, so
+a later session with the login present offers the tool again.
 
 ## Claude Code, locked to LangSlice
 
