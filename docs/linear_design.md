@@ -63,7 +63,8 @@ JobSpec
   inputs: order/positions/angles/transforms supplied by the host for tasks that are OFF,
           plus pixel_size_um, damaged {id: note} (flags the agent cannot clear),
           locked [ids] (flip, rotation and transform the agent cannot change) and
-          channel_names [one per exported page] (names of the raw channels)
+          channel_names [one per exported page] (names of the raw channels);
+          any other key is refused, naming the allowed ones (core.spec.INPUT_KEYS)
 ```
 
 **A mirror is a linear transform (2026-09-29).** A left-right mirror is the
