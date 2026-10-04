@@ -201,6 +201,16 @@ longer exist be taken over by the images it is opened with.
   directory removed; refused when that job folder already holds a
   checkpoint. A checkpoint from a newer LangSlice is refused before
   anything moves. Each migration is a line in `logs/events.jsonl`.
+  Resumable (review fix 2026-10-04): a journal, `migration.json` in the job
+  folder, lists every planned move before anything moves and marks each one
+  done; the converted checkpoint, history and results are written while the
+  old files still exist, the old files go after, the journal last, and the
+  next open finishes an interrupted migration from it (a saved job's too).
+  A move across file systems copies under `.partial`, renames into place,
+  marks done, and only then removes the original. A target that already
+  exists without the mark is compared file by file (size and SHA-256): the
+  same, the original goes; different, both stay, the state keeps the
+  original's path and the event lists it under `conflicts`.
 - `formats.py` — the public files (above): `registration_document`,
   `section_entry`, `parameters` (the truth in public units),
   `applied_deformation`, `maps_status`, `write_registration`,

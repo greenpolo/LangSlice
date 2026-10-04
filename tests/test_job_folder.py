@@ -250,6 +250,147 @@ def test_a_newer_checkpoint_beside_the_images_is_refused_and_left_alone(tmp_path
     assert (folder / "linear_state.json").exists() and (folder / "deformable").is_dir()
 
 
+
+# --- an interrupted migration (review finding 5, 2026-10-04) ----------------------------
+
+
+def _assert_migrated(folder: Path, job: Job) -> None:
+    root = folder / "langslice"
+    for old in ("linear_state.json", "linear_undo.json", "linear_results.json",
+                "deformable", "nonlinear"):
+        assert not (folder / old).exists(), old
+    held = job.state.slices[0]
+    assert held.deformation["record"] == f"sections/s0/deformable/{KEY}"
+    assert (root / held.deformation["record"] / "record.json").read_text() == "{}"
+    correction = held.image_correction
+    assert correction["artifact_dir"] == f"sections/s0/image_correction/{CALL}/attempt-01"
+    assert (root / correction["artifact_dir"] / "extracted_lines.png").read_bytes() == b"png"
+    assert len(job.undo_stack) == 1 and job.undo_stack[0]["notes"][-1] == "older"
+    assert not list(root.glob("**/*.partial"))
+    assert not (root / "migration.json").exists()
+
+
+def test_a_migration_interrupted_before_the_state_is_written_resumes(
+    tmp_path: Path, monkeypatch: Any,
+):
+    """Folders moved, then the process died before ``state.json``: the next
+    open finishes the migration from its journal, and every stored path
+    points at the moved folders (none orphaned)."""
+    from langslice.job import migrate
+
+    folder = _folder(tmp_path / "stack")
+    _write_legacy(folder, _legacy_state(folder, folder))
+    real = migrate.write_json_atomic
+
+    def dies_at_the_state(path: str, data: Any, **kwargs: Any) -> None:
+        if path.endswith("state.json"):
+            raise OSError("interrupted")
+        real(path, data, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(migrate, "write_json_atomic", dies_at_the_state)
+        with pytest.raises(OSError, match="interrupted"):
+            _open(folder)
+    assert not (folder / "deformable").exists()  # the folders had moved
+    job, _ = _open(folder)
+    _assert_migrated(folder, job)
+
+
+def test_a_migration_interrupted_after_the_state_is_written_resumes(
+    tmp_path: Path, monkeypatch: Any,
+):
+    """``state.json`` written, the process died before the history and the
+    old files' removal: the next open finishes (history included) instead
+    of leaving the old files beside the images."""
+    from langslice.job import migrate
+
+    folder = _folder(tmp_path / "stack")
+    _write_legacy(folder, _legacy_state(folder, folder))
+
+    class Dies:
+        def __init__(self, _folder: Path) -> None:
+            pass
+
+        def save(self, *_args: Any) -> None:
+            raise OSError("interrupted")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(migrate, "History", Dies)
+        with pytest.raises(OSError, match="interrupted"):
+            _open(folder)
+    assert (folder / "langslice" / "state.json").exists()
+    job, _ = _open(folder)
+    _assert_migrated(folder, job)
+
+
+@pytest.mark.parametrize("same", [True, False])
+def test_a_migration_onto_an_existing_folder_checks_its_content(tmp_path: Path, same: bool):
+    """A key folder already in the job folder: the old one is removed only
+    when its content is the same; otherwise both are kept, the state keeps
+    pointing at the old one, and the migration reports the conflict."""
+    folder = _folder(tmp_path / "stack")
+    _write_legacy(folder, _legacy_state(folder, folder))
+    target = folder / "langslice" / "sections" / "s0" / "deformable" / KEY
+    target.mkdir(parents=True)
+    (target / "record.json").write_text("{}" if same else '{"other": 1}')
+    job, _ = _open(folder)
+    source = folder / "deformable" / "s0.png" / KEY
+    held = job.state.slices[0].deformation["record"]
+    events = (folder / "langslice" / "logs" / "events.jsonl").read_text()
+    if same:
+        assert not source.exists() and held == f"sections/s0/deformable/{KEY}"
+    else:
+        assert (source / "record.json").read_text() == "{}"
+        assert (target / "record.json").read_text() == '{"other": 1}'
+        assert held == str(source)
+        assert "conflicts" in events and str(source) in events
+
+
+@pytest.mark.parametrize("dies_in", ["copy", "removal"])
+def test_a_migration_across_file_systems_survives_an_interruption(
+    tmp_path: Path, monkeypatch: Any, dies_in: str,
+):
+    """Old folders on another file system are copied, then removed: an
+    interruption while copying (a partial copy) or while removing the
+    originals (a complete copy) is finished on the next open, nothing lost."""
+    import errno
+
+    from langslice.job import migrate
+
+    folder = _folder(tmp_path / "stack")
+    _write_legacy(folder, _legacy_state(folder, folder))
+
+    def other_device(_src: Any, _dst: Any) -> None:
+        raise OSError(errno.EXDEV, "Invalid cross-device link")
+
+    real_copy, real_remove = migrate._copy_tree, migrate._remove_tree
+    calls = {"n": 0}
+
+    def partial_copy(src: Path, dst: Path) -> None:
+        dst.mkdir(parents=True)
+        (dst / "half").write_bytes(b"x")
+        raise OSError("interrupted")
+
+    def partial_remove(path: Path) -> None:
+        calls["n"] += 1
+        first = next(p for p in sorted(path.rglob("*")) if p.is_file())
+        first.unlink()
+        raise OSError("interrupted")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(migrate, "_rename", other_device)
+        if dies_in == "copy":
+            patch.setattr(migrate, "_copy_tree", partial_copy)
+        else:
+            patch.setattr(migrate, "_remove_tree", partial_remove)
+        with pytest.raises(OSError, match="interrupted"):
+            _open(folder)
+    assert real_copy is migrate._copy_tree and real_remove is migrate._remove_tree
+    with monkeypatch.context() as patch:
+        patch.setattr(migrate, "_rename", other_device)  # still another device
+        job, _ = _open(folder)
+    _assert_migrated(folder, job)
+
 def _saved_job(root: Path, folder: Path, job_id: str) -> Path:
     """A phase-2 saved Claude job: the whole job under ``<root>/<id>/``."""
     old = root / job_id
