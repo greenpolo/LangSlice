@@ -215,7 +215,7 @@ program. Code that runs in LangSlice's own environment lives in
   a host that brings its own model: Claude Desktop, or Claude Code locked to
   this one server. ABBA's Claude mode copies a saved-job prompt, and without a
   host `langslice claude prepare FOLDER` saves the same kind of job (checkpoint
-  in the job directory, resumed on reopen) and prints the prompt; `start_job`
+  and undo history in the job directory, resumed on reopen) and prints the prompt; `start_job`
   returns a Claude-specific statement and status table, and `show_stack` pages
   deliver the opening images. Authenticated localhost events update ABBA live;
   checkpoints/results remain in `~/.langslice/jobs/<id>/` after disconnection.

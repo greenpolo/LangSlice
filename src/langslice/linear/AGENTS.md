@@ -106,6 +106,22 @@ MCP server (`encode_jpeg` straight into MCP image blocks for the opening; its
 tool results still unpack the toolbox's parts). `engine.py` and `session.py`
 are the ADK driver.
 
+**The job layer (phase 2, 2026-10-03).** `job.py` sits between the core and
+the doors (it imports the core only, and `tests/test_core_imports.py` checks
+it too): one `Job` owns the `StackState` and `JobSpec`, the host's locked and
+damaged sections, undo/redo, the checkpoint and its observers, the submit
+gates, the stale-deformation rule, `over_cap`, the deformation
+`RecordStore`, the checkpoint and results paths, and the background image
+corrections. The native tools (`build_tools(state, ctx, spec, job=...)`; a
+job is made around the state when none is passed) and the MCP server
+(`mcp_server.server.Session`: the core job, the toolbox over it and the
+door's own pages, trace and host channel) both sit on it. The
+look-before-commit gates (`compared`/`reviewed`) and the model-delivery
+bookkeeping (pending/seen placement views, delivery ids, `tool_context`)
+stay on the `ToolBox`, the tool door: a library call on the job is never
+gated. Tool results still reach MCP as the toolbox's genai parts; plain
+pictures need the tool bodies split (phase 3).
+
 - `spec.py` — `JobSpec` (+ `ReorderSpec`/`PositionSpec`/`TransformSpec`/
   `NonlinearSpec`). Every checkbox a host shows maps to a field here; nothing
   else is user-facing. Users see Positioning (`reorder` + `position`), Linear
@@ -140,7 +156,39 @@ are the ADK driver.
   tags), `position_range`, `axis_ends`, `species`, and the `render_cache` /
   `render_scale` caches. No model and no message images: the driver's
   `engine.EngineContext` subclasses it to add those.
-- `checkpoint.py` — atomic JSON write to `<folder>/linear_state.json`.
+- `checkpoint.py` — atomic JSON write to `<folder>/linear_state.json`,
+  versioned (`format_version`, `STATE_FORMAT_VERSION` 1; `upgrade_state`
+  reads an unversioned checkpoint as version 0, the same fields, and refuses
+  a newer one), and the global observers (`observe_checkpoints`).
+- `job.py` — the job layer (above): `Job.open` (resume the checkpoint when
+  `spec.resume`, else `ingest` + `apply_host_inputs`, then the first
+  checkpoint), `ingest`, `apply_host_inputs`, `host_transform`,
+  `emit_results`, the submit gates (`submit_errors` and its parts,
+  `missing_deformations` included). Undo is ONE pattern: `before =
+  job.snapshot()`, write, `job.commit(before)` (one undo step, then the
+  checkpoint). The history is `linear_undo.json` beside the checkpoint
+  (`UNDO_FORMAT_VERSION` 1: `undo` and `redo`, oldest first, whole states at
+  `state_format_version`; depth `UNDO_DEPTH` 50), rewritten on every step,
+  read back by a resumed job and emptied by a fresh one; an unreadable one
+  starts empty. `Job.sync` (run inside the toolbox lock before every tool
+  call) reloads the state file when its inode, size or mtime changed since
+  the job last read or wrote it: a script's edit becomes one undo step, a
+  second job's edit comes with its own history file, which is read back;
+  an unchanged rewrite is not a step and a file that does not parse (a
+  script mid-write) is left for the next call. A step holds the whole
+  state, so undo restores the deformation references on the section
+  records too (the records on disk are content-addressed and never change).
+  Not undone, deliberately: `transform_history` (what was tried, not what
+  holds), the seen/pending placement views (what the model received cannot
+  be unseen), the render and reference-picture caches (keyed by everything
+  they draw, so never stale), running image corrections (they land only on
+  a section still waiting at the same geometry). `compared`/`reviewed`:
+  an undo, redo or reload that MOVES a section's position counts as a write
+  to it, as `set_positions` does: that section's compared views are dropped
+  and the stack needs a new `view_stack` (`toolbox.forget_looks`).
+  Missing image corrections take the fingerprint function from the door
+  (`registration_tool.correction_fingerprint` lives with the provider code
+  until phase 4).
 - `discovery.py` — natural-sorted image discovery.
 - `render.py` — `render_slice` (ROTATE first, then FLIP, then the display-only
   `--preprocess auto` enhancement), `stack_pictures`, the status rows and
@@ -286,8 +334,10 @@ are the ADK driver.
   drawn first) and AFTER, labelled.
   Computation (silhouette fit, calibration, tissue pivot, `search_position`,
   the image model's input) always reads the default.
-- `toolbox.py` — `build_tools(state, ctx, spec)`: every tool, gated by the
-  spec, plus the submit gates and the undo/redo snapshot stack. The interactive
+- `toolbox.py` — `build_tools(state, ctx, spec, job=None)`: every tool,
+  gated by the spec, on the job (state, undo, checkpoint and submit gates
+  are the job's), plus the door's own record on the `ToolBox`: the
+  look-before-commit gates and the delivery bookkeeping. The interactive
   transform lives here: `_Staged` (one section, its calibrated canvas and the
   resolved pivot), `adjust_transforms` (the write AND the look, any positioned
   section; `mode="ab"` draws the new parameters beside what the section
@@ -297,7 +347,7 @@ are the ADK driver.
   per-result `image_indexes`. Paired landmark tools are removed; interactive
   alignment exposes direct affine adjustments only.
   `transform_history` on the ToolBox is per section and lasts the whole run,
-  but is not repeated in tool replies. `commit(*touched)` is what ordinary writes answer with: the status rows of
+  but is not repeated in tool replies. `commit(before, *touched)` (the job's commit) is what ordinary writes answer with: the status rows of
   the sections it touched plus `n_sections`, never the whole table —
   transform writes return their canonical physical result instead; `status`,
   `undo`, `redo` and `submit` are what return all the rows.
@@ -401,9 +451,11 @@ are the ADK driver.
   preflight size guarantee. Logs separate cumulative input from peak request
   input; 1.3M processed over a run does not mean a 1.3M-token context.
 - `engine.py` — `EngineContext` (the `Workspace` plus the checkpoint and
-  results paths, the model and `reference_parts`, the encoded-picture
-  cache), `ingest`, `apply_host_inputs`, `run_session`,
-  `emit_results`, and `run(spec)`. No post pass: the session is the whole run.
+  results paths the job is opened at, the model and `reference_parts`, the
+  encoded-picture cache), `run_session`, and `run(spec)` (`Job.open`, the
+  toolbox on it, the session, `Job.emit_results`). `ingest` and
+  `apply_host_inputs` are re-exported from `job.py` for the SliceBench
+  adapters. No post pass: the session is the whole run.
 - `live.py` — optional in-memory observer for host activity windows.
   `engine.run(on_event=...)` streams sanitized seed images, assistant text,
   provider-exposed reasoning summaries, final tool calls/results with detached
@@ -443,7 +495,7 @@ The ABBA dialog's controls, all plain `JobSpec` fields (not CLI flags yet):
   (`DAMAGE_SET_BY_USER`) and the job statement lists those sections.
 - **`inputs["locked"]`**: sections the user already aligned in-plane.
   `apply_host_inputs` gives each without a supplied transform
-  `toolbox.host_transform()` (`kind` `"host"`, identity params, identity
+  `job.host_transform()` (`kind` `"host"`, identity params, identity
   `physical`). `orient_slices`, `fit_affine` and `adjust_transforms` refuse
   them per section (`LOCKED`); `fit_affine`'s default target list skips them;
   their positions still move. The host transform satisfies
@@ -517,7 +569,7 @@ included; added 2026-10-03 after M11_B_08/C_08, Nash: "Astra knows, it was
 just lazy") and to compare candidates, inspect each fit's borders against
 internal anatomy (and the traced borders), apply the best and keep the linear
 placement only where no fit improves on it, and `submit` refuses `MISSING_DEFORMATIONS`
-(`toolbox.missing_deformations`, part of `submit_errors`) until every section
+(`job.missing_deformations`, part of `submit_errors`) until every section
 holds a deformation at its current `linear_key` or a `keep_linear` record.
 `fit_deformable(slices, keep_linear="reason")` is that record: no fit,
 `SliceState.deformation = {"keep_linear": reason, "linear_key": ...}`, one
@@ -539,7 +591,7 @@ With an image model the `nonlinear` task also adds `trace_borders(id, prompt="")
 the top-level `registration_tool` bridge. It uses the supplied linear placement
 and the agent's per-slice edited copy of the base correction prompt.
 The call runs in the background (`registration_tool.start_correction` prepares
-it; `ToolBox.settle_image_corrections` waits at submit and at session end) and
+it; `Job.settle_image_corrections` waits at submit and at session end) and
 returns no images. The first image reply is retained in `SliceState.image_correction`. No atlas search,
 replacement prompt, candidate selection or anatomical rejection is exposed.
 The same task adds `grep_atlas(query, section="")` (`linear/atlas_grep.py`): a text-only
@@ -596,7 +648,7 @@ passes the applied record as `previous` (refused `NO_DEFORMATION` without
 one). `traced_borders` is the ANTs label-map mode (`labels="model"`),
 `traced_lines` lines vs borders; both need the trace at this placement
 (`NO_TRACE`/`TRACE_STALE`). A trace still running is waited for
-(`ToolBox.wait_image_job`, one `deformation.TRACE_WAIT_S` 300 s deadline per
+(`Job.wait_image_job`, one `deformation.TRACE_WAIT_S` 300 s deadline per
 call; the result lands as `settle_image_corrections` lands it, checkpointed,
 no undo step), and the reply adds one picture per traced section of its lines
 on the stain (`traces` maps them); `TRACE_TIMEOUT` / `TRACE_FAILED` otherwise. Max 4 sections, 8 fits
@@ -604,7 +656,8 @@ per call. `SliceState.deformation` holds `record` (absolute path), `key`,
 `linear_key`, `steps` (the chain for `current`), `summary`, `inverse_source`;
 the record directory holds the composed field, its inverse, the parent steps
 and `provenance` (section id, linear handoff metadata, inputs). Every tool is
-wrapped by `toolbox._clears_stale_deformations`: after any call, a
+wrapped by `toolbox._clears_stale_deformations` (the rule is
+`Job.clear_stale_deformations`): after any call, a
 deformation whose `linear_key` no longer matches (position, orientation,
 cutting angles, transform) is cleared in the same undo step and the reply
 carries `deformation_cleared`. `view_placement`/`set_positions` draw the
@@ -762,7 +815,9 @@ data-only refusals first: gated, `set_positions` refuses a section not
 compared since its last write (ONE compare, because Astra's own method
 confirms each section at one hypothesised position; the first version
 demanded two and blocked that), and `submit` refuses until `view_stack`
-has run after the last write. Gates alone did not help Luna (run 10:
+has run after the last write (an undo, redo or reload that moves a position
+counts as a write to it, 2026-10-03). The gates are the tool doors' only:
+a script or library call on the job is never gated. Gates alone did not help Luna (run 10:
 median 1.79, it looked without seeing), so `--playbook`
 (`PositionSpec.playbook`) puts Astra's run-8 method into the job
 statement's Method section, read off its trace: a complete hypothesis of
@@ -827,8 +882,10 @@ still believed.) `orient_slices` does still clear a section's transform: a
 transform is defined AFTER the orientation it was fitted under.
 
 **Every write checkpoints, every write is undoable.** One tool call is one undo
-step, so a batch undoes as one. The undo stack is in memory only (depth 50); a
-resumed run starts from the checkpoint, which is the state as it stood.
+step, so a batch undoes as one. The undo history (depth 50) is saved beside
+the checkpoint (`linear_undo.json`), so a resumed run starts from the state as
+it stood and can still undo the steps before it (until 2026-10-03 the history
+was in memory only and a resume began with none).
 
 ## Ceilings worth knowing
 
