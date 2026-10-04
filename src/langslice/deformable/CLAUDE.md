@@ -9,8 +9,10 @@ and imports neither. It is the engine behind the linear agent's
 masks, `engines.run_elastix_affine` fits), and since 2026-10-04 behind the
 fit of the image model's lines in `langslice nonlinear register
 --deformation deformable` and the ABBA registration plugin
-(`nonlinear/border_fit.py`, which replaced the old Elastix residual fit). No
-export adapter reads its records yet. `engines.py` is LangSlice's one
+(`nonlinear/border_fit.py`, which replaced the old Elastix residual fit). The
+job folder's maps and VisuAlign markers read an applied record
+(`core/maps.py`, formats phase 2026-10-04); no ABBA or BrainGlobe export
+adapter reads it yet. `engines.py` is LangSlice's one
 itk-elastix registration wrapper (`landmark_elastix.py`, the landmark-pair
 spline of old checkpoints, is separate).
 
@@ -203,8 +205,10 @@ torn-band masks, excluded ids, `native_to_volume_index` (plane pixel → atlas
 volume index, so exports need no atlas object), `native_coordinates()`,
 `volume_coordinates()`, `save()`/`load()` (parent chain under `parent/`),
 and a free-form `provenance` dict saved with the metadata (the linear tool
-stores section id, linear handoff metadata and its inputs there). Export
-adapters (ABBA, VisuAlign, BrainGlobe) are to read this record; none exist.
+stores section id, linear handoff metadata and its inputs there). The job
+folder's maps (`coords.tif`, `labels.tif`, `residual.tif`) and the VisuAlign
+markers are composed from it by `core/maps.py` (`native_points`); ABBA and
+BrainGlobe export adapters are still to be built.
 
 Diagnostics are reported, never enforced: per-region area ratio
 warped/placed from the Jacobian (`N_R / Σ_{p∈R} J`), raster ratio, fold
@@ -253,7 +257,8 @@ included, one-sided entries drawn on that side of the record's placement)
 draws those regions' edges strongly over a faint outline of the
 colour-family regions; `marked` draws a second set (regions excluded from a
 fit) in `MARKED_COLOR`, and `outlines` (`all`/`outer`/`none`) limits the
-rest (`warped_border_layers` returns every layer). `resampled_record` carries a
+rest (`warped_border_layers` returns every layer; `drawn_border_coverage`
+the lines a call draws, as a saved picture's borders layer). `resampled_record` carries a
 record onto a smaller or cropped grid for pictures; `warp_section_image`
 resamples a section render into its placed-atlas frame through the inverse
 field (fixed-point inverse when none is stored), so a picture drawn under the

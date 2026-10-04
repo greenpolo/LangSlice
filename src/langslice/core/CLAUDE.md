@@ -91,15 +91,46 @@ core modules (`space`, `affine`, `oblique`, `image_prep`, `atlas/`,
 - `sizes.py` — the picture sizes: `PICTURE_EDGES` (opening and later long
   edge per `image_resolution`), `AUTO_RESOLUTION`, `MIN_RESOLUTION`,
   `MAX_IMAGES_PER_CALL`, `resolution_level`, `opening_edge`, `picture_edge`.
-- `layers.py` — a placement picture's layers and frame record, the
-  on-demand coordinate map, and the per-call picture notes (below).
+- `layers.py` — a placement picture's layers and frame record (and a
+  `fit_deformable` picture's), the on-demand coordinate map, and the
+  per-call picture notes (below).
+- `maps.py` (formats phase, 2026-10-04) — section pixels to atlas
+  micrometres for the job folder's public files (`job/formats.py`,
+  `docs/file_formats.md`). `SectionFrame` / `section_frame(state,
+  workspace, record)`: one placed section's linear map from its image FILE
+  (`[x, y]` pixel centres; rotation and flip are part of the map,
+  `orientation_matrix`, PIL's counter-clockwise quarter turns first, then
+  the flip) onto the `PREVIEW_LONG_EDGE` frame the six numbers are
+  normalized against, the native plane placed there by
+  `handoff.linear_placement_matrix`, and `plane_index_affine` times the
+  resolution to micrometres: `pixel_to_atlas_um(size)` for the file or any
+  resize of it. The working copy's size comes from the file header
+  (`image_prep.working_size`) and the render size from
+  `image_prep.prepared_size`, so `registration.json` is rewritten on every
+  write without decoding images; memoized on `Workspace.frame_cache` by
+  everything it depends on. No transform: the identity, as the pictures
+  draw it (`IDENTITY_PARAMS`, `stored_params`); `placement_problem` says
+  why a section has no map. `native_points(frame, warp, x, y)`: native
+  plane `(x, y)` of file points, through an applied deformation exactly as
+  its record composes it (carried onto the fit grid, displaced by its
+  field, bilinear with replicated edges, then its placement undone).
+  `section_maps(workspace, frame, warp, full_resolution=)`: `SectionMaps`
+  on the working copy's grid (or the file's): coordinates (NaN off the
+  tissue, `tissue_mask` = the deformable fit's rule, or off the atlas
+  volume), atlas ids (`deformable.geometry.sample_native`, nearest, as the
+  pictures' labels layer), and the residual `(drow, dcol)` such that
+  `coords = pixel_to_atlas_um @ [p + d, 1]`; computed in `BLOCK_ROWS`
+  blocks. `residual_markers(frame, warp)`: VisuAlign `[x, y, nx, ny]`
+  markers on a grid of 1/36 of the long edge.
 - `jpeg.py` — the doors' one JPEG encoding (below).
 - `handoff.py` (phase 4) — a written linear placement as the nonlinear work
   starts from it: `prepare_linear_registration(state, workspace, id,
   long_edge=, transform=)` (the oriented, unframed section render and the
   3x3 from native atlas-plane pixel centres onto it, calibration checked,
   `LinearRegistrationInput`; the trace's canvas and every deformable fit's
-  grid), `correction_fingerprint` (everything an image correction's inputs
+  grid; its matrix is `linear_placement_matrix`, the one path from the six
+  stored numbers to the atlas, which `core.maps` uses too),
+  `correction_fingerprint` (everything an image correction's inputs
   depend on; the trace's call key, the submit check and a traced fit's
   staleness test all read it) and `digest`. No provider import:
   `registration_handoff.py` re-exports the first for SliceBench.
@@ -149,6 +180,16 @@ takes a `view.json` (record or path) and returns the `(rows, cols, 3)`
 float32 map on demand, NaN in the caption band. The labels layer is what
 that map reads in the atlas annotation, up to ties at exact half voxels.
 
+A `fit_deformable` picture (formats phase) gets the same layers on its own
+grid through `warp_layers(atlas, note, size)`: labels through the record's
+composed map (0 off the tissue the record keeps), borders as
+`deformable.render.drawn_border_coverage` (exactly the lines drawn), a
+frame whose `pixel_to_atlas_um` is the record's linear placement on the
+picture, and, when the field was drawn, a residual layer `residual.tif`
+(`RESIDUAL_LAYER`, `(2, rows, cols)` float32, `(drow, dcol)` picture
+pixels) the frame names under `residual`; `coordinate_map` applies it
+(beside the `view.json`, or `folder=` for a record).
+
 Which pictures a call returned, and of what, is noted while it runs:
 `layers.collecting()` (the job's saving hook, `Job.views.shown`, runs every
 tool call inside it) and
@@ -156,7 +197,10 @@ tool call inside it) and
 extra=)`; `note_for` finds a picture's note by identity. `draw_canvas`,
 `placement_pictures` (stacked, side_by_side references), `section_picture`,
 `atlas_view_picture` and `stack_review` note theirs;
-`ops.deformable.pictures` notes `fit_deformable`'s fits and traces, and the
+`ops.deformable.pictures` notes `fit_deformable`'s fits (through
+`linear.deformation.picture(note=...)`, with a `WarpNote`: the record
+resampled onto the picture, the caption band, whether the field is drawn,
+the border style) and traces, and the
 tool door the pictures it labels itself (`preprocess` before/after). With
 nothing collecting, a note costs nothing. The job saves the pictures
 (`langslice.job.views`, `job/CLAUDE.md`).

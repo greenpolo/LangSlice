@@ -162,7 +162,13 @@ shown is saved there as the JPEG it received; a placement picture adds its
 atlas labels (uint32 TIFF), its border mask (PNG) and its frame
 (`view.json`: plane, µm per pixel, placement and the pixel-to-atlas matrix
 in BrainGlobe micrometres), from which `langslice.core.layers.coordinate_map`
-computes each pixel's atlas position. An old layout (the files beside the
+computes each pixel's atlas position (a `fit_deformable` picture adds its
+residual layer). `registration.json` renders the state in public units on
+every write (each section's parameters and its image-file pixel -> atlas
+micrometres matrix), and submit (or the CLI/library verb `export_maps`)
+writes each section's `coords.tif`, `labels.tif`, `labels_fiji.tif` +
+`labels.csv`, `residual.tif` and the QuickNII/VisuAlign exports, all derived
+and never read back (`docs/file_formats.md`). An old layout (the files beside the
 images, or a saved Claude job under `~/.langslice/jobs/<id>/`) is moved in on
 open; a newer one is refused. `JobSpec.job_dir` (`--job-dir`) puts the job
 folder elsewhere, refusing one that holds another image folder's job; a

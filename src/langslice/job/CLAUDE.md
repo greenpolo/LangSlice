@@ -12,7 +12,8 @@ they are named, upgraded, indexed and filled with pictures.
 ## The layer rule
 
 Job layer: imports the core (`linear.state`, `linear.checkpoint`,
-`linear.discovery`, `core.layers`, `core.jpeg`) only. Never an operation
+`linear.discovery`, `linear.deformation`, `core.layers`, `core.jpeg`,
+`core.maps`, `atlas`) only. Never an operation
 (`ops`), a door (`linear.toolbox`, `linear.view_options`, `adk`,
 `mcp_server`, `api`) or `google.*`, `litellm`, `openai`.
 `tests/test_core_imports.py` loads each module in a fresh interpreter and
@@ -63,18 +64,24 @@ job.lock             the write lock (lock.py), held while a writer syncs and com
 job.json             settings: the JobSpec under "spec", format_version (1),
                      created_at, image_folder; a saved Claude job's job_id and
                      its own fields under "host" (kind, params, notes, trace_dir)
-state.json           the checkpoint (StackState, state format 2)
+state.json           the checkpoint (StackState, state format 2): THE TRUTH
+registration.json    its public rendering (formats.py), rewritten on every checkpoint
 history/             undo/redo: index.json + step-NNNNNN.json, one per step
 sections/<stem>/     per section; <stem> is the image filename's stem (the whole
                      filename when two images share a stem)
   deformable/<key>/          applied deformation records (RecordStore)
   image_correction/<key>/    trace_borders calls, attempt-NN inside
   views/<seq>_<tool>_<mode>/ pictures of this section the model saw
+  coords.tif, labels.tif,    the section's maps (formats.py), written at submit
+  labels_fiji.tif,           and by export_maps, never on an ordinary write
+  labels.csv, residual.tif,
+  maps.json
 views/<seq>_<tool>_<mode>/   pictures of several sections or none (atlas, sheets,
                              opening strips, show_stack pages)
 views.jsonl          append-only index of every saved picture
 exports/             linear_results.json (the run's result; spec.out overrides
-                     the path), result.json (a saved host job's final result)
+                     the path), result.json (a saved host job's final result),
+                     quicknii.json and visualign.json (with the maps)
 logs/events.jsonl    one line per open and per migration
 logs/runs/<id>.json  an agent-CLI background run (`--background`), its stderr in <id>.log
 prompt.txt           a saved Claude job's copy prompt
@@ -82,9 +89,23 @@ AGENTS.md, CLAUDE.md the reference card for coding agents, identical, generated
                      (`doors/card.py`) and rewritten when stale
 ```
 
-Reserved, not written yet (the formats phase): `registration.json` at the
-top, and `residual.tif`, `coords.tif`, `labels.tif`, `labels_fiji.tif` +
-`labels.csv` in each section folder.
+**The public files (formats phase, 2026-10-04; `docs/file_formats.md` has
+every field).** `state.json` stays the one working source; `formats.py`
+renders it for scripts and other programs, in BrainGlobe micrometres (the
+atlas's axis order, voxel `i`'s centre at `i * resolution`) and image-file
+pixels `[row, col]`, and never reads any of it back. `Job.checkpoint`
+rewrites `registration.json` atomically after the state
+(`formats.write_registration`, through `Job.workspace`, which `Job.open`,
+`Job.load` and the tool door set; a failure is logged, never raised): per
+section its parameters in public units (atlas, plane, orientation, the six
+numbers and their knobs, the applied deformation's record), the file
+pixel -> atlas matrix of its linear placement (`core.maps`), why it has none
+(`problem`), and its written maps with whether they are still `current`
+(`maps.json`'s `parameters_digest`). The maps (`write_section_maps`:
+`coords.tif`, `labels.tif`, `labels_fiji.tif` + `labels.csv`,
+`residual.tif`, `maps.json`) and the exports are written by
+`ops.exports.export_maps`, at submit and on demand. `Job.persist` False
+writes none of it.
 
 **Opening a job without writing (phase 5).** `Job.open` writes `job.json`
 and a first checkpoint. `Job.load(spec, workspace, folder=)` opens an
@@ -161,6 +182,16 @@ paths). The trace identity in a deformation cache key is the stored
   directory removed; refused when that job folder already holds a
   checkpoint. A checkpoint from a newer LangSlice is refused before
   anything moves. Each migration is a line in `logs/events.jsonl`.
+- `formats.py` — the public files (above): `registration_document`,
+  `section_entry`, `parameters` (the truth in public units),
+  `applied_deformation`, `maps_status`, `write_registration`,
+  `write_section_maps` (float maps as ImageJ hyperstacks, deflate without
+  the floating-point predictor, which ImageJ 1.x cannot read;
+  `FLOAT_COMPRESSION`), `write_labels` (the uint32 ids, the uint16 Fiji
+  index with the atlas colours as its lookup table, the csv),
+  `derived_files` (the CLI's artifacts after submit), `write_json`, the
+  file names (`SECTION_FILES` by artifact kind, `QUICKNII_FILE`,
+  `VISUALIGN_FILE`).
 - `views.py` — `ViewStore` (`Job.views`): every picture the model was
   shown. The hook every door uses (phase 3d) is `ViewStore.shown(tool,
   atlas_of=)`: a context manager that collects what `core.layers` notes
@@ -177,8 +208,10 @@ paths). The trace identity in a deformation cache key is the stored
   exact bytes the door sent: the same `core.jpeg.encode_jpeg` on the same
   picture, or the door's own bytes), `view.json` (format 1: tool, call
   number and id, arguments, sections, mode, picture size and bytes, `frame`)
-  and, for a placement picture, `labels.tif` (uint32, zlib) and
-  `borders.png` (8-bit coverage). One section → `sections/<stem>/views/`,
+  and, for a placement picture or a `fit_deformable` picture (its note's
+  `warp`, `core.layers.warp_layers`), `labels.tif` (uint32, zlib) and
+  `borders.png` (8-bit coverage), plus `residual.tif` for a `fit_deformable`
+  picture that shows its deformation (`has_frame` decides). One section → `sections/<stem>/views/`,
   else `views/`. One line per picture in `views.jsonl` (`seq`, `name`,
   `path`, `tool`, `call`, `sections`, `mode`, `layers`). One background
   thread per store, ending when its queue is empty; `flush` (`ops.submit`,
@@ -190,9 +223,9 @@ paths). The trace identity in a deformation cache key is the stored
   long as before. A 1024 px placement picture: `view.jpg` ~40 KB,
   `labels.tif` ~10 KB, `borders.png` ~1 KB, `view.json` ~2.5 KB (a real
   atlas's labels compress less). `captured()` (phase 5) collects every
-  picture any store queues inside the block (`Saved`: its folder and
-  whether it gets layers; `files()` lists `view.jpg`, `view.json` and the
-  layers with their kinds): the agent CLI's `artifacts`. The numbering reads the index as it grows
+  picture any store queues inside the block (`Saved`: its folder,
+  whether it gets layers and a residual; `files()` lists `view.jpg`,
+  `view.json` and the layers with their kinds): the agent CLI's `artifacts`. The numbering reads the index as it grows
   (each save reads the lines appended since the last), so two stores on one
   folder (a running agent and a CLI call) continue each other's numbers; two
   pictures queued by both before either is written can still share one.

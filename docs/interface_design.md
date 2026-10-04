@@ -284,8 +284,9 @@ or transform clears it and the tool's reply says `deformation_cleared` (undo
 restores both). `view_placement` and `set_positions` draw the applied warp
 in every mode that draws the section under its placement (`overlay`,
 `checkerboard`, `outlines`, `section`; `view.deformation` `none` shows the
-linear placement alone). Export adapters (ABBA, VisuAlign, BrainGlobe) will
-read the saved record; none is built. `keep_linear` (a reason) fits nothing
+linear placement alone). The job folder's maps and VisuAlign markers read
+the saved record (`docs/file_formats.md`); ABBA and BrainGlobe adapters are
+not built. `keep_linear` (a reason) fits nothing
 and draws nothing: each named section records that its linear placement
 stands (one undo step; cleared like a deformation when the placement
 changes; satisfies `submit`); `view` or `candidates` beside it are refused.

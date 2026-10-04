@@ -268,8 +268,8 @@ against borders, include/exclude regions (optionally one side,
 `"CTX:left"`), sequential `start="current"` steps, preview candidates vs one applied
 setting; the engine is the user's `nonlinear.engine` choice or the agent's.
 Applied records are saved under `<results dir>/deformable/` and referenced from
-`SliceState.deformation`; export adapters (ABBA, VisuAlign, BrainGlobe) are to
-read them and are not built. The standalone routes above and the ABBA plugin
+`SliceState.deformation`; the job folder's maps and VisuAlign markers read them
+(`docs/file_formats.md`); ABBA and BrainGlobe adapters are not built. The standalone routes above and the ABBA plugin
 fit the model's lines through it (`nonlinear/border_fit.py`). `fit_section(image, atlas, placement, settings,
 lines=..., previous=..., native=...)` takes a `Placement` — the handoff's
 `atlas_to_slice` or the image tool's `atlas_to_canvas`, unchanged; `native`

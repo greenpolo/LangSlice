@@ -40,24 +40,33 @@ One registration job: the sections in `{images}` placed in a BrainGlobe atlas.
 Written by LangSlice {langslice.__version__} from its code; regenerated on open,
 so do not edit it.
 
-## Files: state is truth, pictures are derived
+## Files: state is truth, everything else is derived
 - `state.json`: THE TRUTH. Order, positions, flips, transforms and the applied
   deformation of every section. Change it through the verbs below; a direct
   edit by a script is picked up by a running agent as one undo step.
-- `job.json`: settings (tasks, atlas, plane) and format version.
-- `history/`: undo and redo, one file per step.
-- `sections/<name>/`: per section, `deformable/<key>/` (applied deformation
-  records), `image_correction/<key>/` (image-model traces), `views/`.
-- `views/` (several sections or none), `views.jsonl` (index of every picture).
-- `exports/` results, `logs/` events and background runs (`logs/runs/`).
-Pictures, layers and maps are derived: regenerate them, never edit them as truth.
+- `registration.json`: the same registrations in public units (read only,
+  rewritten on every change): per section its parameters and `pixel_to_atlas_um`
+  (image file pixel [row, col, 1] -> atlas um).
+- `job.json`: settings (tasks, atlas, plane); `history/`: undo/redo, a file per step.
+- `sections/<name>/`: per section `deformable/<key>/` (applied deformation
+  records), `image_correction/<key>/` (image-model traces), `views/`, and the
+  maps written at submit or by `export_maps` (on the image's working copy):
+  - `coords.tif`: float32 (3, rows, cols) atlas um per pixel, NaN off tissue/atlas.
+  - `labels.tif`: uint32 atlas ids per pixel (0 off tissue/atlas).
+  - `labels_fiji.tif` + `labels.csv`: uint16 index Fiji opens; csv: index -> id, name, RGB.
+  - `residual.tif`: float32 (2, rows, cols) (drow, dcol) px of an applied deformation.
+  - `maps.json`: the grid, its pixel_to_atlas_um, the parameters they came from.
+- `views/`, `views.jsonl` (pictures of several sections; index of every picture).
+- `exports/`: results, `quicknii.json`, `visualign.json`; `logs/`: events, runs.
+Maps and pictures are derived and never read back: editing one changes no
+registration (no fit reads an edited map yet); use the verbs.
 
 ## Pictures and coordinates
 Each picture folder holds `view.jpg` (what was shown), `view.json` (its frame)
 and, for a section on its atlas, `labels.tif` (uint32 atlas ids per pixel) and
-`borders.png` (the drawn borders). Atlas coordinates of every pixel:
-`langslice.coordinate_map("<picture folder>/view.json")` gives a (rows, cols, 3)
-float32 array. Coordinates are BrainGlobe atlas micrometres in the atlas's own
+`borders.png` (the drawn borders); a deformable fit's adds `residual.tif`.
+`langslice.coordinate_map("<picture>/view.json")`: every pixel's atlas position,
+(rows, cols, 3) float32. Coordinates are BrainGlobe atlas micrometres in the atlas's own
 axis order (its orientation string; packaged atlases are `asr`: 0 anterior to
 posterior, 1 superior to inferior, 2 right to left), voxel i's centre at
 i * resolution. Pixels are (row, col), centres at integers. Section positions
