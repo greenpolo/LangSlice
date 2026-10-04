@@ -37,6 +37,9 @@ import a host. The QUINT entry below describes that file.
   borders; ABBA's labels are given as the native grid, placed by an identity
   at `voxel_size_um`; since 2026-10-04, replacing the Elastix residual fit),
   and the provider is resolved here (`providers.registry.resolve_image_model`).
+  Provider `none` calls no model and fits nothing: the landmarks are the
+  identity, ABBA's placement stands (as `nonlinear register`'s model-free
+  route).
   The fit maps output histology coordinates to the rough atlas frame; ABBA
   receives the paired coordinates in the opposite direction, not a negated
   displacement field. The measured ABBA↔brainglobe AP offset is ~0.99, not

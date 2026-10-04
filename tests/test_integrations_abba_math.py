@@ -127,6 +127,7 @@ def test_border_refinement_preserves_host_grid_and_inverts_landmark_pairs(
             rough_border_overlay=image,
             model_border_overlay=Image.new("RGB", image.size, "red"),
             model_border_mask=np.ones((40, 50), dtype=bool),
+            metadata={"model_called": True},
         )
 
     def fit(canvas, lines, passed_atlas, placement, **kwargs):
@@ -161,6 +162,31 @@ def test_border_refinement_preserves_host_grid_and_inverts_landmark_pairs(
     assert Image.open(debug / "model_border_overlay.png").getpixel((0, 0)) == (255, 0, 0)
     assert Image.open(debug / "fitted_border_overlay.png").getpixel((0, 0)) == (0, 0, 255)
 
+
+
+def test_model_free_abba_registration_fits_nothing(monkeypatch):
+    """Provider ``none`` calls no model, so the rough borders are not fitted
+    against themselves: the landmarks are the identity, as ``nonlinear
+    register`` returns an identity residual (review finding 7)."""
+    from langslice.core.atlas import core
+    from langslice.core.nonlinear import border_fit
+    from langslice.hosts.integrations.abba import (
+        LangSliceAbbaConfig,
+        compute_registration_landmarks,
+    )
+
+    atlas = FakeAtlas()
+    yy, xx = np.indices((40, 50))
+    coords = np.stack((np.full_like(xx, 0.5, dtype=float), yy / 50, xx / 60), axis=-1)
+    _, _, ids = render_atlas_at_coords(atlas, coords)
+    histology = np.where(ids > 0, 180.0, 20.0)
+    monkeypatch.setattr(core, "load_atlas", lambda _: atlas)
+    monkeypatch.setattr(border_fit, "fit_border_lines",
+                        lambda *a, **k: pytest.fail("model-free must not fit"))
+    src, tgt = compute_registration_landmarks(
+        coords, histology, LangSliceAbbaConfig(provider="none", landmark_grid=8))
+    assert len(src) >= 4
+    np.testing.assert_array_equal(src, tgt)
 
 def test_border_refinement_rejects_multiple_draws_before_loading_atlas(monkeypatch):
     from langslice.core.atlas import core
