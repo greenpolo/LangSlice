@@ -30,9 +30,10 @@ langslice = "langslice.cli:main"
 [project.optional-dependencies]
 # Deformable fit extras (langslice.deformable): the ANTs engine and the reader
 # for ABBA's cached Allen Nissl volume. antspyx 0.6.x pins scipy<1.16 (and
-# 0.6.2+ numpy<2.4), so installing it downgrades those two.
+# 0.6.2+ numpy<2.4), so installing it downgrades those two. 0.6.3 is the floor:
+# the engine seeds fits through `ants.config`, which 0.6.1 lacks.
 registration = [
-    "antspyx>=0.6.1,<0.7; python_version < '3.14'",
+    "antspyx>=0.6.3,<0.7; python_version < '3.14'",
     "h5py>=3.10",
 ]
 abba = [
