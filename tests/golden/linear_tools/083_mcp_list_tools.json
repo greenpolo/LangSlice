@@ -1,0 +1,13 @@
+{
+ "call": {
+  "arguments": {},
+  "tool": "list_tools"
+ },
+ "content": [
+  {
+   "text": "[\"adjust_transforms\", \"fit_affine\", \"mark_damaged\", \"note\", \"orient_slices\", \"redo\", \"show_stack\", \"start_job\", \"status\", \"submit\", \"undo\", \"view_atlas\", \"view_placement\", \"view_slices\"]"
+  }
+ ],
+ "door": "mcp",
+ "images": []
+}

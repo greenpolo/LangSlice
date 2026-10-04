@@ -1,0 +1,34 @@
+{
+ "args": [],
+ "data": {
+  "error": "UNKNOWN_ARGUMENTS",
+  "message": "view_slices: Unknown key(s) in (top level): mode; accepted: slices, view. `mode` belongs inside `view`. Nothing was done.",
+  "problems": [
+   {
+    "accepted": [
+     "slices",
+     "view"
+    ],
+    "argument": "(top level)",
+    "notes": [
+     "`mode` belongs inside `view`."
+    ],
+    "unknown": [
+     "mode"
+    ]
+   }
+  ],
+  "status": "error",
+  "tool": "view_slices"
+ },
+ "door": "tools",
+ "images": [],
+ "kwargs": {
+  "mode": "section",
+  "slices": [
+   "s0.png"
+  ]
+ },
+ "media_texts": [],
+ "tool": "view_slices"
+}

@@ -1,0 +1,31 @@
+{
+ "args": [
+  "Not yet.",
+  [],
+  []
+ ],
+ "data": {
+  "error": "MISSING_IMAGE_CORRECTIONS",
+  "message": "Each section requires a completed image correction at its current linear placement. This checks completion and geometry, not anatomical quality.",
+  "sections": [
+   {
+    "id": "s0.png",
+    "reason": "No completed image correction"
+   },
+   {
+    "id": "s1.png",
+    "reason": "No completed image correction"
+   },
+   {
+    "id": "s2.png",
+    "reason": "No completed image correction"
+   }
+  ],
+  "status": "refused"
+ },
+ "door": "tools",
+ "images": [],
+ "kwargs": {},
+ "media_texts": [],
+ "tool": "submit"
+}

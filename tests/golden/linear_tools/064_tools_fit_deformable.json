@@ -1,0 +1,39 @@
+{
+ "args": [
+  [
+   "s2.png"
+  ]
+ ],
+ "data": {
+  "applied": true,
+  "changed": [
+   {
+    "damage_note": "right third missing",
+    "damaged": true,
+    "flip": false,
+    "id": "s2.png",
+    "index": 2,
+    "keep_linear": "Too little tissue survives for a warp.",
+    "position_mm": 0.2,
+    "rotation_deg": 0,
+    "transform": "interactive",
+    "transform_mirrored": false
+   }
+  ],
+  "cutting_angles_deg": {
+   "pitch": 0.0,
+   "yaw": 0.0
+  },
+  "interval_breaks": [],
+  "keep_linear": "Too little tissue survives for a warp.",
+  "n_sections": 3,
+  "status": "ok"
+ },
+ "door": "tools",
+ "images": [],
+ "kwargs": {
+  "keep_linear": "Too little tissue survives for a warp."
+ },
+ "media_texts": [],
+ "tool": "fit_deformable"
+}

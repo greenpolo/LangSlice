@@ -1,0 +1,17 @@
+{
+ "call": {
+  "arguments": {
+   "interval_breaks": [],
+   "notes": [],
+   "summary": "done"
+  },
+  "tool": "submit"
+ },
+ "content": [
+  {
+   "text": "{\"status\": \"error\", \"error\": \"MISSING_TRANSFORMS\", \"missing_ids\": [\"s2.png\"], \"message\": \"1 of 3 section(s) carry no transform; every section needs one, damaged ones included.\"}"
+  }
+ ],
+ "door": "mcp",
+ "images": []
+}

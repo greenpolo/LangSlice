@@ -1,0 +1,23 @@
+{
+ "args": [
+  "s0.png",
+  0.1,
+  false
+ ],
+ "data": {
+  "current_position_mm": 0.1,
+  "id": "s0.png",
+  "pitch_deg": 0.0,
+  "position_mm": 0.0,
+  "score": 0.6965,
+  "searched_angles": false,
+  "searched_window_mm": 0.1,
+  "status": "ok",
+  "yaw_deg": 0.0
+ },
+ "door": "tools",
+ "images": [],
+ "kwargs": {},
+ "media_texts": [],
+ "tool": "search_position"
+}

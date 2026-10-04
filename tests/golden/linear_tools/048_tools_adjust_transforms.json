@@ -1,0 +1,102 @@
+{
+ "args": [
+  [
+   {
+    "id": "s0.png",
+    "rotation_deg": 1.0,
+    "scale_x": 1.0,
+    "scale_y": 1.01,
+    "translate_x_mm": 0.0,
+    "translate_y_mm": 0.01
+   }
+  ]
+ ],
+ "data": {
+  "description": "Attached feedback images (mapped by each result's image_indexes), in entry order, for s0.png; each image is labelled with its section and transform.",
+  "results": [
+   {
+    "ab_reference": {
+     "params": {
+      "pivot": [
+       0.5,
+       0.5
+      ],
+      "rotation_deg": -0.859,
+      "scale_x": 0.9896,
+      "scale_y": 1.0051,
+      "shear": -0.009,
+      "translate_x_mm": -0.0507,
+      "translate_y_mm": -0.0575
+     },
+     "source": "stored",
+     "stored_kind": "silhouette"
+    },
+    "description": "s0.png under the transform above, two overlays at the same crop: first these parameters, then the transform the section carried before this call. The outlines are the FAMILY regions of the coronal atlas section at 0.100 mm, drawn at true physical scale with #ffff00 borders 1.0 output pixel(s) wide.",
+    "id": "s0.png",
+    "image_indexes": [
+     0,
+     1
+    ],
+    "physical": {
+     "pivot": [
+      0.5,
+      0.5
+     ],
+     "rotation_deg": 1.0,
+     "scale_x": 1.0,
+     "scale_y": 1.01,
+     "translate_x_mm": 0.0,
+     "translate_y_mm": 0.01
+    },
+    "position_mm": 0.1,
+    "status": "ok",
+    "written": true
+   }
+  ],
+  "status": "ok",
+  "view": {
+   "atlas_channels": [
+    "borders"
+   ],
+   "border_color": "#ffff00",
+   "border_thickness": 1.0,
+   "channels": [
+    "view"
+   ],
+   "mode": "ab",
+   "outlines": "all",
+   "zoom": [
+    0.0,
+    0.0,
+    1.0,
+    1.0
+   ]
+  }
+ },
+ "door": "tools",
+ "images": [
+  {
+   "file": "048_tools_adjust_transforms.0.png",
+   "mode": "RGB",
+   "size": [
+    338,
+    314
+   ]
+  },
+  {
+   "file": "048_tools_adjust_transforms.1.png",
+   "mode": "RGB",
+   "size": [
+    338,
+    296
+   ]
+  }
+ ],
+ "kwargs": {
+  "view": {
+   "mode": "ab"
+  }
+ },
+ "media_texts": [],
+ "tool": "adjust_transforms"
+}

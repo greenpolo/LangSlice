@@ -1,0 +1,75 @@
+{
+ "args": [
+  [
+   {
+    "id": "s2.png",
+    "positions_mm": [
+     0.2
+    ]
+   }
+  ]
+ ],
+ "data": {
+  "compared": [
+   {
+    "calibration": {
+     "source": "host",
+     "um_per_px": 31.25
+    },
+    "current_position_mm": 0.2,
+    "id": "s2.png",
+    "position_mm": 0.2,
+    "transform": "identity"
+   }
+  ],
+  "description": "Shown, in order: s2.png at 0.20 mm; the images of each pair in that order, each captioned with the section and the position it is shown at.",
+  "media_delivery_id": "__direct__",
+  "no_position": [],
+  "render_failed": [],
+  "status": "ok",
+  "unknown_ids": [],
+  "view": {
+   "atlas_channels": [
+    "ara",
+    "borders"
+   ],
+   "atlas_opacity": 0.5,
+   "border_color": "#ffff00",
+   "border_thickness": 1.0,
+   "channels": [
+    "view"
+   ],
+   "deformation": "applied",
+   "mode": "outlines",
+   "outlines": "all",
+   "zoom": [
+    0.0,
+    0.0,
+    1.0,
+    1.0
+   ]
+  }
+ },
+ "door": "tools",
+ "images": [
+  {
+   "file": "024_tools_view_placement.0.png",
+   "mode": "RGB",
+   "size": [
+    338,
+    350
+   ]
+  }
+ ],
+ "kwargs": {
+  "view": {
+   "atlas_channels": [
+    "ara",
+    "borders"
+   ],
+   "mode": "outlines"
+  }
+ },
+ "media_texts": [],
+ "tool": "view_placement"
+}

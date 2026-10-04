@@ -1,0 +1,41 @@
+{
+ "args": [
+  [
+   {
+    "damaged": true,
+    "id": "s2.png",
+    "note": "right third missing"
+   }
+  ]
+ ],
+ "data": {
+  "changed": [
+   {
+    "damage_note": "right third missing",
+    "damaged": true,
+    "flip": false,
+    "id": "s2.png",
+    "index": 2,
+    "position_mm": 0.2,
+    "rotation_deg": 0
+   }
+  ],
+  "cutting_angles_deg": {
+   "pitch": 0.0,
+   "yaw": 0.0
+  },
+  "interval_breaks": [],
+  "marked": [
+   "s2.png"
+  ],
+  "n_sections": 3,
+  "status": "ok",
+  "unknown_ids": [],
+  "unmarked": []
+ },
+ "door": "tools",
+ "images": [],
+ "kwargs": {},
+ "media_texts": [],
+ "tool": "mark_damaged"
+}

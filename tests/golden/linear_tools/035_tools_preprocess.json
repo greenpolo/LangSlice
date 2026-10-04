@@ -1,0 +1,124 @@
+{
+ "args": [],
+ "data": {
+  "channels": {
+   "s0.png": [
+    "gray"
+   ],
+   "s1.png": [
+    "red",
+    "green",
+    "blue"
+   ],
+   "s2.png": [
+    "gray"
+   ]
+  },
+  "description": "Attached, per section in this order: s0.png, s1.png, s2.png — BEFORE (the fit appearance before this call) then AFTER (as it is now), each labelled; a null setting is the default appearance.",
+  "image_indexes": {
+   "s0.png": {
+    "after": 1,
+    "before": 0
+   },
+   "s1.png": {
+    "after": 3,
+    "before": 2
+   },
+   "s2.png": {
+    "after": 5,
+    "before": 4
+   }
+  },
+  "scope": "stack",
+  "settings": {
+   "fit": {
+    "stack": {
+     "channel_weights": null,
+     "clahe_clip": 6.0,
+     "clahe_tiles": 4,
+     "denoise": false,
+     "n4": false
+    }
+   }
+  },
+  "shown": [
+   "s0.png",
+   "s1.png",
+   "s2.png"
+  ],
+  "status": "ok",
+  "targets": [
+   "fit"
+  ],
+  "view": {
+   "channels": [
+    "view"
+   ],
+   "mode": "section",
+   "zoom": [
+    0.0,
+    0.0,
+    1.0,
+    1.0
+   ]
+  }
+ },
+ "door": "tools",
+ "images": [
+  {
+   "file": "035_tools_preprocess.0.png",
+   "mode": "RGB",
+   "size": [
+    255,
+    236
+   ]
+  },
+  {
+   "file": "035_tools_preprocess.1.png",
+   "mode": "RGB",
+   "size": [
+    255,
+    236
+   ]
+  },
+  {
+   "file": "035_tools_preprocess.2.png",
+   "mode": "RGB",
+   "size": [
+    258,
+    239
+   ]
+  },
+  {
+   "file": "035_tools_preprocess.3.png",
+   "mode": "RGB",
+   "size": [
+    258,
+    239
+   ]
+  },
+  {
+   "file": "035_tools_preprocess.4.png",
+   "mode": "RGB",
+   "size": [
+    184,
+    246
+   ]
+  },
+  {
+   "file": "035_tools_preprocess.5.png",
+   "mode": "RGB",
+   "size": [
+    184,
+    244
+   ]
+  }
+ ],
+ "kwargs": {
+  "clahe_clip": 6.0,
+  "clahe_tiles": 4,
+  "target": "fit"
+ },
+ "media_texts": [],
+ "tool": "preprocess"
+}

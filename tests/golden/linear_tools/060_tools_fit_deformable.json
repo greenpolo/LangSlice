@@ -1,0 +1,143 @@
+{
+ "args": [
+  [
+   "s0.png"
+  ]
+ ],
+ "data": {
+  "applied": false,
+  "description": "Preview: nothing was written. One picture per result (image_indexes): the final atlas borders on the section image the fit read; then, per traced section (`traces`), the image model's traced lines on the section.",
+  "render_failed": [],
+  "results": [
+   {
+    "cached": false,
+    "candidate": 1,
+    "displacement_mm": {
+     "max": 0.134,
+     "median": 0.03
+    },
+    "engine_settings": {
+     "bending_weight": 0.001,
+     "grid_spacing_mm": 0.4,
+     "iterations": 300,
+     "metric": "mean_squares",
+     "resolutions": 2,
+     "working_um": 40.0
+    },
+    "flags": [],
+    "fold_fraction": 0.0,
+    "id": "s0.png",
+    "image_indexes": [
+     0
+    ],
+    "runtime_s": "<seconds>",
+    "settings": {
+     "engine": "elastix",
+     "fit_atlas": "borders",
+     "fit_section": "traced_lines",
+     "stiffness": "medium"
+    },
+    "status": "ok"
+   },
+   {
+    "cached": false,
+    "candidate": 2,
+    "displacement_mm": {
+     "max": 0.274,
+     "median": 0.104
+    },
+    "engine_settings": {
+     "bending_weight": 0.01,
+     "edge_channel": true,
+     "grid_spacing_mm": 0.25,
+     "iterations": 300,
+     "metric": "mutual_information",
+     "resolutions": 2,
+     "working_um": 40.0
+    },
+    "flags": [],
+    "fold_fraction": 0.0,
+    "id": "s0.png",
+    "image_indexes": [
+     1
+    ],
+    "runtime_s": "<seconds>",
+    "settings": {
+     "engine": "elastix",
+     "fit_atlas": "ara",
+     "fit_section": "fit",
+     "stiffness": "soft"
+    },
+    "status": "ok"
+   }
+  ],
+  "status": "ok",
+  "traces": [
+   {
+    "id": "s0.png",
+    "image_indexes": [
+     2
+    ]
+   }
+  ],
+  "view": {
+   "atlas_channels": [
+    "borders"
+   ],
+   "border_color": "#ffff00",
+   "border_thickness": 1.0,
+   "channels": [
+    "view"
+   ],
+   "mode": "borders",
+   "outlines": "all",
+   "zoom": [
+    0.0,
+    0.0,
+    1.0,
+    1.0
+   ]
+  }
+ },
+ "door": "tools",
+ "images": [
+  {
+   "file": "060_tools_fit_deformable.0.png",
+   "mode": "RGB",
+   "size": [
+    272,
+    245
+   ]
+  },
+  {
+   "file": "060_tools_fit_deformable.1.png",
+   "mode": "RGB",
+   "size": [
+    272,
+    245
+   ]
+  },
+  {
+   "file": "060_tools_fit_deformable.2.png",
+   "mode": "RGB",
+   "size": [
+    272,
+    243
+   ]
+  }
+ ],
+ "kwargs": {
+  "candidates": [
+   {
+    "engine": "elastix",
+    "fit_section": "traced_lines"
+   },
+   {
+    "engine": "elastix",
+    "stiffness": "soft"
+   }
+  ]
+ },
+ "media_texts": [],
+ "tool": "fit_deformable"
+}

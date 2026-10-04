@@ -1,0 +1,27 @@
+{
+ "args": [
+  [
+   0.1
+  ]
+ ],
+ "data": {
+  "available": [
+   "ara",
+   "borders"
+  ],
+  "error": "ATLAS_CHANNEL_UNAVAILABLE",
+  "message": "The nissl atlas channel needs ABBA's cached Allen atlas matching allen_mouse_25um; this host has none.",
+  "status": "error"
+ },
+ "door": "tools",
+ "images": [],
+ "kwargs": {
+  "view": {
+   "atlas_channels": [
+    "nissl"
+   ]
+  }
+ },
+ "media_texts": [],
+ "tool": "view_atlas"
+}

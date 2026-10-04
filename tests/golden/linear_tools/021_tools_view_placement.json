@@ -1,0 +1,134 @@
+{
+ "args": [
+  [
+   {
+    "id": "s0.png",
+    "positions_mm": [
+     0.05,
+     0.1
+    ]
+   },
+   {
+    "id": "s1.png",
+    "positions_mm": [
+     0.15
+    ]
+   }
+  ]
+ ],
+ "data": {
+  "compared": [
+   {
+    "calibration": {
+     "source": "host",
+     "um_per_px": 31.25
+    },
+    "current_position_mm": 0.1,
+    "id": "s0.png",
+    "image_indexes": {
+     "atlas": 1,
+     "section": 0
+    },
+    "position_mm": 0.05
+   },
+   {
+    "calibration": {
+     "source": "host",
+     "um_per_px": 31.25
+    },
+    "current_position_mm": 0.1,
+    "id": "s0.png",
+    "image_indexes": {
+     "atlas": 2,
+     "section": 0
+    },
+    "position_mm": 0.1
+   },
+   {
+    "calibration": {
+     "source": "host",
+     "um_per_px": 31.25
+    },
+    "current_position_mm": 0.15,
+    "id": "s1.png",
+    "image_indexes": {
+     "atlas": 4,
+     "section": 3
+    },
+    "position_mm": 0.15
+   }
+  ],
+  "description": "Shown, in order: s0.png at 0.05 mm, s0.png at 0.10 mm, s1.png at 0.15 mm; separate reference images mapped by zero-based image_indexes. Section captions retain their original display index/flags; filenames identify sections. Independently tissue-framed, not a shared physical canvas.",
+  "media_delivery_id": "__direct__",
+  "no_position": [],
+  "render_failed": [],
+  "status": "ok",
+  "unknown_ids": [],
+  "view": {
+   "atlas_channels": [
+    "ara"
+   ],
+   "channels": [
+    "view"
+   ],
+   "deformation": "applied",
+   "mode": "side_by_side",
+   "zoom": [
+    0.0,
+    0.0,
+    1.0,
+    1.0
+   ]
+  }
+ },
+ "door": "tools",
+ "images": [
+  {
+   "file": "021_tools_view_placement.0.png",
+   "mode": "RGB",
+   "size": [
+    255,
+    217
+   ]
+  },
+  {
+   "file": "021_tools_view_placement.1.png",
+   "mode": "RGB",
+   "size": [
+    158,
+    136
+   ]
+  },
+  {
+   "file": "021_tools_view_placement.2.png",
+   "mode": "RGB",
+   "size": [
+    158,
+    136
+   ]
+  },
+  {
+   "file": "021_tools_view_placement.3.png",
+   "mode": "RGB",
+   "size": [
+    258,
+    220
+   ]
+  },
+  {
+   "file": "021_tools_view_placement.4.png",
+   "mode": "RGB",
+   "size": [
+    158,
+    136
+   ]
+  }
+ ],
+ "kwargs": {
+  "view": {
+   "mode": "side_by_side"
+  }
+ },
+ "media_texts": [],
+ "tool": "view_placement"
+}
