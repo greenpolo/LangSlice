@@ -153,14 +153,21 @@ brightfield stains, detected by a bright slide border, get CLAHE on optical
 density. Display only: the enhanced pixels are never written back to the user's
 files.
 
-Every write checkpoints the whole state to `<image_folder>/linear_state.json`,
-and the results file (default `<image_folder>/linear_results.json`, or `--out`)
-has the same shape. The undo history sits beside the checkpoint in
-`linear_undo.json`. A run that dies resumes from that checkpoint with the state
-it had, and its undo history -- the agent is re-seeded, not replayed. `--fresh`
-ignores the checkpoint and starts over, with an empty history. A script may
-edit `linear_state.json` while a run is going: the run reloads it before its
-next tool call, and the edit is one undo step. `--trace-dir PATH` writes a full-content JSONL
+Everything a run writes goes in the job folder next to the images,
+`<image_folder>/langslice/` (`src/langslice/job/CLAUDE.md`). Every write
+checkpoints the whole state to `langslice/state.json`, and the results file
+(default `langslice/exports/linear_results.json`, or `--out`) has the same
+shape. The undo history is `langslice/history/`, one file per step. A run that
+dies resumes from that checkpoint with the state it had, and its undo history
+-- the agent is re-seeded, not replayed. `--fresh` ignores the checkpoint and
+starts over, with an empty history. A script may edit `langslice/state.json`
+while a run is going: the run reloads it before its next tool call, and the
+edit is one undo step. Every picture the agent is shown is saved under
+`langslice/sections/<stem>/views/` (one section) or `langslice/views/`, with
+its atlas labels, border mask and frame for placement pictures, and listed in
+`langslice/views.jsonl`. A folder with the old files beside the images
+(`linear_state.json`, `linear_undo.json`, `deformable/`, `nonlinear/`) is
+moved into the job folder the next time it is opened. `--trace-dir PATH` writes a full-content JSONL
 trace of every agent session.
 
 With tracing enabled, the subscription provider also records content-free usage

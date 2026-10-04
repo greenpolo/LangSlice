@@ -4,11 +4,12 @@ Package guide for `src/langslice/core/`. The repo-level `CLAUDE.md` holds the
 project-wide rules. `AGENTS.md` here is a verbatim copy — edit one, mirror to
 the other.
 
-The core library's new home (layered refactor, phase 3b, 2026-10-03). For
-now it holds the pictures the tools send; the existing core modules
-(`space`, `affine`, `oblique`, `image_prep`, `atlas/`, `deformable/`,
-`linear/render`, `linear/display`, `linear/workspace`, `linear/transform`,
-`linear/deformation`, ...) move in later, in one rename-only commit.
+The core library's new home (layered refactor, phases 3b and 3c,
+2026-10-03). For now it holds the pictures the tools send and their layers;
+the existing core modules (`space`, `affine`, `oblique`, `image_prep`,
+`atlas/`, `deformable/`, `linear/render`, `linear/display`,
+`linear/workspace`, `linear/transform`, `linear/deformation`, ...) move in
+later, in one rename-only commit.
 
 ## The layer rule
 
@@ -55,28 +56,68 @@ now it holds the pictures the tools send; the existing core modules
   and the interactive transform's `stage` (the working frame, calibration,
   canvas and resolved pivot; `StageFailure` `ATLAS_RENDER_FAILED` /
   `BAD_PIVOT`), `Staged` and `staged_views`.
+- `layers.py` — a placement picture's layers and frame record, the
+  on-demand coordinate map, and the per-call picture notes (below).
+- `jpeg.py` — the doors' one JPEG encoding (below).
 
-## The frame of a picture (for saving renders, phase 3c)
+## The frame of a picture and its layers (phase 3c)
 
 `CanvasFrame` holds everything that fixes a physical picture's canvas: the
 shown section render (before any warp), its micrometres per pixel, the
 position, plane and cutting angles, the placement (`params`: the knobs about
 `pivot`/`pivot_in_section`, or a 2x3 on the shown render's frame;
-`spline`; `warp`), the zoom window and the panel size. The canvas is
-`linear.render.canvas_geometry(section.size, um_per_px, atlas, position_mm,
-plane, pitch_deg, yaw_deg)`; `physical_views` places the section on it
-(`section_offset`) and maps it by `matrix = shift(offset) @ section_matrix @
-shift(-offset)`. The picture's layers in that one frame are then: the section
-as placed (that warp of the canvas, then `deformable.warp_section_image`
-when `warp` is set), the atlas labels (`geometry.annotation` through
-`atlas_scale`/`atlas_offset`), the border mask (the same lines
-`physical_views` draws) and the pixel-to-atlas map (canvas pixel -> plane
-pixel through the same scale and offset, then the plane's 3D coordinates at
-the position and angles). Phase 3c adds one function here that takes a
-`CanvasFrame` and returns those layers; the doors already receive the frame
-(`Canvas.frame`, `Placed.canvas`). Factor the matrix block of
-`physical_views` into a helper both use, so the picture and its layers can
-never disagree.
+`spline`; `warp`), the zoom window and the panel size. `physical_views`
+builds the placement with `linear.render.placement_matrices` (the section
+matrix on the section's frame, and the same map on the canvas,
+`shift(offset) @ section_matrix @ shift(-offset)`) and rasterises every
+atlas border through `linear.render.line_coverage`; with `panel_frames` it
+hands back one `linear.render.PanelFrame` per picture: the picture size,
+the `content_box` below the caption, the canvas `crop_box` and `factor`
+(canvas px -> picture px), the `CanvasGeometry`, the `section_matrix`
+(section render -> canvas, 3x3) and the lines it drew. `draw_canvas` keeps
+them on `Canvas.panels` and notes each picture (below).
+
+`layers.py` turns a `PanelFrame` into the picture's layers, on the
+picture's own pixel grid (caption band included, empty there):
+`labels_layer` (the atlas id under every pixel, uint32, nearest neighbour
+through the mapping the borders are drawn with), `borders_layer` (the drawn
+borders' coverage, uint8, `line_coverage` at full strength, so the layer
+and the picture's lines cannot disagree), `picture_to_native`,
+`section_to_picture` (3x3 on `[row, col, 1]`, the linear placement; a
+deformation drawn on top is not in it), `frame_record` (the JSON a saved
+picture's `view.json` carries under `frame`: atlas name, version,
+orientation, shape and resolution; plane name, position and angles;
+picture size and content box; µm per canvas and picture pixel; the canvas
+crop, factor, atlas scale and offset, section offset; the section id,
+render size and placement; the applied deformation's folder, relative to
+the job folder; the zoom; `pixel_to_atlas_um`; `section_to_picture`; the
+convention in words) and `picture_layers` (all three).
+
+`pixel_to_atlas_um` is a 3x3 matrix taking a picture pixel `[row, col, 1]`
+(pixel centres at integers, row 0 the top of the picture, caption included)
+to BrainGlobe atlas micrometres in the atlas's own axis order, voxel `i`'s
+centre at `i * resolution` (Nash 2026-10-03). It is exact: the picture shows
+one atlas plane, so the map is affine (`oblique.plane_index_affine`, built
+from the same basis `plane_index_coordinates` samples, times the
+resolution). No coordinate map is stored per picture (three float32
+channels per pixel would be the largest file by far): `coordinate_map(view)`
+takes a `view.json` (record or path) and returns the `(rows, cols, 3)`
+float32 map on demand, NaN in the caption band. The labels layer is what
+that map reads in the atlas annotation, up to ties at exact half voxels.
+
+Which pictures a call returned, and of what, is noted while it runs:
+`layers.collecting()` (the tool door wraps every tool in it) and
+`layers.note(image, sections=, mode=, frame=, panel=, deformation=,
+extra=)`; `note_for` finds a picture's note by identity. `draw_canvas`,
+`placement_pictures` (stacked, side_by_side references), `section_picture`,
+`atlas_view_picture` and `stack_review` note theirs; the tool door notes the
+pictures it composes itself (`preprocess` before/after, `fit_deformable`'s
+fits and traces). With nothing collecting, a note costs nothing. The job
+saves the pictures (`langslice.job.views`, `job/CLAUDE.md`).
+
+`jpeg.py` — `encode_jpeg` (`JPEG_QUALITY` 85): the one encoding every
+picture a model receives goes through; `adk.media` re-exports it, the MCP
+door and the job's view store call it, so the saved bytes are the sent ones.
 
 ## Later
 

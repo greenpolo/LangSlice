@@ -71,7 +71,7 @@ here is a verbatim copy — edit one, mirror to the other.
   probes never see it. A probe script (kept outside the repo) reads
   the ImgLib2 matrices straight back for combined knobs and matches
   LangSlice's blocks exactly; another checks a saved
-  `.abba` against the agent's `linear_state.json` slice by slice. The
+  `.abba` against the agent's checkpoint (`langslice/state.json`) slice by slice. The
   pitch/yaw ↔ `setRotateX/Y` mapping is pitch_deg = −deg(rotateX), yaw_deg
   = −deg(rotateY), pinned 2026-09-29 to stage 0 of ABBA's own exported
   transform chains (`tests/test_integrations_abba_math.py`). The 2026-09-22
@@ -263,5 +263,6 @@ calibration or checkpoint-to-native geometry translation. An authenticated
 loopback listener passes MCP checkpoints to the same `AbbaHostSession.apply`
 native action path. Claude changes are live, while ChatGPT retains its existing
 final-only apply. Closing the Claude window disconnects the host, not the MCP
-job; saved results remain under `~/.langslice/jobs/`. No Fiji scripting tools
+job; saved results remain in the job folder next to the exported snapshots
+(`~/.langslice/snapshots/claude-*/langslice/`). No Fiji scripting tools
 are exposed. See `docs/abba_plugin_design.md` for the wire/file contracts.

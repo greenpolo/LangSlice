@@ -106,11 +106,15 @@ and optional `host_channel` (`address`, `port`, `token`). It shares
 it does not load credentials or call a model. Nonlinear is refused.
 It returns `{job_id, job_dir, prompt}`. Java copies `prompt` verbatim.
 
-Jobs live under `~/.langslice/jobs/<12-hex-id>/job.json`, alongside LangSlice's
-existing per-user credentials location. Format version 1 records `job_id`,
-UTC `created_at`, the original request `params`, `notes` and `host_channel`.
-Job directories and job files are owner-only on POSIX. Exported snapshots are
-retained under `~/.langslice/snapshots/claude-*`; there is no automatic cleanup.
+Exported snapshots are retained under `~/.langslice/snapshots/claude-*`; there
+is no automatic cleanup. The job lives in the job folder next to them,
+`~/.langslice/snapshots/claude-*/langslice/` (`src/langslice/job/CLAUDE.md`):
+its `job.json` records the `job_id`, UTC `created_at`, the settings and, under
+`host`, the original request `params` and `notes`; `prompt.txt` holds the copy
+prompt. The id leads there through `~/.langslice/jobs/<12-hex-id>.json`, which
+records the job folder and `host_channel` and is owner-only on POSIX. A job
+saved by an earlier version (the whole job under `~/.langslice/jobs/<id>/`) is
+moved into its job folder the first time it is opened.
 The job file, not prose from the clipboard, enforces the selected tools,
 calibration, positions, locked geometry, damage and preprocessing.
 
@@ -138,8 +142,9 @@ Closing the progress window closes the listener. This channel accepts only
 LangSlice result events, never Fiji scripts or arbitrary host commands.
 
 A refused or disconnected host is non-fatal to MCP tools. Each write saves
-`linear_state.json` in the job directory; submission writes `linear_results.json`
-and `result.json` (including final host updates). No reconnection is attempted.
+`state.json` in the job folder; submission writes `exports/linear_results.json`
+and `exports/result.json` (including final host updates). No reconnection is
+attempted.
 Restarting the MCP process and opening a job again starts from its original saved
 request, not a resume of its previous checkpoint; keep one session per job.
 MCP traces contain tool activity only, not Claude's private conversation.

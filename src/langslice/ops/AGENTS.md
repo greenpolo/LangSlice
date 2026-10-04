@@ -68,8 +68,12 @@ write.
   traced section, the image read and the trace's lines on the fit grid),
   `written`. `keep_linear(job, records, reason)`: the "linear placement
   stands" record, one undo step; `NOTHING_WRITTEN` (each offending section
-  under `results`) when one lacks a position or a transform.
+  under `results`) when one lacks a position or a transform. An applied
+  record is saved in the section's folder (`job.deformations`:
+  `sections/<stem>/deformable/<key>`) and the section's `deformation`
+  holds its path relative to the job folder; a traced fit section reads
+  the trace's artifacts under the job folder (`traced_lines(root=...)`).
 
 The pictures are not here: they are the core's (`src/langslice/core/`,
-its own `CLAUDE.md`). Still to come (phase 3c): saving every render, with
-its layers, to the job folder.
+its own `CLAUDE.md`), and the job saves every one the model is shown, with
+its layers, in the job folder (`src/langslice/job/`, phase 3c).

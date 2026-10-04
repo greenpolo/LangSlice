@@ -125,9 +125,22 @@ Shared, top-level:
 - `core/` — the core library's new home (layered refactor): for now the
   pictures the tools send (`pictures.py`, `placement.py`: every placement
   picture and the frame it is drawn in), plain PIL images with captions
-  burned in; the doors package them (ADK parts, MCP blocks). Never imports
-  the job layer, ops, a door or a model client:
+  burned in; the doors package them (ADK parts, MCP blocks; `jpeg.py` the
+  one encoding). `layers.py`: a placement picture's atlas labels, border
+  mask and frame (`pixel_to_atlas_um`, BrainGlobe µm), and
+  `coordinate_map`, each picture pixel's atlas position on demand. Never
+  imports the job layer, ops, a door or a model client:
   `src/langslice/core/CLAUDE.md` (loads when working there).
+- `job/` — the job folder: everything a job writes lives in
+  `<images>/langslice/`, next to the images every host hands LangSlice
+  (`job.json` settings + format version, `state.json`, `history/` one file
+  per undo step, `sections/<stem>/`, `views/` + `views.jsonl`: every
+  picture the model was shown, as the JPEG it received, placement pictures
+  with atlas labels, border mask and frame, `exports/`, `logs/`). Paths in
+  job files are relative to it; old layouts are moved in on open, newer
+  ones refused; saved Claude jobs are found by id through
+  `~/.langslice/jobs/<id>.json`: `src/langslice/job/CLAUDE.md` (loads when
+  working there).
 - `atlas/` — BrainGlobe loading, slice extraction, colored region maps, borders,
   the organized-color LUT for human-review renders, and one side of a region
   (`"CTX:left"`, the section's displayed side, `sides.py`):
@@ -226,11 +239,12 @@ program. Code that runs in LangSlice's own environment lives in
   (`src/langslice/mcp_server/`). This is the linear toolbox served over MCP to
   a host that brings its own model: Claude Desktop, or Claude Code locked to
   this one server. ABBA's Claude mode copies a saved-job prompt, and without a
-  host `langslice claude prepare FOLDER` saves the same kind of job (checkpoint
-  and undo history in the job directory, resumed on reopen) and prints the prompt; `start_job`
+  host `langslice claude prepare FOLDER` saves the same kind of job (in the
+  job folder next to the sections, resumed on reopen; the id leads there
+  through `~/.langslice/jobs/<id>.json`) and prints the prompt; `start_job`
   returns a Claude-specific statement and status table, and `show_stack` pages
   deliver the opening images. Authenticated localhost events update ABBA live;
-  checkpoints/results remain in `~/.langslice/jobs/<id>/` after disconnection.
+  checkpoints/results remain in the job folder after disconnection.
   The host owns the loop, so there is no turn budget, nudges or image working
   set. This is the subscription-legal route for Claude; LangSlice never
   handles Claude credentials.
@@ -262,6 +276,8 @@ program. Code that runs in LangSlice's own environment lives in
   which derives AP/DV/ML axis indices from the atlas orientation via
   `brainglobe_space` and requires the AP axis to increase anterior→posterior.
 - Optional debug traces are written only when `LANGSLICE_VLM_DEBUG_DIR` is set.
+- A job's files live in its job folder, `<images>/langslice/`
+  (`src/langslice/job/CLAUDE.md`); nothing else is written beside the images.
 - Linear agent sessions write a full-content JSONL trace (what the agent
   was shown, said, called, and got back; images as descriptors, never bytes)
   only when `LANGSLICE_TRACE_DIR` is set — `langslice linear run

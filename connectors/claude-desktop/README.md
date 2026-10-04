@@ -28,8 +28,9 @@ Restart Desktop. In ABBA, choose **Claude** in LangSlice Registration, configure
 the job, and click **Copy prompt**. Paste it into Claude; the prompt names the
 saved job and asks for `start_job(job_id=...)`. Keep the ABBA progress window
 open for live section moves. Closing it disconnects ABBA but does not stop
-Claude; results remain under `~/.langslice/jobs/<job-id>/`. Enable only LangSlice
-for this conversation, never a general Fiji scripting connector.
+Claude; results remain in the job folder next to the exported snapshots,
+`~/.langslice/snapshots/claude-*/langslice/`. Enable only LangSlice for this
+conversation, never a general Fiji scripting connector.
 
 Without a registration host, the command line is the Copy prompt:
 
@@ -37,11 +38,18 @@ Without a registration host, the command line is the Copy prompt:
 langslice claude prepare FOLDER --interval 200 --notes "Section 12 has a large tear."
 ```
 
-It takes every `langslice linear run` job flag, saves the job under
-`~/.langslice/jobs/<job-id>/` and prints the prompt to paste. The job's
-checkpoint, undo history and results live in that directory, never in the
-image folder, and reopening the job (a restarted Desktop, a new chat) resumes
-from the checkpoint with its undo history.
+It takes every `langslice linear run` job flag, saves the job in the job
+folder next to the sections, `FOLDER/langslice/`, and prints the prompt to
+paste. The job's settings, checkpoint, undo history, the pictures Claude was
+shown and the results live in that folder (the section images themselves are
+never written), and reopening the job (a restarted Desktop, a new chat)
+resumes from the checkpoint with its undo history. The job id leads to the
+folder through `~/.langslice/jobs/<job-id>.json`. A folder already holding a
+job (from `langslice linear run` or an earlier prepare) is continued: one
+image folder, one job, and a new prepare's id replaces the earlier one. A job
+saved by an earlier version under
+`~/.langslice/jobs/<job-id>/` is moved next to its sections when it is next
+opened.
 
 For development, ask Claude to register a folder of sections. Claude calls
 `start_job` with the folder path. `langslice mcp` takes every `langslice linear
