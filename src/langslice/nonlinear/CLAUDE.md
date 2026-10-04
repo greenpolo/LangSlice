@@ -22,7 +22,8 @@ never matters.
   host, or the top-level `registration_handoff` bridge). Image 1 is the tissue
   with the rough yellow family borders drawn on it, Image 2 the identical clean
   tissue; ONE model call with `prompts.border_refinement_prompt(plane)`, then
-  the residual border fit. Production; not under test.
+  (`deformation="deformable"`) the fit of its lines (`border_fit.py`).
+  Production; not under test.
 - **Route "atlas"** — no placement supplied. Image 1 is the clean tissue,
   Image 2 the outlined grayscale atlas (`outlined_atlas_template`: grayscale
   plate plus yellow family borders, oriented by `image_axes` then the explicit
@@ -31,7 +32,7 @@ never matters.
   sends Image 1 clean tissue, Image 2 pass 1's extracted lines redrawn on the
   tissue, Image 3 the outlined atlas. The rough placement for the fit is the
   local silhouette-moments fit (`prior.place_plane_on_tissue_with_matrix`); the
-  model's lines then go through the SAME residual fit as route "supplied".
+  model's lines then go through the SAME fit as route "supplied".
   Metadata: `prior["source"] = "silhouette_moments_atlas_route"`, `passes`,
   `prior["atlas_route_model_calls"]`. Pass 2 is optional: on clean coronal
   sections it moves lines by about a pixel; its value on large sagittal and
@@ -44,10 +45,25 @@ never matters.
 - A caller-supplied `generated_image` with no placement replays route "atlas"
   with zero model calls.
 
-How corrected borders become a deformation is not designed yet. The agreed
-order is: design the deformation algorithm, then settle the border output format
-it consumes, then test (`docs/interface_design.md`). Until then the residual fit
-is off by default and the model call is judged on its raw lines.
+The fit of the model's corrected lines is the deformable package's (Nash
+2026-10-01: `deformable/` replaces the old residual fit; done 2026-10-04):
+`border_fit.fit_border_lines`, route B, the extracted line mask against the
+colour-family borders the model was shown, Elastix B-spline lines-vs-borders
+by default (`traced_lines`; `engine="ants"` adds the lines as named regions,
+`traced_borders`), on a `deformable.Placement` of the atlas plane on the
+model's canvas (`border_fit.placement_on_canvas`: the canvas pixel size from
+the placement's scale; `border_registration.native_to_oriented_map` folds
+`image_axes` and the mirror into the matrix, since the fit reads the native
+plane). `deformation="deformable"` fits, `"none"` (the CLI default) fits
+nothing and returns an identity residual, as does the model-free diagnostic;
+the Elastix `"bspline"`/`"affine"` residual fit and its report are gone.
+Elastix is the default because it ships with LangSlice (the result does not
+change with the optional ANTs install) and on the 2026-10-04 before/after
+check (a stubbed reply drawn at a known placement on a real coronal section,
+the supplied placement shrunk 6 %, turned 3° and shifted) it followed the
+reply's lines closest, outline included; the ANTs named-region mode left the
+ventrolateral outline short there (its regions are named after a placement
+that far off). The model call is still judged on its raw lines first.
 
 Atlas labels and grayscale references must use the same position, plane, cutting
 angles and orientation. Reflection is explicit (`atlas_mirror_lr`), never guessed
@@ -63,33 +79,49 @@ the residual alone.
   `generate_registration_candidate`, the public dispatcher (thin; routing lives
   in `border_registration.py`, imported lazily to avoid a circular import).
 - `border_registration.py` — `generate_border_registration_candidate`: route
-  selection, rough placement, the atlas-route model calls, the shared residual
-  fit, coordinate composition (`composed_correspondences`,
-  `composed_native_map`) and the candidate contract.
-- `border_refinement.py` — `refine_borders`: the correction request,
+  selection, rough placement, the atlas-route model calls, the fit (through
+  `border_fit`), coordinate composition (`composed_correspondences`,
+  `composed_native_map`, `marker_spacing_px`), `native_to_oriented_map` and
+  the candidate contract. Candidate metadata: `deformation`, `fit` (the fit's
+  settings, engine, diagnostics and flags, or `fit_skipped`),
+  `fit_elapsed_s`; the debug folder adds `fit_report.json` and the saved
+  `deformable/` record.
+- `border_refinement.py` — `refine_borders`: the correction request and the
   yellow-line extraction (`extract_thinned_lines`, `yellow_mask`, `thin`),
-  residual Elastix fit and nearest-neighbor label warp. `deformation="none"`
-  (the CLI default since 2026-09-22) skips the fit entirely and returns an
-  identity residual: the model call is judged on its raw lines while its
-  design is open, and the fit stage is not under evaluation.
-  `integrations/abba.py` shares this core directly.
+  the rough and corrected overlays; it fits nothing. `integrations/abba.py`
+  shares this core directly.
+- `border_fit.py` — `fit_border_lines` (the deformable fit of the lines;
+  `BorderFit`: the field in canvas pixels, fitted labels, the fitted borders
+  drawn smoothly on the canvas, the record, metadata) and
+  `placement_on_canvas`. The ABBA plugin passes its own label grid as
+  `native=` (placed by an identity).
 - `prompts.py` — the three prompt functions; the OpenAI-GPT or Gemini wording
   is selected by `canonical_provider(provider)`.
 - `prior.py` — `place_plane_on_tissue_with_matrix`, the silhouette-moments
   placement.
-- `providers.py` — `SegmentationGenerationRequest` /
-  `generate_warped_segmentation_image`: the one-call-in, one-image-out
-  transport adapter every prompt call goes through. `mode` (default `"edit"`)
-  is the edit-vs-generate task semantic each transport translates its own way.
+- `providers.py` — `generate_warped_segmentation_image`: the one-call-in,
+  one-image-out transport adapter every prompt call goes through, by the
+  request's provider. `SegmentationGenerationRequest` lives in `types.py`
+  (re-exported here) so callers build requests without the transport. `mode`
+  (default `"edit"`) is the edit-vs-generate task semantic each transport
+  translates its own way. A door resolves a provider name to this call once
+  (`providers.registry.resolve_image_model`) and passes it in as
+  `image_call` (`refine_borders`, `generate_registration_candidate`,
+  `estimate_registration`); without one they fall back to this adapter.
 - `model_prompts.py` — canvas/aspect facts only (`image_model_family`,
   `aspect_ratio_limits`, `gemini_aspect_for`, `native_output_size`).
-- `image_gen_helpers.py` — Elastix and geometry helpers for the residual fit.
+- `image_gen_helpers.py` — label-map helpers: families (`_merge_classified`),
+  crisp label borders, ventricle ids, line widths. No fit.
 - `render.py` — review-grade rendering only.
 - `runtime.py` — `estimate_registration`: orchestration, debug artifacts,
   trace events.
-- `registration_handoff.py` (top-level) — prepares supplied linear geometry.
-  `registration_tool.py` uses it for the opt-in annotation tool, leaving residual
-  fitting and transformation export to the separate registration stage.
+- `core/handoff.py` — prepares supplied linear geometry
+  (`prepare_linear_registration`, re-exported by the top-level
+  `registration_handoff.py`, which also holds `run_linear_registration`:
+  route "supplied" for one section, the image model an argument).
+  `registration_tool.py` uses it for the opt-in annotation tool, taking the
+  image model as an argument too, and leaves fitting to `fit_deformable` and
+  transformation export to the separate registration stage.
 
 ## Visual review is essential
 

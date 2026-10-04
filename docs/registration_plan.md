@@ -13,16 +13,18 @@ linear agent or the host. Route "atlas" remains for experiments.
   dispatcher).
 - `nonlinear/border_registration.py`: route selection, rough placement, the
   one/two atlas-route model calls, and transform composition.
-- `nonlinear/border_refinement.py`: the shared correction request, line
-  extraction and residual fit both routes use.
+- `nonlinear/border_refinement.py`: the shared correction request and line
+  extraction both routes use.
+- `nonlinear/border_fit.py`: the fit of the corrected lines, through the
+  deformable package (`deformable/`).
 - `nonlinear/prompts.py`: the three prompt texts (route "supplied", and route
   "atlas" pass 1 / pass 2).
-- `registration_handoff.py`: top-level bridge from linear state without
-  coupling the sibling methods.
+- `core/handoff.py` (re-exported by `registration_handoff.py`): bridge from
+  linear state without coupling the sibling methods.
 - `registration_tool.py`: the linear agent's `trace_borders` tool, which
   runs route "supplied" on the handoff and keeps the first reply (no fit).
 - `integrations/abba.py`: host-placed borders through the shared correction
-  core (route "supplied" only).
+  core and fit (route "supplied" only).
 - `nonlinear/runtime.py`: orchestration and debug artifacts.
 - `nonlinear/types.py`: result and annotation data classes.
 - `nonlinear/providers.py`: image-generation transport adapters.
@@ -34,11 +36,10 @@ local silhouette placement and let the model draw boundaries from nothing
 against an outlined grayscale atlas template, with an optional second
 corrective call (route "atlas"). Either way: send the (rough or drawn)
 borders and the clean histology through the shared correction core, extract
-corrected lines, optionally fit the residual deformation, and compose it with
-the complete initial placement. The default is no fit (`deformation="none"`,
-an identity residual): the deformation algorithm is designed first, and the
-border output format it consumes is settled after it
-([interface design](interface_design.md)).
+corrected lines, optionally fit the residual deformation (the deformable
+package, `deformation="deformable"`), and compose it with the complete
+initial placement. The CLI default is no fit (`deformation="none"`, an
+identity residual); see the [interface design](interface_design.md).
 
 Markers are sampled from the composed mapping, not B-spline coefficients.
 Review the raw correction, extracted borders on original tissue, and fitted

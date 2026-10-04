@@ -94,6 +94,15 @@ core modules (`space`, `affine`, `oblique`, `image_prep`, `atlas/`,
 - `layers.py` — a placement picture's layers and frame record, the
   on-demand coordinate map, and the per-call picture notes (below).
 - `jpeg.py` — the doors' one JPEG encoding (below).
+- `handoff.py` (phase 4) — a written linear placement as the nonlinear work
+  starts from it: `prepare_linear_registration(state, workspace, id,
+  long_edge=, transform=)` (the oriented, unframed section render and the
+  3x3 from native atlas-plane pixel centres onto it, calibration checked,
+  `LinearRegistrationInput`; the trace's canvas and every deformable fit's
+  grid), `correction_fingerprint` (everything an image correction's inputs
+  depend on; the trace's call key, the submit check and a traced fit's
+  staleness test all read it) and `digest`. No provider import:
+  `registration_handoff.py` re-exports the first for SliceBench.
 
 ## The frame of a picture and its layers (phase 3c)
 

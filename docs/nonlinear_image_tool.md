@@ -15,6 +15,14 @@ prompt sent and their word diff are saved with each attempt. The image model
 makes one correction; the first reply is retained with its extracted yellow
 borders on the unchanged photograph.
 
+The image model is the run's, resolved once by the tool door: `build_tools`
+takes it as `image_model` (`providers.registry.ImageModel`: provider, model and
+the edit call), resolving `nonlinear.provider` / `nonlinear.image_model`
+through `providers.registry.resolve_image_model` when the host passes none.
+`ops.traces.trace_borders` and `registration_tool.start_correction` receive it
+and import no provider; the placement geometry and its fingerprint are the
+core's (`core.handoff`).
+
 The tool prepares the two images and prompt, starts the image call in the
 background and returns at once, with no images: the agent cannot act on a reply,
 so it does not wait for one. Calls therefore run at the agent's pace, up to

@@ -303,7 +303,7 @@ per-page downsample, never a whole-slide decode). `render_slice(look=...)`
 draws any other look from those channels over the same frame, crop and size,
 so geometry never depends on appearance. Pictures use the view look; the
 silhouette fit, calibration, the tissue pivot, `search_position` and
-`trace_borders`' input (`registration_handoff`) always read the default.
+`trace_borders`' input (`core.handoff`) always read the default.
 
 `view_atlas` and `view_slices` frame tissue the same way so apparent scale is
 not a cue. Every image a tool returns carries its label burned into the pixels

@@ -100,7 +100,8 @@ bridges rather than direct imports of each other:
   silhouette fit; `adjust_transforms`); there is no nested per-section session. Spec: `docs/linear_design.md`. Code map, the lean-
   harness rule, the submit gates and the known ceilings:
   `src/langslice/linear/CLAUDE.md` (loads when working there).
-- `nonlinear/` — generative-image registration (image model → optional Elastix fit → report).
+- `nonlinear/` — generative-image registration (image model → optional fit of its
+  lines by `deformable/` → report).
   Exactly two border-based routes (a supplied placement corrected in one model
   call, the production path; or a placement-free route, kept for experiments,
   that draws boundaries against an outlined grayscale atlas template), its
@@ -113,7 +114,11 @@ Shared, top-level:
   `nonlinear` with an image provider (not `none`): corrects a supplied linear placement using the fixed prompt plus
   per-slice additional notes. No atlas search, replacement prompt, agent rejection
   or fit. Saves the first result and exact artifacts separately from transforms.
-  `registration_handoff.py` supplies calibrated geometry; see
+  The image model is an argument (`providers.registry.ImageModel`, resolved by a
+  door), so it imports no provider. The calibrated geometry and the correction
+  fingerprint are the core's (`core/handoff.py`); `registration_handoff.py`
+  re-exports `prepare_linear_registration` for SliceBench and holds
+  `run_linear_registration`, which takes the model as an argument; see
   `docs/nonlinear_image_tool.md`.
 
 - `ops/` — the verbs: every write to a stack (positions, order, orientation,
@@ -135,7 +140,10 @@ Shared, top-level:
   `linear/render.py` is a re-export shim for SliceBench); the doors package
   the pictures (ADK parts, MCP blocks; `jpeg.py` the one encoding). `layers.py`: a placement picture's atlas labels, border
   mask and frame (`pixel_to_atlas_um`, BrainGlobe µm), and
-  `coordinate_map`, each picture pixel's atlas position on demand. Never
+  `coordinate_map`, each picture pixel's atlas position on demand.
+  `handoff.py`: a written linear placement as a section render plus the
+  native atlas plane mapped onto it (`prepare_linear_registration`, what the
+  trace and every deformable fit start from) and `correction_fingerprint`. Never
   imports the job layer, ops, a door or a model client:
   `src/langslice/core/CLAUDE.md` (loads when working there).
 - `job/` — the job folder: everything a job writes lives in
@@ -164,13 +172,17 @@ Shared, top-level:
   on the nonlinear fit — see the `nonlinear/` entry
 - `space.py` — coordinate and orientation conventions
 - `affine.py` — shared in-plane affine core: the silhouette (moments) fit of a
-  section onto an atlas section, plus the rotation/scale/translate matrix
-  builder and the normalized 6-number parameter convention. Used by both
-  `linear/transform.py` and `nonlinear/quick_affine.py`; belongs
-  to neither
+  section onto an atlas section (`silhouette_affine`, the one wrapper, cutting
+  angles included), plus the rotation/scale/translate matrix builder, the
+  normalized 6-number parameter convention and `pixel_center_map` (pixel
+  centres through a resize and offset). Used by `linear/transform.py`,
+  `nonlinear/` and `deformable/`; belongs to neither method
 - `deformable/` — the deformable-fit engine behind the linear agent's
-  `fit_deformable` tool (task `nonlinear`; no host or export adapter reads
-  its records yet), whose prepared images and Elastix plumbing also run
+  `fit_deformable` tool (task `nonlinear`) and behind the fit of the image
+  model's lines in `langslice nonlinear register --deformation deformable`
+  and the ABBA registration plugin (`nonlinear/border_fit.py`; no export
+  adapter reads its records yet), whose prepared images and Elastix plumbing
+  (the one itk-elastix wrapper, `engines.py`) also run
   `fit_affine`'s Elastix affine: ANTs SyN (optional
   `registration` extra) or Elastix B-spline residual fit of a linearly placed
   atlas plane onto one section — stain vs reference/ABBA Nissl, model lines
@@ -204,7 +216,12 @@ Shared, top-level:
   `openai_oauth.py`: `langslice login`, the `openai-oauth/*` ADK model
   strings — legacy `chatgpt/*` accepted — and gpt-image-2), and `none` (no
   model at all: nonlinear retains a supplied placement or fits a silhouette
-  prior, so there is nothing to authenticate). The OAuth path is
+  prior, so there is nothing to authenticate). `registry.resolve_image_model`
+  is the one place a provider name becomes an image-edit call
+  (`ImageModel`: provider, model, `call`); only a door resolves it (the
+  toolbox binding `build_tools(image_model=...)`, the CLI and API runtime,
+  the ABBA plugin), and the operations (`registration_tool`, `ops.traces`,
+  `run_linear_registration`) receive it. The OAuth path is
   NOT the OpenAI API: it talks to the separate Codex backend
   (`chatgpt.com/backend-api/codex`), whose image tool ignores
   `model`/`size`/`quality` and matches the input image's aspect exactly.
@@ -277,7 +294,9 @@ program. Code that runs in LangSlice's own environment lives in
   asks the model to draw boundaries from nothing against an outlined
   grayscale atlas template, with an optional second corrective call
   (`passes=2`). Raw model replies, extracted boundaries on original histology,
-  and fitted atlas overlays are separate. The initial placement and residual
+  and fitted atlas overlays are separate. The fit of the model's lines is the
+  deformable package's (`--deformation deformable`; the Elastix residual fit
+  was retired 2026-10-04). The initial placement and residual
   fit are composed in exported coordinates. See `docs/nonlinear_design.md`;
   there is no hosted-router retry loop.
 - Positions are atlas-native millimeters from the anterior edge of the volume.

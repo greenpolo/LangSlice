@@ -36,9 +36,10 @@ wording; `registry.py` lists which.
   sections, host damage flags, the spec's flip switch, the submit gates)
   are the job's and are applied here; the transform cap (`Job.over_cap`)
   is checked by the tool door with its other arguments.
-- A model call is passed in, never chosen here: `traces.trace_borders` and
-  `submit.submit` take the provider bridge's functions as plain callables
-  (phase 4 injects the provider).
+- A model is passed in, never chosen here: `traces.trace_borders` takes the
+  image model (`providers.registry.ImageModel`: provider, model, `call`)
+  the door resolved (phase 4); the geometry fingerprint is the core's
+  (`core.handoff.correction_fingerprint`).
 - A refusal is `refusal.Refused(code, status="error", **facts)`, nothing
   written; `Refused.payload()` is the `{"status": ..., "error": code, ...}`
   every door answers with (`status` "refused" for a gate, `Refused.of`
@@ -78,8 +79,9 @@ wording; `registry.py` lists which.
   sections whose position the step changed, which the tool door's gates
   forget, `depth`); `moved_positions(before, state)`.
 - `submit.py` — `submit(job, summary=, notes=, interval_breaks=,
-  fingerprint=, gate=)`: the job's gates (`Job.submit_errors`), then with
-  *fingerprint* and the nonlinear task every section's completed image
+  traces=, workspace=, gate=)`: the job's gates (`Job.submit_errors`), then
+  with *traces* (the image model is in the run; *workspace* reads each
+  section's geometry) and the nonlinear task every section's completed image
   correction (`MISSING_IMAGE_CORRECTIONS`, reported before a missing
   deformation), then the door's *gate*; then ONE undo step: the interval
   breaks, the order reversed to run the atlas way (noted), the notes and a
@@ -129,12 +131,12 @@ wording; `registry.py` lists which.
   holds its path relative to the job folder; a traced fit section reads
   the trace's artifacts under the job folder (`traced_lines(root=...)`).
 
-- `traces.py` — `trace_borders(job, ref, prompt=, fingerprint=, start=,
-  workers=)`: one section's image correction. *fingerprint* (the section's
-  current geometry) and *start* (prepare the edit, return the record and
-  the call to run) are the provider bridge's, passed in
-  (`registration_tool.correction_fingerprint` / `start_correction` bound
-  to the run's provider by the tool door). A call already running at that
+- `traces.py` — `trace_borders(job, workspace, ref, image_model=, prompt=,
+  workers=)`: one section's image correction. The section's current
+  geometry is `core.handoff.correction_fingerprint`;
+  `registration_tool.start_correction` prepares the edit for *image_model*
+  (resolved by the door: the toolbox's `build_tools(image_model=...)`
+  binding) and returns the record and the call to run. A call already running at that
   geometry is not started again (`running`); otherwise the call runs on the
   job's image executor and the section's `image_correction` record is
   written as one undo step when it changed. `UNKNOWN_SECTION`,

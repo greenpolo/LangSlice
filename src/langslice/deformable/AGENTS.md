@@ -6,8 +6,13 @@ and imports neither. It is the engine behind the linear agent's
 `fit_deformable` tool (`linear/deformation.py`, task `nonlinear`) and, since
 2026-10-03, behind `fit_affine`'s default Elastix method
 (`linear/transform.elastix_affine`: `prepare_fit` builds its images and
-masks, `engines.run_elastix_affine` fits); no CLI, host or export adapter
-uses it yet.
+masks, `engines.run_elastix_affine` fits), and since 2026-10-04 behind the
+fit of the image model's lines in `langslice nonlinear register
+--deformation deformable` and the ABBA registration plugin
+(`nonlinear/border_fit.py`, which replaced the old Elastix residual fit). No
+export adapter reads its records yet. `engines.py` is LangSlice's one
+itk-elastix registration wrapper (`landmark_elastix.py`, the landmark-pair
+spline of old checkpoints, is separate).
 
 ## What it does
 
@@ -44,7 +49,15 @@ and returns a `record.DeformableRecord`. No custom solver.
   `atlas_to_canvas`) against `borders_merged` (the same color-family set the
   model was shown, `atlas.render.family_labels`) or `borders`; both softened
   by the same Gaussian ridge (`settings.LINE_SOFTENING_UM`, fixed at 60 µm).
-  Mean squares. The crossed pairings are refused (`metric_for`): lines
+  Mean squares. `settings.traced_settings(engine)` is the traced-lines
+  setting in one call: ANTs with the lines as named regions too
+  (`labels="model"`), or Elastix lines against borders; `engine=None` picks
+  ANTs when installed (`nonlinear/border_fit.py` passes Elastix).
+- Caller-supplied labels (`prepare_fit(native=...)`, through `fit_section`):
+  a host's own leaf-label grid stands in for the atlas plane, placed by the
+  placement's matrix (the ABBA plugin: labels sampled at ABBA's per-pixel
+  coordinates, identity, its voxel size). Border atlas images only, no
+  one-sided entries; the record's `native_to_volume_index` is None. The crossed pairings are refused (`metric_for`): lines
   against `ara`/`nissl`, and the stain against borders (the ceiling test's
   worst pairing: it stayed at the linear placement).
 - Label-map channels (`labels=`, ANTs only): `model` names each area the
