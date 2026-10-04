@@ -10,7 +10,8 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.linear.engine import build_context, ingest
+from langslice.linear.engine import build_context
+from langslice.linear.job import ingest
 from langslice.linear.spec import JobSpec
 from langslice.linear.toolbox import build_tools
 from tests.fakes import EllipseAtlas, ellipse_section

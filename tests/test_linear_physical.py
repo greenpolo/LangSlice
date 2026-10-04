@@ -18,7 +18,8 @@ from langslice.affine import normalized_physical_affine, physical_affine_matrix
 from langslice.atlas.recolor import color_lut
 from langslice.atlas.render import family_mapping, family_outlines
 from langslice.image_prep import read_pixel_size_um
-from langslice.linear.engine import build_context, ingest
+from langslice.linear.engine import build_context
+from langslice.linear.job import ingest
 from langslice.linear.render import (
     canvas_geometry,
     canvas_um_per_px,

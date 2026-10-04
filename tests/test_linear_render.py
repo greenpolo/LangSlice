@@ -7,7 +7,8 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from langslice.linear.engine import build_context, ingest
+from langslice.linear.engine import build_context
+from langslice.linear.job import ingest
 from langslice.linear.render import caption, render_slice, status_rows, status_text
 from langslice.linear.spec import JobSpec
 from tests.fakes import SlabAtlas

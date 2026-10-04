@@ -15,7 +15,8 @@ from langslice.adk import TOOL_MEDIA_PARTS_KEY
 from langslice.deformable import DeformableRecord
 from langslice.linear import deformation
 from langslice.linear.checkpoint import load_checkpoint
-from langslice.linear.engine import build_context, ingest
+from langslice.linear.engine import build_context
+from langslice.linear.job import ingest
 from langslice.linear.prompt import build_job_statement
 from langslice.linear.spec import JobSpec, NonlinearSpec, TransformSpec
 from langslice.linear.state import StackState
@@ -146,7 +147,7 @@ def test_several_candidates_preview_and_write_nothing(tmp_path: Path, atlas):
         assert len(row["image_indexes"]) == 1
     assert len(_media(result)) == 2
     assert json.dumps(state.to_dict(), sort_keys=True) == before
-    assert not box.undo_stack
+    assert not box.job.undo_stack
     assert not (Path(ctx.results_path).parent / "deformable").exists()
 
 
@@ -174,10 +175,10 @@ def test_one_setting_applies_and_undo_redo_restore_it(tmp_path: Path, atlas):
     _tool(box, "redo")()
     assert state.slices[0].deformation == held
     # The same setting again only re-draws: no second undo step.
-    depth = len(box.undo_stack)
+    depth = len(box.job.undo_stack)
     again = _apply(box, stiffness="soft")["results"][0]
     assert again["written"] is False and again["cached"] is True
-    assert len(box.undo_stack) == depth
+    assert len(box.job.undo_stack) == depth
 
 
 def test_applying_a_previewed_candidate_reuses_its_result(tmp_path: Path, atlas, monkeypatch):
@@ -556,13 +557,13 @@ def test_a_traced_image_waits_for_its_running_trace_and_shows_it(tmp_path: Path,
         time.sleep(0.3)
         return _trace_artifacts(state, ctx, folder, fingerprint="now")
 
-    box.start_image_job(ID, "now", job, workers=1)
+    box.job.start_image_job(ID, "now", job, workers=1)
     result = _tool(box, "fit_deformable")([ID], **FAST, fit_section="traced_lines")
     assert result["status"] == "ok", result
     assert result["results"][0]["status"] == "ok"
     assert state.slices[0].image_correction["status"] == "ok"
     assert load_checkpoint(ctx.checkpoint_path).slices[0].image_correction["status"] == "ok"
-    assert ID not in box.image_jobs
+    assert ID not in box.job.image_jobs
     media = _media(result)
     assert len(media) == 2 and result["traces"] == [{"id": ID, "image_indexes": [1]}]
     assert "traced lines" in result["description"]
@@ -588,7 +589,7 @@ def test_a_trace_still_running_after_the_wait_is_reported(tmp_path: Path, atlas,
         return {"status": "error", "error": "TransportError", "message": "no image",
                 "geometry_fingerprint": "now"}
 
-    box.start_image_job(ID, "now", job, workers=1)
+    box.job.start_image_job(ID, "now", job, workers=1)
     fit = _tool(box, "fit_deformable")
     late = fit([ID], **FAST, fit_section="traced_lines")["results"][0]
     assert late["error"] == "TRACE_TIMEOUT" and "0.2 s" in late["message"]

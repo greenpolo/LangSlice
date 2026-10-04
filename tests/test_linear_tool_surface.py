@@ -12,7 +12,8 @@ from PIL import Image
 
 from langslice.adk import TOOL_MEDIA_PARTS_KEY
 from langslice.linear import appearance as looks
-from langslice.linear.engine import build_context, ingest
+from langslice.linear.engine import build_context
+from langslice.linear.job import ingest
 from langslice.linear.prompt import TOOL_LINES
 from langslice.linear.render import render_slice
 from langslice.linear.spec import JobSpec, NonlinearSpec, PositionSpec
@@ -151,7 +152,7 @@ def test_preprocess_refuses_bad_settings_before_writing(tmp_path: Path):
     assert tool(clahe_clip=-1)["error"] == "BAD_ARGS"
     assert tool(target="atlas")["error"] == "BAD_TARGET"
     assert tool(slices=["nope.png"])["error"] == "UNKNOWN_SLICE_IDS"
-    assert state.appearance == {} and not box.undo_stack
+    assert state.appearance == {} and not box.job.undo_stack
 
 
 def test_ants_steps_run_when_the_extra_is_installed(tmp_path: Path):
@@ -230,7 +231,7 @@ def test_unknown_and_misplaced_arguments_are_refused(tmp_path: Path):
     assert entry["error"] == "UNKNOWN_ARGUMENTS"
     assert entry["problems"][0]["argument"] == "entries[0]"
     assert entry["problems"][0]["accepted"] == ["id", "position_mm"]
-    assert state.to_dict() == before and not box.undo_stack
+    assert state.to_dict() == before and not box.job.undo_stack
     # ADK drops unknown top-level arguments before a tool runs; the plugin
     # answers the call first.
     plugin = StrictArgumentsPlugin()

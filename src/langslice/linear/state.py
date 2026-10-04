@@ -21,6 +21,16 @@ from typing import Any
 #: Quarter-turns the render applies before the flip.
 ROTATIONS = (0, 90, 180, 270)
 
+#: The five physical knobs of the transform every section starts from, and
+#: the B side of an A/B preview when a section carries nothing yet.
+IDENTITY_PARAMS: dict[str, float] = {
+    "rotation_deg": 0.0,
+    "scale_x": 1.0,
+    "scale_y": 1.0,
+    "translate_x_mm": 0.0,
+    "translate_y_mm": 0.0,
+}
+
 
 @dataclass
 class SliceState:

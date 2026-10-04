@@ -10,7 +10,7 @@ import pytest
 
 from langslice.adk import TOOL_MEDIA_PARTS_KEY
 from langslice.linear.checkpoint import load_checkpoint
-from langslice.linear.engine import apply_host_inputs
+from langslice.linear.job import apply_host_inputs
 from langslice.linear.prompt import build_job_statement
 from langslice.linear.spec import DEFAULT_TASKS, JobSpec, NonlinearSpec
 from langslice.linear.state import StackState
@@ -110,7 +110,7 @@ def test_result_of_an_undone_correction_does_not_land(tmp_path: Path, monkeypatc
     box = build_tools(state, ctx, spec)
     _tool(box, "trace_borders")("0")
     _tool(box, "undo")()
-    assert box.settle_image_corrections(state) is False
+    assert box.job.settle_image_corrections() is False
     assert state.slices[0].image_correction is None
 
 
@@ -144,7 +144,7 @@ def test_image_tool_reports_missing_placement_without_checkpoint_mutation(tmp_pa
     response = _tool(box, "trace_borders")("s0.png")
     assert response["error"] == "INVALID_LINEAR_PLACEMENT"
     assert state.slices[0].image_correction is None
-    assert not box.undo_stack
+    assert not box.job.undo_stack
     refusal = _tool(box, "submit")("Done", [], [])
     assert "requires a position" in refusal["sections"][0]["reason"]
 

@@ -1,17 +1,16 @@
-"""The run: ingest, one agent session, results.
+"""The run: open the job, one agent session, results.
 
 ``run(spec)`` is the whole of ``langslice linear``. There is no node graph: one
-state, one toolbox, one job statement, and a session that ends at ``submit`` or
-the turn budget. Every write tool checkpoints, so a run that dies mid-way
-resumes from the checkpoint with the state it had — the agent is re-seeded, not
+job (:class:`langslice.linear.job.Job`), one toolbox over it, one job
+statement, and a session that ends at ``submit`` or the turn budget. Every
+write tool checkpoints, so a run that dies mid-way resumes from the checkpoint
+with the state it had (and its undo history) — the agent is re-seeded, not
 replayed.
 """
 
 from __future__ import annotations
 
 import contextlib
-import copy
-import json
 import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -21,13 +20,13 @@ from google.genai import types
 
 from langslice.adk.media import opening_parts
 from langslice.atlas.core import load_atlas
-from langslice.linear.checkpoint import (
-    default_checkpoint_path,
-    load_checkpoint,
-    observe_checkpoints,
-    save_checkpoint,
-)
-from langslice.linear.discovery import discover_slices
+from langslice.linear.checkpoint import default_checkpoint_path
+from langslice.linear.job import Job
+
+# Re-exported for the sibling SliceBench adapters, which import them from here;
+# they live in the job layer (langslice.linear.job) since layered-core phase 2.
+from langslice.linear.job import apply_host_inputs as apply_host_inputs  # noqa: E402
+from langslice.linear.job import ingest as ingest  # noqa: E402
 from langslice.linear.live import LiveCallback
 from langslice.linear.prompt import build_job_statement, display_facts
 from langslice.linear.render import status_text
@@ -37,7 +36,7 @@ from langslice.linear.session import (
     run_agent_session,
 )
 from langslice.linear.spec import JobSpec
-from langslice.linear.state import SliceState, StackState
+from langslice.linear.state import StackState
 from langslice.linear.toolbox import ToolBox, build_tools
 from langslice.linear.workspace import Workspace, log_progress
 
@@ -75,8 +74,10 @@ DEBRIEF_PROMPT = (
 @dataclass(kw_only=True)
 class EngineContext(Workspace):
     """The agent driver's context: the core :class:`Workspace` plus what only
-    the driver needs — the job's files, the model, and the cache of encoded
-    message images (:mod:`langslice.adk.media`)."""
+    the driver needs — where the job's files go (the paths the
+    :class:`~langslice.linear.job.Job` is opened at; the job owns them from
+    then on), the model, and the cache of encoded message images
+    (:mod:`langslice.adk.media`)."""
 
     checkpoint_path: str
     results_path: str
@@ -104,131 +105,6 @@ def build_context(
         emit=emit or log_progress,
         atlas_loader=atlas_loader or load_atlas,
     )
-
-
-# --- ingest --------------------------------------------------------------
-
-
-def ingest(spec: JobSpec, ctx: EngineContext) -> StackState:
-    """Discover the folder and build the stack state. Plain code, no model."""
-    paths = discover_slices(ctx.image_folder)
-    if not paths:
-        raise ValueError(f"No slice images found in {ctx.image_folder}")
-
-    pos_lo, pos_hi = ctx.position_range
-    state = StackState(
-        image_folder=ctx.image_folder,
-        atlas=spec.atlas,
-        plane=spec.plane,
-        interval_mm=spec.interval_mm,
-        thickness_mm=spec.thickness_mm,
-        spec=spec.to_dict(),
-        slices=[
-            SliceState(
-                id=os.path.basename(path), index_original=index, index_corrected=index
-            )
-            for index, path in enumerate(paths)
-        ],
-    )
-    state.notes.append(
-        f"ingest: {len(paths)} sections, atlas {spec.atlas} ({spec.plane}) "
-        f"spans {pos_lo:.2f}-{pos_hi:.2f} mm"
-    )
-    ctx.progress(f"[ingest] {len(paths)} sections from {ctx.image_folder}")
-    return state
-
-
-def apply_host_inputs(state: StackState, spec: JobSpec) -> None:
-    """Write the host's answers for the tasks that are switched off.
-
-    Order arrives as a list of filenames, positions as a filename -> mm
-    mapping, angles as ``{"pitch": deg, "yaw": deg}``, damage as a filename
-    -> note mapping, and transforms as filename -> stored transform dictionaries.
-    Anything the host
-    supplies for a task that IS on is applied too — it is a starting point,
-    not a constraint. Two exceptions are constraints: ``damaged`` flags the
-    agent cannot clear, and ``locked`` sections (a list of filenames) whose
-    flip, rotation and transform the agent cannot change; a locked section
-    without a supplied transform carries the ``"host"`` identity
-    (:func:`langslice.linear.toolbox.host_transform`), because its snapshot
-    is already aligned.
-    """
-    inputs = spec.inputs or {}
-
-    order = inputs.get("order") or []
-    if order:
-        known = [state.by_id(str(name)) for name in order]
-        missing = [str(name) for name, hit in zip(order, known, strict=True) if hit is None]
-        if missing:
-            raise ValueError(f"inputs.order names sections that are not here: {missing}")
-        tail = [s for s in state.in_order() if s.id not in {str(name) for name in order}]
-        for index, record in enumerate([r for r in known if r is not None] + tail):
-            record.index_corrected = index
-        state.notes.append(f"inputs: order set by the host ({len(order)} sections)")
-
-    positions = inputs.get("positions") or {}
-    if positions:
-        applied = 0
-        for name, value in positions.items():
-            record = state.by_id(str(name))
-            if record is None:
-                raise ValueError(f"inputs.positions names an unknown section: {name!r}")
-            record.position_mm = float(value)
-            applied += 1
-        state.notes.append(f"inputs: {applied} position(s) set by the host")
-
-    angles = inputs.get("angles") or {}
-    if angles:
-        state.cutting_angles_deg = {
-            "pitch": float(angles.get("pitch", 0.0)),
-            "yaw": float(angles.get("yaw", 0.0)),
-        }
-        state.notes.append(
-            f"inputs: cutting angles set by the host "
-            f"(pitch {state.pitch_deg:.2f}, yaw {state.yaw_deg:.2f})"
-        )
-
-    transforms = inputs.get("transforms") or {}
-    if transforms:
-        for name, value in transforms.items():
-            record = state.by_id(str(name))
-            if record is None:
-                raise ValueError(f"inputs.transforms names an unknown section: {name!r}")
-            if not isinstance(value, dict):
-                raise ValueError(f"inputs.transforms[{name!r}] must be a transform dictionary")
-            # Preserve complete historical mappings, including splines. The image
-            # correction handoff explicitly refuses unsupported spline inputs.
-            record.transform = copy.deepcopy(value)
-        state.notes.append(f"inputs: {len(transforms)} transform(s) set by the host")
-
-    damaged = inputs.get("damaged") or {}
-    if damaged:
-        # Damage is normally the agent's own classification; a host (or a
-        # benchmark) may assert it up front so the automatic fits refuse the
-        # section and it is aligned by hand.
-        for name, note in damaged.items():
-            record = state.by_id(str(name))
-            if record is None:
-                raise ValueError(f"inputs.damaged names an unknown section: {name!r}")
-            record.damaged = True
-            record.damage_note = str(note or "")
-        state.notes.append(f"inputs: {len(damaged)} section(s) marked damaged by the host")
-
-    locked = inputs.get("locked") or []
-    if locked:
-        from langslice.linear.toolbox import host_transform
-
-        if not isinstance(locked, (list, tuple)):
-            raise ValueError("inputs.locked must be a list of section filenames")
-        for name in locked:
-            record = state.by_id(str(name))
-            if record is None:
-                raise ValueError(f"inputs.locked names an unknown section: {name!r}")
-            if record.transform is None:
-                record.transform = host_transform()
-        state.notes.append(
-            f"inputs: {len(locked)} section(s) locked by the host (in-plane alignment done)"
-        )
 
 
 # --- the session ---------------------------------------------------------
@@ -297,20 +173,8 @@ async def run_session(
     )
     if sink and sink[0]:
         state.debrief = sink[0]
-        save_checkpoint(state, ctx.checkpoint_path)
+        box.job.checkpoint()
     return outcome
-
-
-# --- results -------------------------------------------------------------
-
-
-def emit_results(state: StackState, ctx: EngineContext) -> StackState:
-    """Write the results JSON — the same shape as the checkpoint."""
-    os.makedirs(os.path.dirname(os.path.abspath(ctx.results_path)), exist_ok=True)
-    with open(ctx.results_path, "w", encoding="utf-8") as handle:
-        json.dump(state.to_dict(), handle, indent=2)
-    ctx.progress(f"[emit] results -> {ctx.results_path}")
-    return state
 
 
 async def run(
@@ -325,34 +189,26 @@ async def run(
 
     *on_write* is a host adapter that wants to watch the run live (the ABBA
     mirror, :mod:`langslice.integrations.abba_linear`): it is called once
-    with the state as ingested, then again after every checkpoint the
-    session writes (:func:`langslice.linear.checkpoint.observe_checkpoints`),
-    through to the final result.
+    with the state as opened, then again after every checkpoint the job
+    writes (and every reload of a state file changed on disk,
+    :meth:`langslice.linear.job.Job.observe`), through to the final result.
     """
     ctx = build_context(spec, emit=emit, atlas_loader=atlas_loader)
-
-    state = load_checkpoint(ctx.checkpoint_path) if spec.resume else None
-    if state is not None:
-        ctx.progress(f"[ingest] resuming from {ctx.checkpoint_path}")
-        state.spec = spec.to_dict()
-        state.submitted = False
-    else:
-        state = ingest(spec, ctx)
-        apply_host_inputs(state, spec)
-    save_checkpoint(state, ctx.checkpoint_path)
+    job = Job.open(spec, ctx, checkpoint_path=ctx.checkpoint_path,
+                   results_path=ctx.results_path)
+    state = job.state
     if on_write is not None:
         on_write(state)
 
-    box = build_tools(state, ctx, spec, on_event=on_event)
-    watch = observe_checkpoints(on_write) if on_write is not None else contextlib.nullcontext()
+    box = build_tools(state, ctx, spec, job=job, on_event=on_event)
+    watch = job.observe(on_write) if on_write is not None else contextlib.nullcontext()
     with watch:
         try:
             tool_calls, turns = await run_session(state, ctx, spec, box, on_event=on_event)
         finally:
             # Background image corrections finish and are recorded even when
             # the session ends without a submit.
-            if box.settle_image_corrections(state):
-                save_checkpoint(state, ctx.checkpoint_path)
+            job.settle_image_corrections()
         ctx.progress(
             f"[session] {tool_calls} tool call(s) over {turns} turn(s); "
             + ("submitted" if state.submitted else "no submission")
@@ -360,4 +216,4 @@ async def run(
         if not state.submitted:
             state.notes.append(f"session: no submission within {turns} turns")
 
-        return emit_results(state, ctx)
+        return job.emit_results(ctx.progress)

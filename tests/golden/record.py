@@ -355,7 +355,8 @@ def tool_map(box: Any) -> dict[str, Any]:
 
 
 def record_full_toolbox(rec: Recorder, folder: Path) -> tuple[list[str], Any]:
-    from langslice.linear.engine import build_context, ingest
+    from langslice.linear.engine import build_context
+    from langslice.linear.job import ingest
     from langslice.linear.toolbox import build_tools
 
     spec = full_spec(folder)
@@ -498,7 +499,8 @@ def record_full_toolbox(rec: Recorder, folder: Path) -> tuple[list[str], Any]:
 
 
 def record_auto_toolbox(rec: Recorder, folder: Path) -> list[str]:
-    from langslice.linear.engine import build_context, ingest
+    from langslice.linear.engine import build_context
+    from langslice.linear.job import ingest
     from langslice.linear.spec import JobSpec, NonlinearSpec
     from langslice.linear.toolbox import build_tools
 
@@ -551,7 +553,8 @@ def record_gated_toolbox(rec: Recorder, folder: Path) -> list[str]:
     model request carried a call's pictures; ``begin_model_call`` promotes
     direct calls (no tool context), as the MCP door does before every call.
     """
-    from langslice.linear.engine import build_context, ingest
+    from langslice.linear.engine import build_context
+    from langslice.linear.job import ingest
     from langslice.linear.spec import JobSpec, PositionSpec
     from langslice.linear.toolbox import build_tools
 

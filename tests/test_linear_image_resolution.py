@@ -19,7 +19,8 @@ from PIL import Image, ImageDraw
 
 from langslice.adk import TOOL_MEDIA_PARTS_KEY
 from langslice.adk.media import strip_edge
-from langslice.linear.engine import build_context, build_seed_message, ingest
+from langslice.linear.engine import build_context, build_seed_message
+from langslice.linear.job import ingest
 from langslice.linear.opening import COLUMN_GAP, section_tile, strip_layout
 from langslice.linear.render import (
     CAPTION_PX,

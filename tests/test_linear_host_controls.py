@@ -9,10 +9,11 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.linear.engine import apply_host_inputs, build_context, ingest
+from langslice.linear.engine import build_context
+from langslice.linear.job import HOST_TRANSFORM_KIND, apply_host_inputs, ingest, submit_errors
 from langslice.linear.prompt import build_job_statement
 from langslice.linear.spec import JobSpec, TransformSpec
-from langslice.linear.toolbox import HOST_TRANSFORM_KIND, build_tools, submit_errors
+from langslice.linear.toolbox import build_tools
 from tests.fakes import SlabAtlas
 
 _ATLAS = SlabAtlas()
