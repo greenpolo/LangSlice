@@ -116,6 +116,11 @@ Shared, top-level:
   `registration_handoff.py` supplies calibrated geometry; see
   `docs/nonlinear_image_tool.md`.
 
+- `ops/` — the verbs: every write to a stack (positions, order, orientation,
+  damage, appearance, notes, the in-plane transform) as a function on the
+  job, one undo step each, returning a plain record; no pictures, no model
+  wording, no gates. Imports the core and the job layer only, never a door:
+  `src/langslice/ops/CLAUDE.md` (loads when working there).
 - `atlas/` — BrainGlobe loading, slice extraction, colored region maps, borders,
   the organized-color LUT for human-review renders, and one side of a region
   (`"CTX:left"`, the section's displayed side, `sides.py`):

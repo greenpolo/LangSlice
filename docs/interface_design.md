@@ -196,7 +196,7 @@ every key and its type.
 | `search_position` | position.bayesian | `search_position(id, window_mm, angles)` (was `fit_position`) | — |
 | `orient_slices` | transform | `orient_slices(entries, view)`; entry: id, flip, rotate_deg | section |
 | `fit_affine` | transform.automatic | `fit_affine(slices, method="elastix", fit_atlas="", include=[], exclude=[], view)` | overlay (default), side_by_side, checkerboard, outlines, section, template |
-| `adjust_transforms` | transform.interactive | `adjust_transforms(entries, view)`; entry: id, rotation_deg, scale_x, scale_y, translate_x_mm, translate_y_mm, pivot, note; one `view` draws every entry | as `fit_affine`, plus ab |
+| `adjust_transforms` | transform.interactive | `adjust_transforms(entries, view)`; entry: id, rotation_deg, scale_x, scale_y, translate_x_mm, translate_y_mm, shear (optional, default 0: the unitless slant `fit_affine` reports, so a fit's map can be kept), pivot, note; one `view` draws every entry | as `fit_affine`, plus ab |
 | `set_cutting_angles` | transform.angles | `set_cutting_angles(pitch_deg, yaw_deg)` | — |
 | `trace_borders`, `grep_atlas` | nonlinear (`trace_borders` not with provider `none`) | `trace_borders(id, prompt="")`, `grep_atlas(query, id="")` | — |
 | `fit_deformable` | nonlinear | `fit_deformable(slices, include=[], exclude=[], start="linear", fit_section="fit", fit_atlas="", engine="", stiffness="medium", candidates=[], keep_linear="", view)`; candidate: stiffness, fit_section, fit_atlas, engine; `engine` only when `nonlinear.engine` is `either` | borders (default), ab |
@@ -339,7 +339,9 @@ never change any stored setting). Its keys:
   drawn under its placement; `none` the linear placement alone.
 - `resolution` — only when the user chose image resolution `auto`: the long
   edge in pixels of each picture this call returns (of each section tile in
-  `view_stack`), 128..1536, 0 = 512. Out of range is clamped and the reply's
+  `view_stack`), 128 up to the driver model's largest image (2048 px on the
+  OpenAI lanes, 2000 px for a Claude host: a request holding more than 20
+  images takes none larger), 0 = 512. Out of range is clamped and the reply's
   `view.resolution_note` says so. At every other level the key is not in the
   schema and is refused with the reason (the user fixed the picture size).
 
@@ -368,7 +370,7 @@ the long edge of one picture, or of each panel of a multi-panel picture:
 | low (default) | 256 px | 512 px |
 | medium | 384 px | 768 px |
 | high | 512 px | 1024 px |
-| auto | 256 px | the agent's `view.resolution` per call, 128..1536 px; 512 px when it gives none |
+| auto | 256 px | the agent's `view.resolution` per call, 128 px up to the driver model's largest image (2048 px on the OpenAI lanes, 2000 px for a Claude host); 512 px when it gives none |
 
 The opening shows the stack as ABBA-style strips, sections over the atlas at
 their current positions (atlas reference strips instead when nothing is

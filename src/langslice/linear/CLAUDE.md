@@ -122,6 +122,24 @@ stay on the `ToolBox`, the tool door: a library call on the job is never
 gated. Tool results still reach MCP as the toolbox's genai parts; plain
 pictures need the tool bodies split (phase 3).
 
+**The operations (phase 3a, 2026-10-03).** The writes live in the top-level
+package `src/langslice/ops/` (its own `CLAUDE.md`), one verb group per file:
+`positions` (`set_positions`: clamp into the atlas range and write;
+`set_cutting_angles`), `order` (`reorder`, `renumber`), `orientation`
+(`orient_sections`: flip/quarter turn, drops a transform the change made
+stale), `damage` (`mark_damaged`), `appearance` (`set_appearance`,
+`planned_settings`), `notes` (`add_note`) and `transforms`
+(`interactive_transform`: knobs to the stored record; `fit_transform`:
+`fit_affine`'s record; `set_transforms`: any number as one undo step). Each
+takes the job (and the workspace where it reads the atlas), takes one undo
+step through it and returns a plain record of what changed; a refusal is
+`ops.refusal.Refused`. The tool bodies for these verbs are argument checking,
+the look-before-commit gates, one ops call, the pictures and the wording.
+`preprocess` draws its AFTER pictures from `planned_settings` and writes only
+once every picture is drawn. Still in the toolbox, for phase 3b: the
+placement pictures (`draw_canvas`, `stored_placement`, `stage`/`_Staged`,
+`placement_pictures`), `fit_deformable_impl` and render saving.
+
 - `spec.py` — `JobSpec` (+ `ReorderSpec`/`PositionSpec`/`TransformSpec`/
   `NonlinearSpec`). Every checkbox a host shows maps to a field here; nothing
   else is user-facing. Users see Positioning (`reorder` + `position`), Linear
@@ -203,9 +221,13 @@ pictures need the tool bodies split (phase 3).
   `view.border_thickness` (0.25–8 output pixels, including fractional widths) alongside `view.atlas_opacity`;
   these are display-only and do not change transforms or IoU. The native ABBA
   viewer keeps its own display settings. Includes a 1 mm scale bar and two-line
-  caption). It takes either the five physical knobs or a ready 2x3 in the
+  caption). It takes either the knobs (`shear` optional; the caption names
+  a non-zero one) or a ready 2x3 in the
   section's frame, so the interactive loop and `fit_affine` draw the same
-  picture, and returns `(images, silhouette_iou)`. Its view controls:
+  picture, and returns `(images, silhouette_iou)`. `left` (2026-10-03) is a
+  fit's own side split for one-sided `regions` (`transform.FitFrame.left`),
+  used instead of resolving the sides through the drawn placement, which has
+  none once it turns the midline past 45 degrees. Its view controls:
   `mode` (`overlay`, `side_by_side` — two physical images, `checkerboard`,
   `outlines` — atlas lines plus the section's own silhouette in neutral grey
   on black, over any atlas image the call lists at `atlas_opacity` — and the line-free `section` / `template`), `zoom` ([x0, y0, x1, y1] fractions of the CANVAS, cropped BEFORE
@@ -215,7 +237,9 @@ pictures need the tool bodies split (phase 3).
   (`OUTLINE_LAYERS`: `all` family boundaries, `outer` — the root contour from
   `atlas.render.outer_outline` — or `none`; the caption names the layer when
   it is not `all`).
-  `physical_overlay` is the one-image `overlay` wrapper `fit_affine` uses.
+  `physical_overlay` is the one-image `overlay` wrapper (tests and scripts;
+  `fit_affine` draws through the toolbox's `draw_canvas` from the fit's
+  `FitFrame`).
   `caption` wraps any line wider than its picture (`wrap_caption`: at spaces,
   mid-word for one long word), so a small picture keeps its whole label; a
   caption that fits draws the same pixels as before.
@@ -253,7 +277,8 @@ pictures need the tool bodies split (phase 3).
   strip's long edge is the model lane's largest image (`limit`, from
   `adk/media.image_limit` on the run's model: `OPENAI_MAX_IMAGE_EDGE`
   2048 for openai-oauth/openai-api, any other lane uses it too, unmeasured;
-  `CLAUDE_MAX_IMAGE_EDGE` 1568 for the MCP host), tiles the level's opening
+  `CLAUDE_MAX_IMAGE_EDGE` 1568 for the MCP host; a later picture's cap is
+  separate, `CLAUDE_MAX_VIEW_EDGE`, see `view_options.py`), tiles the level's opening
   size (`strip_layout`: as many as fit, shrunk by at most a few pixels so a
   full strip fills the edge): 8/5/4 per strip at low/medium/high on the
   OpenAI lanes, 6/4/3 for Claude. `pack_strips` also keeps every strip
@@ -280,7 +305,14 @@ pictures need the tool bodies split (phase 3).
   `FunctionTool` drops unknown top-level arguments before a tool runs; the
   plugin's `before_tool_callback` answers first) and
   `mcp_server.server.strict_arguments` (FastMCP drops them too; checked
-  after its JSON pre-parse).
+  after its JSON pre-parse). `normalize_arguments(func, args)` (2026-10-03)
+  makes what the tools accept as sent schema-valid for a door that
+  validates first: a whole number in a text argument (`id`, `section`) or in
+  `slices` becomes its text (a corrected index; the tools resolve `"2"` and
+  `2` alike), a null inside a typed-dict argument is dropped and a null
+  `view` is the default. The MCP door applies it after the refusal check;
+  ADK hands the values through as sent. `TransformEntry` carries the
+  optional `shear` knob (2026-10-03).
 - `display.py` / `view_options.py` — `view`, the picture options (2026-10-01
   as nine flat arguments; one `view` object since 2026-10-03, Nash: "Our
   tools have been really messy"; ABBA's image-channel / atlas-channel
@@ -313,8 +345,21 @@ pictures need the tool bodies split (phase 3).
   placement tools); `resolution` only at image resolution `auto`:
   `view_options.view_schema` (applied to every tool in `build_tools`) swaps `view`'s
   annotation for `ViewAuto` there, and `clamp_resolution` clamps it to
-  128..1536 with a `view.resolution_note`. `DisplayOptions.long_edge` is the
-  call's picture size; `echo()` is what the call drew. It never writes state,
+  `render.MIN_RESOLUTION` 128 .. the driver model's largest image with a
+  `view.resolution_note` (Nash 2026-10-03: the cap is the model's own
+  maximum, not a fixed 1536). The door knows the model and passes the cap
+  (`build_tools(max_view_edge=...)`, kept as `ToolBox.max_view_edge`, read
+  by `parse_view`, `view_atlas` and the job statement's resolution line):
+  the ADK agent's default is `adk.media.view_edge_limit`, the lane's
+  largest image edge (2048 px on the OpenAI lanes and any unmeasured lane;
+  there a near-square picture past ~1600 px still meets the 2,500-patch
+  budget, which shrinks it); the MCP door passes
+  `opening.CLAUDE_MAX_VIEW_EDGE` 2000 (a Claude request holding more than
+  20 images takes none larger; Claude 4.7+ reads ~2576 px alone, older
+  models shrink past 1568). `DisplayOptions.long_edge` is the
+  call's picture size; `echo()` is what the call drew (`channels` only
+  where they choose the picture, `channels_apply`: not for `preprocess` or
+  `fit_deformable`, 2026-10-03). It never writes state,
   so a call's options never change a default. `framed_section` /
   `framed_atlas` draw the tissue-framed pictures (default options = the old
   pixels exactly), `channel_strip` the `view_slices` channels mode (each raw
@@ -337,17 +382,29 @@ pictures need the tool bodies split (phase 3).
 - `toolbox.py` — `build_tools(state, ctx, spec, job=None)`: every tool,
   gated by the spec, on the job (state, undo, checkpoint and submit gates
   are the job's), plus the door's own record on the `ToolBox`: the
-  look-before-commit gates and the delivery bookkeeping. The interactive
-  transform lives here: `_Staged` (one section, its calibrated canvas and the
+  look-before-commit gates and the delivery bookkeeping. Every write goes
+  through `langslice.ops` (above). The interactive
+  transform's pictures live here: `_Staged` (one section, its calibrated canvas and the
   resolved pivot), `adjust_transforms` (the write AND the look, any positioned
   section; `mode="ab"` draws the new parameters beside what the section
   carried before the call, a silhouette fit included; the same numbers again
-  re-draw without an undo step). One to four distinct sections share one undo
-  step and one `view`; each returns one image, or two for `ab`/`side_by_side`, mapped by
-  per-result `image_indexes`. Paired landmark tools are removed; interactive
+  re-draw without an undo step). Each entry is staged and drawn, its record
+  built by `ops.transforms.interactive_transform`, and the call's records
+  written once by `ops.transforms.set_transforms`: one to four distinct
+  sections share one undo step and one `view`; each returns one image, or two for `ab`/`side_by_side`, mapped by
+  per-result `image_indexes`. The knobs are rotation, the two scales, the
+  two shifts and, since 2026-10-03 (Nash), an optional `shear` (default 0):
+  `affine.decompose_affine`'s convention, linear part
+  `R(rotation) . [[scale_x, shear*scale_x], [0, scale_y]]`, a unitless slant
+  before the rotation in units of `scale_x`, the same number a fit reports,
+  so a tweak that copies a fit's knobs keeps its map (an Elastix fit's shear
+  given back: 0.07 px; dropped: 8 px, `test_linear_fit_affine_elastix`).
+  Paired landmark tools are removed; interactive
   alignment exposes direct affine adjustments only.
   `transform_history` on the ToolBox is per section and lasts the whole run,
-  but is not repeated in tool replies. `commit(before, *touched)` (the job's commit) is what ordinary writes answer with: the status rows of
+  but is not repeated in tool replies. `answered(*touched)` (after an ops
+  write; `commit(before, *touched)` where the door still writes, the
+  `keep_linear` record) is what ordinary writes answer with: the status rows of
   the sections it touched plus `n_sections`, never the whole table —
   transform writes return their canonical physical result instead; `status`,
   `undo`, `redo` and `submit` are what return all the rows.
@@ -361,13 +418,18 @@ pictures need the tool bodies split (phase 3).
   `--pixel-size-um` (`"host"`), else the file's TIFF/OME tags (`"file"`),
   else the tissue-width guess (`"estimated"`) — it never crashes and never
   silently pretends. The knobs are ABBA's (rotation about the pivot, per-axis
-  scales, `translate_x_mm`/`translate_y_mm`), and the recorded transform
+  scales, `translate_x_mm`/`translate_y_mm`) plus `shear`, and the recorded transform
   carries them under `"physical"` (with the pivot as canvas fractions) next to
   the six normalized numbers plus the `"calibration"` used.
+  The fits return numbers, never pictures (2026-10-03): an ok payload carries
+  a `FitFrame` under `FIT_FRAME_KEY` (the working frame, its calibration,
+  the fitted matrix on it, and `left`, the side split the fit resolved for
+  one-sided regions from the placement it started from), which the caller
+  pops and draws from; there is no draw callback.
   `physical_decomposition` is `decompose_affine` minus its translation
   fractions; `similarity_fit` (Umeyama, exact on two points), `affine_fit`
-  (least squares) and `physical_params` (a canvas 2x3 back into the five knobs
-  about a pivot) are shared affine geometry helpers.
+  (least squares) and `physical_params` (a canvas 2x3 back into the knobs,
+  shear included, about a pivot) are shared affine geometry helpers.
   `region_silhouette_fit` (2026-10-01) is `fit_affine`'s `include`/`exclude`
   path: atlas regions resolved by the deformable package
   (`deformable.atlas_images.regions_mask`, `deformable.masks`; a one-sided
@@ -508,7 +570,9 @@ The ABBA dialog's controls, all plain `JobSpec` fields (not CLI flags yet):
   sections and atlas, `opening.py`) and
   every later picture (`render.picture_edge`: each panel a tool returns):
   low 256/512, medium 384/768, high 512/1024, auto 256 then the agent's
-  `view.resolution` per call (128..1536, 512 when it gives none). Only what the
+  `view.resolution` per call (128 up to the driver model's largest image,
+  2048 px on the OpenAI lanes, 2000 for a Claude host; 512 when it gives
+  none). Only what the
   agent is SHOWN changes. Nothing is upsampled past its source: a framed
   `render_slice` treats `long_edge` as a ceiling over the working copy, a
   physical picture (`draw_canvas`) renders the section at the panel size
@@ -546,7 +610,8 @@ failed `submit` reports unmet requirements without changing or ending the run.
 block after an anchor or to the start; a full list sets the whole order. Unlisted
 sections retain relative order. `move_slice` and the three paired-landmark tools
 are removed. Direct adjustments replace the complete transform, including a
-historical spline or shear.
+historical spline or shear (a shear is given again with the `shear` knob,
+2026-10-03).
 
 ## Linear scope and saved spline compatibility (2026-09-15)
 
@@ -844,8 +909,8 @@ deleted rather than kept behind a flag. The later in-plane paired-landmark
 extension was also removed; nonlinear registration stays separate.
 
 **One transform representation.** Elastix, silhouette, interactive:
-every stored transform and every fit payload carries `physical` (the five
-knobs `adjust_transforms` takes, plus `shear`, about a pivot in canvas fractions)
+every stored transform and every fit payload carries `physical` (the
+knobs `adjust_transforms` takes, `shear` included since 2026-10-03, about a pivot in canvas fractions)
 next to the six normalized numbers. The fraction-based `decomposition` left
 the fit payload: "+0.04 mm entered, negative fraction reported" cost four
 sessions, and GPT-6 Astra could not hand a fit's numbers to the manual
@@ -894,11 +959,13 @@ was in memory only and a resume began with none).
   `affine.silhouette_affine` as `atlas_mask_at`, 2026-09-10). Until then it
   measured against the FLAT section on a 13-degree brain and said so with
   `flat_atlas_fit`; Astra's run-19 debrief asked for exactly this.
-- `physical` on a fit is the five knobs about the canvas centre plus the
-  `shear` they cannot express (0.10-0.16 on M05_D_08, not noise), so a preview
-  typed from a fit reproduces it only up to that shear. The A/B view does not
-  have that gap: its B side is drawn from the six stored numbers
-  (`affine.denormalized_affine`), which are exact.
+- `physical` on a fit is the knobs about the canvas centre, `shear`
+  included (0.10-0.16 on M05_D_08, not noise). Until 2026-10-03
+  `adjust_transforms` had no shear knob, so a preview typed from a fit
+  reproduced it only up to that shear; now the fit's knobs given back,
+  shear included, reproduce it up to their rounding. The A/B view's B side
+  is still drawn from the six stored numbers (`affine.denormalized_affine`),
+  which are exact.
 - The moments core has a 180-degree ambiguity — `(1,1)` and `(-1,-1)` are the
   same axes turned round — and settles it on silhouette IoU alone. On INTACT
   M05 sections the right one wins by 0.036-0.092 IoU; a template-correlation
