@@ -122,77 +122,38 @@ Full CLI: `langslice --help`. Pipeline detail: [`docs/index.md`](./docs/index.md
 
 ## ABBA integration
 
-The independent [Fiji connector](connectors/fiji/README.md) adds
-**Register > LangSlice > LangSlice Registration…** to an existing ABBA
+LangSlice works in [ABBA](https://abba-documentation.readthedocs.io) 0.24.x
+through one integration: the [Fiji connector](connectors/fiji/README.md),
+which adds **Register > LangSlice Registration…** to an existing ABBA
 installation, with account setup under **Plugins > LangSlice > LangSlice
 setup…** and inside the dialog. The dialog runs the agent on the selected
-slices with **Positioning** and **Linear** tasks, per-slice damage marks,
-channel preprocessing with a preview, and an estimated cost; the result is
-applied to ABBA as one undoable step when the run ends. It launches the
-separately installed Python worker as needed. See
+slices with the **Positioning**, **Linear** and **Nonlinear** tasks
+(ChatGPT, or Claude through a copied prompt), per-slice damage marks,
+channel preprocessing with a preview, and an estimated cost. LangSlice runs
+as its own Python worker; every change the agent makes lands in ABBA live,
+as an undoable step: positions, the in-plane affine, and with Nonlinear on a
+warp step on top of it (sections that already carry your own warp are left
+alone unless you allow the agent to overwrite existing transforms). See
 [installation and supported sessions](docs/abba_installation.md).
 
-The following describes the older **Python-started ABBA launcher**, which remains
-available for development and its existing companion viewers:
-
-LangSlice runs inside [ABBA](https://abba-documentation.readthedocs.io) as a
-registration plugin: position slices however you like (DeepSlice, QuickNII
-import, manual), then apply LangSlice's nonlinear registration from ABBA's
-`Register` menu like any built-in method — undoable, saved in the ABBA state.
-
-The top-bar **LangSlice** menu configures and starts the linear agent on
-selected slices (all slices if none are selected). Choose the model, reasoning
-effort, slice interval and thickness, then enable **Ordering**, **Position**,
-and **Transforms** independently. Transforms offers interactive adjustment by
-the agent and automatic affine fitting as separate checkboxes. Interval and
-thickness initially follow ABBA's current stack and can be overridden; interval
-is the median current spacing, and thickness is ABBA's displayed thickness,
-so check these against your cutting protocol.
-
-The independent **Open agent viewer in ABBA** and **Open agent log** menu
-options control which companion windows open during a run. The log appears as a
-narrow sidebar with streamed assistant text, provider reasoning summaries,
-expandable tool cards, and smaller image previews below. Browse earlier images,
-enlarge a preview, or pause scrolling. It uses a local Chrome/Chromium app window,
-with a Swing fallback. Reasoning summaries come directly from the provider;
-LangSlice does not rewrite them, and encrypted reasoning is never displayed.
-The viewer keeps bounded recent history. Enable a JSONL trace separately for
-full persistent diagnostics.
-
-The native agent viewer stays open across single-section and multi-section
-work. Its upper overview uses ABBA's actual positioning atlas display, at the
-session's existing display interval and channel settings. Sections retain their
-native size and placement, with ABBA's green selection handles and dashed guides.
-The lower focus panels show individual registered atlas overlays, up to four
-sections per page. The agent's target changes update this separate viewer while
-preserving the main ABBA camera and selection. Position and transform writes still reach
-ABBA through its normal undoable actions. The overview and focus panels show
-committed registrations; speculative candidate positions appear only in the
-exact tool-image previews in the log, without moving sections or adding candidate
-markers to the native viewer. Closing either companion leaves registration
-running; **Show agent viewer** and **Show agent log** reopen them.
-
-Menu runs currently support flat coronal Allen mouse sessions. Turn off ordering
-when working on slices with existing registrations. The agent uses calibrated
-snapshots of the loaded images and adds its corrections to the existing stack;
-the window remains responsive while it works. Human edits during a run are not
-read back by the agent. Results and snapshots are retained in the run directory
-reported in the console; save the finished session with ABBA's **File > Save State**.
-
-`langslice abba --linear FOLDER` runs the `linear` agent (order, position,
-one in-plane transform per section) inside the same ABBA session instead: the
-agent works exactly as it does headless, and every write it makes — a
-reorder, a position, a flip, an affine tweak — appears live on the stack in
-ABBA's BigDataViewer as it happens, undoable there like any other ABBA
-action. `Register > LangSlice` stays available in the same session.
+`langslice abba` starts ABBA from Python (abba-python with ABBA 0.24.1's
+Java libraries, Java 21) with the connector on its classpath, and adds two
+passive companions to the connector's runs: the agent viewer (ABBA's own
+positioning display plus focus panels of the sections the agent is working
+on, without moving your camera or selection) and the agent log (a browser
+window with the agent's text, provider reasoning summaries, tool cards and
+the pictures it was shown, read from the job folder). Neither changes ABBA;
+the connector applies every change.
 
 ```bash
 conda activate langslice
-conda install -c conda-forge openjdk=11 maven
-pip install -e ".[abba]"   # optional Python-started ABBA route
-langslice abba             # launches the ABBA GUI with LangSlice installed
-langslice abba --linear ./sections --save-state ./sections/run.abba
+pip install -e ".[abba]"                    # abba-python
+(cd connectors/fiji && mvn package)         # the connector jar (Java 21)
+langslice abba                              # or --connector-jar PATH, --no-viewer, --no-log
 ```
+
+Importing images, saving or loading an ABBA state and exporting
+registrations are ABBA's own commands; LangSlice does not wrap them.
 
 ## Related Repositories
 

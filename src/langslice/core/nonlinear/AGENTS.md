@@ -109,13 +109,13 @@ the residual alone.
   `deformable/` record.
 - `border_refinement.py` — `refine_borders`: the correction request and the
   yellow-line extraction (`extract_thinned_lines`, `yellow_mask`, `thin`),
-  the rough and corrected overlays; it fits nothing. `hosts/integrations/abba.py`
-  shares this core directly.
+  the rough and corrected overlays; it fits nothing. (The abba-python
+  plugin that also used it was removed 2026-10-04.)
 - `border_fit.py` — `fit_border_lines` (the deformable fit of the lines;
   `BorderFit`: the field in canvas pixels, fitted labels, the fitted borders
   drawn smoothly on the canvas, the record, metadata) and
-  `placement_on_canvas`. The ABBA plugin passes its own label grid as
-  `native=` (placed by an identity).
+  `placement_on_canvas`. A caller may pass its own label grid as `native=`
+  (placed by an identity).
 - `prompts.py` — the three prompt functions; the OpenAI-GPT or Gemini wording
   is selected by `canonical_provider(provider)` (the core's name table,
   `core/provider_names.py`).

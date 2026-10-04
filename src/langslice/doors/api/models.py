@@ -120,10 +120,13 @@ class LinearEstimateRequest(EngineBaseModel):
 
 
 class LinearEstimateResult(EngineBaseModel):
-    low: float
-    high: float
+    #: None when no estimate can be given (``available`` False; ``basis``
+    #: says why in plain language).
+    low: float | None
+    high: float | None
     unit: Literal["percent_of_usage_window"]
     basis: str
+    available: bool = True
 
 
 class PreprocessPreviewResult(EngineBaseModel):

@@ -21,19 +21,23 @@ command reaches the host commands by module path only (`hosts/cli.py`,
 
 ## Files and sub-packages
 
-- `cli.py` — the host commands `abba` (ABBA with LangSlice installed,
-  optionally with the linear agent's live mirror) and `serve` (the engine
-  service), registered with the `langslice` command by module path.
+- `cli.py` — the host commands `abba` (ABBA 0.24.x started from Python with
+  the Fiji connector jar on the classpath and the passive Python viewer and
+  log listening to its runs; `--connector-jar`, `--no-viewer`, `--no-log`)
+  and `serve` (the engine service), registered with the `langslice`
+  command by module path.
 
-- `integrations/` — the ABBA registration plugin, the live linear mirror,
-  the ABBA viewer and activity log (formerly top-level `integrations/`):
-  `integrations/CLAUDE.md`. The QUINT writer that used to sit there is
+- `integrations/` — `abba_launch.py` (what `langslice abba` starts, and
+  the listener of the connector's run messages), the ABBA agent viewer
+  (`abba_follow.py`, `abba_compare.py`, `abba_overview.py`) and activity log
+  (`abba_chat.py` + `static/`, `abba_activity.py`): `integrations/CLAUDE.md`.
+  The abba-python registration plugin, the launcher's settings menu and
+  the Python live mirror were removed 2026-10-04 (the Fiji connector is the
+  one ABBA integration). The QUINT writer that used to sit there is
   `job/quint.py` (an operation writes it).
 - `api/` — `service.py` (`langslice serve --stdio`: the JSON-lines engine
-  service the Fiji connector starts). Its `nonlinear.abba` worker
-  (`nonlinear_worker.py`), whose only caller was the Fiji connector's unused
-  Java `nonlinear(...)`, was removed 2026-10-04; ABBA's nonlinear route is the
-  abba-python registration plugin (`integrations/abba.py`). The protocol models, the runtime handlers, setup, saved
-  Claude jobs and the JVM-free linear snapshot worker are door-level, in
-  `doors/api/` (moved down 2026-10-04). `docs/abba_plugin_design.md`,
-  `docs/abba_installation.md`.
+  service the Fiji connector starts). The protocol models, the runtime
+  handlers, setup, saved Claude jobs and the JVM-free snapshot worker
+  (`abba_worker.py`, whose checkpoints carry the affine and warp rows) are
+  door-level, in `doors/api/` (moved down 2026-10-04).
+  `docs/abba_plugin_design.md`, `docs/abba_installation.md`.

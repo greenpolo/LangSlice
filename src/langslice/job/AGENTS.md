@@ -39,7 +39,6 @@ LangSlice, so a job travels with its images:
 | `langslice mcp`, `start_job(job_id=...)` | the saved job's | the index entry's job folder |
 | ABBA worker `linear.run` (Fiji connector) | the connector's snapshot folder, a fresh `langslice-abba-*` temporary folder per run | `<snapshots>/langslice/` (or the spec's `job_dir`, or the read-only fallback); the result's `output_dir` names the one used |
 | ABBA Claude mode (`claude.prepare`) | `~/.langslice/snapshots/claude-*/` | `<snapshots>/langslice/` (id in the index) |
-| `langslice abba --linear` (Python launcher) | a fresh `langslice-abba-*` run folder under the spec's folder (or the system temporary folder) | `<run folder>/langslice/` |
 
 Two exceptions, both from `layout.locate_job_folder` (used by
 `Job.open`, `engine.build_context` and the Claude job preparation):

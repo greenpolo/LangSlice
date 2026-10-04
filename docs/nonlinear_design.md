@@ -172,12 +172,13 @@ linear placement, including shear, physical calibration and section
 orientation, without changing the linear state. Their image frame is the
 oriented rendered section, not the original acquisition TIFF.
 
-ABBA already provides aligned atlas-coordinate channels. Its adapter
-(`hosts/integrations/abba.py`) draws those placed labels directly on the section
-and uses the same route-"supplied" correction core and the same fit (the
-labels sampled at ABBA's coordinates are the fit's native grid, placed by an
-identity at the plugin's voxel size) — no standalone placement-free route or
-silhouette refit in that adapter.
+In ABBA (the Fiji connector, 2026-10-04) the nonlinear step is the linear
+agent's own `trace_borders` / `fit_deformable` on the connector's
+snapshots; an applied deformation lands in ABBA as a BigWarp warp step on
+top of LangSlice's affine step (`core/abba_warp.py`: landmark pairs in
+ABBA's centred world frame, a 9x9..33x33 TPS checked within 5 µm, folds
+refused). The abba-python registration plugin that sampled ABBA's
+coordinate channels was removed that day.
 
 Do not infer left-right reflection from a nearly symmetric tissue silhouette.
 Mirroring must be explicit and consistent for labels, grayscale anatomy and
