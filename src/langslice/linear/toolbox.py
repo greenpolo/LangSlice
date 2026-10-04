@@ -88,6 +88,7 @@ from langslice.ops import traces as ops_traces
 from langslice.ops import transforms as ops_transforms
 from langslice.ops import views as ops_views
 from langslice.ops.refusal import Refused
+from langslice.providers.registry import ImageModel, resolve_image_model
 
 if TYPE_CHECKING:  # ponytail: import cycle — engine builds the toolbox
     from langslice.linear.engine import EngineContext
@@ -548,6 +549,7 @@ def build_tools(
     job: Job | None = None,
     on_event: LiveCallback | None = None,
     max_view_edge: int | None = None,
+    image_model: ImageModel | None = None,
 ) -> ToolBox:
     """Build the tools this run's spec switches on, closed over *state*.
 
@@ -555,7 +557,11 @@ def build_tools(
     context's job folder (an empty undo history, nothing written until the
     first write). *max_view_edge* is the largest picture
     the driver model takes (None: the run model's lane,
-    :func:`langslice.linear.view_options.view_edge_limit`).
+    :func:`langslice.linear.view_options.view_edge_limit`). *image_model* is
+    the image model ``trace_borders`` calls when the run has one (None: this
+    door resolves the spec's ``nonlinear.provider`` and ``image_model``
+    through :func:`langslice.providers.registry.resolve_image_model`, the
+    binding every operation below receives).
     """
     if job is None:
         job = Job(state, spec, layout=ctx.layout, results_path=ctx.results_path)
@@ -566,6 +572,8 @@ def build_tools(
     over_cap = job.over_cap
     #: The image model is part of this run: trace_borders and traced images exist.
     traces_on = spec.nonlinear.uses_image_model
+    if traces_on and image_model is None:
+        image_model = resolve_image_model(spec.nonlinear.provider, spec.nonlinear.image_model)
 
     # --- shared plumbing ------------------------------------------------
 
@@ -624,13 +632,6 @@ def build_tools(
             float(state.pitch_deg),
             float(state.yaw_deg),
         )
-
-    def correction_fingerprint() -> Callable[[str], str]:
-        """A section's current image-correction geometry: the provider bridge's
-        (``registration_tool``, until phase 4 injects the provider)."""
-        from langslice import registration_tool
-
-        return lambda section_id: registration_tool.correction_fingerprint(state, ctx, section_id)
 
     def resolve_many(refs: list[Any]) -> tuple[list[SliceState], list[str]]:
         known: list[SliceState] = []
@@ -834,7 +835,7 @@ def build_tools(
         try:
             done = ops_submit.submit(
                 job, summary=summary, notes=notes, interval_breaks=interval_breaks,
-                fingerprint=correction_fingerprint() if traces_on else None, gate=look_gate,
+                traces=traces_on, workspace=ctx, gate=look_gate,
             )
         except Refused as refusal:
             return refusal.payload()
@@ -1796,19 +1797,9 @@ def build_tools(
         saved and checked at submit. The first result at a placement is reused.
         Does not fit a deformation.
         """
-        from langslice import registration_tool
-
-        def start(section_id: str, **where: Any) -> Any:
-            return registration_tool.start_correction(
-                state, ctx, section_id, provider=spec.nonlinear.provider,
-                image_model=spec.nonlinear.image_model, **where,
-            )
-
+        assert image_model is not None  # the tool exists only when traces are on
         try:
-            done = ops_traces.trace_borders(
-                job, id, prompt=prompt, fingerprint=correction_fingerprint(), start=start,
-                workers=registration_tool.MAX_CONCURRENT_IMAGE_CALLS,
-            )
+            done = ops_traces.trace_borders(job, ctx, id, prompt=prompt, image_model=image_model)
         except Refused as refusal:
             return refusal.payload()
         if done.running:

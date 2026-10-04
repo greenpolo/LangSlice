@@ -20,6 +20,13 @@ CLIs, saved configs, and sibling repos keep working.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from langslice.nonlinear.types import GeneratedSegmentation, SegmentationGenerationRequest
+
 CANONICAL_PROVIDERS = ("gemini-api", "openai-api", "openai-oauth", "none")
 
 _ALIASES = {
@@ -54,3 +61,52 @@ def canonical_provider(name: str) -> str:
     """Resolve any accepted provider spelling to its canonical name."""
     normalized = (name or "").strip().lower()
     return _ALIASES.get(normalized, normalized)
+
+
+#: One image edit: the request in (prompt, images in order, provider, model),
+#: one image out.
+ImageCall = Callable[["SegmentationGenerationRequest"], "GeneratedSegmentation"]
+
+
+@dataclass(frozen=True)
+class ImageModel:
+    """An image model as the operations receive it: resolved, never chosen there.
+
+    ``provider`` is the canonical access method (it selects the prompt's
+    GPT or Gemini wording and keys saved replies), ``model`` the image model
+    (None: the provider's own default), ``call`` the one edit. A door (the
+    toolbox binding, the engine, MCP, the CLI, a host plugin) builds this with
+    :func:`resolve_image_model`; a test or a script passes its own ``call``.
+    """
+
+    provider: str
+    model: str | None
+    call: ImageCall
+
+
+def default_image_model(provider: str) -> str | None:
+    """The image model a provider uses when none is named (None: the transport's)."""
+    if canonical_provider(provider) == "openai-oauth":
+        return OPENAI_OAUTH_DEFAULT_IMAGE_MODEL
+    return None
+
+
+def resolve_image_model(provider: str, model: str | None = None) -> ImageModel:
+    """Resolve a provider name (any accepted spelling) to its image-edit call.
+
+    The transport (``langslice.nonlinear.providers``) is imported when the
+    call runs, not here, so resolving loads no model client. ``none`` and
+    unknown names are refused: there is no image model to call.
+    """
+    canonical = canonical_provider(provider)
+    if canonical == "none":
+        raise ValueError("The image correction tool requires an image-model provider")
+    if canonical not in CANONICAL_PROVIDERS:
+        raise ValueError(f"Unknown provider: {provider}")
+
+    def call(request: SegmentationGenerationRequest) -> GeneratedSegmentation:
+        from langslice.nonlinear.providers import generate_warped_segmentation_image
+
+        return generate_warped_segmentation_image(request)
+
+    return ImageModel(provider=canonical, model=model or default_image_model(canonical), call=call)

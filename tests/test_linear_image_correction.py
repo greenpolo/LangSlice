@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from langslice.adk import TOOL_MEDIA_PARTS_KEY
+from langslice.core import handoff
 from langslice.linear.checkpoint import load_checkpoint
 from langslice.linear.job import apply_host_inputs
 from langslice.linear.prompt import build_job_statement
@@ -68,13 +69,15 @@ def test_image_correction_runs_in_background_and_submit_waits(tmp_path: Path, mo
         return running, job
 
     monkeypatch.setattr(registration_tool, "start_correction", fake_start)
-    monkeypatch.setattr(registration_tool, "correction_fingerprint", lambda *_: "geometry")
+    monkeypatch.setattr(handoff, "correction_fingerprint", lambda *_: "geometry")
     box = build_tools(state, ctx, spec)
     result = _tool(box, "trace_borders")("0", "Edited prompt.")
+    # The door resolved the spec's provider and model once; the operation got it.
+    model = calls[0][1].pop("image_model")
+    assert (model.provider, model.model) == ("openai-api", "test-model")
     assert calls == [("s0.png", {
         "prompt": "Edited prompt.",
         "calls_dir": Path(ctx.job_folder) / "sections" / "s0" / "image_correction",
-        "provider": "openai-api", "image_model": "test-model",
     })]
     # The tool returns while the image call is still running, with no images.
     assert result["status"] == "running" and TOOL_MEDIA_PARTS_KEY not in result
@@ -106,7 +109,7 @@ def test_result_of_an_undone_correction_does_not_land(tmp_path: Path, monkeypatc
     running = {"status": "running", "geometry_fingerprint": "geometry"}
     monkeypatch.setattr(registration_tool, "start_correction",
                         lambda *a, **k: (running, lambda: {**running, "status": "ok"}))
-    monkeypatch.setattr(registration_tool, "correction_fingerprint", lambda *_: "geometry")
+    monkeypatch.setattr(handoff, "correction_fingerprint", lambda *_: "geometry")
     box = build_tools(state, ctx, spec)
     _tool(box, "trace_borders")("0")
     _tool(box, "undo")()
@@ -118,11 +121,9 @@ def test_result_of_an_undone_correction_does_not_land(tmp_path: Path, monkeypatc
     "status": "ok", "geometry_fingerprint": "previous-placement",
 }])
 def test_submit_requires_completed_correction_at_current_geometry(tmp_path, monkeypatch, result):
-    from langslice import registration_tool
-
     state, ctx, spec = _placed(tmp_path)
     state.slices[0].image_correction = result
-    monkeypatch.setattr(registration_tool, "correction_fingerprint", lambda *_: "current")
+    monkeypatch.setattr(handoff, "correction_fingerprint", lambda *_: "current")
     box = build_tools(state, ctx, spec)
     response = _tool(box, "submit")("Done", [], [])
     assert response["error"] == "MISSING_IMAGE_CORRECTIONS"
@@ -139,7 +140,7 @@ def test_image_tool_reports_missing_placement_without_checkpoint_mutation(tmp_pa
         raise ValueError("s0.png requires a position and linear transform")
 
     monkeypatch.setattr(registration_tool, "start_correction", missing)
-    monkeypatch.setattr(registration_tool, "correction_fingerprint", missing)
+    monkeypatch.setattr(handoff, "correction_fingerprint", missing)
     box = build_tools(state, ctx, spec)
     response = _tool(box, "trace_borders")("s0.png")
     assert response["error"] == "INVALID_LINEAR_PLACEMENT"

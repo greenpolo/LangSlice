@@ -35,9 +35,9 @@ Four doors are covered:
 
 Everything goes through public entry points (``build_tools``, ``engine.run``,
 ``mcp_server.server.build_server``). The few internals touched are listed in
-:data:`PATCHES` and :func:`stub_image_model`; each is checked to exist, so a
-phase that moves one fails here loudly instead of silently recording
-something else.
+:data:`PATCHES`; each is checked to exist, so a phase that moves one fails
+here loudly instead of silently recording something else. The image model is
+injected (:func:`stub_image_model`, given to ``build_tools``).
 
 Regenerate deliberately::
 
@@ -75,7 +75,7 @@ ROOT_TOKEN = "<ROOT>"
 HEX_TOKEN = "<hex>"
 #: Hex runs this long or longer are digests. Normalised because the image
 #: correction's geometry fingerprint hashes the section file's absolute path
-#: and mtime (``registration_tool.correction_fingerprint``), and the trace
+#: and mtime (``core.handoff.correction_fingerprint``), and the trace
 #: call key, the deformable cache keys and the record directories derive from
 #: it; none of them are stable across temporary folders.
 HEX_RUN = re.compile(r"[0-9a-f]{16,}")
@@ -176,21 +176,20 @@ def apply_patches() -> None:
         setattr(module, attribute, value)
 
 
-def stub_image_model() -> None:
-    """Replace the image model's network call; everything around it runs.
+def stub_image_model(spec: Any) -> Any:
+    """The image model the full toolbox is given: the run's, its network call replaced.
 
-    ``registration_tool.start_correction`` prepares the canvas and the rough
-    border overlay as it always does; the stub answers the edit with that
-    overlay (the borders as drawn), so line extraction, the artifacts and the
-    traced fit sections downstream all run on real data. No network.
+    ``build_tools`` takes the image model as an argument (phase 4); this is
+    the spec's provider and model as :func:`langslice.providers.registry.resolve_image_model`
+    resolves them, with a ``call`` that answers the edit with the rough border
+    overlay ``registration_tool.start_correction`` prepared (the borders as
+    drawn), so line extraction, the artifacts and the traced fit sections
+    downstream all run on real data. No network.
     """
-    from langslice import registration_tool
-    from langslice.nonlinear.types import GeneratedSegmentation
+    import dataclasses
 
-    name = "generate_warped_segmentation_image"
-    if not hasattr(registration_tool, name):
-        raise RuntimeError(f"golden recorder: registration_tool.{name} no longer exists; "
-                           "update stub_image_model")
+    from langslice.nonlinear.types import GeneratedSegmentation
+    from langslice.providers.registry import resolve_image_model
 
     def generate(request: Any) -> GeneratedSegmentation:
         images = [request.slice_image, *request.reference_images]
@@ -203,7 +202,8 @@ def stub_image_model() -> None:
         return GeneratedSegmentation(image=drawn.convert("RGB"), provider=request.provider,
                                      model=str(request.model), route="golden-stub")
 
-    setattr(registration_tool, name, generate)
+    resolved = resolve_image_model(spec.nonlinear.provider, spec.nonlinear.image_model)
+    return dataclasses.replace(resolved, call=generate)
 
 
 # --- normalisation ----------------------------------------------------------------
@@ -378,7 +378,7 @@ def record_full_toolbox(rec: Recorder, folder: Path) -> tuple[list[str], Any]:
     spec = full_spec(folder)
     ctx = build_context(spec, emit=lambda _m: None, atlas_loader=atlas_loader())
     state = ingest(spec, ctx)
-    box = build_tools(state, ctx, spec)
+    box = build_tools(state, ctx, spec, image_model=stub_image_model(spec))
     t = tool_map(box)
     door = "tools"
 
@@ -871,7 +871,6 @@ def record(out: Path) -> dict[str, Any]:
     for variable in ("LANGSLICE_TRACE_DIR", "LANGSLICE_VLM_DEBUG_DIR"):
         os.environ.pop(variable, None)
     apply_patches()
-    stub_image_model()
     if out.exists():
         shutil.rmtree(out)
     out.mkdir(parents=True)

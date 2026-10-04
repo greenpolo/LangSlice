@@ -9,7 +9,7 @@ atlas plane composes the linear placement after it::
 
     native_xy = inverse(atlas_to_section) @ (pixel + field_mm / mm_per_px)
 
-which is ``registration_handoff``'s and ``border_registration``'s order
+which is ``core.handoff``'s and ``border_registration``'s order
 (``composed_native_map``: residual first, then undo the placement), so ABBA,
 VisuAlign and BrainGlobe exports can all be derived from
 :meth:`DeformableRecord.native_coordinates` and

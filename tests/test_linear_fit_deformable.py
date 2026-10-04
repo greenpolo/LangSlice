@@ -405,13 +405,13 @@ def _trace_artifacts(state: StackState, ctx: Any, folder: Path, *,
 
 def test_traced_images_need_a_completed_trace_at_this_placement(tmp_path: Path, atlas,
                                                                 monkeypatch):
-    from langslice import registration_tool
+    from langslice.core import handoff
 
     state, ctx, _, box = _setup(tmp_path, atlas)
     fit = _tool(box, "fit_deformable")
     missing = fit([ID], **FAST, fit_section="traced_lines")
     assert missing["results"][0]["error"] == "NO_TRACE"
-    monkeypatch.setattr(registration_tool, "correction_fingerprint", lambda *_: "now")
+    monkeypatch.setattr(handoff, "correction_fingerprint", lambda *_: "now")
     _fake_trace(state, ctx, tmp_path / "trace", fingerprint="earlier")
     assert fit([ID], **FAST, fit_section="traced_lines")["results"][0]["error"] \
         == "TRACE_STALE"
@@ -476,7 +476,7 @@ def test_the_job_is_a_deformation_per_section_in_both_modes(tmp_path: Path, atla
 
 
 def test_without_an_image_model_there_are_no_traces(tmp_path: Path, atlas, monkeypatch):
-    from langslice import registration_tool
+    from langslice.core import handoff
 
     _, _, spec, box = _setup(tmp_path, atlas, provider="none")
     assert spec.nonlinear.uses_image_model is False
@@ -490,7 +490,7 @@ def test_without_an_image_model_there_are_no_traces(tmp_path: Path, atlas, monke
     def no_trace_check(*_a: Any, **_k: Any) -> Any:
         raise AssertionError("submit looked for an image correction")
 
-    monkeypatch.setattr(registration_tool, "correction_fingerprint", no_trace_check)
+    monkeypatch.setattr(handoff, "correction_fingerprint", no_trace_check)
     submit = _tool(box, "submit")
     first = submit("Done", [], [])
     assert first["error"] == "MISSING_DEFORMATIONS"
@@ -505,10 +505,10 @@ def test_without_an_image_model_there_are_no_traces(tmp_path: Path, atlas, monke
 
 def test_with_the_image_model_submit_wants_traces_then_deformations(tmp_path: Path, atlas,
                                                                      monkeypatch):
-    from langslice import registration_tool
+    from langslice.core import handoff
 
     state, ctx, _, box = _setup(tmp_path, atlas)
-    monkeypatch.setattr(registration_tool, "correction_fingerprint", lambda *_: "now")
+    monkeypatch.setattr(handoff, "correction_fingerprint", lambda *_: "now")
     submit = _tool(box, "submit")
     assert submit("Done", [], [])["error"] == "MISSING_IMAGE_CORRECTIONS"
     _fake_trace(state, ctx, tmp_path / "trace", fingerprint="now")
@@ -550,10 +550,10 @@ def test_a_traced_image_waits_for_its_running_trace_and_shows_it(tmp_path: Path,
     import io
     import time
 
-    from langslice import registration_tool
+    from langslice.core import handoff
 
     state, ctx, _, box = _setup(tmp_path, atlas)
-    monkeypatch.setattr(registration_tool, "correction_fingerprint", lambda *_: "now")
+    monkeypatch.setattr(handoff, "correction_fingerprint", lambda *_: "now")
     folder = tmp_path / "trace"
     state.slices[0].image_correction = {"status": "running", "geometry_fingerprint": "now"}
 
@@ -580,10 +580,10 @@ def test_a_traced_image_waits_for_its_running_trace_and_shows_it(tmp_path: Path,
 def test_a_trace_still_running_after_the_wait_is_reported(tmp_path: Path, atlas, monkeypatch):
     import threading
 
-    from langslice import registration_tool
+    from langslice.core import handoff
 
     state, _, _, box = _setup(tmp_path, atlas)
-    monkeypatch.setattr(registration_tool, "correction_fingerprint", lambda *_: "now")
+    monkeypatch.setattr(handoff, "correction_fingerprint", lambda *_: "now")
     monkeypatch.setattr(deformation, "TRACE_WAIT_S", 0.2)
     state.slices[0].image_correction = {"status": "running", "geometry_fingerprint": "now"}
     release = threading.Event()

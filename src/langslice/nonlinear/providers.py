@@ -5,13 +5,12 @@ from __future__ import annotations
 import base64
 import importlib
 import io
-from dataclasses import dataclass, field
 from typing import Any, cast
 
 from PIL import Image
 
 from langslice.nonlinear.model_prompts import gemini_aspect_for
-from langslice.nonlinear.types import GeneratedSegmentation
+from langslice.nonlinear.types import GeneratedSegmentation, SegmentationGenerationRequest
 from langslice.providers import vlm_config
 from langslice.providers.openai_config import (
     get_openai_client,
@@ -31,28 +30,6 @@ _VALID_REQUEST_ROUTES = {
 }
 
 _IMAGE_QUALITIES = {"low", "medium", "high", "xhigh", "max"}
-
-
-@dataclass
-class SegmentationGenerationRequest:
-    #: Model-facing atlas references, in prompt order: they follow the slice
-    #: image as Image 2..N. The prompt describes what each one is; providers
-    #: just deliver them in this order.
-    reference_images: list[Image.Image]
-    slice_image: Image.Image
-    prompt: str
-    provider: str = "google"
-    model: str | None = None
-    route: str | None = None
-    review_model: str | None = None
-    #: Task-level semantic: registration is always an EDIT of the slice image
-    #: (pixel-aligned output). Each transport translates this its own way —
-    #: the images endpoint IS an edit call, the Responses-based routes pass it
-    #: as the image_generation tool's action.
-    mode: str = "edit"
-    openai_image_route: str = "images"
-    thinking_level: str | None = None
-    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 def _image_to_png_file(image: Image.Image, name: str) -> io.BytesIO:

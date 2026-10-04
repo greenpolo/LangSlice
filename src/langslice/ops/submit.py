@@ -11,6 +11,7 @@ from langslice.ops.refusal import Refused
 
 if TYPE_CHECKING:
     from langslice.linear.job import Job
+    from langslice.linear.workspace import Workspace
 
 #: The note the write adds when the corrected order is reversed to run the atlas way.
 REVERSED_NOTE = "submit: corrected order reversed to run the atlas way"
@@ -45,18 +46,20 @@ def submit(
     summary: str = "",
     notes: Sequence[Any] = (),
     interval_breaks: Sequence[Any] = (),
-    fingerprint: Callable[[str], str] | None = None,
+    traces: bool = False,
+    workspace: Workspace | None = None,
     gate: Callable[[], Mapping[str, Any] | None] | None = None,
 ) -> Submitted:
     """Check the job's submit gates, then end the run: ONE undo step.
 
     The gates, in order: the job's (:meth:`~langslice.linear.job.Job.submit_errors`:
     positions, order, interval breaks, transforms, deformations), then, with
-    *fingerprint* (a section's current image-correction geometry, bound by
-    the caller: it lives with the provider code) and the nonlinear task on,
-    every section's completed image correction at its current placement,
-    which is reported before a missing deformation since a deformation may
-    be fitted to its section's trace. *gate*, when given, runs last, before
+    *traces* (the image model is part of the run; *workspace*, the run's,
+    reads each section's current geometry) and the nonlinear task on, every
+    section's completed image correction at its current placement
+    (:meth:`~langslice.linear.job.Job.missing_image_corrections`), which is
+    reported before a missing deformation since a deformation may be fitted
+    to its section's trace. *gate*, when given, runs last, before
     anything is written: a door's own check (the tool door's "view_stack
     first"); a payload it returns refuses the call. A refusal is
     :class:`Refused` with the gate's payload, nothing written.
@@ -71,12 +74,13 @@ def submit(
     refusal = job.submit_errors(breaks)
     # With the image model, missing traces are reported before missing
     # deformations: a deformation may be fitted to its section's trace.
-    traces = fingerprint is not None
+    if traces and workspace is None:
+        raise ValueError("submit: checking the image corrections needs the workspace")
     if refusal is not None and not (traces and refusal.get("error") == "MISSING_DEFORMATIONS"):
         raise Refused.of(refusal)
     if traces and job.spec.has("nonlinear"):
-        assert fingerprint is not None
-        pending = job.missing_image_corrections(fingerprint)
+        assert workspace is not None
+        pending = job.missing_image_corrections(workspace)
         if pending:
             raise Refused(
                 "MISSING_IMAGE_CORRECTIONS", status="refused", sections=pending,

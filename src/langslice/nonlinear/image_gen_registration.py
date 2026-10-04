@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import cv2
 import numpy as np
@@ -26,6 +26,9 @@ from langslice.nonlinear.image_gen_helpers import (
 from langslice.nonlinear.model_prompts import aspect_ratio_limits, native_output_size
 from langslice.nonlinear.types import Deformation, RegistrationCandidate
 from langslice.space import Plane
+
+if TYPE_CHECKING:
+    from langslice.providers.registry import ImageCall
 
 #: Long edge every model-facing atlas render is NEAREST/LANCZOS-upscaled to at
 #: least. The atlas is coarse (a 25um coronal plate is ~456px across); below
@@ -360,6 +363,7 @@ def generate_registration_candidate(
     initial_atlas_to_slice: Sequence[Sequence[float]] | np.ndarray | None = None,
     initial_alignment_source: str = "supplied",
     atlas_mirror_lr: bool = False,
+    image_call: ImageCall | None = None,
 ) -> RegistrationCandidate:
     """Generate one dense border-based registration candidate.
 
@@ -381,6 +385,11 @@ def generate_registration_candidate(
     thin dispatcher; the routing and both routes' orchestration live in
     :mod:`langslice.nonlinear.border_registration` (avoids a circular import
     at module load time).
+
+    *image_call* is the image model's edit, resolved by the caller
+    (:class:`langslice.providers.registry.ImageModel`'s ``call``); without
+    it the request goes to the transport adapter for *provider*
+    (:func:`langslice.nonlinear.providers.generate_warped_segmentation_image`).
     """
     from langslice.nonlinear.border_registration import generate_border_registration_candidate
 
@@ -398,5 +407,5 @@ def generate_registration_candidate(
         debug_dir=debug_dir, on_progress=on_progress, on_trace=on_trace,
         openai_image_route=openai_image_route, review_model=review_model,
         thinking_level=thinking_level, native_canvas=native_canvas,
-        canvas_long_edge=canvas_long_edge,
+        canvas_long_edge=canvas_long_edge, image_call=image_call,
     )

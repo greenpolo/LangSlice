@@ -6,7 +6,7 @@ import json
 import uuid
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import cv2
 import numpy as np
@@ -38,6 +38,9 @@ from langslice.nonlinear.types import (
 )
 from langslice.providers.registry import canonical_provider
 from langslice.space import Plane, atlas_space_context, orient_slice_to_axes
+
+if TYPE_CHECKING:
+    from langslice.providers.registry import ImageCall
 
 
 def pixel_center_map(
@@ -187,6 +190,7 @@ def generate_border_registration_candidate(
     thinking_level: str | None = None,
     native_canvas: bool = True,
     canvas_long_edge: int | None = None,
+    image_call: ImageCall | None = None,
 ) -> RegistrationCandidate:
     """Route to exactly one of two border-based placements, then correct.
 
@@ -203,9 +207,12 @@ def generate_border_registration_candidate(
     with no placement replays route "atlas" without any model call: it is
     treated as that route's own final output. No reflection is inferred from
     symmetric tissue; ``atlas_mirror_lr`` is the only source of it.
+    *image_call* is the image model's edit (default: the transport adapter
+    for *provider*).
     """
     if passes not in (1, 2):
         raise ValueError("passes must be 1 or 2")
+    edit = image_call or generate_warped_segmentation_image
     if on_progress:
         on_progress("Preparing rough atlas boundaries on the original section...")
     candidate_id = candidate_id or f"candidate-{uuid.uuid4().hex[:12]}"
@@ -271,7 +278,7 @@ def generate_border_registration_candidate(
         else:
             if on_progress:
                 on_progress("Drawing atlas boundaries on the clean tissue (pass 1)...")
-            reply = generate_warped_segmentation_image(SegmentationGenerationRequest(
+            reply = edit(SegmentationGenerationRequest(
                 slice_image=canvas.convert("RGB"), reference_images=[outlined_atlas],
                 prompt=atlas_route_prompts["pass1"],
                 provider=provider, model=image_model, review_model=review_model,
@@ -296,7 +303,7 @@ def generate_border_registration_candidate(
                 atlas_route_artifacts["pass1_raw_correction.png"] = atlas_route_output
                 atlas_route_artifacts["pass1_lines_on_tissue.png"] = lines_on_tissue
                 atlas_route_prompts["pass2"] = pass2_atlas_prompt(plane, provider)
-                reply = generate_warped_segmentation_image(SegmentationGenerationRequest(
+                reply = edit(SegmentationGenerationRequest(
                     slice_image=canvas.convert("RGB"),
                     reference_images=[lines_on_tissue, outlined_atlas],
                     prompt=atlas_route_prompts["pass2"],
@@ -323,7 +330,7 @@ def generate_border_registration_candidate(
         canvas, rough, atlas, provider=provider, model=image_model, plane=plane,
         review_model=review_model, openai_image_route=openai_image_route,
         thinking_level=thinking_level, generated_image=generated_image,
-        deformation=deformation, image_prompt=image_prompt,
+        deformation=deformation, image_prompt=image_prompt, image_call=image_call,
     )
     if prior["source"] == "silhouette_moments_atlas_route":
         # refine_borders sees `generated_image` as a replay either way (it
