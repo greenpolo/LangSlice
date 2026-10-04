@@ -91,8 +91,10 @@ claude --strict-mcp-config --mcp-config connectors/claude-desktop/langslice.mcp.
   docstrings, submit gates, undo stack and checkpoint. Saved ABBA jobs also
   share the same validation, snapshot preprocessing and native update
   translation.
-- **Claude briefing:** `start_job` returns a compact factual statement and status
-  table without images. Read every `show_stack(page=...)` page before writing.
+- **Claude briefing:** `start_job` returns the job statement LangSlice's own
+  agent gets (the same text, saying where this door's opening pictures are),
+  the user's notes, and the status table with the recent run notes, without
+  images. Read every `show_stack(page=...)` page before writing.
   Sections arrive as labelled strips in the stack's order (1568 px long, Claude's
   recommended largest image), the atlas at each section's current position
   beneath it; atlas reference strips follow when a section has no position.

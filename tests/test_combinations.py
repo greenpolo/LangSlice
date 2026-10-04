@@ -826,7 +826,7 @@ def test_mcp_offers_trace_borders_only_with_a_connected_image_model(images, monk
     verb only when the job's provider is not none AND its key or login is
     present. Without it, trace_borders is simply not listed, the statement
     says why, and submit does not wait for traces."""
-    from langslice.doors.mcp.prompt import IMAGE_MODEL_OFF
+    from langslice.doors.statement import IMAGE_MODEL_OFF
 
     connected(monkeypatch, linked)
     server = _mcp_server(spec_for(images, ["nonlinear"], provider="openai-oauth",

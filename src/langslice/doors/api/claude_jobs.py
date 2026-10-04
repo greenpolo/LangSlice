@@ -58,7 +58,10 @@ def validate_channel(value: Any) -> dict[str, Any] | None:
     return dict(value)
 
 
-def copy_prompt(job_id: str, spec: Any, notes: str) -> str:
+def copy_prompt(job_id: str, spec: Any) -> str:
+    """The prompt the user pastes into Claude: the job id, its settings and
+    how to begin. The user's notes are not repeated here: ``start_job``'s
+    statement carries them (``job.json`` ``notes``), as every door's does."""
     labels = {"reorder": "section order", "position": "positioning",
               "transform": "linear alignment", "nonlinear": "nonlinear (deformable) alignment"}
     selected = ", ".join(labels[task] for task in spec.tasks)
@@ -75,7 +78,7 @@ def copy_prompt(job_id: str, spec: Any, notes: str) -> str:
         lines.append(
             f"Linear: automatic affine {'enabled' if spec.transform.automatic else 'disabled'}, "
             f"up to {spec.transform.max_parallel} sections per interactive adjustment; "
-            f"hemisphere flipping {'enabled' if spec.reorder.flip else 'disabled'}."
+            f"hemisphere flipping {'enabled' if spec.transform.flip else 'disabled'}."
         )
     if spec.has("nonlinear"):
         if not spec.nonlinear.uses_image_model:
@@ -97,8 +100,6 @@ def copy_prompt(job_id: str, spec: Any, notes: str) -> str:
         ) + ".")
     from langslice.agent.prompt import task_notes
     lines.extend(task_notes(spec))
-    if notes.strip():
-        lines.extend(["User notes:", notes])
     return "\n".join(lines)
 
 
@@ -111,11 +112,11 @@ def prepare_claude(params: dict[str, Any]) -> dict[str, Any]:
                   if key not in {"notes", "host_channel"}}
     prepared = prepare_linear(run_params)
     job_id, layout = _write_job(
-        prepared.folder, {"kind": "host", "params": run_params, "notes": notes},
-        spec=prepared.spec, channel=channel,
+        prepared.folder, {"kind": "host", "params": run_params},
+        spec=prepared.spec, channel=channel, notes=notes,
     )
     return {"job_id": job_id, "job_dir": str(layout.folder),
-            "prompt": _save_prompt(layout, copy_prompt(job_id, prepared.spec, notes))}
+            "prompt": _save_prompt(layout, copy_prompt(job_id, prepared.spec))}
 
 
 def prepare_folder(spec: Any, notes: str = "", trace_dir: str | None = None) -> dict[str, Any]:
@@ -139,13 +140,13 @@ def prepare_folder(spec: Any, notes: str = "", trace_dir: str | None = None) -> 
         raise ValueError(f"No section images found in {folder}")
     spec.image_folder = str(folder)
     job_id, layout = _write_job(
-        folder, {"kind": "folder", "notes": notes,
+        folder, {"kind": "folder",
                  "trace_dir": str(Path(trace_dir).expanduser().resolve()) if trace_dir else None,
                  **({} if spec.resume else {"fresh": True})},
-        spec=spec, channel=None,
+        spec=spec, channel=None, notes=notes,
     )
     return {"job_id": job_id, "job_dir": str(layout.folder),
-            "prompt": _save_prompt(layout, copy_prompt(job_id, spec, notes))}
+            "prompt": _save_prompt(layout, copy_prompt(job_id, spec))}
 
 
 def _save_prompt(layout: JobLayout, prompt: str) -> str:
@@ -156,12 +157,13 @@ def _save_prompt(layout: JobLayout, prompt: str) -> str:
 
 def _write_job(
     image_folder: Path, host: dict[str, Any], *, spec: JobSpec,
-    channel: dict[str, Any] | None,
+    channel: dict[str, Any] | None, notes: str = "",
 ) -> tuple[str, JobLayout]:
     """Save the job: its folder located, upgraded and checked (another image
     folder's job, and with ``spec.resume`` a checkpoint made from other
-    inputs, are refused before anything is written), ``job.json`` and the
-    index entry."""
+    inputs, are refused before anything is written), ``job.json`` (the
+    user's *notes* under ``notes``, which every door reads:
+    :func:`langslice.doors.statement.read_notes`) and the index entry."""
     job_id = index.new_id()
     images = Path(image_folder).expanduser().resolve()
     folder, fallback = locate_job_folder(images, spec.job_dir, root=jobs_root(),
@@ -173,7 +175,7 @@ def _write_job(
     if spec.resume:
         refuse_changed_inputs(layout, spec)
     layout.ensure()
-    write_job_file(layout, job_id=job_id, spec=spec.to_dict(),
+    write_job_file(layout, job_id=job_id, spec=spec.to_dict(), notes=notes,
                    host={"format": FORMAT_VERSION, **host})
     index.register(jobs_root(), job_id, layout.folder, host_channel=channel, fallback=fallback)
     from langslice.doors.card import write_card

@@ -688,15 +688,61 @@ class Variant:
     engine: str = "either"
     #: The caller chooses each picture's size (``view.resolution``).
     auto: bool = False
+    #: Who reads the declaration (:data:`DOORS`): where the opening pictures
+    #: are, and how an image-model verb answers.
+    door: str = "agent"
 
     @classmethod
-    def of(cls, spec: Any, *, auto: bool, image_model: bool = True) -> Variant:
+    def of(cls, spec: Any, *, auto: bool, image_model: bool = True,
+           door: str = "agent") -> Variant:
         """The variant of a :class:`~langslice.core.spec.JobSpec`'s run;
         *image_model* False: the door cannot reach its image model, so the
         run is declared as one without it."""
         return cls(traces=bool(spec.nonlinear.uses_image_model and image_model),
                    preprocessing=bool(spec.agent_preprocessing),
-                   engine=str(spec.nonlinear.engine), auto=bool(auto))
+                   engine=str(spec.nonlinear.engine), auto=bool(auto), door=door)
+
+
+#: The doors a verb is declared for: ``agent`` (LangSlice's own agent, and
+#: the library), ``mcp`` (Claude Desktop) and ``cli`` (the agent CLI).
+DOORS = ("agent", "mcp", "cli")
+
+#: Passages each door words its own way, as ``(agent text, {door: text})``
+#: per verb: where the opening pictures are (the ADK agent's seed message,
+#: the MCP door's ``show_stack`` pages, the CLI's ``brief`` files), and how
+#: an image-model verb answers (the CLI waits for the call to land unless
+#: run with ``--background``).
+_DOOR_DOCS: dict[str, tuple[tuple[str, dict[str, str]], ...]] = {
+    "view_placement": ((
+        "the section is in the opening\n                message)",
+        {"mcp": "the section is in the opening\n                pictures, show_stack)",
+         "cli": "the section is in the opening\n                pictures, brief)"},
+    ),),
+    "trace_borders": ((
+        "Starts the image call in the background and returns at once; the result is\n"
+        "        saved and checked at submit.",
+        {"cli": "Runs the image call and answers once it has landed (with --background\n"
+                "        at once; `wait` collects the answer); the result is saved and\n"
+                "        checked at submit."},
+    ),),
+    "trace_from_atlas": ((
+        "Starts the image calls in the background and returns at once; the\n"
+        "        results are saved and checked at submit.",
+        {"cli": "Runs the image calls and answers once they have landed (with\n"
+                "        --background at once; `wait` collects the answer); the results\n"
+                "        are saved and checked at submit."},
+    ),),
+}
+
+
+def _door_doc(name: str, doc: str, door: str) -> str:
+    """*doc* worded for *door* (:data:`_DOOR_DOCS`)."""
+    for agent_text, worded in _DOOR_DOCS.get(name, ()):
+        if door in worded:
+            if agent_text not in doc:
+                raise RuntimeError(f"{name}: the passage {door!r} rewords is gone")
+            doc = doc.replace(agent_text, worded[door])
+    return doc
 
 
 #: The variant a caller without a job sees: every argument, every option.
@@ -803,7 +849,7 @@ def declaration(name: str, variant: Variant = FULL) -> Declaration:
     signature = inspect.signature(stub, eval_str=True)
     annotations = dict(inspect.get_annotations(stub, eval_str=True))
     parameters = list(signature.parameters.values())
-    doc = model_doc(stub)
+    doc = _door_doc(name, model_doc(stub), variant.door)
     if name == "fit_deformable":
         doc = _fit_deformable_doc(doc, variant)
         if variant.engine != "either":
