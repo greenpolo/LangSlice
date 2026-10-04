@@ -52,7 +52,14 @@ The remaining top-level modules are shared by both:
 - `src/langslice/adk/` -- ADK plugins, model resolution, and SDK helpers.
 - `src/langslice/api/` -- Pydantic engine contract, runtime wrappers, and the
   stdio service used by non-Python clients.
-- `src/langslice/cli.py` -- the `langslice` command.
+- `src/langslice/doors/` -- the doors over the verbs: one declaration per verb
+  (`declarations.py`) that the agent tools, the MCP tools, the agent CLI and
+  the library are built from; `cli/` (every `langslice` command, one module
+  per group, including the agent CLI `langslice job FOLDER VERB`, `ops`,
+  `schema`; `docs/agent_cli.md`), `library.py` (`langslice.open_job`),
+  `card.py` (the job folder's `AGENTS.md` / `CLAUDE.md`).
+- `src/langslice/cli.py` -- the `langslice` command's entry point
+  (`langslice.cli:main`).
 
 ## Where The Methods Fit
 

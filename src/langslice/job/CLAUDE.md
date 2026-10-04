@@ -75,12 +75,25 @@ views.jsonl          append-only index of every saved picture
 exports/             linear_results.json (the run's result; spec.out overrides
                      the path), result.json (a saved host job's final result)
 logs/events.jsonl    one line per open and per migration
+logs/runs/<id>.json  an agent-CLI background run (`--background`), its stderr in <id>.log
 prompt.txt           a saved Claude job's copy prompt
+AGENTS.md, CLAUDE.md the reference card for coding agents, identical, generated
+                     (`doors/card.py`) and rewritten when stale
 ```
 
 Reserved, not written yet (the formats phase): `registration.json` at the
 top, and `residual.tif`, `coords.tif`, `labels.tif`, `labels_fiji.tif` +
 `labels.csv` in each section folder.
+
+**Opening a job without writing (phase 5).** `Job.open` writes `job.json`
+and a first checkpoint. `Job.load(spec, workspace, folder=)` opens an
+existing folder as it stands (the checkpoint and its history; nothing
+rewritten, `FileNotFoundError` without a checkpoint, another image
+folder's job refused): the agent CLI and the library open a job per call
+this way (`doors/jobs.py`), so a call beside a running agent changes
+nothing until its first write. `Job.persist` False (`Job.load(...,
+persist=False)`, the CLI's `--dry-run`) writes nothing at all: no
+checkpoint, no history, and `views.DiscardedViews` saves no picture.
 
 **Paths are relative.** Every path a job file stores (a deformation's
 `record`, an image correction's `artifact_dir` / `artifact_paths`, the views
@@ -160,7 +173,13 @@ paths). The trace identity in a deformation cache key is the stored
   in the background; the 18 s golden recording and the test suite take as
   long as before. A 1024 px placement picture: `view.jpg` ~40 KB,
   `labels.tif` ~10 KB, `borders.png` ~1 KB, `view.json` ~2.5 KB (a real
-  atlas's labels compress less).
+  atlas's labels compress less). `captured()` (phase 5) collects every
+  picture any store queues inside the block (`Saved`: its folder and
+  whether it gets layers; `files()` lists `view.jpg`, `view.json` and the
+  layers with their kinds): the agent CLI's `artifacts`. The numbering reads the index as it grows
+  (each save reads the lines appended since the last), so two stores on one
+  folder (a running agent and a CLI call) continue each other's numbers; two
+  pictures queued by both before either is written can still share one.
 
 The frame record and the on-demand coordinate map are the core's
 (`core/layers.py`, `core/CLAUDE.md`).

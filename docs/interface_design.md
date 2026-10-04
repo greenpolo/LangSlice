@@ -170,9 +170,29 @@ and exporting EVERY channel (weight 0 included) when it is on, since custom
 mode exports only weighted channels today; sending `channel_names` from the
 dialog's channel list is the matching one-liner.
 
+## Surfaces: one vocabulary, four doors (phase 5, 2026-10-04)
+
+Every verb below has ONE name, one argument list and one description,
+declared once (`doors/declarations.py`) and listed once with its operation,
+read or write, task group and the specs that have it (`ops/registry.py`,
+`VERBS`, `enabled(spec)`). Every door is generated from those two:
+
+| Door | Driver | What it gets |
+| --- | --- | --- |
+| Agent tools (ADK) | LangSlice's own agent | the verbs `enabled(spec)` names, declared for the run (`build_tools`); pictures as message images; the look-before-commit gates |
+| MCP (`langslice mcp`) | Claude Desktop, Claude Code locked to the server | the same tools (plus the door's own `start_job`, `show_stack`); pictures as image blocks; `readOnlyHint` on the read verbs |
+| Agent CLI (`langslice job FOLDER VERB`, `ops`, `schema`) | a coding agent (Claude Code, Codex) | the same tools on a job folder, one JSON envelope per call, pictures as saved file paths, no gates, any picture size (`docs/agent_cli.md`) |
+| Library (`import langslice`) | a script | `langslice.open_job(folder)`: the same verbs as methods; `coordinate_map`, `load_atlas` |
+
+A verb is never renamed once shipped. Every job folder carries a reference
+card for coding agents (`AGENTS.md` = `CLAUDE.md`, generated from the
+registry, `doors/card.py`). Host connectors (ABBA, napari later) stay
+separate: a person drives them.
+
 ## Agent tool surface (locked 2026-10-01; one shape per tool 2026-10-03)
 
-The linear stack agent's tools, as built (`linear/toolbox.py`). Every write is
+The linear stack agent's tools, as declared (`doors/declarations.py`; the
+bodies are `linear/toolbox.py`). Every write is
 undoable and checkpointed. Operation arguments are top-level; every tool that
 returns a picture takes ALL its picture options in one argument, `view`
 (below). The slice list is `slices` on every tool, a single section is `id`
@@ -198,7 +218,7 @@ every key and its type.
 | `fit_affine` | transform.automatic | `fit_affine(slices, method="elastix", fit_atlas="", include=[], exclude=[], view)` | overlay (default), side_by_side, checkerboard, outlines, section, template |
 | `adjust_transforms` | transform.interactive | `adjust_transforms(entries, view)`; entry: id, rotation_deg, scale_x, scale_y, translate_x_mm, translate_y_mm, shear (optional: the unitless slant `fit_affine` reports; left out, the section's current shear is kept, 0 sets none), pivot, note; one `view` draws every entry | as `fit_affine`, plus ab |
 | `set_cutting_angles` | transform.angles | `set_cutting_angles(pitch_deg, yaw_deg)` | — |
-| `trace_borders`, `grep_atlas` | nonlinear (`trace_borders` not with provider `none`) | `trace_borders(id, prompt="")`, `grep_atlas(query, id="")` | — |
+| `trace_borders`, `grep_atlas` | nonlinear (`trace_borders` not with provider `none`) | `trace_borders(id, prompt="")`, `grep_atlas(query, section="")` | — |
 | `fit_deformable` | nonlinear | `fit_deformable(slices, include=[], exclude=[], start="linear", fit_section="fit", fit_atlas="", engine="", stiffness="medium", candidates=[], keep_linear="", view)`; candidate: stiffness, fit_section, fit_atlas, engine; `engine` only when `nonlinear.engine` is `either` | borders (default), ab |
 | `submit` | always | `submit(summary, notes, interval_breaks)` | — |
 

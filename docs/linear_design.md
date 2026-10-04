@@ -223,12 +223,14 @@ the wording. The module map:
 
 | layer | module | holds |
 | --- | --- | --- |
-| door | `linear/toolbox.py`, `linear/view_options.py`, `linear/arguments.py` | the tools: arguments, `view` parsing, the gates (`compared`/`reviewed`), delivery bookkeeping, `transform_history`, every reply's wording |
+| door | `doors/declarations.py` | every verb's one declaration: arguments and the description a model reads, per run variant (`view` with `resolution`, `fit_deformable` per image model, preprocess and fixed engine) |
+| door | `linear/toolbox.py`, `linear/view_options.py`, `linear/arguments.py` | the tool bodies: argument checking, `view` parsing, the gates (`compared`/`reviewed`), delivery bookkeeping, `transform_history`, every reply's wording; `build_tools` builds the verbs `ops.registry.enabled(spec)` names, each `declare`d |
+| door | `doors/cli/`, `doors/library.py`, `doors/jobs.py`, `doors/card.py` | the agent CLI and the script door over the same tools (gates off), opening a job without the agent, the job folder's reference card |
 | door | `adk/media.py`, `mcp_server/` | packaging: JPEG message parts (`packaged`), MCP image blocks |
 | ops | `ops/views.py` | the read verbs: `status`, `view_slices`, `view_atlas`, `view_placement`, `view_stack` |
 | ops | `ops/positions.py`, `order.py`, `orientation.py`, `damage.py`, `appearance.py`, `notes.py`, `history.py` | positions and cutting angles (+ `search_position`, `run_deepslice`), reorder, flip/rotation, damage, `preprocess`, notes, undo/redo |
 | ops | `ops/transforms.py`, `ops/deformable.py`, `ops/traces.py`, `ops/atlas.py`, `ops/submit.py` | `fit_affine`, `adjust_transforms`, the deformable fit and `keep_linear`, `trace_borders` (the image-model call passed in), `grep_atlas`, `submit` |
-| ops | `ops/registry.py` | every tool -> its operation, read/write, task group |
+| ops | `ops/registry.py` | every verb -> its operation, read/write, task group, the specs that have it (`enabled`): the list every door is built from |
 | job | `linear/job.py`, `job/` | state, undo, checkpoint, submit gates, image-correction jobs; the job folder and its saved pictures (`Job.views.shown`, the one saving hook) |
 | core | `core/pictures.py`, `core/placement.py`, `core/layers.py` | the viewing pictures, every placement picture (`draw_canvas`, `fit_picture`, `transform_views`) and its layers |
 | core | `core/sections.py`, `captions.py`, `canvas.py`, `sheets.py`, `status.py`, `sizes.py` | renders and their cache, captions, the physical canvas, stack sheets, the status table, picture sizes (was `linear/render.py`, now a shim for SliceBench) |
@@ -266,7 +268,8 @@ model SDK.
 validates one call's `view` against the tool's `Profile` into a
 `linear/display.py` `DisplayOptions`, which the renderers draw; the same typed
 object, `arguments.View`, on every picture tool; `ViewAuto` adds `resolution`
-at image resolution `auto` via `view_options.view_schema`):
+where the caller sizes the pictures, image resolution `auto` and the agent CLI,
+through the verb's declaration, `doors/declarations.py`):
 
 | key | values | applies to |
 | --- | --- | --- |

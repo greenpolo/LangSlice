@@ -128,10 +128,25 @@ Shared, top-level:
   on the job: a write is one undo step, each returns a plain record, and
   given the call's display options the core's pictures; no model wording,
   no look-before-commit gates. Each agent tool is argument checking, one
-  call here and its wording; `registry.py` maps every tool to its
-  operation, read or write, and task group. Imports the core and the job
-  layer only, never a door:
+  call here and its wording; `registry.py` maps every verb to its
+  operation, read or write, task group and the specs that have it
+  (`enabled(spec)`): the one list every door is built from. Imports the
+  core and the job layer only, never a door:
   `src/langslice/ops/CLAUDE.md` (loads when working there).
+- `doors/` — the doors over the verbs (layered refactor, phase 5).
+  `declarations.py` is each verb's ONE declaration (arguments and the
+  description a model reads); the agent tools and the MCP tools are built
+  from it and the registry (`linear/toolbox.py` defines only the tool
+  bodies). The agent CLI for coding agents (`doors/cli/`: `langslice job
+  FOLDER VERB`, `langslice ops`, `langslice schema`; one JSON envelope on
+  stdout, exit codes 0/2/3/4, pictures as file paths, `--dry-run`,
+  `--background`), the script door (`import langslice;
+  langslice.open_job(folder)`, `coordinate_map`, `load_atlas`; no agent
+  framework loaded) and the job folder's reference card (`AGENTS.md` +
+  `CLAUDE.md`, written into every job folder). `doors/cli/` also holds
+  every other command, one module per group (`langslice/cli.py` keeps the
+  entry point): `src/langslice/doors/CLAUDE.md` (loads when working there);
+  `docs/agent_cli.md`.
 - `core/` — the core library's new home (layered refactor): the pictures
   the tools send (`pictures.py`, `placement.py`: every placement picture and
   the frame it is drawn in), plain PIL images with captions burned in, and
@@ -151,7 +166,8 @@ Shared, top-level:
   (`job.json` settings + format version, `state.json`, `history/` one file
   per undo step, `sections/<stem>/`, `views/` + `views.jsonl`: every
   picture the model was shown, as the JPEG it received, placement pictures
-  with atlas labels, border mask and frame, `exports/`, `logs/`). Paths in
+  with atlas labels, border mask and frame, `exports/`, `logs/`, and the
+  reference card `AGENTS.md` = `CLAUDE.md`). Paths in
   job files are relative to it; old layouts are moved in on open, newer
   ones refused; `--job-dir` / `JobSpec.job_dir` puts it elsewhere (a folder
   holding another image folder's job is refused); a read-only image folder

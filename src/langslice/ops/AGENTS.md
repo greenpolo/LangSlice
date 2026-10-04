@@ -7,7 +7,7 @@ the other.
 Every write to a stack, and every read a viewing tool makes, is a function
 here (layered refactor, phases 3a and 3b, 2026-10-03; the rest of the tool
 logic and the read verbs, phase 3d, 2026-10-04). The agent tools, the MCP
-server and, later, the per-operation CLI and scripts call the same
+server, the agent CLI and scripts (phase 5) call the same
 functions, so a tool and a script do exactly the same write and get the same
 picture. Each agent tool's body is argument checking, ONE call here and the
 wording; `registry.py` lists which.
@@ -154,12 +154,19 @@ wording; `registry.py` lists which.
   indexes, failed pairs; `placement_view` is the shared body),
   `view_stack(job, workspace, options)` (`StackView`: sheet, plot, rows in
   written-position order). `regions_not_in_plane`. `MAX_VIEW_SLICES` (4).
-- `registry.py` — `VERBS`: every agent tool name -> `Verb(name, function,
-  kind "read"/"write", group "Common"/"Positioning"/"Linear"/"Nonlinear",
-  alternates)`, in `build_tools` order; `table()` as plain rows.
-  `fit_deformable`'s alternate is `keep_linear`. Phase 5 generates the ADK,
-  MCP and CLI doors from it; today `tests/test_ops_registry.py` checks it
-  both ways against `build_tools`.
+- `registry.py` — `VERBS`: every verb (agent tool) name -> `Verb(name,
+  function, kind "read"/"write", group "Common"/"Positioning"/"Linear"/
+  "Nonlinear", alternates, when)`, in the order every door lists them;
+  `enabled(spec)` (phase 5): the verbs a run of the spec has (`when`: the
+  task switches and host switches that were `build_tools`' if-chain);
+  `table()` as plain rows. `fit_deformable`'s alternate is `keep_linear`.
+  Every door is built from it (phase 5): `build_tools` makes the tools
+  `enabled(spec)` names (the ADK and MCP doors), the MCP door's
+  `readOnlyHint` is `kind == "read"`, and the agent CLI (`langslice ops`,
+  `schema`, `job FOLDER VERB`), the library's job methods and the job
+  folder's reference card list it (`src/langslice/doors/`). A verb is
+  never renamed once shipped. `tests/test_ops_registry.py` and
+  `tests/test_doors_declarations.py` check it.
 
 The pictures are drawn by the core (`src/langslice/core/`, its own
 `CLAUDE.md`), and the job saves every one a door shows, with its layers, in

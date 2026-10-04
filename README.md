@@ -98,6 +98,27 @@ an audit pass); this route remains for experiments. Neither route shows the
 model a colored atlas map, and `--deformation` defaults to `none`. See
 [the nonlinear design](docs/nonlinear_design.md).
 
+For coding agents (Claude Code, Codex) and scripts, every agent tool is also
+a command and a Python method on a job folder, under the same name: one JSON
+answer per call on stdout, pictures as file paths, exit codes 0 / 2 / 3 / 4.
+Each job folder carries a reference card (`AGENTS.md`, `CLAUDE.md`):
+
+```bash
+langslice job sections/ init --tasks position,transform   # the job folder, no agent run
+langslice ops                                              # the verbs
+langslice schema set_positions                             # one verb's arguments
+langslice job sections/ set_positions --entries '[{"id": "s01.tif", "position_mm": 5.2}]'
+langslice job sections/ fit_deformable --slices s01.tif --background   # then: wait
+```
+
+```python
+import langslice
+job = langslice.open_job("sections/")
+job.status()
+```
+
+See [the agent CLI](docs/agent_cli.md).
+
 Full CLI: `langslice --help`. Pipeline detail: [`docs/index.md`](./docs/index.md).
 
 ## ABBA integration

@@ -200,6 +200,22 @@ the `ab_reference` payload of `adjust_transforms` (the B picture itself is
 `core.placement.transform_views`), argument checking (`parse_view`, region
 names, candidate resolution) and every reply's wording.
 
+**One declaration per verb (phase 5, 2026-10-04).** A tool's name,
+arguments and description are no longer the closure's: they are its
+declaration in `src/langslice/doors/declarations.py` (a stub per verb, its
+docstring re-indented to the eight spaces the closures gave it, so models
+read the same bytes; its own `CLAUDE.md` in `doors/`). `build_tools`
+defines the tool bodies (no docstrings, no defaults) and builds
+`declare(name, body, variant)` for every verb `ops.registry.enabled(spec)`
+names, in registry order: the ADK and MCP tools are generated from the
+registry and the declarations, and so are the agent CLI and the library
+(`langslice job FOLDER VERB`, `langslice.open_job`), which build the same
+toolbox with `gates=False` (the look-before-commit gates are tool-only) and
+`level="auto"` (the caller sizes pictures). The run variant
+(`declarations.Variant`: image model, `preprocess`, fixed engine, `auto`)
+decides `view`'s type and `fit_deformable`'s description and arguments, as
+`view_schema`, `_STAIN_ONLY_DOC` and `fit_deformable_fixed` did before.
+
 - `spec.py` — `JobSpec` (+ `ReorderSpec`/`PositionSpec`/`TransformSpec`/
   `NonlinearSpec`). Every checkbox a host shows maps to a field here; nothing
   else is user-facing. Users see Positioning (`reorder` + `position`), Linear
@@ -416,9 +432,10 @@ names, candidate resolution) and every reply's wording.
   `border_color`, `border_thickness` (default `DEFAULT_BORDER_THICKNESS` 1.0
   everywhere, picked by eye on M11_B_03: 0.5 faded into bright tissue, 1.5
   covered ventricle edges); `zoom`; `deformation` (`applied`/`none`,
-  placement tools); `resolution` only at image resolution `auto`:
-  `view_options.view_schema` (applied to every tool in `build_tools`) swaps `view`'s
-  annotation for `ViewAuto` there, and `clamp_resolution` clamps it to
+  placement tools); `resolution` only at image resolution `auto` (or the
+  door's `level`, "auto" for the CLI and the library): the verb's
+  declaration (`doors.declarations`, `Variant.auto`) types `view` as
+  `ViewAuto` there, and `clamp_resolution` clamps it to
   `core.sizes.MIN_RESOLUTION` 128 .. the driver model's largest image with a
   `view.resolution_note` (Nash 2026-10-03: the cap is the model's own
   maximum, not a fixed 1536). The door knows the model and passes the cap
@@ -454,7 +471,9 @@ names, candidate resolution) and every reply's wording.
   Computation (silhouette fit, calibration, tissue pivot, `search_position`,
   the image model's input) always reads the default.
 - `toolbox.py` — `build_tools(state, ctx, spec, job=None,
-  image_model=None)`: every tool, gated by the spec, on the job (state,
+  image_model=None, gates=True, level=None)`: the tool bodies; the tools
+  are the verbs `ops.registry.enabled(spec)` names, each `declare`d
+  (`doors/declarations.py`: name, arguments, description); on the job (state,
   undo, checkpoint and submit gates are the job's; the image model, when
   the run has one, is the binding `trace_borders` hands to `ops.traces`,
   resolved from the spec through `providers.registry.resolve_image_model`
@@ -597,10 +616,12 @@ names, candidate resolution) and every reply's wording.
   tokens, after its response. It is not a cumulative spending guard or a
   preflight size guarantee. Logs separate cumulative input from peak request
   input; 1.3M processed over a run does not mean a 1.3M-token context.
-- `engine.py` — `EngineContext` (the `Workspace` plus the checkpoint and
-  results paths the job is opened at and the model), `run_session` (the
+- `engine.py` — `EngineContext` (`doors.jobs.JobContext`: the `Workspace`
+  plus the job folder and results path the job is opened at; it adds the
+  model), `run_session` (the
   agent gets the tools `adk.media.packaged`), and `run(spec)` (`Job.open`, the
-  toolbox on it, the session, `Job.emit_results`). `ingest` and
+  job folder's reference card, the toolbox on it, the session,
+  `Job.emit_results`). `ingest` and
   `apply_host_inputs` are re-exported from `job.py` for the SliceBench
   adapters. No post pass: the session is the whole run.
 - `live.py` — optional in-memory observer for host activity windows.
@@ -731,7 +752,7 @@ invalidated by a placement change. With an image model the trace gate
 `nonlinear.provider` `none` (`NonlinearSpec.uses_image_model` False; the
 provider is validated against `providers.registry`) builds `grep_atlas` and
 `fit_deformable` but no `trace_borders`, strips traced images from
-`fit_deformable`'s docstring (`toolbox._STAIN_ONLY_DOC`) and refuses them
+`fit_deformable`'s description (`doors.declarations._STAIN_ONLY_DOC`) and refuses them
 (`NO_IMAGE_MODEL`), requires no trace and drops every image-model line and
 the base prompt from the job statement. The task-notes heading is
 "Nonlinear deformation".
@@ -776,7 +797,7 @@ the 2026-10-02 stain ceiling test (deformable `CLAUDE.md`). Every fit runs
 on a fixed thread count with a fixed seed, so the same inputs give the same
 warp. With a completed trace the agent chooses; the docstring
 states that traced_borders + ANTs + medium is the recommended pairing
-(`toolbox._RECOMMENDED_TRACED`, dropped where the engine is fixed to Elastix
+(`doors.declarations._RECOMMENDED_TRACED`, dropped where the engine is fixed to Elastix
 or there is no image model). The 2026-10-01 ceiling test (deformable
 `CLAUDE.md`) removed `detail` (fixed at standard), the `stiff` level, line
 softening as a knob, and raw channels as section images: a channel is a fit
@@ -791,8 +812,8 @@ them (`UNKNOWN_REGIONS` for a bad side, `NO_SIDES` on a sagittal stack) and
 `region_overlap` refuses `CTX` with `CTX:left` but not `CTX:left` with
 `CTX:right`.
 `engine` exists only when `JobSpec.nonlinear.engine` is `"either"` (default);
-`"ants"`/`"elastix"` build the same tool without it (`fit_deformable_fixed`,
-renamed). ANTs missing answers `UNAVAILABLE` naming the extra. 2–4
+`"ants"`/`"elastix"` declare the same tool without it (`Variant.engine`;
+the body's `engine` defaults to ""). ANTs missing answers `UNAVAILABLE` naming the extra. 2–4
 `candidates` (each overriding stiffness/fit_section/fit_atlas/
 [engine]; another key is refused by the strict check) PREVIEW and write nothing; one setting APPLIES it as one undo step,
 reusing an identical cached or saved result (`cached`); the same key again
