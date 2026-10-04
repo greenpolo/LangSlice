@@ -15,6 +15,8 @@ import argparse
 import sys
 
 import langslice
+from langslice.doors.cli.catalog import add_parsers as add_catalog_parsers
+from langslice.doors.cli.catalog import run_ops, run_schema
 from langslice.doors.cli.hosts import (
     add_abba_parser,
     add_claude_prepare_parser,
@@ -25,6 +27,8 @@ from langslice.doors.cli.hosts import (
     run_mcp,
     run_serve,
 )
+from langslice.doors.cli.job import add_parser as add_job_parser
+from langslice.doors.cli.job import run as run_job
 from langslice.doors.cli.linear import (
     add_quick_affine_parser,
     add_run_parser,
@@ -32,6 +36,9 @@ from langslice.doors.cli.linear import (
     run_quick_affine,
 )
 from langslice.doors.cli.register import add_register_parser, run_register
+
+#: The agent CLI's commands: JSON on stdout, an exit code returned.
+AGENT_COMMANDS = {"job": run_job, "ops": run_ops, "schema": run_schema}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -84,10 +91,16 @@ def build_parser() -> argparse.ArgumentParser:
     claude_sub = claude.add_subparsers(dest="subcommand", required=True)
     add_claude_prepare_parser(claude_sub)
 
+    # The agent CLI: langslice job FOLDER VERB, langslice ops, langslice schema
+    add_job_parser(subparsers)
+    add_catalog_parsers(subparsers)
+
     return parser
 
 
-def main(argv: list[str] | None = None):
+def main(argv: list[str] | None = None) -> int | None:
+    """Run one ``langslice`` command; the agent CLI's commands (``job``,
+    ``ops``, ``schema``) return their exit code (0, 2, 3 or 4)."""
     # `.env` holds the API keys (GEMINI_API_KEY, OPENAI_API_KEY); every lane
     # reads it, not only the one whose module happens to be imported.
     from langslice.providers.openai_config import _load_dotenv
@@ -95,6 +108,12 @@ def main(argv: list[str] | None = None):
     _load_dotenv()
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.command in AGENT_COMMANDS:
+        if args.command == "job" and args.verb.replace("-", "_") == "trace_borders":
+            from langslice.api.setup import apply_saved_credentials
+
+            apply_saved_credentials()  # the image model's keys
+        return AGENT_COMMANDS[args.command](args)
     if args.command not in {"serve", "login", "version"}:
         from langslice.api.setup import apply_saved_credentials
 
@@ -128,3 +147,4 @@ def main(argv: list[str] | None = None):
     else:
         parser.print_help()
         sys.exit(1)
+    return None

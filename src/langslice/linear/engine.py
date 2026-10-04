@@ -23,6 +23,7 @@ from google.genai import types
 from langslice.adk.media import opening_parts, packaged_tools
 from langslice.atlas.core import load_atlas
 from langslice.core.status import status_text
+from langslice.doors.jobs import JobContext
 from langslice.job.layout import JobLayout, locate_job_folder
 from langslice.linear.job import Job
 
@@ -40,7 +41,7 @@ from langslice.linear.session import (
 from langslice.linear.spec import JobSpec
 from langslice.linear.state import StackState
 from langslice.linear.toolbox import ToolBox, build_tools
-from langslice.linear.workspace import Workspace, log_progress
+from langslice.linear.workspace import log_progress
 
 logger = logging.getLogger(__name__)
 
@@ -74,25 +75,14 @@ DEBRIEF_PROMPT = (
 
 
 @dataclass(kw_only=True)
-class EngineContext(Workspace):
-    """The agent driver's context: the core :class:`Workspace` plus what only
-    the driver needs — where the job's files go (the job folder and results
-    path the :class:`~langslice.linear.job.Job` is opened at; the job owns
-    them from then on) and the model."""
+class EngineContext(JobContext):
+    """The agent driver's context: the core :class:`Workspace` and where the
+    job's files go (:class:`~langslice.doors.jobs.JobContext`: the job folder,
+    ``<images>/langslice``, and the results path the
+    :class:`~langslice.linear.job.Job` is opened at; the job owns them from
+    then on), plus what only the driver needs: the model."""
 
-    #: The job folder (``<images>/langslice``, :mod:`langslice.job.layout`).
-    job_folder: str
-    results_path: str
     model: str
-
-    @property
-    def layout(self) -> JobLayout:
-        return JobLayout(Path(self.job_folder), Path(self.image_folder))
-
-    @property
-    def checkpoint_path(self) -> str:
-        """The job folder's state checkpoint."""
-        return str(self.layout.state_file)
 
 
 def build_context(
