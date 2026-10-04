@@ -525,12 +525,26 @@ def test_nonlinear_on_positions_alone_is_refused_until_a_transform_is_written(im
         assert fit["results"][0]["error"] == "INVALID_LINEAR_PLACEMENT", fit
         kept = job.fit_deformable(slices=[ID0], keep_linear="kept")
         assert kept["error"] == "NOTHING_WRITTEN", kept
+        # Each refusal says what to do: supply transforms, or Linear and fit_affine.
+        for message in (fit["results"][0]["message"], kept["results"][0]["message"]):
+            assert "--transforms" in message and "inputs.transforms" in message, message
+            assert "Linear on" in message and "fit_affine" in message, message
     fresh = spec_for(images, ["nonlinear"], positions=dict(POSITIONS), locked=list(IDS))
     fresh.resume = False  # a new job on the same images, not the one above
     create(fresh)
     with langslice.open_job(images) as job:
         assert job.fit_deformable(slices=list(IDS), keep_linear="kept")["status"] == "ok"
         assert job.submit(summary="done", notes=[], interval_breaks=[])["status"] == "ok"
+
+
+def test_tracing_on_positions_alone_says_what_to_do(images):
+    import langslice
+
+    create(spec_for(images, ["nonlinear"], provider="openai-oauth", positions=dict(POSITIONS)))
+    with langslice.open_job(images) as job:
+        traced = job.trace_borders(id=ID0)
+        assert traced["error"] == "INVALID_LINEAR_PLACEMENT", traced
+        assert "--transforms" in traced["message"] and "fit_affine" in traced["message"]
 
 
 # --- 6. Nonlinear on a registration made elsewhere ------------------------------------------

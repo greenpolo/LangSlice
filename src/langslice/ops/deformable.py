@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Any
 
 from PIL import Image
 
-from langslice.core import deformation
+from langslice.core import deformation, handoff
 from langslice.core.state import SliceState
 from langslice.ops.inputs import section_inputs, stale_row
 from langslice.ops.refusal import Refused
@@ -356,7 +356,9 @@ def keep_linear(job: Job, records: list[SliceState], reason: str) -> KeptLinear:
         records = [job.state.by_id(record.id) or record for record in records]
         refused = [
             {"id": record.id, "status": "error", "error": "INVALID_LINEAR_PLACEMENT",
-             "message": "keep_linear needs a position and a transform."}
+             "message": "keep_linear needs a position and a transform."
+             + ("" if record.position_mm is None or job.spec.has("transform")
+                else " " + handoff.NO_TRANSFORM_LINEAR_OFF)}
             for record in records if record.position_mm is None or record.transform is None
         ]
         if refused:
