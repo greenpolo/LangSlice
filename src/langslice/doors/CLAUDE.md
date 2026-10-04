@@ -11,7 +11,7 @@ them and from the registry (`ops/registry.py`: `VERBS`, `enabled(spec)`):
 | Door | Built by | Driver |
 |---|---|---|
 | agent tools (ADK) | `doors/tools/toolbox.py` `build_tools`: the verbs `enabled(spec)` names, each `declarations.declare`d | LangSlice's agent |
-| MCP tools | the same toolbox (`doors/mcp/server.py`), plus the door's `start_job`, `show_stack`; `readOnlyHint` = read verbs; `trace_borders` only when the job's image model is connected (`server.image_model_off`, `api.setup.image_model_connected`; else `build_tools(image_model_connected=False)`) | Claude Desktop, Claude Code locked to it |
+| MCP tools | the same toolbox (`doors/mcp/server.py`, `door="mcp"`), plus the door's `start_job`, `show_stack`; `readOnlyHint` = read verbs; `trace_borders` only when the job's image model is connected (`server.image_model_off`, `api.setup.image_model_connected`; else `build_tools(image_model_connected=False)`); every reply within `tools.media.REPLY_BYTES`; the opening-read gate armed by `start_job` (`ToolBox.require_opening`) | Claude Desktop, Claude Code locked to it |
 | agent CLI | `cli/job.py` over the same toolbox, gates off, `level="auto"`, pictures capped at the job's viewer's (`jobs.job_viewer`), `trace_borders` only when the image model is connected (`Opened.image_model_connected`), plus the scripting verbs (`export_maps`, and the hidden `trace_from_atlas`) and `brief` (the job statement and opening, `cli/brief.py`) | Claude Code, Codex |
 | library | `library.py` (`langslice.open_job`, `langslice.create_job`) over the same toolbox, the scripting verbs included; `pipeline.py` (`register_section`, `register_job`) calls those verbs in a fixed order | a script, a scripted pipeline |
 
@@ -47,6 +47,19 @@ the path) and checks, and runs `import langslice; langslice.open_job(...)`
 with a verb or two, then a scripted `register_section` with a model of the
 script's own. An operation (`ops/`) never
 imports a door.
+
+What every door shares beyond the verbs (door parity, 2026-10-04): the job
+statement (`statement.py`), the ending of a job (`jobs.close_job`), the
+host trace (`trace.py`), the reply byte budget and paging
+(`tools/media.py`: `REPLY_BYTES`, `fit_reply`, `paged`, `strip_bytes`), and
+in the `ToolBox` the in-flight rule (`in_flight`, `begin_model_call`) and
+the opening-read gate (`require_opening`, `opening_read`,
+`opening_refusal`; armed by the MCP door only). Deliberately different:
+the host owns the loop for MCP and the CLI (no turn budget, nudges,
+debrief, image working set or quota accounting there); the
+look-before-commit gates are the tools' only (off in the CLI); pictures are
+files and artifacts in the CLI, inline elsewhere; the CLI is a process per
+call.
 
 Two sub-packages moved in with the folder move (2026-10-04), each described
 in the linear agent environment's guide (`src/langslice/agent/CLAUDE.md`):

@@ -403,6 +403,20 @@ def _saves_views(tool: Any, job: Job, ctx: Any) -> Any:
     return run
 
 
+def _opening_gate(tool: Any, box: ToolBox) -> Any:
+    """Refuse a write while the door's opening-read gate is armed and some
+    opening page is unread (:meth:`ToolBox.opening_refusal`)."""
+
+    @functools.wraps(tool)
+    def run(*args: Any, **kwargs: Any) -> Any:
+        refusal = box.opening_refusal()
+        if refusal is not None:
+            return refusal
+        return tool(*args, **kwargs)
+
+    return run
+
+
 def _strict(tool: Any) -> Any:
     """Refuse unknown or misplaced arguments before *tool* runs.
 
@@ -465,10 +479,53 @@ class ToolBox:
     #: The largest picture the driver model takes: the cap of
     #: ``view.resolution`` at image resolution "auto".
     max_view_edge: int = DEFAULT_IMAGE_LIMIT[0]
+    #: The opening-read gate of a door that delivers the opening pictures
+    #: on request (MCP's ``show_stack`` pages): the pages not read yet,
+    #: ``None`` while the door has not armed it (:meth:`require_opening`).
+    #: Every write is refused (``OPENING_NOT_READ``) until the set is empty.
+    opening_unread: set[int] | None = None
+    #: Calls of a door whose host may send several at once (MCP) that are
+    #: running now (:meth:`in_flight`).
+    _flying: int = field(default=0, repr=False)
+    _flight: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     @property
     def names(self) -> list[str]:
         return [tool.__name__ for tool in self.tools]
+
+    def require_opening(self, pages: int) -> None:
+        """Arm the opening-read gate: every write is refused until each of
+        the *pages* opening pages was read (:meth:`opening_read`). Armed
+        once per toolbox; a host that already read them is not asked again."""
+        if self.opening_unread is None:
+            self.opening_unread = set(range(1, int(pages) + 1))
+
+    def opening_read(self, page: int) -> None:
+        """The host fetched opening page *page*."""
+        if self.opening_unread is not None:
+            self.opening_unread.discard(int(page))
+
+    def opening_refusal(self) -> dict[str, Any] | None:
+        """The opening-read gate's refusal, or None when it is open."""
+        if not self.opening_unread:
+            return None
+        pages = sorted(self.opening_unread)
+        return {"status": "refused", "error": "OPENING_NOT_READ", "pages": pages,
+                "detail": "Read every opening page before the first write: "
+                + ", ".join(f"show_stack(page={page})" for page in pages)
+                + " (the pictures of the stack the job statement asks for)."}
+
+    @contextlib.contextmanager
+    def in_flight(self) -> Iterator[None]:
+        """Around one call of a door whose host may send several at once:
+        while it runs, :meth:`begin_model_call` promotes nothing."""
+        with self._flight:
+            self._flying += 1
+        try:
+            yield
+        finally:
+            with self._flight:
+                self._flying -= 1
 
     def record_placement_view(
         self,
@@ -494,8 +551,14 @@ class ToolBox:
             )
 
     def begin_model_call(self) -> None:
-        """Promote pictures from direct calls (a convenience for hosts/tests)."""
-        direct = self.pending_placement_views.pop("__direct__", None)
+        """Promote pictures from direct calls (a convenience for hosts/tests):
+        a new call from the host means the pictures of the calls before it
+        reached it, unless another call is still in flight (:meth:`in_flight`:
+        the host sent them together, so it has seen neither's pictures)."""
+        with self._flight:
+            if self._flying:
+                return
+            direct = self.pending_placement_views.pop("__direct__", None)
         if direct is not None:
             self.seen_placement_views.update(direct)
 
@@ -1697,10 +1760,14 @@ def build_tools(
     # `view.resolution` exists only where the caller chooses the picture size.
     variant = Variant.of(spec, auto=level == AUTO_RESOLUTION, image_model=traces_on, door=door)
     lock = threading.Lock()
+    def behind_gate(name: str, tool: Any) -> Any:
+        """A write behind the door's opening-read gate (armed by MCP only)."""
+        return _opening_gate(tool, box) if VERBS[name].kind == "write" else tool
+
     box.tools = [
         _serialized(
             _saves_views(_clears_stale_deformations(
-                _strict(declare(name, bodies[name], variant)), job), job, ctx),
+                _strict(behind_gate(name, declare(name, bodies[name], variant))), job), job, ctx),
             lock, state=state, on_event=on_event, guard=functools.partial(guarded, name))
         for name in enabled(spec, scripting=scripting, image_model=image_model_connected,
                             hidden=scripting)

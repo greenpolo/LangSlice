@@ -818,6 +818,12 @@ def _mcp_names_and_statement(server: Any) -> tuple[set[str], str]:
             started = await client.call_tool("start_job", {})
             first = started.content[0]
             assert isinstance(first, TextContent), started
+            # A host reads every opening page before it writes (the gate).
+            import re
+
+            pages = int(re.findall(r"show_stack\(page=(\d+)\)", first.text)[-1])
+            for page in range(1, pages + 1):
+                await client.call_tool("show_stack", {"page": page})
             return {tool.name for tool in listed.tools}, first.text
 
     return asyncio.run(body())

@@ -150,8 +150,11 @@ seed, `core/opening.py`, at Claude's 1568 px long edge): labelled sections in
 corrected order with the atlas at each current position beneath it, then atlas
 reference strips when a section has no position. Pages are 1-based and bounded
 to 680,000 serialized JSON bytes (including base64); a strip and its text stay
-on one page, and an oversized strip is reduced in resolution.
-The briefing asks Claude to read every page before writing. Folder-based
+on one page, and a strip that would pass the budget is composed with fewer
+sections rather than shrunk. Every tool reply has the same budget: past it,
+its pictures are shrunk together and a last text says so.
+The briefing asks Claude to read every page before writing, and from then on
+every write is refused (`OPENING_NOT_READ`) until it has. Folder-based
 `start_job(image_folder=...)` remains available for development.
 
 The Java listener binds only `127.0.0.1`, on an OS-selected port. Its first JSON

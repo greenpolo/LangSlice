@@ -1,0 +1,13 @@
+{
+ "call": {
+  "arguments": {},
+  "tool": "declare_trace_borders"
+ },
+ "content": [
+  {
+   "text": "{\"annotations\": {\"readOnlyHint\": false}, \"description\": \"Trace one slice's atlas borders onto its anatomy with the image model.\\n\\n        Args:\\n            id: Section filename or corrected index, with a position and linear transform.\\n            prompt: The full image prompt for this section, edited from the base prompt.\\n\\n        Starts the image call in the background and returns at once; the result is\\n        saved and checked at submit. The first result at a placement is reused.\\n        Does not fit a deformation.\\n        \", \"inputSchema\": {\"properties\": {\"id\": {\"title\": \"Id\", \"type\": \"string\"}, \"prompt\": {\"default\": \"\", \"title\": \"Prompt\", \"type\": \"string\"}}, \"required\": [\"id\"], \"title\": \"trace_bordersArguments\", \"type\": \"object\"}, \"name\": \"trace_borders\"}"
+  }
+ ],
+ "door": "mcp_nonlinear_traced",
+ "images": []
+}

@@ -1,0 +1,13 @@
+{
+ "call": {
+  "arguments": {},
+  "tool": "declare_view_slices"
+ },
+ "content": [
+  {
+   "text": "{\"annotations\": {\"readOnlyHint\": true}, \"description\": \"Look at up to 4 named sections at higher resolution.\\n\\n        Sections are rendered as corrected: any rotation and flip already\\n        applied, framed to their tissue the same way atlas sections are.\\n        Each image carries its corrected index and filename burned into its\\n        top-left corner.\\n\\n        Args:\\n            slices: Filenames or corrected indices (max 4 per call).\\n            view: Picture options (described once in the job statement).\\n                Modes: \\\"section\\\" (default: the section in view.channels) or\\n                \\\"channels\\\" (one small tile per raw channel, unmodified, each\\n                labelled with its name). No atlas is drawn.\\n\\n        Returns:\\n            status/slices/description plus the images, in the order asked.\\n        \", \"inputSchema\": {\"$defs\": {\"ViewAuto\": {\"additionalProperties\": false, \"description\": \"Picture options, with the picture size (image resolution \\\"auto\\\").\", \"properties\": {\"atlas_channels\": {\"items\": {\"type\": \"string\"}, \"title\": \"Atlas Channels\", \"type\": \"array\"}, \"atlas_opacity\": {\"title\": \"Atlas Opacity\", \"type\": \"number\"}, \"border_color\": {\"title\": \"Border Color\", \"type\": \"string\"}, \"border_thickness\": {\"title\": \"Border Thickness\", \"type\": \"number\"}, \"channels\": {\"items\": {\"type\": \"string\"}, \"title\": \"Channels\", \"type\": \"array\"}, \"deformation\": {\"title\": \"Deformation\", \"type\": \"string\"}, \"mode\": {\"title\": \"Mode\", \"type\": \"string\"}, \"outlines\": {\"title\": \"Outlines\", \"type\": \"string\"}, \"regions\": {\"items\": {\"type\": \"string\"}, \"title\": \"Regions\", \"type\": \"array\"}, \"resolution\": {\"title\": \"Resolution\", \"type\": \"integer\"}, \"zoom\": {\"items\": {\"type\": \"number\"}, \"title\": \"Zoom\", \"type\": \"array\"}}, \"title\": \"ViewAuto\", \"type\": \"object\"}}, \"properties\": {\"slices\": {\"items\": {\"type\": \"string\"}, \"title\": \"Slices\", \"type\": \"array\"}, \"view\": {\"$ref\": \"#/$defs/ViewAuto\", \"default\": {}}}, \"required\": [\"slices\"], \"title\": \"view_slicesArguments\", \"type\": \"object\"}, \"name\": \"view_slices\"}"
+  }
+ ],
+ "door": "mcp_auto",
+ "images": []
+}

@@ -178,20 +178,34 @@ def compose_strip(columns: Sequence[Sequence[Image.Image]], tile: int) -> Image.
     return out
 
 
+def jpeg_bytes(image: Image.Image) -> int:
+    """The size of *image* in the doors' JPEG encoding (:mod:`langslice.core.jpeg`)."""
+    from langslice.core.jpeg import encode_jpeg
+
+    return len(encode_jpeg(image))
+
+
 def pack_strips(columns: Sequence[Sequence[Image.Image]], tile: int, count: int,
-                budget: int) -> list[tuple[int, Image.Image]]:
-    """Columns into strips of at most *count*, each within *budget* patches.
+                budget: int, max_bytes: int | None = None) -> list[tuple[int, Image.Image]]:
+    """Columns into strips of at most *count*, each within *budget* patches
+    and, with *max_bytes*, within that many bytes as the doors encode it (a
+    host that caps a reply's size: the MCP door's pages).
 
     Returns ``(first column index, strip)`` per strip. A column that would
-    push a strip past the budget starts the next one (a single column is
-    always one strip, whatever it costs).
+    push a strip past either budget starts the next one (a single column is
+    always one strip, whatever it costs), so no strip is shrunk after it is
+    drawn: every tile keeps the level's opening size.
     """
+    def over(strip: Image.Image) -> bool:
+        return patches(strip.size) > budget or (
+            max_bytes is not None and jpeg_bytes(strip) > max_bytes)
+
     strips: list[tuple[int, Image.Image]] = []
     start = 0
     while start < len(columns):
         end = min(len(columns), start + count)
         strip = compose_strip(columns[start:end], tile)
-        while end - start > 1 and patches(strip.size) > budget:
+        while end - start > 1 and over(strip):
             end -= 1
             strip = compose_strip(columns[start:end], tile)
         strips.append((start, strip))
@@ -208,13 +222,17 @@ def _angles(state: StackState) -> str:
 
 def opening_items(
     state: StackState, ctx: Workspace, *, limit: tuple[int, int] = DEFAULT_IMAGE_LIMIT,
+    max_bytes: int | None = None,
 ) -> list[str | Image.Image]:
     """The stack's opening as strips, each preceded by a short text: texts and
     pictures in the order they are read (a door packages them,
     :func:`langslice.doors.tools.media.opening_parts`).
 
     *limit* is ``(long edge, patch budget)`` of one image, the model lane's
-    (:data:`IMAGE_LIMITS`). Tiles are the run's opening size.
+    (:data:`IMAGE_LIMITS`). Tiles are the run's opening size. *max_bytes*
+    caps each strip's encoded size (:func:`pack_strips`; the MCP door's
+    page budget): a strip that would pass it holds fewer sections instead
+    of being shrunk.
     """
     edge, budget = limit
     count, tile = strip_layout(edge, opening_edge(ctx))
@@ -235,7 +253,7 @@ def opening_items(
                 if position is not None else _cell(None, "no position", tile)
             )
         columns.append(column)
-    strips = pack_strips(columns, tile, count, budget)
+    strips = pack_strips(columns, tile, count, budget, max_bytes)
 
     planes = ("at that section's own cutting angles (they differ between sections)"
               if state.mixed_angles else f"at the stack's cutting angles{_angles(state)}")
@@ -262,12 +280,14 @@ def opening_items(
         items.append(strip)
 
     if unplaced:
-        items.extend(reference_items(state, ctx, tile=tile, count=count, budget=budget))
+        items.extend(reference_items(state, ctx, tile=tile, count=count, budget=budget,
+                                     max_bytes=max_bytes))
     return items
 
 
 def reference_items(
     state: StackState, ctx: Workspace, *, tile: int, count: int, budget: int,
+    max_bytes: int | None = None,
 ) -> list[str | Image.Image]:
     """The atlas reference (evenly spaced positions) as strips of atlas tiles."""
     step, pictures = reference_atlas(ctx, state, long_edge=tile)
@@ -279,7 +299,7 @@ def reference_items(
         else f"at the stack's cutting angles{_angles(state)}")
     columns = [[_cell(picture, f"atlas {position:.2f} mm", tile)]
                for position, picture in pictures]
-    strips = pack_strips(columns, tile, count, budget)
+    strips = pack_strips(columns, tile, count, budget, max_bytes)
     items: list[str | Image.Image] = [(
         f"Atlas reference strip{'s' if len(strips) != 1 else ''}: the atlas at "
         f"{len(pictures)} positions, every {step:.2f} mm from {pictures[0][0]:.2f} to "
