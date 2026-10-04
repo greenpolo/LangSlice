@@ -482,3 +482,79 @@ def staged_views(
         mode=mode, pivot=pivot, section_offset=staged.geometry.section_offset,
         label=label, spline=spline,
     )
+
+
+# --- the transform tools' pictures -------------------------------------------------
+
+
+def fit_picture(
+    ws: Workspace, state: StackState, record: SliceState, frame: Any, options: DisplayOptions,
+) -> list[Image.Image]:
+    """A fitted section under its new transform (``fit_affine``'s picture).
+
+    Drawn from the fit's working frame and matrix (*frame*, a
+    :class:`~langslice.linear.transform.FitFrame`). One-sided regions are
+    highlighted with the sides the fit resolved (``frame.left``), so the
+    picture shows what the fit used even after a large turn.
+    """
+    return draw_canvas(
+        ws, state, record, frame.section, frame.um_per_px,
+        float(record.position_mm or 0.0), frame.matrix, options, label=record.id,
+        left=frame.left,
+    ).images
+
+
+def ab_reference(
+    staged: Staged, previous: dict[str, Any] | None,
+) -> tuple[Any, tuple[float, float] | None]:
+    """What an ``ab`` picture's B side draws: ``(params, pivot)``.
+
+    The six numbers the section carried before the call, when it had them:
+    they are the exact map, where the knobs (shear included) are rounded.
+    Knobs alone are drawn as given, about their stored pivot; no transform
+    at all is identity.
+    """
+    stored = (previous or {}).get("physical")
+    before = (previous or {}).get("params")
+    other: Any = dict(IDENTITY_PARAMS)
+    if before is not None and len(before) == 6:
+        other = denormalized_affine(before, staged.section.size)
+    elif isinstance(stored, dict):
+        other = {key: float(stored[key]) for key in IDENTITY_PARAMS}
+        if stored.get("shear"):
+            other["shear"] = float(stored["shear"])
+    other_pivot = staged.pivot
+    if isinstance(stored, dict) and stored.get("pivot"):
+        fractions = [float(value) for value in stored["pivot"]]
+        other_pivot = (
+            fractions[0] * staged.geometry.size[0],
+            fractions[1] * staged.geometry.size[1],
+        )
+    return other, other_pivot
+
+
+def transform_views(
+    ws: Workspace, state: StackState, staged: Staged, options: DisplayOptions,
+    previous: dict[str, Any] | None,
+) -> list[Image.Image]:
+    """``adjust_transforms``'s pictures of one staged section.
+
+    Mode ``ab``: two overlays at the same crop, the staged knobs (labelled
+    "candidate") then what the section carried before the call, *previous*
+    (labelled "stored"; "identity" when it had none, :func:`ab_reference`).
+    Any other mode: the staged knobs in that mode.
+    """
+    record = staged.record
+    if options.mode != "ab":
+        return staged_views(ws, state, staged, staged.params, options, mode=options.mode,
+                            pivot=staged.pivot).images
+    other, other_pivot = ab_reference(staged, previous)
+    held = previous is not None
+    return staged_views(
+        ws, state, staged, staged.params, options, mode="overlay", pivot=staged.pivot,
+        label=f"{record.id} candidate",
+    ).images + staged_views(
+        ws, state, staged, other, options, mode="overlay", pivot=other_pivot,
+        label=f"{record.id} {'stored' if held else 'identity'}",
+        spline=(previous or {}).get("spline"),
+    ).images

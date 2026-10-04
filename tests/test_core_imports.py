@@ -61,6 +61,11 @@ CORE_MODULES = (
     "langslice.ops.notes",
     "langslice.ops.transforms",
     "langslice.ops.deformable",
+    "langslice.ops.submit",
+    "langslice.ops.history",
+    "langslice.ops.views",
+    "langslice.ops.traces",
+    "langslice.ops.atlas",
 )
 
 #: The doors: an operation (``langslice.ops``) must load none of them.

@@ -26,30 +26,26 @@ import functools
 import importlib.util
 import inspect
 import logging
-import math
 import threading
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from PIL import Image
 
 from langslice.adk import TOOL_MEDIA_DELIVERY_ID_KEY, TOOL_MEDIA_PARTS_KEY
-from langslice.affine import denormalized_affine
-from langslice.core import layers, placement
-from langslice.core.canvas import VIEW_MODES, normalize_border_style
+from langslice.core import layers
+from langslice.core.canvas import VIEW_MODES
 from langslice.core.captions import caption
-from langslice.core.pictures import atlas_view_picture, section_picture, stack_review
 from langslice.core.placement import (
     FRAMED_PLACEMENT_MODES,
     PLACEMENT_MODES,
     WARPED_PLACEMENT_MODES,
 )
-from langslice.core.sections import render_slice
 from langslice.core.sizes import MAX_IMAGES_PER_CALL, resolution_level
-from langslice.core.status import compact_rows, status_rows
+from langslice.core.status import compact_rows
 from langslice.linear import appearance as looks
 from langslice.linear import deformation
 from langslice.linear.arguments import (
@@ -63,14 +59,10 @@ from langslice.linear.arguments import (
     View,
     argument_refusal,
 )
-from langslice.linear.atlas_grep import GREP_ATLAS_LIMIT, grep_structures, plane_structure_ids
-from langslice.linear.deepslice import run_deepslice as _run_deepslice
 from langslice.linear.display import (
     MODE_RULES,
     DisplayOptions,
     available_atlas_channels,
-    framed_section,
-    regions_in_plane,
 )
 from langslice.linear.job import HOST_TRANSFORM_KIND, Job
 from langslice.linear.live import LiveCallback, _plain
@@ -80,25 +72,22 @@ from langslice.linear.state import (
     IDENTITY_PARAMS,
     SliceState,
     StackState,
-    normalize_to_atlas_order,
-)
-from langslice.linear.transform import (
-    FIT_FRAME_KEY,
-    FitFrame,
-    fit_elastix,
-    fit_silhouette,
 )
 from langslice.linear.view_options import Profile, parse_view, view_edge_limit, view_schema
 from langslice.ops import appearance as ops_appearance
+from langslice.ops import atlas as ops_atlas
 from langslice.ops import damage as ops_damage
 from langslice.ops import deformable as ops_deformable
+from langslice.ops import history as ops_history
 from langslice.ops import notes as ops_notes
 from langslice.ops import order as ops_order
 from langslice.ops import orientation as ops_orientation
 from langslice.ops import positions as ops_positions
+from langslice.ops import submit as ops_submit
+from langslice.ops import traces as ops_traces
 from langslice.ops import transforms as ops_transforms
+from langslice.ops import views as ops_views
 from langslice.ops.refusal import Refused
-from langslice.space import Plane
 
 if TYPE_CHECKING:  # ponytail: import cycle — engine builds the toolbox
     from langslice.linear.engine import EngineContext
@@ -193,9 +182,10 @@ def _clamp_and_dedupe(
 VIEW_ATLAS_PROFILE_MODES = ("template",)
 
 
-def make_view_atlas(state: StackState, ctx: EngineContext, max_view_edge: int):
+def make_view_atlas(job: Job, ctx: EngineContext, max_view_edge: int):
     """Build the ``view_atlas`` tool, closed over the run's atlas and plane;
     *max_view_edge* caps ``view.resolution`` (the driver model's largest image)."""
+    state = job.state
     pos_lo, pos_hi = ctx.position_range
     profile = Profile(
         VIEW_ATLAS_PROFILE_MODES, channels=False,
@@ -239,9 +229,8 @@ def make_view_atlas(state: StackState, ctx: EngineContext, max_view_edge: int):
         if not positions:
             return {"status": "error", "error": "EMPTY_RESULT"}
 
-        parts: list[Media] = [
-            atlas_view_picture(ctx, state, position, options) for position in positions
-        ]
+        shown = ops_views.view_atlas(job, ctx, positions, options)
+        parts: list[Media] = list(shown.pictures)
         plural = "s" if len(positions) != 1 else ""
         result: dict[str, Any] = {
             "status": "ok",
@@ -258,16 +247,8 @@ def make_view_atlas(state: StackState, ctx: EngineContext, max_view_edge: int):
             "view": options.echo(),
             TOOL_MEDIA_PARTS_KEY: parts,
         }
-        if options.regions:
-            absent = {
-                f"{position:.2f}": missing for position in positions
-                if (missing := [
-                    name for name, _ids in options.regions
-                    if name not in regions_in_plane(ctx, state, position, options)
-                ])
-            }
-            if absent:
-                result["regions_not_in_plane"] = absent
+        if shown.regions_not_in_plane:
+            result["regions_not_in_plane"] = shown.regions_not_in_plane
         if dropped:
             result["truncated"] = True
             result["dropped_positions_mm"] = dropped
@@ -389,42 +370,32 @@ def _clears_stale_deformations(tool: Any, job: Job) -> Any:
 def _saves_views(tool: Any, job: Job, ctx: Any) -> Any:
     """Save every picture *tool* returns in the job folder, with its layers.
 
-    What the pictures show is noted while the tool runs
-    (:func:`langslice.core.layers.collecting`); the job's view store
-    (:class:`langslice.job.views.ViewStore`) encodes and writes them in the
-    background, in the doors' encoding, so the doors' bytes are untouched.
-    A successful `submit` waits for every picture to be written.
+    The hook is the job's (:meth:`langslice.job.views.ViewStore.shown`),
+    the same for every door: this wrapper only says which pictures the tool
+    returned and with which arguments. The store encodes and writes them in
+    the background, in the doors' encoding, so the doors' bytes are
+    untouched; a successful `submit` (:func:`langslice.ops.submit.submit`)
+    waits for every picture to be written.
     """
     signature = inspect.signature(tool)
 
     @functools.wraps(tool)
     def run(*args: Any, **kwargs: Any) -> Any:
-        with layers.collecting() as notes:
+        with job.views.shown(tool.__name__, atlas_of=lambda: ctx.atlas) as shown:
             result = tool(*args, **kwargs)
-        media = result.get(TOOL_MEDIA_PARTS_KEY) if isinstance(result, dict) else None
-        pictures = ([item for item in media if isinstance(item, Image.Image)]
-                    if isinstance(media, list) else [])
-        if pictures:
-            try:
-                bound = signature.bind(*args, **kwargs)
-                bound.apply_defaults()
-                arguments = dict(bound.arguments)
-            except TypeError:
-                arguments = dict(kwargs)
-            context = arguments.pop("tool_context", None)
-            noted = [(picture, layers.note_for(picture, notes)) for picture in pictures]
-            placed = any(held is not None and held.panel is not None for _p, held in noted)
-            try:
-                job.views.save(
-                    tool=tool.__name__, pictures=list(noted), arguments=_plain(arguments),
-                    call_id=_plain(getattr(context, "function_call_id", None)),
-                    atlas=ctx.atlas if placed else None,
-                )
-            except Exception:  # saving must never break a tool
-                logger.warning("Could not queue the pictures of %s", tool.__name__,
-                               exc_info=True)
-        if tool.__name__ == "submit" and job.state.submitted:
-            job.views.flush()
+            media = result.get(TOOL_MEDIA_PARTS_KEY) if isinstance(result, dict) else None
+            pictures = ([item for item in media if isinstance(item, Image.Image)]
+                        if isinstance(media, list) else [])
+            if pictures:
+                try:
+                    bound = signature.bind(*args, **kwargs)
+                    bound.apply_defaults()
+                    arguments = dict(bound.arguments)
+                except TypeError:
+                    arguments = dict(kwargs)
+                context = arguments.pop("tool_context", None)
+                shown.show(pictures, arguments=_plain(arguments),
+                           call_id=_plain(getattr(context, "function_call_id", None)))
         return result
 
     return run
@@ -592,7 +563,6 @@ def build_tools(
         raise ValueError("build_tools: the job must hold this state and spec")
     box = ToolBox(job, max_view_edge=int(max_view_edge or view_edge_limit(ctx)))
     pos_lo, pos_hi = ctx.position_range
-    locked = job.locked
     over_cap = job.over_cap
     #: The image model is part of this run: trace_borders and traced images exist.
     traces_on = spec.nonlinear.uses_image_model
@@ -600,10 +570,11 @@ def build_tools(
     # --- shared plumbing ------------------------------------------------
 
     def rows() -> dict[str, Any]:
+        table = ops_views.status(job)
         return {
-            "rows": compact_rows(status_rows(state)),
-            "cutting_angles_deg": dict(state.cutting_angles_deg),
-            "interval_breaks": list(state.interval_breaks),
+            "rows": compact_rows(table.rows),
+            "cutting_angles_deg": table.cutting_angles_deg,
+            "interval_breaks": table.interval_breaks,
         }
 
     def changed(touched: list[str]) -> dict[str, Any]:
@@ -614,11 +585,12 @@ def build_tools(
         whole table, and is one call away.
         """
         wanted = set(touched)
+        table = ops_views.status(job)
         return {
-            "changed": compact_rows([row for row in status_rows(state) if row["id"] in wanted]),
+            "changed": compact_rows([row for row in table.rows if row["id"] in wanted]),
             "n_sections": len(state.slices),
-            "cutting_angles_deg": dict(state.cutting_angles_deg),
-            "interval_breaks": list(state.interval_breaks),
+            "cutting_angles_deg": table.cutting_angles_deg,
+            "interval_breaks": table.interval_breaks,
         }
 
     def answered(*touched: str) -> dict[str, Any]:
@@ -626,12 +598,9 @@ def build_tools(
         itself took the undo step and the checkpoint)."""
         return {"status": "ok", **changed(list(touched))}
 
-    def forget_looks(before: dict[str, Any]) -> None:
+    def forget_looks(moved: list[str]) -> None:
         """A position moved by undo, redo or a reload is a write to it: that
         section needs a new view, and the stack a new review (the gates)."""
-        held = {row["id"]: row.get("position_mm") for row in before.get("slices", [])}
-        moved = [record.id for record in state.slices
-                 if held.get(record.id) != record.position_mm]
         for name in moved:
             box.compared.pop(name, None)
         if moved:
@@ -641,7 +610,7 @@ def build_tools(
         """Before every call: pick up a state file changed on disk."""
         before = job.sync()
         if before is not None:
-            forget_looks(before)
+            forget_looks(ops_history.moved_positions(before, state))
 
     def placement_view_key(
         record: SliceState, position_mm: float
@@ -655,6 +624,13 @@ def build_tools(
             float(state.pitch_deg),
             float(state.yaw_deg),
         )
+
+    def correction_fingerprint() -> Callable[[str], str]:
+        """A section's current image-correction geometry: the provider bridge's
+        (``registration_tool``, until phase 4 injects the provider)."""
+        from langslice import registration_tool
+
+        return lambda section_id: registration_tool.correction_fingerprint(state, ctx, section_id)
 
     def resolve_many(refs: list[Any]) -> tuple[list[SliceState], list[str]]:
         known: list[SliceState] = []
@@ -726,14 +702,6 @@ def build_tools(
         return {"status": "error", "error": "BAD_ARGS",
                 "message": "A region cannot be both included and excluded: " + ", ".join(overlap)}
 
-    def section_part(record: SliceState, options: DisplayOptions) -> Image.Image:
-        """One section as corrected (:func:`langslice.core.pictures.section_picture`)."""
-        return section_picture(ctx, state, record, options)
-
-    def absent_regions(position: float, options: DisplayOptions) -> list[str]:
-        present = regions_in_plane(ctx, state, position, options)
-        return [name for name, _ids in options.regions if name not in present]
-
     def view_slices(
         slices: list[str],
         view: View = {},  # noqa: B006 — read, never mutated; ADK wants a value
@@ -764,7 +732,7 @@ def build_tools(
         options = display(VIEW_SLICES_VIEW, view, sections=known)
         if isinstance(options, dict):
             return options
-        parts = [section_part(record, options) for record in known]
+        shown = ops_views.view_slices(job, ctx, known, options)
         result: dict[str, Any] = {
             "status": "ok",
             "slices": [record.id for record in known],
@@ -780,11 +748,10 @@ def build_tools(
                    "right in the order of `channels`." if options.mode == "channels" else ".")
             ),
             "view": options.echo(),
-            TOOL_MEDIA_PARTS_KEY: parts,
+            TOOL_MEDIA_PARTS_KEY: list(shown.pictures),
         }
         if options.mode == "channels":
-            result["channels"] = {record.id: list(ctx.section_channels(record.id)[0])
-                                  for record in known}
+            result["channels"] = shown.channels
         return result
 
     def note(text: str) -> dict[str, Any]:
@@ -800,19 +767,19 @@ def build_tools(
 
     def undo() -> dict[str, Any]:
         """Undo the last write. One tool call undoes as one step."""
-        before = job.snapshot()
-        if not job.undo():
+        step = ops_history.undo(job)
+        if not step.done:
             return {"status": "error", "error": "NOTHING_TO_UNDO"}
-        forget_looks(before)
-        return {"status": "ok", "undo_depth": len(job.undo_stack), **rows()}
+        forget_looks(step.moved)
+        return {"status": "ok", "undo_depth": step.depth, **rows()}
 
     def redo() -> dict[str, Any]:
         """Redo the write that ``undo`` reversed."""
-        before = job.snapshot()
-        if not job.redo():
+        step = ops_history.redo(job)
+        if not step.done:
             return {"status": "error", "error": "NOTHING_TO_REDO"}
-        forget_looks(before)
-        return {"status": "ok", "redo_depth": len(job.redo_stack), **rows()}
+        forget_looks(step.moved)
+        return {"status": "ok", "redo_depth": step.depth, **rows()}
 
     def mark_damaged(entries: list[DamageEntry]) -> dict[str, Any]:
         """Set or clear damage flags for sections with unreliable outlines.
@@ -855,67 +822,29 @@ def build_tools(
                 conclude is real. Empty if there are none.
             notes: Short observations worth carrying forward.
         """
-        breaks: list[int] = []
-        for raw in interval_breaks if isinstance(interval_breaks, (list, tuple)) else []:
-            try:
-                breaks.append(int(raw))
-            except (TypeError, ValueError):
-                continue
-        refusal = job.submit_errors(breaks)
-        # With the image model, missing traces are reported before missing
-        # deformations: a deformation may be fitted to its section's trace.
-        if refusal is not None and not (
-                traces_on and refusal.get("error") == "MISSING_DEFORMATIONS"):
-            return refusal
-        if spec.has("nonlinear") and traces_on:
-            from langslice.registration_tool import correction_fingerprint
-
-            pending = job.missing_image_corrections(
-                lambda section_id: correction_fingerprint(state, ctx, section_id))
-            if pending:
+        def look_gate() -> dict[str, Any] | None:
+            if spec.has("position") and spec.position.gated and not box.reviewed:
                 return {
                     "status": "refused",
-                    "error": "MISSING_IMAGE_CORRECTIONS",
-                    "sections": pending,
-                    "message": "Each section requires a completed image correction at its current "
-                    "linear placement. This checks completion and geometry, "
-                    "not anatomical quality.",
+                    "error": "NOT_REVIEWED",
+                    "detail": "view_stack has not run since the last set_positions write",
                 }
-        if refusal is not None:
-            return refusal
-        if spec.has("position") and spec.position.gated and not box.reviewed:
-            return {
-                "status": "refused",
-                "error": "NOT_REVIEWED",
-                "detail": "view_stack has not run since the last set_positions write",
-            }
+            return None
 
-        before = job.snapshot()
-        state.interval_breaks = sorted(set(breaks))
-        # Direction is a convention, not an inference: a posterior-first stack
-        # is emitted in atlas order without the agent being told about it.
-        if normalize_to_atlas_order(state):
-            state.notes.append("submit: corrected order reversed to run the atlas way")
-        # Model output is a trust boundary: a malformed submission must not
-        # take the run down.
-        clean_notes = (
-            [str(item).strip() for item in notes if str(item).strip()]
-            if isinstance(notes, (list, tuple))
-            else []
-        )
-        state.notes.extend(clean_notes)
-        summary_text = str(summary or "").strip()
-        if summary_text:
-            state.notes.append(f"submit: {summary_text}")
-        state.submitted = True
+        try:
+            done = ops_submit.submit(
+                job, summary=summary, notes=notes, interval_breaks=interval_breaks,
+                fingerprint=correction_fingerprint() if traces_on else None, gate=look_gate,
+            )
+        except Refused as refusal:
+            return refusal.payload()
         box.submission.update(
             {
-                "summary": summary_text,
-                "notes": clean_notes,
-                "interval_breaks": list(state.interval_breaks),
+                "summary": done.summary,
+                "notes": done.notes,
+                "interval_breaks": done.interval_breaks,
             }
         )
-        job.commit(before)
         if tool_context is not None:
             tool_context.actions.escalate = True
         return {"status": "ok", **rows()}
@@ -1020,32 +949,27 @@ def build_tools(
         if isinstance(options, dict):
             return options
 
-        pictured = targets[0]  # "both" writes one setting to both targets
         ids = [record.id for record in scope] if slices else None
-        parts: list[Media] = []
         try:
             # BEFORE is drawn first, from the settings as they stand; AFTER
             # from the settings the write will leave. Written only once every
             # picture is drawn.
-            earlier = [
-                (record, looks.section_settings(state, pictured, record.id),
-                 framed_section(ctx, state, record, options,
-                                look=looks.section_settings(state, pictured, record.id)))
-                for record in shown
-            ]
-            for record, was, picture in earlier:
-                now = ops_appearance.planned_settings(state, pictured, ids, settings, record.id)
-                label = f"{record.index_corrected}: {record.id}  {pictured} appearance"
-                parts.append(layers.note(
-                    caption(picture, f"{label}  BEFORE ({looks.describe(was)})"),
-                    sections=(record.id,), mode="before", extra={"target": pictured}))
-                parts.append(layers.note(caption(
-                    framed_section(ctx, state, record, options, look=now),
-                    f"{label}  AFTER ({looks.describe(now)})"),
-                    sections=(record.id,), mode="after", extra={"target": pictured}))
-        except Exception as exc:
-            return {"status": "error", "error": "RENDER_FAILED", "message": str(exc)}
-        written = ops_appearance.set_appearance(job, targets, ids, settings)
+            done = ops_appearance.preprocess(job, ctx, targets, ids, settings, shown=shown,
+                                             options=options)
+        except Refused as refusal:
+            return refusal.payload()
+        pictured = done.target  # "both" writes one setting to both targets
+        parts: list[Media] = []
+        for pair in done.pictures:
+            record = pair.record
+            label = f"{record.index_corrected}: {record.id}  {pictured} appearance"
+            parts.append(layers.note(
+                caption(pair.before, f"{label}  BEFORE ({looks.describe(pair.before_settings)})"),
+                sections=(record.id,), mode="before", extra={"target": pictured}))
+            parts.append(layers.note(
+                caption(pair.after, f"{label}  AFTER ({looks.describe(pair.after_settings)})"),
+                sections=(record.id,), mode="after", extra={"target": pictured}))
+        written = done.written
         return {
             "status": "ok",
             "targets": targets,
@@ -1068,7 +992,7 @@ def build_tools(
     box.tools = [
         status,
         view_slices,
-        make_view_atlas(state, ctx, box.max_view_edge),
+        make_view_atlas(job, ctx, box.max_view_edge),
         note,
         undo,
         redo,
@@ -1114,18 +1038,8 @@ def build_tools(
         options = display(ORIENT_VIEW, view, sections=named)
         if isinstance(options, dict):
             return options
-        done = ops_orientation.orient_sections(job, entries)
+        done = ops_orientation.orient_sections(job, entries, workspace=ctx, options=options)
         applied = done.applied
-        parts: list[Media] = []
-        failed: list[dict[str, str]] = []
-        for name in applied[:MAX_VIEW_SLICES]:
-            record = state.by_id(name)
-            if record is None:
-                continue
-            try:
-                parts.append(section_part(record, options))
-            except Exception as exc:
-                failed.append({"id": name, "message": str(exc)})
         return {
             "applied": applied,
             "cleared_transforms": done.cleared_transforms,
@@ -1138,9 +1052,9 @@ def build_tools(
                 + ", in that order, rendered as they now stand, each labelled "
                 "'<corrected index>: <filename>' in its top-left corner."
             ),
-            "render_failed": failed,
+            "render_failed": done.render_failed,
             "view": options.echo(),
-            TOOL_MEDIA_PARTS_KEY: parts,
+            TOOL_MEDIA_PARTS_KEY: list(done.pictures),
         }
 
     # --- reorder --------------------------------------------------------
@@ -1170,37 +1084,6 @@ def build_tools(
         box.tools.append(reorder_slices)
 
     # --- position -------------------------------------------------------
-
-    def placement_pictures(
-        record: SliceState,
-        position: float,
-        options: DisplayOptions,
-        parts: list[Media],
-        section_indexes: dict[str, int],
-        working: placement.Working,
-    ) -> dict[str, Any]:
-        """Append one section-position pair's pictures
-        (:func:`langslice.core.placement.placement_pictures`) to *parts*.
-
-        ``side_by_side``: the section once per distinct id and one atlas per
-        pair, mapped by the returned ``image_indexes``. Returns the pair's
-        row fields (calibration, transform drawn, deformation drawn, image
-        indexes).
-        """
-        placed = placement.placement_pictures(ctx, state, record, position, options, working,
-                                              store=job.deformations)
-        row = placed.row
-        if placed.separate:
-            # Encode both before mutating delivery bookkeeping.
-            tissue_image, atlas_image = placed.images
-            if record.id not in section_indexes:
-                section_indexes[record.id] = len(parts)
-                parts.append(tissue_image)
-            row["image_indexes"] = {"section": section_indexes[record.id], "atlas": len(parts)}
-            parts.append(atlas_image)
-            return row
-        parts.extend(placed.images)
-        return row
 
     def set_positions(
         entries: list[PositionEntry],
@@ -1259,9 +1142,19 @@ def build_tools(
                 continue
             wanted.append((record.id, requested))
 
-        done = ops_positions.set_positions(job, ctx, wanted)
+        atlas_bearing = (options.mode != "section" and options.full_view
+                         and bool(options.atlas_channels))
+        # Do not pay for the same placement picture twice. A successful
+        # compare is promoted to ``seen`` only at the next model-call
+        # boundary, so compare + write tool calls emitted in one round still
+        # return the write picture: the model has not received the compare
+        # result yet. Orientation and cutting angles are part of the identity.
+        done = ops_positions.set_positions(
+            job, ctx, wanted, options=options,
+            show=lambda record, position: placement_view_key(record, position)
+            not in box.seen_placement_views,
+        )
         written = [{"id": name, "position_mm": round(value, 3)} for name, value in done.written]
-        written_positions = [value for _name, value in done.written]
         clamped = [{"id": name, "requested_mm": round(requested, 3),
                     "clamped_to_mm": round(value, 3)}
                    for name, requested, value in done.clamped]
@@ -1285,51 +1178,20 @@ def build_tools(
         }
         if clamped:
             result["atlas_range_mm"] = [round(pos_lo, 3), round(pos_hi, 3)]
-        # Do not pay for the same placement picture twice. A successful
-        # compare is promoted to ``seen`` only at the next model-call
-        # boundary, so compare + write tool calls emitted in one round still
-        # return the write picture: the model has not received the compare
-        # result yet. Orientation and cutting angles are part of the identity.
-        shown = [
-            (row, position)
-            for row, position in zip(written, written_positions, strict=True)
-            if (record := state.by_id(row["id"])) is not None
-            and placement_view_key(record, position)
-            not in box.seen_placement_views
-        ]
-        parts: list[Media] = []
-        failed: list[dict[str, str]] = []
-        rendered: list[str] = []
+        pictured = done.view or ops_views.PlacementView()
         delivery_id: str | None = None
-        section_indexes: dict[str, int] = {}
-        working: dict[str, tuple[Any, float, str]] = {}
         image_indexes: dict[str, Any] = {}
-        atlas_bearing = (options.mode != "section" and options.full_view
-                         and bool(options.atlas_channels))
-        for row, position in shown:
-            record = state.by_id(row["id"])
-            if record is None:
-                continue
-            first = len(parts)
-            try:
-                extras = placement_pictures(
-                    record, position, options, parts, section_indexes, working,
-                )
-            except Exception as exc:
-                del parts[first:]
-                failed.append({"id": row["id"], "message": str(exc)})
-                continue
-            image_indexes[record.id] = extras.get(
-                "image_indexes", list(range(first, len(parts))),
-            )
-            rendered.append(record.id)
+        rendered: list[str] = []
+        for pair in pictured.shown:
+            image_indexes[pair.record.id] = pair.indexes
+            rendered.append(pair.record.id)
             if atlas_bearing:
                 delivery_id = box.record_placement_view(
-                    tool_context, placement_view_key(record, position)
+                    tool_context, placement_view_key(pair.record, pair.position)
                 )
+        failed = [{"id": record.id, "message": message} for record, _p, message in pictured.failed]
         result["render_failed"] = failed
-        shown_rows = [row for row, _position in shown]
-        suppressed = [row["id"] for row in written if row not in shown_rows]
+        suppressed = done.not_shown
         result["description"] = (
             (
                 "Attached: the placement pictures of each section not already "
@@ -1356,7 +1218,7 @@ def build_tools(
         result["images_suppressed_seen"] = suppressed
         if delivery_id is not None:
             result[TOOL_MEDIA_DELIVERY_ID_KEY] = delivery_id
-        result[TOOL_MEDIA_PARTS_KEY] = parts
+        result[TOOL_MEDIA_PARTS_KEY] = list(pictured.pictures)
         return result
 
     def run_deepslice(
@@ -1374,12 +1236,8 @@ def build_tools(
             installed or the plane/atlas is unsupported.
         """
         del keep
-        return _run_deepslice(
-            state,
-            ctx,
-            slice_ids=[str(item) for item in slices or []],
-            allow_angle_change=bool(allow_angle_change),
-        )
+        return ops_positions.run_deepslice(job, ctx, list(slices or []),
+                                           allow_angle_change=bool(allow_angle_change))
 
     def search_position(id: str, window_mm: float, angles: bool) -> dict[str, Any]:
         """Search the atlas around a section's current position. Writes nothing.
@@ -1397,46 +1255,11 @@ def build_tools(
         Returns:
             The best position (and angles) with its score.
         """
-        record = state.resolve(id)
-        if record is None:
-            return {"status": "error", "error": "UNKNOWN_SLICE_IDS", "unknown": [id]}
-        if record.position_mm is None:
-            return {"status": "error", "error": "NO_POSITION", "id": record.id}
         try:
-            window = float(window_mm)
-        except (TypeError, ValueError):
-            return {"status": "error", "error": "BAD_ARGS"}
-
-        from langslice.oblique import fit_oblique
-
-        pitch, yaw = state.pitch_deg, state.yaw_deg
-        bounds = ((-15.0, 15.0), (-15.0, 15.0)) if angles else ((pitch, pitch), (yaw, yaw))
-        section = render_slice(ctx, record, long_edge=512)
-        try:
-            fit = fit_oblique(
-                ctx.atlas,
-                section,
-                record.position_mm,
-                cast(Plane, state.plane),
-                pitch_bounds=bounds[0],
-                yaw_bounds=bounds[1],
-                position_window_mm=max(0.0, window),
-                allow_mirror=False,
-            )
-        except Exception as exc:
-            logger.warning("search_position failed for %s: %s", record.id, exc)
-            return {"status": "error", "error": "FIT_FAILED", "message": str(exc)}
-        return {
-            "status": "ok",
-            "id": record.id,
-            "current_position_mm": round(record.position_mm, 3),
-            "position_mm": round(float(fit["position_mm"]), 3),
-            "pitch_deg": round(float(fit["pitch_deg"]), 3),
-            "yaw_deg": round(float(fit["yaw_deg"]), 3),
-            "score": round(float(fit["score"]), 4),
-            "searched_window_mm": round(max(0.0, window), 3),
-            "searched_angles": bool(angles),
-        }
+            found = ops_positions.search_position(job, ctx, id, window_mm, angles=bool(angles))
+        except Refused as refusal:
+            return refusal.payload()
+        return {"status": "ok", **found}
 
     def view_placement(
         entries: list[PlacementEntry],
@@ -1513,25 +1336,16 @@ def build_tools(
         dropped = len(pairs) - MAX_VIEW_SLICES
         pairs = pairs[:MAX_VIEW_SLICES]
 
-        working: dict[str, tuple[Any, float, str]] = {}
-        compared: list[dict[str, Any]] = []
-        parts: list[Media] = []
-        failed: list[dict[str, Any]] = []
-        delivery_id: str | None = None
         full_atlas_view = (options.mode != "section" and options.full_view
                            and bool(options.atlas_channels))
-        section_indexes: dict[str, int] = {}
-        for record, position in pairs:
-            first = len(parts)
-            try:
-                extras = placement_pictures(
-                    record, position, options, parts, section_indexes, working,
-                )
-            except Exception as exc:
-                del parts[first:]
-                failed.append({"id": record.id, "position_mm": round(position, 3),
-                               "message": str(exc)})
-                continue
+        shown = ops_views.view_placement(job, ctx, pairs, options)
+        parts: list[Media] = list(shown.pictures)
+        failed = [{"id": record.id, "position_mm": round(position, 3), "message": message}
+                  for record, position, message in shown.failed]
+        delivery_id: str | None = None
+        compared: list[dict[str, Any]] = []
+        for pair in shown.shown:
+            record, position = pair.record, pair.position
             # A failed render is neither a gate-satisfying comparison nor a
             # picture the model could have seen.
             box.compared.setdefault(record.id, set()).add(round(position, 2))
@@ -1539,15 +1353,15 @@ def build_tools(
                 delivery_id = box.record_placement_view(
                     tool_context, placement_view_key(record, position)
                 )
-            absent = absent_regions(position, options)
             compared.append({
                 "id": record.id,
                 "position_mm": round(position, 3),
                 "current_position_mm": (
                     None if record.position_mm is None else round(record.position_mm, 3)
                 ),
-                **extras,
-                **({"regions_not_in_plane": absent} if absent else {}),
+                **pair.row,
+                **({"regions_not_in_plane": pair.regions_not_in_plane}
+                   if pair.regions_not_in_plane else {}),
             })
         separate = options.mode == "side_by_side"
         result: dict[str, Any] = {
@@ -1602,7 +1416,8 @@ def build_tools(
             return options
         box.reviewed = True
 
-        sheet, plot = stack_review(ctx, state, options)
+        review = ops_views.view_stack(job, ctx, options)
+        sheet, plot = review.sheet, review.plot
         parts = [
             f"The {len(state.slices)} sections in the order of their "
             "written positions (unplaced last), each captioned "
@@ -1611,12 +1426,9 @@ def build_tools(
             "Position against corrected index:",
             plot,
         ]
-        ordered = sorted(
-            status_rows(state), key=lambda r: (r["position_mm"] is None, r["position_mm"] or 0.0)
-        )
         return {
             "status": "ok",
-            "rows": compact_rows(ordered),
+            "rows": compact_rows(review.rows),
             "description": (
                 "Attached: one contact sheet of every section in the order of "
                 "its written position, each captioned, with the atlas section "
@@ -1729,8 +1541,6 @@ def build_tools(
             return {"status": "error", "error": "FIT_ATLAS_UNAVAILABLE",
                     "message": f"The {atlas_kind} atlas image needs ABBA's cached Allen atlas "
                     f"matching {state.atlas}; this host has none.", "fit_atlas": offered}
-        fitter = (functools.partial(fit_elastix, atlas_image=atlas_kind) if chosen == "elastix"
-                  else fit_silhouette)
         kept = region_names(include, "include")
         if isinstance(kept, dict):
             return kept
@@ -1745,13 +1555,7 @@ def build_tools(
         if slices:
             targets, unknown = resolve_many(list(slices))
         else:
-            targets = [
-                record
-                for record in state.in_order()
-                if record.position_mm is not None and not record.damaged
-                and record.id not in locked
-            ]
-            unknown = []
+            targets, unknown = ops_transforms.fit_targets(job), []
         refusal = over_cap(len(targets) + len(unknown))
         if refusal is not None:
             return refusal
@@ -1765,51 +1569,15 @@ def build_tools(
             if isinstance(options, dict):
                 return options
 
-        def draw_fit(record: SliceState, frame: FitFrame) -> list[Any]:
-            """The fitted section, drawn from the fit's working frame and matrix.
-
-            One-sided regions are highlighted with the sides the fit resolved
-            (``frame.left``), so the picture shows what the fit used even
-            after a large turn.
-            """
-            return placement.draw_canvas(
-                ctx, state, record, frame.section, frame.um_per_px,
-                float(record.position_mm or 0.0), frame.matrix, options, label=record.id,
-                left=frame.left,
-            ).images
-
-        results: list[dict[str, Any]] = []
-        parts: list[Media] = []
-        fits: list[tuple[SliceState, dict[str, Any]]] = []
-        for record in targets:
-            if record.id in locked:
-                results.append({"id": record.id, "status": "error", "error": "LOCKED"})
-                continue
-            if record.damaged and not restricted:
-                results.append({"id": record.id, "status": "error", "error": "DAMAGED"})
-                continue
-            try:
-                outcome = fitter(state, ctx, record, include=kept, exclude=dropped)
-                frame = outcome.pop(FIT_FRAME_KEY, None)
-                panels = draw_fit(record, frame) if frame is not None else []
-            except Exception as exc:  # nothing is written for this section
-                logger.warning("fit_affine failed for %s: %s", record.id, exc)
-                results.append({"id": record.id, "status": "error",
-                                "error": getattr(exc, "code", "RENDER_FAILED"),
-                                "message": str(exc)})
-                continue
-            results.append(outcome)
-            if outcome["status"] != "ok":
-                continue
-            fits.append((record, outcome))
-            # Every fit returns its picture (run 15, 2026-09-10: a
-            # 25-section fit pictured 4 and the model never saw 21).
-            outcome["image_indexes"] = list(range(len(parts), len(parts) + len(panels)))
-            parts.extend(panels)
-
+        done = ops_transforms.fit_affine(
+            job, ctx, targets, method=chosen, fit_atlas=atlas_kind, include=kept,
+            exclude=dropped, options=options,
+        )
+        fits = [row for row in done.rows if row.get("status") == "ok"]
+        parts: list[Media] = list(done.pictures)
         payload: dict[str, Any] = {
             "status": "ok" if fits else "error",
-            "results": results,
+            "results": done.rows,
             "unknown_ids": unknown,
             "view": options.echo(),
         }
@@ -1819,7 +1587,7 @@ def build_tools(
         if parts:
             payload["description"] = (
                 "Attached panels are "
-                + ", ".join(record.id for record, _ in fits)
+                + ", ".join(row["id"] for row in fits)
                 + ", in that order (mapped by each result's image_indexes); "
                 "each shows the section under its fitted transform against "
                 "the atlas at true physical scale, in the requested view."
@@ -1827,153 +1595,32 @@ def build_tools(
                    if restricted else "")
             )
             payload[TOOL_MEDIA_PARTS_KEY] = parts
-        ops_transforms.set_transforms(job, {
-            record.id: ops_transforms.fit_transform(chosen, outcome, include=kept,
-                                                    exclude=dropped, fit_atlas=atlas_kind)
-            for record, outcome in fits
-        })
-        for _record, outcome in fits:
-            outcome.pop("params")  # the six raw numbers stay host-side
+        for row in fits:
+            row.pop("params")  # the six raw numbers stay host-side
         return payload
 
     # --- the interactive transform --------------------------------------
 
-    def stage(
-        slice_id: str,
-        rotation_deg: float,
-        scale_x: float,
-        scale_y: float,
-        translate_x_mm: float,
-        translate_y_mm: float,
-        pivot: Any,
-        shear: float | None = None,
-    ) -> placement.Staged | dict[str, Any]:
-        """One section, its calibrated canvas and the pivot
-        (:func:`langslice.core.placement.stage`), or a refusal."""
-        record = state.resolve(slice_id)
-        if record is None:
-            return {"status": "error", "error": "UNKNOWN_SLICE_IDS", "unknown": [slice_id]}
-        if record.position_mm is None:
-            return {"status": "error", "error": "NO_POSITION", "id": record.id}
-        if shear is None:
-            # Left out: the shear the section's transform already has stays.
-            held = (record.transform or {}).get("physical") or {}
-            shear = held.get("shear") or 0.0
-        try:
-            params = {
-                "rotation_deg": float(rotation_deg),
-                "scale_x": float(scale_x),
-                "scale_y": float(scale_y),
-                "translate_x_mm": float(translate_x_mm),
-                "translate_y_mm": float(translate_y_mm),
-                "shear": 0.0 if shear is None else float(shear),
-            }
-        except (TypeError, ValueError):
-            return {"status": "error", "error": "BAD_ARGS"}
-        if not all(math.isfinite(value) for value in params.values()):
-            return {"status": "error", "error": "BAD_ARGS",
-                    "message": "every transform number must be finite"}
-        try:
-            return placement.stage(ctx, state, record, params, pivot)
-        except placement.StageFailure as failure:
-            return {"status": "error", "error": failure.code, "message": str(failure)}
+    def adjusted(entry: ops_transforms.Adjustment, options: DisplayOptions) -> dict[str, Any]:
+        """One written (or redrawn) entry's result, in words and numbers.
 
-    def staged_views(
-        staged: placement.Staged,
-        params: dict[str, float] | np.ndarray,
-        options: DisplayOptions,
-        *,
-        mode: str,
-        pivot: tuple[float, float] | None,
-        label: str = "",
-        spline: dict[str, Any] | None = None,
-    ) -> list[Any]:
-        """One staged section's canvas pictures (the write is on its working frame)."""
-        return placement.staged_views(ctx, state, staged, params, options, mode=mode,
-                                      pivot=pivot, label=label, spline=spline).images
-
-    def _adjust_transform(
-        slice_id: str,
-        rotation_deg: float,
-        scale_x: float,
-        scale_y: float,
-        translate_x_mm: float,
-        translate_y_mm: float,
-        options: DisplayOptions,
-        pivot: str | list[float] = "canvas",
-        note: str = "",
-        shear: float | None = None,
-    ) -> tuple[dict[str, Any], dict[str, Any] | None]:
-        """One section's new in-plane transform, drawn: ``(result, record to write)``.
-
-        The record is the stored transform these parameters make
-        (:func:`langslice.ops.transforms.interactive_transform`), None when
-        the section already holds it (the same numbers again only re-draw)
-        or nothing could be drawn. The section's flip and rotation flags are
-        not touched. The batch tool writes every record as one undo step.
+        The ``ab`` reference reported is what the B picture drew: the
+        section's transform before the call, or identity.
         """
-        view = options.mode
-        staged = stage(
-            slice_id, rotation_deg, scale_x, scale_y, translate_x_mm,
-            translate_y_mm, pivot, shear,
-        )
-        if isinstance(staged, dict):
-            return staged, None
+        staged, previous = entry.staged, entry.previous
+        assert staged is not None and entry.transform is not None
         record = staged.record
-        previous = record.transform
-        written = ops_transforms.interactive_transform(
-            size=staged.section.size, um_per_px=staged.um_per_px,
-            calibration=staged.calibration, pivot=staged.pivot_in_section,
-            pivot_frac=staged.pivot_frac, knobs=staged.params, note=note,
-        )
-        wrote = not ops_transforms.same_transform(previous, written)
-
+        view = options.mode
         stored = (previous or {}).get("physical")
         reference: dict[str, Any] | None = None
-        try:
-            if view == "ab":
-                # The B side is drawn from the six numbers the section carried
-                # before this call, when there were any: they are the exact
-                # map, where the knobs the payload reports (shear included)
-                # are rounded. Knobs alone (no six numbers) are drawn as given.
-                before = (previous or {}).get("params")
-                other: Any = dict(IDENTITY_PARAMS)
-                if before is not None and len(before) == 6:
-                    other = denormalized_affine(before, staged.section.size)
-                elif isinstance(stored, dict):
-                    other = {key: float(stored[key]) for key in IDENTITY_PARAMS}
-                    if stored.get("shear"):
-                        other["shear"] = float(stored["shear"])
-                other_pivot = staged.pivot
-                if isinstance(stored, dict) and stored.get("pivot"):
-                    fractions = [float(value) for value in stored["pivot"]]
-                    other_pivot = (
-                        fractions[0] * staged.geometry.size[0],
-                        fractions[1] * staged.geometry.size[1],
-                    )
-                held = previous is not None
-                images = staged_views(
-                    staged, staged.params, options, mode="overlay", pivot=staged.pivot,
-                    label=f"{record.id} candidate",
-                ) + staged_views(
-                    staged, other, options, mode="overlay", pivot=other_pivot,
-                    label=f"{record.id} {'stored' if held else 'identity'}",
-                    spline=(previous or {}).get("spline"),
-                )
-                reference = {
-                    "source": "stored" if held else "identity",
-                    "params": dict(stored) if isinstance(stored, dict) else dict(IDENTITY_PARAMS),
-                }
-                if held:
-                    reference["stored_kind"] = (previous or {}).get("kind")
-            else:
-                images = staged_views(
-                    staged, staged.params, options, mode=view, pivot=staged.pivot,
-                )
-        except Exception as exc:
-            logger.warning("adjust_transform failed for %s: %s", record.id, exc)
-            return {"status": "error", "error": "RENDER_FAILED", "message": str(exc)}, None
-
+        if view == "ab":
+            held = previous is not None
+            reference = {
+                "source": "stored" if held else "identity",
+                "params": dict(stored) if isinstance(stored, dict) else dict(IDENTITY_PARAMS),
+            }
+            if held:
+                reference["stored_kind"] = (previous or {}).get("kind")
         history = box.transform_history.setdefault(record.id, [])
         history.append(dict(staged.params))
         image = f"atlas {options.atlas_name()}"
@@ -2000,7 +1647,7 @@ def build_tools(
             ),
         }[view]
         position = float(record.position_mm or 0.0)
-        absent = absent_regions(position, options)
+        absent = ops_views.regions_not_in_plane(job, ctx, position, options)
         if options.borders:
             lines = (
                 ("The outline is the OUTER boundary of "
@@ -2020,13 +1667,12 @@ def build_tools(
             "status": "ok",
             "id": record.id,
             "position_mm": round(position, 3),
-            "physical": written["physical"],
-            "written": wrote,
+            "physical": entry.transform["physical"],
+            "written": entry.written,
             **({"ab_reference": reference} if reference is not None else {}),
             **({"regions_not_in_plane": absent} if absent else {}),
             "description": f"{record.id} under the transform above, {described}. {lines}",
-            TOOL_MEDIA_PARTS_KEY: images,
-        }, (written if wrote else None)
+        }
 
     def adjust_transforms(
         entries: list[TransformEntry],
@@ -2102,37 +1748,18 @@ def build_tools(
         if isinstance(options, dict):
             return options
 
+        done = ops_transforms.adjust_transforms(job, ctx, entries, options=options)
         results: list[dict[str, Any]] = []
         parts: list[Media] = []
-        writes: dict[str, dict[str, Any]] = {}
-        for entry in entries:
-            if not isinstance(entry, dict):
-                results.append({"status": "error", "error": "BAD_ARGS"})
+        for entry in done.entries:
+            if entry.error is not None:
+                results.append(dict(entry.error) if entry.early
+                               else {**entry.error, "image_indexes": []})
                 continue
-            target = state.resolve(entry.get("id", ""))
-            if target is not None and target.id in locked:
-                results.append({"status": "error", "error": "LOCKED", "id": target.id})
-                continue
-            result, record_to_write = _adjust_transform(
-                str(entry.get("id", "")),
-                entry.get("rotation_deg"),  # type: ignore[arg-type]
-                entry.get("scale_x"),  # type: ignore[arg-type]
-                entry.get("scale_y"),  # type: ignore[arg-type]
-                entry.get("translate_x_mm"),  # type: ignore[arg-type]
-                entry.get("translate_y_mm"),  # type: ignore[arg-type]
-                options,
-                entry.get("pivot", "canvas"),  # type: ignore[arg-type]
-                str(entry.get("note", "")),
-                entry.get("shear"),
-            )
-            media = result.pop(TOOL_MEDIA_PARTS_KEY, [])
-            result["image_indexes"] = list(range(len(parts), len(parts) + len(media)))
-            parts.extend(media)
-            if record_to_write is not None:
-                writes[str(result["id"])] = record_to_write
+            result = adjusted(entry, options)
+            result["image_indexes"] = list(range(len(parts), len(parts) + len(entry.pictures)))
+            parts.extend(entry.pictures)
             results.append(result)
-        # Every section of the call, one undo step.
-        ops_transforms.set_transforms(job, writes)
         successful = [row["id"] for row in results if row.get("status") == "ok"]
         return {
             "status": "ok" if successful else "error",
@@ -2171,42 +1798,28 @@ def build_tools(
         """
         from langslice import registration_tool
 
-        record = state.resolve(id)
-        if record is None:
-            return {"status": "error", "error": "UNKNOWN_SECTION", "id": str(id)}
-        try:
-            fingerprint = registration_tool.correction_fingerprint(state, ctx, record.id)
-            if job.image_job_running(record.id, fingerprint):
-                return {"status": "running", "id": record.id,
-                        "message": "This section's image correction is already running."}
-            result, call = registration_tool.start_correction(
-                state, ctx, record.id,
-                prompt=prompt,
-                calls_dir=job.layout.image_correction_dir(record.id),
-                provider=spec.nonlinear.provider,
-                image_model=spec.nonlinear.image_model,
+        def start(section_id: str, **where: Any) -> Any:
+            return registration_tool.start_correction(
+                state, ctx, section_id, provider=spec.nonlinear.provider,
+                image_model=spec.nonlinear.image_model, **where,
             )
-        except ValueError as exc:
-            return {"status": "error", "error": "INVALID_LINEAR_PLACEMENT",
-                    "id": record.id, "message": str(exc)}
-        except OSError as exc:
-            return {"status": "error", "error": "IMAGE_CORRECTION_IO_ERROR",
-                    "id": record.id, "message": str(exc)}
-        if call is not None:
-            job.start_image_job(
-                record.id, result["geometry_fingerprint"], call,
+
+        try:
+            done = ops_traces.trace_borders(
+                job, id, prompt=prompt, fingerprint=correction_fingerprint(), start=start,
                 workers=registration_tool.MAX_CONCURRENT_IMAGE_CALLS,
             )
-        result = job.portable(result)
-        if result != record.image_correction:
-            before = job.snapshot()
-            record.image_correction = result
-            job.commit(before)
+        except Refused as refusal:
+            return refusal.payload()
+        if done.running:
+            return {"status": "running", "id": done.id,
+                    "message": "This section's image correction is already running."}
+        result = done.record
         response = {key: result[key] for key in (
             "status", "error", "message", "cached", "prompt_edited", "attempt",
         ) if key in result}
-        response["id"] = record.id
-        if call is not None:
+        response["id"] = done.id
+        if done.started:
             response["message"] = (
                 "Image call started in the background. Continue; submit waits for it."
             )
@@ -2226,31 +1839,10 @@ def build_tools(
             Rows of acronym, id, name, ancestry (root to parent, as acronyms)
             and descendant count, capped at 40 with the number left over.
         """
-        text = str(query).strip()
-        if not text:
-            return {"status": "error", "error": "BAD_ARGS", "message": "Empty query."}
-        structures = getattr(ctx.atlas, "structures", None)
-        entries = list(structures.values()) if structures else []
-        if not entries:
-            return {"status": "error", "error": "NO_STRUCTURES",
-                    "message": "This atlas has no region hierarchy."}
-        present: set[int] | None = None
-        note = ""
-        if section != "":
-            record = state.resolve(section)
-            if record is None:
-                return {"status": "error", "error": "UNKNOWN_SLICE_IDS", "unknown": [section]}
-            if record.position_mm is None:
-                note = f"{record.id} has no position yet, so in_section is omitted."
-            else:
-                present = plane_structure_ids(state, ctx, record.position_mm)
-        rows, total = grep_structures(entries, text, present, limit=GREP_ATLAS_LIMIT)
-        result: dict[str, Any] = {"status": "ok", "query": text, "matches": total, "rows": rows}
-        if total > len(rows):
-            result["more"] = total - len(rows)
-        if note:
-            result["note"] = note
-        return result
+        try:
+            return {"status": "ok", **ops_atlas.grep_atlas(job, ctx, query, section)}
+        except Refused as refusal:
+            return refusal.payload()
 
     # --- the deformable fit (nonlinear) -----------------------------------
 
@@ -2400,69 +1992,13 @@ def build_tools(
         if isinstance(options, dict):
             return options
         done = ops_deformable.fit_deformable(job, ctx, targets, choices, include=kept,
-                                             exclude=dropped, start=begin)
+                                             exclude=dropped, start=begin, options=options)
         applying = done.applied
         rows = done.rows
-
-        parts: list[Media] = []
-        failed: list[dict[str, str]] = []
+        parts: list[Media] = list(done.pictures)
+        failed = done.render_failed
+        traces = done.traces
         highlight = [name for name, _ids in options.regions] or list(kept)
-        color, thickness = normalize_border_style(options.border_color, options.border_thickness)
-        style = deformation.Style(
-            zoom=() if options.full_view else tuple(options.zoom), highlight=tuple(highlight),
-            marked=dropped, outlines=options.layer, color=color, thickness=thickness,
-            atlas_opacity=options.atlas_opacity, long_edge=options.long_edge,
-        )
-        for fitted in done.fitted:
-            row, fit, outcome = fitted.row, fitted.fit, fitted.outcome
-            record = fit.grid.record
-            heading = (f"{record.id}  " + ("applied" if applying else
-                       f"candidate {row['candidate']}/{len(choices)}")
-                       + f": {fit.choice.engine} {fit.choice.stiffness}")
-            detail_line = (f"{fit.choice.fit_section} vs {fit.choice.fit_atlas}, start {begin}"
-                           + (f", include {','.join(kept)}" if kept else "")
-                           + (f", exclude {','.join(dropped)}" if dropped else ""))
-            shown_atlas = options.atlas_images
-            first = len(parts)
-            try:
-                images = [deformation.picture(ctx, fit.image, outcome, warped=True, style=style,
-                                              atlas_images=shown_atlas,
-                                              title=f"{heading}\n{detail_line}")]
-                if options.mode == "ab":
-                    if fit.previous is not None:
-                        images.append(deformation.picture(
-                            ctx, fit.image, fit.previous, warped=True, style=style,
-                            atlas_images=shown_atlas,
-                            title=f"{record.id}  before: the deformation it started from"))
-                    else:
-                        images.append(deformation.picture(
-                            ctx, fit.image, outcome, warped=False, style=style,
-                            atlas_images=shown_atlas,
-                            title=f"{record.id}  before: the linear placement"))
-                for index, image in enumerate(images):
-                    layers.note(image, sections=(record.id,),
-                                mode=("after" if index == 0 else "before")
-                                if options.mode == "ab" else options.mode)
-                parts.extend(images)
-            except Exception as exc:
-                logger.warning("fit_deformable picture failed for %s", record.id, exc_info=True)
-                del parts[first:]
-                failed.append({"id": record.id, "message": str(exc)})
-                continue
-            row["image_indexes"] = list(range(first, len(parts)))
-        # Each traced section's trace, once per call, so it can be reviewed.
-        traces: list[dict[str, Any]] = []
-        for section_id, (image, lines) in done.traced.items():
-            try:
-                picture = deformation.trace_picture(
-                    image, lines, style=style,
-                    title=f"{section_id}  trace_borders result: the image model's lines")
-            except Exception as exc:
-                logger.warning("trace picture failed for %s", section_id, exc_info=True)
-                failed.append({"id": section_id, "message": str(exc)})
-                continue
-            traces.append({"id": section_id, "image_indexes": [len(parts)]})
-            parts.append(layers.note(picture, sections=(section_id,), mode="trace"))
         succeeded = [row for row in rows if row.get("status") == "ok"]
         result: dict[str, Any] = {
             "status": "ok" if succeeded else "error",

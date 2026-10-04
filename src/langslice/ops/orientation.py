@@ -7,7 +7,11 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from PIL import Image
+
+    from langslice.linear.display import DisplayOptions
     from langslice.linear.job import Job
+    from langslice.linear.workspace import Workspace
 
 #: The rotations a section may carry, degrees.
 ROTATIONS: tuple[int, ...] = (0, 90, 180, 270)
@@ -25,13 +29,22 @@ class Oriented:
     #: ``{"id", "error", ...}`` per refused part: ``LOCKED`` (the whole
     #: entry), ``FLIP_DISABLED`` or ``BAD_ROTATION`` (that key only).
     rejected: list[dict[str, Any]] = field(default_factory=list)
+    #: With display options: the first sections reached (up to
+    #: :data:`langslice.ops.views.MAX_VIEW_SLICES`) as they now stand, one
+    #: picture each (:func:`langslice.ops.views.view_slices`), and
+    #: ``{"id", "message"}`` per picture that failed (the write stands).
+    pictures: list[Image.Image] = field(default_factory=list)
+    render_failed: list[dict[str, str]] = field(default_factory=list)
 
     @property
     def touched(self) -> list[str]:
         return list(self.applied)
 
 
-def orient_sections(job: Job, entries: Iterable[Mapping[str, Any]]) -> Oriented:
+def orient_sections(
+    job: Job, entries: Iterable[Mapping[str, Any]], *,
+    workspace: Workspace | None = None, options: DisplayOptions | None = None,
+) -> Oriented:
     """Set flip and/or rotation per ``{"id", "flip"?, "rotate_deg"?}`` entry.
 
     Rotation is applied first, then the flip (the renderer's order). A
@@ -39,7 +52,8 @@ def orient_sections(job: Job, entries: Iterable[Mapping[str, Any]]) -> Oriented:
     orientation changes loses its transform: a transform describes the
     section after its orientation. The host's locked sections are refused,
     and so is a flip when the job's spec turns flipping off. One undo step,
-    always taken.
+    always taken. With *workspace* and *options*, the sections reached are
+    pictured as they now stand.
     """
     state = job.state
     before = job.snapshot()
@@ -78,5 +92,14 @@ def orient_sections(job: Job, entries: Iterable[Mapping[str, Any]]) -> Oriented:
             cleared.append(record.id)
         applied.append(record.id)
     job.commit(before)
+    pictures: list[Image.Image] = []
+    failed: list[dict[str, str]] = []
+    if workspace is not None and options is not None:
+        from langslice.ops.views import MAX_VIEW_SLICES, view_slices
+
+        records = [record for name in applied[:MAX_VIEW_SLICES]
+                   if (record := state.by_id(name)) is not None]
+        shown = view_slices(job, workspace, records, options, keep_going=True)
+        pictures, failed = shown.pictures, shown.failed
     return Oriented(applied=applied, cleared_transforms=cleared, unknown=unknown,
-                    rejected=rejected)
+                    rejected=rejected, pictures=pictures, render_failed=failed)

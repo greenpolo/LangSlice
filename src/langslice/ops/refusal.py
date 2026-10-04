@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 
@@ -10,13 +11,23 @@ class Refused(ValueError):
 
     *code* is the machine-readable reason (``UNKNOWN_SLICE_IDS``,
     ``BAD_ARGS``...); *details* are the plain facts behind it (the ids, the
-    allowed values). :meth:`payload` is the shape every door answers with.
+    allowed values). *status* is ``error`` (the call could not run) or
+    ``refused`` (a gate: the call is valid but the job is not ready, as
+    ``submit``'s). :meth:`payload` is the shape every door answers with.
     """
 
-    def __init__(self, code: str, **details: Any) -> None:
+    def __init__(self, code: str, *, status: str = "error", **details: Any) -> None:
         super().__init__(str(details.get("message") or code))
         self.code = code
+        self.status = status
         self.details = details
 
+    @classmethod
+    def of(cls, payload: Mapping[str, Any]) -> Refused:
+        """The refusal a ``{"status", "error", ...}`` payload states (a job gate's)."""
+        rest = {key: value for key, value in payload.items() if key not in ("status", "error")}
+        return cls(str(payload.get("error")), status=str(payload.get("status") or "error"),
+                   **rest)
+
     def payload(self) -> dict[str, Any]:
-        return {"status": "error", "error": self.code, **self.details}
+        return {"status": self.status, "error": self.code, **self.details}

@@ -8,11 +8,16 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from langslice.linear import appearance as looks
+from langslice.ops.refusal import Refused
 
 if TYPE_CHECKING:
+    from PIL import Image
+
     from langslice.linear.appearance import Look
+    from langslice.linear.display import DisplayOptions
     from langslice.linear.job import Job
-    from langslice.linear.state import StackState
+    from langslice.linear.state import SliceState, StackState
+    from langslice.linear.workspace import Workspace
 
 
 @dataclass(frozen=True)
@@ -65,3 +70,73 @@ def set_appearance(
         for name in targets
     }
     return AppearanceSet(targets=list(targets), section_ids=ids, in_force=in_force)
+
+
+@dataclass(frozen=True)
+class BeforeAfter:
+    """One section's appearance before and after a :func:`preprocess` call:
+    the settings and the tissue-framed picture of each (no caption: the door
+    labels them)."""
+
+    record: SliceState
+    before_settings: Look
+    before: Image.Image
+    after_settings: Look
+    after: Image.Image
+
+
+@dataclass(frozen=True)
+class Preprocessed:
+    """What :func:`preprocess` wrote, and the pictures of the target it drew."""
+
+    written: AppearanceSet
+    #: The target pictured (the first of the call's; "both" writes one
+    #: setting to both).
+    target: str
+    pictures: list[BeforeAfter] = field(default_factory=list)
+
+
+def preprocess(
+    job: Job,
+    workspace: Workspace,
+    targets: Sequence[str],
+    section_ids: Sequence[str] | None,
+    settings: Look,
+    *,
+    shown: Sequence[SliceState] = (),
+    options: DisplayOptions | None = None,
+) -> Preprocessed:
+    """Set the appearance (:func:`set_appearance`), picturing it first.
+
+    For each section in *shown*, with *options*: the first target's
+    appearance BEFORE the call (drawn first, from the settings as they
+    stand) and AFTER (from the settings the write will leave,
+    :func:`planned_settings`), each tissue-framed
+    (:func:`langslice.linear.display.framed_section`). The write happens only
+    once every picture is drawn: a picture that fails refuses the call
+    (``RENDER_FAILED``), nothing written.
+    """
+    from langslice.linear.display import framed_section
+
+    state = job.state
+    pictured = targets[0]
+    ids = None if section_ids is None else list(section_ids)
+    pairs: list[BeforeAfter] = []
+    if options is not None:
+        try:
+            earlier = [
+                (record, looks.section_settings(state, pictured, record.id),
+                 framed_section(workspace, state, record, options,
+                                look=looks.section_settings(state, pictured, record.id)))
+                for record in shown
+            ]
+            for record, was, before in earlier:
+                now = planned_settings(state, pictured, ids, settings, record.id)
+                pairs.append(BeforeAfter(
+                    record=record, before_settings=was, before=before, after_settings=now,
+                    after=framed_section(workspace, state, record, options, look=now),
+                ))
+        except Exception as exc:
+            raise Refused("RENDER_FAILED", message=str(exc)) from exc
+    written = set_appearance(job, targets, ids, settings)
+    return Preprocessed(written=written, target=pictured, pictures=pairs)

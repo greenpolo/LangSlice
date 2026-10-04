@@ -11,7 +11,11 @@ it; :func:`set_transforms` writes any number of them as one undo step.
 
 from __future__ import annotations
 
+import functools
+import logging
+import math
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from langslice.affine import normalized_physical_affine
@@ -19,7 +23,15 @@ from langslice.linear.transform import physical_decomposition
 from langslice.ops.refusal import Refused
 
 if TYPE_CHECKING:
+    from PIL import Image
+
+    from langslice.core.placement import Staged
+    from langslice.linear.display import DisplayOptions
     from langslice.linear.job import Job
+    from langslice.linear.state import SliceState
+    from langslice.linear.workspace import Workspace
+
+logger = logging.getLogger(__name__)
 
 #: The knobs of a transform, in the order every payload lists them. ``shear``
 #: is :func:`langslice.affine.decompose_affine`'s (0: none).
@@ -118,3 +130,251 @@ def set_transforms(job: Job, transforms: Mapping[str, Mapping[str, Any]]) -> lis
         record.transform = dict(transforms[record.id])
     job.commit(before)
     return [record.id for record in records]
+
+
+# --- fit_affine ------------------------------------------------------------------------
+
+#: ``fit_affine``'s methods: an intensity affine refining the current
+#: placement (default), or the whole-outline silhouette fit from scratch.
+FIT_METHODS: tuple[str, ...] = ("elastix", "silhouette")
+
+
+def fit_targets(job: Job) -> list[SliceState]:
+    """The sections ``fit_affine`` fits when none are named: every positioned,
+    undamaged section the host did not lock, in corrected order."""
+    return [
+        record for record in job.state.in_order()
+        if record.position_mm is not None and not record.damaged
+        and record.id not in job.locked
+    ]
+
+
+@dataclass(frozen=True)
+class AffineFit:
+    """What :func:`fit_affine` did.
+
+    ``rows``: one per section asked, in order: the fit's payload (``id``,
+    ``status: ok``, ``iou``, ``physical``, ``params`` (the six stored
+    numbers), ``calibration``, ``mirrored``, ``regions`` when restricted;
+    with pictures, ``image_indexes`` into ``pictures``) or ``{"id", "status":
+    "error", "error", ...}`` (``LOCKED``, ``DAMAGED``, the fitter's code,
+    ``RENDER_FAILED``). ``fitted``: the sections written.
+    """
+
+    rows: list[dict[str, Any]] = field(default_factory=list)
+    fitted: list[str] = field(default_factory=list)
+    pictures: list[Image.Image] = field(default_factory=list)
+
+
+def fit_affine(
+    job: Job,
+    workspace: Workspace,
+    records: Sequence[SliceState],
+    *,
+    method: str = "elastix",
+    fit_atlas: str = "ara",
+    include: tuple[str, ...] = (),
+    exclude: tuple[str, ...] = (),
+    options: DisplayOptions | None = None,
+) -> AffineFit:
+    """Fit an in-plane affine per section and write each fit as its transform.
+
+    *method* ``elastix`` refines the section's current placement against the
+    atlas image *fit_atlas* (``ara`` or ``nissl``,
+    :func:`langslice.linear.transform.fit_elastix`); ``silhouette`` fits the
+    tissue outline from scratch (:func:`~langslice.linear.transform.fit_silhouette`).
+    *include* / *exclude* restrict the fit to atlas regions (sides allowed).
+    The job's rules, per section: a locked section is refused (``LOCKED``),
+    a damaged one too unless regions restrict the fit (``DAMAGED``).
+
+    With *options*, each fit is drawn under its new transform
+    (:func:`langslice.core.placement.fit_picture`) BEFORE anything is
+    written: a section whose fit or picture fails is that section's error
+    row and is not written. Every fit that succeeded is written as ONE undo
+    step (:func:`set_transforms`, :func:`fit_transform` records).
+    """
+    from langslice.core.placement import fit_picture
+    from langslice.linear.transform import FIT_FRAME_KEY, fit_elastix, fit_silhouette
+
+    state = job.state
+    fitter = (functools.partial(fit_elastix, atlas_image=fit_atlas) if method == "elastix"
+              else fit_silhouette)
+    restricted = bool(include or exclude)
+    rows: list[dict[str, Any]] = []
+    pictures: list[Image.Image] = []
+    fits: list[tuple[SliceState, dict[str, Any]]] = []
+    for record in records:
+        if record.id in job.locked:
+            rows.append({"id": record.id, "status": "error", "error": "LOCKED"})
+            continue
+        if record.damaged and not restricted:
+            rows.append({"id": record.id, "status": "error", "error": "DAMAGED"})
+            continue
+        try:
+            outcome = fitter(state, workspace, record, include=include, exclude=exclude)
+            frame = outcome.pop(FIT_FRAME_KEY, None)
+            panels = (fit_picture(workspace, state, record, frame, options)
+                      if frame is not None and options is not None else [])
+        except Exception as exc:  # nothing is written for this section
+            logger.warning("fit_affine failed for %s: %s", record.id, exc)
+            rows.append({"id": record.id, "status": "error",
+                         "error": getattr(exc, "code", "RENDER_FAILED"),
+                         "message": str(exc)})
+            continue
+        rows.append(outcome)
+        if outcome["status"] != "ok":
+            continue
+        fits.append((record, outcome))
+        if options is not None:
+            # Every fit returns its picture (run 15, 2026-09-10: a
+            # 25-section fit pictured 4 and the model never saw 21).
+            outcome["image_indexes"] = list(range(len(pictures), len(pictures) + len(panels)))
+            pictures.extend(panels)
+    written = set_transforms(job, {
+        record.id: fit_transform(method, outcome, include=include, exclude=exclude,
+                                 fit_atlas=fit_atlas)
+        for record, outcome in fits
+    })
+    return AffineFit(rows=rows, fitted=written, pictures=pictures)
+
+
+# --- adjust_transforms ---------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Adjustment:
+    """One ``adjust_transforms`` entry: the transform its knobs make, or why not."""
+
+    #: ``{"status": "error", "error", ...}`` when the entry was refused
+    #: (``BAD_ARGS``, ``LOCKED``, ``UNKNOWN_SLICE_IDS``, ``NO_POSITION``,
+    #: ``ATLAS_RENDER_FAILED``, ``BAD_PIVOT``, ``RENDER_FAILED``); else None.
+    error: dict[str, Any] | None = None
+    #: True for an entry refused before its section was looked at (not an
+    #: object, or a locked section).
+    early: bool = False
+    #: The section, its working frame, canvas and pivot
+    #: (:class:`langslice.core.placement.Staged`), with the knobs used.
+    staged: Staged | None = None
+    #: The section's transform before the call.
+    previous: dict[str, Any] | None = None
+    #: The stored record these knobs make (:func:`interactive_transform`).
+    transform: dict[str, Any] | None = None
+    #: Whether it differs from *previous* (the same numbers again only redraw).
+    written: bool = False
+    pictures: list[Image.Image] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class Adjusted:
+    """What :func:`adjust_transforms` did: one :class:`Adjustment` per entry,
+    in order, and the sections written."""
+
+    entries: list[Adjustment] = field(default_factory=list)
+    written: list[str] = field(default_factory=list)
+
+
+def _knobs(entry: Mapping[str, Any], record: SliceState) -> dict[str, float] | dict[str, Any]:
+    """The entry's knobs as finite floats, or the refusal payload."""
+    shear = entry.get("shear")
+    if shear is None:
+        # Left out: the shear the section's transform already has stays.
+        held = (record.transform or {}).get("physical") or {}
+        shear = held.get("shear") or 0.0
+    try:
+        params = {
+            "rotation_deg": float(entry.get("rotation_deg")),  # type: ignore[arg-type]
+            "scale_x": float(entry.get("scale_x")),  # type: ignore[arg-type]
+            "scale_y": float(entry.get("scale_y")),  # type: ignore[arg-type]
+            "translate_x_mm": float(entry.get("translate_x_mm")),  # type: ignore[arg-type]
+            "translate_y_mm": float(entry.get("translate_y_mm")),  # type: ignore[arg-type]
+            "shear": float(shear),
+        }
+    except (TypeError, ValueError):
+        return {"status": "error", "error": "BAD_ARGS"}
+    if not all(math.isfinite(value) for value in params.values()):
+        return {"status": "error", "error": "BAD_ARGS",
+                "message": "every transform number must be finite"}
+    return params
+
+
+def adjust_transforms(
+    job: Job,
+    workspace: Workspace,
+    entries: Sequence[Any],
+    *,
+    options: DisplayOptions | None = None,
+) -> Adjusted:
+    """Set each entry's section to the transform its knobs make; ONE undo step.
+
+    An entry is ``{"id", "rotation_deg", "scale_x", "scale_y",
+    "translate_x_mm", "translate_y_mm", "shear"?, "pivot"?, "note"?}``
+    (:data:`KNOBS`; *pivot* "canvas" (default), "tissue" or ``[fx, fy]``
+    canvas fractions). A left-out ``shear`` keeps the section's current
+    shear (0 without one); an explicit 0 drops it. The record replaces the
+    whole transform, spline included; the flip and rotation flags are not
+    touched. Per entry, refused: a locked section (``LOCKED``), an unknown
+    one, one without a position, numbers that are not finite, a canvas or
+    pivot that cannot be built (:func:`langslice.core.placement.stage`).
+
+    With *options*, each entry is drawn first
+    (:func:`langslice.core.placement.transform_views`; mode ``ab`` adds what
+    the section carried before) and an entry whose picture fails is not
+    written (``RENDER_FAILED``). The records that differ from the section's
+    current transform are written together (:func:`set_transforms`).
+    """
+    from langslice.core.placement import StageFailure, stage, transform_views
+
+    state = job.state
+    done: list[Adjustment] = []
+    writes: dict[str, dict[str, Any]] = {}
+    for entry in entries:
+        if not isinstance(entry, Mapping):
+            done.append(Adjustment(error={"status": "error", "error": "BAD_ARGS"}, early=True))
+            continue
+        target = state.resolve(entry.get("id", ""))
+        if target is not None and target.id in job.locked:
+            done.append(Adjustment(error={"status": "error", "error": "LOCKED",
+                                          "id": target.id}, early=True))
+            continue
+        slice_id = str(entry.get("id", ""))
+        record = state.resolve(slice_id)
+        if record is None:
+            done.append(Adjustment(error={"status": "error", "error": "UNKNOWN_SLICE_IDS",
+                                          "unknown": [slice_id]}))
+            continue
+        if record.position_mm is None:
+            done.append(Adjustment(error={"status": "error", "error": "NO_POSITION",
+                                          "id": record.id}))
+            continue
+        params = _knobs(entry, record)
+        if "error" in params:
+            done.append(Adjustment(error=dict(params)))
+            continue
+        try:
+            staged = stage(workspace, state, record, params, entry.get("pivot", "canvas"))
+        except StageFailure as failure:
+            done.append(Adjustment(error={"status": "error", "error": failure.code,
+                                          "message": str(failure)}))
+            continue
+        previous = record.transform
+        transform = interactive_transform(
+            size=staged.section.size, um_per_px=staged.um_per_px,
+            calibration=staged.calibration, pivot=staged.pivot_in_section,
+            pivot_frac=staged.pivot_frac, knobs=staged.params,
+            note=str(entry.get("note", "")),
+        )
+        wrote = not same_transform(previous, transform)
+        pictures: list[Image.Image] = []
+        if options is not None:
+            try:
+                pictures = transform_views(workspace, state, staged, options, previous)
+            except Exception as exc:
+                logger.warning("adjust_transform failed for %s: %s", record.id, exc)
+                done.append(Adjustment(error={"status": "error", "error": "RENDER_FAILED",
+                                              "message": str(exc)}))
+                continue
+        if wrote:
+            writes[record.id] = transform
+        done.append(Adjustment(staged=staged, previous=previous, transform=transform,
+                               written=wrote, pictures=pictures))
+    return Adjusted(entries=done, written=set_transforms(job, writes))
