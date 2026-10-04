@@ -304,7 +304,9 @@ def open_saved_job(job_id: str, atlas_loader: Callable[[str], Any] | None) -> Se
     if trace_dir:
         session.trace = McpTrace(trace_dir, session.ctx.image_folder)
     session.channel = HostChannel(job_id, record.get("host_channel"))
-    session.host_update = checkpoint_callback(prepared, session.channel.event)
+    checkpoints = checkpoint_callback(prepared, session.channel.event)
+    checkpoints.attach(session.job, session.ctx)
+    session.host_update = checkpoints
     session.host_update(session.state)
     return session
 
@@ -343,7 +345,10 @@ def finish(session: Session) -> None:
     session.job.emit_results(session.ctx.progress)
     if session.job_dir is not None and session.prepared is not None:
         result = {"state": session.state.to_dict(), "output_dir": str(session.job_dir),
-                  "final_updates": session.prepared.final_updates}
+                  "final_updates": session.prepared.final_updates,
+                  "abba": dict(session.prepared.abba)}
+        if session.prepared.final_angles is not None:
+            result["host_angles"] = session.prepared.final_angles
         target = session.job.layout.host_result_file
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(json.dumps(result, indent=2), encoding="utf-8")

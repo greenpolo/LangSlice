@@ -136,14 +136,35 @@ def build_seed_message(state: StackState, ctx: EngineContext) -> types.Content:
     return types.Content(role="user", parts=parts)
 
 
-def save_opening(box: ToolBox, seed: types.Content) -> None:
-    """Save the opening's pictures in the job folder, as the bytes sent."""
+def save_opening(box: ToolBox, seed: types.Content) -> list[str]:
+    """Save the opening's pictures in the job folder, as the bytes sent;
+    return the saved pictures' paths (written in the background)."""
+    from langslice.job.views import PICTURE_FILE, captured
+
     pictures = [part.inline_data.data for part in seed.parts or []
                 if part.inline_data is not None and part.inline_data.data]
     try:
-        box.job.views.save(tool="opening", pictures=[(data, None) for data in pictures])
+        with captured() as saved:
+            box.job.views.save(tool="opening", pictures=[(data, None) for data in pictures])
+        return [str(item.folder / PICTURE_FILE) for item in saved]
     except Exception:  # saving must never break the run
         logger.warning("Could not queue the opening pictures", exc_info=True)
+        return []
+
+
+def with_seed_views(on_event: LiveCallback | None, views: list[str]) -> LiveCallback | None:
+    """*on_event*, with the saved opening pictures' paths added to the seed
+    event as ``views`` (hosts show them from the job folder, never bytes)."""
+    if on_event is None or not views:
+        return on_event
+    forward = on_event
+
+    def observe(event: dict[str, Any]) -> None:
+        if event.get("kind") == "seed":
+            event = {**event, "views": list(views)}
+        forward(event)
+
+    return observe
 
 
 async def run_session(
@@ -177,7 +198,7 @@ async def run_session(
     )
     sink: list[str] = []
     seed = build_seed_message(state, ctx)
-    save_opening(box, seed)
+    on_event = with_seed_views(on_event, save_opening(box, seed))
     outcome = await run_agent_session(
         agent=agent,
         seed_message=seed,
@@ -207,19 +228,25 @@ async def run(
     atlas_loader: Callable[[str], Any] | None = None,
     on_write: Callable[[StackState], None] | None = None,
     on_event: LiveCallback | None = None,
+    on_open: Callable[[Job, EngineContext], None] | None = None,
 ) -> StackState:
     """Run one linear job and return the final stack state.
 
     *on_write* is a host adapter that wants to watch the run live (the ABBA
-    mirror, :mod:`langslice.hosts.integrations.abba_linear`): it is called once
-    with the state as opened, then again after every checkpoint the job
-    writes (and every reload of a state file changed on disk,
-    :meth:`langslice.job.job.Job.observe`), through to the final result.
+    worker's checkpoint rows, :func:`langslice.doors.api.abba_worker.checkpoint_callback`):
+    it is called once with the state as opened, then again after every
+    checkpoint the job writes (and every reload of a state file changed on
+    disk, :meth:`langslice.job.job.Job.observe`), through to the final
+    result. *on_open* is called once with the opened job and its context,
+    before the first *on_write* (the worker reads applied deformation
+    records and section frames through them).
     """
     ctx = build_context(spec, emit=emit, atlas_loader=atlas_loader)
     job = Job.open(spec, ctx, folder=ctx.job_folder, results_path=ctx.results_path)
     write_card(job.layout)
     state = job.state
+    if on_open is not None:
+        on_open(job, ctx)
     if on_write is not None:
         on_write(state)
 

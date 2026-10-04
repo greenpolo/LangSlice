@@ -74,6 +74,8 @@ from langslice.doors.tools.arguments import (
 )
 from langslice.doors.tools.view_options import Profile, parse_view, view_edge_limit
 from langslice.job.job import HOST_TRANSFORM_KIND, Job
+from langslice.job.views import PICTURE_FILE as VIEW_PICTURE_FILE
+from langslice.job.views import captured as captured_views
 from langslice.ops import appearance as ops_appearance
 from langslice.ops import atlas as ops_atlas
 from langslice.ops import damage as ops_damage
@@ -294,6 +296,8 @@ def _serialized(
     Model tool-call announcements may arrive together. These optional events
     identify the tool actually executing, including stable filenames resolved
     before a reorder. They never enter model context or change its schema.
+    ``tool_end`` carries ``views``: the paths of the pictures the call saved
+    in the job folder (``job.views``), never their bytes.
     *guard* is entered inside the lock around the tool (the job's write
     lock and its reload of a state file changed on disk).
     """
@@ -329,13 +333,17 @@ def _serialized(
                 fields.update(id=None, args={}, target_ids=[])
             notify({"kind": "tool_start", **fields})
             try:
-                result = tool(*args, **kwargs)
+                with captured_views() as saved:
+                    result = tool(*args, **kwargs)
             except Exception as exc:
                 notify({"kind": "tool_end", **fields, "response": {
                     "status": "error", "error": type(exc).__name__, "message": str(exc),
                 }})
                 raise
-            notify({"kind": "tool_end", **fields, "response": _plain(result)})
+            # The pictures as saved in the job folder (written in the
+            # background): hosts show them from there, never from bytes.
+            notify({"kind": "tool_end", **fields, "response": _plain(result),
+                    "views": [str(item.folder / VIEW_PICTURE_FILE) for item in saved]})
             return result
 
     return run

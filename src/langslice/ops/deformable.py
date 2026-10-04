@@ -102,6 +102,8 @@ def fit_deformable(
     Identical inputs reuse a cached or saved result; applying a section's own
     current key again writes nothing (``written: false``). With *options*,
     every fit and every traced section's trace is then drawn (:func:`pictures`).
+    A section that keeps the user's own deformation in the host
+    (``Job.keep_warp``, ``inputs.keep_warp``) is refused (``KEEPS_HOST_WARP``).
 
     The fits run outside the job's write lock, from the state as it stood;
     applying takes the lock (:meth:`~langslice.job.job.Job.writing`) and
@@ -119,6 +121,11 @@ def fit_deformable(
     traced_choice = any(choice.fit_section in deformation.TRACED for choice in choices)
     expected: dict[str, str] = {}
     for record in records:
+        if record.id in job.keep_warp:
+            rows.append({"id": record.id, "status": "error", "error": "KEEPS_HOST_WARP",
+                         "message": "This section carries the user's own deformation in "
+                         "the host, which the user did not let the agent overwrite."})
+            continue
         running = False
         if traced_choice:
             # A traced image waits for the section's trace still running; a
