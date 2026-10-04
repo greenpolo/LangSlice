@@ -161,6 +161,10 @@ class DisplayOptions:
     given: frozenset[str] = frozenset()
     #: Whether this tool takes ``deformation``.
     has_deformation: bool = False
+    #: Whether ``channels`` picks what this tool shows of the section. Not for
+    #: ``preprocess`` (a target's appearance) or ``fit_deformable`` (the image
+    #: the fit read): their echo names no channels or version.
+    channels_apply: bool = True
 
     @property
     def full_view(self) -> bool:
@@ -234,7 +238,7 @@ class DisplayOptions:
         """The options as a payload's ``view`` field: what this call drew."""
         rule = MODE_RULES[self.mode]
         out: dict[str, Any] = {"mode": self.mode}
-        if rule.section:
+        if rule.section and self.channels_apply:
             out["channels"] = [self.version] if self.version else list(self.channels)
             colors = self.channel_colors()
             if colors:

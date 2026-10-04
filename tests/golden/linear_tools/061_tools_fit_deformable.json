@@ -54,9 +54,6 @@
    ],
    "border_color": "#ffff00",
    "border_thickness": 1.0,
-   "channels": [
-    "view"
-   ],
    "mode": "borders",
    "outlines": "all",
    "zoom": [
