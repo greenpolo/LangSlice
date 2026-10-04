@@ -449,3 +449,15 @@ def test_renamed_tools_and_arguments_replace_the_old_names(tmp_path: Path):
     for name in ("reorder_slices", "fit_affine", "view_slices"):
         assert "slices" in inspect.signature(_tool(box, name)).parameters, name
     assert "id" in inspect.signature(_tool(box, "search_position")).parameters
+
+
+def test_the_view_echo_names_channels_only_where_they_choose_the_picture(tmp_path: Path):
+    """Handed-over bug 3: preprocess (a target's appearance) and fit_deformable
+    (the image the fit read) echoed channels ["view"], which they never drew."""
+    _state, _ctx, _spec, box = _setup(tmp_path, agent_preprocessing=True)
+    shown = _tool(box, "view_slices")(["s0.png"])
+    assert shown["view"]["channels"] == ["view"]
+    picked = _tool(box, "view_slices")(["s0.png"], view={"channels": ["fit"]})
+    assert picked["view"]["channels"] == ["fit"]
+    preprocessed = _tool(box, "preprocess")(target="fit", clahe_clip=2.0)
+    assert preprocessed["status"] == "ok" and "channels" not in preprocessed["view"]

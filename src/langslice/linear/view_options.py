@@ -389,4 +389,5 @@ def parse_view(
         resolution_note=note,
         given=frozenset(given),
         has_deformation=profile.deformation,
+        channels_apply=profile.channels,
     )
