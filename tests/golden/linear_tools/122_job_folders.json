@@ -33,6 +33,8 @@
     "sections/s0/views/000007_fit_deformable_borders/view.json",
     "state.json",
     "views.jsonl",
+    "views.seq",
+    "views.seq.lock",
     "views/000004_view_stack_sheet/view.jpg",
     "views/000004_view_stack_sheet/view.json",
     "views/000005_view_stack_spacing/view.jpg",
@@ -189,6 +191,8 @@
     "registration.json",
     "state.json",
     "views.jsonl",
+    "views.seq",
+    "views.seq.lock",
     "views/000001_opening/view.jpg",
     "views/000001_opening/view.json",
     "views/000002_opening/view.jpg",
@@ -196,7 +200,7 @@
    ],
    "job_file": {
     "format_version": 1,
-    "image_folder": "<ROOT>/engine",
+    "image_folder": "..",
     "spec": {
      "agent_damage": true,
      "agent_preprocessing": true,
@@ -433,6 +437,8 @@
     "sections/s2/views/000007_view_placement_template/view.json",
     "state.json",
     "views.jsonl",
+    "views.seq",
+    "views.seq.lock",
     "views/000008_view_stack_sheet/view.jpg",
     "views/000008_view_stack_sheet/view.json",
     "views/000009_view_stack_spacing/view.jpg",
@@ -725,12 +731,14 @@
     "sections/s1/views/000004_fit_affine_overlay/view.json",
     "state.json",
     "views.jsonl",
+    "views.seq",
+    "views.seq.lock",
     "views/000001_show_stack/view.jpg",
     "views/000001_show_stack/view.json"
    ],
    "job_file": {
     "format_version": 1,
-    "image_folder": "<ROOT>/mcp",
+    "image_folder": "..",
     "spec": {
      "agent_damage": true,
      "agent_preprocessing": false,
@@ -1023,11 +1031,13 @@
     "sections/s2/views/000003_adjust_transforms_overlay/view.jpg",
     "sections/s2/views/000003_adjust_transforms_overlay/view.json",
     "state.json",
-    "views.jsonl"
+    "views.jsonl",
+    "views.seq",
+    "views.seq.lock"
    ],
    "job_file": {
     "format_version": 1,
-    "image_folder": "<ROOT>/resume",
+    "image_folder": "..",
     "spec": {
      "agent_damage": true,
      "agent_preprocessing": false,
@@ -1544,6 +1554,8 @@
     "sections/s2/views/000052_adjust_transforms_side_by_side/view.json",
     "state.json",
     "views.jsonl",
+    "views.seq",
+    "views.seq.lock",
     "views/000006_view_atlas_atlas/view.jpg",
     "views/000006_view_atlas_atlas/view.json",
     "views/000007_view_atlas_atlas/view.jpg",
