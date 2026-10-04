@@ -157,7 +157,7 @@ def _fake_engine(monkeypatch, steps, seen: dict[str, Any]):
     """Replace the engine: record the spec, then write each step as a checkpoint."""
     from langslice.agent import engine
 
-    async def run(spec, *, on_write, on_event, emit):
+    async def run(spec, *, on_write, on_event, emit, **_):
         seen["spec"] = spec
         rows = [{"id": name, "position_mm": value, "index_corrected": index,
                  "flip": False, "rotation_deg": 0,

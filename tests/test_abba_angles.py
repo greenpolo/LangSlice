@@ -8,7 +8,6 @@ applies stack-wide angle changes with it (``host_angles``: rotateX =
 import numpy as np
 import pytest
 
-
 # --- ABBA slicing rotations <-> LangSlice pitch/yaw ---------------------------
 
 #: Stage 0 (atlas (ML, DV, AP) mm -> ABBA world) of ABBA's own QuPath

@@ -35,7 +35,7 @@ MAX_PARALLEL_TRANSFORMS = 4
 #: key would otherwise drop the supplied answer without a word).
 INPUT_KEYS: tuple[str, ...] = (
     "order", "positions", "angles", "orientation", "transforms", "damaged", "locked",
-    "pixel_size_um", "channel_names",
+    "keep_warp", "pixel_size_um", "channel_names",
 )
 
 #: The two parts of a supplied cutting angle (``inputs.angles``).
@@ -322,6 +322,9 @@ class JobSpec:
     #: were aligned in-plane by the user: the agent cannot change their flip,
     #: rotation or transform (a ``"host"`` identity transform unless
     #: ``transforms`` supplies one), but their positions still move.
+    #: ``keep_warp`` sections (a list of filenames) carry the user's own
+    #: deformation in the host: ``fit_deformable`` refuses them
+    #: (``KEEPS_HOST_WARP``).
     inputs: dict[str, Any] = field(default_factory=dict)
     #: Resume from the folder checkpoint when one exists.
     resume: bool = True

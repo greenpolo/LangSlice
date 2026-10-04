@@ -120,6 +120,11 @@ def locked_ids(spec: JobSpec) -> set[str]:
     return {str(name) for name in (spec.inputs or {}).get("locked") or []}
 
 
+def keep_warp_ids(spec: JobSpec) -> set[str]:
+    """Sections whose own deformation in the host the agent may not replace."""
+    return {str(name) for name in (spec.inputs or {}).get("keep_warp") or []}
+
+
 def host_damaged_ids(spec: JobSpec) -> set[str]:
     """Sections the host marked damaged; the agent cannot clear these flags."""
     return {str(name) for name in ((spec.inputs or {}).get("damaged") or {})}
@@ -292,6 +297,17 @@ def apply_host_inputs(state: StackState, spec: JobSpec) -> None:
                 record.transform = host_transform()
         state.notes.append(
             f"inputs: {len(locked)} section(s) locked by the host (in-plane alignment done)"
+        )
+
+    keep_warp = inputs.get("keep_warp") or []
+    if keep_warp:
+        if not isinstance(keep_warp, (list, tuple)):
+            raise ValueError("inputs.keep_warp must be a list of section filenames")
+        for name in keep_warp:
+            if state.by_id(str(name)) is None:
+                raise ValueError(f"inputs.keep_warp names an unknown section: {name!r}")
+        state.notes.append(
+            f"inputs: {len(keep_warp)} section(s) keep their own deformation in the host"
         )
 
 
@@ -712,6 +728,9 @@ class Job:
         self.lock = FolderLock(layout.folder)
         #: Sections whose flip, rotation and transform the host locked.
         self.locked = frozenset(locked_ids(spec))
+        #: Sections whose own deformation in the host stays (``fit_deformable``
+        #: refuses them, ``KEEPS_HOST_WARP``).
+        self.keep_warp = frozenset(keep_warp_ids(spec))
         #: Sections the host marked damaged; their flags cannot be cleared.
         self.host_damaged = frozenset(host_damaged_ids(spec))
         #: Whole states, oldest first; the last one is what ``undo`` restores.
