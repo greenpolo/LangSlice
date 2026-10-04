@@ -145,21 +145,23 @@ def _scaled_volume(
     return volume, res_mm
 
 
-def _plane_coordinates(
+def _plane_basis(
     shape: tuple[int, ...],
     res_mm: tuple[float, float, float],
     axes: tuple[int, int, int],
     normal_index: float,
     pitch_deg: float,
     yaw_deg: float,
-) -> np.ndarray:
-    """(3, H, W) volume index coordinates of a plane, in raw (undisplayed) order.
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """``(centre, step_row, step_col)`` of a plane in volume index coordinates.
 
     The plane passes through the volume's in-plane centre at *normal_index*
-    along the normal axis. In-plane unit directions in physical space,
-    expressed on the atlas axes, are converted to index steps one voxel wide
-    along their own axis; dividing component-wise by the per-axis resolution
-    keeps anisotropic atlases square.
+    along the normal axis; raw plane pixel ``(r, c)`` sits at ``centre +
+    (r - (H - 1) / 2) * step_row + (c - (W - 1) / 2) * step_col``. In-plane
+    unit directions in physical space, expressed on the atlas axes, are
+    converted to index steps one voxel wide along their own axis; dividing
+    component-wise by the per-axis resolution keeps anisotropic atlases
+    square.
     """
     normal_axis, row_axis, col_axis = axes
     height, width = shape[row_axis], shape[col_axis]
@@ -176,6 +178,23 @@ def _plane_coordinates(
     centre[normal_axis] = normal_index
     centre[row_axis] = (height - 1) / 2.0
     centre[col_axis] = (width - 1) / 2.0
+    return centre, step_row, step_col
+
+
+def _plane_coordinates(
+    shape: tuple[int, ...],
+    res_mm: tuple[float, float, float],
+    axes: tuple[int, int, int],
+    normal_index: float,
+    pitch_deg: float,
+    yaw_deg: float,
+) -> np.ndarray:
+    """(3, H, W) volume index coordinates of a plane, in raw (undisplayed) order
+    (:func:`_plane_basis`)."""
+    _normal_axis, row_axis, col_axis = axes
+    height, width = shape[row_axis], shape[col_axis]
+    centre, step_row, step_col = _plane_basis(
+        shape, res_mm, axes, normal_index, pitch_deg, yaw_deg)
 
     rows = (np.arange(height, dtype=np.float64) - (height - 1) / 2.0)[:, None]
     cols = (np.arange(width, dtype=np.float64) - (width - 1) / 2.0)[None, :]
@@ -218,6 +237,42 @@ def plane_index_coordinates(
     if plane in {"sagittal", "horizontal"}:
         coords = np.swapaxes(coords, 1, 2)
     return np.ascontiguousarray(coords)
+
+
+def plane_index_affine(
+    atlas: Any,
+    position_mm: float,
+    plane: Plane = "coronal",
+    pitch_deg: float = 0.0,
+    yaw_deg: float = 0.0,
+) -> np.ndarray:
+    """3x3 map from a display-oriented plane pixel ``[row, col, 1]`` to its
+    atlas voxel index (3 axes, atlas array order, voxel centres at integers).
+
+    The same plane as :func:`plane_index_coordinates` (and so
+    :func:`langslice.atlas.render.annotation_slice`) at the same arguments,
+    built from the same basis (:func:`_plane_basis`), without the full grid.
+    Multiply each row by the axis resolution for BrainGlobe micrometres.
+    """
+    normal_axis, row_axis, col_axis = plane_axes(atlas, plane)
+    context = atlas_space_context(atlas)
+    res_mm = cast(
+        "tuple[float, float, float]", tuple(r / 1000.0 for r in context.resolution_um)
+    )
+    if pitch_deg or yaw_deg:
+        normal_index = position_mm / res_mm[normal_axis]
+    else:
+        from langslice.atlas.core import position_mm_to_index
+
+        normal_index = float(position_mm_to_index(atlas, position_mm, plane=plane))
+    shape = context.shape
+    centre, step_row, step_col = _plane_basis(
+        shape, res_mm, (normal_axis, row_axis, col_axis), normal_index, pitch_deg, yaw_deg)
+    origin = (centre - (shape[row_axis] - 1) / 2.0 * step_row
+              - (shape[col_axis] - 1) / 2.0 * step_col)
+    if plane in {"sagittal", "horizontal"}:  # displayed transposed
+        step_row, step_col = step_col, step_row
+    return np.column_stack([step_row, step_col, origin])
 
 
 def sample_oblique_plane(

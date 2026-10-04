@@ -14,7 +14,6 @@ ADK's message format, so nothing in the core or the tools imports it.
 from __future__ import annotations
 
 import functools
-import io
 from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Any
 
@@ -22,6 +21,8 @@ from google.genai import types
 from PIL import Image
 
 from langslice.adk import TOOL_MEDIA_PARTS_KEY
+from langslice.core.jpeg import JPEG_QUALITY as JPEG_QUALITY
+from langslice.core.jpeg import encode_jpeg as encode_jpeg
 from langslice.linear.opening import opening_items
 from langslice.linear.state import StackState
 from langslice.linear.view_options import image_limit as image_limit
@@ -30,15 +31,6 @@ from langslice.linear.view_options import view_edge_limit as view_edge_limit
 if TYPE_CHECKING:  # the driver's context imports the toolbox
     from langslice.linear.engine import EngineContext
 
-#: JPEG quality of every picture a tool or the opening sends.
-JPEG_QUALITY = 85
-
-
-def encode_jpeg(img: Image.Image, *, quality: int = JPEG_QUALITY) -> bytes:
-    """One PIL image as JPEG bytes (RGB), the encoding every door sends."""
-    buf = io.BytesIO()
-    img.convert("RGB").save(buf, format="JPEG", quality=quality)
-    return buf.getvalue()
 
 
 def image_to_part(img: Image.Image, *, quality: int = JPEG_QUALITY) -> types.Part:
