@@ -19,6 +19,7 @@ records, which the door draws.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import time
 from dataclasses import dataclass, field, replace
@@ -28,6 +29,7 @@ from PIL import Image
 
 from langslice.linear import deformation
 from langslice.linear.state import SliceState
+from langslice.ops.inputs import section_inputs, stale_row
 from langslice.ops.refusal import Refused
 
 if TYPE_CHECKING:
@@ -100,6 +102,12 @@ def fit_deformable(
     Identical inputs reuse a cached or saved result; applying a section's own
     current key again writes nothing (``written: false``). With *options*,
     every fit and every traced section's trace is then drawn (:func:`pictures`).
+
+    The fits run outside the job's write lock, from the state as it stood;
+    applying takes the lock (:meth:`~langslice.linear.job.Job.writing`) and
+    refuses a section whose inputs changed meanwhile
+    (:data:`langslice.ops.inputs.STALE_INPUT`, that section's row), applying
+    the others.
     """
     state = job.state
     store = job.deformations
@@ -108,7 +116,17 @@ def fit_deformable(
     jobs: list[deformation.Job] = []
     traced: dict[str, tuple[Image.Image, Any]] = {}
     trace_deadline = time.monotonic() + deformation.TRACE_WAIT_S
+    traced_choice = any(choice.fit_section in deformation.TRACED for choice in choices)
+    expected: dict[str, str] = {}
     for record in records:
+        running = False
+        if traced_choice:
+            # A traced image waits for the section's trace still running; a
+            # result lands under the job's lock, which may reload the state.
+            running = not job.wait_image_job(record.id, trace_deadline - time.monotonic())
+            record = state.by_id(record.id) or record
+        expected[record.id] = section_inputs(state, record, deformation=start == "current",
+                                             trace=traced_choice)
         try:
             grid = deformation.fit_grid(state, workspace, record)
         except (ValueError, OSError) as exc:
@@ -125,13 +143,6 @@ def fit_deformable(
                              "applied deformation; this section has none."})
                 continue
             previous_key = str((record.deformation or {}).get("key"))
-        running = False
-        if any(choice.fit_section in deformation.TRACED for choice in choices):
-            # A traced image waits for the section's trace still running.
-            landed = record.id in job.image_jobs
-            running = not job.wait_image_job(record.id, trace_deadline - time.monotonic())
-            if landed and not running:
-                job.checkpoint()
         for number, choice in enumerate(choices, start=1):
             failure = {"id": record.id, "status": "error", "settings": choice.echo(),
                        **({} if applying else {"candidate": number})}
@@ -163,7 +174,27 @@ def fit_deformable(
                          **({} if applying else {"candidate": number})})
     deformation.run_jobs(workspace, jobs)
 
-    before = job.snapshot()
+    with job.writing() if applying else contextlib.nullcontext():
+        before = job.snapshot()
+        done = _apply(job, rows, jobs, applying=applying, expected=expected,
+                      include=include, exclude=exclude, start=start)
+        if done.written:
+            job.commit(before)
+    done = replace(done, traced=traced)
+    if options is None:
+        return done
+    return pictures(workspace, done, options, candidates=len(choices), include=include,
+                    exclude=exclude, start=start)
+
+
+def _apply(
+    job: Job, rows: list[dict[str, Any]], jobs: list[deformation.Job], *, applying: bool,
+    expected: dict[str, str], include: tuple[str, ...], exclude: tuple[str, ...], start: str,
+) -> DeformableFit:
+    """Every fit's row; with *applying* (under the job's lock), each section's
+    result as its deformation when its inputs are unchanged."""
+    state = job.state
+    store = job.deformations
     written: list[str] = []
     fitted: list[Fitted] = []
     for row in rows:
@@ -180,6 +211,15 @@ def fit_deformable(
         store.put(fit.key, outcome)
         numbers = deformation.summary(outcome, fit.previous)
         record = fit.grid.record
+        if applying:
+            # The state may have been reloaded: the section as it is now.
+            now = state.by_id(record.id)
+            if now is None or section_inputs(
+                    state, now, deformation=start == "current",
+                    trace=fit.choice.fit_section in deformation.TRACED) != expected[record.id]:
+                row.update(stale_row(record.id))
+                continue
+            record = now
         row.update(status="ok", engine_settings=deformation.engine_settings(fit.settings),
                    **numbers, runtime_s=round(float(outcome.engine.get("runtime_s", 0.0)), 1),
                    cached=fit.cached)
@@ -205,14 +245,7 @@ def fit_deformable(
                 written.append(record.id)
             row["steps"] = len((record.deformation or {}).get("steps") or [])
         fitted.append(Fitted(row=row, fit=fit, outcome=outcome))
-    if written:
-        job.commit(before)
-    done = DeformableFit(applied=applying, rows=rows, fitted=fitted, traced=traced,
-                         written=written)
-    if options is None:
-        return done
-    return pictures(workspace, done, options, candidates=len(choices), include=include,
-                    exclude=exclude, start=start)
+    return DeformableFit(applied=applying, rows=rows, fitted=fitted, written=written)
 
 
 def pictures(
@@ -317,16 +350,18 @@ def keep_linear(job: Job, records: list[SliceState], reason: str) -> KeptLinear:
     (``NOTHING_WRITTEN``, each offending section under ``results``) when any
     section lacks a position or a transform.
     """
-    refused = [
-        {"id": record.id, "status": "error", "error": "INVALID_LINEAR_PLACEMENT",
-         "message": "keep_linear needs a position and a transform."}
-        for record in records if record.position_mm is None or record.transform is None
-    ]
-    if refused:
-        raise Refused("NOTHING_WRITTEN", results=refused)
-    before = job.snapshot()
-    for record in records:
-        record.deformation = {"keep_linear": reason,
-                              "linear_key": deformation.linear_key(job.state, record)}
-    job.commit(before)
+    with job.writing():
+        records = [job.state.by_id(record.id) or record for record in records]
+        refused = [
+            {"id": record.id, "status": "error", "error": "INVALID_LINEAR_PLACEMENT",
+             "message": "keep_linear needs a position and a transform."}
+            for record in records if record.position_mm is None or record.transform is None
+        ]
+        if refused:
+            raise Refused("NOTHING_WRITTEN", results=refused)
+        before = job.snapshot()
+        for record in records:
+            record.deformation = {"keep_linear": reason,
+                                  "linear_key": deformation.linear_key(job.state, record)}
+        job.commit(before)
     return KeptLinear(touched=[record.id for record in records], reason=reason)

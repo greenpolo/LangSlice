@@ -59,6 +59,7 @@ Two exceptions, both from `layout.locate_job_folder` (used by
 Inside (`layout.py`, names as constants):
 
 ```
+job.lock             the write lock (lock.py), held while a writer syncs and commits
 job.json             settings: the JobSpec under "spec", format_version (1),
                      created_at, image_folder; a saved Claude job's job_id and
                      its own fields under "host" (kind, params, notes, trace_dir)
@@ -95,6 +96,19 @@ nothing until its first write. `Job.persist` False (`Job.load(...,
 persist=False)`, the CLI's `--dry-run`) writes nothing at all: no
 checkpoint, no history, and `views.DiscardedViews` saves no picture.
 
+**One writer at a time, across processes (phase 5 follow-up).** Every
+write goes lock -> sync -> apply -> commit -> unlock: `Job.writing()` holds
+the folder's `lock.FolderLock` (`job.lock`, `filelock`: `fcntl` on Linux
+and macOS, `msvcrt` on Windows, released by the OS if a process dies;
+reentrant in its thread; `LOCK_TIMEOUT_S` 300 then `JobBusy`) and runs
+`Job.sync` first. `commit`, `checkpoint` and the history save take it too;
+`undo`/`redo`, `clear_stale_deformations` and the landing of image
+corrections (`settle_image_corrections`, `wait_image_job`: the calls run
+outside it, their results land under it) are written inside it, and so
+is `Job.open`'s read and first checkpoint. A missing or unwritable folder
+is used without the lock. After a sync the section records are new
+objects: resolve them by id inside the block.
+
 **Paths are relative.** Every path a job file stores (a deformation's
 `record`, an image correction's `artifact_dir` / `artifact_paths`, the views
 index) is relative to the job folder (`JobLayout.relative` /
@@ -105,6 +119,8 @@ paths). The trace identity in a deformation cache key is the stored
 
 ## Files
 
+- `lock.py` — `FolderLock(folder)` (`held()`, `LOCK_FILE` `job.lock`,
+  `LOCK_TIMEOUT_S`, `JobBusy`): above.
 - `layout.py` — `locate_job_folder` (above), `writable`, `check_owner`,
   `JobLayout` (the folder, every name, `section_dir`,
   `deformable_dir`, `image_correction_dir`, `section_views_dir`,

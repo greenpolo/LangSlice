@@ -22,7 +22,8 @@ SCHEMA_VERSION = 1
 JOB_COMMANDS: dict[str, str] = {
     "init": "Create the job for a folder of section images (the job flags of "
             "`langslice linear run`; --resume continues an existing job).",
-    "status ID": "One background run: running, done (with its answer) or lost.",
+    "runs [ID]": "The background runs (newest first), or one run: running, finished "
+                "(with its answer) or lost.",
     "wait [ID]": "Wait for a background run (the latest without ID); --timeout SECONDS.",
 }
 

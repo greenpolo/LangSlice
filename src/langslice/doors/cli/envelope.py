@@ -70,10 +70,12 @@ FIXES: dict[str, str] = {
     "ORDER_POSITION_MISMATCH": "Make positions run one way along the order "
                                "(reorder_slices or set_positions).",
     "LOCKED": "The user locked this section's in-plane alignment; leave it out.",
+    "STALE_INPUT": "The section changed while this ran; run the verb again for it.",
+    "JOB_BUSY": "Another writer held the job folder's lock; retry.",
     "NOTHING_FITTED": "Each section's row under result.results names its problem.",
     "NOTHING_ADJUSTED": "Each section's row under result.results names its problem.",
     "NOTHING_WRITTEN": "See result.unknown_ids and result.rejected.",
-    "UNKNOWN_RUN": "List the background runs with `langslice job {job} status`.",
+    "UNKNOWN_RUN": "List the background runs with `langslice job {job} runs`.",
     "STILL_RUNNING": "Wait again: `langslice job {job} wait <id>`.",
     "RUN_LOST": "The background process ended without an answer; see its log under "
                 "logs/runs/ and run the verb again.",

@@ -102,7 +102,8 @@ operation (`ops/`) never imports a door.
     before and after on a job that writes nothing), `shape` (concise:
     no `description`, a write's whole-stack `rows` as `n_rows`; verbose:
     everything and the picture texts), `changes`, `init` (the job flags of
-    `linear run`, `jobs.create`), `runs` (`status ID`, `wait [ID]`).
+    `linear run`, `jobs.create`), `runs` (`runs [ID]`, `wait [ID]`; `status`
+    is only the verb).
     `CHECKED_ONLY`: `trace_borders` and `fit_deformable` are checked, not
     run, by `--dry-run`.
   - `background.py` — `--background`: `start` (a record in
@@ -117,7 +118,12 @@ operation (`ops/`) never imports a door.
 Each CLI call and each `open_job` opens the job as it stands (`Job.load`),
 and every tool call runs `Job.sync` first, so an agent run and CLI calls on
 one folder see each other's writes, history included
-(`tests/test_agent_cli.py` interleaves them). Not handled: a long write
-(a background `fit_deformable`) commits the state it opened with, so a
-write by someone else in the meantime is overwritten; there is no lock
-across processes.
+(`tests/test_agent_cli.py` interleaves them). Every write holds the job
+folder's lock (`job/lock.py`, `Job.writing`: lock, sync, apply, commit):
+the tool door wraps every verb in it, except the long ones
+(`VERBS[name].long`: `fit_affine`, `fit_deformable`, `trace_borders`),
+which compute outside it and take it to apply, refusing a section whose
+inputs changed (`ops.inputs`, `STALE_INPUT`); `job.lock` timing out is
+`JOB_BUSY` (exit 3). `tests/test_job_concurrency.py`: an agent write during
+a fit survives, a moved section is refused, concurrent CLI processes all
+land.

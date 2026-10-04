@@ -277,6 +277,8 @@ decides `view`'s type and `fit_deformable`'s description and arguments, as
   call) reloads the state file when its inode, size or mtime changed since
   the job last read or wrote it: a script's edit becomes one undo step, a
   second job's edit comes with its own history index, which is read back;
+  every write holds the job folder's lock and syncs first (`Job.writing`,
+  `src/langslice/job/CLAUDE.md`; the long verbs take it only to apply);
   an unchanged rewrite is not a step and a file that does not parse (a
   script mid-write) is left for the next call. A step holds the whole
   state, so undo restores the deformation references on the section

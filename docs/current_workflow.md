@@ -9,7 +9,7 @@ langslice linear    {run, quick-affine}
 langslice nonlinear {register}
 langslice           {version, login, serve, abba, mcp}
 langslice claude    {prepare}
-langslice job FOLDER {init, VERB, status ID, wait [ID]}   # the agent CLI
+langslice job FOLDER {init, VERB, runs [ID], wait [ID]}   # the agent CLI
 langslice           {ops, schema [VERB]}                  # the agent CLI's catalogue
 ```
 

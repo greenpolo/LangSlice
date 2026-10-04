@@ -22,6 +22,8 @@ dependencies = [
     "tifffile",
     "python-dotenv",
     "itk-elastix",
+    # The job folder's cross-process write lock (langslice.job.lock).
+    "filelock>=3.12",
 ]
 
 [project.scripts]

@@ -246,13 +246,16 @@ def test_a_background_run_answers_at_once_then_status_and_wait(capsys, images, m
     assert waited["result"]["run"] == run and waited["result"]["slices"] == [ID0]
     assert [artifact["kind"] for artifact in waited["artifacts"]] == ["view", "view_json"]
     assert Path(waited["artifacts"][0]["path"]).is_file()
-    code, status = cli(capsys, "job", str(images), "status", run)
-    assert code == 0 and status["result"]["state"] == "finished"
-    assert status["result"]["exit"] == 0
-    code, listed = cli(capsys, "job", str(images), "status")
-    assert listed["result"]["background"][0]["id"] == run
-    code, unknown = cli(capsys, "job", str(images), "status", "no-such-run")
+    code, one = cli(capsys, "job", str(images), "runs", run)
+    assert code == 0 and one["result"]["state"] == "finished"
+    assert one["result"]["exit"] == 0
+    code, listed = cli(capsys, "job", str(images), "runs")
+    assert listed["result"]["runs"][0]["id"] == run
+    code, unknown = cli(capsys, "job", str(images), "runs", "no-such-run")
     assert code == 2 and unknown["error"]["code"] == "UNKNOWN_RUN"
+    # `status` is only the verb.
+    code, status = cli(capsys, "job", str(images), "status", run)
+    assert code == 2 and status["error"]["code"] == "BAD_ARGUMENTS"
 
 
 # --- live shared editing --------------------------------------------------------------

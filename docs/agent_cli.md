@@ -30,7 +30,8 @@ Besides the verbs, `FOLDER` takes:
   `--pixel-size-um`, `--image-provider none`, ...), through the same ingest
   every host uses; no agent runs. An existing job there is continued
   (`--fresh` starts over).
-- `status ID`: one background run.
+- `runs [ID]`: the background runs, newest first, or one run's state
+  (running, finished with its answer, or lost). `status` is only the verb.
 - `wait [ID]`: wait for a background run (the latest without ID);
   `--timeout SECONDS`.
 
@@ -78,7 +79,7 @@ When `ok` is false, `error` says why and what to do:
 | --- | --- |
 | 0 | ok |
 | 2 | the call is wrong: unknown verb or argument, a missing or malformed one, an unknown section, no job in FOLDER |
-| 3 | the job refused it: a gate or rule (`MISSING_TRANSFORMS`, `LOCKED`, `NOTHING_TO_UNDO`, a verb this job's tasks do not have), or a background run still running at `wait --timeout` |
+| 3 | the job refused it: a gate or rule (`MISSING_TRANSFORMS`, `LOCKED`, `NOTHING_TO_UNDO`, a verb this job's tasks do not have, `STALE_INPUT` for every section), another writer holding the lock past 300 s (`JOB_BUSY`), or a background run still running at `wait --timeout` |
 | 4 | internal error (the traceback is on stderr); a background run that ended without an answer |
 
 `result` is concise by default: no description written for a model, and a
@@ -96,8 +97,15 @@ Each call opens the job as it stands on disk (nothing is rewritten by
 opening), runs the verb and closes it. A LangSlice agent run on the same
 folder picks up a CLI write before its next tool call, history included, and
 the next CLI call picks up the agent's; every write is one undo step either
-way. A long write (a background `fit_deformable`) applies the state it opened
-with: a write by someone else in the meantime is overwritten.
+way. Every write holds the job folder's lock (`job.lock`, across processes,
+Linux, macOS and Windows): lock, reload what others saved, apply, commit,
+unlock, so concurrent writers never overwrite each other. `fit_affine`,
+`fit_deformable` and `trace_borders` compute outside the lock (a fit can take
+minutes) and take it only to apply: a section whose inputs (position, plane,
+cutting angles, orientation, transform, fit appearance, applied deformation
+or trace, whatever the result was computed from) changed meanwhile is
+refused as that section's row, `STALE_INPUT` (run it again), and the other
+sections apply; the envelope lists it under `warnings`.
 
 ## The reference card and the library
 

@@ -20,7 +20,15 @@ wording; `registry.py` lists which.
 - A write takes ONE undo step through the job (`before = job.snapshot()`,
   write, `job.commit(before)`: the step and the checkpoint), or none when
   nothing was written, and returns a plain record of what changed (a frozen
-  dataclass with `touched`, or plain data). A read (`views.py`, `atlas.py`,
+  dataclass with `touched`, or plain data). It runs under the job folder's
+  write lock (`Job.writing`: lock, sync, apply, commit): the doors hold it
+  around every verb except the long ones (`registry.Verb.long`:
+  `fit_affine`, `fit_deformable`, `trace_borders`), which compute outside
+  it from the state they read and take it themselves to apply, comparing
+  each section's `inputs.section_inputs` with the value they computed from:
+  a changed section is that section's row `STALE_INPUT`
+  (`inputs.stale_row`; `trace_borders` raises it), the others apply.
+  `set_transforms` and `keep_linear` take it themselves too. A read (`views.py`, `atlas.py`,
   `positions.search_position`) writes nothing.
 - Pictures are the core's, never drawn here: a read verb, or a write that
   shows its result, takes the call's core `linear.display.DisplayOptions`
@@ -142,6 +150,11 @@ wording; `registry.py` lists which.
   written as one undo step when it changed. `UNKNOWN_SECTION`,
   `INVALID_LINEAR_PLACEMENT`, `IMAGE_CORRECTION_IO_ERROR`. Returns
   `TraceStarted`.
+- `inputs.py` — `section_inputs(state, record, deformation=, trace=)`: a
+  digest of what a fit of the section reads (its linear placement:
+  position, plane, angles, flip, rotation, transform; its fit appearance;
+  damage; with `deformation` the applied deformation's key, with `trace`
+  its image correction), `STALE_INPUT`, `stale_row`.
 - `atlas.py` — `grep_atlas(job, workspace, query, section="")`: the region
   hierarchy searched like text (`linear/atlas_grep.py`), with `in_section`
   per row for a placed section.
@@ -156,7 +169,7 @@ wording; `registry.py` lists which.
   written-position order). `regions_not_in_plane`. `MAX_VIEW_SLICES` (4).
 - `registry.py` — `VERBS`: every verb (agent tool) name -> `Verb(name,
   function, kind "read"/"write", group "Common"/"Positioning"/"Linear"/
-  "Nonlinear", alternates, when)`, in the order every door lists them;
+  "Nonlinear", alternates, when, long)`, in the order every door lists them;
   `enabled(spec)` (phase 5): the verbs a run of the spec has (`when`: the
   task switches and host switches that were `build_tools`' if-chain);
   `table()` as plain rows. `fit_deformable`'s alternate is `keep_linear`.

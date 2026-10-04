@@ -2,8 +2,8 @@
 
 The agent CLI (phase 5): every verb of :data:`langslice.ops.registry.VERBS`
 under the tool's own name (kebab-case accepted: ``set-positions``), plus
-``init`` (create the job for a folder of images), ``status ID`` and ``wait
-[ID]`` (background runs). FOLDER is the job folder or the image folder
+``init`` (create the job for a folder of images), ``runs [ID]`` and ``wait
+[ID]`` (background runs; ``status`` is only the verb). FOLDER is the job folder or the image folder
 beside it.
 
 Arguments are the verb's declared arguments
@@ -48,6 +48,7 @@ from langslice.doors.cli.envelope import (
     emit,
     stdout_to_stderr,
 )
+from langslice.job.lock import JobBusy
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +90,7 @@ def add_parser(subparsers: argparse._SubParsersAction) -> None:
         "job", help="Agent CLI: one verb on a job folder, JSON on stdout "
         "(see `langslice ops`)")
     p.add_argument("folder", help="The job folder, or the image folder beside it")
-    p.add_argument("verb", help="A verb (`langslice ops`), init, status [ID] or wait [ID]")
+    p.add_argument("verb", help="A verb (`langslice ops`), init, runs [ID] or wait [ID]")
     p.add_argument("rest", nargs=argparse.REMAINDER,
                    help="--args JSON|@file, --name value, --dry-run, --background, "
                    "--verbose, --timeout SECONDS")
@@ -112,7 +113,7 @@ def execute(folder: str, verb: str, rest: list[str], *,
             return init(folder, rest, atlas_loader=atlas_loader)
         options, arguments, positional = parse(rest)
         run_id = options.get("run_id")
-        if name in ("wait",) or (name == "status" and positional):
+        if name in ("runs", "wait"):
             return runs(folder, name, positional, options)
         if positional:
             raise _Refusal(Envelope.failure(
@@ -121,6 +122,8 @@ def execute(folder: str, verb: str, rest: list[str], *,
         envelope = call(folder, name, arguments, options, atlas_loader=atlas_loader)
     except _Refusal as refusal:
         envelope = refusal.envelope
+    except JobBusy as exc:
+        envelope = Envelope.failure("JOB_BUSY", str(exc), exit=EXIT_REFUSED)
     except Exception as exc:  # the envelope reports it; the traceback goes to stderr
         logger.exception("langslice job %s %s failed", folder, verb)
         envelope = Envelope.failure("INTERNAL", f"{type(exc).__name__}: {exc}",
@@ -360,9 +363,6 @@ def _run(opened: Any, verb: str, tool: Any, arguments: dict[str, Any], *,
         from langslice.ops.registry import enabled
 
         result["verbs"] = enabled(opened.spec)
-        runs = background.listing(job.layout)
-        if runs:
-            result["background"] = runs[:10]
     if dry_run and isinstance(result, dict):
         result["dry_run"] = True
         if VERBS[verb].kind == "write":
@@ -375,6 +375,9 @@ def _run(opened: Any, verb: str, tool: Any, arguments: dict[str, Any], *,
             value = reply.get(key)
             if value:
                 warnings.append(f"{key}: {json.dumps(value, default=str)}")
+        if ok and isinstance(reply.get("results"), list):  # per-section refusals
+            warnings += [f"{row.get('id')}: {row.get('error')}" for row in reply["results"]
+                         if isinstance(row, dict) and row.get("status") == "error"]
     if not ok:
         code = str(reply.get("error") or "ERROR")
         message = str(reply.get("message") or reply.get("detail") or "")
@@ -479,7 +482,7 @@ def init(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelope:
 
 
 def runs(folder: str, verb: str, positional: list[str], options: dict[str, Any]) -> Envelope:
-    """``status ID`` (one run) and ``wait [ID]`` (the latest without ID)."""
+    """``runs [ID]`` (every run, or one) and ``wait [ID]`` (the latest without ID)."""
     from langslice.doors.jobs import NoJob, find
     from langslice.job.layout import JobLayout
 
@@ -490,11 +493,16 @@ def runs(folder: str, verb: str, positional: list[str], options: dict[str, Any])
     job_folder = str(layout.folder)
     if len(positional) > 1:
         return Envelope.failure("BAD_ARGUMENTS", "Give one run id.", job=job_folder)
+    if verb == "runs" and not positional:
+        listed = background.listing(layout)
+        return Envelope(result={"runs": listed},
+                        next=[f"langslice job {job_folder} wait {run['id']}"
+                              for run in listed if run.get("state") == "running"][:1])
     run_id = positional[0] if positional else background.latest(layout)
     if run_id is None:
         return Envelope.failure("UNKNOWN_RUN", "This job has no background runs.",
                                 job=job_folder)
-    if verb == "status":
+    if verb == "runs":
         record = background.read(layout, run_id)
         if record is None:
             return Envelope.failure("UNKNOWN_RUN", f"No run {run_id}.", job=job_folder)

@@ -1,4 +1,4 @@
-"""Background runs of the agent CLI: ``--background``, ``status ID``, ``wait``.
+"""Background runs of the agent CLI: ``--background``, ``runs [ID]``, ``wait [ID]``.
 
 A long verb (``fit_deformable``, ``trace_borders``) answers at once with a
 run id when given ``--background``: the same command is started again as a
