@@ -62,12 +62,17 @@ def trace_borders(
     the write happen under it (:meth:`~langslice.job.job.Job.writing`),
     refused ``STALE_INPUT`` when the section's geometry changed meanwhile;
     the result lands only at the geometry it was made for. Refused:
-    ``UNKNOWN_SECTION``, ``INVALID_LINEAR_PLACEMENT`` (the placement cannot be
-    prepared), ``IMAGE_CORRECTION_IO_ERROR``, ``STALE_INPUT``.
+    ``UNKNOWN_SECTION``, ``KEEPS_HOST_WARP`` / ``NONLINEAR_SKIPPED`` (the host
+    kept the section out of Nonlinear, ``Job.nonlinear_refusal``),
+    ``INVALID_LINEAR_PLACEMENT`` (the placement cannot be prepared),
+    ``IMAGE_CORRECTION_IO_ERROR``, ``STALE_INPUT``.
     """
     record = job.state.resolve(ref)
     if record is None:
         raise Refused("UNKNOWN_SECTION", id=str(ref))
+    refusal = job.nonlinear_refusal(record.id)
+    if refusal is not None:
+        raise Refused(refusal[0], id=record.id, message=refusal[1])
     try:
         current = handoff.correction_fingerprint(job.state, workspace, record.id)
         if job.image_job_running(record.id, current):

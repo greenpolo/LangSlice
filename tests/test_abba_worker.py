@@ -504,3 +504,73 @@ def test_the_seed_event_carries_the_saved_opening_views():
     assert got[0]["views"] == ["/job/views/000001_opening/view.jpg"]
     assert "views" not in got[1]
     assert with_seed_views(None, ["x"]) is None
+
+
+def test_sections_left_out_of_nonlinear_are_refused_by_its_tools(tmp_path, monkeypatch):
+    """`nonlinear_skip` (the dialog's "do not align these first" with
+    Positioning on) reaches the job as inputs.nonlinear_skip; the fit and
+    the image model's trace refuse those sections."""
+    import dataclasses
+
+    import langslice
+    from langslice.core.spec import NonlinearSpec
+    from langslice.doors.api.abba_worker import prepare_linear
+    from langslice.doors.jobs import create
+    from tests.golden.record import (
+        ID0,
+        PIXEL_SIZE_UM,
+        apply_patches,
+        atlas_loader,
+        full_spec,
+        write_sections,
+    )
+
+    snapshots = tmp_path / "snapshots"
+    snapshots.mkdir()
+    Image.new("L", (80, 40)).save(snapshots / "a.tif")
+    prepared = prepare_linear({"image_folder": str(snapshots), "pixel_size_um": 25,
+                               "positions_mm": {"a.tif": 4.0}, "nonlinear_skip": ["a.tif"],
+                               "spec": {"tasks": ["position", "nonlinear"],
+                                        "nonlinear": {"provider": "none"}}})
+    assert prepared.spec.inputs["nonlinear_skip"] == ["a.tif"]
+    with pytest.raises(ValueError, match="nonlinear_skip"):
+        prepare_linear({"image_folder": str(snapshots), "pixel_size_um": 25,
+                        "positions_mm": {"a.tif": 4.0}, "nonlinear_skip": ["b.tif"]})
+
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    apply_patches()
+    folder = tmp_path / "stack"
+    write_sections(folder)
+    spec = dataclasses.replace(
+        full_spec(folder), nonlinear=NonlinearSpec(provider="none"), agent_preprocessing=False,
+        inputs={"pixel_size_um": PIXEL_SIZE_UM, "nonlinear_skip": [ID0]})
+    create(spec, atlas_loader=atlas_loader()).close()
+    job = langslice.open_job(str(folder), atlas_loader=atlas_loader())
+    try:
+        job.set_positions(entries=[{"id": ID0, "position_mm": 0.1}])
+        assert "NONLINEAR_SKIPPED" in json.dumps(job.fit_deformable(slices=[ID0],
+                                                                    engine="elastix"))
+        assert job.job.nonlinear_refusal(ID0)[0] == "NONLINEAR_SKIPPED"
+    finally:
+        job.close()
+
+
+def test_the_run_ends_with_a_checkpoint_of_the_final_state(params, monkeypatch):
+    """The connector applies the end-of-run checkpoint's rows (not
+    final_updates), so the worker always sends one after the engine."""
+    from langslice.agent import engine
+
+    async def run(spec, *, on_write, on_event, emit, **_):
+        row = {"id": "section_0001.tif", "position_mm": 4.0, "rotation_deg": 0,
+               "transform": None}
+        value = {"slices": [row]}
+        on_write(SimpleNamespace(to_dict=lambda: copy.deepcopy(value)))
+        row["position_mm"] = 4.3
+        return SimpleNamespace(to_dict=lambda: copy.deepcopy(value))
+
+    monkeypatch.setattr(engine, "run", run)
+    events: list = []
+    result = run_linear(params, events.append)
+    last = [event for event in events if event["kind"] == "checkpoint"][-1]
+    assert last["host_updates"] == [{"id": "section_0001.tif", "position_mm": 4.3}]
+    assert result["final_updates"] == last["updates_since_start"]
