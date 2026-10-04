@@ -8,6 +8,11 @@ both turn them into a JSON schema that names every key and its type, so the
 model sees the shape in the tool list, and the keys this module checks are
 the keys that schema shows.
 
+:func:`normalize_arguments` is the other shared rule: what the native tools
+accept as sent (a corrected index as a number where a filename or index is
+asked for, a null picture option) is made schema-valid before a door that
+validates against the schema (FastMCP) sees it.
+
 :func:`argument_refusal` is the one strictness rule, used at every door: the
 toolbox's own wrapper (``toolbox.build_tools``: direct calls and nested
 keys), the ADK plugin (``adk.plugins.StrictArgumentsPlugin``: ADK drops
@@ -196,6 +201,61 @@ def _note(key: str, typed: Any, params: dict[str, Any], *, top_level: bool) -> s
             if key in notes and issubclass_typed(found[0], kind):
                 return notes[key]
     return ""
+
+
+def _is_index(value: Any) -> bool:
+    """A whole number sent where a section reference (text) is typed."""
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _text_typed(annotation: Any) -> bool:
+    return annotation is str
+
+
+def _text_list_typed(annotation: Any) -> bool:
+    return (typing.get_origin(annotation) in (list, tuple)
+            and typing.get_args(annotation)[:1] == (str,))
+
+
+def _without_nulls(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {key: item for key, item in value.items() if item is not None}
+    return value
+
+
+def normalize_arguments(func: Callable[..., Any], args: Mapping[str, Any]) -> dict[str, Any]:
+    """*args* as the native tools read them, in a shape *func*'s schema accepts.
+
+    The tools take a section either by filename or by corrected index, and
+    ADK hands them a number as sent; a door that validates against the
+    schema first (FastMCP's pydantic check) would refuse a number where the
+    schema says text. So a whole number in a text argument (``id``,
+    ``section``) or in a list of text (``slices``) becomes its text; the
+    tools resolve ``"2"`` and ``2`` alike. A null inside a typed-dict
+    argument (``view``, each ``entries`` / ``candidates`` dict) means "not
+    given", as the tools read it, and is dropped; a null ``view`` is the
+    default. Nothing else changes: unknown keys are :func:`argument_refusal`'s.
+    """
+    params = parameters(func)
+    out = dict(args)
+    for name, annotation in params.items():
+        if name not in out:
+            continue
+        value = out[name]
+        found = _typed_dict(annotation)
+        if found is not None:
+            many = found[1]
+            if value is None and not many:
+                del out[name]
+            elif many and isinstance(value, (list, tuple)):
+                out[name] = [_without_nulls(item) for item in value]
+            else:
+                out[name] = _without_nulls(value)
+        elif _text_typed(annotation) and _is_index(value):
+            out[name] = str(value)
+        elif _text_list_typed(annotation) and isinstance(value, (list, tuple)):
+            out[name] = [str(item) if _is_index(item) else item for item in value]
+    return out
 
 
 def argument_refusal(func: Callable[..., Any], args: Mapping[str, Any]) -> dict[str, Any] | None:

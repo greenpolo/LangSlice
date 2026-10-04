@@ -381,9 +381,12 @@ def strict_arguments(server: FastMCP, name: str, tool: Callable[..., Any]) -> No
     its default. The registered tool's argument check is replaced by one that
     first applies :func:`langslice.linear.arguments.argument_refusal` (the
     same rule the ADK plugin and the toolbox apply) to the arguments as sent,
-    after FastMCP's JSON pre-parse of string-encoded objects.
+    after FastMCP's JSON pre-parse of string-encoded objects, then
+    :func:`~langslice.linear.arguments.normalize_arguments`, so what the ADK
+    agent may send (a corrected index as a number, a null picture option)
+    passes FastMCP's schema check here too.
     """
-    from langslice.linear.arguments import argument_refusal
+    from langslice.linear.arguments import argument_refusal, normalize_arguments
 
     registered = server._tool_manager.get_tool(name)  # noqa: SLF001 — FastMCP has no hook
     if registered is None:
@@ -397,11 +400,13 @@ def strict_arguments(server: FastMCP, name: str, tool: Callable[..., Any]) -> No
             arguments_to_validate: dict[str, Any],
             arguments_to_pass_directly: dict[str, Any] | None,
         ) -> Any:
-            refusal = argument_refusal(tool, self.pre_parse_json(arguments_to_validate))
+            arguments = self.pre_parse_json(arguments_to_validate)
+            refusal = argument_refusal(tool, arguments)
             if refusal is not None:
                 return result_blocks(refusal)
             return await super().call_fn_with_arg_validation(
-                fn, fn_is_async, arguments_to_validate, arguments_to_pass_directly)
+                fn, fn_is_async, normalize_arguments(tool, arguments),
+                arguments_to_pass_directly)
 
     registered.fn_metadata = Strict.model_construct(
         **{field: getattr(metadata, field) for field in base.model_fields})

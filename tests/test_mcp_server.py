@@ -15,6 +15,7 @@ from mcp.shared.memory import create_connected_server_and_client_session
 from mcp.types import ImageContent, TextContent
 from PIL import Image
 
+from langslice.linear.arguments import View, normalize_arguments
 from langslice.linear.opening import CLAUDE_MAX_IMAGE_EDGE, CLAUDE_MAX_IMAGE_PATCHES, patches
 from langslice.linear.spec import JobSpec
 from langslice.mcp_server.server import build_server
@@ -142,6 +143,44 @@ def test_unknown_and_misplaced_arguments_are_refused_over_mcp(tmp_path: Path):
     }
     assert _text(encoded)["view"]["mode"] == "channels"
     assert sum(isinstance(block, ImageContent) for block in encoded.content) == 1
+
+
+def test_mcp_takes_what_the_adk_agent_may_send(tmp_path: Path):
+    """Handed-over bug 2: corrected indices as numbers in `slices` and null
+    picture options passed ADK but failed FastMCP's schema check."""
+    server = build_server(_spec_for, str(_folder(tmp_path)), atlas_loader=lambda _n: _ATLAS)
+
+    async def body(client: Any) -> Any:
+        return (
+            await client.call_tool("view_slices", {"slices": [0, "s2.png"]}),
+            await client.call_tool("view_slices", {"slices": ["s0.png"],
+                                                   "view": {"mode": None, "zoom": None}}),
+            await client.call_tool("view_slices", {"slices": [1], "view": None}),
+            await client.call_tool("view_slices", {"slices": ["s0.png"],
+                                                   "view": {"mode": None, "glow": None}}),
+        )
+
+    numbers, nulls, no_view, stray = _session(server, body)
+    assert _text(numbers)["slices"] == ["s0.png", "s2.png"]
+    assert sum(isinstance(block, ImageContent) for block in numbers.content) == 2
+    assert _text(nulls)["view"]["mode"] == "section"
+    assert _text(no_view)["slices"] == ["s1.png"]
+    # A null under an unknown key is still an unknown key.
+    assert _text(stray)["error"] == "UNKNOWN_ARGUMENTS"
+
+
+def test_normalize_arguments_only_touches_what_the_schema_would_refuse():
+    def tool(slices: list[str], id: str, section: str = "", view: View = {},  # noqa: B006
+             positions_mm: list[float] = []) -> None:  # noqa: B006
+        del slices, id, section, view, positions_mm
+
+    assert normalize_arguments(tool, {
+        "slices": [3, "a.png", True], "id": 2, "section": "b.png",
+        "view": {"mode": None, "zoom": [0, 0, 1, 1]}, "positions_mm": [1, 2],
+    }) == {"slices": ["3", "a.png", True], "id": "2", "section": "b.png",
+           "view": {"zoom": [0, 0, 1, 1]}, "positions_mm": [1, 2]}
+    assert normalize_arguments(tool, {"slices": [], "id": "x", "view": None}) == {
+        "slices": [], "id": "x"}
 
 
 def test_without_a_folder_start_job_opens_one_and_the_tools_appear(tmp_path: Path):
