@@ -65,7 +65,7 @@ from langslice.job.layout import (
     locate_job_folder,
     write_job_file,
 )
-from langslice.job.views import ViewStore
+from langslice.job.views import DiscardedViews, ViewStore
 from langslice.linear import deformation
 from langslice.linear.checkpoint import (
     notify_observers,
@@ -630,6 +630,9 @@ class Job:
         self.image_jobs: dict[str, tuple[str, Future[dict[str, Any]]]] = {}
         self.image_executor: ThreadPoolExecutor | None = None
         self._deformations: deformation.RecordStore | None = None
+        #: False: nothing this job holds is written (the state, the history,
+        #: the pictures); a dry run's job (the CLI's ``--dry-run``).
+        self.persist = True
         self._state_stamp = _stamp(self.checkpoint_path)
         self._undo_stamp = _stamp(self.undo_path)
 
@@ -688,6 +691,36 @@ class Job:
         layout.log_event("open", resumed=bool(undo or redo or spec.resume))
         return job
 
+    @classmethod
+    def load(
+        cls, spec: JobSpec, workspace: Workspace, *, folder: str | os.PathLike[str],
+        results_path: str | None = None, persist: bool = True,
+    ) -> Job:
+        """Open an existing job folder as it stands, writing nothing.
+
+        The state is the folder's checkpoint as saved (``FileNotFoundError``
+        without one; a newer one is refused, ``ValueError``), with its undo
+        history; ``job.json`` and the state file are not rewritten, so a job
+        loaded beside a running agent changes nothing until its first write
+        (the CLI and the library open a job per call this way). A folder
+        holding another image folder's job is refused (``ValueError``).
+        *persist* False: the job writes nothing at all (:attr:`persist`).
+        """
+        images = Path(os.path.abspath(workspace.image_folder))
+        layout = JobLayout(Path(os.path.abspath(folder)), images)
+        check_owner(layout)
+        data = read_checkpoint(str(layout.state_file))
+        if data is None:
+            raise FileNotFoundError(f"No job state in {layout.folder}")
+        history = History(layout.history_dir)
+        undo, redo = history.load()
+        job = cls(StackState.from_dict(data), spec, layout=layout, results_path=results_path,
+                  undo=undo, redo=redo, history=history)
+        job.persist = persist
+        if not persist:
+            job.views = DiscardedViews(layout)
+        return job
+
     @property
     def folder(self) -> Path:
         """The job folder."""
@@ -713,6 +746,8 @@ class Job:
 
     def checkpoint(self) -> None:
         """Write the state (atomically, versioned), then tell every observer."""
+        if not self.persist:
+            return
         write_checkpoint(self.state, self.checkpoint_path)
         self._state_stamp = _stamp(self.checkpoint_path)
         self._notify()
@@ -775,6 +810,8 @@ class Job:
         return True
 
     def _save_history(self) -> None:
+        if not self.persist:
+            return
         self.history.save(self.undo_stack, self.redo_stack)
         self._undo_stamp = _stamp(self.undo_path)
 

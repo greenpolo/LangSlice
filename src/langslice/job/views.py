@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import atexit
 import contextlib
+import contextvars
 import json
 import logging
 import queue
@@ -66,6 +67,41 @@ _NAME_PART = re.compile(r"[^a-zA-Z0-9_]+")
 
 #: Every store with pictures queued at some point (for :func:`flush_all`).
 _STORES: weakref.WeakSet[ViewStore] = weakref.WeakSet()
+#: The open :func:`captured` lists of this context, innermost last.
+_CAPTURES: contextvars.ContextVar[tuple[list[Saved], ...]] = contextvars.ContextVar(
+    "langslice_view_captures", default=())
+
+
+@dataclass(frozen=True)
+class Saved:
+    """One queued picture: its folder (absolute) and whether it gets layers."""
+
+    folder: Path
+    name: str
+    layers: bool
+
+    def files(self) -> list[tuple[Path, str]]:
+        """``(path, kind)`` of every file the picture's folder will hold:
+        ``view`` (the JPEG), ``view_json``, and for a placement picture
+        ``labels`` and ``borders``."""
+        listed = [(self.folder / PICTURE_FILE, "view"), (self.folder / VIEW_FILE, "view_json")]
+        if self.layers:
+            listed += [(self.folder / LABELS_FILE, "labels"), (self.folder / BORDERS_FILE,
+                                                               "borders")]
+        return listed
+
+
+@contextlib.contextmanager
+def captured() -> Iterator[list[Saved]]:
+    """Collect every picture any store queues in this block (this thread or
+    task), in order: what a door that answers with file paths (the CLI)
+    reports. The files exist once the store is flushed."""
+    found: list[Saved] = []
+    token = _CAPTURES.set((*_CAPTURES.get(), found))
+    try:
+        yield found
+    finally:
+        _CAPTURES.reset(token)
 
 
 def flush_all() -> None:
@@ -179,6 +215,12 @@ class ViewStore:
                 mode = held.mode if held is not None else None
                 items.append(_Picture(seq, view_name(seq, tool, mode), index, image, held))
                 seq += 1
+            for capture in _CAPTURES.get():
+                capture.extend(
+                    Saved(self._folder(item.note, item.name), item.name,
+                          item.note is not None and item.note.panel is not None
+                          and item.note.frame is not None and atlas is not None)
+                    for item in items)
             self._seq, self._call = seq, call
             self._queue.put(_Call(tool, call, call_id, arguments, items, atlas))
             if not self._running:
@@ -305,3 +347,14 @@ class ViewStore:
                  "sections": record["sections"], "mode": record["mode"],
                  "layers": bool(record["layers"])}
         return json.dumps(entry) + "\n"
+
+
+class DiscardedViews(ViewStore):
+    """A store that saves nothing (a job that writes nothing, ``Job.persist``
+    False: the CLI's dry run)."""
+
+    def save(
+        self, *, tool: str, pictures: list[tuple[Image.Image | bytes, PictureNote | None]],
+        arguments: Any = None, call_id: str | None = None, atlas: Any = None,
+    ) -> list[str]:
+        return []
