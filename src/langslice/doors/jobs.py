@@ -208,3 +208,48 @@ def create(
     if not job.lean:
         write_card(job.layout)
     return Opened(job, ctx, image_model)
+
+
+#: The supplied inputs a registration made elsewhere replaces, by the option
+#: each door names them with (CLI flag, library argument).
+REGISTRATION_EXCLUDES = ("positions", "transforms", "angles", "orientation")
+
+
+def with_registration(
+    spec: JobSpec,
+    registration: str | os.PathLike[str],
+    *,
+    target: str | None = None,
+    atlas_loader: Callable[[str], Any] | None = None,
+    emit: Callable[[str], None] | None = None,
+) -> tuple[JobSpec, dict[str, Any]]:
+    """*spec* with the linear registration in the file *registration* (made
+    elsewhere: QuickNII/VisuAlign JSON or XML, DeepSlice CSV/JSON/XML, a
+    LangSlice ``registration.json``) as its supplied inputs, and the import
+    report (``job.imports.registration_inputs``: sections placed, what did
+    not match, refusals, ``warnings``, each also said through *emit*).
+
+    ``ValueError`` when *spec* already supplies positions, transforms,
+    angles or an orientation (the registration supplies them), when its
+    entries cannot be matched one to one, or when no section could be
+    placed. *target* overrides the file's QuickNII target.
+    """
+    from langslice.job.imports import registration_inputs
+
+    clashes = [key for key in REGISTRATION_EXCLUDES if (spec.inputs or {}).get(key)]
+    if clashes:
+        raise ValueError(f"A registration file supplies the {', '.join(clashes)}; give "
+                         "either the file or those inputs, not both")
+    path = Path(os.path.abspath(os.path.expanduser(os.fspath(registration))))
+    if not path.is_file():
+        raise ValueError(f"No registration file at {path}")
+    folder = Path(spec.job_dir) if spec.job_dir else job_folder_for(spec.image_folder)
+    ctx = context(spec, folder, atlas_loader=atlas_loader, emit=emit)
+    imported = registration_inputs(path, ctx, target=target)
+    say = emit or log_progress
+    for warning in imported.report["warnings"]:
+        say(f"[registration] {warning}")
+    import dataclasses
+
+    supplied = {**(spec.inputs or {}), **imported.inputs}
+    return dataclasses.replace(spec, inputs=supplied), imported.report

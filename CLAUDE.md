@@ -370,7 +370,13 @@ program. Code that runs in LangSlice's own environment lives in
   elsewhere (QuickNII/VisuAlign JSON or XML, DeepSlice JSON/XML/CSV, a job's
   `registration.json`) is read into per-section placements by
   `job/imports.py` over the exact inverse geometry
-  `core/import_geometry.py`; not yet wired into a job's inputs.
+  `core/import_geometry.py`, and becomes a job's supplied inputs (positions,
+  per-section cutting angles, orientation, transforms, the pixel size when
+  none is given) through `langslice job FOLDER init --registration FILE` (and
+  every stack-opening command's flags) or `langslice.create_job(...,
+  registration=FILE)`; such a job's tasks default to `nonlinear` only, the
+  imported linear placement kept as it is. VisuAlign markers are never
+  imported (the init result warns; LangSlice's nonlinear step replaces them).
 - Every way of using LangSlice goes through one job folder and its verbs
   (the agent run, the agent CLI `langslice job`, the library, MCP, the agent
   tools); the one-shot `langslice nonlinear register` / `register.run`

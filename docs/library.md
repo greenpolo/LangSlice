@@ -41,7 +41,7 @@ own (below) needs none of this.
 | `langslice.image_model(source, ...)` | the image model profile the border trace calls |
 | `langslice.default_prompt(provider, plane)` | LangSlice's own trace prompt, the text to start a prompt of your own from |
 | `langslice.register_section(image, ...)` | one section, start to finish |
-| `langslice.create_job(images, ...)` | the job of a folder of sections (or a `JobSpec`); a job handle |
+| `langslice.create_job(images, ...)` | the job of a folder of sections (or a `JobSpec`), from supplied placements or a registration file made elsewhere; a job handle |
 | `langslice.register_job(job, ...)` | the scripted registration over a job's sections |
 | `langslice.open_job(folder, ...)` | an existing job; the same handle, every verb a method |
 | `langslice.RegistrationError` | raised by `register_section` when its section could not be registered |
@@ -243,6 +243,8 @@ when the job was submitted with no problems.
 - `tasks`: default `["nonlinear"]` when every section has a supplied
   transform, else `["transform", "nonlinear"]` (adds `fit_affine`). Any other
   task list makes the job of that list (the agent's tasks included).
+- `registration`: a registration file made elsewhere, instead of the four
+  placement arguments (below).
 - `image_model`: as above; None makes a job without one.
 - `job_dir`, `output`: the job-folder settings (below).
 - `fresh=True` starts the folder's job over instead of continuing it
@@ -258,6 +260,53 @@ job's tasks give as a method, with the agent tools' names and arguments
 `job.export_maps()`, `job.status()`, `job.undo()`. Use it as a context
 manager or call `job.close()` when done. A script that needs another sequence
 calls the verbs itself; `register_job` is only the default sequence.
+
+## Starting from an existing registration
+
+A stack already registered linearly elsewhere (QuickNII, VisuAlign,
+DeepSlice, or an earlier LangSlice job) keeps that registration, and only the
+image-model nonlinear step runs on top:
+
+```python
+job = langslice.create_job(
+    "/scans/M01",
+    atlas="allen_mouse_25um",
+    registration="/scans/M01/quicknii.json",   # or .xml, a DeepSlice .csv, a registration.json
+    pixel_size_um=0.65,                        # optional (below)
+    image_model=model,
+)
+print(job.imported["sections"], job.imported["warnings"])
+result = langslice.register_job(job)
+```
+
+The file is read and its entries matched to the folder's images: the same
+file name, else the name without extension (ignoring case: a registration
+made on PNG copies of TIFF scans), else one QuickNII section number
+`_sNNN`. Each matched section gets the file's position, its own cutting
+angles, its orientation and its in-plane transform, exactly: the new job's
+`registration.json` maps every section file as the file does (a QuickNII
+anchoring places the image by fractions of its width and height, so a
+registration made on smaller copies carries over). The formats and what is
+read: `docs/file_formats.md`, "Importing a registration made elsewhere".
+
+- `tasks` defaults to `["nonlinear"]`: the imported placement is kept as it
+  is; `register_job` then traces and fits each section. Pass `tasks=` to
+  let the automatic alignment or the agent change it.
+- `registration=` cannot be combined with `positions`, `transforms`,
+  `angles` or `orientation` (`ValueError`).
+- The pixel size: `pixel_size_um`, else the files' own; when neither gives
+  one, the size the imported registration implies is used (and said).
+- `job.imported` is the import report: the file's `format`, each placed
+  section (`id`, the file's `entry`, how it matched, `position_mm`,
+  `pitch_deg`, `yaw_deg`, `rotation_deg`, `flip`), `unmatched` entries,
+  `missing` sections (no placement: give them one or leave them out),
+  `refused` sections with the reason (another atlas target, a plane tilted
+  more than 45 degrees from the job's), the pixel size, and `warnings`
+  (also passed to `emit`).
+- VisuAlign markers are not imported: only the file's linear registration
+  is, and a warning says so; LangSlice's nonlinear step replaces them.
+- An ambiguous file (two entries for one section, or one entry naming two)
+  and a file that places no section are refused (`ValueError`).
 
 ## Job-folder settings
 

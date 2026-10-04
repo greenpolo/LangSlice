@@ -6,10 +6,24 @@ from __future__ import annotations
 
 import argparse
 import textwrap
-from typing import TYPE_CHECKING
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from langslice.core.spec import JobSpec
+
+#: The tasks a stack-opening command runs without ``--tasks``.
+DEFAULT_TASKS = "reorder,position,transform"
+#: ... and with ``--registration``: only the nonlinear step, on top of the
+#: imported linear registration.
+REGISTRATION_TASKS = "nonlinear"
+#: The flags ``--registration`` cannot be combined with (it supplies what
+#: they would), by argparse destination.
+REGISTRATION_CLASHES = {
+    "positions": "--positions", "transforms": "--transforms",
+    "orientation": "--orientation", "pitch": "--pitch", "yaw": "--yaw",
+    "section_angles": "--section-angles", "angles": "--angles",
+}
 
 PLANE_HELP = (
     "Slicing plane (normal axis). Position is interpreted along this axis "
@@ -34,10 +48,12 @@ def add_linear_arguments(p: argparse.ArgumentParser) -> None:
     inside a live ABBA session instead of headless."""
     p.add_argument(
         "--tasks",
-        default="reorder,position,transform",
+        default=None,
         help="Comma-separated subset of reorder,position,transform,nonlinear; "
         "nonlinear gives every linearly aligned slice a deformation (fit_deformable), "
-        "with image-model border tracing unless --image-provider none",
+        "with image-model border tracing unless --image-provider none. Default: "
+        f"{DEFAULT_TASKS}; with --registration, {REGISTRATION_TASKS} (the imported "
+        "linear registration kept as it is)",
     )
     p.add_argument("--atlas", default="allen_mouse_25um", help="BrainGlobe atlas name")
     p.add_argument(
@@ -148,6 +164,14 @@ def add_linear_arguments(p: argparse.ArgumentParser) -> None:
         metavar="JSON",
         help='Host-supplied positions: a JSON file path or inline JSON mapping '
         'filename -> mm',
+    )
+    p.add_argument(
+        "--registration", default=None, metavar="FILE",
+        help="A linear registration made elsewhere, imported as every section's "
+        "position, cutting angles, orientation and in-plane transform: QuickNII or "
+        "VisuAlign JSON/XML, DeepSlice CSV/JSON/XML, or a LangSlice registration.json. "
+        "Not with --positions, --transforms, --orientation, --pitch/--yaw, "
+        "--section-angles or --angles. VisuAlign markers are not imported",
     )
     p.add_argument(
         "--order",
@@ -282,14 +306,56 @@ def apply_trace_dir(args: argparse.Namespace) -> None:
         os.environ[TRACE_DIR_ENV] = args.trace_dir
 
 
-def build_linear_spec(args: argparse.Namespace, image_folder: str) -> JobSpec:
+def build_linear_spec(
+    args: argparse.Namespace, image_folder: str, *,
+    atlas_loader: Callable[[str], Any] | None = None,
+    emit: Callable[[str], None] | None = None,
+) -> JobSpec:
     """Args -> :class:`~langslice.core.spec.JobSpec`.
 
-    Shared by ``linear run`` (*image_folder* is the positional) and
-    ``abba --linear FOLDER`` (*image_folder* is that flag's value) — both
-    parsers add the same flags via :func:`add_linear_arguments`.
+    Shared by every command that opens a stack (``linear run``, ``abba
+    --linear FOLDER``, ``mcp``, ``claude prepare``, ``job FOLDER init``):
+    their parsers add the same flags via :func:`add_linear_arguments`. A
+    ``--registration`` file is imported here (:func:`build_job_spec`; its
+    warnings said through *emit*).
     """
+    spec, _report = build_job_spec(args, image_folder, atlas_loader=atlas_loader, emit=emit)
+    return spec
+
+
+def build_job_spec(
+    args: argparse.Namespace, image_folder: str, *,
+    atlas_loader: Callable[[str], Any] | None = None,
+    emit: Callable[[str], None] | None = None,
+) -> tuple[JobSpec, dict[str, Any] | None]:
+    """:func:`build_linear_spec` and the ``--registration`` import report
+    (None without one: ``doors.jobs.with_registration``). ``ValueError`` for
+    flags that cannot be combined, an unreadable or ambiguous registration,
+    or one that places no section."""
+    spec = spec_from_args(args, image_folder)
+    registration = getattr(args, "registration", None)
+    if not registration:
+        return spec, None
+    from langslice.doors.jobs import with_registration
+
+    return with_registration(spec, registration, atlas_loader=atlas_loader, emit=emit)
+
+
+def spec_from_args(args: argparse.Namespace, image_folder: str) -> JobSpec:
+    """The spec the flags give, ``--registration`` not yet imported (its
+    clashes with other flags refused, its default tasks applied)."""
     from langslice.core.spec import JobSpec, NonlinearSpec, PositionSpec, ReorderSpec, TransformSpec
+
+    registration = getattr(args, "registration", None)
+    if registration:
+        given = [flag for name, flag in REGISTRATION_CLASHES.items()
+                 if getattr(args, name, None) not in (None, False)]
+        if given:
+            raise ValueError(f"--registration supplies every section's position, cutting "
+                             f"angles, orientation and transform; it cannot be combined "
+                             f"with {', '.join(given)}")
+    tasks = args.tasks if args.tasks is not None else (
+        REGISTRATION_TASKS if registration else DEFAULT_TASKS)
 
     inputs: dict[str, object] = {}
     positions = load_json_arg(args.positions, "--positions")
@@ -331,7 +397,7 @@ def build_linear_spec(args: argparse.Namespace, image_folder: str) -> JobSpec:
         job_dir=getattr(args, "job_dir", None),
         preprocess=args.preprocess,
         agent_preprocessing=bool(getattr(args, "agent_preprocessing", False)),
-        tasks=[task.strip() for task in args.tasks.split(",") if task.strip()],
+        tasks=[task.strip() for task in tasks.split(",") if task.strip()],
         reorder=ReorderSpec(flip=args.flip, hemisphere_cue=args.hemisphere_cue),
         position=PositionSpec(
             thickness_um=args.thickness,

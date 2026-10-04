@@ -535,3 +535,59 @@ def test_matching_rules_in_order():
     # Two section numbers in one name: no number at all.
     assert imports.match_sections(["x_s1_s2.png"], ["y_s1.png"]) == {}
     assert imports.section_number("folder/name_s0042_10x.png") == 42
+
+
+# --- as a job's supplied inputs ----------------------------------------------------------
+
+
+def test_the_imported_transform_carries_its_knobs(stack: Path, tmp_path: Path):
+    """``physical`` rebuilds the six numbers (knobs rounded as every stored
+    transform's are), about the render's centre at its pixel size."""
+    from langslice.core.affine import normalized_physical_affine
+
+    atlas = DeepAtlas()
+    workspace = make_workspace(stack, atlas)
+    document = job_export(export_rows(workspace, PER_SECTION), atlas_facts(atlas))
+    result = imports.import_placements(write_export(tmp_path / "q.json", document), workspace)
+    for placement in result.placements:
+        knobs_ = dict(placement.transform()["physical"])
+        assert knobs_.pop("pivot") == [0.5, 0.5]
+        rebuilt = normalized_physical_affine(size=placement.placement.render_size,
+                                             um_per_px=placement.placement.render_um_per_px,
+                                             **knobs_)
+        assert np.allclose(rebuilt, placement.params, atol=2e-3)
+
+
+def test_registration_inputs(stack: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    atlas = DeepAtlas()
+    workspace = make_workspace(stack, atlas)
+    document = job_export(export_rows(workspace, PER_SECTION), atlas_facts(atlas))
+    path = write_export(tmp_path / "q.json", document)
+    found = imports.registration_inputs(path, workspace)
+    inputs = found.inputs
+    assert set(inputs) == {"positions", "angles", "orientation", "transforms"}
+    assert set(inputs["angles"]) == {ID0, ID1, ID2}  # they differ: per section
+    assert inputs["orientation"][ID1] == {"flip": True, "rotation_deg": 90}
+    assert found.report["warnings"] == [] and found.report["markers_imported"] is False
+    # Only one file carries its own pixel size: the job gets one size, and
+    # every section is placed against it (the maps still hold exactly).
+    import langslice.core.workspace as module
+
+    monkeypatch.setattr(module, "read_pixel_size_um",
+                        lambda path: 2.0 * PIXEL_SIZE_UM if str(path).endswith(ID0) else None)
+    bare = make_workspace(stack, atlas, pixel_size=None)
+    found = imports.registration_inputs(path, bare)
+    size = found.inputs["pixel_size_um"]
+    assert found.report["pixel_size_source"] == "imported"
+    assert all(p.pixel_size_um == size and p.pixel_size_source == "host"
+               for p in found.result.placements)
+    assert any("replaced" in warning for warning in found.report["warnings"])
+    redrawn = make_workspace(stack, atlas, pixel_size=size)
+    for placement in found.result.placements:
+        given = Given(placement.section_id, placement.position_mm, placement.pitch_deg,
+                      placement.yaw_deg, placement.rotation_deg, placement.flip, {})
+        state = state_of(redrawn, [given])
+        state.slices[0].transform = {"params": list(placement.params)}
+        frame = section_frame(state, redrawn, state.slices[0])
+        assert np.allclose(frame.pixel_to_atlas_um(), placement.pixel_to_atlas_um,
+                           atol=1e-6, rtol=0)

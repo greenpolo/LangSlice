@@ -38,6 +38,7 @@ from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pytest
 
 from langslice.cli import main
@@ -755,12 +756,6 @@ def test_6_cli_init_takes_locked_and_damaged_sections(capsys, images):
        "--keep-linear", "kept")
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "A registration made elsewhere is READ (job/imports.py: QuickNII/VisuAlign "
-    "JSON and XML, DeepSlice JSON/XML/CSV, registration.json, into per-section "
-    "placements) but not wired into a job: no `init --registration` and no job "
-    "input takes the per-section cutting angles it carries. ABBA state files are "
-    "not read."))
 def test_6_a_quicknii_registration_can_be_imported(capsys, images, tmp_path):
     # A job placed by LangSlice exports quicknii.json; a new job from it must
     # land at the same placement.
@@ -773,6 +768,17 @@ def test_6_a_quicknii_registration_can_be_imported(capsys, images, tmp_path):
                          "--image-provider", "none", "--job-dir", str(tmp_path / "again"),
                          "--registration", str(quicknii))
     assert code == 0, envelope
+    result = envelope["result"]
+    assert result["tasks"] == ["nonlinear"]  # the imported placement kept as it is
+    assert [row["id"] for row in result["registration"]["sections"]] == list(IDS)
+    assert result["registration"]["format"] == "quicknii-json"
+    # The new job maps every section's file exactly as the source job did
+    # (QuickNII anchorings are rounded to 1e-6 voxels).
+    before = json.loads((source / "registration.json").read_text())["sections"]
+    after = json.loads((tmp_path / "again" / "registration.json").read_text())["sections"]
+    for old, new in zip(before, after, strict=True):
+        assert new["problem"] is None, new
+        assert np.allclose(new["pixel_to_atlas_um"], old["pixel_to_atlas_um"], atol=1e-3)
 
 
 def connected(monkeypatch: pytest.MonkeyPatch, value: bool) -> None:

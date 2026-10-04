@@ -463,10 +463,15 @@ def changes(before: dict[str, Any], after: dict[str, Any], *,
 
 def init(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelope:
     """Create (or continue) the job for the image folder *folder*: the job
-    flags of ``langslice linear run``; ingest as every host does."""
+    flags of ``langslice linear run``; ingest as every host does. With
+    ``--registration FILE`` the file's linear registration is the job's
+    supplied placement (``doors.jobs.with_registration``): the result's
+    ``registration`` says what was placed and what was not, and its
+    warnings are the envelope's (``BAD_REGISTRATION`` when it cannot be
+    read, matched one to one, or places no section)."""
     from langslice.core.discovery import discover_slices
-    from langslice.doors.cli.linear import add_linear_arguments, build_linear_spec
-    from langslice.doors.jobs import create
+    from langslice.doors.cli.linear import add_linear_arguments, spec_from_args
+    from langslice.doors.jobs import create, with_registration
     from langslice.job.job import InputsChanged
     from langslice.ops.registry import enabled
 
@@ -477,9 +482,16 @@ def init(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelope:
     if not images.is_dir() or not discover_slices(str(images)):
         return Envelope.failure("NO_IMAGES", f"No section images in {images}.")
     try:
-        spec = build_linear_spec(args, str(images))
+        spec = spec_from_args(args, str(images))
     except ValueError as exc:
         return Envelope.failure("BAD_ARGUMENTS", str(exc))
+    imported: dict[str, Any] | None = None
+    if args.registration:
+        try:
+            spec, imported = with_registration(spec, args.registration,
+                                               atlas_loader=atlas_loader, emit=progress)
+        except (OSError, ValueError) as exc:
+            return Envelope.failure("BAD_REGISTRATION", str(exc), job=str(images))
     try:
         opened = create(spec, atlas_loader=atlas_loader, emit=progress)
     except InputsChanged as exc:
@@ -494,10 +506,14 @@ def init(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelope:
             "verbs": enabled(spec, scripting=True), "resumed": bool(opened.job.undo_stack
                                                     or opened.job.redo_stack),
         }
+        if imported is not None:
+            result["registration"] = {key: value for key, value in imported.items()
+                                      if key != "warnings"}
         artifacts = [{"path": str(layout.folder / name), "kind": "card"}
                      for name in ("AGENTS.md", "CLAUDE.md")]
         artifacts.append({"path": str(layout.state_file), "kind": "state"})
         return Envelope(result=result, artifacts=artifacts,
+                        warnings=list((imported or {}).get("warnings") or []),
                         next=[f"langslice job {layout.folder} status"])
     finally:
         opened.close()

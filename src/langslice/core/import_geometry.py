@@ -132,7 +132,8 @@ class RecoveredPlacement:
     ``in_plane_error_px`` the largest in-plane disagreement at the corners
     after the round trip, in file pixels. ``in_plane`` is the six numbers
     read as rotation, scales and shear on the render's pixel frame
-    (:func:`langslice.core.affine.decompose_affine`).
+    (:func:`langslice.core.affine.decompose_affine`); ``render_size`` is
+    that oriented render's ``(width, height)``.
     """
 
     position_mm: float
@@ -146,11 +147,29 @@ class RecoveredPlacement:
     out_of_plane_um: float
     in_plane_error_px: float
     in_plane: dict[str, Any]
+    render_size: tuple[int, int]
 
     def to_dict(self) -> dict[str, Any]:
         out = asdict(self)
         out["params"] = list(self.params)
+        out["render_size"] = list(self.render_size)
         return out
+
+    def physical(self) -> dict[str, Any]:
+        """The six numbers as the knobs every stored transform carries
+        (``physical``: rotation, scales, shear and millimetre shifts about
+        the render's centre, :func:`langslice.core.transform.physical_params`,
+        rounded as it rounds), the inverse of
+        :func:`langslice.core.affine.normalized_physical_affine` on the
+        oriented render at ``render_um_per_px``."""
+        from langslice.core.affine import denormalized_affine
+        from langslice.core.transform import physical_params
+
+        width, height = self.render_size
+        matrix = denormalized_affine(self.params, self.render_size)
+        return {**physical_params(matrix, pivot=(width / 2.0, height / 2.0),
+                                  um_per_px=self.render_um_per_px),
+                "pivot": [0.5, 0.5]}
 
 
 def _native_to_um(atlas: Any, position_mm: float, plane: Plane, pitch: float,
@@ -265,4 +284,5 @@ def placement_from_pixel_map(
         file_um_per_px=float(file_um_per_px), render_um_per_px=render_um,
         out_of_plane_um=out_of_plane, in_plane_error_px=in_plane_error * native_px_in_file,
         in_plane=decompose_affine(list(params), render_size),
+        render_size=(int(render_size[0]), int(render_size[1])),
     )
