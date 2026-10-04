@@ -93,7 +93,7 @@ class PlacementEntry(TypedDict, total=False):
 
 @with_config(ConfigDict(extra="forbid"))
 class TransformEntry(TypedDict, total=False):
-    """One ``adjust_transforms`` entry: the five knobs, the pivot and a note."""
+    """One ``adjust_transforms`` entry: the knobs (shear optional), the pivot and a note."""
 
     id: str | int
     rotation_deg: float
@@ -101,6 +101,7 @@ class TransformEntry(TypedDict, total=False):
     scale_y: float
     translate_x_mm: float
     translate_y_mm: float
+    shear: float
     pivot: str | list[float]
     note: str
 

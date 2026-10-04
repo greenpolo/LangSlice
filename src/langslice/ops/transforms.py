@@ -21,9 +21,10 @@ from langslice.ops.refusal import Refused
 if TYPE_CHECKING:
     from langslice.linear.job import Job
 
-#: The knobs of a transform, in the order every payload lists them.
+#: The knobs of a transform, in the order every payload lists them. ``shear``
+#: is :func:`langslice.affine.decompose_affine`'s (0: none).
 KNOBS: tuple[str, ...] = (
-    "rotation_deg", "scale_x", "scale_y", "translate_x_mm", "translate_y_mm",
+    "rotation_deg", "scale_x", "scale_y", "translate_x_mm", "translate_y_mm", "shear",
 )
 
 
@@ -42,8 +43,11 @@ def interactive_transform(
     *size* and *um_per_px* are the section's working frame and its
     calibration; *pivot* is the rotation/scale centre on that frame (None:
     its centre) and *pivot_frac* the same point as canvas fractions, which
-    the record keeps beside the knobs.
+    the record keeps beside the knobs. *knobs* are :data:`KNOBS` (``shear``
+    may be left out: none); the record's ``physical`` lists all six, so a
+    tweak that copies a fit's knobs, shear included, keeps the fit's map.
     """
+    knobs = {**knobs, "shear": knobs.get("shear", 0.0)}
     six = normalized_physical_affine(size=size, um_per_px=um_per_px, pivot=pivot, **knobs)
     return {
         "kind": "interactive",

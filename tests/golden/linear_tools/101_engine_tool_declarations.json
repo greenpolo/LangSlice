@@ -982,13 +982,13 @@
    }
   },
   {
-   "description": "Set and show one to four independent sections in one undoable call.\n\nEach entry replaces the complete transform, including any previous\nspline or shear. A section may appear once per call; inspect its result\nbefore making a dependent correction in a later call. Call it as often\nas you need, on any section that has a position; the last call is what\nstays.\n\nArgs:\n    entries: One to four objects with id, rotation_deg (counter-clockwise\n        about the pivot, degrees), scale_x, scale_y (multipliers about\n        the pivot; 1.0 leaves the size alone), translate_x_mm (right),\n        translate_y_mm (down). Optional per entry: pivot (\"canvas\",\n        \"tissue\" or [fx, fy] fractions of the canvas) and note.\n    view: Picture options (described once in the job statement), one\n        for every entry's picture. Modes: \"overlay\" (default: the section\n        with the atlas lines on it), \"side_by_side\" (two images: the\n        section, then the atlas image, same scale and crop),\n        \"checkerboard\", \"outlines\" (the atlas lines and the section's\n        own silhouette on black), \"section\", \"template\" (the atlas\n        alone) or \"ab\" (two overlays at the same crop: these\n        parameters, then the section's stored transform, or identity\n        when it has none).\n\nReturns:\n    Per-section results with zero-based image_indexes into the attached\n    labelled images, in entry order, and the `view` they were drawn\n    with. All writes form one undo step. Repeating unchanged\n    parameters only redraws, without an undo step.",
+   "description": "Set and show one to four independent sections in one undoable call.\n\nEach entry replaces the complete transform, including any previous\nspline or shear: to keep a fit's shear, give it again. A section may\nappear once per call; inspect its result before making a dependent\ncorrection in a later call. Call it as often as you need, on any\nsection that has a position; the last call is what stays.\n\nArgs:\n    entries: One to four objects with id, rotation_deg (counter-clockwise\n        about the pivot, degrees), scale_x, scale_y (multipliers about\n        the pivot; 1.0 leaves the size alone), translate_x_mm (right),\n        translate_y_mm (down). Optional per entry: shear (a unitless\n        slant applied before the rotation: each point moves sideways\n        by shear times its distance below the pivot, in units of\n        scale_x; 0, the default, is none; the same number fit_affine\n        reports), pivot (\"canvas\", \"tissue\" or [fx, fy] fractions of\n        the canvas) and note.\n    view: Picture options (described once in the job statement), one\n        for every entry's picture. Modes: \"overlay\" (default: the section\n        with the atlas lines on it), \"side_by_side\" (two images: the\n        section, then the atlas image, same scale and crop),\n        \"checkerboard\", \"outlines\" (the atlas lines and the section's\n        own silhouette on black), \"section\", \"template\" (the atlas\n        alone) or \"ab\" (two overlays at the same crop: these\n        parameters, then the section's stored transform, or identity\n        when it has none).\n\nReturns:\n    Per-section results with zero-based image_indexes into the attached\n    labelled images, in entry order, and the `view` they were drawn\n    with. All writes form one undo step. Repeating unchanged\n    parameters only redraws, without an undo step.",
    "name": "adjust_transforms",
    "parameters_json_schema": {
     "$defs": {
      "TransformEntry": {
       "additionalProperties": false,
-      "description": "One ``adjust_transforms`` entry: the five knobs, the pivot and a note.",
+      "description": "One ``adjust_transforms`` entry: the knobs (shear optional), the pivot and a note.",
       "properties": {
        "id": {
         "anyOf": [
@@ -1029,6 +1029,10 @@
        },
        "scale_y": {
         "title": "Scale Y",
+        "type": "number"
+       },
+       "shear": {
+        "title": "Shear",
         "type": "number"
        },
        "translate_x_mm": {

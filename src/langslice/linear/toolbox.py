@@ -2058,6 +2058,7 @@ def build_tools(
         translate_x_mm: float,
         translate_y_mm: float,
         pivot: Any,
+        shear: float | None = None,
     ) -> _Staged | dict[str, Any]:
         """One section, its calibrated canvas and the pivot, or a refusal."""
         record = state.resolve(slice_id)
@@ -2072,9 +2073,13 @@ def build_tools(
                 "scale_y": float(scale_y),
                 "translate_x_mm": float(translate_x_mm),
                 "translate_y_mm": float(translate_y_mm),
+                "shear": 0.0 if shear is None else float(shear),
             }
         except (TypeError, ValueError):
             return {"status": "error", "error": "BAD_ARGS"}
+        if not all(math.isfinite(value) for value in params.values()):
+            return {"status": "error", "error": "BAD_ARGS",
+                    "message": "every transform number must be finite"}
         section = render_slice(ctx, record, long_edge=PREVIEW_LONG_EDGE)
         um_per_px, source = calibrate(state, ctx, record, section)
         try:
@@ -2145,6 +2150,7 @@ def build_tools(
         options: DisplayOptions,
         pivot: str | list[float] = "canvas",
         note: str = "",
+        shear: float | None = None,
     ) -> tuple[dict[str, Any], dict[str, Any] | None]:
         """One section's new in-plane transform, drawn: ``(result, record to write)``.
 
@@ -2157,7 +2163,7 @@ def build_tools(
         view = options.mode
         staged = stage(
             slice_id, rotation_deg, scale_x, scale_y, translate_x_mm,
-            translate_y_mm, pivot,
+            translate_y_mm, pivot, shear,
         )
         if isinstance(staged, dict):
             return staged, None
@@ -2176,14 +2182,16 @@ def build_tools(
             if view == "ab":
                 # The B side is drawn from the six numbers the section carried
                 # before this call, when there were any: they are the exact
-                # map, shear included, and the five knobs the payload reports
-                # cannot carry that shear.
+                # map, where the knobs the payload reports (shear included)
+                # are rounded. Knobs alone (no six numbers) are drawn as given.
                 before = (previous or {}).get("params")
                 other: Any = dict(IDENTITY_PARAMS)
                 if before is not None and len(before) == 6:
                     other = denormalized_affine(before, staged.section.size)
                 elif isinstance(stored, dict):
                     other = {key: float(stored[key]) for key in IDENTITY_PARAMS}
+                    if stored.get("shear"):
+                        other["shear"] = float(stored["shear"])
                 other_pivot = staged.pivot
                 if isinstance(stored, dict) and stored.get("pivot"):
                     fractions = [float(value) for value in stored["pivot"]]
@@ -2283,17 +2291,21 @@ def build_tools(
         """Set and show one to four independent sections in one undoable call.
 
         Each entry replaces the complete transform, including any previous
-        spline or shear. A section may appear once per call; inspect its result
-        before making a dependent correction in a later call. Call it as often
-        as you need, on any section that has a position; the last call is what
-        stays.
+        spline or shear: to keep a fit's shear, give it again. A section may
+        appear once per call; inspect its result before making a dependent
+        correction in a later call. Call it as often as you need, on any
+        section that has a position; the last call is what stays.
 
         Args:
             entries: One to four objects with id, rotation_deg (counter-clockwise
                 about the pivot, degrees), scale_x, scale_y (multipliers about
                 the pivot; 1.0 leaves the size alone), translate_x_mm (right),
-                translate_y_mm (down). Optional per entry: pivot ("canvas",
-                "tissue" or [fx, fy] fractions of the canvas) and note.
+                translate_y_mm (down). Optional per entry: shear (a unitless
+                slant applied before the rotation: each point moves sideways
+                by shear times its distance below the pivot, in units of
+                scale_x; 0, the default, is none; the same number fit_affine
+                reports), pivot ("canvas", "tissue" or [fx, fy] fractions of
+                the canvas) and note.
             view: Picture options (described once in the job statement), one
                 for every entry's picture. Modes: "overlay" (default: the section
                 with the atlas lines on it), "side_by_side" (two images: the
@@ -2366,6 +2378,7 @@ def build_tools(
                 options,
                 entry.get("pivot", "canvas"),  # type: ignore[arg-type]
                 str(entry.get("note", "")),
+                entry.get("shear"),
             )
             media = result.pop(TOOL_MEDIA_PARTS_KEY, [])
             result["image_indexes"] = list(range(len(parts), len(parts) + len(media)))
