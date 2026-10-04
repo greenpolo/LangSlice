@@ -472,3 +472,70 @@ def test_a_claude_job_on_a_read_only_folder_lives_under_its_id(
     assert entry["fallback"]["image_folder"] == str(read_only)
     session = open_saved_job(prepared["job_id"], lambda _n: _ATLAS)
     assert session.job.folder == target
+
+
+# --- a job folder moves with its images (review finding 2, 2026-10-04) -------------------
+
+
+def _create(folder: Path, **spec_kwargs: Any) -> Any:
+    from langslice.doors.jobs import create
+
+    spec = JobSpec(image_folder=str(folder), model="fake-model", preprocess="none",
+                   **spec_kwargs)
+    opened = create(spec, atlas_loader=lambda _n: _ATLAS, emit=lambda _m: None)
+    opened.close()
+    return opened
+
+
+def test_a_job_folder_moves_with_its_images(tmp_path: Path, monkeypatch: Any):
+    """The default job folder stores its images as its parent, so renaming
+    or moving the image folder (job folder inside) keeps the job: the CLI
+    and the library open it, the images are read where they are now, and a
+    host reopening the moved folder resumes it."""
+    import langslice
+    from langslice.doors.jobs import open_folder
+
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    folder = _folder(tmp_path / "stack")
+    _create(folder)
+    record = json.loads((folder / "langslice" / "job.json").read_text())
+    assert record["image_folder"] == ".."
+    moved = tmp_path / "elsewhere" / "renamed"
+    moved.parent.mkdir()
+    folder.rename(moved)
+    opened = open_folder(moved, atlas_loader=lambda _n: _ATLAS)
+    assert Path(opened.spec.image_folder) == moved
+    assert Path(opened.ctx.image_path("s0.png")).is_file()
+    opened.close()
+    job = langslice.open_job(str(moved / "langslice"), atlas_loader=lambda _n: _ATLAS)
+    job.set_positions(entries=[{"id": "s0.png", "position_mm": 0.1}])
+    job.close()
+    registration = json.loads((moved / "langslice" / "registration.json").read_text())
+    assert registration["image_folder"] == str(moved)
+    again = _create(moved)  # a host opening the moved folder resumes the job
+    assert again.job.state.by_id("s0.png").position_mm == 0.1
+
+
+def test_an_explicit_job_folder_whose_images_moved_says_how_to_reattach(
+    tmp_path: Path, monkeypatch: Any,
+):
+    from langslice.doors.jobs import NoJob, open_folder
+
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    folder = _folder(tmp_path / "dataset")
+    arm = tmp_path / "arm"
+    _create(folder, job_dir=str(arm))
+    assert json.loads((arm / "job.json").read_text())["image_folder"] == str(folder)
+    moved = tmp_path / "dataset-moved"
+    folder.rename(moved)
+    with pytest.raises(NoJob) as raised:
+        open_folder(arm, atlas_loader=lambda _n: _ATLAS)
+    message = str(raised.value)
+    assert str(folder) in message and "--job-dir" in message and "init" in message
+    # Reattached from the images' new place, the same job continues.
+    again = _create(moved, job_dir=str(arm))
+    assert json.loads((arm / "job.json").read_text())["image_folder"] == str(moved)
+    assert again.job.folder == arm
+    # Another image folder's job is still refused while its images exist.
+    with pytest.raises(ValueError, match="already holds the job of"):
+        _create(_folder(tmp_path / "other"), job_dir=str(arm))

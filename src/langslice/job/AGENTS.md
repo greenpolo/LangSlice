@@ -142,7 +142,16 @@ index) is relative to the job folder (`JobLayout.relative` /
 `JobLayout.resolve`; `job.checkpoint.state_paths` walks a state's
 paths). The trace identity in a deformation cache key is the stored
 (relative) artifact directory, so keys survive a move of the folder.
-`StackState.image_folder` itself stays absolute.
+`StackState.image_folder` itself stays absolute (rewritten by `Job.open`
+to where the images are now). `job.json`'s `image_folder` is `".."`
+(`layout.IMAGES_ARE_PARENT`) for the default job folder, so the job folder
+moves or is renamed with its images; an explicit job folder stores the
+absolute path. `layout.held_image_folder` resolves it (a default folder
+written with an absolute path that no longer exists: its parent), the
+CLI and library (`doors.jobs.read_spec`) open the images there, and when
+they are gone say how to reattach (`langslice job NEW_IMAGES init
+--job-dir FOLDER`); `check_owner` lets an explicit folder whose images no
+longer exist be taken over by the images it is opened with.
 
 ## Files
 

@@ -239,7 +239,8 @@ def registration_document(
         "atlas": atlas if atlas is not None else {"name": state.atlas},
         "plane": state.plane,
         "cutting_angles_deg": {"pitch": state.pitch_deg, "yaw": state.yaw_deg},
-        "image_folder": state.image_folder,
+        "image_folder": (str(workspace.image_folder) if workspace is not None
+                         else state.image_folder),
         "submitted": bool(state.submitted),
         "sections": [section_entry(state, workspace, layout, record, atlas)
                      for record in state.in_order()],

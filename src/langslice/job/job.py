@@ -688,6 +688,7 @@ class Job:
             if state is not None:
                 workspace.progress(f"[ingest] resuming from {layout.state_file}")
                 state.spec = spec.to_dict()
+                state.image_folder = str(images)  # where they are now (a moved folder)
                 state.submitted = False
                 undo, redo = history.load()
             else:

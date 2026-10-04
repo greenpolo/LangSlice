@@ -147,18 +147,62 @@ def locate_job_folder(
     return target, fallback
 
 
+#: ``job.json``'s ``image_folder`` when the job folder is the default one,
+#: ``<images>/langslice``: its parent. Stored relative, so the job folder
+#: moves (or is renamed) with its images. An explicit job folder
+#: (``--job-dir``) stores the absolute path it needs.
+IMAGES_ARE_PARENT = ".."
+
+
+def stored_image_folder(layout: JobLayout) -> str | None:
+    """What ``job.json`` stores as the image folder of *layout*."""
+    if layout.image_folder is None:
+        return None
+    if layout.folder == job_folder_for(layout.image_folder):
+        return IMAGES_ARE_PARENT
+    return str(layout.image_folder)
+
+
+def held_image_folder(folder: Path, held: dict[str, Any]) -> Path | None:
+    """The image folder a ``job.json`` record *held* (of the job folder
+    *folder*) names, as an absolute path, or None when it names none.
+
+    A relative value is under the job folder (:data:`IMAGES_ARE_PARENT`: its
+    parent). An absolute one is taken as it is, except a default job folder
+    (named ``langslice``) whose stored folder no longer exists, written
+    before the relative form: its parent, where its images moved with it.
+    """
+    value = held.get("image_folder")
+    if not isinstance(value, str) or not value:
+        value = (held.get("spec") or {}).get("image_folder") if isinstance(
+            held.get("spec"), dict) else None
+        if not isinstance(value, str) or not value:
+            return None
+    path = Path(value)
+    if not path.is_absolute():
+        return Path(os.path.normpath(os.path.join(os.path.abspath(folder), value)))
+    if not path.is_dir() and Path(folder).name == JOB_DIRNAME:
+        return Path(os.path.abspath(folder)).parent
+    return path
+
+
 def check_owner(layout: JobLayout) -> None:
     """Refuse a job folder that holds the job of ANOTHER image folder.
 
     Two jobs never share a folder silently; the same image folder's job is
-    continued. Raises ``ValueError``.
+    continued. The default job folder's images are its parent wherever it
+    moves (:data:`IMAGES_ARE_PARENT`). An explicit folder whose image folder
+    no longer exists is taken over by the images it is opened with (they
+    moved: ``langslice job NEW_IMAGES init --job-dir FOLDER``). Raises
+    ``ValueError``.
     """
     held = read_job_file(layout)
     if held is None or layout.image_folder is None:
         return
-    owner = held.get("image_folder")
-    if isinstance(owner, str) and os.path.realpath(owner) != os.path.realpath(
-            layout.image_folder):
+    owner = held_image_folder(layout.folder, held)
+    if owner is None or not owner.is_dir():
+        return
+    if os.path.realpath(owner) != os.path.realpath(layout.image_folder):
         raise ValueError(
             f"{layout.folder} already holds the job of {owner}, not of {layout.image_folder}. "
             "Choose another job folder (--job-dir) for this one.")
@@ -337,6 +381,6 @@ def write_job_file(layout: JobLayout, **fields: Any) -> dict[str, Any]:
     record = {**held, **fields, FORMAT_KEY: JOB_FORMAT_VERSION}
     record.setdefault("created_at", datetime.now(timezone.utc).isoformat(timespec="seconds"))
     if layout.image_folder is not None:
-        record["image_folder"] = str(layout.image_folder)
+        record["image_folder"] = stored_image_folder(layout)
     write_json_atomic(str(layout.job_file), dict(sorted(record.items())))
     return record

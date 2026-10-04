@@ -25,7 +25,13 @@ from langslice.core.spec import JobSpec
 from langslice.core.workspace import Workspace, log_progress
 from langslice.doors.card import write_card
 from langslice.job.job import Job
-from langslice.job.layout import JobLayout, job_folder_for, locate_job_folder, read_job_file
+from langslice.job.layout import (
+    JobLayout,
+    held_image_folder,
+    job_folder_for,
+    locate_job_folder,
+    read_job_file,
+)
 
 if TYPE_CHECKING:
     from langslice.doors.tools.toolbox import ToolBox
@@ -89,12 +95,24 @@ def find(path: str | os.PathLike[str]) -> Path:
 
 
 def read_spec(job_folder: Path) -> JobSpec:
-    """The job's spec as its ``job.json`` holds it, opened as a resume."""
+    """The job's spec as its ``job.json`` holds it, opened as a resume.
+
+    The image folder is resolved from the job folder
+    (:func:`~langslice.job.layout.held_image_folder`: the default job folder's
+    images are its parent, wherever it moved). ``NoJob``, with how to
+    reattach the job, when its images are not where it says."""
     record = read_job_file(JobLayout(job_folder)) or {}
     data = dict(record.get("spec") or {})
     if not data:
         raise NoJob(f"{job_folder / 'job.json'} holds no job settings")
-    data["image_folder"] = str(record.get("image_folder") or data.get("image_folder") or "")
+    images = held_image_folder(job_folder, record)
+    if images is None or not images.is_dir():
+        raise NoJob(
+            f"The images of the job in {job_folder} are not in {images} any more. If they "
+            "moved, reattach the job from their new folder: langslice job NEW_IMAGE_FOLDER "
+            f"init --job-dir {job_folder} (or move the job folder back beside them, as "
+            "<images>/langslice).")
+    data["image_folder"] = str(images)
     spec = JobSpec.from_dict(data)
     spec.resume = True
     return spec
