@@ -46,7 +46,7 @@ import numpy as np
 from langslice.core.affine import pixel_center_map
 from langslice.core.handoff import linear_placement_matrix
 from langslice.core.image_prep import prepared_size, working_size
-from langslice.core.sections import PREVIEW_LONG_EDGE
+from langslice.core.sections import PREVIEW_LONG_EDGE, render_slice
 from langslice.core.space import Plane
 
 if TYPE_CHECKING:
@@ -208,6 +208,18 @@ def placement_problem(state: StackState, record: SliceState) -> str | None:
     return None
 
 
+#: ``registration.json``'s ``problem`` for a section mapped at an estimated
+#: scale: neither the file nor the host gives a pixel size.
+SCALE_UNKNOWN = ("pixel size unknown: neither the file nor the host gives one, so the "
+                 "scale is estimated from the tissue width at this position, as the "
+                 "pictures draw it")
+
+
+def scale_problem(frame: SectionFrame) -> str | None:
+    """Why *frame*'s scale is not a calibration (None: it is one)."""
+    return SCALE_UNKNOWN if frame.calibration_source == "estimated" else None
+
+
 def section_frame(state: StackState, workspace: Workspace, record: SliceState) -> SectionFrame:
     """The section's linear frame (``ValueError`` when it has none:
     :func:`placement_problem`). Memoized on the workspace
@@ -217,7 +229,6 @@ def section_frame(state: StackState, workspace: Workspace, record: SliceState) -
         raise ValueError(f"{record.id}: {problem}")
     if state.atlas != workspace.spec.atlas or state.plane != workspace.spec.plane:
         raise ValueError("State and workspace disagree about the atlas or plane")
-    transform = record.transform or {}
     path = workspace.image_path(record.id)
     spec = workspace.spec
     key = (
@@ -225,9 +236,10 @@ def section_frame(state: StackState, workspace: Workspace, record: SliceState) -
         float(record.position_mm),  # type: ignore[arg-type]
         state.atlas, state.plane, state.pitch_deg, state.yaw_deg,
         stored_params(record),
-        json.dumps(transform.get("calibration"), sort_keys=True, default=str),
         json.dumps((spec.inputs or {}).get("pixel_size_um"), default=str),
         json.dumps(spec.host_preprocessing, sort_keys=True, default=str),
+        # An estimated scale is measured on the default appearance's render.
+        str(spec.preprocess),
     )
     held = workspace.frame_cache.get(key)
     if held is None:
@@ -258,16 +270,17 @@ def _section_frame(state: StackState, workspace: Workspace, record: SliceState) 
     unturned_render = prepared_size(working, max_long_edge=PREVIEW_LONG_EDGE)
     render_scale = factor * working[0] / float(unturned_render[0])
     file_um, source = workspace.calibration(record.id)
-    transform = record.transform or {}
     if file_um is not None:
         render_um = float(file_um) * render_scale
     else:
-        try:
-            render_um = float((transform.get("calibration") or {})["section_um_per_px"])
-        except (KeyError, TypeError, ValueError) as exc:
-            raise ValueError(f"{record.id}: no pixel size (neither the file, the host nor "
-                             "the stored transform gives one)") from exc
-        source = str((transform.get("calibration") or {}).get("source", "stored"))
+        # Neither the file nor the host gives a pixel size: the scale every
+        # placement picture draws this section at, estimated from its tissue
+        # width at its CURRENT position (core.transform.calibrate), never the
+        # one stored with a transform written at another position.
+        from langslice.core.transform import calibrate
+
+        working_frame = render_slice(workspace, record, long_edge=PREVIEW_LONG_EDGE)
+        render_um, source = calibrate(state, workspace, record, working_frame)
         file_um = render_um / render_scale
     if not np.isfinite(render_um) or render_um <= 0:
         raise ValueError(f"{record.id}: the pixel size must be finite and positive")

@@ -156,7 +156,7 @@ def section_entry(
     atlas: dict[str, Any] | None,
 ) -> dict[str, Any]:
     """One section of ``registration.json``."""
-    from langslice.core.maps import placement_problem, section_frame
+    from langslice.core.maps import placement_problem, scale_problem, section_frame
 
     folder = layout.section_dir(record.id)
     entry: dict[str, Any] = {
@@ -176,6 +176,8 @@ def section_entry(
         except Exception as exc:  # an unreadable file, a missing atlas: said, not raised
             logger.warning("No frame for %s", record.id, exc_info=True)
             problem = str(exc)
+        else:
+            problem = scale_problem(frame)
     entry["image"] = None if frame is None else {
         "file": record.id, "size": list(frame.file_size),
         "pixel_size_um": frame.file_um_per_px, "pixel_size_source": frame.calibration_source,
