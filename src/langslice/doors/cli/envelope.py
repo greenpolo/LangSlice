@@ -58,9 +58,8 @@ FIXES: dict[str, str] = {
                          "`langslice job {job} status`.",
     "UNKNOWN_SECTION": "Use a filename or corrected index from `langslice job {job} status`.",
     "NO_JOB": "Create the job first: `langslice job <image folder> init`.",
-    "JOB_EXISTS": "Open it with `langslice job {job} status`, or pass --resume to init.",
     "NO_IMAGES": "Point init at a folder of section images (TIFF, PNG or JPEG).",
-    "NOTHING_TO_UNDO": "Nothing was written since the job opened its history.",
+    "NOTHING_TO_UNDO": "The job's history holds no earlier step.",
     "NOTHING_TO_REDO": "Redo follows an undo only.",
     "NO_POSITION": "Write the section's position first (set_positions).",
     "MISSING_POSITIONS": "Write every section's position first (set_positions).",
@@ -71,6 +70,9 @@ FIXES: dict[str, str] = {
     "ORDER_POSITION_MISMATCH": "Make positions run one way along the order "
                                "(reorder_slices or set_positions).",
     "LOCKED": "The user locked this section's in-plane alignment; leave it out.",
+    "NOTHING_FITTED": "Each section's row under result.results names its problem.",
+    "NOTHING_ADJUSTED": "Each section's row under result.results names its problem.",
+    "NOTHING_WRITTEN": "See result.unknown_ids and result.rejected.",
     "UNKNOWN_RUN": "List the background runs with `langslice job {job} status`.",
     "STILL_RUNNING": "Wait again: `langslice job {job} wait <id>`.",
     "RUN_LOST": "The background process ended without an answer; see its log under "

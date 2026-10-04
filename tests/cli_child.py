@@ -13,9 +13,13 @@ import sys
 from typing import Any
 
 
-def install(loader: Any) -> None:
-    """Every job the CLI and the library open reads *loader*'s atlas."""
+def install(loader: Any, put: Any = setattr) -> None:
+    """Every job the CLI and the library open reads *loader*'s atlas, and a
+    background run starts this module, not the real CLI (whose BrainGlobe
+    atlas would be downloaded). *put* sets each attribute (a test passes
+    ``monkeypatch.setattr``, so both are undone after it)."""
     import langslice.doors.jobs as jobs
+    from langslice.doors.cli import background
 
     original = jobs.context
 
@@ -23,7 +27,8 @@ def install(loader: Any) -> None:
         kwargs["atlas_loader"] = loader
         return original(*args, **kwargs)
 
-    jobs.context = context  # type: ignore[assignment]
+    put(jobs, "context", context)
+    put(background, "CHILD_COMMAND", [sys.executable, "-m", "tests.cli_child"])
 
 
 def main() -> int:
