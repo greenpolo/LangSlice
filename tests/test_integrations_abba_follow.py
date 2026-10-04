@@ -354,3 +354,19 @@ def test_removed_landmark_tools_do_not_drive_native_comparison(setup, name):
     assert not comparison.batches
     assert not setup.view.navigated and not setup.fits
     assert name not in abba_follow._WRITES
+
+
+@pytest.mark.parametrize("name, refreshed", [
+    ("fit_deformable", True), ("trace_borders", True), ("mark_damaged", True),
+    ("preprocess", False),
+])
+def test_nonlinear_damage_and_appearance_tools_are_followed(setup, name, refreshed):
+    comparison = _Comparison()
+    follower = abba_follow.AbbaFollower(
+        setup.abba, setup.mapping, comparison_factory=lambda: comparison,
+    )
+    follower.on_event(_event(name=name, targets=("b",)))
+    assert comparison.batches == [[("b", 1.0)]]
+    follower.on_event(_event(kind="tool_end", name=name))
+    assert len(comparison.batches) == (2 if refreshed else 1)
+    assert not setup.view.navigated

@@ -77,13 +77,13 @@ def _finite_positive(value: Any, name: str) -> float:
     return result
 
 
-def _json_event(value: Any) -> Any:
+def public_event(value: Any) -> Any:
     """Forward public event data, excluding media bytes and private reasoning."""
     if isinstance(value, dict):
-        return {str(key): _json_event(item) for key, item in value.items()
+        return {str(key): public_event(item) for key, item in value.items()
                 if key not in {"data", "thought_signature", "encrypted_content"}}
     if isinstance(value, (list, tuple)):
-        return [_json_event(item) for item in value]
+        return [public_event(item) for item in value]
     if value is None or isinstance(value, (str, bool, int)):
         return value
     if isinstance(value, float) and math.isfinite(value):
@@ -541,7 +541,7 @@ def run_linear(params: dict[str, Any], emit: Emit) -> dict[str, Any]:
         state = asyncio.run(engine.run(
             spec, on_write=checkpoint, on_open=checkpoint.attach,
             emit=lambda message: emit({"kind": "log", "message": message}),
-            on_event=lambda event: emit({"kind": "agent_event", "event": _json_event(event)}),
+            on_event=lambda event: emit({"kind": "agent_event", "event": public_event(event)}),
         ))
     # Observers are deliberately isolated by the engine. A final explicit
     # conversion ensures a failed native geometry export cannot report success.

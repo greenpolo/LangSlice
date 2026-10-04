@@ -35,7 +35,12 @@ from langslice.core.opening import CLAUDE_IMAGE_LIMIT, CLAUDE_MAX_VIEW_EDGE, ope
 from langslice.core.spec import JobSpec
 from langslice.core.state import StackState
 from langslice.doors.api import setup as provider_setup
-from langslice.doors.api.abba_worker import PreparedLinear, checkpoint_callback, prepare_linear
+from langslice.doors.api.abba_worker import (
+    PreparedLinear,
+    checkpoint_callback,
+    prepare_linear,
+    public_event,
+)
 from langslice.doors.api.claude_jobs import load_job
 from langslice.doors.card import write_card
 from langslice.doors.mcp.host_channel import HostChannel
@@ -61,6 +66,22 @@ INSTRUCTIONS = (
     "show_stack page before writing. Work only through the LangSlice tools and "
     "finish with `submit`."
 )
+
+
+class EventRelay:
+    """The session's tool events (``tool_start`` / ``tool_end``, the
+    ``show_stack`` pages as ``seed``), forwarded to ``target`` when a host
+    listens (the ABBA channel of a saved ABBA job), dropped otherwise. The
+    toolbox emits them (:func:`langslice.doors.tools.toolbox.build_tools`'s
+    ``on_event``); they carry saved view paths, never image bytes."""
+
+    def __init__(self) -> None:
+        self.target: Callable[[dict[str, Any]], None] | None = None
+
+    def __call__(self, event: dict[str, Any]) -> None:
+        target = self.target
+        if target is not None:
+            target(event)
 
 
 @dataclass
@@ -91,6 +112,8 @@ class Session:
     #: The job's nonlinear task names an image model this door cannot reach
     #: (:func:`image_model_off`): its tools and statement are a run without one.
     image_model_off: bool = False
+    #: Tool events, forwarded to the host channel of a saved ABBA job.
+    events: EventRelay = field(default_factory=EventRelay)
 
     @property
     def spec(self) -> JobSpec:
@@ -213,9 +236,10 @@ def open_job(
     trace_dir = os.environ.get(TRACE_DIR_ENV)
     trace = McpTrace(trace_dir, ctx.image_folder) if trace_dir else None
     # The host is Claude: its pictures are capped at Claude's largest image.
+    events = EventRelay()
     box = build_tools(job.state, ctx, spec, job=job, max_view_edge=CLAUDE_MAX_VIEW_EDGE,
-                      image_model_connected=not off)
-    return Session(job, ctx, box, trace, image_model_off=off)
+                      image_model_connected=not off, on_event=events)
+    return Session(job, ctx, box, trace, image_model_off=off, events=events)
 
 
 # Budget includes JSON/text overhead, not only encoded image bytes.
@@ -269,16 +293,22 @@ def opening_pages(session: Session) -> list[list[ContentBlock]]:
     return pages
 
 
-def save_page(session: Session, page: int, blocks: list[ContentBlock]) -> None:
-    """Save the page's pictures in the job folder, as the bytes the host got."""
+def save_page(session: Session, page: int, blocks: list[ContentBlock]) -> list[str]:
+    """Save the page's pictures in the job folder, as the bytes the host got;
+    return their paths (written in the background)."""
+    from langslice.job.views import PICTURE_FILE, captured
+
     pictures = [base64.b64decode(block.data) for block in blocks
                 if isinstance(block, ImageContent)]
     try:
-        session.job.views.save(tool="show_stack", arguments={"page": page},
-                               pictures=[(data, None) for data in pictures])
+        with captured() as saved:
+            session.job.views.save(tool="show_stack", arguments={"page": page},
+                                   pictures=[(data, None) for data in pictures])
+        return [str(item.folder / PICTURE_FILE) for item in saved]
     except Exception:  # saving must never break a page
         logger.warning("Could not queue the pictures of show_stack page %s", page,
                        exc_info=True)
+        return []
 
 
 def briefing(session: Session) -> list[ContentBlock]:
@@ -304,6 +334,9 @@ def open_saved_job(job_id: str, atlas_loader: Callable[[str], Any] | None) -> Se
     if trace_dir:
         session.trace = McpTrace(trace_dir, session.ctx.image_folder)
     session.channel = HostChannel(job_id, record.get("host_channel"))
+    channel = session.channel
+    session.events.target = lambda event: channel.event(
+        {"kind": "agent_event", "event": public_event(event)})
     checkpoints = checkpoint_callback(prepared, session.channel.event)
     checkpoints.attach(session.job, session.ctx)
     session.host_update = checkpoints
@@ -490,7 +523,14 @@ def build_server(
             if not 1 <= page <= len(session.pages):
                 raise ValueError(f"page must be between 1 and {len(session.pages)}")
             blocks = session.pages[page - 1]
-            save_page(session, page, blocks)
+            views = save_page(session, page, blocks)
+            # The opening pages are this door's seed: the host's viewer
+            # follows the whole stack and its log shows the saved pictures.
+            try:
+                session.events({"kind": "seed", "page": page, "views": views,
+                                "text": f"Opening pictures, page {page}"})
+            except Exception:
+                logger.warning("Could not forward the show_stack event", exc_info=True)
             if session.trace is not None:
                 session.trace.write("show_stack", page=page, content=describe_blocks(blocks))
             return blocks
