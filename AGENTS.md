@@ -123,8 +123,8 @@ deformation) and the image-model border route (`core/nonlinear/`).
     `sides.py`): `src/langslice/core/atlas/CLAUDE.md`.
   - `core/deformable/` — the deformable-fit engine behind the linear agent's
     `fit_deformable` tool (task `nonlinear`) and behind the fit of the image
-    model's lines in `langslice nonlinear register --deformation deformable`
-    and the ABBA registration plugin (`core/nonlinear/border_fit.py`; no
+    model's lines in the core border routes and the ABBA registration plugin
+    (`core/nonlinear/border_fit.py`; no
     export adapter reads its records yet), whose prepared images and Elastix
     plumbing (the one itk-elastix wrapper, `engines.py`) also run
     `fit_affine`'s Elastix affine: ANTs SyN (optional `registration` extra)
@@ -230,7 +230,7 @@ deformation) and the image-model border route (`core/nonlinear/`).
   `media.py` the ADK message parts); `doors/mcp/` the MCP server
   (`langslice mcp`); `doors/api/` what the MCP door, the CLI and the engine
   service share (the engine contract's Pydantic models, the
-  register/quick-affine/export runtime, setup and credentials, saved Claude
+  quick-affine/export runtime, setup and credentials, saved Claude
   jobs, the JVM-free linear snapshot worker `abba_worker.py`). The agent CLI for coding
   agents (`doors/cli/`: `langslice job FOLDER VERB`, `langslice ops`,
   `langslice schema`; one JSON envelope on stdout, exit codes 0/2/3/4,
@@ -295,8 +295,10 @@ deformation) and the image-model border route (`core/nonlinear/`).
 - `hosts/` — host connectors that run in LangSlice's own environment:
   `hosts/integrations/` (the ABBA registration plugin, the live linear
   mirror, the ABBA viewer and log: `src/langslice/hosts/integrations/CLAUDE.md`)
-  `hosts/api/` (the engine service the Fiji connector starts, and the ABBA
-  plugin's `nonlinear.abba` worker) and `hosts/cli.py` (`abba`, `serve`):
+  `hosts/api/` (the engine service the Fiji connector starts; its
+  `nonlinear.abba` worker and the Fiji connector's uncalled Java
+  `nonlinear(...)` were removed 2026-10-04) and `hosts/cli.py` (`abba`,
+  `serve`):
   `src/langslice/hosts/CLAUDE.md`.
 - Compatibility shims, for the sibling repos only (LangSlice imports none;
   import-linter's `no-shims-inside` contract): `linear/` (`JobSpec` & co.,
@@ -362,18 +364,26 @@ program. Code that runs in LangSlice's own environment lives in
   `registration.json`) is read into per-section placements by
   `job/imports.py` over the exact inverse geometry
   `core/import_geometry.py`; not yet wired into a job's inputs.
-- Registration is exactly two border-based routes, chosen automatically by
-  whether a placement is supplied: route "supplied" is one image-model call
-  that moves a supplied linear/host placement's drawn boundaries onto the
-  tissue; route "atlas" (no placement) fits a local silhouette placement and
-  asks the model to draw boundaries from nothing against an outlined
-  grayscale atlas template, with an optional second corrective call
-  (`passes=2`). Raw model replies, extracted boundaries on original histology,
-  and fitted atlas overlays are separate. The fit of the model's lines is the
-  deformable package's (`--deformation deformable`; the Elastix residual fit
-  was retired 2026-10-04). The initial placement and residual
-  fit are composed in exported coordinates. See `docs/nonlinear_design.md`;
-  there is no hosted-router retry loop.
+- Every way of using LangSlice goes through one job folder and its verbs
+  (the agent run, the agent CLI `langslice job`, the library, MCP, the agent
+  tools); the one-shot `langslice nonlinear register` / `register.run`
+  pipeline was removed 2026-10-04.
+- Image-model registration is exactly two border-based routes (the core's
+  `core/nonlinear/border_registration.py`): route "supplied" is one
+  image-model call that moves a linear/host placement's drawn boundaries onto
+  the tissue — on a job, the `trace_borders` verb; route "atlas"
+  (placement-free) asks the model to draw boundaries from nothing on the
+  clean section against an outlined grayscale atlas template at its
+  position and its own cutting angles, with an optional second corrective call (`passes=2`) — on a job,
+  the HIDDEN scripting verb `trace_from_atlas` (`ops/traces.py`,
+  `registry.Verb.hidden`: the agent CLI and the library call it by name; no
+  listing, agent tool, MCP tool or public doc offers it; kept for
+  experiments). Both record the same trace, so the fit of the model's lines
+  is `fit_deformable`'s traced fit sections on top of the section's linear
+  placement (the deformable package's; the Elastix residual fit was retired
+  2026-10-04). Raw model replies, extracted boundaries on original
+  histology, and fitted atlas overlays are separate. See
+  `docs/nonlinear_design.md`; there is no hosted-router retry loop.
 - Positions are atlas-native millimeters from the anterior edge of the volume.
 - Atlas orientation assumptions are centralized in `src/langslice/core/space.py`,
   which derives AP/DV/ML axis indices from the atlas orientation via

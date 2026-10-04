@@ -7,7 +7,7 @@ from typing import Any, cast
 import pytest
 
 from langslice.doors.api import runtime
-from langslice.doors.api.models import EngineLogEvent, EngineRequest, RegisterResult
+from langslice.doors.api.models import EngineLogEvent, EngineRequest, QuickAffineResult
 from langslice.hosts.api.service import handle_request, run_stdio
 
 
@@ -58,7 +58,7 @@ def test_validation_error_returns_error() -> None:
         json.dumps(
             {
                 "id": "2",
-                "method": "register.run",
+                "method": "quick_affine.run",
                 "params": {"atlas": "allen_mouse_25um"},
             }
         )
@@ -70,24 +70,19 @@ def test_validation_error_returns_error() -> None:
 
 
 def test_progress_events_are_emitted_before_result(monkeypatch: pytest.MonkeyPatch) -> None:
-    def fake_run_register(request, emit=None):  # noqa: ANN001
+    def fake_run_quick_affine(request, emit=None):  # noqa: ANN001
         assert request.image_path == "slice.png"
         if emit is not None:
             emit(EngineLogEvent(kind="log", message="starting"))
-        return RegisterResult(
-            accepted_correspondence_count=0,
-            rotation_deg=0.0,
-            translation_px=(0.0, 0.0),
-            scale=(1.0, 1.0),
-            shear=0.0,
-        )
+        return QuickAffineResult(warped_slice_path="out.png", elapsed_s=0.0,
+                                 silhouette_iou=1.0)
 
-    monkeypatch.setattr(runtime, "run_register", fake_run_register)
+    monkeypatch.setattr(runtime, "run_quick_affine", fake_run_quick_affine)
     messages = _run_lines(
         json.dumps(
             {
                 "id": "3",
-                "method": "register.run",
+                "method": "quick_affine.run",
                 "params": {
                     "image_path": "slice.png",
                     "atlas": "allen_mouse_25um",
@@ -108,7 +103,7 @@ def test_validation_error_for_unknown_param_key() -> None:
         json.dumps(
             {
                 "id": "4",
-                "method": "register.run",
+                "method": "quick_affine.run",
                 "params": {
                     "image_path": "slice.png",
                     "atlas": "allen_mouse_25um",

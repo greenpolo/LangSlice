@@ -26,7 +26,6 @@ from langslice.doors.api.models import (
     LinearEstimateResult,
     PreprocessPreviewRequest,
     QuickAffineRequest,
-    RegisterRequest,
     SetupApiKeyRequest,
     SetupLoginRequest,
 )
@@ -115,22 +114,14 @@ def handle_request(request: EngineRequest, emit: EmitEventEnvelope) -> EngineRes
 
         apply_saved_credentials()
 
-    if request.method in {"linear.run", "nonlinear.abba"}:
+    if request.method == "linear.run":
         from langslice.doors.api import abba_worker
-        from langslice.hosts.api import nonlinear_worker
 
-        operation = (
-            abba_worker.run_linear if request.method == "linear.run"
-            else nonlinear_worker.run_nonlinear
-        )
-        data = operation(request.params, data_emit)
+        data = abba_worker.run_linear(request.params, data_emit)
         return EngineResultEnvelope(id=request.id, type="result", result=data)
 
     if request.method == "version":
         result = runtime.get_version()
-    elif request.method == "register.run":
-        params = RegisterRequest.model_validate(request.params)
-        result = runtime.run_register(params, emit=runtime_emit)
     elif request.method == "quick_affine.run":
         params = QuickAffineRequest.model_validate(request.params)
         result = runtime.run_quick_affine(params, emit=runtime_emit)

@@ -40,8 +40,8 @@ import a host. The QUINT entry below describes that file.
   at `voxel_size_um`; since 2026-10-04, replacing the Elastix residual fit),
   and the provider is resolved here (`providers.registry.resolve_image_model`).
   Provider `none` calls no model and fits nothing: the landmarks are the
-  identity, ABBA's placement stands (as `nonlinear register`'s model-free
-  route).
+  identity, ABBA's placement stands (as the core border route's model-free
+  diagnostic).
   The fit maps output histology coordinates to the rough atlas frame; ABBA
   receives the paired coordinates in the opposite direction, not a negated
   displacement field. The measured ABBA↔brainglobe AP offset is ~0.99, not
@@ -269,9 +269,10 @@ not use `abba_python` or PyCommandBuilder. Setup loads without Python and owns
 environment selection; authentication runs in the worker. The existing modules
 above remain the Python-started ABBA route.
 
-`doors/api/abba_worker.py` reuses the linear engine, and
-`hosts/api/nonlinear_worker.py` the nonlinear
-`compute_registration_landmarks`, without importing Java. Linear snapshots are
+`doors/api/abba_worker.py` reuses the linear engine without importing Java.
+(`compute_registration_landmarks` is the abba-python plugin's own; the
+engine service's `nonlinear.abba` worker that also called it, reachable only
+from an uncalled method of the Fiji connector, was removed 2026-10-04.) Linear snapshots are
 centred/calibrated; host AP mapping is measured, ingestion emits no mutations,
 and streamed updates express complete replacement corrections in world mm.
 Every checkpoint also carries `updates_since_start` (ingested state to that

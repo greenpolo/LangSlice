@@ -30,9 +30,10 @@ command reaches the host commands by module path only (`hosts/cli.py`,
   `integrations/CLAUDE.md`. The QUINT writer that used to sit there is
   `job/quint.py` (an operation writes it).
 - `api/` — `service.py` (`langslice serve --stdio`: the JSON-lines engine
-  service the Fiji connector starts) and `nonlinear_worker.py`
-  (`nonlinear.abba`: the image-model refinement of ABBA's placement through
-  the ABBA plugin). The protocol models, the runtime handlers, setup, saved
+  service the Fiji connector starts). Its `nonlinear.abba` worker
+  (`nonlinear_worker.py`), whose only caller was the Fiji connector's unused
+  Java `nonlinear(...)`, was removed 2026-10-04; ABBA's nonlinear route is the
+  abba-python registration plugin (`integrations/abba.py`). The protocol models, the runtime handlers, setup, saved
   Claude jobs and the JVM-free linear snapshot worker are door-level, in
   `doors/api/` (moved down 2026-10-04). `docs/abba_plugin_design.md`,
   `docs/abba_installation.md`.

@@ -6,7 +6,6 @@ The CLI is grouped by method:
 
 ```bash
 langslice linear    {run, quick-affine}
-langslice nonlinear {register}
 langslice           {version, login, serve, abba, mcp}
 langslice claude    {prepare}
 langslice job FOLDER {init, VERB, runs [ID], wait [ID]}   # the agent CLI
@@ -16,9 +15,8 @@ langslice           {ops, schema [VERB]}                  # the agent CLI's cata
 The commands live in `src/langslice/doors/cli/`, one module per group
 (`langslice.cli:main` is the entry point).
 
-`linear` and `nonlinear` are independent. `nonlinear register` takes a slice
-position as an argument and does not care where it came from, so it can follow
-`langslice linear run` or a placement made in another tool.
+The nonlinear step does not care where the linear placement came from: the
+agent's, or one made in another tool and supplied with the job.
 
 ## Linear: Order, Position, Transform
 
@@ -265,65 +263,34 @@ B-spline.
 ## Nonlinear: Border Refinement
 
 ```bash
-# No placement: route "atlas" draws boundaries against the outlined atlas (one model call)
-langslice nonlinear register slice.png --position 3.9
+# In the agent run: the image tool and the deformable fit (task nonlinear)
+langslice linear run FOLDER --tasks nonlinear
 
-# Supplied placement: route "supplied" corrects the placed borders directly (one model call)
-langslice nonlinear register slice.png --position 3.9 --initial-alignment placement.json
+# Verb by verb on the job (a placement made by the agent or supplied at init)
+langslice job FOLDER trace_borders --id s01.tif
+langslice job FOLDER fit_deformable --slices s01.tif --fit-section traced_lines
 ```
 
-There are exactly two border-based routes, chosen automatically by whether a
-placement is supplied. There is no colormap route left: an image model is
-never shown a colored atlas region map on either route.
+The image-model border correction is one step of the job: it starts from the
+section's linear placement (made by the agent, or supplied with the job:
+`--positions`, `--transforms` on `langslice job FOLDER init`). The image model
+receives the placed yellow atlas borders over histology and the same
+photograph without lines, and moves the boundaries onto the visible tissue
+(`trace_borders`, one call per section, the first reply at a placement kept).
+No image model is ever shown a colored atlas region map.
 
-With a supplied placement (route "supplied"), the image model receives the
-placed yellow atlas borders over histology, followed by the same photograph
-without lines, and adjusts the boundaries to match the visible tissue.
-
-Without a placement (route "atlas"), a local silhouette-moments fit stands in
-for the rough placement, and the model instead draws boundaries from nothing
-onto the clean tissue, using an outlined grayscale atlas template (the
-reference plate with its own thin yellow boundaries) as its only atlas
-reference. Add `--passes 2` for an optional second call that audits and
-corrects the first pass's lines against the same template; pass 1 alone was
-measured sufficient on undamaged coronal sections, so `--passes 1` (the
-default) is fine unless the first pass looks incomplete.
-
-After either route's model call(s), yellow lines are extracted and displayed
-on the original photograph. By default (`--deformation none`) no fit runs: the
-residual is identity and the exported placement is the rough one.
-`--deformation deformable` fits the model's lines with the deformable package
-(`src/langslice/core/nonlinear/border_fit.py`: the lines against the atlas family
-borders, Elastix B-spline, the linear agent's `fit_deformable` with
-`traced_lines`) and transfers the correction to the atlas labels; the fitted
-borders are drawn on the original photograph, the fit's diagnostics go to
-`fit_report.json` and its record to `deformable/` in the output folder. (The
-Elastix `bspline`/`affine` residual fit this replaced was retired on
-2026-10-04.) Exports compose the complete initial placement and residual deformation. Keep the raw reply, corrected lines on original tissue,
+The yellow lines are extracted from the raw reply and kept, with the reply,
+in the section's folder. No deformation is fitted until `fit_deformable` is
+called; its traced fit sections (`traced_lines`, `traced_borders`) fit the
+model's lines against the atlas family borders with the deformable package
+(`src/langslice/core/deformable/`) on top of the linear placement. Keep the raw reply, corrected lines on original tissue,
 and fitted atlas overlay distinct when reviewing results.
 
-`placement.json` contains a 3×3 affine mapping oriented native atlas pixel
-centers to pixels in the input image. Position, cutting angles and atlas axes
-must agree with that placement. `--mirror-atlas-lr` applies an explicit atlas
-reflection on either route; no reflection is inferred from the tissue. The
-core's `core/handoff.py` (re-exported by the top-level `registration_handoff`
-bridge) prepares this contract from linear section state. ABBA uses its
-existing host alignment directly and fits the model's lines the same way.
-
-`--preprocess auto` remains the default shared tissue-visibility enhancement;
-`none` disables it. In either case, both correction attachments use the
-identical prepared photograph. `--canvas-pad`, `--pitch-deg` and `--yaw-deg`
-remain available. One draw per model call is
-supported; there is no multi-draw voting.
-
-`--provider none` is an explicit model-free diagnostic: retain supplied placement
-or fit a silhouette placement, then return its borders and composed coordinates.
-It does not run image generation or fit a residual deformation.
-
-Provider selection remains explicit: `gemini-api` for Gemini, `openai-api`
-for API access, or `openai-oauth` for subscription access (the legacy
-spellings `google`, `openai` and `chatgpt` still resolve). API requests retain `--openai-image-route` and
-`--endpoint`. Both stages use the selected provider.
+Mirroring is never inferred from the tissue: a mirrored section is the
+job's `flip` (`orient_slices`, or `--orientation` at init). The image
+provider is the job's (`--image-provider`: `gemini-api`, `openai-api`,
+`openai-oauth`, or `none` for no image model, which leaves the fitting verbs
+on the stain alone). One draw per model call; there is no multi-draw voting.
 
 See [the nonlinear design](nonlinear_design.md) for coordinate contracts,
 artifact meanings, supported handoffs and review limitations.
@@ -347,7 +314,7 @@ Once signed in, no API key is needed for either model surface:
 - chat/vision/tool-use agents accept `openai-oauth/<model>` model strings,
   e.g. `--model openai-oauth/gpt-5.6-luna` (legacy `chatgpt/<model>` is
   accepted), served by the ADK backend in `src/langslice/providers/openai_oauth.py`;
-- image-gen registration accepts `--provider openai-oauth`.
+- the image model accepts `--image-provider openai-oauth` (the default).
 
 ## Engine Service
 
@@ -358,10 +325,10 @@ protocol:
 langslice serve --stdio
 ```
 
-The service accepts `version`, `register.run`, `quick_affine.run`, and
+The service accepts `version`, `quick_affine.run`, and
 `export.run` request envelopes, plus the Fiji connector's `setup.status`,
 `setup.login`, `setup.api_key`, `linear.run`, `linear.estimate`,
-`preprocess.preview` and `nonlinear.abba` (see
+and `preprocess.preview` (see
 [the connector design](abba_plugin_design.md)). It streams progress/log
 events and returns typed JSON result or error envelopes. The contract is
 defined by the Pydantic models in `src/langslice/doors/api/models.py`.

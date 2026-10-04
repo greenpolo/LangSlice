@@ -1,7 +1,8 @@
 """The fit after the image model's border correction: the deformable package's.
 
 Every caller that turns the model's corrected lines into a deformation (both
-border routes of ``nonlinear register`` and the ABBA registration plugin)
+border routes of ``border_registration.generate_border_registration_candidate`` and
+the ABBA registration plugin)
 fits them here with :mod:`langslice.core.deformable`, route B: the extracted lines
 against the colour-family borders the model was shown
 (:func:`langslice.core.deformable.traced_settings`), the linear agent's

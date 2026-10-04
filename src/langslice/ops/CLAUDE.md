@@ -24,11 +24,12 @@ wording; `registry.py` lists which.
   write lock (`Job.writing`: lock, sync, apply, commit): the doors hold it
   around every verb except the long ones (`registry.Verb.long`:
   `fit_affine`, `fit_deformable`, `trace_borders`, and the scripting
-  verb `export_maps`), which compute outside
+  verbs `trace_from_atlas` and `export_maps`), which compute outside
   it from the state they read and take it themselves to apply, comparing
   each section's `inputs.section_inputs` with the value they computed from:
   a changed section is that section's row `STALE_INPUT`
-  (`inputs.stale_row`; `trace_borders` raises it), the others apply.
+  (`inputs.stale_row`; `trace_borders` raises it, `trace_from_atlas`
+  compares the geometry fingerprint), the others apply.
   `set_transforms` and `keep_linear` take it themselves too. A read (`views.py`, `atlas.py`,
   `positions.search_position`) writes nothing.
 - Pictures are the core's, never drawn here: a read verb, or a write that
@@ -45,8 +46,8 @@ wording; `registry.py` lists which.
   sections, host damage flags, the spec's flip switch, the submit gates)
   are the job's and are applied here; the transform cap (`Job.over_cap`)
   is checked by the tool door with its other arguments.
-- A model is passed in, never chosen here: `traces.trace_borders` takes the
-  image model (`providers.registry.ImageModel`: provider, model, `call`)
+- A model is passed in, never chosen here: `traces.trace_borders` (and
+  `traces.trace_from_atlas`) takes the image model (`providers.registry.ImageModel`: provider, model, `call`)
   the door resolved (phase 4); the geometry fingerprint is the core's
   (`core.handoff.correction_fingerprint`).
 - A refusal is `refusal.Refused(code, status="error", **facts)`, nothing
@@ -175,6 +176,22 @@ wording; `registry.py` lists which.
   written as one undo step when it changed. `UNKNOWN_SECTION`,
   `INVALID_LINEAR_PLACEMENT`, `IMAGE_CORRECTION_IO_ERROR`. Returns
   `TraceStarted`.
+  `trace_from_atlas(job, workspace, refs, image_model=, passes=1,
+  workers=)`: the placement-free route "atlas" as a job verb, a HIDDEN
+  scripting verb (kept for experiments, called by name, listed nowhere):
+  per section `registration_tool.start_atlas_correction` (the model shown
+  the clean section and the outlined atlas plane at its position and
+  angles, never its placement; `passes` 2 adds the corrective call), the
+  record and its artifacts exactly as `trace_borders` writes them, so a
+  traced `fit_deformable` (from the section's written linear placement),
+  the submit gate and the maps read it unchanged. Needs a position and a
+  written transform. Prepared outside the lock; under it each section's
+  geometry is checked again (`STALE_INPUT` row), its call started, its
+  record written; every changed record ONE undo step. Per-section rows
+  (`UNKNOWN_SECTION`, `INVALID_LINEAR_PLACEMENT`,
+  `IMAGE_CORRECTION_IO_ERROR`, `STALE_INPUT`, `running`); `BAD_ARGS` for
+  no sections or `passes` not 1/2. Returns `AtlasTraces` (`rows`,
+  `written`).
 - `inputs.py` — `section_inputs(state, record, deformation=, trace=)`: a
   digest of what a fit of the section reads (its linear placement:
   position, plane, angles, flip, rotation, transform; its fit appearance;
@@ -194,15 +211,21 @@ wording; `registry.py` lists which.
   written-position order). `regions_not_in_plane`. `MAX_VIEW_SLICES` (4).
 - `registry.py` — `VERBS`: every verb (agent tool) name -> `Verb(name,
   function, kind "read"/"write", group "Common"/"Positioning"/"Linear"/
-  "Nonlinear", alternates, when, long, scripting, image_model)`, in the
-  order every door lists them; `enabled(spec, scripting=, image_model=)`
+  "Nonlinear", alternates, when, long, scripting, image_model, hidden)`, in
+  the order every door lists them; `enabled(spec, scripting=, image_model=,
+  hidden=)`
   (phase 5): the verbs a run of the spec has (`when`: the task switches and
   host switches that were `build_tools`' if-chain; `image_model` False
   leaves out the verbs that call the image model, `trace_borders`, for a
   door that cannot reach it: MCP with none connected). A `scripting` verb (`export_maps`, a "read":
   it changes no state) is the agent CLI's and the library's only
   (`build_tools(scripting=True)`), never offered to a model, so the agent
-  tools and MCP declare exactly what they did;
+  tools and MCP declare exactly what they did. A `hidden` verb (always a
+  scripting verb; `trace_from_atlas`) is in `enabled` only with `hidden=True`
+  (what `build_tools(scripting=True)` passes, so the CLI and the library
+  call it by name) and in no listing: `listed()` (every verb but the hidden
+  ones) is what `langslice ops`, `langslice schema` without a verb, the job
+  folder's card, the library's `verbs` and the CLI's `verbs` lists show;
   `table()` as plain rows. `fit_deformable`'s alternate is `keep_linear`.
   Every door is built from it (phase 5): `build_tools` makes the tools
   `enabled(spec)` names (the ADK and MCP doors), the MCP door's

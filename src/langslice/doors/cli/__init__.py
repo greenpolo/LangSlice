@@ -2,8 +2,7 @@
 
 ``langslice.cli:main`` (the installed entry point) is :func:`main` here.
 Groups: :mod:`~langslice.doors.cli.linear` (``linear run``, ``linear
-quick-affine`` and the shared job flags), :mod:`~langslice.doors.cli.register`
-(``nonlinear register``), :mod:`~langslice.doors.cli.claude` (``mcp``,
+quick-affine`` and the shared job flags), :mod:`~langslice.doors.cli.claude` (``mcp``,
 ``claude prepare``), the host commands (``abba``, ``serve``:
 :mod:`langslice.hosts.cli`, loaded by module path through
 ``HOST_COMMANDS``, so the doors never import a host), and the agent CLI:
@@ -35,7 +34,6 @@ from langslice.doors.cli.linear import (
     run_linear,
     run_quick_affine,
 )
-from langslice.doors.cli.register import add_register_parser, run_register
 
 #: The agent CLI's commands: JSON on stdout, an exit code returned.
 AGENT_COMMANDS = {"job": run_job, "ops": run_ops, "schema": run_schema}
@@ -80,14 +78,6 @@ def build_parser() -> argparse.ArgumentParser:
     add_run_parser(linear_sub)
     add_quick_affine_parser(linear_sub)
 
-    # langslice nonlinear <cmd> — image-gen registration
-    nonlinear = subparsers.add_parser(
-        "nonlinear",
-        help="Nonlinear methods: image-gen registration",
-    )
-    nonlinear_sub = nonlinear.add_subparsers(dest="subcommand", required=True)
-    add_register_parser(nonlinear_sub)
-
     # langslice abba, langslice serve (the host commands, loaded on demand)
     for command in HOST_COMMANDS:
         _host_command(command, 0)(subparsers)
@@ -126,7 +116,7 @@ def main(argv: list[str] | None = None) -> int | None:
     if args.command in AGENT_COMMANDS:
         return AGENT_COMMANDS[args.command](args)
 
-    # Group commands (`linear`, `nonlinear`) carry the leaf name in
+    # Group commands (`linear`, `claude`) carry the leaf name in
     # `subcommand`; top-level commands only set `command`. Leaf names are
     # unique across groups, so one dispatch chain covers both.
     command = getattr(args, "subcommand", None) or args.command
@@ -139,8 +129,6 @@ def main(argv: list[str] | None = None) -> int | None:
         print(f"Signed in. Credentials saved to {login()}")
     elif command in HOST_COMMANDS:
         _host_command(command, 1)(args)
-    elif command == "register":
-        run_register(args)
     elif command == "quick-affine":
         run_quick_affine(args)
     elif command == "run":

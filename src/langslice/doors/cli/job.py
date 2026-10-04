@@ -54,7 +54,7 @@ logger = logging.getLogger(__name__)
 
 #: Verbs a dry run checks without running (a model call, a long fit that
 #: saves records).
-CHECKED_ONLY = frozenset({"trace_borders", "fit_deformable"})
+CHECKED_ONLY = frozenset({"trace_borders", "trace_from_atlas", "fit_deformable"})
 #: Reply keys worth a warning when present and not empty.
 WARN_KEYS = ("unknown_ids", "unknown", "rejected", "render_failed", "clamped",
              "deformation_cleared", "truncated", "dropped_positions_mm", "not_shown")
@@ -290,7 +290,8 @@ def call(folder: str, verb: str, flags: dict[str, list[str]], options: dict[str,
     job_folder = str(opened.job.folder)
     try:
         offered = enabled(opened.spec, scripting=True)
-        if verb not in offered:
+        # A hidden verb is called by name, never listed (``Verb.hidden``).
+        if verb not in enabled(opened.spec, scripting=True, hidden=True):
             raise _Refusal(Envelope.failure(
                 "VERB_OFF", f"This job's settings (tasks {opened.spec.tasks}) have no {verb}.",
                 result={"verbs": offered}, job=job_folder, verb=verb))
@@ -338,8 +339,8 @@ def _run(opened: Any, verb: str, tool: Any, arguments: dict[str, Any], *,
     before = job.snapshot() if dry_run else None
     with captured() as saved:
         reply = tool(**arguments)
-    if verb == "trace_borders":
-        job.settle_image_corrections()  # this process ends: the call lands now
+    if VERBS[verb].image_model:
+        job.settle_image_corrections()  # this process ends: the calls land now
     artifacts: list[dict[str, str]] = []
     warnings: list[str] = []
     ok = not (isinstance(reply, dict) and reply.get("status") in ("error", "refused"))
@@ -365,6 +366,15 @@ def _run(opened: Any, verb: str, tool: Any, arguments: dict[str, Any], *,
         held = (record.image_correction or {}) if record is not None else {}
         result["image_correction"] = {key: held[key] for key in (
             "status", "error", "message", "cached", "attempt") if key in held}
+    if verb == "trace_from_atlas" and isinstance(result, dict):
+        for row in result.get("results") or []:  # each landed call's outcome
+            if not isinstance(row, dict) or row.get("error") is not None:
+                continue
+            record = job.state.resolve(str(row.get("id", "")))
+            held = (record.image_correction or {}) if record is not None else {}
+            if held:
+                row["image_correction"] = {key: held[key] for key in (
+                    "status", "error", "message", "cached", "attempt") if key in held}
     if verb == "status" and isinstance(result, dict):
         from langslice.ops.registry import enabled
 

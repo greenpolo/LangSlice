@@ -73,12 +73,13 @@ Worker methods used, all already in protocol version 1:
 | `setup.status` / `setup.login` / `setup.api_key` | shared setup dock |
 | `linear.run` | positions and in-plane affines from calibrated section snapshots |
 | `linear.estimate` / `preprocess.preview` | the dock's cost line and preprocessing preview |
-| `register.run` | one section at a supplied position, angles and `initial_atlas_to_slice` |
 | `export.run` | QUINT JSON when a host has no native result store |
 
-`nonlinear.abba` stays ABBA-only: it needs per-pixel atlas coordinate channels
-that only ABBA's resliced atlas provides. napari hosts carry a position plus
-angles plus an in-plane affine, which is exactly the `register.run` contract.
+napari hosts carry a position plus angles plus an in-plane affine: a
+LangSlice job's supplied placement (`inputs.positions`, `inputs.transforms`,
+`inputs.angles`). The nonlinear step runs on that job like every other door
+(`trace_borders`, `fit_deformable`); the one-shot `register.run` method that
+used to take a single section outside a job was removed on 2026-10-04.
 
 ### brainglobe-registration
 
@@ -90,8 +91,8 @@ Elastix parameter set. Results saved brainreg-style.
   push the returned position onto the slider and the in-plane affine onto the
   sample layer's `affine`. Cutting angles map to the pitch/yaw spin boxes once
   the linear engine's angle updates are verified for hosts.
-- Nonlinear: `register.run` with the host's current position, angles and
-  layer affine; write `registered_atlas.tiff`, `registered_hemispheres.tiff`
+- Nonlinear: a job with the host's current position, angles and layer
+  affine supplied, then its nonlinear task; write `registered_atlas.tiff`, `registered_hemispheres.tiff`
   and a `langslice.json` parameter record next to them, and add the warped
   annotation as a labels layer.
 - Open: brainglobe-registration has no confirmed headless API; the adapter
@@ -109,8 +110,9 @@ position model, not DeepSlice.
 
 - Linear: export the subject's low-resolution slice images, run `linear.run`,
   write `ap` and the affine fields back into each `SliceInfo.params`.
-- Nonlinear: `register.run` per slice; the returned atlas-to-slice pairs
-  become `TPSTransformParams`, which is brainways' native nonlinear store.
+- Nonlinear: a job with each slice's placement supplied, then its nonlinear
+  task; the job's per-section maps (atlas coordinates per pixel) become
+  `TPSTransformParams` pairs, which is brainways' native nonlinear store.
   This is the cleanest fit of the two hosts.
 - Open: brainways' dataclasses are frozen and its project writer is internal;
   the adapter must go through its public project API. Sign and axis
@@ -132,11 +134,9 @@ user settings. Either side may be installed first.
   should say what is unsupported, not which host is asking, and the coronal
   and flat-plane limits should be lifted as the linear engine's angle path
   is verified.
-- A `register.run` result already carries the warped atlas path and
-  correspondence count; the connectors additionally need the paired
-  atlas-to-slice points that `nonlinear.abba` returns, so `register.run` gains
-  an optional `landmarks: true` flag returning `source_points` /
-  `target_points` in acquisition pixels.
+- A worker method that makes a job from host snapshots with their
+  placements supplied and runs its nonlinear task (not built), returning
+  paired atlas-to-slice points in acquisition pixels from the job's maps.
 - No new transport, no new setup methods.
 
 ## Distribution
