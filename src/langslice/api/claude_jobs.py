@@ -153,6 +153,9 @@ def _write_job(
     write_job_file(layout, job_id=job_id, spec=spec,
                    host={"format": FORMAT_VERSION, **host})
     index.register(jobs_root(), job_id, layout.folder, host_channel=channel, fallback=fallback)
+    from langslice.doors.card import write_card
+
+    write_card(layout)
     return job_id, layout
 
 
