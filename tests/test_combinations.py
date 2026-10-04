@@ -162,21 +162,27 @@ SUBMIT_FLAGS = ("--summary", "done", "--notes", "[]", "--interval-breaks", "[]")
 
 
 def transforms_file(images: Path) -> str:
-    """The supplied transforms as a JSON file (inline JSON this long breaks
-    ``init``: ``test_init_takes_a_long_inline_json``)."""
+    """The supplied transforms as a JSON file (inline JSON works as well:
+    ``test_init_takes_a_long_inline_json``)."""
     path = images.parent / "transforms.json"
     path.write_text(json.dumps(EXTERNAL_TRANSFORMS))
     return str(path)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "load_json_arg (doors/cli/linear.py:229-231) tries the value as a path first; "
-    "inline JSON longer than a file name (255 bytes, any real --transforms map) "
-    "raises OSError ENAMETOOLONG, and init exits 4 (INTERNAL). Catch OSError there, "
-    "or parse JSON first."))
 def test_init_takes_a_long_inline_json(capsys, images):
-    init(capsys, images, "nonlinear", "--positions", json.dumps(POSITIONS),
-         "--transforms", json.dumps(EXTERNAL_TRANSFORMS))
+    long_inline = json.dumps(EXTERNAL_TRANSFORMS)
+    assert len(long_inline) > 255  # longer than any file name
+    job = init(capsys, images, "nonlinear", "--positions", json.dumps(POSITIONS),
+               "--transforms", long_inline)
+    spec = json.loads((job / "job.json").read_text())["spec"]
+    assert spec["inputs"]["transforms"] == EXTERNAL_TRANSFORMS
+
+
+def test_init_names_the_flag_of_a_bad_json_argument(capsys, images):
+    code, envelope = cli(capsys, "job", str(images), "init", "--tasks", "nonlinear",
+                         "--image-provider", "none", "--positions", "no-such-file.json")
+    assert code == 2 and envelope["error"]["code"] == "BAD_ARGUMENTS", envelope
+    assert "--positions" in envelope["error"]["message"]
 
 
 # --- what a finished job must hold ---------------------------------------------------------

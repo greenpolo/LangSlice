@@ -219,17 +219,36 @@ def add_linear_arguments(p: argparse.ArgumentParser) -> None:
     )
 
 
-def load_json_arg(value: str | None) -> object | None:
-    """A JSON argument, given inline or as a path to a JSON file."""
+def load_json_arg(value: str | None, flag: str = "JSON argument") -> object | None:
+    """A JSON argument, given inline or as a path to a JSON file.
+
+    An inline object or list (``{...}``, ``[...]``) is parsed as JSON whatever
+    its length (never tried as a file name: a real ``--transforms`` map is
+    longer than any). Anything else is a path when that file exists, else
+    inline JSON. Neither is a ``ValueError`` naming *flag*.
+    """
     import json
     from pathlib import Path
 
     if not value:
         return None
-    path = Path(value)
-    if path.exists():
-        return json.loads(path.read_text(encoding="utf-8"))
-    return json.loads(value)
+    path: Path | None = None
+    if not value.lstrip().startswith(("{", "[")):
+        try:
+            candidate = Path(value).expanduser()
+            path = candidate if candidate.is_file() else None
+        except OSError:  # not usable as a file name: inline JSON
+            path = None
+    if path is not None:
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError(f"{flag}: could not read JSON from {path}: {exc}") from exc
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{flag}: neither an existing JSON file nor inline JSON ({exc})"
+                         ) from exc
 
 
 def apply_trace_dir(args: argparse.Namespace) -> None:
@@ -252,13 +271,13 @@ def build_linear_spec(args: argparse.Namespace, image_folder: str) -> JobSpec:
     from langslice.core.spec import JobSpec, NonlinearSpec, PositionSpec, ReorderSpec, TransformSpec
 
     inputs: dict[str, object] = {}
-    positions = load_json_arg(args.positions)
+    positions = load_json_arg(args.positions, "--positions")
     if positions is not None:
         inputs["positions"] = positions
-    order = load_json_arg(args.order)
+    order = load_json_arg(args.order, "--order")
     if order is not None:
         inputs["order"] = order
-    transforms = load_json_arg(args.transforms)
+    transforms = load_json_arg(args.transforms, "--transforms")
     if transforms is not None:
         inputs["transforms"] = transforms
     if args.pixel_size_um:
