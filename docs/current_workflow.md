@@ -5,7 +5,7 @@ This page describes the active CLI workflows.
 The CLI is grouped by method:
 
 ```bash
-langslice linear    {run, quick-affine}
+langslice linear    {run}
 langslice           {version, login, serve, abba, mcp}
 langslice claude    {prepare}
 langslice job FOLDER {init, VERB, runs [ID], wait [ID]}   # the agent CLI
@@ -250,17 +250,6 @@ the job as it stands, runs the verb through the same tool the agent has
 `langslice.open_job(folder)` gives the same verbs as methods; a scripted
 pipeline without the agent: [`library.md`](library.md).
 
-## Linear: Quick Affine
-
-```bash
-langslice linear quick-affine <image> --position <mm> [--atlas ...] [--plane ...] [--out ...]
-```
-
-An affine-only preview that aligns the tissue silhouette to the atlas silhouette
-at a known position, using the shared affine core (`src/langslice/core/affine.py`)
-that the linear `fit_affine` tool also runs on. No image generation, no
-B-spline.
-
 ## Nonlinear: Border Refinement
 
 ```bash
@@ -326,8 +315,7 @@ protocol:
 langslice serve --stdio
 ```
 
-The service accepts `version`, `quick_affine.run`, and
-`export.run` request envelopes, plus the Fiji connector's `setup.status`,
+The service accepts `version` and `export.run` request envelopes, plus the Fiji connector's `setup.status`,
 `setup.login`, `setup.api_key`, `linear.run`, `linear.estimate`,
 and `preprocess.preview` (see
 [the connector design](abba_plugin_design.md)). It streams progress/log

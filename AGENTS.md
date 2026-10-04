@@ -151,8 +151,8 @@ deformation) and the image-model border route (`core/nonlinear/`).
     transforms. The image model is an argument
     (`providers.registry.ImageModel`, resolved by a door); the calibrated
     geometry and the correction fingerprint are `core/handoff.py`'s;
-    `registration_handoff.py` holds `run_linear_registration`, which takes
-    the model as an argument; see `docs/nonlinear_image_tool.md`. A model
+    `registration_handoff.py` re-exports `prepare_linear_registration` for
+    SliceBench; see `docs/nonlinear_image_tool.md`. A model
     call is only ever the `image_call` a door passes in (refused without
     one); provider names are the core's own table, `core/provider_names.py`.
   - `oblique.py` — arbitrary-plane sampling out of an atlas volume plus
@@ -230,7 +230,7 @@ deformation) and the image-model border route (`core/nonlinear/`).
   `media.py` the ADK message parts); `doors/mcp/` the MCP server
   (`langslice mcp`); `doors/api/` what the MCP door, the CLI and the engine
   service share (the engine contract's Pydantic models, the
-  quick-affine/export runtime, setup and credentials, saved Claude
+  export runtime, setup and credentials, saved Claude
   jobs, the JVM-free linear snapshot worker `abba_worker.py`). The agent CLI for coding
   agents (`doors/cli/`: `langslice job FOLDER VERB`, `langslice ops`,
   `langslice schema`; one JSON envelope on stdout, exit codes 0/2/3/4,
@@ -279,8 +279,7 @@ deformation) and the image-model border route (`core/nonlinear/`).
   a provider name becomes an image-edit call (`ImageModel`: provider,
   model, `call`); only a door resolves it (the toolbox binding
   `build_tools(image_model=...)`, the CLI and API runtime, the ABBA plugin),
-  and the operations (`registration_tool`, `ops.traces`,
-  `run_linear_registration`) receive it. `profiles.py` makes model
+  and the operations (`registration_tool`, `ops.traces`) receive it. `profiles.py` makes model
   PROFILES for the library (`langslice.image_model`: a provider's model with
   its built-in prompt, or a model and prompt of the caller's own, marked
   untested in every trace; `default_prompt`): the `ImageModel` fields

@@ -163,11 +163,9 @@ cutting angles, then transformed by `image_axes` and the explicit
 
 `langslice.core.handoff.prepare_linear_registration` (re-exported by
 `langslice.core.nonlinear.registration_handoff`) prepares this contract from an existing
-linear section state; `registration_handoff.run_linear_registration`
-performs the handoff, with the image model passed in
-(`providers.registry.ImageModel`, resolved by the caller through
-`resolve_image_model`). These are callable host interfaces, not an
-automatically enabled tool in the linear agent's toolbox. The opt-in `nonlinear`
+linear section state; on a job the `trace_borders` verb performs the
+handoff, with the image model passed in (`providers.registry.ImageModel`,
+resolved by the door). The opt-in `nonlinear`
 task adds a separate annotation-only `registration_tool` using the same prepared
 linear geometry. The handoff functions preserve the
 linear placement, including shear, physical calibration and section

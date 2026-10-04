@@ -7,7 +7,7 @@ from typing import Any, cast
 import pytest
 
 from langslice.doors.api import runtime
-from langslice.doors.api.models import EngineLogEvent, EngineRequest, QuickAffineResult
+from langslice.doors.api.models import EngineLogEvent, EngineRequest, ExportResult
 from langslice.hosts.api.service import handle_request, run_stdio
 
 
@@ -58,7 +58,7 @@ def test_validation_error_returns_error() -> None:
         json.dumps(
             {
                 "id": "2",
-                "method": "quick_affine.run",
+                "method": "export.run",
                 "params": {"atlas": "allen_mouse_25um"},
             }
         )
@@ -70,23 +70,23 @@ def test_validation_error_returns_error() -> None:
 
 
 def test_progress_events_are_emitted_before_result(monkeypatch: pytest.MonkeyPatch) -> None:
-    def fake_run_quick_affine(request, emit=None):  # noqa: ANN001
+    def fake_run_export(request, emit=None):  # noqa: ANN001
         assert request.image_path == "slice.png"
         if emit is not None:
             emit(EngineLogEvent(kind="log", message="starting"))
-        return QuickAffineResult(warped_slice_path="out.png", elapsed_s=0.0,
-                                 silhouette_iou=1.0)
+        return ExportResult(output_path="out.json", target="t", aligner="a", slices=1)
 
-    monkeypatch.setattr(runtime, "run_quick_affine", fake_run_quick_affine)
+    monkeypatch.setattr(runtime, "run_export", fake_run_export)
     messages = _run_lines(
         json.dumps(
             {
                 "id": "3",
-                "method": "quick_affine.run",
+                "method": "export.run",
                 "params": {
                     "image_path": "slice.png",
                     "atlas": "allen_mouse_25um",
                     "position_mm": 5.0,
+                    "output_path": "out.json",
                 },
             }
         )
@@ -103,11 +103,12 @@ def test_validation_error_for_unknown_param_key() -> None:
         json.dumps(
             {
                 "id": "4",
-                "method": "quick_affine.run",
+                "method": "export.run",
                 "params": {
                     "image_path": "slice.png",
                     "atlas": "allen_mouse_25um",
                     "position_mm": 5.0,
+                    "output_path": "out.json",
                     "plaen": "coronal",
                 },
             }

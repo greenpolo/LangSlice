@@ -42,8 +42,7 @@ border route (`core/nonlinear/`).
     (image-moments) fit of a section onto an atlas section, the
     rotation/scale/translate matrix builder, the normalized six-number
     parameter convention, and `pixel_center_map`. `silhouette_affine` is the
-    one silhouette wrapper the linear transform tools and `quick_affine`
-    share.
+    one silhouette wrapper the linear transform tools use.
   - `core/oblique.py` -- arbitrary-plane (cutting-angle) sampling of an
     atlas volume and the (pitch, yaw) fitter.
   - `core/deformable/` -- the library deformable fit (ANTs SyN or Elastix
@@ -56,11 +55,11 @@ border route (`core/nonlinear/`).
     supplied; otherwise a silhouette-placed, model-drawn-boundary route
     against an outlined grayscale atlas template), the fit of the model's
     lines through `core/deformable/` (`border_fit.py`), affine/nonlinear
-    result types, the silhouette-based `quick_affine` preview,
+    result types,
     `registration_tool.py` (the linear agent's optional image-model
     border-correction tool; the image model is an argument) and
-    `registration_handoff.py` (route "supplied" for one section with the
-    image model passed in).
+    `registration_handoff.py` (the geometry handoff, re-exported for
+    SliceBench).
 - `src/langslice/job/` -- the job: one `Job` (`job.py`) owning the state,
   undo, the checkpoint (`checkpoint.py`) and the submit gates; the job
   folder's layout, history, index, migrations, saved views, the public files
@@ -72,7 +71,7 @@ border route (`core/nonlinear/`).
   CLI and the library are built from; `tools/` (the native agent tools:
   toolbox, argument shapes, `view` options, ADK message packaging), `mcp/`
   (the MCP server), `api/` (the engine contract's Pydantic models, the
-  register/quick-affine/export runtime, setup, saved Claude jobs and the
+  export runtime, setup, saved Claude jobs and the
   JVM-free linear snapshot worker), `cli/` (every `langslice` command, one module per
   group, including the agent CLI `langslice job FOLDER VERB`, `ops`,
   `schema`; `docs/agent_cli.md`), `library.py` (`langslice.open_job`,
@@ -113,7 +112,7 @@ The Python package is the source of truth for LangSlice runtime behavior. The
 engine contract is defined with Pydantic models in `src/langslice/doors/api/models.py`.
 
 `langslice serve --stdio` runs the newline-delimited JSON engine service. It
-accepts `version`, `quick_affine.run`, and `export.run`, plus
+accepts `version` and `export.run`, plus
 `setup.status`, `setup.login`, `setup.api_key`, `linear.run`, `linear.estimate`,
 `preprocess.preview` for the independent Fiji connector. It emits progress/log/data event envelopes
 and returns either result or error envelopes. The connector starts a worker in

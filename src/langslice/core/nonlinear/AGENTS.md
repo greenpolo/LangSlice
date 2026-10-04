@@ -141,8 +141,8 @@ the residual alone.
 - `render.py` — review-grade rendering only.
 - `core/handoff.py` — prepares supplied linear geometry
   (`prepare_linear_registration`, re-exported by the top-level
-  `core/nonlinear/registration_handoff.py`, which also holds `run_linear_registration`:
-  route "supplied" for one section, the image model an argument).
+  `core/nonlinear/registration_handoff.py` for SliceBench; its
+  `run_linear_registration` was removed 2026-10-04, only tests called it).
   `core/nonlinear/registration_tool.py` uses it for the opt-in annotation tool
   (`start_correction`, route "supplied") and the hidden `trace_from_atlas`
   verb (`start_atlas_correction`, route "atlas"), both sharing the call-key

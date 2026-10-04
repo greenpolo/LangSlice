@@ -1,9 +1,9 @@
 """In-plane affine alignment of one histology section to one atlas section.
 
-Shared by both methods, which is why it sits at the top level:
-:mod:`langslice.core.nonlinear.quick_affine` wraps :func:`silhouette_affine` into a
-warped RGBA preview for the 3D viewer, and the linear ``fit_affine`` tool
-records its parameters as the proposed affine for an intact section. Pure
+The linear ``fit_affine`` tool's silhouette method records
+:func:`silhouette_affine`'s parameters as the proposed affine for an intact
+section; the matrix builders and the normalized six-number convention are
+shared by every reader of a stored transform. Pure
 functions only — no CLI, no agent, no model calls, no file writes.
 
 Two ways to get a 2x3 affine here:
@@ -298,8 +298,7 @@ def silhouette_affine(
     """Fit a 2x3 affine aligning *image* to the atlas section at *position_mm*.
 
     The one silhouette wrapper: the linear ``fit_affine`` silhouette method
-    (``core.transform.fit_silhouette``) and the viewer preview
-    (``core.nonlinear.quick_affine``) both call it. The atlas tissue silhouette is
+    (``core.transform.fit_silhouette``) calls it. The atlas tissue silhouette is
     the root mask of the plane at *position_mm* and the cutting angles
     (:func:`langslice.core.atlas.core.get_root_mask`), so an angled stack is
     measured against the plane every other picture in the run shows (until

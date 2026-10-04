@@ -1,8 +1,8 @@
 """The ``langslice`` command, one module per command group.
 
 ``langslice.cli:main`` (the installed entry point) is :func:`main` here.
-Groups: :mod:`~langslice.doors.cli.linear` (``linear run``, ``linear
-quick-affine`` and the shared job flags), :mod:`~langslice.doors.cli.claude` (``mcp``,
+Groups: :mod:`~langslice.doors.cli.linear` (``linear run`` and the shared
+job flags), :mod:`~langslice.doors.cli.claude` (``mcp``,
 ``claude prepare``), the host commands (``abba``, ``serve``:
 :mod:`langslice.hosts.cli`, loaded by module path through
 ``HOST_COMMANDS``, so the doors never import a host), and the agent CLI:
@@ -28,12 +28,7 @@ from langslice.doors.cli.claude import (
 )
 from langslice.doors.cli.job import add_parser as add_job_parser
 from langslice.doors.cli.job import run as run_job
-from langslice.doors.cli.linear import (
-    add_quick_affine_parser,
-    add_run_parser,
-    run_linear,
-    run_quick_affine,
-)
+from langslice.doors.cli.linear import add_run_parser, run_linear
 
 #: The agent CLI's commands: JSON on stdout, an exit code returned.
 AGENT_COMMANDS = {"job": run_job, "ops": run_ops, "schema": run_schema}
@@ -76,7 +71,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     linear_sub = linear.add_subparsers(dest="subcommand", required=True)
     add_run_parser(linear_sub)
-    add_quick_affine_parser(linear_sub)
 
     # langslice abba, langslice serve (the host commands, loaded on demand)
     for command in HOST_COMMANDS:
@@ -129,8 +123,6 @@ def main(argv: list[str] | None = None) -> int | None:
         print(f"Signed in. Credentials saved to {login()}")
     elif command in HOST_COMMANDS:
         _host_command(command, 1)(args)
-    elif command == "quick-affine":
-        run_quick_affine(args)
     elif command == "run":
         run_linear(args)
     elif command == "mcp":

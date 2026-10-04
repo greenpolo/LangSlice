@@ -17,7 +17,6 @@ EngineMethod = Literal[
     "claude.prepare",
     "preprocess.preview",
     "linear.estimate",
-    "quick_affine.run",
     "export.run",
 ]
 ENGINE_METHODS: tuple[EngineMethod, ...] = (
@@ -29,7 +28,6 @@ ENGINE_METHODS: tuple[EngineMethod, ...] = (
     "claude.prepare",
     "preprocess.preview",
     "linear.estimate",
-    "quick_affine.run",
     "export.run",
 )
 
@@ -156,21 +154,6 @@ class VersionResult(EngineBaseModel):
     version: str
 
 
-class QuickAffineRequest(EngineBaseModel):
-    image_path: str
-    atlas: str
-    position_mm: float
-    plane: Plane = "coronal"
-    output_dir: str | None = None
-    output_path: str | None = None
-
-
-class QuickAffineResult(EngineBaseModel):
-    warped_slice_path: str
-    elapsed_s: float
-    silhouette_iou: float
-
-
 class ExportRequest(EngineBaseModel):
     image_path: str
     atlas: str
@@ -209,8 +192,6 @@ def export_schema_bundle() -> dict[str, object]:
         "EngineResultEnvelope": EngineResultEnvelope,
         "EngineErrorEnvelope": EngineErrorEnvelope,
         "VersionResult": VersionResult,
-        "QuickAffineRequest": QuickAffineRequest,
-        "QuickAffineResult": QuickAffineResult,
         "ExportRequest": ExportRequest,
         "ExportResult": ExportResult,
     }

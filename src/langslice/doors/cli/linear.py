@@ -1,4 +1,4 @@
-"""``langslice linear``: the agent run and the quick affine preview, and the
+"""``langslice linear``: the agent run, and the
 job flags every command that opens a stack shares (``linear run``, ``abba
 --linear``, ``mcp``, ``claude prepare``, ``job FOLDER init``)."""
 
@@ -457,46 +457,3 @@ def run_linear(args: argparse.Namespace) -> None:
         print(textwrap.indent(state.debrief, "  "))
     if state.interval_breaks:
         print(f"  Interval breaks: {state.interval_breaks}")
-
-
-def add_quick_affine_parser(subparsers: argparse._SubParsersAction) -> None:
-    """Fast affine-only Elastix preview, no image-gen. Produces a placeholder
-    warped slice the moment a position is locked, before the full pipeline
-    finishes."""
-    p = subparsers.add_parser(
-        "quick-affine",
-        help="Affine-only Elastix preview registration (no image-gen, ~2s)",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    p.add_argument("image", help="Path to slice image")
-    p.add_argument("--atlas", required=True, help="BrainGlobe atlas name")
-    p.add_argument("--position", type=float, required=True, help="Position in mm (per plane)")
-    p.add_argument(
-        "--plane",
-        default="coronal",
-        choices=["coronal", "sagittal", "horizontal"],
-        help=PLANE_HELP,
-    )
-    p.add_argument("--out", required=True, help="Path to write the warped slice PNG")
-    p.add_argument("--json", action="store_true", help="Print result JSON to stdout")
-
-
-def run_quick_affine(args: argparse.Namespace) -> None:
-    import json
-    from pathlib import Path
-
-    from PIL import Image
-
-    from langslice.core.nonlinear.quick_affine import quick_affine_register
-
-    image = Image.open(args.image)
-    result = quick_affine_register(
-        image,
-        atlas_name=args.atlas,
-        position_mm=args.position,
-        plane=args.plane,
-        out_path=Path(args.out),
-    )
-    print(f"Quick affine complete: {result['warped_slice_path']} ({result['elapsed_s']}s)")
-    if args.json:
-        print(json.dumps(result, indent=2))

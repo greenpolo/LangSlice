@@ -25,7 +25,6 @@ from langslice.doors.api.models import (
     LinearEstimateRequest,
     LinearEstimateResult,
     PreprocessPreviewRequest,
-    QuickAffineRequest,
     SetupApiKeyRequest,
     SetupLoginRequest,
 )
@@ -122,9 +121,6 @@ def handle_request(request: EngineRequest, emit: EmitEventEnvelope) -> EngineRes
 
     if request.method == "version":
         result = runtime.get_version()
-    elif request.method == "quick_affine.run":
-        params = QuickAffineRequest.model_validate(request.params)
-        result = runtime.run_quick_affine(params, emit=runtime_emit)
     elif request.method == "export.run":
         params = ExportRequest.model_validate(request.params)
         result = runtime.run_export(params, emit=runtime_emit)

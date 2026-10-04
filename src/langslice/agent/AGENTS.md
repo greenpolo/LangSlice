@@ -1114,7 +1114,7 @@ the history was in memory only and a resume began with none).
 - `fit_affine`'s silhouette method measures against the atlas plane at the
   stack's cutting angles (2026-09-10; since phase 4 `affine.silhouette_affine`
   takes the angles and reads `core.atlas.core.get_root_mask` at them, the one
-  silhouette wrapper `core/nonlinear/quick_affine` shares). Until then it
+  silhouette wrapper). Until then it
   measured against the FLAT section on a 13-degree brain and said so with
   `flat_atlas_fit`; Astra's run-19 debrief asked for exactly this.
 - `physical` on a fit is the knobs about the canvas centre, `shear`
@@ -1128,8 +1128,8 @@ the history was in memory only and a resume began with none).
   same axes turned round — and settles it on silhouette IoU alone. On INTACT
   M05 sections the right one wins by 0.036-0.092 IoU; a template-correlation
   tie-break would help the cases where silhouette IoU alone is close, but that
-  is measured, not built: it would move a benchmarked path (`silhouette_affine`
-  is `core/nonlinear/quick_affine`'s too). The fit's own panel is what catches it;
+  is measured, not built: it would move a benchmarked path. The fit's own
+  panel is what catches it;
   look at it. Damaged sections never reach this path: `fit_affine` refuses
   them outright unless regions are given.
 - The moments core matches long axes. With regions on M04_D_08 (both
