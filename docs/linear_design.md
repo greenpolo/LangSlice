@@ -198,6 +198,18 @@ what changed; every write is undoable; every write checkpoints; fits write
 their result. Tools report data. No advice, no interpretation, no strategy
 in any payload or prompt (see `lean-harness` history in `linear/CLAUDE.md`).
 
+**Code layout (layered refactor, 2026-10-03).** A tool is a door: argument
+checking, the look-before-commit gates, one operation and the wording. The
+writes are operations (`src/langslice/ops/`: positions, order, orientation,
+damage, appearance, notes, transforms, the deformable fit and `keep_linear`),
+the job (`linear/job.py`) owns state, undo, checkpoint and the submit gates,
+and the pictures are built by the core (`src/langslice/core/`: `pictures.py`
+for the viewing tools, `placement.py` for every placement picture, whose
+`draw_canvas` also returns the `CanvasFrame` the picture was drawn in). The
+tools return plain PIL pictures; the ADK driver packages them as JPEG message
+parts (`adk/media.py` `packaged`) and the MCP server as image blocks, so the
+toolbox imports no model SDK.
+
 | tool | task gate | does |
 | --- | --- | --- |
 | `status` | always | one row per section in corrected order: index, id, position_mm, delta_to_next_mm (signed), flip, rotation_deg, damaged(+note), transform kind, transform_iou, transform_mirrored, caveats; plus cutting angles and interval breaks. The `ls` of the environment. |
@@ -485,8 +497,9 @@ methods draw the same lines from the same source.
 (display-preprocessed grayscale) with the family outlines on top at true
 scale, a 1 mm scale bar, and a caption (section id, position, angles, the
 params). `fit_affine`'s panels use the same renderer
-(`render.physical_overlay`, the `overlay` view of `render.physical_views`), so
-every look at a section is the same picture.
+(`core.placement.draw_canvas` over `render.physical_views`; was
+`render.physical_overlay`, its `overlay` view), so every look at a section
+is the same picture.
 
 **View controls (2026-09-06).** Four sessions of gpt-5.6-luna aligning damaged
 M04 sections converged on the same three complaints — one fixed small image,

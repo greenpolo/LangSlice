@@ -117,10 +117,17 @@ Shared, top-level:
   `docs/nonlinear_image_tool.md`.
 
 - `ops/` — the verbs: every write to a stack (positions, order, orientation,
-  damage, appearance, notes, the in-plane transform) as a function on the
-  job, one undo step each, returning a plain record; no pictures, no model
-  wording, no gates. Imports the core and the job layer only, never a door:
+  damage, appearance, notes, the in-plane transform, the deformable fit and
+  `keep_linear`) as a function on the job, one undo step each, returning a
+  plain record; no pictures, no model wording, no gates. Imports the core and
+  the job layer only, never a door:
   `src/langslice/ops/CLAUDE.md` (loads when working there).
+- `core/` — the core library's new home (layered refactor): for now the
+  pictures the tools send (`pictures.py`, `placement.py`: every placement
+  picture and the frame it is drawn in), plain PIL images with captions
+  burned in; the doors package them (ADK parts, MCP blocks). Never imports
+  the job layer, ops, a door or a model client:
+  `src/langslice/core/CLAUDE.md` (loads when working there).
 - `atlas/` — BrainGlobe loading, slice extraction, colored region maps, borders,
   the organized-color LUT for human-review renders, and one side of a region
   (`"CTX:left"`, the section's displayed side, `sides.py`):

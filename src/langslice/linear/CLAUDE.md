@@ -71,9 +71,10 @@ mapped by zero-based `image_indexes` in each compared row. These are
 independently tissue-framed, not a common physical canvas; zoom is refused
 and outlines/opacity do not apply. Other modes still return one physical
 canvas per pair. Interactive-transform `side_by_side` is unchanged.
-Comparison and atlas-fetch paths share encoded reference caches
-(`adk/media.py` `reference_slice_part` / `atlas_part`, kept on the driver's
-`EngineContext.reference_parts`; the core draws the captioned pictures,
+Comparison and atlas-fetch paths share cached reference pictures
+(`core/pictures.py` `reference_section_picture` / `reference_atlas_picture`,
+plain captioned pictures on `Workspace.picture_cache` since 2026-10-03, phase
+3b; until then encoded parts on the driver's context; drawn by
 `render.reference_slice_picture` / `atlas_fetch.atlas_picture`):
 section captions retain their first display index/flags across reorder,
 filenames are the stable identity, and orientation/preprocessing/size changes
@@ -99,12 +100,14 @@ and text; none imports `google.genai`, ADK, litellm or openai
 `render`, `display`, `transform`, `deformation`, `appearance`,
 `atlas_fetch`, `opening`, and `registration_handoff` at the top level. The
 doors turn them into what a host reads: `adk/media.py` (the one module that
-makes `types.Part`s: JPEG encoding, the cached reference pictures, the
-model-lane image limit, the opening as parts), the toolbox and
-`view_options.py` (argument checking and the wording the model sees), the
-MCP server (`encode_jpeg` straight into MCP image blocks for the opening; its
-tool results still unpack the toolbox's parts). `engine.py` and `session.py`
-are the ADK driver.
+makes `types.Part`s: JPEG encoding, `packaged` / `package_result` for the
+tools' pictures, the opening as parts), the toolbox and `view_options.py`
+(argument checking, the model-lane image limit and the wording the model
+sees; neither imports `google.genai` since phase 3b, checked by
+`tests/test_core_imports.py`), the MCP server (`encode_jpeg` straight into
+MCP image blocks, for the opening and for the tools' plain pictures).
+`engine.py` and `session.py` are the ADK driver; `engine.run_session` hands
+the agent `adk.media.packaged_tools(box.tools)`.
 
 **The job layer (phase 2, 2026-10-03).** `job.py` sits between the core and
 the doors (it imports the core only, and `tests/test_core_imports.py` checks
@@ -119,8 +122,7 @@ door's own pages, trace and host channel) both sit on it. The
 look-before-commit gates (`compared`/`reviewed`) and the model-delivery
 bookkeeping (pending/seen placement views, delivery ids, `tool_context`)
 stay on the `ToolBox`, the tool door: a library call on the job is never
-gated. Tool results still reach MCP as the toolbox's genai parts; plain
-pictures need the tool bodies split (phase 3).
+gated.
 
 **The operations (phase 3a, 2026-10-03).** The writes live in the top-level
 package `src/langslice/ops/` (its own `CLAUDE.md`), one verb group per file:
@@ -136,9 +138,28 @@ step through it and returns a plain record of what changed; a refusal is
 `ops.refusal.Refused`. The tool bodies for these verbs are argument checking,
 the look-before-commit gates, one ops call, the pictures and the wording.
 `preprocess` draws its AFTER pictures from `planned_settings` and writes only
-once every picture is drawn. Still in the toolbox, for phase 3b: the
-placement pictures (`draw_canvas`, `stored_placement`, `stage`/`_Staged`,
-`placement_pictures`), `fit_deformable_impl` and render saving.
+once every picture is drawn.
+
+**Pictures in the core, plain pictures to the doors (phase 3b,
+2026-10-03).** The pictures the tools send are built in the new core package
+`src/langslice/core/` (its own `CLAUDE.md`): `core/pictures.py` (the
+section and atlas pictures of `view_slices`, `orient_slices`, `view_atlas`,
+`view_stack`, and the cached reference pictures) and `core/placement.py`
+(every placement picture: `draw_canvas`, which returns the panels and the
+`CanvasFrame` they were drawn in, `stored_placement`, `current_warp`,
+`placement_pictures`, and the interactive transform's `stage` / `Staged` /
+`staged_views`). The deformable fit is an operation,
+`ops.deformable.fit_deformable` (candidates, include/exclude, start,
+traced fit sections; one setting applies as one undo step), and so is
+`ops.deformable.keep_linear`; `fit_deformable`'s tool body validates the
+arguments (`resolve_choice`, the region checks), calls it and draws the
+pictures from what it returns. Every tool returns plain PIL pictures (and,
+for `view_stack`, lines of text) under `TOOL_MEDIA_PARTS_KEY`; the ADK driver
+packages them as JPEG message parts (`adk.media.packaged`), the MCP server as
+image and text blocks (`result_blocks`), so the bytes each host receives are
+those it received before (the goldens check). Not yet: saving every render
+with its layers to the job folder (phase 3c, which takes the layers from the
+`CanvasFrame`).
 
 - `spec.py` — `JobSpec` (+ `ReorderSpec`/`PositionSpec`/`TransformSpec`/
   `NonlinearSpec`). Every checkbox a host shows maps to a field here; nothing
@@ -172,8 +193,9 @@ placement pictures (`draw_canvas`, `stored_placement`, `stage`/`_Staged`,
   `working_source` (the working copy and its scale, `source_cache`),
   `section_channels` (`channel_cache`), `calibration` (host, then file
   tags), `position_range`, `axis_ends`, `species`, and the `render_cache` /
-  `render_scale` caches. No model and no message images: the driver's
-  `engine.EngineContext` subclasses it to add those.
+  `render_scale` caches and the `picture_cache` of captioned reference
+  pictures (`core.pictures`). No model: the driver's `engine.EngineContext`
+  subclasses it to add that.
 - `checkpoint.py` — atomic JSON write to `<folder>/linear_state.json`,
   versioned (`format_version`, `STATE_FORMAT_VERSION` 1; `upgrade_state`
   reads an unversioned checkpoint as version 0, the same fields, and refuses
@@ -238,7 +260,7 @@ placement pictures (`draw_canvas`, `stored_placement`, `stage`/`_Staged`,
   `atlas.render.outer_outline` — or `none`; the caption names the layer when
   it is not `all`).
   `physical_overlay` is the one-image `overlay` wrapper (tests and scripts;
-  `fit_affine` draws through the toolbox's `draw_canvas` from the fit's
+  `fit_affine` draws through `core.placement.draw_canvas` from the fit's
   `FitFrame`).
   `caption` wraps any line wider than its picture (`wrap_caption`: at spaces,
   mid-word for one long word), so a small picture keeps its whole label; a
@@ -363,7 +385,7 @@ placement pictures (`draw_canvas`, `stored_placement`, `stage`/`_Staged`,
   so a call's options never change a default. `framed_section` /
   `framed_atlas` draw the tissue-framed pictures (default options = the old
   pixels exactly), `channel_strip` the `view_slices` channels mode (each raw
-  channel unmodified, labelled); the toolbox's `draw_canvas` draws every
+  channel unmodified, labelled); `core.placement.draw_canvas` draws every
   physical picture (its caption names the channels and any atlas under the
   section, `canvas_label`).
 - `appearance.py` — the section's appearance per target (2026-10-01): `view`
@@ -383,9 +405,11 @@ placement pictures (`draw_canvas`, `stored_placement`, `stage`/`_Staged`,
   gated by the spec, on the job (state, undo, checkpoint and submit gates
   are the job's), plus the door's own record on the `ToolBox`: the
   look-before-commit gates and the delivery bookkeeping. Every write goes
-  through `langslice.ops` (above). The interactive
-  transform's pictures live here: `_Staged` (one section, its calibrated canvas and the
-  resolved pivot), `adjust_transforms` (the write AND the look, any positioned
+  through `langslice.ops` (above) and every picture is drawn by
+  `langslice.core` (above); the tools return them plain. The interactive
+  transform: `core.placement.stage` (one section, its calibrated canvas and
+  the resolved pivot; the door checks the knobs and fills a left-out shear
+  first), `adjust_transforms` (the write AND the look, any positioned
   section; `mode="ab"` draws the new parameters beside what the section
   carried before the call, a silhouette fit included; the same numbers again
   re-draw without an undo step). Each entry is staged and drawn, its record
@@ -405,8 +429,7 @@ placement pictures (`draw_canvas`, `stored_placement`, `stage`/`_Staged`,
   alignment exposes direct affine adjustments only.
   `transform_history` on the ToolBox is per section and lasts the whole run,
   but is not repeated in tool replies. `answered(*touched)` (after an ops
-  write; `commit(before, *touched)` where the door still writes, the
-  `keep_linear` record) is what ordinary writes answer with: the status rows of
+  write) is what ordinary writes answer with: the status rows of
   the sections it touched plus `n_sections`, never the whole table —
   transform writes return their canonical physical result instead; `status`,
   `undo`, `redo` and `submit` are what return all the rows.
@@ -515,8 +538,8 @@ placement pictures (`draw_canvas`, `stored_placement`, `stage`/`_Staged`,
   preflight size guarantee. Logs separate cumulative input from peak request
   input; 1.3M processed over a run does not mean a 1.3M-token context.
 - `engine.py` — `EngineContext` (the `Workspace` plus the checkpoint and
-  results paths the job is opened at, the model and `reference_parts`, the
-  encoded-picture cache), `run_session`, and `run(spec)` (`Job.open`, the
+  results paths the job is opened at and the model), `run_session` (the
+  agent gets the tools `adk.media.packaged`), and `run(spec)` (`Job.open`, the
   toolbox on it, the session, `Job.emit_results`). `ingest` and
   `apply_host_inputs` are re-exported from `job.py` for the SliceBench
   adapters. No post pass: the session is the whole run.
@@ -577,7 +600,7 @@ The ABBA dialog's controls, all plain `JobSpec` fields (not CLI flags yet):
   none). Only what the
   agent is SHOWN changes. Nothing is upsampled past its source: a framed
   `render_slice` treats `long_edge` as a ceiling over the working copy, a
-  physical picture (`draw_canvas`) renders the section at the panel size
+  physical picture (`core.placement.draw_canvas`) renders the section at the panel size
   divided by the zoom span (`render.shown_section`, the matrix and pivot
   carried onto it by `rescale_section_matrix`) and `physical_views` shows
   the crop at `long_edge` or its own pixels, `atlas_fetch.atlas_sized`
@@ -1031,4 +1054,5 @@ paged under
 model is available through the Claude connector. The MCP tools are the same
 functions with the same `view` and the same strict-argument rule
 (`mcp_server.server.strict_arguments`; a nested object Claude Desktop sends
-as a JSON string is parsed first).
+as a JSON string is parsed first); their plain pictures become image blocks
+through `encode_jpeg` (`result_blocks`).
