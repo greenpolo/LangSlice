@@ -98,8 +98,9 @@ modules take a `workspace.Workspace` and return plain PIL pictures, numbers
 and text; none imports `google.genai`, ADK, litellm or openai
 (`tests/test_core_imports.py` checks each in a fresh interpreter): `workspace`,
 `display`, `transform`, `deformation`, `appearance`,
-`atlas_fetch`, `opening`, and `registration_handoff` at the top level (the
-former `render` is in `src/langslice/core/` since phase 3d). The
+`atlas_fetch`, `opening`, and `registration_handoff` / `registration_tool` at
+the top level (the former `render` is in `src/langslice/core/` since phase
+3d; the handoff geometry in `core/handoff.py` since phase 4). The
 doors turn them into what a host reads: `adk/media.py` (the one module that
 makes `types.Part`s: JPEG encoding, `packaged` / `package_result` for the
 tools' pictures, the opening as parts), the toolbox and `view_options.py`
@@ -179,11 +180,10 @@ replies are unchanged.
 
 **Every tool one operation (phase 3d, 2026-10-04).** What was still inline
 in the tools moved to `src/langslice/ops/` (its own `CLAUDE.md`):
-`submit` (`ops.submit`: the job's gates, the image-correction check with
-the fingerprint function passed in, the door's look gate as a callable, then
-the write), `fit_affine` and `adjust_transforms` (`ops.transforms`),
-`trace_borders` (`ops.traces`, the image-model call passed in as
-callables), `search_position` and `run_deepslice` (`ops.positions`),
+`submit` (`ops.submit`: the job's gates, the image-correction check through
+the workspace, the door's look gate as a callable, then the write),
+`fit_affine` and `adjust_transforms` (`ops.transforms`), `trace_borders`
+(`ops.traces`, the image model passed in), `search_position` and `run_deepslice` (`ops.positions`),
 `grep_atlas` (`ops.atlas`), `preprocess` (`ops.appearance.preprocess`),
 `undo`/`redo` (`ops.history`), and the read verbs of every viewing tool
 (`ops.views`: `status`, `view_slices`, `view_atlas`, `view_placement`,
@@ -273,9 +273,10 @@ names, candidate resolution) and every reply's wording.
   an undo, redo or reload that MOVES a section's position counts as a write
   to it, as `set_positions` does: that section's compared views are dropped
   and the stack needs a new `view_stack` (`toolbox.forget_looks`).
-  Missing image corrections take the fingerprint function from the door
-  (`registration_tool.correction_fingerprint` lives with the provider code
-  until phase 4).
+  Missing image corrections (`missing_image_corrections(workspace)`) read
+  each section's geometry through the core's
+  `core.handoff.correction_fingerprint` (phase 4: the provider is no longer
+  needed for it).
 - `discovery.py` — natural-sorted image discovery.
 - `render.py` — a re-export shim since phase 3d (2026-10-04), kept only
   because SliceBench imports it (`slicebench/adapters/langslice_geometry.py`);
@@ -452,9 +453,12 @@ names, candidate resolution) and every reply's wording.
   drawn first) and AFTER, labelled.
   Computation (silhouette fit, calibration, tissue pivot, `search_position`,
   the image model's input) always reads the default.
-- `toolbox.py` — `build_tools(state, ctx, spec, job=None)`: every tool,
-  gated by the spec, on the job (state, undo, checkpoint and submit gates
-  are the job's), plus the door's own record on the `ToolBox`: the
+- `toolbox.py` — `build_tools(state, ctx, spec, job=None,
+  image_model=None)`: every tool, gated by the spec, on the job (state,
+  undo, checkpoint and submit gates are the job's; the image model, when
+  the run has one, is the binding `trace_borders` hands to `ops.traces`,
+  resolved from the spec through `providers.registry.resolve_image_model`
+  when not passed), plus the door's own record on the `ToolBox`: the
   look-before-commit gates and the delivery bookkeeping. Each tool body is
   argument checking, one `langslice.ops` call (above; `ops/registry.py`
   names it) and the wording; every picture is drawn by `langslice.core`
@@ -735,7 +739,11 @@ the base prompt from the job statement. The task-notes heading is
 Local anatomical deformation remains the responsibility of the nonlinear workflow.
 With an image model the `nonlinear` task also adds `trace_borders(id, prompt="")` through
 the top-level `registration_tool` bridge. It uses the supplied linear placement
-and the agent's per-slice edited copy of the base correction prompt.
+and the agent's per-slice edited copy of the base correction prompt. The image
+model is the door's binding: `build_tools(image_model=...)`, resolved from
+`nonlinear.provider` / `nonlinear.image_model` through
+`providers.registry.resolve_image_model` when omitted, and handed to
+`ops.traces.trace_borders`.
 The call runs in the background (`registration_tool.start_correction` prepares
 it; `Job.settle_image_corrections` waits at submit and at session end) and
 returns no images. The first image reply is retained in `SliceState.image_correction`. No atlas search,
@@ -1037,8 +1045,9 @@ the history was in memory only and a resume began with none).
 ## Ceilings worth knowing
 
 - `fit_affine`'s silhouette method measures against the atlas plane at the
-  stack's cutting angles (`atlas_fetch.atlas_mask` handed to
-  `affine.silhouette_affine` as `atlas_mask_at`, 2026-09-10). Until then it
+  stack's cutting angles (2026-09-10; since phase 4 `affine.silhouette_affine`
+  takes the angles and reads `atlas.core.get_root_mask` at them, the one
+  silhouette wrapper `nonlinear/quick_affine` shares). Until then it
   measured against the FLAT section on a 13-degree brain and said so with
   `flat_atlas_fit`; Astra's run-19 debrief asked for exactly this.
 - `physical` on a fit is the knobs about the canvas centre, `shear`

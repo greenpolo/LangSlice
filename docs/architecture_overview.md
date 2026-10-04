@@ -15,9 +15,9 @@ other; top-level bridge modules connect them:
 - `src/langslice/nonlinear/` -- generative-image registration: exactly two
   border-based routes (placed-border correction when a placement is supplied;
   otherwise a silhouette-placed, model-drawn-boundary route against an
-  outlined grayscale atlas template), image provider adapters, Elastix
-  runtime, affine/nonlinear result types, and the silhouette-based
-  `quick_affine` preview.
+  outlined grayscale atlas template), image provider adapters, the fit of the
+  model's lines through `deformable/` (`border_fit.py`), affine/nonlinear
+  result types, and the silhouette-based `quick_affine` preview.
 
 The remaining top-level modules are shared by both:
 
@@ -27,19 +27,28 @@ The remaining top-level modules are shared by both:
 - `src/langslice/affine.py` -- the shared in-plane affine core: the silhouette
   (image-moments) fit of a section onto an atlas section, the
   rotation/scale/translate matrix builder, and the normalized six-number
-  parameter convention. Used by the linear transform tools and by
-  `quick_affine`.
+  parameter convention, and `pixel_center_map`. `silhouette_affine` is the
+  one silhouette wrapper the linear transform tools and `quick_affine` share.
 - `src/langslice/oblique.py` -- arbitrary-plane (cutting-angle) sampling of an
   atlas volume and the (pitch, yaw) fitter.
-- `src/langslice/registration_handoff.py` -- turns a linear section state into
-  the calibrated placement the nonlinear border correction takes.
+- `src/langslice/core/handoff.py` -- turns a linear section state into
+  the calibrated placement the nonlinear border correction and the deformable
+  fit take, and fingerprints it; `src/langslice/registration_handoff.py`
+  re-exports it and runs route "supplied" for one section with the image
+  model passed in.
 - `src/langslice/registration_tool.py` -- the linear agent's optional
-  image-model border-correction tool, built on that handoff.
+  image-model border-correction tool, built on that handoff; the image model
+  is an argument.
+- `src/langslice/deformable/` -- the library deformable fit (ANTs SyN or
+  Elastix B-spline) of a placed atlas plane: the linear agent's
+  `fit_deformable` and the fit of the image model's lines.
 - `src/langslice/image_prep.py` -- image normalization, metadata detection,
   downsampling, and the host multichannel blend (`host_preprocess`).
 - `src/langslice/integrations/` -- integration layers for external registration software: `quint.py` (QUINT/QuickNII/VisuAlign JSON export), `abba.py` (abba-python registration plugin).
 - `src/langslice/providers/` -- model access: Gemini API keys, OpenAI API keys,
-  and ChatGPT subscription sign-in (`openai-oauth`), named in `registry.py`.
+  and ChatGPT subscription sign-in (`openai-oauth`), named in `registry.py`,
+  where `resolve_image_model` turns a provider name into the image-edit call
+  a door hands to the operations.
 - `src/langslice/adk/` -- ADK plugins, model resolution, and SDK helpers.
 - `src/langslice/api/` -- Pydantic engine contract, runtime wrappers, and the
   stdio service used by non-Python clients.
@@ -119,9 +128,10 @@ derived representations and adjustment history stay local.
    ask the model to draw the boundaries from nothing (route "atlas", with an
    optional second corrective call).
 3. Extract corrected yellow lines and overlay them on the original photograph.
-4. Optionally fit the residual deformation (Elastix B-spline or affine) and
-   warp the placed atlas labels. The default is `deformation="none"`: the
-   residual is identity while the deformation algorithm is still being designed.
+4. Optionally fit the residual deformation to the corrected lines with the
+   deformable package (`deformation="deformable"`: lines against the atlas
+   family borders, Elastix B-spline) and warp the placed atlas labels. The CLI
+   default is `deformation="none"`: the residual is identity.
 5. Compose the initial affine placement with that residual for native-atlas
    correspondences and VisuAlign markers.
 6. Return separate raw, corrected-border and fitted-atlas review artifacts.

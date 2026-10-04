@@ -17,13 +17,18 @@ here is a verbatim copy — edit one, mirror to the other.
   histology; the shared nonlinear boundary-refinement core sends that overlay
   plus the clean histology for ONE image-model correction call. There is no
   standalone color-map initialization or silhouette refit in this adapter.
+  The fit of the corrected lines is the deformable package's
+  (`nonlinear/border_fit.fit_border_lines`, Elastix lines against the family
+  borders; ABBA's labels are given as the native grid, placed by an identity
+  at `voxel_size_um`; since 2026-10-04, replacing the Elastix residual fit),
+  and the provider is resolved here (`providers.registry.resolve_image_model`).
   The fit maps output histology coordinates to the rough atlas frame; ABBA
   receives the paired coordinates in the opposite direction, not a negated
   displacement field. The measured ABBA↔brainglobe AP offset is ~0.99, not
   1.0; never hardcode it. The
   nonlinear result returns as a serializable invertible thin-plate-spline
   (`InvertibleWrapped2DTransformAs3D` — the plain wrapper is not invertible)
-  sampled from the Elastix deformation field, and lands on the slice's
+  sampled from the fitted deformation field, and lands on the slice's
   registration stack like a native step (undo, state save/reload included).
   Reopening a saved state requires the plugin registered first, else ABBA
   drops the step. `install_gui` adds a `Register > LangSlice` menu entry via

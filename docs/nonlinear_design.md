@@ -8,9 +8,10 @@ The standalone lower-level atlas route described here remains available for
 experiments; it is not exposed to the stack agent's correction tool. Route
 "supplied" is the production path: nonlinear correction needs a linear
 placement first, because the silhouette placement route "atlas" starts from is
-broken by exactly the outline damage that matters most. How corrected borders
-become a deformation is still being designed; see
-[the interface design](interface_design.md).
+broken by exactly the outline damage that matters most. Corrected borders
+become a deformation through the shared deformable fit
+(`langslice.deformable`, below), the same engine the linear agent's
+`fit_deformable` uses; see also [the interface design](interface_design.md).
 
 <p align="center">
   <img alt="Registration stages: inputs, image-model output on the slice, Elastix deformation field, registered slice" src="assets/registration_pipeline.png" width="720">
@@ -18,15 +19,16 @@ become a deformation is still being designed; see
 
 The figure shows the stages every route passes through: an input slice and
 an atlas rendering, one image-model call that moves the atlas onto the
-tissue, an Elastix residual fit of the model's output, and the deformation
+tissue, a residual fit of the model's output, and the deformation
 applied to atlas coordinates. It predates the current design and shows the
-model repainting a colored region map; the routes below give it atlas
-borders instead, and the model draws or corrects boundary lines rather than
-fills.
+model repainting a colored region map and an Elastix fit of it; the routes
+below give it atlas borders instead, the model draws or corrects boundary
+lines rather than fills, and the deformable package fits those lines.
 
 Registration is exactly two border-based routes, selected automatically by
 whether an initial atlas placement is supplied. Both routes fit the SAME
-residual border deformation and compose it with their own initial placement.
+residual deformation to the model's lines and compose it with their own
+initial placement.
 There is no colormap workflow: an image model never repaints a colored atlas
 region map, is never shown any colored atlas render, and no per-pixel
 classification, multi-draw voting or RGB Elastix stage exists in this
@@ -46,8 +48,8 @@ Without it, `provider="none"` keeps its historical model-free diagnostic
 runs route "atlas": the rough placement is ALWAYS the local
 silhouette-moments fit (`prior.place_plane_on_tissue_with_matrix`) — never a
 remote call, since there is nothing yet to correct — and one or two model
-calls draw or correct boundaries against it before the same residual fit
-that route "supplied" uses.
+calls draw or correct boundaries against it before the same fit that route
+"supplied" uses.
 
 A caller-supplied `generated_image` with no placement replays route "atlas"
 with zero model calls: it is treated as that route's own final output.
@@ -69,16 +71,26 @@ with zero model calls: it is treated as that route's own final output.
    the canvas aspect if the lane returned a different frame, Zhang-Suen
    thinning to a single-pixel skeleton) and displayed on the untouched
    original photograph — never on the model's redrawn tissue.
-5. Optionally, Elastix fits a B-spline (or affine, with
-   `deformation="affine"`) residual from the rough borders to the corrected
-   ones. The CLI default is `--deformation none`: no fit runs, the residual is
-   identity, and the exported placement is the rough one. The model call is
-   judged on its lines alone while its design is open; the fit is a separate
-   question, taken up later. When a fit does run it goes
-   (`image_gen_helpers._run_elastix_april_borders`), and the atlas label map
-   is warped by nearest-neighbor sampling
-   (`image_gen_helpers._warp_classified_labels`) — never reconstructed from
-   the yellow lines themselves.
+5. Optionally (`deformation="deformable"`, `--deformation deformable`), the
+   deformable package fits the extracted lines
+   (`border_fit.fit_border_lines`): route B, the line mask against the
+   colour-family borders the model was shown, both softened by the same
+   60 µm ridge, mean squares, Elastix B-spline at medium stiffness by default
+   (`engine="ants"`: ANTs SyN with the lines also turned into named regions).
+   The placement it fits on is the canvas placement as a
+   `deformable.Placement` (`border_fit.placement_on_canvas`: the canvas
+   pixel size follows from the placement's scale and the atlas resolution;
+   `border_registration.native_to_oriented_map` folds `image_axes` and the
+   mirror into the matrix, since the fit samples the native plane). The
+   fitted atlas labels come from the composed map
+   (`DeformableRecord.native_coordinates`) — never reconstructed from the
+   yellow lines themselves — and the fitted borders are drawn smoothly on
+   the canvas, clipped to tissue (`deformable.draw_warped_borders`). The CLI
+   default is `--deformation none`: no fit runs, the residual is identity,
+   and the exported placement is the rough one; the model call is judged on
+   its lines first. (Until 2026-10-04 this step was an Elastix borders
+   B-spline or affine residual fit of its own, `"bspline"`/`"affine"`; the
+   deformable package replaced it.)
 
 ## Route "atlas": drawing a border from nothing
 
@@ -105,7 +117,7 @@ with zero model calls: it is treated as that route's own final output.
    three ways: remove a line with no counterpart in the atlas, leave a line
    off a slide feature (bubble, stain, debris), and nudge a line that has a
    counterpart but sits off its edge.
-4. The resulting lines feed the SAME residual fit as route "supplied", with
+4. The resulting lines feed the SAME fit as route "supplied", with
    the silhouette-moments placement as the initial placement instead of a
    supplied one.
 
@@ -148,9 +160,12 @@ supplied photograph. The atlas grid is sampled at the requested position and
 cutting angles, then transformed by `image_axes` and the explicit
 `atlas_mirror_lr` option; the matrix refers to that oriented grid.
 
-`langslice.registration_handoff.prepare_linear_registration` prepares this
-contract from an existing linear section state; `run_linear_registration`
-performs the handoff. These are callable host interfaces, not an
+`langslice.core.handoff.prepare_linear_registration` (re-exported by
+`langslice.registration_handoff`) prepares this contract from an existing
+linear section state; `registration_handoff.run_linear_registration`
+performs the handoff, with the image model passed in
+(`providers.registry.ImageModel`, resolved by the caller through
+`resolve_image_model`). These are callable host interfaces, not an
 automatically enabled tool in the linear agent's toolbox. The opt-in `nonlinear`
 task adds a separate annotation-only `registration_tool` using the same prepared
 linear geometry. The handoff functions preserve the
@@ -160,8 +175,10 @@ oriented rendered section, not the original acquisition TIFF.
 
 ABBA already provides aligned atlas-coordinate channels. Its adapter
 (`integrations/abba.py`) draws those placed labels directly on the section
-and uses the same route-"supplied" correction core — no standalone
-placement-free route or silhouette refit in that adapter.
+and uses the same route-"supplied" correction core and the same fit (the
+labels sampled at ABBA's coordinates are the fit's native grid, placed by an
+identity at the plugin's voxel size) — no standalone placement-free route or
+silhouette refit in that adapter.
 
 Do not infer left-right reflection from a nearly symmetric tissue silhouette.
 Mirroring must be explicit and consistent for labels, grayscale anatomy and
@@ -176,8 +193,8 @@ affine, or the silhouette-moments affine on route "atlas") with the residual
 border-fit deformation. Composition happens in
 `border_registration.composed_correspondences` and `composed_native_map`:
 
-- `composed_correspondences` samples the residual field on the fit's own
-  B-spline control-grid spacing (`image_gen_helpers._grid_spacing_px`) and
+- `composed_correspondences` samples the residual field every
+  `marker_spacing_px` (1/36 of the long edge, at least 32 px) and
   returns two coordinate lists: `markers` (slice pixel → canonical
   letterboxed-atlas-canvas pixel, the VisuAlign convention) and `direct`
   (slice pixel → native atlas pixel, unambiguous atlas-grid coordinates).
@@ -195,7 +212,9 @@ Candidate metadata (`RegistrationCandidate.metadata`, written by
 `provider="none"` sets `"silhouette_moments"`; no placement with an active
 provider — route "atlas" itself — sets
 `"silhouette_moments_atlas_route"`),
-`passes`, `atlas_to_canvas`, `slice_to_canvas`,
+`passes`, `deformation`, `fit` (the deformable fit's settings, engine,
+diagnostics and flags, or `{"fit": "none", "fit_skipped": true}`),
+`fit_elapsed_s`, `atlas_to_canvas`, `slice_to_canvas`,
 `native_atlas_to_canonical_canvas`, `visualign_markers` + `n_markers`,
 `marker_frames` (the exact composition formula, in prose), and
 `slice_to_native_atlas_correspondences` +
@@ -229,10 +248,11 @@ returned `RegistrationCandidate` and (with `debug_dir` set) on disk:
 - the residual deformation field, the rough/warped label arrays and the
   composed native-atlas coordinate map (`residual_field.npz`,
   `rough_leaf_ids.npz`, `warped_leaf_ids.npz`, `atlas_coordinate_map.npz`);
-- `meta.json` and `elastix_report.json` (the mechanical fit diagnostics from
-  `residual_fit_report` / `image_gen_helpers._elastix_report` — codes only
+- `meta.json` and `fit_report.json` (the deformable fit's mechanical
+  diagnostics: per-region area ratios, folds, displacement, and flags only
   when the warp is physically implausible; anatomical quality is still a
-  human visual call, never a metric verdict).
+  human visual call, never a metric verdict), plus the fit's
+  `DeformableRecord` saved under `deformable/`.
 
 Read `output_kind` and `workflow` metadata rather than assuming a color-map
 image is present anywhere in this pipeline.
@@ -249,9 +269,11 @@ against borders, include/exclude regions (optionally one side,
 setting; the engine is the user's `nonlinear.engine` choice or the agent's.
 Applied records are saved under `<results dir>/deformable/` and referenced from
 `SliceState.deformation`; export adapters (ABBA, VisuAlign, BrainGlobe) are to
-read them and are not built. No host wires the engine directly. `fit_section(image, atlas, placement, settings,
-lines=..., previous=...)` takes a `Placement` — the handoff's
-`atlas_to_slice` or the image tool's `atlas_to_canvas`, unchanged — and
+read them and are not built. The standalone routes above and the ABBA plugin
+fit the model's lines through it (`nonlinear/border_fit.py`). `fit_section(image, atlas, placement, settings,
+lines=..., previous=..., native=...)` takes a `Placement` — the handoff's
+`atlas_to_slice` or the image tool's `atlas_to_canvas`, unchanged; `native`
+replaces the atlas plane with a host's own label grid — and
 returns a `DeformableRecord`; `fit_candidates` runs up to eight settings in a
 process pool.
 

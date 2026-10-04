@@ -243,18 +243,24 @@ default) is fine unless the first pass looks incomplete.
 
 After either route's model call(s), yellow lines are extracted and displayed
 on the original photograph. By default (`--deformation none`) no fit runs: the
-residual is identity and the exported placement is the rough one, while the
-deformation algorithm is still being designed. `--deformation bspline|affine`
-runs a residual Elastix fit that transfers the correction to the atlas labels.
-Exports compose the complete initial placement and residual deformation. Keep the raw reply, corrected lines on original tissue,
+residual is identity and the exported placement is the rough one.
+`--deformation deformable` fits the model's lines with the deformable package
+(`src/langslice/nonlinear/border_fit.py`: the lines against the atlas family
+borders, Elastix B-spline, the linear agent's `fit_deformable` with
+`traced_lines`) and transfers the correction to the atlas labels; the fitted
+borders are drawn on the original photograph, the fit's diagnostics go to
+`fit_report.json` and its record to `deformable/` in the output folder. (The
+Elastix `bspline`/`affine` residual fit this replaced was retired on
+2026-10-04.) Exports compose the complete initial placement and residual deformation. Keep the raw reply, corrected lines on original tissue,
 and fitted atlas overlay distinct when reviewing results.
 
 `placement.json` contains a 3×3 affine mapping oriented native atlas pixel
 centers to pixels in the input image. Position, cutting angles and atlas axes
 must agree with that placement. `--mirror-atlas-lr` applies an explicit atlas
 reflection on either route; no reflection is inferred from the tissue. The
-top-level `registration_handoff` bridge prepares this contract from linear
-section state. ABBA uses its existing host alignment directly.
+core's `core/handoff.py` (re-exported by the top-level `registration_handoff`
+bridge) prepares this contract from linear section state. ABBA uses its
+existing host alignment directly and fits the model's lines the same way.
 
 `--preprocess auto` remains the default shared tissue-visibility enhancement;
 `none` disables it. In either case, both correction attachments use the
@@ -264,7 +270,7 @@ supported; there is no multi-draw voting.
 
 `--provider none` is an explicit model-free diagnostic: retain supplied placement
 or fit a silhouette placement, then return its borders and composed coordinates.
-It does not run image generation or residual Elastix fitting.
+It does not run image generation or fit a residual deformation.
 
 Provider selection remains explicit: `gemini-api` for Gemini, `openai-api`
 for API access, or `openai-oauth` for subscription access (the legacy
