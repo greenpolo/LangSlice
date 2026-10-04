@@ -418,10 +418,19 @@ decides `view`'s type and `fit_deformable`'s description and arguments, as
   inside the lane's patch budget (`OPENAI_MAX_IMAGE_PATCHES` 2500 32-px
   patches at detail high, verified 2026-10-03; `CLAUDE_MAX_IMAGE_PATCHES`
   ~1.2 MP), past which the encoder would shrink the strip, labels included:
-  a column that would cross it starts the next strip. With no position at
+  a column that would cross it starts the next strip; with `max_bytes`
+  (`opening_items(max_bytes=)`, the MCP door's page budget) a column that
+  would push the strip's JPEG past it does too, so no strip is shrunk
+  after it is drawn. With no position at
   all the strips are section-only and the atlas reference
   (`reference_atlas`) follows as atlas-only strips; when every section has
   a position the reference is not sent; a partly placed stack gets both.
+  `VIEWER_LIMITS` (2026-10-04): the agent CLI's viewers, the coding agent
+  that opens its picture files (`claude`: Claude Code's Read, the MCP
+  door's numbers, strips at `CLAUDE_IMAGE_LIMIT` and pictures up to
+  `CLAUDE_MAX_VIEW_EDGE` 2000; `codex` / `openai`: Codex's `view_image`,
+  which resizes to fit 2048 px and 2,500 patches, the OpenAI lanes'
+  numbers); `DEFAULT_VIEWER` `claude`.
 - `doors/tools/arguments.py` — the shapes of the arguments (2026-10-03): `View` (the
   picture options) and `ViewAuto` (+ `resolution`), and the `entries` /
   `candidates` dicts (`DamageEntry`, `OrientEntry`, `PositionEntry`,
@@ -647,7 +656,13 @@ decides `view`'s type and `fit_deformable`'s description and arguments, as
   tool that exists, hard constraints. Nothing else. `display_facts` reads
   the run's raw channels and atlas channels off the workspace for it. `tool_line` words the
   `fit_deformable` line for the run (traced fit sections only with an image
-  model). `display_lines` describes `view` ONCE, with the raw channels (and
+  model) and, for the door that reads it (`door`: `agent`, `mcp`, `cli`),
+  where the opening pictures are (`OPENING_PLACES`: the seed message, the
+  `show_stack` pages, the `brief` files) and, for the CLI, that
+  `trace_borders` answers once its call has landed (`_CLI_LINES`); `auto`
+  (None: the spec's image resolution is "auto") adds the `view.resolution`
+  range, which the CLI always states. Every door's statement is assembled
+  in `doors/statement.py` (its own `CLAUDE.md` in `doors/`). `display_lines` describes `view` ONCE, with the raw channels (and
   that their names may not identify the stain; `view_slices` mode channels
   shows each) and the atlas channels this host has, each with one line
   (`ATLAS_CHANNEL_LINES`); `PICTURE_TOOLS` includes `fit_deformable`.
@@ -662,7 +677,10 @@ decides `view`'s type and `fit_deformable`'s description and arguments, as
 - `agent/engine.py` — `EngineContext` (`doors.jobs.JobContext`: the `Workspace`
   plus the job folder and results path the job is opened at; it adds the
   model), `run_session` (the
-  agent gets the tools `doors.tools.media.packaged`), and `run(spec)` (`Job.open`, the
+  agent gets the tools `doors.tools.media.packaged`; its system instruction
+  is `build_job_statement` plus the user's notes from `job.json`,
+  `doors.statement.read_notes`, when there are any; the seed message is the
+  opening strips and `doors.statement.status_and_notes`), and `run(spec)` (`Job.open`, the
   job folder's reference card, the toolbox on it, the session,
   `Job.emit_results`). `ingest` and
   `apply_host_inputs` are re-exported from `job.py` for the SliceBench
@@ -1185,15 +1203,39 @@ host must enable at least one transform method when enabling that task.
 
 ## Claude host briefing
 
-`prompt.run_facts` is shared with `doors/mcp/prompt.py`; keep the factual
-range, axis direction, protocol and calibration text identical across hosts.
-Claude's statement does not reuse the ADK method/playbook. MCP opens saved ABBA
+The statement is the ADK agent's (`build_job_statement`, worded for the
+door `mcp`), assembled by `doors.statement.job_statement` exactly as the
+agent CLI's `brief` assembles its own: the job statement, the door's
+opening paragraph (`opening_for_mcp`: read every `show_stack` page before
+any write), `IMAGE_MODEL_OFF` when the image model is not connected, the
+user's notes (`job.json` `notes`, `doors.statement.read_notes`; the copy
+prompt no longer repeats them) and the status table with its header and
+the recent run notes (`status_and_notes`, the ADK seed's own text). MCP opens saved ABBA
 jobs through `doors.api.abba_worker.prepare_linear`, exactly like `linear.run`,
 and supplies the opening strips separately with `show_stack` pages
 (`opening_pages`: `opening.opening_items` at `CLAUDE_IMAGE_LIMIT`, each
-strip encoded by `doors/tools/media.encode_jpeg` straight into an MCP image block,
-paged under
-`PAGE_BYTES`, a strip and its text kept together). The nonlinear task
+strip composed within a page's byte budget, `max_bytes`
+`doors.tools.media.strip_bytes`: a strip that would pass it holds fewer
+sections instead of being shrunk; encoded by `doors/tools/media.encode_jpeg`
+straight into an MCP image block, paged under `PAGE_BYTES`
+(`media.REPLY_BYTES` 680 KB, `media.paged`), a strip and its text kept
+together). Since the statement asks the host to read every page before
+writing, `start_job` arms the toolbox's opening-read gate
+(`ToolBox.require_opening`): every write answers `OPENING_NOT_READ`
+(with the unread `pages`) until each page was fetched (`opening_read`);
+a host that never calls `start_job` is not gated, and the agent CLI and
+LangSlice's own agent never are (the CLI is gate-free; the ADK agent gets
+the pictures in its first message). Every tool reply goes through the same
+budget (`result_blocks`: `media.fit_reply`; past it every picture is
+shrunk together and a last text, `media.shrunk_note`, says so and asks for
+fewer sections or a smaller `view.resolution`; nothing is dropped; the job
+folder keeps the full-size pictures), without the ADK-only
+`media_delivery_id`. A call runs `in_flight` (`ToolBox.in_flight`), so a
+call the host sent beside it promotes no picture as seen
+(`begin_model_call`). `Session.close` (`doors.jobs.close_job`: running
+image-model calls settled, pictures written) ends a job replaced by
+another and every job when `serve` stops. A strict-argument refusal is
+traced like a tool result. The nonlinear task
 opens through the Claude connector (MCP and a saved Claude job alike): its
 fitting tools always, `trace_borders` only when the job's image model is
 connected (`doors.mcp.server.image_model_off`, asking
@@ -1201,7 +1243,7 @@ connected (`doors.mcp.server.image_model_off`, asking
 login present). When it is not, the toolbox is built with
 `image_model_connected=False` (no `trace_borders`, `fit_deformable` stain-only,
 `submit` not waiting for traces), the statement is that of provider `none`
-plus `doors.mcp.prompt.IMAGE_MODEL_OFF`, and the copy prompt says so too;
+plus `doors.statement.IMAGE_MODEL_OFF`, and the copy prompt says so too;
 the job's spec keeps its provider. The MCP tools are the same
 functions with the same `view` and the same strict-argument rule
 (`doors.mcp.server.strict_arguments`; a nested object Claude Desktop sends

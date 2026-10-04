@@ -11,8 +11,8 @@ them and from the registry (`ops/registry.py`: `VERBS`, `enabled(spec)`):
 | Door | Built by | Driver |
 |---|---|---|
 | agent tools (ADK) | `doors/tools/toolbox.py` `build_tools`: the verbs `enabled(spec)` names, each `declarations.declare`d | LangSlice's agent |
-| MCP tools | the same toolbox (`doors/mcp/server.py`), plus the door's `start_job`, `show_stack`; `readOnlyHint` = read verbs; `trace_borders` only when the job's image model is connected (`server.image_model_off`, `api.setup.image_model_connected`; else `build_tools(image_model_connected=False)`) | Claude Desktop, Claude Code locked to it |
-| agent CLI | `cli/job.py` over the same toolbox, gates off, `level="auto"`, plus the scripting verbs (`export_maps`, and the hidden `trace_from_atlas`) | Claude Code, Codex |
+| MCP tools | the same toolbox (`doors/mcp/server.py`, `door="mcp"`), plus the door's `start_job`, `show_stack`; `readOnlyHint` = read verbs; `trace_borders` only when the job's image model is connected (`server.image_model_off`, `api.setup.image_model_connected`; else `build_tools(image_model_connected=False)`); every reply within `tools.media.REPLY_BYTES`; the opening-read gate armed by `start_job` (`ToolBox.require_opening`) | Claude Desktop, Claude Code locked to it |
+| agent CLI | `cli/job.py` over the same toolbox, gates off, `level="auto"`, pictures capped at the job's viewer's (`jobs.job_viewer`), `trace_borders` only when the image model is connected (`Opened.image_model_connected`), plus the scripting verbs (`export_maps`, and the hidden `trace_from_atlas`) and `brief` (the job statement and opening, `cli/brief.py`) | Claude Code, Codex |
 | library | `library.py` (`langslice.open_job`, `langslice.create_job`) over the same toolbox, the scripting verbs included; `pipeline.py` (`register_section`, `register_job`) calls those verbs in a fixed order | a script, a scripted pipeline |
 
 A hidden verb (`registry.Verb.hidden`: `trace_from_atlas`, the
@@ -48,14 +48,28 @@ with a verb or two, then a scripted `register_section` with a model of the
 script's own. An operation (`ops/`) never
 imports a door.
 
+What every door shares beyond the verbs (door parity, 2026-10-04): the job
+statement (`statement.py`), the ending of a job (`jobs.close_job`), the
+host trace (`trace.py`), the reply byte budget and paging
+(`tools/media.py`: `REPLY_BYTES`, `fit_reply`, `paged`, `strip_bytes`), and
+in the `ToolBox` the in-flight rule (`in_flight`, `begin_model_call`) and
+the opening-read gate (`require_opening`, `opening_read`,
+`opening_refusal`; armed by the MCP door only). Deliberately different:
+the host owns the loop for MCP and the CLI (no turn budget, nudges,
+debrief, image working set or quota accounting there); the
+look-before-commit gates are the tools' only (off in the CLI); pictures are
+files and artifacts in the CLI, inline elsewhere; the CLI is a process per
+call.
+
 Two sub-packages moved in with the folder move (2026-10-04), each described
 in the linear agent environment's guide (`src/langslice/agent/CLAUDE.md`):
 `tools/` (formerly in `linear/` and `adk/`): `toolbox.py` (the tool
 bodies), `arguments.py`, `view_options.py`, `media.py` (the ADK message
 parts) and, in `__init__.py`, the media keys re-exported from
 `core/media_keys.py`; `mcp/` (formerly
-`mcp_server/`): the MCP server (`server.py`, `prompt.py`,
-`host_channel.py`; `connectors/claude-desktop/`). And `api/` (formerly in
+`mcp_server/`): the MCP server (`server.py`, `host_channel.py`;
+`connectors/claude-desktop/`; its statement, formerly `mcp/prompt.py`, is
+`statement.py`'s). And `api/` (formerly in
 `hosts/api/`, moved down 2026-10-04 because the MCP door and the CLI use
 it and none of it drives a host): `models.py` (the engine contract's
 Pydantic models, `export_schema_bundle`), `runtime.py` (`version`,
@@ -105,8 +119,12 @@ them). The engine service stays in `hosts/api/`. The MCP door's
   (signature = the arguments, docstring = the description a model reads).
   `model_doc` re-indents the docstring to the eight spaces the tool closures
   gave it, so models read the same bytes as before phase 5. `Variant`
-  (`traces`, `preprocessing`, `engine`, `auto`; `Variant.of(spec, auto=)`)
-  is what of a run changes a declaration: `view` typed `ViewAuto` (with
+  (`traces`, `preprocessing`, `engine`, `auto`, `door`; `Variant.of(spec,
+  auto=, door=)`) is what of a run changes a declaration: the door that
+  reads it (`DOORS`: `agent`, `mcp`, `cli`; `_DOOR_DOCS`: where
+  `view_placement` says the section is, the opening message, the
+  `show_stack` pages or the `brief` files, and the CLI's `trace_borders` /
+  `trace_from_atlas`, which answer once their calls have landed); `view` typed `ViewAuto` (with
   `resolution`) where the caller sizes pictures; `fit_deformable`'s
   description without the image model (`_STAIN_ONLY_DOC`), with
   `preprocess` (`_PREPROCESS_DOC`), and with the engine fixed (no `engine`
@@ -118,11 +136,35 @@ them). The engine service stays in `hosts/api/`. The MCP door's
   the body takes it; a body lacking a declared argument is a `TypeError`),
   `arguments_schema(name, variant)` (pydantic JSON schema, unknown keys
   refused). `FULL` is the variant of a caller without a job.
+- `trace.py` — what a host-owned door records of its calls:
+  `TRACE_DIR_ENV` (`LANGSLICE_TRACE_DIR`, also `agent.trace`'s),
+  `HostTrace` (the MCP door's trace, formerly `mcp.server.McpTrace`, still
+  that name there: one JSON line per record, images as descriptors; one file
+  per MCP session), `cli_trace(job_folder, trace_dir)` (the agent CLI's: one
+  file per job folder, `cli_<images>_<digest>.jsonl`) and `log_call`
+  (`logs/calls.jsonl`).
+- `statement.py` — the job statement every door gives a registration
+  agent, in one place: `job_statement(spec, state, ctx, door=, tool_names=,
+  opening=, notes=, max_resolution=, image_model_off=, auto=)` (the ADK
+  agent's `agent.prompt.build_job_statement` worded for the door, then the
+  door's opening paragraph, `IMAGE_MODEL_OFF` when the job's image model is
+  not connected, the user's notes, `status_and_notes`), used by the MCP
+  door (`opening_for_mcp`: the `show_stack` pages) and the agent CLI's
+  `brief` and `init` (`opening_for_cli`: the saved picture files and how
+  the commands behave: `--dry-run`, `--background` for the long verbs,
+  `long_verbs()`, parallel calls). `status_and_notes(state)` (the status
+  table with its header and the newest `RECENT_NOTES` run notes) is the ADK
+  seed message's text too. `read_notes(layout)`: the user's notes,
+  `job.json` `notes` (written by `claude prepare --notes`, ABBA's Claude
+  mode and `langslice job FOLDER init --notes`; a saved job from before
+  2026-10-04 holds them under `host`), read by every door, the ADK agent
+  included. `image_model_state(spec, connected=)`: the image model as the
+  CLI's `status` and `brief` report it.
 - `jobs.py` — opening a job without the agent: `JobContext` (the
   workspace plus the job folder and results path; the driver's
   `EngineContext` adds only the model), `find(path)` (a job folder, or the
   image folder beside one; `NoJob`), `read_spec` (`job.json`'s spec, as a
-  resume), `open_folder(path, persist=)` (`Job.load`: nothing rewritten;
+  resume), `open_folder(path, persist=, door=)` (`Job.load`: nothing rewritten;
   the card brought up to date; the model keys loaded by
   `api.setup.load_credentials`, `.env` then the keys saved by setup, the one
   loader the CLI's `main` uses too), `create(spec)` (`Job.open`: the ingest
@@ -132,8 +174,16 @@ them). The engine service stays in `hosts/api/`. The MCP door's
   `max_view_edge` `OPEN_MAX_VIEW_EDGE`: no model's cap, the source's pixels
   bound every picture; `image_model` handed to `build_tools`; without one a
   `custom`-provider job, or one with `Opened.traces_off`, gets
-  `image_model_connected=False`: no `trace_borders`), `Opened.close`
-  (image corrections settled, pictures flushed). `with_registration(spec,
+  `image_model_connected=False`: no `trace_borders`; nor does one whose
+  provider's key or login is absent here, `Opened.image_model_connected`,
+  the MCP door's `api.setup.image_model_connected`), `Opened.close`
+  (`close_job`: image corrections settled, pictures flushed; every door
+  ends a job through it). `door` (`agent`, or `cli` for the agent CLI:
+  its declarations worded for it, `Variant.door`) and `viewer` (the CLI's:
+  `job_viewer(layout)`, `job.json` `viewer`, default `claude`;
+  `core.opening.VIEWER_LIMITS` gives the opening strips' limit and
+  `Opened.max_view_edge`, the largest picture; None for a script:
+  `OPEN_MAX_VIEW_EDGE`). `with_registration(spec,
   file, target=, atlas_loader=, emit=)`: the spec with a registration made
   elsewhere as its supplied inputs (`job.imports.registration_inputs` on
   the spec's workspace, `context`) and the import report, each warning
@@ -187,8 +237,9 @@ them). The engine service stays in `hosts/api/`. The MCP door's
   `card_text(layout)` (one screen: the folder's files, one line each for
   `registration.json` and each section's maps, state as truth and the
   rest derived, the coordinate map and convention, the CLI with
-  every listed verb from the registry, `registry.listed()`, the Python
-  entry point), `write_card`
+  every listed verb from the registry, `registry.listed()`, each marked
+  `long` where `Verb.long`, that calls may run in parallel, the Python
+  entry point; first, to run `brief` and read `BRIEF_FILE`), `write_card`
   (writes where missing or worded differently; never raises). Written by
   every door that opens or makes a job: the CLI and the library
   (`jobs.open_folder`, `jobs.create`), the agent run (`engine.run`), the MCP
@@ -212,11 +263,31 @@ them). The engine service stays in `hosts/api/`. The MCP door's
     `UNKNOWN_*`, `TOO_MANY_*` and `ARGUMENT_CODES` are 2, every other
     refusal 3); `FIXES` per code; `stdout_to_stderr()` (Python and native
     stdout to stderr while a verb runs, so stdout holds the envelope only).
+    `IMAGE_MODEL_OFF`: a verb that needs the job's image model, which is
+    not connected here (exit 3).
+  - `brief.py` — `langslice job FOLDER brief` (and `init`'s statement):
+    `build(opened, pictures=)` -> `Brief`: `statement.job_statement` for
+    door `cli` (the gates left out, `auto` sizing at the viewer's largest
+    picture, `IMAGE_MODEL_OFF` when the image model is not connected), the
+    opening (`core.opening.opening_items` at the viewer's strip limit,
+    saved as the job's `opening` views like the ADK run's, artifacts of
+    kind `opening` with `index` and `label`), the facts (`viewer`,
+    `resolution` range, `image_model`), all written to `BRIEF.md`.
   - `catalog.py` — `langslice ops` (the listed verbs: name, kind, group,
-    summary; the job commands) and `langslice schema [VERB] [--job FOLDER]`
-    (`SCHEMA_VERSION` 1; `canonical_verb`: kebab-case accepted; every
-    listed verb, or one verb by name, a hidden one included).
-  - `job.py` — `langslice job FOLDER VERB`: `execute` (never raises),
+    summary, `long`; the job commands, `brief` among them) and `langslice
+    schema [VERB] [--job FOLDER]` (`SCHEMA_VERSION` 2; `canonical_verb`:
+    kebab-case accepted; every listed verb, or one verb by name, a hidden
+    one included; per verb `Declared.entry`: `summary`, the whole
+    `description`, `kind`, `group`, `long`, `arguments`, and for a picture
+    verb `picture_options`, `agent.prompt.display_lines` with the
+    resolution range; declared for `--job`'s job, or the job of the current
+    folder, through `jobs.open_folder(persist=False, door="cli")`, else
+    `FULL` with a `hint`; a long verb's `next` is its `--background` call).
+  - `job.py` — `langslice job FOLDER VERB`: `execute` (never raises; every
+    call logged by `record`: `logs/calls.jsonl` through `trace.log_call`,
+    and with `LANGSLICE_TRACE_DIR` a `tool_result` record per call in
+    `trace.cli_trace`'s one file per job; `Envelope.call` holds the
+    arguments as the verb read them, never printed),
     `parse` (`--args`, `--name value`, `--dry-run`, `--background`,
     `--verbose`, `--timeout`, the child's `--run-id`), `arguments_for`
     (flags read as the verb declares them; `argument_refusal`, missing
@@ -226,10 +297,14 @@ them). The engine service stays in `hosts/api/`. The MCP door's
     an image-model verb's calls (`Verb.image_model`: `trace_borders`,
     `trace_from_atlas`) settled before answering, each landed outcome
     shown; `submit` writes the results;
-    pictures flushed and listed as artifacts; `would_change` from the state
-    before and after on a job that writes nothing), `shape` (concise:
-    no `description`, a write's whole-stack `rows` as `n_rows`; verbose:
-    everything and the picture texts), `changes`, `init` (the job flags of
+    pictures flushed and listed as artifacts, each with `index` (the
+    picture's place in the call, as `image_indexes` count) and, on its
+    `view` entry, `label` (sections and mode, `job.views.Saved`);
+    `would_change` from the state before and after on a job that writes
+    nothing; a dry run of a long verb adds its `--background` command to
+    `next`), `shape` (concise: a reply with pictures keeps its description
+    on one line as `picture_note`, a write's whole-stack `rows` as
+    `n_rows`; verbose: everything and the picture texts), `changes`, `init` (the job flags of
     `linear run`, `jobs.create`; with `--registration` the import report
     under `result.registration` and its warnings as the envelope's,
     `BAD_REGISTRATION` when the file cannot be read, matched one to one or

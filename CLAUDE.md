@@ -236,7 +236,9 @@ deformation) and the image-model border route (`core/nonlinear/`).
   jobs, the JVM-free linear snapshot worker `abba_worker.py`). The agent CLI for coding
   agents (`doors/cli/`: `langslice job FOLDER VERB`, `langslice ops`,
   `langslice schema`; one JSON envelope on stdout, exit codes 0/2/3/4,
-  pictures as file paths, `--dry-run`, `--background`), the script door
+  pictures as file paths, `--dry-run`, `--background`; `brief` first: the
+  job statement every door gives, `doors/statement.py`, and the opening
+  pictures as files), the script door
   (`import langslice; langslice.open_job(folder)`, `create_job`,
   `coordinate_map`, `load_atlas`; no agent framework loaded), the scripted
   pipeline over it (`pipeline.py`: `register_section`, `register_job`, the
@@ -353,8 +355,9 @@ program. Code that runs in LangSlice's own environment lives in
   host `langslice claude prepare FOLDER` saves the same kind of job (in the
   job folder next to the sections, resumed on reopen; the id leads there
   through `~/.langslice/jobs/<id>.json`) and prints the prompt; `start_job`
-  returns a Claude-specific statement and status table, and `show_stack` pages
-  deliver the opening images. Authenticated localhost events update ABBA live;
+  returns the job statement LangSlice's own agent gets (`doors/statement.py`)
+  with the status table and the user's notes, and `show_stack` pages
+  deliver the opening images (read before any write). Authenticated localhost events update ABBA live;
   checkpoints/results remain in the job folder after disconnection.
   The host owns the loop, so there is no turn budget, nudges or image working
   set. This is the subscription-legal route for Claude; LangSlice never

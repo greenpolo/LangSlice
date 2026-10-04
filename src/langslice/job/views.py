@@ -95,6 +95,12 @@ class Saved:
     layers: bool
     #: A deformable-fit picture with its residual drawn (``residual.tif``).
     residual: bool = False
+    #: What the picture shows, from its note: the sections and the mode.
+    sections: tuple[str, ...] = ()
+    mode: str | None = None
+    #: Its place among the call's pictures (zero-based, the order a reply's
+    #: ``image_indexes`` count in).
+    index: int = 0
 
     def files(self) -> list[tuple[Path, str]]:
         """``(path, kind)`` of every file the picture's folder will hold:
@@ -288,7 +294,9 @@ class ViewStore:
                     Saved(self._folder(item.note, item.name), item.name,
                           has_frame(item.note) and atlas is not None,
                           item.note is not None and item.note.warp is not None
-                          and item.note.warp.warped and atlas is not None)
+                          and item.note.warp.warped and atlas is not None,
+                          sections=tuple(item.note.sections) if item.note else (),
+                          mode=item.note.mode if item.note else None, index=item.index)
                     for item in items)
             self._seq, self._call = seq, call
             self._queue.put(_Call(tool, call, call_id, arguments, items, atlas))

@@ -28,8 +28,10 @@ Four doors are covered:
   the checkpoint and carries on (including ``undo``/``redo`` across it).
 - the final stack state of the main toolbox and of the resumed job.
 - ``declarations``: what each door declares per tool (ADK function
-  declarations of three toolboxes, MCP tool lists with their schemas),
-  recorded last.
+  declarations of three toolboxes, MCP tool lists with their schemas).
+- ``mcp_*``: three more MCP jobs, recorded last (nonlinear with the image
+  model connected and not, image resolution "auto" with the opening-read
+  gate and a clamped picture size).
 - ``job_folders``: each door's job folder (``<images>/langslice``) after
   the run: its file list, the views index, ``job.json``, a hash of every
   saved picture's label and border layers (decoded pixels) and of its
@@ -780,6 +782,8 @@ def record_mcp_resume(rec: Recorder, folder: Path) -> None:
     ]
     second: list[tuple[str, dict[str, Any]]] = [
         ("start_job", {}),
+        # A new conversation reads the opening before it writes (the gate).
+        ("show_stack", {"page": 1}),
         ("status", {}),
         ("undo", {}),
         ("redo", {}),
@@ -861,6 +865,80 @@ def record_declarations(rec: Recorder, folder: Path) -> None:
                         for tool in (await client.list_tools()).tools]
 
         rec.raw("declarations", f"mcp_{label}", {"tools": asyncio.run(listed())})
+
+
+# --- MCP variants: nonlinear with and without the image model, auto picture size ------
+
+
+def record_mcp_variants(rec: Recorder, root: Path) -> None:
+    """Three more MCP jobs, recorded after everything else (no earlier entry
+    is renumbered): the nonlinear task on a supplied linear placement with
+    its image model connected (the stub's lane; no image call is made) and
+    with it not connected (the statement says the tool is off), and image
+    resolution "auto" (the resolution range, a clamped request), each with
+    its tool list and start_job statement; the last also shows the
+    opening-read gate refusing a write before show_stack."""
+    import dataclasses
+
+    from mcp.shared.memory import create_connected_server_and_client_session
+    from mcp.types import TextContent
+
+    from langslice.core.spec import JobSpec, NonlinearSpec
+    from langslice.doors.api import setup
+    from langslice.doors.mcp.server import build_server
+
+    positions = {ID0: 0.1, ID1: 0.15, ID2: 0.2}
+    supplied = {"pixel_size_um": PIXEL_SIZE_UM, "positions": positions, "transforms": {
+        name: {"kind": "interactive", "params": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
+               "mirrored": False} for name in positions}}
+    variants: list[tuple[str, JobSpec, bool, list[tuple[str, dict[str, Any]]]]] = [
+        ("nonlinear_traced", JobSpec(
+            image_folder="", preprocess="none", tasks=["nonlinear"], inputs=supplied,
+            nonlinear=NonlinearSpec(provider="openai-oauth")), True, []),
+        ("nonlinear_off", JobSpec(
+            image_folder="", preprocess="none", tasks=["nonlinear"], inputs=supplied,
+            nonlinear=NonlinearSpec(provider="openai-oauth")), False, []),
+        ("auto", JobSpec(
+            image_folder="", preprocess="none", tasks=["transform"], image_resolution="auto",
+            inputs={"pixel_size_um": PIXEL_SIZE_UM, "positions": positions}), True, [
+                ("note", {"text": "Before the opening."}),
+                ("show_stack", {"page": 1}),
+                ("note", {"text": "After the opening."}),
+                ("view_slices", {"slices": [ID1], "view": {"resolution": 5000}}),
+            ]),
+    ]
+    held = setup.image_model_connected
+    try:
+        for label, spec, linked, calls in variants:
+            folder = root / label
+            write_sections(folder)
+            setup.image_model_connected = lambda _provider, linked=linked: linked  # type: ignore[assignment]
+            server = build_server(lambda image_folder, spec=spec: dataclasses.replace(
+                spec, image_folder=image_folder), str(folder), atlas_loader=atlas_loader())
+
+            async def body(server: Any = server, calls: Any = calls,
+                           ) -> list[tuple[str, dict[str, Any], list[Any]]]:
+                out: list[tuple[str, dict[str, Any], list[Any]]] = []
+                async with create_connected_server_and_client_session(server) as client:
+                    listed = (await client.list_tools()).tools
+                    out.append(("list_tools", {}, [TextContent(type="text", text=json.dumps(
+                        sorted(tool.name for tool in listed)))]))
+                    for tool in listed:
+                        if tool.name in ("trace_borders", "fit_deformable", "view_slices"):
+                            out.append((f"declare_{tool.name}", {}, [TextContent(
+                                type="text", text=json.dumps(tool.model_dump(
+                                    mode="json", exclude_none=True), sort_keys=True))]))
+                    start = await client.call_tool("start_job", {})
+                    out.append(("start_job", {}, list(start.content)))
+                    for name, arguments in calls:
+                        result = await client.call_tool(name, arguments)
+                        out.append((name, arguments, list(result.content)))
+                return out
+
+            for name, arguments, blocks in asyncio.run(body()):
+                rec.blocks(f"mcp_{label}", name, {"tool": name, "arguments": arguments}, blocks)
+    finally:
+        setup.image_model_connected = held  # type: ignore[assignment]
 
 
 # --- the job folders ------------------------------------------------------------------
@@ -969,6 +1047,7 @@ def record(out: Path) -> dict[str, Any]:
         declared = root / "declarations"
         write_sections(declared)
         record_declarations(rec, declared)
+        record_mcp_variants(rec, root / "variants")
         built = sorted(set(main_names) | set(auto_names) | set(gated_names))
         missing = sorted(set(built) - rec.called)
         if missing:
