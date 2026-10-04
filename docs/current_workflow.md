@@ -166,7 +166,10 @@ checkpoints the whole state to `langslice/state.json`, and the results file
 shape. The undo history is `langslice/history/`, one file per step. A run that
 dies resumes from that checkpoint with the state it had, and its undo history
 -- the agent is re-seeded, not replayed. `--fresh` ignores the checkpoint and
-starts over, with an empty history. A script may edit `langslice/state.json`
+starts over, with an empty history. Resuming with other supplied inputs
+(positions, transforms, order, angles, calibration, ...) than the
+checkpoint was made from is refused, naming the inputs that differ and
+`--fresh`. A script may edit `langslice/state.json`
 while a run is going: the run reloads it before its next tool call, and the
 edit is one undo step. Every picture the agent is shown is saved under
 `langslice/sections/<stem>/views/` (one section) or `langslice/views/`, with

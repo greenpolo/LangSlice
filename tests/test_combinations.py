@@ -621,21 +621,34 @@ def test_6_an_unknown_input_is_refused(images):
         JobSpec.from_dict({"image_folder": str(images), "inputs": {"transfroms": {}}})
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "Re-running `init` with a different supplied registration on a folder that holds "
-    "a job resumes the old checkpoint and drops the new inputs without a word "
-    "(Job.open, job/job.py:682-696: apply_host_inputs runs on a fresh ingest only), "
-    "while job.json is rewritten with the new inputs (job/job.py:678). It should "
-    "refuse (and name --fresh) or apply them."))
 def test_6_a_second_init_with_new_inputs_is_not_silently_ignored(capsys, images):
-    init(capsys, images, "nonlinear", "--positions", json.dumps(POSITIONS))
-    moved = {name: mm + 0.02 for name, mm in POSITIONS.items()}
-    code, envelope = cli(capsys, "job", str(images), "init", "--tasks", "nonlinear",
-                         "--image-provider", "none", "--pixel-size-um", str(PIXEL_SIZE_UM),
+    job = init(capsys, images, "nonlinear", "--positions", json.dumps(POSITIONS))
+    moved = {name: round(mm + 0.02, 6) for name, mm in POSITIONS.items()}
+    flags = ("--tasks", "nonlinear", "--image-provider", "none", "--preprocess", "none",
+             "--pixel-size-um", str(PIXEL_SIZE_UM), "--no-debrief")
+
+    def positions() -> dict[str, float]:
+        _code, status = cli(capsys, "job", str(images), "status")
+        return {row["id"]: row["position_mm"] for row in status["result"]["rows"]}
+
+    # Different inputs: refused, naming --fresh; nothing rewritten.
+    code, envelope = cli(capsys, "job", str(images), "init", *flags,
                          "--positions", json.dumps(moved))
-    if code == 0:
-        code, status = cli(capsys, "job", str(images), "status")
-        assert {row["id"]: row["position_mm"] for row in status["result"]["rows"]} == moved
+    assert code == 3 and envelope["error"]["code"] == "INPUTS_CHANGED", envelope
+    assert "positions" in envelope["error"]["message"]
+    assert "--fresh" in envelope["error"]["message"] and "--fresh" in envelope["error"]["fix"]
+    spec = json.loads((job / "job.json").read_text())["spec"]
+    assert spec["inputs"]["positions"] == POSITIONS
+    assert positions() == POSITIONS
+    # The same inputs: resumed as before.
+    code, envelope = cli(capsys, "job", str(images), "init", *flags,
+                         "--positions", json.dumps(POSITIONS))
+    assert code == 0, envelope
+    # --fresh: a new job from the new inputs.
+    code, envelope = cli(capsys, "job", str(images), "init", *flags, "--fresh",
+                         "--positions", json.dumps(moved))
+    assert code == 0, envelope
+    assert positions() == moved
 
 
 @pytest.mark.xfail(strict=True, reason=(

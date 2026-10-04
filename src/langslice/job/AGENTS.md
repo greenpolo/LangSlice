@@ -114,6 +114,15 @@ pixel -> atlas matrix of its linear placement (`core.maps`), why it has none
 `ops.exports.export_maps`, at submit and on demand. `Job.persist` False
 writes none of it.
 
+**Resuming with other inputs is refused.** `Job.open` with `spec.resume`
+on a folder whose checkpoint was made from other supplied inputs
+(`JobSpec.inputs`, compared with the checkpoint's own spec:
+`job.changed_inputs`) raises `job.InputsChanged` (a `ValueError`) before
+anything is written, naming the keys that differ and how to start fresh
+(`START_FRESH`: `--fresh`, `resume=False`); resuming would have kept the
+old inputs and dropped the new ones. The same inputs resume as before; the
+agent CLI's `init` answers `INPUTS_CHANGED` (exit 3).
+
 **Opening a job without writing (phase 5).** `Job.open` writes `job.json`
 and a first checkpoint. `Job.load(spec, workspace, folder=)` opens an
 existing folder as it stands (the checkpoint and its history; nothing

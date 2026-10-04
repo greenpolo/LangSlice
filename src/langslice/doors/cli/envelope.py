@@ -79,6 +79,9 @@ FIXES: dict[str, str] = {
     "STILL_RUNNING": "Wait again: `langslice job {job} wait <id>`.",
     "RUN_LOST": "The background process ended without an answer; see its log under "
                 "logs/runs/ and run the verb again.",
+    "INPUTS_CHANGED": "Rerun `langslice job {job} init` with --fresh to start a new job "
+                      "from these inputs (the old one's work is replaced), or with the "
+                      "inputs the job was made from (job.json, spec.inputs) to continue it.",
 }
 
 

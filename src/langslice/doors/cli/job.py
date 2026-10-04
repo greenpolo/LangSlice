@@ -457,6 +457,7 @@ def init(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelope:
     from langslice.core.discovery import discover_slices
     from langslice.doors.cli.linear import add_linear_arguments, build_linear_spec
     from langslice.doors.jobs import create
+    from langslice.job.job import InputsChanged
     from langslice.ops.registry import enabled
 
     parser = _Parser(prog="langslice job FOLDER init", add_help=False)
@@ -469,7 +470,10 @@ def init(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelope:
         spec = build_linear_spec(args, str(images))
     except ValueError as exc:
         return Envelope.failure("BAD_ARGUMENTS", str(exc))
-    opened = create(spec, atlas_loader=atlas_loader, emit=progress)
+    try:
+        opened = create(spec, atlas_loader=atlas_loader, emit=progress)
+    except InputsChanged as exc:
+        return Envelope.failure("INPUTS_CHANGED", str(exc), job=str(images))
     try:
         layout = opened.job.layout
         state = opened.job.state
