@@ -66,6 +66,26 @@ IMAGE_LIMITS: dict[str, tuple[int, int]] = {
 DEFAULT_IMAGE_LIMIT = (OPENAI_MAX_IMAGE_EDGE, OPENAI_MAX_IMAGE_PATCHES)
 CLAUDE_IMAGE_LIMIT = (CLAUDE_MAX_IMAGE_EDGE, CLAUDE_MAX_IMAGE_PATCHES)
 
+#: The agent CLI's viewers: the coding agent that opens the picture files a
+#: CLI call saves, as ``(opening strip limit, largest later picture)``,
+#: the same numbers as the door that serves the same models.
+#:
+#: - ``claude`` (Claude Code's Read): Read's own resize rule is not
+#:   published; the pictures reach the Claude API, which takes no image past
+#:   2000 px once a request holds more than 20 (any working session) and
+#:   shrinks past 1568 px (~1.15 MP) on models before 4.7 (2576 px on 4.7+),
+#:   so the MCP door's numbers: strips at 1568 px, pictures up to 2000.
+#: - ``codex`` / ``openai`` (Codex's view_image): resized to fit 2048 px and
+#:   2,500 32-px patches (codex-rs ``utils/image``, detail "high", the
+#:   default), the OpenAI lanes' numbers.
+VIEWER_LIMITS: dict[str, tuple[tuple[int, int], int]] = {
+    "claude": (CLAUDE_IMAGE_LIMIT, CLAUDE_MAX_VIEW_EDGE),
+    "codex": (DEFAULT_IMAGE_LIMIT, OPENAI_MAX_IMAGE_EDGE),
+    "openai": (DEFAULT_IMAGE_LIMIT, OPENAI_MAX_IMAGE_EDGE),
+}
+#: The viewer of a job that names none.
+DEFAULT_VIEWER = "claude"
+
 #: Space between two columns of a strip; a grey separator line runs down
 #: its middle so each section reads with the atlas beneath it as one unit.
 COLUMN_GAP = 6

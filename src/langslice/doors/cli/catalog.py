@@ -23,7 +23,12 @@ SCHEMA_VERSION = 1
 #: The agent CLI's own commands besides the verbs (``langslice job FOLDER ...``).
 JOB_COMMANDS: dict[str, str] = {
     "init": "Create the job for a folder of section images (the job flags of "
-            "`langslice linear run`; --resume continues an existing job).",
+            "`langslice linear run`, plus --notes TEXT and --viewer claude|codex|openai; "
+            "a job already in the folder is continued). Answers with the job statement.",
+    "brief": "Start here: LangSlice's job statement for this job (the one its own "
+             "agent gets), the status table, the user's notes, and the opening pictures "
+             "saved as files (artifacts of kind `opening`, in reading order); also "
+             "written to BRIEF.md in the job folder.",
     "runs [ID]": "The background runs (newest first), or one run: running, finished "
                 "(with its answer) or lost.",
     "wait [ID]": "Wait for a background run (the latest without ID); --timeout SECONDS.",

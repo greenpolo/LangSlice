@@ -67,8 +67,10 @@ Inside (`layout.py`, names as constants):
 ```
 job.lock             the write lock (lock.py), held while a writer syncs and commits
 job.json             settings: the JobSpec under "spec", format_version (1),
-                     created_at, image_folder; a saved Claude job's job_id and
-                     its own fields under "host" (kind, params, notes, trace_dir)
+                     created_at, image_folder; the user's "notes" (every door
+                     gives them to the agent); the agent CLI's "viewer"; a saved
+                     Claude job's job_id and its own fields under "host" (kind,
+                     params, trace_dir)
 state.json           the checkpoint (StackState, state format 3): THE TRUTH
 registration.json    its public rendering (formats.py), rewritten on every checkpoint
 history/             undo/redo: index.json + step-NNNNNN.json, one per step
@@ -82,7 +84,7 @@ sections/<stem>/     per section; <stem> is the image filename's stem (the whole
   labels.csv, tissue.png,    over the section's filled outline (tissue.png: the
   residual.tif, maps.json    threshold's tissue estimate, not used to cut them)
 views/<seq>_<tool>_<mode>/   pictures of several sections or none (atlas, sheets,
-                             opening strips, show_stack pages)
+                             opening strips, show_stack pages, brief's strips)
 views.jsonl          append-only index of every saved picture
 views.seq            the picture/call numbers handed out (+ views.seq.lock)
 exports/             linear_results.json (the run's result; spec.out overrides
@@ -93,6 +95,8 @@ logs/runs/<id>.json  an agent-CLI background run (`--background`), its stderr in
 prompt.txt           a saved Claude job's copy prompt
 AGENTS.md, CLAUDE.md the reference card for coding agents, identical, generated
                      (`doors/card.py`) and rewritten when stale
+BRIEF.md             the agent CLI's brief (`langslice job FOLDER brief`, `init`):
+                     the job statement and the opening pictures' paths
 ```
 
 **Lean job folders (2026-10-04).** `JobSpec.output_level` "lean" (the

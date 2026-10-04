@@ -136,7 +136,7 @@ def job_statement(
     spec: JobSpec, state: StackState, ctx: Workspace, *, door: str,
     tool_names: list[str], opening: list[str], notes: str = "",
     max_resolution: int | None = None, image_model_off: bool = False,
-    auto: bool | None = None,
+    auto: bool | None = None, gates: bool = True,
 ) -> str:
     """The whole statement a host-owned door (MCP, the agent CLI) gives:
     the job statement the ADK agent is given, worded for *door*, then
@@ -157,7 +157,7 @@ def job_statement(
         build_job_statement(
             spec, state, tool_names=tool_names, species=ctx.species,
             pos_lo=low, pos_hi=high, axis_ends=ctx.axis_ends,
-            max_resolution=max_resolution, door=door, auto=auto,
+            max_resolution=max_resolution, door=door, auto=auto, gates=gates,
             **display_facts(ctx, state),
         ),
     ]

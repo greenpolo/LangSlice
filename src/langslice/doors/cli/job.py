@@ -2,9 +2,10 @@
 
 The agent CLI (phase 5): every verb of :data:`langslice.ops.registry.VERBS`
 under the tool's own name (kebab-case accepted: ``set-positions``), plus
-``init`` (create the job for a folder of images), ``runs [ID]`` and ``wait
-[ID]`` (background runs; ``status`` is only the verb). FOLDER is the job folder or the image folder
-beside it.
+``init`` (create the job for a folder of images), ``brief`` (the job
+statement and the opening pictures, :mod:`langslice.doors.cli.brief`),
+``runs [ID]`` and ``wait [ID]`` (background runs; ``status`` is only the
+verb). FOLDER is the job folder or the image folder beside it.
 
 Arguments are the verb's declared arguments
 (:mod:`langslice.doors.declarations`, ``langslice schema VERB``): a JSON
@@ -112,6 +113,11 @@ def execute(folder: str, verb: str, rest: list[str], *,
         if name == "init":
             return init(folder, rest, atlas_loader=atlas_loader)
         options, arguments, positional = parse(rest)
+        if name == "brief":
+            if arguments or positional:
+                raise _Refusal(Envelope.failure(
+                    "BAD_ARGUMENTS", "brief takes no arguments.", verb=name))
+            return brief(folder, atlas_loader=atlas_loader)
         run_id = options.get("run_id")
         if name in ("runs", "wait"):
             return runs(folder, name, positional, options)
@@ -270,7 +276,8 @@ def _open(folder: str, *, persist: bool, atlas_loader: Any) -> Any:
     from langslice.doors.jobs import NoJob, open_folder
 
     try:
-        return open_folder(folder, atlas_loader=atlas_loader, emit=progress, persist=persist)
+        return open_folder(folder, atlas_loader=atlas_loader, emit=progress, persist=persist,
+                           door="cli")
     except NoJob as exc:
         raise _Refusal(Envelope.failure("NO_JOB", str(exc))) from exc
     except (FileNotFoundError, ValueError) as exc:
@@ -281,7 +288,7 @@ def _open(folder: str, *, persist: bool, atlas_loader: Any) -> Any:
 def call(folder: str, verb: str, flags: dict[str, list[str]], options: dict[str, Any], *,
          atlas_loader: Any = None) -> Envelope:
     """Run *verb* on the job *folder* names (see the module text)."""
-    from langslice.ops.registry import VERBS, enabled
+    from langslice.ops.registry import VERBS, listed
 
     if verb not in VERBS:
         raise _Refusal(Envelope.failure("UNKNOWN_VERB", f"No verb {verb!r}.", verb=verb))
@@ -289,13 +296,21 @@ def call(folder: str, verb: str, flags: dict[str, list[str]], options: dict[str,
     opened = _open(folder, persist=not dry_run, atlas_loader=atlas_loader)
     job_folder = str(opened.job.folder)
     try:
-        offered = enabled(opened.spec, scripting=True)
-        # A hidden verb is called by name, never listed (``Verb.hidden``).
-        if verb not in enabled(opened.spec, scripting=True, hidden=True):
-            raise _Refusal(Envelope.failure(
-                "VERB_OFF", f"This job's settings (tasks {opened.spec.tasks}) have no {verb}.",
-                result={"verbs": offered}, job=job_folder, verb=verb))
+        # The job's verbs as the tool door builds them (a hidden verb is
+        # called by name, never listed: ``Verb.hidden``).
         tools = {tool.__name__: tool for tool in opened.tools().tools}
+        offered = [name for name in tools if name in listed()]
+        if verb not in tools:
+            spec = opened.spec
+            if (VERBS[verb].image_model and spec.has("nonlinear")
+                    and spec.nonlinear.uses_image_model and not opened.image_model_connected):
+                raise _Refusal(Envelope.failure(
+                    "IMAGE_MODEL_OFF", f"{verb} needs the job's image model "
+                    f"({spec.nonlinear.provider}), which is not connected to LangSlice here "
+                    "(no key or login).", result={"verbs": offered}, job=job_folder, verb=verb))
+            raise _Refusal(Envelope.failure(
+                "VERB_OFF", f"This job's settings (tasks {spec.tasks}) have no {verb}.",
+                result={"verbs": offered}, job=job_folder, verb=verb))
         tool = tools[verb]
         arguments = arguments_for(tool, options, flags, verb)
         if options.get("run_id"):
@@ -376,9 +391,13 @@ def _run(opened: Any, verb: str, tool: Any, arguments: dict[str, Any], *,
                 row["image_correction"] = {key: held[key] for key in (
                     "status", "error", "message", "cached", "attempt") if key in held}
     if verb == "status" and isinstance(result, dict):
-        from langslice.ops.registry import enabled
+        from langslice.doors.statement import image_model_state
+        from langslice.ops.registry import listed
 
-        result["verbs"] = enabled(opened.spec, scripting=True)
+        result["verbs"] = [name for name in opened.tools().names if name in listed()]
+        state = image_model_state(opened.spec, connected=opened.image_model_connected)
+        if state is not None:
+            result["image_model"] = state
     if dry_run and isinstance(result, dict):
         result["dry_run"] = True
         if VERBS[verb].kind == "write":
@@ -470,13 +489,20 @@ def init(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelope:
     warnings are the envelope's (``BAD_REGISTRATION`` when it cannot be
     read, matched one to one, or places no section)."""
     from langslice.core.discovery import discover_slices
+    from langslice.core.opening import VIEWER_LIMITS
     from langslice.doors.cli.linear import add_linear_arguments, spec_from_args
     from langslice.doors.jobs import create, with_registration
     from langslice.job.job import InputsChanged
-    from langslice.ops.registry import enabled
+    from langslice.ops.registry import listed
 
     parser = _Parser(prog="langslice job FOLDER init", add_help=False)
     add_linear_arguments(parser)
+    parser.add_argument("--notes", default=None, metavar="TEXT",
+                        help="The user's notes for this job (job.json), which every door "
+                        "gives the registration agent")
+    parser.add_argument("--viewer", default=None, choices=sorted(VIEWER_LIMITS),
+                        help="Which model reads the pictures (job.json; default claude): "
+                        "it sets their largest size")
     args = parser.parse_args(rest)
     images = Path(folder).expanduser().resolve()
     if not images.is_dir() or not discover_slices(str(images)):
@@ -493,18 +519,32 @@ def init(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelope:
         except (OSError, ValueError) as exc:
             return Envelope.failure("BAD_REGISTRATION", str(exc), job=str(images))
     try:
-        opened = create(spec, atlas_loader=atlas_loader, emit=progress)
+        opened = create(spec, atlas_loader=atlas_loader, emit=progress, door="cli")
     except InputsChanged as exc:
         return Envelope.failure("INPUTS_CHANGED", str(exc), job=str(images))
     try:
+        from langslice.doors.cli import brief as briefs
+        from langslice.doors.jobs import VIEWER_KEY, job_viewer
+        from langslice.doors.statement import NOTES_KEY
+        from langslice.job.layout import write_job_file
+
         layout = opened.job.layout
         state = opened.job.state
+        settings = {**({NOTES_KEY: args.notes} if args.notes is not None else {}),
+                    **({VIEWER_KEY: args.viewer} if args.viewer else {})}
+        if settings:
+            write_job_file(layout, **settings)
+            opened.viewer = job_viewer(layout)
+        written = briefs.build(opened, pictures=False)
+        listed_verbs = [name for name in opened.tools().names if name in listed()]
         result = {
             "job_folder": str(layout.folder), "image_folder": str(images),
             "sections": [record.id for record in state.in_order()],
             "tasks": list(spec.tasks), "atlas": spec.atlas, "plane": spec.plane,
-            "verbs": enabled(spec, scripting=True), "resumed": bool(opened.job.undo_stack
-                                                    or opened.job.redo_stack),
+            "verbs": listed_verbs, "resumed": bool(opened.job.undo_stack
+                                                   or opened.job.redo_stack),
+            **written.facts,
+            "statement": written.statement,
         }
         if imported is not None:
             result["registration"] = {key: value for key, value in imported.items()
@@ -512,9 +552,39 @@ def init(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelope:
         artifacts = [{"path": str(layout.folder / name), "kind": "card"}
                      for name in ("AGENTS.md", "CLAUDE.md")]
         artifacts.append({"path": str(layout.state_file), "kind": "state"})
+        artifacts += written.artifacts
         return Envelope(result=result, artifacts=artifacts,
                         warnings=list((imported or {}).get("warnings") or []),
-                        next=[f"langslice job {layout.folder} status"])
+                        next=[f"langslice job {layout.folder} brief"])
+    finally:
+        opened.close()
+
+
+# --- brief ----------------------------------------------------------------------------
+
+
+def brief(folder: str, *, atlas_loader: Any = None) -> Envelope:
+    """``brief``: the job statement, the opening pictures saved as files
+    (artifacts of kind ``opening``, in reading order) and ``BRIEF.md``
+    (:mod:`langslice.doors.cli.brief`)."""
+    from langslice.doors.cli import brief as briefs
+    from langslice.ops.registry import listed
+
+    opened = _open(folder, persist=True, atlas_loader=atlas_loader)
+    try:
+        written = briefs.build(opened, pictures=True)
+        pictures = [item for item in written.artifacts if item["kind"] == "opening"]
+        expected = sum(1 for entry in written.opening if "picture" in entry)
+        warnings = ([] if len(pictures) == expected else [
+            "The opening pictures were not saved (a lean job keeps no pictures); "
+            "`langslice.open_job` gives them to a script."])
+        return Envelope(result={
+            "job_folder": str(opened.job.folder),
+            "statement": written.statement,
+            "opening": written.opening,
+            "verbs": [name for name in opened.tools().names if name in listed()],
+            **written.facts,
+        }, artifacts=written.artifacts, warnings=warnings)
     finally:
         opened.close()
 

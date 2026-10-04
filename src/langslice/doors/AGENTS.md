@@ -12,7 +12,7 @@ them and from the registry (`ops/registry.py`: `VERBS`, `enabled(spec)`):
 |---|---|---|
 | agent tools (ADK) | `doors/tools/toolbox.py` `build_tools`: the verbs `enabled(spec)` names, each `declarations.declare`d | LangSlice's agent |
 | MCP tools | the same toolbox (`doors/mcp/server.py`), plus the door's `start_job`, `show_stack`; `readOnlyHint` = read verbs; `trace_borders` only when the job's image model is connected (`server.image_model_off`, `api.setup.image_model_connected`; else `build_tools(image_model_connected=False)`) | Claude Desktop, Claude Code locked to it |
-| agent CLI | `cli/job.py` over the same toolbox, gates off, `level="auto"`, plus the scripting verbs (`export_maps`, and the hidden `trace_from_atlas`) | Claude Code, Codex |
+| agent CLI | `cli/job.py` over the same toolbox, gates off, `level="auto"`, pictures capped at the job's viewer's (`jobs.job_viewer`), `trace_borders` only when the image model is connected (`Opened.image_model_connected`), plus the scripting verbs (`export_maps`, and the hidden `trace_from_atlas`) and `brief` (the job statement and opening, `cli/brief.py`) | Claude Code, Codex |
 | library | `library.py` (`langslice.open_job`, `langslice.create_job`) over the same toolbox, the scripting verbs included; `pipeline.py` (`register_section`, `register_job`) calls those verbs in a fixed order | a script, a scripted pipeline |
 
 A hidden verb (`registry.Verb.hidden`: `trace_from_atlas`, the
@@ -143,7 +143,7 @@ them). The engine service stays in `hosts/api/`. The MCP door's
   workspace plus the job folder and results path; the driver's
   `EngineContext` adds only the model), `find(path)` (a job folder, or the
   image folder beside one; `NoJob`), `read_spec` (`job.json`'s spec, as a
-  resume), `open_folder(path, persist=)` (`Job.load`: nothing rewritten;
+  resume), `open_folder(path, persist=, door=)` (`Job.load`: nothing rewritten;
   the card brought up to date; the model keys loaded by
   `api.setup.load_credentials`, `.env` then the keys saved by setup, the one
   loader the CLI's `main` uses too), `create(spec)` (`Job.open`: the ingest
@@ -153,8 +153,16 @@ them). The engine service stays in `hosts/api/`. The MCP door's
   `max_view_edge` `OPEN_MAX_VIEW_EDGE`: no model's cap, the source's pixels
   bound every picture; `image_model` handed to `build_tools`; without one a
   `custom`-provider job, or one with `Opened.traces_off`, gets
-  `image_model_connected=False`: no `trace_borders`), `Opened.close`
-  (image corrections settled, pictures flushed). `with_registration(spec,
+  `image_model_connected=False`: no `trace_borders`; nor does one whose
+  provider's key or login is absent here, `Opened.image_model_connected`,
+  the MCP door's `api.setup.image_model_connected`), `Opened.close`
+  (`close_job`: image corrections settled, pictures flushed; every door
+  ends a job through it). `door` (`agent`, or `cli` for the agent CLI:
+  its declarations worded for it, `Variant.door`) and `viewer` (the CLI's:
+  `job_viewer(layout)`, `job.json` `viewer`, default `claude`;
+  `core.opening.VIEWER_LIMITS` gives the opening strips' limit and
+  `Opened.max_view_edge`, the largest picture; None for a script:
+  `OPEN_MAX_VIEW_EDGE`). `with_registration(spec,
   file, target=, atlas_loader=, emit=)`: the spec with a registration made
   elsewhere as its supplied inputs (`job.imports.registration_inputs` on
   the spec's workspace, `context`) and the import report, each warning
@@ -208,8 +216,9 @@ them). The engine service stays in `hosts/api/`. The MCP door's
   `card_text(layout)` (one screen: the folder's files, one line each for
   `registration.json` and each section's maps, state as truth and the
   rest derived, the coordinate map and convention, the CLI with
-  every listed verb from the registry, `registry.listed()`, the Python
-  entry point), `write_card`
+  every listed verb from the registry, `registry.listed()`, each marked
+  `long` where `Verb.long`, that calls may run in parallel, the Python
+  entry point; first, to run `brief` and read `BRIEF_FILE`), `write_card`
   (writes where missing or worded differently; never raises). Written by
   every door that opens or makes a job: the CLI and the library
   (`jobs.open_folder`, `jobs.create`), the agent run (`engine.run`), the MCP
@@ -233,6 +242,16 @@ them). The engine service stays in `hosts/api/`. The MCP door's
     `UNKNOWN_*`, `TOO_MANY_*` and `ARGUMENT_CODES` are 2, every other
     refusal 3); `FIXES` per code; `stdout_to_stderr()` (Python and native
     stdout to stderr while a verb runs, so stdout holds the envelope only).
+    `IMAGE_MODEL_OFF`: a verb that needs the job's image model, which is
+    not connected here (exit 3).
+  - `brief.py` — `langslice job FOLDER brief` (and `init`'s statement):
+    `build(opened, pictures=)` -> `Brief`: `statement.job_statement` for
+    door `cli` (the gates left out, `auto` sizing at the viewer's largest
+    picture, `IMAGE_MODEL_OFF` when the image model is not connected), the
+    opening (`core.opening.opening_items` at the viewer's strip limit,
+    saved as the job's `opening` views like the ADK run's, artifacts of
+    kind `opening` with `index` and `label`), the facts (`viewer`,
+    `resolution` range, `image_model`), all written to `BRIEF.md`.
   - `catalog.py` — `langslice ops` (the listed verbs: name, kind, group,
     summary; the job commands) and `langslice schema [VERB] [--job FOLDER]`
     (`SCHEMA_VERSION` 1; `canonical_verb`: kebab-case accepted; every

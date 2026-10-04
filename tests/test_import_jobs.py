@@ -85,6 +85,10 @@ def _setup(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, atlas: DeepAtlas) ->
         return stub_image_model(holder)
 
     monkeypatch.setattr(toolbox, "resolve_image_model", resolve)
+    # The stub stands for a connected image model (its key or login present).
+    from langslice.doors.api import setup
+
+    monkeypatch.setattr(setup, "image_model_connected", lambda _provider: True)
 
 
 @pytest.fixture
