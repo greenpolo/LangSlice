@@ -265,27 +265,52 @@ def section_frame(state: StackState, workspace: Workspace, record: SliceState) -
     return frame
 
 
-def _section_frame(state: StackState, workspace: Workspace, record: SliceState) -> SectionFrame:
+@dataclass(frozen=True)
+class RenderSizes:
+    """The sizes one section file is mapped through (:func:`render_sizes`):
+    the file, its working copy (``working_factor`` file pixels per working
+    pixel), the unturned :data:`PREVIEW_LONG_EDGE` render the six stored
+    numbers are normalized against (before the quarter turn), and
+    ``render_scale``, file pixels per render pixel along x."""
+
+    file_size: tuple[int, int]
+    working_size: tuple[int, int]
+    working_factor: float
+    unturned_render: tuple[int, int]
+    render_scale: float
+
+
+def render_sizes(workspace: Workspace, section_id: str) -> RenderSizes:
+    """The section file's sizes (see :class:`RenderSizes`), from the file
+    header when it can (nothing decoded), else from its working copy."""
     from PIL import Image
 
-    from langslice.core.layers import atlas_facts
-    from langslice.core.oblique import plane_index_affine
-
-    path = workspace.image_path(record.id)
+    path = workspace.image_path(section_id)
     with Image.open(path) as handle:
         file_size = (int(handle.size[0]), int(handle.size[1]))
-    cached = workspace.source_cache.get(record.id)
+    cached = workspace.source_cache.get(section_id)
     if cached is not None:
         working, factor = (int(cached[0].size[0]), int(cached[0].size[1])), float(cached[1])
     else:
         found = working_size(path, pages=workspace.spec.host_preprocessing is not None)
         if found is None:
-            source, factor = workspace.working_source(record.id)
+            source, factor = workspace.working_source(section_id)
             working = (int(source.size[0]), int(source.size[1]))
         else:
             working, factor = found
     unturned_render = prepared_size(working, max_long_edge=PREVIEW_LONG_EDGE)
-    render_scale = factor * working[0] / float(unturned_render[0])
+    return RenderSizes(file_size=file_size, working_size=working, working_factor=float(factor),
+                       unturned_render=unturned_render,
+                       render_scale=factor * working[0] / float(unturned_render[0]))
+
+
+def _section_frame(state: StackState, workspace: Workspace, record: SliceState) -> SectionFrame:
+    from langslice.core.layers import atlas_facts
+    from langslice.core.oblique import plane_index_affine
+
+    sizes = render_sizes(workspace, record.id)
+    file_size, working, factor = sizes.file_size, sizes.working_size, sizes.working_factor
+    unturned_render, render_scale = sizes.unturned_render, sizes.render_scale
     file_um, source = workspace.calibration(record.id)
     if file_um is not None:
         render_um = float(file_um) * render_scale
