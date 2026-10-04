@@ -33,7 +33,7 @@ import re
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import cv2
 import numpy as np
@@ -63,9 +63,7 @@ from langslice.deformable.settings import (
 )
 from langslice.linear import appearance as looks
 from langslice.linear.state import SliceState, StackState
-
-if TYPE_CHECKING:  # ponytail: import cycle — engine builds the toolbox
-    from langslice.linear.engine import EngineContext
+from langslice.linear.workspace import Workspace
 
 logger = logging.getLogger(__name__)
 
@@ -172,7 +170,7 @@ class Grid:
 
 
 def fit_grid(
-    state: StackState, ctx: EngineContext, record: SliceState,
+    state: StackState, ctx: Workspace, record: SliceState,
     transform: dict[str, Any] | None = None,
 ) -> Grid:
     """The section's fit grid (``ValueError`` without a usable linear placement).
@@ -194,7 +192,7 @@ def _on_grid(image: Image.Image, grid: Grid) -> Image.Image:
 
 
 def stain_image(
-    ctx: EngineContext, state: StackState, grid: Grid, fit_section: str,
+    ctx: Workspace, state: StackState, grid: Grid, fit_section: str,
 ) -> tuple[Image.Image, Any]:
     """``(image, identity)`` of the stain a fit reads: the section's fit appearance.
 
@@ -214,7 +212,7 @@ def stain_image(
 
 
 def traced_lines(
-    state: StackState, ctx: EngineContext, grid: Grid, *, running: bool = False,
+    state: StackState, ctx: Workspace, grid: Grid, *, running: bool = False,
     waited_s: float = TRACE_WAIT_S,
 ) -> tuple[np.ndarray, str]:
     """The image model's lines from ``trace_borders`` at THIS placement, on the grid.
@@ -481,7 +479,7 @@ class Job:
     cached: bool = False
 
 
-def run_jobs(ctx: EngineContext, jobs: list[Job]) -> None:
+def run_jobs(ctx: Workspace, jobs: list[Job]) -> None:
     """Prepare and run every job without a result, concurrently when several."""
     prepared = []
     waiting: list[Job] = []
@@ -535,7 +533,7 @@ class Style:
 
 
 def picture(
-    ctx: EngineContext,
+    ctx: Workspace,
     image: Image.Image,
     record: DeformableRecord,
     *,
@@ -612,7 +610,7 @@ def _unwarped(record: DeformableRecord) -> DeformableRecord:
 
 
 def _blend_atlas(
-    ctx: EngineContext, base: Image.Image, record: DeformableRecord, kinds: tuple[str, ...],
+    ctx: Workspace, base: Image.Image, record: DeformableRecord, kinds: tuple[str, ...],
     opacity: float,
 ) -> Image.Image:
     """The atlas images pulled through the record's map, blended under the lines.

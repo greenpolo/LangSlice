@@ -28,10 +28,11 @@ from langslice.linear.render import (
     picture_edge,
 )
 from langslice.linear.state import StackState
-from langslice.space import Plane
+from langslice.linear.workspace import Workspace
 
-if TYPE_CHECKING:  # ponytail: import cycle — engine builds the toolbox
+if TYPE_CHECKING:  # interim: the media module takes these next
     from langslice.linear.engine import EngineContext
+from langslice.space import Plane
 
 #: Atlas sections one ``view_atlas`` call may return. Anything past this is
 #: dropped — and reported back, never silently.
@@ -73,7 +74,7 @@ def _clamp_and_dedupe(
 
 
 def atlas_mask(
-    ctx: EngineContext, state: StackState, position_mm: float, size: tuple[int, int]
+    ctx: Workspace, state: StackState, position_mm: float, size: tuple[int, int]
 ) -> np.ndarray:
     """Binary tissue silhouette of the atlas section, at the stack's angles."""
     plane = cast(Plane, state.plane)
@@ -92,7 +93,7 @@ def atlas_mask(
 
 
 def atlas_section(
-    ctx: EngineContext,
+    ctx: Workspace,
     state: StackState,
     position_mm: float,
     *,
@@ -274,7 +275,7 @@ def make_view_atlas(state: StackState, ctx: EngineContext):
 
 
 def reference_atlas(
-    ctx: EngineContext, state: StackState, *, long_edge: int | None = None,
+    ctx: Workspace, state: StackState, *, long_edge: int | None = None,
     max_images: int = SEED_ATLAS_MAX_IMAGES,
 ) -> tuple[float, list[tuple[float, Image.Image]]]:
     """The atlas at evenly spaced positions for the opening: ``(step, pictures)``.

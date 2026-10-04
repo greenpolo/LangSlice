@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
-from typing import TYPE_CHECKING
 
 from google.genai import types
 from PIL import Image, ImageDraw
@@ -32,10 +31,8 @@ from langslice.linear.appearance import view_look
 from langslice.linear.atlas_fetch import atlas_section, reference_atlas
 from langslice.linear.render import caption, image_to_part, opening_edge, render_slice
 from langslice.linear.state import SliceState, StackState
+from langslice.linear.workspace import Workspace
 from langslice.providers.registry import canonical_provider
-
-if TYPE_CHECKING:  # import cycle: the engine builds the context
-    from langslice.linear.engine import EngineContext
 
 #: Longest image edge, in pixels, the OpenAI lanes take in without shrinking
 #: (gpt-6-astra at detail "high"; Codex CLI's own client resize is the same
@@ -71,14 +68,14 @@ SEPARATOR_COLOR = (110, 110, 110)
 ROW_GAP = 4
 
 
-def image_limit(ctx: EngineContext) -> tuple[int, int]:
+def image_limit(ctx: Workspace) -> tuple[int, int]:
     """``(long edge, patch budget)`` of one image for this run's model lane."""
     model = str(getattr(ctx, "model", "") or "")
     provider = canonical_provider(model.split("/", 1)[0]) if "/" in model else ""
     return IMAGE_LIMITS.get(provider, DEFAULT_IMAGE_LIMIT)
 
 
-def strip_edge(ctx: EngineContext) -> int:
+def strip_edge(ctx: Workspace) -> int:
     """Long edge of each opening strip for this run's model lane."""
     return image_limit(ctx)[0]
 
@@ -113,13 +110,13 @@ def tile_label(record: SliceState) -> str:
     return label + (f" [{', '.join(flags)}]" if flags else "")
 
 
-def section_tile(ctx: EngineContext, state: StackState, record: SliceState, tile: int
+def section_tile(ctx: Workspace, state: StackState, record: SliceState, tile: int
                  ) -> Image.Image:
     """The section as the agent is shown it, tissue-framed, at most *tile*."""
     return render_slice(ctx, record, long_edge=tile, frame=True, look=view_look(state, record))
 
 
-def atlas_tile(ctx: EngineContext, state: StackState, position_mm: float, long_edge: int
+def atlas_tile(ctx: Workspace, state: StackState, position_mm: float, long_edge: int
                ) -> Image.Image:
     """The atlas at *position_mm* and the stack's angles, tissue-framed, drawn
     to *long_edge* (the section's above it), as ``view_stack`` draws it: the
@@ -192,7 +189,7 @@ def _angles(state: StackState) -> str:
 
 
 def opening_parts(
-    state: StackState, ctx: EngineContext, *, limit: tuple[int, int] | None = None,
+    state: StackState, ctx: Workspace, *, limit: tuple[int, int] | None = None,
 ) -> list[types.Part]:
     """The stack's opening images as strips, each preceded by a short text.
 
@@ -247,7 +244,7 @@ def opening_parts(
 
 
 def reference_parts(
-    state: StackState, ctx: EngineContext, *, tile: int, count: int, budget: int,
+    state: StackState, ctx: Workspace, *, tile: int, count: int, budget: int,
 ) -> list[types.Part]:
     """The atlas reference (evenly spaced positions) as strips of atlas tiles."""
     step, pictures = reference_atlas(ctx, state, long_edge=tile)

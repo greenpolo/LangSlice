@@ -39,7 +39,7 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
 import numpy as np
 from PIL import Image
@@ -72,10 +72,8 @@ from langslice.linear.render import (
     resolution_level,
 )
 from langslice.linear.state import SliceState, StackState
+from langslice.linear.workspace import Workspace
 from langslice.space import Plane
-
-if TYPE_CHECKING:  # ponytail: import cycle — engine builds the toolbox
-    from langslice.linear.engine import EngineContext
 
 #: Every atlas channel, in the order pictures and docs list them.
 ATLAS_CHANNELS: tuple[str, ...] = ("ara", "nissl", "borders")
@@ -305,13 +303,13 @@ class DisplayOptions:
         return out
 
 
-def available_atlas_channels(ctx: EngineContext) -> tuple[str, ...]:
+def available_atlas_channels(ctx: Workspace) -> tuple[str, ...]:
     """The atlas channels this host can draw."""
     return ATLAS_CHANNELS if ctx.abba_atlas is not None else ("ara", "borders")
 
 
 def display_facts(
-    ctx: EngineContext, state: StackState,
+    ctx: Workspace, state: StackState,
 ) -> dict[str, Any]:
     """The job statement's display facts: raw channels and atlas channels here.
 
@@ -402,7 +400,7 @@ def _names(value: Any, key: str) -> list[str] | dict[str, Any]:
 
 
 def parse_view(
-    ctx: EngineContext,
+    ctx: Workspace,
     state: StackState,
     view: Any,
     profile: Profile,
@@ -658,7 +656,7 @@ def default_options(
 
 
 def _nissl_plane(
-    ctx: EngineContext, state: StackState, position_mm: float, labels: np.ndarray,
+    ctx: Workspace, state: StackState, position_mm: float, labels: np.ndarray,
 ) -> np.ndarray:
     """ABBA's Nissl on the native plane grid, percentile-stretched to 0..1."""
     source = ctx.abba_atlas
@@ -676,7 +674,7 @@ def _nissl_plane(
 
 
 def atlas_image_picture(
-    ctx: EngineContext, state: StackState, kinds: tuple[str, ...], position_mm: float,
+    ctx: Workspace, state: StackState, kinds: tuple[str, ...], position_mm: float,
 ) -> Image.Image | None:
     """The atlas images *kinds* on the native plane grid; None for ``ara`` alone.
 
@@ -715,7 +713,7 @@ def atlas_image_picture(
 
 
 def regions_in_plane(
-    ctx: EngineContext, state: StackState, position_mm: float, options: DisplayOptions,
+    ctx: Workspace, state: StackState, position_mm: float, options: DisplayOptions,
 ) -> list[str]:
     """The highlighted regions with at least one pixel in the plane at *position_mm*."""
     if not options.regions:
@@ -737,7 +735,7 @@ def _crop_fraction(image: Image.Image, zoom: tuple[float, ...]) -> Image.Image:
 
 
 def framed_section(
-    ctx: EngineContext, state: StackState, record: SliceState, options: DisplayOptions,
+    ctx: Workspace, state: StackState, record: SliceState, options: DisplayOptions,
     *, long_edge: int | None = None, look: Look | str = "options",
 ) -> Image.Image:
     """One section as corrected, tissue-framed, in the call's look and zoom.
@@ -762,7 +760,7 @@ def framed_section(
 
 
 def channel_strip(
-    ctx: EngineContext, state: StackState, record: SliceState, options: DisplayOptions,
+    ctx: Workspace, state: StackState, record: SliceState, options: DisplayOptions,
     *, tile_edge: int,
 ) -> tuple[Image.Image, list[str]]:
     """One section's raw channels side by side, each unmodified and labelled.
@@ -787,7 +785,7 @@ def channel_strip(
 
 
 def framed_atlas(
-    ctx: EngineContext, state: StackState, position_mm: float, options: DisplayOptions,
+    ctx: Workspace, state: StackState, position_mm: float, options: DisplayOptions,
     *, long_edge: int | None = None, fill: bool = False,
 ) -> Image.Image:
     """The atlas at *position_mm*, framed to its anatomy, with the call's lines.
