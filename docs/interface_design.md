@@ -289,8 +289,9 @@ damaged sections are fitted (the submit gate on damaged sections still wants
 an interactive transform). Included regions are highlighted in the pictures
 unless `view.regions` names others.
 
-**`view`: the picture options** (`linear/display.py`: `parse_view` validates
-one call's `view` against the tool's `Profile`; the job statement describes
+**`view`: the picture options** (`linear/view_options.py`: `parse_view`
+validates one call's `view` against the tool's `Profile` into
+`linear/display.py`'s `DisplayOptions`; the job statement describes
 it once and each tool's description lists only its modes; a call's options
 never change any stored setting). Its keys:
 
@@ -402,7 +403,7 @@ image model's input (`trace_borders`), the silhouette fit, calibration and
 file's red/green/blue) are read once at working size
 (`image_prep.read_working_pages`: a pyramid level or a per-page downsample,
 never a full-size whole-slide decode) and kept as named 8-bit planes
-(`EngineContext.section_channels`). The default appearance is drawn from the
+(`Workspace.section_channels`). The default appearance is drawn from the
 same working copy, so every look shares one frame, crop and size; a look only
 changes intensities.
 
