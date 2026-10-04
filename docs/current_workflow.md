@@ -7,8 +7,14 @@ The CLI is grouped by method:
 ```bash
 langslice linear    {run, quick-affine}
 langslice nonlinear {register}
-langslice           {version, login, serve, abba}
+langslice           {version, login, serve, abba, mcp}
+langslice claude    {prepare}
+langslice job FOLDER {init, VERB, status ID, wait [ID]}   # the agent CLI
+langslice           {ops, schema [VERB]}                  # the agent CLI's catalogue
 ```
+
+The commands live in `src/langslice/doors/cli/`, one module per group
+(`langslice.cli:main` is the entry point).
 
 `linear` and `nonlinear` are independent. `nonlinear register` takes a slice
 position as an argument and does not care where it came from, so it can follow
@@ -202,6 +208,28 @@ cost); `--max-input-tokens N` (default disabled;
 than N input tokens, including cached input. It is checked after the response,
 not a preflight guarantee. Both stops allow one grace call to submit; writes
 made before the stop are kept. No cumulative input-token stop is applied.
+
+## The agent CLI: one verb on a job folder
+
+For coding agents (Claude Code, Codex) and scripts: every agent tool is a
+command on a job folder under the same name, and nothing else is printed on
+stdout but one JSON envelope. Full reference: `docs/agent_cli.md`.
+
+```bash
+langslice job sections/ init --tasks position,transform --pixel-size-um 0.65
+langslice ops                                   # verbs: name, kind, group, one line
+langslice schema adjust_transforms              # the JSON schema of its arguments
+langslice job sections/ view_slices --slices s01.tif --view '{"resolution": 1200}'
+langslice job sections/ set_positions --args @positions.json --dry-run
+langslice job sections/ fit_deformable --slices s01.tif --background
+langslice job sections/ wait                    # the latest background run
+```
+
+`init` takes the job flags of `linear run` and runs no agent. Each call opens
+the job as it stands, runs the verb through the same tool the agent has
+(without the look-before-commit gates) and closes it, so calls and a running
+`linear run` on the same folder pick up each other's writes. In Python:
+`langslice.open_job(folder)` gives the same verbs as methods.
 
 ## Linear: Quick Affine
 
