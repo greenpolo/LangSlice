@@ -18,9 +18,9 @@ from tests.golden.record import atlas_loader, full_spec, write_sections
 
 
 def _names(spec: Any, *, scripting: bool = False) -> list[str]:
-    from langslice.linear.engine import build_context
-    from langslice.linear.job import ingest
-    from langslice.linear.toolbox import build_tools
+    from langslice.agent.engine import build_context
+    from langslice.doors.tools.toolbox import build_tools
+    from langslice.job.job import ingest
 
     ctx = build_context(spec, emit=lambda _m: None, atlas_loader=atlas_loader())
     state = ingest(spec, ctx)

@@ -1,8 +1,8 @@
 """The verbs: every write to a stack, as library functions on a job.
 
-Each operation takes the :class:`~langslice.linear.job.Job` (and, where it
+Each operation takes the :class:`~langslice.job.job.Job` (and, where it
 reads the atlas or the section files, the core
-:class:`~langslice.linear.workspace.Workspace`) plus plain arguments, does
+:class:`~langslice.core.workspace.Workspace`) plus plain arguments, does
 its write as ONE undo step through the job (``snapshot`` before, ``commit``
 after: one step and the checkpoint), and returns a plain record of what
 changed. No pictures, no wording for a model, no look-before-commit gates:

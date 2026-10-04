@@ -23,7 +23,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from langslice.linear.checkpoint import (
+from langslice.job.checkpoint import (
     FORMAT_KEY,
     STATE_FORMAT_VERSION,
     upgrade_state,
@@ -48,7 +48,7 @@ class History:
     """The history folder of one job, kept in line with the job's two stacks.
 
     The stacks themselves stay plain lists of state dicts on the job
-    (:class:`langslice.linear.job.Job`); :meth:`save` writes a file for each
+    (:class:`langslice.job.job.Job`); :meth:`save` writes a file for each
     entry it has not written yet (matched by identity) and the index.
     """
 

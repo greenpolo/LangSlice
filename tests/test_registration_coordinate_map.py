@@ -5,11 +5,11 @@ from types import SimpleNamespace
 import numpy as np
 from PIL import Image
 
-from langslice.nonlinear import image_gen_registration as registration
+from langslice.core.nonlinear import image_gen_registration as registration
 
 
 def test_public_defaults_to_border_wrapper_and_forwards_supplied_alignment(monkeypatch):
-    from langslice.nonlinear import border_registration
+    from langslice.core.nonlinear import border_registration
 
     calls = []
     sentinel = object()
@@ -38,7 +38,7 @@ def test_public_defaults_to_border_wrapper_and_forwards_supplied_alignment(monke
 
 
 def test_public_forwards_passes_for_route_atlas_without_supplied_alignment(monkeypatch):
-    from langslice.nonlinear import border_registration
+    from langslice.core.nonlinear import border_registration
 
     calls = []
     sentinel = object()

@@ -33,14 +33,7 @@ from pathlib import Path
 from typing import Any
 
 from langslice.job import index
-from langslice.job.history import History
-from langslice.job.layout import (
-    DEFORMABLE_DIR,
-    IMAGE_CORRECTION_DIR,
-    JobLayout,
-    write_job_file,
-)
-from langslice.linear.checkpoint import (
+from langslice.job.checkpoint import (
     CHECKPOINT_FILENAME,
     FORMAT_KEY,
     STATE_FORMAT_VERSION,
@@ -48,6 +41,13 @@ from langslice.linear.checkpoint import (
     state_paths,
     upgrade_state,
     write_json_atomic,
+)
+from langslice.job.history import History
+from langslice.job.layout import (
+    DEFORMABLE_DIR,
+    IMAGE_CORRECTION_DIR,
+    JobLayout,
+    write_job_file,
 )
 
 logger = logging.getLogger(__name__)

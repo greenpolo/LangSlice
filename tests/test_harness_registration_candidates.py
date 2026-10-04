@@ -31,11 +31,11 @@ def test_build_atlas_root_mask_produces_binary_alpha_at_target_size(monkeypatch)
     as transparent (0), and NEAREST-resizes to *target_size* so alpha stays
     binary -- bilinear interpolation would halo the 3D-viewer silhouette.
 
-    The implementation now lives in `langslice.atlas.core.get_root_mask` (it is
+    The implementation now lives in `langslice.core.atlas.core.get_root_mask` (it is
     an atlas accessor, and the linear transform tools need it too); the
     name here is an alias, so this exercises both."""
-    from langslice.atlas import core as atlas_core
-    from langslice.nonlinear import image_gen_helpers
+    from langslice.core.atlas import core as atlas_core
+    from langslice.core.nonlinear import image_gen_helpers
 
     # Annotation slab: top half has tissue (non-zero IDs), bottom half is bg.
     annotation = np.array(
@@ -74,7 +74,7 @@ def test_build_atlas_root_mask_produces_binary_alpha_at_target_size(monkeypatch)
 
 
 def test_canvas_pad_grows_working_canvas_and_reports_offsets():
-    from langslice.nonlinear.image_gen_registration import prepare_canvas
+    from langslice.core.nonlinear.image_gen_registration import prepare_canvas
 
     canvas, unpadded, ox, oy, pad_px = prepare_canvas(
         _make_slice(),  # 12x8
@@ -91,7 +91,7 @@ def test_canvas_pad_grows_working_canvas_and_reports_offsets():
 
 def test_extreme_aspect_ratio_clamps_into_the_supported_range():
     """gpt-image-2 accepts 1:3..3:1; a 4:1 strip black-pads down to 3:1."""
-    from langslice.nonlinear.image_gen_registration import prepare_canvas
+    from langslice.core.nonlinear.image_gen_registration import prepare_canvas
 
     canvas, unpadded, ox, oy, _pad_px = prepare_canvas(
         _make_slice((48, 12)), native_canvas=False, image_model="gpt-image-2",
@@ -103,7 +103,7 @@ def test_extreme_aspect_ratio_clamps_into_the_supported_range():
 
 
 def test_in_range_aspect_ratio_is_left_untouched():
-    from langslice.nonlinear.image_gen_registration import prepare_canvas
+    from langslice.core.nonlinear.image_gen_registration import prepare_canvas
 
     canvas, unpadded, ox, oy, _pad_px = prepare_canvas(
         _make_slice((24, 9)), native_canvas=False, image_model="gpt-image-2",

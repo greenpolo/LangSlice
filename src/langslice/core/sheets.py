@@ -9,14 +9,14 @@ from collections.abc import Callable
 
 from PIL import Image, ImageDraw
 
-from langslice.affine import resize_long_edge
+from langslice.core.affine import resize_long_edge
+from langslice.core.appearance import Look, view_look
 from langslice.core.captions import _font, caption
 from langslice.core.sections import render_slice
 from langslice.core.sizes import opening_edge
+from langslice.core.state import SliceState, StackState
 from langslice.core.status import slice_flags
-from langslice.linear.appearance import Look, view_look
-from langslice.linear.state import SliceState, StackState
-from langslice.linear.workspace import Workspace
+from langslice.core.workspace import Workspace
 
 #: Largest long edge of the ``view_stack`` contact sheet. Each section tile is
 #: drawn at the level's opening size, then shrunk until the whole sheet fits:

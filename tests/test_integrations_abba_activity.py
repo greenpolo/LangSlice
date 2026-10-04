@@ -4,8 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from langslice.integrations import abba_activity as activity
-from langslice.linear.live import LiveEvents
+from langslice.agent.live import LiveEvents
+from langslice.hosts.integrations import abba_activity as activity
 
 
 def _image(data: bytes, label: str = "Section") -> dict:

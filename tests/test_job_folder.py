@@ -14,16 +14,16 @@ import pytest
 import tifffile
 from PIL import Image
 
+from langslice.agent.engine import build_context
 from langslice.core.jpeg import encode_jpeg
 from langslice.core.layers import coordinate_map
+from langslice.core.spec import JobSpec
+from langslice.doors.tools.toolbox import build_tools
+from langslice.job.checkpoint import STATE_FORMAT_VERSION
 from langslice.job.history import UNDO_DEPTH
+from langslice.job.job import Job
 from langslice.job.layout import JOB_FORMAT_VERSION, JobLayout, section_dirname
 from langslice.job.views import flush_all
-from langslice.linear.checkpoint import STATE_FORMAT_VERSION
-from langslice.linear.engine import build_context
-from langslice.linear.job import Job
-from langslice.linear.spec import JobSpec
-from langslice.linear.toolbox import build_tools
 from tests.fakes import SlabAtlas
 
 _ATLAS = SlabAtlas()
@@ -229,8 +229,8 @@ def _saved_job(root: Path, folder: Path, job_id: str) -> Path:
 
 
 def test_an_old_saved_claude_job_moves_next_to_its_images(tmp_path: Path, monkeypatch: Any):
-    from langslice.api import claude_jobs
-    from langslice.mcp_server.server import open_saved_job
+    from langslice.doors.mcp.server import open_saved_job
+    from langslice.hosts.api import claude_jobs
 
     monkeypatch.setattr(claude_jobs, "jobs_root", lambda: tmp_path / "jobs")
     folder = _folder(tmp_path / "stack")
@@ -252,7 +252,7 @@ def test_an_old_saved_claude_job_moves_next_to_its_images(tmp_path: Path, monkey
 
 
 def test_an_old_saved_job_does_not_move_onto_another_job(tmp_path: Path, monkeypatch: Any):
-    from langslice.api import claude_jobs
+    from langslice.hosts.api import claude_jobs
 
     monkeypatch.setattr(claude_jobs, "jobs_root", lambda: tmp_path / "jobs")
     folder = _folder(tmp_path / "stack")
@@ -268,7 +268,7 @@ def test_an_old_saved_job_does_not_move_onto_another_job(tmp_path: Path, monkeyp
 
 
 def _golden_toolbox(folder: Path) -> tuple[Any, Any]:
-    from langslice.linear.job import ingest
+    from langslice.job.job import ingest
     from tests.golden.record import atlas_loader, full_spec, write_sections
 
     write_sections(folder)
@@ -287,7 +287,7 @@ def _place(box: Any) -> None:
 
 
 def test_every_picture_is_saved_as_sent_with_layers_for_placements(tmp_path: Path):
-    from langslice.adk import TOOL_MEDIA_PARTS_KEY
+    from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 
     box, _ctx = _golden_toolbox(tmp_path / "stack")
     shown = _tool(box, "view_slices")(["s0.png", "s1.png"])[TOOL_MEDIA_PARTS_KEY]
@@ -460,8 +460,8 @@ def test_a_read_only_image_folder_falls_back_to_the_home_job_folder(
 def test_a_claude_job_on_a_read_only_folder_lives_under_its_id(
     tmp_path: Path, read_only: Path, monkeypatch: Any,
 ):
-    from langslice.api import claude_jobs
-    from langslice.mcp_server.server import open_saved_job
+    from langslice.doors.mcp.server import open_saved_job
+    from langslice.hosts.api import claude_jobs
 
     monkeypatch.setattr(claude_jobs, "jobs_root", lambda: tmp_path / "jobs")
     prepared = claude_jobs.prepare_folder(

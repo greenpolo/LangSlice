@@ -9,8 +9,8 @@ import numpy as np
 import pytest
 from scipy import ndimage as ndi
 
-from langslice.atlas.render import family_labels
-from langslice.deformable import (
+from langslice.core.atlas.render import family_labels
+from langslice.core.deformable import (
     AbbaAtlas,
     CandidateFailure,
     DeformableRecord,
@@ -22,14 +22,14 @@ from langslice.deformable import (
     prepare_fit,
     ventricle_ids,
 )
-from langslice.deformable.abba_atlas import SHAPE_AP_DV_ML
-from langslice.deformable.engines import FIT_THREADS, RANDOM_SEED, invert_field, run_engine
-from langslice.deformable.fit import finish_fit, fit_prepared
-from langslice.deformable.masks import torn_edge_band
-from langslice.deformable.record import jacobian_determinant
-from langslice.deformable.regions import named_regions
-from langslice.nonlinear.image_gen_helpers import _merge_classified
-from langslice.oblique import plane_index_coordinates, sample_oblique_plane
+from langslice.core.deformable.abba_atlas import SHAPE_AP_DV_ML
+from langslice.core.deformable.engines import FIT_THREADS, RANDOM_SEED, invert_field, run_engine
+from langslice.core.deformable.fit import finish_fit, fit_prepared
+from langslice.core.deformable.masks import torn_edge_band
+from langslice.core.deformable.record import jacobian_determinant
+from langslice.core.deformable.regions import named_regions
+from langslice.core.nonlinear.image_gen_helpers import _merge_classified
+from langslice.core.oblique import plane_index_coordinates, sample_oblique_plane
 from tests.deformable_synthetic import (
     CTX,
     HY,

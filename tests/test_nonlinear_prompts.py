@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from langslice.nonlinear.prompts import (
+from langslice.core.nonlinear.prompts import (
     border_refinement_prompt,
     pass1_atlas_prompt,
     pass2_atlas_prompt,

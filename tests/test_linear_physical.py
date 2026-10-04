@@ -14,17 +14,17 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.affine import normalized_physical_affine, physical_affine_matrix
-from langslice.atlas.recolor import color_lut
-from langslice.atlas.render import family_mapping, family_outlines
+from langslice.agent.engine import build_context
+from langslice.core.affine import normalized_physical_affine, physical_affine_matrix
+from langslice.core.atlas.recolor import color_lut
+from langslice.core.atlas.render import family_mapping, family_outlines
 from langslice.core.canvas import canvas_geometry, physical_overlay
 from langslice.core.captions import scale_bar_px
+from langslice.core.image_prep import read_pixel_size_um
 from langslice.core.sections import canvas_um_per_px
-from langslice.image_prep import read_pixel_size_um
-from langslice.linear.engine import build_context
-from langslice.linear.job import ingest
-from langslice.linear.spec import JobSpec
-from langslice.linear.transform import calibrate
+from langslice.core.spec import JobSpec
+from langslice.core.transform import calibrate
+from langslice.job.job import ingest
 from tests.linear_tool_helpers import single_adjust
 
 #: The atlas fake below is 25 um per voxel, like allen_mouse_25um.
@@ -110,7 +110,7 @@ def test_ome_xml_pixel_size_wins_over_the_tags(tmp_path: Path):
 
 def test_the_micro_sign_survives_a_mangled_encoding():
     """tifffile writes "µm"; its UTF-8 bytes reach us as "Âµm" often enough."""
-    from langslice.image_prep import _unit_to_um
+    from langslice.core.image_prep import _unit_to_um
 
     assert _unit_to_um("Âµm") == 1.0
     assert _unit_to_um("µm") == 1.0
@@ -216,7 +216,7 @@ def test_the_template_only_shows_when_it_is_asked_for():
 
 
 def test_outlines_follow_the_family_boundaries_of_the_filled_map():
-    from langslice.nonlinear.render import filled_regions
+    from langslice.core.nonlinear.render import filled_regions
 
     atlas = TwoRegionAtlas()
     labels = atlas.annotation[0]
@@ -299,8 +299,8 @@ def test_no_pixel_size_anywhere_is_estimated_never_fatal(tmp_path: Path):
 
 
 def test_the_preview_tool_returns_one_image_and_the_numbers(tmp_path: Path):
-    from langslice.adk import TOOL_MEDIA_PARTS_KEY
-    from langslice.linear.toolbox import build_tools
+    from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
+    from langslice.doors.tools.toolbox import build_tools
 
     _section((512, 512)).save(tmp_path / "s.tif", dpi=(2540.0, 2540.0))  # 10 um/px
     ctx, state = _ctx(tmp_path)
@@ -323,7 +323,7 @@ def test_the_preview_tool_returns_one_image_and_the_numbers(tmp_path: Path):
 
 
 def test_reasoning_effort_reaches_a_model_that_has_one():
-    from langslice.linear.session import build_agent
+    from langslice.agent.session import build_agent
     from langslice.providers.openai_oauth import ChatGptLlm
 
     agent = build_agent(
@@ -353,7 +353,7 @@ def _half_section(tmp_path: Path):
     the whole outline must stretch the remnant over the whole atlas square to
     match its centroid.
     """
-    from langslice.linear.toolbox import build_tools
+    from langslice.doors.tools.toolbox import build_tools
 
     arr = np.zeros((120, 120, 3), dtype=np.uint8)
     arr[10:110, 10:60] = 200  # left half of the centred 100 px (= 1 mm) square
@@ -375,7 +375,7 @@ def test_damage_is_refused_by_fit_affine(tmp_path: Path):
 
 
 def test_a_stored_silhouette_fit_is_the_b_side_of_an_a_b_preview(tmp_path: Path):
-    from langslice.adk import TOOL_MEDIA_PARTS_KEY
+    from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 
     tools, state = _half_section(tmp_path)
     tools["fit_affine"](["s.tif"], "silhouette")

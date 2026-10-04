@@ -13,7 +13,7 @@ def test_orient_slice_to_axes_maps_horizontal_to_user_frame() -> None:
 
     import numpy as np
 
-    from langslice.space import atlas_space_context, native_slice_axes, orient_slice_to_axes
+    from langslice.core.space import atlas_space_context, native_slice_axes, orient_slice_to_axes
 
     atlas = SimpleNamespace(
         atlas_name="fake",

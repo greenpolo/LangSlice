@@ -11,17 +11,17 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.adk import TOOL_MEDIA_PARTS_KEY
-from langslice.adk.media import package_result
-from langslice.deformable import DeformableRecord
-from langslice.linear import deformation
-from langslice.linear.checkpoint import load_checkpoint
-from langslice.linear.engine import build_context
-from langslice.linear.job import ingest
-from langslice.linear.prompt import build_job_statement
-from langslice.linear.spec import JobSpec, NonlinearSpec, TransformSpec
-from langslice.linear.state import StackState
-from langslice.linear.toolbox import build_tools
+from langslice.agent.engine import build_context
+from langslice.agent.prompt import build_job_statement
+from langslice.core import deformation
+from langslice.core.deformable import DeformableRecord
+from langslice.core.spec import JobSpec, NonlinearSpec, TransformSpec
+from langslice.core.state import StackState
+from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
+from langslice.doors.tools.media import package_result
+from langslice.doors.tools.toolbox import build_tools
+from langslice.job.checkpoint import load_checkpoint
+from langslice.job.job import ingest
 from tests.deformable_synthetic import SMOOTH_FIELD, SyntheticAtlas, render_section
 
 ID = "s0.png"

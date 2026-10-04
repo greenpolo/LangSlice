@@ -1,7 +1,7 @@
 """The deformation on top of a section's linear placement: fit it, or keep the placement.
 
 :func:`fit_deformable` runs one or more deformable fits per section
-(:mod:`langslice.linear.deformation`: the fit grid, the image each fit
+(:mod:`langslice.core.deformation`: the fit grid, the image each fit
 reads, the record cache and the engines) and, when the call has exactly one
 setting, APPLIES each section's result as its deformation: one undo step
 for the call. Several settings (candidates) are a preview: every fit runs
@@ -9,7 +9,7 @@ and is cached, nothing is written. :func:`keep_linear` records instead that
 a section's linear placement stands without a deformation.
 
 The arguments arrive checked (the door validates them and resolves each
-candidate into a :class:`~langslice.linear.deformation.Choice`); what can go
+candidate into a :class:`~langslice.core.deformation.Choice`); what can go
 wrong per section (no valid placement, ``start="current"`` with nothing to
 compose onto, a trace that is missing, stale or failed, a fit that failed,
 a record that cannot be saved) is that section's row, not a refusal of the
@@ -27,17 +27,17 @@ from typing import TYPE_CHECKING, Any
 
 from PIL import Image
 
-from langslice.linear import deformation
-from langslice.linear.state import SliceState
+from langslice.core import deformation
+from langslice.core.state import SliceState
 from langslice.ops.inputs import section_inputs, stale_row
 from langslice.ops.refusal import Refused
 
 if TYPE_CHECKING:
     import numpy as np
 
-    from langslice.linear.display import DisplayOptions
-    from langslice.linear.job import Job
-    from langslice.linear.workspace import Workspace
+    from langslice.core.display import DisplayOptions
+    from langslice.core.workspace import Workspace
+    from langslice.job.job import Job
 
 logger = logging.getLogger(__name__)
 
@@ -97,14 +97,14 @@ def fit_deformable(
     ``exclude``, sides allowed); *start* is ``linear`` (from the linear
     placement) or ``current`` (composed onto the section's applied
     deformation). A traced choice waits for the section's trace still running
-    (one :data:`~langslice.linear.deformation.TRACE_WAIT_S` deadline for the
+    (one :data:`~langslice.core.deformation.TRACE_WAIT_S` deadline for the
     call; a trace that lands is checkpointed without an undo step).
     Identical inputs reuse a cached or saved result; applying a section's own
     current key again writes nothing (``written: false``). With *options*,
     every fit and every traced section's trace is then drawn (:func:`pictures`).
 
     The fits run outside the job's write lock, from the state as it stood;
-    applying takes the lock (:meth:`~langslice.linear.job.Job.writing`) and
+    applying takes the lock (:meth:`~langslice.job.job.Job.writing`) and
     refuses a section whose inputs changed meanwhile
     (:data:`langslice.ops.inputs.STALE_INPUT`, that section's row), applying
     the others.
@@ -259,11 +259,11 @@ def pictures(
     start: str = "linear",
 ) -> DeformableFit:
     """*done* with its pictures: per drawn row, the final atlas borders on the
-    image the fit read (:func:`langslice.linear.deformation.picture`), titled
+    image the fit read (:func:`langslice.core.deformation.picture`), titled
     with the section, applied or candidate number of *candidates*, engine,
     stiffness and what was fitted; mode ``ab`` adds what the fit started from
     (the previous deformation, or the linear placement). Then each traced
-    section's trace on the section (:func:`~langslice.linear.deformation.trace_picture`).
+    section's trace on the section (:func:`~langslice.core.deformation.trace_picture`).
     Included or ``view.regions`` borders strong, excluded ones pink. Each
     drawn row gets ``image_indexes``; a picture that fails is listed in
     ``render_failed``.

@@ -2,7 +2,7 @@
 
 Live shared editing (a running agent, CLI calls, scripts on one job folder)
 needs every write to go lock -> sync (reload the state if it changed on
-disk) -> apply -> commit -> unlock (:meth:`langslice.linear.job.Job.writing`).
+disk) -> apply -> commit -> unlock (:meth:`langslice.job.job.Job.writing`).
 The lock is ``job.lock`` in the job folder, held through ``filelock``
 (``fcntl`` on Linux and macOS, ``msvcrt`` on Windows; the operating system
 releases it when a process dies). It is reentrant in the thread that holds

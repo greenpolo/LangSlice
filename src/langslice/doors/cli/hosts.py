@@ -70,7 +70,7 @@ def run_abba(args: argparse.Namespace) -> None:
         ) from exc
 
     if args.linear:
-        from langslice.integrations.abba_linear import run_linear_in_abba
+        from langslice.hosts.integrations.abba_linear import run_linear_in_abba
 
         apply_trace_dir(args)
         spec = build_linear_spec(args, args.linear)
@@ -84,7 +84,7 @@ def run_abba(args: argparse.Namespace) -> None:
         )
         return
 
-    from langslice.integrations.abba import run_gui_session
+    from langslice.hosts.integrations.abba import run_gui_session
 
     run_gui_session(
         abba_atlas=args.abba_atlas,
@@ -110,7 +110,7 @@ def add_serve_parser(subparsers: argparse._SubParsersAction) -> None:
 def run_serve(args: argparse.Namespace) -> None:
     if not args.stdio:
         raise SystemExit("serve currently requires --stdio")
-    from langslice.api.service import run_stdio
+    from langslice.hosts.api.service import run_stdio
 
     raise SystemExit(run_stdio())
 
@@ -144,7 +144,7 @@ def add_mcp_parser(subparsers: argparse._SubParsersAction) -> None:
 
 def run_mcp(args: argparse.Namespace) -> None:
     try:
-        from langslice.mcp_server.server import serve
+        from langslice.doors.mcp.server import serve
     except ImportError as exc:
         raise SystemExit(
             'The MCP SDK is not installed. Install it with\n  pip install "langslice[mcp]"'
@@ -173,7 +173,7 @@ def add_claude_prepare_parser(subparsers: argparse._SubParsersAction) -> None:
 
 
 def run_claude_prepare(args: argparse.Namespace) -> None:
-    from langslice.api.claude_jobs import prepare_folder
+    from langslice.hosts.api.claude_jobs import prepare_folder
 
     spec = build_linear_spec(args, args.image_folder)
     job = prepare_folder(spec, args.notes, trace_dir=args.trace_dir)

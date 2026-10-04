@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from langslice.api import setup
+from langslice.hosts.api import setup
 
 
 @pytest.fixture
@@ -125,7 +125,7 @@ def test_status_models_do_not_import_the_transport() -> None:
     import sys
 
     script = (
-        "import sys; from langslice.api import setup; setup.setup_status(); "
+        "import sys; from langslice.hosts.api import setup; setup.setup_status(); "
         "print('langslice.providers.openai_oauth' in sys.modules, 'google.adk' in sys.modules)"
     )
     out = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True,

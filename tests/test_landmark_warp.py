@@ -2,7 +2,7 @@
 import numpy as np
 import pytest
 
-from langslice.landmark_warp import ThinPlateSpline, fit_spline, warp_section
+from langslice.core.landmark_warp import ThinPlateSpline, fit_spline, warp_section
 
 POINTS = np.array([[0, 0], [1, 0], [0, 1], [1, 1], [.5, .5]], dtype=float)
 

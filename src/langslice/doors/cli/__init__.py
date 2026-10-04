@@ -110,12 +110,12 @@ def main(argv: list[str] | None = None) -> int | None:
     args = parser.parse_args(argv)
     if args.command in AGENT_COMMANDS:
         if args.command == "job" and args.verb.replace("-", "_") == "trace_borders":
-            from langslice.api.setup import apply_saved_credentials
+            from langslice.hosts.api.setup import apply_saved_credentials
 
             apply_saved_credentials()  # the image model's keys
         return AGENT_COMMANDS[args.command](args)
     if args.command not in {"serve", "login", "version"}:
-        from langslice.api.setup import apply_saved_credentials
+        from langslice.hosts.api.setup import apply_saved_credentials
 
         apply_saved_credentials()
 

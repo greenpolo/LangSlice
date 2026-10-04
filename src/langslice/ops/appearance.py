@@ -1,4 +1,4 @@
-"""How sections look: the ``view`` and ``fit`` appearances (:mod:`langslice.linear.appearance`)."""
+"""How sections look: the ``view`` and ``fit`` appearances (:mod:`langslice.core.appearance`)."""
 
 from __future__ import annotations
 
@@ -7,17 +7,17 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from langslice.linear import appearance as looks
+from langslice.core import appearance as looks
 from langslice.ops.refusal import Refused
 
 if TYPE_CHECKING:
     from PIL import Image
 
-    from langslice.linear.appearance import Look
-    from langslice.linear.display import DisplayOptions
-    from langslice.linear.job import Job
-    from langslice.linear.state import SliceState, StackState
-    from langslice.linear.workspace import Workspace
+    from langslice.core.appearance import Look
+    from langslice.core.display import DisplayOptions
+    from langslice.core.state import SliceState, StackState
+    from langslice.core.workspace import Workspace
+    from langslice.job.job import Job
 
 
 @dataclass(frozen=True)
@@ -51,7 +51,7 @@ def planned_settings(
 def set_appearance(
     job: Job, targets: Sequence[str], section_ids: Sequence[str] | None, settings: Look,
 ) -> AppearanceSet:
-    """Write *settings* (validated, :func:`langslice.linear.appearance.validate_settings`;
+    """Write *settings* (validated, :func:`langslice.core.appearance.validate_settings`;
     None = back to the default) for each target, stack-wide (*section_ids*
     None) or for those sections. One undo step.
     """
@@ -112,11 +112,11 @@ def preprocess(
     appearance BEFORE the call (drawn first, from the settings as they
     stand) and AFTER (from the settings the write will leave,
     :func:`planned_settings`), each tissue-framed
-    (:func:`langslice.linear.display.framed_section`). The write happens only
+    (:func:`langslice.core.display.framed_section`). The write happens only
     once every picture is drawn: a picture that fails refuses the call
     (``RENDER_FAILED``), nothing written.
     """
-    from langslice.linear.display import framed_section
+    from langslice.core.display import framed_section
 
     state = job.state
     pictured = targets[0]

@@ -528,7 +528,7 @@ def test_function_result_round_trip_body(monkeypatch):
 
 # --- wiring ------------------------------------------------------------------
 def test_model_resolver_routes_chatgpt_prefix():
-    from langslice.adk import model_resolver
+    from langslice.agent import model_resolver
 
     model = model_resolver.resolve_adk_model("chatgpt/gpt-5.6-luna")
     assert isinstance(model, chatgpt.ChatGptLlm)
@@ -547,7 +547,7 @@ def test_registry_resolves_chatgpt_models():
 def test_nonlinear_provider_uses_direct_images_edit(monkeypatch):
     """The registration path calls the direct edits endpoint: one GPT model
     (the pilot), one image model — no routing model rewriting the prompt."""
-    from langslice.nonlinear import providers
+    from langslice.providers import images as providers
 
     captured: dict[str, Any] = {}
 

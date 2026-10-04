@@ -11,7 +11,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.affine import (
+from langslice.core.affine import (
     affine_matrix,
     decompose_affine,
     extract_slice_silhouette,
@@ -25,7 +25,7 @@ from tests.fakes import EllipseAtlas, ellipse_section
 
 
 def test_the_affine_core_is_shared_and_nonlinears_api_is_unchanged():
-    from langslice.nonlinear import quick_affine
+    from langslice.core.nonlinear import quick_affine
 
     # quick_affine now wraps the shared core rather than owning it.
     assert quick_affine.silhouette_affine is silhouette_affine
@@ -43,8 +43,8 @@ def test_the_affine_core_is_shared_and_nonlinears_api_is_unchanged():
 
 
 def test_the_atlas_root_mask_kept_its_old_name_in_nonlinear():
-    from langslice.atlas.core import get_root_mask
-    from langslice.nonlinear.image_gen_helpers import _build_atlas_root_mask
+    from langslice.core.atlas.core import get_root_mask
+    from langslice.core.nonlinear.image_gen_helpers import _build_atlas_root_mask
 
     assert _build_atlas_root_mask is get_root_mask
 
@@ -230,7 +230,7 @@ def test_silhouette_affine_never_reflects():
     import numpy as np
     from PIL import Image, ImageDraw
 
-    from langslice.affine import silhouette_affine
+    from langslice.core.affine import silhouette_affine
 
     class _Atlas:  # minimal: get_root_mask reads only what the fit asks for
         pass
@@ -240,7 +240,7 @@ def test_silhouette_affine_never_reflects():
     # Off-centre notch so the silhouette has a handedness the fit could "fix".
     ImageDraw.Draw(canvas).rectangle((30, 20, 60, 50), fill=0)
 
-    import langslice.affine as affine_mod
+    import langslice.core.affine as affine_mod
 
     def fake_root_mask(atlas, position_mm, size, plane="coronal", pitch_deg=0.0, yaw_deg=0.0):
         w, h = size
@@ -277,7 +277,7 @@ def test_decompose_affine_reads_a_pure_rotation_on_a_wide_image_when_given_its_s
 
 def test_the_six_numbers_go_back_to_the_pixels_they_came_from():
     """A stored transform has to be DRAWN again, shear and all."""
-    from langslice.affine import denormalized_affine
+    from langslice.core.affine import denormalized_affine
 
     size = (300, 200)
     matrix = np.array([[1.03, 0.21, 12.0], [-0.07, 0.94, -5.0]])
@@ -291,7 +291,7 @@ def test_silhouette_affine_measures_against_the_mask_it_is_given():
     import numpy as np
     from PIL import Image
 
-    from langslice.affine import silhouette_affine
+    from langslice.core.affine import silhouette_affine
 
     seen: dict[str, tuple[int, int]] = {}
 

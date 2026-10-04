@@ -196,7 +196,7 @@ def test_the_outline_layer_picks_which_atlas_lines_are_drawn():
 
 def _tools(tmp_path: Path):
     """The transform tools of a one-section run, on a 10 um/px file."""
-    from langslice.linear.toolbox import build_tools
+    from langslice.doors.tools.toolbox import build_tools
 
     _section(200, (512, 512)).save(tmp_path / "s.tif", dpi=(2540.0, 2540.0))  # 10 um/px
     ctx, state = _ctx(tmp_path)
@@ -236,7 +236,7 @@ def test_the_adjust_payload_is_concise_while_local_history_stays_complete(tmp_pa
 
 
 def test_the_adjust_tool_takes_the_view_controls(tmp_path: Path):
-    from langslice.adk import TOOL_MEDIA_PARTS_KEY
+    from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 
     preview = single_adjust(_tools(tmp_path)[0]["adjust_transforms"])
 
@@ -255,7 +255,7 @@ def test_the_adjust_tool_takes_the_view_controls(tmp_path: Path):
 
 
 def test_ab_returns_the_candidate_and_what_is_stored(tmp_path: Path):
-    from langslice.adk import TOOL_MEDIA_PARTS_KEY
+    from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 
     tools, _box, _state = _tools(tmp_path)
     against_identity = single_adjust(tools["adjust_transforms"])(
@@ -279,7 +279,7 @@ def test_ab_returns_the_candidate_and_what_is_stored(tmp_path: Path):
 
 
 def test_view_placement_draws_the_section_on_each_atlas_position(tmp_path: Path):
-    from langslice.adk import TOOL_MEDIA_PARTS_KEY
+    from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 
     tools, _box, state = _tools(tmp_path)
     compare = tools["view_placement"]
@@ -321,7 +321,7 @@ def test_view_placement_draws_the_section_on_each_atlas_position(tmp_path: Path)
 def test_a_tissue_pivot_turns_the_section_about_its_own_centroid(tmp_path: Path):
     """A rotation about the tissue centroid leaves that centroid in place."""
     from langslice.core.canvas import canvas_geometry, physical_views, pivot_on_canvas
-    from langslice.image_prep import foreground_mask
+    from langslice.core.image_prep import foreground_mask
 
     section = _section(200, (300, 200))  # tissue square well off the canvas centre
     arr = np.asarray(section).copy()
@@ -481,7 +481,7 @@ def test_invalid_border_style_does_not_write_a_transform(tmp_path: Path, style):
 
 
 def test_batch_border_style_changes_only_the_render(tmp_path: Path):
-    from langslice.adk import TOOL_MEDIA_PARTS_KEY
+    from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 
     tools, box, state = _tools(tmp_path)
     entry = {"id": "s.tif", **_IDENTITY, "rotation_deg": 5.0}

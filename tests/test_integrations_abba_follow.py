@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from langslice.integrations import abba_follow
+from langslice.hosts.integrations import abba_follow
 
 
 class _Slice:

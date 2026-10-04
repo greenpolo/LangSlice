@@ -18,14 +18,14 @@ import cv2
 import numpy as np
 from PIL import Image, ImageColor
 
-from langslice.affine import (
+from langslice.core.affine import (
     extract_slice_silhouette,
     physical_affine_matrix,
     resize_long_edge,
     silhouette_iou,
 )
-from langslice.atlas.core import get_reference_slice
-from langslice.atlas.render import (
+from langslice.core.atlas.core import get_reference_slice
+from langslice.core.atlas.render import (
     annotation_slice,
     atlas_um_per_px,
     family_outlines,
@@ -34,8 +34,8 @@ from langslice.atlas.render import (
     region_contours,
 )
 from langslice.core.captions import _draw_scale_bar, caption
-from langslice.image_prep import foreground_mask
-from langslice.space import Plane
+from langslice.core.image_prep import foreground_mask
+from langslice.core.space import Plane
 
 #: Black working space on each side of the larger of section and atlas, as a
 #: fraction of that extent. Room for x/y moves, like ABBA's viewer.
@@ -48,7 +48,7 @@ class CanvasGeometry:
     The canvas IS the section's frame, grown symmetrically when the atlas
     anatomy at true scale would not fit inside it. Both frames therefore share
     a centre, which is why a transform's rotation centre is the same in either
-    (:func:`langslice.affine.normalized_physical_affine`).
+    (:func:`langslice.core.affine.normalized_physical_affine`).
     """
 
     size: tuple[int, int]
@@ -280,9 +280,9 @@ def regions_left(
 
     *regions* is ``[(name, ids)]``; *native_to_display* the linear map from the
     native atlas plane to the frame whose left and right the sides name
-    (:func:`langslice.atlas.sides.native_left`).
+    (:func:`langslice.core.atlas.sides.native_left`).
     """
-    from langslice.atlas.sides import has_sides, native_left
+    from langslice.core.atlas.sides import has_sides, native_left
 
     if not has_sides([name for name, _ids in regions]):
         return None
@@ -299,7 +299,7 @@ def region_polys(
     as the family outlines. A name with a side (``"CTX:left"``) keeps only
     that side, *left* being the native pixels on the left (:func:`regions_left`).
     """
-    from langslice.atlas.sides import restrict, split_side
+    from langslice.core.atlas.sides import restrict, split_side
 
     polys: list[np.ndarray] = []
     for name, ids in regions:
@@ -695,7 +695,7 @@ def physical_views(
     *matrix_label* names a ready matrix in the caption. ``template`` draws
     the atlas image alone; *template_lines* adds the *outlines* layer to it.
     *left* is the section's displayed left on the native plane as resolved
-    elsewhere (a fit's own split, :class:`langslice.linear.transform.FitFrame`);
+    elsewhere (a fit's own split, :class:`langslice.core.transform.FitFrame`);
     a one-sided region then uses it instead of resolving the sides through
     this placement, which has none once it turns the midline past 45 degrees.
 
@@ -726,7 +726,7 @@ def physical_views(
         pivot=pivot, pivot_in_section=pivot_in_section,
     )
     if spline is not None:
-        from langslice.landmark_warp import warp_section
+        from langslice.core.landmark_warp import warp_section
 
         warped = warp_section(
             np.asarray(section.convert("RGB"), dtype=np.uint8), spline,
@@ -760,7 +760,7 @@ def physical_views(
         # frame (native -> canvas is the atlas scale; section -> canvas the matrix).
         linear = _as_3x3(section_matrix)[:2, :2]
         if left is not None and left.shape == geometry.annotation.shape[:2]:
-            from langslice.atlas.sides import has_sides
+            from langslice.core.atlas.sides import has_sides
 
             sides = left if has_sides([name for name, _ids in regions]) else None
         else:

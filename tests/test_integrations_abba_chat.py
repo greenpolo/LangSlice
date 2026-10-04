@@ -6,7 +6,7 @@ from urllib.request import Request, urlopen
 
 import pytest
 
-from langslice.integrations import abba_chat as chat
+from langslice.hosts.integrations import abba_chat as chat
 
 
 def test_history_preserves_summary_deltas_and_ignores_private_fields():
@@ -98,7 +98,7 @@ def test_server_requires_token_host_and_exposes_no_mutations():
 
 
 def test_browser_missing_falls_back_to_existing_viewer(monkeypatch):
-    from langslice.integrations import abba_activity
+    from langslice.hosts.integrations import abba_activity
 
     monkeypatch.setattr(chat, "_browser", lambda: (_ for _ in ()).throw(RuntimeError("missing")))
     marker = object()

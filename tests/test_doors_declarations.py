@@ -14,10 +14,10 @@ from typing import Any
 
 import pytest
 
+from langslice.core.spec import JobSpec, NonlinearSpec, PositionSpec, TransformSpec
 from langslice.doors import declarations
 from langslice.doors.declarations import FULL, Variant, declaration, declare
-from langslice.linear.arguments import FixedCandidate, View, ViewAuto
-from langslice.linear.spec import JobSpec, NonlinearSpec, PositionSpec, TransformSpec
+from langslice.doors.tools.arguments import FixedCandidate, View, ViewAuto
 from langslice.ops.registry import VERBS, enabled
 
 

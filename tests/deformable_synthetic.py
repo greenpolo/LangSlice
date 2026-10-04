@@ -15,7 +15,7 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from langslice.deformable.geometry import Placement
+from langslice.core.deformable.geometry import Placement
 
 CTX, STR, TH, HY, VS, VL = 2, 3, 4, 5, 73, 81
 SECTION_MM_PER_PX = 0.025

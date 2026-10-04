@@ -15,10 +15,10 @@ from mcp.shared.memory import create_connected_server_and_client_session
 from mcp.types import ImageContent, TextContent
 from PIL import Image
 
-from langslice.linear.arguments import View, normalize_arguments
-from langslice.linear.opening import CLAUDE_MAX_IMAGE_EDGE, CLAUDE_MAX_IMAGE_PATCHES, patches
-from langslice.linear.spec import JobSpec
-from langslice.mcp_server.server import build_server
+from langslice.core.opening import CLAUDE_MAX_IMAGE_EDGE, CLAUDE_MAX_IMAGE_PATCHES, patches
+from langslice.core.spec import JobSpec
+from langslice.doors.mcp.server import build_server
+from langslice.doors.tools.arguments import View, normalize_arguments
 from tests.fakes import SlabAtlas
 
 _ATLAS = SlabAtlas()
@@ -206,7 +206,7 @@ def test_without_a_folder_start_job_opens_one_and_the_tools_appear(tmp_path: Pat
 
 
 def test_show_stack_page_budget_and_corrected_order(tmp_path: Path):
-    from langslice.mcp_server.server import PAGE_BYTES, briefing, open_job, page_size
+    from langslice.doors.mcp.server import PAGE_BYTES, briefing, open_job, page_size
 
     folder = _folder(tmp_path, n=36)
     rng = np.random.default_rng(17)
@@ -238,8 +238,8 @@ def test_show_stack_page_budget_and_corrected_order(tmp_path: Path):
 
 
 def test_saved_job_settings_and_offline_submission(tmp_path: Path, monkeypatch: Any):
-    from langslice.api import claude_jobs
-    from langslice.mcp_server.server import host_tool, open_saved_job
+    from langslice.doors.mcp.server import host_tool, open_saved_job
+    from langslice.hosts.api import claude_jobs
 
     folder = _folder(tmp_path)
     monkeypatch.setattr(claude_jobs, "jobs_root", lambda: tmp_path / "jobs")
@@ -278,7 +278,7 @@ def test_saved_job_settings_and_offline_submission(tmp_path: Path, monkeypatch: 
 def test_host_channel_loopback_envelopes_and_disconnect():
     import socket
 
-    from langslice.mcp_server.host_channel import HostChannel
+    from langslice.doors.mcp.host_channel import HostChannel
 
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
@@ -305,8 +305,8 @@ def test_host_channel_loopback_envelopes_and_disconnect():
 def test_job_validation_and_no_image_provider(tmp_path: Path, monkeypatch: Any):
     import pytest
 
-    from langslice.api import claude_jobs
-    from langslice.mcp_server.server import open_job
+    from langslice.doors.mcp.server import open_job
+    from langslice.hosts.api import claude_jobs
 
     monkeypatch.setattr(claude_jobs, "jobs_root", lambda: tmp_path / "jobs")
     with pytest.raises(ValueError, match="Invalid LangSlice job id"):
@@ -318,9 +318,9 @@ def test_job_validation_and_no_image_provider(tmp_path: Path, monkeypatch: Any):
 
 
 def test_saved_job_start_over_mcp_ignores_development_defaults(tmp_path: Path, monkeypatch: Any):
-    from langslice.api import claude_jobs, setup
-    from langslice.api.models import EngineRequest
-    from langslice.api.service import handle_request
+    from langslice.hosts.api import claude_jobs, setup
+    from langslice.hosts.api.models import EngineRequest
+    from langslice.hosts.api.service import handle_request
 
     monkeypatch.setattr(claude_jobs, "jobs_root", lambda: tmp_path / "jobs")
     monkeypatch.setattr(setup, "apply_saved_credentials", lambda: (_ for _ in ()).throw(
@@ -353,8 +353,8 @@ def test_saved_job_start_over_mcp_ignores_development_defaults(tmp_path: Path, m
 def test_cli_prepared_folder_job_lives_next_to_the_sections_and_resumes(
     tmp_path: Path, monkeypatch: Any, capsys: Any
 ):
-    from langslice.api import claude_jobs
     from langslice.cli import main
+    from langslice.hosts.api import claude_jobs
 
     monkeypatch.setattr(claude_jobs, "jobs_root", lambda: tmp_path / "jobs")
     folder = _folder(tmp_path)
@@ -399,7 +399,7 @@ def test_cli_prepared_folder_job_lives_next_to_the_sections_and_resumes(
 def test_a_saved_job_opened_at_startup_lists_its_tools_from_the_first_request(
     tmp_path: Path, monkeypatch: Any
 ):
-    from langslice.api import claude_jobs
+    from langslice.hosts.api import claude_jobs
 
     monkeypatch.setattr(claude_jobs, "jobs_root", lambda: tmp_path / "jobs")
     job = claude_jobs.prepare_folder(

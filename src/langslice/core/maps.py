@@ -8,10 +8,10 @@ fit uses: the six stored numbers are placed by
 :func:`langslice.core.handoff.linear_placement_matrix` on the section's
 :data:`~langslice.core.sections.PREVIEW_LONG_EDGE` working frame (the frame
 they are normalized against), the native atlas plane is mapped to BrainGlobe
-micrometres by :func:`langslice.oblique.plane_index_affine` times the
+micrometres by :func:`langslice.core.oblique.plane_index_affine` times the
 resolution (as :func:`langslice.core.layers.frame_record` does for a
 picture), and an applied deformation is the record's own field and placement
-(:class:`langslice.deformable.record.DeformableRecord`), composed exactly as
+(:class:`langslice.core.deformable.record.DeformableRecord`), composed exactly as
 its pictures compose it (residual first, then the linear placement undone).
 
 Conventions (Nash 2026-10-03, BrainGlobe's): atlas micrometres in the atlas's
@@ -43,16 +43,16 @@ from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 
-from langslice.affine import pixel_center_map
+from langslice.core.affine import pixel_center_map
 from langslice.core.handoff import linear_placement_matrix
+from langslice.core.image_prep import prepared_size, working_size
 from langslice.core.sections import PREVIEW_LONG_EDGE
-from langslice.image_prep import prepared_size, working_size
-from langslice.space import Plane
+from langslice.core.space import Plane
 
 if TYPE_CHECKING:
-    from langslice.deformable.record import DeformableRecord
-    from langslice.linear.state import SliceState, StackState
-    from langslice.linear.workspace import Workspace
+    from langslice.core.deformable.record import DeformableRecord
+    from langslice.core.state import SliceState, StackState
+    from langslice.core.workspace import Workspace
 
 #: ``[x, y, 1]`` <-> ``[row, col, 1]``.
 SWAP = np.array([[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
@@ -240,7 +240,7 @@ def _section_frame(state: StackState, workspace: Workspace, record: SliceState) 
     from PIL import Image
 
     from langslice.core.layers import atlas_facts
-    from langslice.oblique import plane_index_affine
+    from langslice.core.oblique import plane_index_affine
 
     path = workspace.image_path(record.id)
     with Image.open(path) as handle:
@@ -375,7 +375,7 @@ def section_footprint(
     """``(footprint, tissue, found)`` on a grid of *size* (nearest).
 
     *tissue* is the foreground rule of the deformable fit
-    (:func:`langslice.deformable.masks.tissue_masks`, its raw mask) on the
+    (:func:`langslice.core.deformable.masks.tissue_masks`, its raw mask) on the
     working copy; dim tissue (fibre tracts, white matter) may fall outside
     it. *footprint* is the section's filled outline: that mask closed over
     gaps of up to ``2 * FOOTPRINT_CLOSING_MM`` and every hole filled, so
@@ -385,7 +385,7 @@ def section_footprint(
     import cv2
     from scipy import ndimage as ndi
 
-    from langslice.deformable.masks import tissue_masks
+    from langslice.core.deformable.masks import tissue_masks
 
     source, _factor = workspace.working_source(frame.section_id)
     try:
@@ -416,7 +416,7 @@ def section_maps(
     """The section's coordinate, label and residual maps (see
     :class:`SectionMaps`) on its working copy's grid (what every picture is
     drawn from), or with *full_resolution* on the file's own pixels."""
-    from langslice.deformable.geometry import sample_native
+    from langslice.core.deformable.geometry import sample_native
 
     size = frame.file_size if full_resolution else frame.working_size
     width, height = int(size[0]), int(size[1])

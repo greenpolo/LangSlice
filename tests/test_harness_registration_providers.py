@@ -8,11 +8,11 @@ from typing import Any, cast
 import pytest
 from PIL import Image
 
-from langslice.nonlinear.types import GeneratedSegmentation
+from langslice.core.nonlinear.types import GeneratedSegmentation
 
 
 def _providers():
-    from langslice.nonlinear import providers
+    from langslice.providers import images as providers
 
     return providers
 

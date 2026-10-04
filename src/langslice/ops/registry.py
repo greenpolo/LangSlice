@@ -1,6 +1,6 @@
 """Every tool and the operation it calls: the one list the doors are built from.
 
-One :class:`Verb` per agent tool (:func:`langslice.linear.toolbox.build_tools`
+One :class:`Verb` per agent tool (:func:`langslice.doors.tools.toolbox.build_tools`
 returns exactly these names, checked by ``tests/test_ops_registry.py``): the
 operation the tool body calls, whether it writes, and the task group a host
 shows it under. ``Common`` tools are on in every run whatever the tasks
@@ -128,7 +128,7 @@ VERBS: dict[str, Verb] = _verbs(
 
 
 def enabled(spec: Any, *, scripting: bool = False) -> list[str]:
-    """The verbs a run of *spec* (a :class:`~langslice.linear.spec.JobSpec`)
+    """The verbs a run of *spec* (a :class:`~langslice.core.spec.JobSpec`)
     has, in :data:`VERBS` order: the tools every door builds for it. The
     scripting verbs (``Verb.scripting``) only with *scripting*: the agent
     CLI's and the library's toolbox, never the agent tools or MCP."""

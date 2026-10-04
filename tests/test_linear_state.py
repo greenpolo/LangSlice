@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from langslice.linear.spec import JobSpec, PositionSpec, ReorderSpec, TransformSpec
-from langslice.linear.state import SliceState, StackState
+from langslice.core.spec import JobSpec, PositionSpec, ReorderSpec, TransformSpec
+from langslice.core.state import SliceState, StackState
 
 
 def _stack(n: int = 3) -> StackState:
@@ -100,7 +100,7 @@ def test_cutting_angles_report_obliqueness():
 def test_old_checkpoint_discards_draft_landmarks_and_retains_applied_spline():
     import numpy as np
 
-    from langslice.landmark_warp import fit_spline
+    from langslice.core.landmark_warp import fit_spline
 
     state = _stack(1)
     source = [[.2, .2], [.8, .2], [.2, .8], [.8, .8]]

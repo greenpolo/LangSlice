@@ -17,18 +17,18 @@ import numpy as np
 import pytest
 from PIL import Image, ImageDraw
 
-from langslice.adk import TOOL_MEDIA_PARTS_KEY
-from langslice.adk.media import package_result, strip_edge
+from langslice.agent.engine import build_context, build_seed_message
 from langslice.core.captions import CAPTION_PX, _caption_font, caption, wrap_caption
+from langslice.core.opening import COLUMN_GAP, section_tile, strip_layout
 from langslice.core.sections import PREVIEW_LONG_EDGE, render_slice, shown_section
 from langslice.core.sheets import SHEET_MAX_LONG_EDGE, stack_sheet
 from langslice.core.sizes import PICTURE_EDGES, opening_edge
-from langslice.linear.engine import build_context, build_seed_message
-from langslice.linear.job import ingest
-from langslice.linear.opening import COLUMN_GAP, section_tile, strip_layout
-from langslice.linear.spec import JobSpec
-from langslice.linear.toolbox import build_tools
-from langslice.linear.transform import calibrate
+from langslice.core.spec import JobSpec
+from langslice.core.transform import calibrate
+from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
+from langslice.doors.tools.media import package_result, strip_edge
+from langslice.doors.tools.toolbox import build_tools
+from langslice.job.job import ingest
 from tests.linear_tool_helpers import legacy_view
 from tests.test_linear_physical import TwoRegionAtlas
 
@@ -184,7 +184,7 @@ def test_resolution_exists_only_at_auto(tmp_path: Path, level: str):
 
 
 def test_the_job_statement_names_resolution_only_at_auto(tmp_path: Path):
-    from langslice.linear.prompt import display_lines
+    from langslice.agent.prompt import display_lines
 
     names = ["view_slices", "fit_deformable"]
     assert not any("resolution" in line for line in display_lines(names))
@@ -293,8 +293,8 @@ def _digest(image: Image.Image) -> str:
 
 
 def test_the_image_model_and_deformable_fit_inputs_do_not_depend_on_the_level(tmp_path: Path):
-    from langslice.linear import deformation
-    from langslice.registration_handoff import prepare_linear_registration
+    from langslice.core import deformation
+    from langslice.core.nonlinear.registration_handoff import prepare_linear_registration
 
     seen: dict[str, tuple[str, str, Any]] = {}
     for level in ("low", "high", "auto"):
@@ -384,8 +384,8 @@ def test_a_caption_that_fits_is_drawn_as_before():
 def test_the_cap_is_the_driver_models_own(tmp_path: Path):
     """The door passes the driver model's largest image: Claude's for the MCP
     host, the model lane's for the ADK agent."""
-    from langslice.linear.opening import CLAUDE_MAX_VIEW_EDGE, OPENAI_MAX_IMAGE_EDGE
-    from langslice.linear.prompt import build_job_statement
+    from langslice.agent.prompt import build_job_statement
+    from langslice.core.opening import CLAUDE_MAX_VIEW_EDGE, OPENAI_MAX_IMAGE_EDGE
 
     state, ctx, _tools, spec = _run(tmp_path / "auto", "auto")
     claude = build_tools(state, ctx, spec, max_view_edge=CLAUDE_MAX_VIEW_EDGE)

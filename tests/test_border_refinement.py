@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.nonlinear import border_refinement as borders
+from langslice.core.nonlinear import border_refinement as borders
 
 
 @pytest.fixture
@@ -118,7 +118,7 @@ def synthetic():
 
 
 def _family_lines(labels, atlas):
-    from langslice.atlas.render import family_labels
+    from langslice.core.atlas.render import family_labels
 
     merged = family_labels(labels, atlas)
     lines = np.zeros(merged.shape, dtype=bool)
@@ -142,7 +142,7 @@ def _mean_error(field_px, field_mm, truth):
 def test_the_model_lines_are_fitted_by_the_deformable_package(synthetic):
     """Lines drawn where the warped regions meet pull the placed borders there:
     the field comes back in canvas pixels in the documented direction."""
-    from langslice.nonlinear.border_fit import fit_border_lines
+    from langslice.core.nonlinear.border_fit import fit_border_lines
     from tests.deformable_synthetic import placement
 
     atlas, field, image, truth = synthetic
@@ -161,7 +161,7 @@ def test_the_model_lines_are_fitted_by_the_deformable_package(synthetic):
 
 
 def test_an_empty_line_mask_is_refused_before_any_fit(synthetic):
-    from langslice.nonlinear.border_fit import fit_border_lines
+    from langslice.core.nonlinear.border_fit import fit_border_lines
     from tests.deformable_synthetic import placement
 
     atlas, _field, image, _truth = synthetic
@@ -173,7 +173,7 @@ def test_host_labels_fit_like_the_atlas_plane_they_equal(synthetic):
     """ABBA hands labels sampled at its own coordinates (placed by an identity
     on its grid). Given the very labels the atlas plane holds, the fit is the
     plane's, bit for bit; only the volume mapping is not claimed."""
-    from langslice.nonlinear.border_fit import fit_border_lines
+    from langslice.core.nonlinear.border_fit import fit_border_lines
     from tests.deformable_synthetic import placement
 
     atlas, _field, image, truth = synthetic
@@ -187,7 +187,7 @@ def test_host_labels_fit_like_the_atlas_plane_they_equal(synthetic):
 
 
 def test_supplied_native_labels_refuse_a_grayscale_atlas_image(synthetic):
-    from langslice.deformable import FitSettings, prepare_fit
+    from langslice.core.deformable import FitSettings, prepare_fit
     from tests.deformable_synthetic import placement
 
     atlas, _field, image, _truth = synthetic
@@ -197,7 +197,7 @@ def test_supplied_native_labels_refuse_a_grayscale_atlas_image(synthetic):
 
 
 def test_the_canvas_pixel_size_comes_from_the_placement_scale():
-    from langslice.nonlinear.border_fit import placement_on_canvas
+    from langslice.core.nonlinear.border_fit import placement_on_canvas
 
     atlas = SimpleNamespace(resolution=(25.0, 25.0, 25.0))
     matrix = np.array([[2.5, 0.0, 3.0], [0.0, 2.5, 4.0], [0.0, 0.0, 1.0]])

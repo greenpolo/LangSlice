@@ -16,7 +16,7 @@ loaded)::
 - :func:`coordinate_map` (:mod:`langslice.core.layers`): a saved picture's
   pixels in atlas micrometres, ``(rows, cols, 3)`` float32, the atlas's own
   axis order, voxel ``i``'s centre at ``i * resolution``.
-- :func:`load_atlas` (:mod:`langslice.atlas.core`): a cached BrainGlobe atlas.
+- :func:`load_atlas` (:mod:`langslice.core.atlas.core`): a cached BrainGlobe atlas.
 
 Each is loaded on first use, so ``import langslice`` stays light.
 """
@@ -29,7 +29,7 @@ __version__ = "0.1.0"
 __all__ = ["__version__", "coordinate_map", "load_atlas", "open_job"]
 
 if TYPE_CHECKING:
-    from langslice.atlas.core import load_atlas as load_atlas
+    from langslice.core.atlas.core import load_atlas as load_atlas
     from langslice.core.layers import coordinate_map as coordinate_map
     from langslice.doors.library import open_job as open_job
 
@@ -37,7 +37,7 @@ if TYPE_CHECKING:
 _PUBLIC = {
     "open_job": ("langslice.doors.library", "open_job"),
     "coordinate_map": ("langslice.core.layers", "coordinate_map"),
-    "load_atlas": ("langslice.atlas.core", "load_atlas"),
+    "load_atlas": ("langslice.core.atlas.core", "load_atlas"),
 }
 
 

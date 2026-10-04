@@ -16,15 +16,15 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from langslice.image_prep import (
+from langslice.core.appearance import Look, look_token
+from langslice.core.image_prep import (
     adaptive_preprocess,
     custom_appearance,
     prepare_image_for_vlm,
     tissue_box,
 )
-from langslice.linear.appearance import Look, look_token
-from langslice.linear.state import SliceState
-from langslice.linear.workspace import Workspace
+from langslice.core.state import SliceState
+from langslice.core.workspace import Workspace
 
 #: Working frame for transform fits and their preview panels. A COMPUTE
 #: size: fits, calibration and the six stored numbers are normalized against
@@ -62,11 +62,11 @@ def render_slice(
 
     *look* None is the DEFAULT appearance: with ``spec.preprocess == "auto"``
     the section is run through
-    :func:`~langslice.image_prep.adaptive_preprocess` — per-channel CLAHE plus a
+    :func:`~langslice.core.image_prep.adaptive_preprocess` — per-channel CLAHE plus a
     DAPI-weighted grayscale blend — so dim fluorescence reads like the atlas
     instead of like a black field; a host's multi-channel snapshot arrives
     already blended (``spec.host_preprocessing``). Any other look
-    (:mod:`langslice.linear.appearance`) is drawn from the section's raw
+    (:mod:`langslice.core.appearance`) is drawn from the section's raw
     channels over the SAME frame, crop and size, so geometry never depends on
     appearance. Display only: the user's file is never touched.
 
@@ -159,7 +159,7 @@ def _look_image(
     if "overlay" in look:
         # Each channel stretched on its WHOLE working plane (so a framed and
         # an unframed picture share one stretch), then added in its colour.
-        from langslice.linear.appearance import OVERLAY_STRETCH, channel_colors
+        from langslice.core.appearance import OVERLAY_STRETCH, channel_colors
 
         total = np.zeros((size[1], size[0], 3), dtype=np.float32)
         names_shown = list(look["overlay"])

@@ -6,8 +6,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from langslice.linear.checkpoint import observe_checkpoints, save_checkpoint
-from langslice.linear.state import SliceState, StackState
+from langslice.core.state import SliceState, StackState
+from langslice.job.checkpoint import observe_checkpoints, save_checkpoint
 
 
 def _state() -> StackState:

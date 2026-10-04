@@ -46,7 +46,7 @@ def main() -> int:
     install(atlas_loader())
     delay = float(os.environ.get(COMMIT_DELAY_ENV) or 0)
     if delay:
-        from langslice.linear.job import Job
+        from langslice.job.job import Job
 
         commit = Job.commit
 

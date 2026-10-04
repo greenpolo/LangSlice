@@ -22,8 +22,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from langslice.job.checkpoint import write_json_atomic
 from langslice.job.layout import JobLayout
-from langslice.linear.checkpoint import write_json_atomic
 
 #: How a background run starts the CLI again (tests start a helper instead).
 CHILD_COMMAND: list[str] = [sys.executable, "-m", "langslice"]

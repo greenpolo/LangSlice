@@ -10,15 +10,15 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.adk import TOOL_MEDIA_PARTS_KEY
-from langslice.adk.media import package_result
+from langslice.agent.engine import build_context
+from langslice.agent.prompt import TOOL_LINES
+from langslice.core import appearance as looks
 from langslice.core.sections import render_slice
-from langslice.linear import appearance as looks
-from langslice.linear.engine import build_context
-from langslice.linear.job import ingest
-from langslice.linear.prompt import TOOL_LINES
-from langslice.linear.spec import JobSpec, NonlinearSpec, PositionSpec
-from langslice.linear.toolbox import build_tools
+from langslice.core.spec import JobSpec, NonlinearSpec, PositionSpec
+from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
+from langslice.doors.tools.media import package_result
+from langslice.doors.tools.toolbox import build_tools
+from langslice.job.job import ingest
 from tests.fakes import SlabAtlas
 
 PICTURE_TOOLS = (
@@ -138,7 +138,7 @@ def test_section_overrides_win_and_a_reset_returns_to_the_stack(tmp_path: Path):
 def test_preprocess_is_one_undoable_checkpointed_write(tmp_path: Path):
     state, ctx, _, box = _setup(tmp_path, agent_preprocessing=True)
     _tool(box, "preprocess")(channel_weights=[0, 1, 0])
-    from langslice.linear.checkpoint import load_checkpoint
+    from langslice.job.checkpoint import load_checkpoint
 
     saved = load_checkpoint(ctx.checkpoint_path)
     assert saved is not None and saved.appearance["view"]["stack"]["channel_weights"] == [0, 1, 0]
@@ -217,7 +217,7 @@ def test_unknown_and_misplaced_arguments_are_refused(tmp_path: Path):
 
     from google.adk.tools import FunctionTool
 
-    from langslice.adk.plugins import StrictArgumentsPlugin
+    from langslice.agent.plugins import StrictArgumentsPlugin
 
     state, _, _, box = _setup(tmp_path)
     before = state.to_dict()
@@ -418,8 +418,8 @@ def test_set_positions_pictures_take_the_placement_modes(tmp_path: Path):
 
 
 def test_the_job_statement_describes_view_once_with_the_channels():
-    from langslice.linear.prompt import PICTURE_TOOLS as PROMPT_PICTURE_TOOLS
-    from langslice.linear.prompt import display_lines
+    from langslice.agent.prompt import PICTURE_TOOLS as PROMPT_PICTURE_TOOLS
+    from langslice.agent.prompt import display_lines
 
     assert "fit_deformable" in PROMPT_PICTURE_TOOLS
     lines = display_lines(["view_slices"], channels=["red", "green", "blue"],

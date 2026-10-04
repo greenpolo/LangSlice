@@ -3,7 +3,7 @@
 Every stored transform has one shape (``SliceState.transform``): ``kind``
 (``interactive``, ``elastix``, ``silhouette``, or the host's), ``params``
 (the six normalized numbers on the section's working frame, the exact map,
-:mod:`langslice.affine`), ``physical`` (the same map as the knobs about a
+:mod:`langslice.core.affine`), ``physical`` (the same map as the knobs about a
 pivot in canvas fractions), the ``calibration`` it was drawn with, and
 ``mirrored``. :func:`interactive_transform` and :func:`fit_transform` build
 it; :func:`set_transforms` writes any number of them as one undo step.
@@ -18,24 +18,24 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from langslice.affine import normalized_physical_affine
-from langslice.linear.transform import physical_decomposition
+from langslice.core.affine import normalized_physical_affine
+from langslice.core.transform import physical_decomposition
 from langslice.ops.inputs import section_inputs, stale_row
 from langslice.ops.refusal import Refused
 
 if TYPE_CHECKING:
     from PIL import Image
 
+    from langslice.core.display import DisplayOptions
     from langslice.core.placement import Staged
-    from langslice.linear.display import DisplayOptions
-    from langslice.linear.job import Job
-    from langslice.linear.state import SliceState
-    from langslice.linear.workspace import Workspace
+    from langslice.core.state import SliceState
+    from langslice.core.workspace import Workspace
+    from langslice.job.job import Job
 
 logger = logging.getLogger(__name__)
 
 #: The knobs of a transform, in the order every payload lists them. ``shear``
-#: is :func:`langslice.affine.decompose_affine`'s (0: none).
+#: is :func:`langslice.core.affine.decompose_affine`'s (0: none).
 KNOBS: tuple[str, ...] = (
     "rotation_deg", "scale_x", "scale_y", "translate_x_mm", "translate_y_mm", "shear",
 )
@@ -90,8 +90,8 @@ def fit_transform(
 ) -> dict[str, Any]:
     """The stored record of one ``fit_affine`` result.
 
-    *fit* is the fitter's ok payload (:func:`langslice.linear.transform.fit_silhouette`,
-    :func:`~langslice.linear.transform.fit_elastix`); *method* becomes the
+    *fit* is the fitter's ok payload (:func:`langslice.core.transform.fit_silhouette`,
+    :func:`~langslice.core.transform.fit_elastix`); *method* becomes the
     ``kind``. Regions and a non-default atlas image are recorded only when
     they were used.
     """
@@ -183,8 +183,8 @@ def fit_affine(
 
     *method* ``elastix`` refines the section's current placement against the
     atlas image *fit_atlas* (``ara`` or ``nissl``,
-    :func:`langslice.linear.transform.fit_elastix`); ``silhouette`` fits the
-    tissue outline from scratch (:func:`~langslice.linear.transform.fit_silhouette`).
+    :func:`langslice.core.transform.fit_elastix`); ``silhouette`` fits the
+    tissue outline from scratch (:func:`~langslice.core.transform.fit_silhouette`).
     *include* / *exclude* restrict the fit to atlas regions (sides allowed).
     The job's rules, per section: a locked section is refused (``LOCKED``),
     a damaged one too unless regions restrict the fit (``DAMAGED``).
@@ -196,13 +196,13 @@ def fit_affine(
     step (:func:`set_transforms`, :func:`fit_transform` records).
 
     The fits run outside the job's write lock, from the state as it stood;
-    the write takes the lock (:meth:`~langslice.linear.job.Job.writing`) and
+    the write takes the lock (:meth:`~langslice.job.job.Job.writing`) and
     refuses a section whose inputs changed meanwhile
     (:data:`langslice.ops.inputs.STALE_INPUT`, that section's row; its
     picture stays), writing the others.
     """
     from langslice.core.placement import fit_picture
-    from langslice.linear.transform import FIT_FRAME_KEY, fit_elastix, fit_silhouette
+    from langslice.core.transform import FIT_FRAME_KEY, fit_elastix, fit_silhouette
 
     state = job.state
     fitter = (functools.partial(fit_elastix, atlas_image=fit_atlas) if method == "elastix"

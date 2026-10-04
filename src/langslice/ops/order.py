@@ -9,8 +9,8 @@ from typing import TYPE_CHECKING
 from langslice.ops.refusal import Refused
 
 if TYPE_CHECKING:
-    from langslice.linear.job import Job
-    from langslice.linear.state import SliceState
+    from langslice.core.state import SliceState
+    from langslice.job.job import Job
 
 
 @dataclass(frozen=True)

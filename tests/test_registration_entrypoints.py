@@ -8,7 +8,7 @@ import pytest
 from PIL import Image
 from pydantic import ValidationError
 
-from langslice.api.models import RegisterRequest
+from langslice.hosts.api.models import RegisterRequest
 
 
 class CapturedRequest(Exception):
@@ -28,7 +28,7 @@ def test_api_rejects_invalid_alignment(matrix):
 
 
 def test_the_api_door_resolves_the_image_model_it_hands_in(tmp_path, monkeypatch):
-    from langslice.api.runtime import run_register
+    from langslice.hosts.api.runtime import run_register
 
     image_path = tmp_path / "image.png"
     Image.new("RGB", (40, 30), "gray").save(image_path)
@@ -38,7 +38,7 @@ def test_the_api_door_resolves_the_image_model_it_hands_in(tmp_path, monkeypatch
         received.update(kwargs)
         raise CapturedRequest
 
-    monkeypatch.setattr("langslice.nonlinear.runtime.estimate_registration", capture)
+    monkeypatch.setattr("langslice.core.nonlinear.runtime.estimate_registration", capture)
     request = RegisterRequest(image_path=str(image_path), atlas="test", position_mm=1,
                               provider="chatgpt", preprocess="none")
     with pytest.raises(CapturedRequest):
@@ -49,7 +49,7 @@ def test_the_api_door_resolves_the_image_model_it_hands_in(tmp_path, monkeypatch
 
 @pytest.mark.parametrize("supplied", [False, True])
 def test_api_resize_preserves_pixel_centres(tmp_path, monkeypatch, supplied):
-    from langslice.api.runtime import run_register
+    from langslice.hosts.api.runtime import run_register
 
     image_path = tmp_path / "image.png"
     Image.new("RGB", (301, 199), "gray").save(image_path)
@@ -60,7 +60,7 @@ def test_api_resize_preserves_pixel_centres(tmp_path, monkeypatch, supplied):
         received.update(kwargs)
         raise CapturedRequest
 
-    monkeypatch.setattr("langslice.nonlinear.runtime.estimate_registration", capture)
+    monkeypatch.setattr("langslice.core.nonlinear.runtime.estimate_registration", capture)
     request = RegisterRequest(
         image_path=str(image_path), atlas="test", position_mm=1, provider="none",
         preprocess="none", vlm_resolution=100,
@@ -87,7 +87,7 @@ def test_api_resize_preserves_pixel_centres(tmp_path, monkeypatch, supplied):
 
 
 def test_nonlinear_runtime_threads_supplied_placement(monkeypatch):
-    from langslice.nonlinear import runtime
+    from langslice.core.nonlinear import runtime
 
     monkeypatch.setattr(runtime, "load_atlas", lambda _: object())
     monkeypatch.setattr(runtime, "get_composite_slice", lambda *a, **k: Image.new("RGB", (8, 8)))
@@ -116,7 +116,7 @@ def test_nonlinear_runtime_threads_omitted_placement_selects_atlas_route(monkeyp
     selects route "atlas" inside `border_registration.py` (an explicitly
     supplied placement selects route "supplied" instead; see the test above).
     ``passes``/``atlas_mirror_lr`` still thread through on this route too."""
-    from langslice.nonlinear import runtime
+    from langslice.core.nonlinear import runtime
 
     monkeypatch.setattr(runtime, "load_atlas", lambda _: object())
     monkeypatch.setattr(runtime, "get_composite_slice", lambda *a, **k: Image.new("RGB", (8, 8)))
@@ -145,8 +145,8 @@ def test_api_returns_prepared_frame_provenance_without_remapping_markers(
 ):
     from types import SimpleNamespace
 
-    from langslice.api.runtime import run_register
-    from langslice.nonlinear.types import RegistrationAnnotationSession
+    from langslice.core.nonlinear.types import RegistrationAnnotationSession
+    from langslice.hosts.api.runtime import run_register
 
     image_path = tmp_path / "image.png"
     Image.new("RGB", (301, 199), "gray").save(image_path)
@@ -164,7 +164,7 @@ def test_api_returns_prepared_frame_provenance_without_remapping_markers(
             annotation_session=session, accepted_correspondences=[], debug_dir=None,
         )
 
-    monkeypatch.setattr("langslice.nonlinear.runtime.estimate_registration", fake_registration)
+    monkeypatch.setattr("langslice.core.nonlinear.runtime.estimate_registration", fake_registration)
     result = run_register(RegisterRequest(
         image_path=str(image_path), atlas="test", position_mm=1, provider="none",
         preprocess="none", vlm_resolution=100,
@@ -207,7 +207,7 @@ def test_cli_alignment_json_and_mirror(tmp_path, monkeypatch, wrapped):
         received.append(request)
         raise CapturedRequest
 
-    monkeypatch.setattr("langslice.api.runtime.run_register", capture)
+    monkeypatch.setattr("langslice.hosts.api.runtime.run_register", capture)
     with pytest.raises(CapturedRequest):
         run_register_cli(args)
     assert received[0].initial_atlas_to_slice == matrix

@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, cast
 from langslice.doors.cli.linear import PLANE_HELP
 
 if TYPE_CHECKING:
-    from langslice.nonlinear.types import Deformation
+    from langslice.core.nonlinear.types import Deformation
 
 
 def resolve_register_models(
@@ -169,8 +169,8 @@ def run_register(args: argparse.Namespace) -> None:
     import json
     import os
 
-    from langslice.api.models import RegisterRequest
-    from langslice.api.runtime import run_register
+    from langslice.hosts.api.models import RegisterRequest
+    from langslice.hosts.api.runtime import run_register
 
     initial_alignment = None
     alignment_path = getattr(args, "initial_alignment", None)

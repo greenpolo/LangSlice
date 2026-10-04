@@ -7,9 +7,9 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-import langslice.nonlinear.runtime as runtime
+import langslice.core.nonlinear.runtime as runtime
+from langslice.core.nonlinear.types import RegistrationAnnotationSession, RegistrationCandidate
 from langslice.doors.cli.register import resolve_register_models
-from langslice.nonlinear.types import RegistrationAnnotationSession, RegistrationCandidate
 
 
 @pytest.fixture(autouse=True)

@@ -3,7 +3,7 @@
 One function per viewing tool (``status``, ``view_slices``, ``view_atlas``,
 ``view_placement``, ``view_stack``), so a script or the CLI gets the very
 picture the tool shows. Each takes the job (and the workspace) plus checked
-arguments and the call's :class:`~langslice.linear.display.DisplayOptions`,
+arguments and the call's :class:`~langslice.core.display.DisplayOptions`,
 writes nothing and takes no undo step. The pictures are the core's
 (:mod:`langslice.core.pictures`, :mod:`langslice.core.placement`): captions
 burned in, each noted with what it shows (:mod:`langslice.core.layers`), so
@@ -20,15 +20,15 @@ from typing import TYPE_CHECKING, Any
 from PIL import Image
 
 from langslice.core import placement
+from langslice.core.display import DisplayOptions, regions_in_plane
 from langslice.core.pictures import atlas_view_picture, section_picture, stack_review
 from langslice.core.sizes import MAX_IMAGES_PER_CALL
+from langslice.core.state import SliceState
 from langslice.core.status import status_rows
-from langslice.linear.display import DisplayOptions, regions_in_plane
-from langslice.linear.state import SliceState
 
 if TYPE_CHECKING:
-    from langslice.linear.job import Job
-    from langslice.linear.workspace import Workspace
+    from langslice.core.workspace import Workspace
+    from langslice.job.job import Job
 
 #: Sections (or section-position pairs) one viewing call shows.
 MAX_VIEW_SLICES = MAX_IMAGES_PER_CALL

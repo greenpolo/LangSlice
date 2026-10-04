@@ -2,7 +2,7 @@
 
 Plain PIL images with their labels burned in (tool images reach a model as
 bare attachments, so every picture names itself). The doors package them:
-the ADK tools through :mod:`langslice.adk.media`, MCP as image blocks.
+the ADK tools through :mod:`langslice.doors.tools.media`, MCP as image blocks.
 
 The two reference pictures (a section tissue-framed, an atlas section) are
 cached on the workspace (``Workspace.picture_cache``), keyed by everything
@@ -18,22 +18,22 @@ from typing import Any
 
 from PIL import Image
 
+from langslice.core.appearance import Look
+from langslice.core.atlas_fetch import atlas_picture
 from langslice.core.captions import caption
-from langslice.core.layers import note
-from langslice.core.sections import render_cache_key
-from langslice.core.sheets import reference_slice_picture, spacing_plot, stack_sheet
-from langslice.core.sizes import opening_edge, picture_edge
-from langslice.linear.appearance import Look
-from langslice.linear.atlas_fetch import atlas_picture
-from langslice.linear.display import (
+from langslice.core.display import (
     DisplayOptions,
     atlas_caption,
     channel_strip,
     framed_atlas,
     framed_section,
 )
-from langslice.linear.state import SliceState, StackState
-from langslice.linear.workspace import Workspace
+from langslice.core.layers import note
+from langslice.core.sections import render_cache_key
+from langslice.core.sheets import reference_slice_picture, spacing_plot, stack_sheet
+from langslice.core.sizes import opening_edge, picture_edge
+from langslice.core.state import SliceState, StackState
+from langslice.core.workspace import Workspace
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +56,7 @@ def reference_section_picture(
 def reference_atlas_picture(
     ws: Workspace, state: StackState, position_mm: float, *, long_edge: int | None = None,
 ) -> Image.Image:
-    """:func:`langslice.linear.atlas_fetch.atlas_picture`, cached by position,
+    """:func:`langslice.core.atlas_fetch.atlas_picture`, cached by position,
     plane, cutting angles and size. Shared: read only."""
     long_edge = long_edge or picture_edge(ws)
     key = ("atlas", state.plane, float(position_mm), state.pitch_deg, state.yaw_deg,

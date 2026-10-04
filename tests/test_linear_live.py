@@ -7,7 +7,7 @@ from typing import Any, cast
 
 from google.genai import types
 
-from langslice.linear.live import LiveEvents
+from langslice.agent.live import LiveEvents
 
 
 def event(parts, *, partial=False):
@@ -80,7 +80,7 @@ def test_final_revision_is_visible_when_it_differs_from_streamed_text():
 
 
 def test_session_streaming_counts_final_calls_once_and_debrief_once(monkeypatch):
-    from langslice.linear import session
+    from langslice.agent import session
     records = []
     options = []
     submitted = [False]
@@ -131,7 +131,7 @@ def test_session_streaming_counts_final_calls_once_and_debrief_once(monkeypatch)
 def test_session_closes_runner_in_original_context_before_debrief(monkeypatch):
     from contextvars import ContextVar
 
-    from langslice.linear import session
+    from langslice.agent import session
 
     context = ContextVar('test_runner_context', default='outside')
     closed = []

@@ -8,7 +8,7 @@ import re
 import numpy as np
 import pytest
 
-from langslice.landmark_elastix import fit_landmark_elastix, load_elastix
+from langslice.core.landmark_elastix import fit_landmark_elastix, load_elastix
 
 
 @pytest.fixture(scope="module")

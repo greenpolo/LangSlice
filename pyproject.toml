@@ -30,7 +30,7 @@ dependencies = [
 langslice = "langslice.cli:main"
 
 [project.optional-dependencies]
-# Deformable fit extras (langslice.deformable): the ANTs engine and the reader
+# Deformable fit extras (langslice.core.deformable): the ANTs engine and the reader
 # for ABBA's cached Allen Nissl volume. antspyx 0.6.x pins scipy<1.16 (and
 # 0.6.2+ numpy<2.4), so installing it downgrades those two. 0.6.3 is the floor:
 # the engine seeds fits through `ants.config`, which 0.6.1 lacks.
@@ -56,7 +56,7 @@ where = ["src"]
 include = ["langslice*"]
 
 [tool.setuptools.package-data]
-langslice = ["atlas/*.json", "integrations/static/*"]
+langslice = ["core/atlas/*.json", "hosts/integrations/static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

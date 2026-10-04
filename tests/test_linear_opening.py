@@ -15,11 +15,8 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.adk.media import image_limit, opening_parts
-from langslice.core.sizes import PICTURE_EDGES
-from langslice.linear.engine import build_context
-from langslice.linear.job import ingest
-from langslice.linear.opening import (
+from langslice.agent.engine import build_context
+from langslice.core.opening import (
     CLAUDE_IMAGE_LIMIT,
     CLAUDE_MAX_IMAGE_EDGE,
     CLAUDE_MAX_IMAGE_PATCHES,
@@ -31,7 +28,10 @@ from langslice.linear.opening import (
     strip_layout,
     tile_label,
 )
-from langslice.linear.spec import JobSpec
+from langslice.core.sizes import PICTURE_EDGES
+from langslice.core.spec import JobSpec
+from langslice.doors.tools.media import image_limit, opening_parts
+from langslice.job.job import ingest
 from tests.fakes import SlabAtlas
 
 _ATLAS = SlabAtlas()

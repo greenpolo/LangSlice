@@ -7,8 +7,7 @@ from google.adk.flows.llm_flows.functions import (
 from google.adk.models.llm_request import LlmRequest
 from google.genai import types
 
-from langslice.adk import TOOL_MEDIA_DELIVERY_ID_KEY, TOOL_MEDIA_PARTS_KEY
-from langslice.adk.plugins import (
+from langslice.agent.plugins import (
     DEFAULT_KEEP_IMAGES,
     DEFAULT_MAX_IMAGES,
     ModelCallPacingPlugin,
@@ -16,7 +15,8 @@ from langslice.adk.plugins import (
     ToolMediaDeliveryPlugin,
     WorkingSetImages,
 )
-from langslice.linear.session import build_plugins
+from langslice.agent.session import build_plugins
+from langslice.doors.tools import TOOL_MEDIA_DELIVERY_ID_KEY, TOOL_MEDIA_PARTS_KEY
 
 
 class _FakeTool:

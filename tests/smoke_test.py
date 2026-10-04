@@ -6,22 +6,22 @@ import importlib
 
 import numpy as np
 
-from langslice.integrations.quint import build_quint_export, export_to_dict
-from langslice.nonlinear import (
+from langslice.core.nonlinear import (
     AffineResult,
     affine_matrix_from_legacy_params,
     identity_affine_matrix,
 )
+from langslice.job.quint import build_quint_export, export_to_dict
 
 
 def test_public_module_imports() -> None:
     importlib.import_module("langslice")
-    importlib.import_module("langslice.atlas")
+    importlib.import_module("langslice.core.atlas")
     importlib.import_module("langslice.providers.vlm_config")
     importlib.import_module("langslice.linear")
-    importlib.import_module("langslice.nonlinear")
-    importlib.import_module("langslice.integrations.quint")
-    importlib.import_module("langslice.image_prep")
+    importlib.import_module("langslice.core.nonlinear")
+    importlib.import_module("langslice.job.quint")
+    importlib.import_module("langslice.core.image_prep")
     importlib.import_module("langslice.cli")
 
 

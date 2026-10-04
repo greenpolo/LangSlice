@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from langslice.oblique import (
+from langslice.core.oblique import (
     build_rotation_matrix,
     compute_similarity_metric,
     fit_oblique,
@@ -233,7 +233,7 @@ def test_metric_dispatch_and_self_similarity(atlas: _Phantom) -> None:
 
 def test_annotation_sampling_keeps_large_ids_exact() -> None:
     """Allen ids exceed float32's exact integer range; the sampler must not round."""
-    from langslice.oblique import sample_oblique_annotation
+    from langslice.core.oblique import sample_oblique_annotation
 
     atlas = _Phantom()
     # 484682516 (ccb) is the id that exposed this: float32 lands it on ...528.

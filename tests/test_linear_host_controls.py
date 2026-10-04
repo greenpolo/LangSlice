@@ -9,11 +9,11 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from langslice.linear.engine import build_context
-from langslice.linear.job import HOST_TRANSFORM_KIND, apply_host_inputs, ingest, submit_errors
-from langslice.linear.prompt import build_job_statement
-from langslice.linear.spec import JobSpec, TransformSpec
-from langslice.linear.toolbox import build_tools
+from langslice.agent.engine import build_context
+from langslice.agent.prompt import build_job_statement
+from langslice.core.spec import JobSpec, TransformSpec
+from langslice.doors.tools.toolbox import build_tools
+from langslice.job.job import HOST_TRANSFORM_KIND, apply_host_inputs, ingest, submit_errors
 from tests.fakes import SlabAtlas
 
 _ATLAS = SlabAtlas()
@@ -236,7 +236,7 @@ def test_the_job_statement_names_locked_sections_and_why(tmp_path: Path):
 
 
 def test_the_worker_never_emits_geometry_for_locked_sections():
-    from langslice.api.abba_worker import _host_updates
+    from langslice.hosts.api.abba_worker import _host_updates
 
     def row(transform, flip=False, position=4.0):
         return {"id": "a.tif", "position_mm": position, "index_corrected": 0,

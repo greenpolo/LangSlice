@@ -38,8 +38,8 @@ from tests.golden.record import (
 @pytest.fixture(scope="module")
 def placed(tmp_path_factory: pytest.TempPathFactory) -> Any:
     import langslice
+    from langslice.core.spec import NonlinearSpec
     from langslice.doors.jobs import create
-    from langslice.linear.spec import NonlinearSpec
 
     root = tmp_path_factory.mktemp("formats")
     patch = pytest.MonkeyPatch()
@@ -177,7 +177,7 @@ def test_registration_matrix_agrees_with_the_placement_pictures(placed):
     """A placement picture's coordinate map and registration.json's file
     matrix name the same atlas point for the same section point, including a
     turned and flipped section and a zoomed picture."""
-    from langslice.affine import pixel_center_map
+    from langslice.core.affine import pixel_center_map
     from langslice.core.layers import coordinate_map
     from langslice.core.maps import orientation_matrix, unturned
 
@@ -211,7 +211,7 @@ def test_residual_maps_agree_with_the_fit_deformable_pictures(placed):
     """A fit_deformable picture's coordinate map (its residual layer
     included) and the section's own composed map agree, up to resampling
     the field at the picture's size."""
-    from langslice.affine import pixel_center_map
+    from langslice.core.affine import pixel_center_map
     from langslice.core.layers import coordinate_map
     from langslice.core.maps import native_points, orientation_matrix, section_frame, unturned
 
@@ -252,7 +252,7 @@ def test_a_picture_record_without_its_folder_cannot_be_mapped(placed):
 
 def test_quicknii_anchoring_and_visualign_markers_reproduce_the_maps(placed):
     from langslice.core.layers import atlas_facts
-    from langslice.integrations.quint import atlas_um_to_quicknii_points
+    from langslice.job.quint import atlas_um_to_quicknii_points
 
     job, root, _exported = placed
     facts = atlas_facts(job.workspace.atlas)
@@ -297,7 +297,7 @@ def test_quicknii_anchoring_and_visualign_markers_reproduce_the_maps(placed):
 
 def test_quicknii_axes_reverse_brainglobe_asr():
     """BrainGlobe asr voxel centre 0 is QuickNII's far edge minus half a voxel."""
-    from langslice.integrations.quint import atlas_um_to_quicknii_points
+    from langslice.job.quint import atlas_um_to_quicknii_points
 
     atlas = {"orientation": "asr", "shape": [528, 320, 456], "resolution_um": [25.0] * 3}
     point = atlas_um_to_quicknii_points([[0.0, 0.0, 0.0]], atlas)[0]
@@ -364,7 +364,7 @@ def test_full_resolution_maps_are_on_the_file_pixels(placed, tmp_path, monkeypat
 
 
 def test_working_size_reads_the_header_as_the_decoder_would(tmp_path):
-    from langslice.image_prep import (
+    from langslice.core.image_prep import (
         read_working_image,
         read_working_pages,
         working_size,

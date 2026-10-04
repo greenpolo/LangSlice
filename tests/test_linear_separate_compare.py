@@ -1,9 +1,9 @@
 """Separate positioning references reuse cached pictures, not composed canvases."""
 
-from langslice.adk import TOOL_MEDIA_DELIVERY_ID_KEY, TOOL_MEDIA_PARTS_KEY
-from langslice.adk.media import encode_jpeg
 from langslice.core.pictures import reference_atlas_picture, reference_section_picture
 from langslice.core.sizes import picture_edge
+from langslice.doors.tools import TOOL_MEDIA_DELIVERY_ID_KEY, TOOL_MEDIA_PARTS_KEY
+from langslice.doors.tools.media import encode_jpeg
 from tests.test_linear_toolbox import _box, _tool, _ToolContext
 
 
@@ -58,7 +58,7 @@ def test_atlas_reuse_keys_on_exact_position_and_cutting_angles(tmp_path, monkeyp
     first = _images([reference_atlas_picture(ctx, state, 3.0)])[0]
     assert _images([reference_atlas_picture(ctx, state, 3.0)])[0] == first
     # Fake atlas does not support oblique interpolation; isolate cache identity.
-    from langslice.linear import atlas_fetch
+    from langslice.core import atlas_fetch
     original = atlas_fetch.atlas_section
     image = original(ctx, state, 3.0, frame=True)
     calls = []

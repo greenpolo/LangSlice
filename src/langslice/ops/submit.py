@@ -7,13 +7,13 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from langslice.linear.state import normalize_to_atlas_order
+from langslice.core.state import normalize_to_atlas_order
 from langslice.ops.exports import Exported
 from langslice.ops.refusal import Refused
 
 if TYPE_CHECKING:
-    from langslice.linear.job import Job
-    from langslice.linear.workspace import Workspace
+    from langslice.core.workspace import Workspace
+    from langslice.job.job import Job
 
 logger = logging.getLogger(__name__)
 
@@ -59,12 +59,12 @@ def submit(
 ) -> Submitted:
     """Check the job's submit gates, then end the run: ONE undo step.
 
-    The gates, in order: the job's (:meth:`~langslice.linear.job.Job.submit_errors`:
+    The gates, in order: the job's (:meth:`~langslice.job.job.Job.submit_errors`:
     positions, order, interval breaks, transforms, deformations), then, with
     *traces* (the image model is part of the run; *workspace*, the run's,
     reads each section's current geometry) and the nonlinear task on, every
     section's completed image correction at its current placement
-    (:meth:`~langslice.linear.job.Job.missing_image_corrections`), which is
+    (:meth:`~langslice.job.job.Job.missing_image_corrections`), which is
     reported before a missing deformation since a deformation may be fitted
     to its section's trace. *gate*, when given, runs last, before
     anything is written: a door's own check (the tool door's "view_stack
