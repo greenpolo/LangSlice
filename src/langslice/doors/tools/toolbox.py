@@ -514,7 +514,8 @@ def build_tools(
     tool-only). *level* is the picture-size level the tools work at (None:
     the run's ``image_resolution``; the CLI passes "auto": its caller sizes
     every picture). *scripting* adds the verbs only scripts get
-    (``Verb.scripting``: ``export_maps``), for the CLI and the library.
+    (``Verb.scripting``: ``export_maps``, and the hidden ``trace_from_atlas``,
+    called by name, listed nowhere), for the CLI and the library.
     *image_model_connected* False: the door cannot reach the spec's image
     model (MCP with none connected, ``doors.api.setup.image_model_connected``),
     so the tools are those of a run without one: no ``trace_borders``,
@@ -1440,6 +1441,21 @@ def build_tools(
             )
         return response
 
+    def trace_from_atlas(slices: list[str], passes: int) -> dict[str, Any]:
+        assert image_model is not None  # the verb exists only when traces are on
+        try:
+            done = ops_traces.trace_from_atlas(job, ctx, list(slices or []),
+                                               image_model=image_model, passes=passes)
+        except Refused as refusal:
+            return refusal.payload()
+        failed = [row for row in done.rows if row.get("status") == "error"]
+        return {
+            "status": "error" if len(failed) == len(done.rows) else "ok",
+            **({"error": "NOTHING_TRACED"} if len(failed) == len(done.rows) else {}),
+            "results": done.rows,
+            "message": "Image calls run in the background; submit waits for them.",
+        }
+
     def grep_atlas(query: str, section: str) -> dict[str, Any]:
         try:
             return {"status": "ok", **ops_atlas.grep_atlas(job, ctx, query, section)}
@@ -1652,7 +1668,8 @@ def build_tools(
         "run_deepslice": run_deepslice, "search_position": search_position,
         "orient_slices": orient_slices, "fit_affine": fit_affine,
         "adjust_transforms": adjust_transforms, "set_cutting_angles": set_cutting_angles,
-        "trace_borders": trace_borders, "grep_atlas": grep_atlas,
+        "trace_borders": trace_borders, "trace_from_atlas": trace_from_atlas,
+        "grep_atlas": grep_atlas,
         "fit_deformable": fit_deformable, "submit": submit, "export_maps": export_maps,
     }
     # `view.resolution` exists only where the caller chooses the picture size.
@@ -1663,6 +1680,7 @@ def build_tools(
             _saves_views(_clears_stale_deformations(
                 _strict(declare(name, bodies[name], variant)), job), job, ctx),
             lock, state=state, on_event=on_event, guard=functools.partial(guarded, name))
-        for name in enabled(spec, scripting=scripting, image_model=image_model_connected)
+        for name in enabled(spec, scripting=scripting, image_model=image_model_connected,
+                            hidden=scripting)
     ]
     return box

@@ -12,8 +12,17 @@ them and from the registry (`ops/registry.py`: `VERBS`, `enabled(spec)`):
 |---|---|---|
 | agent tools (ADK) | `doors/tools/toolbox.py` `build_tools`: the verbs `enabled(spec)` names, each `declarations.declare`d | LangSlice's agent |
 | MCP tools | the same toolbox (`doors/mcp/server.py`), plus the door's `start_job`, `show_stack`; `readOnlyHint` = read verbs; `trace_borders` only when the job's image model is connected (`server.image_model_off`, `api.setup.image_model_connected`; else `build_tools(image_model_connected=False)`) | Claude Desktop, Claude Code locked to it |
-| agent CLI | `cli/job.py` over the same toolbox, gates off, `level="auto"`, plus the scripting verbs (`export_maps`) | Claude Code, Codex |
+| agent CLI | `cli/job.py` over the same toolbox, gates off, `level="auto"`, plus the scripting verbs (`export_maps`, and the hidden `trace_from_atlas`) | Claude Code, Codex |
 | library | `library.py` (`langslice.open_job`) over the same toolbox, the scripting verbs included | a script |
+
+A hidden verb (`registry.Verb.hidden`: `trace_from_atlas`, the
+placement-free image-model trace kept for experiments) is built by the
+scripting doors and called by name (`langslice job FOLDER
+trace_from_atlas`, `job.trace_from_atlas(...)`), but listed nowhere: not
+in `langslice ops`, `langslice schema` without a verb (`schema
+trace_from_atlas` answers by name), the card, the library's `verbs` or
+`dir()`, the CLI's `verbs` lists, nor the public docs
+(`registry.listed()`).
 
 A verb is never renamed once shipped (scripts and agents call it by name).
 The goldens (`tests/golden/linear_tools/*_declarations_*`) pin what the ADK
@@ -97,7 +106,8 @@ plugin's `nonlinear.abba` worker stay in `hosts/api/`.
 - `library.py` — `open_job(folder, atlas_loader=, emit=)` -> `JobHandle`:
   every verb the job has as a method (the tool itself: same arguments,
   the reply dict with plain PIL pictures under `images`, saved like every
-  door's; the scripting verbs too), `verbs`, `folder`, `job`, `state`,
+  door's; the scripting verbs too, the hidden one by name), `verbs` (the
+  listed ones), `folder`, `job`, `state`,
   `workspace`, `close`, a
   context manager. `langslice/__init__.py` exposes `open_job`,
   `coordinate_map` (`core.layers`) and `load_atlas` (`core.atlas.core`), each
@@ -107,7 +117,8 @@ plugin's `nonlinear.abba` worker stay in `hosts/api/`.
   `card_text(layout)` (one screen: the folder's files, one line each for
   `registration.json` and each section's maps, state as truth and the
   rest derived, the coordinate map and convention, the CLI with
-  every verb from the registry, the Python entry point), `write_card`
+  every listed verb from the registry, `registry.listed()`, the Python
+  entry point), `write_card`
   (writes where missing or worded differently; never raises). Written by
   every door that opens or makes a job: the CLI and the library
   (`jobs.open_folder`, `jobs.create`), the agent run (`engine.run`), the MCP
@@ -127,24 +138,28 @@ plugin's `nonlinear.abba` worker stay in `hosts/api/`.
     `UNKNOWN_*`, `TOO_MANY_*` and `ARGUMENT_CODES` are 2, every other
     refusal 3); `FIXES` per code; `stdout_to_stderr()` (Python and native
     stdout to stderr while a verb runs, so stdout holds the envelope only).
-  - `catalog.py` — `langslice ops` (verbs: name, kind, group, summary; the
-    job commands) and `langslice schema [VERB] [--job FOLDER]`
-    (`SCHEMA_VERSION` 1; `canonical_verb`: kebab-case accepted).
+  - `catalog.py` — `langslice ops` (the listed verbs: name, kind, group,
+    summary; the job commands) and `langslice schema [VERB] [--job FOLDER]`
+    (`SCHEMA_VERSION` 1; `canonical_verb`: kebab-case accepted; every
+    listed verb, or one verb by name, a hidden one included).
   - `job.py` — `langslice job FOLDER VERB`: `execute` (never raises),
     `parse` (`--args`, `--name value`, `--dry-run`, `--background`,
     `--verbose`, `--timeout`, the child's `--run-id`), `arguments_for`
     (flags read as the verb declares them; `argument_refusal`, missing
     arguments, `normalize_arguments`), `call` (open, `VERB_OFF`, background
-    start, dry run, run), `_run` (the tool inside `job.views.captured()`;
-    `trace_borders` settled before answering; `submit` writes the results;
+    start, dry run, run; a hidden verb is callable, `VERB_OFF` lists only
+    the listed ones), `_run` (the tool inside `job.views.captured()`;
+    an image-model verb's calls (`Verb.image_model`: `trace_borders`,
+    `trace_from_atlas`) settled before answering, each landed outcome
+    shown; `submit` writes the results;
     pictures flushed and listed as artifacts; `would_change` from the state
     before and after on a job that writes nothing), `shape` (concise:
     no `description`, a write's whole-stack `rows` as `n_rows`; verbose:
     everything and the picture texts), `changes`, `init` (the job flags of
     `linear run`, `jobs.create`), `runs` (`runs [ID]`, `wait [ID]`; `status`
     is only the verb).
-    `CHECKED_ONLY`: `trace_borders` and `fit_deformable` are checked, not
-    run, by `--dry-run`. After `submit` the derived files
+    `CHECKED_ONLY`: `trace_borders`, `trace_from_atlas` and
+    `fit_deformable` are checked, not run, by `--dry-run`. After `submit` the derived files
     (`job.formats.derived_files`) and after `export_maps` the files it
     wrote are listed as artifacts by kind.
   - `background.py` — `--background`: `start` (a record in
@@ -165,7 +180,7 @@ one folder see each other's writes, history included
 folder's lock (`job/lock.py`, `Job.writing`: lock, sync, apply, commit):
 the tool door wraps every verb in it, except the long ones
 (`VERBS[name].long`: `fit_affine`, `fit_deformable`, `trace_borders`,
-`export_maps`),
+`trace_from_atlas`, `export_maps`),
 which compute outside it and take it to apply, refusing a section whose
 inputs changed (`ops.inputs`, `STALE_INPUT`); `job.lock` timing out is
 `JOB_BUSY` (exit 3). `tests/test_job_concurrency.py`: an agent write during

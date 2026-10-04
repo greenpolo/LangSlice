@@ -42,8 +42,12 @@ class JobHandle:
 
     @property
     def verbs(self) -> list[str]:
-        """The verbs this job has (its tasks decide), in registry order."""
-        return list(self._tools)
+        """The verbs this job has (its tasks decide), in registry order; a
+        hidden verb (``Verb.hidden``) is callable by name but not listed."""
+        from langslice.ops.registry import listed
+
+        shown = listed()
+        return [name for name in self._tools if name in shown]
 
     def __getattr__(self, name: str) -> Callable[..., dict[str, Any]]:
         tools = self.__dict__.get("_tools") or {}
@@ -57,7 +61,7 @@ class JobHandle:
         raise AttributeError(name)
 
     def __dir__(self) -> list[str]:
-        return sorted({*super().__dir__(), *self._tools})
+        return sorted({*super().__dir__(), *self.verbs})
 
     # --- the job ----------------------------------------------------------------------
 

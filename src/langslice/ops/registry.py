@@ -71,10 +71,18 @@ class Verb:
     #: uses (the agent CLI, the library) and never to a model through the
     #: agent tools or MCP (:func:`enabled` with ``scripting``).
     scripting: bool = False
-    #: The verb calls the run's image model (``trace_borders``): a door that
-    #: cannot reach one leaves it out (:func:`enabled` with ``image_model``
-    #: False).
+    #: The verb calls the run's image model (``trace_borders``,
+    #: ``trace_from_atlas``): a door that cannot reach one leaves it out
+    #: (:func:`enabled` with ``image_model`` False).
     image_model: bool = False
+    #: A hidden verb (always a scripting verb) is in no listing: not in
+    #: :func:`enabled`'s answer unless asked for (``hidden=True``), not in
+    #: ``langslice ops``, the ``langslice schema`` of every verb, the job
+    #: folder's card, the library's ``verbs`` or the public docs. The
+    #: scripting doors still build it, so the agent CLI (``langslice job
+    #: FOLDER VERB``) and the library call it by name (``trace_from_atlas``:
+    #: kept reachable for experiments, not advertised).
+    hidden: bool = False
 
 
 def _verbs(*verbs: Verb) -> dict[str, Verb]:
@@ -120,6 +128,11 @@ VERBS: dict[str, Verb] = _verbs(
     Verb("trace_borders", traces.trace_borders, "write", "Nonlinear", long=True,
          image_model=True,
          when=lambda spec: spec.has("nonlinear") and spec.nonlinear.uses_image_model),
+    # The placement-free trace (route "atlas"): kept for experiments, called
+    # by name from the agent CLI and the library, listed nowhere.
+    Verb("trace_from_atlas", traces.trace_from_atlas, "write", "Nonlinear", long=True,
+         image_model=True, scripting=True, hidden=True,
+         when=lambda spec: spec.has("nonlinear") and spec.nonlinear.uses_image_model),
     Verb("grep_atlas", atlas.grep_atlas, "read", "Nonlinear",
          when=lambda spec: spec.has("nonlinear")),
     Verb("fit_deformable", deformable.fit_deformable, "write", "Nonlinear", long=True,
@@ -133,17 +146,26 @@ VERBS: dict[str, Verb] = _verbs(
 )
 
 
-def enabled(spec: Any, *, scripting: bool = False, image_model: bool = True) -> list[str]:
+def enabled(spec: Any, *, scripting: bool = False, image_model: bool = True,
+            hidden: bool = False) -> list[str]:
     """The verbs a run of *spec* (a :class:`~langslice.core.spec.JobSpec`)
     has, in :data:`VERBS` order: the tools every door builds for it. The
     scripting verbs (``Verb.scripting``) only with *scripting*: the agent
     CLI's and the library's toolbox, never the agent tools or MCP.
     *image_model* False: the door cannot reach the spec's image model (MCP
     with none connected), so the verbs that call it (``Verb.image_model``)
-    are left out."""
+    are left out. The hidden verbs (``Verb.hidden``) only with *hidden* as
+    well as *scripting*: a door builds them, a listing never shows them."""
     return [name for name, verb in VERBS.items()
             if verb.when(spec) and (scripting or not verb.scripting)
+            and (hidden or not verb.hidden)
             and (image_model or not verb.image_model)]
+
+
+def listed() -> dict[str, Verb]:
+    """Every verb a listing shows (``langslice ops``, ``langslice schema``,
+    the job folder's card): :data:`VERBS` without the hidden ones."""
+    return {name: verb for name, verb in VERBS.items() if not verb.hidden}
 
 
 def table() -> list[dict[str, str]]:

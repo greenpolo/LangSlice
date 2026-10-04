@@ -43,9 +43,27 @@ def test_every_tool_of_the_full_toolbox_is_registered_and_back(folder: Path, mon
     monkeypatch.setenv("HOME", str(folder / "home"))
     names = _names(full_spec(folder))
     assert names == MODEL_VERBS
-    # The scripting door (the CLI, the library) adds the scripting verbs.
+    # The scripting door (the CLI, the library) adds the scripting verbs,
+    # the hidden one included (callable by name).
     assert _names(full_spec(folder), scripting=True) == list(VERBS)
-    assert [name for name, verb in VERBS.items() if verb.scripting] == ["export_maps"]
+    assert [name for name, verb in VERBS.items() if verb.scripting] == [
+        "trace_from_atlas", "export_maps"]
+
+
+def test_a_hidden_verb_is_a_scripting_verb_left_out_of_every_listing(folder: Path):
+    from langslice.ops.registry import enabled, listed
+
+    hidden = [name for name, verb in VERBS.items() if verb.hidden]
+    assert hidden == ["trace_from_atlas"]
+    assert all(VERBS[name].scripting for name in hidden)
+    spec = full_spec(folder)
+    assert "trace_from_atlas" not in enabled(spec, scripting=True)
+    assert "trace_from_atlas" in enabled(spec, scripting=True, hidden=True)
+    assert "trace_from_atlas" not in enabled(spec, hidden=True)  # never a model's
+    assert list(listed()) == [name for name in VERBS if name not in hidden]
+    # Like trace_borders, it needs the run's image model.
+    assert "trace_from_atlas" not in enabled(spec, scripting=True, hidden=True,
+                                             image_model=False)
 
 
 @pytest.mark.parametrize("tasks", [["reorder"], ["position"], ["transform"], ["nonlinear"],
