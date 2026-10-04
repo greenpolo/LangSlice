@@ -24,6 +24,50 @@ _SUPPORTED_ATLASES = {"allen_mouse_10um", "allen_mouse_25um", "allen_mouse_50um"
 #: shown, when the host sends preprocessing settings or multi-page snapshots.
 
 
+#: Why an ABBA door refuses a job whose sections carry different cutting
+#: angles: ABBA shows one atlas angle for the whole stack (its
+#: ``ReslicedAtlas`` rotations). Jobs made from an ABBA session have one.
+ABBA_MIXED_ANGLES = (
+    "This job was made elsewhere with a cutting angle per section, which ABBA "
+    "cannot show: ABBA uses one atlas angle for the whole stack. Open the job in "
+    "LangSlice outside ABBA (the command line or Claude) instead."
+)
+
+
+def refuse_mixed_angles(state: Any) -> None:
+    """Raise ``ValueError`` (:data:`ABBA_MIXED_ANGLES`) when *state* (a
+    ``StackState`` or its ``to_dict()``) has sections that differ in cutting
+    angle; nothing for a single-angle job."""
+    from langslice.core.state import serialized_mixed_angles
+
+    mixed = (serialized_mixed_angles(state) if isinstance(state, dict)
+             else bool(state.mixed_angles))
+    if mixed:
+        raise ValueError(ABBA_MIXED_ANGLES)
+
+
+def refuse_mixed_job(spec: JobSpec) -> None:
+    """Refuse, before ABBA is touched, a spec whose job would carry
+    different cutting angles per section: supplied per-section angles that
+    differ (``inputs.angles``), or, when it resumes, a checkpoint whose
+    sections differ (``ValueError``, :data:`ABBA_MIXED_ANGLES`)."""
+    from langslice.core.spec import supplied_angles
+
+    _stack, sections = supplied_angles((spec.inputs or {}).get("angles"))
+    if len(set(sections.values())) > 1:
+        raise ValueError(ABBA_MIXED_ANGLES)
+    if not spec.resume or not spec.image_folder:
+        return
+    from langslice.core.state import StackState
+    from langslice.job.checkpoint import read_checkpoint
+    from langslice.job.layout import JobLayout, locate_job_folder
+
+    folder, _fallback = locate_job_folder(spec.image_folder, spec.job_dir, register=False)
+    data = read_checkpoint(str(JobLayout(folder).state_file))
+    if data is not None:
+        refuse_mixed_angles(StackState.from_dict(data))
+
+
 def _finite_positive(value: Any, name: str) -> float:
     result = float(value)
     if not math.isfinite(result) or result <= 0:
@@ -236,7 +280,13 @@ def prepare_linear(params: dict[str, Any]) -> PreparedLinear:
 
 
 def checkpoint_callback(prepared: PreparedLinear, emit: Emit) -> Callable[[Any], None]:
-    """Create a per-job delta tracker; the first checkpoint is ingestion."""
+    """Create a per-job delta tracker; the first checkpoint is ingestion.
+
+    Every checkpoint refuses a state whose sections differ in cutting angle
+    (:func:`refuse_mixed_angles`) before emitting anything: ABBA shows one
+    angle for the whole stack. The worker's own jobs are flat; this guards
+    a saved job (the MCP door's ABBA channel) that was made elsewhere.
+    """
     previous: dict[str, Any] | None = None
     start: dict[str, Any] | None = None
     since_start: list[dict[str, Any]] = []
@@ -244,6 +294,9 @@ def checkpoint_callback(prepared: PreparedLinear, emit: Emit) -> Callable[[Any],
     def checkpoint(state: Any) -> None:
         nonlocal previous, start, since_start
         current = state.to_dict()
+        # Before anything reaches ABBA: a stack with an angle per section
+        # cannot be shown there (the run's own final call raises it too).
+        refuse_mixed_angles(current)
         initial = previous is None or start is None
         if previous is None or start is None:
             start = current

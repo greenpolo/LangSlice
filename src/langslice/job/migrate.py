@@ -17,7 +17,9 @@ Two old layouts exist, both from before the job folder (phase 2):
 records and corrections into their section folders, the results to
 ``exports/``. Every stored path is rewritten to its new place, relative to
 the job folder, and the checkpoint is written at the current format (state
-format 2; ``job.json`` format 1). Each migration is one line in
+format 3, through :func:`langslice.job.checkpoint.upgrade_state`, which also
+gives every section of an old state the stack's cutting angles; ``job.json``
+format 1). Each migration is one line in
 ``logs/events.jsonl``. A newer format is refused before anything moves.
 
 Resumable: a journal (:data:`JOURNAL_FILE`) is written before anything moves

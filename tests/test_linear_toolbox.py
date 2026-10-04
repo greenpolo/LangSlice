@@ -252,7 +252,7 @@ def test_seen_placement_identity_includes_orientation_and_cutting_angles(
     assert len(reoriented[TOOL_MEDIA_PARTS_KEY]) == 1
     box.mark_placement_views_delivered({"write-1"})
 
-    state.cutting_angles_deg["pitch"] = 2.0
+    state.cutting_angles_deg = {"pitch": 2.0, "yaw": 0.0}
     reangled = write(
         [{"id": "s0.png", "position_mm": 3.0}],
         tool_context=_ToolContext("write-2"),

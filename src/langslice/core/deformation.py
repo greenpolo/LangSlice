@@ -144,7 +144,7 @@ def linear_key(state: StackState, record: SliceState) -> str:
     transform = record.transform or {}
     return _digest({
         "atlas": state.atlas, "plane": state.plane, "position_mm": record.position_mm,
-        "angles": [state.pitch_deg, state.yaw_deg], "flip": record.flip,
+        "angles": [record.pitch_deg, record.yaw_deg], "flip": record.flip,
         "rotation_deg": record.rotation_deg,
         "transform": {key: transform.get(key) for key in ("params", "spline", "calibration")},
     })

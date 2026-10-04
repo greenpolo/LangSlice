@@ -15,6 +15,7 @@ descending stack, and the emitted corrected order always runs the atlas way
 
 from __future__ import annotations
 
+import statistics
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -30,6 +31,45 @@ IDENTITY_PARAMS: dict[str, float] = {
     "translate_x_mm": 0.0,
     "translate_y_mm": 0.0,
 }
+
+#: A plane's cutting angles, ``(pitch_deg, yaw_deg)``.
+Angles = tuple[float, float]
+
+#: The key cutting angles are stored under, on a section and (in the
+#: serialized state, when every section shares one) on the stack.
+ANGLES_KEY = "cutting_angles_deg"
+
+
+def flat_angles() -> dict[str, float]:
+    """The flat plane, ``{"pitch": 0.0, "yaw": 0.0}`` (a new dict)."""
+    return {"pitch": 0.0, "yaw": 0.0}
+
+
+def angles_tuple(angles: dict[str, Any] | None) -> Angles:
+    """``(pitch, yaw)`` of a stored angles dict (missing parts are 0)."""
+    angles = angles or {}
+    return float(angles.get("pitch", 0.0)), float(angles.get("yaw", 0.0))
+
+
+def plane_angles(state: StackState, angles: Angles | None) -> Angles:
+    """*angles* as floats, or, when None, the stack's one angle
+    (:attr:`StackState.stack_angles`, which refuses a stack whose sections
+    differ). The rule every atlas-plane picture takes its plane by: a
+    section's own angles for a picture of that section, the stack's view
+    angles for one without."""
+    return state.stack_angles if angles is None else (float(angles[0]), float(angles[1]))
+
+
+def serialized_mixed_angles(data: dict[str, Any]) -> bool:
+    """Whether a serialized state (:meth:`StackState.to_dict`, a checkpoint's
+    fields at format 3) has sections whose cutting angles differ: the stack's
+    ``cutting_angles_deg`` is written null exactly then."""
+    return ANGLES_KEY in data and data[ANGLES_KEY] is None
+
+
+class MixedAngles(ValueError):
+    """The stack's sections have different cutting angles, so there is no
+    one stack-wide angle to read (:attr:`StackState.stack_angles`)."""
 
 
 @dataclass
@@ -91,7 +131,30 @@ class SliceState:
     #: orientation, cutting angles or transform clears it.
     deformation: dict[str, Any] | None = None
     caveats: list[str] = field(default_factory=list)
+    #: This section's own cutting angles, ``{"pitch": deg, "yaw": deg}``:
+    #: the atlas plane every picture, fit and map of it is drawn at. Equal
+    #: on every section of a stack LangSlice angled itself
+    #: (``set_cutting_angles`` sets them all); a registration supplied per
+    #: section keeps each its own (``inputs.angles``). Serialized on the
+    #: stack when all sections share one (:meth:`StackState.to_dict`).
+    cutting_angles_deg: dict[str, float] = field(default_factory=flat_angles)
 
+    @property
+    def angles(self) -> Angles:
+        """``(pitch_deg, yaw_deg)`` of this section's plane."""
+        return angles_tuple(self.cutting_angles_deg)
+
+    @property
+    def pitch_deg(self) -> float:
+        return self.angles[0]
+
+    @property
+    def yaw_deg(self) -> float:
+        return self.angles[1]
+
+    @property
+    def is_oblique(self) -> bool:
+        return bool(self.pitch_deg or self.yaw_deg)
 
 
 def add_caveat(record: SliceState, caveat: str) -> None:
@@ -111,10 +174,6 @@ class StackState:
     thickness_mm: float = 0.0
     #: The JobSpec as run (:meth:`langslice.core.spec.JobSpec.to_dict`).
     spec: dict[str, Any] = field(default_factory=dict)
-    #: Stack-wide cutting angles; 0/0 means a flat plane.
-    cutting_angles_deg: dict[str, float] = field(
-        default_factory=lambda: {"pitch": 0.0, "yaw": 0.0}
-    )
     #: Corrected indices of the sections AFTER a gap the agent concluded is real.
     interval_breaks: list[int] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
@@ -150,32 +209,111 @@ class StackState:
             return None
         return next((s for s in self.slices if s.index_corrected == index), None)
 
+    # --- cutting angles ---------------------------------------------------
+    #
+    # Each section carries its own plane (``SliceState.cutting_angles_deg``).
+    # Everything LangSlice angles itself is one plane for the whole stack;
+    # a registration supplied per section may differ section by section.
+
+    @property
+    def mixed_angles(self) -> bool:
+        """Whether the sections' cutting angles differ."""
+        return len({record.angles for record in self.slices}) > 1
+
+    @property
+    def stack_angles(self) -> Angles:
+        """The one ``(pitch, yaw)`` every section shares (flat for an empty
+        stack); :class:`MixedAngles` when they differ, so a reader that
+        should use each section's own angle cannot take one silently."""
+        planes = {record.angles for record in self.slices}
+        if len(planes) > 1:
+            raise MixedAngles(
+                "The sections of this stack have different cutting angles; "
+                "read each section's own (SliceState.angles).")
+        return next(iter(planes), (0.0, 0.0))
+
+    @property
+    def view_angles(self) -> Angles:
+        """The plane an atlas picture without a section is drawn at
+        (``view_atlas``, the opening's atlas reference): the stack's one
+        angle, or, when the sections differ, the median pitch and the median
+        yaw of its sections."""
+        if not self.mixed_angles:
+            return self.stack_angles
+        pitches = [record.pitch_deg for record in self.slices]
+        yaws = [record.yaw_deg for record in self.slices]
+        return float(statistics.median(pitches)), float(statistics.median(yaws))
+
+    @property
+    def cutting_angles_deg(self) -> dict[str, float]:
+        """The stack-wide angles as ``{"pitch", "yaw"}`` (a copy; assign to
+        change them); :class:`MixedAngles` when the sections differ."""
+        self.stack_angles  # noqa: B018 - raises for a mixed stack
+        if not self.slices:
+            return flat_angles()
+        return dict(self.slices[0].cutting_angles_deg)
+
+    @cutting_angles_deg.setter
+    def cutting_angles_deg(self, angles: dict[str, Any]) -> None:
+        """Set every section to *angles* (``set_cutting_angles``): a stack
+        whose sections differed now has one plane."""
+        pitch, yaw = angles_tuple(angles)
+        for record in self.slices:
+            record.cutting_angles_deg = {"pitch": pitch, "yaw": yaw}
+
     @property
     def pitch_deg(self) -> float:
-        return float(self.cutting_angles_deg.get("pitch", 0.0))
+        """The stack-wide pitch (:attr:`stack_angles`)."""
+        return self.stack_angles[0]
 
     @property
     def yaw_deg(self) -> float:
-        return float(self.cutting_angles_deg.get("yaw", 0.0))
+        """The stack-wide yaw (:attr:`stack_angles`)."""
+        return self.stack_angles[1]
 
     @property
     def is_oblique(self) -> bool:
-        return bool(self.pitch_deg or self.yaw_deg)
+        """Whether any section's plane is angled."""
+        return any(record.is_oblique for record in self.slices)
 
     # --- (de)serialization ----------------------------------------------
 
     def to_dict(self) -> dict[str, Any]:
-        """JSON-compatible dict. Same shape for checkpoint and hand-back."""
-        return asdict(self)
+        """JSON-compatible dict. Same shape for checkpoint and hand-back.
+
+        The cutting angles are written once, on the stack
+        (``"cutting_angles_deg": {"pitch", "yaw"}``), when every section
+        shares them, so a single-angle state reads as it always has; when
+        they differ (state format 3), the stack's is ``null`` and each
+        section row carries its own.
+        """
+        data = asdict(self)
+        rows = data["slices"]
+        if self.mixed_angles:
+            data[ANGLES_KEY] = None
+        else:
+            data[ANGLES_KEY] = (dict(rows[0][ANGLES_KEY]) if rows else flat_angles())
+            for row in rows:
+                row.pop(ANGLES_KEY, None)
+        return data
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> StackState:
-        """Rebuild from :meth:`to_dict` output, ignoring unknown keys."""
+        """Rebuild from :meth:`to_dict` output, ignoring unknown keys.
+
+        A section row without its own angles carries the stack's
+        (``cutting_angles_deg`` on the stack, flat without), which is how a
+        single-angle state and every state before format 3 read.
+        """
         slice_fields = SliceState.__dataclass_fields__
-        slices = [
-            SliceState(**{k: v for k, v in row.items() if k in slice_fields})
-            for row in data.get("slices", [])
-        ]
+        stack = data.get(ANGLES_KEY)
+        slices = []
+        for row in data.get("slices", []):
+            kwargs = {k: v for k, v in row.items() if k in slice_fields}
+            own = kwargs.get(ANGLES_KEY)
+            kwargs[ANGLES_KEY] = dict(own if isinstance(own, dict) else
+                                      stack if isinstance(stack, dict) else flat_angles())
+            slices.append(SliceState(**kwargs))
         stack_fields = {k for k in cls.__dataclass_fields__ if k != "slices"}
         kwargs = {k: v for k, v in data.items() if k in stack_fields}
         return cls(slices=slices, **kwargs)

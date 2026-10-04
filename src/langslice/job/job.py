@@ -57,7 +57,7 @@ import numpy as np
 
 from langslice.core import deformation
 from langslice.core.discovery import discover_slices
-from langslice.core.spec import MAX_PARALLEL_TRANSFORMS, JobSpec
+from langslice.core.spec import MAX_PARALLEL_TRANSFORMS, JobSpec, supplied_angles
 from langslice.core.state import IDENTITY_PARAMS, ROTATIONS, SliceState, StackState
 from langslice.job import formats, migrate
 from langslice.job.checkpoint import (
@@ -164,7 +164,10 @@ def apply_host_inputs(state: StackState, spec: JobSpec) -> None:
     """Write the host's answers for the tasks that are switched off.
 
     Order arrives as a list of filenames, positions as a filename -> mm
-    mapping, angles as ``{"pitch": deg, "yaw": deg}``, orientation as a
+    mapping, angles as ``{"pitch": deg, "yaw": deg}`` for the whole stack or
+    a filename -> ``{"pitch": deg, "yaw": deg}`` mapping, each section's own
+    plane kept as supplied (:func:`langslice.core.spec.supplied_angles`; a
+    section it does not name keeps the flat plane), orientation as a
     filename -> ``{"flip": bool, "rotation_deg": 0|90|180|270}`` mapping (a
     missing key leaves that part as it is), damage as a filename
     -> note mapping, and transforms as filename -> stored transform dictionaries.
@@ -200,15 +203,22 @@ def apply_host_inputs(state: StackState, spec: JobSpec) -> None:
             applied += 1
         state.notes.append(f"inputs: {applied} position(s) set by the host")
 
-    angles = inputs.get("angles") or {}
-    if angles:
-        state.cutting_angles_deg = {
-            "pitch": float(angles.get("pitch", 0.0)),
-            "yaw": float(angles.get("yaw", 0.0)),
-        }
+    stack_angles, section_angles = supplied_angles(inputs.get("angles"))
+    if stack_angles is not None:
+        pitch, yaw = stack_angles
+        state.cutting_angles_deg = {"pitch": pitch, "yaw": yaw}
         state.notes.append(
             f"inputs: cutting angles set by the host "
-            f"(pitch {state.pitch_deg:.2f}, yaw {state.yaw_deg:.2f})"
+            f"(pitch {pitch:.2f}, yaw {yaw:.2f})"
+        )
+    if section_angles:
+        for name, (pitch, yaw) in section_angles.items():
+            record = state.by_id(name)
+            if record is None:
+                raise ValueError(f"inputs.angles names an unknown section: {name!r}")
+            record.cutting_angles_deg = {"pitch": pitch, "yaw": yaw}
+        state.notes.append(
+            f"inputs: cutting angles of {len(section_angles)} section(s) set by the host"
         )
 
     orientation = inputs.get("orientation") or {}

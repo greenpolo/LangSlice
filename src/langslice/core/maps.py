@@ -243,7 +243,7 @@ def section_frame(state: StackState, workspace: Workspace, record: SliceState) -
     key = (
         record.id, _file_stamp(path), bool(record.flip), int(record.rotation_deg),
         float(record.position_mm),  # type: ignore[arg-type]
-        state.atlas, state.plane, state.pitch_deg, state.yaw_deg,
+        state.atlas, state.plane, record.pitch_deg, record.yaw_deg,
         stored_params(record),
         json.dumps((spec.inputs or {}).get("pixel_size_um"), default=str),
         json.dumps(spec.host_preprocessing, sort_keys=True, default=str),
@@ -310,17 +310,17 @@ def _section_frame(state: StackState, workspace: Workspace, record: SliceState) 
     position = float(record.position_mm)  # type: ignore[arg-type]
     atlas = workspace.atlas
     atlas_to_render, geometry = linear_placement_matrix(
-        render_size, render_um, atlas, position, plane, state.pitch_deg, state.yaw_deg,
+        render_size, render_um, atlas, position, plane, record.pitch_deg, record.yaw_deg,
         stored_params(record))
     facts = atlas_facts(atlas)
-    index = plane_index_affine(atlas, position, plane, state.pitch_deg, state.yaw_deg)
+    index = plane_index_affine(atlas, position, plane, record.pitch_deg, record.yaw_deg)
     to_um = np.diag(facts["resolution_um"]) @ index
     return SectionFrame(
         section_id=record.id, file_size=file_size, working_size=working,
         working_factor=float(factor), render_size=render_size,
         render_um_per_px=float(render_um), file_um_per_px=float(file_um),
         calibration_source=str(source or ""), position_mm=position, plane=state.plane,
-        pitch_deg=state.pitch_deg, yaw_deg=state.yaw_deg, rotation_deg=rotation,
+        pitch_deg=record.pitch_deg, yaw_deg=record.yaw_deg, rotation_deg=rotation,
         flip=bool(record.flip), file_to_render=file_to_render,
         atlas_to_render=atlas_to_render, native_to_index=index, native_to_um=to_um,
         annotation=np.asarray(geometry.annotation), atlas=facts,

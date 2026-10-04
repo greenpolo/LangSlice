@@ -64,7 +64,7 @@ from langslice.core.image_prep import mask_box
 from langslice.core.sections import render_slice
 from langslice.core.sizes import PICTURE_EDGES
 from langslice.core.space import Plane
-from langslice.core.state import SliceState, StackState
+from langslice.core.state import Angles, SliceState, StackState, plane_angles
 from langslice.core.workspace import Workspace
 
 #: Every atlas channel, in the order pictures and docs list them.
@@ -293,14 +293,14 @@ def default_options(
 
 def _nissl_plane(
     ctx: Workspace, state: StackState, position_mm: float, labels: np.ndarray,
+    angles: Angles,
 ) -> np.ndarray:
     """ABBA's Nissl on the native plane grid, percentile-stretched to 0..1."""
     source = ctx.abba_atlas
     if source is None:
         raise ValueError("The nissl atlas channel needs ABBA's cached Allen atlas")
     values = np.asarray(source.sample_plane(
-        "NISSL", ctx.atlas, position_mm, cast(Plane, state.plane),
-        state.pitch_deg, state.yaw_deg,
+        "NISSL", ctx.atlas, position_mm, cast(Plane, state.plane), *angles,
     ), dtype=np.float32)
     inside = values[(labels > 0) & (values > 0)]
     top = float(np.percentile(inside, NISSL_PERCENTILE)) if inside.size else 0.0
@@ -311,8 +311,12 @@ def _nissl_plane(
 
 def atlas_image_picture(
     ctx: Workspace, state: StackState, kinds: tuple[str, ...], position_mm: float,
+    *, angles: Angles | None = None,
 ) -> Image.Image | None:
     """The atlas images *kinds* on the native plane grid; None for ``ara`` alone.
+
+    At *angles* (:func:`langslice.core.state.plane_angles`: a section's own,
+    or the stack's when None).
 
     ``ara`` alone is left to the renderers' own reference path (the pixels
     every earlier picture showed). ``nissl`` is ABBA's Nissl, stretched
@@ -324,8 +328,9 @@ def atlas_image_picture(
     if images == ("ara",):
         return None
     plane = cast(Plane, state.plane)
+    pitch, yaw = plane_angles(state, angles)
     labels = np.asarray(annotation_slice(
-        ctx.atlas, position_mm, plane=plane, pitch_deg=state.pitch_deg, yaw_deg=state.yaw_deg,
+        ctx.atlas, position_mm, plane=plane, pitch_deg=pitch, yaw_deg=yaw,
     ))
     shape = labels.shape
     if not images:
@@ -333,9 +338,9 @@ def atlas_image_picture(
 
     def gray(kind: str) -> np.ndarray:
         if kind == "nissl":
-            return _nissl_plane(ctx, state, position_mm, labels)
+            return _nissl_plane(ctx, state, position_mm, labels, (pitch, yaw))
         reference = get_reference_slice(ctx.atlas, position_mm, plane=plane,
-                                        pitch_deg=state.pitch_deg, yaw_deg=state.yaw_deg)
+                                        pitch_deg=pitch, yaw_deg=yaw)
         if reference.size != (shape[1], shape[0]):
             reference = reference.resize((shape[1], shape[0]), Image.Resampling.BILINEAR)
         return np.asarray(reference.convert("L"), dtype=np.float32) / 255.0
@@ -350,13 +355,16 @@ def atlas_image_picture(
 
 def regions_in_plane(
     ctx: Workspace, state: StackState, position_mm: float, options: DisplayOptions,
+    *, angles: Angles | None = None,
 ) -> list[str]:
-    """The highlighted regions with at least one pixel in the plane at *position_mm*."""
+    """The highlighted regions with at least one pixel in the plane at
+    *position_mm* and *angles* (the stack's when None)."""
     if not options.regions:
         return []
+    pitch, yaw = plane_angles(state, angles)
     labels = np.asarray(annotation_slice(
         ctx.atlas, position_mm, plane=cast(Plane, state.plane),
-        pitch_deg=state.pitch_deg, yaw_deg=state.yaw_deg,
+        pitch_deg=pitch, yaw_deg=yaw,
     ))
     return [name for name, ids in options.regions if np.isin(labels, list(ids)).any()]
 
@@ -423,9 +431,12 @@ def channel_strip(
 
 def framed_atlas(
     ctx: Workspace, state: StackState, position_mm: float, options: DisplayOptions,
-    *, long_edge: int | None = None, fill: bool = False,
+    *, long_edge: int | None = None, fill: bool = False, angles: Angles | None = None,
 ) -> Image.Image:
     """The atlas at *position_mm*, framed to its anatomy, with the call's lines.
+
+    At *angles*: a section's own for a picture beside that section, the
+    stack's view angles for ``view_atlas``; None, the stack's one angle.
 
     At most *long_edge* (None: ``options.long_edge``) and never upsampled
     past the plane's own voxels, unless *fill*: then drawn at exactly
@@ -440,23 +451,25 @@ def framed_atlas(
     def sized(picture: Image.Image) -> Image.Image:
         return resize_long_edge(picture, edge) if fill else atlas_sized(picture, edge)
 
+    pitch, yaw = plane_angles(state, angles)
     if options.atlas_images == ("ara",) and not options.lines and options.full_view:
-        return sized(atlas_section(ctx, state, position_mm, frame=True))
+        return sized(atlas_section(ctx, state, position_mm, frame=True, angles=(pitch, yaw)))
     plane = cast(Plane, state.plane)
     labels = np.asarray(annotation_slice(
-        ctx.atlas, position_mm, plane=plane, pitch_deg=state.pitch_deg, yaw_deg=state.yaw_deg,
+        ctx.atlas, position_mm, plane=plane, pitch_deg=pitch, yaw_deg=yaw,
     ))
-    picture = atlas_image_picture(ctx, state, options.atlas_channels, position_mm)
+    picture = atlas_image_picture(ctx, state, options.atlas_channels, position_mm,
+                                  angles=(pitch, yaw))
     if picture is None:
         picture = get_reference_slice(
             ctx.atlas, position_mm, plane=plane,
-            pitch_deg=state.pitch_deg, yaw_deg=state.yaw_deg,
+            pitch_deg=pitch, yaw_deg=yaw,
         )
     native = (labels.shape[1], labels.shape[0])
     if picture.size != native:
         picture = picture.resize(native, Image.Resampling.BILINEAR)
     try:
-        mask = atlas_mask(ctx, state, position_mm, picture.size) > 0
+        mask = atlas_mask(ctx, state, position_mm, picture.size, angles=(pitch, yaw)) > 0
     except Exception:
         mask = labels > 0
     box = mask_box(picture.size, mask) or (0, 0, picture.width, picture.height)
@@ -476,7 +489,7 @@ def framed_atlas(
     if options.borders:
         draw = outer_outline if options.outlines == "outer" else family_outlines
         context = [poly for _color, poly in draw(
-            ctx.atlas, position_mm, plane=plane, pitch_deg=state.pitch_deg, yaw_deg=state.yaw_deg,
+            ctx.atlas, position_mm, plane=plane, pitch_deg=pitch, yaw_deg=yaw,
         )]
     origin = (box[0], box[1])
     if context:
@@ -485,24 +498,26 @@ def framed_atlas(
     if options.regions:
         # An atlas-only picture has no section: a side is the picture's own.
         left = regions_left(ctx.atlas, options.regions, position_mm, plane,
-                            state.pitch_deg, state.yaw_deg, np.eye(2))
+                            pitch, yaw, np.eye(2))
         _draw_polys(canvas, region_polys(labels, options.regions, left), rgb,
                     thickness=options.border_thickness, origin=origin, factor=factor)
     return Image.fromarray(canvas, mode="RGB")
 
 
-def atlas_caption(state: StackState, position_mm: float, options: DisplayOptions) -> str:
-    """The label burned into an atlas picture."""
-    angles = (
-        f" pitch {state.pitch_deg:.1f} yaw {state.yaw_deg:.1f}" if state.is_oblique else ""
-    )
+def atlas_caption(state: StackState, position_mm: float, options: DisplayOptions,
+                  *, angles: Angles | None = None) -> str:
+    """The label burned into an atlas picture drawn at *angles* (the stack's
+    when None)."""
+    from langslice.core.captions import angles_label
+
+    shown = angles_label(plane_angles(state, angles))
     name = options.atlas_name()
     extra = "" if name == "template" else f" {name}"
     if options.borders and options.outlines == "outer":
         extra += " outer outline"
     if options.regions:
         extra += " regions " + ",".join(name for name, _ids in options.regions)
-    return f"atlas {position_mm:.2f} mm{angles}{extra}"
+    return f"atlas {position_mm:.2f} mm{shown}{extra}"
 
 
 __all__ = [

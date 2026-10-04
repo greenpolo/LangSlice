@@ -11,6 +11,23 @@ from typing import Any
 
 from langslice.core.state import SliceState, StackState
 
+#: What a status reply says under ``cutting_angles_deg`` when the sections'
+#: angles differ: each row carries its own.
+PER_SECTION = "per section"
+
+
+def angles_dict(record: SliceState) -> dict[str, float]:
+    """The section's ``{"pitch", "yaw"}`` in degrees, as floats."""
+    pitch, yaw = record.angles
+    return {"pitch": pitch, "yaw": yaw}
+
+
+def stack_angles_entry(state: StackState) -> dict[str, float] | str:
+    """What a status reply says under ``cutting_angles_deg``: the stack's
+    ``{"pitch", "yaw"}`` (a copy of the stored angles), or
+    :data:`PER_SECTION` when the sections differ (their rows carry them)."""
+    return PER_SECTION if state.mixed_angles else dict(state.cutting_angles_deg)
+
 
 def status_rows(state: StackState) -> list[dict[str, Any]]:
     """One row per section in corrected order. The ``ls`` of the environment.
@@ -19,9 +36,13 @@ def status_rows(state: StackState) -> list[dict[str, Any]]:
     corrected order that carries a position, and null when this section has
     none or no placed section follows it. ``transform_iou`` and
     ``transform_mirrored`` come off the recorded transform. Data only: no
-    comparison against the nominal interval, no verdict.
+    comparison against the nominal interval, no verdict. When the sections'
+    cutting angles differ (a registration supplied per section), each row
+    also carries its own ``cutting_angles_deg``; a single-angle stack's rows
+    do not (the stack's angle is reported once, beside them).
     """
     ordered = state.in_order()
+    mixed = state.mixed_angles
     rows: list[dict[str, Any]] = []
     for index, record in enumerate(ordered):
         here = record.position_mm
@@ -46,6 +67,7 @@ def status_rows(state: StackState) -> list[dict[str, Any]]:
                 "delta_to_next_mm": delta,
                 "flip": record.flip,
                 "rotation_deg": record.rotation_deg,
+                **({"cutting_angles_deg": angles_dict(record)} if mixed else {}),
                 "damaged": record.damaged,
                 "damage_note": record.damage_note,
                 "transform": transform.get("kind"),
@@ -111,6 +133,9 @@ def status_text(state: StackState) -> str:
                 transform += f" mirrored={bool(row['transform_mirrored'])}"
         if row.get("deformation_steps"):
             transform += f"  deformation={row['deformation_steps']} step(s)"
+        if "cutting_angles_deg" in row:
+            angles = row["cutting_angles_deg"]
+            transform += f"  angles=pitch {angles['pitch']:.2f} yaw {angles['yaw']:.2f}"
         lines.append(
             f"{row['index']:>3}  {row['id']}  {position}  {delta}"
             + (f"  [{'; '.join(flags)}]" if flags else "")

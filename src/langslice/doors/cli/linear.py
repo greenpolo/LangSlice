@@ -129,6 +129,12 @@ def add_linear_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument("--pitch", type=float, default=None, help="Host-given cutting pitch, degrees")
     p.add_argument("--yaw", type=float, default=None, help="Host-given cutting yaw, degrees")
     p.add_argument(
+        "--section-angles", default=None, metavar="JSON",
+        help='Host-given cutting angles per section (a registration made elsewhere): JSON '
+        'file or inline mapping of filenames to {"pitch": deg, "yaw": deg}; not with '
+        "--pitch/--yaw",
+    )
+    p.add_argument(
         "--fact",
         dest="facts",
         action="append",
@@ -304,6 +310,16 @@ def build_linear_spec(args: argparse.Namespace, image_folder: str) -> JobSpec:
         inputs["pixel_size_um"] = float(args.pixel_size_um)
     if args.pitch is not None or args.yaw is not None:
         inputs["angles"] = {"pitch": args.pitch or 0.0, "yaw": args.yaw or 0.0}
+    section_angles = load_json_arg(getattr(args, "section_angles", None), "--section-angles")
+    if section_angles is not None:
+        if "angles" in inputs:
+            raise ValueError("--section-angles gives each section its own plane; it cannot "
+                             "be combined with the stack-wide --pitch/--yaw")
+        if not isinstance(section_angles, dict) or not all(
+                isinstance(value, dict) for value in section_angles.values()):
+            raise ValueError('--section-angles must map filenames to {"pitch": deg, '
+                             '"yaw": deg}')
+        inputs["angles"] = section_angles
 
     return JobSpec(
         image_folder=image_folder,

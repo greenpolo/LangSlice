@@ -139,8 +139,8 @@ def parameters(state: StackState, record: SliceState, atlas: dict[str, Any] | No
             "name": state.plane,
             "position_mm": position,
             "position_um": None if position is None else float(position) * 1000.0,
-            "pitch_deg": state.pitch_deg,
-            "yaw_deg": state.yaw_deg,
+            "pitch_deg": record.pitch_deg,
+            "yaw_deg": record.yaw_deg,
         },
         "orientation": {"rotation_deg": int(record.rotation_deg), "flip": bool(record.flip),
                         "order": "rotate (counter-clockwise quarter turns) first, then "
@@ -238,7 +238,10 @@ def registration_document(
         "convention": CONVENTION,
         "atlas": atlas if atlas is not None else {"name": state.atlas},
         "plane": state.plane,
-        "cutting_angles_deg": {"pitch": state.pitch_deg, "yaw": state.yaw_deg},
+        # The stack's one plane; null when the sections' angles differ (a
+        # registration supplied per section): each section's "plane" has its own.
+        "cutting_angles_deg": (None if state.mixed_angles else
+                               dict(zip(("pitch", "yaw"), state.stack_angles, strict=True))),
         "image_folder": (str(workspace.image_folder) if workspace is not None
                          else state.image_folder),
         "submitted": bool(state.submitted),
