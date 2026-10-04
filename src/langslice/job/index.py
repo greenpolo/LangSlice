@@ -39,6 +39,14 @@ def new_id() -> str:
     return uuid.uuid4().hex[:12]
 
 
+def folder_id(image_folder: str | os.PathLike[str]) -> str:
+    """A stable id for an image folder (its absolute path, hashed), so a job
+    whose folder could not be written is found again on reopen."""
+    import hashlib
+
+    return hashlib.sha256(os.path.abspath(os.fspath(image_folder)).encode()).hexdigest()[:12]
+
+
 def check_id(job_id: str) -> str:
     if not isinstance(job_id, str) or _JOB_ID.fullmatch(job_id) is None:
         raise ValueError("Invalid LangSlice job id")
@@ -56,9 +64,13 @@ def legacy_dir(root: Path, job_id: str) -> Path:
 
 def register(
     root: Path, job_id: str, folder: Path, *, host_channel: dict[str, Any] | None = None,
-    created_at: str | None = None,
+    created_at: str | None = None, fallback: dict[str, Any] | None = None,
 ) -> Path:
-    """Write the id's entry, pointing at *folder*; owner-only. Returns its path."""
+    """Write the id's entry, pointing at *folder*; owner-only. Returns its path.
+
+    *fallback* records why the job folder is here and not next to its images
+    (``image_folder``, ``reason``): the image folder could not be written.
+    """
     path = entry_path(root, job_id)
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     record = {
@@ -67,6 +79,8 @@ def register(
         "host_channel": host_channel,
         "created_at": created_at or datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
+    if fallback is not None:
+        record["fallback"] = fallback
     temporary = path.with_suffix(".tmp")
     with temporary.open("w", encoding="utf-8") as handle:
         os.chmod(temporary, 0o600)

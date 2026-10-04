@@ -22,7 +22,7 @@ from google.genai import types
 
 from langslice.adk.media import opening_parts, packaged_tools
 from langslice.atlas.core import load_atlas
-from langslice.job.layout import JobLayout, job_folder_for
+from langslice.job.layout import JobLayout, locate_job_folder
 from langslice.linear.job import Job
 
 # Re-exported for the sibling SliceBench adapters, which import them from here;
@@ -100,12 +100,20 @@ def build_context(
     *,
     emit: Callable[[str], None] | None = None,
     atlas_loader: Callable[[str], Any] | None = None,
+    job_folder: str | os.PathLike[str] | None = None,
 ) -> EngineContext:
-    """Assemble an :class:`EngineContext` from a job spec."""
+    """Assemble an :class:`EngineContext` from a job spec.
+
+    The job folder is *job_folder* when given (a saved job's), else
+    :func:`~langslice.job.layout.locate_job_folder` (``spec.job_dir``, next
+    to the images, or ``~/.langslice/jobs/<id>/`` for a read-only folder).
+    """
     from langslice.providers.openai_oauth import DEFAULT_REVIEW_MODEL
 
     folder = os.path.abspath(spec.image_folder)
-    job_folder = job_folder_for(folder)
+    if job_folder is None:
+        job_folder, _fallback = locate_job_folder(folder, spec.job_dir, emit=emit or log_progress)
+    job_folder = Path(job_folder)
     return EngineContext(
         spec=spec,
         image_folder=folder,

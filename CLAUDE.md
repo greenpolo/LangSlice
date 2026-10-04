@@ -138,7 +138,9 @@ Shared, top-level:
   picture the model was shown, as the JPEG it received, placement pictures
   with atlas labels, border mask and frame, `exports/`, `logs/`). Paths in
   job files are relative to it; old layouts are moved in on open, newer
-  ones refused; saved Claude jobs are found by id through
+  ones refused; `--job-dir` / `JobSpec.job_dir` puts it elsewhere (a folder
+  holding another image folder's job is refused); a read-only image folder
+  falls back to `~/.langslice/jobs/<id>/`; saved Claude jobs are found by id through
   `~/.langslice/jobs/<id>.json`: `src/langslice/job/CLAUDE.md` (loads when
   working there).
 - `atlas/` — BrainGlobe loading, slice extraction, colored region maps, borders,
@@ -277,7 +279,9 @@ program. Code that runs in LangSlice's own environment lives in
   `brainglobe_space` and requires the AP axis to increase anterior→posterior.
 - Optional debug traces are written only when `LANGSLICE_VLM_DEBUG_DIR` is set.
 - A job's files live in its job folder, `<images>/langslice/`
-  (`src/langslice/job/CLAUDE.md`); nothing else is written beside the images.
+  (`src/langslice/job/CLAUDE.md`; `--job-dir` moves it, a read-only image
+  folder falls back to `~/.langslice/jobs/<id>/`); nothing else is written
+  beside the images.
 - Linear agent sessions write a full-content JSONL trace (what the agent
   was shown, said, called, and got back; images as descriptors, never bytes)
   only when `LANGSLICE_TRACE_DIR` is set — `langslice linear run

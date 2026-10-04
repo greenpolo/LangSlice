@@ -474,7 +474,15 @@ def _add_linear_arguments(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--out",
         default=None,
-        help="Results JSON path. Default: <image_folder>/langslice/exports/linear_results.json",
+        help="Results JSON path. Default: <job folder>/exports/linear_results.json",
+    )
+    p.add_argument(
+        "--job-dir",
+        default=None,
+        metavar="PATH",
+        help="Put the job folder (checkpoint, undo history, pictures, results) here "
+        "instead of <image_folder>/langslice; e.g. one per benchmark arm. A folder "
+        "holding the job of another image folder is refused",
     )
     p.add_argument(
         "--trace-dir",
@@ -583,6 +591,7 @@ def _build_linear_spec(args: argparse.Namespace, image_folder: str) -> "JobSpec"
         model=args.model,
         reasoning=args.reasoning,
         out=args.out,
+        job_dir=getattr(args, "job_dir", None),
         preprocess=args.preprocess,
         agent_preprocessing=bool(getattr(args, "agent_preprocessing", False)),
         tasks=[task.strip() for task in args.tasks.split(",") if task.strip()],

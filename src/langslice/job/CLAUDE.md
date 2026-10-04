@@ -34,6 +34,28 @@ LangSlice, so a job travels with its images:
 | ABBA Claude mode (`claude.prepare`) | `~/.langslice/snapshots/claude-*/` | `<snapshots>/langslice/` (id in the index) |
 | `langslice abba --linear` (Python launcher) | a fresh `langslice-abba-*` run folder under the spec's folder (or the system temporary folder) | `<run folder>/langslice/` |
 
+Two exceptions, both from `layout.locate_job_folder` (used by
+`Job.open`, `engine.build_context` and the Claude job preparation):
+
+- **An explicit folder.** `JobSpec.job_dir` (`--job-dir PATH` on `linear
+  run`, `mcp` and `claude prepare`) puts the job folder exactly there, same
+  layout, e.g. one per benchmark arm on one dataset folder; the image folder
+  is then never written (no migration from beside the images either). Two
+  jobs never share a folder silently: `layout.check_owner` refuses a folder
+  whose `job.json` names a DIFFERENT image folder (`ValueError`, "already
+  holds the job of ..."); the same image folder's job is continued.
+  `to_dict` leaves `job_dir` out when it is unset.
+- **A read-only image folder.** When `<images>/langslice/` cannot be created
+  or written (`layout.writable`: a probe file in an existing folder, else
+  write access to the image folder; nothing is created by the check), the
+  job folder is `~/.langslice/jobs/<id>/`, same layout. The id is the
+  image folder's path hashed (`index.folder_id`), so a reopen finds it
+  again; a saved Claude job uses its own id. Said once through the
+  progress/emit log (`[job] ... cannot be created or written; the job
+  folder is ...`) and recorded in the id's index entry under `fallback`
+  (`image_folder`, `reason`). Old files beside a read-only image folder are
+  not migrated.
+
 Inside (`layout.py`, names as constants):
 
 ```
@@ -70,7 +92,8 @@ paths). The trace identity in a deformation cache key is the stored
 
 ## Files
 
-- `layout.py` — `JobLayout` (the folder, every name, `section_dir`,
+- `layout.py` — `locate_job_folder` (above), `writable`, `check_owner`,
+  `JobLayout` (the folder, every name, `section_dir`,
   `deformable_dir`, `image_correction_dir`, `section_views_dir`,
   `relative`/`resolve`, `ensure`, `log_event`), `job_folder_for`,
   `section_dirname`, `read_job_file` (refuses a newer `format_version`),
@@ -86,7 +109,10 @@ paths). The trace identity in a deformation cache key is the stored
   call on a 40-section stack at depth 50). An unreadable or newer history
   starts empty (logged).
 - `index.py` — saved host jobs by id: `~/.langslice/jobs/<id>.json`
-  (`job_id`, `job_folder`, `host_channel`, `created_at`; owner-only). The
+  (`job_id`, `job_folder`, `host_channel`, `created_at`, and `fallback`
+  when the job folder is under `~/.langslice/jobs/` because the image
+  folder could not be written; owner-only). `folder_id` (an image folder's
+  stable id). The
   channel token stays here, not in a folder that may be shared. `register`,
   `lookup` (refuses a newer entry), `legacy_dir`.
 - `migrate.py` — opening an old layout upgrades it.

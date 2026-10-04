@@ -180,6 +180,9 @@ class JobSpec:
     #: max). None leaves the provider's own default alone.
     reasoning: str | None = None
     out: str | None = None
+    #: Where the job folder goes (``--job-dir``). None: next to the images,
+    #: ``<images>/langslice`` (:func:`langslice.job.layout.locate_job_folder`).
+    job_dir: str | None = None
     #: Display-side preprocessing for everything the agent looks at:
     #: "auto" runs :func:`langslice.image_prep.adaptive_preprocess`, "none"
     #: shows the raw section. Never written back to the user's files.
@@ -293,6 +296,8 @@ class JobSpec:
         # written, so a reloaded spec has one source for it.
         data["reorder"].pop("flip", None)
         data["reorder"].pop("hemisphere_cue", None)
+        if data.get("job_dir") is None:  # the default stays out of saved specs
+            data.pop("job_dir", None)
         return data
 
     @classmethod

@@ -189,9 +189,7 @@ def open_job(
     saved job's (the same place, as its index names it)."""
     if spec.has("nonlinear"):
         raise ValueError("Image generation is unavailable through the Claude connector")
-    ctx = build_context(spec, atlas_loader=atlas_loader)
-    if folder is not None:
-        ctx.job_folder = str(folder)
+    ctx = build_context(spec, atlas_loader=atlas_loader, job_folder=folder)
     job = Job.open(spec, ctx, folder=ctx.job_folder, results_path=ctx.results_path)
     trace_dir = os.environ.get(TRACE_DIR_ENV)
     trace = McpTrace(trace_dir, ctx.image_folder) if trace_dir else None

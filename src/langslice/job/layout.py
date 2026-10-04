@@ -26,6 +26,12 @@ section folder.
 
 Every path a job file stores is relative to the job folder
 (:meth:`JobLayout.relative`), so the folder can move with its images.
+
+:func:`locate_job_folder` picks the folder: ``JobSpec.job_dir`` when set
+(exactly there), else ``<images>/langslice``, else, when the image folder
+cannot be written, ``~/.langslice/jobs/<id>/`` (said once, recorded in the
+id's index entry). :func:`check_owner` refuses a folder holding another
+image folder's job.
 """
 
 from __future__ import annotations
@@ -33,6 +39,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -76,6 +84,83 @@ _UNSAFE = re.compile(r"[\x00-\x1f/\\:*?\"<>|]")
 def job_folder_for(image_folder: str | os.PathLike[str]) -> Path:
     """``<image_folder>/langslice`` (absolute)."""
     return Path(os.path.abspath(os.fspath(image_folder))) / JOB_DIRNAME
+
+
+def writable(folder: Path, image_folder: Path) -> bool:
+    """Whether the job folder can be made and written, without making it.
+
+    An existing folder is probed with a temporary file; a missing one asks
+    whether *image_folder* (its parent) can take a new folder.
+    """
+    if folder.exists():
+        try:
+            handle, probe = tempfile.mkstemp(dir=folder, prefix=".write-probe-")
+            os.close(handle)
+            os.unlink(probe)
+            return True
+        except OSError:
+            return False
+    return os.access(image_folder, os.W_OK | os.X_OK)
+
+
+def locate_job_folder(
+    image_folder: str | os.PathLike[str],
+    job_dir: str | os.PathLike[str] | None = None,
+    *,
+    emit: Callable[[str], None] | None = None,
+    root: Path | None = None,
+    job_id: str | None = None,
+    register: bool = True,
+) -> tuple[Path, dict[str, Any] | None]:
+    """``(job folder, fallback)`` for a job on *image_folder*.
+
+    *job_dir* given: exactly there (``JobSpec.job_dir``, ``--job-dir``).
+    Otherwise ``<images>/langslice`` (:func:`job_folder_for`), unless that
+    cannot be created or written (a read-only image folder): then
+    ``<root>/<id>/`` (``~/.langslice/jobs/``), the id *job_id* or one fixed
+    by the image folder's path (:func:`langslice.job.index.folder_id`, so a
+    reopen finds it), said once through *emit* and, with *register*,
+    recorded in the id's index entry. *fallback* is ``{"image_folder",
+    "reason"}`` then, None otherwise.
+    """
+    from langslice.job import index
+
+    if job_dir:
+        return Path(os.path.abspath(os.path.expanduser(os.fspath(job_dir)))), None
+    images = Path(os.path.abspath(os.fspath(image_folder)))
+    folder = job_folder_for(images)
+    if writable(folder, images):
+        return folder, None
+    root = Path(root) if root is not None else index.default_root()
+    job_id = job_id or index.folder_id(images)
+    target = root / job_id
+    fallback = {"image_folder": str(images),
+                "reason": f"{folder} cannot be created or written"}
+    if emit is not None:
+        emit(f"[job] {folder} cannot be created or written; the job folder is {target} "
+             f"(job id {job_id})")
+    if register:
+        held = index.lookup(root, job_id)
+        if held is None or held.get("job_folder") != str(target) or "fallback" not in held:
+            index.register(root, job_id, target, fallback=fallback)
+    return target, fallback
+
+
+def check_owner(layout: JobLayout) -> None:
+    """Refuse a job folder that holds the job of ANOTHER image folder.
+
+    Two jobs never share a folder silently; the same image folder's job is
+    continued. Raises ``ValueError``.
+    """
+    held = read_job_file(layout)
+    if held is None or layout.image_folder is None:
+        return
+    owner = held.get("image_folder")
+    if isinstance(owner, str) and os.path.realpath(owner) != os.path.realpath(
+            layout.image_folder):
+        raise ValueError(
+            f"{layout.folder} already holds the job of {owner}, not of {layout.image_folder}. "
+            "Choose another job folder (--job-dir) for this one.")
 
 
 def _safe(name: str) -> str:
