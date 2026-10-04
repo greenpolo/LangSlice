@@ -24,7 +24,7 @@ from langslice.core.display import DisplayOptions, regions_in_plane
 from langslice.core.pictures import atlas_view_picture, section_picture, stack_review
 from langslice.core.sizes import MAX_IMAGES_PER_CALL
 from langslice.core.state import SliceState
-from langslice.core.status import status_rows
+from langslice.core.status import stack_angles_entry, status_rows
 
 if TYPE_CHECKING:
     from langslice.core.workspace import Workspace
@@ -41,17 +41,19 @@ MAX_VIEW_SLICES = MAX_IMAGES_PER_CALL
 class StackStatus:
     """The stack as it stands: one row per section in corrected order
     (:func:`langslice.core.status.status_rows`), the cutting angles and the
-    interval breaks."""
+    interval breaks. ``cutting_angles_deg`` is the stack's ``{"pitch",
+    "yaw"}``, or ``"per section"`` when the sections' angles differ (each
+    row then carries its own)."""
 
     rows: list[dict[str, Any]]
-    cutting_angles_deg: dict[str, float]
+    cutting_angles_deg: dict[str, float] | str
     interval_breaks: list[int]
 
 
 def status(job: Job) -> StackStatus:
     """The status table (``status``)."""
     state = job.state
-    return StackStatus(rows=status_rows(state), cutting_angles_deg=dict(state.cutting_angles_deg),
+    return StackStatus(rows=status_rows(state), cutting_angles_deg=stack_angles_entry(state),
                        interval_breaks=list(state.interval_breaks))
 
 
@@ -99,9 +101,12 @@ def view_slices(
 
 def regions_not_in_plane(
     job: Job, workspace: Workspace, position_mm: float, options: DisplayOptions,
+    angles: tuple[float, float],
 ) -> list[str]:
-    """The call's highlighted regions with no pixel in the plane at *position_mm*."""
-    present = regions_in_plane(workspace, job.state, position_mm, options)
+    """The call's highlighted regions with no pixel in the plane at
+    *position_mm* and *angles* (a section's own; ``view_atlas``'s, the
+    stack's view angles)."""
+    present = regions_in_plane(workspace, job.state, position_mm, options, angles=angles)
     return [name for name, _ids in options.regions if name not in present]
 
 
@@ -118,7 +123,8 @@ def view_atlas(
     job: Job, workspace: Workspace, positions: list[float], options: DisplayOptions,
 ) -> AtlasView:
     """The atlas alone at each position (already clamped into the atlas
-    range), at the stack's cutting angles, tissue-framed and labelled."""
+    range), at the stack's cutting angles (``StackState.view_angles``: the
+    median of the sections' when they differ), tissue-framed and labelled."""
     state = job.state
     pictures = [atlas_view_picture(workspace, state, position, options)
                 for position in positions]
@@ -126,7 +132,8 @@ def view_atlas(
     if options.regions:
         absent = {
             f"{position:.2f}": missing for position in positions
-            if (missing := regions_not_in_plane(job, workspace, position, options))
+            if (missing := regions_not_in_plane(job, workspace, position, options,
+                                                state.view_angles))
         }
     return AtlasView(pictures=pictures, regions_not_in_plane=absent)
 
@@ -197,7 +204,7 @@ def placement_view(
             pictures.append(atlas_image)
         else:
             pictures.extend(placed.images)
-        absent = (regions_not_in_plane(job, workspace, position, options)
+        absent = (regions_not_in_plane(job, workspace, position, options, record.angles)
                   if regions_report else [])
         shown.append(PairShown(
             record=record, position=position, row=row,

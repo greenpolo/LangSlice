@@ -215,11 +215,16 @@ def make_view_atlas(job: Job, ctx: EngineContext, max_view_edge: int, level: str
 
         shown = ops_views.view_atlas(job, ctx, positions, options)
         parts: list[Media] = list(shown.pictures)
+        # The plane drawn: the stack's angles as stored, or, when the
+        # sections differ, the median (StackState.view_angles).
+        drawn_angles = (
+            dict(zip(("pitch", "yaw"), state.view_angles, strict=True))
+            if state.mixed_angles else dict(state.cutting_angles_deg))
         plural = "s" if len(positions) != 1 else ""
         result: dict[str, Any] = {
             "status": "ok",
             "positions_mm": [round(position, 2) for position in positions],
-            "cutting_angles_deg": dict(state.cutting_angles_deg),
+            "cutting_angles_deg": drawn_angles,
             # Each image carries its own burned-in label; the ordering note
             # says the same thing in the payload.
             "description": (
@@ -231,6 +236,12 @@ def make_view_atlas(job: Job, ctx: EngineContext, max_view_edge: int, level: str
             "view": options.echo(),
             TOOL_MEDIA_PARTS_KEY: parts,
         }
+        if state.mixed_angles:
+            result["description"] += (
+                " The sections' cutting angles differ; these atlas sections are drawn "
+                f"at their median, pitch {drawn_angles['pitch']:.2f} yaw "
+                f"{drawn_angles['yaw']:.2f} degrees."
+            )
         if shown.regions_not_in_plane:
             result["regions_not_in_plane"] = shown.regions_not_in_plane
         if dropped:
@@ -607,8 +618,8 @@ def build_tools(
             float(position_mm),
             bool(record.flip),
             int(record.rotation_deg),
-            float(state.pitch_deg),
-            float(state.yaw_deg),
+            float(record.pitch_deg),
+            float(record.yaw_deg),
         )
 
     def resolve_many(refs: list[Any]) -> tuple[list[SliceState], list[str]]:
@@ -1326,7 +1337,7 @@ def build_tools(
             ),
         }[view]
         position = float(record.position_mm or 0.0)
-        absent = ops_views.regions_not_in_plane(job, ctx, position, options)
+        absent = ops_views.regions_not_in_plane(job, ctx, position, options, record.angles)
         if options.borders:
             lines = (
                 ("The outline is the OUTER boundary of "

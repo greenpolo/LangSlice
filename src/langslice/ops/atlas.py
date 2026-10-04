@@ -41,7 +41,8 @@ def grep_atlas(job: Job, workspace: Workspace, query: str, section: object = "")
         if record.position_mm is None:
             note = f"{record.id} has no position yet, so in_section is omitted."
         else:
-            present = plane_structure_ids(state, workspace, record.position_mm)
+            present = plane_structure_ids(state, workspace, record.position_mm,
+                                          record.angles)
     rows, total = grep_structures(entries, text, present, limit=GREP_ATLAS_LIMIT)
     result: dict[str, Any] = {"query": text, "matches": total, "rows": rows}
     if total > len(rows):

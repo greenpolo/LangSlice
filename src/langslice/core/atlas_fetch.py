@@ -1,9 +1,13 @@
-"""Atlas sections for the toolbox, rendered at the stack's cutting angles.
+"""Atlas sections for the toolbox, rendered at a plane's cutting angles.
 
 One entry point, :func:`atlas_section`, so the sections the agent looks at, the
 sections a fit is measured against and the sections a preview overlays are the
-same pixels. When ``cutting_angles_deg`` is 0/0 this is the flat voxel-grid
-slice; otherwise the plane is resampled obliquely.
+same pixels. When the angles are 0/0 this is the flat voxel-grid slice;
+otherwise the plane is resampled obliquely. *angles* is the
+``(pitch, yaw)`` to draw at: a section's own (``SliceState.angles``) for a
+picture of that section, ``StackState.view_angles`` for one without a
+section; None reads ``StackState.stack_angles``, which refuses a stack whose
+sections differ (:class:`langslice.core.state.MixedAngles`).
 """
 
 from __future__ import annotations
@@ -16,11 +20,11 @@ from PIL import Image
 
 from langslice.core.affine import resize_long_edge
 from langslice.core.atlas.core import get_reference_slice, get_root_mask
-from langslice.core.captions import caption
+from langslice.core.captions import angles_label, caption
 from langslice.core.image_prep import crop_to_mask
 from langslice.core.sizes import opening_edge, picture_edge
 from langslice.core.space import Plane
-from langslice.core.state import StackState
+from langslice.core.state import Angles, StackState, plane_angles
 from langslice.core.workspace import Workspace
 
 #: Most atlas sections in the opening's atlas reference (laid out as strips by
@@ -29,11 +33,13 @@ SEED_ATLAS_MAX_IMAGES = 48
 
 
 def atlas_mask(
-    ctx: Workspace, state: StackState, position_mm: float, size: tuple[int, int]
+    ctx: Workspace, state: StackState, position_mm: float, size: tuple[int, int],
+    *, angles: Angles | None = None,
 ) -> np.ndarray:
-    """Binary tissue silhouette of the atlas section, at the stack's angles."""
+    """Binary tissue silhouette of the atlas section, at the plane's angles."""
+    pitch, yaw = plane_angles(state, angles)
     return get_root_mask(ctx.atlas, position_mm, size, plane=cast(Plane, state.plane),
-                         pitch_deg=state.pitch_deg, yaw_deg=state.yaw_deg)
+                         pitch_deg=pitch, yaw_deg=yaw)
 
 
 def atlas_section(
@@ -42,8 +48,9 @@ def atlas_section(
     position_mm: float,
     *,
     frame: bool = False,
+    angles: Angles | None = None,
 ) -> Image.Image:
-    """The atlas template section at *position_mm*, at the stack's angles.
+    """The atlas template section at *position_mm*, at the plane's angles.
 
     *frame* crops to the tissue silhouette plus a margin, so the section fills
     its frame about as much as a tissue-framed histology render does. The
@@ -51,17 +58,18 @@ def atlas_section(
     pixels: reference volumes carry faint background noise that would put the
     bounding box back at the canvas edges.
     """
+    pitch, yaw = plane_angles(state, angles)
     image = get_reference_slice(
         ctx.atlas,
         position_mm,
         plane=cast(Plane, state.plane),
-        pitch_deg=state.pitch_deg,
-        yaw_deg=state.yaw_deg,
+        pitch_deg=pitch,
+        yaw_deg=yaw,
     )
     if not frame:
         return image
     try:
-        mask = atlas_mask(ctx, state, position_mm, image.size)
+        mask = atlas_mask(ctx, state, position_mm, image.size, angles=(pitch, yaw))
     except Exception:
         return image
     return crop_to_mask(image, mask > 0)
@@ -82,6 +90,7 @@ def atlas_sized(picture: Image.Image, long_edge: int) -> Image.Image:
 def atlas_picture(
     ctx: Workspace, state: StackState, position_mm: float, *,
     long_edge: int | None = None, prepared: Image.Image | None = None,
+    angles: Angles | None = None,
 ) -> Image.Image:
     """One tissue-framed atlas section at *position_mm*, sized and captioned.
 
@@ -90,16 +99,12 @@ def atlas_picture(
     already drawn at *long_edge*.
     """
     long_edge = long_edge or picture_edge(ctx)
-    angles = (
-        f" pitch {state.pitch_deg:.1f} yaw {state.yaw_deg:.1f}"
-        if state.is_oblique
-        else ""
-    )
+    plane = plane_angles(state, angles)
     return caption(
         prepared if prepared is not None else atlas_sized(
-            atlas_section(ctx, state, position_mm, frame=True), long_edge,
+            atlas_section(ctx, state, position_mm, frame=True, angles=plane), long_edge,
         ),
-        f"atlas {position_mm:.2f} mm{angles}",
+        f"atlas {position_mm:.2f} mm{angles_label(plane)}",
     )
 
 
@@ -113,9 +118,11 @@ def reference_atlas(
     sections from one ``view_atlas`` and then only ever half of a
     comparison pair. The reference spans the atlas's valid range at the
     nominal interval, or coarser when that would exceed *max_images*. Each
-    picture is tissue-framed at the stack's cutting angles and at most
-    *long_edge* (None: the run's opening size), never upsampled; a plane with
-    nothing in it (an oblique plane through the volume's corner) is skipped.
+    picture is tissue-framed at the stack's cutting angles
+    (``StackState.view_angles``: the median of the sections' when they
+    differ) and at most *long_edge* (None: the run's opening size), never
+    upsampled; a plane with nothing in it (an oblique plane through the
+    volume's corner) is skipped.
     :mod:`langslice.core.opening` lays the pictures out as strips.
     """
     pos_lo, pos_hi = ctx.position_range
@@ -126,7 +133,7 @@ def reference_atlas(
     pictures: list[tuple[float, Image.Image]] = []
     for k in range(int(span / step) + 1):
         position = pos_lo + k * step
-        picture = atlas_section(ctx, state, position, frame=True)
+        picture = atlas_section(ctx, state, position, frame=True, angles=state.view_angles)
         if np.asarray(picture).max() < 8:
             continue  # an oblique plane through the volume's corner: nothing to show
         pictures.append((position, atlas_sized(picture, edge)))

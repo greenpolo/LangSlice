@@ -579,6 +579,18 @@ def build_job_statement(
     )
 
 
+
+def stack_angles_fact(state: StackState) -> str:
+    """The job statement's line on the cutting angles: the stack's one
+    angle, or, when the sections differ (a registration supplied per
+    section), that each status row carries its own."""
+    if state.mixed_angles:
+        return ("- Cutting angles: these differ between sections, as supplied; each "
+                "status row carries its own cutting_angles_deg. set_cutting_angles sets "
+                "one angle for every section.")
+    pitch, yaw = state.stack_angles
+    return f"- Stack-wide cutting angles: pitch {pitch:.2f} deg, yaw {yaw:.2f} deg."
+
 def run_facts(
     spec: JobSpec, state: StackState, *, species: str, pos_lo: float,
     pos_hi: float, axis_ends: tuple[str, str],
@@ -605,8 +617,7 @@ def run_facts(
         f"The nominal interval is a protocol value, not a measurement: sections "
         f"can be missing anywhere in the stack, so the spacing between "
         f"neighbours may differ from it.",
-        f"- Stack-wide cutting angles: pitch {state.pitch_deg:.2f} deg, yaw "
-        f"{state.yaw_deg:.2f} deg.",
+        stack_angles_fact(state),
     ]
     facts.append(
         f"- {len(placed)} of {len(state.slices)} sections carry a position."

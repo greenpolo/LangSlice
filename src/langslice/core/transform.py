@@ -76,8 +76,8 @@ def calibrate(
         ctx.atlas,
         record.position_mm or 0.0,
         cast(Plane, state.plane),
-        state.pitch_deg,
-        state.yaw_deg,
+        record.pitch_deg,
+        record.yaw_deg,
     )
     return (estimated or atlas_um_per_px(ctx.atlas)), "estimated"
 
@@ -372,8 +372,8 @@ def fit_silhouette(
             ctx.atlas,
             record.position_mm,
             cast(Plane, state.plane),
-            state.pitch_deg,
-            state.yaw_deg,
+            record.pitch_deg,
+            record.yaw_deg,
         )
         position = record.position_mm
         regions: dict[str, Any] | None = None
@@ -384,7 +384,7 @@ def fit_silhouette(
                        if stored is not None and len(stored) == 6 else np.eye(3)[:2])
             restricted = region_silhouette_fit(section, geometry, ctx.atlas, current,
                                                plane_at=(position, str(state.plane),
-                                                         state.pitch_deg, state.yaw_deg),
+                                                         record.pitch_deg, record.yaw_deg),
                                                include=include, exclude=exclude)
             regions = restricted.report
             left = restricted.left
@@ -396,8 +396,8 @@ def fit_silhouette(
                 atlas=ctx.atlas,
                 position_mm=position,
                 plane=cast(Plane, state.plane),
-                pitch_deg=state.pitch_deg,
-                yaw_deg=state.yaw_deg,
+                pitch_deg=record.pitch_deg,
+                yaw_deg=record.yaw_deg,
             )
             iou = float(fit.iou)
             in_section = _fit_matrix_in_section_frame(
@@ -701,8 +701,8 @@ def fit_elastix(
             ctx.atlas,
             record.position_mm,
             cast(Plane, state.plane),
-            state.pitch_deg,
-            state.yaw_deg,
+            record.pitch_deg,
+            record.yaw_deg,
         )
         fit = elastix_affine(state, ctx, record, start,
                              {"section_um_per_px": um_per_px, "source": source},

@@ -8,8 +8,9 @@ checkpoint and re-seed the agent with the state it had. The job
 The file carries :data:`STATE_FORMAT_VERSION` under ``format_version`` next to
 the state's own fields. A checkpoint without it predates versioning (version
 0); :func:`upgrade_state` converts older versions (version 2 made the paths
-on the section records relative to the job folder) and refuses a file from a
-newer LangSlice, never guessing at it.
+on the section records relative to the job folder; version 3 gave every
+section its own cutting angles, :func:`section_angles`) and refuses a file
+from a newer LangSlice, never guessing at it.
 
 Every checkpoint funnels through :func:`save_checkpoint` (or the job's
 :meth:`~langslice.job.job.Job.checkpoint`, which calls
@@ -43,8 +44,15 @@ FORMAT_KEY = "format_version"
 #: the same fields as the unversioned ones before it. 2 (2026-10-03, the job
 #: folder): every path on a section record (a deformation's ``record``, an
 #: image correction's ``artifact_dir`` and ``artifact_paths``) is relative to
-#: the job folder (:func:`state_paths`).
-STATE_FORMAT_VERSION = 2
+#: the job folder (:func:`state_paths`). 3 (2026-10-04): cutting angles are
+#: per section (``SliceState.cutting_angles_deg``). A state whose sections
+#: share one angle is written exactly as before (the stack's
+#: ``cutting_angles_deg``, nothing on the rows); one whose sections differ
+#: (a registration supplied per section) writes the stack's as null and each
+#: row's own. An older LangSlice refuses format 3, so it never reads a
+#: per-section state as flat; older states load with every section carrying
+#: the stack's angle (:func:`section_angles`).
+STATE_FORMAT_VERSION = 3
 
 #: Called with the state after every atomic write. A list, not a single slot,
 #: so nested runs (tests, a resumed session) can each hold their own observer
@@ -152,6 +160,24 @@ def state_paths(
     return {**data, "slices": slices} if "slices" in data else dict(data)
 
 
+def section_angles(data: dict[str, Any]) -> dict[str, Any]:
+    """*data* (a state's fields before format 3) with every section row
+    carrying the stack's cutting angles (``cutting_angles_deg``; flat when
+    the stack has none). A row that already has its own keeps it; the input
+    is not changed."""
+    stack = data.get("cutting_angles_deg")
+    angles = dict(stack) if isinstance(stack, dict) else {"pitch": 0.0, "yaw": 0.0}
+    if "slices" not in data:
+        return dict(data)
+    rows = [
+        {**row, "cutting_angles_deg": dict(angles)}
+        if isinstance(row, dict) and not isinstance(row.get("cutting_angles_deg"), dict)
+        else row
+        for row in data.get("slices") or []
+    ]
+    return {**data, "slices": rows}
+
+
 def relative_to(root: str | os.PathLike[str]) -> Callable[[str], str]:
     """A path converter: absolute paths inside *root* become relative to it
     (POSIX separators); every other path is kept as it is."""
@@ -178,6 +204,8 @@ def upgrade_state(
     Version 1 stored absolute paths: those inside *root* (the job folder)
     become relative to it, the rest stay as they are (the job folder's
     migration, :mod:`langslice.job.migrate`, moves the old folders first).
+    Before version 3 the cutting angles were the stack's alone: every
+    section is given them (:func:`section_angles`).
     Raises ``ValueError`` for a version this LangSlice does not know.
     """
     version = data.get(FORMAT_KEY, 0)
@@ -190,6 +218,8 @@ def upgrade_state(
     fields = {key: value for key, value in data.items() if key != FORMAT_KEY}
     if version < 2 and root is not None:
         fields = state_paths(fields, relative_to(root))
+    if version < 3:
+        fields = section_angles(fields)
     return fields
 
 

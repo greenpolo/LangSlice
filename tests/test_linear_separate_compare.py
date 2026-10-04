@@ -68,7 +68,7 @@ def test_atlas_reuse_keys_on_exact_position_and_cutting_angles(tmp_path, monkeyp
         return image
 
     monkeypatch.setattr(atlas_fetch, "atlas_section", render)
-    state.cutting_angles_deg["pitch"] = 2.0
+    state.cutting_angles_deg = {"pitch": 2.0, "yaw": 0.0}
     assert _images([reference_atlas_picture(ctx, state, 3.0)])[0] != first
     reference_atlas_picture(ctx, state, 3.0001)
     reference_atlas_picture(ctx, state, 3.0001)

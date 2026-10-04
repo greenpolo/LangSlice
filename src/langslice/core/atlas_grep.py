@@ -13,15 +13,17 @@ from langslice.core.space import Plane
 GREP_ATLAS_LIMIT = 40
 
 
-def plane_structure_ids(state: Any, ctx: Any, position_mm: float) -> set[int]:
-    """Annotation ids present in the atlas plane at a placement and the stack's angles."""
+def plane_structure_ids(
+    state: Any, ctx: Any, position_mm: float, angles: tuple[float, float],
+) -> set[int]:
+    """Annotation ids present in the atlas plane at a placement and *angles*
+    (``(pitch, yaw)``: the section's own)."""
     plane = cast(Plane, state.plane)
-    if state.is_oblique:
+    pitch, yaw = angles
+    if pitch or yaw:
         from langslice.core.oblique import sample_oblique_annotation
 
-        labels = sample_oblique_annotation(
-            ctx.atlas, position_mm, plane, state.pitch_deg, state.yaw_deg
-        )
+        labels = sample_oblique_annotation(ctx.atlas, position_mm, plane, pitch, yaw)
     else:
         idx, axis = _resolve_idx_axis(ctx.atlas, position_mm, plane)
         labels = np.take(np.asarray(ctx.atlas.annotation), idx, axis=axis)

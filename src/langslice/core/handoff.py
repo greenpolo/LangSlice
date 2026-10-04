@@ -168,7 +168,7 @@ def prepare_linear_registration(
         raise ValueError("State and rendering context disagree about the atlas or plane")
     if state.plane not in ("coronal", "sagittal", "horizontal"):
         raise ValueError("Unsupported section plane")
-    if not np.isfinite([state.pitch_deg, state.yaw_deg]).all():
+    if not np.isfinite([record.pitch_deg, record.yaw_deg]).all():
         raise ValueError("Cutting angles must be finite")
     try:
         params = np.asarray(transform["params"], dtype=np.float64)
@@ -199,11 +199,11 @@ def prepare_linear_registration(
     plane = cast(Plane, state.plane)
     atlas_to_slice, geometry = linear_placement_matrix(
         image.size, um_per_px, ctx.atlas, float(record.position_mm), plane,
-        state.pitch_deg, state.yaw_deg, params)
+        record.pitch_deg, record.yaw_deg, params)
     return LinearRegistrationInput(
         image=image.copy(), atlas_to_slice=atlas_to_slice, atlas_name=state.atlas,
         position_mm=float(record.position_mm), plane=plane,
-        pitch_deg=state.pitch_deg, yaw_deg=state.yaw_deg,
+        pitch_deg=record.pitch_deg, yaw_deg=record.yaw_deg,
         metadata={
             "source": "linear_state", "section_id": record.id,
             "orientation": {"rotation_deg": record.rotation_deg, "flip": record.flip},
@@ -241,7 +241,7 @@ def correction_fingerprint(state: StackState, ctx: Workspace, section_id: str) -
     return digest({
         "source": str(source), "source_size": stat.st_size, "source_mtime": stat.st_mtime_ns,
         "section_id": record.id, "atlas": state.atlas, "plane": state.plane,
-        "position_mm": record.position_mm, "angles": state.cutting_angles_deg,
+        "position_mm": record.position_mm, "angles": record.cutting_angles_deg,
         "flip": record.flip, "rotation_deg": record.rotation_deg,
         "transform": {key: transform.get(key) for key in (
             "params", "calibration", "orientation", "stale", "spline",

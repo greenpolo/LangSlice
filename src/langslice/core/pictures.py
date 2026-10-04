@@ -32,7 +32,7 @@ from langslice.core.layers import note
 from langslice.core.sections import render_cache_key
 from langslice.core.sheets import reference_slice_picture, spacing_plot, stack_sheet
 from langslice.core.sizes import opening_edge, picture_edge
-from langslice.core.state import SliceState, StackState
+from langslice.core.state import Angles, SliceState, StackState, plane_angles
 from langslice.core.workspace import Workspace
 
 logger = logging.getLogger(__name__)
@@ -55,14 +55,17 @@ def reference_section_picture(
 
 def reference_atlas_picture(
     ws: Workspace, state: StackState, position_mm: float, *, long_edge: int | None = None,
+    angles: Angles | None = None,
 ) -> Image.Image:
     """:func:`langslice.core.atlas_fetch.atlas_picture`, cached by position,
-    plane, cutting angles and size. Shared: read only."""
+    plane, cutting angles (*angles*: a section's own, or the stack's when
+    None) and size. Shared: read only."""
     long_edge = long_edge or picture_edge(ws)
-    key = ("atlas", state.plane, float(position_mm), state.pitch_deg, state.yaw_deg,
-           int(long_edge))
+    pitch, yaw = plane_angles(state, angles)
+    key = ("atlas", state.plane, float(position_mm), pitch, yaw, int(long_edge))
     if key not in ws.picture_cache:
-        ws.picture_cache[key] = atlas_picture(ws, state, position_mm, long_edge=long_edge)
+        ws.picture_cache[key] = atlas_picture(ws, state, position_mm, long_edge=long_edge,
+                                              angles=(pitch, yaw))
     return ws.picture_cache[key]
 
 
@@ -72,13 +75,18 @@ def atlas_view_picture(
     """The atlas alone at *position_mm*, tissue-framed and captioned.
 
     The default picture (``ara``, no lines, no zoom) is the cached reference;
-    any other options draw it afresh with the call's lines and regions.
+    any other options draw it afresh with the call's lines and regions. No
+    section is drawn, so the plane is the stack's view angles
+    (``StackState.view_angles``: its one angle, or the median of its
+    sections' when they differ), named in the caption when oblique.
     """
+    angles = state.view_angles
     if options.atlas_images == ("ara",) and not options.lines and options.full_view:
-        picture = reference_atlas_picture(ws, state, position_mm, long_edge=options.long_edge)
+        picture = reference_atlas_picture(ws, state, position_mm, long_edge=options.long_edge,
+                                          angles=angles)
     else:
-        picture = caption(framed_atlas(ws, state, position_mm, options),
-                          atlas_caption(state, position_mm, options))
+        picture = caption(framed_atlas(ws, state, position_mm, options, angles=angles),
+                          atlas_caption(state, position_mm, options, angles=angles))
     return note(picture, mode="atlas", extra={"position_mm": float(position_mm)})
 
 
@@ -122,7 +130,8 @@ def stack_review(
         if record.position_mm is None:
             return None
         try:
-            return framed_atlas(ws, state, float(record.position_mm), options)
+            return framed_atlas(ws, state, float(record.position_mm), options,
+                                angles=record.angles)
         except Exception as exc:
             logger.warning("view_stack: atlas render failed for %s: %s", record.id, exc)
             return None

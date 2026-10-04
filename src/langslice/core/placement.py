@@ -194,7 +194,7 @@ def draw_canvas(
             in_section = ((pivot[0] - ox) * fx, (pivot[1] - oy) * fy)
     frame = CanvasFrame(
         section_id=record.id, section=shown, um_per_px=shown_um, position_mm=position,
-        plane=state.plane, pitch_deg=state.pitch_deg, yaw_deg=state.yaw_deg, params=params,
+        plane=state.plane, pitch_deg=record.pitch_deg, yaw_deg=record.yaw_deg, params=params,
         pivot=pivot if in_section is None else None, pivot_in_section=in_section,
         spline=spline, warp=warp, zoom=options.window, long_edge=edge,
     )
@@ -206,13 +206,14 @@ def draw_canvas(
     drawn_mode = mode or options.mode
     images, _iou = physical_views(
         shown, shown_um, ws.atlas, position, cast(Plane, state.plane),
-        state.pitch_deg, state.yaw_deg, params,
+        record.pitch_deg, record.yaw_deg, params,
         mode=drawn_mode, zoom=options.window,
         atlas_opacity=options.atlas_opacity, outlines=options.layer,
         border_color=options.border_color, border_thickness=options.border_thickness,
         pivot=frame.pivot, pivot_in_section=in_section,
         label=canvas_label(label or record.id, options), spline=spline, long_edge=edge,
-        atlas_picture=atlas_image_picture(ws, state, options.atlas_channels, position),
+        atlas_picture=atlas_image_picture(ws, state, options.atlas_channels, position,
+                                          angles=record.angles),
         atlas_name=options.atlas_name(), regions=options.regions,
         matrix_label=matrix_label, template_lines=options.borders, left=left,
         panel_frames=panels,
@@ -303,10 +304,11 @@ def placement_pictures(
     default_atlas = options.atlas_images == ("ara",) and not options.lines
     if options.mode == "side_by_side":
         atlas_image = (
-            reference_atlas_picture(ws, state, position, long_edge=options.long_edge)
+            reference_atlas_picture(ws, state, position, long_edge=options.long_edge,
+                                    angles=record.angles)
             if default_atlas else caption(
-                framed_atlas(ws, state, position, options),
-                atlas_caption(state, position, options),
+                framed_atlas(ws, state, position, options, angles=record.angles),
+                atlas_caption(state, position, options, angles=record.angles),
             )
         )
         tissue_image = reference_section_picture(
@@ -322,7 +324,8 @@ def placement_pictures(
         # the two read at the same size, as in `view_stack`.
         top = framed_section(ws, state, record, options)
         picture = stacked(
-            top, framed_atlas(ws, state, position, options, long_edge=max(top.size), fill=True),
+            top, framed_atlas(ws, state, position, options, long_edge=max(top.size), fill=True,
+                              angles=record.angles),
         )
         name = options.atlas_name()
         return Placed(images=[note(caption(
@@ -432,8 +435,8 @@ def stage(
             ws.atlas,
             float(record.position_mm or 0.0),
             cast(Plane, state.plane),
-            state.pitch_deg,
-            state.yaw_deg,
+            record.pitch_deg,
+            record.yaw_deg,
         )
     except Exception as exc:
         logger.warning("transform: atlas render failed for %s: %s", record.id, exc)

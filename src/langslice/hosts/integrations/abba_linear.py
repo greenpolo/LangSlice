@@ -273,6 +273,11 @@ def measure_axis_offset(
 # ---------------------------------------------------------------------------
 
 
+#: The ``sync_errors`` key under which a mirror refusing a job whose sections
+#: carry different cutting angles keeps why (ABBA has one atlas angle).
+MIXED_ANGLES_KEY = "cutting_angles"
+
+
 class AbbaStackMirror:
     """Push every linear-agent write into a live ABBA session.
 
@@ -392,6 +397,16 @@ class AbbaStackMirror:
             )
 
     def _on_write_unsafe(self, state: StackState) -> None:
+        from langslice.doors.api.abba_worker import ABBA_MIXED_ANGLES
+
+        if state.mixed_angles:
+            # ABBA has one atlas angle for the whole stack: nothing of a job
+            # with an angle per section is mirrored (its placements would be
+            # shown on the wrong plane). Said once, kept in sync_errors.
+            if self.sync_errors.get(MIXED_ANGLES_KEY) != ABBA_MIXED_ANGLES:
+                logger.warning("AbbaStackMirror: %s", ABBA_MIXED_ANGLES)
+            self.sync_errors[MIXED_ANGLES_KEY] = ABBA_MIXED_ANGLES
+            return
         current = state.to_dict()
         previous = self._last_state
         prev_rows = {row["id"]: row for row in (previous or {}).get("slices", [])}
@@ -815,6 +830,10 @@ def run_existing_in_abba(
 
     if not spec.tasks:
         raise ValueError("Select at least one LangSlice task")
+    from langslice.doors.api.abba_worker import refuse_mixed_job
+
+    # The run is fresh (resume off below): only supplied angles can differ.
+    refuse_mixed_job(replace(spec, resume=False))
     if spec.plane != "coronal":
         raise ValueError("The live ABBA adapter currently supports coronal sessions")
     if getattr(abba, "z_axis", "AP") != "AP":
@@ -976,6 +995,7 @@ def run_linear_in_abba(
 
     from langslice.agent.engine import run
     from langslice.core.discovery import discover_slices
+    from langslice.doors.api.abba_worker import refuse_mixed_job
     from langslice.hosts.integrations.abba import (
         GUI_DEPENDENCY,
         enable_langslice_registration,
@@ -983,6 +1003,7 @@ def run_linear_in_abba(
         wait_for_jvm_shutdown,
     )
 
+    refuse_mixed_job(spec)  # ABBA has one atlas angle; refused before it starts
     scyjava.config.endpoints.append(GUI_DEPENDENCY)
 
     abba = Abba(abba_atlas)

@@ -11,6 +11,7 @@ See ``docs/linear_design.md`` for the design this mirrors.
 
 from __future__ import annotations
 
+import math
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -36,6 +37,63 @@ INPUT_KEYS: tuple[str, ...] = (
     "order", "positions", "angles", "orientation", "transforms", "damaged", "locked",
     "pixel_size_um", "channel_names",
 )
+
+#: The two parts of a supplied cutting angle (``inputs.angles``).
+ANGLE_KEYS: tuple[str, ...] = ("pitch", "yaw")
+
+
+def _degrees(value: Any, where: str) -> float:
+    if isinstance(value, (bool, dict, list, tuple)) or value is None:
+        raise ValueError(f"{where} must be a number of degrees; got {value!r}")
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{where} must be a number of degrees; got {value!r}") from None
+    if not math.isfinite(number):
+        raise ValueError(f"{where} must be finite; got {value!r}")
+    return number
+
+
+def _angle_pair(value: dict[str, Any], where: str) -> tuple[float, float]:
+    strange = sorted(str(key) for key in value if key not in ANGLE_KEYS)
+    if strange:
+        raise ValueError(f"{where} takes only pitch and yaw; got {strange}")
+    pitch, yaw = (_degrees(value.get(key, 0.0), f"{where}.{key}") for key in ANGLE_KEYS)
+    return pitch, yaw
+
+
+def supplied_angles(
+    value: Any,
+) -> tuple[tuple[float, float] | None, dict[str, tuple[float, float]]]:
+    """``inputs.angles`` read: ``(stack, per_section)``.
+
+    Two forms. Stack-wide, ``{"pitch": deg, "yaw": deg}`` (the CLI's
+    ``--pitch``/``--yaw``): every section gets that plane, returned as
+    ``((pitch, yaw), {})``. Per section, ``{filename: {"pitch": deg,
+    "yaw": deg}, ...}`` (a registration made elsewhere, each section's own
+    plane): returned as ``(None, {filename: (pitch, yaw)})``; a section it
+    does not name keeps the flat plane. A missing part is 0. The form is
+    read from the values (numbers or objects); a mapping that mixes the two
+    is refused, as are other keys in an angle, and non-finite or
+    non-numeric degrees (``ValueError``). Empty or None: ``(None, {})``.
+    """
+    if value is None or value == {}:
+        return None, {}
+    if not isinstance(value, dict):
+        raise ValueError("inputs.angles must be {pitch, yaw} for the whole stack, or "
+                         "{filename: {pitch, yaw}} per section")
+    nested = [key for key, item in value.items() if isinstance(item, dict)]
+    if not nested:
+        return _angle_pair(value, "inputs.angles"), {}
+    if len(nested) != len(value):
+        flat = sorted(str(key) for key in value if key not in nested)
+        raise ValueError(
+            f"inputs.angles mixes the stack-wide form ({flat}) with per-section "
+            "entries; give either {pitch, yaw} for the whole stack or "
+            "{filename: {pitch, yaw}} for each section")
+    return None, {str(name): _angle_pair(item, f"inputs.angles[{name!r}]")
+                  for name, item in value.items()}
+
 
 #: ``NonlinearSpec.engine`` values: a fixed deformable-fit engine, or the
 #: agent's choice per call.
@@ -233,6 +291,9 @@ class JobSpec:
     #: supplied ``orientation`` is the section's flip and quarter turn (the
     #: ``orient_slices`` data; a supplied transform describes the section
     #: after it), kept as supplied.
+    #: ``angles`` is the whole stack's plane, or per section
+    #: ``{filename: {"pitch": deg, "yaw": deg}}`` (a registration made
+    #: elsewhere keeps each section's own plane; :func:`supplied_angles`).
     #: ``channel_names`` (one name per page of a host's multi-page snapshot)
     #: names its channels. Any other key is refused (:data:`INPUT_KEYS`).
     #: ``damaged`` flags cannot be cleared by the agent. ``locked`` sections
@@ -285,6 +346,7 @@ class JobSpec:
                 raise ValueError(
                     f"Unknown inputs key(s) {strange}; inputs takes only {list(INPUT_KEYS)}"
                 )
+            supplied_angles(self.inputs.get("angles"))
         # Flip moved from reorder to transform (2026-09-29); a host that still
         # sets the old fields keeps working, and old readers see the values
         # that apply.

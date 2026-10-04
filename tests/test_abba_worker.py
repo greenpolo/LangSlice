@@ -212,3 +212,73 @@ def test_output_dir_is_the_job_folder_the_run_used(params, monkeypatch, tmp_path
         finally:
             images.chmod(0o755)
     assert Path(result["output_dir"]) == expected
+
+
+# --- one atlas angle for the whole stack --------------------------------------------
+
+
+def _angled_state(*angles):
+    from langslice.core.state import SliceState, StackState
+
+    slices = [SliceState(id=f"s{i}.tif", index_original=i, index_corrected=i)
+              for i in range(len(angles))]
+    for record, (pitch, yaw) in zip(slices, angles, strict=True):
+        record.cutting_angles_deg = {"pitch": pitch, "yaw": yaw}
+    return StackState(slices=slices)
+
+
+def test_a_checkpoint_with_an_angle_per_section_is_refused_before_abba_sees_it(params):
+    from langslice.doors.api.abba_worker import (
+        ABBA_MIXED_ANGLES,
+        checkpoint_callback,
+        prepare_linear,
+    )
+
+    events = []
+    checkpoint = checkpoint_callback(prepare_linear(params), events.append)
+    checkpoint(_angled_state((0.0, 0.0), (0.0, 0.0)))  # one angle: as before
+    assert len(events) == 1 and events[0]["initial"]
+    with pytest.raises(ValueError, match="cannot show") as refused:
+        checkpoint(_angled_state((0.0, 0.0), (2.0, 0.0)))
+    assert str(refused.value) == ABBA_MIXED_ANGLES
+    assert len(events) == 1  # nothing emitted to the host
+
+
+def test_a_run_ending_with_an_angle_per_section_reports_the_refusal(params, monkeypatch):
+    from langslice.agent import engine
+
+    async def run(spec, *, on_write, on_event, emit):
+        return _angled_state((1.0, 0.0), (0.0, 0.0))
+
+    monkeypatch.setattr(engine, "run", run)
+    with pytest.raises(ValueError, match="cannot show"):
+        run_linear(params, [].append)
+
+
+def test_a_spec_with_differing_section_angles_is_refused_for_abba(tmp_path):
+    from langslice.core.spec import JobSpec
+    from langslice.doors.api.abba_worker import refuse_mixed_job
+
+    def spec(angles, resume=False):
+        return JobSpec(image_folder=str(tmp_path), resume=resume, inputs={"angles": angles})
+
+    refuse_mixed_job(spec({"pitch": 2.0, "yaw": 0.0}))  # stack-wide: one angle
+    refuse_mixed_job(spec({"a.tif": {"pitch": 1.0}, "b.tif": {"pitch": 1.0}}))
+    with pytest.raises(ValueError, match="cannot show"):
+        refuse_mixed_job(spec({"a.tif": {"pitch": 1.0}, "b.tif": {"pitch": 2.0}}))
+
+
+def test_resuming_a_saved_job_with_an_angle_per_section_is_refused_for_abba(tmp_path):
+    from langslice.core.spec import JobSpec
+    from langslice.doors.api.abba_worker import refuse_mixed_job
+    from langslice.job.checkpoint import write_checkpoint
+    from langslice.job.layout import JobLayout
+
+    layout = JobLayout.for_images(tmp_path)
+    layout.folder.mkdir()
+    write_checkpoint(_angled_state((0.0, 0.0), (1.5, 0.0)), str(layout.state_file))
+    with pytest.raises(ValueError, match="cannot show"):
+        refuse_mixed_job(JobSpec(image_folder=str(tmp_path), resume=True))
+    refuse_mixed_job(JobSpec(image_folder=str(tmp_path), resume=False))  # a fresh job
+    write_checkpoint(_angled_state((1.5, 0.0), (1.5, 0.0)), str(layout.state_file))
+    refuse_mixed_job(JobSpec(image_folder=str(tmp_path), resume=True))

@@ -1,4 +1,4 @@
-"""Where sections sit: positions along the slicing axis, and the stack's cutting angles."""
+"""Where sections sit: positions along the slicing axis, and the cutting angles."""
 
 from __future__ import annotations
 
@@ -95,7 +95,10 @@ def set_positions(
 def set_cutting_angles(job: Job, workspace: Workspace, pitch_deg: float, yaw_deg: float) -> None:
     """Set the stack-wide cutting angles (degrees); one undo step.
 
-    Every render cached at the old angles is dropped.
+    Every section gets the one plane: a stack whose sections carried
+    different angles (a registration supplied per section) has one angle
+    afterwards, and undo restores each section's own. Every render cached
+    at the old angles is dropped.
     """
     before = job.snapshot()
     job.state.cutting_angles_deg = {"pitch": float(pitch_deg), "yaw": float(yaw_deg)}
@@ -116,7 +119,8 @@ def search_position(
     and returns the best: ``id``, ``current_position_mm``, ``position_mm``,
     ``pitch_deg``, ``yaw_deg``, ``score``, ``searched_window_mm``,
     ``searched_angles``. *angles* also searches the cutting angles (±15
-    degrees); otherwise they are held at the stack's. Refused:
+    degrees); otherwise they are held at the section's own (the stack's
+    unless a registration was supplied per section). Refused:
     ``UNKNOWN_SLICE_IDS``, ``NO_POSITION``, ``BAD_ARGS`` (a window that is
     not a number), ``FIT_FAILED``.
     """
@@ -136,7 +140,7 @@ def search_position(
         window = max(0.0, float(window_mm))
     except (TypeError, ValueError):
         raise Refused("BAD_ARGS") from None
-    pitch, yaw = state.pitch_deg, state.yaw_deg
+    pitch, yaw = record.angles
     bounds = ((-15.0, 15.0), (-15.0, 15.0)) if angles else ((pitch, pitch), (yaw, yaw))
     section = render_slice(workspace, record, long_edge=512)
     try:

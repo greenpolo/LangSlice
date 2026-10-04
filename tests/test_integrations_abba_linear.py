@@ -361,6 +361,33 @@ def test_on_write_pushes_cutting_angles_to_the_resliced_atlas():
     assert resliced.rotate_x is not None and resliced.rotate_y is not None
 
 
+def test_a_stack_with_an_angle_per_section_is_refused_not_mirrored():
+    """ABBA shows one atlas angle for the whole stack: a job made elsewhere
+    with an angle per section is not pushed at all (its placements would
+    land on the wrong plane), and the mirror says why."""
+    from langslice.doors.api.abba_worker import ABBA_MIXED_ANGLES
+    from langslice.hosts.integrations.abba_linear import MIXED_ANGLES_KEY
+
+    mirror, abba = _mirror()
+    state = _stack()
+    for index, record in enumerate(state.slices):
+        record.position_mm = 2.0 + index
+        record.cutting_angles_deg = {"pitch": float(index), "yaw": 0.0}
+
+    mirror.on_write(state)
+
+    resliced = abba.mp.getReslicedAtlas()
+    assert resliced.rotate_x is None and resliced.rotate_y is None
+    assert abba.mp.moves == []
+    assert mirror.sync_errors[MIXED_ANGLES_KEY] == ABBA_MIXED_ANGLES
+    assert "cannot show" in ABBA_MIXED_ANGLES
+
+    # The same stack set to one angle (set_cutting_angles) mirrors as before.
+    state.cutting_angles_deg = {"pitch": 4.0, "yaw": -2.0}
+    mirror.on_write(state)
+    assert resliced.rotate_x is not None and len(abba.mp.moves) == 3
+
+
 # --- finish ------------------------------------------------------------------
 
 

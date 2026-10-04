@@ -14,6 +14,15 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
+#: How an atlas caption names a plane's cutting angles (:func:`angles_label`).
+ANGLES_LABEL = " pitch {:.1f} yaw {:.1f}"
+
+
+def angles_label(angles: tuple[float, float], template: str = ANGLES_LABEL) -> str:
+    """``(pitch, yaw)`` as a caption shows them; empty for the flat plane."""
+    pitch, yaw = angles
+    return template.format(pitch, yaw) if (pitch or yaw) else ""
+
 #: Font size of the label strip :func:`caption` burns into an image.
 CAPTION_PX = 14
 
