@@ -172,7 +172,11 @@ longer exist be taken over by the images it is opened with.
   second job on the same folder). Why per-step files: the phase-2
   `linear_undo.json` rewrote every whole state on every call (megabytes per
   call on a 40-section stack at depth 50). An unreadable or newer history
-  starts empty (logged).
+  (index, any step, or step files without an index) starts the session
+  without undo and is never deleted: `History.problem` says why (logged,
+  and `Job.open` says it through the progress log), and `save` writes and
+  deletes nothing while it is set; a fresh job reads a history before
+  emptying it. Only a history that was read is pruned.
 - `index.py` — saved host jobs by id: `~/.langslice/jobs/<id>.json`
   (`job_id`, `job_folder`, `host_channel`, `created_at`, and `fallback`
   when the job folder is under `~/.langslice/jobs/` because the image

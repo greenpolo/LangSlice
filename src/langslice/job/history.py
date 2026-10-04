@@ -12,7 +12,11 @@ after each index write.
 
 An unreadable index or step starts the job without a history (logged): the
 history is a convenience, the checkpoint is the record. A history from a
-newer LangSlice is likewise ignored, never guessed at.
+newer LangSlice is likewise ignored, never guessed at. Either way the
+history on disk is left exactly as it is: :attr:`History.problem` is set and
+:meth:`History.save` writes and deletes nothing until a later
+:meth:`History.load` reads a valid one (undo works for the session, in
+memory). Only a history that was read is pruned.
 """
 
 from __future__ import annotations
@@ -57,6 +61,9 @@ class History:
         self.next = 1
         #: id(entry) -> (entry, step file name) for every entry on disk.
         self._known: dict[int, tuple[dict[str, Any], str]] = {}
+        #: Why the history on disk could not be read (None: it was, or there
+        #: is none). While set, :meth:`save` leaves the folder untouched.
+        self.problem: str | None = None
 
     @property
     def index_path(self) -> Path:
@@ -71,35 +78,44 @@ class History:
     def load(self) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         """``(undo, redo)`` from disk, each upgraded; empty without a history."""
         self._known = {}
+        self.problem = None
         try:
             index = json.loads(self.index_path.read_text(encoding="utf-8"))
         except FileNotFoundError:
+            if self.exists():  # step files without their index: not ours to delete
+                return self._unreadable("its index is missing")
             return [], []
-        except (OSError, ValueError):
-            logger.warning("Undo history %s unreadable; starting without it", self.index_path,
-                           exc_info=True)
-            return [], []
+        except (OSError, ValueError) as exc:
+            return self._unreadable(f"its index does not read ({exc})")
         version = index.get(FORMAT_KEY) if isinstance(index, dict) else None
-        if not isinstance(version, int) or version > HISTORY_FORMAT_VERSION:
-            logger.warning("Undo history %s has format %r; starting without it",
-                           self.index_path, version)
-            return [], []
+        if not isinstance(version, int) or isinstance(version, bool) or version < 1:
+            return self._unreadable(f"its index has an unreadable format {version!r}")
+        if version > HISTORY_FORMAT_VERSION:
+            return self._unreadable(f"it was written by a newer LangSlice (format {version})")
         try:
             undo_names = [str(name) for name in index.get("undo") or []]
             redo_names = [str(name) for name in index.get("redo") or []]
             undo = [self._read_step(name) for name in undo_names]
             redo = [self._read_step(name) for name in redo_names]
-        except (OSError, ValueError):
-            logger.warning("Undo history %s unreadable; starting without it", self.index_path,
-                           exc_info=True)
-            return [], []
+        except (OSError, ValueError) as exc:
+            return self._unreadable(f"a step does not read ({exc})")
         self.next = max(int(index.get("next") or 1), 1)
         for entry, name in zip(undo + redo, undo_names + redo_names, strict=True):
             self._known[id(entry)] = (entry, name)
         return undo, redo
 
+    def _unreadable(self, why: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        self.problem = (f"The undo history in {self.folder} cannot be used: {why}. It is left "
+                        "untouched; undo covers this session's steps only.")
+        logger.warning("%s", self.problem)
+        return [], []
+
     def save(self, undo: list[dict[str, Any]], redo: list[dict[str, Any]]) -> None:
-        """Write the steps not on disk yet, then the index; drop the rest."""
+        """Write the steps not on disk yet, then the index; drop the rest.
+        Nothing at all while the history on disk could not be read
+        (:attr:`problem`)."""
+        if self.problem is not None:
+            return
         self.folder.mkdir(parents=True, exist_ok=True)
         known: dict[int, tuple[dict[str, Any], str]] = {}
 

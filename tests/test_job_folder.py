@@ -131,6 +131,44 @@ def test_undo_is_one_file_per_step_and_bounded(tmp_path: Path):
     assert again.redo() and again.state.notes[-1] == f"note {UNDO_DEPTH + 4}"
 
 
+
+@pytest.mark.parametrize("damage", ["step", "newer_index"])
+def test_a_history_that_cannot_be_read_is_never_deleted(tmp_path: Path, damage: str,
+                                                       caplog: Any):
+    """An unreadable step or an index from a newer LangSlice: the job opens
+    without undo for the session, with a warning, and the history on disk
+    is left exactly as it was, through the open and later writes (review
+    finding 4)."""
+    import logging
+
+    folder = _folder(tmp_path / "stack")
+    job, _ctx = _open(folder)
+    for index in range(3):
+        before = job.snapshot()
+        job.state.notes.append(f"note {index}")
+        job.commit(before)
+    history = folder / "langslice" / "history"
+    if damage == "step":
+        (history / "step-000002.json").write_text("{ not json")
+    else:
+        index = json.loads((history / "index.json").read_text())
+        index["format_version"] = 99
+        (history / "index.json").write_text(json.dumps(index))
+    held = {path.name: path.read_bytes() for path in history.iterdir()}
+    with caplog.at_level(logging.WARNING):
+        again, _ = _open(folder)
+    assert again.undo_stack == [] and again.redo_stack == []
+    assert any("history" in record.getMessage() for record in caplog.records)
+    before = again.snapshot()
+    again.state.notes.append("after")
+    again.commit(before)
+    assert again.undo() and again.state.notes[-1] == "note 2"  # this session's own step
+    assert {path.name: path.read_bytes() for path in history.iterdir()} == held
+    # A fresh job on the folder leaves it alone too.
+    fresh, _ = _open(folder, resume=False)
+    assert {path.name: path.read_bytes() for path in history.iterdir()} == held
+    assert fresh.undo_stack == []
+
 # --- migration -------------------------------------------------------------------------------
 
 
