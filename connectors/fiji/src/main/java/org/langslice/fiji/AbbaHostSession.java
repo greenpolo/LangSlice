@@ -539,6 +539,7 @@ final class AbbaHostSession {
         Map<String, String> parameters = new HashMap<>();
         if (warp.has("record") && warp.get("record").isJsonPrimitive()) parameters.put("langslice_record", warp.get("record").getAsString());
         if (warp.has("max_error_mm") && warp.get("max_error_mm").isJsonPrimitive()) parameters.put("langslice_max_error_mm", warp.get("max_error_mm").getAsString());
+        if (warp.has("p99_error_mm") && warp.get("p99_error_mm").isJsonPrimitive()) parameters.put("langslice_p99_error_mm", warp.get("p99_error_mm").getAsString());
         reg.setRegistrationParameters(parameters);
         reg.setRegistrationName(WARP_NAME);
         if (!reg.isRegistrationDone()) throw new IllegalStateException("Warp serialization failed.");

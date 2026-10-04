@@ -76,8 +76,10 @@ checkpoint that changes nothing leaves ABBA's Redo history alone). Per section i
 at most a LangSlice affine step (`AffineRegistration`, "LangSlice affine") and on top
 of it a LangSlice warp step (`BigWarpSource2DRegistration`, "LangSlice warp"), above
 the registrations the section had when the run started. A row's `warp` is
-`{source_mm, target_mm, record, max_error_mm, points}` in the centred ABBA world-mm
-frame (rows of x then y; point pairs are also read), and the step's thin-plate spline
+`{source_mm, target_mm, record, max_error_mm, p99_error_mm, points}` in the centred ABBA
+world-mm frame (rows of x then y; point pairs are also read; the two errors are how far
+ABBA's spline is from LangSlice's deformation, measured off the points: never a reason
+to withhold the warp, and logged per section), and the step's thin-plate spline
 maps `target_mm` onto `source_mm`, the same pull-back as the legacy spline rows,
 applied after the affine step; `warp: null` removes the step. Order: delete the warp,
 delete the affine when the placement changes, append the new affine, append the new

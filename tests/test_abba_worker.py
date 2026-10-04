@@ -415,7 +415,11 @@ def test_an_applied_deformation_lands_as_warp_pairs_on_the_affine(warped):
     tracker(job.state)
     row = _row(events[-1], ID0)
     warp = row["warp"]
-    assert set(warp) == {"source_mm", "target_mm", "record", "max_error_mm", "points"}
+    assert set(warp) == {"source_mm", "target_mm", "record", "max_error_mm", "p99_error_mm",
+                         "points"}
+    assert 0 < warp["p99_error_mm"] <= warp["max_error_mm"]
+    logged = [e["message"] for e in events if e.get("kind") == "log" and ID0 in e["message"]]
+    assert any("deformation sent to ABBA" in m and "landmarks" in m for m in logged)
     source = np.asarray(warp["source_mm"]).T
     target = np.asarray(warp["target_mm"]).T
     assert len(warp["source_mm"]) == 2 and source.shape == (warp["points"], 2)

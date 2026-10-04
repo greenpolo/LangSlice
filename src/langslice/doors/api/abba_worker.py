@@ -467,8 +467,9 @@ class HostCheckpoints:
         return warps
 
     def _warp(self, state: Any, record: Any, key: str) -> dict[str, Any] | None:
-        """The warp row of *record*'s applied deformation *key* (None, with a
-        log message, when it cannot be expressed in ABBA)."""
+        """The warp row of *record*'s applied deformation *key*, its measured
+        error logged; None, with a log message, when its record cannot be
+        read or its thin-plate spline folds at every grid."""
         from langslice.core.deformation import linear_key
 
         cache_key = (record.id, key, linear_key(state, record))
@@ -481,6 +482,12 @@ class HostCheckpoints:
             self.emit({"kind": "log", "message": (
                 f"{record.id}: its deformation is not sent to ABBA ({exc}); ABBA shows "
                 "the linear placement for this section.")})
+        else:
+            self.emit({"kind": "log", "message": (
+                f"{record.id}: deformation sent to ABBA as {row['points']} landmarks; "
+                f"ABBA's thin-plate spline differs from it by at most "
+                f"{row['max_error_mm'] * 1000:.1f} um (99% of points within "
+                f"{row['p99_error_mm'] * 1000:.1f} um).")})
         self._warp_cache[cache_key] = row
         return row
 
@@ -502,6 +509,7 @@ class HostCheckpoints:
         return {"source_mm": source.T.tolist(), "target_mm": target.T.tolist(),
                 "record": str(held.get("record") or key),
                 "max_error_mm": float(report["max_error_mm"]),
+                "p99_error_mm": float(report["p99_error_mm"]),
                 "points": int(report["points"])}
 
 

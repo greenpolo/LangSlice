@@ -33,10 +33,12 @@ other module whose imports are core-only:
   (`warp_world_landmarks(frame, record, params, size=, pixel_size_um=)`:
   `source` = a section point as the affine step placed it, `target` = where
   the deformation takes it, centred world mm, the frame derived from
-  `normalized_to_abba_affine` and `maps.native_points`; adaptive 9x9 to
-  33x33 grid, the TPS pull-back checked within 5 um at off-grid probes, the
-  exact map's and the TPS's sampled Jacobians checked for folds; refused
-  otherwise). `abba_angles.py`: ABBA's `ReslicedAtlas` rotations <->
+  `normalized_to_abba_affine` and `maps.native_points`; a 9x9 to 33x33
+  grid, growing until the TPS pull-back is within 5 um at off-grid probes;
+  past 33x33 the pairs are sent anyway with the error measured
+  (`max_error_mm`, `p99_error_mm`, `within_tolerance`: the product chose
+  speed over accuracy, 2026-10-04); the largest grid whose TPS does not
+  fold is sent, and only a TPS folding at every grid is refused). `abba_angles.py`: ABBA's `ReslicedAtlas` rotations <->
   pitch/yaw (`PITCH_TO_ROTATE_X_SIGN`, `YAW_TO_ROTATE_Y_SIGN`, both -1;
   `angles_to_rotate`, `rotate_to_angles`; SliceBench reads the constants
   through the `langslice.integrations.abba_linear` shim).

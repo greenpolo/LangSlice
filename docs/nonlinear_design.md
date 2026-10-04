@@ -176,8 +176,9 @@ In ABBA (the Fiji connector, 2026-10-04) the nonlinear step is the linear
 agent's own `trace_borders` / `fit_deformable` on the connector's
 snapshots; an applied deformation lands in ABBA as a BigWarp warp step on
 top of LangSlice's affine step (`core/abba_warp.py`: landmark pairs in
-ABBA's centred world frame, a 9x9..33x33 TPS checked within 5 µm, folds
-refused). The abba-python registration plugin that sampled ABBA's
+ABBA's centred world frame, a 9x9..33x33 TPS that stops growing once
+within 5 µm and is otherwise sent at 33x33 with its measured error; only a
+TPS that folds at every grid is refused). The abba-python registration plugin that sampled ABBA's
 coordinate channels was removed that day.
 
 Do not infer left-right reflection from a nearly symmetric tissue silhouette.
