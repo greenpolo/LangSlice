@@ -1,0 +1,19 @@
+{
+ "args": [
+  "Still not reviewed.",
+  [],
+  []
+ ],
+ "data": {
+  "detail": "view_stack has not run since the last set_positions write",
+  "error": "NOT_REVIEWED",
+  "status": "refused"
+ },
+ "door": "gated",
+ "images": [],
+ "kwargs": {
+  "tool_context": "<ToolContext> ToolContext('s1')"
+ },
+ "media_texts": [],
+ "tool": "submit"
+}

@@ -1,0 +1,61 @@
+{
+ "args": [
+  [
+   {
+    "id": "s1.png",
+    "positions_mm": [
+     0.16
+    ]
+   }
+  ]
+ ],
+ "data": {
+  "compared": [
+   {
+    "calibration": {
+     "source": "host",
+     "um_per_px": 31.25
+    },
+    "current_position_mm": 0.15,
+    "id": "s1.png",
+    "position_mm": 0.16,
+    "transform": "identity"
+   }
+  ],
+  "description": "Shown, in order: s1.png at 0.16 mm; the images of each pair in that order, each captioned with the section and the position it is shown at.",
+  "media_delivery_id": "c3",
+  "no_position": [],
+  "render_failed": [],
+  "status": "ok",
+  "unknown_ids": [],
+  "view": {
+   "atlas_channels": [
+    "ara"
+   ],
+   "deformation": "applied",
+   "mode": "template",
+   "zoom": [
+    0.0,
+    0.0,
+    1.0,
+    1.0
+   ]
+  }
+ },
+ "door": "gated",
+ "images": [
+  {
+   "file": "093_gated_view_placement.0.png",
+   "mode": "RGB",
+   "size": [
+    338,
+    332
+   ]
+  }
+ ],
+ "kwargs": {
+  "tool_context": "<ToolContext> ToolContext('c3')"
+ },
+ "media_texts": [],
+ "tool": "view_placement"
+}

@@ -1,0 +1,13 @@
+{
+ "call": {
+  "arguments": {},
+  "tool": "undo"
+ },
+ "content": [
+  {
+   "text": "{\"status\": \"error\", \"error\": \"NOTHING_TO_UNDO\"}"
+  }
+ ],
+ "door": "resume",
+ "images": []
+}

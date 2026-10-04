@@ -1,0 +1,13 @@
+{
+ "call": {
+  "arguments": {},
+  "tool": "redo"
+ },
+ "content": [
+  {
+   "text": "{\"status\": \"error\", \"error\": \"NOTHING_TO_REDO\"}"
+  }
+ ],
+ "door": "resume",
+ "images": []
+}

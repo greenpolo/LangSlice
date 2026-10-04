@@ -18,7 +18,15 @@ Four doors are covered:
   the status table, the tool declarations) and stops the session.
 - ``mcp``: the MCP server driven by an in-memory client (``start_job``,
   ``show_stack`` pages and a few tools), as Claude hosts see it.
-- the final stack state of the main toolbox.
+- ``gated``: the look-before-commit gates and the model-delivery
+  bookkeeping on a ``position.gated`` toolbox: a write refused until the
+  placement was viewed, a picture returned in the same model round and
+  suppressed once delivered (by call id, and for direct calls by
+  ``begin_model_call``), submit refused until ``view_stack``.
+- ``resume``: a checkpoint -> reload -> continue round trip through the MCP
+  door: one server writes, a second server on the same folder resumes from
+  the checkpoint and carries on (including ``undo``/``redo`` across it).
+- the final stack state of the main toolbox and of the resumed job.
 
 Everything goes through public entry points (``build_tools``, ``engine.run``,
 ``mcp_server.server.build_server``). The few internals touched are listed in
@@ -521,6 +529,81 @@ def record_auto_toolbox(rec: Recorder, folder: Path) -> list[str]:
     return box.names
 
 
+# --- door 1c: the look-before-commit gates and the delivery bookkeeping ----------------
+
+
+class ToolContext:
+    """The two things a tool reads from ADK's tool context: its call id, and
+    the actions ``submit`` escalates."""
+
+    def __init__(self, call_id: str) -> None:
+        self.function_call_id = call_id
+        self.actions = type("Actions", (), {"escalate": False})()
+
+    def __repr__(self) -> str:
+        return f"ToolContext({self.function_call_id!r})"
+
+
+def record_gated_toolbox(rec: Recorder, folder: Path) -> list[str]:
+    """Positions behind the gates, with pictures promoted to seen per model round.
+
+    ``mark_placement_views_delivered`` is what the ADK driver calls once a
+    model request carried a call's pictures; ``begin_model_call`` promotes
+    direct calls (no tool context), as the MCP door does before every call.
+    """
+    from langslice.linear.engine import build_context, ingest
+    from langslice.linear.spec import JobSpec, PositionSpec
+    from langslice.linear.toolbox import build_tools
+
+    spec = JobSpec(
+        image_folder=str(folder), model="fake-model", preprocess="none",
+        tasks=["reorder", "position"], inputs={"pixel_size_um": PIXEL_SIZE_UM},
+        position=PositionSpec(gated=True),
+    )
+    ctx = build_context(spec, emit=lambda _m: None, atlas_loader=atlas_loader())
+    state = ingest(spec, ctx)
+    box = build_tools(state, ctx, spec)
+    t = tool_map(box)
+    door = "gated"
+
+    def call(name: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        return rec.tool(door, t, name, *args, **kwargs)
+
+    def delivered(*ids: str) -> None:
+        box.mark_placement_views_delivered(set(ids))
+        rec.raw(door, "delivered", {"delivery_ids": sorted(ids)})
+
+    # Not viewed yet: refused.
+    call("set_positions", [{"id": ID0, "position_mm": 0.1}], tool_context=ToolContext("w0"))
+    call("view_placement", [{"id": ID0, "positions_mm": [0.1]}], tool_context=ToolContext("c1"))
+    # Same model round as the view: the write still returns its picture.
+    call("set_positions", [{"id": ID0, "position_mm": 0.1}], tool_context=ToolContext("w1"))
+    # A stale id from replayed history promotes nothing.
+    delivered("old-call")
+    delivered("c1", "w1")
+    call("view_placement", [{"id": ID0, "positions_mm": [0.1]}, {"id": ID1, "positions_mm": [0.15]},
+                            {"id": ID2, "positions_mm": [0.2]}], tool_context=ToolContext("c2"))
+    # ID0 at 0.1 was delivered: suppressed. ID1's view is still pending: pictured.
+    call("set_positions", [{"id": ID0, "position_mm": 0.1}, {"id": ID1, "position_mm": 0.15}],
+         tool_context=ToolContext("w2"))
+    # A direct call (no tool context), promoted at the next model-call boundary.
+    call("view_placement", [{"id": ID2, "positions_mm": [0.2]}])
+    box.begin_model_call()
+    rec.raw(door, "begin_model_call", {})
+    call("set_positions", [{"id": ID2, "position_mm": 0.2}])
+    call("submit", "Not reviewed yet.", [], [], tool_context=ToolContext("s0"))
+    call("view_stack")
+    # A write needs a new view of that section, and a new review.
+    call("set_positions", [{"id": ID1, "position_mm": 0.16}], tool_context=ToolContext("w3"))
+    call("view_placement", [{"id": ID1, "positions_mm": [0.16]}], tool_context=ToolContext("c3"))
+    call("set_positions", [{"id": ID1, "position_mm": 0.16}], tool_context=ToolContext("w4"))
+    call("submit", "Still not reviewed.", [], [], tool_context=ToolContext("s1"))
+    call("view_stack")
+    call("submit", "Placed behind the gates.", [], [], tool_context=ToolContext("s2"))
+    rec.raw("state", "final_gated", {"state": state.to_dict()})
+    return box.names
+
+
 # --- door 2: the engine's first model request ---------------------------------------
 
 
@@ -645,6 +728,63 @@ def record_mcp(rec: Recorder, folder: Path) -> None:
         rec.blocks("mcp", name, {"tool": name, "arguments": arguments}, blocks)
 
 
+# --- door 3b: checkpoint -> reload -> continue, through the MCP door ----------------------
+
+
+def record_mcp_resume(rec: Recorder, folder: Path) -> None:
+    """Two servers on one folder: the second resumes the first's checkpoint."""
+    from mcp.shared.memory import create_connected_server_and_client_session
+
+    from langslice.linear.checkpoint import default_checkpoint_path, load_checkpoint
+    from langslice.linear.spec import JobSpec
+    from langslice.mcp_server.server import build_server
+
+    positions = {ID0: 0.1, ID1: 0.15, ID2: 0.2}
+
+    def spec_for(image_folder: str) -> JobSpec:
+        return JobSpec(image_folder=image_folder, preprocess="none", tasks=["transform"],
+                       resume=True,
+                       inputs={"pixel_size_um": PIXEL_SIZE_UM, "positions": positions})
+
+    first: list[tuple[str, dict[str, Any]]] = [
+        ("adjust_transforms", {"entries": [{"id": ID0, "rotation_deg": 2.0, "scale_x": 1.0,
+                                            "scale_y": 1.0, "translate_x_mm": 0.01,
+                                            "translate_y_mm": 0.0}]}),
+        ("fit_affine", {"slices": [ID1], "method": "silhouette"}),
+        ("note", {"text": "First server: two sections aligned."}),
+    ]
+    second: list[tuple[str, dict[str, Any]]] = [
+        ("start_job", {}),
+        ("status", {}),
+        ("undo", {}),
+        ("redo", {}),
+        ("adjust_transforms", {"entries": [{"id": ID2, "rotation_deg": -1.0, "scale_x": 1.0,
+                                            "scale_y": 1.0, "translate_x_mm": 0.0,
+                                            "translate_y_mm": 0.0}]}),
+        ("submit", {"summary": "resumed and finished", "notes": [], "interval_breaks": []}),
+    ]
+
+    def session(label: str, calls: list[tuple[str, dict[str, Any]]]) -> None:
+        server = build_server(spec_for, str(folder), atlas_loader=atlas_loader())
+
+        async def main() -> list[tuple[str, dict[str, Any], list[Any]]]:
+            out: list[tuple[str, dict[str, Any], list[Any]]] = []
+            async with create_connected_server_and_client_session(server) as client:
+                for name, arguments in calls:
+                    result = await client.call_tool(name, arguments)
+                    out.append((name, arguments, list(result.content)))
+            return out
+
+        for name, arguments, blocks in asyncio.run(main()):
+            rec.blocks("resume", f"{label}_{name}", {"tool": name, "arguments": arguments},
+                       blocks)
+
+    session("first", first)
+    session("second", second)
+    saved = load_checkpoint(default_checkpoint_path(str(folder)))
+    rec.raw("state", "final_resumed", {"state": saved.to_dict() if saved else None})
+
+
 # --- everything -------------------------------------------------------------------------
 
 
@@ -660,14 +800,17 @@ def record(out: Path) -> dict[str, Any]:
     with tempfile.TemporaryDirectory(prefix="langslice-golden-") as temporary:
         root = Path(temporary)
         rec = Recorder(out, root)
-        folders = {name: root / name for name in ("tools", "auto", "engine", "mcp")}
+        folders = {name: root / name
+                   for name in ("tools", "auto", "gated", "engine", "mcp", "resume")}
         for folder in folders.values():
             write_sections(folder)
         main_names, _state = record_full_toolbox(rec, folders["tools"])
         auto_names = record_auto_toolbox(rec, folders["auto"])
+        gated_names = record_gated_toolbox(rec, folders["gated"])
         record_engine_request(rec, folders["engine"])
         record_mcp(rec, folders["mcp"])
-        built = sorted(set(main_names) | set(auto_names))
+        record_mcp_resume(rec, folders["resume"])
+        built = sorted(set(main_names) | set(auto_names) | set(gated_names))
         missing = sorted(set(built) - rec.called)
         if missing:
             raise RuntimeError(
@@ -677,6 +820,7 @@ def record(out: Path) -> dict[str, Any]:
             "tools_built": built,
             "tools_full_spec": sorted(main_names),
             "tools_auto_spec": sorted(auto_names),
+            "tools_gated_spec": sorted(gated_names),
             "calls": rec.count,
         }
         (out / "manifest.json").write_text(canonical(summary), encoding="utf-8")

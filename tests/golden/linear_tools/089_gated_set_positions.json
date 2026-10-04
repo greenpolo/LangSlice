@@ -1,0 +1,48 @@
+{
+ "args": [
+  [
+   {
+    "id": "s2.png",
+    "position_mm": 0.2
+   }
+  ]
+ ],
+ "data": {
+  "changed": [
+   {
+    "damaged": false,
+    "flip": false,
+    "id": "s2.png",
+    "index": 2,
+    "position_mm": 0.2,
+    "rotation_deg": 0
+   }
+  ],
+  "clamped": [],
+  "cutting_angles_deg": {
+   "pitch": 0.0,
+   "yaw": 0.0
+  },
+  "description": "No images: every written placement was already seen. Already-seen placements not pictured: s2.png.",
+  "images_suppressed_seen": [
+   "s2.png"
+  ],
+  "interval_breaks": [],
+  "n_sections": 3,
+  "rejected": [],
+  "render_failed": [],
+  "status": "ok",
+  "unknown_ids": [],
+  "written": [
+   {
+    "id": "s2.png",
+    "position_mm": 0.2
+   }
+  ]
+ },
+ "door": "gated",
+ "images": [],
+ "kwargs": {},
+ "media_texts": [],
+ "tool": "set_positions"
+}

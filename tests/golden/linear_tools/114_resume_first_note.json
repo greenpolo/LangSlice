@@ -1,0 +1,15 @@
+{
+ "call": {
+  "arguments": {
+   "text": "First server: two sections aligned."
+  },
+  "tool": "note"
+ },
+ "content": [
+  {
+   "text": "{\"status\": \"ok\", \"notes\": [\"ingest: 3 sections, atlas allen_mouse_25um (coronal) spans 0.00-0.25 mm\", \"inputs: 3 position(s) set by the host\", \"First server: two sections aligned.\"]}"
+  }
+ ],
+ "door": "resume",
+ "images": []
+}
