@@ -87,8 +87,8 @@ border route (`core/nonlinear/`).
   transport.
 - `src/langslice/hosts/` -- host connectors in LangSlice's own environment:
   `integrations/` (the abba-python registration plugin and the live linear
-  mirror), `api/` (the stdio service used by non-Python clients and the ABBA
-  plugin's `nonlinear.abba` worker) and `cli.py` (the `abba` and `serve`
+  mirror), `api/` (the stdio service used by non-Python clients) and
+  `cli.py` (the `abba` and `serve`
   commands, which the `langslice` command loads by module path).
 - `src/langslice/cli.py` -- the `langslice` command's entry point
   (`langslice.cli:main`).
@@ -113,7 +113,7 @@ engine contract is defined with Pydantic models in `src/langslice/doors/api/mode
 `langslice serve --stdio` runs the newline-delimited JSON engine service. It
 accepts `version`, `quick_affine.run`, and `export.run`, plus
 `setup.status`, `setup.login`, `setup.api_key`, `linear.run`, `linear.estimate`,
-`preprocess.preview` and `nonlinear.abba` for the independent Fiji connector. It emits progress/log/data event envelopes
+`preprocess.preview` for the independent Fiji connector. It emits progress/log/data event envelopes
 and returns either result or error envelopes. The connector starts a worker in
 the selected Python environment; it does not require `abba_python`. See
 [the connector design](abba_plugin_design.md) and
