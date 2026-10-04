@@ -150,7 +150,9 @@ def test_an_affine_fit_whose_section_moved_meanwhile_is_refused(capsys, images, 
 def test_cli_processes_writing_at_once_all_land(images):
     # Each commit waits 0.4 s inside its write: without the lock, writers
     # that read the state before another's commit would overwrite it.
-    env = {**os.environ, "PYTHONPATH": str(REPO), "LANGSLICE_TEST_COMMIT_DELAY": "0.4"}
+    # This checkout's src first: the venv's editable install may be another's.
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join((str(REPO / "src"), str(REPO))),
+           "LANGSLICE_TEST_COMMIT_DELAY": "0.4"}
 
     def start(*argv: str) -> subprocess.Popen[str]:
         return subprocess.Popen([sys.executable, "-m", "tests.cli_child", "job", str(images),
