@@ -24,12 +24,34 @@ def test_zero_residual_retains_initial_affine_with_rounding_and_padding():
     np.testing.assert_allclose(dense[0, 0], expected_origin[:2])
     assert markers
     for marker, pair in zip(markers, native, strict=True):
-        source = np.array([*marker[:2], 1])
+        # VisuAlign's order: [x_overlay, y_overlay, x_image, y_image].
+        source = np.array([*marker[2:], 1])
         expected_native = np.linalg.inv(initial) @ source
         expected_target = np.linalg.inv(original_to_canvas) @ canonical @ expected_native
         np.testing.assert_allclose(pair[2:], expected_native[:2], atol=1e-10)
-        np.testing.assert_allclose(marker[2:], expected_target[:2], atol=1e-10)
+        np.testing.assert_allclose(marker[:2], expected_target[:2], atol=1e-10)
     assert not np.allclose(np.array(markers)[:, :2], np.array(markers)[:, 2:])
+
+
+def test_markers_are_in_visualign_order_like_the_job_exports():
+    """``[x_overlay, y_overlay, x_image, y_image]``, the order VisuAlign's
+    JSON, PyNutil's ``visualign_deformations.py`` (as SliceBench reads the
+    Carey 2026 markers) and ``core.maps.residual_markers`` use: the image
+    side is the regular sampling grid, the overlay side where each image
+    point's atlas position sits under the linear anchoring (review finding
+    14)."""
+    canvas = pixel_center_map((60, 40), (60, 40))
+    field = np.zeros((40, 60, 2))
+    field[..., 0] = 2.0  # output pixel q lies on the placed atlas at q + (2, 0)
+    markers, native = registration.composed_correspondences(
+        field, canvas, canvas, np.eye(3))
+    rows = np.asarray(markers)
+    image_side, overlay_side = rows[:, 2:4], rows[:, 0:2]
+    xs, ys = np.unique(image_side[:, 0]), np.unique(image_side[:, 1])
+    assert len(xs) * len(ys) == len(rows)  # the image side is the lattice
+    assert xs[0] == 0 and ys[0] == 0
+    np.testing.assert_allclose(overlay_side - image_side, [[2.0, 0.0]] * len(rows))
+    np.testing.assert_allclose(np.asarray(native)[:, :2], image_side)
 
 
 class _Calls(list):

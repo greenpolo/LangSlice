@@ -168,7 +168,7 @@ def test_region_overlay_accepts_a_mismatched_canvas_size() -> None:
 
 def test_marker_grid_reshapes_and_deformation_grid_renders() -> None:
     markers = [
-        [float(x), float(y), float(x) + 5.0, float(y)]
+        [float(x) + 5.0, float(y), float(x), float(y)]  # [overlay, image]
         for y in (0, 25, 50)
         for x in (0, 25, 50, 75)
     ]

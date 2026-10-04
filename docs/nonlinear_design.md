@@ -195,9 +195,12 @@ border-fit deformation. Composition happens in
 
 - `composed_correspondences` samples the residual field every
   `marker_spacing_px` (1/36 of the long edge, at least 32 px) and
-  returns two coordinate lists: `markers` (slice pixel → canonical
-  letterboxed-atlas-canvas pixel, the VisuAlign convention) and `direct`
-  (slice pixel → native atlas pixel, unambiguous atlas-grid coordinates).
+  returns two coordinate lists: `markers` (each slice pixel and the
+  canonical letterboxed-atlas-canvas pixel it lands on, in VisuAlign's
+  order `[x_overlay, y_overlay, x_image, y_image]`, the order the job
+  folder's `exports/visualign.json` and SliceBench use) and `direct`
+  (`[slice_x, slice_y, native_x, native_y]`, unambiguous atlas-grid
+  coordinates).
   Both are reported in unpadded original-image pixel units.
 - `composed_native_map` composes every residual sample with the initial
   placement to give a dense per-pixel native-atlas coordinate map
