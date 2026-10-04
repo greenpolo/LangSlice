@@ -27,15 +27,13 @@ from langslice.core.nonlinear.prior import place_plane_on_tissue_with_matrix, ti
 from langslice.core.nonlinear.prompts import pass1_atlas_prompt, pass2_atlas_prompt
 from langslice.core.nonlinear.types import (
     Deformation,
+    GeneratedSegmentation,
     RegistrationAnnotationSession,
     RegistrationCandidate,
-)
-from langslice.core.space import Plane, atlas_space_context, orient_slice_to_axes
-from langslice.providers.images import (
     SegmentationGenerationRequest,
-    generate_warped_segmentation_image,
 )
-from langslice.providers.registry import canonical_provider
+from langslice.core.provider_names import canonical_provider
+from langslice.core.space import Plane, atlas_space_context, orient_slice_to_axes
 
 if TYPE_CHECKING:
     from langslice.providers.registry import ImageCall
@@ -200,12 +198,20 @@ def generate_border_registration_candidate(
     "atlas" without any model call: it is treated as that route's own final
     output. No reflection is inferred from symmetric tissue;
     ``atlas_mirror_lr`` is the only source of it.
-    *image_call* is the image model's edit (default: the transport adapter
-    for *provider*).
+    *image_call* is the image model's edit, resolved by the caller
+    (:func:`langslice.providers.registry.resolve_image_model`); a model call
+    without one is refused.
     """
     if passes not in (1, 2):
         raise ValueError("passes must be 1 or 2")
-    edit = image_call or generate_warped_segmentation_image
+
+    def edit(request: SegmentationGenerationRequest) -> GeneratedSegmentation:
+        if image_call is None:
+            raise ValueError(
+                "no image_call: pass the resolved image model's call"
+                " (providers.registry.resolve_image_model(provider).call)"
+            )
+        return image_call(request)
     if on_progress:
         on_progress("Preparing rough atlas boundaries on the original section...")
     candidate_id = candidate_id or f"candidate-{uuid.uuid4().hex[:12]}"

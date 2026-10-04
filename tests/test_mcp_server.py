@@ -238,8 +238,8 @@ def test_show_stack_page_budget_and_corrected_order(tmp_path: Path):
 
 
 def test_saved_job_settings_and_offline_submission(tmp_path: Path, monkeypatch: Any):
+    from langslice.doors.api import claude_jobs
     from langslice.doors.mcp.server import host_tool, open_saved_job
-    from langslice.hosts.api import claude_jobs
 
     folder = _folder(tmp_path)
     monkeypatch.setattr(claude_jobs, "jobs_root", lambda: tmp_path / "jobs")
@@ -305,8 +305,8 @@ def test_host_channel_loopback_envelopes_and_disconnect():
 def test_job_validation_and_no_image_provider(tmp_path: Path, monkeypatch: Any):
     import pytest
 
+    from langslice.doors.api import claude_jobs
     from langslice.doors.mcp.server import open_job
-    from langslice.hosts.api import claude_jobs
 
     monkeypatch.setattr(claude_jobs, "jobs_root", lambda: tmp_path / "jobs")
     with pytest.raises(ValueError, match="Invalid LangSlice job id"):
@@ -318,8 +318,8 @@ def test_job_validation_and_no_image_provider(tmp_path: Path, monkeypatch: Any):
 
 
 def test_saved_job_start_over_mcp_ignores_development_defaults(tmp_path: Path, monkeypatch: Any):
-    from langslice.hosts.api import claude_jobs, setup
-    from langslice.hosts.api.models import EngineRequest
+    from langslice.doors.api import claude_jobs, setup
+    from langslice.doors.api.models import EngineRequest
     from langslice.hosts.api.service import handle_request
 
     monkeypatch.setattr(claude_jobs, "jobs_root", lambda: tmp_path / "jobs")
@@ -354,7 +354,7 @@ def test_cli_prepared_folder_job_lives_next_to_the_sections_and_resumes(
     tmp_path: Path, monkeypatch: Any, capsys: Any
 ):
     from langslice.cli import main
-    from langslice.hosts.api import claude_jobs
+    from langslice.doors.api import claude_jobs
 
     monkeypatch.setattr(claude_jobs, "jobs_root", lambda: tmp_path / "jobs")
     folder = _folder(tmp_path)
@@ -399,7 +399,7 @@ def test_cli_prepared_folder_job_lives_next_to_the_sections_and_resumes(
 def test_a_saved_job_opened_at_startup_lists_its_tools_from_the_first_request(
     tmp_path: Path, monkeypatch: Any
 ):
-    from langslice.hosts.api import claude_jobs
+    from langslice.doors.api import claude_jobs
 
     monkeypatch.setattr(claude_jobs, "jobs_root", lambda: tmp_path / "jobs")
     job = claude_jobs.prepare_folder(

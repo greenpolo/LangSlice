@@ -3,8 +3,10 @@
 ``langslice.cli:main`` (the installed entry point) is :func:`main` here.
 Groups: :mod:`~langslice.doors.cli.linear` (``linear run``, ``linear
 quick-affine`` and the shared job flags), :mod:`~langslice.doors.cli.register`
-(``nonlinear register``), :mod:`~langslice.doors.cli.hosts` (``abba``,
-``serve``, ``mcp``, ``claude prepare``), and the agent CLI:
+(``nonlinear register``), :mod:`~langslice.doors.cli.claude` (``mcp``,
+``claude prepare``), the host commands (``abba``, ``serve``:
+:mod:`langslice.hosts.cli`, loaded by module path through
+``HOST_COMMANDS``, so the doors never import a host), and the agent CLI:
 :mod:`~langslice.doors.cli.job` (``job FOLDER VERB``) and
 :mod:`~langslice.doors.cli.catalog` (``ops``, ``schema``).
 """
@@ -12,20 +14,18 @@ quick-affine`` and the shared job flags), :mod:`~langslice.doors.cli.register`
 from __future__ import annotations
 
 import argparse
+import importlib
 import sys
+from typing import Any
 
 import langslice
 from langslice.doors.cli.catalog import add_parsers as add_catalog_parsers
 from langslice.doors.cli.catalog import run_ops, run_schema
-from langslice.doors.cli.hosts import (
-    add_abba_parser,
+from langslice.doors.cli.claude import (
     add_claude_prepare_parser,
     add_mcp_parser,
-    add_serve_parser,
-    run_abba,
     run_claude_prepare,
     run_mcp,
-    run_serve,
 )
 from langslice.doors.cli.job import add_parser as add_job_parser
 from langslice.doors.cli.job import run as run_job
@@ -39,6 +39,20 @@ from langslice.doors.cli.register import add_register_parser, run_register
 
 #: The agent CLI's commands: JSON on stdout, an exit code returned.
 AGENT_COMMANDS = {"job": run_job, "ops": run_ops, "schema": run_schema}
+
+#: The commands that drive a host (the hosts layer), by module path: command
+#: -> (module, its add-parser function, its run function). The module is
+#: imported when the parser is built, never statically, so the doors never
+#: import a host (import-linter's layers contract).
+HOST_COMMANDS = {
+    "abba": ("langslice.hosts.cli", "add_abba_parser", "run_abba"),
+    "serve": ("langslice.hosts.cli", "add_serve_parser", "run_serve"),
+}
+
+
+def _host_command(command: str, part: int) -> Any:
+    module, *functions = HOST_COMMANDS[command]
+    return getattr(importlib.import_module(module), functions[part])
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -74,11 +88,9 @@ def build_parser() -> argparse.ArgumentParser:
     nonlinear_sub = nonlinear.add_subparsers(dest="subcommand", required=True)
     add_register_parser(nonlinear_sub)
 
-    # langslice abba
-    add_abba_parser(subparsers)
-
-    # langslice serve
-    add_serve_parser(subparsers)
+    # langslice abba, langslice serve (the host commands, loaded on demand)
+    for command in HOST_COMMANDS:
+        _host_command(command, 0)(subparsers)
 
     # langslice mcp
     add_mcp_parser(subparsers)
@@ -110,12 +122,12 @@ def main(argv: list[str] | None = None) -> int | None:
     args = parser.parse_args(argv)
     if args.command in AGENT_COMMANDS:
         if args.command == "job" and args.verb.replace("-", "_") == "trace_borders":
-            from langslice.hosts.api.setup import apply_saved_credentials
+            from langslice.doors.api.setup import apply_saved_credentials
 
             apply_saved_credentials()  # the image model's keys
         return AGENT_COMMANDS[args.command](args)
     if args.command not in {"serve", "login", "version"}:
-        from langslice.hosts.api.setup import apply_saved_credentials
+        from langslice.doors.api.setup import apply_saved_credentials
 
         apply_saved_credentials()
 
@@ -130,16 +142,14 @@ def main(argv: list[str] | None = None) -> int | None:
         from langslice.providers.openai_oauth import login
 
         print(f"Signed in. Credentials saved to {login()}")
-    elif command == "abba":
-        run_abba(args)
+    elif command in HOST_COMMANDS:
+        _host_command(command, 1)(args)
     elif command == "register":
         run_register(args)
     elif command == "quick-affine":
         run_quick_affine(args)
     elif command == "run":
         run_linear(args)
-    elif command == "serve":
-        run_serve(args)
     elif command == "mcp":
         run_mcp(args)
     elif command == "prepare":

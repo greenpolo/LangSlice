@@ -7,7 +7,7 @@ from collections.abc import Callable
 from contextlib import contextmanager
 from pathlib import Path
 
-from langslice.hosts.api.models import (
+from langslice.doors.api.models import (
     EngineLogEvent,
     EngineProgressEvent,
     ExportRequest,

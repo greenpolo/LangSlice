@@ -6,8 +6,8 @@ from typing import Any, cast
 
 import pytest
 
-from langslice.hosts.api import runtime
-from langslice.hosts.api.models import EngineLogEvent, EngineRequest, RegisterResult
+from langslice.doors.api import runtime
+from langslice.doors.api.models import EngineLogEvent, EngineRequest, RegisterResult
 from langslice.hosts.api.service import handle_request, run_stdio
 
 
@@ -125,7 +125,7 @@ def test_validation_error_for_unknown_param_key() -> None:
 
 
 def test_setup_status_does_not_import_registration_runtime(monkeypatch, tmp_path):
-    from langslice.hosts.api import setup
+    from langslice.doors.api import setup
 
     monkeypatch.setattr(setup, "setup_status", lambda: {"protocol_version": 1})
     messages = _run_lines(json.dumps({"id": "setup", "method": "setup.status"}))
@@ -133,7 +133,7 @@ def test_setup_status_does_not_import_registration_runtime(monkeypatch, tmp_path
 
 
 def test_login_url_is_a_structured_event(monkeypatch):
-    from langslice.hosts.api import setup
+    from langslice.doors.api import setup
 
     def login(on_url, timeout_s):
         assert timeout_s == 30
@@ -152,7 +152,7 @@ def test_login_url_is_a_structured_event(monkeypatch):
 
 
 def test_api_key_validation_and_exception_never_echo_secret(monkeypatch):
-    from langslice.hosts.api import setup
+    from langslice.doors.api import setup
 
     secret = "test-private-api-key"
     invalid = _run_lines(json.dumps({
@@ -174,7 +174,7 @@ def test_api_key_validation_and_exception_never_echo_secret(monkeypatch):
 
 
 def test_linear_service_emits_checkpoint_before_result(monkeypatch):
-    from langslice.hosts.api import abba_worker, setup
+    from langslice.doors.api import abba_worker, setup
 
     monkeypatch.setattr(setup, "apply_saved_credentials", lambda: None)
 
@@ -195,7 +195,7 @@ def test_native_stdout_is_separate_from_wire_in_real_process(tmp_path):
 
     script = """
 import os
-from langslice.hosts.api import setup
+from langslice.doors.api import setup
 from langslice.hosts.api.service import run_stdio
 def status():
     print('Python diagnostic')

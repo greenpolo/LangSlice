@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from langslice.core.spec import JobSpec
-    from langslice.hosts.api.models import PreprocessPreviewRequest, PreprocessPreviewResult
+    from langslice.doors.api.models import PreprocessPreviewRequest, PreprocessPreviewResult
 
 Emit = Callable[[dict[str, Any]], None]
 _SUPPORTED_ATLASES = {"allen_mouse_10um", "allen_mouse_25um", "allen_mouse_50um"}
@@ -55,8 +55,8 @@ def _host_updates(
     A locked section's in-plane geometry belongs to the host: no orientation
     or transform row is ever emitted for it.
     """
-    from langslice.hosts.integrations.abba_affine import normalized_to_abba_affine
-    from langslice.hosts.integrations.abba_spline import spline_world_landmarks
+    from langslice.core.abba_affine import normalized_to_abba_affine
+    from langslice.core.abba_spline import spline_world_landmarks
 
     prior = {row["id"]: row for row in previous["slices"]}
     updates = []
@@ -106,7 +106,7 @@ def _preprocessing(value: Any) -> dict[str, Any] | None:
     """The host's preprocessing settings, shape-checked, or None when absent."""
     if value is None:
         return None
-    from langslice.hosts.api.models import PreprocessingSettings
+    from langslice.doors.api.models import PreprocessingSettings
 
     return PreprocessingSettings.model_validate(value).model_dump()
 
@@ -351,7 +351,7 @@ def preview_preprocess(request: PreprocessPreviewRequest) -> PreprocessPreviewRe
     no atlas, no engine import.
     """
     from langslice.core.image_prep import host_preprocess, read_pages
-    from langslice.hosts.api.models import PreprocessPreviewResult
+    from langslice.doors.api.models import PreprocessPreviewResult
 
     source = Path(request.image_path).expanduser().resolve(strict=True)
     output = Path(request.output_path).expanduser()
@@ -363,42 +363,3 @@ def preview_preprocess(request: PreprocessPreviewRequest) -> PreprocessPreviewRe
     return PreprocessPreviewResult(
         output_path=str(output), width=image.width, height=image.height,
     )
-
-
-def run_nonlinear(params: dict[str, Any], emit: Emit) -> dict[str, Any]:
-    """Refine host placement; return atlas -> histology pairs in fixed-grid pixels."""
-    import numpy as np
-    import tifffile
-
-    from langslice.hosts.integrations.abba import (
-        LangSliceAbbaConfig,
-        compute_registration_landmarks,
-    )
-
-    coords_path = Path(params["coords_path"]).expanduser().resolve(strict=True)
-    histology_path = Path(params["histology_path"]).expanduser().resolve(strict=True)
-    if coords_path.suffix.lower() == ".npy":
-        coords = np.load(coords_path, allow_pickle=False)
-    else:
-        coords = np.moveaxis(tifffile.imread(coords_path), 0, -1)
-    histology = tifffile.imread(histology_path)
-    if histology.ndim == 3 and histology.shape[0] == 1:
-        histology = histology[0]
-    if (coords.ndim != 3 or coords.shape[-1] != 3 or histology.ndim != 2
-            or coords.shape[:2] != histology.shape or not np.isfinite(coords).all()
-            or not np.isfinite(histology).all()):
-        raise ValueError("Finite AP/DV/ML coordinates and grayscale histology must share one grid")
-    config = LangSliceAbbaConfig(**(params.get("config") or {}))
-    if config.atlas_name not in _SUPPORTED_ATLASES:
-        raise ValueError("The Fiji connector currently requires the Allen Mouse atlas")
-    _finite_positive(config.voxel_size_um, "Registration voxel size")
-    if not isinstance(config.landmark_grid, int) or config.landmark_grid < 2:
-        raise ValueError("Landmark grid must contain at least two points per axis")
-    emit({"kind": "log", "message": "Refining ABBA's current atlas placement"})
-    source, target = compute_registration_landmarks(coords, histology, config)
-    if (source.ndim != 2 or source.shape[1] != 2 or len(source) < 3
-            or target.shape != source.shape or not np.isfinite(source).all()
-            or not np.isfinite(target).all()):
-        raise ValueError("Registration returned invalid paired landmarks")
-    return {"source_points": source.tolist(), "target_points": target.tolist(),
-            "coordinate_frame": "fixed_grid_pixels"}

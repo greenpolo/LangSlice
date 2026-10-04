@@ -6,8 +6,8 @@ from types import SimpleNamespace
 import pytest
 from PIL import Image
 
-from langslice.hosts.api import runtime
-from langslice.hosts.api.models import RegisterRequest
+from langslice.doors.api import runtime
+from langslice.doors.api.models import RegisterRequest
 
 
 def _stub_image_prep(monkeypatch) -> None:  # noqa: ANN001

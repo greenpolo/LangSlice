@@ -11,8 +11,8 @@ from typing import TextIO, cast
 
 from pydantic import ValidationError
 
-from langslice.hosts.api import runtime
-from langslice.hosts.api.models import (
+from langslice.doors.api import runtime
+from langslice.doors.api.models import (
     EngineDataEvent,
     EngineError,
     EngineErrorEnvelope,
@@ -65,7 +65,7 @@ def handle_request(request: EngineRequest, emit: EmitEventEnvelope) -> EngineRes
         ))
 
     if request.method.startswith("setup."):
-        from langslice.hosts.api import setup
+        from langslice.doors.api import setup
 
         if request.method == "setup.status":
             if request.params:
@@ -96,7 +96,7 @@ def handle_request(request: EngineRequest, emit: EmitEventEnvelope) -> EngineRes
 
     if request.method == "preprocess.preview":
         # Local image work only: no model, no credentials, no engine import.
-        from langslice.hosts.api.abba_worker import preview_preprocess
+        from langslice.doors.api.abba_worker import preview_preprocess
 
         preview = preview_preprocess(PreprocessPreviewRequest.model_validate(request.params))
         return EngineResultEnvelope(
@@ -104,22 +104,24 @@ def handle_request(request: EngineRequest, emit: EmitEventEnvelope) -> EngineRes
         )
 
     if request.method == "claude.prepare":
-        from langslice.hosts.api.claude_jobs import prepare_claude
+        from langslice.doors.api.claude_jobs import prepare_claude
 
         return EngineResultEnvelope(
             id=request.id, type="result", result=prepare_claude(request.params),
         )
 
     if request.method != "version":
-        from langslice.hosts.api.setup import apply_saved_credentials
+        from langslice.doors.api.setup import apply_saved_credentials
 
         apply_saved_credentials()
 
     if request.method in {"linear.run", "nonlinear.abba"}:
-        from langslice.hosts.api import abba_worker
+        from langslice.doors.api import abba_worker
+        from langslice.hosts.api import nonlinear_worker
 
         operation = (
-            abba_worker.run_linear if request.method == "linear.run" else abba_worker.run_nonlinear
+            abba_worker.run_linear if request.method == "linear.run"
+            else nonlinear_worker.run_nonlinear
         )
         data = operation(request.params, data_emit)
         return EngineResultEnvelope(id=request.id, type="result", result=data)

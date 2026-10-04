@@ -2,7 +2,7 @@
 import numpy as np
 import pytest
 
-from langslice.hosts.integrations.abba_spline import spline_world_landmarks
+from langslice.core.abba_spline import spline_world_landmarks
 
 
 def test_spline_world_landmarks_preserve_axis_direction_and_orientation():
@@ -54,7 +54,7 @@ def test_elastix_export_samples_full_pullback_and_centers_world_frame(monkeypatc
 
 def test_elastix_export_verifies_nonlinear_offgrid_accuracy(monkeypatch):
     from langslice.core import landmark_warp
-    from langslice.hosts.integrations.abba_spline import _sample_elastix_landmarks
+    from langslice.core.abba_spline import _sample_elastix_landmarks
 
     class Exact:
         def inverse(self, points):
@@ -77,7 +77,7 @@ def test_elastix_export_verifies_nonlinear_offgrid_accuracy(monkeypatch):
 
 def test_elastix_export_refuses_folded_map_before_native_replacement(monkeypatch):
     from langslice.core import landmark_warp
-    from langslice.hosts.integrations.abba_spline import _sample_elastix_landmarks
+    from langslice.core.abba_spline import _sample_elastix_landmarks
 
     class Folded:
         def inverse(self, points):
@@ -89,7 +89,7 @@ def test_elastix_export_refuses_folded_map_before_native_replacement(monkeypatch
 
 
 def test_elastix_export_requires_saved_domain():
-    from langslice.hosts.integrations.abba_spline import _sample_elastix_landmarks
+    from langslice.core.abba_spline import _sample_elastix_landmarks
 
     with pytest.raises(ValueError, match="domain_mm"):
         _sample_elastix_landmarks({})

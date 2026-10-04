@@ -140,7 +140,7 @@ class NonlinearSpec:
     notes: str = ""
 
     def __post_init__(self) -> None:
-        from langslice.providers.registry import CANONICAL_PROVIDERS, canonical_provider
+        from langslice.core.provider_names import CANONICAL_PROVIDERS, canonical_provider
 
         if self.engine not in DEFORMABLE_ENGINES:
             raise ValueError(
@@ -154,7 +154,7 @@ class NonlinearSpec:
     @property
     def uses_image_model(self) -> bool:
         """Whether the image model is part of this run (provider is not ``none``)."""
-        from langslice.providers.registry import canonical_provider
+        from langslice.core.provider_names import canonical_provider
 
         return canonical_provider(str(self.provider or "")) != "none"
 

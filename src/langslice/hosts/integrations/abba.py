@@ -490,3 +490,30 @@ def run_gui_session(
 
     install_menu(abba)
     wait_for_jvm_shutdown()
+
+
+def prepare_spline_registration(abba: Any, source_mm: np.ndarray, target_mm: np.ndarray) -> Any:
+    """Prepare a serializable, completed native BigWarp step without opening UI.
+
+    Building and round-tripping it happens before removing any previous step.
+    ``setTransform`` marks the native plugin complete; RegisterSliceAction then
+    appends it directly instead of calling its interactive ``register`` method.
+    """
+    from scyjava import jimport  # pyright: ignore[reportMissingImports]
+
+    BigWarp = jimport(
+        "ch.epfl.biop.registration.sourceandconverter.bigwarp.SacBigWarp2DRegistration"
+    )
+    ctx = abba.ij.context()
+    service = ctx.getService(jimport("org.scijava.plugin.PluginService").class_)
+    registration = service.getPlugin(BigWarp.class_).createInstance()
+    registration.setScijavaContext(ctx)
+    # Legacy TPS pairs reproduce the Python pullback exactly. Elastix pairs
+    # approximate its exact pullback within the checked export tolerance.
+    registration.setRealTransform(_build_java_tps(target_mm, source_mm))
+    registration.setTransform(registration.getTransform())
+    registration.setRegistrationParameters(jimport("java.util.HashMap")())
+    registration.setRegistrationName("LangSlice landmarks")
+    if not registration.isRegistrationDone():
+        raise RuntimeError("ABBA could not prepare the landmark spline registration")
+    return registration

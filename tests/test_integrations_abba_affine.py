@@ -5,8 +5,8 @@ from typing import Any
 import numpy as np
 import pytest
 
+from langslice.core.abba_affine import normalized_to_abba_affine
 from langslice.core.affine import normalized_affine, physical_affine_matrix
-from langslice.hosts.integrations.abba_affine import normalized_to_abba_affine
 
 
 @pytest.mark.parametrize("rotation_deg", [0, 90, 180, 270])

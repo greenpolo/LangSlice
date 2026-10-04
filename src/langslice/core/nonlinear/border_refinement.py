@@ -22,12 +22,9 @@ from langslice.core.nonlinear.image_gen_helpers import (
     line_width_px,
 )
 from langslice.core.nonlinear.prompts import border_refinement_prompt
+from langslice.core.nonlinear.types import SegmentationGenerationRequest
+from langslice.core.provider_names import canonical_provider
 from langslice.core.space import Plane
-from langslice.providers.images import (
-    SegmentationGenerationRequest,
-    generate_warped_segmentation_image,
-)
-from langslice.providers.registry import canonical_provider
 
 if TYPE_CHECKING:
     from langslice.providers.registry import ImageCall
@@ -201,8 +198,12 @@ def refine_borders(
             {**metadata, "model_called": False, "model_free": True},
         )
     if generated_image is None:
-        edit = image_call or generate_warped_segmentation_image
-        generated = edit(SegmentationGenerationRequest(
+        if image_call is None:
+            raise ValueError(
+                "no image_call: pass the resolved image model's call"
+                " (providers.registry.resolve_image_model(provider).call)"
+            )
+        generated = image_call(SegmentationGenerationRequest(
             slice_image=rough, reference_images=[original], prompt=prompt,
             provider=provider, model=model, review_model=review_model,
             openai_image_route=openai_image_route, thinking_level=thinking_level,

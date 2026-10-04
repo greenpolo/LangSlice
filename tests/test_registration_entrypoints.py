@@ -8,7 +8,7 @@ import pytest
 from PIL import Image
 from pydantic import ValidationError
 
-from langslice.hosts.api.models import RegisterRequest
+from langslice.doors.api.models import RegisterRequest
 
 
 class CapturedRequest(Exception):
@@ -28,7 +28,7 @@ def test_api_rejects_invalid_alignment(matrix):
 
 
 def test_the_api_door_resolves_the_image_model_it_hands_in(tmp_path, monkeypatch):
-    from langslice.hosts.api.runtime import run_register
+    from langslice.doors.api.runtime import run_register
 
     image_path = tmp_path / "image.png"
     Image.new("RGB", (40, 30), "gray").save(image_path)
@@ -49,7 +49,7 @@ def test_the_api_door_resolves_the_image_model_it_hands_in(tmp_path, monkeypatch
 
 @pytest.mark.parametrize("supplied", [False, True])
 def test_api_resize_preserves_pixel_centres(tmp_path, monkeypatch, supplied):
-    from langslice.hosts.api.runtime import run_register
+    from langslice.doors.api.runtime import run_register
 
     image_path = tmp_path / "image.png"
     Image.new("RGB", (301, 199), "gray").save(image_path)
@@ -146,7 +146,7 @@ def test_api_returns_prepared_frame_provenance_without_remapping_markers(
     from types import SimpleNamespace
 
     from langslice.core.nonlinear.types import RegistrationAnnotationSession
-    from langslice.hosts.api.runtime import run_register
+    from langslice.doors.api.runtime import run_register
 
     image_path = tmp_path / "image.png"
     Image.new("RGB", (301, 199), "gray").save(image_path)
@@ -207,7 +207,7 @@ def test_cli_alignment_json_and_mirror(tmp_path, monkeypatch, wrapped):
         received.append(request)
         raise CapturedRequest
 
-    monkeypatch.setattr("langslice.hosts.api.runtime.run_register", capture)
+    monkeypatch.setattr("langslice.doors.api.runtime.run_register", capture)
     with pytest.raises(CapturedRequest):
         run_register_cli(args)
     assert received[0].initial_atlas_to_slice == matrix

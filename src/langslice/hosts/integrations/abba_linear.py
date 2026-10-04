@@ -512,7 +512,7 @@ class AbbaStackMirror:
         """Push the agent's in-plane affine as a registration step, replacing
         (never stacking) a LangSlice affine this mirror already pushed."""
         if transform is not None and transform.get("spline") is not None:
-            from langslice.hosts.integrations.abba_spline import spline_world_landmarks
+            from langslice.core.abba_spline import spline_world_landmarks
 
             geometry = self._snapshot_geometry.get(slice_id)
             if geometry is None:
@@ -534,7 +534,7 @@ class AbbaStackMirror:
         had = self._has_affine.get(slice_id, False)
         geometry = self._snapshot_geometry.get(slice_id)
         if transform is not None and geometry is not None:
-            from langslice.hosts.integrations.abba_affine import normalized_to_abba_affine
+            from langslice.core.abba_affine import normalized_to_abba_affine
 
             size, pixel_size_um = geometry
             matrix = normalized_to_abba_affine(
@@ -679,7 +679,7 @@ class AbbaStackMirror:
         ).runRequest()
 
     def _prepare_spline_registration(self, source: Any, target: Any) -> Any:
-        from langslice.hosts.integrations.abba_spline import prepare_spline_registration
+        from langslice.hosts.integrations.abba import prepare_spline_registration
 
         return prepare_spline_registration(self.abba, source, target)
 
