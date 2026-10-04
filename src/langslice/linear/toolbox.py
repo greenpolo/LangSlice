@@ -100,6 +100,13 @@ from langslice.linear.transform import (
     physical_decomposition,
 )
 from langslice.linear.view_options import Profile, parse_view, view_schema
+from langslice.ops import appearance as ops_appearance
+from langslice.ops import damage as ops_damage
+from langslice.ops import notes as ops_notes
+from langslice.ops import order as ops_order
+from langslice.ops import orientation as ops_orientation
+from langslice.ops import positions as ops_positions
+from langslice.ops.refusal import Refused
 from langslice.space import Plane
 
 if TYPE_CHECKING:  # ponytail: import cycle — engine builds the toolbox
@@ -110,9 +117,6 @@ logger = logging.getLogger(__name__)
 #: Sections one ``view_slices`` call may return, or candidate pairs per compare.
 #: Separate reference comparisons return up to two images per candidate pair.
 MAX_VIEW_SLICES = MAX_IMAGES_PER_CALL
-
-#: Rotations ``orient_slices`` accepts.
-_ROTATIONS = (0, 90, 180, 270)
 
 #: Views ``adjust_transforms`` composes on top of the renderer's own
 #: (:data:`~langslice.linear.render.VIEW_MODES`): the A/B toggle, which is two
@@ -604,7 +608,6 @@ def build_tools(
     box = ToolBox(job)
     pos_lo, pos_hi = ctx.position_range
     locked = job.locked
-    host_damaged = job.host_damaged
     over_cap = job.over_cap
     #: The image model is part of this run: trace_borders and traced images exist.
     traces_on = spec.nonlinear.uses_image_model
@@ -633,12 +636,17 @@ def build_tools(
             "interval_breaks": list(state.interval_breaks),
         }
 
+    def answered(*touched: str) -> dict[str, Any]:
+        """A write's answer: ``ok`` and the rows it changed (the operation
+        itself took the undo step and the checkpoint)."""
+        return {"status": "ok", **changed(list(touched))}
+
     def commit(before: dict[str, Any], *touched: str) -> dict[str, Any]:
         """One undo step (*before*: the job's snapshot) and the checkpoint;
         answer with the rows the write changed. One tool call = one step,
         batch included."""
         job.commit(before)
-        return {"status": "ok", **changed(list(touched))}
+        return answered(*touched)
 
     def forget_looks(before: dict[str, Any]) -> None:
         """A position moved by undo, redo or a reload is a write to it: that
@@ -680,19 +688,6 @@ def build_tools(
             else:
                 known.append(record)
         return known, unknown
-
-    def renumber(order: list[SliceState]) -> list[str]:
-        """Apply a new corrected order; return the ids whose index changed.
-
-        Only ``index_corrected`` moves. Positions and transforms stay where
-        they are; ``submit`` is what holds order and position together.
-        """
-        moved: list[str] = []
-        for index, record in enumerate(order):
-            if record.index_corrected != index:
-                moved.append(record.id)
-            record.index_corrected = index
-        return moved
 
     # --- always on ------------------------------------------------------
 
@@ -941,13 +936,10 @@ def build_tools(
         Args:
             text: The note.
         """
-        cleaned = str(text or "").strip()
-        if not cleaned:
-            return {"status": "error", "error": "BAD_ARGS"}
-        before = job.snapshot()
-        state.notes.append(cleaned)
-        job.commit(before)
-        return {"status": "ok", "notes": list(state.notes)}
+        try:
+            return {"status": "ok", "notes": ops_notes.add_note(job, text)}
+        except Refused as refusal:
+            return refusal.payload()
 
     def undo() -> dict[str, Any]:
         """Undo the last write. One tool call undoes as one step."""
@@ -987,27 +979,10 @@ def build_tools(
         if any(not isinstance(entry, dict)
                or not isinstance(entry.get("damaged", True), bool) for entry in entries):
             return {"status": "error", "error": "BAD_ARGS"}
-        before = job.snapshot()
-        marked: list[str] = []
-        unmarked: list[str] = []
-        unknown: list[str] = []
-        rejected: list[dict[str, str]] = []
-        for entry in entries:
-            if not isinstance(entry, dict):
-                continue
-            record = state.resolve(entry.get("id", ""))
-            if record is None:
-                unknown.append(str(entry.get("id", "")))
-                continue
-            if record.id in host_damaged and not entry.get("damaged", True):
-                rejected.append({"id": record.id, "error": "DAMAGE_SET_BY_USER"})
-                continue
-            record.damaged = entry.get("damaged", True)
-            record.damage_note = str(entry.get("note", "")).strip() if record.damaged else ""
-            (marked if record.damaged else unmarked).append(record.id)
-        return {"marked": marked, "unmarked": unmarked, "unknown_ids": unknown,
-                **({"rejected": rejected} if rejected else {}),
-                **commit(before, *marked, *unmarked)}
+        done = ops_damage.mark_damaged(job, entries)
+        return {"marked": done.marked, "unmarked": done.unmarked, "unknown_ids": done.unknown,
+                **({"rejected": done.rejected} if done.rejected else {}),
+                **answered(*done.touched)}
 
     def submit(
         summary: str,
@@ -1189,21 +1164,20 @@ def build_tools(
             return options
 
         pictured = targets[0]  # "both" writes one setting to both targets
-        before = job.snapshot()
         ids = [record.id for record in scope] if slices else None
         parts: list[types.Part] = []
         try:
-            # BEFORE is drawn first, from the settings as they stand.
+            # BEFORE is drawn first, from the settings as they stand; AFTER
+            # from the settings the write will leave. Written only once every
+            # picture is drawn.
             earlier = [
                 (record, looks.section_settings(state, pictured, record.id),
                  framed_section(ctx, state, record, options,
                                 look=looks.section_settings(state, pictured, record.id)))
                 for record in shown
             ]
-            for name in targets:
-                looks.set_settings(state, name, ids, settings)
             for record, was, picture in earlier:
-                now = looks.section_settings(state, pictured, record.id)
+                now = ops_appearance.planned_settings(state, pictured, ids, settings, record.id)
                 label = f"{record.index_corrected}: {record.id}  {pictured} appearance"
                 parts.append(image_to_part(caption(
                     picture, f"{label}  BEFORE ({looks.describe(was)})")))
@@ -1211,22 +1185,13 @@ def build_tools(
                     framed_section(ctx, state, record, options, look=now),
                     f"{label}  AFTER ({looks.describe(now)})")))
         except Exception as exc:
-            state.restore(before)
             return {"status": "error", "error": "RENDER_FAILED", "message": str(exc)}
-        job.commit(before)
-        in_force = {
-            name: (
-                {"sections": {record.id: looks.section_settings(state, name, record.id)
-                              for record in scope}}
-                if ids else {"stack": looks.section_settings(state, name, "")}
-            )
-            for name in targets
-        }
+        written = ops_appearance.set_appearance(job, targets, ids, settings)
         return {
             "status": "ok",
             "targets": targets,
             "scope": ids or "stack",
-            "settings": in_force,
+            "settings": written.in_force,
             "channels": channel_summary(scope),
             "shown": [record.id for record in shown],
             "image_indexes": {record.id: {"before": 2 * slot, "after": 2 * slot + 1}
@@ -1290,48 +1255,8 @@ def build_tools(
         options = display(ORIENT_VIEW, view, sections=named)
         if isinstance(options, dict):
             return options
-        before = job.snapshot()
-        applied: list[str] = []
-        unknown: list[str] = []
-        rejected: list[dict[str, Any]] = []
-        cleared: list[str] = []
-        for entry in entries:
-            if not isinstance(entry, dict):
-                continue
-            record = state.resolve(entry.get("id", ""))
-            if record is None:
-                unknown.append(str(entry.get("id", "")))
-                continue
-            if record.id in locked:
-                rejected.append({"id": record.id, "error": "LOCKED"})
-                continue
-            was = (record.flip, record.rotation_deg)
-            if "flip" in entry and entry["flip"] is not None:
-                if not spec.transform.flip:
-                    rejected.append({"id": record.id, "error": "FLIP_DISABLED"})
-                else:
-                    record.flip = bool(entry["flip"])
-            if "rotate_deg" in entry and entry["rotate_deg"] is not None:
-                try:
-                    rotation = int(entry["rotate_deg"]) % 360
-                except (TypeError, ValueError):
-                    rotation = -1
-                if rotation not in _ROTATIONS:
-                    rejected.append(
-                        {
-                            "id": record.id,
-                            "error": "BAD_ROTATION",
-                            "allowed": list(_ROTATIONS),
-                        }
-                    )
-                else:
-                    record.rotation_deg = rotation
-            if (record.flip, record.rotation_deg) != was and record.transform is not None:
-                # A transform describes the section AFTER its orientation, so
-                # an orientation change makes the old one stale.
-                record.transform = None
-                cleared.append(record.id)
-            applied.append(record.id)
+        done = ops_orientation.orient_sections(job, entries)
+        applied = done.applied
         parts: list[types.Part] = []
         failed: list[dict[str, str]] = []
         for name in applied[:MAX_VIEW_SLICES]:
@@ -1344,10 +1269,10 @@ def build_tools(
                 failed.append({"id": name, "message": str(exc)})
         return {
             "applied": applied,
-            "cleared_transforms": cleared,
-            "unknown_ids": unknown,
-            "rejected": rejected,
-            **commit(before, *applied),
+            "cleared_transforms": done.cleared_transforms,
+            "unknown_ids": done.unknown,
+            "rejected": done.rejected,
+            **answered(*done.touched),
             "description": (
                 "Attached images are "
                 + ", ".join(applied[:MAX_VIEW_SLICES])
@@ -1376,30 +1301,11 @@ def build_tools(
             Changed rows and moved ids. Only corrected indices change; positions
             and transforms are kept. The whole call is one undoable write.
         """
-        if (not isinstance(slices, list) or not slices
-                or any(not isinstance(item, str) for item in slices)
-                or not isinstance(after, str)):
-            return {"status": "error", "error": "BAD_ARGS"}
-        ids = {record.id for record in state.slices}
-        selected = set(slices)
-        unknown = sorted(selected - ids)
-        if unknown:
-            return {"status": "error", "error": "UNKNOWN_SLICE_IDS", "unknown": unknown}
-        if len(selected) != len(slices):
-            return {"status": "error", "error": "DUPLICATE_SLICE_IDS"}
-        if after != "start" and after not in ids:
-            return {"status": "error", "error": "UNKNOWN_SLICE_IDS", "unknown": [after]}
-        if after in selected:
-            return {"status": "error", "error": "BAD_ARGS",
-                    "message": "after must name a section outside slices"}
-
-        records = {record.id: record for record in state.slices}
-        remaining = [record for record in state.in_order() if record.id not in selected]
-        index = 0 if after == "start" else remaining.index(records[after]) + 1
-        ordered = remaining[:index] + [records[name] for name in slices] + remaining[index:]
-        before = job.snapshot()
-        moved = renumber(ordered)
-        return {"moved": moved, **commit(before, *moved)}
+        try:
+            done = ops_order.reorder(job, slices, after)
+        except Refused as refusal:
+            return refusal.payload()
+        return {"moved": done.moved, **answered(*done.touched)}
 
     if spec.has("reorder"):
         box.tools.append(reorder_slices)
@@ -1515,10 +1421,7 @@ def build_tools(
         options = display(SET_POSITIONS_VIEW, view, sections=named)
         if isinstance(options, dict):
             return options
-        before = job.snapshot()
-        written: list[dict[str, Any]] = []
-        written_positions: list[float] = []
-        clamped: list[dict[str, Any]] = []
+        wanted: list[tuple[str, float]] = []
         unknown: list[str] = []
         rejected: list[dict[str, Any]] = []
         for entry in entries:
@@ -1545,19 +1448,16 @@ def build_tools(
                     }
                 )
                 continue
-            value = min(pos_hi, max(pos_lo, requested))
-            if value != requested:
-                clamped.append(
-                    {
-                        "id": record.id,
-                        "requested_mm": round(requested, 3),
-                        "clamped_to_mm": round(value, 3),
-                    }
-                )
-            record.position_mm = value
-            written.append({"id": record.id, "position_mm": round(value, 3)})
-            written_positions.append(value)
-            box.compared.pop(record.id, None)
+            wanted.append((record.id, requested))
+
+        done = ops_positions.set_positions(job, ctx, wanted)
+        written = [{"id": name, "position_mm": round(value, 3)} for name, value in done.written]
+        written_positions = [value for _name, value in done.written]
+        clamped = [{"id": name, "requested_mm": round(requested, 3),
+                    "clamped_to_mm": round(value, 3)}
+                   for name, requested, value in done.clamped]
+        for name in done.touched:
+            box.compared.pop(name, None)
             box.reviewed = False
 
         if not written:
@@ -1572,7 +1472,7 @@ def build_tools(
             "unknown_ids": unknown,
             "rejected": rejected,
             "clamped": clamped,
-            **commit(before, *[row["id"] for row in written]),
+            **answered(*done.touched),
         }
         if clamped:
             result["atlas_range_mm"] = [round(pos_lo, 3), round(pos_hi, 3)]
@@ -1964,10 +1864,8 @@ def build_tools(
             pitch, yaw = float(pitch_deg), float(yaw_deg)
         except (TypeError, ValueError):
             return {"status": "error", "error": "BAD_ARGS"}
-        before = job.snapshot()
-        state.cutting_angles_deg = {"pitch": pitch, "yaw": yaw}
-        ctx.render_cache.clear()
-        return commit(before)  # stack-wide: no section row changes
+        ops_positions.set_cutting_angles(job, ctx, pitch, yaw)
+        return answered()  # stack-wide: no section row changes
 
     def fit_affine(
         slices: list[str],
