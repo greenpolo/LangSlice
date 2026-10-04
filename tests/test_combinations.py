@@ -760,10 +760,11 @@ def test_6_cli_init_takes_locked_and_damaged_sections(capsys, images):
 
 
 @pytest.mark.xfail(strict=True, reason=(
-    "No importer for a registration made elsewhere: LangSlice writes QuickNII/"
-    "VisuAlign JSON (job/quint.py job_export) but reads none, nor DeepSlice output "
-    "(core/deepslice.py is a stub), nor an ABBA state file. A supplied affine must "
-    "already be LangSlice's normalized six numbers on the oriented section render."))
+    "A registration made elsewhere is READ (job/imports.py: QuickNII/VisuAlign "
+    "JSON and XML, DeepSlice JSON/XML/CSV, registration.json, into per-section "
+    "placements) but not wired into a job: no `init --registration` and no job "
+    "input takes the per-section cutting angles it carries. ABBA state files are "
+    "not read."))
 def test_6_a_quicknii_registration_can_be_imported(capsys, images, tmp_path):
     # A job placed by LangSlice exports quicknii.json; a new job from it must
     # land at the same placement.

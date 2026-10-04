@@ -149,6 +149,54 @@ pixels and `nr` the corrected index + 1.
   `(x, y)`). Each marker reproduces the section's maps exactly at its own
   point (tests). Not yet opened in VisuAlign itself.
 
+## Importing a registration made elsewhere
+
+`langslice.job.imports` reads a linear registration made by another program
+(or an earlier job) and returns each section's placement in LangSlice's own
+terms. It reads only; supplying the result to a job (positions, per-section
+cutting angles, orientation, transforms) is not wired yet.
+
+Formats (`read_registration`, by extension and content):
+
+| Format | Written by | What is read |
+|---|---|---|
+| `quicknii-json`, `visualign-json` | QuickNII, VisuAlign, DeepSlice (`write_QUINT_JSON`), this job's `exports/` | `target`, `aligner`, per slice `filename`, `anchoring`, `width`, `height`, `nr`, `markers` (VisuAlign when any slice has markers) |
+| `quicknii-xml` | QuickNII, DeepSlice (`write_QuickNII_XML`; 1.2.8 writes the series attributes as `xmlns:aligner=...`; earlier releases bare `&`, `width`/`height` `-999`, `nr` as `4.0`) | `<slice filename nr width height anchoring="ox=...&oy=...">` |
+| `deepslice-csv` | DeepSlice `save_predictions` | `Filenames`, `ox` ... `vz`, `width`, `height`, `nr` when present; no target (DeepSlice's mouse target assumed) |
+| `langslice-registration` | a job's `registration.json` | per section `pixel_to_atlas_um` and `image.size` |
+
+Checked against DeepSlice 1.2.8's own source and writers (the current PyPI
+release); `tests/fixtures/deepslice/` holds files its writers produced.
+
+Matching entries to the job's section files, first rule that finds anything:
+the entry's file name (last path component) equals a section's file name
+(`exact`); the names without extensions are equal ignoring case (`stem`);
+both carry exactly one QuickNII section number `_sNNN` and the numbers are
+equal (`section number`). An entry matching two sections, or two entries
+matching one section, is refused.
+
+Each matched section gives: `position_mm`, `pitch_deg`, `yaw_deg` (per
+section: a QuickNII file can carry a different plane per section),
+`rotation_deg` and `flip` (chosen so the six numbers are unmirrored and turn
+at most 45 degrees, unless fixed by the caller), the six normalized numbers
+`params`, the pixel size they are relative to (the job's own; without one,
+the median the imported maps imply, which the job must then be given), the
+imported `pixel_to_atlas_um` on the job's file, and VisuAlign `markers`
+rescaled to the file's continuous pixels (raw too). Markers are not turned
+into a deformation: that needs VisuAlign's interpolation between them.
+
+Exact inverse of the job's own geometry (`core.import_geometry`): through
+`registration.json` the round trip is exact to machine precision; through a
+QuickNII file (anchorings rounded to 1e-6 voxels) to under 2e-7 degrees,
+0.1 nm of position and 1e-8 in the six numbers. A QuickNII anchoring is by
+fractions of the image, so a registration made on a resized copy carries
+over (another aspect ratio is said). What does not carry over: a flat plane
+(both angles 0) is drawn at the nearest voxel of the normal axis, so a
+position between voxels is kept but drawn up to half a voxel away
+(`out_of_plane_um`); angles under 1e-6 degrees are read as 0; a plane
+tilted more than 45 degrees from the job's section plane, and a target that
+is not the job atlas's, are refused.
+
 ## Edited maps and labels
 
 An edited `coords.tif`, `labels.tif` or painted label image changes no
