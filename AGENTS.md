@@ -235,8 +235,11 @@ deformation) and the image-model border route (`core/nonlinear/`).
   agents (`doors/cli/`: `langslice job FOLDER VERB`, `langslice ops`,
   `langslice schema`; one JSON envelope on stdout, exit codes 0/2/3/4,
   pictures as file paths, `--dry-run`, `--background`), the script door
-  (`import langslice; langslice.open_job(folder)`, `coordinate_map`,
-  `load_atlas`; no agent framework loaded) and the job folder's reference
+  (`import langslice; langslice.open_job(folder)`, `create_job`,
+  `coordinate_map`, `load_atlas`; no agent framework loaded), the scripted
+  pipeline over it (`pipeline.py`: `register_section`, `register_job`, the
+  image model's trace and the deformable fit without the agent;
+  `docs/library.md`) and the job folder's reference
   card (`AGENTS.md` + `CLAUDE.md`, written into every job folder).
   `doors/cli/` also holds every other command, one module per group
   (`langslice/cli.py` keeps the entry point); the host commands (`abba`,
@@ -277,7 +280,11 @@ deformation) and the image-model border route (`core/nonlinear/`).
   model, `call`); only a door resolves it (the toolbox binding
   `build_tools(image_model=...)`, the CLI and API runtime, the ABBA plugin),
   and the operations (`registration_tool`, `ops.traces`,
-  `run_linear_registration`) receive it. The OAuth path is NOT the OpenAI
+  `run_linear_registration`) receive it. `profiles.py` makes model
+  PROFILES for the library (`langslice.image_model`: a provider's model with
+  its built-in prompt, or a model and prompt of the caller's own, marked
+  untested in every trace; `default_prompt`): the `ImageModel` fields
+  `prompt`, `photograph_first`, `profile`, `tested`. The OAuth path is NOT the OpenAI
   API: it talks to the separate Codex backend
   (`chatgpt.com/backend-api/codex`), whose image tool ignores
   `model`/`size`/`quality` and matches the input image's aspect exactly.
@@ -397,7 +404,8 @@ program. Code that runs in LangSlice's own environment lives in
 - A job's files live in its job folder, `<images>/langslice/`
   (`src/langslice/job/CLAUDE.md`; `--job-dir` moves it, a read-only image
   folder falls back to `~/.langslice/jobs/<id>/`); nothing else is written
-  beside the images.
+  beside the images. A lean job (`JobSpec.output_level`) keeps the results
+  only: no pictures, undo history on disk, logs or reference card.
 - Linear agent sessions write a full-content JSONL trace (what the agent
   was shown, said, called, and got back; images as descriptors, never bytes)
   only when `LANGSLICE_TRACE_DIR` is set — `langslice linear run

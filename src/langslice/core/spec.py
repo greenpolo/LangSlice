@@ -95,6 +95,16 @@ def supplied_angles(
                   for name, item in value.items()}
 
 
+#: How much a job folder keeps (:attr:`JobSpec.output_level`): "full" every
+#: file a job writes; "lean" the results only (the state, ``job.json``,
+#: ``registration.json``, each section's maps, the deformation records and
+#: image-model traces they are made from, the exports). Lean writes no
+#: pictures (``views/``, ``views.jsonl``), no undo history on disk
+#: (``history/``; undo still works within the process that wrote the step),
+#: no ``logs/`` and no reference card (``AGENTS.md``/``CLAUDE.md``).
+OUTPUT_LEVELS: tuple[str, ...] = ("full", "lean")
+
+
 #: ``NonlinearSpec.engine`` values: a fixed deformable-fit engine, or the
 #: agent's choice per call.
 DEFORMABLE_ENGINES: tuple[str, ...] = ("ants", "elastix", "either")
@@ -193,7 +203,11 @@ class NonlinearSpec:
 
     ``provider`` is the image model's access method (``providers/registry``);
     ``"none"`` runs the task without an image model: no ``trace_borders``,
-    no traced section images, no trace requirement at submit.
+    no traced section images, no trace requirement at submit. ``"custom"``
+    (:data:`langslice.core.provider_names.CUSTOM_PROVIDER`): an image model
+    the caller hands the library itself (``langslice.open_job(...,
+    image_model=...)``); a door that is handed none offers no
+    ``trace_borders``.
     """
 
     provider: str = "openai-oauth"
@@ -205,15 +219,20 @@ class NonlinearSpec:
     notes: str = ""
 
     def __post_init__(self) -> None:
-        from langslice.core.provider_names import CANONICAL_PROVIDERS, canonical_provider
+        from langslice.core.provider_names import (
+            CANONICAL_PROVIDERS,
+            CUSTOM_PROVIDER,
+            canonical_provider,
+        )
 
         if self.engine not in DEFORMABLE_ENGINES:
             raise ValueError(
                 f"nonlinear.engine must be one of {DEFORMABLE_ENGINES}; got {self.engine!r}"
             )
-        if canonical_provider(str(self.provider or "")) not in CANONICAL_PROVIDERS:
+        accepted = (*CANONICAL_PROVIDERS, CUSTOM_PROVIDER)
+        if canonical_provider(str(self.provider or "")) not in accepted:
             raise ValueError(
-                f"nonlinear.provider must be one of {CANONICAL_PROVIDERS}; got {self.provider!r}"
+                f"nonlinear.provider must be one of {accepted}; got {self.provider!r}"
             )
 
     @property
@@ -248,6 +267,9 @@ class JobSpec:
     #: Where the job folder goes (``--job-dir``). None: next to the images,
     #: ``<images>/langslice`` (:func:`langslice.job.layout.locate_job_folder`).
     job_dir: str | None = None
+    #: What the job folder keeps: "full" (default) or "lean", the results
+    #: only (:data:`OUTPUT_LEVELS`). Left out of saved specs when "full".
+    output_level: str = "full"
     #: Display-side preprocessing for everything the agent looks at:
     #: "auto" runs :func:`langslice.core.image_prep.adaptive_preprocess`, "none"
     #: shows the raw section. Never written back to the user's files.
@@ -333,6 +355,10 @@ class JobSpec:
             )
         if self.host_preprocessing is not None and not isinstance(self.host_preprocessing, dict):
             raise ValueError("host_preprocessing must be a settings object or null")
+        if self.output_level not in OUTPUT_LEVELS:
+            raise ValueError(
+                f"output_level must be one of {OUTPUT_LEVELS}; got {self.output_level!r}"
+            )
         if self.plane not in PLANES:
             raise ValueError(f"Unsupported plane {self.plane!r}; expected one of {PLANES}")
         unknown = [task for task in self.tasks if task not in ALL_TASKS]
@@ -359,6 +385,11 @@ class JobSpec:
 
     # --- views -----------------------------------------------------------
 
+    @property
+    def lean(self) -> bool:
+        """Whether the job folder keeps the results only (``output_level`` "lean")."""
+        return self.output_level == "lean"
+
     def has(self, task: str) -> bool:
         """Whether *task* is switched on for this run."""
         return task in self.tasks
@@ -381,6 +412,8 @@ class JobSpec:
         data["reorder"].pop("hemisphere_cue", None)
         if data.get("job_dir") is None:  # the default stays out of saved specs
             data.pop("job_dir", None)
+        if data.get("output_level") == "full":  # likewise
+            data.pop("output_level", None)
         return data
 
     @classmethod

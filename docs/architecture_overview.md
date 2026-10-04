@@ -75,7 +75,9 @@ border route (`core/nonlinear/`).
   register/quick-affine/export runtime, setup, saved Claude jobs and the
   JVM-free linear snapshot worker), `cli/` (every `langslice` command, one module per
   group, including the agent CLI `langslice job FOLDER VERB`, `ops`,
-  `schema`; `docs/agent_cli.md`), `library.py` (`langslice.open_job`),
+  `schema`; `docs/agent_cli.md`), `library.py` (`langslice.open_job`,
+  `create_job`), `pipeline.py` (`register_section`, `register_job`: the
+  scripted nonlinear registration; `docs/library.md`),
   `card.py` (the job folder's `AGENTS.md` / `CLAUDE.md`).
 - `src/langslice/agent/` -- the ADK driver of the linear agent environment:
   the run engine, the ADK session, plugins and model resolution, the job

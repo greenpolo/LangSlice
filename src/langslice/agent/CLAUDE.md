@@ -807,7 +807,9 @@ and the agent's per-slice edited copy of the base correction prompt. The image
 model is the door's binding: `build_tools(image_model=...)`, resolved from
 `nonlinear.provider` / `nonlinear.image_model` through
 `providers.registry.resolve_image_model` when omitted, and handed to
-`ops.traces.trace_borders`.
+`ops.traces.trace_borders`. A model profile's own prompt (a script's,
+`langslice.image_model`; `docs/library.md`) replaces the base prompt the
+agent edits; the agent's own run uses the provider's built-in wording.
 The call runs in the background (`registration_tool.start_correction` prepares
 it; `Job.settle_image_corrections` waits at submit and at session end) and
 returns no images. The first image reply is retained in `SliceState.image_correction`. No atlas search,

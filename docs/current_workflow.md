@@ -247,7 +247,8 @@ langslice job sections/ wait                    # the latest background run
 the job as it stands, runs the verb through the same tool the agent has
 (without the look-before-commit gates) and closes it, so calls and a running
 `linear run` on the same folder pick up each other's writes. In Python:
-`langslice.open_job(folder)` gives the same verbs as methods.
+`langslice.open_job(folder)` gives the same verbs as methods; a scripted
+pipeline without the agent: [`library.md`](library.md).
 
 ## Linear: Quick Affine
 

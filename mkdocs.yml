@@ -41,6 +41,7 @@ nav:
   - Architecture: architecture_overview.md
   - CLI usage: current_workflow.md
   - Agent CLI: agent_cli.md
+  - Python library: library.md
   - Install in ABBA: abba_installation.md
   - Fiji connector design: abba_plugin_design.md
   - Registration pipeline: registration_plan.md

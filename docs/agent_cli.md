@@ -141,4 +141,5 @@ langslice.load_atlas("allen_mouse_25um")     # a BrainGlobe atlas
 ```
 
 `import langslice` and `open_job` load no agent framework or model client
-(`tests/test_core_imports.py`).
+(`tests/test_core_imports.py`). A scripted pipeline (making jobs, image-model
+profiles, `register_section` / `register_job`): [`library.md`](library.md).

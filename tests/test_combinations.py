@@ -119,8 +119,8 @@ def spec_for(images: Path, tasks: list[str], *, provider: str = "none",
 
 
 def create(spec: JobSpec) -> Path:
-    """A job as a script makes one today (``doors.jobs.create``: there is no
-    public library call for it, see ``test_the_library_can_create_a_job``)."""
+    """A job made through the internal door (``doors.jobs.create``; the
+    public call is ``langslice.create_job``, ``test_the_library_can_create_a_job``)."""
     from langslice.doors.jobs import create as create_job
 
     opened = create_job(spec, atlas_loader=atlas_loader(), emit=lambda _m: None)
@@ -458,17 +458,12 @@ def test_4_nonlinear_verbs_called_directly_through_the_cli(capsys, images):
     assert_exported(job, residual=(ID0,))
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "The library cannot be handed an image model: open_job takes no image_model, "
-    "Opened.tools() (doors/jobs.py:142) builds the toolbox without one, so "
-    "build_tools resolves the spec's provider (doors/tools/toolbox.py:532-533). A "
-    "script's own or replayed model needs a monkeypatch."))
 def test_4_the_library_takes_an_image_model(images):
     import langslice
 
     create(spec_for(images, ["nonlinear"], provider="openai-oauth", **external_inputs()))
     model = stub_image_model(spec_for(images, ["nonlinear"], provider="openai-oauth"))
-    with langslice.open_job(images, image_model=model) as job:  # type: ignore[call-arg]
+    with langslice.open_job(images, image_model=model) as job:
         assert job.trace_borders(id=ID0)["status"] in ("running", "ok")
 
 
@@ -868,16 +863,11 @@ def test_claude_prepare_takes_the_nonlinear_task(images, monkeypatch, linked):
     assert ("image-model tool (trace_borders) is off" in prompt) is not linked
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "The library cannot create a job: langslice exposes open_job only "
-    "(langslice/__init__.py), and open_job needs an existing job folder "
-    "(doors/library.py:99-107); creating one (with host inputs) takes the CLI's "
-    "`init` or the internal doors.jobs.create."))
 def test_the_library_can_create_a_job(images):
     import langslice
 
     spec = spec_for(images, ["nonlinear"], **external_inputs())
-    with langslice.create_job(spec) as job:  # type: ignore[attr-defined]
+    with langslice.create_job(spec) as job:
         assert_external_kept(job.state)
 
 

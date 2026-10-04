@@ -27,7 +27,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from langslice.core.provider_names import CANONICAL_PROVIDERS, canonical_provider
+from langslice.core.provider_names import CANONICAL_PROVIDERS, CUSTOM_PROVIDER, canonical_provider
 
 if TYPE_CHECKING:
     from langslice.core.nonlinear.types import GeneratedSegmentation, SegmentationGenerationRequest
@@ -60,15 +60,30 @@ class ImageModel:
     """An image model as the operations receive it: resolved, never chosen there.
 
     ``provider`` is the canonical access method (it selects the prompt's
-    GPT or Gemini wording and keys saved replies), ``model`` the image model
-    (None: the provider's own default), ``call`` the one edit. A door (the
-    toolbox binding, the engine, MCP, the CLI, a host plugin) builds this with
+    GPT or Gemini wording and keys saved replies; ``"custom"`` for a model
+    of the caller's own), ``model`` the image model (None: the provider's
+    own default), ``call`` the one edit. A door (the toolbox binding, the
+    engine, MCP, the CLI, a host plugin) builds this with
     :func:`resolve_image_model`; a test or a script passes its own ``call``.
+
+    The rest makes it a model PROFILE (:mod:`langslice.providers.profiles`):
+    ``prompt`` the base prompt written for this model (None: LangSlice's own
+    for ``provider``, :func:`langslice.core.nonlinear.prompts.border_correction_tool_prompt`;
+    ``{plane}`` in it becomes the section plane), ``photograph_first``
+    the attachment order that prompt describes (True: the clean photograph
+    is Image 1 and the placed borders Image 2; False: the other way round;
+    None: the order of ``provider``'s own prompt), ``profile`` its name, and
+    ``tested`` False for a prompt or model the project has not measured:
+    every trace made with it is marked ``untested``.
     """
 
     provider: str
     model: str | None
     call: ImageCall
+    prompt: str | None = None
+    photograph_first: bool | None = None
+    profile: str | None = None
+    tested: bool = True
 
 
 def default_image_model(provider: str) -> str | None:
@@ -88,6 +103,9 @@ def resolve_image_model(provider: str, model: str | None = None) -> ImageModel:
     canonical = canonical_provider(provider)
     if canonical == "none":
         raise ValueError("The image correction tool requires an image-model provider")
+    if canonical == CUSTOM_PROVIDER:
+        raise ValueError("This job's image model is the caller's own (provider 'custom'): "
+                         "hand it to the library, langslice.open_job(..., image_model=...)")
     if canonical not in CANONICAL_PROVIDERS:
         raise ValueError(f"Unknown provider: {provider}")
 
@@ -100,6 +118,7 @@ def resolve_image_model(provider: str, model: str | None = None) -> ImageModel:
 
 __all__ = [
     "CANONICAL_PROVIDERS",
+    "CUSTOM_PROVIDER",
     "OPENAI_OAUTH_AGENT_MODELS",
     "OPENAI_OAUTH_DEFAULT_AGENT_MODEL",
     "OPENAI_OAUTH_DEFAULT_IMAGE_MODEL",

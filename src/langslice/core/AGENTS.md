@@ -45,7 +45,9 @@ other module whose imports are core-only:
   `tests/test_core_imports.py` loads each module in a fresh interpreter and
   checks what it loads. Provider NAMES are the core's own plain-string
   table, `provider_names.py` (`CANONICAL_PROVIDERS`, the aliases,
-  `canonical_provider`; `providers.registry` re-exports it): `spec.py`
+  `canonical_provider`, and `CUSTOM_PROVIDER` `"custom"`: a job whose image
+  model a script hands the library itself, accepted by the spec, never
+  resolved from a name; `providers.registry` re-exports it): `spec.py`
   validates against it and `nonlinear/` picks the GPT or Gemini prompt
   wording with it. A model call is only ever the `image_call` a door
   passes in; the border routes refuse a call without one.

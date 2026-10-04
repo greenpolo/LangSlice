@@ -191,7 +191,7 @@ def load_credentials(*, saved: bool = True) -> None:
     """The one place a door loads the model keys: ``.env``, then with
     *saved* the keys saved by setup (:func:`apply_saved_credentials`; an
     explicit environment setting wins). The CLI calls it per command, the
-    library on :func:`langslice.open_job`."""
+    library on :func:`langslice.open_job` and :func:`langslice.create_job`."""
     load_dotenv()
     if saved:
         apply_saved_credentials()
