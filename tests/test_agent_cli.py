@@ -87,19 +87,35 @@ def test_ops_lists_every_verb_with_kind_group_and_one_line(capsys):
         assert row["kind"] == VERBS[row["name"]].kind
         assert row["group"] == VERBS[row["name"]].group
         assert row["summary"] and "\n" not in row["summary"]
+        assert row.get("long", False) is VERBS[row["name"]].long
+    assert "brief" in envelope["result"]["job_commands"]
     assert set(envelope) == {"ok", "result", "artifacts", "warnings", "next"}
 
 
 def test_schema_of_one_verb_and_of_every_verb(capsys):
+    from langslice.doors.declarations import Variant, declaration
+
     code, envelope = cli(capsys, "schema", "set-positions")
     assert code == 0
     result = envelope["result"]
-    assert result["verb"] == "set_positions" and result["schema_version"] == 1
+    assert result["verb"] == "set_positions" and result["schema_version"] == 2
     schema = result["arguments"]
     assert schema["required"] == ["entries"]
     assert "resolution" in schema["$defs"]["ViewAuto"]["properties"]
+    # What a model reads of the verb: the whole description, the summary, the
+    # picture options described once (with the resolution range), long or not.
+    assert result["description"] == declaration(
+        "set_positions", Variant(auto=True, door="cli")).doc
+    assert "\n" in result["description"] and result["summary"] in result["description"]
+    assert "`view` also takes `resolution`" in result["picture_options"]
+    assert "128 to 2000" in result["picture_options"]  # the default viewer's largest
+    assert result["long"] is False and result["job"] is None and "--job" in result["hint"]
+    code, fit = cli(capsys, "schema", "fit_affine")
+    assert fit["result"]["long"] is True and fit["next"][0].endswith("--background")
     code, everything = cli(capsys, "schema")
     assert code == 0 and "fit_deformable" in everything["result"]["verbs"]
+    assert everything["result"]["verbs"]["status"]["arguments"]["properties"] == {}
+    assert "picture_options" not in everything["result"]["verbs"]["status"]
     # A hidden verb: not in the listing, its schema by name.
     assert "trace_from_atlas" not in everything["result"]["verbs"]
     code, hidden = cli(capsys, "schema", "trace-from-atlas")
@@ -107,6 +123,22 @@ def test_schema_of_one_verb_and_of_every_verb(capsys):
     code, unknown = cli(capsys, "schema", "align_everything")
     assert code == 2 and unknown["error"]["code"] == "UNKNOWN_VERB"
     assert "langslice ops" in unknown["error"]["fix"]
+
+
+def test_schema_declares_a_jobs_own_verbs(capsys, images, monkeypatch):
+    init(capsys, images, "--viewer", "codex", "--engine", "elastix")
+    code, envelope = cli(capsys, "schema", "fit_deformable", "--job", str(images))
+    assert code == 0, envelope
+    result = envelope["result"]
+    assert result["job"] == str(images / "langslice") and "hint" not in result
+    assert "engine" not in result["arguments"]["properties"]  # the user fixed it
+    assert "128 to 2048" in result["picture_options"]  # the job's viewer
+    assert "Raw image channels per section" in result["picture_options"]
+    # Run in a job folder, schema declares that job's verbs.
+    monkeypatch.chdir(images / "langslice")
+    code, here = cli(capsys, "schema", "fit_deformable")
+    assert here["result"]["job"] == str(images / "langslice")
+    assert "engine" not in here["result"]["arguments"]["properties"]
 
 
 # --- init, the card, status ---------------------------------------------------------
@@ -252,6 +284,49 @@ def test_an_image_model_not_connected_is_reported_and_its_verb_refused(
     code, status = cli(capsys, "job", str(images), "status")
     assert status["result"]["image_model"]["connected"] is True
     assert "trace_borders" in status["result"]["verbs"]
+
+
+def test_status_marks_what_the_user_locked_or_marked_damaged(capsys, images):
+    init(capsys, images, "--locked", json.dumps([ID0]), "--damaged",
+         json.dumps({ID1: "torn"}))
+    code, envelope = cli(capsys, "job", str(images), "status")
+    assert code == 0
+    rows = {row["id"]: row for row in envelope["result"]["rows"]}
+    assert rows[ID0].get("locked") is True and "damage_by_user" not in rows[ID0]
+    assert rows[ID1].get("damage_by_user") is True and "locked" not in rows[ID1]
+    assert "locked" not in rows[ID2] and "damage_by_user" not in rows[ID2]
+
+
+def test_every_call_is_logged_and_traced(capsys, images, monkeypatch, tmp_path):
+    traces = tmp_path / "traces"
+    monkeypatch.setenv("LANGSLICE_TRACE_DIR", str(traces))
+    job = init(capsys, images)
+    code, envelope = cli(capsys, "job", str(images), "view_slices", "--slices", ID0)
+    assert code == 0
+    code, refused = cli(capsys, "job", str(images), "undo")
+    assert code == 3
+    lines = [json.loads(line) for line in (job / "logs" / "calls.jsonl").read_text()
+             .splitlines()]
+    assert [line["verb"] for line in lines] == ["init", "view_slices", "undo"]
+    seen = lines[1]
+    assert seen["arguments"] == ["--slices", ID0] and seen["ok"] is True
+    assert seen["exit"] == 0 and seen["artifacts"] == [
+        item["path"] for item in envelope["artifacts"]]
+    assert lines[2]["ok"] is False and lines[2]["error"] == "NOTHING_TO_UNDO"
+    # The trace, as the MCP door writes its own: one file for the job.
+    files = list(traces.glob("cli_stack_*.jsonl"))
+    assert len(files) == 1
+    records = [json.loads(line) for line in files[0].read_text().splitlines()]
+    assert [record["kind"] for record in records] == ["tool_result"] * 3
+    traced = records[1]
+    assert traced["name"] == "view_slices" and traced["args"]["slices"] == [ID0]
+    assert json.loads(traced["content"][0]["text"])["ok"] is True
+    assert traced["content"][1]["image"] == "image/jpeg" and traced["content"][1]["bytes"] > 0
+    # The artifacts: index and label for each picture, as image_indexes count.
+    view = envelope["artifacts"][0]
+    assert view["kind"] == "view" and view["index"] == 0 and ID0 in view["label"]
+    assert "picture_note" in envelope["result"] and "\n" not in envelope["result"][
+        "picture_note"]
 
 
 # --- writes, pictures, exit codes -----------------------------------------------------

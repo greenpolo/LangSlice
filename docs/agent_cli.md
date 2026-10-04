@@ -43,11 +43,24 @@ stands; nothing in the state changes. `submit` writes the same files.
 `docs/file_formats.md` describes every file.
 
 ```bash
-langslice ops                         # every verb: name, kind, group, one line
-langslice schema                      # every verb's argument schema (versioned)
+langslice ops                         # every verb: name, kind, group, one line, long
+langslice schema                      # every verb as a model reads it (versioned)
 langslice schema fit_deformable       # one verb's
 langslice schema fit_deformable --job FOLDER   # as that job declares it
 ```
+
+`schema` (version 2) gives per verb what a model reads of it: the whole
+declared `description` (the docstring the agent and MCP tools carry, worded
+for this door), its `summary`, `kind`, `group`, `long`, the argument
+schema under `arguments`, and for a verb that returns pictures
+`picture_options`, the job statement's text on `view` with the
+`view.resolution` range. With `--job FOLDER`, or run inside a job folder, it
+declares the verbs as that job's settings do (no `engine` where the user
+fixed it, the job's channels and viewer) and says which job under `job`;
+otherwise every argument, with a `hint`. A long verb (`fit_affine`,
+`fit_deformable`, `trace_borders`, `export_maps`) computes outside the job
+lock and may take minutes: `ops` marks it `long`, and `schema` and a dry
+run of it give the `--background` command under `next`.
 
 Besides the verbs, `FOLDER` takes:
 
@@ -101,8 +114,9 @@ Besides the verbs, `FOLDER` takes:
   value, plain text for a text argument; a list argument takes the flag once
   per item or a JSON list; a yes/no argument alone means true.
 - `--dry-run`: a write runs on the job without writing anything (state,
-  history, pictures) and reports `would_change` (per section the fields that
-  would change, and the stack's). `fit_deformable` and `trace_borders` are
+  history, pictures; only its line in `logs/calls.jsonl`) and reports
+  `would_change` (per section the fields that would change, and the
+  stack's). `fit_deformable`, `trace_borders` and `trace_from_atlas` are
   checked (arguments, sections), not run. `export_maps` writes no file and
   lists under `files` what it would write.
 - `--background`: answer at once with a run id; the verb runs in a detached
@@ -167,10 +181,15 @@ When `ok` is false, `error` says why and what to do:
 | 3 | the job refused it: a gate or rule (`MISSING_TRANSFORMS`, `LOCKED`, `NOTHING_TO_UNDO`, a verb this job's tasks do not have, `STALE_INPUT` for every section), another writer holding the lock past 300 s (`JOB_BUSY`), or a background run still running at `wait --timeout` |
 | 4 | internal error (the traceback is on stderr); a background run that ended without an answer |
 
-`result` is concise by default: no description written for a model, and a
-write's whole-stack `rows` replaced by `n_rows` (`status` and `view_stack`
-keep theirs). Pictures are never inlined: each is saved in the job folder as
-every door saves it, and listed under `artifacts` by absolute path and kind:
+`result` is concise by default: a reply with pictures keeps what they are
+as one line, `picture_note` (the description written for a model, on one
+line), and a write's whole-stack `rows` are replaced by `n_rows` (`status` and
+`view_stack` keep theirs); `--verbose` gives the description and the
+pictures' text lines as written. Pictures are never inlined: each is saved
+in the job folder as every door saves it, and listed under `artifacts` by
+absolute path and kind, with `index` (its place among the call's pictures,
+the number the reply's `image_indexes` give) and, on the `view` entry,
+`label` (the sections it shows and its mode):
 `view` (the JPEG), `view_json` (its frame: `langslice.coordinate_map(path)`
 gives each pixel's atlas micrometres), and for a section on its atlas
 `labels` (uint32 atlas ids) and `borders`, plus `residual` for a
@@ -179,6 +198,22 @@ gives each pixel's atlas micrometres), and for a section on its atlas
 `labels_csv`, `tissue`, `residual` and `maps` (after `submit` and `export_maps`);
 `card`, `state` and `brief` (after `init`); `opening` and `brief` (after
 `brief`). Progress and library output go to stderr.
+
+`status` also says, per row, `locked: true` for a section whose in-plane
+alignment the user did (`--locked`) and `damage_by_user: true` for one the
+user marked damaged (`--damaged`), and `image_model` (see above).
+
+## The call log and the trace
+
+Every call on a job is logged in its folder, `logs/calls.jsonl`: one line per
+call with the verb, its arguments as given, `ok`, the exit code, the error
+code, the number of warnings, the artifacts' paths, the seconds it took and,
+for a background run, its id (a lean job logs nothing). With
+`LANGSLICE_TRACE_DIR` set, each call is also traced as the MCP door traces a
+tool call (`src/langslice/doors/trace.py`): a `tool_result` record (`name`,
+`args` as the verb read them, `content`: the envelope as text, then each
+picture as `image/jpeg` with its path and size, never its bytes) appended to
+one file per job folder, `cli_<images>_<digest>.jsonl`.
 
 ## Live shared editing
 

@@ -13,11 +13,9 @@ import logging
 import os
 import sys
 import threading
-import uuid
 from collections.abc import Callable
 from contextlib import redirect_stdout
 from dataclasses import dataclass, field
-from datetime import datetime
 from io import BytesIO, TextIOWrapper
 from pathlib import Path
 from typing import Any
@@ -30,7 +28,6 @@ from mcp.types import ContentBlock, ImageContent, TextContent, ToolAnnotations
 from PIL import Image
 
 from langslice.agent.engine import EngineContext, build_context
-from langslice.agent.trace import TRACE_DIR_ENV
 from langslice.core.opening import CLAUDE_IMAGE_LIMIT, CLAUDE_MAX_VIEW_EDGE, opening_items
 from langslice.core.spec import JobSpec
 from langslice.core.state import StackState
@@ -48,6 +45,7 @@ from langslice.doors.statement import job_statement, opening_for_mcp, read_notes
 from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
 from langslice.doors.tools.media import encode_jpeg
 from langslice.doors.tools.toolbox import ToolBox, build_tools
+from langslice.doors.trace import TRACE_DIR_ENV, HostTrace
 from langslice.job.job import Job
 from langslice.job.layout import read_job_file, write_job_file
 from langslice.ops.registry import VERBS
@@ -170,26 +168,9 @@ def result_blocks(result: Any) -> list[ContentBlock]:
 # --- trace -----------------------------------------------------------------
 
 
-class McpTrace:
-    """JSONL record of what the host was shown and what it called.
-
-    The host's own words between calls never reach this server, so unlike
-    :class:`langslice.agent.trace.SessionTrace` there is no model record.
-    Images are descriptors, never bytes.
-    """
-
-    def __init__(self, trace_dir: str | Path, folder: str) -> None:
-        name = Path(folder).name or "stack"
-        self.path = Path(trace_dir) / f"mcp_{name}_{uuid.uuid4().hex[:8]}.jsonl"
-
-    def write(self, kind: str, **fields: Any) -> None:
-        record = {"kind": kind, **fields, "at": datetime.now().isoformat(timespec="seconds")}
-        try:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            with self.path.open("a", encoding="utf-8") as handle:
-                handle.write(json.dumps(record, default=str) + "\n")
-        except Exception:
-            logger.warning("Could not write trace record to %s", self.path, exc_info=True)
+#: The door's trace (:class:`langslice.doors.trace.HostTrace`): what the host
+#: was shown and what it called, one file per session.
+McpTrace = HostTrace
 
 
 def describe_blocks(blocks: list[ContentBlock]) -> list[dict[str, Any]]:
