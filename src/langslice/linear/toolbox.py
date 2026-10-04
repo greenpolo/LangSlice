@@ -31,7 +31,7 @@ import numpy as np
 from google.genai import types
 
 from langslice.adk import TOOL_MEDIA_DELIVERY_ID_KEY, TOOL_MEDIA_PARTS_KEY
-from langslice.adk.media import atlas_part, image_to_part, reference_slice_part
+from langslice.adk.media import atlas_part, image_to_part, reference_slice_part, view_edge_limit
 from langslice.affine import (
     denormalized_affine,
     physical_affine_matrix,
@@ -64,6 +64,7 @@ from langslice.linear.display import (
 )
 from langslice.linear.job import HOST_TRANSFORM_KIND, Job
 from langslice.linear.live import LiveCallback, _plain
+from langslice.linear.opening import DEFAULT_IMAGE_LIMIT
 from langslice.linear.render import (
     MAX_IMAGES_PER_CALL,
     PREVIEW_LONG_EDGE,
@@ -206,8 +207,9 @@ def _clamp_and_dedupe(
 VIEW_ATLAS_PROFILE_MODES = ("template",)
 
 
-def make_view_atlas(state: StackState, ctx: EngineContext):
-    """Build the ``view_atlas`` tool, closed over the run's atlas and plane."""
+def make_view_atlas(state: StackState, ctx: EngineContext, max_view_edge: int):
+    """Build the ``view_atlas`` tool, closed over the run's atlas and plane;
+    *max_view_edge* caps ``view.resolution`` (the driver model's largest image)."""
     pos_lo, pos_hi = ctx.position_range
     profile = Profile(
         VIEW_ATLAS_PROFILE_MODES, channels=False,
@@ -241,7 +243,7 @@ def make_view_atlas(state: StackState, ctx: EngineContext):
         requested = _as_floats(list(positions_mm or []))
         if not requested:
             return {"status": "error", "error": "BAD_ARGS"}
-        options = parse_view(ctx, state, view, profile)
+        options = parse_view(ctx, state, view, profile, max_edge=max_view_edge)
         if isinstance(options, dict):
             return options
         dropped = [round(value, 2) for value in requested[MAX_VIEW_POSITIONS:]]
@@ -464,6 +466,9 @@ class ToolBox:
         default_factory=set
     )
     reviewed: bool = False
+    #: The largest picture the driver model takes: the cap of
+    #: ``view.resolution`` at image resolution "auto".
+    max_view_edge: int = DEFAULT_IMAGE_LIMIT[0]
 
     @property
     def names(self) -> list[str]:
@@ -594,19 +599,22 @@ def build_tools(
     state: StackState, ctx: EngineContext, spec: JobSpec, *,
     job: Job | None = None,
     on_event: LiveCallback | None = None,
+    max_view_edge: int | None = None,
 ) -> ToolBox:
     """Build the tools this run's spec switches on, closed over *state*.
 
     The tools sit on *job*; without one, a job is made around *state* at the
     context's checkpoint and results paths (an empty undo history, nothing
-    written until the first write).
+    written until the first write). *max_view_edge* is the largest picture
+    the driver model takes (None: the run model's lane,
+    :func:`langslice.adk.media.view_edge_limit`).
     """
     if job is None:
         job = Job(state, spec, checkpoint_path=ctx.checkpoint_path,
                   results_path=ctx.results_path)
     if job.state is not state or job.spec is not spec:
         raise ValueError("build_tools: the job must hold this state and spec")
-    box = ToolBox(job)
+    box = ToolBox(job, max_view_edge=int(max_view_edge or view_edge_limit(ctx)))
     pos_lo, pos_hi = ctx.position_range
     locked = job.locked
     over_cap = job.over_cap
@@ -709,7 +717,8 @@ def build_tools(
         sections: list[SliceState] = (),  # type: ignore[assignment]
     ) -> DisplayOptions | dict[str, Any]:
         """One call's ``view``, validated once for every picture tool."""
-        return parse_view(ctx, state, view, profile, sections=sections)
+        return parse_view(ctx, state, view, profile, max_edge=box.max_view_edge,
+                          sections=sections)
 
     def region_names(values: Any, field_name: str) -> tuple[str, ...] | dict[str, Any]:
         """Region entries for `include`/`exclude`, checked against the atlas.
@@ -1210,7 +1219,7 @@ def build_tools(
     box.tools = [
         status,
         view_slices,
-        make_view_atlas(state, ctx),
+        make_view_atlas(state, ctx, box.max_view_edge),
         note,
         undo,
         redo,

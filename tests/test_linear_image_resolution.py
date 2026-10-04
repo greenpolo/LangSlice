@@ -196,8 +196,8 @@ def test_the_job_statement_names_resolution_only_at_auto(tmp_path: Path):
 
     names = ["view_slices", "fit_deformable"]
     assert not any("resolution" in line for line in display_lines(names))
-    (line,) = [line for line in display_lines(names, resolution=True) if "resolution" in line]
-    assert "1536" in line and "512" in line and "`view` also takes `resolution`" in line
+    (line,) = [line for line in display_lines(names, resolution=2048) if "resolution" in line]
+    assert "128 to 2048" in line and "512" in line and "`view` also takes `resolution`" in line
 
 
 def test_auto_sizes_each_call_and_clamps(tmp_path: Path):
@@ -206,9 +206,11 @@ def test_auto_sizes_each_call_and_clamps(tmp_path: Path):
     assert _widths(plain) == [512] and plain["view"]["resolution"] == 512
     chosen = tools["view_slices"](["s0.tif"], resolution=1200)
     assert _widths(chosen) == [1200] and "resolution_note" not in chosen["view"]
+    # The cap is the driver model's largest image (Nash 2026-10-03): the
+    # OpenAI lanes' 2048 px here, the run's model being no other lane.
     big = tools["view_placement"]([{"id": "s0.tif"}], mode="overlay", resolution=5000)
-    assert _widths(big) == [1536]
-    assert "1536" in big["view"]["resolution_note"]
+    assert _widths(big) == [2048]
+    assert "2048" in big["view"]["resolution_note"]
     small = tools["view_slices"](["s0.tif"], resolution=20)
     assert _widths(small) == [128] and "128" in small["view"]["resolution_note"]
     refused = tools["view_slices"](["s0.tif"], resolution="large")
@@ -383,3 +385,23 @@ def test_a_caption_that_fits_is_drawn_as_before():
     expected.paste(picture, (0, band))
     ImageDraw.Draw(expected).text((3 - left, 3 - top), text, fill=(255, 255, 255), font=font)
     assert np.array_equal(np.asarray(labelled), np.asarray(expected))
+
+
+def test_the_cap_is_the_driver_models_own(tmp_path: Path):
+    """The door passes the driver model's largest image: Claude's for the MCP
+    host, the model lane's for the ADK agent."""
+    from langslice.linear.opening import CLAUDE_MAX_VIEW_EDGE, OPENAI_MAX_IMAGE_EDGE
+    from langslice.linear.prompt import build_job_statement
+
+    state, ctx, _tools, spec = _run(tmp_path / "auto", "auto")
+    claude = build_tools(state, ctx, spec, max_view_edge=CLAUDE_MAX_VIEW_EDGE)
+    assert claude.max_view_edge == CLAUDE_MAX_VIEW_EDGE == 2000
+    tool = next(tool for tool in claude.tools if tool.__name__ == "view_placement")
+    big = tool([{"id": "s0.tif"}], view={"mode": "overlay", "resolution": 5000})
+    assert _widths(big) == [2000] and "2000" in big["view"]["resolution_note"]
+    ctx.model = "openai-oauth/gpt-6-astra"
+    assert build_tools(state, ctx, spec).max_view_edge == OPENAI_MAX_IMAGE_EDGE
+    text = build_job_statement(spec, state, tool_names=claude.names, species="mouse",
+                               pos_lo=0.0, pos_hi=1.0, axis_ends=("anterior", "posterior"),
+                               max_resolution=claude.max_view_edge)
+    assert "128 to 2000" in text

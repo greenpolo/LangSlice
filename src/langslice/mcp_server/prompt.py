@@ -9,7 +9,8 @@ from langslice.linear.state import StackState
 
 
 def job_statement(spec: JobSpec, state: StackState, ctx: EngineContext, pages: int,
-                  notes: str = "", tool_names: list[str] | None = None) -> str:
+                  notes: str = "", tool_names: list[str] | None = None,
+                  max_resolution: int | None = None) -> str:
     """The same job, facts, tools, constraints and method the ADK agent is given.
 
     Only the delivery differs: the ADK agent's seed message carries the opening
@@ -20,7 +21,7 @@ def job_statement(spec: JobSpec, state: StackState, ctx: EngineContext, pages: i
         build_job_statement(
             spec, state, tool_names=tool_names or [], species=ctx.species,
             pos_lo=low, pos_hi=high, axis_ends=ctx.axis_ends,
-            **display_facts(ctx, state),
+            max_resolution=max_resolution, **display_facts(ctx, state),
         ),
         "",
         "Opening pictures: read every page with show_stack(page=1) through "

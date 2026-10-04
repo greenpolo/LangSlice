@@ -36,7 +36,7 @@ from langslice.api.abba_worker import PreparedLinear, checkpoint_callback, prepa
 from langslice.api.claude_jobs import load_job
 from langslice.linear.engine import EngineContext, build_context
 from langslice.linear.job import Job
-from langslice.linear.opening import CLAUDE_IMAGE_LIMIT, opening_items
+from langslice.linear.opening import CLAUDE_IMAGE_LIMIT, CLAUDE_MAX_VIEW_EDGE, opening_items
 from langslice.linear.spec import JobSpec
 from langslice.linear.state import StackState
 from langslice.linear.toolbox import ToolBox, build_tools
@@ -206,7 +206,9 @@ def open_job(
                    results_path=ctx.results_path)
     trace_dir = os.environ.get(TRACE_DIR_ENV)
     trace = McpTrace(trace_dir, ctx.image_folder) if trace_dir else None
-    return Session(job, ctx, build_tools(job.state, ctx, spec, job=job), trace)
+    # The host is Claude: its pictures are capped at Claude's largest image.
+    box = build_tools(job.state, ctx, spec, job=job, max_view_edge=CLAUDE_MAX_VIEW_EDGE)
+    return Session(job, ctx, box, trace)
 
 
 # Budget includes JSON/text overhead, not only encoded image bytes.
@@ -266,7 +268,7 @@ def briefing(session: Session) -> list[ContentBlock]:
         session.pages = opening_pages(session)
     return [TextContent(type="text", text=job_statement(
         session.spec, session.state, session.ctx, len(session.pages), session.notes,
-        session.box.names,
+        session.box.names, max_resolution=session.box.max_view_edge,
     ))]
 
 

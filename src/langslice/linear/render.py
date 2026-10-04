@@ -56,7 +56,8 @@ PREVIEW_LONG_EDGE = 512
 #: the atlas reference; :mod:`langslice.linear.opening`);
 #: *later* is each picture a tool returns (each panel of a multi-panel
 #: picture). "auto" opens at 256 and lets the agent pass ``resolution`` per
-#: call (:data:`RESOLUTION_RANGE`), 512 when it does not. The only other
+#: call (:data:`MIN_RESOLUTION` up to the driver model's own largest image,
+#: which the door passes in), 512 when it does not. The only other
 #: bound is the source: nothing is upsampled past the pixels it is drawn from
 #: (a section's working copy, the atlas plane at its own voxel size), so a
 #: small snapshot stays small. Never a working frame (:data:`PREVIEW_LONG_EDGE`)
@@ -69,9 +70,12 @@ PICTURE_EDGES: dict[str, tuple[int, int]] = {
 }
 #: The level that lets the agent choose each picture's size.
 AUTO_RESOLUTION = "auto"
-#: ``(smallest, largest)`` long edge the agent may ask for at "auto"; a value
-#: outside is clamped into it and the reply says so.
-RESOLUTION_RANGE = (128, 1536)
+#: Smallest long edge the agent may ask for at "auto". The largest is the
+#: driver model's own maximum image (the door knows the model:
+#: ``adk.media.view_edge_limit``; the MCP host is Claude,
+#: ``opening.CLAUDE_MAX_VIEW_EDGE``). A value outside is clamped and the
+#: reply says so.
+MIN_RESOLUTION = 128
 
 #: Default image/pair batch size. Separate positioning comparisons may return
 #: two references per pair (up to eight images); retained context is governed
@@ -109,8 +113,9 @@ def opening_edge(ctx: Workspace) -> int:
 def picture_edge(ctx: Workspace, requested: int | None = None) -> int:
     """Long edge of each later picture: the level's, or *requested* at "auto".
 
-    *requested* must already be clamped into :data:`RESOLUTION_RANGE`
-    (:func:`langslice.linear.view_options.parse_view` does it); every level but
+    *requested* must already be clamped (:data:`MIN_RESOLUTION` up to the
+    driver model's maximum; :func:`langslice.linear.view_options.parse_view`
+    does it); every level but
     "auto" ignores it.
     """
     level = resolution_level(ctx)

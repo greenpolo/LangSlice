@@ -223,13 +223,14 @@ def display_lines(
     *,
     channels: list[str] | dict[str, list[str]] | None = None,
     atlas_channels: tuple[str, ...] | None = None,
-    resolution: bool = False,
+    resolution: int | None = None,
 ) -> list[str]:
     """``view``, described once, with this run's raw and atlas channels.
 
     Tool docstrings name their own modes and point here. *resolution* (the
-    host left picture size to the agent, level "auto") adds the
-    ``resolution`` key; otherwise picture size is never mentioned.
+    host left picture size to the agent, level "auto": the largest picture
+    the driver model takes) adds the ``resolution`` key and its range;
+    otherwise picture size is never mentioned.
     """
     if not any(name in PICTURE_TOOLS for name in tool_names):
         return []
@@ -264,9 +265,9 @@ def display_lines(
         "reason, and so is any unknown argument.",
     ]
     if resolution:
-        from langslice.linear.render import AUTO_RESOLUTION, PICTURE_EDGES, RESOLUTION_RANGE
+        from langslice.linear.render import AUTO_RESOLUTION, MIN_RESOLUTION, PICTURE_EDGES
 
-        low, high = RESOLUTION_RANGE
+        low, high = MIN_RESOLUTION, resolution
         lines.append(
             "- `view` also takes `resolution`: the long edge in pixels of each picture "
             f"the call returns (of each section tile in `view_stack`), {low} to {high}; "
@@ -330,10 +331,13 @@ def build_job_statement(
     axis_ends: tuple[str, str],
     channels: list[str] | dict[str, list[str]] | None = None,
     atlas_channels: tuple[str, ...] | None = None,
+    max_resolution: int | None = None,
 ) -> str:
     """The system instruction for one run, built from the spec and the state.
 
-    *axis_ends* is ``(low, high)`` from
+    *max_resolution* is the largest picture the driver model takes, the
+    top of ``view.resolution`` at image resolution "auto" (None: the OpenAI
+    lanes', ``opening.DEFAULT_IMAGE_LIMIT``). *axis_ends* is ``(low, high)`` from
     :func:`langslice.space.slice_axis_ends` — what the two ends of the slicing
     axis are anatomically in THIS atlas.
     """
@@ -369,8 +373,14 @@ def build_job_statement(
 
     tools = [f"- `{name}`: {tool_line(name, spec)}" for name in tool_names
              if name in TOOL_LINES]
-    tools += display_lines(tool_names, channels=channels, atlas_channels=atlas_channels,
-                           resolution=spec.image_resolution == "auto")
+    if spec.image_resolution == "auto" and max_resolution is None:
+        from langslice.linear.opening import DEFAULT_IMAGE_LIMIT
+
+        max_resolution = DEFAULT_IMAGE_LIMIT[0]
+    tools += display_lines(
+        tool_names, channels=channels, atlas_channels=atlas_channels,
+        resolution=max_resolution if spec.image_resolution == "auto" else None,
+    )
 
     constraints: list[str] = []
     if spec.has("position"):
