@@ -23,7 +23,7 @@ import numpy as np
 from PIL import Image
 
 from langslice.affine import denormalized_affine
-from langslice.core.canvas import canvas_geometry
+from langslice.core.canvas import CanvasGeometry, canvas_geometry
 from langslice.core.sections import (
     PREVIEW_LONG_EDGE,
     canvas_um_per_px,
@@ -54,6 +54,50 @@ class LinearRegistrationInput:
     pitch_deg: float
     yaw_deg: float
     metadata: dict[str, Any]
+
+
+def linear_placement_matrix(
+    image_size: tuple[int, int],
+    um_per_px: float,
+    atlas: Any,
+    position_mm: float,
+    plane: Plane,
+    pitch_deg: float,
+    yaw_deg: float,
+    params: Any,
+) -> tuple[np.ndarray, CanvasGeometry]:
+    """``(atlas_to_slice, geometry)``: the linear placement as one matrix.
+
+    *atlas_to_slice* (3x3) maps native atlas-plane pixel centres ``[x, y, 1]``
+    (the plane :func:`langslice.atlas.render.annotation_slice` draws at
+    *position_mm*, *plane* and the cutting angles) onto pixel centres of the
+    oriented, unframed section render of *image_size* that the six stored
+    numbers *params* are normalized against, at *um_per_px* (the render's).
+    The one geometry path from a stored placement to the atlas: the
+    image-correction handoff, the deformable fit grid and the job folder's
+    maps and ``registration.json`` (:mod:`langslice.core.maps`) all go
+    through it. ``ValueError`` for a singular or non-finite placement.
+    """
+    matrix = np.vstack([denormalized_affine(params, image_size), [0.0, 0.0, 1.0]])
+    try:
+        inverse = np.linalg.inv(matrix)
+    except np.linalg.LinAlgError as exc:
+        raise ValueError("The written affine is singular") from exc
+    if not np.isfinite(inverse).all():
+        raise ValueError("The written affine cannot be inverted to finite coordinates")
+    geometry = canvas_geometry(image_size, um_per_px, atlas, position_mm, plane,
+                               pitch_deg, yaw_deg)
+    sx, sy = geometry.section_offset
+    ax, ay = geometry.atlas_offset
+    atlas_to_section_frame = np.array(
+        [[geometry.atlas_scale, 0.0, ax - sx],
+         [0.0, geometry.atlas_scale, ay - sy], [0.0, 0.0, 1.0]],
+        dtype=np.float64,
+    )
+    atlas_to_slice = inverse @ atlas_to_section_frame
+    if not np.isfinite(atlas_to_slice).all():
+        raise ValueError("Atlas placement produced non-finite coordinates")
+    return atlas_to_slice, geometry
 
 
 def prepare_linear_registration(
@@ -114,13 +158,6 @@ def prepare_linear_registration(
     image = render_slice(ctx, record, long_edge=long_edge, frame=False)
     with Image.open(ctx.image_path(record.id)) as source_image:
         original_size = list(source_image.size)
-    matrix = np.vstack([denormalized_affine(params, image.size), [0.0, 0.0, 1.0]])
-    try:
-        inverse = np.linalg.inv(matrix)
-    except np.linalg.LinAlgError as exc:
-        raise ValueError("The written affine is singular") from exc
-    if not np.isfinite(inverse).all():
-        raise ValueError("The written affine cannot be inverted to finite coordinates")
 
     um_per_px, source = canvas_um_per_px(ctx, record, long_edge=long_edge, frame=False)
     if um_per_px is None:
@@ -138,20 +175,9 @@ def prepare_linear_registration(
         raise ValueError("Section calibration must be finite and positive")
 
     plane = cast(Plane, state.plane)
-    geometry = canvas_geometry(
-        image.size, um_per_px, ctx.atlas, record.position_mm, plane,
-        state.pitch_deg, state.yaw_deg,
-    )
-    sx, sy = geometry.section_offset
-    ax, ay = geometry.atlas_offset
-    atlas_to_section_frame = np.array(
-        [[geometry.atlas_scale, 0.0, ax - sx],
-         [0.0, geometry.atlas_scale, ay - sy], [0.0, 0.0, 1.0]],
-        dtype=np.float64,
-    )
-    atlas_to_slice = inverse @ atlas_to_section_frame
-    if not np.isfinite(atlas_to_slice).all():
-        raise ValueError("Atlas placement produced non-finite coordinates")
+    atlas_to_slice, geometry = linear_placement_matrix(
+        image.size, um_per_px, ctx.atlas, float(record.position_mm), plane,
+        state.pitch_deg, state.yaw_deg, params)
     return LinearRegistrationInput(
         image=image.copy(), atlas_to_slice=atlas_to_slice, atlas_name=state.atlas,
         position_mm=float(record.position_mm), plane=plane,

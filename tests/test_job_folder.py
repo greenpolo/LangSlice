@@ -78,8 +78,12 @@ def test_open_lays_out_the_job_folder_next_to_the_images(tmp_path: Path):
     assert record["spec"]["image_folder"] == str(folder)
     assert json.loads((root / "state.json").read_text())["format_version"] == STATE_FORMAT_VERSION
     assert "open" in (root / "logs" / "events.jsonl").read_text()
-    # Reserved for the formats phase: not written yet.
-    assert not (root / "registration.json").exists()
+    # The public rendering of the state, written with every checkpoint.
+    registration = json.loads((root / "registration.json").read_text())
+    assert registration["format_version"] == 1
+    assert [entry["id"] for entry in registration["sections"]] == ["s0.png", "s1.png", "s2.png"]
+    assert all(entry["pixel_to_atlas_um"] is None and entry["problem"] == "no position"
+               for entry in registration["sections"])
 
 
 def test_a_job_folder_from_a_newer_langslice_is_refused(tmp_path: Path):

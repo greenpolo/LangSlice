@@ -19,10 +19,12 @@ without an id. Inside::
     logs/                events.jsonl (migrations, opens)
     prompt.txt           a saved Claude job's copy prompt
 
-Reserved for the formats phase, not written yet: ``registration.json`` (the
-truth: plane, affine, residual) at the top and ``residual.tif``,
-``coords.tif``, ``labels.tif``, ``labels_fiji.tif`` + ``labels.csv`` in each
-section folder.
+Derived, public files (formats phase, :mod:`langslice.job.formats`;
+``docs/file_formats.md``): ``registration.json`` at the top (every write),
+``coords.tif``, ``labels.tif``, ``labels_fiji.tif`` + ``labels.csv``,
+``residual.tif`` and ``maps.json`` in each section folder and
+``quicknii.json`` / ``visualign.json`` in ``exports/`` (at submit and by
+``export_maps``).
 
 Every path a job file stores is relative to the job folder
 (:meth:`JobLayout.relative`), so the folder can move with its images.
@@ -66,10 +68,9 @@ HOST_RESULT_FILE = "result.json"
 DEFORMABLE_DIR = "deformable"
 IMAGE_CORRECTION_DIR = "image_correction"
 SECTION_VIEWS_DIR = "views"
-#: Reserved names (the formats phase writes them; nothing does yet).
+#: The public rendering of the state (:mod:`langslice.job.formats`, which
+#: also names each section's map files).
 REGISTRATION_FILE = "registration.json"
-SECTION_RESERVED = ("residual.tif", "coords.tif", "labels.tif", "labels_fiji.tif",
-                    "labels.csv")
 
 #: The job folder's format, carried by ``job.json``. 1 (2026-10-03): this
 #: layout. A folder without ``job.json`` (the files beside the images, or a

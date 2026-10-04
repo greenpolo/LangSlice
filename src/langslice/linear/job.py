@@ -55,7 +55,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from langslice.job import migrate
+from langslice.job import formats, migrate
 from langslice.job.history import UNDO_DEPTH as UNDO_DEPTH
 from langslice.job.history import History
 from langslice.job.layout import (
@@ -636,6 +636,11 @@ class Job:
         #: False: nothing this job holds is written (the state, the history,
         #: the pictures); a dry run's job (the CLI's ``--dry-run``).
         self.persist = True
+        #: The workspace the job's sections and atlas are read through
+        #: (set by :meth:`open`, :meth:`load` and the tool door): every
+        #: checkpoint rewrites ``registration.json`` through it
+        #: (:func:`langslice.job.formats.write_registration`).
+        self.workspace: Workspace | None = None
         self._state_stamp = _stamp(self.checkpoint_path)
         self._undo_stamp = _stamp(self.undo_path)
 
@@ -691,6 +696,7 @@ class Job:
             job = cls(state, spec, layout=layout, results_path=results_path,
                       undo=undo, redo=redo, history=history)
             job.lock = lock
+            job.workspace = workspace
             if not undo and not redo and history.exists():
                 job._save_history()
             job.checkpoint()
@@ -723,6 +729,7 @@ class Job:
         job = cls(StackState.from_dict(data), spec, layout=layout, results_path=results_path,
                   undo=undo, redo=redo, history=history)
         job.persist = persist
+        job.workspace = workspace
         if not persist:
             job.views = DiscardedViews(layout)
         return job
@@ -751,12 +758,15 @@ class Job:
     # --- checkpoint and observers ------------------------------------------------
 
     def checkpoint(self) -> None:
-        """Write the state (atomically, versioned), then tell every observer."""
+        """Write the state (atomically, versioned) and its public rendering,
+        ``registration.json`` (:func:`langslice.job.formats.write_registration`;
+        a failure there is logged, never raised), then tell every observer."""
         if not self.persist:
             return
         with self.lock.held():
             write_checkpoint(self.state, self.checkpoint_path)
             self._state_stamp = _stamp(self.checkpoint_path)
+            formats.write_registration(self.layout, self.state, self.workspace)
         self._notify()
 
     @contextlib.contextmanager
