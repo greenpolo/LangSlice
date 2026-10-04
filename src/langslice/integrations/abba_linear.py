@@ -1,9 +1,10 @@
-"""Deprecated shim: moved to :mod:`langslice.hosts.integrations.abba_linear`.
+"""Deprecated shim: the ABBA cutting-angle sign constants.
 
-Kept for SliceBench (layered folder move, 2026-10-04).
+The Python live mirror that lived here (``hosts/integrations/abba_linear.py``)
+was removed 2026-10-04; its sign table is :mod:`langslice.core.abba_angles`.
+Kept for SliceBench (``slicebench/ingest/abba.py`` reads the two constants).
 """
 
-import importlib
-import sys
+from langslice.core.abba_angles import PITCH_TO_ROTATE_X_SIGN, YAW_TO_ROTATE_Y_SIGN
 
-sys.modules[__name__] = importlib.import_module("langslice.hosts.integrations.abba_linear")
+__all__ = ["PITCH_TO_ROTATE_X_SIGN", "YAW_TO_ROTATE_Y_SIGN"]
