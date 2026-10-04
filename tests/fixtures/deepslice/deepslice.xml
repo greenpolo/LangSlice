@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='utf-8'?>
+<series xmlns:first="1" xmlns:last="3" xmlns:name="deepslice" xmlns:aligner="prerelease_1.0.0" xmlns="">
+  <slice anchoring="ox=372.523816&amp;oy=42.127648&amp;oz=195.994508&amp;ux=-365.770022&amp;uy=8.023006&amp;uz=77.613936&amp;vx=-71.580206&amp;vy=16.50146&amp;vz=-228.788352" filename="M1_s001_10x_A.png" height="208" width="272" nr="1"/>
+  <slice anchoring="ox=185.433684&amp;oy=39.520912&amp;oz=-117.149934&amp;ux=-241.311758&amp;uy=-12.791328&amp;uz=331.584438&amp;vx=190.534668&amp;vy=18.251062&amp;vz=110.473704" filename="M1_s002_10x_A.png" height="208" width="272" nr="2"/>
+  <slice anchoring="ox=172.29952&amp;oy=24.350342&amp;oz=327.644898&amp;ux=-223.06007&amp;uy=1.7914&amp;uz=-256.595004&amp;vx=196.22449&amp;vy=1.19083&amp;vz=-170.57119" filename="M1_s003_10x_A.png" height="208" width="272" nr="3"/>
+</series>
