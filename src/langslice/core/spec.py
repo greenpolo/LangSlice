@@ -35,7 +35,7 @@ MAX_PARALLEL_TRANSFORMS = 4
 #: key would otherwise drop the supplied answer without a word).
 INPUT_KEYS: tuple[str, ...] = (
     "order", "positions", "angles", "orientation", "transforms", "damaged", "locked",
-    "keep_warp", "pixel_size_um", "channel_names",
+    "keep_warp", "nonlinear_skip", "pixel_size_um", "channel_names",
 )
 
 #: The two parts of a supplied cutting angle (``inputs.angles``).
@@ -324,7 +324,10 @@ class JobSpec:
     #: ``transforms`` supplies one), but their positions still move.
     #: ``keep_warp`` sections (a list of filenames) carry the user's own
     #: deformation in the host: ``fit_deformable`` refuses them
-    #: (``KEEPS_HOST_WARP``).
+    #: (``KEEPS_HOST_WARP``). ``nonlinear_skip`` sections (a list of
+    #: filenames) the user left out of Nonlinear (no linear registration and
+    #: not to be aligned first): ``fit_deformable`` and ``trace_borders``
+    #: refuse them (``NONLINEAR_SKIPPED``).
     inputs: dict[str, Any] = field(default_factory=dict)
     #: Resume from the folder checkpoint when one exists.
     resume: bool = True

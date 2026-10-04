@@ -265,6 +265,13 @@ def prepare_linear(params: dict[str, Any]) -> PreparedLinear:
     # the worker as `locked` (registered sections are locked unless it is
     # ticked): a section with the user's own warp that is locked keeps it.
     keep_warp = sorted(set(existing_warp) & set(locked))
+    # Sections the user chose not to have aligned first (no ABBA
+    # registration, Linear off, Positioning on): Nonlinear leaves them alone.
+    nonlinear_skip = params.get("nonlinear_skip") or []
+    if not isinstance(nonlinear_skip, list) or any(
+        not isinstance(name, str) or name not in geometry for name in nonlinear_skip
+    ):
+        raise ValueError("nonlinear_skip names must identify exported snapshots")
     preprocessing = _preprocessing(params.get("preprocessing"))
     channel_names = _channel_names(params.get("channel_names"))
     spec_data = dict(params.get("spec") or {})
@@ -278,6 +285,8 @@ def prepare_linear(params: dict[str, Any]) -> PreparedLinear:
         inputs["locked"] = sorted(set(locked))
     if keep_warp:
         inputs["keep_warp"] = keep_warp
+    if nonlinear_skip:
+        inputs["nonlinear_skip"] = sorted(set(nonlinear_skip))
     if damaged:
         inputs["damaged"] = dict(damaged)
     if channel_names:
@@ -517,7 +526,10 @@ def run_linear(params: dict[str, Any], emit: Emit) -> dict[str, Any]:
     read too), z_offset_mm (ABBA's slicing-axis offset, kept with the job;
     the connector converts positions with it) and existing_warp (snapshot
     filenames already carrying the user's own warp: those that are also
-    locked keep it, ``inputs.keep_warp``).
+    locked keep it, ``inputs.keep_warp``) and nonlinear_skip (snapshot
+    filenames the user left out of Nonlinear, ``inputs.nonlinear_skip``).
+    The run ends with one more checkpoint of the final state (the connector
+    applies its rows; it does not apply ``final_updates`` again).
     Checkpoint events carry initial=True with no mutations for ingestion.
     Later host_updates are replacement corrections relative to the previous
     checkpoint, never cumulative transforms; every checkpoint also carries

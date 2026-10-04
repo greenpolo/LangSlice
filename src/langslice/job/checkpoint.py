@@ -17,7 +17,7 @@ Every checkpoint funnels through :func:`save_checkpoint` (or the job's
 :func:`write_checkpoint` and :func:`notify_observers`), which makes it the one
 place a host can watch a run live: :func:`observe_checkpoints` registers a
 callback fired with the state after every write, which is what the ABBA
-mirror (:mod:`langslice.hosts.integrations.abba_linear`) attaches to.
+worker's checkpoint rows (:mod:`langslice.doors.api.abba_worker`) attach to.
 """
 
 from __future__ import annotations
