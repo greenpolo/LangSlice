@@ -61,7 +61,9 @@ JobSpec
   nonlinear: {provider: openai-oauth, image_model: null, engine: either, notes: ""}
                                 # provider "none": no image model (no trace_borders)
   inputs: order/positions/angles/transforms supplied by the host for tasks that are OFF,
-          plus pixel_size_um, damaged {id: note} (flags the agent cannot clear),
+          orientation {id: {flip, rotation_deg}} (the supplied flip and quarter turn,
+          kept as supplied), plus pixel_size_um, damaged {id: note} (flags the agent
+          cannot clear),
           locked [ids] (flip, rotation and transform the agent cannot change) and
           channel_names [one per exported page] (names of the raw channels);
           any other key is refused, naming the allowed ones (core.spec.INPUT_KEYS)
@@ -441,9 +443,10 @@ langslice linear run FOLDER [--tasks reorder,position,transform[,nonlinear]] ...
 langslice linear quick-affine ...   (unchanged)
 ```
 
-The full flag list is in `docs/current_workflow.md`. `image_resolution`,
-`agent_damage`, the per-task `notes`, `transform.max_parallel` and
-`inputs.damaged` / `inputs.locked` are spec fields without CLI flags so far.
+The full flag list is in `docs/current_workflow.md`. `agent_damage`, the
+per-task `notes` and `transform.max_parallel` are spec fields without CLI
+flags so far; `inputs.orientation`, `inputs.locked` and `inputs.damaged` are
+`--orientation`, `--locked` and `--damaged`.
 
 `estimate`, `estimate-brain`, `--stop-after`, `--rerun-from` and
 `collect-traces` are removed. A single section is a stack of one.

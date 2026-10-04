@@ -155,6 +155,21 @@ def add_linear_arguments(p: argparse.ArgumentParser) -> None:
         "of filenames to saved transform records",
     )
     p.add_argument(
+        "--orientation", default=None, metavar="JSON",
+        help='Host-supplied orientation: JSON file or inline mapping of filenames to '
+        '{"flip": true|false, "rotation_deg": 0|90|180|270}',
+    )
+    p.add_argument(
+        "--locked", default=None, metavar="JSON",
+        help="Sections already aligned in-plane by the user: JSON file or inline list "
+        "of filenames; their flip, rotation and transform cannot change",
+    )
+    p.add_argument(
+        "--damaged", default=None, metavar="JSON",
+        help="Sections the user marked damaged: JSON file or inline mapping of "
+        "filenames to a note; the flags cannot be cleared",
+    )
+    p.add_argument(
         "--out",
         default=None,
         help="Results JSON path. Default: <job folder>/exports/linear_results.json",
@@ -280,6 +295,11 @@ def build_linear_spec(args: argparse.Namespace, image_folder: str) -> JobSpec:
     transforms = load_json_arg(args.transforms, "--transforms")
     if transforms is not None:
         inputs["transforms"] = transforms
+    for key, flag in (("orientation", "--orientation"), ("locked", "--locked"),
+                      ("damaged", "--damaged")):
+        value = load_json_arg(getattr(args, key, None), flag)
+        if value is not None:
+            inputs[key] = value
     if args.pixel_size_um:
         inputs["pixel_size_um"] = float(args.pixel_size_um)
     if args.pitch is not None or args.yaw is not None:

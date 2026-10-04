@@ -33,7 +33,7 @@ MAX_PARALLEL_TRANSFORMS = 4
 #: The keys :attr:`JobSpec.inputs` takes; any other is refused (a misspelled
 #: key would otherwise drop the supplied answer without a word).
 INPUT_KEYS: tuple[str, ...] = (
-    "order", "positions", "angles", "transforms", "damaged", "locked",
+    "order", "positions", "angles", "orientation", "transforms", "damaged", "locked",
     "pixel_size_um", "channel_names",
 )
 
@@ -225,10 +225,14 @@ class JobSpec:
     #: calibration override:
     #: ``{"positions": {filename: mm}, "order": [filename, ...],
     #: "angles": {"pitch": deg, "yaw": deg}, "pixel_size_um": float,
+    #: "orientation": {filename: {"flip": bool, "rotation_deg": 0|90|180|270}},
     #: "transforms": {filename: transform_dict},
     #: "damaged": {filename: note}, "locked": [filename, ...]}``.
     #: A supplied transform may be mirrored (negative determinant, as a
-    #: host's own alignment carries a flip); it is kept as supplied.
+    #: host's own alignment carries a flip); it is kept as supplied. A
+    #: supplied ``orientation`` is the section's flip and quarter turn (the
+    #: ``orient_slices`` data; a supplied transform describes the section
+    #: after it), kept as supplied.
     #: ``channel_names`` (one name per page of a host's multi-page snapshot)
     #: names its channels. Any other key is refused (:data:`INPUT_KEYS`).
     #: ``damaged`` flags cannot be cleared by the agent. ``locked`` sections
