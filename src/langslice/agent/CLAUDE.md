@@ -418,7 +418,10 @@ decides `view`'s type and `fit_deformable`'s description and arguments, as
   inside the lane's patch budget (`OPENAI_MAX_IMAGE_PATCHES` 2500 32-px
   patches at detail high, verified 2026-10-03; `CLAUDE_MAX_IMAGE_PATCHES`
   ~1.2 MP), past which the encoder would shrink the strip, labels included:
-  a column that would cross it starts the next strip. With no position at
+  a column that would cross it starts the next strip; with `max_bytes`
+  (`opening_items(max_bytes=)`, the MCP door's page budget) a column that
+  would push the strip's JPEG past it does too, so no strip is shrunk
+  after it is drawn. With no position at
   all the strips are section-only and the atlas reference
   (`reference_atlas`) follows as atlas-only strips; when every section has
   a position the reference is not sent; a partly placed stack gets both.
@@ -1211,9 +1214,28 @@ the recent run notes (`status_and_notes`, the ADK seed's own text). MCP opens sa
 jobs through `doors.api.abba_worker.prepare_linear`, exactly like `linear.run`,
 and supplies the opening strips separately with `show_stack` pages
 (`opening_pages`: `opening.opening_items` at `CLAUDE_IMAGE_LIMIT`, each
-strip encoded by `doors/tools/media.encode_jpeg` straight into an MCP image block,
-paged under
-`PAGE_BYTES`, a strip and its text kept together). The nonlinear task
+strip composed within a page's byte budget, `max_bytes`
+`doors.tools.media.strip_bytes`: a strip that would pass it holds fewer
+sections instead of being shrunk; encoded by `doors/tools/media.encode_jpeg`
+straight into an MCP image block, paged under `PAGE_BYTES`
+(`media.REPLY_BYTES` 680 KB, `media.paged`), a strip and its text kept
+together). Since the statement asks the host to read every page before
+writing, `start_job` arms the toolbox's opening-read gate
+(`ToolBox.require_opening`): every write answers `OPENING_NOT_READ`
+(with the unread `pages`) until each page was fetched (`opening_read`);
+a host that never calls `start_job` is not gated, and the agent CLI and
+LangSlice's own agent never are (the CLI is gate-free; the ADK agent gets
+the pictures in its first message). Every tool reply goes through the same
+budget (`result_blocks`: `media.fit_reply`; past it every picture is
+shrunk together and a last text, `media.shrunk_note`, says so and asks for
+fewer sections or a smaller `view.resolution`; nothing is dropped; the job
+folder keeps the full-size pictures), without the ADK-only
+`media_delivery_id`. A call runs `in_flight` (`ToolBox.in_flight`), so a
+call the host sent beside it promotes no picture as seen
+(`begin_model_call`). `Session.close` (`doors.jobs.close_job`: running
+image-model calls settled, pictures written) ends a job replaced by
+another and every job when `serve` stops. A strict-argument refusal is
+traced like a tool result. The nonlinear task
 opens through the Claude connector (MCP and a saved Claude job alike): its
 fitting tools always, `trace_borders` only when the job's image model is
 connected (`doors.mcp.server.image_model_off`, asking

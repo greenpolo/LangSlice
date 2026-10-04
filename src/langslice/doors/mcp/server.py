@@ -16,7 +16,7 @@ import threading
 from collections.abc import Callable
 from contextlib import redirect_stdout
 from dataclasses import dataclass, field
-from io import BytesIO, TextIOWrapper
+from io import TextIOWrapper
 from pathlib import Path
 from typing import Any
 
@@ -40,10 +40,19 @@ from langslice.doors.api.abba_worker import (
 )
 from langslice.doors.api.claude_jobs import load_job
 from langslice.doors.card import write_card
+from langslice.doors.jobs import close_job
 from langslice.doors.mcp.host_channel import HostChannel
 from langslice.doors.statement import job_statement, opening_for_mcp, read_notes
-from langslice.doors.tools import TOOL_MEDIA_PARTS_KEY
-from langslice.doors.tools.media import encode_jpeg
+from langslice.doors.tools import TOOL_MEDIA_DELIVERY_ID_KEY, TOOL_MEDIA_PARTS_KEY
+from langslice.doors.tools.media import (
+    REPLY_BYTES,
+    Item,
+    encode_jpeg,
+    fit_reply,
+    paged,
+    shrunk_note,
+    strip_bytes,
+)
 from langslice.doors.tools.toolbox import ToolBox, build_tools
 from langslice.doors.trace import TRACE_DIR_ENV, HostTrace
 from langslice.job.job import Job
@@ -121,16 +130,34 @@ class Session:
     def state(self) -> StackState:
         return self.job.state
 
+    def close(self) -> None:
+        """Let the job go: its host channel closed, its running image-model
+        calls settled and recorded, its pictures written
+        (:func:`langslice.doors.jobs.close_job`, as every door ends a job).
+        When another job replaces it and when the server stops."""
+        if self.channel is not None:
+            self.channel.close()
+        try:
+            close_job(self.job)
+        except Exception:
+            logger.warning("Could not finish the job in %s", self.job.folder, exc_info=True)
+
 
 # --- content conversion ----------------------------------------------------
 
 
-def image_block(image: Image.Image) -> ImageContent:
-    """One core picture as an MCP image block (the doors' JPEG encoding)."""
-    return ImageContent(
-        type="image", data=base64.b64encode(encode_jpeg(image)).decode("ascii"),
-        mimeType="image/jpeg",
-    )
+def image_block(image: Image.Image | bytes) -> ImageContent:
+    """One core picture (or its JPEG bytes) as an MCP image block (the doors'
+    JPEG encoding)."""
+    data = image if isinstance(image, bytes) else encode_jpeg(image)
+    return ImageContent(type="image", data=base64.b64encode(data).decode("ascii"),
+                        mimeType="image/jpeg")
+
+
+def blocks_of(items: list[Item]) -> list[ContentBlock]:
+    """Texts and JPEG bytes (:data:`langslice.doors.tools.media.Item`) as MCP blocks."""
+    return [TextContent(type="text", text=item) if isinstance(item, str) else image_block(item)
+            for item in items]
 
 
 def result_blocks(result: Any) -> list[ContentBlock]:
@@ -139,11 +166,16 @@ def result_blocks(result: Any) -> list[ContentBlock]:
     The tools return plain pictures (PIL images, captions burned in) and
     lines of text under ``TOOL_MEDIA_PARTS_KEY``; each picture becomes an
     image block in the doors' JPEG encoding (:func:`image_block`), each
-    non-empty text a text block. ``images_attached`` counts both.
+    non-empty text a text block. ``images_attached`` counts both. The
+    ADK-only delivery id (``media_delivery_id``) is left out. The whole
+    reply stays within the host's reply budget
+    (:func:`langslice.doors.tools.media.fit_reply`): past it every picture is
+    shrunk together and a last text says so and how to get full-size ones.
     """
     media: list[Any] = []
     if isinstance(result, dict):
         body = dict(result)
+        body.pop(TOOL_MEDIA_DELIVERY_ID_KEY, None)
         listed = body.pop(TOOL_MEDIA_PARTS_KEY, None)
         if isinstance(listed, list):
             media = [item for item in listed if isinstance(item, (str, Image.Image))]
@@ -153,16 +185,13 @@ def result_blocks(result: Any) -> list[ContentBlock]:
             body[TOOL_MEDIA_PARTS_KEY] = listed
     else:
         body = result
-    blocks: list[ContentBlock] = [
-        TextContent(type="text", text=json.dumps(body, default=str))
-    ]
-    for item in media:
-        if isinstance(item, str):
-            if item:
-                blocks.append(TextContent(type="text", text=item))
-        else:
-            blocks.append(image_block(item))
-    return blocks
+    items: list[Item] = [json.dumps(body, default=str)]
+    items += [item if isinstance(item, str) else encode_jpeg(item)
+              for item in media if not isinstance(item, str) or item]
+    fitted, shrunk = fit_reply(items)
+    if shrunk is not None:
+        fitted.append(shrunk_note(sum(isinstance(item, bytes) for item in fitted), shrunk))
+    return blocks_of(fitted)
 
 
 # --- trace -----------------------------------------------------------------
@@ -223,55 +252,26 @@ def open_job(
     return Session(job, ctx, box, trace, image_model_off=off, events=events)
 
 
-# Budget includes JSON/text overhead, not only encoded image bytes.
-PAGE_BYTES = 680_000
+#: The serialized bytes of one ``show_stack`` page, JSON and base64 included
+#: (every MCP reply's budget, :data:`langslice.doors.tools.media.REPLY_BYTES`).
+PAGE_BYTES = REPLY_BYTES
 
 
 def page_size(blocks: list[ContentBlock]) -> int:
     return len(json.dumps([block.model_dump(exclude_none=True) for block in blocks]).encode())
 
 
-def _fit_page(blocks: list[ContentBlock]) -> list[ContentBlock]:
-    """Shrink oversized pictures together; never merge labelled images."""
-    while page_size(blocks) > PAGE_BYTES:
-        changed = False
-        for block in blocks:
-            if isinstance(block, ImageContent):
-                with Image.open(BytesIO(base64.b64decode(block.data))) as image:
-                    if max(image.size) <= 32:
-                        continue
-                    image = image.convert("RGB")
-                    image.thumbnail((max(1, int(image.width * .8)), max(1, int(image.height * .8))))
-                    stream = BytesIO()
-                    image.save(stream, format="JPEG", quality=80)
-                    block.data = base64.b64encode(stream.getvalue()).decode("ascii")
-                    block.mimeType = "image/jpeg"
-                    changed = True
-        if not changed:
-            raise ValueError("Opening picture labels exceed the page budget")
-    return blocks
-
-
 def opening_pages(session: Session) -> list[list[ContentBlock]]:
     """The opening strips (:mod:`langslice.core.opening`) at Claude's image
-    size, paged under :data:`PAGE_BYTES`; a strip and its text stay together."""
-    pages: list[list[ContentBlock]] = []
-    page: list[ContentBlock] = []
-    pending: list[ContentBlock] = []
-    for item in opening_items(session.state, session.ctx, limit=CLAUDE_IMAGE_LIMIT):
-        if isinstance(item, str):
-            pending.append(TextContent(type="text", text=item))
-            continue
-        pending.append(image_block(item))
-        group = _fit_page(pending)
-        if page and page_size(page + group) > PAGE_BYTES:
-            pages.append(page)
-            page = []
-        page.extend(group)
-        pending = []
-    if page or pending:
-        pages.append(page + pending)
-    return pages
+    size, each strip composed within a page's byte budget (fewer sections per
+    strip, never a shrunk strip: :func:`langslice.doors.tools.media.strip_bytes`),
+    paged under :data:`PAGE_BYTES` (:func:`langslice.doors.tools.media.paged`);
+    a strip and its text stay together."""
+    items = opening_items(session.state, session.ctx, limit=CLAUDE_IMAGE_LIMIT,
+                          max_bytes=strip_bytes(PAGE_BYTES))
+    encoded: list[Item] = [item if isinstance(item, str) else encode_jpeg(item)
+                           for item in items]
+    return [blocks_of(page) for page in paged(encoded, PAGE_BYTES)]
 
 
 def save_page(session: Session, page: int, blocks: list[ContentBlock]) -> list[str]:
@@ -293,9 +293,13 @@ def save_page(session: Session, page: int, blocks: list[ContentBlock]) -> list[s
 
 
 def briefing(session: Session) -> list[ContentBlock]:
-    """Text only; opening pictures are available through show_stack."""
+    """Text only; opening pictures are available through show_stack. The
+    statement asks the host to read every page before writing, so from here
+    every write is refused until it has (the toolbox's opening-read gate,
+    :meth:`langslice.doors.tools.toolbox.ToolBox.require_opening`)."""
     if not session.pages:
         session.pages = opening_pages(session)
+    session.box.require_opening(len(session.pages))
     return [TextContent(type="text", text=job_statement(
         session.spec, session.state, session.ctx, door="mcp", tool_names=session.box.names,
         opening=opening_for_mcp(len(session.pages)), notes=session.notes,
@@ -401,7 +405,10 @@ def host_tool(session: Session, tool: Callable[..., Any]) -> Callable[..., Any]:
                 with session.lock:
                     return invoke()
 
-            result = await to_thread.run_sync(serialized)
+            # In flight until it answers: a call the host sent beside it
+            # promotes no picture as seen (begin_model_call).
+            with session.box.in_flight():
+                result = await to_thread.run_sync(serialized)
         except Exception as exc:
             logger.exception("Tool %s failed", tool.__name__)
             result = {"status": "error", "error": type(exc).__name__, "message": str(exc)}
@@ -419,7 +426,8 @@ def host_tool(session: Session, tool: Callable[..., Any]) -> Callable[..., Any]:
     return run
 
 
-def strict_arguments(server: FastMCP, name: str, tool: Callable[..., Any]) -> None:
+def strict_arguments(server: FastMCP, name: str, tool: Callable[..., Any],
+                     trace: Callable[[], HostTrace | None] = lambda: None) -> None:
     """Refuse unknown or misplaced arguments on the registered tool *name*.
 
     FastMCP validates arguments against a model built from the signature and
@@ -430,7 +438,8 @@ def strict_arguments(server: FastMCP, name: str, tool: Callable[..., Any]) -> No
     after FastMCP's JSON pre-parse of string-encoded objects, then
     :func:`~langslice.doors.tools.arguments.normalize_arguments`, so what the ADK
     agent may send (a corrected index as a number, a null picture option)
-    passes FastMCP's schema check here too.
+    passes FastMCP's schema check here too. A refusal is traced like any
+    tool result (*trace*: the session's trace, when it keeps one).
     """
     from langslice.doors.tools.arguments import argument_refusal, normalize_arguments
 
@@ -449,7 +458,12 @@ def strict_arguments(server: FastMCP, name: str, tool: Callable[..., Any]) -> No
             arguments = self.pre_parse_json(arguments_to_validate)
             refusal = argument_refusal(tool, arguments)
             if refusal is not None:
-                return result_blocks(refusal)
+                blocks = result_blocks(refusal)
+                held = trace()
+                if held is not None:
+                    held.write("tool_result", name=name, args=arguments,
+                               content=describe_blocks(blocks))
+                return blocks
             return await super().call_fn_with_arg_validation(
                 fn, fn_is_async, normalize_arguments(tool, arguments),
                 arguments_to_pass_directly)
@@ -467,6 +481,7 @@ def build_server(
     *,
     job_id: str | None = None,
     atlas_loader: Callable[[str], Any] | None = None,
+    sessions: dict[str, Session] | None = None,
 ) -> FastMCP:
     """The server. *spec_for* turns a folder into this server's job spec.
 
@@ -475,9 +490,11 @@ def build_server(
     *job_id* opens that saved job now, for hosts that list tools only once, at
     startup (Claude Code in print mode ignores a later tool-list change).
     *atlas_loader* is for tests and offline hosts, as in the engine.
+    *sessions* holds the open job under ``"job"`` (the caller closes it when
+    the server stops: :func:`serve`).
     """
     server = FastMCP(SERVER_NAME, instructions=INSTRUCTIONS)
-    current: dict[str, Session] = {}
+    current: dict[str, Session] = {} if sessions is None else sessions
 
     def install(session: Session) -> None:
         """List the session's tools: the verbs the registry gives its spec
@@ -485,8 +502,7 @@ def build_server(
         then the door's own ``show_stack``."""
         old = current.get("job")
         if old is not None:
-            if old.channel is not None:
-                old.channel.close()
+            old.close()
             server.remove_tool("show_stack")
             for name in old.box.names:
                 server.remove_tool(name)
@@ -496,7 +512,7 @@ def build_server(
                 annotations=ToolAnnotations(readOnlyHint=tool.__name__ in READ_ONLY_TOOLS),
                 structured_output=False,
             )
-            strict_arguments(server, tool.__name__, tool)
+            strict_arguments(server, tool.__name__, tool, lambda: session.trace)
         async def show_stack(page: int) -> list[ContentBlock]:
             """Read an opening-picture page (1-based); read every page before writes."""
             if not session.pages:
@@ -504,6 +520,7 @@ def build_server(
             if not 1 <= page <= len(session.pages):
                 raise ValueError(f"page must be between 1 and {len(session.pages)}")
             blocks = session.pages[page - 1]
+            session.box.opening_read(page)
             views = save_page(session, page, blocks)
             # The opening pages are this door's seed: the host's viewer
             # follows the whole stack and its log shows the saved pictures.
@@ -576,8 +593,15 @@ def serve(
     wire = os.fdopen(os.dup(sys.stdout.fileno()), "wb", buffering=0)
     os.dup2(sys.stderr.fileno(), sys.stdout.fileno())
     with redirect_stdout(sys.stderr):
-        server = build_server(spec_for, folder, job_id=job_id)
-        anyio.run(_run_stdio, server, wire)
+        sessions: dict[str, Session] = {}
+        server = build_server(spec_for, folder, job_id=job_id, sessions=sessions)
+        try:
+            anyio.run(_run_stdio, server, wire)
+        finally:
+            # The host went away: running image-model calls land, pictures
+            # are written (Session.close).
+            for session in sessions.values():
+                session.close()
 
 
 async def _run_stdio(server: FastMCP, wire: Any) -> None:

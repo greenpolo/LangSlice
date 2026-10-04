@@ -32,7 +32,7 @@ from langslice.core.spec import JobSpec
 from langslice.core.state import StackState
 from langslice.core.workspace import log_progress
 from langslice.doors.card import write_card
-from langslice.doors.jobs import JobContext
+from langslice.doors.jobs import JobContext, close_job
 from langslice.doors.statement import read_notes, status_and_notes, user_notes_lines
 from langslice.doors.tools.media import opening_parts, packaged_tools
 from langslice.doors.tools.toolbox import ToolBox, build_tools
@@ -250,8 +250,9 @@ async def run(
             tool_calls, turns = await run_session(state, ctx, spec, box, on_event=on_event)
         finally:
             # Background image corrections finish and are recorded even when
-            # the session ends without a submit.
-            job.settle_image_corrections()
+            # the session ends without a submit; the pictures are written
+            # (close_job, as every door ends a job).
+            close_job(job)
         ctx.progress(
             f"[session] {tool_calls} tool call(s) over {turns} turn(s); "
             + ("submitted" if state.submitted else "no submission")

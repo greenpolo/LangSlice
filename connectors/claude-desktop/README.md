@@ -98,7 +98,10 @@ claude --strict-mcp-config --mcp-config connectors/claude-desktop/langslice.mcp.
   Sections arrive as labelled strips in the stack's order (1568 px long, Claude's
   recommended largest image), the atlas at each section's current position
   beneath it; atlas reference strips follow when a section has no position.
-  Every page stays below 680,000 serialized bytes.
+  Every page stays below 680,000 serialized bytes (a strip holds fewer
+  sections rather than being shrunk), and every write is refused until each
+  page was read. Every tool reply stays below the same size: past it, its
+  pictures are shrunk together and the reply says so.
 - **Different from the ADK run:**
   - There is no turn budget and no nudges.
   - There is no image working set, so the host keeps every picture for the

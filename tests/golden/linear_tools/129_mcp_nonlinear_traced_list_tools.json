@@ -1,0 +1,13 @@
+{
+ "call": {
+  "arguments": {},
+  "tool": "list_tools"
+ },
+ "content": [
+  {
+   "text": "[\"fit_deformable\", \"grep_atlas\", \"mark_damaged\", \"note\", \"redo\", \"show_stack\", \"start_job\", \"status\", \"submit\", \"trace_borders\", \"undo\", \"view_atlas\", \"view_placement\", \"view_slices\"]"
+  }
+ ],
+ "door": "mcp_nonlinear_traced",
+ "images": []
+}

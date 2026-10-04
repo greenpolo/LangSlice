@@ -17,7 +17,7 @@
  },
  "content": [
   {
-   "text": "{\"status\": \"ok\", \"compared\": [{\"id\": \"s0.png\", \"position_mm\": 0.1, \"current_position_mm\": 0.1, \"calibration\": {\"um_per_px\": 31.25, \"source\": \"host\"}, \"transform\": \"identity\"}], \"unknown_ids\": [], \"no_position\": [], \"view\": {\"mode\": \"overlay\", \"channels\": [\"view\"], \"atlas_channels\": [\"borders\"], \"outlines\": \"all\", \"border_color\": \"#ffff00\", \"border_thickness\": 1.0, \"zoom\": [0.0, 0.0, 1.0, 1.0], \"deformation\": \"applied\"}, \"render_failed\": [], \"description\": \"Shown, in order: s0.png at 0.10 mm; the images of each pair in that order, each captioned with the section and the position it is shown at.\", \"media_delivery_id\": \"__direct__\", \"images_attached\": 1}"
+   "text": "{\"status\": \"ok\", \"compared\": [{\"id\": \"s0.png\", \"position_mm\": 0.1, \"current_position_mm\": 0.1, \"calibration\": {\"um_per_px\": 31.25, \"source\": \"host\"}, \"transform\": \"identity\"}], \"unknown_ids\": [], \"no_position\": [], \"view\": {\"mode\": \"overlay\", \"channels\": [\"view\"], \"atlas_channels\": [\"borders\"], \"outlines\": \"all\", \"border_color\": \"#ffff00\", \"border_thickness\": 1.0, \"zoom\": [0.0, 0.0, 1.0, 1.0], \"deformation\": \"applied\"}, \"render_failed\": [], \"description\": \"Shown, in order: s0.png at 0.10 mm; the images of each pair in that order, each captioned with the section and the position it is shown at.\", \"images_attached\": 1}"
   },
   {
    "image": 0,
