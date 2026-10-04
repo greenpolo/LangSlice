@@ -596,12 +596,6 @@ def test_6_an_agent_cannot_move_a_supplied_placement(images, monkeypatch):
     assert_exported(images / "langslice")
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "No orientation in the host inputs: apply_host_inputs (job/job.py:163-250) reads "
-    "order, positions, angles, transforms, damaged and locked only, so a supplied flip "
-    "or quarter turn can only be folded into the affine; unknown keys are ignored "
-    "silently. JobSpec.inputs (core/spec.py) needs an 'orientation' entry "
-    "({filename: {flip, rotation_deg}})."))
 def test_6_a_supplied_orientation_is_kept(images):
     import langslice
 
@@ -610,6 +604,32 @@ def test_6_a_supplied_orientation_is_kept(images):
     with langslice.open_job(images) as job:
         assert job.state.by_id(ID1).flip is True
         assert job.state.by_id(ID1).rotation_deg == 90
+        assert job.state.by_id(ID1).transform == EXTERNAL_TRANSFORMS[ID1]  # kept as supplied
+        assert job.state.by_id(ID0).flip is False and job.state.by_id(ID0).rotation_deg == 0
+        assert job.fit_deformable(slices=list(IDS), keep_linear="kept")["status"] == "ok"
+        assert job.submit(summary="done", notes=[], interval_breaks=[])["status"] == "ok"
+    document = assert_exported(images / "langslice")
+    oriented = document["sections"][1]["parameters"]["orientation"]
+    assert (oriented["flip"], oriented["rotation_deg"]) == (True, 90)
+
+
+@pytest.mark.parametrize("bad", [
+    {"flip": "yes"}, {"rotation_deg": 45}, {"rotate_deg": 90}, {"flip": True, "turn": 1}])
+def test_a_bad_supplied_orientation_is_refused(images, bad):
+    with pytest.raises(ValueError, match="orientation"):
+        create(spec_for(images, ["nonlinear"], **external_inputs(), orientation={ID1: bad}))
+
+
+def test_cli_init_takes_an_orientation(capsys, images):
+    orientation = {ID2: {"flip": True}, ID0: {"rotation_deg": 180}}
+    job = init(capsys, images, "nonlinear", "--positions", json.dumps(POSITIONS),
+               "--transforms", transforms_file(images), "--orientation", json.dumps(orientation))
+    from langslice.job.checkpoint import load_checkpoint
+
+    state = load_checkpoint(str(job / "state.json"))
+    assert state is not None
+    assert (state.by_id(ID2).flip, state.by_id(ID2).rotation_deg) == (True, 0)
+    assert (state.by_id(ID0).flip, state.by_id(ID0).rotation_deg) == (False, 180)
 
 
 def test_6_an_unknown_input_is_refused(images):
@@ -651,16 +671,21 @@ def test_6_a_second_init_with_new_inputs_is_not_silently_ignored(capsys, images)
     assert positions() == moved
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "`langslice job FOLDER init` has --positions/--order/--transforms/--pitch/--yaw "
-    "but no --damaged, --locked or orientation flag (doors/cli/linear.py "
-    "add_linear_arguments / build_linear_spec), though JobSpec.inputs takes damaged "
-    "and locked."))
 def test_6_cli_init_takes_locked_and_damaged_sections(capsys, images):
+    damaged = images.parent / "damaged.json"
+    damaged.write_text(json.dumps({ID2: "torn"}))
     job = init(capsys, images, "nonlinear", "--positions", json.dumps(POSITIONS),
-               "--locked", json.dumps(list(IDS)), "--damaged", json.dumps({ID2: "torn"}))
+               "--locked", json.dumps(list(IDS)), "--damaged", str(damaged))
     spec = json.loads((job / "job.json").read_text())["spec"]
     assert spec["inputs"]["locked"] == list(IDS)
+    assert spec["inputs"]["damaged"] == {ID2: "torn"}
+    from langslice.job.checkpoint import load_checkpoint
+
+    state = load_checkpoint(str(job / "state.json"))
+    assert state is not None and state.by_id(ID2).damaged is True
+    # Locked sections carry the host identity: the nonlinear step can start.
+    ok(capsys, images, "fit_deformable", "--slices", ID0, "--slices", ID1, "--slices", ID2,
+       "--keep-linear", "kept")
 
 
 @pytest.mark.xfail(strict=True, reason=(

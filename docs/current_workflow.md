@@ -32,6 +32,7 @@ langslice linear run FOLDER [--tasks reorder,position,transform[,nonlinear]]
     [--thickness UM] [--interval UM] [--strict-interval] [--deepslice] [--bayesian]
     [--angles]
     [--fact TEXT ...] [--positions JSON] [--order JSON] [--transforms JSON]
+    [--orientation JSON] [--locked JSON] [--damaged JSON]
     [--out PATH] [--fresh] [--trace-dir PATH]
     [--max-quota-percent N] [--max-input-tokens N] [--gates] [--playbook]
     [--image-retention legacy] [--no-debrief]
@@ -48,13 +49,21 @@ is a deformation per section, fitted with `fit_deformable`, and
 `trace_borders`). A task
 that is OFF contributes no tools and takes its answer from the host instead:
 `--order` (a JSON list of filenames), `--positions` (a JSON mapping filename to
-millimetres) and `--transforms` (filename to a transform record in the
-checkpoint format) are read as a file path or as inline JSON. Hosts present
+millimetres), `--transforms` (filename to a transform record in the
+checkpoint format) and `--orientation` (filename to `{"flip": true|false,
+"rotation_deg": 0|90|180|270}`: the section's flip and quarter turn, which
+a supplied transform describes the section after) are read as a file path
+or as inline JSON (an inline object or list is always parsed as JSON,
+however long). So are `--locked` (a list of filenames the user already
+aligned in-plane: their flip, rotation and transform cannot change, and a
+locked section without a supplied transform carries the host identity) and
+`--damaged` (filename to a note: damage flags the agent cannot clear). Hosts present
 `reorder` + `position` as one Positioning task and `transform` as Linear; see
 [the interface design](interface_design.md). The ABBA dialog's extra controls
-(image resolution low/medium/high/auto, per-task notes, the per-call section
-cap, user damage marks, locked sections, the agent's damage tool) are `JobSpec`
-fields, not CLI flags yet; see `docs/linear_design.md`. Image resolution sets
+(per-task notes, the per-call section cap, the agent's damage tool) are
+`JobSpec` fields, not CLI flags yet (image resolution is
+`--image-resolution`, user damage marks and locked sections are
+`--damaged` and `--locked`); see `docs/linear_design.md`. Image resolution sets
 the long edge of each opening-strip tile and of every later picture the agent sees
 (low 256/512 px, medium 384/768, high 512/1024; auto 256 and then the agent's
 own `view.resolution` per call, up to the driver model's largest image:

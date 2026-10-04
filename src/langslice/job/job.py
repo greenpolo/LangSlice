@@ -58,7 +58,7 @@ import numpy as np
 from langslice.core import deformation
 from langslice.core.discovery import discover_slices
 from langslice.core.spec import MAX_PARALLEL_TRANSFORMS, JobSpec
-from langslice.core.state import IDENTITY_PARAMS, SliceState, StackState
+from langslice.core.state import IDENTITY_PARAMS, ROTATIONS, SliceState, StackState
 from langslice.job import formats, migrate
 from langslice.job.checkpoint import (
     notify_observers,
@@ -164,7 +164,9 @@ def apply_host_inputs(state: StackState, spec: JobSpec) -> None:
     """Write the host's answers for the tasks that are switched off.
 
     Order arrives as a list of filenames, positions as a filename -> mm
-    mapping, angles as ``{"pitch": deg, "yaw": deg}``, damage as a filename
+    mapping, angles as ``{"pitch": deg, "yaw": deg}``, orientation as a
+    filename -> ``{"flip": bool, "rotation_deg": 0|90|180|270}`` mapping (a
+    missing key leaves that part as it is), damage as a filename
     -> note mapping, and transforms as filename -> stored transform dictionaries.
     Anything the host
     supplies for a task that IS on is applied too — it is a starting point,
@@ -208,6 +210,32 @@ def apply_host_inputs(state: StackState, spec: JobSpec) -> None:
             f"inputs: cutting angles set by the host "
             f"(pitch {state.pitch_deg:.2f}, yaw {state.yaw_deg:.2f})"
         )
+
+    orientation = inputs.get("orientation") or {}
+    if orientation:
+        if not isinstance(orientation, dict):
+            raise ValueError("inputs.orientation must map section filenames to "
+                             "{flip, rotation_deg}")
+        for name, value in orientation.items():
+            record = state.by_id(str(name))
+            if record is None:
+                raise ValueError(f"inputs.orientation names an unknown section: {name!r}")
+            if not isinstance(value, dict) or set(value) - {"flip", "rotation_deg"}:
+                raise ValueError(f"inputs.orientation[{name!r}] must be "
+                                 "{flip: bool, rotation_deg: 0|90|180|270}")
+            flip = value.get("flip")
+            if flip is not None:
+                if not isinstance(flip, bool):
+                    raise ValueError(f"inputs.orientation[{name!r}].flip must be true or false")
+                record.flip = flip
+            rotation = value.get("rotation_deg")
+            if rotation is not None:
+                if isinstance(rotation, bool) or not isinstance(rotation, (int, float)) or (
+                        rotation % 360 not in ROTATIONS):
+                    raise ValueError(f"inputs.orientation[{name!r}].rotation_deg must be one "
+                                     f"of {list(ROTATIONS)}")
+                record.rotation_deg = int(rotation % 360)
+        state.notes.append(f"inputs: {len(orientation)} orientation(s) set by the host")
 
     transforms = inputs.get("transforms") or {}
     if transforms:
