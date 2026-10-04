@@ -107,7 +107,7 @@ job.status()
 ```
 
 See [the agent CLI](docs/agent_cli.md). Claude Code and Codex setups (skills,
-one-brain registration agents, MCP config): [`connectors/claude-code/`](connectors/claude-code/README.md),
+one-brain registration agents): [`connectors/claude-code/`](connectors/claude-code/README.md),
 [`connectors/codex/`](connectors/codex/README.md). A scripted pipeline can run the image
 model's border trace and the deformable fit without the agent, on one section or
 a folder, with a model and prompt of its own:

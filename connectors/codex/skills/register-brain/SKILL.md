@@ -5,9 +5,10 @@ description: Set up and run a LangSlice registration of one brain (a folder of h
 
 # Register a brain with LangSlice
 
-You (the main session) set up the job, launch a registration subagent, and
-check what it produced. You never do the registration yourself: no positions,
-transforms or fits written by you. The subagent registers exactly one brain.
+You (the main session) prepare the job, launch a registration subagent, check
+what it produced, and handle import and export with other software. You never
+do the registration yourself: no positions, transforms or fits written by you.
+Registration is always the subagent's, and it registers exactly one brain.
 
 ## 1. Ask the user (only what is not already said)
 
@@ -28,13 +29,11 @@ transforms or fits written by you. The subagent registers exactly one brain.
 - Notes about the brain (a tear, a damaged section).
 - Which subagent the user allows (step 3).
 
-`langslice --help`, `langslice job FOLDER init --help` list every flag. Check
-that `langslice` runs (`langslice version`); if it does not, tell the user how
-the plugin README says to install it, and stop.
+`langslice job FOLDER init --help` lists every flag. Check that `langslice`
+runs (`langslice version`); if it does not, tell the user how the plugin
+README says to install it, and stop.
 
 ## 2. Create the job
-
-For the CLI and scripting subagents:
 
 ```bash
 langslice job FOLDER init --tasks position,transform --atlas allen_mouse_25um \
@@ -47,52 +46,45 @@ and `state`, `warnings`). Report any warning to the user (for example what a
 continued; changed inputs are refused with `INPUTS_CHANGED`, which names
 `--fresh`: ask the user before starting over.
 
-For the MCP subagent the job is saved with the same flags, and the command
-prints the id to give the subagent (on stderr: `Saved job ID in DIR`):
-
-```bash
-langslice claude prepare FOLDER --tasks position,transform --notes "Section 12 has a tear."
-```
-
 ## 3. Launch exactly one registration subagent
 
-Pick the variant the user allows, by how much access it gets:
+Pick the variant the user allows:
 
 | Subagent | Can do | Use when |
 | --- | --- | --- |
-| `register_mcp` | only LangSlice's MCP tools | the user wants no shell or file access (default) |
-| `register_cli` | Bash + Read | the user accepts a shell for `langslice job` |
-| `register_scripting` | Bash + Read + Write + Edit | the user also wants scripts with the LangSlice Python library |
+| `register_cli` | Bash + Read: the `langslice job` command line | default |
+| `register_scripting` | Bash + Read + Write + Edit: also scripts with the LangSlice Python library in the job folder | the user wants scripting |
 
-Ask Codex to spawn that custom agent by name (`register_mcp`, `register_cli`
-or `register_scripting`; the agent files are in `connectors/codex/agents/`).
-The request names only the job:
-"Register the brain in job id ID" (MCP) or "Register the brain in job folder
-FOLDER" (CLI, scripting). Add the user's notes only if they were not already
-saved in the job. Do not add registration advice of your own: the subagent
-works from LangSlice's own job statement or job card. Do not give it any
-other task. Run one subagent per job at a time.
+Ask Codex to spawn that custom agent by name. The request names only the job
+folder: "Register the brain in job folder FOLDER". Add the user's notes only
+if they were not already saved in the job. Do not add registration advice of
+your own: the subagent works from LangSlice's own job statement and card. Do
+not give it any other task. Run one subagent per job at a time.
 
 Shell restriction: Codex rules govern commands that run outside the sandbox
-only. If the user wants the CLI variants limited, point them to
-`connectors/codex/README.md` (rules file and sandbox settings) before launching.
+only. If the user wants the agent limited, point them to
+`connectors/codex/README.md` (rules file and sandbox) before launching.
 
 ## 4. Check the result yourself
 
 When the subagent returns, do not trust its summary alone:
 
-- `langslice job FOLDER status`: the job's state, tasks and any open items;
+- `langslice job FOLDER status`: the job's state, tasks and open items;
   confirm the job was submitted.
 - Open `FOLDER/registration.json` (derived from `state.json`, the truth) and
   the maps and exports under `FOLDER/exports/` (`quicknii.json`,
   `visualign.json`) and each section's maps. `docs/file_formats.md` in the
   LangSlice repository describes every file.
-- Look at the pictures the job saved (`views/`, paths in `artifacts`) by opening the images, and tell the user in plain words what looks right and what does not.
+- Look at the pictures the job saved (`views/`, paths in `artifacts`) by
+  opening them, and tell the user in plain words what looks right and what does not.
   If a picture and a number disagree, say so.
 - Changes the user asks for go through another subagent run on the same job
   (every write is one undo step), not through your own edits.
 
-To export without registering: `langslice job FOLDER export_maps` writes each
-placed section's maps, `exports/quicknii.json`, `exports/visualign.json` and
-`registration.json` from the job as it stands. To bring the registration into
-ABBA or QuPath, use the `abba` skill.
+## 5. Import and export with other software
+
+`langslice job FOLDER export_maps` writes each placed section's maps,
+`exports/quicknii.json`, `exports/visualign.json` and `registration.json`
+from the job as it stands. Starting from another program's registration is
+`init --registration FILE` (step 1). For ABBA, Fiji, QuPath or QuickNII, use
+the `abba` skill.
