@@ -88,6 +88,52 @@ def _oauth_models() -> dict[str, object]:
     }
 
 
+#: The image-model choices a host dialog shows, in its order: the ChatGPT
+#: image lane first, None last (``setup_status()["image_models"]``).
+IMAGE_MODEL_CHOICES: tuple[tuple[str, str], ...] = (
+    ("openai-oauth", "ChatGPT image lane"),
+    ("gemini-api", "Gemini API"),
+    ("openai-api", "OpenAI API"),
+    ("none", "None"),
+)
+
+
+def _image_models(provider: str) -> tuple[list[str], str | None]:
+    """``(models, default)`` a dialog offers for *provider*'s image model."""
+    if provider == "openai-oauth":
+        from langslice.providers import registry
+
+        return (list(registry.OPENAI_OAUTH_IMAGE_MODELS),
+                registry.OPENAI_OAUTH_DEFAULT_IMAGE_MODEL)
+    if provider == "gemini-api":
+        from langslice.providers import vlm_config
+
+        models = [name for name in vlm_config.AVAILABLE_MODELS if "-image" in name]
+        return models, (models[0] if models else None)
+    if provider == "openai-api":
+        from langslice.providers import openai_config
+
+        default = openai_config.get_openai_image_model()
+        return [default], default
+    return [], None
+
+
+def image_model_choices() -> list[dict[str, Any]]:
+    """Every image-model choice a host dialog shows (:data:`IMAGE_MODEL_CHOICES`),
+    each with whether it is connected here (:func:`image_model_connected`:
+    offline presence checks only, no provider contacted; None is always
+    connected: it calls no model) and the models to offer."""
+    choices = []
+    for provider, label in IMAGE_MODEL_CHOICES:
+        models, default = _image_models(provider)
+        choices.append({
+            "provider": provider, "label": label,
+            "connected": provider == "none" or image_model_connected(provider),
+            "models": models, "default_model": default,
+        })
+    return choices
+
+
 def setup_status() -> dict[str, Any]:
     """Return installation and credential presence, without network access or secrets."""
     error = None
@@ -105,6 +151,7 @@ def setup_status() -> dict[str, Any]:
         "python_executable": sys.executable,
         "environment_prefix": sys.prefix,
         "providers": providers,
+        "image_models": image_model_choices(),
         "credentials_error": error,
     }
 
