@@ -14,6 +14,7 @@ layer's files (``langslice.job``) neither a door nor an operation.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 
@@ -88,6 +89,12 @@ FORBIDDEN = ("google.adk", "google.genai", "litellm", "openai")
 PLAIN_DOORS = (
     "langslice.linear.toolbox",
     "langslice.linear.view_options",
+    "langslice.doors.declarations",
+    "langslice.doors.jobs",
+    "langslice.doors.library",
+    "langslice.doors.card",
+    "langslice.doors.cli",
+    "langslice.doors.cli.job",
 )
 
 _PROBE = """
@@ -127,3 +134,45 @@ def test_operations_and_job_files_load_no_door(module: str):
     assert done.returncode == 0, done.stderr
     loaded = json.loads(done.stdout.strip().splitlines()[-1])
     assert loaded == [], f"{module} loads {loaded[:5]}"
+
+
+_LIBRARY = """
+import json, os, sys
+from pathlib import Path
+
+import langslice
+from tests.golden.record import PIXEL_SIZE_UM, atlas_loader, write_sections
+from langslice.doors.jobs import create
+from langslice.linear.spec import JobSpec
+
+images = Path(sys.argv[1])
+write_sections(images)
+loader = atlas_loader()
+create(JobSpec(image_folder=str(images), preprocess="none",
+               tasks=["reorder", "position", "transform"],
+               inputs={"pixel_size_um": PIXEL_SIZE_UM}), atlas_loader=loader).close()
+job = langslice.open_job(images, atlas_loader=loader)
+job.status()
+job.set_positions(entries=[{"id": "s0.png", "position_mm": 0.1}], view={"mode": "overlay"})
+job.close()
+forbidden = tuple(sys.argv[2:])
+print(json.dumps(sorted(
+    name for name in sys.modules
+    if any(name == root or name.startswith(root + ".") for root in forbidden)
+)))
+"""
+
+
+def test_the_library_opens_a_job_without_an_agent_or_model_client(tmp_path):
+    """``import langslice``, ``open_job`` and a verb or two: the script door."""
+    from pathlib import Path
+
+    repo = Path(__file__).resolve().parents[1]
+    done = subprocess.run(
+        [sys.executable, "-c", _LIBRARY, str(tmp_path / "stack"), *FORBIDDEN],
+        capture_output=True, text=True, timeout=300, check=False, cwd=repo,
+        env={**os.environ, "HOME": str(tmp_path / "home"), "PYTHONPATH": str(repo)},
+    )
+    assert done.returncode == 0, done.stderr[-3000:]
+    loaded = json.loads(done.stdout.strip().splitlines()[-1])
+    assert loaded == [], f"langslice.open_job loads {loaded[:5]}"
