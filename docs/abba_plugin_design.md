@@ -11,11 +11,11 @@ ABBA's distribution is optional.
 - `connectors/fiji/`: discover/select the environment, setup/account dialogs, the
   Registration dialog, start and stop worker processes, snapshot selected sections
   with calibration, and apply returned geometry using ABBA's native actions.
-- `src/langslice/api/setup.py`: offline installation/credential status, saved
+- `src/langslice/hosts/api/setup.py`: offline installation/credential status, saved
   API keys, and the existing browser OAuth login with a structured URL callback.
-- `src/langslice/api/abba_worker.py`: JVM-free linear and nonlinear registration
+- `src/langslice/hosts/api/abba_worker.py`: JVM-free linear and nonlinear registration
   requests. The scientific engines remain in their existing packages.
-- `src/langslice/api/service.py`: JSON-lines transport. Standard output carries
+- `src/langslice/hosts/api/service.py`: JSON-lines transport. Standard output carries
   protocol messages only; Python and native diagnostic output goes to stderr.
 
 The existing `abba_python` integration remains a separate launcher and reference
@@ -121,7 +121,7 @@ calibration, positions, locked geometry, damage and preprocessing.
 `langslice mcp` starts without a folder. `start_job(job_id=...)` loads the
 saved request and returns a Claude-specific factual statement and status table,
 without pictures. `show_stack(page)` serves the opening strips (as in the ADK
-seed, `linear/opening.py`, at Claude's 1568 px long edge): labelled sections in
+seed, `core/opening.py`, at Claude's 1568 px long edge): labelled sections in
 corrected order with the atlas at each current position beneath it, then atlas
 reference strips when a section has no position. Pages are 1-based and bounded
 to 680,000 serialized JSON bytes (including base64); a strip and its text stay

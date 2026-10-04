@@ -10,7 +10,7 @@ experiments; it is not exposed to the stack agent's correction tool. Route
 placement first, because the silhouette placement route "atlas" starts from is
 broken by exactly the outline damage that matters most. Corrected borders
 become a deformation through the shared deformable fit
-(`langslice.deformable`, below), the same engine the linear agent's
+(`langslice.core.deformable`, below), the same engine the linear agent's
 `fit_deformable` uses; see also [the interface design](interface_design.md).
 
 <p align="center">
@@ -132,7 +132,7 @@ Metadata for route "atlas" records `prior["source"] =
 
 ## Prompts
 
-Prompt text lives in `nonlinear/prompts.py`: `border_refinement_prompt`
+Prompt text lives in `core/nonlinear/prompts.py`: `border_refinement_prompt`
 (route "supplied", unchanged wording since production acceptance),
 `pass1_atlas_prompt` and `pass2_atlas_prompt` (route "atlas"). Provider
 selection follows `canonical_provider(provider)`: names starting with
@@ -161,7 +161,7 @@ cutting angles, then transformed by `image_axes` and the explicit
 `atlas_mirror_lr` option; the matrix refers to that oriented grid.
 
 `langslice.core.handoff.prepare_linear_registration` (re-exported by
-`langslice.registration_handoff`) prepares this contract from an existing
+`langslice.core.nonlinear.registration_handoff`) prepares this contract from an existing
 linear section state; `registration_handoff.run_linear_registration`
 performs the handoff, with the image model passed in
 (`providers.registry.ImageModel`, resolved by the caller through
@@ -174,7 +174,7 @@ orientation, without changing the linear state. Their image frame is the
 oriented rendered section, not the original acquisition TIFF.
 
 ABBA already provides aligned atlas-coordinate channels. Its adapter
-(`integrations/abba.py`) draws those placed labels directly on the section
+(`hosts/integrations/abba.py`) draws those placed labels directly on the section
 and uses the same route-"supplied" correction core and the same fit (the
 labels sampled at ABBA's coordinates are the fit's native grid, placed by an
 identity at the plugin's voxel size) — no standalone placement-free route or
@@ -257,11 +257,11 @@ returned `RegistrationCandidate` and (with `debug_dir` set) on disk:
 Read `output_kind` and `workflow` metadata rather than assuming a color-map
 image is present anywhere in this pipeline.
 
-## Deformable fit engine (`langslice.deformable`)
+## Deformable fit engine (`langslice.core.deformable`)
 
 A shared top-level package holds the library fit that corrected borders (or
 the stain itself) go through. The linear agent reaches it through
-`fit_deformable` (task `nonlinear`, `linear/deformation.py`): the stain's
+`fit_deformable` (task `nonlinear`, `core/deformation.py`): the stain's
 fit appearance against ara/nissl, or the `trace_borders` lines
 (`traced_borders` = label-map mode, `traced_lines` = lines vs borders)
 against borders, include/exclude regions (optionally one side,
@@ -270,7 +270,7 @@ setting; the engine is the user's `nonlinear.engine` choice or the agent's.
 Applied records are saved under `<results dir>/deformable/` and referenced from
 `SliceState.deformation`; the job folder's maps and VisuAlign markers read them
 (`docs/file_formats.md`); ABBA and BrainGlobe adapters are not built. The standalone routes above and the ABBA plugin
-fit the model's lines through it (`nonlinear/border_fit.py`). `fit_section(image, atlas, placement, settings,
+fit the model's lines through it (`core/nonlinear/border_fit.py`). `fit_section(image, atlas, placement, settings,
 lines=..., previous=..., native=...)` takes a `Placement` — the handoff's
 `atlas_to_slice` or the image tool's `atlas_to_canvas`, unchanged; `native`
 replaces the atlas plane with a host's own label grid — and
@@ -305,7 +305,7 @@ midline slit that correlation alone missed), and in the linear tool the
 automatic tissue/ventricle labels (continuous outline, enlarged ventricles
 filled). Fits are deterministic: fixed seed and a fixed thread count
 (`engines.FIT_THREADS`), identical inputs give identical fields.
-Details: `src/langslice/deformable/CLAUDE.md`.
+Details: `src/langslice/core/deformable/CLAUDE.md`.
 
 ## Review and limits
 

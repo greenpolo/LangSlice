@@ -1,34 +1,50 @@
-# LangSlice `core/` — the picture builders
+# LangSlice `core/` — the core library
 
 Package guide for `src/langslice/core/`. The repo-level `CLAUDE.md` holds the
 project-wide rules. `AGENTS.md` here is a verbatim copy — edit one, mirror to
 the other.
 
-The core library's new home (layered refactor, phases 3b and 3c,
-2026-10-03; the renders, phase 3d, 2026-10-04). It holds the pictures the
-tools send and their layers, and the section renders, captions, canvas,
-sheets and status table that were `linear/render.py`; the other existing
-core modules (`space`, `affine`, `oblique`, `image_prep`, `atlas/`,
-`deformable/`, `linear/display`, `linear/workspace`, `linear/transform`,
-`linear/deformation`, ...) move in later, in one rename-only commit.
+The lowest layer of the layered core. The pictures the tools send and their
+layers (phases 3b and 3c, 2026-10-03), the section renders, captions,
+canvas, sheets and status table that were `linear/render.py` (phase 3d,
+2026-10-04), and, since the rename-only folder move (2026-10-04), every
+other module whose imports are core-only:
+
+- shared foundations: `space.py`, `oblique.py`, `affine.py`,
+  `image_prep.py`, `landmark_warp.py` + `landmark_elastix.py`, and the
+  sub-packages `atlas/` (`atlas/CLAUDE.md`), `deformable/`
+  (`deformable/CLAUDE.md`) and `nonlinear/` (the image-model border route's
+  prompts, request, line extraction and fit, `nonlinear/CLAUDE.md`);
+- the linear method's core: `state.py`, `spec.py`, `workspace.py`,
+  `appearance.py`, `atlas_fetch.py`, `atlas_grep.py`, `display.py`,
+  `opening.py`, `transform.py`, `deformation.py`, `discovery.py`,
+  `deepslice.py`. Their entries are in the linear agent environment's guide
+  (`src/langslice/agent/CLAUDE.md`, "Files"), which maps the whole method.
 
 ## The layer rule
 
-- A core module takes plain inputs: the `linear.workspace.Workspace` (atlas,
-  section files, render caches), the `linear.state.StackState` and its
-  records, ids, numbers, the core's `linear.display.DisplayOptions`. It
+- A core module takes plain inputs: the `core.workspace.Workspace` (atlas,
+  section files, render caches), the `core.state.StackState` and its
+  records, ids, numbers, the core's `core.display.DisplayOptions`. It
   returns plain outputs: PIL images (captions burned in: tool images reach a
   model as bare attachments), numpy arrays, dicts and frozen dataclasses.
-- It imports other core modules only. Never the job layer (`linear.job`),
-  the operations (`ops`), a door (`linear.toolbox`, `linear.view_options`,
-  `adk`, `mcp_server`), and never `google.*`, `litellm` or `openai`.
+- It imports other core modules only. Never the job layer (`job/`), the
+  operations (`ops/`), a door (`doors/`), the agent driver (`agent/`), a
+  host, a provider, and never `google.*`, `litellm` or `openai`.
+  import-linter's contracts (`pyproject.toml`, run by
+  `tests/test_import_layers.py`) check the imports;
   `tests/test_core_imports.py` loads each module in a fresh interpreter and
-  checks.
+  checks what it loads. Known violations, listed in the contracts'
+  `ignore_imports`: `spec.py` and `nonlinear/` (`prompts`, `model_prompts`,
+  `border_refinement`, `border_registration`) import
+  `providers.registry.canonical_provider`, and the two border modules fall
+  back to the image transport (`providers.images`) when no `image_call` is
+  passed.
 - No undo, no checkpoint, no look-before-commit gates, no wording for a
   model beyond the captions burned into a picture. Something that writes the
   stack is an operation (`ops/`); something that words a reply is a door.
 - A picture is returned, never encoded: the doors package it (the ADK agent
-  through `adk.media.packaged`, JPEG message parts; MCP as image blocks).
+  through `doors.tools.media.packaged`, JPEG message parts; MCP as image blocks).
 
 ## Files
 
@@ -119,7 +135,7 @@ core modules (`space`, `affine`, `oblique`, `image_prep`, `atlas/`,
   section's footprint or off the atlas volume: `section_footprint`, the
   deformable fit's foreground rule closed over `FOOTPRINT_CLOSING_MM` and
   hole-filled, so dark tissue and tears inside the outline keep their
-  coordinates; the raw rule is kept as `tissue` for `tissue.png`), atlas ids (`deformable.geometry.sample_native`, nearest, as the
+  coordinates; the raw rule is kept as `tissue` for `tissue.png`), atlas ids (`core.deformable.geometry.sample_native`, nearest, as the
   pictures' labels layer), and the residual `(drow, dcol)` such that
   `coords = pixel_to_atlas_um @ [p + d, 1]`; computed in `BLOCK_ROWS`
   blocks. `residual_markers(frame, warp)`: VisuAlign `[x, y, nx, ny]`
@@ -135,7 +151,7 @@ core modules (`space`, `affine`, `oblique`, `image_prep`, `atlas/`,
   `correction_fingerprint` (everything an image correction's inputs
   depend on; the trace's call key, the submit check and a traced fit's
   staleness test all read it) and `digest`. No provider import:
-  `registration_handoff.py` re-exports the first for SliceBench.
+  `core/nonlinear/registration_handoff.py` re-exports the first for SliceBench.
 
 ## The frame of a picture and its layers (phase 3c)
 
@@ -186,7 +202,7 @@ A `fit_deformable` picture (formats phase) gets the same layers on its own
 grid through `warp_layers(atlas, note, size)`: labels through the record's
 composed map at every content pixel (no tissue rule, as a placement
 picture's), borders as
-`deformable.render.drawn_border_coverage` (exactly the lines drawn), a
+`core.deformable.render.drawn_border_coverage` (exactly the lines drawn), a
 frame whose `pixel_to_atlas_um` is the record's linear placement on the
 picture, and, when the field was drawn, a residual layer `residual.tif`
 (`RESIDUAL_LAYER`, `(2, rows, cols)` float32, `(drow, dcol)` picture
@@ -201,7 +217,7 @@ extra=)`; `note_for` finds a picture's note by identity. `draw_canvas`,
 `placement_pictures` (stacked, side_by_side references), `section_picture`,
 `atlas_view_picture` and `stack_review` note theirs;
 `ops.deformable.pictures` notes `fit_deformable`'s fits (through
-`linear.deformation.picture(note=...)`, with a `WarpNote`: the record
+`core.deformation.picture(note=...)`, with a `WarpNote`: the record
 resampled onto the picture, the caption band, whether the field is drawn,
 the border style) and traces, and the
 tool door the pictures it labels itself (`preprocess` before/after). With
@@ -209,7 +225,7 @@ nothing collecting, a note costs nothing. The job saves the pictures
 (`langslice.job.views`, `job/CLAUDE.md`).
 
 `jpeg.py` — `encode_jpeg` (`JPEG_QUALITY` 85): the one encoding every
-picture a model receives goes through; `adk.media` re-exports it, the MCP
+picture a model receives goes through; `doors.tools.media` re-exports it, the MCP
 door and the job's view store call it, so the saved bytes are the sent ones.
 
 ## `linear/render.py`

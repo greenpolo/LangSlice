@@ -1,12 +1,17 @@
-# LangSlice `nonlinear/` — generative-image registration
+# LangSlice `core/nonlinear/` — generative-image registration
 
-Package guide; `AGENTS.md` is a verbatim twin of this file.
+Package guide for `src/langslice/core/nonlinear/` (the `nonlinear/` package
+until the folder move, 2026-10-04); `AGENTS.md` is a verbatim twin of this
+file. The image transport it calls, formerly `nonlinear/providers.py`, is
+`src/langslice/providers/images.py`; `registration_tool.py`,
+`registration_handoff.py` and `agent_trace.py`, formerly top-level, live
+here; the `nonlinear register` command is the door `doors/cli/register.py`.
 See `docs/nonlinear_design.md` for the design and coordinate contracts.
 
 ## Supported design
 
 The stack agent's optional `nonlinear` task uses a supplied linear placement via
-top-level `registration_tool.py`. Its only image tool is
+`core/nonlinear/registration_tool.py`. Its only image tool is
 `trace_borders(id, prompt="")`: placed-border correction with the agent's
 edited copy of the base prompt (blank = base), one retained reply per geometry,
 raw and extracted images returned separately, no fit, atlas search or rejection.
@@ -88,7 +93,7 @@ the residual alone.
   `deformable/` record.
 - `border_refinement.py` — `refine_borders`: the correction request and the
   yellow-line extraction (`extract_thinned_lines`, `yellow_mask`, `thin`),
-  the rough and corrected overlays; it fits nothing. `integrations/abba.py`
+  the rough and corrected overlays; it fits nothing. `hosts/integrations/abba.py`
   shares this core directly.
 - `border_fit.py` — `fit_border_lines` (the deformable fit of the lines;
   `BorderFit`: the field in canvas pixels, fitted labels, the fitted borders
@@ -99,7 +104,8 @@ the residual alone.
   is selected by `canonical_provider(provider)`.
 - `prior.py` — `place_plane_on_tissue_with_matrix`, the silhouette-moments
   placement.
-- `providers.py` — `generate_warped_segmentation_image`: the one-call-in,
+- `providers/images.py` (in the providers package since the folder move) —
+  `generate_warped_segmentation_image`: the one-call-in,
   one-image-out transport adapter every prompt call goes through, by the
   request's provider. `SegmentationGenerationRequest` lives in `types.py`
   (re-exported here) so callers build requests without the transport. `mode`
@@ -117,9 +123,9 @@ the residual alone.
   trace events.
 - `core/handoff.py` — prepares supplied linear geometry
   (`prepare_linear_registration`, re-exported by the top-level
-  `registration_handoff.py`, which also holds `run_linear_registration`:
+  `core/nonlinear/registration_handoff.py`, which also holds `run_linear_registration`:
   route "supplied" for one section, the image model an argument).
-  `registration_tool.py` uses it for the opt-in annotation tool, taking the
+  `core/nonlinear/registration_tool.py` uses it for the opt-in annotation tool, taking the
   image model as an argument too, and leaves fitting to `fit_deformable` and
   transformation export to the separate registration stage.
 

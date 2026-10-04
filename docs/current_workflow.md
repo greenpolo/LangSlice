@@ -90,7 +90,7 @@ Sections and fetched atlas sections are framed the same way (foreground plus a
 6% margin) so apparent scale is not a cue. Every image a tool returns has its
 label burned into the pixels (section id, atlas position), because tool images
 arrive as bare attachments with no text beside them. The seed message shows the
-stack as ABBA-style strips (`linear/opening.py`, since 2026-10-03): rows of
+stack as ABBA-style strips (`core/opening.py`, since 2026-10-03): rows of
 labelled sections in corrected order with the atlas at each section's current
 position beneath it, each strip as long as the model's largest image (2048 px
 on the OpenAI lanes) and inside its patch budget, so nothing is shrunk by the
@@ -242,7 +242,7 @@ langslice linear quick-affine <image> --position <mm> [--atlas ...] [--plane ...
 ```
 
 An affine-only preview that aligns the tissue silhouette to the atlas silhouette
-at a known position, using the shared affine core (`src/langslice/affine.py`)
+at a known position, using the shared affine core (`src/langslice/core/affine.py`)
 that the linear `fit_affine` tool also runs on. No image generation, no
 B-spline.
 
@@ -277,7 +277,7 @@ After either route's model call(s), yellow lines are extracted and displayed
 on the original photograph. By default (`--deformation none`) no fit runs: the
 residual is identity and the exported placement is the rough one.
 `--deformation deformable` fits the model's lines with the deformable package
-(`src/langslice/nonlinear/border_fit.py`: the lines against the atlas family
+(`src/langslice/core/nonlinear/border_fit.py`: the lines against the atlas family
 borders, Elastix B-spline, the linear agent's `fit_deformable` with
 `traced_lines`) and transfers the correction to the atlas labels; the fitted
 borders are drawn on the original photograph, the fit's diagnostics go to
@@ -348,7 +348,7 @@ The service accepts `version`, `register.run`, `quick_affine.run`, and
 `preprocess.preview` and `nonlinear.abba` (see
 [the connector design](abba_plugin_design.md)). It streams progress/log
 events and returns typed JSON result or error envelopes. The contract is
-defined by the Pydantic models in `src/langslice/api/models.py`.
+defined by the Pydantic models in `src/langslice/hosts/api/models.py`.
 
 ## Debug And Request Capture
 
@@ -383,7 +383,7 @@ Every tool that returns a picture takes all its picture options in one
 argument, `view` (`mode`, `channels`, `atlas_channels`, `atlas_opacity`,
 `regions`, `outlines`, `border_color`, `border_thickness`, `zoom`,
 `deformation`, and `resolution` at image resolution `auto`;
-`linear/display.py`), one per call on `adjust_transforms`; they apply to that
+`core/display.py`), one per call on `adjust_transforms`; they apply to that
 call only. `channels` is raw channels (several overlaid in colours) or the
 `view`/`fit` version; `atlas_channels` is any of `ara`, `nissl` (only where
 ABBA's cached Allen atlas is installed) and `borders` (the lines). By default

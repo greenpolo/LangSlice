@@ -30,7 +30,7 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-# Contours, family colors and the shade rules moved to `atlas/render.py` when
+# Contours, family colors and the shade rules moved to `core/atlas/render.py` when
 # `linear` started drawing the same lines; re-exported here so this module
 # stays the one import for review rendering.
 from langslice.core.atlas.render import (

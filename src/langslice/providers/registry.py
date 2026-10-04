@@ -9,7 +9,7 @@ product name. Canonical names:
 - ``openai-oauth``: OpenAI via a ChatGPT-subscription OAuth login
   (``langslice login``; transport lives in ``providers/openai_oauth.py``).
 - ``none``: no model at all. Registration's model-free backbone registers
-  the silhouette prior itself (see ``nonlinear/prior.py``); there is nothing
+  the silhouette prior itself (see ``core/nonlinear/prior.py``); there is nothing
   to authenticate, so it needs no transport module.
 
 Future providers (``anthropic-api``, ``openrouter-api``, ``qwen-api``, ...)

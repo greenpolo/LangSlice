@@ -6,60 +6,93 @@ in `SliceBench`; both depend on this package.
 
 ## Package Layout
 
-The two registration methods are sibling subpackages that never import each
-other; top-level bridge modules connect them:
+The package is laid out by layer (folder move, 2026-10-04). Each layer
+imports only the layers below it; import-linter enforces it
+(`[tool.importlinter]` in `pyproject.toml`, run by
+`tests/test_import_layers.py`), and every `ignore_imports` entry there is a
+known violation to be removed by moving code.
 
-- `src/langslice/linear/` -- order, position and one in-plane affine per
-  section: the job spec, the stack state and its JSON checkpoint, the one
-  toolbox, the job statement, the ADK session, and the run engine.
-- `src/langslice/nonlinear/` -- generative-image registration: exactly two
-  border-based routes (placed-border correction when a placement is supplied;
-  otherwise a silhouette-placed, model-drawn-boundary route against an
-  outlined grayscale atlas template), image provider adapters, the fit of the
-  model's lines through `deformable/` (`border_fit.py`), affine/nonlinear
-  result types, and the silhouette-based `quick_affine` preview.
+| Layer | Package | May import |
+|---|---|---|
+| hosts | `src/langslice/hosts/` | everything below |
+| doors : agent | `src/langslice/doors/`, `src/langslice/agent/` | each other, ops, job, core, providers |
+| ops | `src/langslice/ops/` | job, core |
+| job | `src/langslice/job/` | core |
+| core | `src/langslice/core/` | core only |
+| providers (beside) | `src/langslice/providers/` | core types; never job, ops, doors, agent, hosts |
 
-The remaining top-level modules are shared by both:
+Core, job and ops never import `providers`, `google.*`, `litellm`, `openai`
+or `mcp`. The two registration methods are task groups over this one
+layout, not packages: the linear agent environment and the image-model
+border route (`core/nonlinear/`).
 
-- `src/langslice/atlas/` -- BrainGlobe atlas loading, slice extraction, and
-  colored region maps.
-- `src/langslice/space.py` -- coordinate and orientation conventions.
-- `src/langslice/affine.py` -- the shared in-plane affine core: the silhouette
-  (image-moments) fit of a section onto an atlas section, the
-  rotation/scale/translate matrix builder, and the normalized six-number
-  parameter convention, and `pixel_center_map`. `silhouette_affine` is the
-  one silhouette wrapper the linear transform tools and `quick_affine` share.
-- `src/langslice/oblique.py` -- arbitrary-plane (cutting-angle) sampling of an
-  atlas volume and the (pitch, yaw) fitter.
-- `src/langslice/core/handoff.py` -- turns a linear section state into
-  the calibrated placement the nonlinear border correction and the deformable
-  fit take, and fingerprints it; `src/langslice/registration_handoff.py`
-  re-exports it and runs route "supplied" for one section with the image
-  model passed in.
-- `src/langslice/registration_tool.py` -- the linear agent's optional
-  image-model border-correction tool, built on that handoff; the image model
-  is an argument.
-- `src/langslice/deformable/` -- the library deformable fit (ANTs SyN or
-  Elastix B-spline) of a placed atlas plane: the linear agent's
-  `fit_deformable` and the fit of the image model's lines.
-- `src/langslice/image_prep.py` -- image normalization, metadata detection,
-  downsampling, and the host multichannel blend (`host_preprocess`).
-- `src/langslice/integrations/` -- integration layers for external registration software: `quint.py` (QUINT/QuickNII/VisuAlign JSON export), `abba.py` (abba-python registration plugin).
-- `src/langslice/providers/` -- model access: Gemini API keys, OpenAI API keys,
-  and ChatGPT subscription sign-in (`openai-oauth`), named in `registry.py`,
-  where `resolve_image_model` turns a provider name into the image-edit call
-  a door hands to the operations.
-- `src/langslice/adk/` -- ADK plugins, model resolution, and SDK helpers.
-- `src/langslice/api/` -- Pydantic engine contract, runtime wrappers, and the
-  stdio service used by non-Python clients.
-- `src/langslice/doors/` -- the doors over the verbs: one declaration per verb
-  (`declarations.py`) that the agent tools, the MCP tools, the agent CLI and
-  the library are built from; `cli/` (every `langslice` command, one module
-  per group, including the agent CLI `langslice job FOLDER VERB`, `ops`,
+- `src/langslice/core/` -- the core library: the stack state
+  (`state.py`), the job spec (`spec.py`), the workspace (`workspace.py`:
+  the atlas, the section files, render caches), the renders, captions,
+  canvas, sheets and pictures the tools send with their layers
+  (`coordinate_map`), the in-plane fits (`transform.py`), the deformable
+  machinery (`deformation.py`), the opening, display and appearance options,
+  and `handoff.py` (a linear section state as the calibrated placement the
+  nonlinear border correction and the deformable fit take, and its
+  fingerprint). Shared foundations:
+  - `core/atlas/` -- BrainGlobe atlas loading, slice extraction, and colored
+    region maps.
+  - `core/space.py` -- coordinate and orientation conventions.
+  - `core/affine.py` -- the shared in-plane affine core: the silhouette
+    (image-moments) fit of a section onto an atlas section, the
+    rotation/scale/translate matrix builder, the normalized six-number
+    parameter convention, and `pixel_center_map`. `silhouette_affine` is the
+    one silhouette wrapper the linear transform tools and `quick_affine`
+    share.
+  - `core/oblique.py` -- arbitrary-plane (cutting-angle) sampling of an
+    atlas volume and the (pitch, yaw) fitter.
+  - `core/deformable/` -- the library deformable fit (ANTs SyN or Elastix
+    B-spline) of a placed atlas plane: the linear agent's `fit_deformable`
+    and the fit of the image model's lines.
+  - `core/image_prep.py` -- image normalization, metadata detection,
+    downsampling, and the host multichannel blend (`host_preprocess`).
+  - `core/nonlinear/` -- generative-image registration: exactly two
+    border-based routes (placed-border correction when a placement is
+    supplied; otherwise a silhouette-placed, model-drawn-boundary route
+    against an outlined grayscale atlas template), the fit of the model's
+    lines through `core/deformable/` (`border_fit.py`), affine/nonlinear
+    result types, the silhouette-based `quick_affine` preview,
+    `registration_tool.py` (the linear agent's optional image-model
+    border-correction tool; the image model is an argument) and
+    `registration_handoff.py` (route "supplied" for one section with the
+    image model passed in).
+- `src/langslice/job/` -- the job: one `Job` (`job.py`) owning the state,
+  undo, the checkpoint (`checkpoint.py`) and the submit gates; the job
+  folder's layout, history, index, migrations, saved views, the public files
+  (`formats.py`) and the QUINT/QuickNII/VisuAlign export (`quint.py`).
+- `src/langslice/ops/` -- the verbs: every write and every viewing read as a
+  function on the job; `registry.py` lists them for every door.
+- `src/langslice/doors/` -- the doors over the verbs: one declaration per
+  verb (`declarations.py`) that the agent tools, the MCP tools, the agent
+  CLI and the library are built from; `tools/` (the native agent tools:
+  toolbox, argument shapes, `view` options, ADK message packaging), `mcp/`
+  (the MCP server), `cli/` (every `langslice` command, one module per
+  group, including the agent CLI `langslice job FOLDER VERB`, `ops`,
   `schema`; `docs/agent_cli.md`), `library.py` (`langslice.open_job`),
   `card.py` (the job folder's `AGENTS.md` / `CLAUDE.md`).
+- `src/langslice/agent/` -- the ADK driver of the linear agent environment:
+  the run engine, the ADK session, plugins and model resolution, the job
+  statement, the trace, the cost estimate, live events.
+- `src/langslice/providers/` -- model access: Gemini API keys, OpenAI API
+  keys, and ChatGPT subscription sign-in (`openai-oauth`), named in
+  `registry.py`, where `resolve_image_model` turns a provider name into the
+  image-edit call a door hands to the operations; `images.py`, the image
+  transport.
+- `src/langslice/hosts/` -- host connectors in LangSlice's own environment:
+  `integrations/` (the abba-python registration plugin and the live linear
+  mirror) and `api/` (the Pydantic engine contract, runtime wrappers, and the
+  stdio service used by non-Python clients).
 - `src/langslice/cli.py` -- the `langslice` command's entry point
   (`langslice.cli:main`).
+- `src/langslice/linear/`, `atlas/`, `nonlinear/`, `integrations/`, `adk/`
+  and a few top-level modules (`space.py`, `oblique.py`, `affine.py`,
+  `image_prep.py`, `registration_handoff.py`) are compatibility shims for
+  the sibling repos; LangSlice imports none of them.
 
 ## Where The Methods Fit
 
@@ -72,7 +105,7 @@ LangSlice-nonlinear stands in for the manual spline/BigWarp deformation step.
 ## Engine Contract
 
 The Python package is the source of truth for LangSlice runtime behavior. The
-engine contract is defined with Pydantic models in `src/langslice/api/models.py`.
+engine contract is defined with Pydantic models in `src/langslice/hosts/api/models.py`.
 
 `langslice serve --stdio` runs the newline-delimited JSON engine service. It
 accepts `version`, `register.run`, `quick_affine.run`, and `export.run`, plus
@@ -97,7 +130,7 @@ present these tasks to users as Positioning (`reorder` + `position`), Linear
 Every write tool checkpoints the whole state, so a run that dies resumes with
 the state it had (the agent is re-seeded, not replayed), and every write is
 undoable (`undo`/`redo`, one tool call = one step; the history is saved beside
-the checkpoint and survives a resume). One job object (`linear/job.py`) owns
+the checkpoint and survives a resume). One job object (`job/job.py`) owns
 the state, undo, checkpoint and submit gates; the agent's tools and the MCP
 server both sit on it, and it picks up a state file a script changed on disk. The results file
 uses the checkpoint's schema, so the CLI, the checkpoint and any host adapter
@@ -147,8 +180,7 @@ Each route uses one image-generation call, except route "atlas" with an
 optional second audit call. Route "supplied" is the production path: nonlinear
 correction needs a linear placement first. Route "atlas" remains for
 experiments. ABBA shares the border-correction core and
-retains its host placement. The top-level linear handoff adapter does not
-introduce a dependency between the sibling method packages. See
+retains its host placement. See
 [the design](nonlinear_design.md).
 
 ## Debugging

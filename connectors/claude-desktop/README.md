@@ -5,7 +5,7 @@ model. The host runs the conversation and LangSlice supplies the job, the
 pictures and the tools. The user's own Claude subscription runs the model in
 Anthropic's own app, so LangSlice never handles Claude credentials.
 
-The server is `langslice mcp` (code: `src/langslice/mcp_server/`). It needs
+The server is `langslice mcp` (code: `src/langslice/doors/mcp/`). It needs
 the MCP SDK: `pip install "langslice[mcp]"`.
 
 ## Claude Desktop

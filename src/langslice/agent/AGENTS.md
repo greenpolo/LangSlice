@@ -1,11 +1,26 @@
-# LangSlice `linear/` — order, position, transform
+# LangSlice `agent/` — the linear agent environment (order, position, transform)
 
-Package guide for `src/langslice/linear/`. The repo-level `CLAUDE.md` holds the
-project-wide rules; this file holds what is specific to this package.
-`AGENTS.md` here is a verbatim copy — edit one, mirror to the other.
+Package guide for `src/langslice/agent/`, the ADK driver, and the map of the
+linear method's code across the layers. The repo-level `CLAUDE.md` holds the
+project-wide rules; this file holds what is specific to the linear agent
+environment. `AGENTS.md` here is a verbatim copy — edit one, mirror to the
+other.
 
 The design this implements is `docs/linear_design.md`. Read it before changing
 shapes; this file is the map of the code, not a second spec.
+
+Until the folder move (2026-10-04) this was the guide of `linear/`, the one
+package that held the whole method. The files now live in their layer
+packages (lowest layer their imports allow): the stack state, job spec,
+workspace, renders and fits in `core/`; the checkpoint and the `Job` in
+`job/`; the toolbox, its argument shapes, the `view` options and the ADK
+message packaging (`media.py`) in `doors/tools/`; the MCP server in
+`doors/mcp/`; and the driver (engine, session, prompt, trace, cost, live,
+the ADK plugins and model resolver) here in `agent/`. The Files list below
+names each by its new path. `linear/` keeps only re-export shims for the
+sibling repos (`from langslice.linear import JobSpec, run`, `engine`, `spec`,
+`state`, `toolbox`, `trace`, `transform`, `render`); LangSlice itself never
+imports them (import-linter's `no-shims-inside` contract).
 
 ## One environment, not a pipeline
 
@@ -36,7 +51,7 @@ head and send one `set_positions`. Nothing previews; everything is undoable.
 sections, reorder+position: order 38/38, positions median 0.30 mm, bias
 -0.17 — a 0.2 mm ladder from a correct anchor; damage 7/7 +1 FP; 13 calls).
 Nash kept five of its ten asks:
-- images "not delivered": REAL, and not the transport. `adk/plugins.py`
+- images "not delivered": REAL, and not the transport. `agent/plugins.py`
   `trim_stale_tool_images` kept only the newest 24 tool images (sized for
   8-image sweeps); with 16-image `set_positions` batches every call but the
   newest two lost its pixels on every later turn, which is exactly Astra's
@@ -98,20 +113,20 @@ modules take a `workspace.Workspace` and return plain PIL pictures, numbers
 and text; none imports `google.genai`, ADK, litellm or openai
 (`tests/test_core_imports.py` checks each in a fresh interpreter): `workspace`,
 `display`, `transform`, `deformation`, `appearance`,
-`atlas_fetch`, `opening`, and `registration_handoff` / `registration_tool` at
-the top level (the former `render` is in `src/langslice/core/` since phase
+`atlas_fetch`, `opening` (all in `core/` since the folder move), and
+`registration_handoff` / `registration_tool` (`core/nonlinear/`) (the former `render` is in `src/langslice/core/` since phase
 3d; the handoff geometry in `core/handoff.py` since phase 4). The
-doors turn them into what a host reads: `adk/media.py` (the one module that
+doors turn them into what a host reads: `doors/tools/media.py` (the one module that
 makes `types.Part`s: JPEG encoding, `packaged` / `package_result` for the
-tools' pictures, the opening as parts), the toolbox and `view_options.py`
+tools' pictures, the opening as parts), the toolbox and `doors/tools/view_options.py`
 (argument checking, the model-lane image limit and the wording the model
 sees; neither imports `google.genai` since phase 3b, checked by
 `tests/test_core_imports.py`), the MCP server (`encode_jpeg` straight into
 MCP image blocks, for the opening and for the tools' plain pictures).
-`engine.py` and `session.py` are the ADK driver; `engine.run_session` hands
-the agent `adk.media.packaged_tools(box.tools)`.
+`agent/engine.py` and `agent/session.py` are the ADK driver; `engine.run_session` hands
+the agent `doors.tools.media.packaged_tools(box.tools)`.
 
-**The job layer (phase 2, 2026-10-03).** `job.py` sits between the core and
+**The job layer (phase 2, 2026-10-03).** `job/job.py` sits between the core and
 the doors (it imports the core only, and `tests/test_core_imports.py` checks
 it too): one `Job` owns the `StackState` and `JobSpec`, the host's locked and
 damaged sections, undo/redo, the checkpoint and its observers, the submit
@@ -119,7 +134,7 @@ gates, the stale-deformation rule, `over_cap`, the deformation
 `RecordStore`, the checkpoint and results paths, and the background image
 corrections. The native tools (`build_tools(state, ctx, spec, job=...)`; a
 job is made around the state when none is passed) and the MCP server
-(`mcp_server.server.Session`: the core job, the toolbox over it and the
+(`doors.mcp.server.Session`: the core job, the toolbox over it and the
 door's own pages, trace and host channel) both sit on it. The
 look-before-commit gates (`compared`/`reviewed`) and the model-delivery
 bookkeeping (pending/seen placement views, delivery ids, `tool_context`)
@@ -157,7 +172,7 @@ traced fit sections; one setting applies as one undo step), and so is
 arguments (`resolve_choice`, the region checks), calls it and draws the
 pictures from what it returns. Every tool returns plain PIL pictures (and,
 for `view_stack`, lines of text) under `TOOL_MEDIA_PARTS_KEY`; the ADK driver
-packages them as JPEG message parts (`adk.media.packaged`), the MCP server as
+packages them as JPEG message parts (`doors.tools.media.packaged`), the MCP server as
 image and text blocks (`result_blocks`), so the bytes each host receives are
 those it received before (the goldens check).
 
@@ -216,7 +231,7 @@ toolbox with `gates=False` (the look-before-commit gates are tool-only) and
 decides `view`'s type and `fit_deformable`'s description and arguments, as
 `view_schema`, `_STAIN_ONLY_DOC` and `fit_deformable_fixed` did before.
 
-- `spec.py` — `JobSpec` (+ `ReorderSpec`/`PositionSpec`/`TransformSpec`/
+- `core/spec.py` — `JobSpec` (+ `ReorderSpec`/`PositionSpec`/`TransformSpec`/
   `NonlinearSpec`). Every checkbox a host shows maps to a field here; nothing
   else is user-facing. Users see Positioning (`reorder` + `position`), Linear
   (`transform`) and Nonlinear (`docs/interface_design.md`). Flip and
@@ -235,14 +250,14 @@ decides `view`'s type and `fit_deformable`'s description and arguments, as
   Host dialog fields (2026-09-28, see "Host controls" below):
   `image_resolution`, `agent_damage`, per-task `notes`,
   `transform.max_parallel`, and `inputs["damaged"]` / `inputs["locked"]`.
-- `state.py` — `StackState`/`SliceState`. The checkpoint, the result and the
+- `core/state.py` — `StackState`/`SliceState`. The checkpoint, the result and the
   thing every tool writes, one JSON shape for all three. `restore()` refills
   the same object in place, because tools close over one state. Every stored
   transform carries `physical` — the five knobs plus `shear`, about a pivot in
   canvas fractions — next to the six normalized numbers, whatever made it.
   There is no `confidence`: nothing downstream read it (Nash, 2026-09-06), and
   the reasoning lives in `adjust_transforms`'s note.
-- `workspace.py` — `Workspace`, the core context: the spec, the image
+- `core/workspace.py` — `Workspace`, the core context: the spec, the image
   folder, the atlas (`atlas_loader`, loaded once), `abba_atlas` (ABBA's
   cached Allen atlas when it matches, looked up once), each section's
   `working_source` (the working copy and its scale, `source_cache`),
@@ -251,7 +266,7 @@ decides `view`'s type and `fit_deformable`'s description and arguments, as
   `render_scale` caches and the `picture_cache` of captioned reference
   pictures (`core.pictures`). No model: the driver's `engine.EngineContext`
   subclasses it to add that.
-- `checkpoint.py` — atomic JSON write of the job folder's `state.json`
+- `job/checkpoint.py` — atomic JSON write of the job folder's `state.json`
   (`default_checkpoint_path`: `<images>/langslice/state.json`), versioned
   (`format_version`, `STATE_FORMAT_VERSION` 2; `upgrade_state(data, root)`
   reads an unversioned checkpoint as version 0, makes version 1's absolute
@@ -259,7 +274,7 @@ decides `view`'s type and `fit_deformable`'s description and arguments, as
   (every path a state stores, through one converter), `relative_to`, and
   the global observers (`observe_checkpoints`). `CHECKPOINT_FILENAME`
   (`linear_state.json`) names the old layout's file, for the migration.
-- `job.py` — the job layer (above): `Job.open` (migrate an old layout,
+- `job/job.py` — the job layer (above): `Job.open` (migrate an old layout,
   write `job.json`, resume the checkpoint when `spec.resume`, else `ingest`
   + `apply_host_inputs`, then the first checkpoint), `Job.layout` /
   `folder` / `checkpoint_path` / `undo_path`, `Job.portable` (an image
@@ -295,8 +310,8 @@ decides `view`'s type and `fit_deformable`'s description and arguments, as
   each section's geometry through the core's
   `core.handoff.correction_fingerprint` (phase 4: the provider is no longer
   needed for it).
-- `discovery.py` — natural-sorted image discovery.
-- `render.py` — a re-export shim since phase 3d (2026-10-04), kept only
+- `core/discovery.py` — natural-sorted image discovery.
+- `linear/render.py` — a re-export shim since phase 3d (2026-10-04), kept only
   because SliceBench imports it (`slicebench/adapters/langslice_geometry.py`);
   the code is in `src/langslice/core/` and LangSlice imports it from there:
   `core.sections.render_slice` (ROTATE first, then FLIP, then the display-only
@@ -308,7 +323,7 @@ decides `view`'s type and `fit_deformable`'s description and arguments, as
   true scale (`atlas um/px / canvas um/px`, anatomy centred, canvas grown to
   hold it — never fit-to-canvas, which is not a calibration), and
   `physical_views` draws the alignment picture on it (family outlines
-  from `atlas.render.family_outlines` as yellow 1 px lines by default, drawn
+  from `core.atlas.render.family_outlines` as yellow 1 px lines by default, drawn
   at OUTPUT size. Agent tools expose `view.border_color` (named color/#RRGGBB) and
   `view.border_thickness` (0.25–8 output pixels, including fractional widths) alongside `view.atlas_opacity`;
   these are display-only and do not change transforms or IoU. The native ABBA
@@ -327,7 +342,7 @@ decides `view`'s type and `fit_deformable`'s description and arguments, as
   `atlas_opacity` (0..1; `template_opacity` until 2026-10-01, the
   `show_template` bool before that) and `outlines`
   (`OUTLINE_LAYERS`: `all` family boundaries, `outer` — the root contour from
-  `atlas.render.outer_outline` — or `none`; the caption names the layer when
+  `core.atlas.render.outer_outline` — or `none`; the caption names the layer when
   it is not `all`).
   `physical_overlay` is the one-image `overlay` wrapper (tests and scripts;
   `fit_affine` draws through `core.placement.draw_canvas` from the fit's
@@ -346,14 +361,14 @@ decides `view`'s type and `fit_deformable`'s description and arguments, as
   burns a label into a COPY — every image a tool returns gets one, because
   tool images reach the model as bare attachments; never caption an image a
   fit measures.
-- `atlas_fetch.py` — `atlas_section` (the one atlas renderer: flat at 0/0
+- `core/atlas_fetch.py` — `atlas_section` (the one atlas renderer: flat at 0/0
   cutting angles, `oblique.sample_oblique_plane` otherwise), `atlas_picture`
   (one tissue-framed atlas section, sized and captioned; the `view_atlas`
   tool, was `fetch_atlas`, is built in the toolbox, `make_view_atlas`), and
   `reference_atlas` (the opening's evenly spaced atlas positions, at most
   `SEED_ATLAS_MAX_IMAGES` 48, never upsampled). Sections and atlas sections
   are framed the same way so apparent scale is not a cue.
-- `opening.py` — the opening images (2026-10-03, Nash: "a strip of atlas
+- `core/opening.py` — the opening images (2026-10-03, Nash: "a strip of atlas
   images and slice images, just like how abba does it"): `opening_items`
   lays the stack out as horizontal strips in corrected order, the sections
   on top and, directly beneath each, the atlas at its CURRENT position and
@@ -365,9 +380,9 @@ decides `view`'s type and `fit_deformable`'s description and arguments, as
   a position gets `no position`), columns are split by a thin grey line,
   and a text before each strip lists its sections; it returns the texts and
   strips in reading order as plain strings and PIL images
-  (`adk/media.opening_parts` makes them message parts for the seed). A
+  (`doors/tools/media.opening_parts` makes them message parts for the seed). A
   strip's long edge is the model lane's largest image (`limit`, from
-  `adk/media.image_limit` on the run's model: `OPENAI_MAX_IMAGE_EDGE`
+  `doors/tools/media.image_limit` on the run's model: `OPENAI_MAX_IMAGE_EDGE`
   2048 for openai-oauth/openai-api, any other lane uses it too, unmeasured;
   `CLAUDE_MAX_IMAGE_EDGE` 1568 for the MCP host; a later picture's cap is
   separate, `CLAUDE_MAX_VIEW_EDGE`, see `view_options.py`), tiles the level's opening
@@ -381,7 +396,7 @@ decides `view`'s type and `fit_deformable`'s description and arguments, as
   all the strips are section-only and the atlas reference
   (`reference_atlas`) follows as atlas-only strips; when every section has
   a position the reference is not sent; a partly placed stack gets both.
-- `arguments.py` — the shapes of the arguments (2026-10-03): `View` (the
+- `doors/tools/arguments.py` — the shapes of the arguments (2026-10-03): `View` (the
   picture options) and `ViewAuto` (+ `resolution`), and the `entries` /
   `candidates` dicts (`DamageEntry`, `OrientEntry`, `PositionEntry`,
   `PlacementEntry`, `TransformEntry`, `Candidate`, `FixedCandidate`), all
@@ -393,10 +408,10 @@ decides `view`'s type and `fit_deformable`'s description and arguments, as
   stray key belongs (`` `mode` belongs inside `view` ``) and `KEY_NOTES` (a
   `resolution` below "auto": the user fixed the picture size; a candidate
   `engine` when the engine is fixed). Applied by `toolbox._strict` (every
-  call, direct ones included), `adk.plugins.StrictArgumentsPlugin` (ADK's
+  call, direct ones included), `agent.plugins.StrictArgumentsPlugin` (ADK's
   `FunctionTool` drops unknown top-level arguments before a tool runs; the
   plugin's `before_tool_callback` answers first) and
-  `mcp_server.server.strict_arguments` (FastMCP drops them too; checked
+  `doors.mcp.server.strict_arguments` (FastMCP drops them too; checked
   after its JSON pre-parse). `normalize_arguments(func, args)` (2026-10-03)
   makes what the tools accept as sent schema-valid for a door that
   validates first: a whole number in a text argument (`id`, `section`) or in
@@ -405,7 +420,7 @@ decides `view`'s type and `fit_deformable`'s description and arguments, as
   `view` is the default. The MCP door applies it after the refusal check;
   ADK hands the values through as sent. `TransformEntry` carries the
   optional `shear` knob (2026-10-03).
-- `display.py` / `view_options.py` — `view`, the picture options (2026-10-01
+- `core/display.py` / `doors/tools/view_options.py` — `view`, the picture options (2026-10-01
   as nine flat arguments; one `view` object since 2026-10-03, Nash: "Our
   tools have been really messy"; ABBA's image-channel / atlas-channel
   design). The door half, `view_options.py`: `parse_view` validates one call's `view` against the tool's `Profile` (its modes, first
@@ -443,7 +458,7 @@ decides `view`'s type and `fit_deformable`'s description and arguments, as
   maximum, not a fixed 1536). The door knows the model and passes the cap
   (`build_tools(max_view_edge=...)`, kept as `ToolBox.max_view_edge`, read
   by `parse_view`, `view_atlas` and the job statement's resolution line):
-  the ADK agent's default is `adk.media.view_edge_limit`, the lane's
+  the ADK agent's default is `doors.tools.media.view_edge_limit`, the lane's
   largest image edge (2048 px on the OpenAI lanes and any unmeasured lane;
   there a near-square picture past ~1600 px still meets the 2,500-patch
   budget, which shrinks it); the MCP door passes
@@ -459,7 +474,7 @@ decides `view`'s type and `fit_deformable`'s description and arguments, as
   channel unmodified, labelled); `core.placement.draw_canvas` draws every
   physical picture (its caption names the channels and any atlas under the
   section, `canvas_label`).
-- `appearance.py` — the section's appearance per target (2026-10-01): `view`
+- `core/appearance.py` — the section's appearance per target (2026-10-01): `view`
   (what the agent is shown) and `fit` (`fit_image`, what a deformable fit
   reads), each a stack setting plus per-section overrides on
   `StackState.appearance` (undone and checkpointed). `None` is the DEFAULT
@@ -472,7 +487,7 @@ decides `view`'s type and `fit_deformable`'s description and arguments, as
   drawn first) and AFTER, labelled.
   Computation (silhouette fit, calibration, tissue pivot, `search_position`,
   the image model's input) always reads the default.
-- `toolbox.py` — `build_tools(state, ctx, spec, job=None,
+- `doors/tools/toolbox.py` — `build_tools(state, ctx, spec, job=None,
   image_model=None, gates=True, level=None)`: the tool bodies; the tools
   are the verbs `ops.registry.enabled(spec)` names, each `declare`d
   (`doors/declarations.py`: name, arguments, description); on the job (state,
@@ -513,7 +528,7 @@ decides `view`'s type and `fit_deformable`'s description and arguments, as
   the sections it touched plus `n_sections`, never the whole table —
   transform writes return their canonical physical result instead; `status`,
   `undo`, `redo` and `submit` are what return all the rows.
-- `transform.py` — the silhouette fit and the arithmetic the interactive tools
+- `core/transform.py` — the silhouette fit and the arithmetic the interactive tools
   run on, both in PHYSICAL space. `fit_silhouette` matches the whole tissue
   outline against the whole atlas outline (`affine.silhouette_affine`) and
   reports six normalized numbers on the section frame plus `physical` about
@@ -537,9 +552,9 @@ decides `view`'s type and `fit_deformable`'s description and arguments, as
   shear included, about a pivot) are shared affine geometry helpers.
   `region_silhouette_fit` (2026-10-01) is `fit_affine`'s `include`/`exclude`
   path: atlas regions resolved by the deformable package
-  (`deformable.atlas_images.regions_mask`, `deformable.masks`; a one-sided
+  (`core.deformable.atlas_images.regions_mask`, `core.deformable.masks`; a one-sided
   entry such as `"CTX:left"` is the section's side, carried onto the atlas
-  plane through the CURRENT stored transform, `atlas.sides.native_left`,
+  plane through the CURRENT stored transform, `core.atlas.sides.native_left`,
   with the plane passed as `plane_at`), the kept footprint (minus
   excluded; with include, within `DEFAULT_NEIGHBOURHOOD_UM` of them) against
   the tissue the section's CURRENT stored transform lays there, one pass of
@@ -563,7 +578,7 @@ decides `view`'s type and `fit_deformable`'s description and arguments, as
   `structures`, `exclude` -> `exclude`, one-sided entries included; an
   INTACT section gets no torn-edge band, since the band's rule also marks
   outline the start merely overhangs), runs
-  `deformable.engines.run_elastix_affine` (Elastix `AffineTransform` from
+  `core.deformable.engines.run_elastix_affine` (Elastix `AffineTransform` from
   the identity, fixed seed and threads: identical inputs give identical
   numbers) and composes the result onto the start (new matrix = start @
   step, step the engine's mm map in grid pixels). A full affine: the six
@@ -573,7 +588,7 @@ decides `view`'s type and `fit_deformable`'s description and arguments, as
   `_fit_payload`, shared with `fit_silhouette`, so both methods reply,
   draw, checkpoint and undo identically; the stored `kind` is the method.
   Elastix errors and failed preparation answer `FIT_FAILED` per section.
-- `deformation.py` — `fit_deformable`'s machinery (2026-10-01): the fit grid
+- `core/deformation.py` — `fit_deformable`'s machinery (2026-10-01): the fit grid
   (`fit_grid`: `prepare_linear_registration` at `FIT_LONG_EDGE` 1536, the same
   handoff `trace_borders` uses), the image a fit reads (`stain_image`: the
   `fit` appearance — a raw channel is a fit appearance `preprocess` sets, no
@@ -602,7 +617,7 @@ decides `view`'s type and `fit_deformable`'s description and arguments, as
   `USE_PROCESS_POOL`) and `picture` (the borders on the image the fit read at
   the call's picture size, `Style.long_edge`, never past the 1536 px fit
   image; included/`regions` strong, excluded pink).
-- `prompt.py` — `build_job_statement`: job, run facts, ONE factual line per
+- `agent/prompt.py` — `build_job_statement`: job, run facts, ONE factual line per
   tool that exists, hard constraints. Nothing else. `display_facts` reads
   the run's raw channels and atlas channels off the workspace for it. `tool_line` words the
   `fit_deformable` line for the run (traced fit sections only with an image
@@ -610,7 +625,7 @@ decides `view`'s type and `fit_deformable`'s description and arguments, as
   that their names may not identify the stain; `view_slices` mode channels
   shows each) and the atlas channels this host has, each with one line
   (`ATLAS_CHANNEL_LINES`); `PICTURE_TOOLS` includes `fit_deformable`.
-- `session.py` — the ADK agent builder, the plugins, the loop, and
+- `agent/session.py` — the ADK agent builder, the plugins, the loop, and
   `TokenTally`: every call's usage is printed and traced, and
   `JobSpec.max_quota_percent` (25) ends the session when this run's share
   of the provider's usage window reaches it. Optional `max_input_tokens`
@@ -618,15 +633,15 @@ decides `view`'s type and `fit_deformable`'s description and arguments, as
   tokens, after its response. It is not a cumulative spending guard or a
   preflight size guarantee. Logs separate cumulative input from peak request
   input; 1.3M processed over a run does not mean a 1.3M-token context.
-- `engine.py` — `EngineContext` (`doors.jobs.JobContext`: the `Workspace`
+- `agent/engine.py` — `EngineContext` (`doors.jobs.JobContext`: the `Workspace`
   plus the job folder and results path the job is opened at; it adds the
   model), `run_session` (the
-  agent gets the tools `adk.media.packaged`), and `run(spec)` (`Job.open`, the
+  agent gets the tools `doors.tools.media.packaged`), and `run(spec)` (`Job.open`, the
   job folder's reference card, the toolbox on it, the session,
   `Job.emit_results`). `ingest` and
   `apply_host_inputs` are re-exported from `job.py` for the SliceBench
   adapters. No post pass: the session is the whole run.
-- `live.py` — optional in-memory observer for host activity windows.
+- `agent/live.py` — optional in-memory observer for host activity windows.
   `engine.run(on_event=...)` streams sanitized seed images, assistant text,
   provider-exposed reasoning summaries, final tool calls/results with detached
   image bytes, usage, completion and errors. Observer failures cannot fail the
@@ -638,14 +653,14 @@ decides `view`'s type and `fit_deformable`'s description and arguments, as
   lock, with resolved filename `target_ids`, sanitized arguments/results and a
   unique execution ID. These host-only events follow real execution order and
   never enter model context; `tool_end` follows checkpoint/mirror writes.
-- `deepslice.py`, `trace.py` — the DeepSlice seam (reports `UNAVAILABLE`) and
+- `core/deepslice.py`, `agent/trace.py` — the DeepSlice seam (reports `UNAVAILABLE`) and
   the full-content JSONL session trace.
-- `cost.py` — `estimate(spec, n_slices, locked)`: the pre-run usage-window
+- `agent/cost.py` — `estimate(spec, n_slices, locked)`: the pre-run usage-window
   estimate the worker's `linear.estimate` serves, from measured runs only.
   Refuses medium/high/auto image resolution (nothing measured; the low runs
   predate the 2026-10-01 picture sizes); single-run or
-  unmeasured settings get a widened band. Imports no engine: `linear/__init__`
-  loads `run` lazily so hosts can price a spec without the agent framework.
+  unmeasured settings get a widened band. Imports no engine: hosts price a
+  spec (`core/spec.py`) without the agent framework.
 
 ## Host controls (2026-09-28)
 
@@ -771,7 +786,7 @@ The call runs in the background (`registration_tool.start_correction` prepares
 it; `Job.settle_image_corrections` waits at submit and at session end) and
 returns no images. The first image reply is retained in `SliceState.image_correction`. No atlas search,
 replacement prompt, candidate selection or anatomical rejection is exposed.
-The same task adds `grep_atlas(query, section="")` (`linear/atlas_grep.py`): a text-only
+The same task adds `grep_atlas(query, section="")` (`core/atlas_grep.py`): a text-only
 lookup of atlas regions by acronym, name substring or id, with ancestry, descendant
 count and, for a positioned section, whether the region is in the atlas plane at its
 placement. It is for choosing regions a later deformable fit should exclude.
@@ -808,7 +823,7 @@ appearance (`preprocess` target `fit`; the docstring points there when
 `BAD_FIT_SECTION`. The stain against `borders` is refused (`BAD_ARGS`:
 borders are for traced fit sections). `nissl` is described neutrally as a
 Nissl-stained reference. Region entries (`include`, `exclude`, `regions`)
-may name one side, `"CTX:left"` / `"CTX:right"` (`atlas.sides`): the
+may name one side, `"CTX:left"` / `"CTX:right"` (`core.atlas.sides`): the
 section's side as this tool's pictures draw it; `region_names` validates
 them (`UNKNOWN_REGIONS` for a bad side, `NO_SIDES` on a sagittal stack) and
 `region_overlap` refuses `CTX` with `CTX:left` but not `CTX:left` with
@@ -860,7 +875,7 @@ reply caching survive checkpoint undo; no note-only regeneration occurs. A faile
 transport that returned no image may be retried.
 See `docs/nonlinear_image_tool.md` for the contract and prompt sentence audit.
 
-Historical `transform.spline` checkpoints remain supported: `landmark_warp.py`
+Historical `transform.spline` checkpoints remain supported: `core/landmark_warp.py`
 evaluates the exact stored Elastix or legacy TPS mapping, and rendering, undo,
 resume and calibrated native ABBA export retain that complete transform. The
 affine metadata is not applied twice. Later affine adjustments/fits replace the
@@ -894,7 +909,7 @@ text plus prefix breaks. Design rules that follow:
 - **Picture sizes are the host's level** (`image_resolution`, see Host
   controls): from 2026-09-09 to 2026-10-01 every picture was instead sized
   so one pixel was never finer than the atlas voxel, capped at 512 px
-  (`atlas.render.model_long_edge`, deleted), which showed a 6 mm section at
+  (`core.atlas.render.model_long_edge`, deleted), which showed a 6 mm section at
   ~220-360 px everywhere, too small to judge a fit. The opening on M04
   (38 sections) since the strips (2026-10-03), as 32-px patches: no
   positions 5.0k / 10.2k / 15.6k at low / medium / high in 11 / 17 / 21
@@ -912,7 +927,7 @@ text plus prefix breaks. Design rules that follow:
   so every Astra compare re-sent the section). `physical_views(long_edge=
   None)` is canvas pixels for host-side use; every model-facing caller
   passes a size.
-- **Images stay** (`adk/plugins.py WorkingSetImages`): every tool image is
+- **Images stay** (`agent/plugins.py WorkingSetImages`): every tool image is
   kept until 500 are live, then the oldest media-bearing calls are cut in
   ONE batch to 250 (`DEFAULT_MAX_IMAGES` / `DEFAULT_KEEP_IMAGES`, a cut
   result says "dropped from context"); the cut only moves forward and the
@@ -1070,8 +1085,8 @@ the history was in memory only and a resume began with none).
 
 - `fit_affine`'s silhouette method measures against the atlas plane at the
   stack's cutting angles (2026-09-10; since phase 4 `affine.silhouette_affine`
-  takes the angles and reads `atlas.core.get_root_mask` at them, the one
-  silhouette wrapper `nonlinear/quick_affine` shares). Until then it
+  takes the angles and reads `core.atlas.core.get_root_mask` at them, the one
+  silhouette wrapper `core/nonlinear/quick_affine` shares). Until then it
   measured against the FLAT section on a 13-degree brain and said so with
   `flat_atlas_fit`; Astra's run-19 debrief asked for exactly this.
 - `physical` on a fit is the knobs about the canvas centre, `shear`
@@ -1086,7 +1101,7 @@ the history was in memory only and a resume began with none).
   M05 sections the right one wins by 0.036-0.092 IoU; a template-correlation
   tie-break would help the cases where silhouette IoU alone is close, but that
   is measured, not built: it would move a benchmarked path (`silhouette_affine`
-  is `nonlinear/quick_affine`'s too). The fit's own panel is what catches it;
+  is `core/nonlinear/quick_affine`'s too). The fit's own panel is what catches it;
   look at it. Damaged sections never reach this path: `fit_affine` refuses
   them outright unless regions are given.
 - The moments core matches long axes. With regions on M04_D_08 (both
@@ -1132,17 +1147,17 @@ host must enable at least one transform method when enabling that task.
 
 ## Claude host briefing
 
-`prompt.run_facts` is shared with `mcp_server/prompt.py`; keep the factual
+`prompt.run_facts` is shared with `doors/mcp/prompt.py`; keep the factual
 range, axis direction, protocol and calibration text identical across hosts.
 Claude's statement does not reuse the ADK method/playbook. MCP opens saved ABBA
-jobs through `api.abba_worker.prepare_linear`, exactly like `linear.run`,
+jobs through `hosts.api.abba_worker.prepare_linear`, exactly like `linear.run`,
 and supplies the opening strips separately with `show_stack` pages
 (`opening_pages`: `opening.opening_items` at `CLAUDE_IMAGE_LIMIT`, each
-strip encoded by `adk/media.encode_jpeg` straight into an MCP image block,
+strip encoded by `doors/tools/media.encode_jpeg` straight into an MCP image block,
 paged under
 `PAGE_BYTES`, a strip and its text kept together). No image
 model is available through the Claude connector. The MCP tools are the same
 functions with the same `view` and the same strict-argument rule
-(`mcp_server.server.strict_arguments`; a nested object Claude Desktop sends
+(`doors.mcp.server.strict_arguments`; a nested object Claude Desktop sends
 as a JSON string is parsed first); their plain pictures become image blocks
 through `encode_jpeg` (`result_blocks`).

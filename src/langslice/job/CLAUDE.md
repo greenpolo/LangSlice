@@ -4,20 +4,26 @@ Package guide for `src/langslice/job/`. The repo-level `CLAUDE.md` holds the
 project-wide rules. `AGENTS.md` here is a verbatim copy — edit one, mirror to
 the other.
 
-The files of the job layer (layered refactor, phase 3c, 2026-10-03). The
-`Job` itself (state, undo, checkpoint, gates) is `linear/job.py` until the
-rename-only commit moves it; this package is where its files live and how
-they are named, upgraded, indexed and filled with pictures.
+The job layer (layered refactor, phase 3c, 2026-10-03; folder move
+2026-10-04). The `Job` itself (state, undo, checkpoint, gates) is
+`job/job.py` (formerly `linear/job.py`) over `job/checkpoint.py` (formerly
+`linear/checkpoint.py`), both described in the linear agent environment's
+guide (`src/langslice/agent/CLAUDE.md`, "Files"); `job/quint.py` (formerly
+`integrations/quint.py`) is the QUINT/QuickNII/VisuAlign writer
+`ops.exports` calls, described in `src/langslice/hosts/integrations/CLAUDE.md`.
+The rest of this package is where the job's files live and how they are
+named, upgraded, indexed and filled with pictures.
 
 ## The layer rule
 
-Job layer: imports the core (`linear.state`, `linear.checkpoint`,
-`linear.discovery`, `linear.deformation`, `core.layers`, `core.jpeg`,
-`core.maps`, `atlas`) only. Never an operation
-(`ops`), a door (`linear.toolbox`, `linear.view_options`, `adk`,
-`mcp_server`, `api`) or `google.*`, `litellm`, `openai`.
+Job layer: imports the core (`core.state`, `core.discovery`,
+`core.deformation`, `core.layers`, `core.jpeg`, `core.maps`, `core.atlas`,
+...) and itself only. Never an operation (`ops/`), a door (`doors/`), the
+agent driver (`agent/`), a host (`hosts/`), a provider or `google.*`,
+`litellm`, `openai`. import-linter's contracts (`pyproject.toml`, run by
+`tests/test_import_layers.py`) check the imports;
 `tests/test_core_imports.py` loads each module in a fresh interpreter and
-checks both.
+checks what it loads.
 
 ## The job folder
 
@@ -133,7 +139,7 @@ objects: resolve them by id inside the block.
 **Paths are relative.** Every path a job file stores (a deformation's
 `record`, an image correction's `artifact_dir` / `artifact_paths`, the views
 index) is relative to the job folder (`JobLayout.relative` /
-`JobLayout.resolve`; `linear.checkpoint.state_paths` walks a state's
+`JobLayout.resolve`; `job.checkpoint.state_paths` walks a state's
 paths). The trace identity in a deformation cache key is the stored
 (relative) artifact directory, so keys survive a move of the folder.
 `StackState.image_folder` itself stays absolute.
@@ -175,7 +181,7 @@ paths). The trace identity in a deformation cache key is the stored
   path rewritten to its new relative place, including each moved call's
   saved `result.json`). Skipped (logged) when the job folder already holds a
   checkpoint. `migrate_saved_job(root, id)` (called by
-  `api.claude_jobs.load_job`): a phase-2 saved job under
+  `hosts.api.claude_jobs.load_job`): a phase-2 saved job under
   `~/.langslice/jobs/<id>/` moves into the job folder next to its images
   (plus `prompt.txt` and `result.json` → `exports/`), its `job.json`
   becomes the folder's (`host`), the index entry is written and the old

@@ -14,8 +14,8 @@ wording; `registry.py` lists which.
 
 ## The rule
 
-- An operation takes the `linear.job.Job` (and the core
-  `linear.workspace.Workspace` where it reads the atlas, the section files or
+- An operation takes the `job.job.Job` (and the core
+  `core.workspace.Workspace` where it reads the atlas, the section files or
   the render caches) plus plain arguments: ids, numbers, dicts.
 - A write takes ONE undo step through the job (`before = job.snapshot()`,
   write, `job.commit(before)`: the step and the checkpoint), or none when
@@ -31,7 +31,7 @@ wording; `registry.py` lists which.
   `set_transforms` and `keep_linear` take it themselves too. A read (`views.py`, `atlas.py`,
   `positions.search_position`) writes nothing.
 - Pictures are the core's, never drawn here: a read verb, or a write that
-  shows its result, takes the call's core `linear.display.DisplayOptions`
+  shows its result, takes the call's core `core.display.DisplayOptions`
   and returns the plain PIL pictures `src/langslice/core/` draws (captions
   burned in, each noted for the job's saved views). Without options a write
   draws nothing (a script). Where a picture must exist before the write
@@ -52,10 +52,13 @@ wording; `registry.py` lists which.
   written; `Refused.payload()` is the `{"status": ..., "error": code, ...}`
   every door answers with (`status` "refused" for a gate, `Refused.of`
   turns a job gate's payload into one).
-- Layer: core and job only. Never a door (`linear.toolbox`,
-  `linear.view_options`, `adk`, `mcp_server`) and never `google.*`, `litellm`
-  or `openai`. `tests/test_core_imports.py` loads each module in a fresh
-  interpreter and checks both.
+- Layer: core and job only. Never a door (`doors/`), the agent driver
+  (`agent/`), a host (`hosts/`), a provider (a type named under
+  `TYPE_CHECKING` excepted: `traces.py` takes an `ImageModel`), and never
+  `google.*`, `litellm` or `openai`. import-linter's contracts
+  (`pyproject.toml`, `tests/test_import_layers.py`) check the imports;
+  `tests/test_core_imports.py` loads each module in a fresh interpreter and
+  checks what it loads.
 
 ## Files
 
@@ -68,7 +71,7 @@ wording; `registry.py` lists which.
   (a read: `oblique.fit_oblique` around the section's position, the best
   position/angles/score; `UNKNOWN_SLICE_IDS`, `NO_POSITION`, `BAD_ARGS`,
   `FIT_FAILED`). `run_deepslice(job, workspace, ids, allow_angle_change=)`
-  (the `linear/deepslice.py` seam: `UNAVAILABLE`).
+  (the `core/deepslice.py` seam: `UNAVAILABLE`).
 - `order.py` — `reorder(job, filenames, after)` (one block, filenames only),
   `renumber(order)` (indices only, no undo step).
 - `orientation.py` — `orient_sections(job, entries, workspace=, options=)`:
@@ -104,7 +107,7 @@ wording; `registry.py` lists which.
   by `job.formats.write_section_maps`; a section without a position, or
   whose record or file cannot be read, is `skipped` with its reason), then
   `exports/quicknii.json` and `exports/visualign.json` for every placed
-  section (`integrations.quint.job_export`, markers from
+  section (`job.quint.job_export`, markers from
   `core.maps.residual_markers`), then `registration.json`. A job that
   persists nothing writes nothing and lists what it would (`written`
   False). `UNKNOWN_SLICE_IDS`. Returns `Exported`.
@@ -169,7 +172,7 @@ wording; `registry.py` lists which.
   damage; with `deformation` the applied deformation's key, with `trace`
   its image correction), `STALE_INPUT`, `stale_row`.
 - `atlas.py` — `grep_atlas(job, workspace, query, section="")`: the region
-  hierarchy searched like text (`linear/atlas_grep.py`), with `in_section`
+  hierarchy searched like text (`core/atlas_grep.py`), with `in_section`
   per row for a placed section.
 - `views.py` — the read verbs, one per viewing tool: `status(job)`
   (`StackStatus`: the status rows, angles, breaks), `view_slices(job,
