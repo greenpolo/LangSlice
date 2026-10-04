@@ -148,6 +148,14 @@ def run_register(request: RegisterRequest, emit: EngineEmit | None = None) -> Re
             if request.thinking is not None:
                 vlm_config.set_thinking_level(request.thinking)
 
+        # This door resolves the provider name to its image call; the
+        # registration below receives it.
+        image_call = None
+        if canonical_provider(request.provider) != "none":
+            from langslice.providers.registry import resolve_image_model
+
+            image_call = resolve_image_model(request.provider, image_model).call
+
         _log(emit, f"Running register provider={request.provider}")
 
         def on_progress(message: str) -> None:
@@ -173,6 +181,7 @@ def run_register(request: RegisterRequest, emit: EngineEmit | None = None) -> Re
             initial_atlas_to_slice=initial_alignment,
             initial_alignment_source=request.initial_alignment_source,
             atlas_mirror_lr=request.atlas_mirror_lr,
+            image_call=image_call,
         )
         affine = result.affine_result
         session_dict = annotation_session_to_dict(result.annotation_session)

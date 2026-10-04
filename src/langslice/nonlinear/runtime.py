@@ -9,6 +9,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from PIL import Image
 
@@ -25,6 +26,9 @@ from langslice.nonlinear.types import (
     render_landmark_annotations,
 )
 from langslice.space import Plane
+
+if TYPE_CHECKING:
+    from langslice.providers.registry import ImageCall
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +132,7 @@ def _run_dense_registration(
     initial_atlas_to_slice: Sequence[Sequence[float]] | None,
     initial_alignment_source: str,
     atlas_mirror_lr: bool,
+    image_call: ImageCall | None = None,
 ) -> RegistrationResult:
     dense_debug_root = _dense_registration_debug_root(atlas_name, debug_dir)
     runtime_debug_dir = str(dense_debug_root / "registration") if dense_debug_root else None
@@ -156,6 +161,7 @@ def _run_dense_registration(
         on_trace=on_trace,
         openai_image_route=openai_image_route,
         review_model=candidate_review_model,
+        image_call=image_call,
     )
 
     result = candidate_to_registration_result(candidate, image.size, debug_dir=runtime_debug_dir)
@@ -256,6 +262,7 @@ def estimate_registration(
     initial_atlas_to_slice: Sequence[Sequence[float]] | None = None,
     initial_alignment_source: str = "supplied",
     atlas_mirror_lr: bool = False,
+    image_call: ImageCall | None = None,
 ) -> RegistrationResult:
     """Run border-based registration and return affine + nonlinear results.
 
@@ -271,7 +278,9 @@ def estimate_registration(
     package (:func:`langslice.nonlinear.border_fit.fit_border_lines`);
     ``"none"`` fits nothing (identity residual; the CLI default). ``provider="none"`` calls no
     model: it retains a supplied placement, or fits a silhouette placement,
-    without fitting a residual deformation.
+    without fitting a residual deformation. *image_call* is the image
+    model's edit as the caller resolved it
+    (:func:`langslice.providers.registry.resolve_image_model`).
     """
     atlas = load_atlas(atlas_name)
     atlas_image = get_composite_slice(atlas, position_mm, plane=plane)
@@ -299,6 +308,7 @@ def estimate_registration(
         initial_atlas_to_slice=initial_atlas_to_slice,
         initial_alignment_source=initial_alignment_source,
         atlas_mirror_lr=atlas_mirror_lr,
+        image_call=image_call,
     )
     _progress(
         on_progress,

@@ -27,6 +27,26 @@ def test_api_rejects_invalid_alignment(matrix):
                         initial_atlas_to_slice=matrix)
 
 
+def test_the_api_door_resolves_the_image_model_it_hands_in(tmp_path, monkeypatch):
+    from langslice.api.runtime import run_register
+
+    image_path = tmp_path / "image.png"
+    Image.new("RGB", (40, 30), "gray").save(image_path)
+    received = {}
+
+    def capture(**kwargs):
+        received.update(kwargs)
+        raise CapturedRequest
+
+    monkeypatch.setattr("langslice.nonlinear.runtime.estimate_registration", capture)
+    request = RegisterRequest(image_path=str(image_path), atlas="test", position_mm=1,
+                              provider="chatgpt", preprocess="none")
+    with pytest.raises(CapturedRequest):
+        run_register(request)
+    assert callable(received["image_call"])
+    assert received["provider"] == "chatgpt"
+
+
 @pytest.mark.parametrize("supplied", [False, True])
 def test_api_resize_preserves_pixel_centres(tmp_path, monkeypatch, supplied):
     from langslice.api.runtime import run_register
@@ -50,6 +70,8 @@ def test_api_resize_preserves_pixel_centres(tmp_path, monkeypatch, supplied):
     with pytest.raises(CapturedRequest):
         run_register(request)
     assert received["passes"] == 2
+    assert received["image_call"] is None  # provider none: no model to resolve
+    assert received["deformation"] == "deformable"
     assert received["atlas_mirror_lr"] is True
     assert received["initial_alignment_source"] == "test-placement"
     if supplied:
@@ -112,6 +134,8 @@ def test_nonlinear_runtime_threads_omitted_placement_selects_atlas_route(monkeyp
         )
     assert received["initial_atlas_to_slice"] is None
     assert received["passes"] == 2
+    assert received["image_call"] is None  # provider none: no model to resolve
+    assert received["deformation"] == "deformable"
     assert received["atlas_mirror_lr"] is True
 
 
