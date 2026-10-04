@@ -75,3 +75,4 @@ _spike_litert_venv/
 # uv project venv (Python 3.11, base harness)
 .venv/
 _local/openai_api.env
+.import_linter_cache/
