@@ -187,8 +187,10 @@ before (the goldens are unchanged).
   files): `placement_from_pixel_map(pixel_to_atlas_um, atlas=, plane=,
   sizes=, file_um_per_px=, orientation=)` returns `RecoveredPlacement`
   (position, pitch and yaw in `core.oblique`'s convention, quarter turn,
-  flip, the six numbers on the oriented render at that pixel size,
-  `out_of_plane_um`, `in_plane_error_px`). Nine numbers each way (normal,
+  flip, the six numbers on the oriented render (`render_size`) at that pixel
+  size, `out_of_plane_um`, `in_plane_error_px`; `physical()` the knobs a
+  stored transform carries, `core.transform.physical_params` about the
+  render's centre). Nine numbers each way (normal,
   position, full in-plane affine), so anisotropic scale and shear survive;
   flip and quarter turn are a choice (unmirrored, least turn) unless given;
   a flat plane is drawn at the nearest voxel (reported); angles below

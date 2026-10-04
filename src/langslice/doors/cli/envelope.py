@@ -79,6 +79,10 @@ FIXES: dict[str, str] = {
     "STILL_RUNNING": "Wait again: `langslice job {job} wait <id>`.",
     "RUN_LOST": "The background process ended without an answer; see its log under "
                 "logs/runs/ and run the verb again.",
+    "BAD_REGISTRATION": "Give --registration a QuickNII/VisuAlign JSON or XML, a DeepSlice "
+                        "CSV/JSON/XML or a LangSlice registration.json whose entries name "
+                        "this folder's section images (by file name, stem or _sNNN number) "
+                        "on the job's atlas.",
     "INPUTS_CHANGED": "Rerun `langslice job {job} init` with --fresh to start a new job "
                       "from these inputs (the old one's work is replaced), or with the "
                       "inputs the job was made from (job.json, spec.inputs) to continue it.",

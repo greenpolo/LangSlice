@@ -51,9 +51,10 @@ IMAGE_MODEL_KEY = "image_model"
 class JobHandle:
     """One open job folder; every verb its settings have is a method."""
 
-    def __init__(self, opened: Opened) -> None:
+    def __init__(self, opened: Opened, imported: dict[str, Any] | None = None) -> None:
         self._opened = opened
         self._tools = {tool.__name__: tool for tool in opened.tools().tools}
+        self._imported = imported
 
     # --- the verbs ------------------------------------------------------------------
 
@@ -92,6 +93,15 @@ class JobHandle:
         """The image model ``trace_borders`` calls when one was handed in
         (:class:`langslice.providers.registry.ImageModel`), else None."""
         return self._opened.image_model
+
+    @property
+    def imported(self) -> dict[str, Any] | None:
+        """What :func:`create_job`'s *registration* file placed (the import
+        report: format, per section how it matched and where it was placed,
+        ``unmatched`` entries, ``missing`` sections, ``refused`` ones with
+        the reason, the pixel size, ``warnings``); None for a job made
+        without one, or opened with :func:`open_job`."""
+        return self._imported
 
     @property
     def job(self) -> Any:
@@ -239,6 +249,7 @@ def create_job(
     orientation: Mapping[str, Mapping[str, Any]] | None = None,
     pixel_size_um: float | None = None,
     inputs: Mapping[str, Any] | None = None,
+    registration: str | os.PathLike[str] | None = None,
     fresh: bool = False,
     atlas_loader: Callable[[str], Any] | None = None,
     emit: Callable[[str], None] | None = None,
@@ -264,14 +275,25 @@ def create_job(
     :func:`langslice.core.spec.supplied_angles`) and *pixel_size_um*; *inputs*
     takes any other key of ``JobSpec.inputs``. *tasks* None: ``nonlinear``,
     plus ``transform`` (``fit_affine``) unless every section has a supplied
-    transform. *image_model* as in :func:`open_job`; None makes a job
+    transform.
+
+    Or *registration*: a linear registration made elsewhere (a QuickNII or
+    VisuAlign JSON/XML, a DeepSlice CSV/JSON/XML, a LangSlice
+    ``registration.json``), imported as every section's position, cutting
+    angles, orientation and transform (``doors.jobs.with_registration``; not
+    with *positions*, *transforms*, *angles* or *orientation*; VisuAlign
+    markers are not imported). *tasks* None is then ``["nonlinear"]``: the
+    imported placement kept as it is. The handle's :attr:`JobHandle.imported`
+    says what was placed; the warnings go to *emit* as well.
+
+    *image_model* as in :func:`open_job`; None makes a job
     without one (nonlinear provider ``none``). *fresh* starts over instead
     of continuing the folder's job. *settings* are further
     :class:`JobSpec` fields (``preprocess``, ``interval_um`` lives in
     ``position``...).
     """
     from langslice.doors.api.setup import load_credentials
-    from langslice.doors.jobs import create
+    from langslice.doors.jobs import REGISTRATION_EXCLUDES, create, with_registration
     from langslice.job.layout import write_job_file
 
     load_credentials()  # the image model's keys, as open_job loads them
@@ -280,7 +302,8 @@ def create_job(
         given = {name: value for name, value in {
             "positions": positions, "transforms": transforms, "angles": angles,
             "orientation": orientation, "pixel_size_um": pixel_size_um, "inputs": inputs,
-            "tasks": tasks, "job_dir": job_dir}.items() if value is not None}
+            "tasks": tasks, "job_dir": job_dir,
+            "registration": registration}.items() if value is not None}
         if given or settings or output != "full" or fresh:
             raise ValueError("create_job takes a JobSpec as it is: set "
                              f"{sorted({*given, *settings})} on the spec instead")
@@ -300,6 +323,11 @@ def create_job(
                                        for name, value in orientation.items()}
         if pixel_size_um is not None:
             supplied["pixel_size_um"] = float(pixel_size_um)
+        if registration is not None:
+            clashes = sorted(key for key in REGISTRATION_EXCLUDES if supplied.get(key))
+            if clashes:
+                raise ValueError(f"registration= supplies every section's placement; "
+                                 f"it cannot be combined with {clashes}")
         nonlinear = dict(settings.pop("nonlinear", None) or {})
         if model is not None:
             nonlinear.update(provider=model.provider, image_model=model.model)
@@ -311,7 +339,8 @@ def create_job(
         spec = JobSpec.from_dict({
             "atlas": atlas, "plane": plane, "debrief": False, **settings,
             "image_folder": str(folder),
-            "tasks": list(tasks) if tasks is not None else pipeline_tasks(
+            "tasks": list(tasks) if tasks is not None else ["nonlinear"]
+            if registration is not None else pipeline_tasks(
                 folder, supplied.get("transforms") or {}),
             "nonlinear": nonlinear, "inputs": supplied,
             "job_dir": None if job_dir is None else os.path.abspath(
@@ -319,11 +348,15 @@ def create_job(
             "output_level": output, "resume": not fresh,
         })
     _check_model_fits(spec, model)
+    imported: dict[str, Any] | None = None
+    if registration is not None:
+        spec, imported = with_registration(spec, registration, atlas_loader=atlas_loader,
+                                           emit=emit)
     opened = create(spec, atlas_loader=atlas_loader, emit=emit, image_model=model)
     try:
         if model is not None:
             write_job_file(opened.job.layout, **{IMAGE_MODEL_KEY: profile_record(model)})
-        return JobHandle(opened)
+        return JobHandle(opened, imported)
     except BaseException:
         opened.close()
         raise

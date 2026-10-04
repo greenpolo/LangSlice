@@ -263,7 +263,17 @@ longer exist be taken over by the images it is opened with.
   `transform()` the stored-transform dict, kind `imported`; `unmatched`,
   `missing`, `refused`). Geometry through `job/quint.py`'s inverses and
   `core/import_geometry.py`; `docs/file_formats.md` ("Importing a
-  registration made elsewhere"). Not wired into `JobSpec.inputs` yet.
+  registration made elsewhere"). `registration_inputs(source, workspace,
+  target=)` -> `RegistrationInputs`: the result as `JobSpec.inputs`
+  (`positions`, `angles` stack-wide when every section's agree to within
+  `ANGLE_EPSILON_DEG` (the median), else per section, `orientation`,
+  `transforms` with their `physical` knobs, and `pixel_size_um` when neither
+  the caller nor the files give one: the imported median, every section
+  then placed against it), the `report` the doors show (sections and how
+  they matched, `unmatched`, `missing`, `refused`, `markers_imported`
+  False, `warnings`: including `MARKERS_NOT_IMPORTED` when the file has
+  VisuAlign markers) and the full `ImportResult`; `ValueError` when nothing
+  is placed. The doors call it through `doors.jobs.with_registration`.
 - `views.py` — `ViewStore` (`Job.views`): every picture the model was
   shown. The hook every door uses (phase 3d) is `ViewStore.shown(tool,
   atlas_of=)`: a context manager that collects what `core.layers` notes

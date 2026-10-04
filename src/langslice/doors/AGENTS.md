@@ -118,7 +118,13 @@ own jobs are flat). The engine service stays in
   bound every picture; `image_model` handed to `build_tools`; without one a
   `custom`-provider job, or one with `Opened.traces_off`, gets
   `image_model_connected=False`: no `trace_borders`), `Opened.close`
-  (image corrections settled, pictures flushed).
+  (image corrections settled, pictures flushed). `with_registration(spec,
+  file, target=, atlas_loader=, emit=)`: the spec with a registration made
+  elsewhere as its supplied inputs (`job.imports.registration_inputs` on
+  the spec's workspace, `context`) and the import report, each warning
+  said through `emit`; refuses a spec that already supplies any of
+  `REGISTRATION_EXCLUDES` (positions, transforms, angles, orientation).
+  Every door that takes `--registration` / `registration=` goes through it.
 - `library.py` — `open_job(folder, image_model=, atlas_loader=, emit=)` ->
   `JobHandle`: every verb the job has as a method (the tool itself: same
   arguments, the reply dict with plain PIL pictures under `images`, saved
@@ -127,12 +133,15 @@ own jobs are flat). The engine service stays in
   `image_model`, `job`, `state`, `workspace`, `close`, a context manager.
   `create_job(images | JobSpec, atlas=, plane=, tasks=, image_model=,
   job_dir=, output=, positions=, transforms=, angles=, orientation=,
-  pixel_size_um=, inputs=, fresh=, **JobSpec fields)`: the job of a folder
+  pixel_size_um=, inputs=, registration=, fresh=, **JobSpec fields)`: the job of a folder
   through `jobs.create` (keys loaded as `open_job` loads them), the same
   handle; supplied transforms as six numbers become `{"kind":
   "interactive", "params", "mirrored"}` (`_transform`); `angles` in either
   `inputs.angles` form, the stack's or per section (`_angles`, checked by
-  `core.spec.supplied_angles`); `tasks` None is
+  `core.spec.supplied_angles`); `registration=` a file made elsewhere
+  (`jobs.with_registration`; not with the four placement arguments; tasks
+  None is then `["nonlinear"]`; the report on `JobHandle.imported`);
+  otherwise `tasks` None is
   `pipeline_tasks` (`nonlinear`, plus `transform` unless every section has
   a transform); `image_model` None is provider `none`, else the model's
   provider (`custom` for a model of the caller's own) and `job.json`
@@ -174,7 +183,11 @@ own jobs are flat). The engine service stays in
   `__init__.py` (`build_parser`, `main`: the agent commands return their
   exit code), `linear.py` (`linear run`, `linear quick-affine`, and the job
   flags every stack-opening command shares: `add_linear_arguments`,
-  `build_linear_spec`), `claude.py`
+  `build_linear_spec`; `--tasks` defaults to `DEFAULT_TASKS`, or with
+  `--registration FILE` to `REGISTRATION_TASKS` (`nonlinear`);
+  `spec_from_args` refuses `--registration` with any of
+  `REGISTRATION_CLASHES`, and `build_job_spec` imports the file through
+  `jobs.with_registration` and returns its report), `claude.py`
   (`mcp`, `claude prepare`), the host commands by module path
   (`HOST_COMMANDS`: `abba`, `serve` in `hosts/cli.py`), and the agent CLI
   (`docs/agent_cli.md`):
@@ -202,7 +215,10 @@ own jobs are flat). The engine service stays in
     before and after on a job that writes nothing), `shape` (concise:
     no `description`, a write's whole-stack `rows` as `n_rows`; verbose:
     everything and the picture texts), `changes`, `init` (the job flags of
-    `linear run`, `jobs.create`), `runs` (`runs [ID]`, `wait [ID]`; `status`
+    `linear run`, `jobs.create`; with `--registration` the import report
+    under `result.registration` and its warnings as the envelope's,
+    `BAD_REGISTRATION` when the file cannot be read, matched one to one or
+    places nothing), `runs` (`runs [ID]`, `wait [ID]`; `status`
     is only the verb).
     `CHECKED_ONLY`: `trace_borders`, `trace_from_atlas` and
     `fit_deformable` are checked, not run, by `--dry-run`. After `submit` the derived files

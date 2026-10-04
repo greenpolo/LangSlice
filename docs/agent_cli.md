@@ -42,6 +42,28 @@ Besides the verbs, `FOLDER` takes:
   (`--positions`, `--transforms`, `--orientation`, `--order`,
   `--pitch`/`--yaw`, `--section-angles`, `--locked`, `--damaged`, `--pixel-size-um`, ...) is refused with `INPUTS_CHANGED` (exit 3), which
   names the inputs that differ and `--fresh`.
+
+  `--registration FILE` starts from a linear registration made elsewhere: a
+  QuickNII or VisuAlign JSON/XML, a DeepSlice CSV/JSON/XML, or a LangSlice
+  `registration.json`. Its entries are matched to the section images (exact
+  file name, then the name without extension ignoring case, then one
+  QuickNII `_sNNN` section number) and each matched section gets the
+  file's position, cutting angles (per section), orientation and in-plane
+  transform as supplied inputs (`docs/file_formats.md`, "Importing a
+  registration made elsewhere"). Without `--tasks` the job's tasks are
+  `nonlinear` only: the imported placement is kept and only the nonlinear
+  step (`trace_borders`, `fit_deformable`) runs on top. Not with
+  `--positions`, `--transforms`, `--orientation`, `--pitch`/`--yaw`,
+  `--section-angles` or `--angles` (`BAD_ARGUMENTS`). The result carries
+  `registration` (the format, each placed section with how it matched and
+  its placement, `unmatched` entries, `missing` sections, `refused` ones
+  with the reason, the pixel size and its source); the envelope's
+  `warnings` say what was not placed and that VisuAlign markers in the file
+  were not imported (LangSlice's nonlinear step replaces them). A file that
+  cannot be read, whose entries match the sections ambiguously, or that
+  places no section is refused with `BAD_REGISTRATION` (exit 2). The other
+  commands that open a stack with these flags (`linear run`, `mcp`,
+  `claude prepare`, `abba --linear`) take `--registration` the same way.
 - `runs [ID]`: the background runs, newest first, or one run's state
   (running, finished with its answer, or lost). `status` is only the verb.
 - `wait [ID]`: wait for a background run (the latest without ID);

@@ -153,8 +153,32 @@ pixels and `nr` the corrected index + 1.
 
 `langslice.job.imports` reads a linear registration made by another program
 (or an earlier job) and returns each section's placement in LangSlice's own
-terms. It reads only; supplying the result to a job (positions, per-section
-cutting angles, orientation, transforms) is not wired yet.
+terms. A job is made from one with `langslice job FOLDER init --registration
+FILE` (`docs/agent_cli.md`) or `langslice.create_job(FOLDER,
+registration=FILE)` (`docs/library.md`, "Starting from an existing
+registration"): the placements become the job's supplied inputs
+(`job.json`, `spec.inputs`):
+
+| Input | From the import |
+|---|---|
+| `positions` | each placed section's `position_mm` |
+| `angles` | `{"pitch", "yaw"}` for the whole stack when every placed section's agree to within 1e-6 degrees (a written file's rounding; the median), else `{filename: {"pitch", "yaw"}}` per section |
+| `orientation` | each section's `flip` and `rotation_deg` |
+| `transforms` | each section's six numbers as a stored transform, `kind` `imported`, with `physical` (the knobs, about the render's centre), `in_plane`, `calibration` and a `note` naming the entry |
+| `pixel_size_um` | only when neither the caller nor the files give one: the median size the imported maps imply (every section is then placed against that one size, so the maps hold exactly) |
+
+The new job's `registration.json` maps every section file as the imported
+registration does (tests: from a job's `quicknii.json` to 1e-3 µm, from its
+`registration.json` to 1e-6 µm, from DeepSlice's own files to 1e-3 µm). Its
+tasks default to `nonlinear` only, the imported placement kept as it is.
+Combining a registration file with supplied positions, transforms, angles or
+an orientation is refused. Entries matching no section image (`unmatched`),
+sections no entry names (`missing`: no placement, so they block `submit`
+until placed), sections that could not be placed (`refused`, with the
+reason) and each section's problems are reported as warnings. VisuAlign
+markers are never imported (product decision 2026-10-04): the warning says
+the file's nonlinear markers were not imported and LangSlice's nonlinear
+step replaces them; the raw markers stay available on the `ImportResult`.
 
 Formats (`read_registration`, by extension and content):
 

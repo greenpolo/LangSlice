@@ -91,6 +91,7 @@ from typing import TYPE_CHECKING, Any, cast
 import numpy as np
 
 from langslice.core.import_geometry import (
+    ANGLE_EPSILON_DEG,
     RecoveredPlacement,
     implied_pixel_size_um,
     placement_from_pixel_map,
@@ -206,9 +207,10 @@ class ImportedPlacement:
         return self.placement.params
 
     def transform(self) -> dict[str, Any]:
-        """The stored-transform dictionary this placement would be supplied
-        as (``kind`` :data:`IMPORTED_KIND`, the six numbers, their reading,
-        the calibration they are relative to)."""
+        """The stored-transform dictionary this placement is supplied as
+        (``kind`` :data:`IMPORTED_KIND`, the six numbers, the knobs every
+        stored transform carries (``physical``), their reading on the render
+        (``in_plane``), the calibration they are relative to)."""
         parts = dict(self.placement.in_plane)
         mirrored = bool(parts.pop("mirrored", False))
         parts.pop("translate_x_frac", None)
@@ -216,6 +218,7 @@ class ImportedPlacement:
         return {
             "kind": IMPORTED_KIND,
             "params": list(self.placement.params),
+            "physical": self.placement.physical(),
             "in_plane": parts,
             "mirrored": mirrored,
             "calibration": {"section_um_per_px": self.placement.render_um_per_px,
@@ -646,3 +649,146 @@ def import_placements(
         refused=refused, pixel_size_um=stack_size, pixel_size_source=stack_source,
     )
 
+
+
+# --- as a job's supplied inputs ----------------------------------------------------------
+
+#: The ``JobSpec.inputs`` keys an imported registration supplies; a caller
+#: that also gives any of them is refused (:func:`registration_inputs`).
+IMPORTED_INPUT_KEYS = ("positions", "angles", "orientation", "transforms")
+#: The warning when the file carries VisuAlign markers (product decision
+#: 2026-10-04: only the linear registration is imported).
+MARKERS_NOT_IMPORTED = (
+    "The file's VisuAlign nonlinear markers ({count} section(s)) were not imported: "
+    "only its linear registration is. LangSlice's nonlinear step replaces them.")
+
+
+@dataclass(frozen=True)
+class RegistrationInputs:
+    """An imported registration as a job's supplied inputs.
+
+    ``inputs`` holds the ``JobSpec.inputs`` keys it supplies: ``positions``,
+    ``angles`` (the stack-wide form, the median, when every placed section's
+    pitch and yaw agree to within
+    :data:`~langslice.core.import_geometry.ANGLE_EPSILON_DEG`, a written
+    file's rounding; else per section), ``orientation``, ``transforms`` and, when
+    neither the caller nor the files give a pixel size, ``pixel_size_um``.
+    ``report`` is what the caller is told (the :class:`ImportResult` in brief:
+    the file, the sections placed and how each matched, what did not match,
+    the refused sections with the reason, ``warnings``). ``result`` is the
+    full :class:`ImportResult` (the VisuAlign markers kept raw and rescaled
+    there, never imported).
+    """
+
+    inputs: dict[str, Any]
+    report: dict[str, Any]
+    result: ImportResult
+
+
+def _plural(count: int, one: str, many: str) -> str:
+    return f"{count} {one if count == 1 else many}"
+
+
+def registration_inputs(
+    source: str | os.PathLike[str] | RegistrationFile,
+    workspace: Workspace,
+    *,
+    target: str | None = None,
+) -> RegistrationInputs:
+    """Import *source* (:func:`import_placements`) into the job of
+    *workspace*'s spec, as the supplied inputs a job is made from.
+
+    The pixel size: the caller's (``inputs.pixel_size_um``) or each file's
+    own when they have one; otherwise the size the imported maps imply
+    (``ImportResult.pixel_size_um``), which the inputs then carry (and, when
+    only some files carry their own, every section is placed relative to
+    that one size, so the placements hold exactly whatever each file says).
+    :class:`AmbiguousMatch` when the entries cannot be matched one to one;
+    ``ValueError`` when no section could be placed.
+    """
+    from langslice.core.workspace import Workspace as Plain
+
+    held = source if isinstance(source, RegistrationFile) else read_registration(source)
+    result = import_placements(held, workspace, target=target)
+    host_size = bool((workspace.spec.inputs or {}).get("pixel_size_um"))
+    pixel_size: float | None = None
+    overridden: list[str] = []
+    if not host_size and result.pixel_size_source == "imported" \
+            and result.pixel_size_um is not None:
+        pixel_size = float(result.pixel_size_um)
+        overridden = [p.section_id for p in result.placements
+                      if p.pixel_size_source != "imported"]
+        if overridden:  # one pixel size for the job: place every section against it
+            spec = workspace.spec
+            fixed = type(spec).from_dict({**spec.to_dict(), "inputs": {
+                **(spec.inputs or {}), "pixel_size_um": pixel_size}})
+            again = Plain(spec=fixed, image_folder=workspace.image_folder,
+                          emit=workspace.emit, atlas_loader=workspace.atlas_loader)
+            result = import_placements(held, again, target=target)
+    if not result.placements:
+        reasons = "; ".join(f"{name}: {why}" for name, why in result.refused.items())
+        raise ValueError(
+            f"No section could be placed from {held.path} ({held.format}): "
+            + (reasons or "no entry names a section image here "
+               f"(entries: {result.unmatched[:5]})"))
+
+    placements = result.placements
+    pitches = [p.pitch_deg for p in placements]
+    yaws = [p.yaw_deg for p in placements]
+    if max(pitches) - min(pitches) <= ANGLE_EPSILON_DEG \
+            and max(yaws) - min(yaws) <= ANGLE_EPSILON_DEG:
+        # One plane for the stack (differences below a written file's rounding).
+        angles: dict[str, Any] = {"pitch": float(np.median(pitches)),
+                                  "yaw": float(np.median(yaws))}
+    else:
+        angles = {p.section_id: {"pitch": p.pitch_deg, "yaw": p.yaw_deg} for p in placements}
+    inputs: dict[str, Any] = {
+        "positions": {p.section_id: p.position_mm for p in placements},
+        "angles": angles,
+        "orientation": {p.section_id: {"flip": p.flip, "rotation_deg": p.rotation_deg}
+                        for p in placements},
+        "transforms": {p.section_id: p.transform() for p in placements},
+    }
+    if pixel_size is not None:
+        inputs["pixel_size_um"] = pixel_size
+
+    warnings: list[str] = list(held.notes)
+    if result.unmatched:
+        warnings.append(
+            f"{_plural(len(result.unmatched), 'entry', 'entries')} in the file match no "
+            f"section image and were ignored: {result.unmatched}")
+    if result.missing:
+        warnings.append(
+            f"{_plural(len(result.missing), 'section has', 'sections have')} no entry in "
+            f"the file and no placement: {result.missing}")
+    for section_id, why in result.refused.items():
+        warnings.append(f"{section_id}: not imported ({why})")
+    for placement in placements:
+        warnings.extend(f"{placement.section_id}: {problem}" for problem in placement.problems)
+    marked = [entry for entry in held.entries if entry.markers]
+    if marked:
+        warnings.append(MARKERS_NOT_IMPORTED.format(count=len(marked)))
+    if pixel_size is not None:
+        warnings.append(
+            f"No pixel size was given{' for every file' if overridden else ''}: the job "
+            f"maps the sections at {pixel_size:.6g} um per pixel, the size the imported "
+            "registration implies (the placements hold at it)."
+            + (f" The files' own sizes of {overridden} are replaced by it." if overridden
+               else ""))
+    report = {
+        "path": held.path, "format": held.format, "target": target or held.target or (
+            DEEPSLICE_DEFAULT_TARGET if held.format == "deepslice-csv" else None),
+        "aligner": held.aligner,
+        "sections": [{
+            "id": p.section_id, "entry": p.source_filename, "match": p.match,
+            "position_mm": p.position_mm, "pitch_deg": p.pitch_deg, "yaw_deg": p.yaw_deg,
+            "rotation_deg": p.rotation_deg, "flip": p.flip,
+        } for p in placements],
+        "unmatched": list(result.unmatched), "missing": list(result.missing),
+        "refused": dict(result.refused),
+        "pixel_size_um": pixel_size if pixel_size is not None else result.pixel_size_um,
+        "pixel_size_source": "imported" if pixel_size is not None else result.pixel_size_source,
+        "markers_imported": False,
+        "warnings": warnings,
+    }
+    return RegistrationInputs(inputs=inputs, report=report, result=result)
