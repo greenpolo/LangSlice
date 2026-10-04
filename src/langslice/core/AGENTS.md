@@ -133,7 +133,8 @@ other module whose imports are core-only:
   (`image_prep.working_size`) and the render size from
   `image_prep.prepared_size`, so `registration.json` is rewritten on every
   write without decoding images; memoized on `Workspace.frame_cache` by
-  everything it depends on. A section with no pixel size (neither the file
+  everything it depends on (one frame per section, least recently used out
+  past `FRAME_CACHE_SECTIONS`). A section with no pixel size (neither the file
   nor the host gives one) is mapped at the scale its placement pictures draw
   it at, `core.transform.calibrate` on its working frame (estimated from the
   tissue width at its CURRENT position, never the scale stored with a

@@ -220,10 +220,19 @@ def scale_problem(frame: SectionFrame) -> str | None:
     return SCALE_UNKNOWN if frame.calibration_source == "estimated" else None
 
 
+#: Sections whose frame :func:`section_frame` keeps (least recently used
+#: first out). Each keeps only its frame at its current key, so moving a
+#: section never grows the cache; the cap is above any stack's size because
+#: every write maps every section (``registration.json``), and a smaller
+#: least-recently-used cap would recompute all of them on every write.
+FRAME_CACHE_SECTIONS = 512
+
+
 def section_frame(state: StackState, workspace: Workspace, record: SliceState) -> SectionFrame:
     """The section's linear frame (``ValueError`` when it has none:
     :func:`placement_problem`). Memoized on the workspace
-    (``Workspace.frame_cache``) by everything it depends on."""
+    (``Workspace.frame_cache``: one frame per section, at the key of
+    everything it depends on; bounded, ``FRAME_CACHE_SECTIONS``)."""
     problem = placement_problem(state, record)
     if problem is not None:
         raise ValueError(f"{record.id}: {problem}")
@@ -241,11 +250,19 @@ def section_frame(state: StackState, workspace: Workspace, record: SliceState) -
         # An estimated scale is measured on the default appearance's render.
         str(spec.preprocess),
     )
-    held = workspace.frame_cache.get(key)
-    if held is None:
-        held = _section_frame(state, workspace, record)
-        workspace.frame_cache[key] = held
-    return cast(SectionFrame, held)
+    cache = workspace.frame_cache
+    held = cache.get(record.id)
+    if held is not None and held[0] == key:
+        cache.move_to_end(record.id)
+        return cast(SectionFrame, held[1])
+    frame = _section_frame(state, workspace, record)
+    # One frame per section (the one at its current key); the least recently
+    # used section is dropped past FRAME_CACHE_SECTIONS.
+    cache[record.id] = (key, frame)
+    cache.move_to_end(record.id)
+    while len(cache) > FRAME_CACHE_SECTIONS:
+        cache.popitem(last=False)
+    return frame
 
 
 def _section_frame(state: StackState, workspace: Workspace, record: SliceState) -> SectionFrame:
