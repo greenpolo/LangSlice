@@ -107,6 +107,12 @@ class FitFrame:
     section: Image.Image
     um_per_px: float
     matrix: np.ndarray
+    #: Native atlas-plane pixels on the section's displayed left, as the fit
+    #: resolved them (from the placement it started from) when an include or
+    #: exclude entry named a side; None otherwise. A picture of the fit
+    #: highlights one-sided regions with this same split, so the picture
+    #: shows the sides the fit used, however far the fit turned the section.
+    left: np.ndarray | None = None
 
 #: Below this long/short axis ratio an outline has no defined long axis, and a
 #: region-restricted fit's reply says so with the rotation it chose (M04_D_08
@@ -134,6 +140,9 @@ class RegionFit:
     matrix: np.ndarray
     iou: float
     report: dict[str, Any] = field(default_factory=dict)
+    #: The section's displayed left on the native plane, as the fit resolved
+    #: it (None when no entry named a side).
+    left: np.ndarray | None = None
 
 
 def _place(mask: np.ndarray, matrix: np.ndarray, size: tuple[int, int]) -> np.ndarray:
@@ -284,7 +293,7 @@ def region_silhouette_fit(
     report["tissue_used_fraction"] = round(float(used.sum()) / float(tissue.sum()), 3)
     if notes:
         report["note"] = " ".join(notes)
-    return RegionFit(matrix=in_section[:2], iou=float(iou), report=report)
+    return RegionFit(matrix=in_section[:2], iou=float(iou), report=report, left=left)
 
 
 def _fit_matrix_in_section_frame(
@@ -374,6 +383,7 @@ def fit_silhouette(
         )
         position = record.position_mm
         regions: dict[str, Any] | None = None
+        left: np.ndarray | None = None
         if include or exclude:
             stored = (record.transform or {}).get("params")
             current = (denormalized_affine(stored, section.size)
@@ -383,6 +393,7 @@ def fit_silhouette(
                                                          state.pitch_deg, state.yaw_deg),
                                                include=include, exclude=exclude)
             regions = restricted.report
+            left = restricted.left
             iou = restricted.iou
             in_section = restricted.matrix
         else:
@@ -410,7 +421,7 @@ def fit_silhouette(
         }
 
     return _fit_payload(record, section, um_per_px, source, geometry, in_section, iou,
-                        regions=regions)
+                        regions=regions, left=left)
 
 
 def _fit_payload(
@@ -423,6 +434,7 @@ def _fit_payload(
     iou: float,
     *,
     regions: dict[str, Any] | None,
+    left: np.ndarray | None = None,
 ) -> dict[str, Any]:
     """The tool-shaped payload of one fit, whichever method made it.
 
@@ -453,7 +465,8 @@ def _fit_payload(
             "section_um_per_px": round(um_per_px, 4),
             "source": source,
         },
-        FIT_FRAME_KEY: FitFrame(section=section, um_per_px=um_per_px, matrix=in_section),
+        FIT_FRAME_KEY: FitFrame(section=section, um_per_px=um_per_px, matrix=in_section,
+                                left=left),
     }
     if regions is not None:
         payload["regions"] = regions
@@ -516,6 +529,9 @@ class ElastixFit:
     grid_image: Image.Image
     fit_image: Image.Image
     engine: dict[str, Any]
+    #: The section's displayed left on the native plane, resolved once from
+    #: the start placement (None when no entry named a side).
+    left: np.ndarray | None = None
 
 
 def _overlap(prepared: Any, atlas: Any, atlas_to_section: np.ndarray,
@@ -587,6 +603,7 @@ def elastix_affine(
     from dataclasses import replace
 
     from langslice.deformable import prepare_fit
+    from langslice.deformable.atlas_images import placement_left
     from langslice.deformable.engines import run_elastix_affine
     from langslice.linear import deformation
 
@@ -627,6 +644,7 @@ def elastix_affine(
         grid_image=grid.image, fit_image=image,
         engine={"version": result.engine_version, "runtime_s": round(result.runtime_s, 2),
                 "fit_look": look, "native_parameters": result.native_parameters},
+        left=placement_left(ctx.atlas, grid.placement, [*include, *exclude]),
     )
 
 
@@ -706,7 +724,7 @@ def fit_elastix(
         }
     in_section = denormalized_affine(fit.params, section.size)
     return _fit_payload(record, section, um_per_px, source, geometry, in_section, fit.iou,
-                        regions=fit.report if (include or exclude) else None)
+                        regions=fit.report if (include or exclude) else None, left=fit.left)
 
 
 # --- what the interactive tools share ------------------------------------
