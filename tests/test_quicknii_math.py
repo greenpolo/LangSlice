@@ -169,3 +169,40 @@ def test_affine_decomposition_and_shear_preservation() -> None:
     v_norm = float(np.linalg.norm([shear_anchoring.vx, shear_anchoring.vy, shear_anchoring.vz]))
     assert abs(shear_anchoring.vx) > 1e-6
     assert abs(u_norm - v_norm) > 1.0
+
+
+def test_finer_and_coarser_allen_atlases_export_to_the_25um_target() -> None:
+    """QuickNII and VisuAlign ship the Allen CCFv3 at 25 um only
+    (``ABA_Mouse_CCFv3_2017_25um.cutlas``, the target DeepSlice writes too):
+    a 10, 50 or 100 um job is exported to it, its anchoring in that
+    target's voxel space, the same physical plane as a 25 um job's (review
+    finding 15)."""
+    from langslice.job.quint import build_quint_export, job_export
+
+    def facts(res: float) -> dict:
+        return {"name": f"allen_mouse_{int(res)}um", "orientation": "asr",
+                "shape": [round(13200 / res), round(8000 / res), round(11400 / res)],
+                "resolution_um": [res] * 3}
+
+    def pixel_map(res: float) -> np.ndarray:
+        # A physical (CCF, voxel-edge) placement, in each atlas's own
+        # BrainGlobe micrometres (voxel i's centre at i * res: CCF - res / 2).
+        physical = np.array([[0.0, 0.0, 6000.0], [20.0, 0.0, 2000.0], [0.0, 20.0, 1500.0]])
+        physical[:, 2] -= res / 2.0
+        return physical
+
+    reference = job_export([{"filename": "a.png", "width": 300, "height": 200, "nr": 1,
+                             "pixel_to_atlas_um": pixel_map(25.0)}], facts(25.0))
+    for res in (10.0, 50.0, 100.0):
+        exported = job_export([{"filename": "a.png", "width": 300, "height": 200, "nr": 1,
+                                "pixel_to_atlas_um": pixel_map(res)}], facts(res))
+        assert exported["target"] == "ABA_Mouse_CCFv3_2017_25um.cutlas"
+        np.testing.assert_allclose(exported["slices"][0]["anchoring"],
+                                   reference["slices"][0]["anchoring"], atol=1e-4)
+    coarse = build_quint_export("a.png", 6.0, "allen_mouse_25um", (528, 320, 456),
+                                (25.0, 25.0, 25.0), 300, 200)
+    fine = build_quint_export("a.png", 6.0, "allen_mouse_10um", (1320, 800, 1140),
+                              (10.0, 10.0, 10.0), 300, 200)
+    assert fine.target == coarse.target == "ABA_Mouse_CCFv3_2017_25um.cutlas"
+    np.testing.assert_allclose(fine.slices[0].anchoring.to_list(),
+                               coarse.slices[0].anchoring.to_list(), atol=0.5)
