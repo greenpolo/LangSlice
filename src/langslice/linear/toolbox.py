@@ -22,7 +22,7 @@ import math
 import threading
 import time
 import uuid
-from concurrent.futures import Future, ThreadPoolExecutor
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -51,7 +51,6 @@ from langslice.linear.arguments import (
     argument_refusal,
 )
 from langslice.linear.atlas_grep import GREP_ATLAS_LIMIT, grep_structures, plane_structure_ids
-from langslice.linear.checkpoint import save_checkpoint
 from langslice.linear.deepslice import run_deepslice as _run_deepslice
 from langslice.linear.display import (
     MODE_RULES,
@@ -64,6 +63,7 @@ from langslice.linear.display import (
     framed_section,
     regions_in_plane,
 )
+from langslice.linear.job import HOST_TRANSFORM_KIND, Job
 from langslice.linear.live import LiveCallback, _plain
 from langslice.linear.render import (
     MAX_IMAGES_PER_CALL,
@@ -86,8 +86,13 @@ from langslice.linear.render import (
     stacked,
     status_rows,
 )
-from langslice.linear.spec import MAX_PARALLEL_TRANSFORMS, JobSpec
-from langslice.linear.state import SliceState, StackState, normalize_to_atlas_order
+from langslice.linear.spec import JobSpec
+from langslice.linear.state import (
+    IDENTITY_PARAMS,
+    SliceState,
+    StackState,
+    normalize_to_atlas_order,
+)
 from langslice.linear.transform import (
     calibrate,
     fit_elastix,
@@ -105,18 +110,6 @@ logger = logging.getLogger(__name__)
 #: Sections one ``view_slices`` call may return, or candidate pairs per compare.
 #: Separate reference comparisons return up to two images per candidate pair.
 MAX_VIEW_SLICES = MAX_IMAGES_PER_CALL
-
-#: Undo snapshots kept in memory. Not persisted: a resumed run starts from the
-#: checkpoint, which is the state as it stood.
-UNDO_DEPTH = 50
-
-#: A reported interval break must be at least this much wider than the stack's
-#: own median written spacing.
-INTERVAL_BREAK_MIN_RATIO = 1.5
-
-#: Strict-interval tolerance: consecutive spacing must be within this fraction
-#: of the nominal interval.
-STRICT_INTERVAL_TOLERANCE = 0.10
 
 #: Rotations ``orient_slices`` accepts.
 _ROTATIONS = (0, 90, 180, 270)
@@ -166,22 +159,6 @@ FIT_DEFORMABLE_VIEW = Profile(
     channels_reason="fit_deformable draws on the image the fit read (fit_section)",
     deformation_reason="fit_deformable's pictures are the fits themselves",
 )
-
-#: The transform every section starts from, and the B side of an A/B preview
-#: when a section carries nothing yet.
-IDENTITY_PARAMS: dict[str, float] = {
-    "rotation_deg": 0.0,
-    "scale_x": 1.0,
-    "scale_y": 1.0,
-    "translate_x_mm": 0.0,
-    "translate_y_mm": 0.0,
-}
-
-#: The transform a locked section carries: the host's snapshot is already
-#: registered in-plane, so the identity IS its alignment. ``kind`` ``"host"``
-#: counts as a transform at submit and is never written back to the host.
-HOST_TRANSFORM_KIND = "host"
-
 
 # --- view_atlas ----------------------------------------------------------------
 
@@ -319,26 +296,6 @@ def make_view_atlas(state: StackState, ctx: EngineContext):
     return view_atlas
 
 
-def locked_ids(spec: JobSpec) -> set[str]:
-    """Sections whose flip, rotation and transform the host locked."""
-    return {str(name) for name in (spec.inputs or {}).get("locked") or []}
-
-
-def host_damaged_ids(spec: JobSpec) -> set[str]:
-    """Sections the host marked damaged; the agent cannot clear these flags."""
-    return {str(name) for name in ((spec.inputs or {}).get("damaged") or {})}
-
-
-def host_transform() -> dict[str, Any]:
-    """The identity transform a locked section carries."""
-    return {
-        "kind": HOST_TRANSFORM_KIND,
-        "params": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0],
-        "physical": {**IDENTITY_PARAMS, "shear": 0.0, "pivot": [0.5, 0.5]},
-        "mirrored": False,
-    }
-
-
 def _tool_target_ids(state: StackState, name: str, args: dict[str, Any]) -> list[str]:
     """Resolve host display targets before a tool can reorder the stack."""
     if name in {"view_stack", "status", "undo", "redo", "submit",
@@ -367,13 +324,15 @@ def _tool_target_ids(state: StackState, name: str, args: dict[str, Any]) -> list
 
 def _serialized(
     tool: Any, lock: threading.Lock, *, state: StackState | None = None,
-    on_event: LiveCallback | None = None,
+    on_event: LiveCallback | None = None, before: Callable[[], None] | None = None,
 ) -> Any:
     """Serialize execution and its host notifications under the same lock.
 
     Model tool-call announcements may arrive together. These optional events
     identify the tool actually executing, including stable filenames resolved
     before a reorder. They never enter model context or change its schema.
+    *before* runs inside the lock ahead of the tool (the job's reload of a
+    state file changed on disk).
     """
     signature = inspect.signature(tool)
 
@@ -387,6 +346,8 @@ def _serialized(
     @functools.wraps(tool)
     def run(*args: Any, **kwargs: Any) -> Any:
         with lock:
+            if before is not None:
+                before()
             if on_event is None:
                 return tool(*args, **kwargs)
             fields: dict[str, Any] = {"name": tool.__name__, "execution_id": uuid.uuid4().hex}
@@ -419,23 +380,21 @@ def _serialized(
     return run
 
 
-def _clears_stale_deformations(tool: Any, state: StackState, ctx: EngineContext) -> Any:
+def _clears_stale_deformations(tool: Any, job: Job) -> Any:
     """After any tool: drop deformations whose linear placement changed, and say so.
 
-    A deformation is fitted on top of one linear placement; a write that moves
-    the position, orientation, cutting angles or transform makes it stale. It
-    is cleared in the same undo step as that write (the snapshot was taken
-    before it), so `undo` restores the placement and the deformation together.
+    The rule is the job's (:meth:`~langslice.linear.job.Job.clear_stale_deformations`):
+    cleared in the same undo step as the write that made them stale, so
+    `undo` restores the placement and the deformation together. The door
+    says so in the reply.
     """
 
     @functools.wraps(tool)
     def run(*args: Any, **kwargs: Any) -> Any:
         result = tool(*args, **kwargs)
-        cleared = deformation.clear_stale(state)
-        if cleared:
-            save_checkpoint(state, ctx.checkpoint_path)
-            if isinstance(result, dict):
-                result["deformation_cleared"] = cleared
+        cleared = job.clear_stale_deformations()
+        if cleared and isinstance(result, dict):
+            result["deformation_cleared"] = cleared
         return result
 
     return run
@@ -466,18 +425,26 @@ def _strict(tool: Any) -> Any:
 
 @dataclass
 class ToolBox:
-    """The tools of one run plus the mutable results the engine reads back."""
+    """The tools of one run over its :class:`~langslice.linear.job.Job`, plus
+    what only a tool door keeps: the look-before-commit gates and which
+    pictures the model has received.
 
+    The job holds the state, undo/redo, the checkpoint, the submit gates and
+    the image-correction jobs; the gates and the delivery bookkeeping here
+    are consulted by the tools alone, never by a library call.
+    """
+
+    job: Job
     tools: list[Any] = field(default_factory=list)
     submission: dict[str, Any] = field(default_factory=dict)
-    undo_stack: list[dict[str, Any]] = field(default_factory=list)
-    redo_stack: list[dict[str, Any]] = field(default_factory=list)
     #: Every parameter set `adjust_transforms` was given this run, per section
     #: id, oldest first. Kept host-side; the growing history is not repeated
     #: in every tool result because it is already present in the trajectory.
     transform_history: dict[str, list[dict[str, float]]] = field(default_factory=dict)
     #: Positions each section was compared at since its last write, and
-    #: whether `view_stack` has run since the last write (the gates).
+    #: whether `view_stack` has run since the last write (the gates). A
+    #: position that undo, redo or a reload of the state file moves counts as
+    #: a write (`forget_looks`); nothing else of this door's record is undone.
     compared: dict[str, set[float]] = field(default_factory=dict)
     #: Placement pictures successfully produced by a tool call but not yet
     #: carried into a later model request. A compare and a write requested in
@@ -492,82 +459,10 @@ class ToolBox:
         default_factory=set
     )
     reviewed: bool = False
-    #: Image corrections still running, per section id: the geometry they
-    #: were started at and their future. The agent never waits on them;
-    #: `submit` and the end of the session do.
-    image_jobs: dict[str, tuple[str, Future[dict[str, Any]]]] = field(default_factory=dict)
-    image_executor: ThreadPoolExecutor | None = None
-    #: Deformable-fit records: cached by input digest, applied ones on disk
-    #: under the results folder (`fit_deformable`, placement pictures).
-    deformations: deformation.RecordStore | None = None
 
     @property
     def names(self) -> list[str]:
         return [tool.__name__ for tool in self.tools]
-
-    def start_image_job(
-        self, section_id: str, fingerprint: str, job: Any, *, workers: int
-    ) -> None:
-        """Run one image correction in the background."""
-        if self.image_executor is None:
-            self.image_executor = ThreadPoolExecutor(
-                max_workers=workers, thread_name_prefix="image-correction"
-            )
-        self.image_jobs[section_id] = (fingerprint, self.image_executor.submit(job))
-
-    def image_job_running(self, section_id: str, fingerprint: str) -> bool:
-        running = self.image_jobs.get(section_id)
-        return running is not None and running[0] == fingerprint and not running[1].done()
-
-    def settle_image_corrections(self, state: StackState) -> bool:
-        """Wait for every running correction and record its result.
-
-        A result lands only on a section that still holds the running record
-        for the same geometry; one undone or superseded meanwhile keeps what
-        it has (the reply stays on disk and is reused at that geometry).
-        Returns whether any section changed.
-        """
-        changed = False
-        for section_id, (fingerprint, future) in list(self.image_jobs.items()):
-            changed |= self._land(state, section_id, fingerprint, _job_result(
-                section_id, fingerprint, future, None))
-        self.image_jobs.clear()
-        if self.image_executor is not None:
-            self.image_executor.shutdown(wait=True)
-            self.image_executor = None
-        return changed
-
-    def wait_image_job(self, state: StackState, section_id: str, timeout: float) -> bool:
-        """Wait up to *timeout* seconds for one section's running correction.
-
-        Records its result the way :meth:`settle_image_corrections` does and
-        returns True once nothing is running for the section; False when the
-        call is still running at the timeout.
-        """
-        running = self.image_jobs.get(section_id)
-        if running is None:
-            return True
-        fingerprint, future = running
-        try:
-            result = _job_result(section_id, fingerprint, future, max(0.0, timeout))
-        except TimeoutError:
-            return False
-        del self.image_jobs[section_id]
-        self._land(state, section_id, fingerprint, result)
-        return True
-
-    @staticmethod
-    def _land(
-        state: StackState, section_id: str, fingerprint: str, result: dict[str, Any],
-    ) -> bool:
-        """Record a finished correction on a section still waiting for it."""
-        record = state.by_id(section_id)
-        held = (record.image_correction or {}) if record is not None else {}
-        if (record is not None and held.get("status") == "running"
-                and held.get("geometry_fingerprint") == fingerprint):
-            record.image_correction = result
-            return True
-        return False
 
     def record_placement_view(
         self,
@@ -641,26 +536,6 @@ _STAIN_ONLY_DOC: tuple[tuple[str, str], ...] = (
     (" Traced sections add `traces`: each\n            one's trace drawn on the section.", ""),
 )
 
-def _job_result(
-    section_id: str, fingerprint: str, future: Future[dict[str, Any]], timeout: float | None,
-) -> dict[str, Any]:
-    """A correction job's result; an exception becomes an error result.
-
-    Raises ``TimeoutError`` when *timeout* passes first.
-    """
-    try:
-        return future.result(timeout=timeout)
-    except TimeoutError:
-        if not future.done():  # the wait ran out; a job's own timeout is a result
-            raise
-        error: BaseException = future.exception() or TimeoutError()
-        return {"id": section_id, "geometry_fingerprint": fingerprint,
-                "status": "error", "error": type(error).__name__, "message": str(error)}
-    except Exception as exc:  # the job records its own failures; this is a backstop
-        return {"id": section_id, "geometry_fingerprint": fingerprint,
-                "status": "error", "error": type(exc).__name__, "message": str(exc)}
-
-
 @dataclass(frozen=True)
 class _Staged:
     """One section ready to be drawn or measured on its physical canvas."""
@@ -707,322 +582,32 @@ class _Staged:
         )
 
 
-# --- submit gates --------------------------------------------------------
-
-
-def missing_positions(state: StackState) -> dict[str, Any] | None:
-    """``None`` when every section has a position, else the rejection."""
-    missing = [record.id for record in state.in_order() if record.position_mm is None]
-    if not missing:
-        return None
-    return {
-        "status": "error",
-        "error": "MISSING_POSITIONS",
-        "missing_ids": missing,
-        "message": (
-            f"{len(missing)} of {len(state.slices)} section(s) have no "
-            "position; every section needs one, damaged ones included."
-        ),
-    }
-
-
-def order_position_mismatch(state: StackState) -> dict[str, Any] | None:
-    """Positions must run one way along the corrected order (either way)."""
-    placed = [s for s in state.in_order() if s.position_mm is not None]
-    if len(placed) < 2:
-        return None
-    first = float(placed[0].position_mm)  # type: ignore[arg-type]
-    last = float(placed[-1].position_mm)  # type: ignore[arg-type]
-    direction = 1.0 if last >= first else -1.0
-    pairs: list[dict[str, Any]] = []
-    for before, after in zip(placed, placed[1:], strict=False):
-        delta = float(after.position_mm) - float(before.position_mm)  # type: ignore[arg-type]
-        if delta * direction < 0:
-            pairs.append(
-                {
-                    "before": before.id,
-                    "after": after.id,
-                    "before_position_mm": round(float(before.position_mm), 3),  # type: ignore[arg-type]
-                    "after_position_mm": round(float(after.position_mm), 3),  # type: ignore[arg-type]
-                }
-            )
-    if not pairs:
-        return None
-    trend = "increase" if direction > 0 else "decrease"
-    return {
-        "status": "error",
-        "error": "ORDER_POSITION_MISMATCH",
-        "pairs": pairs,
-        "message": (
-            f"Positions {trend} from {first:.3f} mm to {last:.3f} mm along the "
-            f"corrected order, but {len(pairs)} neighbour pair(s) run the other "
-            "way."
-        ),
-    }
-
-
-def strict_interval_error(state: StackState, breaks: list[int]) -> dict[str, Any] | None:
-    """Every consecutive spacing within 10% of the interval, no breaks."""
-    if breaks:
-        return {
-            "status": "error",
-            "error": "STRICT_INTERVAL",
-            "reported_breaks": list(breaks),
-            "message": (
-                "strict_interval is on: interval_breaks must be empty, "
-                f"{len(breaks)} were reported."
-            ),
-        }
-    interval = float(state.interval_mm)
-    if interval <= 0:
-        return None
-    placed = [s for s in state.in_order() if s.position_mm is not None]
-    tolerance = interval * STRICT_INTERVAL_TOLERANCE
-    failures: list[dict[str, Any]] = []
-    for before, after in zip(placed, placed[1:], strict=False):
-        spacing = abs(float(after.position_mm) - float(before.position_mm))  # type: ignore[arg-type]
-        if abs(spacing - interval) > tolerance:
-            failures.append(
-                {
-                    "between": [before.id, after.id],
-                    "spacing_mm": round(spacing, 3),
-                }
-            )
-    if not failures:
-        return None
-    return {
-        "status": "error",
-        "error": "STRICT_INTERVAL",
-        "interval_mm": round(interval, 3),
-        "tolerance_mm": round(tolerance, 3),
-        "failures": failures,
-        "message": (
-            f"strict_interval is on: every consecutive spacing must be within "
-            f"{STRICT_INTERVAL_TOLERANCE:.0%} of {interval:.3f} mm; "
-            f"{len(failures)} pair(s) are not."
-        ),
-    }
-
-
-def unsupported_breaks(state: StackState, breaks: list[int]) -> dict[str, Any] | None:
-    """Check reported interval breaks against the spacing that was WRITTEN.
-
-    A break at corrected index *i* claims the gap between *i-1* and *i* is
-    larger than the rest of the stack's; the positions on the state make that
-    claim checkable without an image.
-    """
-    if not breaks:
-        return None
-    ordered = state.in_order()
-    deltas = [
-        abs(float(b.position_mm) - float(a.position_mm))  # type: ignore[arg-type]
-        for a, b in zip(ordered, ordered[1:], strict=False)
-        if a.position_mm is not None and b.position_mm is not None
-    ]
-    if not deltas:
-        return None
-    median = float(sorted(deltas)[len(deltas) // 2])
-    threshold = median * INTERVAL_BREAK_MIN_RATIO
-
-    failures: list[dict[str, Any]] = []
-    for index in sorted(set(breaks)):
-        position = next(
-            (i for i, r in enumerate(ordered) if r.index_corrected == index), None
-        )
-        if position is None or position == 0:
-            failures.append(
-                {
-                    "index": index,
-                    "error": "NOT_A_GAP",
-                    "reason": (
-                        f"corrected index {index} has no section before it; a "
-                        "break index names the section AFTER the gap."
-                    ),
-                }
-            )
-            continue
-        before, after = ordered[position - 1], ordered[position]
-        if before.position_mm is None or after.position_mm is None:
-            continue
-        written = abs(float(after.position_mm) - float(before.position_mm))
-        if written > threshold:
-            continue
-        failures.append(
-            {
-                "index": index,
-                "error": "NOT_A_GAP",
-                "written_interval_mm": round(written, 3),
-                "median_interval_mm": round(median, 3),
-                "between": [before.id, after.id],
-            }
-        )
-    if not failures:
-        return None
-    return {
-        "status": "error",
-        "error": "INTERVAL_BREAKS_UNSUPPORTED",
-        "failures": failures,
-        "message": (
-            f"{len(failures)} reported interval break(s) are not in the "
-            "positions you wrote. A break index is accepted only where the "
-            f"written interval exceeds {INTERVAL_BREAK_MIN_RATIO:g}x the "
-            "stack's median written spacing."
-        ),
-    }
-
-
-def missing_transforms(state: StackState) -> dict[str, Any] | None:
-    """``None`` when every section carries a transform, else the rejection."""
-    missing = [record.id for record in state.in_order() if record.transform is None]
-    if not missing:
-        return None
-    return {
-        "status": "error",
-        "error": "MISSING_TRANSFORMS",
-        "missing_ids": missing,
-        "message": (
-            f"{len(missing)} of {len(state.slices)} section(s) carry no "
-            "transform; every section needs one, damaged ones included."
-        ),
-    }
-
-
-def damaged_transform_error(state: StackState, spec: JobSpec) -> dict[str, Any] | None:
-    """Damaged sections require an applied interactive correction, not identity."""
-    failures = []
-    identity = np.array([1.0, 0.0, 0.0, 0.0, 1.0, 0.0])
-    # A locked section was aligned by the user and cannot be changed here.
-    locked = locked_ids(spec)
-    for record in state.in_order():
-        if not record.damaged or record.id in locked:
-            continue
-        transform = record.transform or {}
-        reason = None
-        if not transform:
-            reason = "missing_transform"
-        elif transform.get("kind") != "interactive":
-            reason = "not_interactive"
-        else:
-            try:
-                params = np.asarray(transform.get("params"), dtype=float)
-                if params.shape != (6,) or not np.isfinite(params).all():
-                    reason = "invalid_transform"
-                elif transform.get("spline") is not None:
-                    from langslice.landmark_warp import fit_spline
-
-                    spline = transform["spline"]
-                    fitted = fit_spline(spline)
-                    is_identity = (
-                        fitted.is_identity() if spline.get("backend") == "elastix" else
-                        np.allclose(spline["source"], spline["target"], rtol=0, atol=1e-9)
-                    )
-                    if is_identity:
-                        reason = "identity_transform"
-                elif np.allclose(params, identity, rtol=0, atol=1e-9):
-                    reason = "identity_transform"
-            except (TypeError, ValueError, KeyError, RuntimeError, np.linalg.LinAlgError):
-                reason = "invalid_transform"
-        if reason:
-            failures.append({"id": record.id, "reason": reason})
-    if not failures:
-        return None
-    return {
-        "status": "error",
-        "error": "DAMAGED_REQUIRES_MANUAL_TRANSFORM",
-        "failures": failures,
-        "interactive_enabled": spec.transform.interactive,
-        "message": (
-            "Damaged sections require a non-identity interactive transform. "
-            + (
-                "Use adjust_transforms to align the surviving "
-                "anatomy, inspect the returned overlays, then submit again."
-                if spec.transform.interactive else
-                "Interactive transform tools are disabled for this run; the host "
-                "must enable interactive transforms to resolve these sections."
-            )
-        ),
-    }
-
-
-def submit_errors(
-    state: StackState, spec: JobSpec, breaks: list[int]
-) -> dict[str, Any] | None:
-    """Every gate that applies to this run, in order."""
-    if spec.has("position"):
-        refusal = (
-            missing_positions(state)
-            or order_position_mismatch(state)
-            or (
-                strict_interval_error(state, breaks)
-                if spec.position.strict_interval
-                else unsupported_breaks(state, breaks)
-            )
-        )
-        if refusal is not None:
-            return refusal
-    if spec.has("transform"):
-        refusal = damaged_transform_error(state, spec) or missing_transforms(state)
-        if refusal is not None:
-            return refusal
-    if spec.has("nonlinear"):
-        return missing_deformations(state)
-    return None
-
-
-def missing_deformations(state: StackState) -> dict[str, Any] | None:
-    """``None`` when every section carries a deformation, or a keep_linear
-    reason, at its current linear placement; else the rejection."""
-    missing: list[dict[str, str]] = []
-    for record in state.in_order():
-        held = record.deformation or {}
-        if not held:
-            missing.append({"id": record.id, "reason": "no deformation and no keep_linear reason"})
-        elif held.get("linear_key") != deformation.linear_key(state, record):
-            missing.append({"id": record.id, "reason": "made at a different linear placement"})
-    if not missing:
-        return None
-    return {
-        "status": "error",
-        "error": "MISSING_DEFORMATIONS",
-        "sections": missing,
-        "message": (
-            f"{len(missing)} of {len(state.slices)} section(s) carry no deformation at their "
-            "current placement. Apply one fit_deformable result per section, or give "
-            "fit_deformable keep_linear with a reason where the linear placement stands."
-        ),
-    }
-
-
 # --- the toolbox ---------------------------------------------------------
 
 
 def build_tools(
     state: StackState, ctx: EngineContext, spec: JobSpec, *,
+    job: Job | None = None,
     on_event: LiveCallback | None = None,
 ) -> ToolBox:
-    """Build the tools this run's spec switches on, closed over *state*."""
-    box = ToolBox()
+    """Build the tools this run's spec switches on, closed over *state*.
+
+    The tools sit on *job*; without one, a job is made around *state* at the
+    context's checkpoint and results paths (an empty undo history, nothing
+    written until the first write).
+    """
+    if job is None:
+        job = Job(state, spec, checkpoint_path=ctx.checkpoint_path,
+                  results_path=ctx.results_path)
+    if job.state is not state or job.spec is not spec:
+        raise ValueError("build_tools: the job must hold this state and spec")
+    box = ToolBox(job)
     pos_lo, pos_hi = ctx.position_range
-    locked = locked_ids(spec)
-    host_damaged = host_damaged_ids(spec)
+    locked = job.locked
+    host_damaged = job.host_damaged
+    over_cap = job.over_cap
     #: The image model is part of this run: trace_borders and traced images exist.
     traces_on = spec.nonlinear.uses_image_model
-    #: Below the maximum, the most sections one transform call may take.
-    transform_cap = (
-        spec.transform.max_parallel
-        if spec.transform.max_parallel < MAX_PARALLEL_TRANSFORMS else None
-    )
-
-    def over_cap(requested: int) -> dict[str, Any] | None:
-        """The refusal for a transform call naming more sections than allowed."""
-        if transform_cap is None or requested <= transform_cap:
-            return None
-        return {
-            "status": "error",
-            "error": "TOO_MANY_SECTIONS",
-            "max_sections": transform_cap,
-            "requested": requested,
-        }
 
     # --- shared plumbing ------------------------------------------------
 
@@ -1048,20 +633,29 @@ def build_tools(
             "interval_breaks": list(state.interval_breaks),
         }
 
-    def push(before: dict[str, Any]) -> None:
-        """Record one undo step. One tool call = one step, batch included."""
-        box.undo_stack.append(before)
-        del box.undo_stack[:-UNDO_DEPTH]
-        box.redo_stack.clear()
-
-    def snapshot() -> None:
-        """Take the undo step, before anything is written."""
-        push(state.to_dict())
-
-    def commit(*touched: str) -> dict[str, Any]:
-        """Checkpoint the write and answer with the rows it changed."""
-        save_checkpoint(state, ctx.checkpoint_path)
+    def commit(before: dict[str, Any], *touched: str) -> dict[str, Any]:
+        """One undo step (*before*: the job's snapshot) and the checkpoint;
+        answer with the rows the write changed. One tool call = one step,
+        batch included."""
+        job.commit(before)
         return {"status": "ok", **changed(list(touched))}
+
+    def forget_looks(before: dict[str, Any]) -> None:
+        """A position moved by undo, redo or a reload is a write to it: that
+        section needs a new view, and the stack a new review (the gates)."""
+        held = {row["id"]: row.get("position_mm") for row in before.get("slices", [])}
+        moved = [record.id for record in state.slices
+                 if held.get(record.id) != record.position_mm]
+        for name in moved:
+            box.compared.pop(name, None)
+        if moved:
+            box.reviewed = False
+
+    def sync_job() -> None:
+        """Before every call: pick up a state file changed on disk."""
+        before = job.sync()
+        if before is not None:
+            forget_looks(before)
 
     def placement_view_key(
         record: SliceState, position_mm: float
@@ -1274,19 +868,12 @@ def build_tools(
                     str(transform.get("kind") or "stored"))
         return dict(IDENTITY_PARAMS), None, "identity"
 
-    def deformation_store() -> deformation.RecordStore:
-        """Fitted records of this run, saved under the results folder (made on first use)."""
-        if box.deformations is None:
-            box.deformations = deformation.RecordStore(
-                root=Path(ctx.results_path).parent / "deformable")
-        return box.deformations
-
     def current_warp(record: SliceState) -> Any:
         """The section's applied deformation record, or None (or unreadable)."""
         if not record.deformation:
             return None
         try:
-            return deformation_store().current(state, record)
+            return job.deformations.current(state, record)
         except Exception:  # a missing record must not break a placement picture
             logger.warning("Deformation record unreadable for %s", record.id, exc_info=True)
             return None
@@ -1357,29 +944,26 @@ def build_tools(
         cleaned = str(text or "").strip()
         if not cleaned:
             return {"status": "error", "error": "BAD_ARGS"}
-        snapshot()
+        before = job.snapshot()
         state.notes.append(cleaned)
-        save_checkpoint(state, ctx.checkpoint_path)
+        job.commit(before)
         return {"status": "ok", "notes": list(state.notes)}
 
     def undo() -> dict[str, Any]:
         """Undo the last write. One tool call undoes as one step."""
-        if not box.undo_stack:
+        before = job.snapshot()
+        if not job.undo():
             return {"status": "error", "error": "NOTHING_TO_UNDO"}
-        box.redo_stack.append(state.to_dict())
-        state.restore(box.undo_stack.pop())
-        save_checkpoint(state, ctx.checkpoint_path)
-        return {"status": "ok", "undo_depth": len(box.undo_stack), **rows()}
+        forget_looks(before)
+        return {"status": "ok", "undo_depth": len(job.undo_stack), **rows()}
 
     def redo() -> dict[str, Any]:
         """Redo the write that ``undo`` reversed."""
-        if not box.redo_stack:
+        before = job.snapshot()
+        if not job.redo():
             return {"status": "error", "error": "NOTHING_TO_REDO"}
-        box.undo_stack.append(state.to_dict())
-        del box.undo_stack[:-UNDO_DEPTH]
-        state.restore(box.redo_stack.pop())
-        save_checkpoint(state, ctx.checkpoint_path)
-        return {"status": "ok", "redo_depth": len(box.redo_stack), **rows()}
+        forget_looks(before)
+        return {"status": "ok", "redo_depth": len(job.redo_stack), **rows()}
 
     def mark_damaged(entries: list[DamageEntry]) -> dict[str, Any]:
         """Set or clear damage flags for sections with unreliable outlines.
@@ -1403,7 +987,7 @@ def build_tools(
         if any(not isinstance(entry, dict)
                or not isinstance(entry.get("damaged", True), bool) for entry in entries):
             return {"status": "error", "error": "BAD_ARGS"}
-        snapshot()
+        before = job.snapshot()
         marked: list[str] = []
         unmarked: list[str] = []
         unknown: list[str] = []
@@ -1423,7 +1007,7 @@ def build_tools(
             (marked if record.damaged else unmarked).append(record.id)
         return {"marked": marked, "unmarked": unmarked, "unknown_ids": unknown,
                 **({"rejected": rejected} if rejected else {}),
-                **commit(*marked, *unmarked)}
+                **commit(before, *marked, *unmarked)}
 
     def submit(
         summary: str,
@@ -1445,7 +1029,7 @@ def build_tools(
                 breaks.append(int(raw))
             except (TypeError, ValueError):
                 continue
-        refusal = submit_errors(state, spec, breaks)
+        refusal = job.submit_errors(breaks)
         # With the image model, missing traces are reported before missing
         # deformations: a deformation may be fitted to its section's trace.
         if refusal is not None and not (
@@ -1454,22 +1038,8 @@ def build_tools(
         if spec.has("nonlinear") and traces_on:
             from langslice.registration_tool import correction_fingerprint
 
-            if box.settle_image_corrections(state):
-                save_checkpoint(state, ctx.checkpoint_path)
-            pending: list[dict[str, str]] = []
-            for record in state.in_order():
-                result = record.image_correction or {}
-                try:
-                    current = correction_fingerprint(state, ctx, record.id)
-                except (OSError, ValueError) as exc:
-                    pending.append({"id": record.id, "reason": str(exc)})
-                    continue
-                if result.get("status") != "ok":
-                    pending.append({"id": record.id, "reason": "No completed image correction"})
-                elif result.get("geometry_fingerprint") != current:
-                    pending.append({
-                        "id": record.id, "reason": "Placement changed since image correction",
-                    })
+            pending = job.missing_image_corrections(
+                lambda section_id: correction_fingerprint(state, ctx, section_id))
             if pending:
                 return {
                     "status": "refused",
@@ -1488,7 +1058,7 @@ def build_tools(
                 "detail": "view_stack has not run since the last set_positions write",
             }
 
-        snapshot()
+        before = job.snapshot()
         state.interval_breaks = sorted(set(breaks))
         # Direction is a convention, not an inference: a posterior-first stack
         # is emitted in atlas order without the agent being told about it.
@@ -1513,7 +1083,7 @@ def build_tools(
                 "interval_breaks": list(state.interval_breaks),
             }
         )
-        save_checkpoint(state, ctx.checkpoint_path)
+        job.commit(before)
         if tool_context is not None:
             tool_context.actions.escalate = True
         return {"status": "ok", **rows()}
@@ -1619,7 +1189,7 @@ def build_tools(
             return options
 
         pictured = targets[0]  # "both" writes one setting to both targets
-        before = state.to_dict()
+        before = job.snapshot()
         ids = [record.id for record in scope] if slices else None
         parts: list[types.Part] = []
         try:
@@ -1643,8 +1213,7 @@ def build_tools(
         except Exception as exc:
             state.restore(before)
             return {"status": "error", "error": "RENDER_FAILED", "message": str(exc)}
-        push(before)
-        save_checkpoint(state, ctx.checkpoint_path)
+        job.commit(before)
         in_force = {
             name: (
                 {"sections": {record.id: looks.section_settings(state, name, record.id)
@@ -1721,7 +1290,7 @@ def build_tools(
         options = display(ORIENT_VIEW, view, sections=named)
         if isinstance(options, dict):
             return options
-        snapshot()
+        before = job.snapshot()
         applied: list[str] = []
         unknown: list[str] = []
         rejected: list[dict[str, Any]] = []
@@ -1778,7 +1347,7 @@ def build_tools(
             "cleared_transforms": cleared,
             "unknown_ids": unknown,
             "rejected": rejected,
-            **commit(*applied),
+            **commit(before, *applied),
             "description": (
                 "Attached images are "
                 + ", ".join(applied[:MAX_VIEW_SLICES])
@@ -1828,9 +1397,9 @@ def build_tools(
         remaining = [record for record in state.in_order() if record.id not in selected]
         index = 0 if after == "start" else remaining.index(records[after]) + 1
         ordered = remaining[:index] + [records[name] for name in slices] + remaining[index:]
-        snapshot()
+        before = job.snapshot()
         moved = renumber(ordered)
-        return {"moved": moved, **commit(*moved)}
+        return {"moved": moved, **commit(before, *moved)}
 
     if spec.has("reorder"):
         box.tools.append(reorder_slices)
@@ -1946,7 +1515,7 @@ def build_tools(
         options = display(SET_POSITIONS_VIEW, view, sections=named)
         if isinstance(options, dict):
             return options
-        before = state.to_dict()
+        before = job.snapshot()
         written: list[dict[str, Any]] = []
         written_positions: list[float] = []
         clamped: list[dict[str, Any]] = []
@@ -1998,13 +1567,12 @@ def build_tools(
                 "unknown_ids": unknown,
                 "rejected": rejected,
             }
-        push(before)
         result = {
             "written": written,
             "unknown_ids": unknown,
             "rejected": rejected,
             "clamped": clamped,
-            **commit(*[row["id"] for row in written]),
+            **commit(before, *[row["id"] for row in written]),
         }
         if clamped:
             result["atlas_range_mm"] = [round(pos_lo, 3), round(pos_hi, 3)]
@@ -2396,10 +1964,10 @@ def build_tools(
             pitch, yaw = float(pitch_deg), float(yaw_deg)
         except (TypeError, ValueError):
             return {"status": "error", "error": "BAD_ARGS"}
-        snapshot()
+        before = job.snapshot()
         state.cutting_angles_deg = {"pitch": pitch, "yaw": yaw}
         ctx.render_cache.clear()
-        return commit()  # stack-wide: no section row changes
+        return commit(before)  # stack-wide: no section row changes
 
     def fit_affine(
         slices: list[str],
@@ -2573,7 +2141,7 @@ def build_tools(
                    if restricted else "")
             )
             payload[TOOL_MEDIA_PARTS_KEY] = parts
-        snapshot()
+        before = job.snapshot()
         for record, outcome in fits:
             record.transform = {
                 "kind": chosen,
@@ -2587,7 +2155,7 @@ def build_tools(
                 **({"fit_atlas": atlas_kind} if chosen == "elastix" and atlas_kind != "ara"
                    else {}),
             }
-        save_checkpoint(state, ctx.checkpoint_path)
+        job.commit(before)
         return payload
 
     # --- the interactive transform --------------------------------------
@@ -2781,11 +2349,10 @@ def build_tools(
         history = box.transform_history.setdefault(record.id, [])
         history.append(dict(staged.params))
         if wrote:
-            if not batching_adjustments:
-                snapshot()
+            single = None if batching_adjustments else job.snapshot()
             record.transform = written
-            if not batching_adjustments:
-                save_checkpoint(state, ctx.checkpoint_path)
+            if single is not None:
+                job.commit(single)
         image = f"atlas {options.atlas_name()}"
         under = (f", the {image} blended under it at opacity {options.atlas_opacity:g}"
                  if options.atlas_images and options.atlas_opacity > 0 else "")
@@ -2908,7 +2475,7 @@ def build_tools(
         if isinstance(options, dict):
             return options
 
-        before = state.to_dict()
+        before = job.snapshot()
         results: list[dict[str, Any]] = []
         parts: list[types.Part] = []
         wrote_any = False
@@ -2942,8 +2509,7 @@ def build_tools(
             batching_adjustments = False
 
         if wrote_any:
-            push(before)
-            save_checkpoint(state, ctx.checkpoint_path)
+            job.commit(before)
         successful = [row["id"] for row in results if row.get("status") == "ok"]
         return {
             "status": "ok" if successful else "error",
@@ -2987,13 +2553,13 @@ def build_tools(
             return {"status": "error", "error": "UNKNOWN_SECTION", "id": str(id)}
         try:
             fingerprint = registration_tool.correction_fingerprint(state, ctx, record.id)
-            if box.image_job_running(record.id, fingerprint):
+            if job.image_job_running(record.id, fingerprint):
                 return {"status": "running", "id": record.id,
                         "message": "This section's image correction is already running."}
-            result, job = registration_tool.start_correction(
+            result, call = registration_tool.start_correction(
                 state, ctx, record.id,
                 prompt=prompt,
-                out=Path(ctx.results_path).parent / "nonlinear",
+                out=Path(job.results_path).parent / "nonlinear",
                 provider=spec.nonlinear.provider,
                 image_model=spec.nonlinear.image_model,
             )
@@ -3003,20 +2569,20 @@ def build_tools(
         except OSError as exc:
             return {"status": "error", "error": "IMAGE_CORRECTION_IO_ERROR",
                     "id": record.id, "message": str(exc)}
-        if job is not None:
-            box.start_image_job(
-                record.id, result["geometry_fingerprint"], job,
+        if call is not None:
+            job.start_image_job(
+                record.id, result["geometry_fingerprint"], call,
                 workers=registration_tool.MAX_CONCURRENT_IMAGE_CALLS,
             )
         if result != record.image_correction:
-            snapshot()
+            before = job.snapshot()
             record.image_correction = result
-            save_checkpoint(state, ctx.checkpoint_path)
+            job.commit(before)
         response = {key: result[key] for key in (
             "status", "error", "message", "cached", "prompt_edited", "attempt",
         ) if key in result}
         response["id"] = record.id
-        if job is not None:
+        if call is not None:
             response["message"] = (
                 "Image call started in the background. Continue; submit waits for it."
             )
@@ -3142,11 +2708,11 @@ def build_tools(
         ]
         if refused:
             return {"status": "error", "error": "NOTHING_WRITTEN", "results": refused}
-        snapshot()
+        before = job.snapshot()
         for record in targets:
             record.deformation = {"keep_linear": reason,
                                   "linear_key": deformation.linear_key(state, record)}
-        return {**commit(*(record.id for record in targets)), "applied": True,
+        return {**commit(before, *(record.id for record in targets)), "applied": True,
                 "keep_linear": reason}
 
     def fit_deformable_impl(
@@ -3162,7 +2728,7 @@ def build_tools(
         keep_linear: str,
         view: Any,
     ) -> dict[str, Any]:
-        store = deformation_store()
+        store = job.deformations
         if not isinstance(slices, (list, tuple)) or not slices:
             return {"status": "error", "error": "BAD_ARGS",
                     "message": "slices must name one or more sections"}
@@ -3253,11 +2819,10 @@ def build_tools(
             running = False
             if any(choice.fit_section in deformation.TRACED for choice in choices):
                 # A traced image waits for the section's trace still running.
-                landed = record.id in box.image_jobs
-                running = not box.wait_image_job(state, record.id,
-                                                 trace_deadline - time.monotonic())
+                landed = record.id in job.image_jobs
+                running = not job.wait_image_job(record.id, trace_deadline - time.monotonic())
                 if landed and not running:
-                    save_checkpoint(state, ctx.checkpoint_path)
+                    job.checkpoint()
             for number, choice in enumerate(choices, start=1):
                 failure = {"id": record.id, "status": "error", "settings": choice.echo(),
                            **({} if applying else {"candidate": number})}
@@ -3304,35 +2869,35 @@ def build_tools(
             index = row.pop("job", None)
             if index is None:
                 continue
-            job = jobs[index]
-            outcome = job.result
-            row["settings"] = job.choice.echo()
+            fit = jobs[index]
+            outcome = fit.result
+            row["settings"] = fit.choice.echo()
             if not isinstance(outcome, deformation.DeformableRecord):
                 row.update(status="error", error="FIT_FAILED",
                            message=getattr(outcome, "error", "no result"))
                 continue
-            store.put(job.key, outcome)
-            numbers = deformation.summary(outcome, job.previous)
-            record = job.grid.record
-            row.update(status="ok", engine_settings=deformation.engine_settings(job.settings),
+            store.put(fit.key, outcome)
+            numbers = deformation.summary(outcome, fit.previous)
+            record = fit.grid.record
+            row.update(status="ok", engine_settings=deformation.engine_settings(fit.settings),
                        **numbers, runtime_s=round(float(outcome.engine.get("runtime_s", 0.0)), 1),
-                       cached=job.cached)
+                       cached=fit.cached)
             if applying:
                 linear = deformation.linear_key(state, record)
                 outcome.provenance = deformation.provenance(
-                    job.grid, job.choice, kept, dropped, begin, job.image_identity, linear)
+                    fit.grid, fit.choice, kept, dropped, begin, fit.image_identity, linear)
                 held = record.deformation or {}
-                if held.get("key") == job.key:
+                if held.get("key") == fit.key:
                     row["written"] = False
                 else:
                     try:
-                        folder = store.save(record.id, job.key, outcome)
+                        folder = store.save(record.id, fit.key, outcome)
                     except OSError as exc:
                         row.update(status="error", error="RECORD_WRITE_FAILED", message=str(exc))
                         continue
                     record.deformation = deformation.reference(
-                        folder=folder, key=job.key, linear=linear, record=outcome,
-                        choice=job.choice, include=kept, exclude=dropped, start=begin,
+                        folder=folder, key=fit.key, linear=linear, record=outcome,
+                        choice=fit.choice, include=kept, exclude=dropped, start=begin,
                         previous=held, numbers=numbers,
                     )
                     row["written"] = True
@@ -3340,25 +2905,25 @@ def build_tools(
                 row["steps"] = len((record.deformation or {}).get("steps") or [])
             heading = (f"{record.id}  " + ("applied" if applying else
                        f"candidate {row['candidate']}/{len(choices)}")
-                       + f": {job.choice.engine} {job.choice.stiffness}")
-            detail_line = (f"{job.choice.fit_section} vs {job.choice.fit_atlas}, start {begin}"
+                       + f": {fit.choice.engine} {fit.choice.stiffness}")
+            detail_line = (f"{fit.choice.fit_section} vs {fit.choice.fit_atlas}, start {begin}"
                            + (f", include {','.join(kept)}" if kept else "")
                            + (f", exclude {','.join(dropped)}" if dropped else ""))
             shown_atlas = options.atlas_images
             first = len(parts)
             try:
-                images = [deformation.picture(ctx, job.image, outcome, warped=True, style=style,
+                images = [deformation.picture(ctx, fit.image, outcome, warped=True, style=style,
                                               atlas_images=shown_atlas,
                                               title=f"{heading}\n{detail_line}")]
                 if options.mode == "ab":
-                    if job.previous is not None:
+                    if fit.previous is not None:
                         images.append(deformation.picture(
-                            ctx, job.image, job.previous, warped=True, style=style,
+                            ctx, fit.image, fit.previous, warped=True, style=style,
                             atlas_images=shown_atlas,
                             title=f"{record.id}  before: the deformation it started from"))
                     else:
                         images.append(deformation.picture(
-                            ctx, job.image, outcome, warped=False, style=style,
+                            ctx, fit.image, outcome, warped=False, style=style,
                             atlas_images=shown_atlas,
                             title=f"{record.id}  before: the linear placement"))
                 parts.extend(image_to_part(image) for image in images)
@@ -3369,8 +2934,7 @@ def build_tools(
                 continue
             row["image_indexes"] = list(range(first, len(parts)))
         if wrote_any:
-            push(before)
-            save_checkpoint(state, ctx.checkpoint_path)
+            job.commit(before)
         # Each traced section's trace, once per call, so it can be reviewed.
         traces: list[dict[str, Any]] = []
         for section_id, (image, lines) in traced_views.items():
@@ -3544,8 +3108,8 @@ def build_tools(
     # `view.resolution` exists only where the user left picture size to the agent.
     level = resolution_level(ctx)
     box.tools = [
-        _serialized(_clears_stale_deformations(_strict(view_schema(tool, level)), state, ctx),
-                    lock, state=state, on_event=on_event)
+        _serialized(_clears_stale_deformations(_strict(view_schema(tool, level)), job),
+                    lock, state=state, on_event=on_event, before=sync_job)
         for tool in box.tools
     ]
     return box

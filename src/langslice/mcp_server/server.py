@@ -34,14 +34,8 @@ from langslice.adk import TOOL_MEDIA_PARTS_KEY
 from langslice.adk.media import encode_jpeg
 from langslice.api.abba_worker import PreparedLinear, checkpoint_callback, prepare_linear
 from langslice.api.claude_jobs import load_job
-from langslice.linear.checkpoint import load_checkpoint, observe_checkpoints, save_checkpoint
-from langslice.linear.engine import (
-    EngineContext,
-    apply_host_inputs,
-    build_context,
-    emit_results,
-    ingest,
-)
+from langslice.linear.engine import EngineContext, build_context
+from langslice.linear.job import Job
 from langslice.linear.opening import CLAUDE_IMAGE_LIMIT, opening_items
 from langslice.linear.spec import JobSpec
 from langslice.linear.state import StackState
@@ -68,22 +62,38 @@ INSTRUCTIONS = (
 
 
 @dataclass
-class Job:
-    """One open folder: the same objects ``langslice.linear.engine.run`` holds."""
+class Session:
+    """One open job as this door holds it.
 
-    spec: JobSpec
+    ``job`` is the core :class:`~langslice.linear.job.Job` (state, spec,
+    undo/redo, checkpoint, submit gates), the one ``langslice.linear.engine.run``
+    opens; ``box`` is the tools over it, whose gates and delivery bookkeeping
+    this door shares with the ADK agent's. The rest is the door's own: the
+    saved-job record, the host channel and its update callback, the opening
+    pages and the trace.
+    """
+
+    job: Job
     ctx: EngineContext
-    state: StackState
     box: ToolBox
     trace: McpTrace | None
     job_id: str = ""
     job_dir: Path | None = None
     notes: str = ""
-    checkpoint: Callable[[Any], None] | None = None
+    #: Sends the host (ABBA) its live update after every checkpoint.
+    host_update: Callable[[StackState], None] | None = None
     prepared: PreparedLinear | None = None
     channel: HostChannel | None = None
     pages: list[list[ContentBlock]] = field(default_factory=list)
     lock: Any = field(default_factory=threading.RLock, repr=False)
+
+    @property
+    def spec(self) -> JobSpec:
+        return self.job.spec
+
+    @property
+    def state(self) -> StackState:
+        return self.job.state
 
 
 # --- content conversion ----------------------------------------------------
@@ -180,29 +190,23 @@ def open_job(
     spec: JobSpec,
     atlas_loader: Callable[[str], Any] | None = None,
     checkpoint_path: str | None = None,
-) -> Job:
+) -> Session:
     """Open *spec*'s folder the way the engine does, without a model.
 
-    *checkpoint_path* moves the checkpoint (and the resume point) out of the
-    image folder, into a saved job's own directory.
+    *checkpoint_path* moves the checkpoint (and the resume point, and the undo
+    history beside it) out of the image folder, into a saved job's own
+    directory.
     """
     if spec.has("nonlinear"):
         raise ValueError("Image generation is unavailable through the Claude connector")
     ctx = build_context(spec, atlas_loader=atlas_loader)
     if checkpoint_path is not None:
         ctx.checkpoint_path = checkpoint_path
-    state = load_checkpoint(ctx.checkpoint_path) if spec.resume else None
-    if state is not None:
-        ctx.progress(f"[ingest] resuming from {ctx.checkpoint_path}")
-        state.spec = spec.to_dict()
-        state.submitted = False
-    else:
-        state = ingest(spec, ctx)
-        apply_host_inputs(state, spec)
-    save_checkpoint(state, ctx.checkpoint_path)
+    job = Job.open(spec, ctx, checkpoint_path=ctx.checkpoint_path,
+                   results_path=ctx.results_path)
     trace_dir = os.environ.get(TRACE_DIR_ENV)
     trace = McpTrace(trace_dir, ctx.image_folder) if trace_dir else None
-    return Job(spec, ctx, state, build_tools(state, ctx, spec), trace)
+    return Session(job, ctx, build_tools(job.state, ctx, spec, job=job), trace)
 
 
 # Budget includes JSON/text overhead, not only encoded image bytes.
@@ -234,13 +238,13 @@ def _fit_page(blocks: list[ContentBlock]) -> list[ContentBlock]:
     return blocks
 
 
-def opening_pages(job: Job) -> list[list[ContentBlock]]:
+def opening_pages(session: Session) -> list[list[ContentBlock]]:
     """The opening strips (:mod:`langslice.linear.opening`) at Claude's image
     size, paged under :data:`PAGE_BYTES`; a strip and its text stay together."""
     pages: list[list[ContentBlock]] = []
     page: list[ContentBlock] = []
     pending: list[ContentBlock] = []
-    for item in opening_items(job.state, job.ctx, limit=CLAUDE_IMAGE_LIMIT):
+    for item in opening_items(session.state, session.ctx, limit=CLAUDE_IMAGE_LIMIT):
         if isinstance(item, str):
             pending.append(TextContent(type="text", text=item))
             continue
@@ -256,16 +260,17 @@ def opening_pages(job: Job) -> list[list[ContentBlock]]:
     return pages
 
 
-def briefing(job: Job) -> list[ContentBlock]:
+def briefing(session: Session) -> list[ContentBlock]:
     """Text only; opening pictures are available through show_stack."""
-    if not job.pages:
-        job.pages = opening_pages(job)
+    if not session.pages:
+        session.pages = opening_pages(session)
     return [TextContent(type="text", text=job_statement(
-        job.spec, job.state, job.ctx, len(job.pages), job.notes, job.box.names,
+        session.spec, session.state, session.ctx, len(session.pages), session.notes,
+        session.box.names,
     ))]
 
 
-def open_saved_job(job_id: str, atlas_loader: Callable[[str], Any] | None) -> Job:
+def open_saved_job(job_id: str, atlas_loader: Callable[[str], Any] | None) -> Session:
     folder, record = load_job(job_id)
     if record["kind"] == "folder":
         return open_folder_job(job_id, folder, record, atlas_loader)
@@ -273,24 +278,23 @@ def open_saved_job(job_id: str, atlas_loader: Callable[[str], Any] | None) -> Jo
     if prepared.spec.has("nonlinear"):
         raise ValueError("Image generation is unavailable in Claude mode")
     prepared.spec.out = str(folder / "linear_results.json")
-    job = open_job(prepared.spec, atlas_loader)
-    job.job_id, job.job_dir, job.prepared = job_id, folder, prepared
-    job.notes = record.get("notes", "")
-    job.ctx.checkpoint_path = str(folder / "linear_state.json")
-    save_checkpoint(job.state, job.ctx.checkpoint_path)
+    session = open_job(prepared.spec, atlas_loader,
+                   checkpoint_path=str(folder / "linear_state.json"))
+    session.job_id, session.job_dir, session.prepared = job_id, folder, prepared
+    session.notes = record.get("notes", "")
     trace_dir = prepared.trace_dir
     if trace_dir:
-        job.trace = McpTrace(trace_dir, job.ctx.image_folder)
-    job.channel = HostChannel(job_id, record.get("host_channel"))
-    job.checkpoint = checkpoint_callback(prepared, job.channel.event)
-    job.checkpoint(job.state)
-    return job
+        session.trace = McpTrace(trace_dir, session.ctx.image_folder)
+    session.channel = HostChannel(job_id, record.get("host_channel"))
+    session.host_update = checkpoint_callback(prepared, session.channel.event)
+    session.host_update(session.state)
+    return session
 
 
 def open_folder_job(
     job_id: str, folder: Path, record: dict[str, Any],
     atlas_loader: Callable[[str], Any] | None,
-) -> Job:
+) -> Session:
     """A plain-folder job: its checkpoint and results live in the job directory.
 
     Reopening it (a restarted server, a new chat) resumes from that checkpoint.
@@ -298,28 +302,28 @@ def open_folder_job(
     spec = JobSpec.from_dict(record["spec"])
     spec.resume = True
     spec.out = str(folder / "linear_results.json")
-    job = open_job(spec, atlas_loader, checkpoint_path=str(folder / "linear_state.json"))
-    job.job_id, job.job_dir = job_id, folder
-    job.notes = record.get("notes", "")
+    session = open_job(spec, atlas_loader, checkpoint_path=str(folder / "linear_state.json"))
+    session.job_id, session.job_dir = job_id, folder
+    session.notes = record.get("notes", "")
     if record.get("trace_dir"):
-        job.trace = McpTrace(record["trace_dir"], job.ctx.image_folder)
-    return job
+        session.trace = McpTrace(record["trace_dir"], session.ctx.image_folder)
+    return session
 
 
-def finish(job: Job) -> None:
-    if job.checkpoint is not None:
-        job.checkpoint(job.state)
-    emit_results(job.state, job.ctx)
-    if job.job_dir is not None and job.prepared is not None:
-        result = {"state": job.state.to_dict(), "output_dir": str(job.job_dir),
-                  "final_updates": job.prepared.final_updates}
-        (job.job_dir / "result.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
-        if job.channel is not None:
-            job.channel.send({"type": "result", "result": result})
-            job.channel.close()
+def finish(session: Session) -> None:
+    if session.host_update is not None:
+        session.host_update(session.state)
+    session.job.emit_results(session.ctx.progress)
+    if session.job_dir is not None and session.prepared is not None:
+        result = {"state": session.state.to_dict(), "output_dir": str(session.job_dir),
+                  "final_updates": session.prepared.final_updates}
+        (session.job_dir / "result.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
+        if session.channel is not None:
+            session.channel.send({"type": "result", "result": result})
+            session.channel.close()
 
 
-def host_tool(job: Job, tool: Callable[..., Any]) -> Callable[..., Any]:
+def host_tool(session: Session, tool: Callable[..., Any]) -> Callable[..., Any]:
     """Wrap one toolbox tool for MCP: same name, docstring and arguments.
 
     ``tool_context`` is ADK's and is dropped from the schema; the tools accept
@@ -333,20 +337,20 @@ def host_tool(job: Job, tool: Callable[..., Any]) -> Callable[..., Any]:
         # Pictures from earlier calls have reached the host by now: the call
         # that follows them is the host's next move. The placement gates
         # (compare-before-write, review-after-write) read this record.
-        job.box.begin_model_call()
+        session.box.begin_model_call()
         try:
             def invoke() -> Any:
-                if job.checkpoint is None:
+                if session.host_update is None:
                     result = tool(**kwargs)
                 else:
-                    with observe_checkpoints(job.checkpoint):
+                    with session.job.observe(session.host_update):
                         result = tool(**kwargs)
-                if tool.__name__ == "submit" and job.state.submitted:
-                    finish(job)
+                if tool.__name__ == "submit" and session.state.submitted:
+                    finish(session)
                 return result
 
             def serialized() -> Any:
-                with job.lock:
+                with session.lock:
                     return invoke()
 
             result = await to_thread.run_sync(serialized)
@@ -354,8 +358,8 @@ def host_tool(job: Job, tool: Callable[..., Any]) -> Callable[..., Any]:
             logger.exception("Tool %s failed", tool.__name__)
             result = {"status": "error", "error": type(exc).__name__, "message": str(exc)}
         blocks = result_blocks(result)
-        if job.trace is not None:
-            job.trace.write("tool_result", name=tool.__name__, args=kwargs,
+        if session.trace is not None:
+            session.trace.write("tool_result", name=tool.__name__, args=kwargs,
                             content=describe_blocks(blocks))
         return blocks
 
@@ -420,9 +424,9 @@ def build_server(
     *atlas_loader* is for tests and offline hosts, as in the engine.
     """
     server = FastMCP(SERVER_NAME, instructions=INSTRUCTIONS)
-    current: dict[str, Job] = {}
+    current: dict[str, Session] = {}
 
-    def install(job: Job) -> None:
+    def install(session: Session) -> None:
         old = current.get("job")
         if old is not None:
             if old.channel is not None:
@@ -430,27 +434,27 @@ def build_server(
             server.remove_tool("show_stack")
             for name in old.box.names:
                 server.remove_tool(name)
-        for tool in job.box.tools:
+        for tool in session.box.tools:
             server.add_tool(
-                host_tool(job, tool),
+                host_tool(session, tool),
                 annotations=ToolAnnotations(readOnlyHint=tool.__name__ in READ_ONLY_TOOLS),
                 structured_output=False,
             )
             strict_arguments(server, tool.__name__, tool)
         async def show_stack(page: int) -> list[ContentBlock]:
             """Read an opening-picture page (1-based); read every page before writes."""
-            if not job.pages:
-                job.pages = await to_thread.run_sync(opening_pages, job)
-            if not 1 <= page <= len(job.pages):
-                raise ValueError(f"page must be between 1 and {len(job.pages)}")
-            blocks = job.pages[page - 1]
-            if job.trace is not None:
-                job.trace.write("show_stack", page=page, content=describe_blocks(blocks))
+            if not session.pages:
+                session.pages = await to_thread.run_sync(opening_pages, session)
+            if not 1 <= page <= len(session.pages):
+                raise ValueError(f"page must be between 1 and {len(session.pages)}")
+            blocks = session.pages[page - 1]
+            if session.trace is not None:
+                session.trace.write("show_stack", page=page, content=describe_blocks(blocks))
             return blocks
 
         server.add_tool(show_stack, structured_output=False,
                         annotations=ToolAnnotations(readOnlyHint=True))
-        current["job"] = job
+        current["job"] = session
 
     async def start_job(
         image_folder: str = "", job_id: str = "", ctx: Context | None = None,
@@ -463,27 +467,27 @@ def build_server(
         """
         if job_id and image_folder:
             raise ValueError("Supply job_id or image_folder, not both")
-        job = current.get("job")
-        if job_id and (job is None or job.job_id != job_id):
-            job = await to_thread.run_sync(open_saved_job, job_id, atlas_loader)
-            install(job)
+        session = current.get("job")
+        if job_id and (session is None or session.job_id != job_id):
+            session = await to_thread.run_sync(open_saved_job, job_id, atlas_loader)
+            install(session)
             if ctx is not None:
                 await ctx.session.send_tool_list_changed()
         wanted = os.path.abspath(os.path.expanduser(image_folder)) if image_folder else None
-        if wanted is not None and (job is None or wanted != job.ctx.image_folder):
-            job = await to_thread.run_sync(open_job, spec_for(wanted), atlas_loader)
-            install(job)
+        if wanted is not None and (session is None or wanted != session.ctx.image_folder):
+            session = await to_thread.run_sync(open_job, spec_for(wanted), atlas_loader)
+            install(session)
             if ctx is not None:
                 await ctx.session.send_tool_list_changed()
-        if job is None:
+        if session is None:
             return [TextContent(type="text", text=json.dumps({
                 "status": "error",
                 "error": "NO_FOLDER",
                 "message": "Name a saved job: start_job(job_id=...), or an image_folder.",
             }))]
-        blocks = await to_thread.run_sync(briefing, job)
-        if job.trace is not None:
-            job.trace.write("briefing", content=describe_blocks(blocks))
+        blocks = await to_thread.run_sync(briefing, session)
+        if session.trace is not None:
+            session.trace.write("briefing", content=describe_blocks(blocks))
         return blocks
 
     server.add_tool(start_job, structured_output=False)

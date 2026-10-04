@@ -1,4 +1,5 @@
-"""The core library imports without the agent framework or any model client.
+"""The core library (and the job layer on it) imports without the agent
+framework or any model client.
 
 Each core module is imported in a fresh interpreter (a module another test
 loaded would hide the leak) and must leave no ``google.adk``,
@@ -24,6 +25,7 @@ CORE_MODULES = (
     "langslice.linear.appearance",
     "langslice.linear.atlas_fetch",
     "langslice.linear.opening",
+    "langslice.linear.job",
     "langslice.registration_handoff",
     "langslice.deformable",
     "langslice.space",

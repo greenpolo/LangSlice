@@ -78,7 +78,7 @@ def test_real_manual_adjustment_resolves_damage_gate_and_undo_restores_it(tmp_pa
     damaged.damaged = True
     result = single_adjust(_tool(box, "adjust_transforms"))("s0.png", 5, 1.1, 1, .25, 0)
     assert result["status"] == "ok"
-    from langslice.linear.toolbox import submit_errors
+    from langslice.linear.job import submit_errors
 
     assert submit_errors(state, ctx.spec, []) is None
     _tool(box, "undo")()
@@ -88,7 +88,7 @@ def test_real_manual_adjustment_resolves_damage_gate_and_undo_restores_it(tmp_pa
 
 
 def test_damage_gate_reports_disabled_manual_tools_and_respects_task_switch(tmp_path):
-    from langslice.linear.toolbox import submit_errors
+    from langslice.linear.job import submit_errors
     from tests.test_linear_toolbox import _stack
 
     state, _, spec = _stack(
@@ -108,7 +108,7 @@ def test_damage_gate_reports_disabled_manual_tools_and_respects_task_switch(tmp_
 
 @pytest.mark.parametrize("shift,accepted", [(0, False), (.05, True)])
 def test_historical_spline_checkpoint_still_obeys_damage_gate(tmp_path, shift, accepted):
-    from langslice.linear.toolbox import submit_errors
+    from langslice.linear.job import submit_errors
 
     state, ctx, box = _box(tmp_path, tasks=["transform"], placed=True)
     for record in state.slices:

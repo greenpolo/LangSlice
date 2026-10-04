@@ -99,7 +99,9 @@ def test_build_tools_forwards_execution_observer(tmp_path):
 
     events = []
     state = StackState(slices=[SliceState("a", 0, 0)])
-    ctx: Any = SimpleNamespace(position_range=(0, 10))
+    ctx: Any = SimpleNamespace(position_range=(0, 10),
+                               checkpoint_path=str(tmp_path / "linear_state.json"),
+                               results_path=str(tmp_path / "linear_results.json"))
     box = build_tools(state, ctx, JobSpec(str(tmp_path), tasks=[]), on_event=events.append)
     result = next(tool for tool in box.tools if tool.__name__ == "status")()
     assert result["status"] == "ok"

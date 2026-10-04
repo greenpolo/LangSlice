@@ -480,7 +480,7 @@ def test_invalid_border_style_does_not_write_a_transform(tmp_path: Path, style):
     response = single_adjust(tools["adjust_transforms"])("s.tif", 5.0, 1.0, 1.0, 0.0, 0.0, **style)
     assert response["error"] == "INVALID_BORDER_STYLE"
     assert state.to_dict() == before
-    assert not box.undo_stack
+    assert not box.job.undo_stack
 
 
 def test_batch_border_style_changes_only_the_render(tmp_path: Path):
@@ -490,13 +490,13 @@ def test_batch_border_style_changes_only_the_render(tmp_path: Path):
     entry = {"id": "s.tif", **_IDENTITY, "rotation_deg": 5.0}
     first = tools["adjust_transforms"]([entry])
     before = state.to_dict()
-    undo_depth = len(box.undo_stack)
+    undo_depth = len(box.job.undo_stack)
     second = tools["adjust_transforms"](
         [entry], view={"border_color": "cyan", "border_thickness": 3},
     )
     assert first["status"] == second["status"] == "ok"
     assert state.to_dict() == before
-    assert len(box.undo_stack) == undo_depth
+    assert len(box.job.undo_stack) == undo_depth
     first_image = first[TOOL_MEDIA_PARTS_KEY][0].inline_data.data
     second_image = second[TOOL_MEDIA_PARTS_KEY][0].inline_data.data
     assert first_image != second_image

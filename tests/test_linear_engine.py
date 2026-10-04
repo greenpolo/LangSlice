@@ -16,12 +16,8 @@ from PIL import Image
 
 from langslice.linear import JobSpec, run
 from langslice.linear.checkpoint import load_checkpoint
-from langslice.linear.engine import (
-    apply_host_inputs,
-    build_context,
-    emit_results,
-    ingest,
-)
+from langslice.linear.engine import build_context
+from langslice.linear.job import apply_host_inputs, emit_results, ingest
 from langslice.linear.prompt import build_job_statement
 from langslice.linear.spec import PositionSpec
 from langslice.linear.toolbox import build_tools
@@ -96,7 +92,7 @@ def test_host_inputs_set_the_order_positions_and_angles(tmp_path: Path):
 def test_a_mirrored_host_transform_is_accepted_and_kept(tmp_path: Path):
     # A host's own alignment (ABBA) carries a flip inside its affine: a
     # negative determinant. The harness keeps it as supplied.
-    from langslice.linear.toolbox import submit_errors
+    from langslice.linear.job import submit_errors
 
     names = _make_stack(tmp_path, n=2)
     mirrored = {"kind": "host", "params": [-1.0, 0.0, 1.0, 0.0, 1.0, 0.0], "mirrored": True}
@@ -351,7 +347,8 @@ def test_the_quota_budget_is_measured_from_the_first_call(tmp_path: Path, monkey
 
 
 def test_the_seed_carries_section_strips_then_the_atlas_reference(tmp_path: Path):
-    from langslice.linear.engine import build_context, build_seed_message, ingest
+    from langslice.linear.engine import build_context, build_seed_message
+    from langslice.linear.job import ingest
 
     _make_stack(tmp_path, n=3)
     spec = _spec(tmp_path, tasks=["position"], position=PositionSpec(interval_um=500))
@@ -397,7 +394,7 @@ def test_ingest_tools_and_emit_on_a_real_folder(tmp_path: Path):
     )["status"] == "ok"
     assert tools["status"]()["rows"][0]["position_mm"] == 3.0
 
-    emit_results(state, ctx)
+    emit_results(state, ctx.results_path)
     written = json.loads(Path(spec.out).read_text())
     assert len(written["slices"]) == len(state.slices)
 
@@ -407,7 +404,8 @@ def test_the_job_statement_states_the_alignment_frame_when_transforms_are_on(tmp
     del names
     on = _spec(tmp_path, tasks=["transform"])
     off = _spec(tmp_path, tasks=["position"])
-    from langslice.linear.engine import build_context, ingest
+    from langslice.linear.engine import build_context
+    from langslice.linear.job import ingest
     from langslice.linear.prompt import build_job_statement
     from langslice.linear.toolbox import build_tools
 

@@ -449,6 +449,7 @@ def test_existing_runner_seeds_host_state_without_reset_or_resume(tmp_path, monk
 
     from langslice.integrations.abba_linear import run_existing_in_abba
     from langslice.linear import engine
+    from langslice.linear.job import apply_host_inputs
     from langslice.linear.spec import JobSpec
 
     abba = FakeAbba()
@@ -463,7 +464,7 @@ def test_existing_runner_seeds_host_state_without_reset_or_resume(tmp_path, monk
     async def fake_run(spec, *, emit, on_write):
         seen.append(spec)
         state = _stack(2)
-        engine.apply_host_inputs(state, spec)
+        apply_host_inputs(state, spec)
         on_write(state)
         assert abba.mp.moves == []
         assert first.pretransform_history == []

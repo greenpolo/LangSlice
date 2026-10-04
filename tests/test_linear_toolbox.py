@@ -10,7 +10,8 @@ import pytest
 from PIL import Image
 
 from langslice.linear.checkpoint import load_checkpoint
-from langslice.linear.engine import build_context, ingest
+from langslice.linear.engine import build_context
+from langslice.linear.job import ingest
 from langslice.linear.spec import JobSpec, PositionSpec, ReorderSpec, TransformSpec
 from langslice.linear.toolbox import build_tools
 from tests.fakes import EllipseAtlas, SlabAtlas, ellipse_section
@@ -164,7 +165,7 @@ def test_a_failed_write_leaves_no_undo_step(tmp_path: Path):
     _, _, box = _box(tmp_path)
     result = _tool(box, "set_positions")([{"id": "nope.png", "position_mm": 1.0}])
     assert result["error"] == "NOTHING_WRITTEN"
-    assert box.undo_stack == []
+    assert box.job.undo_stack == []
 
 
 def test_set_positions_clamps_to_the_atlas_range(tmp_path: Path):
@@ -482,13 +483,13 @@ def test_reorder_moves_a_block_and_checkpoints_one_undo_step(
     assert result["status"] == "ok"
     assert [s.id for s in state.in_order()] == expected
     assert [s.index_corrected for s in state.in_order()] == list(range(5))
-    assert len(box.undo_stack) == 1
+    assert len(box.job.undo_stack) == 1
     saved = load_checkpoint(ctx.checkpoint_path)
     assert saved is not None
     assert saved.to_dict() == state.to_dict()
     assert _tool(box, "undo")()["status"] == "ok"
     assert state.to_dict() == before
-    assert not box.undo_stack
+    assert not box.job.undo_stack
 
 
 @pytest.mark.parametrize(
@@ -512,8 +513,8 @@ def test_reorder_rejects_invalid_input_without_writing_or_changing_history(
     _tool(box, "undo")()
     before = state.to_dict()
     checkpoint_before = Path(ctx.checkpoint_path).read_bytes()
-    undo_before = list(box.undo_stack)
-    redo_before = list(box.redo_stack)
+    undo_before = list(box.job.undo_stack)
+    redo_before = list(box.job.redo_stack)
 
     result = _tool(box, "reorder_slices")(new_order, after=after)
 
@@ -521,8 +522,8 @@ def test_reorder_rejects_invalid_input_without_writing_or_changing_history(
     assert result["error"]
     assert state.to_dict() == before
     assert Path(ctx.checkpoint_path).read_bytes() == checkpoint_before
-    assert box.undo_stack == undo_before
-    assert box.redo_stack == redo_before
+    assert box.job.undo_stack == undo_before
+    assert box.job.redo_stack == redo_before
 
 
 # --- the submit gates ----------------------------------------------------
@@ -631,7 +632,7 @@ def test_refused_submit_runs_the_gates_without_writing(tmp_path: Path):
 
     # Writes nothing: no checkpoint, no undo step, no submission.
     assert state.submitted is False
-    assert box.undo_stack == []
+    assert box.job.undo_stack == []
     assert load_checkpoint(ctx.checkpoint_path) is None
 
 
@@ -757,7 +758,7 @@ def test_adjust_transforms_batches_independent_sections_as_one_undo_step(
     assert result["status"] == "ok"
     assert [row["id"] for row in result["results"]] == ["s0.png", "s1.png"]
     assert len(result[TOOL_MEDIA_PARTS_KEY]) == 2
-    assert len(box.undo_stack) == 1
+    assert len(box.job.undo_stack) == 1
     assert state.by_id("s0.png").transform["physical"]["rotation_deg"] == 2.0
     assert state.by_id("s1.png").transform["physical"]["rotation_deg"] == -3.0
 
@@ -782,7 +783,7 @@ def test_adjust_transforms_refuses_two_planned_edits_to_the_same_section(
     )
     assert result["error"] == "DUPLICATE_SLICE_IDS"
     assert state.by_id("s0.png").transform is None
-    assert box.undo_stack == []
+    assert box.job.undo_stack == []
 
 
 def test_adjust_transforms_checkpoints_successes_when_another_render_fails(
@@ -817,7 +818,7 @@ def test_adjust_transforms_checkpoints_successes_when_another_render_fails(
     assert state.by_id("s0.png").transform is not None
     assert state.by_id("s1.png").transform is None
     assert load_checkpoint(ctx.checkpoint_path).by_id("s0.png").transform is not None
-    assert len(box.undo_stack) == 1
+    assert len(box.job.undo_stack) == 1
     _tool(box, "undo")()
     assert state.by_id("s0.png").transform is None
 
@@ -837,7 +838,7 @@ def test_one_entry_adjustment_encoding_failure_does_not_mutate_state(
     assert result["error"] == "RENDER_FAILED"
     assert state.by_id("s0.png").transform is None
     assert load_checkpoint(ctx.checkpoint_path) is None
-    assert box.undo_stack == []
+    assert box.job.undo_stack == []
 
 
 def test_submit_names_the_sections_with_no_transform(tmp_path: Path):
@@ -987,7 +988,7 @@ def test_damage_flags_can_be_set_and_cleared_together_with_undo(tmp_path: Path):
     assert state.by_id("s1.png").damaged is True
     assert state.by_id("s1.png").damage_note == "missing hemisphere"
     assert load_checkpoint(ctx.checkpoint_path).to_dict() == state.to_dict()
-    assert len(box.undo_stack) == 1
+    assert len(box.job.undo_stack) == 1
     _tool(box, "undo")()
     assert state.to_dict() == before
 
@@ -1010,6 +1011,6 @@ def test_adjust_transforms_one_view_draws_every_entry(tmp_path: Path):
     assert [row["image_indexes"] for row in result["results"]] == [[0, 1], [2, 3], [4, 5]]
     assert result["view"]["mode"] == "ab"
     assert len(result[TOOL_MEDIA_PARTS_KEY]) == 6
-    assert len(box.undo_stack) == 1
+    assert len(box.job.undo_stack) == 1
     _tool(box, "undo")()
     assert all(record.transform is None for record in state.slices)

@@ -16,7 +16,8 @@ import pytest
 from PIL import Image
 
 from langslice.adk.media import image_limit, opening_parts
-from langslice.linear.engine import build_context, ingest
+from langslice.linear.engine import build_context
+from langslice.linear.job import ingest
 from langslice.linear.opening import (
     CLAUDE_IMAGE_LIMIT,
     CLAUDE_MAX_IMAGE_EDGE,
