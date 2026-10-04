@@ -495,11 +495,6 @@ def test_5_nonlinear_without_an_image_model_through_the_cli(capsys, images):
     assert_exported(job, residual=(ID0,))
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "MCP refuses the nonlinear task outright, even with provider none, where no "
-    "image model is involved: doors/mcp/server.py:191 (open_job) and :281 "
-    "(open_saved_job), and Claude mode in doors/api/claude_jobs.py:97-100,119. "
-    "The refusal should apply only when spec.nonlinear.uses_image_model."))
 def test_5_nonlinear_without_an_image_model_through_mcp(images):
     server = _mcp_server(spec_for(images, ["nonlinear"], **external_inputs()))
     replies = _mcp(server, [
@@ -668,16 +663,91 @@ def test_6_a_quicknii_registration_can_be_imported(capsys, images, tmp_path):
     assert code == 0, envelope
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "MCP refuses the nonlinear task (doors/mcp/server.py:191), so a registration "
-    "supplied to `langslice mcp --positions ... --transforms ...` cannot get its "
-    "nonlinear step through Claude Desktop / Claude Code, with or without an "
-    "image model."))
-def test_6_external_registration_then_nonlinear_through_mcp(images):
+def connected(monkeypatch: pytest.MonkeyPatch, value: bool) -> None:
+    """Whether the job's image model counts as connected to LangSlice (its key
+    or login present), as the MCP door and Claude mode ask it; no credential
+    is read."""
+    from langslice.doors.api import setup
+
+    monkeypatch.setattr(setup, "image_model_connected", lambda _provider: value)
+
+
+def test_6_external_registration_then_nonlinear_through_mcp(images, monkeypatch):
+    connected(monkeypatch, True)
     server = _mcp_server(spec_for(images, ["nonlinear"], provider="openai-oauth",
                                   **external_inputs()))
-    replies = _mcp(server, [("trace_borders", {"id": ID0})])
-    assert replies[0]["status"] in ("running", "ok")
+    replies = _mcp(server, [
+        *[("trace_borders", {"id": name}) for name in IDS],
+        ("fit_deformable", {"slices": list(IDS), "keep_linear": "kept"}),
+        ("submit", {"summary": "done", "notes": [], "interval_breaks": []}),
+    ])
+    assert all(reply["status"] in ("running", "ok") for reply in replies[:3]), replies
+    assert [reply["status"] for reply in replies[3:]] == ["ok", "ok"], replies
+    assert_exported(images / "langslice")
+
+
+def _mcp_names_and_statement(server: Any) -> tuple[set[str], str]:
+    from mcp.shared.memory import create_connected_server_and_client_session
+    from mcp.types import TextContent
+
+    async def body() -> tuple[set[str], str]:
+        async with create_connected_server_and_client_session(server) as client:
+            listed = await client.list_tools()
+            started = await client.call_tool("start_job", {})
+            first = started.content[0]
+            assert isinstance(first, TextContent), started
+            return {tool.name for tool in listed.tools}, first.text
+
+    return asyncio.run(body())
+
+
+@pytest.mark.parametrize("linked", [True, False], ids=["connected", "not-connected"])
+def test_mcp_offers_trace_borders_only_with_a_connected_image_model(images, monkeypatch,
+                                                                    linked):
+    """Over MCP the fitting verbs come with the nonlinear task; the image-model
+    verb only when the job's provider is not none AND its key or login is
+    present. Without it, trace_borders is simply not listed, the statement
+    says why, and submit does not wait for traces."""
+    from langslice.doors.mcp.prompt import IMAGE_MODEL_OFF
+
+    connected(monkeypatch, linked)
+    server = _mcp_server(spec_for(images, ["nonlinear"], provider="openai-oauth",
+                                  **external_inputs()))
+    names, statement = _mcp_names_and_statement(server)
+    assert {"grep_atlas", "fit_deformable", "view_placement"} <= names
+    assert ("trace_borders" in names) is linked
+    assert (IMAGE_MODEL_OFF in statement) is not linked
+    assert ("Base image-model prompt" in statement) is linked
+    if not linked:
+        replies = _mcp(server, [
+            ("fit_deformable", {"slices": list(IDS), "keep_linear": "kept"}),
+            ("submit", {"summary": "done", "notes": [], "interval_breaks": []}),
+        ])
+        assert [reply["status"] for reply in replies] == ["ok", "ok"], replies
+        spec = json.loads((images / "langslice" / "job.json").read_text())["spec"]
+        assert spec["nonlinear"]["provider"] == "openai-oauth"  # the job keeps its provider
+
+
+def test_mcp_with_provider_none_never_asks_for_an_image_model(images, monkeypatch):
+    from langslice.doors.api import setup
+
+    monkeypatch.setattr(setup, "image_model_connected", _no_network)
+    names, statement = _mcp_names_and_statement(
+        _mcp_server(spec_for(images, ["nonlinear"], **external_inputs())))
+    assert "trace_borders" not in names and "fit_deformable" in names
+    assert "image-model tool (trace_borders) is off" not in statement
+
+
+@pytest.mark.parametrize("linked", [True, False], ids=["connected", "not-connected"])
+def test_claude_prepare_takes_the_nonlinear_task(images, monkeypatch, linked):
+    from langslice.doors.api.claude_jobs import prepare_folder
+
+    connected(monkeypatch, linked)
+    job = prepare_folder(spec_for(images, ["nonlinear"], provider="openai-oauth",
+                                  **external_inputs()))
+    prompt = job["prompt"]
+    assert "nonlinear (deformable) alignment" in prompt
+    assert ("image-model tool (trace_borders) is off" in prompt) is not linked
 
 
 @pytest.mark.xfail(strict=True, reason=(
@@ -754,10 +824,18 @@ def test_7_the_agent_with_every_task_and_no_image_model(images, monkeypatch):
     assert results["submitted"] is True
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "MCP refuses the nonlinear task even without an image model "
-    "(doors/mcp/server.py:191), so Claude cannot run every task."))
 def test_7_every_task_and_no_image_model_through_mcp(images):
     server = _mcp_server(spec_for(images, ["reorder", "position", "transform", "nonlinear"]))
-    replies = _mcp(server, [("status", {})])
-    assert "fit_deformable" in json.dumps(replies)
+    names, _statement = _mcp_names_and_statement(server)
+    assert {"set_positions", "fit_affine", "fit_deformable", "grep_atlas"} <= names
+    assert "trace_borders" not in names
+    replies = _mcp(server, [
+        ("set_positions", {"entries": [{"id": n, "position_mm": mm}
+                                       for n, mm in POSITIONS.items()]}),
+        ("adjust_transforms", {"entries": [{"id": name, **IDENTITY} for name in IDS]}),
+        ("fit_deformable", {"slices": [ID0], "engine": "elastix"}),
+        ("fit_deformable", {"slices": [ID1, ID2], "keep_linear": "kept"}),
+        ("submit", {"summary": "done", "notes": [], "interval_breaks": []}),
+    ])
+    assert [reply["status"] for reply in replies] == ["ok"] * 5, replies
+    assert_exported(images / "langslice", residual=(ID0,))

@@ -1155,8 +1155,16 @@ and supplies the opening strips separately with `show_stack` pages
 (`opening_pages`: `opening.opening_items` at `CLAUDE_IMAGE_LIMIT`, each
 strip encoded by `doors/tools/media.encode_jpeg` straight into an MCP image block,
 paged under
-`PAGE_BYTES`, a strip and its text kept together). No image
-model is available through the Claude connector. The MCP tools are the same
+`PAGE_BYTES`, a strip and its text kept together). The nonlinear task
+opens through the Claude connector (MCP and a saved Claude job alike): its
+fitting tools always, `trace_borders` only when the job's image model is
+connected (`doors.mcp.server.image_model_off`, asking
+`doors.api.setup.image_model_connected`: provider not `none`, its key or
+login present). When it is not, the toolbox is built with
+`image_model_connected=False` (no `trace_borders`, `fit_deformable` stain-only,
+`submit` not waiting for traces), the statement is that of provider `none`
+plus `doors.mcp.prompt.IMAGE_MODEL_OFF`, and the copy prompt says so too;
+the job's spec keeps its provider. The MCP tools are the same
 functions with the same `view` and the same strict-argument rule
 (`doors.mcp.server.strict_arguments`; a nested object Claude Desktop sends
 as a JSON string is parsed first); their plain pictures become image blocks

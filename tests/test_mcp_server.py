@@ -302,19 +302,47 @@ def test_host_channel_loopback_envelopes_and_disconnect():
     assert channel.socket is None
 
 
-def test_job_validation_and_no_image_provider(tmp_path: Path, monkeypatch: Any):
+def test_job_validation(tmp_path: Path, monkeypatch: Any):
     import pytest
 
     from langslice.doors.api import claude_jobs
-    from langslice.doors.mcp.server import open_job
 
     monkeypatch.setattr(claude_jobs, "jobs_root", lambda: tmp_path / "jobs")
     with pytest.raises(ValueError, match="Invalid LangSlice job id"):
         claude_jobs.load_job("../../outside")
     with pytest.raises(ValueError, match="loopback"):
         claude_jobs.validate_channel({"address": "example.com", "port": 10, "token": "a" * 32})
-    with pytest.raises(ValueError, match="Image generation"):
-        open_job(JobSpec(image_folder=str(tmp_path), tasks=["nonlinear"]))
+
+
+def test_image_model_connected_checks_presence_only(tmp_path: Path, monkeypatch: Any):
+    """The MCP door offers trace_borders only when the job's image provider is
+    not none and its key or login is present (a private HOME here: no real
+    credential is read)."""
+    import json
+
+    from langslice.doors.api.setup import image_model_connected
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    for name in ("LANGSLICE_OPENAI_AUTH", "OPENAI_API_KEY", "OPENAI_BASE_URL",
+                 "OPENAI_IMAGE_API_KEY", "OPENAI_IMAGE_BASE_URL", "GEMINI_API_KEY",
+                 "GOOGLE_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    assert not image_model_connected("none")
+    assert not image_model_connected("openai-oauth")
+    assert not image_model_connected("openai-api")
+    assert not image_model_connected("gemini-api")
+    login = tmp_path / ".langslice" / "openai_auth.json"
+    login.parent.mkdir()
+    login.write_text(json.dumps({"tokens": {"access_token": "fake"}}))
+    assert image_model_connected("openai-oauth") and image_model_connected("chatgpt")
+    monkeypatch.setenv("GEMINI_API_KEY", "fake")
+    assert image_model_connected("gemini-api")
+    (tmp_path / ".langslice" / "provider_credentials.json").write_text(
+        json.dumps({"openai-api": "fake"}))
+    assert image_model_connected("openai-api")
+    other = tmp_path / "other.json"
+    monkeypatch.setenv("LANGSLICE_OPENAI_AUTH", str(other))
+    assert not image_model_connected("openai-oauth")  # the override's file, which is absent
 
 
 def test_saved_job_start_over_mcp_ignores_development_defaults(tmp_path: Path, monkeypatch: Any):

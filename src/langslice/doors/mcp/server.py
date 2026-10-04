@@ -34,6 +34,7 @@ from langslice.agent.trace import TRACE_DIR_ENV
 from langslice.core.opening import CLAUDE_IMAGE_LIMIT, CLAUDE_MAX_VIEW_EDGE, opening_items
 from langslice.core.spec import JobSpec
 from langslice.core.state import StackState
+from langslice.doors.api import setup as provider_setup
 from langslice.doors.api.abba_worker import PreparedLinear, checkpoint_callback, prepare_linear
 from langslice.doors.api.claude_jobs import load_job
 from langslice.doors.card import write_card
@@ -86,6 +87,9 @@ class Session:
     channel: HostChannel | None = None
     pages: list[list[ContentBlock]] = field(default_factory=list)
     lock: Any = field(default_factory=threading.RLock, repr=False)
+    #: The job's nonlinear task names an image model this door cannot reach
+    #: (:func:`image_model_off`): its tools and statement are a run without one.
+    image_model_off: bool = False
 
     @property
     def spec(self) -> JobSpec:
@@ -180,6 +184,17 @@ def describe_blocks(blocks: list[ContentBlock]) -> list[dict[str, Any]]:
 # --- the job ---------------------------------------------------------------
 
 
+def image_model_off(spec: JobSpec) -> bool:
+    """Whether *spec*'s nonlinear task names an image model that is not
+    connected to LangSlice here (no key or login for its provider:
+    :func:`langslice.doors.api.setup.image_model_connected`). Then
+    ``trace_borders`` is not listed and the statement says why; the fitting
+    tools are offered either way. The spec is left as it is: the job keeps
+    its provider for a door that can reach it."""
+    return (spec.has("nonlinear") and spec.nonlinear.uses_image_model
+            and not provider_setup.image_model_connected(spec.nonlinear.provider))
+
+
 def open_job(
     spec: JobSpec,
     atlas_loader: Callable[[str], Any] | None = None,
@@ -187,17 +202,19 @@ def open_job(
 ) -> Session:
     """Open *spec*'s folder the way the engine does, without a model: its
     job folder next to the images (``<images>/langslice``), or *folder*, a
-    saved job's (the same place, as its index names it)."""
-    if spec.has("nonlinear"):
-        raise ValueError("Image generation is unavailable through the Claude connector")
+    saved job's (the same place, as its index names it). The nonlinear
+    task's image-model tool is offered only when that model is connected
+    (:func:`image_model_off`)."""
+    off = image_model_off(spec)
     ctx = build_context(spec, atlas_loader=atlas_loader, job_folder=folder)
     job = Job.open(spec, ctx, folder=ctx.job_folder, results_path=ctx.results_path)
     write_card(job.layout)
     trace_dir = os.environ.get(TRACE_DIR_ENV)
     trace = McpTrace(trace_dir, ctx.image_folder) if trace_dir else None
     # The host is Claude: its pictures are capped at Claude's largest image.
-    box = build_tools(job.state, ctx, spec, job=job, max_view_edge=CLAUDE_MAX_VIEW_EDGE)
-    return Session(job, ctx, box, trace)
+    box = build_tools(job.state, ctx, spec, job=job, max_view_edge=CLAUDE_MAX_VIEW_EDGE,
+                      image_model_connected=not off)
+    return Session(job, ctx, box, trace, image_model_off=off)
 
 
 # Budget includes JSON/text overhead, not only encoded image bytes.
@@ -270,6 +287,7 @@ def briefing(session: Session) -> list[ContentBlock]:
     return [TextContent(type="text", text=job_statement(
         session.spec, session.state, session.ctx, len(session.pages), session.notes,
         session.box.names, max_resolution=session.box.max_view_edge,
+        image_model_off=session.image_model_off,
     ))]
 
 
@@ -278,8 +296,6 @@ def open_saved_job(job_id: str, atlas_loader: Callable[[str], Any] | None) -> Se
     if record["kind"] == "folder":
         return open_folder_job(job_id, folder, record, atlas_loader)
     prepared = prepare_linear(record["params"])
-    if prepared.spec.has("nonlinear"):
-        raise ValueError("Image generation is unavailable in Claude mode")
     session = open_job(prepared.spec, atlas_loader, folder)
     session.job_id, session.job_dir, session.prepared = job_id, folder, prepared
     session.notes = record.get("notes", "")

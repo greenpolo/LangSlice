@@ -54,10 +54,18 @@ def _api_status(provider: str, keys: dict[str, str]) -> dict[str, object]:
     }
 
 
+def _oauth_path() -> Path:
+    """The login file ``providers.openai_oauth`` reads: ``LANGSLICE_OPENAI_AUTH``
+    when set (another account for one process), else LangSlice's own."""
+    override = os.environ.get("LANGSLICE_OPENAI_AUTH", "").strip()
+    return Path(override).expanduser() if override else (
+        Path.home() / ".langslice" / "openai_auth.json")
+
+
 def _oauth_status() -> dict[str, object]:
     # Do not call load_credentials: status must never refresh tokens or contact a provider.
     try:
-        path = Path.home() / ".langslice" / "openai_auth.json"
+        path = _oauth_path()
         doc = json.loads(path.read_text(encoding="utf-8"))
         tokens = doc.get("tokens", doc)
         if isinstance(tokens, dict) and isinstance(tokens.get("access_token"), str):
@@ -99,6 +107,34 @@ def setup_status() -> dict[str, Any]:
         "providers": providers,
         "credentials_error": error,
     }
+
+
+def image_model_connected(provider: str) -> bool:
+    """Whether LangSlice can reach *provider*'s image model now: the provider
+    (any accepted spelling) is not ``none`` and its key or login is present.
+
+    The offline presence check of :func:`setup_status` (a key in the
+    environment or saved by setup, the ChatGPT login file; for
+    ``openai-api`` also a custom endpoint, ``OPENAI_IMAGE_BASE_URL`` or
+    ``OPENAI_BASE_URL``): nothing is validated, no token refreshed, no
+    provider contacted. The MCP door asks it before offering ``trace_borders``.
+    """
+    from langslice.core.provider_names import canonical_provider
+
+    canonical = canonical_provider(str(provider or ""))
+    if canonical == "openai-oauth":
+        return bool(_oauth_status()["configured"])
+    if canonical not in _KEY_ENV:
+        return False
+    if canonical == "openai-api" and any(
+            os.getenv(name, "").strip() for name in (
+                "OPENAI_IMAGE_API_KEY", "OPENAI_IMAGE_BASE_URL", "OPENAI_BASE_URL")):
+        return True
+    try:
+        keys = _read_keys()
+    except ValueError:
+        keys = {}
+    return bool(_api_status(canonical, keys)["configured"])
 
 
 def save_api_key(provider: str, api_key: str) -> dict[str, object]:

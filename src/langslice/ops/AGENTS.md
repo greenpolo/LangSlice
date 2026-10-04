@@ -190,10 +190,12 @@ wording; `registry.py` lists which.
   written-position order). `regions_not_in_plane`. `MAX_VIEW_SLICES` (4).
 - `registry.py` — `VERBS`: every verb (agent tool) name -> `Verb(name,
   function, kind "read"/"write", group "Common"/"Positioning"/"Linear"/
-  "Nonlinear", alternates, when, long, scripting)`, in the order every door
-  lists them; `enabled(spec, scripting=)` (phase 5): the verbs a run of the
-  spec has (`when`: the task switches and host switches that were
-  `build_tools`' if-chain). A `scripting` verb (`export_maps`, a "read":
+  "Nonlinear", alternates, when, long, scripting, image_model)`, in the
+  order every door lists them; `enabled(spec, scripting=, image_model=)`
+  (phase 5): the verbs a run of the spec has (`when`: the task switches and
+  host switches that were `build_tools`' if-chain; `image_model` False
+  leaves out the verbs that call the image model, `trace_borders`, for a
+  door that cannot reach it: MCP with none connected). A `scripting` verb (`export_maps`, a "read":
   it changes no state) is the agent CLI's and the library's only
   (`build_tools(scripting=True)`), never offered to a model, so the agent
   tools and MCP declare exactly what they did;

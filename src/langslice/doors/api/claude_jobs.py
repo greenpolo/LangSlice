@@ -9,7 +9,8 @@ the notes and the trace folder; ``prompt.txt`` the copy prompt. The id leads
 there through the index (:mod:`langslice.job.index`,
 ``~/.langslice/jobs/<id>.json``), which also holds the host's loopback
 channel. A phase-2 saved job (the whole job under ``~/.langslice/jobs/<id>/``)
-is moved into its job folder on first open. No model or credential access.
+is moved into its job folder on first open. No model access; the image
+provider's key or login is only checked for presence (``setup.image_model_connected``).
 """
 from __future__ import annotations
 
@@ -17,6 +18,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from langslice.doors.api import setup as provider_setup
 from langslice.doors.api.abba_worker import prepare_linear
 from langslice.job import index, migrate
 from langslice.job.layout import (
@@ -56,7 +58,7 @@ def validate_channel(value: Any) -> dict[str, Any] | None:
 
 def copy_prompt(job_id: str, spec: Any, notes: str) -> str:
     labels = {"reorder": "section order", "position": "positioning",
-              "transform": "linear alignment"}
+              "transform": "linear alignment", "nonlinear": "nonlinear (deformable) alignment"}
     selected = ", ".join(labels[task] for task in spec.tasks)
     lines = [f"Use the LangSlice connector for job {job_id}.",
              f'Call start_job(job_id="{job_id}") first.',
@@ -73,6 +75,17 @@ def copy_prompt(job_id: str, spec: Any, notes: str) -> str:
             f"up to {spec.transform.max_parallel} sections per interactive adjustment; "
             f"hemisphere flipping {'enabled' if spec.reorder.flip else 'disabled'}."
         )
+    if spec.has("nonlinear"):
+        if not spec.nonlinear.uses_image_model:
+            lines.append("Nonlinear: deformations are fitted to the stain alone "
+                         "(no image model chosen).")
+        elif provider_setup.image_model_connected(spec.nonlinear.provider):
+            lines.append(f"Nonlinear: the image model ({spec.nonlinear.provider}) traces "
+                         "region borders with trace_borders.")
+        else:
+            lines.append("Nonlinear: the image-model tool (trace_borders) is off: no image "
+                         "model is connected to LangSlice (no key or login for "
+                         f"{spec.nonlinear.provider}); deformations are fitted to the stain.")
     inputs = spec.inputs or {}
     if inputs.get("locked"):
         lines.append("Existing alignment is locked for: " + ", ".join(inputs["locked"]) + ".")
@@ -94,11 +107,7 @@ def prepare_claude(params: dict[str, Any]) -> dict[str, Any]:
     channel = validate_channel(params.get("host_channel"))
     run_params = {key: value for key, value in params.items()
                   if key not in {"notes", "host_channel"}}
-    if "nonlinear" in (run_params.get("spec") or {}).get("tasks", []):
-        raise ValueError("Image generation is unavailable in Claude mode")
     prepared = prepare_linear(run_params)
-    if prepared.spec.has("nonlinear"):
-        raise ValueError("Image generation is unavailable in Claude mode")
     job_id, layout = _write_job(
         prepared.folder, {"kind": "host", "params": run_params, "notes": notes},
         spec=prepared.spec.to_dict(), channel=channel,
@@ -116,8 +125,6 @@ def prepare_folder(spec: Any, notes: str = "", trace_dir: str | None = None) -> 
     """
     from langslice.core.discovery import discover_slices
 
-    if spec.has("nonlinear"):
-        raise ValueError("Image generation is unavailable in Claude mode")
     folder = Path(spec.image_folder).expanduser().resolve(strict=True)
     if not discover_slices(str(folder)):
         raise ValueError(f"No section images found in {folder}")

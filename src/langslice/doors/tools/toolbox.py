@@ -493,6 +493,7 @@ def build_tools(
     gates: bool = True,
     level: str | None = None,
     scripting: bool = False,
+    image_model_connected: bool = True,
 ) -> ToolBox:
     """Build the tools this run's spec switches on, closed over *state*.
 
@@ -514,6 +515,11 @@ def build_tools(
     the run's ``image_resolution``; the CLI passes "auto": its caller sizes
     every picture). *scripting* adds the verbs only scripts get
     (``Verb.scripting``: ``export_maps``), for the CLI and the library.
+    *image_model_connected* False: the door cannot reach the spec's image
+    model (MCP with none connected, ``doors.api.setup.image_model_connected``),
+    so the tools are those of a run without one: no ``trace_borders``,
+    ``fit_deformable`` declared and checked for the stain alone, ``submit``
+    not waiting for traces. The spec itself is left as it is.
     """
     if job is None:
         job = Job(state, spec, layout=ctx.layout, results_path=ctx.results_path)
@@ -528,7 +534,7 @@ def build_tools(
     pos_lo, pos_hi = ctx.position_range
     over_cap = job.over_cap
     #: The image model is part of this run: trace_borders and traced images exist.
-    traces_on = spec.nonlinear.uses_image_model
+    traces_on = spec.nonlinear.uses_image_model and image_model_connected
     if traces_on and image_model is None:
         image_model = resolve_image_model(spec.nonlinear.provider, spec.nonlinear.image_model)
 
@@ -1650,13 +1656,13 @@ def build_tools(
         "fit_deformable": fit_deformable, "submit": submit, "export_maps": export_maps,
     }
     # `view.resolution` exists only where the caller chooses the picture size.
-    variant = Variant.of(spec, auto=level == AUTO_RESOLUTION)
+    variant = Variant.of(spec, auto=level == AUTO_RESOLUTION, image_model=traces_on)
     lock = threading.Lock()
     box.tools = [
         _serialized(
             _saves_views(_clears_stale_deformations(
                 _strict(declare(name, bodies[name], variant)), job), job, ctx),
             lock, state=state, on_event=on_event, guard=functools.partial(guarded, name))
-        for name in enabled(spec, scripting=scripting)
+        for name in enabled(spec, scripting=scripting, image_model=image_model_connected)
     ]
     return box

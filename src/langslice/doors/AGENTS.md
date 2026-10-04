@@ -11,7 +11,7 @@ them and from the registry (`ops/registry.py`: `VERBS`, `enabled(spec)`):
 | Door | Built by | Driver |
 |---|---|---|
 | agent tools (ADK) | `doors/tools/toolbox.py` `build_tools`: the verbs `enabled(spec)` names, each `declarations.declare`d | LangSlice's agent |
-| MCP tools | the same toolbox (`doors/mcp/server.py`), plus the door's `start_job`, `show_stack`; `readOnlyHint` = read verbs | Claude Desktop, Claude Code locked to it |
+| MCP tools | the same toolbox (`doors/mcp/server.py`), plus the door's `start_job`, `show_stack`; `readOnlyHint` = read verbs; `trace_borders` only when the job's image model is connected (`server.image_model_off`, `api.setup.image_model_connected`; else `build_tools(image_model_connected=False)`) | Claude Desktop, Claude Code locked to it |
 | agent CLI | `cli/job.py` over the same toolbox, gates off, `level="auto"`, plus the scripting verbs (`export_maps`) | Claude Code, Codex |
 | library | `library.py` (`langslice.open_job`) over the same toolbox, the scripting verbs included | a script |
 
@@ -49,7 +49,10 @@ parts) and, in `__init__.py`, the media keys re-exported from
 it and none of it drives a host): `models.py` (the engine contract's
 Pydantic models, `export_schema_bundle`), `runtime.py` (`register.run`,
 `quick_affine.run`, `export.run`, `nonlinear register`'s runtime),
-`setup.py` (offline setup status, saved credentials, login),
+`setup.py` (offline setup status, saved credentials, login, and
+`image_model_connected(provider)`: the provider is not `none` and its key
+or login is present, an offline presence check the MCP door and Claude
+mode ask before offering `trace_borders`),
 `claude_jobs.py` (saved Claude jobs: the id index and the host channel)
 and `abba_worker.py` (the JVM-free linear snapshot worker:
 `prepare_linear`, `checkpoint_callback` with its ABBA-world host rows,
