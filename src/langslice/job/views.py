@@ -167,6 +167,8 @@ class ViewStore:
         self._running = False
         self._seq: int | None = None
         self._call = 0
+        #: Bytes of the views index already read for the numbering.
+        self._index_read = 0
         #: Seconds the calling threads spent in :meth:`save` (numbering and
         #: queueing), and the writer spent per call: kept for measuring.
         self.queue_seconds = 0.0
@@ -175,20 +177,26 @@ class ViewStore:
     # --- numbering ----------------------------------------------------------------
 
     def _next_numbers(self) -> tuple[int, int]:
-        """The next picture and call numbers, continuing a reopened job's."""
+        """The next picture and call numbers, continuing the index's: a
+        reopened job's, and another store's on the same folder (a running
+        agent and a CLI call), read as the index grows."""
         if self._seq is None:
-            self._seq, self._call = 1, 0
-            try:
-                with self.layout.views_index.open(encoding="utf-8") as handle:
-                    for line in handle:
-                        try:
-                            entry = json.loads(line)
-                        except ValueError:
-                            continue
-                        self._seq = max(self._seq, int(entry.get("seq", 0)) + 1)
-                        self._call = max(self._call, int(entry.get("call", 0)))
-            except OSError:
-                pass
+            self._seq, self._call, self._index_read = 1, 0, 0
+        try:
+            with self.layout.views_index.open("rb") as handle:
+                handle.seek(self._index_read)
+                for line in handle:
+                    if not line.endswith(b"\n"):
+                        break  # a line still being written: read it next time
+                    self._index_read += len(line)
+                    try:
+                        entry = json.loads(line)
+                    except ValueError:
+                        continue
+                    self._seq = max(self._seq, int(entry.get("seq", 0)) + 1)
+                    self._call = max(self._call, int(entry.get("call", 0)))
+        except OSError:
+            pass
         return self._seq, self._call
 
     # --- saving -------------------------------------------------------------------
