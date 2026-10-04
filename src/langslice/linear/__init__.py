@@ -1,12 +1,10 @@
-"""Linear: order, position and one in-plane transform per section.
+"""Deprecated: the former ``linear`` package's public names (layered folder move, 2026-10-04).
 
-One agent environment over one stack of histology sections — one state, one
-toolbox, one job statement — that a host switches on task by task
-(``docs/linear_design.md``).
-
-    from langslice.core.spec import JobSpec
-    from langslice.agent.engine import run
-    state = asyncio.run(run(JobSpec(image_folder="...", atlas="allen_mouse_25um")))
+Kept for SliceBench (``from langslice.linear import JobSpec``) and hosts that
+read specs; the modules live in their layers now (``langslice.core.spec``,
+``langslice.core.state``, ``langslice.agent.engine``). The other modules here
+(``engine``, ``spec``, ``state``, ``toolbox``, ``trace``, ``transform``,
+``render``) are re-export shims for SliceBench too.
 """
 
 from typing import TYPE_CHECKING, Any
