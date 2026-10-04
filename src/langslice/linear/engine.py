@@ -19,6 +19,7 @@ from typing import Any
 
 from google.genai import types
 
+from langslice.adk.media import opening_parts
 from langslice.atlas.core import load_atlas
 from langslice.linear.checkpoint import (
     default_checkpoint_path,
@@ -29,7 +30,6 @@ from langslice.linear.checkpoint import (
 from langslice.linear.discovery import discover_slices
 from langslice.linear.display import display_facts
 from langslice.linear.live import LiveCallback
-from langslice.linear.opening import opening_parts
 from langslice.linear.prompt import build_job_statement
 from langslice.linear.render import status_text
 from langslice.linear.session import (

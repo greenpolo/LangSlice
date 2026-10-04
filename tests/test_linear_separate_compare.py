@@ -1,8 +1,8 @@
 """Separate positioning references reuse cached bytes, not composed canvases."""
 
 from langslice.adk import TOOL_MEDIA_DELIVERY_ID_KEY, TOOL_MEDIA_PARTS_KEY
-from langslice.linear.atlas_fetch import atlas_part
-from langslice.linear.render import picture_edge, reference_slice_part
+from langslice.adk.media import atlas_part, reference_slice_part
+from langslice.linear.render import picture_edge
 from tests.test_linear_toolbox import _box, _tool, _ToolContext
 
 

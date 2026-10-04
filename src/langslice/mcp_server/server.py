@@ -28,8 +28,10 @@ from google.genai import types
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.server.stdio import stdio_server
 from mcp.types import ContentBlock, ImageContent, TextContent, ToolAnnotations
+from PIL import Image
 
 from langslice.adk import TOOL_MEDIA_PARTS_KEY
+from langslice.adk.media import encode_jpeg
 from langslice.api.abba_worker import PreparedLinear, checkpoint_callback, prepare_linear
 from langslice.api.claude_jobs import load_job
 from langslice.linear.checkpoint import load_checkpoint, observe_checkpoints, save_checkpoint
@@ -40,7 +42,7 @@ from langslice.linear.engine import (
     emit_results,
     ingest,
 )
-from langslice.linear.opening import CLAUDE_IMAGE_LIMIT, opening_parts
+from langslice.linear.opening import CLAUDE_IMAGE_LIMIT, opening_items
 from langslice.linear.spec import JobSpec
 from langslice.linear.state import StackState
 from langslice.linear.toolbox import ToolBox, build_tools
@@ -101,6 +103,14 @@ def part_blocks(part: types.Part) -> list[ContentBlock]:
     if part.text:
         return [TextContent(type="text", text=part.text)]
     return []
+
+
+def image_block(image: Image.Image) -> ImageContent:
+    """One core picture as an MCP image block (the doors' JPEG encoding)."""
+    return ImageContent(
+        type="image", data=base64.b64encode(encode_jpeg(image)).decode("ascii"),
+        mimeType="image/jpeg",
+    )
 
 
 def result_blocks(result: Any) -> list[ContentBlock]:
@@ -205,8 +215,6 @@ def page_size(blocks: list[ContentBlock]) -> int:
 
 def _fit_page(blocks: list[ContentBlock]) -> list[ContentBlock]:
     """Shrink oversized pictures together; never merge labelled images."""
-    from PIL import Image
-
     while page_size(blocks) > PAGE_BYTES:
         changed = False
         for block in blocks:
@@ -232,10 +240,11 @@ def opening_pages(job: Job) -> list[list[ContentBlock]]:
     pages: list[list[ContentBlock]] = []
     page: list[ContentBlock] = []
     pending: list[ContentBlock] = []
-    for part in opening_parts(job.state, job.ctx, limit=CLAUDE_IMAGE_LIMIT):
-        pending.extend(part_blocks(part))
-        if part.inline_data is None:
+    for item in opening_items(job.state, job.ctx, limit=CLAUDE_IMAGE_LIMIT):
+        if isinstance(item, str):
+            pending.append(TextContent(type="text", text=item))
             continue
+        pending.append(image_block(item))
         group = _fit_page(pending)
         if page and page_size(page + group) > PAGE_BYTES:
             pages.append(page)

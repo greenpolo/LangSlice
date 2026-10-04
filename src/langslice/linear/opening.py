@@ -7,7 +7,8 @@ section's current position at the stack's cutting angles. Until 2026-10-03
 every section and every atlas section was its own image (~80 images for a
 40-section stack); Nash asked for strips instead.
 
-Each strip's long edge is the model lane's largest image (:func:`strip_edge`),
+Each strip's long edge is the model lane's largest image
+(:func:`langslice.adk.media.strip_edge`),
 its tiles the host's ``image_resolution`` opening size
 (:func:`langslice.linear.render.opening_edge`), so a larger level means fewer
 tiles per strip and more strips. A strip also stays inside the lane's patch
@@ -23,16 +24,14 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 
-from google.genai import types
 from PIL import Image, ImageDraw
 
 from langslice.affine import resize_long_edge
 from langslice.linear.appearance import view_look
 from langslice.linear.atlas_fetch import atlas_section, reference_atlas
-from langslice.linear.render import caption, image_to_part, opening_edge, render_slice
+from langslice.linear.render import caption, opening_edge, render_slice
 from langslice.linear.state import SliceState, StackState
 from langslice.linear.workspace import Workspace
-from langslice.providers.registry import canonical_provider
 
 #: Longest image edge, in pixels, the OpenAI lanes take in without shrinking
 #: (gpt-6-astra at detail "high"; Codex CLI's own client resize is the same
@@ -66,18 +65,6 @@ SEPARATOR_PX = 2
 SEPARATOR_COLOR = (110, 110, 110)
 #: Space between a strip's section row and its atlas row.
 ROW_GAP = 4
-
-
-def image_limit(ctx: Workspace) -> tuple[int, int]:
-    """``(long edge, patch budget)`` of one image for this run's model lane."""
-    model = str(getattr(ctx, "model", "") or "")
-    provider = canonical_provider(model.split("/", 1)[0]) if "/" in model else ""
-    return IMAGE_LIMITS.get(provider, DEFAULT_IMAGE_LIMIT)
-
-
-def strip_edge(ctx: Workspace) -> int:
-    """Long edge of each opening strip for this run's model lane."""
-    return image_limit(ctx)[0]
 
 
 def patches(size: tuple[int, int]) -> int:
@@ -188,15 +175,17 @@ def _angles(state: StackState) -> str:
     return f" (pitch {state.pitch_deg:.1f}, yaw {state.yaw_deg:.1f} degrees)"
 
 
-def opening_parts(
-    state: StackState, ctx: Workspace, *, limit: tuple[int, int] | None = None,
-) -> list[types.Part]:
-    """The stack's opening images as strips, each preceded by a short text.
+def opening_items(
+    state: StackState, ctx: Workspace, *, limit: tuple[int, int] = DEFAULT_IMAGE_LIMIT,
+) -> list[str | Image.Image]:
+    """The stack's opening as strips, each preceded by a short text: texts and
+    pictures in the order they are read (a door packages them,
+    :func:`langslice.adk.media.opening_parts`).
 
-    *limit* is ``(long edge, patch budget)`` of one image; None is this run's
-    model lane (:func:`image_limit`). Tiles are the run's opening size.
+    *limit* is ``(long edge, patch budget)`` of one image, the model lane's
+    (:data:`IMAGE_LIMITS`). Tiles are the run's opening size.
     """
-    edge, budget = limit or image_limit(ctx)
+    edge, budget = limit
     count, tile = strip_layout(edge, opening_edge(ctx))
     ordered = list(state.in_order())
     placed = any(record.position_mm is not None for record in ordered)
@@ -222,30 +211,30 @@ def opening_parts(
         "('no position' where it has none)."
         if placed else ""
     )
-    parts: list[types.Part] = [types.Part.from_text(text=(
+    items: list[str | Image.Image] = [(
         f"The {len(ordered)} sections of the stack follow in {len(strips)} "
         f"strip{'s' if len(strips) != 1 else ''}, in their current corrected order, "
         "left to right and strip after strip. Each section is labelled "
         "'<index>: <filename>' above it and drawn with any rotation and flip "
         f"already applied.{beneath}"
-    ))]
+    )]
     bounds = [start for start, _strip in strips] + [len(ordered)]
     for number, (start, strip) in enumerate(strips):
         members = ordered[start:bounds[number + 1]]
-        parts.append(types.Part.from_text(text=(
+        items.append(
             f"Strip {number + 1} of {len(strips)}: "
             + ", ".join(f"{record.index_corrected}: {record.id}" for record in members)
-        )))
-        parts.append(image_to_part(strip))
+        )
+        items.append(strip)
 
     if unplaced:
-        parts.extend(reference_parts(state, ctx, tile=tile, count=count, budget=budget))
-    return parts
+        items.extend(reference_items(state, ctx, tile=tile, count=count, budget=budget))
+    return items
 
 
-def reference_parts(
+def reference_items(
     state: StackState, ctx: Workspace, *, tile: int, count: int, budget: int,
-) -> list[types.Part]:
+) -> list[str | Image.Image]:
     """The atlas reference (evenly spaced positions) as strips of atlas tiles."""
     step, pictures = reference_atlas(ctx, state, long_edge=tile)
     if not pictures:
@@ -253,18 +242,16 @@ def reference_parts(
     columns = [[_cell(picture, f"atlas {position:.2f} mm", tile)]
                for position, picture in pictures]
     strips = pack_strips(columns, tile, count, budget)
-    parts: list[types.Part] = [types.Part.from_text(text=(
+    items: list[str | Image.Image] = [(
         f"Atlas reference strip{'s' if len(strips) != 1 else ''}: the atlas at "
         f"{len(pictures)} positions, every {step:.2f} mm from {pictures[0][0]:.2f} to "
         f"{pictures[-1][0]:.2f} mm, at the stack's cutting angles{_angles(state)}, "
         f"in {len(strips)} strip{'s' if len(strips) != 1 else ''}, each atlas section "
         "labelled 'atlas <position> mm' above it."
-    ))]
+    )]
     bounds = [start for start, _strip in strips] + [len(pictures)]
     for number, (start, strip) in enumerate(strips):
         first, last = pictures[start][0], pictures[bounds[number + 1] - 1][0]
-        parts.append(types.Part.from_text(text=(
-            f"Atlas strip {number + 1} of {len(strips)}: {first:.2f} to {last:.2f} mm"
-        )))
-        parts.append(image_to_part(strip))
-    return parts
+        items.append(f"Atlas strip {number + 1} of {len(strips)}: {first:.2f} to {last:.2f} mm")
+        items.append(strip)
+    return items

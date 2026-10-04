@@ -15,6 +15,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
+from langslice.adk.media import image_limit, opening_parts
 from langslice.linear.engine import build_context, ingest
 from langslice.linear.opening import (
     CLAUDE_IMAGE_LIMIT,
@@ -23,8 +24,6 @@ from langslice.linear.opening import (
     COLUMN_GAP,
     OPENAI_MAX_IMAGE_EDGE,
     OPENAI_MAX_IMAGE_PATCHES,
-    image_limit,
-    opening_parts,
     pack_strips,
     patches,
     strip_layout,
