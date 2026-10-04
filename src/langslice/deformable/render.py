@@ -226,6 +226,47 @@ def _without_field(record: DeformableRecord) -> DeformableRecord:
     return replace(record, field_mm=np.zeros_like(record.field_mm))
 
 
+def _drawn_layers(
+    record: DeformableRecord, atlas: Any, *,
+    highlight: Iterable[str | int], marked: Iterable[str | int], warped: bool, outlines: str,
+    width_px: float, smoothing_px: float, supersample: int, native: np.ndarray | None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """``(faint, strong, marked)``: the coverage :func:`draw_warped_borders`
+    draws, each layer as the *outlines* choice leaves it."""
+    if outlines not in ("all", "outer", "none"):
+        raise ValueError("outlines must be all, outer or none")
+    highlight = list(highlight)
+    layers = warped_border_layers(
+        record, atlas, highlight=highlight, marked=marked, warped=warped, width_px=width_px,
+        smoothing_px=smoothing_px, supersample=supersample, native=native,
+    )
+    blank = np.zeros_like(layers["faint"])
+    if highlight:
+        strong = layers["strong"]
+        faint = {"all": layers["faint"], "outer": np.minimum(layers["faint"], layers["outer"]),
+                 "none": blank}[outlines]
+    else:
+        faint = blank
+        strong = {"all": layers["strong"], "outer": layers["outer"], "none": blank}[outlines]
+    return faint, strong, layers["marked"]
+
+
+def drawn_border_coverage(
+    record: DeformableRecord, atlas: Any, *,
+    highlight: Iterable[str | int] = (), marked: Iterable[str | int] = (),
+    warped: bool = True, outlines: str = "all",
+    width_px: float = 2.0, smoothing_px: float = BORDER_SMOOTHING_PX, supersample: int = 3,
+    native: np.ndarray | None = None,
+) -> np.ndarray:
+    """Every line :func:`draw_warped_borders` draws with these arguments, as
+    coverage in [0, 1] at full strength (the faint lines too): a picture's
+    borders layer."""
+    layers = _drawn_layers(record, atlas, highlight=highlight, marked=marked, warped=warped,
+                           outlines=outlines, width_px=width_px, smoothing_px=smoothing_px,
+                           supersample=supersample, native=native)
+    return np.maximum.reduce(layers)
+
+
 def draw_warped_borders(
     image: Image.Image, record: DeformableRecord, atlas: Any, *,
     highlight: Iterable[str | int] = (), marked: Iterable[str | int] = (),
@@ -243,25 +284,14 @@ def draw_warped_borders(
     *outlines* limits the other lines: ``all``, ``outer`` (only the atlas's
     outer boundary) or ``none``. Clipped to the tissue.
     """
-    if outlines not in ("all", "outer", "none"):
-        raise ValueError("outlines must be all, outer or none")
-    layers = warped_border_layers(
-        record, atlas, highlight=highlight, marked=marked, warped=warped, width_px=width_px,
-        smoothing_px=smoothing_px, supersample=supersample, native=native,
-    )
-    blank = np.zeros_like(layers["faint"])
-    if highlight:
-        strong = layers["strong"]
-        faint = {"all": layers["faint"], "outer": np.minimum(layers["faint"], layers["outer"]),
-                 "none": blank}[outlines]
-    else:
-        faint = blank
-        strong = {"all": layers["strong"], "outer": layers["outer"], "none": blank}[outlines]
+    faint, strong, marked_lines = _drawn_layers(
+        record, atlas, highlight=highlight, marked=marked, warped=warped, outlines=outlines,
+        width_px=width_px, smoothing_px=smoothing_px, supersample=supersample, native=native)
     base = np.asarray(image.convert("RGB"), dtype=np.float32)
     if base.shape[:2] != strong.shape:
         raise ValueError("The image must be on the record's section grid")
     for coverage, ink, weight in (
-        (faint, color, FAINT_ALPHA), (strong, color, 1.0), (layers["marked"], marked_color, 1.0),
+        (faint, color, FAINT_ALPHA), (strong, color, 1.0), (marked_lines, marked_color, 1.0),
     ):
         alpha = (weight * coverage)[..., None]
         base = base * (1.0 - alpha) + np.array(ink, dtype=np.float32) * alpha

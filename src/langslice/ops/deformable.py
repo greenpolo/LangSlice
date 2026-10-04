@@ -292,24 +292,26 @@ def pictures(
         shown_atlas = options.atlas_images
         first = len(parts)
         try:
+            def noted(index: int, section: str = record.id) -> dict[str, Any]:
+                return {"sections": (section,),
+                        "mode": (("after" if index == 0 else "before")
+                                 if options.mode == "ab" else options.mode)}
+
             images = [deformation.picture(workspace, fit.image, outcome, warped=True,
                                           style=style, atlas_images=shown_atlas,
-                                          title=f"{heading}\n{detail_line}")]
+                                          title=f"{heading}\n{detail_line}", note=noted(0))]
             if options.mode == "ab":
                 if fit.previous is not None:
                     images.append(deformation.picture(
                         workspace, fit.image, fit.previous, warped=True, style=style,
                         atlas_images=shown_atlas,
-                        title=f"{record.id}  before: the deformation it started from"))
+                        title=f"{record.id}  before: the deformation it started from",
+                        note=noted(1)))
                 else:
                     images.append(deformation.picture(
                         workspace, fit.image, outcome, warped=False, style=style,
                         atlas_images=shown_atlas,
-                        title=f"{record.id}  before: the linear placement"))
-            for index, image in enumerate(images):
-                layers.note(image, sections=(record.id,),
-                            mode=("after" if index == 0 else "before")
-                            if options.mode == "ab" else options.mode)
+                        title=f"{record.id}  before: the linear placement", note=noted(1)))
             parts.extend(images)
         except Exception as exc:
             logger.warning("fit_deformable picture failed for %s", record.id, exc_info=True)
