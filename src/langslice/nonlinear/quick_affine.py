@@ -7,11 +7,12 @@ attempt was both slow (~15s cold-start) and fragile across modalities (the NCC
 metric chases noise when comparing histology staining patterns to atlas Nissl).
 Both problems vanish if we register *shapes* instead of intensities.
 
-The fit itself lives in :mod:`langslice.affine` (shared with the linear
-``fit_affine`` tool). All this module adds is the viewer's output format: warp
-the section RGB through the fitted affine and use the atlas root silhouette as
-the alpha channel, so the 3D viewer renders a brain-shaped sheet rather than a
-rectangular slab.
+The fit itself is :func:`langslice.affine.silhouette_affine`, the one
+silhouette wrapper (shared with the linear ``fit_affine`` tool's silhouette
+method, cutting angles included). All this module adds is the viewer's
+output format: warp the section RGB through the fitted affine and use the
+atlas root silhouette as the alpha channel, so the 3D viewer renders a
+brain-shaped sheet rather than a rectangular slab.
 
 Cost: ~150ms in a warm Python process, no itk, no Elastix.
 """
@@ -40,6 +41,8 @@ def quick_affine_register(
     atlas_name: str,
     position_mm: float,
     plane: Plane = "coronal",
+    pitch_deg: float = 0.0,
+    yaw_deg: float = 0.0,
     out_path: Path,
 ) -> dict[str, Any]:
     """Silhouette-based affine alignment of slice → atlas root.
@@ -56,6 +59,8 @@ def quick_affine_register(
         atlas=load_atlas(atlas_name),
         position_mm=position_mm,
         plane=plane,
+        pitch_deg=pitch_deg,
+        yaw_deg=yaw_deg,
     )
 
     # Linear interpolation for smoothness; clip to the atlas silhouette via

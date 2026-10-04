@@ -32,19 +32,8 @@ def atlas_mask(
     ctx: Workspace, state: StackState, position_mm: float, size: tuple[int, int]
 ) -> np.ndarray:
     """Binary tissue silhouette of the atlas section, at the stack's angles."""
-    plane = cast(Plane, state.plane)
-    if not state.is_oblique:
-        return get_root_mask(ctx.atlas, position_mm, size, plane=plane)
-    from langslice.oblique import sample_oblique_annotation
-
-    labels = sample_oblique_annotation(
-        ctx.atlas, position_mm, plane, state.pitch_deg, state.yaw_deg
-    )
-    mask = (labels != 0).astype(np.uint8) * 255
-    resized = Image.fromarray(mask, mode="L").resize(
-        size, resample=Image.Resampling.NEAREST
-    )
-    return np.asarray(resized, dtype=np.uint8)
+    return get_root_mask(ctx.atlas, position_mm, size, plane=cast(Plane, state.plane),
+                         pitch_deg=state.pitch_deg, yaw_deg=state.yaw_deg)
 
 
 def atlas_section(

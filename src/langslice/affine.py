@@ -82,6 +82,27 @@ class SilhouetteFit:
     sign_pattern: tuple[int, int]
 
 
+def pixel_center_map(
+    source_size: tuple[int, int],
+    target_size: tuple[int, int],
+    offset: tuple[float, float] = (0.0, 0.0),
+) -> np.ndarray:
+    """3x3 map of pixel centres from one grid onto a resized (and shifted) grid.
+
+    Pixel centres sit at integer indices (OpenCV's convention), so a resize
+    by ``s`` maps ``x`` to ``s * x + (s - 1) / 2``; each axis keeps its own
+    factor (resize rounding), and *offset* adds padding or a placement on a
+    larger canvas, in target pixels. The one copy: the image tool's canvas,
+    the nonlinear canvas and the deformable working grid all use it.
+    """
+    sx, sy = target_size[0] / source_size[0], target_size[1] / source_size[1]
+    return np.array([
+        [sx, 0.0, offset[0] + (sx - 1.0) / 2.0],
+        [0.0, sy, offset[1] + (sy - 1.0) / 2.0],
+        [0.0, 0.0, 1.0],
+    ])
+
+
 def resize_long_edge(image: Image.Image, long_edge: int) -> Image.Image:
     """Scale *image* so its long edge is exactly *long_edge* px."""
     width, height = image.size
@@ -269,16 +290,22 @@ def silhouette_affine(
     atlas: Any,
     position_mm: float,
     plane: Plane = "coronal",
+    pitch_deg: float = 0.0,
+    yaw_deg: float = 0.0,
     long_edge: int = AFFINE_LONG_EDGE,
     atlas_mask_at: Callable[[tuple[int, int]], np.ndarray] | None = None,
 ) -> SilhouetteFit:
     """Fit a 2x3 affine aligning *image* to the atlas section at *position_mm*.
 
-    *atlas_mask_at* returns the atlas tissue silhouette at a ``(w, h)`` size;
-    the flat section's root mask by default. A stack cut at an angle passes
-    its oblique mask here, so the fit measures against the plane every other
-    picture in the run shows (until 2026-09-10 it measured against the flat
-    plane on a 13-degree brain and said so with ``flat_atlas_fit``).
+    The one silhouette wrapper: the linear ``fit_affine`` silhouette method
+    (``linear.transform.fit_silhouette``) and the viewer preview
+    (``nonlinear.quick_affine``) both call it. The atlas tissue silhouette is
+    the root mask of the plane at *position_mm* and the cutting angles
+    (:func:`langslice.atlas.core.get_root_mask`), so an angled stack is
+    measured against the plane every other picture in the run shows (until
+    2026-09-10 it measured against the flat plane on a 13-degree brain and
+    said so with ``flat_atlas_fit``). *atlas_mask_at* (a ``(w, h)`` size ->
+    mask) replaces that silhouette with the caller's own.
 
     Raises ``ValueError`` when the tissue silhouette is implausible (Otsu
     failed on a blank or uniform field) or no candidate could be computed.
@@ -289,7 +316,8 @@ def silhouette_affine(
     atlas_mask = (
         atlas_mask_at(size)
         if atlas_mask_at is not None
-        else get_root_mask(atlas, position_mm, size, plane=plane)
+        else get_root_mask(atlas, position_mm, size, plane=plane,
+                           pitch_deg=pitch_deg, yaw_deg=yaw_deg)
     )
     matrix, iou, pattern = mask_affine(slice_mask, atlas_mask)
 

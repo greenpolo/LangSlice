@@ -35,6 +35,8 @@ def test_the_affine_core_is_shared_and_nonlinears_api_is_unchanged():
         "atlas_name",
         "position_mm",
         "plane",
+        "pitch_deg",
+        "yaw_deg",
         "out_path",
     ]
     assert signature.parameters["plane"].default == "coronal"
@@ -240,7 +242,7 @@ def test_silhouette_affine_never_reflects():
 
     import langslice.affine as affine_mod
 
-    def fake_root_mask(atlas, position_mm, size, plane="coronal"):
+    def fake_root_mask(atlas, position_mm, size, plane="coronal", pitch_deg=0.0, yaw_deg=0.0):
         w, h = size
         mask = Image.new("L", (w, h), 0)
         draw = ImageDraw.Draw(mask)

@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any, cast
 import cv2
 import numpy as np
 
+from langslice.affine import pixel_center_map
 from langslice.space import Plane
 
 if TYPE_CHECKING:
@@ -90,14 +91,6 @@ def placement_from_handoff(prepared: LinearRegistrationInput) -> Placement:
         section_mm_per_px=float(prepared.metadata["section_um_per_px"]) / 1000.0,
         source=str(prepared.metadata.get("source", "linear_state")),
     )
-
-
-def pixel_center_map(source_size: tuple[int, int], target_size: tuple[int, int]) -> np.ndarray:
-    """3x3 map of pixel centres from one grid onto a resized grid over the same area."""
-    sx, sy = target_size[0] / source_size[0], target_size[1] / source_size[1]
-    return np.array([[sx, 0.0, (sx - 1.0) / 2.0],
-                     [0.0, sy, (sy - 1.0) / 2.0],
-                     [0.0, 0.0, 1.0]])
 
 
 @dataclass(frozen=True)

@@ -288,6 +288,8 @@ def get_root_mask(
     target_size: tuple[int, int],
     *,
     plane: Plane = "coronal",
+    pitch_deg: float = 0.0,
+    yaw_deg: float = 0.0,
 ) -> np.ndarray:
     """Binary tissue silhouette of the atlas at *position_mm*, at *target_size*.
 
@@ -302,11 +304,20 @@ def get_root_mask(
         target_size: ``(width, height)`` of the desired mask.
         plane: Slicing plane, resolved the same way as every other accessor
             here so the slab axis lines up across the pipeline.
+        pitch_deg, yaw_deg: Cutting angles; non-zero samples the plane
+            obliquely (:func:`langslice.oblique.sample_oblique_annotation`),
+            the plane every picture of an angled stack shows.
     """
-    idx, axis = _resolve_idx_axis(atlas, position_mm, plane)
-    annotation_slice = np.asarray(np.take(atlas.annotation, idx, axis=axis))
-    annotation_slice = orient_slice_for_display(annotation_slice, plane)
-    mask = (annotation_slice != 0).astype(np.uint8) * 255
+    if pitch_deg or yaw_deg:
+        from langslice.oblique import sample_oblique_annotation
+
+        labels = sample_oblique_annotation(atlas, position_mm, plane, pitch_deg, yaw_deg)
+        mask = (labels != 0).astype(np.uint8) * 255
+    else:
+        idx, axis = _resolve_idx_axis(atlas, position_mm, plane)
+        annotation_slice = np.asarray(np.take(atlas.annotation, idx, axis=axis))
+        annotation_slice = orient_slice_for_display(annotation_slice, plane)
+        mask = (annotation_slice != 0).astype(np.uint8) * 255
     mask_img = Image.fromarray(mask, mode="L").resize(
         target_size, resample=Image.Resampling.NEAREST
     )

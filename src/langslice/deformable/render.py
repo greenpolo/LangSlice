@@ -281,7 +281,7 @@ def resampled_record(
     """
     from dataclasses import replace
 
-    from langslice.deformable.geometry import pixel_center_map
+    from langslice.affine import pixel_center_map
 
     width, height = record.section_size
     field = np.stack([

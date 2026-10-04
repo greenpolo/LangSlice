@@ -6,12 +6,13 @@ import numpy as np
 import pytest
 from PIL import Image
 
+from langslice.affine import pixel_center_map
 from langslice.nonlinear import border_registration as registration
 from langslice.nonlinear.border_refinement import BorderRefinementResult
 
 
 def test_zero_residual_retains_initial_affine_with_rounding_and_padding():
-    original_to_canvas = registration.pixel_center_map((101, 57), (37, 21), (7, 9))
+    original_to_canvas = pixel_center_map((101, 57), (37, 21), (7, 9))
     initial = np.array([[1.3, 0.2, 9.0], [-0.1, 0.8, 12.0], [0, 0, 1]])
     canonical = registration.canonical_atlas_map((31, 19), (51, 39))
     field = np.zeros((39, 51, 2))

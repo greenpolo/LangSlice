@@ -47,7 +47,6 @@ from langslice.affine import (
 from langslice.atlas.render import atlas_um_per_px
 from langslice.core.canvas import canvas_geometry, estimate_um_per_px
 from langslice.core.sections import PREVIEW_LONG_EDGE, canvas_um_per_px, render_slice
-from langslice.linear.atlas_fetch import atlas_mask
 from langslice.linear.state import SliceState, StackState
 from langslice.linear.workspace import Workspace
 from langslice.space import Plane
@@ -397,7 +396,8 @@ def fit_silhouette(
                 atlas=ctx.atlas,
                 position_mm=position,
                 plane=cast(Plane, state.plane),
-                atlas_mask_at=lambda size: atlas_mask(ctx, state, position, size),
+                pitch_deg=state.pitch_deg,
+                yaw_deg=state.yaw_deg,
             )
             iou = float(fit.iou)
             in_section = _fit_matrix_in_section_frame(
