@@ -259,7 +259,7 @@ def test_a_background_run_answers_at_once_then_status_and_wait(capsys, images, m
     init(capsys, images)
     # install() pointed background runs at tests.cli_child (the synthetic atlas).
     assert background.CHILD_COMMAND[-1] == "tests.cli_child"
-    monkeypatch.setenv("PYTHONPATH", str(REPO))
+    monkeypatch.setenv("PYTHONPATH", os.pathsep.join((str(REPO / "src"), str(REPO))))
     monkeypatch.chdir(REPO)
     code, envelope = cli(capsys, "job", str(images), "view_slices", "--slices", ID0,
                          "--background")
