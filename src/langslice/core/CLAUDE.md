@@ -155,6 +155,23 @@ other module whose imports are core-only:
   `coords = pixel_to_atlas_um @ [p + d, 1]`; computed in `BLOCK_ROWS`
   blocks. `residual_markers(frame, warp)`: VisuAlign `[x, y, nx, ny]`
   markers on a grid of 1/36 of the long edge.
+  `render_sizes(workspace, id)` (`RenderSizes`: the file, working copy and
+  unturned render sizes and the file-to-render scale, header-only when it
+  can) is the one place those sizes are found; `_section_frame` and the
+  importer both use it.
+- `import_geometry.py` — the exact inverse of `maps.section_frame`'s linear
+  map, for a registration made elsewhere (`job/imports.py` reads the
+  files): `placement_from_pixel_map(pixel_to_atlas_um, atlas=, plane=,
+  sizes=, file_um_per_px=, orientation=)` returns `RecoveredPlacement`
+  (position, pitch and yaw in `core.oblique`'s convention, quarter turn,
+  flip, the six numbers on the oriented render at that pixel size,
+  `out_of_plane_um`, `in_plane_error_px`). Nine numbers each way (normal,
+  position, full in-plane affine), so anisotropic scale and shear survive;
+  flip and quarter turn are a choice (unmirrored, least turn) unless given;
+  a flat plane is drawn at the nearest voxel (reported); angles below
+  `ANGLE_EPSILON_DEG` read as 0; a plane more than `MAX_TILT_DEG` from the
+  job's plane is refused. `plane_angles`, `plane_position_mm`,
+  `implied_pixel_size_um`.
 - `jpeg.py` — the doors' one JPEG encoding (below).
 - `handoff.py` (phase 4) — a written linear placement as the nonlinear work
   starts from it: `prepare_linear_registration(state, workspace, id,
