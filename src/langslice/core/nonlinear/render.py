@@ -462,18 +462,20 @@ def split_view(
 
 
 def _marker_grid(markers: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Reshape flat ``[ox, oy, nx, ny]`` rows into ``(rows, cols, 2)`` grids.
+    """Reshape flat VisuAlign ``[x_overlay, y_overlay, x_image, y_image]``
+    rows into ``(rows, cols, 2)`` grids: ``source`` the image points (the
+    regular lattice), ``target`` the overlay points they land on.
 
     Missing nodes stay NaN so a partial grid still draws the segments it has.
     """
-    xs = np.unique(markers[:, 0])
-    ys = np.unique(markers[:, 1])
+    xs = np.unique(markers[:, 2])
+    ys = np.unique(markers[:, 3])
     source = np.full((len(ys), len(xs), 2), np.nan)
     target = np.full((len(ys), len(xs), 2), np.nan)
-    col = np.searchsorted(xs, markers[:, 0])
-    row = np.searchsorted(ys, markers[:, 1])
-    source[row, col] = markers[:, 0:2]
-    target[row, col] = markers[:, 2:4]
+    col = np.searchsorted(xs, markers[:, 2])
+    row = np.searchsorted(ys, markers[:, 3])
+    source[row, col] = markers[:, 2:4]
+    target[row, col] = markers[:, 0:2]
     return source, target
 
 
@@ -486,8 +488,9 @@ def deformation_grid(
 ) -> Image.Image:
     """The warp drawn as a deformed grid, colored by local distortion.
 
-    *markers* are VisuAlign-style ``[ox, oy, nx, ny]`` rows on a regular
-    lattice, in the coordinates of *histology*. The straight faint lattice is
+    *markers* are VisuAlign ``[x_overlay, y_overlay, x_image, y_image]``
+    rows whose image points lie on a regular lattice, in the coordinates of
+    *histology*. The straight faint lattice is
     where space started; the bright one is where it went.
 
     Color is displacement RELATIVE TO THE MEDIAN displacement, not absolute:

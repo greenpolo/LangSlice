@@ -103,6 +103,11 @@ def composed_correspondences(
 ) -> tuple[list[list[float]], list[list[float]]]:
     """Sample slice→canonical atlas markers and slice→native atlas points.
 
+    Markers are VisuAlign's ``[x_overlay, y_overlay, x_image, y_image]``:
+    the image point (a regular grid) last, the atlas overlay point it lands
+    on first. Native correspondences are ``[slice_x, slice_y, native_x,
+    native_y]``.
+
     The residual field maps output canvas q to placed atlas q+d. Undo rough
     placement before converting native atlas pixels into the canonical frame.
     The latter frame, like the source points, is reported in unpadded original
@@ -128,7 +133,9 @@ def composed_correspondences(
             native = canvas_to_native @ moved
             source = canvas_to_slice @ q
             target = canvas_to_slice @ canonical @ native
-            markers.append([float(source[0]), float(source[1]), float(target[0]), float(target[1])])
+            # VisuAlign's order, [x_overlay, y_overlay, x_image, y_image]
+            # (core.maps.residual_markers; PyNutil, SliceBench).
+            markers.append([float(target[0]), float(target[1]), float(source[0]), float(source[1])])
             direct.append([float(source[0]), float(source[1]), float(native[0]), float(native[1])])
     if not np.isfinite(np.asarray(markers)).all():
         raise ValueError("Composed registration correspondences are not finite")
@@ -394,8 +401,9 @@ def generate_border_registration_candidate(
         "native_atlas_to_canonical_canvas": canonical.tolist(),
         "visualign_markers": markers, "n_markers": len(markers),
         "marker_frames": {
-            "source": "original section pixel centers (may extend outside original image)",
-            "target": "canonical letterboxed atlas canvas mapped to original image units",
+            "order": "[x_overlay, y_overlay, x_image, y_image] (VisuAlign)",
+            "image": "original section pixel centers (may extend outside original image)",
+            "overlay": "canonical letterboxed atlas canvas mapped to original image units",
             "composition": (
                 "inverse(slice_to_canvas) @ native_atlas_to_canonical_canvas @ "
                 "inverse(atlas_to_canvas) @ (canvas_point + residual_displacement)"
