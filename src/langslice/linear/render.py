@@ -1454,6 +1454,7 @@ def physical_views(
             f"rot {params['rotation_deg']:.1f}  "
             f"scale {params['scale_x']:.3f}/{params['scale_y']:.3f}  "
             f"shift {params['translate_x_mm']:+.2f}/{params['translate_y_mm']:+.2f} mm"
+            + (f"  shear {params['shear']:+.3f}" if params.get("shear") else "")
         )
 
     # The crop happens first, then the screen is sized: *long_edge*, or the

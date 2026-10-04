@@ -126,7 +126,8 @@ def test_transform_records_and_one_undo_step_for_a_batch(tmp_path: Path):
         size=(40, 30), um_per_px=10.0, calibration={"section_um_per_px": 10.0, "source": "host"},
         pivot=None, pivot_frac=[0.5, 0.5], knobs=knobs, note=" why ")
     assert record["params"] == [1.0, 0.0, 0.0, 0.0, 1.0, 0.0]
-    assert record["physical"] == {**knobs, "pivot": [0.5, 0.5]} and record["note"] == "why"
+    assert record["physical"] == {**knobs, "shear": 0.0, "pivot": [0.5, 0.5]}
+    assert record["note"] == "why"
     assert not transforms.same_transform(None, record)
     assert transforms.same_transform({**record, "note": "other"}, record)
 

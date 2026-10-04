@@ -312,13 +312,21 @@ def affine_matrix(
     translate_y: float,
     size: tuple[int, int],
     pivot: tuple[float, float] | None = None,
+    shear: float = 0.0,
 ) -> np.ndarray:
     """A 2x3 affine from human knobs, about the centre of a *size* image.
 
     Rotation is counter-clockwise on screen (the OpenCV convention), scales
     are multipliers per axis applied before the rotation, and translations are
     FRACTIONS of image width/height — positive x moves right, positive y moves
-    down. Identity is ``rotation_deg=0, scale=1, translate=0``.
+    down. Identity is ``rotation_deg=0, scale=1, translate=0, shear=0``.
+
+    *shear* is :func:`decompose_affine`'s: the linear part is
+    ``R(rotation) . [[scale_x, shear * scale_x], [0, scale_y]]``, so before
+    the rotation a point ``(x, y)`` (from the pivot) moves sideways by
+    ``shear * y``, in units of ``scale_x``: a dimensionless slant, ``0.1``
+    shifting each row by a tenth of its distance below the pivot. The knobs
+    and :func:`decompose_affine` round-trip exactly (up to its rounding).
 
     *pivot* moves the point rotation and scale happen about, in PIXELS of the
     same frame *size* describes; ``None`` is the frame's centre. The
@@ -330,6 +338,9 @@ def affine_matrix(
     cos_t, sin_t = math.cos(rad), math.sin(rad)
     a, b = cos_t * scale_x, sin_t * scale_y
     c, d = -sin_t * scale_x, cos_t * scale_y
+    if shear:
+        b += cos_t * shear * scale_x
+        d -= sin_t * shear * scale_x
     return np.array([
         [a, b, cx - (a * cx + b * cy) + translate_x * width],
         [c, d, cy - (c * cx + d * cy) + translate_y * height],
@@ -346,6 +357,7 @@ def physical_affine_matrix(
     size: tuple[int, int],
     um_per_px: float,
     pivot: tuple[float, float] | None = None,
+    shear: float = 0.0,
 ) -> np.ndarray:
     """:func:`affine_matrix` with the shifts given in MILLIMETRES.
 
@@ -374,6 +386,7 @@ def physical_affine_matrix(
         translate_y=translate_y_mm * px_per_mm / height,
         size=size,
         pivot=pivot,
+        shear=shear,
     )
 
 
@@ -387,6 +400,7 @@ def normalized_physical_affine(
     size: tuple[int, int],
     um_per_px: float,
     pivot: tuple[float, float] | None = None,
+    shear: float = 0.0,
 ) -> list[float]:
     """Physical parameters as the six normalized numbers hosts consume.
 
@@ -410,6 +424,7 @@ def normalized_physical_affine(
             size=size,
             um_per_px=um_per_px,
             pivot=pivot,
+            shear=shear,
         ),
         size,
     )
@@ -465,9 +480,9 @@ def denormalized_affine(params: Any, size: tuple[int, int]) -> np.ndarray:
     """The inverse of :func:`normalized_affine`: six numbers back to pixels.
 
     What a stored transform has to go through to be DRAWN again — the six
-    numbers are exact, including any shear the five physical knobs cannot
-    carry, so a picture of "what is stored" is built from these and not from
-    the knobs.
+    numbers are exact, where the reported knobs (shear included) are
+    rounded, so a picture of "what is stored" is built from these and not
+    from the knobs.
     """
     a, b, tx, c, d, ty = (float(v) for v in params)
     width, height = float(size[0]), float(size[1])

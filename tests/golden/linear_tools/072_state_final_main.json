@@ -119,6 +119,7 @@
       "rotation_deg": 1.0,
       "scale_x": 1.0,
       "scale_y": 1.01,
+      "shear": 0.0,
       "translate_x_mm": 0.0,
       "translate_y_mm": 0.01
      }
@@ -230,6 +231,7 @@
       "rotation_deg": -1.0,
       "scale_x": 0.99,
       "scale_y": 1.0,
+      "shear": 0.0,
       "translate_x_mm": 0.02,
       "translate_y_mm": 0.0
      }
@@ -302,6 +304,7 @@
       "rotation_deg": 3.0,
       "scale_x": 1.05,
       "scale_y": 0.98,
+      "shear": 0.0,
       "translate_x_mm": 0.05,
       "translate_y_mm": -0.02
      }

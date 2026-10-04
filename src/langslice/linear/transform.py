@@ -761,13 +761,13 @@ def affine_fit(src: np.ndarray, dst: np.ndarray) -> np.ndarray:
 def physical_params(
     matrix: np.ndarray, *, pivot: tuple[float, float], um_per_px: float
 ) -> dict[str, float]:
-    """A 2x3 in canvas pixels as the five knobs, about *pivot*.
+    """A 2x3 in canvas pixels as the knobs, about *pivot*.
 
-    The inverse of :func:`langslice.affine.physical_affine_matrix`: rotation
-    and scales come out of the linear part, and the shift is what is left of
-    the translation once the pivot's own displacement is taken out. ``shear``
-    rides along because a three-point affine can have some and the five knobs
-    cannot express it.
+    The inverse of :func:`langslice.affine.physical_affine_matrix`: rotation,
+    scales and ``shear`` come out of the linear part
+    (:func:`langslice.affine.decompose_affine`'s convention, the one the
+    ``shear`` knob of ``adjust_transforms`` takes), and the shift is what is
+    left of the translation once the pivot's own displacement is taken out.
     """
     values = np.asarray(matrix, dtype=np.float64).reshape(2, 3)
     linear, offset = values[:, :2], values[:, 2]

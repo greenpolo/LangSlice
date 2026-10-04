@@ -251,3 +251,36 @@ def test_a_section_without_tissue_is_refused_cleanly(tmp_path: Path, atlas):
     assert result["error"] == "NOTHING_FITTED"
     assert result["results"][0]["error"] == "FIT_FAILED"
     assert state.slices[0].transform is None
+
+
+def test_a_manual_tweak_keeps_the_fits_shear_when_it_passes_it_back(tmp_path: Path, atlas):
+    """adjust_transforms takes the shear fit_affine reports (Nash 2026-10-03):
+    the fit's knobs given back draw and store the fit's own map."""
+    centre = np.array([WIDTH / 2.0, HEIGHT / 2.0])
+    slant = np.eye(3)
+    slant[0, 1] = 0.06
+    slant[:2, 2] = centre - slant[:2, :2] @ centre
+    truth = _step(3.0, 1.02, 4.0, -2.0) @ slant
+    state, _ctx, box = _setup(tmp_path, atlas, _section(atlas, truth))
+    row = _tool(box, "fit_affine")([])["results"][0]
+    fitted = list(state.slices[0].transform["params"])
+    knobs = {key: value for key, value in row["physical"].items() if key != "pivot"}
+    assert abs(knobs["shear"]) > 0.03, knobs
+
+    def tweak(**entry: Any) -> list[float]:
+        result = _tool(box, "adjust_transforms")([{"id": ID, **entry}])
+        assert result["status"] == "ok", result
+        assert result["results"][0]["physical"]["shear"] == entry.get("shear", 0.0)
+        return list(state.slices[0].transform["params"])
+
+    kept = _error_vs(_px(fitted), tweak(**knobs))
+    dropped = _error_vs(_px(fitted), tweak(**{**knobs, "shear": 0.0}))
+    assert kept["corner_px"] < 0.2, kept
+    assert dropped["corner_px"] > 2.0, dropped
+
+
+def _px(params: list[float]) -> np.ndarray:
+    """Six normalized numbers as a 3x3 in section pixels."""
+    from langslice.affine import denormalized_affine
+
+    return np.vstack([denormalized_affine(params, SECTION_SIZE), [0, 0, 1]])
