@@ -1,11 +1,19 @@
 """JSON checkpoint for a linear run — the record of truth.
 
-Every write tool saves the full :class:`StackState` here, atomically (temp
-file + rename) so a crash mid-write cannot leave a truncated file. Resume =
-load the checkpoint and re-seed the agent with the state it had.
+Every write saves the full :class:`StackState` here, atomically (temp file +
+rename) so a crash mid-write cannot leave a truncated file. Resume = load the
+checkpoint and re-seed the agent with the state it had. The job
+(:class:`langslice.linear.job.Job`) is the one writer during a run.
 
-Every tool write funnels through :func:`save_checkpoint`, which makes it the
-one place a host can watch a run live: :func:`observe_checkpoints` registers a
+The file carries :data:`STATE_FORMAT_VERSION` under ``format_version`` next to
+the state's own fields. A checkpoint without it predates versioning (version
+0) and reads unchanged; :func:`upgrade_state` is where a later version's
+conversion goes. A file from a newer LangSlice is refused, never guessed at.
+
+Every checkpoint funnels through :func:`save_checkpoint` (or the job's
+:meth:`~langslice.linear.job.Job.checkpoint`, which calls
+:func:`write_checkpoint` and :func:`notify_observers`), which makes it the one
+place a host can watch a run live: :func:`observe_checkpoints` registers a
 callback fired with the state after every write, which is what the ABBA
 mirror (:mod:`langslice.integrations.abba_linear`) attaches to.
 """
@@ -18,12 +26,19 @@ import logging
 import os
 import tempfile
 from collections.abc import Callable, Iterator
+from typing import Any
 
 from langslice.linear.state import StackState
 
 logger = logging.getLogger(__name__)
 
 CHECKPOINT_FILENAME = "linear_state.json"
+
+#: The key a job-folder file carries its format version under.
+FORMAT_KEY = "format_version"
+#: The checkpoint's format. 1 (2026-10-03): the first versioned checkpoint,
+#: the same fields as the unversioned ones before it.
+STATE_FORMAT_VERSION = 1
 
 #: Called with the state after every atomic write. A list, not a single slot,
 #: so nested runs (tests, a resumed session) can each hold their own observer
@@ -36,6 +51,40 @@ def default_checkpoint_path(image_folder: str) -> str:
     return os.path.join(image_folder, CHECKPOINT_FILENAME)
 
 
+def write_json_atomic(path: str, data: Any, *, indent: int | None = 2) -> None:
+    """Write *data* as JSON to *path* through a temporary file and a rename."""
+    directory = os.path.dirname(os.path.abspath(path))
+    os.makedirs(directory, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(dir=directory, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            if indent is None:
+                json.dump(data, handle, separators=(",", ":"))
+            else:
+                json.dump(data, handle, indent=indent)
+        # mkstemp creates 0600; a job file is an ordinary output file.
+        os.chmod(tmp_path, 0o644)
+        os.replace(tmp_path, path)
+    except BaseException:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        raise
+
+
+def write_checkpoint(state: StackState, path: str) -> None:
+    """Write *state* to *path* atomically, versioned; observers are not told."""
+    write_json_atomic(path, {FORMAT_KEY: STATE_FORMAT_VERSION, **state.to_dict()})
+
+
+def notify_observers(state: StackState) -> None:
+    """Call every observer with *state*; one that raises is logged and skipped."""
+    for observer in list(_observers):
+        try:
+            observer(state)
+        except Exception:
+            logger.exception("Checkpoint observer raised; ignoring")
+
+
 def save_checkpoint(state: StackState, path: str) -> None:
     """Write *state* to *path* atomically, then notify any observers.
 
@@ -43,24 +92,8 @@ def save_checkpoint(state: StackState, path: str) -> None:
     ABBA mirror hiccuping on a JPype call) must never break the agent's
     write, which has already happened by the time observers run.
     """
-    directory = os.path.dirname(os.path.abspath(path))
-    os.makedirs(directory, exist_ok=True)
-    fd, tmp_path = tempfile.mkstemp(dir=directory, suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(state.to_dict(), handle, indent=2)
-        # mkstemp creates 0600; a checkpoint is an ordinary output file.
-        os.chmod(tmp_path, 0o644)
-        os.replace(tmp_path, path)
-    except BaseException:
-        if os.path.exists(tmp_path):
-            os.unlink(tmp_path)
-        raise
-    for observer in list(_observers):
-        try:
-            observer(state)
-        except Exception:
-            logger.exception("Checkpoint observer raised; ignoring")
+    write_checkpoint(state, path)
+    notify_observers(state)
 
 
 @contextlib.contextmanager
@@ -78,9 +111,34 @@ def observe_checkpoints(fn: Callable[[StackState], None]) -> Iterator[None]:
         _observers.remove(fn)
 
 
-def load_checkpoint(path: str) -> StackState | None:
-    """Load a checkpoint, or ``None`` if there isn't one at *path*."""
+def upgrade_state(data: dict[str, Any]) -> dict[str, Any]:
+    """A checkpoint's fields at the current format, without the version key.
+
+    Unversioned (version 0) checkpoints have the version-1 fields already.
+    Raises ``ValueError`` for a version this LangSlice does not know.
+    """
+    version = data.get(FORMAT_KEY, 0)
+    if not isinstance(version, int) or isinstance(version, bool) or version < 0:
+        raise ValueError(f"Unreadable checkpoint format_version {version!r}")
+    if version > STATE_FORMAT_VERSION:
+        raise ValueError(
+            f"This checkpoint was written by a newer LangSlice (format {version}; this "
+            f"version reads up to {STATE_FORMAT_VERSION}). Update LangSlice to open it.")
+    return {key: value for key, value in data.items() if key != FORMAT_KEY}
+
+
+def read_checkpoint(path: str) -> dict[str, Any] | None:
+    """A checkpoint's state fields, upgraded; ``None`` if there is no file."""
     if not os.path.exists(path):
         return None
     with open(path, encoding="utf-8") as handle:
-        return StackState.from_dict(json.load(handle))
+        data = json.load(handle)
+    if not isinstance(data, dict):
+        raise ValueError(f"{path} does not hold a stack state")
+    return upgrade_state(data)
+
+
+def load_checkpoint(path: str) -> StackState | None:
+    """Load a checkpoint, or ``None`` if there isn't one at *path*."""
+    data = read_checkpoint(path)
+    return None if data is None else StackState.from_dict(data)
