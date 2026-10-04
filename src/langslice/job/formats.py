@@ -14,9 +14,11 @@ never read back as input:
   ``Job.checkpoint``).
 - per section (``sections/<name>/``), on submit and on demand
   (``export_maps``, :func:`write_section_maps`): ``coords.tif``,
-  ``labels.tif``, ``labels_fiji.tif`` + ``labels.csv``, ``residual.tif``
-  (only with a deformation) and ``maps.json`` (what the maps were written
-  from: grid, matrix, the parameters' digest).
+  ``labels.tif``, ``labels_fiji.tif`` + ``labels.csv`` (over the
+  section's footprint, its filled outline), ``tissue.png`` (the
+  threshold's tissue estimate), ``residual.tif`` (only with a deformation)
+  and ``maps.json`` (what the maps were written from: grid, matrix, the
+  parameters' digest).
 
 Writers never raise into a write of the state: a failure is logged (and the
 section's entry says why it has no matrix).
@@ -53,6 +55,7 @@ LABELS_FILE = "labels.tif"
 LABELS_FIJI_FILE = "labels_fiji.tif"
 LABELS_CSV_FILE = "labels.csv"
 RESIDUAL_FILE = "residual.tif"
+TISSUE_FILE = "tissue.png"
 MAPS_FILE = "maps.json"
 #: Under ``exports/``: the QuickNII anchoring of every placed section, and the
 #: same with VisuAlign markers of each applied deformation.
@@ -61,7 +64,8 @@ VISUALIGN_FILE = "visualign.json"
 #: Every per-section file, by its artifact kind.
 SECTION_FILES: dict[str, str] = {
     "coords": COORDS_FILE, "labels": LABELS_FILE, "labels_fiji": LABELS_FIJI_FILE,
-    "labels_csv": LABELS_CSV_FILE, "residual": RESIDUAL_FILE, "maps": MAPS_FILE,
+    "labels_csv": LABELS_CSV_FILE, "tissue": TISSUE_FILE, "residual": RESIDUAL_FILE,
+    "maps": MAPS_FILE,
 }
 #: Stated in ``registration.json``, so a script reading it needs nothing else.
 CONVENTION = (
@@ -361,11 +365,16 @@ def write_section_maps(
     write_float_channels(folder / COORDS_FILE, np.moveaxis(maps.coords, -1, 0),
                          ("axis0_um", "axis1_um", "axis2_um"), maps.um_per_px,
                          {**info, "content": "atlas micrometres per pixel, NaN outside the "
-                                             "tissue or the atlas"})
+                                             "section's footprint or the atlas"})
     written.append((folder / COORDS_FILE, "coords"))
     written += write_labels(folder, maps.labels, atlas, maps.um_per_px,
-                            {**info, "content": "atlas ids per pixel, 0 outside the tissue "
-                                                "or the atlas"})
+                            {**info, "content": "atlas ids per pixel, 0 outside the "
+                                                "section's footprint or the atlas"})
+    from PIL import Image
+
+    Image.fromarray(np.where(maps.tissue, 255, 0).astype(np.uint8)).save(
+        folder / TISSUE_FILE, format="PNG", optimize=True)
+    written.append((folder / TISSUE_FILE, "tissue"))
     residual_path = folder / RESIDUAL_FILE
     if maps.residual is not None:
         write_float_channels(residual_path, np.moveaxis(maps.residual, -1, 0),
@@ -379,6 +388,8 @@ def write_section_maps(
         residual_path.unlink()
     record = {"format_version": MAPS_FORMAT_VERSION, **info,
               "tissue_found": maps.tissue_found,
+              "footprint_fraction": float(np.mean(maps.footprint)),
+              "tissue_fraction": float(np.mean(maps.tissue)),
               "deformation_record": deformation_record,
               "files": {kind: name for kind, name in SECTION_FILES.items()
                         if kind != "maps" and (folder / name).exists()}}

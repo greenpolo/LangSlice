@@ -72,18 +72,24 @@ own pixels. A grid pixel `[row, col]` maps to the file by pixel centres
 (`langslice.affine.pixel_center_map`); `maps.json` gives the grid's own
 `pixel_to_atlas_um`.
 
-"Tissue" is the deformable fit's tissue rule (`deformable.masks.tissue_masks`:
-foreground against the slide background, interior holes filled) on the
-working copy. A tear or a gap open to the outside is not tissue.
+The maps cover the section's FOOTPRINT, its filled outline: the deformable
+fit's foreground rule (`deformable.masks.tissue_masks`, against the slide
+background) on the working copy, closed over gaps up to 0.3 mm wide
+(`core.maps.FOOTPRINT_CLOSING_MM` 0.15 mm, a radius) and with every hole
+filled. Nothing inside the outline is cut: dim fibre tracts, enlarged
+ventricles, tears and fissures all get coordinates and labels; only the
+slide outside it is NaN / 0. The threshold's own tissue estimate is written
+beside the maps as `tissue.png`, for a script that wants to mask with it.
 
 | File | Content |
 |---|---|
-| `coords.tif` | float32, ImageJ hyperstack, axes CYX, shape `(3, rows, cols)`: channel k is atlas axis k in micrometres. NaN outside the tissue and outside the atlas volume. Calibrated in µm per grid pixel; the channel labels are `axis0_um`..`axis2_um`; the ImageJ Info property holds the grid facts as JSON. |
+| `coords.tif` | float32, ImageJ hyperstack, axes CYX, shape `(3, rows, cols)`: channel k is atlas axis k in micrometres. NaN outside the footprint and outside the atlas volume. Calibrated in µm per grid pixel; the channel labels are `axis0_um`..`axis2_um`; the ImageJ Info property holds the grid facts as JSON. |
 | `labels.tif` | uint32, `(rows, cols)`: the atlas annotation id under each pixel (nearest neighbour on the atlas plane, as the pictures' labels layer and the deformable record do), 0 where `coords.tif` is NaN and where the atlas has no region. Deflate with the horizontal predictor; not an ImageJ file (Fiji turns uint32 into float32, which loses the larger Allen ids). |
+| `tissue.png` | uint8, `(rows, cols)`: 255 where the foreground rule finds tissue, 0 elsewhere (the raw rule: no hole filling, no closing, so dim tissue and gaps inside the footprint may be 0). Not used to cut the maps. |
 | `labels_fiji.tif` | uint16, ImageJ, `(rows, cols)`: a dense index of the section's regions (1..n in the order of their atlas ids, 0 none), with an ImageJ lookup table giving each index its atlas colour (display range 0-255; a section with more than 255 regions shows the rest without their colour). Opens in Fiji as is. |
 | `labels.csv` | `index,id,acronym,name,r,g,b`: the dense index -> atlas id, acronym, name and RGB colour (the atlas structure tree's). |
 | `residual.tif` | only with an applied deformation. float32, ImageJ, axes CYX, `(2, rows, cols)`: `(d_row, d_col)` in grid pixels, defined on the whole grid, such that `atlas_um = pixel_to_atlas_um @ [row + d_row, col + d_col, 1]` (`maps.json`'s matrix). Its source is the deformation record named in `registration.json`. |
-| `maps.json` | `format_version` 1, `section`, `grid_size` (`[width, height]`), `full_resolution`, `um_per_px`, `pixel_to_atlas_um` (the grid's), `parameters_digest` (what they were written from; `registration.json` compares it), `tissue_found`, `deformation_record`, `files`. |
+| `maps.json` | `format_version` 1, `section`, `grid_size` (`[width, height]`), `full_resolution`, `um_per_px`, `pixel_to_atlas_um` (the grid's), `parameters_digest` (what they were written from; `registration.json` compares it), `tissue_found`, `footprint_fraction` and `tissue_fraction` (of the grid), `deformation_record`, `files`. |
 
 Float maps are deflate-compressed WITHOUT TIFF's floating-point predictor:
 ImageJ 1.x cannot decode it. Measured 2026-10-04 on LSD_910 M02 (whole-slide
@@ -93,7 +99,8 @@ section, about 0.6 s per section; at full resolution `coords.tif` 426 MB,
 `residual.tif` 750 MB, 13 s.
 
 Agreement (tests/test_job_formats.py, synthetic atlas): `labels.tif` equals
-the atlas read at `coords.tif` on over 99% of tissue pixels (exact but for
+the atlas read at `coords.tif` on over 99% of the footprint's pixels (99.9998%
+on the LSD_910 sections; exact but for
 ties at half voxels); `coords = matrix @ (p + residual)` to 0.01 µm; a
 placement picture's coordinate map and `registration.json`'s matrix agree to
 0.05 µm; a `fit_deformable` picture's (its residual layer included) and the
@@ -103,7 +110,8 @@ section maps' to under 1 µm on a 31 µm/px section.
 
 Each picture a door showed is saved under `views/` (`job/views.py`); a
 placement picture and, since this phase, a `fit_deformable` picture carry
-`labels.tif`, `borders.png` and a frame in `view.json`.
+`labels.tif` (the atlas id under every pixel below the caption, no tissue
+rule), `borders.png` and a frame in `view.json`.
 `langslice.coordinate_map(".../view.json")` gives every pixel's atlas
 micrometres. A `fit_deformable` picture showing its deformation adds
 `residual.tif` (float32, `(2, rows, cols)`, `(d_row, d_col)` in picture

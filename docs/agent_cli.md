@@ -20,7 +20,7 @@ One verb is the CLI's and the library's only, never a model's tool
 (`Verb.scripting` in the registry): `export_maps` (`--slices`, empty for
 every section; `--full-resolution`) writes each placed section's maps
 (`coords.tif`, `labels.tif`, `labels_fiji.tif` + `labels.csv`,
-`residual.tif`, `maps.json`), `exports/quicknii.json`,
+`tissue.png`, `residual.tif`, `maps.json`), `exports/quicknii.json`,
 `exports/visualign.json` and `registration.json`, from the job as it
 stands; nothing in the state changes. `submit` writes the same files.
 `docs/file_formats.md` describes every file.
@@ -101,7 +101,7 @@ gives each pixel's atlas micrometres), and for a section on its atlas
 `labels` (uint32 atlas ids) and `borders`, plus `residual` for a
 `fit_deformable` picture; `results`, `registration`, `quicknii`,
 `visualign` and each section's `coords`, `labels`, `labels_fiji`,
-`labels_csv`, `residual` and `maps` (after `submit` and `export_maps`);
+`labels_csv`, `tissue`, `residual` and `maps` (after `submit` and `export_maps`);
 `card` and `state` (after `init`). Progress and library output go to stderr.
 
 ## Live shared editing

@@ -116,8 +116,10 @@ core modules (`space`, `affine`, `oblique`, `image_prep`, `atlas/`,
   field, bilinear with replicated edges, then its placement undone).
   `section_maps(workspace, frame, warp, full_resolution=)`: `SectionMaps`
   on the working copy's grid (or the file's): coordinates (NaN off the
-  tissue, `tissue_mask` = the deformable fit's rule, or off the atlas
-  volume), atlas ids (`deformable.geometry.sample_native`, nearest, as the
+  section's footprint or off the atlas volume: `section_footprint`, the
+  deformable fit's foreground rule closed over `FOOTPRINT_CLOSING_MM` and
+  hole-filled, so dark tissue and tears inside the outline keep their
+  coordinates; the raw rule is kept as `tissue` for `tissue.png`), atlas ids (`deformable.geometry.sample_native`, nearest, as the
   pictures' labels layer), and the residual `(drow, dcol)` such that
   `coords = pixel_to_atlas_um @ [p + d, 1]`; computed in `BLOCK_ROWS`
   blocks. `residual_markers(frame, warp)`: VisuAlign `[x, y, nx, ny]`
@@ -182,7 +184,8 @@ that map reads in the atlas annotation, up to ties at exact half voxels.
 
 A `fit_deformable` picture (formats phase) gets the same layers on its own
 grid through `warp_layers(atlas, note, size)`: labels through the record's
-composed map (0 off the tissue the record keeps), borders as
+composed map at every content pixel (no tissue rule, as a placement
+picture's), borders as
 `deformable.render.drawn_border_coverage` (exactly the lines drawn), a
 frame whose `pixel_to_atlas_um` is the record's linear placement on the
 picture, and, when the field was drawn, a residual layer `residual.tif`

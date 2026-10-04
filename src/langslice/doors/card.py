@@ -51,15 +51,15 @@ so do not edit it.
 - `sections/<name>/`: per section `deformable/<key>/` (applied deformation
   records), `image_correction/<key>/` (image-model traces), `views/`, and the
   maps written at submit or by `export_maps` (on the image's working copy):
-  - `coords.tif`: float32 (3, rows, cols) atlas um per pixel, NaN off tissue/atlas.
-  - `labels.tif`: uint32 atlas ids per pixel (0 off tissue/atlas).
-  - `labels_fiji.tif` + `labels.csv`: uint16 index Fiji opens; csv: index -> id, name, RGB.
-  - `residual.tif`: float32 (2, rows, cols) (drow, dcol) px of an applied deformation.
-  - `maps.json`: the grid, its pixel_to_atlas_um, the parameters they came from.
-- `views/`, `views.jsonl` (pictures of several sections; index of every picture).
-- `exports/`: results, `quicknii.json`, `visualign.json`; `logs/`: events, runs.
-Maps and pictures are derived and never read back: editing one changes no
-registration (no fit reads an edited map yet); use the verbs.
+  - `coords.tif`: float32 (3, rows, cols) atlas um per pixel over the section's filled
+    outline, NaN outside it; `tissue.png`: the tissue estimate (0/255), to mask with.
+  - `labels.tif`: uint32 atlas ids per pixel (0 outside the outline); `labels_fiji.tif`
+    + `labels.csv`: a uint16 index Fiji opens, and index -> id, acronym, name, RGB.
+  - `residual.tif`: float32 (2, rows, cols) (drow, dcol) px of an applied deformation;
+    `maps.json`: the grid, its pixel_to_atlas_um, the parameters they came from.
+- `views/`, `views.jsonl` (pictures, their index); `exports/` (results, `quicknii.json`,
+  `visualign.json`); `logs/` (events, background runs).
+Maps and pictures are derived, never read back: editing one changes no registration.
 
 ## Pictures and coordinates
 Each picture folder holds `view.jpg` (what was shown), `view.json` (its frame)

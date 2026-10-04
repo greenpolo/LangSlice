@@ -96,7 +96,7 @@ def test_export_writes_every_file_with_its_kind(placed):
     for stem in ("s0", "s1", "s2"):
         for name, kind in (("coords.tif", "coords"), ("labels.tif", "labels"),
                            ("labels_fiji.tif", "labels_fiji"), ("labels.csv", "labels_csv"),
-                           ("maps.json", "maps")):
+                           ("tissue.png", "tissue"), ("maps.json", "maps")):
             assert (f"sections/{stem}/{name}", kind) in kinds
     # Only the warped section has a residual.
     assert ("sections/s0/residual.tif", "residual") in kinds
@@ -122,6 +122,14 @@ def test_the_map_files_are_what_the_format_says(placed):
     outside = ~np.isfinite(coords[0])
     assert outside.any() and (~outside).any()
     assert (labels[outside] == 0).all()
+    # The maps cover the section's whole footprint: every pixel the tissue
+    # estimate holds (inside the atlas) has coordinates, and tissue.png is
+    # that estimate, for a script to mask with.
+    with Image.open(folder / "tissue.png") as opened:
+        tissue = np.asarray(opened)
+    assert tissue.dtype == np.uint8 and tissue.shape == labels.shape
+    assert set(np.unique(tissue)) <= {0, 255} and (tissue == 255).any()
+    assert np.isfinite(coords[0][tissue == 255]).mean() > 0.999
     rows = list(csv.DictReader((folder / "labels.csv").open()))
     ids = {int(row["index"]): int(row["id"]) for row in rows}
     assert set(np.unique(dense)) - {0} == set(ids)
@@ -400,3 +408,26 @@ def test_orientation_matrix_is_the_render_order(rotation, flip):
     tx, ty = apply(matrix, xs, ys)
     assert (turned[ty.astype(int), tx.astype(int)]
             == np.arange(width * height).reshape(height, width)).all()
+
+
+def test_the_footprint_keeps_dark_tissue_and_tears_inside_the_outline():
+    """A dark band inside the section, open to the slide through a narrow
+    tear, is still the section: the footprint covers it; the tissue
+    estimate does not."""
+    from types import SimpleNamespace
+
+    import cv2
+
+    from langslice.core.maps import section_footprint
+
+    image = np.full((400, 600, 3), 10, dtype=np.uint8)
+    cv2.ellipse(image, (300, 200), (260, 170), 0, 0, 360, (170, 170, 170), -1)
+    cv2.ellipse(image, (300, 200), (120, 40), 0, 0, 360, (12, 12, 12), -1)  # dim band
+    cv2.line(image, (300, 240), (300, 399), (10, 10, 10), 3)  # a tear to the edge
+    workspace = SimpleNamespace(working_source=lambda _id: (Image.fromarray(image), 1.0))
+    frame = SimpleNamespace(section_id="x", file_um_per_px=10.0, working_factor=1.0)
+    footprint, tissue, found = section_footprint(workspace, frame, (600, 400))  # type: ignore[arg-type]
+    assert found
+    assert not tissue[200, 300] and footprint[200, 300]      # the dark band
+    assert not tissue[300, 300] and footprint[300, 300]      # the tear
+    assert not footprint[5, 5] and not footprint[395, 590]   # the slide
