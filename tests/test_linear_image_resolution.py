@@ -18,7 +18,7 @@ import pytest
 from PIL import Image, ImageDraw
 
 from langslice.adk import TOOL_MEDIA_PARTS_KEY
-from langslice.adk.media import strip_edge
+from langslice.adk.media import package_result, strip_edge
 from langslice.linear.engine import build_context, build_seed_message
 from langslice.linear.job import ingest
 from langslice.linear.opening import COLUMN_GAP, section_tile, strip_layout
@@ -75,8 +75,9 @@ def _run(folder: Path, resolution: str, *, size: tuple[int, int] = (2400, 1800),
 
 
 def _images(result: dict[str, Any]) -> list[Image.Image]:
+    # What the ADK agent receives: the door's JPEG parts.
     return [Image.open(io.BytesIO(part.inline_data.data))
-            for part in result[TOOL_MEDIA_PARTS_KEY] if part.inline_data]
+            for part in package_result(result)[TOOL_MEDIA_PARTS_KEY] if part.inline_data]
 
 
 def _widths(result: dict[str, Any]) -> list[int]:

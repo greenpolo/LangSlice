@@ -187,13 +187,15 @@ def test_outlines_mode_draws_a_listed_atlas_image(tmp_path: Path):
     import io
 
     from langslice.adk import TOOL_MEDIA_PARTS_KEY
+    from langslice.adk.media import package_result
 
     _, box = _box(tmp_path, HalvesAtlas(), _left_half_section(), pixel_size_um=50.0,
                   position_mm=1.0)
     view_placement = next(t for t in box.tools if t.__name__ == "view_placement")
 
     def mean(view: dict[str, Any]) -> float:
-        part = view_placement([{"id": "s0.png"}], view=view)[TOOL_MEDIA_PARTS_KEY][0]
+        part = package_result(
+            view_placement([{"id": "s0.png"}], view=view))[TOOL_MEDIA_PARTS_KEY][0]
         return float(np.asarray(Image.open(io.BytesIO(part.inline_data.data)).convert("L")).mean())
 
     lines = mean({"mode": "outlines"})
@@ -217,6 +219,7 @@ def test_a_large_turn_keeps_the_one_sided_highlight_the_fit_used(tmp_path: Path,
     import io
 
     from langslice.adk import TOOL_MEDIA_PARTS_KEY
+    from langslice.adk.media import package_result
 
     def picture(view: dict[str, Any]) -> tuple[float, np.ndarray]:
         state, box = _box(tmp_path / f"{side}{len(view)}", WholeAtlas(), _flat_section(),
@@ -224,7 +227,7 @@ def test_a_large_turn_keeps_the_one_sided_highlight_the_fit_used(tmp_path: Path,
         result = _fit(box, ["s0.png"], "silhouette", include=[f"L:{side}"],
                       view={"mode": "outlines", **view})
         assert result["status"] == "ok", result
-        part = result[TOOL_MEDIA_PARTS_KEY][0]
+        part = package_result(result)[TOOL_MEDIA_PARTS_KEY][0]
         image = np.asarray(Image.open(io.BytesIO(part.inline_data.data)).convert("RGB"))
         return result["results"][0]["physical"]["rotation_deg"], image
 

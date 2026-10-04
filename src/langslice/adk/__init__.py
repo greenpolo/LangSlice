@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-# Key under which LangSlice tools hand back media to ADK.
+# Key under which LangSlice tools hand back media. The tools put their plain
+# pictures (PIL images) and lines of text there, in order; each door packages
+# them: the ADK agent through ``langslice.adk.media.packaged`` (JPEG
+# ``types.Part``s), the MCP server as content blocks.
 #
 # Since google-adk 2.7.0 a tool result may carry ``types.Part`` objects with
 # ``inline_data``; ADK moves them into ``FunctionResponsePart``s on the

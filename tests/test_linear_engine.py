@@ -209,6 +209,42 @@ def test_run_places_the_stack_and_writes_results(tmp_path: Path, monkeypatch):
     assert checkpoint is not None and checkpoint.submitted is True
 
 
+def test_a_tools_plain_pictures_reach_the_model_as_message_images(
+    tmp_path: Path, monkeypatch
+):
+    """The tools return plain pictures; the ADK door packages them, so the
+    model's next request carries the write's picture as an image in the
+    function response."""
+    from tests import fakes
+
+    names = _make_stack(tmp_path, n=2)
+    install_fake_adk_model_stack(monkeypatch, positions={names[0]: 2.0, names[1]: 3.0})
+    requests: list = []
+    generate = fakes._StackLlm.generate_content_async
+
+    def recording(self, llm_request, stream=False):
+        requests.append(llm_request.model_copy(deep=True))
+        return generate(self, llm_request, stream)
+
+    monkeypatch.setattr(fakes._StackLlm, "generate_content_async", recording)
+    state = asyncio.run(run(_spec(tmp_path, tasks=["position"]), emit=lambda _m: None,
+                            atlas_loader=lambda _n: _ATLAS))
+    assert state.submitted is True
+
+    def images(request) -> list[bytes]:
+        found = []
+        for content in request.contents or []:
+            for part in content.parts or []:
+                response = part.function_response
+                if response is not None and response.name == "set_positions":
+                    found += [item.inline_data.data for item in response.parts or []
+                              if item.inline_data is not None]
+        return found
+
+    pictures = images(requests[1])
+    assert len(pictures) == 2 and all(data[:2] == b"\xff\xd8" for data in pictures)
+
+
 def test_run_calls_on_write_with_the_initial_state_and_every_checkpoint(
     tmp_path: Path, monkeypatch
 ):

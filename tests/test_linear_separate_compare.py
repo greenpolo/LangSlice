@@ -1,31 +1,33 @@
-"""Separate positioning references reuse cached bytes, not composed canvases."""
+"""Separate positioning references reuse cached pictures, not composed canvases."""
 
 from langslice.adk import TOOL_MEDIA_DELIVERY_ID_KEY, TOOL_MEDIA_PARTS_KEY
-from langslice.adk.media import atlas_part, reference_slice_part
+from langslice.adk.media import encode_jpeg
+from langslice.core.pictures import reference_atlas_picture, reference_section_picture
 from langslice.linear.render import picture_edge
 from tests.test_linear_toolbox import _box, _tool, _ToolContext
 
 
-def _images(parts):
-    return [part.inline_data.data for part in parts if part.inline_data is not None]
+def _images(pictures):
+    """What a door sends: each picture in the doors' JPEG encoding."""
+    return [encode_jpeg(picture) for picture in pictures if not isinstance(picture, str)]
 
 
-def test_separate_comparison_reuses_cached_bytes_and_maps_each_pair(tmp_path):
+def test_separate_comparison_reuses_cached_pictures_and_maps_each_pair(tmp_path):
     state, ctx, box = _box(tmp_path)
     position = 3.0
     result = _tool(box, "view_placement")([
         {"id": "s0.png", "positions_mm": [position, position]},
         {"id": "s1.png", "positions_mm": [position]},
     ], view={"mode": "side_by_side"})
-    images = _images(result[TOOL_MEDIA_PARTS_KEY])
+    pictures = result[TOOL_MEDIA_PARTS_KEY]
+    images = _images(pictures)
     assert len(images) == 5
     edge = picture_edge(ctx)
-    assert images[0] == _images([reference_slice_part(ctx, state.by_id("s0.png"),
-                                                      long_edge=edge)])[0]
-    assert images[3] == _images([reference_slice_part(ctx, state.by_id("s1.png"),
-                                                      long_edge=edge)])[0]
-    assert images[1] == images[2] == images[4] == _images(
-        [atlas_part(ctx, state, position, long_edge=edge)])[0]
+    assert pictures[0] is reference_section_picture(ctx, state.by_id("s0.png"), long_edge=edge)
+    assert pictures[3] is reference_section_picture(ctx, state.by_id("s1.png"), long_edge=edge)
+    assert pictures[1] is pictures[2] is pictures[4] is reference_atlas_picture(
+        ctx, state, position, long_edge=edge)
+    assert images[1] == images[2] == images[4]
     assert [row["image_indexes"] for row in result["compared"]] == [
         {"section": 0, "atlas": 1}, {"section": 0, "atlas": 2},
         {"section": 3, "atlas": 4},
@@ -34,27 +36,27 @@ def test_separate_comparison_reuses_cached_bytes_and_maps_each_pair(tmp_path):
 
 def test_reference_reuse_survives_reorder_but_not_orientation_or_preprocess(tmp_path):
     state, ctx, box = _box(tmp_path)
-    original = _images([reference_slice_part(ctx, state.by_id("s0.png"))])[0]
+    original = _images([reference_section_picture(ctx, state.by_id("s0.png"))])[0]
     record = state.by_id("s0.png")
     _tool(box, "reorder_slices")([r.id for r in reversed(state.in_order())])
-    assert reference_slice_part(ctx, record).inline_data.data == original
+    assert _images([reference_section_picture(ctx, record)])[0] == original
     record.rotation_deg = 90
-    turned = reference_slice_part(ctx, record).inline_data.data
+    turned = _images([reference_section_picture(ctx, record)])[0]
     assert turned != original
-    before = len(ctx.reference_parts)
+    before = len(ctx.picture_cache)
     record.flip = True
-    reference_slice_part(ctx, record)
-    assert len(ctx.reference_parts) == before + 1
-    before = len(ctx.reference_parts)
+    reference_section_picture(ctx, record)
+    assert len(ctx.picture_cache) == before + 1
+    before = len(ctx.picture_cache)
     ctx.spec.preprocess = "auto"
-    reference_slice_part(ctx, record)
-    assert len(ctx.reference_parts) == before + 1
+    reference_section_picture(ctx, record)
+    assert len(ctx.picture_cache) == before + 1
 
 
 def test_atlas_reuse_keys_on_exact_position_and_cutting_angles(tmp_path, monkeypatch):
     state, ctx, _box_value = _box(tmp_path)
-    first = atlas_part(ctx, state, 3.0).inline_data.data
-    assert atlas_part(ctx, state, 3.0).inline_data.data == first
+    first = _images([reference_atlas_picture(ctx, state, 3.0)])[0]
+    assert _images([reference_atlas_picture(ctx, state, 3.0)])[0] == first
     # Fake atlas does not support oblique interpolation; isolate cache identity.
     from langslice.linear import atlas_fetch
     original = atlas_fetch.atlas_section
@@ -67,9 +69,9 @@ def test_atlas_reuse_keys_on_exact_position_and_cutting_angles(tmp_path, monkeyp
 
     monkeypatch.setattr(atlas_fetch, "atlas_section", render)
     state.cutting_angles_deg["pitch"] = 2.0
-    assert atlas_part(ctx, state, 3.0).inline_data.data != first
-    atlas_part(ctx, state, 3.0001)
-    atlas_part(ctx, state, 3.0001)
+    assert _images([reference_atlas_picture(ctx, state, 3.0)])[0] != first
+    reference_atlas_picture(ctx, state, 3.0001)
+    reference_atlas_picture(ctx, state, 3.0001)
     assert calls == [3.0, 3.0001]
 
 

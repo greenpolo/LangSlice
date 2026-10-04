@@ -58,22 +58,12 @@ from google.genai import types
 from langslice.adk import TOOL_MEDIA_PARTS_KEY
 from langslice.adk.model_resolver import _env
 from langslice.adk.plugins import part_summary
+from langslice.linear.live import _model_name
 
 logger = logging.getLogger(__name__)
 
 #: Directory for full-content session traces. Unset means no tracing at all.
 TRACE_DIR_ENV = "LANGSLICE_TRACE_DIR"
-
-
-def _model_name(model: Any) -> str:
-    """The model's name, without ever stringifying a provider wrapper.
-
-    ``str(LiteLlm(...))`` can print credentials; ``.model`` is just a name.
-    """
-    if isinstance(model, str):
-        return model
-    name = getattr(model, "model", None)
-    return name if isinstance(name, str) else type(model).__name__
 
 
 def _describe_parts(parts: Any) -> list[dict[str, Any]]:

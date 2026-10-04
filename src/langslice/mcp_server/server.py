@@ -24,7 +24,6 @@ from typing import Any
 
 import anyio
 from anyio import to_thread
-from google.genai import types
 from mcp.server.fastmcp import Context, FastMCP
 from mcp.server.stdio import stdio_server
 from mcp.types import ContentBlock, ImageContent, TextContent, ToolAnnotations
@@ -99,22 +98,6 @@ class Session:
 # --- content conversion ----------------------------------------------------
 
 
-def part_blocks(part: types.Part) -> list[ContentBlock]:
-    """One genai Part as MCP content: inline images and text, nothing else."""
-    blob = part.inline_data
-    if blob is not None and blob.data:
-        return [
-            ImageContent(
-                type="image",
-                data=base64.b64encode(blob.data).decode("ascii"),
-                mimeType=blob.mime_type or "image/jpeg",
-            )
-        ]
-    if part.text:
-        return [TextContent(type="text", text=part.text)]
-    return []
-
-
 def image_block(image: Image.Image) -> ImageContent:
     """One core picture as an MCP image block (the doors' JPEG encoding)."""
     return ImageContent(
@@ -124,24 +107,34 @@ def image_block(image: Image.Image) -> ImageContent:
 
 
 def result_blocks(result: Any) -> list[ContentBlock]:
-    """A toolbox result as MCP content: its JSON, then its pictures in order."""
-    images: list[types.Part] = []
+    """A toolbox result as MCP content: its JSON, then its media in order.
+
+    The tools return plain pictures (PIL images, captions burned in) and
+    lines of text under ``TOOL_MEDIA_PARTS_KEY``; each picture becomes an
+    image block in the doors' JPEG encoding (:func:`image_block`), each
+    non-empty text a text block. ``images_attached`` counts both.
+    """
+    media: list[Any] = []
     if isinstance(result, dict):
         body = dict(result)
-        media = body.pop(TOOL_MEDIA_PARTS_KEY, None)
-        if isinstance(media, list):
-            images = [part for part in media if isinstance(part, types.Part)]
-            body["images_attached"] = len(images)
-        elif media is not None:
+        listed = body.pop(TOOL_MEDIA_PARTS_KEY, None)
+        if isinstance(listed, list):
+            media = [item for item in listed if isinstance(item, (str, Image.Image))]
+            body["images_attached"] = len(media)
+        elif listed is not None:
             # Already text (e.g. a note that the pictures were not produced).
-            body[TOOL_MEDIA_PARTS_KEY] = media
+            body[TOOL_MEDIA_PARTS_KEY] = listed
     else:
         body = result
     blocks: list[ContentBlock] = [
         TextContent(type="text", text=json.dumps(body, default=str))
     ]
-    for part in images:
-        blocks.extend(part_blocks(part))
+    for item in media:
+        if isinstance(item, str):
+            if item:
+                blocks.append(TextContent(type="text", text=item))
+        else:
+            blocks.append(image_block(item))
     return blocks
 
 

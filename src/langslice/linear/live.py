@@ -11,10 +11,20 @@ from collections.abc import Callable
 from typing import Any
 
 from langslice.adk import TOOL_MEDIA_PARTS_KEY
-from langslice.linear.trace import _model_name
 
 logger = logging.getLogger(__name__)
 LiveCallback = Callable[[dict[str, Any]], None]
+
+
+def _model_name(model: Any) -> str:
+    """The model's name, without ever stringifying a provider wrapper.
+
+    ``str(LiteLlm(...))`` can print credentials; ``.model`` is just a name.
+    """
+    if isinstance(model, str):
+        return model
+    name = getattr(model, "model", None)
+    return name if isinstance(name, str) else type(model).__name__
 
 
 def _plain(value: Any) -> Any:

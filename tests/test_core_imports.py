@@ -4,9 +4,10 @@ framework or any model client.
 Each core module is imported in a fresh interpreter (a module another test
 loaded would hide the leak) and must leave no ``google.adk``,
 ``google.genai``, ``litellm`` or ``openai`` module behind. Those belong to
-the doors (``langslice.adk``, the toolbox, the MCP server), the agent driver
-and the providers. The operations (``langslice.ops``) must also leave no
-door module behind.
+the ADK and MCP doors (``langslice.adk``, the MCP server), the agent driver
+and the providers; the tool door itself (the toolbox, the ``view`` options)
+returns plain pictures and is checked too. The operations
+(``langslice.ops``) must also leave no door module behind.
 """
 
 from __future__ import annotations
@@ -57,6 +58,13 @@ DOORS = (
 
 FORBIDDEN = ("google.adk", "google.genai", "litellm", "openai")
 
+#: Doors that return plain pictures and data (the ADK driver and the MCP
+#: server package them): they load no agent framework or model client either.
+PLAIN_DOORS = (
+    "langslice.linear.toolbox",
+    "langslice.linear.view_options",
+)
+
 _PROBE = """
 import importlib, json, sys
 importlib.import_module(sys.argv[1])
@@ -68,7 +76,7 @@ print(json.dumps(sorted(
 """
 
 
-@pytest.mark.parametrize("module", CORE_MODULES)
+@pytest.mark.parametrize("module", CORE_MODULES + PLAIN_DOORS)
 def test_core_module_loads_no_agent_or_model_client(module: str):
     done = subprocess.run(
         [sys.executable, "-c", _PROBE, module, *FORBIDDEN],

@@ -385,7 +385,7 @@ def test_view_stack_orders_by_position_and_plots_it(tmp_path: Path):
     assert [row["id"] for row in result["rows"]][-1] == "s0.png"
     parts = result[TOOL_MEDIA_PARTS_KEY]
     # Two images however big the stack: the contact sheet and the plot.
-    assert sum(1 for part in parts if part.inline_data is not None) == 2
+    assert sum(1 for item in parts if not isinstance(item, str)) == 2
     # The sheet's labels carry position and spacing.
     from langslice.linear.render import stack_pictures
 
@@ -823,15 +823,15 @@ def test_adjust_transforms_checkpoints_successes_when_another_render_fails(
     assert state.by_id("s0.png").transform is None
 
 
-def test_one_entry_adjustment_encoding_failure_does_not_mutate_state(
+def test_one_entry_adjustment_render_failure_does_not_mutate_state(
     tmp_path: Path, monkeypatch,
 ):
     state, ctx, box = _box(tmp_path, placed=True)
 
-    def fail_encode(*_args, **_kwargs):
-        raise RuntimeError("encode broke")
+    def fail_render(*_args, **_kwargs):
+        raise RuntimeError("render broke")
 
-    monkeypatch.setattr("langslice.linear.toolbox.image_to_part", fail_encode)
+    monkeypatch.setattr("langslice.core.placement.physical_views", fail_render)
     result = single_adjust(_tool(box, "adjust_transforms"))(
         "s0.png", 2.0, 1.0, 1.0, 0.0, 0.0
     )
@@ -869,17 +869,13 @@ def test_orient_change_clears_a_stale_transform(tmp_path: Path):
 
 
 def test_view_atlas_images_are_section_sized(tmp_path: Path):
-    import io
-
-    from PIL import Image
-
     from langslice.adk import TOOL_MEDIA_PARTS_KEY
     from langslice.linear.atlas_fetch import atlas_section
 
     state, ctx, box = _box(tmp_path)
     result = _tool(box, "view_atlas")([1.0])
     assert result["status"] == "ok"
-    image = Image.open(io.BytesIO(result[TOOL_MEDIA_PARTS_KEY][0].inline_data.data))
+    image = result[TOOL_MEDIA_PARTS_KEY][0]
     native = atlas_section(ctx, state, 1.0, frame=True)
     # The later-picture size at most, and never upsampled past the plane's voxels.
     shrink = min(1.0, 512 / max(native.size))
