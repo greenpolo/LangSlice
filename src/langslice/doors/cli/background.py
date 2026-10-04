@@ -58,11 +58,51 @@ def _read(layout: JobLayout, run_id: str) -> dict[str, Any] | None:
     return data if isinstance(data, dict) else None
 
 
+#: Whether this is Windows, where a process is probed by handle, not signal.
+WINDOWS = os.name == "nt"
+#: Windows: ``OpenProcess`` access right and ``GetExitCodeProcess``'s
+#: answer for a running process.
+_PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+_STILL_ACTIVE = 259
+_ERROR_ACCESS_DENIED = 5
+
+
+def _kernel32() -> Any:
+    import ctypes
+
+    return ctypes.WinDLL("kernel32", use_last_error=False)  # type: ignore[attr-defined]
+
+
+def _alive_windows(pid: int) -> bool:
+    """Whether process *pid* runs, on Windows: psutil when installed, else
+    ``OpenProcess`` + ``GetExitCodeProcess`` (a process that exists but is
+    not ours to open, access denied, counts as running)."""
+    try:
+        import psutil  # pyright: ignore[reportMissingModuleSource]
+    except ImportError:
+        psutil = None
+    if psutil is not None:
+        return bool(psutil.pid_exists(pid))
+    import ctypes
+
+    kernel = _kernel32()
+    handle = kernel.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not handle:
+        return kernel.GetLastError() == _ERROR_ACCESS_DENIED
+    try:
+        code = ctypes.c_ulong(0)
+        if not kernel.GetExitCodeProcess(handle, ctypes.byref(code)):
+            return True  # cannot tell: trust the record
+        return code.value == _STILL_ACTIVE
+    finally:
+        kernel.CloseHandle(handle)
+
+
 def _alive(pid: Any) -> bool:
     if not isinstance(pid, int) or pid <= 0:
         return False
-    if os.name == "nt":  # no cheap probe without extra packages: trust the record
-        return True
+    if WINDOWS:
+        return _alive_windows(pid)
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -73,7 +113,7 @@ def _alive(pid: Any) -> bool:
 
 
 def _detached() -> dict[str, Any]:
-    if os.name == "nt":
+    if WINDOWS:
         flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(
             subprocess, "DETACHED_PROCESS", 0)
         return {"creationflags": flags}
