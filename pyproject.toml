@@ -49,6 +49,8 @@ dev = [
     "pytest",
     "ruff",
     "basedpyright",
+    # The layer contracts below (tests/test_import_layers.py runs them).
+    "import-linter>=2.1",
 ]
 
 [tool.setuptools.packages.find]
@@ -57,6 +59,84 @@ include = ["langslice*"]
 
 [tool.setuptools.package-data]
 langslice = ["core/atlas/*.json", "hosts/integrations/static/*"]
+
+# The layered core's dependency rule (docs/architecture_overview.md): each
+# layer imports only the layers below it. tests/test_import_layers.py runs
+# `lint-imports`. Imports under `if TYPE_CHECKING:` are left out: a type
+# named in an annotation is not a dependency at run time. Every
+# `ignore_imports` entry is a KNOWN violation of the rule, listed so the
+# contracts hold everything else; each is to be removed by moving code, never
+# by adding to the list.
+[tool.importlinter]
+root_package = "langslice"
+exclude_type_checking_imports = true
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+id = "layers"
+name = "Layers: hosts > doors : agent > ops > job > core"
+type = "layers"
+containers = ["langslice"]
+layers = ["hosts", "doors : agent", "ops", "job", "core"]
+ignore_imports = [
+    # Known violations: the CLI's host commands and the MCP door reach into hosts.
+    "langslice.doors.cli -> langslice.hosts.api.setup",
+    "langslice.doors.cli.hosts -> langslice.hosts.api.service",
+    "langslice.doors.cli.hosts -> langslice.hosts.api.claude_jobs",
+    "langslice.doors.cli.hosts -> langslice.hosts.integrations.abba",
+    "langslice.doors.cli.hosts -> langslice.hosts.integrations.abba_linear",
+    "langslice.doors.cli.register -> langslice.hosts.api.models",
+    "langslice.doors.cli.register -> langslice.hosts.api.runtime",
+    "langslice.doors.mcp.server -> langslice.hosts.api.abba_worker",
+    "langslice.doors.mcp.server -> langslice.hosts.api.claude_jobs",
+    "langslice.doors.mcp.host_channel -> langslice.hosts.api.claude_jobs",
+    # Known violation: a provider reads a door's media key.
+    "langslice.providers.openai_oauth -> langslice.doors.tools",
+]
+
+[[tool.importlinter.contracts]]
+id = "no-models-below-doors"
+name = "core, job and ops import no provider, agent framework or model client"
+type = "forbidden"
+source_modules = ["langslice.core", "langslice.job", "langslice.ops"]
+forbidden_modules = ["langslice.providers", "google", "litellm", "openai", "mcp"]
+ignore_imports = [
+    # Known violations: provider names and the image transport inside the core.
+    "langslice.core.spec -> langslice.providers.registry",
+    "langslice.core.nonlinear.prompts -> langslice.providers.registry",
+    "langslice.core.nonlinear.model_prompts -> langslice.providers.registry",
+    "langslice.core.nonlinear.border_refinement -> langslice.providers.registry",
+    "langslice.core.nonlinear.border_refinement -> langslice.providers.images",
+    "langslice.core.nonlinear.border_registration -> langslice.providers.registry",
+    "langslice.core.nonlinear.border_registration -> langslice.providers.images",
+]
+
+[[tool.importlinter.contracts]]
+id = "providers-below-doors"
+name = "providers import no job, operation, door, driver or host"
+type = "forbidden"
+source_modules = ["langslice.providers"]
+forbidden_modules = [
+    "langslice.job", "langslice.ops", "langslice.doors", "langslice.agent", "langslice.hosts",
+]
+ignore_imports = [
+    # Known violation (as in "layers").
+    "langslice.providers.openai_oauth -> langslice.doors.tools",
+]
+
+[[tool.importlinter.contracts]]
+id = "no-shims-inside"
+name = "LangSlice imports none of the compatibility shims (they are for sibling repos)"
+type = "forbidden"
+source_modules = [
+    "langslice.core", "langslice.job", "langslice.ops", "langslice.doors",
+    "langslice.agent", "langslice.providers", "langslice.hosts",
+]
+forbidden_modules = [
+    "langslice.linear", "langslice.atlas", "langslice.nonlinear", "langslice.integrations",
+    "langslice.adk", "langslice.space", "langslice.oblique", "langslice.affine",
+    "langslice.image_prep", "langslice.registration_handoff",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
