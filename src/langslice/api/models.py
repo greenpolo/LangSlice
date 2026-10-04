@@ -22,8 +22,9 @@ Provider = Literal[
 ]
 # Adaptive CLAHE + tissue-coverage-weighted grayscale on the section before it is sent.
 PreprocessMode = Literal["none", "auto"]
-# Elastix stages the fit runs (see nonlinear.types.Deformation).
-Deformation = Literal["none", "bspline", "affine"]
+# The fit after the model's border correction (see nonlinear.types.Deformation):
+# the deformable package's fit of the model's lines, or none.
+Deformation = Literal["none", "deformable"]
 # Route "atlas" (no supplied placement) draws once, or twice with a
 # self-correction call (see nonlinear.image_gen_registration).
 Passes = Literal[1, 2]
@@ -202,7 +203,7 @@ class RegisterRequest(EngineBaseModel):
     # Block cutting angles; every atlas render is resliced on that plane.
     pitch_deg: float = 0.0
     yaw_deg: float = 0.0
-    deformation: Deformation = "bspline"
+    deformation: Deformation = "deformable"
     # Route "atlas" only: one draw, or two with a self-correction call.
     passes: Passes = 1
     # Native sampled atlas pixels (after image_axes/mirror) -> acquisition pixels.

@@ -32,6 +32,14 @@ def test_zero_residual_retains_initial_affine_with_rounding_and_padding():
     assert not np.allclose(np.array(markers)[:, :2], np.array(markers)[:, 2:])
 
 
+class _Calls(list):
+    """The correction calls a test saw; ``fitted``: the placements fitted."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.fitted: list = []
+
+
 @pytest.fixture
 def case(monkeypatch):
     import langslice.nonlinear.image_gen_registration as legacy
@@ -45,16 +53,26 @@ def case(monkeypatch):
     monkeypatch.setattr(legacy, "prepare_canvas", lambda image, **k: (image, image.size, 0, 0, 0))
     monkeypatch.setattr(registration, "_classified_to_rgb",
                         lambda ids, atlas: np.zeros((*ids.shape, 3), dtype=np.uint8))
-    received = []
+    received = _Calls()
 
     def refine(image, rough, atlas, **kwargs):
         received.append((rough.copy(), kwargs))
-        return BorderRefinementResult(
-            image, image, rough > 0, image, rough.copy(), image, None,
-            np.zeros((*rough.shape, 2)), 0.0, {"prompt": "test"},
+        return BorderRefinementResult(image, image, rough > 0, image, {"prompt": "test"})
+
+    def fit(canvas, lines, atlas, placement, **kwargs):
+        """An identity fit: the deformable package has its own tests."""
+        received.fitted.append(placement)
+        rough = received[-1][0]
+        return SimpleNamespace(
+            field_px=np.zeros((*rough.shape, 2)), fitted_labels=rough.copy(),
+            fitted_border_overlay=canvas, record=None, elapsed=0.5,
+            metadata={"fit": "deformable", "flags": []},
         )
 
     monkeypatch.setattr(registration, "refine_borders", refine)
+    monkeypatch.setattr(registration, "fit_border_lines", fit)
+    monkeypatch.setattr(registration, "placement_on_canvas",
+                        lambda atlas, matrix, **k: SimpleNamespace(atlas_to_section=matrix, **k))
     return image, labels, received
 
 
@@ -134,7 +152,9 @@ def test_atlas_route_draws_boundaries_then_places_and_fits(case, monkeypatch):
     assert result.metadata["prior"]["atlas_route_model_calls"] == 1
     assert result.metadata["model_called"] is True
     assert "replayed" not in result.metadata
-    assert result.metadata["elastix"]["codes"] == []
+    assert result.metadata["fit"]["fit"] == "deformable"
+    # The silhouette placement (identity here) is what the fit starts from.
+    np.testing.assert_array_equal(received.fitted[0].atlas_to_section, np.eye(3))
 
 
 def test_atlas_route_passes_two_corrects_against_pass_one_and_the_template(case, monkeypatch):
@@ -215,35 +235,42 @@ def test_nonfinite_fields_and_singular_affines_fail():
                                              np.eye(3), np.eye(3))
 
 
-def test_residual_report_flags_folds_and_missing_regions():
-    rough = np.ones((10, 12), dtype=np.int64)
-    rough[:, 6:] = 2
-    fitted = rough.copy()
-    fitted[:, 6:] = 1
-    yy, xx = np.indices(rough.shape)
-    field = np.stack([-2.0 * xx, np.zeros_like(yy)], axis=-1)
-    report = registration.residual_fit_report(rough, fitted, field)
-    codes = {row["code"] for row in report["codes"]}
-    assert {"WARP_FOLDS", "REGION_MISSING"} <= codes
-    assert "residual" in report["scope"]
-    assert report["max_residual_displacement_px"] == 22.0
+def test_supplied_placement_is_fitted_and_none_fits_nothing(case, tmp_path):
+    image, labels, received = case
+    initial = np.array([[1.0, 0.0, 2.0], [0.0, 1.0, 1.0], [0.0, 0.0, 1.0]])
+    result = registration.generate_border_registration_candidate(
+        image, atlas_name="test", position_mm=1, initial_atlas_to_slice=initial,
+    )
+    assert result.metadata["deformation"] == "deformable"
+    assert result.metadata["fit"]["fit"] == "deformable"
+    np.testing.assert_array_equal(received.fitted[0].atlas_to_section, initial)
+    skipped = registration.generate_border_registration_candidate(
+        image, atlas_name="test", position_mm=1, initial_atlas_to_slice=initial,
+        deformation="none",
+    )
+    assert len(received.fitted) == 1
+    assert skipped.metadata["fit"] == {"fit": "none", "fit_skipped": True}
+    assert skipped.metadata["fit_elapsed_s"] == 0.0
 
 
-def test_residual_report_flags_empty_and_globally_collapsed_fit():
-    rough = np.ones((10, 12), dtype=np.int64)
-    fitted = np.zeros_like(rough)
-    field = np.zeros((*rough.shape, 2))
-    report = registration.residual_fit_report(rough, fitted, field)
-    assert "EMPTY_WARP" in {row["code"] for row in report["codes"]}
-    fitted[2, 3] = 1
-    report = registration.residual_fit_report(rough, fitted, field)
-    assert "ATLAS_COLLAPSED" in {row["code"] for row in report["codes"]}
+@pytest.mark.parametrize("mirror", [False, True])
+@pytest.mark.parametrize("axes", [None, "si,rl", "lr,si"])
+def test_native_to_oriented_map_reproduces_the_label_orientation(axes, mirror):
+    """The fit works on the native plane, the canvas placement on the oriented
+    labels: the map between them is exactly the turn/flip the labels took."""
+    import cv2
 
+    from langslice.space import atlas_space_context, orient_slice_to_axes
+    from tests.deformable_synthetic import SyntheticAtlas
 
-@pytest.mark.parametrize("invalid", [np.full((10, 12), 99, dtype=np.int64),
-                                     np.ones((10, 11), dtype=np.int64),
-                                     np.ones((10, 12), dtype=np.float64)])
-def test_residual_report_rejects_corrupted_labels(invalid):
-    with pytest.raises(ValueError):
-        registration.residual_fit_report(np.ones((10, 12), dtype=np.int64), invalid,
-                                         np.zeros((10, 12, 2)))
+    atlas = SyntheticAtlas()
+    native = np.arange(7 * 11, dtype=np.int64).reshape(7, 11) + 1
+    oriented = native
+    if axes:
+        oriented = orient_slice_to_axes(native, atlas_space_context(atlas), "coronal", axes)
+    if mirror:
+        oriented = np.fliplr(oriented)
+    matrix = registration.native_to_oriented_map(native.shape, atlas, "coronal", axes, mirror)
+    placed = cv2.warpAffine(native.astype(np.float64), matrix[:2],
+                            (oriented.shape[1], oriented.shape[0]), flags=cv2.INTER_NEAREST)
+    np.testing.assert_array_equal(placed.astype(np.int64), oriented)

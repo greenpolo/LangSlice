@@ -102,7 +102,7 @@ def test_border_refinement_preserves_host_grid_and_inverts_landmark_pairs(
         LangSliceAbbaConfig,
         compute_registration_landmarks,
     )
-    from langslice.nonlinear import border_refinement
+    from langslice.nonlinear import border_fit, border_refinement
 
     atlas = FakeAtlas()
     yy, xx = np.indices((40, 50))
@@ -126,12 +126,20 @@ def test_border_refinement_preserves_host_grid_and_inverts_landmark_pairs(
             raw_model_image=Image.new("RGB", (100, 80), "yellow"),
             rough_border_overlay=image,
             model_border_overlay=Image.new("RGB", image.size, "red"),
-            fitted_border_overlay=Image.new("RGB", image.size, "blue"),
-            fitted_labels=fitted_labels,
-            deformation_field=field,
+            model_border_mask=np.ones((40, 50), dtype=bool),
         )
 
+    def fit(canvas, lines, passed_atlas, placement, **kwargs):
+        # The deformable fit gets ABBA's labels as the native grid, placed by
+        # an identity at the plugin's voxel size.
+        fits.append((placement, kwargs))
+        assert passed_atlas is atlas and lines.shape == (40, 50)
+        return SimpleNamespace(field_px=field, fitted_labels=fitted_labels,
+                               fitted_border_overlay=Image.new("RGB", canvas.size, "blue"))
+
+    fits: list = []
     monkeypatch.setattr(border_refinement, "refine_borders", refine)
+    monkeypatch.setattr(border_fit, "fit_border_lines", fit)
     monkeypatch.setattr(core, "load_atlas", lambda _: atlas)
     monkeypatch.setenv("LANGSLICE_VLM_DEBUG_DIR", str(tmp_path))
     config = LangSliceAbbaConfig(provider="openai-oauth", landmark_grid=8)
@@ -142,6 +150,12 @@ def test_border_refinement_preserves_host_grid_and_inverts_landmark_pairs(
     if not varying:
         np.testing.assert_allclose(tgt - src, np.tile([-3, 2], (len(src), 1)))
     assert seen[0]["provider"] == "openai-oauth"
+    # The host door resolved the provider and handed the call in.
+    assert seen[0]["model"] == "gpt-image-2" and callable(seen[0]["image_call"])
+    placement, options = fits[0]
+    np.testing.assert_array_equal(placement.atlas_to_section, np.eye(3))
+    assert placement.section_mm_per_px == pytest.approx(config.voxel_size_um / 1000)
+    np.testing.assert_array_equal(options["native"], expected_ids)
     debug = tmp_path / "abba/attempt_1"
     assert Image.open(debug / "raw_border_correction.png").size == (100, 80)
     assert Image.open(debug / "model_border_overlay.png").getpixel((0, 0)) == (255, 0, 0)

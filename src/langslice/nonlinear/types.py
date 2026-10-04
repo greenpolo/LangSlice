@@ -13,12 +13,13 @@ from PIL import Image, ImageDraw
 
 AffineMatrixLike = Sequence[Sequence[float]] | np.ndarray
 
-#: Elastix deformation model. ``"bspline"`` is the historical affine +
-#: B-spline pair; ``"affine"`` stops after the affine stage, because the
-#: B-spline stage driven by generated paintings measured BELOW the affine
-#: stage alone on the hand-registered slices (family dice 0.65 vs 0.735 flat,
-#: 0.74 vs 0.80 oblique).
-Deformation = Literal["none", "bspline", "affine"]
+#: The fit after the model's border correction. ``"deformable"``: the
+#: deformable package's fit of the model's lines
+#: (:func:`langslice.nonlinear.border_fit.fit_border_lines`); ``"none"``: no
+#: fit, an identity residual (the model's lines are judged on their own).
+#: The Elastix ``"bspline"`` / ``"affine"`` residual fit was retired on
+#: 2026-10-04.
+Deformation = Literal["none", "deformable"]
 
 
 def identity_affine_matrix() -> np.ndarray:
@@ -400,7 +401,7 @@ def candidate_to_registration_result(
         atlas_points=np.zeros((0, 2), dtype=np.float64),
         slice_points=np.zeros((0, 2), dtype=np.float64),
         smoothing=0.0,
-        backend="elastix_bspline_visualign",
+        backend="deformable_visualign",
         reasoning=(
             "Dense VisuAlign markers are the transform representation stored "
             "in annotation metadata."

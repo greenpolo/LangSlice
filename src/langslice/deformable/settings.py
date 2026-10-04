@@ -257,3 +257,27 @@ def metric_for(
     if stain_metric == "mutual_information":
         return "mutual_information"
     return "local_correlation" if engine == "ants" else ELASTIX_STAIN_METRIC
+
+
+def traced_settings(
+    engine: Engine | None = None, *, stiffness: Stiffness = "medium",
+    detail: Detail = "standard",
+) -> FitSettings:
+    """The recommended fit of the image model's traced lines (route B).
+
+    What the linear agent's ``fit_deformable`` recommends with a completed
+    trace (``traced_borders`` + ANTs + medium): with ANTs, the lines turned
+    into named regions against the placed colour-family regions
+    (``labels="model"``) next to the lines against the family borders; with
+    Elastix (no label channels), the lines against the family borders alone
+    (``traced_lines``). *engine* None picks ANTs when antspyx is installed
+    (the ``registration`` extra), else Elastix (a core dependency).
+    """
+    if engine is None:
+        import importlib.util
+
+        engine = "ants" if importlib.util.find_spec("ants") is not None else "elastix"
+    return FitSettings(
+        engine=engine, stiffness=stiffness, detail=detail, atlas_image="borders_merged",
+        section_image="lines", labels="model" if engine == "ants" else "none",
+    )

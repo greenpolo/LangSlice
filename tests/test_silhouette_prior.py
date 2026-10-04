@@ -177,7 +177,7 @@ def test_model_free_backbone_registers_the_silhouette_placement_end_to_end(
         atlas_name="toy_prior_atlas",
         position_mm=0.5,
         provider="none",
-        deformation="affine",
+        deformation="deformable",
         candidate_id="backbone",
         debug_dir=str(tmp_path),
     )
@@ -187,7 +187,9 @@ def test_model_free_backbone_registers_the_silhouette_placement_end_to_end(
     assert candidate.metadata["prior"]["sign_pattern"] in ([1, 1], [-1, -1])
     assert candidate.metadata["prior"]["silhouette_iou"] > 0.9
     assert candidate.markers, "no VisuAlign markers came out of the deformation field"
-    assert candidate.metadata["deformation"] == "affine"
+    assert candidate.metadata["deformation"] == "deformable"
+    # Model-free: nothing to fit, whatever the deformation asks for.
+    assert candidate.metadata["fit"]["fit_skipped"] is True
     assert candidate.metadata["model_called"] is False
     assert candidate.metadata["model_free"] is True
 
@@ -205,11 +207,11 @@ def test_cli_parses_the_model_free_backbone() -> None:
     args = _build_parser().parse_args(
         [
             "nonlinear", "register", "slice.png", "--position", "5.2",
-            "--provider", "none", "--deformation", "affine",
+            "--provider", "none", "--deformation", "deformable",
         ]
     )
     assert args.provider == "none"
-    assert args.deformation == "affine"
+    assert args.deformation == "deformable"
 
 
 def test_register_request_carries_the_model_free_provider() -> None:
@@ -217,7 +219,7 @@ def test_register_request_carries_the_model_free_provider() -> None:
 
     request = RegisterRequest(
         image_path="slice.png", atlas="toy", position_mm=1.0,
-        provider="none", deformation="affine",
+        provider="none", deformation="deformable",
     )
     assert request.provider == "none"
-    assert request.deformation == "affine"
+    assert request.deformation == "deformable"

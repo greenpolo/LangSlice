@@ -251,7 +251,7 @@ def estimate_registration(
     canvas_pad: float = 0.0,
     pitch_deg: float = 0.0,
     yaw_deg: float = 0.0,
-    deformation: Deformation = "bspline",
+    deformation: Deformation = "deformable",
     passes: int = 1,
     initial_atlas_to_slice: Sequence[Sequence[float]] | None = None,
     initial_alignment_source: str = "supplied",
@@ -267,8 +267,9 @@ def estimate_registration(
 
     ``pitch_deg``/``yaw_deg`` are the block's cutting angles: every atlas
     render is resliced on that oblique plane instead of taken flat.
-    ``deformation`` picks the Elastix stages, or ``"none"`` for no fit at all
-    (identity residual; the CLI default). ``provider="none"`` calls no
+    ``deformation="deformable"`` fits the model's lines with the deformable
+    package (:func:`langslice.nonlinear.border_fit.fit_border_lines`);
+    ``"none"`` fits nothing (identity residual; the CLI default). ``provider="none"`` calls no
     model: it retains a supplied placement, or fits a silhouette placement,
     without fitting a residual deformation.
     """

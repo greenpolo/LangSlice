@@ -348,7 +348,7 @@ def generate_registration_candidate(
     canvas_pad: float = 0.0,
     pitch_deg: float = 0.0,
     yaw_deg: float = 0.0,
-    deformation: Deformation = "bspline",
+    deformation: Deformation = "deformable",
     passes: int = 1,
     previous_candidate_id: str | None = None,
     candidate_id: str | None = None,
