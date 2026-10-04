@@ -40,7 +40,7 @@ Besides the verbs, `FOLDER` takes:
   every host uses; no agent runs. An existing job there is continued
   (`--fresh` starts over); one made from other supplied inputs
   (`--positions`, `--transforms`, `--orientation`, `--order`,
-  `--pitch`/`--yaw`, `--locked`, `--damaged`, `--pixel-size-um`, ...) is refused with `INPUTS_CHANGED` (exit 3), which
+  `--pitch`/`--yaw`, `--section-angles`, `--locked`, `--damaged`, `--pixel-size-um`, ...) is refused with `INPUTS_CHANGED` (exit 3), which
   names the inputs that differ and `--fresh`.
 - `runs [ID]`: the background runs, newest first, or one run's state
   (running, finished with its answer, or lost). `status` is only the verb.

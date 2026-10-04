@@ -55,6 +55,27 @@ other module whose imports are core-only:
 - A picture is returned, never encoded: the doors package it (the ADK agent
   through `doors.tools.media.packaged`, JPEG message parts; MCP as image blocks).
 
+## Cutting angles are per section (state format 3, 2026-10-04)
+
+Every atlas plane drawn, fitted or mapped for a section is at that
+section's own angles (`SliceState.angles`): the placement pictures
+(`placement.py`, `CanvasFrame`), the side-by-side and stacked references,
+`view_stack`'s atlas under each section, the opening's atlas tiles, the
+fits (`transform.py`), the handoff and every deformable fit and trace
+(`handoff.py`), the deformation's `linear_key`, the maps and
+`registration.json` (`maps.section_frame`, memoized by the section's
+angles) and so the QuickNII/VisuAlign anchorings, and `grep_atlas`'s
+in-section check. A picture without a section (`view_atlas`, the
+opening's atlas reference) is drawn at `StackState.view_angles` (the shared
+angle, or the median of the sections' when they differ). The atlas-plane
+helpers (`atlas_fetch`, `display`, `pictures.reference_atlas_picture`)
+take `angles=`; None reads the stack's one angle (`state.plane_angles`),
+which raises `MixedAngles` on a stack whose sections differ, so a call
+that should pass a section's own fails loudly instead of drawing the
+wrong plane. `captions.angles_label` words the angles in a caption (empty
+for the flat plane). A single-angle stack draws exactly what it drew
+before (the goldens are unchanged).
+
 ## Files
 
 - `pictures.py` — the captioned section and atlas pictures the viewing tools

@@ -187,7 +187,7 @@ folder=..., results_path=...)` upgrades an old layout first
 `layout` are derived; `build_context` takes it from
 `job.layout.locate_job_folder`: `spec.job_dir` / `--job-dir`, next to the
 images, or `~/.langslice/jobs/<id>/` for a read-only image folder). Every path the state stores is relative to the job
-folder (state format 2). Every picture a tool returns is saved there with
+folder (state format 2; format 3 added per-section cutting angles). Every picture a tool returns is saved there with
 its layers (the job's hook `Job.views.shown`, which `toolbox._saves_views`
 wraps around every tool; the ADK opening through `engine.save_opening`, MCP
 pages through `server.save_page`), the exact JPEG bytes the door sent;
@@ -257,6 +257,23 @@ decides `view`'s type and `fit_deformable`'s description and arguments, as
   canvas fractions — next to the six normalized numbers, whatever made it.
   There is no `confidence`: nothing downstream read it (Nash, 2026-09-06), and
   the reasoning lives in `adjust_transforms`'s note.
+  Cutting angles are per section (state format 3, 2026-10-04):
+  `SliceState.cutting_angles_deg` (`angles`, `pitch_deg`, `yaw_deg`) is the
+  plane every picture, fit, trace, map and export of that section uses, so
+  a registration made elsewhere keeps each section's own plane
+  (`inputs.angles` per section). Everything LangSlice angles itself is one
+  plane: the `StackState.cutting_angles_deg` setter (`set_cutting_angles`)
+  sets every section, flattening a stack whose sections differed (undo
+  restores them). `mixed_angles` says whether they differ; `stack_angles`
+  (and `pitch_deg`, `yaw_deg`, the `cutting_angles_deg` getter) is the one
+  shared angle and raises `MixedAngles` when they differ, so a reader that
+  should use the section's own cannot take one silently; `view_angles` is
+  the plane of a picture without a section (`view_atlas`, the opening's
+  atlas reference): the shared angle, or the median pitch and median yaw.
+  `to_dict` writes a shared angle once, on the stack, exactly as before
+  format 3 (the goldens are unchanged); differing angles write the stack's
+  as null and each row's own (`serialized_mixed_angles`). `from_dict` gives
+  a row without its own the stack's.
 - `core/workspace.py` — `Workspace`, the core context: the spec, the image
   folder, the atlas (`atlas_loader`, loaded once), `abba_atlas` (ABBA's
   cached Allen atlas when it matches, looked up once), each section's
@@ -268,9 +285,12 @@ decides `view`'s type and `fit_deformable`'s description and arguments, as
   subclasses it to add that.
 - `job/checkpoint.py` — atomic JSON write of the job folder's `state.json`
   (`default_checkpoint_path`: `<images>/langslice/state.json`), versioned
-  (`format_version`, `STATE_FORMAT_VERSION` 2; `upgrade_state(data, root)`
+  (`format_version`, `STATE_FORMAT_VERSION` 3; `upgrade_state(data, root)`
   reads an unversioned checkpoint as version 0, makes version 1's absolute
-  paths inside *root* relative, and refuses a newer one), `state_paths`
+  paths inside *root* relative, gives every section of a state before 3
+  the stack's cutting angles (`section_angles`), and refuses a newer one;
+  every reader of a checkpoint or history step goes through it, the
+  layout migration included), `state_paths`
   (every path a state stores, through one converter), `relative_to`, and
   the global observers (`observe_checkpoints`). `CHECKPOINT_FILENAME`
   (`linear_state.json`) names the old layout's file, for the migration.
@@ -362,7 +382,12 @@ decides `view`'s type and `fit_deformable`'s description and arguments, as
   tool images reach the model as bare attachments; never caption an image a
   fit measures.
 - `core/atlas_fetch.py` — `atlas_section` (the one atlas renderer: flat at 0/0
-  cutting angles, `oblique.sample_oblique_plane` otherwise), `atlas_picture`
+  cutting angles, `oblique.sample_oblique_plane` otherwise; `angles=` the
+  plane, a section's own for its pictures, the stack's `view_angles` for
+  one without, None the stack's one angle via `state.plane_angles`, which
+  refuses a stack whose sections differ; `display`'s `framed_atlas`,
+  `atlas_image_picture`, `regions_in_plane`, `atlas_caption` and
+  `pictures.reference_atlas_picture` take the same), `atlas_picture`
   (one tissue-framed atlas section, sized and captioned; the `view_atlas`
   tool, was `fetch_atlas`, is built in the toolbox, `make_view_atlas`), and
   `reference_atlas` (the opening's evenly spaced atlas positions, at most
@@ -372,7 +397,8 @@ decides `view`'s type and `fit_deformable`'s description and arguments, as
   images and slice images, just like how abba does it"): `opening_items`
   lays the stack out as horizontal strips in corrected order, the sections
   on top and, directly beneath each, the atlas at its CURRENT position and
-  the stack's cutting angles (`atlas_tile`, drawn to the section's long edge
+  its own cutting angles (the stack's; the text says when they differ;
+  `atlas_tile`, drawn to the section's long edge
   as `view_stack` does, so an olfactory-bulb plane is not a thumbnail).
   Every tile is labelled in its pixels (`tile_label`: `"<index>:
   <filename>"` plus short flags `rot N`/`flipped`/`damaged`, the damage note

@@ -71,6 +71,18 @@ import a host. The QUINT entry below describes that file.
   import-time base so it never accumulates; the in-plane affine → an
   `AffineRegistration` step, replaced (not stacked) when revised; cutting
   angles → `ReslicedAtlas.setRotateX/Y`. `damaged` has no ABBA equivalent.
+  ABBA has ONE atlas angle for the whole stack, so a job whose sections
+  carry different cutting angles (a registration made elsewhere, supplied
+  per section) is refused, with
+  `doors.api.abba_worker.ABBA_MIXED_ANGLES` (the job was made elsewhere
+  with an angle per section, which ABBA cannot show): `run_linear_in_abba`
+  and `run_existing_in_abba` refuse such supplied angles before ABBA is
+  touched (`abba_worker.refuse_mixed_job`; the launcher also refuses a
+  resumed checkpoint that has them), and the mirror pushes nothing of such
+  a state (no moves, no angles), logs the message once and keeps it in
+  `sync_errors` under `MIXED_ANGLES_KEY`. Jobs from an ABBA session are
+  single-angle (its angles are their stack-wide input) and mirror as
+  before.
   The agent still renders its own BrainGlobe pictures; ABBA is display plus
   the final home (`finish` writes an `.abba` state file).
   Coordinates: `measure_axis_offset` fits ABBA slicing-axis mm to BrainGlobe
