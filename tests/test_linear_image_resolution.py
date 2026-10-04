@@ -19,22 +19,13 @@ from PIL import Image, ImageDraw
 
 from langslice.adk import TOOL_MEDIA_PARTS_KEY
 from langslice.adk.media import package_result, strip_edge
+from langslice.core.captions import CAPTION_PX, _caption_font, caption, wrap_caption
+from langslice.core.sections import PREVIEW_LONG_EDGE, render_slice, shown_section
+from langslice.core.sheets import SHEET_MAX_LONG_EDGE, stack_sheet
+from langslice.core.sizes import PICTURE_EDGES, opening_edge
 from langslice.linear.engine import build_context, build_seed_message
 from langslice.linear.job import ingest
 from langslice.linear.opening import COLUMN_GAP, section_tile, strip_layout
-from langslice.linear.render import (
-    CAPTION_PX,
-    PICTURE_EDGES,
-    PREVIEW_LONG_EDGE,
-    SHEET_MAX_LONG_EDGE,
-    _caption_font,
-    caption,
-    opening_edge,
-    render_slice,
-    shown_section,
-    stack_sheet,
-    wrap_caption,
-)
 from langslice.linear.spec import JobSpec
 from langslice.linear.toolbox import build_tools
 from langslice.linear.transform import calibrate
@@ -325,14 +316,13 @@ def test_low_draws_from_the_working_render_itself(tmp_path: Path):
 
 def test_a_larger_picture_shows_the_same_map(tmp_path: Path, monkeypatch):
     """Drawn larger, the adjusted section lands where the small picture puts it."""
-    from langslice.core import placement
-    from langslice.linear import render
+    from langslice.core import canvas, placement
 
     drawn: list[np.ndarray] = []
 
     def capture(*args, **kwargs):
         frames: list[dict[str, Any]] = []
-        images, iou = render.physical_views(*args, **kwargs, frames=frames)
+        images, iou = canvas.physical_views(*args, **kwargs, frames=frames)
         x0, y0, x1, y1 = frames[0]["content_box"]
         drawn.append(np.asarray(images[0].convert("L"))[y0:y1, x0:x1])
         return images, iou

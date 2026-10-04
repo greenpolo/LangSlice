@@ -10,7 +10,7 @@ every section and every atlas section was its own image (~80 images for a
 Each strip's long edge is the model lane's largest image
 (:func:`langslice.adk.media.strip_edge`),
 its tiles the host's ``image_resolution`` opening size
-(:func:`langslice.linear.render.opening_edge`), so a larger level means fewer
+(:func:`langslice.core.sizes.opening_edge`), so a larger level means fewer
 tiles per strip and more strips. A strip also stays inside the lane's patch
 budget (:data:`MAX_IMAGE_PATCHES`): past it the vision encoder would shrink
 the whole strip, labels included. A stack with no position at all gets
@@ -27,9 +27,11 @@ from collections.abc import Sequence
 from PIL import Image, ImageDraw
 
 from langslice.affine import resize_long_edge
+from langslice.core.captions import caption
+from langslice.core.sections import render_slice
+from langslice.core.sizes import opening_edge
 from langslice.linear.appearance import view_look
 from langslice.linear.atlas_fetch import atlas_section, reference_atlas
-from langslice.linear.render import caption, opening_edge, render_slice
 from langslice.linear.state import SliceState, StackState
 from langslice.linear.workspace import Workspace
 

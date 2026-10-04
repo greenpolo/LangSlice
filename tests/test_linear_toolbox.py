@@ -387,7 +387,7 @@ def test_view_stack_orders_by_position_and_plots_it(tmp_path: Path):
     # Two images however big the stack: the contact sheet and the plot.
     assert sum(1 for item in parts if not isinstance(item, str)) == 2
     # The sheet's labels carry position and spacing.
-    from langslice.linear.render import stack_pictures
+    from langslice.core.sheets import stack_pictures
 
     labels = [label for label, _ in stack_pictures(state, ctx, by_position=True)]
     assert labels[-1].startswith("0: s0.png  9.00 mm")

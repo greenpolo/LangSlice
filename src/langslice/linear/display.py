@@ -3,7 +3,7 @@
 ``view`` is a dict (:class:`langslice.linear.arguments.View`) with these keys,
 validated once by the tool door (:func:`langslice.linear.view_options.parse_view`)
 into a :class:`DisplayOptions` and drawn by the shared renderers (the physical
-canvas in :func:`langslice.linear.render.physical_views`, the tissue-framed
+canvas in :func:`langslice.core.canvas.physical_views`, the tissue-framed
 pictures below):
 
 - ``mode`` — per tool (its :class:`langslice.linear.view_options.Profile`),
@@ -48,20 +48,20 @@ from langslice.atlas.render import (
     family_outlines,
     outer_outline,
 )
-from langslice.image_prep import mask_box
-from langslice.linear.appearance import (
-    Look,
-    channel_colors,
-    section_settings,
-)
-from langslice.linear.render import (
-    PICTURE_EDGES,
+from langslice.core.canvas import (
     REGION_CONTEXT_ALPHA,
     _draw_polys,
     normalize_border_style,
     region_polys,
     regions_left,
-    render_slice,
+)
+from langslice.core.sections import render_slice
+from langslice.core.sizes import PICTURE_EDGES
+from langslice.image_prep import mask_box
+from langslice.linear.appearance import (
+    Look,
+    channel_colors,
+    section_settings,
 )
 from langslice.linear.state import SliceState, StackState
 from langslice.linear.workspace import Workspace
@@ -147,7 +147,7 @@ class DisplayOptions:
     #: ``applied`` or ``none`` (placement pictures).
     deformation: str = "applied"
     #: Long edge of each picture this call returns
-    #: (:func:`langslice.linear.render.picture_edge`).
+    #: (:func:`langslice.core.sizes.picture_edge`).
     long_edge: int = PICTURE_EDGES["low"][1]
     #: The clamped ``resolution`` the agent asked for ("auto" only; None when
     #: it asked for none). A contact sheet sizes its tiles by it.
@@ -362,7 +362,7 @@ def regions_in_plane(
 
 
 def _crop_fraction(image: Image.Image, zoom: tuple[float, ...]) -> Image.Image:
-    from langslice.linear.render import zoom_box
+    from langslice.core.canvas import zoom_box
 
     return image.crop(zoom_box(list(zoom), image.size))
 
@@ -405,7 +405,8 @@ def channel_strip(
     raw plane in grayscale exactly as read (no stretch, no enhancement), at
     *tile_edge* at most. Returns the strip and the channel names in order.
     """
-    from langslice.linear.render import beside, caption
+    from langslice.core.captions import caption
+    from langslice.core.sheets import beside
 
     names, _planes = ctx.section_channels(record.id)
     strip: Image.Image | None = None
@@ -460,7 +461,7 @@ def framed_atlas(
         mask = labels > 0
     box = mask_box(picture.size, mask) or (0, 0, picture.width, picture.height)
     if not options.full_view:
-        from langslice.linear.render import zoom_box
+        from langslice.core.canvas import zoom_box
 
         inner = zoom_box(list(options.zoom), (box[2] - box[0], box[3] - box[1]))
         box = (box[0] + inner[0], box[1] + inner[1], box[0] + inner[2], box[1] + inner[3])

@@ -16,6 +16,7 @@ import pytest
 from PIL import Image
 
 from langslice.adk.media import image_limit, opening_parts
+from langslice.core.sizes import PICTURE_EDGES
 from langslice.linear.engine import build_context
 from langslice.linear.job import ingest
 from langslice.linear.opening import (
@@ -30,7 +31,6 @@ from langslice.linear.opening import (
     strip_layout,
     tile_label,
 )
-from langslice.linear.render import PICTURE_EDGES
 from langslice.linear.spec import JobSpec
 from tests.fakes import SlabAtlas
 

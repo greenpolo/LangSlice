@@ -16,11 +16,8 @@ import pytest
 from PIL import Image
 from test_linear_physical import TwoRegionAtlas, _ctx
 
-from langslice.linear.render import (
-    canvas_geometry,
-    physical_views,
-    scale_bar_px,
-)
+from langslice.core.canvas import canvas_geometry, physical_views
+from langslice.core.captions import scale_bar_px
 from tests.linear_tool_helpers import single_adjust
 
 _IDENTITY = {
@@ -323,8 +320,8 @@ def test_view_placement_draws_the_section_on_each_atlas_position(tmp_path: Path)
 
 def test_a_tissue_pivot_turns_the_section_about_its_own_centroid(tmp_path: Path):
     """A rotation about the tissue centroid leaves that centroid in place."""
+    from langslice.core.canvas import canvas_geometry, physical_views, pivot_on_canvas
     from langslice.image_prep import foreground_mask
-    from langslice.linear.render import canvas_geometry, physical_views, pivot_on_canvas
 
     section = _section(200, (300, 200))  # tissue square well off the canvas centre
     arr = np.asarray(section).copy()
@@ -450,7 +447,7 @@ def test_border_color_changes_atlas_lines_without_changing_tissue_or_overlap(col
 
 
 def test_border_thickness_is_measured_after_zoom_and_resize():
-    from langslice.linear.render import _draw_polys
+    from langslice.core.canvas import _draw_polys
 
     square = np.asarray([[20, 20], [80, 20], [80, 80], [20, 80]], dtype=float)
     widths = {}
@@ -522,7 +519,7 @@ def test_border_style_does_not_add_lines_to_clean_views(mode):
 
 
 def test_fractional_border_widths_are_distinct_and_preserve_geometry():
-    from langslice.linear.render import _draw_polys, normalize_border_style
+    from langslice.core.canvas import _draw_polys, normalize_border_style
 
     square = np.asarray([[20, 20], [80, 20], [80, 80], [20, 80]], dtype=float)
     ink = []

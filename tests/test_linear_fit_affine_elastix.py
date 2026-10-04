@@ -14,11 +14,11 @@ from PIL import Image
 
 from langslice.adk import TOOL_MEDIA_PARTS_KEY
 from langslice.affine import decompose_affine, normalized_affine
+from langslice.core.canvas import canvas_geometry
 from langslice.deformable import engines
 from langslice.linear import transform as tr
 from langslice.linear.engine import build_context
 from langslice.linear.job import ingest
-from langslice.linear.render import canvas_geometry
 from langslice.linear.spec import JobSpec
 from langslice.linear.toolbox import build_tools
 from tests.deformable_synthetic import SECTION_SIZE, TH, SyntheticAtlas

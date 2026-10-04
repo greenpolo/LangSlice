@@ -10,7 +10,7 @@ on the SAME pixel grid as the picture (caption band included, empty there):
   borders are drawn with;
 - **borders** — how much of each pixel the drawn atlas borders cover
   (uint8, 0..255; the picture's own rasteriser,
-  :func:`langslice.linear.render.line_coverage`, at full strength);
+  :func:`langslice.core.canvas.line_coverage`, at full strength);
 - **frame** — a small JSON record: the plane (position, pitch, yaw), the
   micrometres per pixel, the placement, and ``pixel_to_atlas_um``, the 3x3
   matrix taking a picture pixel ``[row, col, 1]`` to BrainGlobe atlas
@@ -42,8 +42,8 @@ import numpy as np
 from PIL import Image
 
 if TYPE_CHECKING:
+    from langslice.core.canvas import PanelFrame
     from langslice.core.placement import CanvasFrame
-    from langslice.linear.render import PanelFrame
 
 #: The frame record's format. 1 (2026-10-03).
 FRAME_FORMAT_VERSION = 1
@@ -142,7 +142,7 @@ def labels_layer(panel: PanelFrame) -> np.ndarray:
 
 def borders_layer(panel: PanelFrame) -> np.ndarray:
     """The drawn atlas borders' coverage of every picture pixel, uint8."""
-    from langslice.linear.render import line_coverage
+    from langslice.core.canvas import line_coverage
 
     width, height = panel.size
     out = np.zeros((height, width), dtype=np.uint8)

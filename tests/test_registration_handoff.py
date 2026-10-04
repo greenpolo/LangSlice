@@ -7,7 +7,7 @@ import pytest
 from PIL import Image
 
 from langslice.affine import normalized_affine
-from langslice.linear import render
+from langslice.core import canvas
 from langslice.linear.engine import EngineContext
 from langslice.linear.spec import JobSpec
 from langslice.linear.state import SliceState, StackState
@@ -29,8 +29,8 @@ def setup_section(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, known: boo
     )
     labels = np.zeros((70, 90), dtype=np.int32)
     labels[7:63, 12:78] = 1
-    monkeypatch.setattr(render, "annotation_slice", lambda *args, **kwargs: labels)
-    monkeypatch.setattr(render, "atlas_um_per_px", lambda _: 25.0)
+    monkeypatch.setattr(canvas, "annotation_slice", lambda *args, **kwargs: labels)
+    monkeypatch.setattr(canvas, "atlas_um_per_px", lambda _: 25.0)
     record = SliceState(
         id="section.png", index_original=0, index_corrected=0, position_mm=4.0,
         transform={"params": [1, 0, 0, 0, 1, 0],
@@ -47,7 +47,7 @@ def test_shear_nonsquare_round_trip(tmp_path, monkeypatch):
     record.transform["params"] = normalized_affine(matrix[:2], (120, 80))
     before = state.to_dict()
     result = prepare_linear_registration(state, ctx, record.id, long_edge=120)
-    geometry = render.canvas_geometry((120, 80), 10, ctx.atlas, 4, "coronal")
+    geometry = canvas.canvas_geometry((120, 80), 10, ctx.atlas, 4, "coronal")
     points = np.array([[13, 10, 1], [60, 45, 1], [76, 61, 1]]).T
     section_points = result.atlas_to_slice @ points
     placed_section = matrix @ section_points

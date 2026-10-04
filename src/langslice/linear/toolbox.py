@@ -39,12 +39,17 @@ from PIL import Image
 from langslice.adk import TOOL_MEDIA_DELIVERY_ID_KEY, TOOL_MEDIA_PARTS_KEY
 from langslice.affine import denormalized_affine
 from langslice.core import layers, placement
+from langslice.core.canvas import VIEW_MODES, normalize_border_style
+from langslice.core.captions import caption
 from langslice.core.pictures import atlas_view_picture, section_picture, stack_review
 from langslice.core.placement import (
     FRAMED_PLACEMENT_MODES,
     PLACEMENT_MODES,
     WARPED_PLACEMENT_MODES,
 )
+from langslice.core.sections import render_slice
+from langslice.core.sizes import MAX_IMAGES_PER_CALL, resolution_level
+from langslice.core.status import compact_rows, status_rows
 from langslice.linear import appearance as looks
 from langslice.linear import deformation
 from langslice.linear.arguments import (
@@ -70,16 +75,6 @@ from langslice.linear.display import (
 from langslice.linear.job import HOST_TRANSFORM_KIND, Job
 from langslice.linear.live import LiveCallback, _plain
 from langslice.linear.opening import DEFAULT_IMAGE_LIMIT
-from langslice.linear.render import (
-    MAX_IMAGES_PER_CALL,
-    VIEW_MODES,
-    caption,
-    compact_rows,
-    normalize_border_style,
-    render_slice,
-    resolution_level,
-    status_rows,
-)
 from langslice.linear.spec import JobSpec
 from langslice.linear.state import (
     IDENTITY_PARAMS,
@@ -121,7 +116,7 @@ Media = Image.Image | str
 MAX_VIEW_SLICES = MAX_IMAGES_PER_CALL
 
 #: Views ``adjust_transforms`` composes on top of the renderer's own
-#: (:data:`~langslice.linear.render.VIEW_MODES`): the A/B toggle, which is two
+#: (:data:`~langslice.core.canvas.VIEW_MODES`): the A/B toggle, which is two
 #: renders of one crop rather than one composition.
 PREVIEW_MODES = (*VIEW_MODES, "ab")
 

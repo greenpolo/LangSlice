@@ -45,14 +45,9 @@ from langslice.affine import (
     tissue_silhouette,
 )
 from langslice.atlas.render import atlas_um_per_px
+from langslice.core.canvas import canvas_geometry, estimate_um_per_px
+from langslice.core.sections import PREVIEW_LONG_EDGE, canvas_um_per_px, render_slice
 from langslice.linear.atlas_fetch import atlas_mask
-from langslice.linear.render import (
-    PREVIEW_LONG_EDGE,
-    canvas_geometry,
-    canvas_um_per_px,
-    estimate_um_per_px,
-    render_slice,
-)
 from langslice.linear.state import SliceState, StackState
 from langslice.linear.workspace import Workspace
 from langslice.space import Plane
