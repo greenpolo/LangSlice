@@ -143,7 +143,9 @@ plugin's `nonlinear.abba` worker stay in `hosts/api/`.
     ... --run-id ID` detached, stderr in `<id>.log`), `begin` / `finish`
     (in the child: its pid; its envelope and exit), `read` (a running run
     whose process is gone, or that never started within `START_GRACE_S`,
-    is `lost`), `listing`, `latest`, `wait`.
+    is `lost`; the process is probed with a null signal, on Windows with
+    psutil when installed, else `OpenProcess`/`GetExitCodeProcess`), `listing`,
+    `latest`, `wait` (without a timeout it returns once the run is lost).
 
 ## Live shared editing
 

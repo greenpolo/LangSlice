@@ -348,3 +348,61 @@ def test_open_job_gives_the_verbs_as_methods(capsys, images):
     saved = next((images / "langslice" / "sections").rglob("view.json"))
     xyz = langslice.coordinate_map(saved)
     assert xyz.ndim == 3 and xyz.shape[2] == 3 and bool((xyz == xyz).any())
+
+
+# --- a dead background run on Windows (review finding 10, 2026-10-04) ------------------
+
+
+def _dead_run(tmp_path: Path) -> tuple[Any, str]:
+    from langslice.doors.cli import background
+    from langslice.job.layout import JobLayout
+
+    layout = JobLayout(tmp_path / "job")
+    background._write(layout, {"id": "run-1", "verb": "fit_deformable", "state": "running",
+                               "started": 0.0, "pid": 424242})
+    return layout, "run-1"
+
+
+@pytest.mark.parametrize("probe", ["psutil", "ctypes"])
+def test_a_dead_run_reads_lost_on_windows(tmp_path, monkeypatch, probe):
+    """On Windows the run's process is really probed (psutil when installed,
+    else OpenProcess/GetExitCodeProcess), and ``wait`` without a timeout
+    returns once the process is gone."""
+    import sys
+    import threading
+    import types
+
+    from langslice.doors.cli import background
+
+    monkeypatch.setattr(background, "WINDOWS", True)
+    if probe == "psutil":
+        fake = types.SimpleNamespace(pid_exists=lambda pid: pid != 424242)
+        monkeypatch.setitem(sys.modules, "psutil", fake)
+    else:
+        monkeypatch.setitem(sys.modules, "psutil", None)  # not installed
+
+        class Kernel32:
+            def OpenProcess(self, access, inherit, pid):  # noqa: N802
+                return 0 if pid == 424242 else 7
+
+            def GetLastError(self):  # noqa: N802
+                return 87  # ERROR_INVALID_PARAMETER: no such process
+
+            def GetExitCodeProcess(self, handle, code):  # noqa: N802
+                code._obj.value = 259
+                return 1
+
+            def CloseHandle(self, handle):  # noqa: N802
+                return 1
+
+        monkeypatch.setattr(background, "_kernel32", lambda: Kernel32())
+    assert background._alive(4242) is True
+    assert background._alive(424242) is False
+    layout, run_id = _dead_run(tmp_path)
+    assert background.read(layout, run_id)["state"] == "lost"
+    answer: list[Any] = []
+    waiter = threading.Thread(target=lambda: answer.append(background.wait(layout, run_id, None)),
+                              daemon=True)
+    waiter.start()
+    waiter.join(5.0)
+    assert answer and answer[0]["state"] == "lost"
