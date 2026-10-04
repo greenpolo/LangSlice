@@ -66,6 +66,7 @@ CORE_MODULES = (
     "langslice.ops.views",
     "langslice.ops.traces",
     "langslice.ops.atlas",
+    "langslice.ops.registry",
 )
 
 #: The doors: an operation (``langslice.ops``) must load none of them.
