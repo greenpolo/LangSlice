@@ -57,7 +57,7 @@ Nash kept five of its ten asks:
   section under its STORED transform (identity without one), so it shows the
   full current placement. Same renderer as everything.
 - `view_stack`: the strip ordered by written position with position and
-  spacing in the labels, plus `render.spacing_plot` (PIL, no matplotlib).
+  spacing in the labels, plus `core.sheets.spacing_plot` (PIL, no matplotlib).
 - `reorder_slices` took corrected indices for one run; Astra then pointed
   out (run 2) that a reorder changes the indices, so an index-addressed
   reorder can hit the wrong section next call. Filenames only again.
@@ -75,7 +75,7 @@ Comparison and atlas-fetch paths share cached reference pictures
 (`core/pictures.py` `reference_section_picture` / `reference_atlas_picture`,
 plain captioned pictures on `Workspace.picture_cache` since 2026-10-03, phase
 3b; until then encoded parts on the driver's context; drawn by
-`render.reference_slice_picture` / `atlas_fetch.atlas_picture`):
+`core.sheets.reference_slice_picture` / `atlas_fetch.atlas_picture`):
 section captions retain their first display index/flags across reorder,
 filenames are the stable identity, and orientation/preprocessing/size changes
 get distinct entries. Atlas entries include exact position, plane, angles and
@@ -97,8 +97,9 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
 modules take a `workspace.Workspace` and return plain PIL pictures, numbers
 and text; none imports `google.genai`, ADK, litellm or openai
 (`tests/test_core_imports.py` checks each in a fresh interpreter): `workspace`,
-`render`, `display`, `transform`, `deformation`, `appearance`,
-`atlas_fetch`, `opening`, and `registration_handoff` at the top level. The
+`display`, `transform`, `deformation`, `appearance`,
+`atlas_fetch`, `opening`, and `registration_handoff` at the top level (the
+former `render` is in `src/langslice/core/` since phase 3d). The
 doors turn them into what a host reads: `adk/media.py` (the one module that
 makes `types.Part`s: JPEG encoding, `packaged` / `package_result` for the
 tools' pictures, the opening as parts), the toolbox and `view_options.py`
@@ -171,10 +172,33 @@ folder=..., results_path=...)` upgrades an old layout first
 `job.layout.locate_job_folder`: `spec.job_dir` / `--job-dir`, next to the
 images, or `~/.langslice/jobs/<id>/` for a read-only image folder). Every path the state stores is relative to the job
 folder (state format 2). Every picture a tool returns is saved there with
-its layers (`toolbox._saves_views` around every tool, `Job.views`; the
-ADK opening through `engine.save_opening`, MCP pages through
-`server.save_page`), the exact JPEG bytes the door sent; replies are
-unchanged.
+its layers (the job's hook `Job.views.shown`, which `toolbox._saves_views`
+wraps around every tool; the ADK opening through `engine.save_opening`, MCP
+pages through `server.save_page`), the exact JPEG bytes the door sent;
+replies are unchanged.
+
+**Every tool one operation (phase 3d, 2026-10-04).** What was still inline
+in the tools moved to `src/langslice/ops/` (its own `CLAUDE.md`):
+`submit` (`ops.submit`: the job's gates, the image-correction check with
+the fingerprint function passed in, the door's look gate as a callable, then
+the write), `fit_affine` and `adjust_transforms` (`ops.transforms`),
+`trace_borders` (`ops.traces`, the image-model call passed in as
+callables), `search_position` and `run_deepslice` (`ops.positions`),
+`grep_atlas` (`ops.atlas`), `preprocess` (`ops.appearance.preprocess`),
+`undo`/`redo` (`ops.history`), and the read verbs of every viewing tool
+(`ops.views`: `status`, `view_slices`, `view_atlas`, `view_placement`,
+`view_stack`), so a script gets the picture a tool shows. A write that
+shows its result takes the call's `DisplayOptions` and returns the core's
+pictures; the tool captions only what it composes itself (`preprocess`'s
+BEFORE/AFTER labels) and words the reply. `ops/registry.py` lists every
+tool with its operation, read or write, and task group
+(`tests/test_ops_registry.py` checks it against `build_tools`). What stays
+in the tool door, deliberately: the look-before-commit gates
+(`ToolBox.compared`, `reviewed`), the delivery bookkeeping (pending and
+seen placement views, delivery ids, `tool_context`), `transform_history`,
+the `ab_reference` payload of `adjust_transforms` (the B picture itself is
+`core.placement.transform_views`), argument checking (`parse_view`, region
+names, candidate resolution) and every reply's wording.
 
 - `spec.py` — `JobSpec` (+ `ReorderSpec`/`PositionSpec`/`TransformSpec`/
   `NonlinearSpec`). Every checkbox a host shows maps to a field here; nothing
@@ -253,11 +277,15 @@ unchanged.
   (`registration_tool.correction_fingerprint` lives with the provider code
   until phase 4).
 - `discovery.py` — natural-sorted image discovery.
-- `render.py` — `render_slice` (ROTATE first, then FLIP, then the display-only
-  `--preprocess auto` enhancement), `stack_pictures`, the status rows and
-  their text form, `caption`, `reference_slice_picture` (the captioned,
+- `render.py` — a re-export shim since phase 3d (2026-10-04), kept only
+  because SliceBench imports it (`slicebench/adapters/langslice_geometry.py`);
+  the code is in `src/langslice/core/` and LangSlice imports it from there:
+  `core.sections.render_slice` (ROTATE first, then FLIP, then the display-only
+  `--preprocess auto` enhancement), `core.sheets.stack_pictures`, the status
+  rows and their text form (`core.status`), `core.captions.caption`,
+  `core.sheets.reference_slice_picture` (the captioned,
   tissue-framed section the comparison tools send), and the PHYSICAL
-  overlay: `canvas_geometry` places an atlas section on a section's frame at
+  overlay (`core.canvas`): `canvas_geometry` places an atlas section on a section's frame at
   true scale (`atlas um/px / canvas um/px`, anatomy centred, canvas grown to
   hold it — never fit-to-canvas, which is not a calibration), and
   `physical_views` draws the alignment picture on it (family outlines
@@ -368,9 +396,9 @@ unchanged.
   core half with the defaults and the renderers); a key that means nothing for the
   tool or the mode answers `VIEW_KEY_UNUSED` with each reason. Keys: `mode`;
   `channels` — raw channel names (look `{"overlay": names}`: each stretched
-  by percentile 1..99.5 on the whole working plane, `render._look_image`; one
+  by percentile 1..99.5 on the whole working plane, `core.sections._look_image`; one
   in gray, several added in `appearance.channel_colors`, a channel named
-  after a colour keeping it, each dimmed by its `render.fine_detail`
+  after a colour keeping it, each dimmed by its `core.sections.fine_detail`
   relative to the most detailed one — on M11_B_03 the flat green
   autofluorescence, stretched alone, washed out the nuclear stain) or one version, `view` (default) / `fit`;
   `atlas_channels` — `ara`, `nissl` (ABBA's cached atlas only,
@@ -378,8 +406,8 @@ unchanged.
   composes the images (ara alone = the renderers' own reference path, none =
   black, two = green + magenta); `atlas_opacity` (default 0.5 when an image
   is listed in a blending mode); `regions` (descendants included,
-  `render.region_polys`, context outlines at `REGION_CONTEXT_ALPHA`; an entry
-  may name one side, `"CTX:left"`, which `render.regions_left` resolves per
+  `core.canvas.region_polys`, context outlines at `REGION_CONTEXT_ALPHA`; an entry
+  may name one side, `"CTX:left"`, which `core.canvas.regions_left` resolves per
   picture: on a physical canvas the SECTION's side through the section matrix
   — a mirrored placement shows it on the canvas's other side and the caption
   says so — and on an atlas-only picture the picture's own side; `NO_SIDES`
@@ -390,7 +418,7 @@ unchanged.
   placement tools); `resolution` only at image resolution `auto`:
   `view_options.view_schema` (applied to every tool in `build_tools`) swaps `view`'s
   annotation for `ViewAuto` there, and `clamp_resolution` clamps it to
-  `render.MIN_RESOLUTION` 128 .. the driver model's largest image with a
+  `core.sizes.MIN_RESOLUTION` 128 .. the driver model's largest image with a
   `view.resolution_note` (Nash 2026-10-03: the cap is the model's own
   maximum, not a fixed 1536). The door knows the model and passes the cap
   (`build_tools(max_view_edge=...)`, kept as `ToolBox.max_view_edge`, read
@@ -427,14 +455,17 @@ unchanged.
 - `toolbox.py` — `build_tools(state, ctx, spec, job=None)`: every tool,
   gated by the spec, on the job (state, undo, checkpoint and submit gates
   are the job's), plus the door's own record on the `ToolBox`: the
-  look-before-commit gates and the delivery bookkeeping. Every write goes
-  through `langslice.ops` (above) and every picture is drawn by
-  `langslice.core` (above); the tools return them plain. The interactive
-  transform: `core.placement.stage` (one section, its calibrated canvas and
-  the resolved pivot; the door checks the knobs and fills a left-out shear
-  first), `adjust_transforms` (the write AND the look, any positioned
+  look-before-commit gates and the delivery bookkeeping. Each tool body is
+  argument checking, one `langslice.ops` call (above; `ops/registry.py`
+  names it) and the wording; every picture is drawn by `langslice.core`
+  (above) and the tools return them plain. The interactive
+  transform: `ops.transforms.adjust_transforms` (per entry
+  `core.placement.stage`: one section, its calibrated canvas and the
+  resolved pivot, after the knobs are checked and a left-out shear filled
+  from the current transform), `adjust_transforms` (the write AND the look, any positioned
   section; `mode="ab"` draws the new parameters beside what the section
-  carried before the call, a silhouette fit included; the same numbers again
+  carried before the call, a silhouette fit included,
+  `core.placement.transform_views`; the same numbers again
   re-draw without an undo step). Each entry is staged and drawn, its record
   built by `ops.transforms.interactive_transform`, and the call's records
   written once by `ops.transforms.set_transforms`: one to four distinct
@@ -451,7 +482,8 @@ unchanged.
   Paired landmark tools are removed; interactive
   alignment exposes direct affine adjustments only.
   `transform_history` on the ToolBox is per section and lasts the whole run,
-  but is not repeated in tool replies. `answered(*touched)` (after an ops
+  but is not repeated in tool replies (door-only state, with the gates, the
+  delivery bookkeeping and the `ab_reference` payload). `answered(*touched)` (after an ops
   write) is what ordinary writes answer with: the status rows of
   the sections it touched plus `n_sections`, never the whole table —
   transform writes return their canonical physical result instead; `status`,
@@ -461,7 +493,7 @@ unchanged.
   outline against the whole atlas outline (`affine.silhouette_affine`) and
   reports six normalized numbers on the section frame plus `physical` about
   the canvas centre (`_conjugate` moves a 2x3 between the two frames); damaged
-  sections are refused before this runs (`toolbox.fit_affine`). `calibrate`
+  sections are refused before this runs (`ops.transforms.fit_affine`). `calibrate`
   answers the canvas's
   `--pixel-size-um` (`"host"`), else the file's TIFF/OME tags (`"file"`),
   else the tissue-width guess (`"estimated"`) — it never crashes and never
@@ -614,10 +646,10 @@ The ABBA dialog's controls, all plain `JobSpec` fields (not CLI flags yet):
   `DAMAGED_REQUIRES_MANUAL_TRANSFORM`. The worker never emits orientation or
   transform rows for them.
 - **`image_resolution`** (`low`|`medium`|`high`|`auto`, default `low`;
-  2026-10-01): `render.PICTURE_EDGES` gives each level two long edges, the
-  opening images (`render.opening_edge`: each tile of the opening strips,
+  2026-10-01): `core.sizes.PICTURE_EDGES` gives each level two long edges, the
+  opening images (`core.sizes.opening_edge`: each tile of the opening strips,
   sections and atlas, `opening.py`) and
-  every later picture (`render.picture_edge`: each panel a tool returns):
+  every later picture (`core.sizes.picture_edge`: each panel a tool returns):
   low 256/512, medium 384/768, high 512/1024, auto 256 then the agent's
   `view.resolution` per call (128 up to the driver model's largest image,
   2048 px on the OpenAI lanes, 2000 for a Claude host; 512 when it gives
@@ -625,7 +657,7 @@ The ABBA dialog's controls, all plain `JobSpec` fields (not CLI flags yet):
   agent is SHOWN changes. Nothing is upsampled past its source: a framed
   `render_slice` treats `long_edge` as a ceiling over the working copy, a
   physical picture (`core.placement.draw_canvas`) renders the section at the panel size
-  divided by the zoom span (`render.shown_section`, the matrix and pivot
+  divided by the zoom span (`core.sections.shown_section`, the matrix and pivot
   carried onto it by `rescale_section_matrix`) and `physical_views` shows
   the crop at `long_edge` or its own pixels, `atlas_fetch.atlas_sized`
   only shrinks the atlas plane, and `deformation.picture` stops at the
@@ -880,7 +912,7 @@ text plus prefix breaks. Design rules that follow:
   `store` is false) is kept on the model turn (`thought_signature`, summary
   in a `thought` text part so traces show it) and sent back ahead of that
   turn, the way the Codex CLI does. ~9k tokens by call 39, all cached.
-- **Rows are compact** (`render.compact_rows`): null and empty fields are
+- **Rows are compact** (`core.status.compact_rows`): null and empty fields are
   absent from every tool payload (a position-only run carried null transform
   fields on every row of every result, a third of the paid text).
 - **A placement picture is sent once per geometry.** Successful

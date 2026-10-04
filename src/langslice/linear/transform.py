@@ -353,7 +353,7 @@ def fit_silhouette(
 
     The whole tissue outline is matched against the whole atlas outline
     (:func:`langslice.affine.silhouette_affine`, in its own frame). Damaged
-    sections are refused before this runs (see `toolbox.fit_affine`).
+    sections are refused before this runs (see `ops.transforms.fit_affine`).
 
     Returns the tool-shaped payload: on success ``params`` (six normalized
     numbers on the section's frame), ``iou``, the ``physical`` knobs about the
