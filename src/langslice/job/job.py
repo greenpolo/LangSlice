@@ -694,12 +694,16 @@ class Job:
             else:
                 state = ingest(spec, workspace)
                 apply_host_inputs(state, spec)
+                if history.exists():
+                    history.load()  # read before it is emptied: never delete unread steps
+            if history.problem is not None:
+                workspace.progress(f"[job] {history.problem}")
             job = cls(state, spec, layout=layout, results_path=results_path,
                       undo=undo, redo=redo, history=history)
             job.lock = lock
             job.workspace = workspace
             if not undo and not redo and history.exists():
-                job._save_history()
+                job._save_history()  # a fresh job empties a history it read; never another
             job.checkpoint()
         layout.log_event("open", resumed=bool(undo or redo or spec.resume))
         return job
