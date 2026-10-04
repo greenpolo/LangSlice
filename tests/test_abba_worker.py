@@ -175,3 +175,40 @@ def test_nonlinear_without_an_image_model_is_accepted(params):
     params["spec"] = {"tasks": ["transform", "nonlinear"], "nonlinear": {"provider": "none"}}
     spec = prepare_linear(params).spec
     assert spec.has("nonlinear") and spec.nonlinear.uses_image_model is False
+
+
+@pytest.mark.parametrize("where", ["job_dir", "read_only"])
+def test_output_dir_is_the_job_folder_the_run_used(params, monkeypatch, tmp_path, where):
+    """The result's output_dir is the run's actual job folder: the spec's
+    job_dir, or the home fallback of a read-only snapshot folder (review
+    finding 12)."""
+    import os
+
+    from langslice.agent import engine
+    from langslice.job import index
+
+    if where == "read_only" and hasattr(os, "geteuid") and os.geteuid() == 0:
+        pytest.skip("root writes into read-only folders")
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+
+    async def run(spec, *, on_write, on_event, emit):
+        value = {"slices": [{"id": "section_0001.tif", "position_mm": 4.0,
+                             "rotation_deg": 0, "transform": None}]}
+        state = SimpleNamespace(to_dict=lambda: copy.deepcopy(value))
+        on_write(state)
+        return state
+
+    monkeypatch.setattr(engine, "run", run)
+    images = Path(params["image_folder"])
+    if where == "job_dir":
+        expected = tmp_path / "elsewhere" / "job"
+        params = {**params, "spec": {**params["spec"], "job_dir": str(expected)}}
+        result = run_linear(params, lambda event: None)
+    else:
+        expected = tmp_path / "home" / ".langslice" / "jobs" / index.folder_id(images)
+        images.chmod(0o555)
+        try:
+            result = run_linear(params, lambda event: None)
+        finally:
+            images.chmod(0o755)
+    assert Path(result["output_dir"]) == expected
