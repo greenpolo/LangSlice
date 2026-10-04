@@ -133,6 +133,10 @@ edits); a bounded redo with new notes per section.
   invalidates every in-plane transform fit against the old atlas section, so
   the agent refits the transforms it owns. DeepSlice returns positions only
   unless its angle box is ticked.
+  A registration made elsewhere may give each section its own angle
+  (`inputs.angles` per section): the job keeps each section's plane, and
+  setting the stack-wide angle gives every section that one (undoable).
+  ABBA shows one atlas angle per stack, so its doors refuse such a job.
 - **Output format follows the fit (agreed).** The border output is settled only
   once the deformation algorithm's input is chosen: raster lines need extraction and
   matching, which discarded the model's placement in every Elastix fit, while

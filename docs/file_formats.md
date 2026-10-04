@@ -40,7 +40,7 @@ Format 1.
 | `note`, `convention` | what the file is; the conventions above, in words |
 | `atlas` | `name`, `version`, `orientation`, `shape` (voxels per axis), `resolution_um` (per axis) |
 | `plane` | `coronal`, `sagittal` or `horizontal` |
-| `cutting_angles_deg` | the stack's `pitch` and `yaw` |
+| `cutting_angles_deg` | the stack's `pitch` and `yaw`; null when the sections' angles differ (a registration supplied per section), each section's `parameters.plane` then giving its own |
 | `image_folder` | the images' folder (absolute) |
 | `submitted` | whether the run was submitted |
 | `sections` | one entry per section, in corrected order (below) |
@@ -53,7 +53,7 @@ Each section:
 | `id` | the image filename |
 | `order` | its corrected index |
 | `folder` | its folder, relative to the job folder (`sections/<name>`) |
-| `parameters` | THE REGISTRATION, in public units: `atlas` (`name`, `version`); `plane` (`name`, `position_mm`, `position_um`, `pitch_deg`, `yaw_deg`); `orientation` (`rotation_deg`: counter-clockwise quarter turns, applied first; `flip`: left-right, applied after); `affine` (null without a transform; else `kind`, `params`: the six normalized numbers `[a, b, tx, c, d, ty]` on the oriented section render, x as a fraction of its width and y of its height; `physical`: rotation, scales, shear, translations in mm, pivot; `mirrored`); `deformation` (null; `{"kind": "none", "reason"}` when the linear placement was kept; or `{"kind": "residual", "record", "key", "steps", "inverse_source"}`, `record` being the deformation record's folder relative to the job folder); `damaged` |
+| `parameters` | THE REGISTRATION, in public units: `atlas` (`name`, `version`); `plane` (`name`, `position_mm`, `position_um`, and the section's own `pitch_deg`, `yaw_deg`); `orientation` (`rotation_deg`: counter-clockwise quarter turns, applied first; `flip`: left-right, applied after); `affine` (null without a transform; else `kind`, `params`: the six normalized numbers `[a, b, tx, c, d, ty]` on the oriented section render, x as a fraction of its width and y of its height; `physical`: rotation, scales, shear, translations in mm, pivot; `mirrored`); `deformation` (null; `{"kind": "none", "reason"}` when the linear placement was kept; or `{"kind": "residual", "record", "key", "steps", "inverse_source"}`, `record` being the deformation record's folder relative to the job folder); `damaged` |
 | `image` | `file`, `size` (`[width, height]` of the file), `pixel_size_um` (of the file), `pixel_size_source` (`host`, `file`, or `estimated`: neither gives one, so the scale is the one every placement picture draws the section at, estimated from its tissue width at its current position) |
 | `pixel_to_atlas_um` | 3x3: a file pixel `[row, col, 1]` -> atlas micrometres (3 rows, the atlas axes), the LINEAR placement; null without a placement |
 | `mapping` | `linear`, `linear (identity in-plane: no transform written)`, `linear + residual` (the maps hold the complete mapping), or null |

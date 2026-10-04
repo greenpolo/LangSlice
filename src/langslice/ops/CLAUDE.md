@@ -67,9 +67,12 @@ wording; `registry.py` lists which.
   show=)`: clamp into `workspace.position_range`, write, report
   written/clamped/unknown; with options, the written placements *show* keeps
   are pictured after the write (`views.placement_view`; `view`,
-  `not_shown`). `set_cutting_angles(job, workspace, pitch, yaw)` (drops the
-  render cache). `search_position(job, workspace, ref, window_mm, angles=)`
-  (a read: `oblique.fit_oblique` around the section's position, the best
+  `not_shown`). `set_cutting_angles(job, workspace, pitch, yaw)` (every
+  section gets the one plane, so a stack whose sections carried different
+  angles is flattened, one undo step restoring them; drops the render
+  cache). `search_position(job, workspace, ref, window_mm, angles=)`
+  (a read: `oblique.fit_oblique` around the section's position, holding the
+  section's own angles unless `angles`, the best
   position/angles/score; `UNKNOWN_SLICE_IDS`, `NO_POSITION`, `BAD_ARGS`,
   `FIT_FAILED`). `run_deepslice(job, workspace, ids, allow_angle_change=)`
   (the `core/deepslice.py` seam: `UNAVAILABLE`).

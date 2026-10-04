@@ -60,7 +60,15 @@ inputs, `job.refuse_changed_inputs`, and with `--fresh` marks the job
 clears the mark)
 and `abba_worker.py` (the JVM-free linear snapshot worker:
 `prepare_linear`, `checkpoint_callback` with its ABBA-world host rows,
-`run_linear`, `preview_preprocess`). The engine service and the ABBA
+`run_linear`, `preview_preprocess`; ABBA shows one atlas angle per stack,
+so `checkpoint_callback` refuses a state whose sections differ in cutting
+angle before emitting anything (`refuse_mixed_angles`,
+`ABBA_MIXED_ANGLES`: the job was made elsewhere with an angle per section,
+which ABBA cannot show), which also fails `run_linear`'s final checkpoint
+and the MCP door's opening of a saved ABBA job (`server.open_saved_job`);
+`refuse_mixed_job(spec)` refuses differing supplied per-section angles, and
+a resumed checkpoint that has them, for the Python launcher. The worker's
+own jobs are flat). The engine service and the ABBA
 plugin's `nonlinear.abba` worker stay in `hosts/api/`.
 
 ## Files

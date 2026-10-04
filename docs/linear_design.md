@@ -61,6 +61,10 @@ JobSpec
   nonlinear: {provider: openai-oauth, image_model: null, engine: either, notes: ""}
                                 # provider "none": no image model (no trace_borders)
   inputs: order/positions/angles/transforms supplied by the host for tasks that are OFF,
+          angles either {pitch, yaw} for the whole stack or {id: {pitch, yaw}} per
+          section (a registration made elsewhere keeps each section's own plane; a
+          section not named stays flat; a mapping mixing the two is refused,
+          core.spec.supplied_angles),
           orientation {id: {flip, rotation_deg}} (the supplied flip and quarter turn,
           kept as supplied), plus pixel_size_um, damaged {id: note} (flags the agent
           cannot clear),
@@ -103,7 +107,8 @@ Opening = each tile of the opening strips. The seed message shows the stack
 the way ABBA's slice strip does (`core/opening.py`, 2026-10-03): horizontal
 strips in corrected order, the sections on top and, directly beneath each,
 the atlas at that section's current position and the stack's cutting angles
-(drawn to the section's size). Every tile is labelled in its pixels
+(each section's own, when a supplied registration gives them per section;
+drawn to the section's size). Every tile is labelled in its pixels
 (`<index>: <filename>`, `atlas <mm> mm`, `no position`), columns are split by
 a thin line, and a text part before each strip lists its sections. A strip's
 long edge is the model lane's largest image, 2048 px on the OpenAI lanes and
@@ -156,7 +161,7 @@ job's own history is read back instead).
 Everything a job writes lives in its job folder next to the images,
 `<images>/langslice/` (2026-10-03, `src/langslice/job/CLAUDE.md`):
 `job.json` (the spec and the folder's format version), `state.json` (the
-checkpoint, state format 2), `history/`, `sections/<stem>/` (the section's
+checkpoint, state format 3), `history/`, `sections/<stem>/` (the section's
 deformation records, image corrections and the pictures of it the model
 was shown), `views/` (pictures of several sections), `views.jsonl` (every
 saved picture), `exports/` (`linear_results.json`) and `logs/`. Every path
@@ -182,7 +187,8 @@ the run log and recorded in the id's index entry.
 StackState
   image_folder, atlas, plane, interval_mm, thickness_mm
   spec: the JobSpec as run
-  cutting_angles_deg: {pitch, yaw}      # stack-wide; 0/0 = flat
+  cutting_angles_deg: {pitch, yaw}      # serialized only: the sections' shared
+                                        # angle (0/0 = flat), null when they differ
   interval_breaks: [corrected indices]  # section AFTER a gap the agent concluded is real
   notes: [str]                          # agent notes, run log
   slices: [SliceState]
@@ -200,7 +206,18 @@ SliceState
                      calibration, iou?, mirrored?, note?}
   caveats: [str]
   image_correction | null: first image-model reply, notes, geometry and artifact paths
+  cutting_angles_deg: {pitch, yaw}      # this section's plane (state format 3);
+                                        # written on the row only when they differ
 ```
+
+Cutting angles are per section (2026-10-04), so a registration made
+elsewhere keeps each section's own plane, and every picture, fit, trace,
+map and export of a section uses its own. Everything LangSlice angles
+itself is one plane: `set_cutting_angles` sets every section (a stack whose
+sections differed is flattened; undo restores them). A stack whose sections
+share an angle is written exactly as before format 3; an older checkpoint
+loads with every section carrying the stack's angle. ABBA shows one atlas
+angle per stack, so its doors refuse a job whose sections differ.
 
 Order and position are separate fields that must agree at submit. Reordering
 touches ONLY `index_corrected` — positions and transforms are kept — and
@@ -251,9 +268,9 @@ model SDK.
 
 | tool | task gate | does |
 | --- | --- | --- |
-| `status` | always | one row per section in corrected order: index, id, position_mm, delta_to_next_mm (signed), flip, rotation_deg, damaged(+note), transform kind, transform_iou, transform_mirrored, caveats; plus cutting angles and interval breaks. The `ls` of the environment. |
+| `status` | always | one row per section in corrected order: index, id, position_mm, delta_to_next_mm (signed), flip, rotation_deg, damaged(+note), transform kind, transform_iou, transform_mirrored, caveats; plus cutting angles and interval breaks (`"per section"` when the sections' angles differ, each row then carrying its own `cutting_angles_deg`). The `ls` of the environment. |
 | `view_slices(slices, view)` | always | up to 4 sections at the later-picture size, rendered as corrected, each captioned with its index and filename. Mode `section` (the section in `view.channels`; `zoom` crops a larger render, magnifying up to the section's working copy) or `channels` (per section one strip of small tiles, one per raw channel, unmodified and labelled; `channels` in the reply lists them). |
-| `view_atlas(positions_mm, view)` | always | up to 4 atlas sections, rendered at the current cutting angles, each captioned with its position (and the angles when oblique), framed to the anatomy. Mode `template`; atlas channels default `[ara]` (add `borders` for lines); `regions` draws those regions' borders; `regions_not_in_plane` names any absent at a position. |
+| `view_atlas(positions_mm, view)` | always | up to 4 atlas sections, rendered at the current cutting angles (the median of the sections' when they differ, said in the description), each captioned with its position (and the angles when oblique), framed to the anatomy. Mode `template`; atlas channels default `[ara]` (add `borders` for lines); `regions` draws those regions' borders; `regions_not_in_plane` names any absent at a position. |
 | `note(text)` | always | append to the run notes. |
 | `undo()` / `redo()` | always | the job's snapshot history, saved beside the checkpoint and kept across a resume; a batch call undoes as one. |
 | `orient_slices([{id, flip?, rotate_deg?}], view)` | transform (rotate) / transform.flip (flip) | set flip and rotation; an orientation change clears the section's transform; returns each changed section rendered as it now stands (≤4). |
@@ -265,7 +282,7 @@ model SDK.
 | `view_stack(view)` | position | one contact sheet of every section in the order of its written position, each over the atlas at its position and captioned with index, filename, position and the distance to the next, plus a plot of position against corrected index (damaged in red): two images. Mode `stacked`; no zoom. Writes nothing. |
 | `run_deepslice(slices, allow_angle_change, keep=[ids])` | position.deepslice | positions (+ angles) for undamaged sections; UNAVAILABLE unless installed and plane/atlas supported. |
 | `search_position(id, window_mm, angles?)` | position.bayesian | `oblique.fit_oblique` at the section's current position: best position (and angles) with score; writes nothing. |
-| `set_cutting_angles(pitch_deg, yaw_deg)` | transform.angles | stack-wide; subsequent atlas fetches and fits use them. |
+| `set_cutting_angles(pitch_deg, yaw_deg)` | transform.angles | stack-wide; subsequent atlas fetches and fits use them. Sets every section, so a stack supplied with an angle per section gets one (undoable). |
 | `fit_affine(slices, method=elastix\|silhouette, fit_atlas="", include=[], exclude=[], view)` | transform | per-section in-plane affine against its atlas section, written as the section's transform (`kind` = the method). `elastix` (default, 2026-10-03) is a local refinement of the section's CURRENT transform (identity without one), never a search from scratch: the deformable package's stain-fit inputs (the `fit` appearance against `fit_atlas`, the ARA template by default or ABBA's Nissl where installed, tissue and atlas masks, the edge channel, excluded regions blanked; an intact section gets no torn-edge band) and an Elastix `AffineTransform` (mutual information + edges, fixed seed and threads, so identical inputs give identical numbers; `transform.fit_elastix`, `core.deformable.engines.run_elastix_affine`). A full affine: the six stored numbers carry its shear exactly, and `physical` reports it as `shear`. `silhouette` is the moments fit of the outlines from scratch. Returns iou (for `elastix`: tissue against the kept atlas footprint under the fitted placement), the transform as the same five `physical` knobs `adjust_transforms` takes (plus `shear`, about the canvas centre) and a captioned panel (default `overlay`; any physical mode) for every successful fit, mapped by `image_indexes`. Damaged sections are refused unless regions are given. `include`/`exclude` (as in `fit_deformable`, one-sided entries such as `"CTX:left"` included) restrict the fit to the kept atlas regions and the tissue the current placement lays on them — silhouette on the true-scale canvas (`transform.region_silhouette_fit`), elastix through the same masks `fit_deformable` builds — with a `regions` report; without them the fit is unchanged. The silhouette fit reads the default appearance, the Elastix fit the `fit` appearance. |
 | `adjust_transforms(entries, view)` | transform.interactive | set one to four independent sections, each with rotation, per-axis scales, millimetre shifts and an optional `shear` (2026-10-03; `affine.decompose_affine`'s convention: linear part `R(rotation) . [[scale_x, shear*scale_x], [0, scale_y]]`, a unitless slant before the rotation in units of `scale_x`, the number `fit_affine` reports; left out, the section's current shear is kept, 0 when it has none; an explicit value, 0 included, sets it). Per-entry pivot and note; one `view` draws every entry (modes as the physical views plus `ab`); `ab` and `side_by_side` return two images, other modes one. Each result maps its images with `image_indexes`. One undo step; repeat unchanged parameters to redraw. Replaces the complete transform, including any spline; a shear left out is kept. Inspect before a dependent correction in a later call. |
 | `trace_borders(id, prompt)` | nonlinear, unless provider `none` | one image-model correction (agent edits the base prompt per section) of the section's placed atlas borders, run in the background (submit waits), first reply kept; no fit, no transform change. See [the image-tool contract](nonlinear_image_tool.md). |
@@ -446,7 +463,8 @@ langslice linear quick-affine ...   (unchanged)
 The full flag list is in `docs/current_workflow.md`. `agent_damage`, the
 per-task `notes` and `transform.max_parallel` are spec fields without CLI
 flags so far; `inputs.orientation`, `inputs.locked` and `inputs.damaged` are
-`--orientation`, `--locked` and `--damaged`.
+`--orientation`, `--locked` and `--damaged`; `inputs.angles` is `--pitch`/`--yaw`
+for the whole stack or `--section-angles` per section (not both).
 
 `estimate`, `estimate-brain`, `--stop-after`, `--rerun-from` and
 `collect-traces` are removed. A single section is a stack of one.

@@ -27,7 +27,7 @@ langslice linear run FOLDER [--tasks reorder,position,transform[,nonlinear]]
     [--atlas ...] [--plane ...] [--model ...] [--preprocess auto|none]
     [--image-provider NAME] [--image-model NAME]
     [--reasoning low|medium|high|xhigh|max] [--pixel-size-um UM]
-    [--pitch DEG] [--yaw DEG]
+    [--pitch DEG] [--yaw DEG] [--section-angles JSON]
     [--no-flip] [--hemisphere-cue TEXT]
     [--thickness UM] [--interval UM] [--strict-interval] [--deepslice] [--bayesian]
     [--angles]
@@ -57,7 +57,11 @@ or as inline JSON (an inline object or list is always parsed as JSON,
 however long). So are `--locked` (a list of filenames the user already
 aligned in-plane: their flip, rotation and transform cannot change, and a
 locked section without a supplied transform carries the host identity) and
-`--damaged` (filename to a note: damage flags the agent cannot clear). Hosts present
+`--damaged` (filename to a note: damage flags the agent cannot clear), and
+`--section-angles` (filename to `{"pitch": deg, "yaw": deg}`: a registration
+made elsewhere keeps each section's own cutting plane; a section it does not
+name stays flat; not with `--pitch`/`--yaw`, which give the whole stack one
+plane). Hosts present
 `reorder` + `position` as one Positioning task and `transform` as Linear; see
 [the interface design](interface_design.md). The ABBA dialog's extra controls
 (per-task notes, the per-call section cap, the agent's damage tool) are
@@ -74,9 +78,9 @@ run can use:
 
 | tool | on when | does |
 | --- | --- | --- |
-| `status` | always | one row per section in corrected order: index, id, `position_mm`, `delta_to_next_mm` (signed), flip, rotation, damaged (+note), transform kind, `transform_iou`, `transform_mirrored`, caveats; plus the stack's cutting angles and interval breaks. Ordinary writes answer with only the rows they changed; transform writes use their physical result instead. This is the whole table |
+| `status` | always | one row per section in corrected order: index, id, `position_mm`, `delta_to_next_mm` (signed), flip, rotation, damaged (+note), transform kind, `transform_iou`, `transform_mirrored`, caveats; plus the stack's cutting angles (`"per section"` when they differ, each row then carrying its own) and interval breaks. Ordinary writes answer with only the rows they changed; transform writes use their physical result instead. This is the whole table |
 | `view_slices` | always | up to 4 sections at higher resolution, rendered as corrected, each captioned with its index and filename; `view` mode `channels` shows each section's raw channels side by side, unmodified and labelled |
-| `view_atlas` | always | up to 4 atlas sections, rendered at the stack's current cutting angles, each captioned with its position |
+| `view_atlas` | always | up to 4 atlas sections, rendered at the stack's current cutting angles (the median of the sections' when a supplied registration gives them per section, said in the reply), each captioned with its position |
 | `note`, `undo`, `redo` | always | run notes; snapshot undo where one tool call undoes as one step, saved beside the checkpoint |
 | `mark_damaged` | `agent_damage` (on in the CLI) | set or clear damage per entry with `damaged` (default True); clearing also removes the note; a damage flag the host set cannot be cleared |
 | `preprocess` | `--agent-preprocessing` (`agent_preprocessing`) | the section appearance (channel weights, CLAHE, ANTs N4/denoise) for target `view`, `fit` or both, stack-wide or per section; undoable; returns each pictured section (up to 4) BEFORE and AFTER the call, labelled |
@@ -87,7 +91,7 @@ run can use:
 | `view_stack` | `position` | one contact sheet of every section in the order of its written position over the atlas at that position, captioned with position and the distance to the next, plus a position-vs-index plot (two images); writes nothing |
 | `run_deepslice` | `--deepslice` | reports `UNAVAILABLE` until the optional extra lands |
 | `search_position` | `--bayesian` | `oblique.fit_oblique` around a section's current position; writes nothing |
-| `set_cutting_angles` | `--angles` | stack-wide pitch/yaw; later fetches and previews follow |
+| `set_cutting_angles` | `--angles` | stack-wide pitch/yaw, set on every section (a stack supplied with an angle per section gets one; undoable); later fetches and previews follow |
 | `fit_affine` | `transform` | in-plane affine per section, written as its transform: by default the Elastix intensity affine refining the section's current transform (stain and edges against `fit_atlas`: the ARA template by default, ABBA's Nissl where installed; never a search from scratch), or `method="silhouette"` (outline moments fit from scratch); with the overlap, the transform as the five physical parameters (`rotation_deg`, `scale_x`, `scale_y`, `translate_x_mm`, `translate_y_mm`, plus `shear`) about the canvas centre, and a physical-scale overlay for every successful fit; `include`/`exclude` regions (as in `fit_deformable`) fit only the kept atlas regions against the tissue the current placement lays there, with a `regions` report; damaged sections are refused unless regions are given |
 | `adjust_transforms(entries, view)` | transform.interactive | set one to four independent sections, each with rotation, per-axis scales, millimetre shifts and an optional `shear` (the unitless slant `fit_affine` reports; left out, the current shear is kept). Per-entry pivot and note; one `view` draws every entry; `ab` and `side_by_side` return two images, other modes one. Each result maps its images with `image_indexes`. One undo step; repeat unchanged parameters to redraw. Replaces the complete transform, including any spline; a shear left out is kept. Inspect before a dependent correction in a later call. |
 | `trace_borders(id, prompt)` | `nonlinear` unless `--image-provider none` | sends the section's placed atlas borders and the clean section to the image model with the agent's edited copy of the base correction prompt; runs in the background and returns at once; keeps the first reply with the extracted borders on the original, and `submit` waits for running calls. No deformation is fitted and no transform changes. See [the image-tool contract](nonlinear_image_tool.md) |

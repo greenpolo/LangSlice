@@ -70,7 +70,7 @@ job.lock             the write lock (lock.py), held while a writer syncs and com
 job.json             settings: the JobSpec under "spec", format_version (1),
                      created_at, image_folder; a saved Claude job's job_id and
                      its own fields under "host" (kind, params, notes, trace_dir)
-state.json           the checkpoint (StackState, state format 2): THE TRUTH
+state.json           the checkpoint (StackState, state format 3): THE TRUTH
 registration.json    its public rendering (formats.py), rewritten on every checkpoint
 history/             undo/redo: index.json + step-NNNNNN.json, one per step
 sections/<stem>/     per section; <stem> is the image filename's stem (the whole
@@ -207,7 +207,7 @@ longer exist be taken over by the images it is opened with.
   job's preparation): `linear_state.json`, `linear_undo.json`,
   `linear_results.json`, `deformable/<file>/<key>/` and
   `nonlinear/<file>/<key>/` beside the images move into the job folder
-  (state to `state.json` at format 2, history split per step, records and
+  (state to `state.json` at the current format, history split per step, records and
   calls into their section folders, results to `exports/`, every stored
   path rewritten to its new relative place, including each moved call's
   saved `result.json`). Skipped (logged) when the job folder already holds a
