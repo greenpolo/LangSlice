@@ -56,16 +56,13 @@ from langslice.linear.deepslice import run_deepslice as _run_deepslice
 from langslice.linear.display import (
     MODE_RULES,
     DisplayOptions,
-    Profile,
     atlas_caption,
     atlas_image_picture,
     available_atlas_channels,
     channel_strip,
     framed_atlas,
     framed_section,
-    parse_view,
     regions_in_plane,
-    view_schema,
 )
 from langslice.linear.live import LiveCallback, _plain
 from langslice.linear.render import (
@@ -97,6 +94,7 @@ from langslice.linear.transform import (
     fit_silhouette,
     physical_decomposition,
 )
+from langslice.linear.view_options import Profile, parse_view, view_schema
 from langslice.space import Plane
 
 if TYPE_CHECKING:  # ponytail: import cycle — engine builds the toolbox
@@ -142,7 +140,7 @@ _NEW_TRANSFORM = ("this tool writes a new linear transform, which clears any def
                   "view_placement shows the applied one")
 
 #: Each picture tool's ``view``: its modes (first = default) and the keys that
-#: mean something for it (:class:`langslice.linear.display.Profile`).
+#: mean something for it (:class:`langslice.linear.view_options.Profile`).
 VIEW_SLICES_VIEW = Profile(("section", "channels"), atlas=False)
 ORIENT_VIEW = Profile(("section",), atlas=False)
 PREPROCESS_VIEW = Profile(

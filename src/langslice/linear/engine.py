@@ -28,9 +28,8 @@ from langslice.linear.checkpoint import (
     save_checkpoint,
 )
 from langslice.linear.discovery import discover_slices
-from langslice.linear.display import display_facts
 from langslice.linear.live import LiveCallback
-from langslice.linear.prompt import build_job_statement
+from langslice.linear.prompt import build_job_statement, display_facts
 from langslice.linear.render import status_text
 from langslice.linear.session import (
     DEFAULT_MAX_ITERATIONS,
