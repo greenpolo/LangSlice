@@ -357,7 +357,11 @@ program. Code that runs in LangSlice's own environment lives in
   border correction (nonlinear, needs the linear placement) → deformation
   (not designed yet; off by default) → VisuAlign markers → export`.
 - `linear` and `nonlinear` are independent; `nonlinear` accepts a position
-  from any source, not just `langslice linear`.
+  from any source, not just `langslice linear`. A linear registration made
+  elsewhere (QuickNII/VisuAlign JSON or XML, DeepSlice JSON/XML/CSV, a job's
+  `registration.json`) is read into per-section placements by
+  `job/imports.py` over the exact inverse geometry
+  `core/import_geometry.py`; not yet wired into a job's inputs.
 - Registration is exactly two border-based routes, chosen automatically by
   whether a placement is supplied: route "supplied" is one image-model call
   that moves a supplied linear/host placement's drawn boundaries onto the

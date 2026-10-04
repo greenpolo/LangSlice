@@ -239,6 +239,19 @@ longer exist be taken over by the images it is opened with.
   `derived_files` (the CLI's artifacts after submit), `write_json`, the
   file names (`SECTION_FILES` by artifact kind, `QUICKNII_FILE`,
   `VISUALIGN_FILE`).
+- `imports.py` — a linear registration made elsewhere, read (never
+  written to the job): `read_registration` (QuickNII/VisuAlign/DeepSlice
+  JSON, QuickNII/DeepSlice XML, DeepSlice CSV, a job's `registration.json`),
+  `match_sections` (exact name, then stem ignoring case, then one `_sNNN`
+  section number; `AmbiguousMatch` refuses doubles), `import_placements(source,
+  workspace, section_ids=, orientations=, target=)` -> `ImportResult`
+  (per-section `ImportedPlacement`: position, per-section pitch and yaw,
+  flip, quarter turn, six numbers, pixel size and its source, the imported
+  map on the job's file, VisuAlign markers rescaled to the file and raw;
+  `transform()` the stored-transform dict, kind `imported`; `unmatched`,
+  `missing`, `refused`). Geometry through `job/quint.py`'s inverses and
+  `core/import_geometry.py`; `docs/file_formats.md` ("Importing a
+  registration made elsewhere"). Not wired into `JobSpec.inputs` yet.
 - `views.py` — `ViewStore` (`Job.views`): every picture the model was
   shown. The hook every door uses (phase 3d) is `ViewStore.shown(tool,
   atlas_of=)`: a context manager that collects what `core.layers` notes

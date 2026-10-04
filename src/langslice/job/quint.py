@@ -472,6 +472,40 @@ def atlas_um_to_quicknii_points(points_um: Any, atlas: dict[str, Any]) -> np.nda
     return np.asarray(bg_space.map_points_to(quicknii_space, edges), dtype=np.float64)
 
 
+def quicknii_points_to_atlas_um(points: Any, atlas: dict[str, Any]) -> np.ndarray:
+    """The inverse of :func:`atlas_um_to_quicknii_points`: QuickNII voxel
+    coordinates (``(n, 3)``: x ML, y AP, z DV, voxel edges, on the atlas's
+    own grid) as BrainGlobe atlas micrometres in the atlas's axis order."""
+    bg_space, quicknii_space = _quicknii_spaces(atlas)
+    forward = np.asarray(bg_space.transformation_matrix_to(quicknii_space), dtype=np.float64)
+    values = np.asarray(points, dtype=np.float64).reshape(-1, 3)
+    homogeneous = np.column_stack([values, np.ones(len(values))])
+    edges = (np.linalg.inv(forward) @ homogeneous.T).T[:, :3]
+    resolution = np.asarray(atlas["resolution_um"], dtype=np.float64)
+    return (edges - VOXEL_EDGE_TO_CENTRE) * resolution
+
+
+def quicknii_target(atlas_name: str) -> str:
+    """The QuickNII ``.cutlas`` target a BrainGlobe atlas is exported to."""
+    return _resolve_target(atlas_name)
+
+
+def from_target_grid(anchoring: Sequence[float], atlas_name: str,
+                     resolution_um: Sequence[float]) -> list[float]:
+    """The inverse of :func:`to_target_grid`: nine anchoring numbers in the
+    QuickNII target's voxel space, in the voxel space of the BrainGlobe atlas
+    *atlas_name* (voxels of *resolution_um*). Not rounded."""
+    target = _TARGET_RESOLUTION_UM.get(_resolve_target(atlas_name))
+    sizes = {float(value) for value in resolution_um}
+    values = [float(value) for value in anchoring]
+    if target is None or sizes == {target}:
+        return values
+    if len(sizes) != 1:
+        raise ValueError(f"{atlas_name}: anisotropic voxels cannot be read from its target")
+    factor = target / sizes.pop()
+    return [value * factor for value in values]
+
+
 def anchoring_from_pixel_map(
     pixel_to_atlas_um: Any, width: int, height: int, atlas: dict[str, Any],
 ) -> AnchoringVector:

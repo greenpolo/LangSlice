@@ -20,7 +20,9 @@ import a host. The QUINT entry below describes that file.
   to the `lpi` QuickNII axes, voxel centres to edges); written by
   `ops.exports.export_maps` as `exports/quicknii.json` and
   `exports/visualign.json` (VisuAlign markers of each applied deformation,
-  `core.maps.residual_markers`). The older coronal-frame
+  `core.maps.residual_markers`). Their inverses, for reading a
+  registration back (`job/imports.py`): `quicknii_points_to_atlas_um`,
+  `from_target_grid`, `quicknii_target`. The older coronal-frame
   `compute_anchoring` path is unchanged.
   `abba.py`: LangSlice as an abba-python registration plugin
   (`enable_langslice_registration`, `register_selected_slices`). Implements
