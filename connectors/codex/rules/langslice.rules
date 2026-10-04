@@ -1,0 +1,18 @@
+# Codex rules govern commands that run OUTSIDE the sandbox, and only those.
+# Copy to ~/.codex/rules/ or <project>/.codex/rules/ (project layers need a
+# trusted project). Check with:
+#   codex execpolicy check --pretty --rules rules/langslice.rules -- langslice job /data/M04 status
+
+prefix_rule(
+    pattern = ["langslice"],
+    decision = "allow",
+    justification = "LangSlice job commands may run without a prompt",
+    match = ["langslice job /data/M04 status", "langslice ops"],
+    not_match = ["python3 -c print(1)"],
+)
+
+prefix_rule(
+    pattern = ["curl"],
+    decision = "forbidden",
+    justification = "A registration agent has no reason to fetch from the network",
+)
