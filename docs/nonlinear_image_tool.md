@@ -66,7 +66,9 @@ the connector's older `nonlinear.abba` worker method is not called by the dialog
 ## Retention and state
 
 `SliceState.image_correction` records the first result and artifact paths separately
-from `transform`. The artifacts live in `nonlinear/` beside the results JSON and
+from `transform`, the paths relative to the job folder. The artifacts live in the
+section's folder of the job folder
+(`<images>/langslice/sections/<stem>/image_correction/<call key>/attempt-NN/`) and
 contain exact image attachments, their hashes, the prompt sent, the base prompt
 and their diff, placement provenance, raw reply, extracted lines and lines on
 the original.

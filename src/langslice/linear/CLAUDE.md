@@ -157,9 +157,22 @@ pictures from what it returns. Every tool returns plain PIL pictures (and,
 for `view_stack`, lines of text) under `TOOL_MEDIA_PARTS_KEY`; the ADK driver
 packages them as JPEG message parts (`adk.media.packaged`), the MCP server as
 image and text blocks (`result_blocks`), so the bytes each host receives are
-those it received before (the goldens check). Not yet: saving every render
-with its layers to the job folder (phase 3c, which takes the layers from the
-`CanvasFrame`).
+those it received before (the goldens check).
+
+**The job folder (phase 3c, 2026-10-03).** A job's files live in
+`<images>/langslice/` (`src/langslice/job/`, its own `CLAUDE.md`):
+`job.json`, `state.json`, `history/` (one file per undo step),
+`sections/<stem>/` (deformation records, image corrections, pictures),
+`views/`, `views.jsonl`, `exports/`, `logs/`. `Job.open(spec, workspace,
+folder=..., results_path=...)` upgrades an old layout first
+(`job.migrate`), writes `job.json`, then resumes or ingests;
+`engine.EngineContext` carries `job_folder` (`checkpoint_path` and
+`layout` are derived). Every path the state stores is relative to the job
+folder (state format 2). Every picture a tool returns is saved there with
+its layers (`toolbox._saves_views` around every tool, `Job.views`; the
+ADK opening through `engine.save_opening`, MCP pages through
+`server.save_page`), the exact JPEG bytes the door sent; replies are
+unchanged.
 
 - `spec.py` — `JobSpec` (+ `ReorderSpec`/`PositionSpec`/`TransformSpec`/
   `NonlinearSpec`). Every checkbox a host shows maps to a field here; nothing
@@ -196,24 +209,32 @@ with its layers to the job folder (phase 3c, which takes the layers from the
   `render_scale` caches and the `picture_cache` of captioned reference
   pictures (`core.pictures`). No model: the driver's `engine.EngineContext`
   subclasses it to add that.
-- `checkpoint.py` — atomic JSON write to `<folder>/linear_state.json`,
-  versioned (`format_version`, `STATE_FORMAT_VERSION` 1; `upgrade_state`
-  reads an unversioned checkpoint as version 0, the same fields, and refuses
-  a newer one), and the global observers (`observe_checkpoints`).
-- `job.py` — the job layer (above): `Job.open` (resume the checkpoint when
-  `spec.resume`, else `ingest` + `apply_host_inputs`, then the first
-  checkpoint), `ingest`, `apply_host_inputs`, `host_transform`,
+- `checkpoint.py` — atomic JSON write of the job folder's `state.json`
+  (`default_checkpoint_path`: `<images>/langslice/state.json`), versioned
+  (`format_version`, `STATE_FORMAT_VERSION` 2; `upgrade_state(data, root)`
+  reads an unversioned checkpoint as version 0, makes version 1's absolute
+  paths inside *root* relative, and refuses a newer one), `state_paths`
+  (every path a state stores, through one converter), `relative_to`, and
+  the global observers (`observe_checkpoints`). `CHECKPOINT_FILENAME`
+  (`linear_state.json`) names the old layout's file, for the migration.
+- `job.py` — the job layer (above): `Job.open` (migrate an old layout,
+  write `job.json`, resume the checkpoint when `spec.resume`, else `ingest`
+  + `apply_host_inputs`, then the first checkpoint), `Job.layout` /
+  `folder` / `checkpoint_path` / `undo_path`, `Job.portable` (an image
+  correction's paths made relative), `Job.views` (`job.views.ViewStore`),
+  `Job.close` (flush the pictures), `ingest`, `apply_host_inputs`,
+  `host_transform`,
   `emit_results`, the submit gates (`submit_errors` and its parts,
   `missing_deformations` included). Undo is ONE pattern: `before =
   job.snapshot()`, write, `job.commit(before)` (one undo step, then the
-  checkpoint). The history is `linear_undo.json` beside the checkpoint
-  (`UNDO_FORMAT_VERSION` 1: `undo` and `redo`, oldest first, whole states at
-  `state_format_version`; depth `UNDO_DEPTH` 50), rewritten on every step,
-  read back by a resumed job and emptied by a fresh one; an unreadable one
-  starts empty. `Job.sync` (run inside the toolbox lock before every tool
+  checkpoint). The history is the job folder's `history/`
+  (`job.history.History`: `index.json` lists the `undo` and `redo` steps,
+  oldest first, each step one whole-state file written once; depth
+  `UNDO_DEPTH` 50, steps beyond it deleted), read back by a resumed job and
+  emptied by a fresh one; an unreadable one starts empty. `Job.sync` (run inside the toolbox lock before every tool
   call) reloads the state file when its inode, size or mtime changed since
   the job last read or wrote it: a script's edit becomes one undo step, a
-  second job's edit comes with its own history file, which is read back;
+  second job's edit comes with its own history index, which is read back;
   an unchanged rewrite is not a step and a file that does not parse (a
   script mid-write) is left for the next call. A step holds the whole
   state, so undo restores the deformation references on the section
@@ -512,8 +533,9 @@ with its layers to the job folder (phase 3c, which takes the layers from the
   correlation radius, edge channel and label map),
   `RecordStore` (results by `cache_key`, a digest of every input incl. the
   linear placement and the start record; 8 in memory, applied ones saved to
-  `<results dir>/deformable/<section>/<key[:24]>/`; `current` is None for a
-  `keep_linear` record), `linear_key` /
+  `<folder_of(section)>/<key[:24]>/`, the job's
+  `sections/<stem>/deformable/`; `current` is None for a `keep_linear`
+  record), `linear_key` /
   `clear_stale`, `summary` (displacement max/median, fold fraction, compact
   flags, the whole-section `SECTION_FLAGS` DISPLACEMENT_OUTSIZED and FOLDS
   listed before the per-region ones so `MAX_FLAGS` never hides them),
@@ -742,7 +764,8 @@ one). `traced_borders` is the ANTs label-map mode (`labels="model"`),
 call; the result lands as `settle_image_corrections` lands it, checkpointed,
 no undo step), and the reply adds one picture per traced section of its lines
 on the stain (`traces` maps them); `TRACE_TIMEOUT` / `TRACE_FAILED` otherwise. Max 4 sections, 8 fits
-per call. `SliceState.deformation` holds `record` (absolute path), `key`,
+per call. `SliceState.deformation` holds `record` (the record's folder,
+relative to the job folder), `key`,
 `linear_key`, `steps` (the chain for `current`), `summary`, `inverse_source`;
 the record directory holds the composed field, its inverse, the parent steps
 and `provenance` (section id, linear handoff metadata, inputs). Every tool is
@@ -972,10 +995,10 @@ still believed.) `orient_slices` does still clear a section's transform: a
 transform is defined AFTER the orientation it was fitted under.
 
 **Every write checkpoints, every write is undoable.** One tool call is one undo
-step, so a batch undoes as one. The undo history (depth 50) is saved beside
-the checkpoint (`linear_undo.json`), so a resumed run starts from the state as
-it stood and can still undo the steps before it (until 2026-10-03 the history
-was in memory only and a resume began with none).
+step, so a batch undoes as one. The undo history (depth 50) is saved in the
+job folder (`history/`, one file per step), so a resumed run starts from the
+state as it stood and can still undo the steps before it (until 2026-10-03
+the history was in memory only and a resume began with none).
 
 ## Ceilings worth knowing
 

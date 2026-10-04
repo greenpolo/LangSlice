@@ -257,8 +257,9 @@ Text: settings and engine numbers, displacement max/median, fold fraction,
 plausibility flags (regions compressed, expanded, vanished or folded;
 `DISPLACEMENT_OUTSIZED` when the largest displacement passes a tenth of the
 tissue's extent or the median passes 0.6 mm). The deformation is stored per
-section (`SliceState.deformation` plus a record directory under the results
-folder); any change to that section's position, orientation, cutting angles
+section (`SliceState.deformation` plus a record directory in the section's
+folder of the job folder, `<images>/langslice/sections/<stem>/deformable/`);
+any change to that section's position, orientation, cutting angles
 or transform clears it and the tool's reply says `deformation_cleared` (undo
 restores both). `view_placement` and `set_positions` draw the applied warp
 in every mode that draws the section under its placement (`overlay`,
@@ -438,7 +439,8 @@ Usage belongs to Claude, so there is no LangSlice cost estimate.
 
 Keep the progress window open: section changes appear live in ABBA through its
 native actions. Close or Disconnect ends only the live connection, not Claude's
-work; checkpoints and completed results remain in the saved job directory.
+work; checkpoints and completed results remain in the job folder next to the
+exported snapshots (`~/.langslice/snapshots/claude-*/langslice/`).
 Each live checkpoint is an undoable ABBA step, unlike ChatGPT's single final apply.
 Avoid editing the selected slices until the connection is finished.
 The log shows LangSlice activity, not Claude's conversation. Saved MCP traces

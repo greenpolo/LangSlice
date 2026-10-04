@@ -141,14 +141,30 @@ the deformation records and the background image corrections. `Job.open`
 resumes the checkpoint (`spec.resume`) or ingests the folder and applies the
 host's inputs. The ADK tools and the MCP server both sit on it. A write is
 one pattern: `before = job.snapshot()`, write, `job.commit(before)` (one undo
-step, then the checkpoint). The undo history (depth 50) is the plain file
-`linear_undo.json` beside the checkpoint (`format_version` 1: `undo` and
-`redo` lists of whole states, oldest first), so undo reaches back across a
-resume; a fresh run empties it. Before every tool call the job reloads a
-state file changed on disk since it last read or wrote it (a script, or a
-second job on the same folder), so a script's edit is picked up mid-run
-instead of overwritten; the edit becomes one undo step (a second job's own
-history file is read back instead).
+step, then the checkpoint). The undo history (depth 50) is the job
+folder's `history/`: `index.json` lists the undo and redo steps, oldest
+first, and each step is one whole-state file written once, so undo reaches
+back across a resume; a fresh run empties it. Before every tool call the job
+reloads a state file changed on disk since it last read or wrote it (a
+script, or a second job on the same folder), so a script's edit is picked up
+mid-run instead of overwritten; the edit becomes one undo step (a second
+job's own history is read back instead).
+
+Everything a job writes lives in its job folder next to the images,
+`<images>/langslice/` (2026-10-03, `src/langslice/job/CLAUDE.md`):
+`job.json` (the spec and the folder's format version), `state.json` (the
+checkpoint, state format 2), `history/`, `sections/<stem>/` (the section's
+deformation records, image corrections and the pictures of it the model
+was shown), `views/` (pictures of several sections), `views.jsonl` (every
+saved picture), `exports/` (`linear_results.json`) and `logs/`. Every path
+the state stores is relative to the job folder. Every picture the model is
+shown is saved there as the JPEG it received; a placement picture adds its
+atlas labels (uint32 TIFF), its border mask (PNG) and its frame
+(`view.json`: plane, µm per pixel, placement and the pixel-to-atlas matrix
+in BrainGlobe micrometres), from which `langslice.core.layers.coordinate_map`
+computes each pixel's atlas position. An old layout (the files beside the
+images, or a saved Claude job under `~/.langslice/jobs/<id>/`) is moved in on
+open; a newer one is refused.
 
 ```
 StackState
