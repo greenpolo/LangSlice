@@ -149,6 +149,7 @@ async def run_session(
             pos_lo=pos_lo,
             pos_hi=pos_hi,
             axis_ends=ctx.axis_ends,
+            max_resolution=box.max_view_edge,
             **display_facts(ctx, state),
         ),
         tools=box.tools,

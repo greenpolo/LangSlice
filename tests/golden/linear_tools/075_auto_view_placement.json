@@ -40,8 +40,8 @@
    "deformation": "applied",
    "mode": "overlay",
    "outlines": "all",
-   "resolution": 1536,
-   "resolution_note": "resolution 4000 is outside 128..1536; used 1536",
+   "resolution": 2048,
+   "resolution_note": "resolution 4000 is outside 128..2048; used 2048",
    "zoom": [
     0.0,
     0.0,

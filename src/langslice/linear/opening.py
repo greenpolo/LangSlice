@@ -48,6 +48,12 @@ CLAUDE_MAX_IMAGE_EDGE = 1568
 #: Claude's per-image area at that edge, ~1.15 MP (~1600 tokens at w*h/750),
 #: as 32-px patches so one rule serves both lanes.
 CLAUDE_MAX_IMAGE_PATCHES = 1_200_000 // (32 * 32)
+#: The largest picture a Claude host may ask for per call (``view.resolution``
+#: at image resolution "auto"): a request holding more than 20 images, which
+#: any working session does, takes none past 2000 px. Claude 4.7+ reads up
+#: to ~2576 px alone; older models shrink anything past 1568 px, which costs
+#: bytes, not the request.
+CLAUDE_MAX_VIEW_EDGE = 2000
 
 #: ``(long edge, patch budget)`` per canonical provider. A lane not listed
 #: (Gemini, a fake test model) uses the OpenAI numbers: unmeasured there.

@@ -110,6 +110,14 @@ def image_limit(ctx: EngineContext) -> tuple[int, int]:
     return IMAGE_LIMITS.get(provider, DEFAULT_IMAGE_LIMIT)
 
 
+def view_edge_limit(ctx: EngineContext) -> int:
+    """Largest picture the agent may ask for per call (``view.resolution``):
+    the model lane's largest image edge (:func:`image_limit`). On the OpenAI
+    lanes a near-square picture past ~1600 px still meets the patch budget,
+    which shrinks it."""
+    return image_limit(ctx)[0]
+
+
 def strip_edge(ctx: EngineContext) -> int:
     """Long edge of each opening strip for this run's model lane."""
     return image_limit(ctx)[0]

@@ -40,7 +40,7 @@ from langslice.linear.display import (
 )
 from langslice.linear.render import (
     AUTO_RESOLUTION,
-    RESOLUTION_RANGE,
+    MIN_RESOLUTION,
     normalize_border_style,
     picture_edge,
     resolution_level,
@@ -80,19 +80,19 @@ class Profile:
         return self.atlas_defaults.get(mode, MODE_RULES[mode].atlas_default)
 
 
-def clamp_resolution(value: Any) -> tuple[int | None, str]:
+def clamp_resolution(value: Any, max_edge: int) -> tuple[int | None, str]:
     """``(long edge, note)`` for a requested ``resolution``; None for "default".
 
-    0, None and "" are the default. A number outside :data:`RESOLUTION_RANGE`
-    is clamped into it and *note* says so; a value that is not a number
-    raises ``ValueError``.
+    0, None and "" are the default. A number outside :data:`MIN_RESOLUTION`
+    .. *max_edge* (the driver model's largest image) is clamped into it and
+    *note* says so; a value that is not a number raises ``ValueError``.
     """
     if value in (None, "", 0):
         return None, ""
     number = float(value)
     if not math.isfinite(number):
         raise ValueError("resolution must be a number of pixels")
-    low, high = RESOLUTION_RANGE
+    low, high = MIN_RESOLUTION, int(max_edge)
     edge = int(round(number))
     if edge < low or edge > high:
         clamped = min(high, max(low, edge))
@@ -157,13 +157,16 @@ def parse_view(
     view: Any,
     profile: Profile,
     *,
+    max_edge: int,
     sections: list[SliceState] = (),  # type: ignore[assignment]
 ) -> DisplayOptions | dict[str, Any]:
     """Validate one call's ``view``; a refusal dict names every problem's fix.
 
-    *sections* are the sections the call shows; named raw channels must
-    exist on each. A key that means nothing for *profile* or for the mode is
-    refused (``VIEW_KEY_UNUSED``) rather than dropped.
+    *max_edge* is the largest picture the driver model takes (the cap of
+    ``resolution`` at "auto"). *sections* are the sections the call shows;
+    named raw channels must exist on each. A key that means nothing for
+    *profile* or for the mode is refused (``VIEW_KEY_UNUSED``) rather than
+    dropped.
     """
     if view is None:
         view = {}
@@ -182,11 +185,10 @@ def parse_view(
     note = ""
     if auto:
         try:
-            asked, note = clamp_resolution(view.get("resolution", 0))
+            asked, note = clamp_resolution(view.get("resolution", 0), max_edge)
         except (TypeError, ValueError):
-            low, high = RESOLUTION_RANGE
-            return _error("BAD_RESOLUTION",
-                          f"view.resolution must be a whole number of pixels, {low}..{high}")
+            return _error("BAD_RESOLUTION", "view.resolution must be a whole number of "
+                          f"pixels, {MIN_RESOLUTION}..{max_edge}")
 
     mode = str(view.get("mode") or profile.modes[0]).strip().lower()
     if mode not in profile.modes:
