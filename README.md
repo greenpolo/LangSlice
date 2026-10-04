@@ -117,7 +117,17 @@ job = langslice.open_job("sections/")
 job.status()
 ```
 
-See [the agent CLI](docs/agent_cli.md).
+See [the agent CLI](docs/agent_cli.md). A scripted pipeline can run the image
+model's border trace and the deformable fit without the agent, on one section or
+a folder, with a model and prompt of its own:
+
+```python
+model = langslice.image_model("openai-oauth")   # or your own model + prompt file
+result = langslice.register_section("s01.tif", position_mm=6.2, image_model=model)
+result.sections[0].coords                       # atlas µm per pixel (coords.tif)
+```
+
+See [the Python library](docs/library.md).
 
 Full CLI: `langslice --help`. Pipeline detail: [`docs/index.md`](./docs/index.md).
 

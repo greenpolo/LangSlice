@@ -23,6 +23,18 @@ through `providers.registry.resolve_image_model` when the host passes none.
 and import no provider; the placement geometry and its fingerprint are the
 core's (`core.handoff`).
 
+The image model may be a model PROFILE (`ImageModel.prompt`,
+`photograph_first`, `profile`, `tested`; `providers/profiles.py`, built by
+`langslice.image_model` for a script: `docs/library.md`): a profile's own
+prompt replaces the base prompt above (`{plane}` in it becomes the plane;
+`registration_tool.profile_prompt`), in the attachment order it names, and
+the agent's edited copy and the saved diff are then against it. A profile's
+own prompt or order is part of the call key a reply is reused under. An
+untested profile (its own prompt or order, or a model of the caller's own)
+marks each attempt's `request.json` and `result.json`, and so the section's
+`image_correction` record, with `"untested": true` and `"profile"`
+(`registration_tool.profile_marks`); a built-in profile adds nothing.
+
 The tool prepares the two images and prompt, starts the image call in the
 background and returns at once, with no images: the agent cannot act on a reply,
 so it does not wait for one. Calls therefore run at the agent's pace, up to

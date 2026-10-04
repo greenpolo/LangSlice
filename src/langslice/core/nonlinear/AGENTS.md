@@ -130,7 +130,12 @@ the residual alone.
   route "supplied" for one section, the image model an argument).
   `core/nonlinear/registration_tool.py` uses it for the opt-in annotation tool, taking the
   image model as an argument too, and leaves fitting to `fit_deformable` and
-  transformation export to the separate registration stage.
+  transformation export to the separate registration stage. A model profile's
+  own prompt and attachment order (`ImageModel.prompt` / `photograph_first`,
+  `providers/profiles.py`) replace the base prompt there (`profile_prompt`)
+  and join the call key; an untested profile marks its request and result
+  `untested` (`profile_marks`). Without a profile prompt the wording is
+  unchanged (`border_correction_tool_prompt`).
 
 ## Visual review is essential
 
