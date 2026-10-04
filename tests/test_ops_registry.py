@@ -17,14 +17,19 @@ from langslice.ops.registry import GROUPS, VERBS, table
 from tests.golden.record import atlas_loader, full_spec, write_sections
 
 
-def _names(spec: Any) -> list[str]:
+def _names(spec: Any, *, scripting: bool = False) -> list[str]:
     from langslice.linear.engine import build_context
     from langslice.linear.job import ingest
     from langslice.linear.toolbox import build_tools
 
     ctx = build_context(spec, emit=lambda _m: None, atlas_loader=atlas_loader())
     state = ingest(spec, ctx)
-    return build_tools(state, ctx, spec).names
+    return build_tools(state, ctx, spec, scripting=scripting).names
+
+
+#: The verbs a model is offered (the agent tools, MCP); the scripting verbs
+#: are the CLI's and the library's only.
+MODEL_VERBS = [name for name, verb in VERBS.items() if not verb.scripting]
 
 
 @pytest.fixture(scope="module")
@@ -37,7 +42,10 @@ def folder(tmp_path_factory: pytest.TempPathFactory) -> Path:
 def test_every_tool_of_the_full_toolbox_is_registered_and_back(folder: Path, monkeypatch):
     monkeypatch.setenv("HOME", str(folder / "home"))
     names = _names(full_spec(folder))
-    assert names == list(VERBS)
+    assert names == MODEL_VERBS
+    # The scripting door (the CLI, the library) adds the scripting verbs.
+    assert _names(full_spec(folder), scripting=True) == list(VERBS)
+    assert [name for name, verb in VERBS.items() if verb.scripting] == ["export_maps"]
 
 
 @pytest.mark.parametrize("tasks", [["reorder"], ["position"], ["transform"], ["nonlinear"],
@@ -49,7 +57,8 @@ def test_every_tool_of_a_partial_toolbox_is_registered(folder: Path, tasks: list
     names = _names(spec)
     assert names and set(names) <= set(VERBS)
     # The always-on tools come with every task.
-    common = {name for name, verb in VERBS.items() if verb.group == "Common"}
+    common = {name for name, verb in VERBS.items()
+              if verb.group == "Common" and not verb.scripting}
     assert common <= set(names)
 
 

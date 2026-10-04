@@ -79,6 +79,7 @@ from langslice.ops import appearance as ops_appearance
 from langslice.ops import atlas as ops_atlas
 from langslice.ops import damage as ops_damage
 from langslice.ops import deformable as ops_deformable
+from langslice.ops import exports as ops_exports
 from langslice.ops import history as ops_history
 from langslice.ops import notes as ops_notes
 from langslice.ops import order as ops_order
@@ -492,6 +493,7 @@ def build_tools(
     image_model: ImageModel | None = None,
     gates: bool = True,
     level: str | None = None,
+    scripting: bool = False,
 ) -> ToolBox:
     """Build the tools this run's spec switches on, closed over *state*.
 
@@ -511,12 +513,15 @@ def build_tools(
     look-before-commit gates of ``position.gated`` (the CLI door: gates are
     tool-only). *level* is the picture-size level the tools work at (None:
     the run's ``image_resolution``; the CLI passes "auto": its caller sizes
-    every picture).
+    every picture). *scripting* adds the verbs only scripts get
+    (``Verb.scripting``: ``export_maps``), for the CLI and the library.
     """
     if job is None:
         job = Job(state, spec, layout=ctx.layout, results_path=ctx.results_path)
     if job.state is not state or job.spec is not spec:
         raise ValueError("build_tools: the job must hold this state and spec")
+    if job.workspace is None:
+        job.workspace = ctx
     box = ToolBox(job, max_view_edge=int(max_view_edge or view_edge_limit(ctx)))
     #: The picture-size level, and whether this door keeps the look gates.
     level = level or resolution_level(ctx)
@@ -1616,6 +1621,23 @@ def build_tools(
         }
         return result
 
+    # --- for scripts only (Verb.scripting) ------------------------------
+
+    def export_maps(slices: list[str], full_resolution: bool) -> dict[str, Any]:
+        try:
+            done = ops_exports.export_maps(job, ctx, list(slices or []),
+                                           full_resolution=bool(full_resolution))
+        except Refused as refusal:
+            return refusal.payload()
+        return {
+            "status": "ok" if done.sections or not done.skipped else "error",
+            **({} if done.sections or not done.skipped else {"error": "NOTHING_EXPORTED"}),
+            "written": done.sections, "skipped": done.skipped,
+            "full_resolution": done.full_resolution, "files_written": done.written,
+            "files": [{"path": path, "kind": kind} for path, kind in done.files],
+            "seconds": round(done.seconds, 2),
+        }
+
     bodies: dict[str, Callable[..., Any]] = {
         "status": status, "view_slices": view_slices,
         "view_atlas": make_view_atlas(job, ctx, box.max_view_edge, level), "note": note,
@@ -1626,7 +1648,7 @@ def build_tools(
         "orient_slices": orient_slices, "fit_affine": fit_affine,
         "adjust_transforms": adjust_transforms, "set_cutting_angles": set_cutting_angles,
         "trace_borders": trace_borders, "grep_atlas": grep_atlas,
-        "fit_deformable": fit_deformable, "submit": submit,
+        "fit_deformable": fit_deformable, "submit": submit, "export_maps": export_maps,
     }
     # `view.resolution` exists only where the caller chooses the picture size.
     variant = Variant.of(spec, auto=level == AUTO_RESOLUTION)
@@ -1636,6 +1658,6 @@ def build_tools(
             _saves_views(_clears_stale_deformations(
                 _strict(declare(name, bodies[name], variant)), job), job, ctx),
             lock, state=state, on_event=on_event, guard=functools.partial(guarded, name))
-        for name in enabled(spec)
+        for name in enabled(spec, scripting=scripting)
     ]
     return box

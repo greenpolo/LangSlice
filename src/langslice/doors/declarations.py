@@ -621,13 +621,36 @@ def submit(
     ...
 
 
+def export_maps(slices: list[str] = [], full_resolution: bool = False) -> dict[str, Any]:
+    """Write each placed section's maps and the stack's exports, from the job as it stands.
+
+    Per section (sections/<name>/): coords.tif (atlas micrometres per
+    pixel, float32, NaN outside the tissue or the atlas), labels.tif (atlas
+    ids, uint32), labels_fiji.tif + labels.csv (a uint16 index Fiji opens
+    without loss, and its table), residual.tif (the deformation, when one
+    is applied) and maps.json. Then exports/quicknii.json and
+    exports/visualign.json, and registration.json again. submit writes the
+    same files; nothing in the state changes.
+
+    Args:
+        slices: Filenames or corrected indices; empty is every section.
+        full_resolution: Write the maps on the image file's own pixels
+            instead of its working copy (what every picture is drawn from).
+
+    Returns:
+        written (the sections), skipped (each with its reason), files
+        (path and kind), seconds.
+    """
+    ...
+
+
 #: Every declared verb, in :data:`langslice.ops.registry.VERBS` order.
 STUBS: dict[str, Callable[..., Any]] = {
     stub.__name__: stub for stub in (
         status, view_slices, view_atlas, note, undo, redo, mark_damaged, preprocess,
         reorder_slices, set_positions, view_placement, view_stack, run_deepslice,
         search_position, orient_slices, fit_affine, adjust_transforms, set_cutting_angles,
-        trace_borders, grep_atlas, fit_deformable, submit,
+        trace_borders, grep_atlas, fit_deformable, submit, export_maps,
     )
 }
 

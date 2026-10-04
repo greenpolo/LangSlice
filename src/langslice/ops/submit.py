@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from langslice.linear.state import normalize_to_atlas_order
+from langslice.ops.exports import Exported
 from langslice.ops.refusal import Refused
 
 if TYPE_CHECKING:
     from langslice.linear.job import Job
     from langslice.linear.workspace import Workspace
+
+logger = logging.getLogger(__name__)
 
 #: The note the write adds when the corrected order is reversed to run the atlas way.
 REVERSED_NOTE = "submit: corrected order reversed to run the atlas way"
@@ -27,6 +31,9 @@ class Submitted:
     interval_breaks: list[int] = field(default_factory=list)
     #: Whether the corrected order was reversed to run the atlas way.
     reversed: bool = False
+    #: The maps and exports written after the step (``ops.exports``), when
+    #: the call had the workspace; None otherwise or when writing failed.
+    exported: Exported | None = None
 
 
 def clean_breaks(values: Any) -> list[int]:
@@ -68,7 +75,10 @@ def submit(
     reversed when it runs against the atlas (a convention, not an inference:
     noted, never asked of the agent), the cleaned *notes* and a
     ``submit: <summary>`` note, ``submitted``. Then every queued picture is
-    written to the job folder before this returns.
+    written to the job folder before this returns, and, with *workspace*,
+    every placed section's maps and the stack's exports
+    (:func:`langslice.ops.exports.export_maps`; a failure there is logged,
+    the submit stands).
     """
     breaks = clean_breaks(interval_breaks)
     refusal = job.submit_errors(breaks)
@@ -117,5 +127,14 @@ def submit(
     state.submitted = True
     job.commit(before)
     job.views.flush()
+    exported = None
+    if workspace is not None and job.persist:
+        from langslice.ops.exports import export_maps
+
+        try:
+            exported = export_maps(job, workspace)
+        except Exception:  # the derived files must never undo a submit
+            logger.warning("Could not write the maps and exports at submit", exc_info=True)
     return Submitted(summary=summary_text, notes=clean_notes,
-                     interval_breaks=list(state.interval_breaks), reversed=reversed_order)
+                     interval_breaks=list(state.interval_breaks), reversed=reversed_order,
+                     exported=exported)

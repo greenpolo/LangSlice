@@ -289,7 +289,7 @@ def call(folder: str, verb: str, flags: dict[str, list[str]], options: dict[str,
     opened = _open(folder, persist=not dry_run, atlas_loader=atlas_loader)
     job_folder = str(opened.job.folder)
     try:
-        offered = enabled(opened.spec)
+        offered = enabled(opened.spec, scripting=True)
         if verb not in offered:
             raise _Refusal(Envelope.failure(
                 "VERB_OFF", f"This job's settings (tasks {opened.spec.tasks}) have no {verb}.",
@@ -344,8 +344,14 @@ def _run(opened: Any, verb: str, tool: Any, arguments: dict[str, Any], *,
     warnings: list[str] = []
     ok = not (isinstance(reply, dict) and reply.get("status") in ("error", "refused"))
     if ok and verb == "submit" and not dry_run:
+        from langslice.job.formats import derived_files
+
         job.emit_results(progress)
         artifacts.append({"path": str(Path(job.results_path).resolve()), "kind": "results"})
+        artifacts += [{"path": str(path), "kind": kind}
+                      for path, kind in derived_files(job.layout, job.state)]
+    if verb == "export_maps" and isinstance(reply, dict) and not dry_run:
+        artifacts += [dict(item) for item in reply.get("files") or []]
     job.views.flush()
     for picture in saved:
         for path, kind in picture.files():
@@ -362,12 +368,15 @@ def _run(opened: Any, verb: str, tool: Any, arguments: dict[str, Any], *,
     if verb == "status" and isinstance(result, dict):
         from langslice.ops.registry import enabled
 
-        result["verbs"] = enabled(opened.spec)
+        result["verbs"] = enabled(opened.spec, scripting=True)
     if dry_run and isinstance(result, dict):
         result["dry_run"] = True
         if VERBS[verb].kind == "write":
             result["would_change"] = changes(before or {}, job.state.to_dict(),
                                              verbose=verbose)
+        elif VERBS[verb].scripting:
+            warnings.append(f"{verb} wrote nothing under --dry-run; `files` lists what it "
+                            "would write.")
         else:
             warnings.append(f"{verb} only reads; --dry-run changes nothing about it.")
     if isinstance(reply, dict):
@@ -414,6 +423,8 @@ def shape(verb: str, reply: Any, *, verbose: bool) -> Any:
     body.pop("description", None)
     if verb not in ROW_VERBS and isinstance(body.get("rows"), list):
         body["n_rows"] = len(body.pop("rows"))
+    if body.get("files_written") and isinstance(body.get("files"), list):
+        body["n_files"] = len(body.pop("files"))  # listed under artifacts
     return body
 
 
@@ -466,7 +477,7 @@ def init(folder: str, rest: list[str], *, atlas_loader: Any = None) -> Envelope:
             "job_folder": str(layout.folder), "image_folder": str(images),
             "sections": [record.id for record in state.in_order()],
             "tasks": list(spec.tasks), "atlas": spec.atlas, "plane": spec.plane,
-            "verbs": enabled(spec), "resumed": bool(opened.job.undo_stack
+            "verbs": enabled(spec, scripting=True), "resumed": bool(opened.job.undo_stack
                                                     or opened.job.redo_stack),
         }
         artifacts = [{"path": str(layout.folder / name), "kind": "card"}

@@ -397,3 +397,91 @@ def save_quint_json(export: QUINTExport, path: str) -> None:
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(data, fh, indent=2)
     logger.info("Saved QUINT JSON: %s", path)
+
+
+# ---------------------------------------------------------------------------
+# A job's registrations as QuickNII / VisuAlign JSON (formats phase, 2026-10-04)
+# ---------------------------------------------------------------------------
+#
+# The anchoring comes straight from a section's exact pixel -> atlas map
+# (``registration.json``'s ``pixel_to_atlas_um``, BrainGlobe micrometres,
+# pixel centres at integers), so any plane and any cutting angle is
+# represented, unlike the coronal-frame path above. The conversion to
+# QuickNII's voxel space is SliceBench's (``slicebench/geometry.py``,
+# ``atlas_um_to_quicknii``), checked there against DeepSlice and human QUINT
+# registrations on the Allen CCFv3 25 um atlas; for other atlases the
+# QuickNII target is assumed to share the BrainGlobe voxel grid (untested).
+
+#: QuickNII / VisuAlign volume axes (x, y, z) as a BrainGlobe origin string:
+#: x runs left -> right (ML), y posterior -> anterior (AP), z inferior ->
+#: superior (DV). Against a BrainGlobe ``asr`` volume every axis is reversed.
+QUICKNII_ORIGIN = "lpi"
+#: QuickNII coordinates are continuous voxel-EDGE coordinates (voxel i spans
+#: [i, i+1)); BrainGlobe micrometres put voxel i's CENTRE at i * resolution.
+VOXEL_EDGE_TO_CENTRE = 0.5
+
+_AXIS_OF_LETTER = {"a": "ap", "p": "ap", "s": "dv", "i": "dv", "l": "ml", "r": "ml"}
+
+
+def _quicknii_spaces(atlas: dict[str, Any]) -> tuple[Any, Any]:
+    from brainglobe_space import AnatomicalSpace
+
+    orientation = str(atlas["orientation"])
+    shape = [int(v) for v in atlas["shape"]]
+    index = {_AXIS_OF_LETTER[letter]: axis for axis, letter in enumerate(orientation)}
+    quicknii_shape = tuple(shape[index[name]] for name in ("ml", "ap", "dv"))
+    return (AnatomicalSpace(orientation, shape=tuple(shape)),
+            AnatomicalSpace(QUICKNII_ORIGIN, shape=quicknii_shape))
+
+
+def atlas_um_to_quicknii_points(points_um: Any, atlas: dict[str, Any]) -> np.ndarray:
+    """BrainGlobe atlas micrometres (``(n, 3)``, the atlas's axis order) as
+    QuickNII voxel coordinates (x ML, y AP, z DV, voxel edges). *atlas* is
+    ``registration.json``'s atlas record (orientation, shape, resolution_um)."""
+    bg_space, quicknii_space = _quicknii_spaces(atlas)
+    resolution = np.asarray(atlas["resolution_um"], dtype=np.float64)
+    edges = np.asarray(points_um, dtype=np.float64).reshape(-1, 3) / resolution
+    edges = edges + VOXEL_EDGE_TO_CENTRE
+    return np.asarray(bg_space.map_points_to(quicknii_space, edges), dtype=np.float64)
+
+
+def anchoring_from_pixel_map(
+    pixel_to_atlas_um: Any, width: int, height: int, atlas: dict[str, Any],
+) -> AnchoringVector:
+    """The QuickNII anchoring of an image of *width* x *height* pixels whose
+    pixel ``[row, col, 1]`` (centres at integers) maps to atlas micrometres
+    by the 3x3 *pixel_to_atlas_um*. QuickNII measures the image from its
+    top-left CORNER as fractions of width and height: ``atlas = o + u * x/W +
+    v * y/H``."""
+    matrix = np.asarray(pixel_to_atlas_um, dtype=np.float64)
+    corner = matrix @ np.array([-0.5, -0.5, 1.0])
+    right = corner + matrix[:, 1] * float(width)
+    down = corner + matrix[:, 0] * float(height)
+    o, top_right, bottom_left = atlas_um_to_quicknii_points(
+        np.stack([corner, right, down]), atlas)
+    u, v = top_right - o, bottom_left - o
+    return AnchoringVector(*(round(float(value), 6) for value in (*o, *u, *v)))
+
+
+def job_export(
+    sections: Sequence[dict[str, Any]], atlas: dict[str, Any], *, name: str = "",
+) -> dict[str, Any]:
+    """QuickNII / VisuAlign JSON of a job's placed sections.
+
+    Each of *sections* gives ``filename``, ``width``, ``height``, ``nr``,
+    ``pixel_to_atlas_um`` and optionally ``markers`` (VisuAlign's
+    ``[x, y, nx, ny]`` in the image's pixel units, from
+    :func:`langslice.core.maps.residual_markers`).
+    """
+    slices = [
+        SliceExport(
+            filename=os.path.basename(str(entry["filename"])),
+            anchoring=anchoring_from_pixel_map(entry["pixel_to_atlas_um"], int(entry["width"]),
+                                               int(entry["height"]), atlas),
+            width=int(entry["width"]), height=int(entry["height"]), nr=int(entry["nr"]),
+            markers=list(entry.get("markers") or []),
+        )
+        for entry in sections
+    ]
+    return export_to_dict(QUINTExport(target=_resolve_target(str(atlas["name"])),
+                                      slices=slices, name=name))

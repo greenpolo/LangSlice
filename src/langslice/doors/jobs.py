@@ -114,15 +114,16 @@ class Opened:
 
     def tools(self) -> ToolBox:
         """The verbs this job's spec has, as the tool door builds them (one
-        toolbox per open job), with the gates off and the pictures sized by
-        the caller (``view.resolution`` up to :data:`OPEN_MAX_VIEW_EDGE`)."""
+        toolbox per open job), with the gates off, the pictures sized by
+        the caller (``view.resolution`` up to :data:`OPEN_MAX_VIEW_EDGE`) and
+        the scripting verbs (``export_maps``) added."""
         if self._box is None:
             from langslice.core.sizes import AUTO_RESOLUTION
             from langslice.linear.toolbox import build_tools
 
             self._box = build_tools(self.job.state, self.ctx, self.spec,  # type: ignore[arg-type]
                                     job=self.job, max_view_edge=OPEN_MAX_VIEW_EDGE,
-                                    gates=False, level=AUTO_RESOLUTION)
+                                    gates=False, level=AUTO_RESOLUTION, scripting=True)
         return self._box
 
     def close(self) -> None:

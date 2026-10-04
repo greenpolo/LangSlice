@@ -225,6 +225,31 @@ def test_the_cli_never_applies_the_look_before_commit_gates(capsys, images):
     assert code == 3 and envelope["error"]["code"] == "MISSING_TRANSFORMS"
 
 
+def test_export_maps_writes_the_derived_files_as_artifacts(capsys, images):
+    job = init(capsys, images)
+    code, envelope = cli(capsys, "job", str(images), "export_maps")
+    # Nothing placed yet: every section skipped, with its reason.
+    assert code == 3 and envelope["error"]["code"] == "NOTHING_EXPORTED"
+    assert {row["reason"] for row in envelope["result"]["skipped"]} == {"no position"}
+    cli(capsys, "job", str(images), "set_positions", "--entries", json.dumps(
+        [{"id": ID0, "position_mm": 0.1}, {"id": ID1, "position_mm": 0.15},
+         {"id": ID2, "position_mm": 0.2}]))
+    code, envelope = cli(capsys, "job", str(images), "export-maps", "--slices", ID0,
+                         "--dry-run")
+    assert code == 0 and envelope["result"]["files_written"] is False
+    assert envelope["artifacts"] == [] and not (job / "sections/s0/coords.tif").exists()
+    code, envelope = cli(capsys, "job", str(images), "export_maps", "--slices", ID0)
+    assert code == 0, envelope
+    assert envelope["result"]["written"] == [ID0] and envelope["result"]["n_files"] >= 5
+    kinds = {artifact["kind"] for artifact in envelope["artifacts"]}
+    assert {"coords", "labels", "labels_fiji", "labels_csv", "maps", "quicknii",
+            "visualign", "registration"} <= kinds
+    assert all(Path(artifact["path"]).is_file() for artifact in envelope["artifacts"])
+    # The verb is the CLI's and the library's: listed by status, never a model's tool.
+    code, envelope = cli(capsys, "job", str(images), "status")
+    assert "export_maps" in envelope["result"]["verbs"]
+
+
 # --- background runs --------------------------------------------------------------------
 
 
