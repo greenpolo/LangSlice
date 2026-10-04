@@ -80,7 +80,10 @@ present these tasks to users as Positioning (`reorder` + `position`), Linear
 
 Every write tool checkpoints the whole state, so a run that dies resumes with
 the state it had (the agent is re-seeded, not replayed), and every write is
-undoable in memory (`undo`/`redo`, one tool call = one step). The results file
+undoable (`undo`/`redo`, one tool call = one step; the history is saved beside
+the checkpoint and survives a resume). One job object (`linear/job.py`) owns
+the state, undo, checkpoint and submit gates; the agent's tools and the MCP
+server both sit on it, and it picks up a state file a script changed on disk. The results file
 uses the checkpoint's schema, so the CLI, the checkpoint and any host adapter
 read one shape. Corrections (order, flips, rotations), positions, cutting
 angles and per-section transforms are proposals -- the host applies them, and

@@ -130,7 +130,25 @@ supplied by the host or checkpoint.
 ## State
 
 `StackState` is the checkpoint, the result, and the thing every tool writes.
-Same JSON shape for all three.
+Same JSON shape for all three; the checkpoint adds `format_version` (1 since
+2026-10-03; an unversioned checkpoint is read as it is, and a newer format is
+refused).
+
+The job layer (`linear/job.py`, 2026-10-03) owns it: one `Job` holds the
+state and the spec, the host's locked and damaged sections, undo/redo, the
+checkpoint and its observers, the submit gates, the stale-deformation rule,
+the deformation records and the background image corrections. `Job.open`
+resumes the checkpoint (`spec.resume`) or ingests the folder and applies the
+host's inputs. The ADK tools and the MCP server both sit on it. A write is
+one pattern: `before = job.snapshot()`, write, `job.commit(before)` (one undo
+step, then the checkpoint). The undo history (depth 50) is the plain file
+`linear_undo.json` beside the checkpoint (`format_version` 1: `undo` and
+`redo` lists of whole states, oldest first), so undo reaches back across a
+resume; a fresh run empties it. Before every tool call the job reloads a
+state file changed on disk since it last read or wrote it (a script, or a
+second job on the same folder), so a script's edit is picked up mid-run
+instead of overwritten; the edit becomes one undo step (a second job's own
+history file is read back instead).
 
 ```
 StackState
@@ -186,7 +204,7 @@ in any payload or prompt (see `lean-harness` history in `linear/CLAUDE.md`).
 | `view_slices(slices, view)` | always | up to 4 sections at the later-picture size, rendered as corrected, each captioned with its index and filename. Mode `section` (the section in `view.channels`; `zoom` crops a larger render, magnifying up to the section's working copy) or `channels` (per section one strip of small tiles, one per raw channel, unmodified and labelled; `channels` in the reply lists them). |
 | `view_atlas(positions_mm, view)` | always | up to 4 atlas sections, rendered at the current cutting angles, each captioned with its position (and the angles when oblique), framed to the anatomy. Mode `template`; atlas channels default `[ara]` (add `borders` for lines); `regions` draws those regions' borders; `regions_not_in_plane` names any absent at a position. |
 | `note(text)` | always | append to the run notes. |
-| `undo()` / `redo()` | always | snapshot stack; a batch call undoes as one. |
+| `undo()` / `redo()` | always | the job's snapshot history, saved beside the checkpoint and kept across a resume; a batch call undoes as one. |
 | `orient_slices([{id, flip?, rotate_deg?}], view)` | transform (rotate) / transform.flip (flip) | set flip and rotation; an orientation change clears the section's transform; returns each changed section rendered as it now stands (≤4). |
 | `reorder_slices(slices, after="start")` | reorder | move the listed filenames as a block, in the listed order, after a named section or at the start. One filename moves one slice; the full list sets the whole order. Unlisted sections keep their relative order. Corrected indices only; positions and transforms are kept. One undo step. |
 | `mark_damaged([{id, damaged?, note?}])` | agent_damage (default on) | set damage (default True), or clear with damaged=False; clearing also removes the note. A flag the host set (`inputs.damaged`) is never cleared (`DAMAGE_SET_BY_USER`). |
@@ -396,14 +414,15 @@ The full flag list is in `docs/current_workflow.md`. `image_resolution`,
 
 ## The write-observer hook and the ABBA host adapter (2026-09-10)
 
-Host adapters were open until 2026-09-10: `checkpoint.py` now exposes
+Host adapters were open until 2026-09-10: `checkpoint.py` exposes
 `observe_checkpoints(fn)`, a context manager that registers `fn` to be called
-with the state right after every `save_checkpoint` write — the one point
-every tool's write already funnels through (`toolbox.py`'s writers,
-`engine.run`'s own checkpoint after ingest). `engine.run(spec, ...,
-on_write=fn)` wraps the whole session in it and calls `fn` once more up
-front, on the freshly-ingested state, so a host sees the stack before the
-agent has touched it. The agent itself never knows a host is watching:
+with the state right after every checkpoint write — the one point every
+write funnels through (`Job.checkpoint`, since 2026-10-03; the job also
+calls them after reloading a state file changed on disk). A job has its own
+observers too (`Job.observe(fn)`). `engine.run(spec, ..., on_write=fn)`
+registers `fn` on the run's job for the whole session and calls it once more
+up front, on the opened state, so a host sees the stack before the agent has
+touched it. The agent itself never knows a host is watching:
 nothing about the toolbox, the job statement, or the render path changes.
 
 `langslice.integrations.abba_linear.AbbaStackMirror` is the first such host:

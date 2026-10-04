@@ -39,8 +39,9 @@ langslice claude prepare FOLDER --interval 200 --notes "Section 12 has a large t
 
 It takes every `langslice linear run` job flag, saves the job under
 `~/.langslice/jobs/<job-id>/` and prints the prompt to paste. The job's
-checkpoint and results live in that directory, never in the image folder, and
-reopening the job (a restarted Desktop, a new chat) resumes from the checkpoint.
+checkpoint, undo history and results live in that directory, never in the
+image folder, and reopening the job (a restarted Desktop, a new chat) resumes
+from the checkpoint with its undo history.
 
 For development, ask Claude to register a folder of sections. Claude calls
 `start_job` with the folder path. `langslice mcp` takes every `langslice linear

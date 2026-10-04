@@ -61,7 +61,7 @@ run can use:
 | `status` | always | one row per section in corrected order: index, id, `position_mm`, `delta_to_next_mm` (signed), flip, rotation, damaged (+note), transform kind, `transform_iou`, `transform_mirrored`, caveats; plus the stack's cutting angles and interval breaks. Ordinary writes answer with only the rows they changed; transform writes use their physical result instead. This is the whole table |
 | `view_slices` | always | up to 4 sections at higher resolution, rendered as corrected, each captioned with its index and filename; `view` mode `channels` shows each section's raw channels side by side, unmodified and labelled |
 | `view_atlas` | always | up to 4 atlas sections, rendered at the stack's current cutting angles, each captioned with its position |
-| `note`, `undo`, `redo` | always | run notes; snapshot undo where one tool call undoes as one step |
+| `note`, `undo`, `redo` | always | run notes; snapshot undo where one tool call undoes as one step, saved beside the checkpoint |
 | `mark_damaged` | `agent_damage` (on in the CLI) | set or clear damage per entry with `damaged` (default True); clearing also removes the note; a damage flag the host set cannot be cleared |
 | `preprocess` | `--agent-preprocessing` (`agent_preprocessing`) | the section appearance (channel weights, CLAHE, ANTs N4/denoise) for target `view`, `fit` or both, stack-wide or per section; undoable; returns each pictured section (up to 4) BEFORE and AFTER the call, labelled |
 | `orient_slices` | `transform` | flip and quarter-turn per section (`--no-flip` refuses the flip half); returns the changed sections as they now stand |
@@ -154,9 +154,12 @@ files.
 
 Every write checkpoints the whole state to `<image_folder>/linear_state.json`,
 and the results file (default `<image_folder>/linear_results.json`, or `--out`)
-has the same shape. A run that dies resumes from that checkpoint with the state
-it had -- the agent is re-seeded, not replayed. `--fresh` ignores the
-checkpoint and starts over. `--trace-dir PATH` writes a full-content JSONL
+has the same shape. The undo history sits beside the checkpoint in
+`linear_undo.json`. A run that dies resumes from that checkpoint with the state
+it had, and its undo history -- the agent is re-seeded, not replayed. `--fresh`
+ignores the checkpoint and starts over, with an empty history. A script may
+edit `linear_state.json` while a run is going: the run reloads it before its
+next tool call, and the edit is one undo step. `--trace-dir PATH` writes a full-content JSONL
 trace of every agent session.
 
 With tracing enabled, the subscription provider also records content-free usage
