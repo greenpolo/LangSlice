@@ -121,7 +121,15 @@ on a folder whose checkpoint was made from other supplied inputs
 anything is written, naming the keys that differ and how to start fresh
 (`START_FRESH`: `--fresh`, `resume=False`); resuming would have kept the
 old inputs and dropped the new ones. The same inputs resume as before; the
-agent CLI's `init` answers `INPUTS_CHANGED` (exit 3).
+agent CLI's `init` answers `INPUTS_CHANGED` (exit 3). A door that saves a
+job to be opened later checks at save time with
+`refuse_changed_inputs(layout, spec)` (the same refusal, `inputs_changed`):
+`claude prepare` (`doors.api.claude_jobs._write_job`, when `spec.resume`).
+`claude prepare --fresh` marks the saved job `fresh` (job.json `host`);
+the MCP door's first open of it (`server.open_folder_job`) runs `Job.open`
+without resume, as `linear run --fresh`, and clears the mark. ABBA's
+Claude mode (`prepare_claude`) never resumes (`prepare_linear` sets
+`resume` False), so it is never refused.
 
 **Opening a job without writing (phase 5).** `Job.open` writes `job.json`
 and a first checkpoint. `Job.load(spec, workspace, folder=)` opens an

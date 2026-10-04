@@ -302,6 +302,26 @@ def changed_inputs(saved_spec: Any, spec: JobSpec) -> list[str]:
     return sorted(key for key in set(old) | set(new) if old.get(key) != new.get(key))
 
 
+def inputs_changed(folder: str | os.PathLike[str], changed: list[str]) -> InputsChanged:
+    """The refusal for resuming the job in *folder* with other *changed* inputs."""
+    return InputsChanged(
+        f"The job in {folder} was made from other supplied inputs "
+        f"({', '.join(changed)} differ); resuming it would ignore the new "
+        f"ones. Open it with the inputs it was made from, or {START_FRESH}."
+    )
+
+
+def refuse_changed_inputs(layout: JobLayout, spec: JobSpec) -> None:
+    """Raise :func:`inputs_changed` when *layout*'s checkpoint was made from
+    other supplied inputs than *spec*'s; nothing without a checkpoint. For a
+    door that saves a job to be opened later (``claude prepare``), so the
+    refusal comes when the job is saved, not when it is opened."""
+    data = read_checkpoint(str(layout.state_file))
+    changed = [] if data is None else changed_inputs(data.get("spec"), spec)
+    if changed:
+        raise inputs_changed(layout.folder, changed)
+
+
 def emit_results(
     state: StackState, results_path: str, progress: Callable[[str], None] | None = None,
 ) -> StackState:
@@ -739,11 +759,7 @@ class Job:
                 state = None if data is None else StackState.from_dict(data)
                 changed = [] if state is None else changed_inputs(state.spec, spec)
                 if changed:
-                    raise InputsChanged(
-                        f"The job in {layout.folder} was made from other supplied inputs "
-                        f"({', '.join(changed)} differ); resuming it would ignore the new "
-                        f"ones. Open it with the inputs it was made from, or {START_FRESH}."
-                    )
+                    raise inputs_changed(layout.folder, changed)
             write_job_file(layout, spec=spec.to_dict())
             history = History(layout.history_dir)
             undo: list[dict[str, Any]] = []

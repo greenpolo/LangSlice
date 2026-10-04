@@ -48,8 +48,11 @@ folder through `~/.langslice/jobs/<job-id>.json`. A folder already holding a
 job (from `langslice linear run` or an earlier prepare) is continued: one
 image folder, one job, and a new prepare's id replaces the earlier one. A job
 made from other supplied inputs (`--positions`, `--transforms`, ...) is not
-continued with the new ones: opening it is refused, naming the inputs that
-differ. A job
+continued with the new ones: `claude prepare` itself refuses, naming the
+inputs that differ and `--fresh`. With `--fresh`, the first `start_job`
+starts the job over from the new inputs, exactly as `langslice linear run
+--fresh` does (a new ingest; the old checkpoint and undo history are
+replaced), and every later open resumes it. A job
 saved by an earlier version under
 `~/.langslice/jobs/<job-id>/` is moved next to its sections when it is next
 opened. `--job-dir PATH` puts the job folder elsewhere; when the sections'

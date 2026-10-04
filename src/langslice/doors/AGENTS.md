@@ -53,7 +53,11 @@ Pydantic models, `export_schema_bundle`), `runtime.py` (`register.run`,
 `image_model_connected(provider)`: the provider is not `none` and its key
 or login is present, an offline presence check the MCP door and Claude
 mode ask before offering `trace_borders`),
-`claude_jobs.py` (saved Claude jobs: the id index and the host channel)
+`claude_jobs.py` (saved Claude jobs: the id index and the host channel;
+`prepare_folder` refuses a folder whose checkpoint was made from other
+inputs, `job.refuse_changed_inputs`, and with `--fresh` marks the job
+`fresh` so `mcp.server.open_folder_job`'s first open starts it over and
+clears the mark)
 and `abba_worker.py` (the JVM-free linear snapshot worker:
 `prepare_linear`, `checkpoint_callback` with its ABBA-world host rows,
 `run_linear`, `preview_preprocess`). The engine service and the ABBA

@@ -68,8 +68,12 @@ def add_claude_prepare_parser(subparsers: argparse._SubParsersAction) -> None:
 
 def run_claude_prepare(args: argparse.Namespace) -> None:
     from langslice.doors.api.claude_jobs import prepare_folder
+    from langslice.job.job import InputsChanged
 
     spec = build_linear_spec(args, args.image_folder)
-    job = prepare_folder(spec, args.notes, trace_dir=args.trace_dir)
+    try:
+        job = prepare_folder(spec, args.notes, trace_dir=args.trace_dir)
+    except InputsChanged as exc:
+        raise SystemExit(f"langslice claude prepare: {exc}") from exc
     print(f"Saved job {job['job_id']} in {job['job_dir']}", file=sys.stderr)
     print(job["prompt"])
