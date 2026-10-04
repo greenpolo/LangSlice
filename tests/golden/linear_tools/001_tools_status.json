@@ -1,0 +1,39 @@
+{
+ "args": [],
+ "data": {
+  "cutting_angles_deg": {
+   "pitch": 0.0,
+   "yaw": 0.0
+  },
+  "interval_breaks": [],
+  "rows": [
+   {
+    "damaged": false,
+    "flip": false,
+    "id": "s0.png",
+    "index": 0,
+    "rotation_deg": 0
+   },
+   {
+    "damaged": false,
+    "flip": false,
+    "id": "s1.png",
+    "index": 1,
+    "rotation_deg": 0
+   },
+   {
+    "damaged": false,
+    "flip": false,
+    "id": "s2.png",
+    "index": 2,
+    "rotation_deg": 0
+   }
+  ],
+  "status": "ok"
+ },
+ "door": "tools",
+ "images": [],
+ "kwargs": {},
+ "media_texts": [],
+ "tool": "status"
+}

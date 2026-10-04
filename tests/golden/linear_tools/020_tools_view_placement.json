@@ -1,0 +1,65 @@
+{
+ "args": [
+  [
+   {
+    "id": "s0.png",
+    "positions_mm": [
+     0.1
+    ]
+   }
+  ]
+ ],
+ "data": {
+  "compared": [
+   {
+    "calibration": {
+     "source": "host",
+     "um_per_px": 31.25
+    },
+    "current_position_mm": 0.1,
+    "id": "s0.png",
+    "position_mm": 0.1
+   }
+  ],
+  "description": "Shown, in order: s0.png at 0.10 mm; the images of each pair in that order, each captioned with the section and the position it is shown at.",
+  "media_delivery_id": "__direct__",
+  "no_position": [],
+  "render_failed": [],
+  "status": "ok",
+  "unknown_ids": [],
+  "view": {
+   "atlas_channels": [
+    "ara"
+   ],
+   "channels": [
+    "view"
+   ],
+   "deformation": "applied",
+   "mode": "stacked",
+   "zoom": [
+    0.0,
+    0.0,
+    1.0,
+    1.0
+   ]
+  }
+ },
+ "door": "tools",
+ "images": [
+  {
+   "file": "020_tools_view_placement.0.png",
+   "mode": "RGB",
+   "size": [
+    255,
+    416
+   ]
+  }
+ ],
+ "kwargs": {
+  "view": {
+   "mode": "stacked"
+  }
+ },
+ "media_texts": [],
+ "tool": "view_placement"
+}

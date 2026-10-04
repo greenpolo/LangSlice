@@ -1,0 +1,74 @@
+{
+ "args": [],
+ "data": {
+  "channels": [
+   "red",
+   "green",
+   "blue"
+  ],
+  "description": "Attached, per section in this order: s1.png — BEFORE (the view appearance before this call) then AFTER (as it is now), each labelled; a null setting is the default appearance.",
+  "image_indexes": {
+   "s1.png": {
+    "after": 1,
+    "before": 0
+   }
+  },
+  "scope": [
+   "s1.png"
+  ],
+  "settings": {
+   "view": {
+    "sections": {
+     "s1.png": null
+    }
+   }
+  },
+  "shown": [
+   "s1.png"
+  ],
+  "status": "ok",
+  "targets": [
+   "view"
+  ],
+  "view": {
+   "channels": [
+    "view"
+   ],
+   "mode": "section",
+   "zoom": [
+    0.0,
+    0.0,
+    1.0,
+    1.0
+   ]
+  }
+ },
+ "door": "tools",
+ "images": [
+  {
+   "file": "036_tools_preprocess.0.png",
+   "mode": "RGB",
+   "size": [
+    258,
+    239
+   ]
+  },
+  {
+   "file": "036_tools_preprocess.1.png",
+   "mode": "RGB",
+   "size": [
+    258,
+    239
+   ]
+  }
+ ],
+ "kwargs": {
+  "reset": true,
+  "slices": [
+   "s1.png"
+  ],
+  "target": "view"
+ },
+ "media_texts": [],
+ "tool": "preprocess"
+}

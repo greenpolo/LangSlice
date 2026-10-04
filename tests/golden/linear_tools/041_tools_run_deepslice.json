@@ -1,0 +1,20 @@
+{
+ "args": [
+  [
+   "s0.png"
+  ],
+  false,
+  []
+ ],
+ "data": {
+  "error": "UNAVAILABLE",
+  "installed": false,
+  "message": "DeepSlice is not wired in this build.",
+  "status": "error"
+ },
+ "door": "tools",
+ "images": [],
+ "kwargs": {},
+ "media_texts": [],
+ "tool": "run_deepslice"
+}

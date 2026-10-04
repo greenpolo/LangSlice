@@ -1,0 +1,54 @@
+{
+ "args": [
+  [
+   0.05,
+   0.2
+  ]
+ ],
+ "data": {
+  "cutting_angles_deg": {
+   "pitch": 0.0,
+   "yaw": 0.0
+  },
+  "description": "Showing 2 atlas sections: 0.05 mm, 0.20 mm. The attached atlas images appear in that same order, each labelled with its position in its top-left corner.",
+  "positions_mm": [
+   0.05,
+   0.2
+  ],
+  "status": "ok",
+  "view": {
+   "atlas_channels": [
+    "ara"
+   ],
+   "mode": "template",
+   "zoom": [
+    0.0,
+    0.0,
+    1.0,
+    1.0
+   ]
+  }
+ },
+ "door": "tools",
+ "images": [
+  {
+   "file": "006_tools_view_atlas.0.png",
+   "mode": "RGB",
+   "size": [
+    158,
+    136
+   ]
+  },
+  {
+   "file": "006_tools_view_atlas.1.png",
+   "mode": "RGB",
+   "size": [
+    158,
+    136
+   ]
+  }
+ ],
+ "kwargs": {},
+ "media_texts": [],
+ "tool": "view_atlas"
+}

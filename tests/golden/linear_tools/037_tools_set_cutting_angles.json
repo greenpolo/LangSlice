@@ -1,0 +1,21 @@
+{
+ "args": [
+  1.0,
+  0.5
+ ],
+ "data": {
+  "changed": [],
+  "cutting_angles_deg": {
+   "pitch": 1.0,
+   "yaw": 0.5
+  },
+  "interval_breaks": [],
+  "n_sections": 3,
+  "status": "ok"
+ },
+ "door": "tools",
+ "images": [],
+ "kwargs": {},
+ "media_texts": [],
+ "tool": "set_cutting_angles"
+}

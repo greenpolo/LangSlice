@@ -1,0 +1,65 @@
+{
+ "args": [
+  [
+   {
+    "flip": true,
+    "id": "s1.png",
+    "rotate_deg": 90
+   }
+  ]
+ ],
+ "data": {
+  "applied": [
+   "s1.png"
+  ],
+  "changed": [
+   {
+    "damaged": false,
+    "delta_to_next_mm": 0.05,
+    "flip": true,
+    "id": "s1.png",
+    "index": 1,
+    "position_mm": 0.15,
+    "rotation_deg": 90
+   }
+  ],
+  "cleared_transforms": [],
+  "cutting_angles_deg": {
+   "pitch": 0.0,
+   "yaw": 0.0
+  },
+  "description": "Attached images are s1.png, in that order, rendered as they now stand, each labelled '<corrected index>: <filename>' in its top-left corner.",
+  "interval_breaks": [],
+  "n_sections": 3,
+  "rejected": [],
+  "render_failed": [],
+  "status": "ok",
+  "unknown_ids": [],
+  "view": {
+   "channels": [
+    "view"
+   ],
+   "mode": "section",
+   "zoom": [
+    0.0,
+    0.0,
+    1.0,
+    1.0
+   ]
+  }
+ },
+ "door": "tools",
+ "images": [
+  {
+   "file": "032_tools_orient_slices.0.png",
+   "mode": "RGB",
+   "size": [
+    201,
+    277
+   ]
+  }
+ ],
+ "kwargs": {},
+ "media_texts": [],
+ "tool": "orient_slices"
+}

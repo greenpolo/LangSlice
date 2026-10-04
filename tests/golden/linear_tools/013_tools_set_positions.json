@@ -1,0 +1,88 @@
+{
+ "args": [
+  [
+   {
+    "id": "s0.png",
+    "position_mm": 9.0
+   }
+  ]
+ ],
+ "data": {
+  "atlas_range_mm": [
+   0.0,
+   0.25
+  ],
+  "changed": [
+   {
+    "damaged": false,
+    "delta_to_next_mm": -0.1,
+    "flip": false,
+    "id": "s0.png",
+    "index": 0,
+    "position_mm": 0.25,
+    "rotation_deg": 0
+   }
+  ],
+  "clamped": [
+   {
+    "clamped_to_mm": 0.25,
+    "id": "s0.png",
+    "requested_mm": 9.0
+   }
+  ],
+  "cutting_angles_deg": {
+   "pitch": 0.0,
+   "yaw": 0.0
+  },
+  "description": "Attached: the placement pictures of each section not already seen at this position, orientation and cutting angle, in the order written (mapped by image_indexes), for s0.png.",
+  "image_indexes": {
+   "s0.png": [
+    0
+   ]
+  },
+  "images_suppressed_seen": [],
+  "interval_breaks": [],
+  "media_delivery_id": "__direct__",
+  "n_sections": 3,
+  "rejected": [],
+  "render_failed": [],
+  "status": "ok",
+  "unknown_ids": [],
+  "view": {
+   "atlas_channels": [
+    "ara"
+   ],
+   "channels": [
+    "view"
+   ],
+   "deformation": "applied",
+   "mode": "stacked",
+   "zoom": [
+    0.0,
+    0.0,
+    1.0,
+    1.0
+   ]
+  },
+  "written": [
+   {
+    "id": "s0.png",
+    "position_mm": 0.25
+   }
+  ]
+ },
+ "door": "tools",
+ "images": [
+  {
+   "file": "013_tools_set_positions.0.png",
+   "mode": "RGB",
+   "size": [
+    255,
+    416
+   ]
+  }
+ ],
+ "kwargs": {},
+ "media_texts": [],
+ "tool": "set_positions"
+}

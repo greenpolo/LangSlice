@@ -1,0 +1,133 @@
+{
+ "args": [
+  [
+   {
+    "id": "s0.png",
+    "position_mm": 0.1
+   },
+   {
+    "id": "s1.png",
+    "position_mm": 0.15
+   },
+   {
+    "id": "s2.png",
+    "position_mm": 0.2
+   }
+  ]
+ ],
+ "data": {
+  "changed": [
+   {
+    "damaged": false,
+    "delta_to_next_mm": 0.05,
+    "flip": false,
+    "id": "s0.png",
+    "index": 0,
+    "position_mm": 0.1,
+    "rotation_deg": 0
+   },
+   {
+    "damaged": false,
+    "delta_to_next_mm": 0.05,
+    "flip": false,
+    "id": "s1.png",
+    "index": 1,
+    "position_mm": 0.15,
+    "rotation_deg": 0
+   },
+   {
+    "damaged": false,
+    "flip": false,
+    "id": "s2.png",
+    "index": 2,
+    "position_mm": 0.2,
+    "rotation_deg": 0
+   }
+  ],
+  "clamped": [],
+  "cutting_angles_deg": {
+   "pitch": 0.0,
+   "yaw": 0.0
+  },
+  "description": "Attached: the placement pictures of each section not already seen at this position, orientation and cutting angle, in the order written (mapped by image_indexes), for s0.png, s1.png, s2.png.",
+  "image_indexes": {
+   "s0.png": [
+    0
+   ],
+   "s1.png": [
+    1
+   ],
+   "s2.png": [
+    2
+   ]
+  },
+  "images_suppressed_seen": [],
+  "interval_breaks": [],
+  "media_delivery_id": "__direct__",
+  "n_sections": 3,
+  "rejected": [],
+  "render_failed": [],
+  "status": "ok",
+  "unknown_ids": [],
+  "view": {
+   "atlas_channels": [
+    "ara"
+   ],
+   "channels": [
+    "view"
+   ],
+   "deformation": "applied",
+   "mode": "stacked",
+   "zoom": [
+    0.0,
+    0.0,
+    1.0,
+    1.0
+   ]
+  },
+  "written": [
+   {
+    "id": "s0.png",
+    "position_mm": 0.1
+   },
+   {
+    "id": "s1.png",
+    "position_mm": 0.15
+   },
+   {
+    "id": "s2.png",
+    "position_mm": 0.2
+   }
+  ]
+ },
+ "door": "tools",
+ "images": [
+  {
+   "file": "011_tools_set_positions.0.png",
+   "mode": "RGB",
+   "size": [
+    255,
+    416
+   ]
+  },
+  {
+   "file": "011_tools_set_positions.1.png",
+   "mode": "RGB",
+   "size": [
+    258,
+    421
+   ]
+  },
+  {
+   "file": "011_tools_set_positions.2.png",
+   "mode": "RGB",
+   "size": [
+    190,
+    359
+   ]
+  }
+ ],
+ "kwargs": {},
+ "media_texts": [],
+ "tool": "set_positions"
+}

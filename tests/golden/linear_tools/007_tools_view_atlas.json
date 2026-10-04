@@ -1,0 +1,65 @@
+{
+ "args": [
+  [
+   0.1
+  ]
+ ],
+ "data": {
+  "cutting_angles_deg": {
+   "pitch": 0.0,
+   "yaw": 0.0
+  },
+  "description": "Showing 1 atlas section: 0.10 mm. The attached atlas images appear in that same order, each labelled with its position in its top-left corner.",
+  "positions_mm": [
+   0.1
+  ],
+  "status": "ok",
+  "view": {
+   "atlas_channels": [
+    "ara",
+    "borders"
+   ],
+   "border_color": "#00ffff",
+   "border_thickness": 2.0,
+   "mode": "template",
+   "outlines": "all",
+   "regions": [
+    "STR",
+    "TH:left"
+   ],
+   "zoom": [
+    0.0,
+    0.0,
+    1.0,
+    1.0
+   ]
+  }
+ },
+ "door": "tools",
+ "images": [
+  {
+   "file": "007_tools_view_atlas.0.png",
+   "mode": "RGB",
+   "size": [
+    158,
+    156
+   ]
+  }
+ ],
+ "kwargs": {
+  "view": {
+   "atlas_channels": [
+    "ara",
+    "borders"
+   ],
+   "border_color": "#00ffff",
+   "border_thickness": 2.0,
+   "regions": [
+    "STR",
+    "TH:left"
+   ]
+  }
+ },
+ "media_texts": [],
+ "tool": "view_atlas"
+}

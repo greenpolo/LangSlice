@@ -1,0 +1,59 @@
+{
+ "args": [
+  [
+   "s1.png"
+  ]
+ ],
+ "data": {
+  "description": "Attached images are s1.png, in that order, rendered as corrected, each labelled '<corrected index>: <filename>' in its top-left corner.",
+  "slices": [
+   "s1.png"
+  ],
+  "status": "ok",
+  "unknown_ids": [],
+  "view": {
+   "channel_colors": {
+    "green": "green",
+    "red": "red"
+   },
+   "channels": [
+    "red",
+    "green"
+   ],
+   "mode": "section",
+   "zoom": [
+    0.1,
+    0.1,
+    0.7,
+    0.8
+   ]
+  }
+ },
+ "door": "tools",
+ "images": [
+  {
+   "file": "004_tools_view_slices.0.png",
+   "mode": "RGB",
+   "size": [
+    155,
+    180
+   ]
+  }
+ ],
+ "kwargs": {
+  "view": {
+   "channels": [
+    "red",
+    "green"
+   ],
+   "zoom": [
+    0.1,
+    0.1,
+    0.7,
+    0.8
+   ]
+  }
+ },
+ "media_texts": [],
+ "tool": "view_slices"
+}
