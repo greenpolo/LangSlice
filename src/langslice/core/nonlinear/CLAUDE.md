@@ -3,9 +3,12 @@
 Package guide for `src/langslice/core/nonlinear/` (the `nonlinear/` package
 until the folder move, 2026-10-04); `AGENTS.md` is a verbatim twin of this
 file. The image transport it calls, formerly `nonlinear/providers.py`, is
-`src/langslice/providers/images.py`; `registration_tool.py`,
-`registration_handoff.py` and `agent_trace.py`, formerly top-level, live
-here; the `nonlinear register` command is the door `doors/cli/register.py`.
+`src/langslice/providers/images.py`; `registration_tool.py` and
+`registration_handoff.py`, formerly top-level, live here. The one-shot
+`langslice nonlinear register` command (and the engine service's
+`register.run`), with its orchestration `runtime.py` (`estimate_registration`)
+and `agent_trace.py`, was removed on 2026-10-04: every way of using
+LangSlice goes through the job folder and its verbs.
 See `docs/nonlinear_design.md` for the design and coordinate contracts.
 
 ## Supported design
@@ -71,7 +74,7 @@ by default (`traced_lines`; `engine="ants"` adds the lines as named regions,
 model's canvas (`border_fit.placement_on_canvas`: the canvas pixel size from
 the placement's scale; `border_registration.native_to_oriented_map` folds
 `image_axes` and the mirror into the matrix, since the fit reads the native
-plane). `deformation="deformable"` fits, `"none"` (the CLI default) fits
+plane). `deformation="deformable"` (the default) fits, `"none"` fits
 nothing and returns an identity residual, as does the model-free diagnostic;
 the Elastix `"bspline"`/`"affine"` residual fit and its report are gone.
 Elastix is the default because it ships with LangSlice (the result does not
@@ -126,8 +129,9 @@ the residual alone.
   (default `"edit"`) is the edit-vs-generate task semantic each transport
   translates its own way. A door resolves a provider name to this call once
   (`providers.registry.resolve_image_model`) and passes it in as
-  `image_call` (`refine_borders`, `generate_registration_candidate`,
-  `estimate_registration`); a model call without one is refused
+  `image_call` (`refine_borders`, `generate_registration_candidate`;
+  `start_correction` and `start_atlas_correction` take the whole
+  `ImageModel`); a model call without one is refused
   (`provider="none"` and a replayed reply need none), so the core never
   imports this adapter.
 - `model_prompts.py` — canvas/aspect facts only (`image_model_family`,
@@ -135,8 +139,6 @@ the residual alone.
 - `image_gen_helpers.py` — label-map helpers: families (`_merge_classified`),
   crisp label borders, ventricle ids, line widths. No fit.
 - `render.py` — review-grade rendering only.
-- `runtime.py` — `estimate_registration`: orchestration, debug artifacts,
-  trace events.
 - `core/handoff.py` — prepares supplied linear geometry
   (`prepare_linear_registration`, re-exported by the top-level
   `core/nonlinear/registration_handoff.py`, which also holds `run_linear_registration`:

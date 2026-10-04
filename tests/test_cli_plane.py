@@ -1,4 +1,4 @@
-"""Tests for the ``--plane`` flag on the ``linear run``/``register`` CLI parsers."""
+"""Tests for the ``--plane`` flag on the ``linear run`` CLI parser."""
 
 from __future__ import annotations
 
@@ -36,33 +36,9 @@ def test_linear_run_rejects_unknown_plane(capsys):
     assert "axial" in err
 
 
-def test_register_default_plane_is_coronal():
-    args = _parse(["nonlinear", "register", "tests/fixture.png", "--position", "5.0"])
-    assert args.subcommand == "register"
-    assert args.plane == "coronal"
-
-
-def test_register_accepts_sagittal_plane():
-    args = _parse(
-        ["nonlinear", "register", "tests/fixture.png", "--position", "5.0", "--plane", "sagittal"]
-    )
-    assert args.subcommand == "register"
-    assert args.plane == "sagittal"
-
-
-def test_register_accepts_horizontal_plane():
-    args = _parse(
-        ["nonlinear", "register", "tests/fixture.png", "--position", "5.0", "--plane", "horizontal"]
-    )
-    assert args.subcommand == "register"
-    assert args.plane == "horizontal"
-
-
-def test_register_rejects_unknown_plane(capsys):
-    parser = build_parser()
+def test_the_nonlinear_register_command_is_gone(capsys):
+    """``nonlinear register`` (a one-shot pipeline outside the job) was
+    removed 2026-10-04; its group went with it."""
     with pytest.raises(SystemExit):
-        parser.parse_args(
-            ["nonlinear", "register", "tests/fixture.png", "--position", "5.0", "--plane", "axial"]
-        )
-    err = capsys.readouterr().err
-    assert "invalid choice" in err
+        build_parser().parse_args(["nonlinear", "register", "x.png", "--position", "5.0"])
+    assert "invalid choice" in capsys.readouterr().err

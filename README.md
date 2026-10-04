@@ -34,7 +34,7 @@ in-plane against the atlas at true physical scale. An image model is then shown
 the atlas borders drawn on the tissue at that placement and asked to correct
 them. Turning corrected borders into a nonlinear deformation is still being
 designed, so by default no deformation is fitted and the linear placement is
-what gets exported; a deformable fit of the model's lines is available as an option (`--deformation deformable`). Results
+what gets exported; a deformable fit of the model's lines is available as an option (`fit_deformable`). Results
 export to VisuAlign-compatible JSON for QUINT / ABBA. The registration stages are
 illustrated in [the nonlinear design](docs/nonlinear_design.md), and the planned
 user-facing options in [the interface design](docs/interface_design.md).
@@ -62,8 +62,8 @@ For API-key providers, use the Fiji setup dialog or copy `.env.example` to `.env
 and add your provider key. The environment file installs LangSlice itself and its
 dependencies; an editable install is only needed for development.
 
-The CLI is grouped by method — `linear` for order, position and in-plane
-alignment, `nonlinear` for generative-image registration:
+Every step runs on one job folder: the agent run below, the agent CLI and
+the Python library further down all read and write the same job.
 
 ```bash
 # Linear: order, position and transform for a folder of sections
@@ -71,9 +71,6 @@ langslice linear run sections/
 
 # Image-model border correction using the folder's saved linear alignment
 langslice linear run sections/ --tasks nonlinear
-
-# Standalone registration using a supplied linear placement
-langslice nonlinear register slice.png --position 3.9 --initial-alignment placement.json
 ```
 
 The image tool uses the fixed border-correction prompt plus optional per-slice
@@ -82,21 +79,13 @@ output plus extracted borders on the original. It currently produces annotation
 images, with deformation fitting kept separate. See
 [the image-tool contract](docs/nonlinear_image_tool.md).
 
-`nonlinear register` takes the position as an
-argument, so it can follow `langslice linear run` or a placement made in
-another tool — in QUINT/ABBA-style workflows it stands in for the manual
-spline/BigWarp deformation step.
-
-Nonlinear registration is exactly two border-based routes, chosen
-automatically by whether a placement is supplied. With a supplied placement,
-one image-generation call moves that placement's drawn atlas borders onto the
-visible tissue; this is the production path, because nonlinear correction
-needs a linear placement first. Without one, a local silhouette fit stands in
-for the rough placement and the model instead draws boundaries from nothing
-against an outlined grayscale atlas template, in one call (optionally two, for
-an audit pass); this route remains for experiments. Neither route shows the
-model a colored atlas map, and `--deformation` defaults to `none`. See
-[the nonlinear design](docs/nonlinear_design.md).
+The nonlinear step needs a linear placement first, made by the agent or
+supplied with the job from another tool (`langslice job FOLDER init
+--positions ... --transforms ...`): one image-generation call moves that
+placement's drawn atlas borders onto the visible tissue — in QUINT/ABBA-style
+workflows it stands in for the manual spline/BigWarp deformation step. The
+model is never shown a colored atlas map, and no deformation is fitted unless
+`fit_deformable` is called. See [the nonlinear design](docs/nonlinear_design.md).
 
 For coding agents (Claude Code, Codex) and scripts, every agent tool is also
 a command and a Python method on a job folder, under the same name: one JSON

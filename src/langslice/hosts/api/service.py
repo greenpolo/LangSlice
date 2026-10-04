@@ -26,7 +26,6 @@ from langslice.doors.api.models import (
     LinearEstimateResult,
     PreprocessPreviewRequest,
     QuickAffineRequest,
-    RegisterRequest,
     SetupApiKeyRequest,
     SetupLoginRequest,
 )
@@ -128,9 +127,6 @@ def handle_request(request: EngineRequest, emit: EmitEventEnvelope) -> EngineRes
 
     if request.method == "version":
         result = runtime.get_version()
-    elif request.method == "register.run":
-        params = RegisterRequest.model_validate(request.params)
-        result = runtime.run_register(params, emit=runtime_emit)
     elif request.method == "quick_affine.run":
         params = QuickAffineRequest.model_validate(request.params)
         result = runtime.run_quick_affine(params, emit=runtime_emit)

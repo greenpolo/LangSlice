@@ -71,7 +71,7 @@ with zero model calls: it is treated as that route's own final output.
    the canvas aspect if the lane returned a different frame, Zhang-Suen
    thinning to a single-pixel skeleton) and displayed on the untouched
    original photograph — never on the model's redrawn tissue.
-5. Optionally (`deformation="deformable"`, `--deformation deformable`), the
+5. Optionally (`deformation="deformable"`), the
    deformable package fits the extracted lines
    (`border_fit.fit_border_lines`): route B, the line mask against the
    colour-family borders the model was shown, both softened by the same
@@ -85,10 +85,11 @@ with zero model calls: it is treated as that route's own final output.
    fitted atlas labels come from the composed map
    (`DeformableRecord.native_coordinates`) — never reconstructed from the
    yellow lines themselves — and the fitted borders are drawn smoothly on
-   the canvas, clipped to tissue (`deformable.draw_warped_borders`). The CLI
-   default is `--deformation none`: no fit runs, the residual is identity,
-   and the exported placement is the rough one; the model call is judged on
-   its lines first. (Until 2026-10-04 this step was an Elastix borders
+   the canvas, clipped to tissue (`deformable.draw_warped_borders`).
+   `deformation="none"` fits nothing: the residual is identity and the
+   exported placement is the rough one; the model call is judged on its
+   lines first. On a job, the fit is `fit_deformable`'s traced fit
+   sections, on top of the section's linear placement. (Until 2026-10-04 this step was an Elastix borders
    B-spline or affine residual fit of its own, `"bspline"`/`"affine"`; the
    deformable package replaced it.)
 
