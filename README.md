@@ -34,7 +34,7 @@ in-plane against the atlas at true physical scale. An image model is then shown
 the atlas borders drawn on the tissue at that placement and asked to correct
 them. Turning corrected borders into a nonlinear deformation is still being
 designed, so by default no deformation is fitted and the linear placement is
-what gets exported; an Elastix residual fit is available as an option. Results
+what gets exported; a deformable fit of the model's lines is available as an option (`--deformation deformable`). Results
 export to VisuAlign-compatible JSON for QUINT / ABBA. The registration stages are
 illustrated in [the nonlinear design](docs/nonlinear_design.md), and the planned
 user-facing options in [the interface design](docs/interface_design.md).
