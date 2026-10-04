@@ -33,6 +33,7 @@ from langslice.adk import TOOL_MEDIA_PARTS_KEY
 from langslice.adk.media import encode_jpeg
 from langslice.api.abba_worker import PreparedLinear, checkpoint_callback, prepare_linear
 from langslice.api.claude_jobs import load_job
+from langslice.doors.card import write_card
 from langslice.linear.engine import EngineContext, build_context
 from langslice.linear.job import Job
 from langslice.linear.opening import CLAUDE_IMAGE_LIMIT, CLAUDE_MAX_VIEW_EDGE, opening_items
@@ -191,6 +192,7 @@ def open_job(
         raise ValueError("Image generation is unavailable through the Claude connector")
     ctx = build_context(spec, atlas_loader=atlas_loader, job_folder=folder)
     job = Job.open(spec, ctx, folder=ctx.job_folder, results_path=ctx.results_path)
+    write_card(job.layout)
     trace_dir = os.environ.get(TRACE_DIR_ENV)
     trace = McpTrace(trace_dir, ctx.image_folder) if trace_dir else None
     # The host is Claude: its pictures are capped at Claude's largest image.

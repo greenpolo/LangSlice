@@ -23,6 +23,7 @@ from google.genai import types
 from langslice.adk.media import opening_parts, packaged_tools
 from langslice.atlas.core import load_atlas
 from langslice.core.status import status_text
+from langslice.doors.card import write_card
 from langslice.doors.jobs import JobContext
 from langslice.job.layout import JobLayout, locate_job_folder
 from langslice.linear.job import Job
@@ -217,6 +218,7 @@ async def run(
     """
     ctx = build_context(spec, emit=emit, atlas_loader=atlas_loader)
     job = Job.open(spec, ctx, folder=ctx.job_folder, results_path=ctx.results_path)
+    write_card(job.layout)
     state = job.state
     if on_write is not None:
         on_write(state)

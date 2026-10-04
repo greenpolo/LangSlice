@@ -163,6 +163,8 @@
   },
   "engine": {
    "files": [
+    "AGENTS.md",
+    "CLAUDE.md",
     "job.json",
     "logs/events.jsonl",
     "state.json",
@@ -567,6 +569,8 @@
   },
   "mcp": {
    "files": [
+    "AGENTS.md",
+    "CLAUDE.md",
     "history/index.json",
     "history/step-000001.json",
     "history/step-000002.json",
@@ -754,6 +758,8 @@
   },
   "resume": {
    "files": [
+    "AGENTS.md",
+    "CLAUDE.md",
     "exports/linear_results.json",
     "history/index.json",
     "history/step-000001.json",
