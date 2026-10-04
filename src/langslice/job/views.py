@@ -33,6 +33,7 @@ and skipped; it never reaches a tool.
 from __future__ import annotations
 
 import atexit
+import contextlib
 import json
 import logging
 import queue
@@ -40,7 +41,8 @@ import re
 import threading
 import time
 import weakref
-from dataclasses import dataclass
+from collections.abc import Callable, Iterable, Iterator
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -48,7 +50,7 @@ import numpy as np
 from PIL import Image
 
 from langslice.core.jpeg import encode_jpeg
-from langslice.core.layers import PictureNote, picture_layers
+from langslice.core.layers import PictureNote, collecting, note_for, picture_layers
 from langslice.job.layout import JobLayout
 
 logger = logging.getLogger(__name__)
@@ -100,6 +102,23 @@ class _Call:
     arguments: Any
     pictures: list[_Picture]
     atlas: Any
+
+
+@dataclass
+class Shown:
+    """What one door call showed (:meth:`ViewStore.shown`): the pictures, in
+    the order the model receives them, the call's arguments and its id."""
+
+    pictures: list[Image.Image] = field(default_factory=list)
+    arguments: Any = None
+    call_id: str | None = None
+
+    def show(self, pictures: Iterable[Image.Image], *, arguments: Any = None,
+             call_id: str | None = None) -> None:
+        """Record the pictures the door sends (and the call they answer)."""
+        self.pictures.extend(pictures)
+        self.arguments = arguments
+        self.call_id = call_id
 
 
 class ViewStore:
@@ -169,6 +188,35 @@ class ViewStore:
                                  daemon=True).start()
         self.queue_seconds += time.perf_counter() - started
         return [item.name for item in items]
+
+    @contextlib.contextmanager
+    def shown(
+        self, tool: str, *, atlas_of: Callable[[], Any] | None = None,
+    ) -> Iterator[Shown]:
+        """Save the pictures a door shows from this block, with their layers.
+
+        The one hook every door uses (the agent tools and the MCP door
+        through the tool wrapper, ``toolbox._saves_views``; the CLI and
+        scripts the same way): run the operation inside the block, then hand
+        the pictures it shows to :meth:`Shown.show`. What the core noted
+        about each while the block ran (:func:`langslice.core.layers.collecting`)
+        decides its folder, its mode and, for a placement picture, its layers
+        (the atlas from *atlas_of*, asked only then). A block that raises
+        saves nothing; saving never raises into the door.
+        """
+        call = Shown()
+        with collecting() as notes:
+            yield call
+        if not call.pictures:
+            return
+        noted = [(picture, note_for(picture, notes)) for picture in call.pictures]
+        placed = any(held is not None and held.panel is not None for _p, held in noted)
+        try:
+            self.save(tool=tool, pictures=list(noted), arguments=call.arguments,
+                      call_id=call.call_id,
+                      atlas=atlas_of() if placed and atlas_of is not None else None)
+        except Exception:  # saving must never break a tool
+            logger.warning("Could not queue the pictures of %s", tool, exc_info=True)
 
     def flush(self) -> None:
         """Wait until every queued picture is written."""
