@@ -10,8 +10,9 @@ mode draws). Strict: a key that means nothing for the tool or the mode
 (atlas keys on a picture with no atlas, ``outlines`` without
 ``borders``...) is refused with the reason; unknown keys are refused before
 a tool runs (:func:`langslice.linear.arguments.argument_refusal`).
-:func:`view_schema` types ``view`` per run (``resolution`` only at image
-resolution "auto"). The keys themselves are described in
+``view`` is typed per run by the verb's declaration
+(:mod:`langslice.doors.declarations`: ``resolution`` only where the caller
+chooses the picture size). The keys themselves are described in
 :mod:`langslice.linear.display`, which draws the pictures.
 """
 
@@ -114,37 +115,6 @@ def clamp_resolution(value: Any, max_edge: int) -> tuple[int | None, str]:
     return edge, ""
 
 
-def view_schema(tool: Any, level: str) -> Any:
-    """*tool* with ``view`` typed for this run: :class:`ViewAuto` only at "auto".
-
-    Every picture tool is written with ``view: View``; at "auto" a wrapper is
-    returned whose signature and annotations carry :class:`ViewAuto` (the
-    ``resolution`` key), so the model sees that key only where it may use it.
-    At every other level a ``resolution`` key is refused by the strict
-    argument check (:data:`langslice.linear.arguments.KEY_NOTES`).
-    """
-    import functools
-    import inspect
-
-    signature = inspect.signature(tool, eval_str=True)
-    if "view" not in signature.parameters or level != AUTO_RESOLUTION:
-        return tool
-
-    @functools.wraps(tool)
-    def with_size(*args: Any, **kwargs: Any) -> Any:
-        return tool(*args, **kwargs)
-
-    with_size.__signature__ = signature.replace(  # type: ignore[attr-defined]
-        parameters=[p.replace(annotation=ViewAuto) if name == "view" else p
-                    for name, p in signature.parameters.items()],
-    )
-    with_size.__annotations__ = {
-        **inspect.get_annotations(tool, eval_str=True), "view": ViewAuto,
-    }
-    del with_size.__wrapped__  # the signature above is the whole truth
-    return with_size
-
-
 def _error(code: str, message: str, **extra: Any) -> dict[str, Any]:
     return {"status": "error", "error": code, "message": message, **extra}
 
@@ -173,6 +143,7 @@ def parse_view(
     *,
     max_edge: int,
     sections: list[SliceState] = (),  # type: ignore[assignment]
+    level: str | None = None,
 ) -> DisplayOptions | dict[str, Any]:
     """Validate one call's ``view``; a refusal dict names every problem's fix.
 
@@ -180,7 +151,9 @@ def parse_view(
     ``resolution`` at "auto"). *sections* are the sections the call shows;
     named raw channels must exist on each. A key that means nothing for
     *profile* or for the mode is refused (``VIEW_KEY_UNUSED``) rather than
-    dropped.
+    dropped. *level* is the picture-size level (None: the run's
+    ``image_resolution``); at "auto" ``resolution`` sizes the picture, else
+    the level's size does.
     """
     if view is None:
         view = {}
@@ -191,7 +164,7 @@ def parse_view(
     if unknown:
         return _error("UNKNOWN_ARGUMENTS", f"Unknown view key(s): {', '.join(unknown)}.",
                       accepted=list(VIEW_KEYS))
-    auto = resolution_level(ctx) == AUTO_RESOLUTION
+    auto = (level or resolution_level(ctx)) == AUTO_RESOLUTION
     if "resolution" in given and not auto:
         return _error("RESOLUTION_FIXED", "The user fixed the picture size for this run, so "
                       "view.resolution cannot be set.")
@@ -397,7 +370,7 @@ def parse_view(
         border_color="#" + "".join(f"{channel:02x}" for channel in rgb),
         border_thickness=width,
         deformation=deform,
-        long_edge=picture_edge(ctx, asked),
+        long_edge=asked if (auto and asked) else picture_edge(ctx),
         resolution=asked,
         auto=auto,
         resolution_note=note,

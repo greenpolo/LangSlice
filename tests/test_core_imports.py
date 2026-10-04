@@ -78,6 +78,7 @@ DOORS = (
     "langslice.linear.view_options",
     "langslice.adk",
     "langslice.mcp_server",
+    "langslice.doors",
 )
 
 FORBIDDEN = ("google.adk", "google.genai", "litellm", "openai")
