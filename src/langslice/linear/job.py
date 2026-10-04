@@ -65,6 +65,7 @@ from langslice.job.layout import (
     locate_job_folder,
     write_job_file,
 )
+from langslice.job.lock import FolderLock
 from langslice.job.views import DiscardedViews, ViewStore
 from langslice.linear import deformation
 from langslice.linear.checkpoint import (
@@ -614,6 +615,8 @@ class Job:
         self.history = history or History(layout.history_dir)
         #: The pictures the model was shown, saved with their layers.
         self.views = ViewStore(layout)
+        #: The job folder's write lock (:meth:`writing`), across processes.
+        self.lock = FolderLock(layout.folder)
         #: Sections whose flip, rotation and transform the host locked.
         self.locked = frozenset(locked_ids(spec))
         #: Sections the host marked damaged; their flags cannot be cleared.
@@ -668,26 +671,29 @@ class Job:
             migrate.migrate_beside_images(layout)
         layout.ensure()
         write_job_file(layout, spec=spec.to_dict())
-        state = None
-        if spec.resume:
-            data = read_checkpoint(str(layout.state_file))
-            state = None if data is None else StackState.from_dict(data)
-        history = History(layout.history_dir)
-        undo: list[dict[str, Any]] = []
-        redo: list[dict[str, Any]] = []
-        if state is not None:
-            workspace.progress(f"[ingest] resuming from {layout.state_file}")
-            state.spec = spec.to_dict()
-            state.submitted = False
-            undo, redo = history.load()
-        else:
-            state = ingest(spec, workspace)
-            apply_host_inputs(state, spec)
-        job = cls(state, spec, layout=layout, results_path=results_path,
-                  undo=undo, redo=redo, history=history)
-        if not undo and not redo and history.exists():
-            job._save_history()
-        job.checkpoint()
+        lock = FolderLock(layout.folder)
+        with lock.held():  # read and first checkpoint as one write
+            state = None
+            if spec.resume:
+                data = read_checkpoint(str(layout.state_file))
+                state = None if data is None else StackState.from_dict(data)
+            history = History(layout.history_dir)
+            undo: list[dict[str, Any]] = []
+            redo: list[dict[str, Any]] = []
+            if state is not None:
+                workspace.progress(f"[ingest] resuming from {layout.state_file}")
+                state.spec = spec.to_dict()
+                state.submitted = False
+                undo, redo = history.load()
+            else:
+                state = ingest(spec, workspace)
+                apply_host_inputs(state, spec)
+            job = cls(state, spec, layout=layout, results_path=results_path,
+                      undo=undo, redo=redo, history=history)
+            job.lock = lock
+            if not undo and not redo and history.exists():
+                job._save_history()
+            job.checkpoint()
         layout.log_event("open", resumed=bool(undo or redo or spec.resume))
         return job
 
@@ -748,9 +754,28 @@ class Job:
         """Write the state (atomically, versioned), then tell every observer."""
         if not self.persist:
             return
-        write_checkpoint(self.state, self.checkpoint_path)
-        self._state_stamp = _stamp(self.checkpoint_path)
+        with self.lock.held():
+            write_checkpoint(self.state, self.checkpoint_path)
+            self._state_stamp = _stamp(self.checkpoint_path)
         self._notify()
+
+    @contextlib.contextmanager
+    def writing(self) -> Iterator[dict[str, Any] | None]:
+        """Hold the job folder's write lock and bring the state up to date.
+
+        Every write goes lock -> :meth:`sync` (reload what another writer
+        saved) -> apply -> :meth:`commit` -> unlock, so a running agent, CLI
+        calls and scripts on one folder never overwrite each other. Yields
+        what :meth:`sync` returned (the state as held before a reload, or
+        None). Reentrant in this thread. A long operation computes outside
+        it, from the state it read, and enters it only to apply: after the
+        sync it checks that each section's inputs are unchanged
+        (``ops.inputs``) and refuses a section whose inputs moved
+        (``STALE_INPUT``). The section records are new objects after a
+        reload: resolve them by id inside the block.
+        """
+        with self.lock.held():
+            yield self.sync()
 
     def _notify(self) -> None:
         notify_observers(self.state)
@@ -776,10 +801,12 @@ class Job:
         return self.state.to_dict()
 
     def commit(self, before: dict[str, Any]) -> None:
-        """Record one undo step (*before*), clear the redo side, checkpoint."""
-        self._push(before)
-        self._save_history()
-        self.checkpoint()
+        """Record one undo step (*before*), clear the redo side, checkpoint.
+        Call it inside :meth:`writing` (with *before* taken there)."""
+        with self.lock.held():
+            self._push(before)
+            self._save_history()
+            self.checkpoint()
 
     def _push(self, before: dict[str, Any]) -> None:
         self.undo_stack.append(before)
@@ -788,31 +815,32 @@ class Job:
 
     def undo(self) -> bool:
         """Restore the state before the last step; False when there is none."""
-        self.sync()
-        if not self.undo_stack:
-            return False
-        self.redo_stack.append(self.state.to_dict())
-        self.state.restore(self.undo_stack.pop())
-        self._save_history()
-        self.checkpoint()
-        return True
+        with self.writing():
+            if not self.undo_stack:
+                return False
+            self.redo_stack.append(self.state.to_dict())
+            self.state.restore(self.undo_stack.pop())
+            self._save_history()
+            self.checkpoint()
+            return True
 
     def redo(self) -> bool:
         """Re-apply the step :meth:`undo` reversed; False when there is none."""
-        self.sync()
-        if not self.redo_stack:
-            return False
-        self.undo_stack.append(self.state.to_dict())
-        del self.undo_stack[:-UNDO_DEPTH]
-        self.state.restore(self.redo_stack.pop())
-        self._save_history()
-        self.checkpoint()
-        return True
+        with self.writing():
+            if not self.redo_stack:
+                return False
+            self.undo_stack.append(self.state.to_dict())
+            del self.undo_stack[:-UNDO_DEPTH]
+            self.state.restore(self.redo_stack.pop())
+            self._save_history()
+            self.checkpoint()
+            return True
 
     def _save_history(self) -> None:
         if not self.persist:
             return
-        self.history.save(self.undo_stack, self.redo_stack)
+        with self.lock.held():
+            self.history.save(self.undo_stack, self.redo_stack)
         self._undo_stamp = _stamp(self.undo_path)
 
     # --- live shared editing -------------------------------------------------------
@@ -889,9 +917,10 @@ class Job:
         stale. Called after every write, it lands in that write's undo step
         (the step holds the state from before the write).
         """
-        cleared = deformation.clear_stale(self.state)
-        if cleared:
-            self.checkpoint()
+        with self.writing():
+            cleared = deformation.clear_stale(self.state)
+            if cleared:
+                self.checkpoint()
         return cleared
 
     @property
@@ -929,24 +958,30 @@ class Job:
         Returns whether any section changed (no undo step: a landing finishes
         the step that started it).
         """
-        changed = False
-        for section_id, (fingerprint, future) in list(self.image_jobs.items()):
-            changed |= _land(self.state, section_id, fingerprint, self.portable(_job_result(
-                section_id, fingerprint, future, None)))
+        results = [(section_id, fingerprint, self.portable(_job_result(
+            section_id, fingerprint, future, None)))
+            for section_id, (fingerprint, future) in list(self.image_jobs.items())]
         self.image_jobs.clear()
         if self.image_executor is not None:
             self.image_executor.shutdown(wait=True)
             self.image_executor = None
-        if changed:
-            self.checkpoint()
+        if not results:
+            return False
+        changed = False
+        with self.writing():  # the calls ran outside the lock; they land under it
+            for section_id, fingerprint, result in results:
+                changed |= _land(self.state, section_id, fingerprint, result)
+            if changed:
+                self.checkpoint()
         return changed
 
     def wait_image_job(self, section_id: str, timeout: float) -> bool:
         """Wait up to *timeout* seconds for one section's running correction.
 
         Records its result the way :meth:`settle_image_corrections` does
-        (without the checkpoint) and returns True once nothing is running for
-        the section; False when the call is still running at the timeout.
+        (under the write lock, checkpointed, no undo step) and returns True
+        once nothing is running for the section; False when the call is
+        still running at the timeout.
         """
         running = self.image_jobs.get(section_id)
         if running is None:
@@ -957,7 +992,9 @@ class Job:
         except TimeoutError:
             return False
         del self.image_jobs[section_id]
-        _land(self.state, section_id, fingerprint, self.portable(result))
+        with self.writing():
+            if _land(self.state, section_id, fingerprint, self.portable(result)):
+                self.checkpoint()
         return True
 
     def missing_image_corrections(self, workspace: Workspace) -> list[dict[str, str]]:

@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 
 from langslice import registration_tool
 from langslice.core import handoff
+from langslice.ops.inputs import STALE_INPUT
 from langslice.ops.refusal import Refused
 
 if TYPE_CHECKING:
@@ -57,8 +58,12 @@ def trace_borders(
     (*workers* at most at once; :meth:`~langslice.linear.job.Job.start_image_job`).
     The section's ``image_correction`` record is written as ONE undo step
     when it changed; the call's result lands on it later (submit waits for
-    it). Refused: ``UNKNOWN_SECTION``, ``INVALID_LINEAR_PLACEMENT`` (the
-    placement cannot be prepared), ``IMAGE_CORRECTION_IO_ERROR``.
+    it). The edit is prepared outside the job's write lock; the start and
+    the write happen under it (:meth:`~langslice.linear.job.Job.writing`),
+    refused ``STALE_INPUT`` when the section's geometry changed meanwhile;
+    the result lands only at the geometry it was made for. Refused:
+    ``UNKNOWN_SECTION``, ``INVALID_LINEAR_PLACEMENT`` (the placement cannot be
+    prepared), ``IMAGE_CORRECTION_IO_ERROR``, ``STALE_INPUT``.
     """
     record = job.state.resolve(ref)
     if record is None:
@@ -75,11 +80,19 @@ def trace_borders(
         raise Refused("INVALID_LINEAR_PLACEMENT", id=record.id, message=str(exc)) from exc
     except OSError as exc:
         raise Refused("IMAGE_CORRECTION_IO_ERROR", id=record.id, message=str(exc)) from exc
-    if call is not None:
-        job.start_image_job(record.id, result["geometry_fingerprint"], call, workers=workers)
-    result = job.portable(result)
-    if result != record.image_correction:
-        before = job.snapshot()
-        record.image_correction = result
-        job.commit(before)
+    with job.writing():  # prepared outside the lock; written under it
+        now = job.state.by_id(record.id)
+        if now is None or handoff.correction_fingerprint(
+                job.state, workspace, record.id) != result["geometry_fingerprint"]:
+            raise Refused(STALE_INPUT, id=record.id,
+                          message="The section's placement changed while the image call was "
+                          "prepared; nothing was started or written. Run trace_borders again.")
+        if call is not None:
+            job.start_image_job(record.id, result["geometry_fingerprint"], call,
+                                workers=workers)
+        result = job.portable(result)
+        if result != now.image_correction:
+            before = job.snapshot()
+            now.image_correction = result
+            job.commit(before)
     return TraceStarted(id=record.id, record=result, started=call is not None)

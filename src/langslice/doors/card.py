@@ -65,7 +65,8 @@ in `state.json` and the verbs are millimetres along the slicing axis.
 
 ## CLI (JSON on stdout: ok, result, artifacts, warnings, next)
 `langslice job {layout.folder} VERB --args '{{...}}'` (or `--key value`);
-`--dry-run` (writes nothing), `--background` then `wait [id]`, `--verbose`.
+`--dry-run` (writes nothing), `--background` then `wait [id]` (`runs` lists
+background runs), `--verbose`.
 Pictures come back as file paths under `artifacts`. Exit codes: 0 ok,
 2 bad arguments, 3 refused by the job (`error.code`, `error.fix`), 4 internal.
 `langslice ops` lists the verbs; `langslice schema VERB` gives the arguments.

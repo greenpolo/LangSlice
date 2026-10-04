@@ -22,13 +22,14 @@ MCP server as content blocks, so this module never imports ``google.genai``.
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import importlib.util
 import inspect
 import logging
 import threading
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
@@ -88,7 +89,7 @@ from langslice.ops import traces as ops_traces
 from langslice.ops import transforms as ops_transforms
 from langslice.ops import views as ops_views
 from langslice.ops.refusal import Refused
-from langslice.ops.registry import enabled
+from langslice.ops.registry import VERBS, enabled
 from langslice.providers.registry import ImageModel, resolve_image_model
 
 if TYPE_CHECKING:  # ponytail: import cycle — engine builds the toolbox
@@ -274,15 +275,16 @@ def _tool_target_ids(state: StackState, name: str, args: dict[str, Any]) -> list
 
 def _serialized(
     tool: Any, lock: threading.Lock, *, state: StackState | None = None,
-    on_event: LiveCallback | None = None, before: Callable[[], None] | None = None,
+    on_event: LiveCallback | None = None,
+    guard: Callable[[], contextlib.AbstractContextManager[Any]] | None = None,
 ) -> Any:
     """Serialize execution and its host notifications under the same lock.
 
     Model tool-call announcements may arrive together. These optional events
     identify the tool actually executing, including stable filenames resolved
     before a reorder. They never enter model context or change its schema.
-    *before* runs inside the lock ahead of the tool (the job's reload of a
-    state file changed on disk).
+    *guard* is entered inside the lock around the tool (the job's write
+    lock and its reload of a state file changed on disk).
     """
     signature = inspect.signature(tool)
 
@@ -295,9 +297,7 @@ def _serialized(
 
     @functools.wraps(tool)
     def run(*args: Any, **kwargs: Any) -> Any:
-        with lock:
-            if before is not None:
-                before()
+        with lock, (guard() if guard is not None else contextlib.nullcontext()):
             if on_event is None:
                 return tool(*args, **kwargs)
             fields: dict[str, Any] = {"name": tool.__name__, "execution_id": uuid.uuid4().hex}
@@ -572,6 +572,21 @@ def build_tools(
         before = job.sync()
         if before is not None:
             forget_looks(ops_history.moved_positions(before, state))
+
+    @contextlib.contextmanager
+    def guarded(name: str) -> Iterator[None]:
+        """Around every call: a verb runs whole under the job folder's write
+        lock, after the state is brought up to date (:meth:`Job.writing`); a
+        long verb (``VERBS[name].long``) only syncs, computes outside the
+        lock and takes it itself to apply, re-checking its sections."""
+        if VERBS[name].long:
+            sync_job()
+            yield
+            return
+        with job.writing() as before:
+            if before is not None:
+                forget_looks(ops_history.moved_positions(before, state))
+            yield
 
     def placement_view_key(
         record: SliceState, position_mm: float
@@ -1620,7 +1635,7 @@ def build_tools(
         _serialized(
             _saves_views(_clears_stale_deformations(
                 _strict(declare(name, bodies[name], variant)), job), job, ctx),
-            lock, state=state, on_event=on_event, before=sync_job)
+            lock, state=state, on_event=on_event, guard=functools.partial(guarded, name))
         for name in enabled(spec)
     ]
     return box

@@ -31,11 +31,30 @@ def install(loader: Any, put: Any = setattr) -> None:
     put(background, "CHILD_COMMAND", [sys.executable, "-m", "tests.cli_child"])
 
 
+#: Seconds every commit waits before writing (tests widen the window in
+#: which two processes writing at once would overwrite each other).
+COMMIT_DELAY_ENV = "LANGSLICE_TEST_COMMIT_DELAY"
+
+
 def main() -> int:
+    import os
+    import time
+
     from tests.golden.record import apply_patches, atlas_loader
 
     apply_patches()
     install(atlas_loader())
+    delay = float(os.environ.get(COMMIT_DELAY_ENV) or 0)
+    if delay:
+        from langslice.linear.job import Job
+
+        commit = Job.commit
+
+        def slow(self: Any, before: Any) -> None:
+            time.sleep(delay)
+            commit(self, before)
+
+        Job.commit = slow  # type: ignore[method-assign]
     from langslice.cli import main as cli_main
 
     return int(cli_main(sys.argv[1:]) or 0)

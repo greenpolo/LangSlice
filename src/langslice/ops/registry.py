@@ -62,6 +62,10 @@ class Verb:
     #: Whether a run of a spec has this verb (a task's switch, a host
     #: switch); every verb exists in some run.
     when: Callable[[Any], bool] = field(default=lambda _spec: True)
+    #: A long verb computes outside the job's write lock and takes it only
+    #: to apply, re-checking each section's inputs (``ops.inputs``); every
+    #: other verb runs whole under the lock (the doors hold it).
+    long: bool = False
 
 
 def _verbs(*verbs: Verb) -> dict[str, Verb]:
@@ -98,17 +102,17 @@ VERBS: dict[str, Verb] = _verbs(
     # Orientation (flip + quarter-turn) is part of in-plane alignment.
     Verb("orient_slices", orientation.orient_sections, "write", "Linear",
          when=lambda spec: spec.has("transform")),
-    Verb("fit_affine", transforms.fit_affine, "write", "Linear",
+    Verb("fit_affine", transforms.fit_affine, "write", "Linear", long=True,
          when=lambda spec: spec.has("transform") and spec.transform.automatic),
     Verb("adjust_transforms", transforms.adjust_transforms, "write", "Linear",
          when=lambda spec: spec.has("transform") and spec.transform.interactive),
     Verb("set_cutting_angles", positions.set_cutting_angles, "write", "Linear",
          when=lambda spec: spec.has("transform") and spec.transform.angles),
-    Verb("trace_borders", traces.trace_borders, "write", "Nonlinear",
+    Verb("trace_borders", traces.trace_borders, "write", "Nonlinear", long=True,
          when=lambda spec: spec.has("nonlinear") and spec.nonlinear.uses_image_model),
     Verb("grep_atlas", atlas.grep_atlas, "read", "Nonlinear",
          when=lambda spec: spec.has("nonlinear")),
-    Verb("fit_deformable", deformable.fit_deformable, "write", "Nonlinear",
+    Verb("fit_deformable", deformable.fit_deformable, "write", "Nonlinear", long=True,
          alternates={"keep_linear": deformable.keep_linear},
          when=lambda spec: spec.has("nonlinear")),
     Verb("submit", submit.submit, "write", "Common"),

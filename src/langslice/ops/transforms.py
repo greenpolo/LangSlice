@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any
 
 from langslice.affine import normalized_physical_affine
 from langslice.linear.transform import physical_decomposition
+from langslice.ops.inputs import section_inputs, stale_row
 from langslice.ops.refusal import Refused
 
 if TYPE_CHECKING:
@@ -117,19 +118,20 @@ def set_transforms(job: Job, transforms: Mapping[str, Mapping[str, Any]]) -> lis
     locked = [name for name in transforms if name in job.locked]
     if locked:
         raise Refused("LOCKED", ids=locked)
-    records = []
-    for name in transforms:
-        record = job.state.by_id(name)
-        if record is None:
-            raise Refused("UNKNOWN_SLICE_IDS", unknown=[name])
-        records.append(record)
-    if not records:
-        return []
-    before = job.snapshot()
-    for record in records:
-        record.transform = dict(transforms[record.id])
-    job.commit(before)
-    return [record.id for record in records]
+    with job.writing():
+        records = []
+        for name in transforms:
+            record = job.state.by_id(name)
+            if record is None:
+                raise Refused("UNKNOWN_SLICE_IDS", unknown=[name])
+            records.append(record)
+        if not records:
+            return []
+        before = job.snapshot()
+        for record in records:
+            record.transform = dict(transforms[record.id])
+        job.commit(before)
+        return [record.id for record in records]
 
 
 # --- fit_affine ------------------------------------------------------------------------
@@ -192,6 +194,12 @@ def fit_affine(
     written: a section whose fit or picture fails is that section's error
     row and is not written. Every fit that succeeded is written as ONE undo
     step (:func:`set_transforms`, :func:`fit_transform` records).
+
+    The fits run outside the job's write lock, from the state as it stood;
+    the write takes the lock (:meth:`~langslice.linear.job.Job.writing`) and
+    refuses a section whose inputs changed meanwhile
+    (:data:`langslice.ops.inputs.STALE_INPUT`, that section's row; its
+    picture stays), writing the others.
     """
     from langslice.core.placement import fit_picture
     from langslice.linear.transform import FIT_FRAME_KEY, fit_elastix, fit_silhouette
@@ -203,7 +211,9 @@ def fit_affine(
     rows: list[dict[str, Any]] = []
     pictures: list[Image.Image] = []
     fits: list[tuple[SliceState, dict[str, Any]]] = []
+    expected: dict[str, str] = {}
     for record in records:
+        expected[record.id] = section_inputs(state, record)
         if record.id in job.locked:
             rows.append({"id": record.id, "status": "error", "error": "LOCKED"})
             continue
@@ -230,11 +240,20 @@ def fit_affine(
             # 25-section fit pictured 4 and the model never saw 21).
             outcome["image_indexes"] = list(range(len(pictures), len(pictures) + len(panels)))
             pictures.extend(panels)
-    written = set_transforms(job, {
-        record.id: fit_transform(method, outcome, include=include, exclude=exclude,
-                                 fit_atlas=fit_atlas)
-        for record, outcome in fits
-    })
+    with job.writing():
+        kept: dict[str, dict[str, Any]] = {}
+        for record, outcome in fits:
+            now = state.by_id(record.id)
+            if now is None or section_inputs(state, now) != expected[record.id]:
+                indexes = outcome.get("image_indexes")
+                outcome.clear()
+                outcome.update(stale_row(record.id))
+                if indexes is not None:
+                    outcome["image_indexes"] = indexes
+                continue
+            kept[record.id] = fit_transform(method, outcome, include=include,
+                                            exclude=exclude, fit_atlas=fit_atlas)
+        written = set_transforms(job, kept)
     return AffineFit(rows=rows, fitted=written, pictures=pictures)
 
 
