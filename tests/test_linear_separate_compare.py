@@ -3,7 +3,7 @@
 from langslice.adk import TOOL_MEDIA_DELIVERY_ID_KEY, TOOL_MEDIA_PARTS_KEY
 from langslice.adk.media import encode_jpeg
 from langslice.core.pictures import reference_atlas_picture, reference_section_picture
-from langslice.linear.render import picture_edge
+from langslice.core.sizes import picture_edge
 from tests.test_linear_toolbox import _box, _tool, _ToolContext
 
 

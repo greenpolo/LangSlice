@@ -8,7 +8,7 @@ plain PIL pictures with their captions burned in out, plus the metadata a
 door words its reply from. No undo, no gates, no message types.
 
 - :func:`draw_canvas` — the ONE renderer of a section at a placement on its
-  millimetre-true canvas (:func:`langslice.linear.render.physical_views`),
+  millimetre-true canvas (:func:`langslice.core.canvas.physical_views`),
   drawn from the render the options ask for at the call's picture size. It
   returns a :class:`Canvas`: the panels and the :class:`CanvasFrame` they
   were drawn in (everything that fixes the canvas, kept so the job folder can
@@ -35,8 +35,24 @@ import numpy as np
 from PIL import Image
 
 from langslice.affine import denormalized_affine, physical_affine_matrix
+from langslice.core.canvas import (
+    VIEW_MODES,
+    CanvasGeometry,
+    PanelFrame,
+    canvas_geometry,
+    physical_views,
+    pivot_on_canvas,
+)
+from langslice.core.captions import caption
 from langslice.core.layers import note
 from langslice.core.pictures import reference_atlas_picture, reference_section_picture
+from langslice.core.sections import (
+    PREVIEW_LONG_EDGE,
+    render_slice,
+    rescale_section_matrix,
+    shown_section,
+)
+from langslice.core.sheets import stacked
 from langslice.linear.display import (
     MODE_RULES,
     DisplayOptions,
@@ -44,20 +60,6 @@ from langslice.linear.display import (
     atlas_image_picture,
     framed_atlas,
     framed_section,
-)
-from langslice.linear.render import (
-    PREVIEW_LONG_EDGE,
-    VIEW_MODES,
-    CanvasGeometry,
-    PanelFrame,
-    canvas_geometry,
-    caption,
-    physical_views,
-    pivot_on_canvas,
-    render_slice,
-    rescale_section_matrix,
-    shown_section,
-    stacked,
 )
 from langslice.linear.state import IDENTITY_PARAMS, SliceState, StackState
 from langslice.linear.transform import calibrate
@@ -84,7 +86,7 @@ WARPED_PLACEMENT_MODES = ("overlay", "checkerboard", "outlines", "section")
 class CanvasFrame:
     """Everything one physical picture's canvas is drawn from.
 
-    The canvas itself is :func:`langslice.linear.render.canvas_geometry` of
+    The canvas itself is :func:`langslice.core.canvas.canvas_geometry` of
     (``section.size``, ``um_per_px``, the atlas, ``position_mm``, ``plane``,
     ``pitch_deg``, ``yaw_deg``); the section sits on it under ``params``
     (the knobs about ``pivot`` / ``pivot_in_section``, or a ready 2x3 on
@@ -115,7 +117,7 @@ class CanvasFrame:
 @dataclass(frozen=True)
 class Canvas:
     """One placement's panels (captioned), the frame they were drawn in, and
-    where each panel's pixels sit (:class:`~langslice.linear.render.PanelFrame`,
+    where each panel's pixels sit (:class:`~langslice.core.canvas.PanelFrame`,
     one per image: what :mod:`langslice.core.layers` computes the layers from)."""
 
     images: list[Image.Image]

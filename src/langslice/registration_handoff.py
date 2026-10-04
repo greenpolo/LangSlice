@@ -13,9 +13,9 @@ import numpy as np
 from PIL import Image
 
 from langslice.affine import denormalized_affine
-from langslice.linear.render import (
+from langslice.core.canvas import canvas_geometry
+from langslice.core.sections import (
     PREVIEW_LONG_EDGE,
-    canvas_geometry,
     canvas_um_per_px,
     render_cache_key,
     render_slice,

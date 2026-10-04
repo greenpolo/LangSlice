@@ -22,6 +22,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, cast
 
+from langslice.core.canvas import normalize_border_style
+from langslice.core.sizes import AUTO_RESOLUTION, MIN_RESOLUTION, picture_edge, resolution_level
 from langslice.linear.arguments import ViewAuto
 from langslice.linear.display import (
     ATLAS_CHANNELS,
@@ -39,13 +41,6 @@ from langslice.linear.display import (
     available_atlas_channels,
 )
 from langslice.linear.opening import DEFAULT_IMAGE_LIMIT, IMAGE_LIMITS
-from langslice.linear.render import (
-    AUTO_RESOLUTION,
-    MIN_RESOLUTION,
-    normalize_border_style,
-    picture_edge,
-    resolution_level,
-)
 from langslice.linear.state import SliceState, StackState
 from langslice.linear.workspace import Workspace
 from langslice.providers.registry import canonical_provider

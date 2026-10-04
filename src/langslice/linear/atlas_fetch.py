@@ -16,8 +16,9 @@ from PIL import Image
 
 from langslice.affine import resize_long_edge
 from langslice.atlas.core import get_reference_slice, get_root_mask
+from langslice.core.captions import caption
+from langslice.core.sizes import opening_edge, picture_edge
 from langslice.image_prep import crop_to_mask
-from langslice.linear.render import caption, opening_edge, picture_edge
 from langslice.linear.state import StackState
 from langslice.linear.workspace import Workspace
 from langslice.space import Plane
@@ -96,7 +97,7 @@ def atlas_picture(
     """One tissue-framed atlas section at *position_mm*, sized and captioned.
 
     *long_edge* None is the run's later-picture size
-    (:func:`langslice.linear.render.picture_edge`); *prepared* is a picture
+    (:func:`langslice.core.sizes.picture_edge`); *prepared* is a picture
     already drawn at *long_edge*.
     """
     long_edge = long_edge or picture_edge(ctx)

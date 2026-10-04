@@ -18,7 +18,11 @@ from typing import Any
 
 from PIL import Image
 
+from langslice.core.captions import caption
 from langslice.core.layers import note
+from langslice.core.sections import render_cache_key
+from langslice.core.sheets import reference_slice_picture, spacing_plot, stack_sheet
+from langslice.core.sizes import opening_edge, picture_edge
 from langslice.linear.appearance import Look
 from langslice.linear.atlas_fetch import atlas_picture
 from langslice.linear.display import (
@@ -27,15 +31,6 @@ from langslice.linear.display import (
     channel_strip,
     framed_atlas,
     framed_section,
-)
-from langslice.linear.render import (
-    caption,
-    opening_edge,
-    picture_edge,
-    reference_slice_picture,
-    render_cache_key,
-    spacing_plot,
-    stack_sheet,
 )
 from langslice.linear.state import SliceState, StackState
 from langslice.linear.workspace import Workspace
@@ -46,7 +41,7 @@ logger = logging.getLogger(__name__)
 def reference_section_picture(
     ws: Workspace, record: SliceState, *, long_edge: int | None = None, look: Look = None,
 ) -> Image.Image:
-    """:func:`langslice.linear.render.reference_slice_picture`, cached per
+    """:func:`langslice.core.sheets.reference_slice_picture`, cached per
     display state (orientation, look, size). The cached caption keeps the
     index and flags of its first display; *long_edge* None is the run's
     opening size, another size its own entry. Shared: read only."""
@@ -121,7 +116,7 @@ def stack_review(
 ) -> tuple[Image.Image, Image.Image]:
     """``(sheet, plot)``: every section in written-position order, a placed
     one over the atlas at its position, captioned; then position against
-    corrected index (:func:`langslice.linear.render.spacing_plot`)."""
+    corrected index (:func:`langslice.core.sheets.spacing_plot`)."""
 
     def atlas_under(record: SliceState) -> Any:
         if record.position_mm is None:

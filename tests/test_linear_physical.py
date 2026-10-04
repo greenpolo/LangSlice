@@ -17,15 +17,12 @@ from PIL import Image
 from langslice.affine import normalized_physical_affine, physical_affine_matrix
 from langslice.atlas.recolor import color_lut
 from langslice.atlas.render import family_mapping, family_outlines
+from langslice.core.canvas import canvas_geometry, physical_overlay
+from langslice.core.captions import scale_bar_px
+from langslice.core.sections import canvas_um_per_px
 from langslice.image_prep import read_pixel_size_um
 from langslice.linear.engine import build_context
 from langslice.linear.job import ingest
-from langslice.linear.render import (
-    canvas_geometry,
-    canvas_um_per_px,
-    physical_overlay,
-    scale_bar_px,
-)
 from langslice.linear.spec import JobSpec
 from langslice.linear.transform import calibrate
 from tests.linear_tool_helpers import single_adjust
@@ -291,7 +288,7 @@ def test_no_pixel_size_anywhere_is_estimated_never_fatal(tmp_path: Path):
     record.position_mm = 0.2
     assert canvas_um_per_px(ctx, record)[0] is None
 
-    from langslice.linear.render import render_slice
+    from langslice.core.sections import render_slice
 
     section = render_slice(ctx, record, long_edge=512)
     um, source = calibrate(state, ctx, record, section)

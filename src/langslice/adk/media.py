@@ -1,6 +1,6 @@
 """Pictures as message images: the one place core pictures become ``types.Part``.
 
-The core (:mod:`langslice.core`, :mod:`langslice.linear.render`,
+The core (:mod:`langslice.core`,
 :mod:`langslice.linear.atlas_fetch`, :mod:`langslice.linear.opening`) draws
 plain PIL images, captions burned in, and the opening as a sequence of texts
 and strips. The tools (:mod:`langslice.linear.toolbox`) return those plain

@@ -568,7 +568,8 @@ def picture(
     ``nissl``; the call's ``view.atlas_channels``) are pulled through the
     record's map and blended under the lines at ``style.atlas_opacity``.
     """
-    from langslice.linear.render import caption, zoom_box
+    from langslice.core.canvas import zoom_box
+    from langslice.core.captions import caption
 
     width, height = record.section_size
     zoom = style.zoom
@@ -602,7 +603,8 @@ def trace_picture(
     border color and thickness are the call's, and the picture is never drawn
     past the fit image's own pixels, like :func:`picture`.
     """
-    from langslice.linear.render import caption, zoom_box
+    from langslice.core.canvas import zoom_box
+    from langslice.core.captions import caption
 
     width, height = image.size
     box = zoom_box(list(style.zoom), (width, height)) if style.zoom else (0, 0, width, height)

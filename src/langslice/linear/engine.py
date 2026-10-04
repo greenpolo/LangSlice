@@ -22,6 +22,7 @@ from google.genai import types
 
 from langslice.adk.media import opening_parts, packaged_tools
 from langslice.atlas.core import load_atlas
+from langslice.core.status import status_text
 from langslice.job.layout import JobLayout, locate_job_folder
 from langslice.linear.job import Job
 
@@ -31,7 +32,6 @@ from langslice.linear.job import apply_host_inputs as apply_host_inputs  # noqa:
 from langslice.linear.job import ingest as ingest  # noqa: E402
 from langslice.linear.live import LiveCallback
 from langslice.linear.prompt import build_job_statement, display_facts
-from langslice.linear.render import status_text
 from langslice.linear.session import (
     DEFAULT_MAX_ITERATIONS,
     build_agent,

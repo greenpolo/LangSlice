@@ -265,7 +265,7 @@ def display_lines(
         "reason, and so is any unknown argument.",
     ]
     if resolution:
-        from langslice.linear.render import AUTO_RESOLUTION, MIN_RESOLUTION, PICTURE_EDGES
+        from langslice.core.sizes import AUTO_RESOLUTION, MIN_RESOLUTION, PICTURE_EDGES
 
         low, high = MIN_RESOLUTION, resolution
         lines.append(

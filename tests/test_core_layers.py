@@ -5,17 +5,16 @@ from __future__ import annotations
 import numpy as np
 from PIL import Image
 
-from langslice.core import layers
-from langslice.linear import render
+from langslice.core import canvas, layers
 from langslice.oblique import plane_index_affine, plane_index_coordinates
 from tests.deformable_synthetic import SMOOTH_FIELD, SyntheticAtlas, render_section
 
 
-def _draw(**kwargs) -> tuple[list[Image.Image], list[render.PanelFrame]]:
+def _draw(**kwargs) -> tuple[list[Image.Image], list[canvas.PanelFrame]]:
     atlas = SyntheticAtlas()
     section, _ = render_section(atlas, SMOOTH_FIELD(), seed=0)
-    panels: list[render.PanelFrame] = []
-    images, _iou = render.physical_views(
+    panels: list[canvas.PanelFrame] = []
+    images, _iou = canvas.physical_views(
         section, 25.0, atlas, 0.15, "coronal", 0.0, 0.0,
         {"rotation_deg": 6.0, "scale_x": 1.0, "scale_y": 1.0, "translate_x_mm": 0.2,
          "translate_y_mm": 0.0}, long_edge=300, panel_frames=panels, **kwargs)

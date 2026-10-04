@@ -188,7 +188,7 @@ def fit_image(
     Same frame as :func:`langslice.registration_handoff.linear_registration_input`
     (oriented, not tissue-framed) at *long_edge*.
     """
-    from langslice.linear.render import render_slice
+    from langslice.core.sections import render_slice
 
     return render_slice(
         ctx, record, long_edge=long_edge, frame=False,

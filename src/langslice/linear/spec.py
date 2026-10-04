@@ -22,7 +22,7 @@ PLANES: tuple[str, ...] = ("coronal", "sagittal", "horizontal")
 
 #: How large the pictures the agent is shown are drawn: a long edge for the
 #: opening images and one for every later picture per level
-#: (:data:`langslice.linear.render.PICTURE_EDGES`); "auto" lets the agent pass
+#: (:data:`langslice.core.sizes.PICTURE_EDGES`); "auto" lets the agent pass
 #: ``resolution`` per call. Nothing a fit computes or a transform stores
 #: depends on it, and the image model's inputs do not change.
 IMAGE_RESOLUTIONS: tuple[str, ...] = ("low", "medium", "high", "auto")

@@ -12,11 +12,11 @@ from PIL import Image
 
 from langslice.adk import TOOL_MEDIA_PARTS_KEY
 from langslice.adk.media import package_result
+from langslice.core.sections import render_slice
 from langslice.linear import appearance as looks
 from langslice.linear.engine import build_context
 from langslice.linear.job import ingest
 from langslice.linear.prompt import TOOL_LINES
-from langslice.linear.render import render_slice
 from langslice.linear.spec import JobSpec, NonlinearSpec, PositionSpec
 from langslice.linear.toolbox import build_tools
 from tests.fakes import SlabAtlas
@@ -296,7 +296,7 @@ def test_raw_channels_one_in_gray_several_overlaid_in_colour(tmp_path: Path):
 
 
 def test_a_flat_channel_is_dimmed_in_an_overlay():
-    from langslice.linear.render import fine_detail
+    from langslice.core.sections import fine_detail
 
     rng = np.random.default_rng(0)
     textured = rng.uniform(0.2, 1.0, (64, 64)).astype(np.float32)
