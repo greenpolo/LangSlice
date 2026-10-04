@@ -160,7 +160,7 @@ Shared, top-level:
   N4/denoise) and fitting. `read_working_image` gives
   each section file's small working copy (the smallest TIFF pyramid level of
   at least 1536 px, a JPEG draft decode, otherwise one downsample to 3072 px);
-  the linear renders are drawn from it (`EngineContext.working_source`) and
+  the linear renders are drawn from it (`linear.workspace.Workspace.working_source`) and
   count file pixels through its scale, so a whole-slide scan is never decoded
   at full size
 - `providers/` — model ACCESS methods, never task logic. `registry.py` is

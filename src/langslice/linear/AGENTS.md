@@ -71,7 +71,10 @@ mapped by zero-based `image_indexes` in each compared row. These are
 independently tissue-framed, not a common physical canvas; zoom is refused
 and outlines/opacity do not apply. Other modes still return one physical
 canvas per pair. Interactive-transform `side_by_side` is unchanged.
-Comparison and atlas-fetch paths share encoded reference caches:
+Comparison and atlas-fetch paths share encoded reference caches
+(`adk/media.py` `reference_slice_part` / `atlas_part`, kept on the driver's
+`EngineContext.reference_parts`; the core draws the captioned pictures,
+`render.reference_slice_picture` / `atlas_fetch.atlas_picture`):
 section captions retain their first display index/flags across reorder,
 filenames are the stable identity, and orientation/preprocessing/size changes
 get distinct entries. Atlas entries include exact position, plane, angles and
@@ -88,6 +91,20 @@ Rejected: labelled anatomy/landmarks, confidence and verification states,
 damage masks, an anatomy-based gap review, a validity-vs-verification audit.
 
 ## Files
+
+**Core and doors (layered refactor, phase 1, 2026-10-03).** The core
+modules take a `workspace.Workspace` and return plain PIL pictures, numbers
+and text; none imports `google.genai`, ADK, litellm or openai
+(`tests/test_core_imports.py` checks each in a fresh interpreter): `workspace`,
+`render`, `display`, `transform`, `deformation`, `appearance`,
+`atlas_fetch`, `opening`, and `registration_handoff` at the top level. The
+doors turn them into what a host reads: `adk/media.py` (the one module that
+makes `types.Part`s: JPEG encoding, the cached reference pictures, the
+model-lane image limit, the opening as parts), the toolbox and
+`view_options.py` (argument checking and the wording the model sees), the
+MCP server (`encode_jpeg` straight into MCP image blocks for the opening; its
+tool results still unpack the toolbox's parts). `engine.py` and `session.py`
+are the ADK driver.
 
 - `spec.py` — `JobSpec` (+ `ReorderSpec`/`PositionSpec`/`TransformSpec`/
   `NonlinearSpec`). Every checkbox a host shows maps to a field here; nothing
@@ -115,11 +132,20 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
   canvas fractions — next to the six normalized numbers, whatever made it.
   There is no `confidence`: nothing downstream read it (Nash, 2026-09-06), and
   the reasoning lives in `adjust_transforms`'s note.
+- `workspace.py` — `Workspace`, the core context: the spec, the image
+  folder, the atlas (`atlas_loader`, loaded once), `abba_atlas` (ABBA's
+  cached Allen atlas when it matches, looked up once), each section's
+  `working_source` (the working copy and its scale, `source_cache`),
+  `section_channels` (`channel_cache`), `calibration` (host, then file
+  tags), `position_range`, `axis_ends`, `species`, and the `render_cache` /
+  `render_scale` caches. No model and no message images: the driver's
+  `engine.EngineContext` subclasses it to add those.
 - `checkpoint.py` — atomic JSON write to `<folder>/linear_state.json`.
 - `discovery.py` — natural-sorted image discovery.
 - `render.py` — `render_slice` (ROTATE first, then FLIP, then the display-only
   `--preprocess auto` enhancement), `stack_pictures`, the status rows and
-  their text form, `caption`, the JPEG `types.Part` encoder, and the PHYSICAL
+  their text form, `caption`, `reference_slice_picture` (the captioned,
+  tissue-framed section the comparison tools send), and the PHYSICAL
   overlay: `canvas_geometry` places an atlas section on a section's frame at
   true scale (`atlas um/px / canvas um/px`, anatomy centred, canvas grown to
   hold it — never fit-to-canvas, which is not a calibration), and
@@ -152,18 +178,19 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
   built. `canvas_um_per_px` follows the file's pixel size down through
   the render's own downsample (`render_scale`, same key as `render_cache`);
   `estimate_um_per_px` is the fallback guess from tissue width. Renders are
-  cached on the context and shared: read them, never mutate them. `caption`
+  cached on the workspace and shared: read them, never mutate them. `caption`
   burns a label into a COPY — every image a tool returns gets one, because
   tool images reach the model as bare attachments; never caption an image a
   fit measures.
 - `atlas_fetch.py` — `atlas_section` (the one atlas renderer: flat at 0/0
-  cutting angles, `oblique.sample_oblique_plane` otherwise), the
-  `view_atlas` tool (was `fetch_atlas`), closed over the run context, and
+  cutting angles, `oblique.sample_oblique_plane` otherwise), `atlas_picture`
+  (one tissue-framed atlas section, sized and captioned; the `view_atlas`
+  tool, was `fetch_atlas`, is built in the toolbox, `make_view_atlas`), and
   `reference_atlas` (the opening's evenly spaced atlas positions, at most
   `SEED_ATLAS_MAX_IMAGES` 48, never upsampled). Sections and atlas sections
   are framed the same way so apparent scale is not a cue.
 - `opening.py` — the opening images (2026-10-03, Nash: "a strip of atlas
-  images and slice images, just like how abba does it"): `opening_parts`
+  images and slice images, just like how abba does it"): `opening_items`
   lays the stack out as horizontal strips in corrected order, the sections
   on top and, directly beneath each, the atlas at its CURRENT position and
   the stack's cutting angles (`atlas_tile`, drawn to the section's long edge
@@ -172,8 +199,11 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
   <filename>"` plus short flags `rot N`/`flipped`/`damaged`, the damage note
   stays in the status table; atlas tiles `atlas <mm> mm`, a section without
   a position gets `no position`), columns are split by a thin grey line,
-  and a text part before each strip lists its sections. A strip's long edge
-  is the model lane's largest image (`image_limit`: `OPENAI_MAX_IMAGE_EDGE`
+  and a text before each strip lists its sections; it returns the texts and
+  strips in reading order as plain strings and PIL images
+  (`adk/media.opening_parts` makes them message parts for the seed). A
+  strip's long edge is the model lane's largest image (`limit`, from
+  `adk/media.image_limit` on the run's model: `OPENAI_MAX_IMAGE_EDGE`
   2048 for openai-oauth/openai-api, any other lane uses it too, unmeasured;
   `CLAUDE_MAX_IMAGE_EDGE` 1568 for the MCP host), tiles the level's opening
   size (`strip_layout`: as many as fit, shrunk by at most a few pixels so a
@@ -203,13 +233,14 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
   plugin's `before_tool_callback` answers first) and
   `mcp_server.server.strict_arguments` (FastMCP drops them too; checked
   after its JSON pre-parse).
-- `display.py` — `view`, the picture options (2026-10-01 as nine flat
-  arguments; one `view` object since 2026-10-03, Nash: "Our tools have been
-  really messy"; ABBA's image-channel / atlas-channel design). `parse_view`
-  validates one call's `view` against the tool's `Profile` (its modes, first
+- `display.py` / `view_options.py` — `view`, the picture options (2026-10-01
+  as nine flat arguments; one `view` object since 2026-10-03, Nash: "Our
+  tools have been really messy"; ABBA's image-channel / atlas-channel
+  design). The door half, `view_options.py`: `parse_view` validates one call's `view` against the tool's `Profile` (its modes, first
   = default; whether `channels`, the atlas keys and `deformation` apply; zoom
   and deformation modes; per-mode atlas defaults) and `MODE_RULES` (what each
-  mode draws) into a frozen `DisplayOptions`; a key that means nothing for the
+  mode draws, `display.py`) into a frozen `DisplayOptions` (`display.py`, the
+  core half with the defaults and the renderers); a key that means nothing for the
   tool or the mode answers `VIEW_KEY_UNUSED` with each reason. Keys: `mode`;
   `channels` — raw channel names (look `{"overlay": names}`: each stretched
   by percentile 1..99.5 on the whole working plane, `render._look_image`; one
@@ -218,7 +249,7 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
   relative to the most detailed one — on M11_B_03 the flat green
   autofluorescence, stretched alone, washed out the nuclear stain) or one version, `view` (default) / `fit`;
   `atlas_channels` — `ara`, `nissl` (ABBA's cached atlas only,
-  `EngineContext.abba_atlas`), `borders` (the lines); `atlas_image_picture`
+  `Workspace.abba_atlas`), `borders` (the lines); `atlas_image_picture`
   composes the images (ara alone = the renderers' own reference path, none =
   black, two = green + magenta); `atlas_opacity` (default 0.5 when an image
   is listed in a blending mode); `regions` (descendants included,
@@ -232,7 +263,7 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
   everywhere, picked by eye on M11_B_03: 0.5 faded into bright tissue, 1.5
   covered ventricle edges); `zoom`; `deformation` (`applied`/`none`,
   placement tools); `resolution` only at image resolution `auto`:
-  `view_schema` (applied to every tool in `build_tools`) swaps `view`'s
+  `view_options.view_schema` (applied to every tool in `build_tools`) swaps `view`'s
   annotation for `ViewAuto` there, and `clamp_resolution` clamps it to
   128..1536 with a `view.resolution_note`. `DisplayOptions.long_edge` is the
   call's picture size; `echo()` is what the call drew. It never writes state,
@@ -249,7 +280,7 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
   appearance (today's `preprocess` auto, or the host's blend when
   `spec.host_preprocessing` is set); anything else is drawn by
   `render_slice(look=...)` from the raw channels
-  (`EngineContext.section_channels`) over the same frame and size. The
+  (`Workspace.section_channels`) over the same frame and size. The
   `preprocess` tool (gated by `spec.agent_preprocessing`) is the only writer;
   it returns each pictured section BEFORE (the target's look before the call,
   drawn first) and AFTER, labelled.
@@ -354,7 +385,8 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
   the call's picture size, `Style.long_edge`, never past the 1536 px fit
   image; included/`regions` strong, excluded pink).
 - `prompt.py` — `build_job_statement`: job, run facts, ONE factual line per
-  tool that exists, hard constraints. Nothing else. `tool_line` words the
+  tool that exists, hard constraints. Nothing else. `display_facts` reads
+  the run's raw channels and atlas channels off the workspace for it. `tool_line` words the
   `fit_deformable` line for the run (traced fit sections only with an image
   model). `display_lines` describes `view` ONCE, with the raw channels (and
   that their names may not identify the stain; `view_slices` mode channels
@@ -368,7 +400,9 @@ damage masks, an anatomy-based gap review, a validity-vs-verification audit.
   tokens, after its response. It is not a cumulative spending guard or a
   preflight size guarantee. Logs separate cumulative input from peak request
   input; 1.3M processed over a run does not mean a 1.3M-token context.
-- `engine.py` — `EngineContext`, `ingest`, `apply_host_inputs`, `run_session`,
+- `engine.py` — `EngineContext` (the `Workspace` plus the checkpoint and
+  results paths, the model and `reference_parts`, the encoded-picture
+  cache), `ingest`, `apply_host_inputs`, `run_session`,
   `emit_results`, and `run(spec)`. No post pass: the session is the whole run.
 - `live.py` — optional in-memory observer for host activity windows.
   `engine.run(on_event=...)` streams sanitized seed images, assistant text,
@@ -864,7 +898,9 @@ range, axis direction, protocol and calibration text identical across hosts.
 Claude's statement does not reuse the ADK method/playbook. MCP opens saved ABBA
 jobs through `api.abba_worker.prepare_linear`, exactly like `linear.run`,
 and supplies the opening strips separately with `show_stack` pages
-(`opening_pages`: `opening_parts` at `CLAUDE_IMAGE_LIMIT`, paged under
+(`opening_pages`: `opening.opening_items` at `CLAUDE_IMAGE_LIMIT`, each
+strip encoded by `adk/media.encode_jpeg` straight into an MCP image block,
+paged under
 `PAGE_BYTES`, a strip and its text kept together). No image
 model is available through the Claude connector. The MCP tools are the same
 functions with the same `view` and the same strict-argument rule

@@ -204,10 +204,11 @@ in any payload or prompt (see `lean-harness` history in `linear/CLAUDE.md`).
 | `fit_deformable(slices, include=[], exclude=[], start="linear", fit_section="fit", fit_atlas="", engine="", stiffness="medium", candidates=[{stiffness, fit_section, fit_atlas, engine}], keep_linear="", view)` — `engine` only when `nonlinear.engine` is `either`; modes: borders, ab | nonlinear | a library deformable fit (ANTs SyN or Elastix B-spline, `src/langslice/deformable/`) on top of each section's linear placement. `include` restricts the fit to those regions plus a margin, `exclude` removes regions from the atlas side; either may name one side of the section, `"CTX:left"` / `"CTX:right"`; `start="current"` composes onto the applied deformation. `fit_section`: the `fit` appearance (one raw channel is a fit appearance `preprocess` sets) or (image model only) the section's `trace_borders` result at this placement (`traced_borders` = named regions, ANTs; `traced_lines` = lines vs borders); `fit_atlas` `ara`/`nissl` for the fit appearance, `borders` for traced fit sections only; stiffness soft/medium/firm; detail and line softening fixed. Defaults: fit appearance, ara, ANTs, medium; with a completed trace the description recommends traced_borders + ANTs + medium; a call waits up to 300 s for a trace still running and adds the trace drawn on the section (`traces`). `keep_linear="reason"` fits nothing and records that the named sections' linear placement stands. 2–4 `candidates` preview and write nothing; one setting applies (one undo step), reusing an identical cached result. Returns per result the final borders drawn on the section image (included strong, excluded pink; `view.atlas_channels` with `ara`/`nissl` blends that atlas image, warped, under the lines), displacement, fold fraction, flags and engine numbers. A later change to position, orientation, cutting angles or transform clears the deformation (`deformation_cleared` in that reply). |
 | `submit(summary, notes, interval_breaks)` | always | ends the run; gated (below). |
 
-**`view`: the picture options** (`linear/display.py`: `parse_view` validates
-one call's `view` against the tool's `Profile` into a `DisplayOptions`; the
-same typed object, `arguments.View`, on every picture tool; `ViewAuto` adds
-`resolution` at image resolution `auto` via `display.view_schema`):
+**`view`: the picture options** (`linear/view_options.py`: `parse_view`
+validates one call's `view` against the tool's `Profile` into a
+`linear/display.py` `DisplayOptions`, which the renderers draw; the same typed
+object, `arguments.View`, on every picture tool; `ViewAuto` adds `resolution`
+at image resolution `auto` via `view_options.view_schema`):
 
 | key | values | applies to |
 | --- | --- | --- |
@@ -227,9 +228,9 @@ with the reason per key; an unknown key (in `view`, at the top level, or in
 any `entries`/`candidates` dict) answers `UNKNOWN_ARGUMENTS`
 (`arguments.argument_refusal`, applied by the toolbox wrapper, the ADK
 `StrictArgumentsPlugin` and the MCP server). Options apply to their call
-only: nothing in `display.py` writes state. The job statement describes `view`
+only: nothing in `display.py` or `view_options.py` writes state. The job statement describes `view`
 once, with this run's raw channel names and the atlas channels this host has
-(`display.display_facts`, `prompt.display_lines`); tool descriptions list only
+(`prompt.display_facts`, `prompt.display_lines`); tool descriptions list only
 their modes.
 
 **Raw channels and appearance** (`linear/appearance.py`). A section's DEFAULT
@@ -237,7 +238,7 @@ appearance is today's: `preprocess` auto (`adaptive_preprocess`) for a plain
 file, or the host's blend (`host_preprocess`) when `host_preprocessing` is set
 — the ABBA worker no longer stages blended copies; it passes its settings and
 the run reads the snapshots themselves. The raw channels stay readable
-(`EngineContext.section_channels`: red/green/blue, or `gray`, for one page;
+(`Workspace.section_channels`: red/green/blue, or `gray`, for one page;
 one plane per page, named by `inputs.channel_names` or ch1.., for several),
 read at working size (`image_prep.read_working_pages`: pyramid level or
 per-page downsample, never a whole-slide decode). `render_slice(look=...)`
