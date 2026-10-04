@@ -1,0 +1,702 @@
+{
+ "door": "declarations",
+ "images": [],
+ "tools": [
+  {
+   "description": "Open a saved LangSlice job by job_id, or a development image_folder.\n\n        Returns the job facts and status table without images. Read every\n        show_stack page before writing. Omit both arguments to repeat the\n        current briefing. Never supply both job_id and image_folder.\n        ",
+   "inputSchema": {
+    "properties": {
+     "image_folder": {
+      "default": "",
+      "title": "Image Folder",
+      "type": "string"
+     },
+     "job_id": {
+      "default": "",
+      "title": "Job Id",
+      "type": "string"
+     }
+    },
+    "title": "start_jobArguments",
+    "type": "object"
+   },
+   "name": "start_job"
+  },
+  {
+   "annotations": {
+    "readOnlyHint": true
+   },
+   "description": "The stack as it stands: one row per section in corrected order.\n\n        Returns:\n            ``rows`` (index, id, position_mm, delta_to_next_mm, flip,\n            rotation_deg, damaged, damage_note, transform kind, transform_iou,\n            transform_mirrored, caveats), plus the stack's cutting angles and\n            interval breaks. Writes return only the rows they changed; this is\n            the whole table.\n        ",
+   "inputSchema": {
+    "properties": {},
+    "title": "statusArguments",
+    "type": "object"
+   },
+   "name": "status"
+  },
+  {
+   "annotations": {
+    "readOnlyHint": true
+   },
+   "description": "Look at up to 4 named sections at higher resolution.\n\n        Sections are rendered as corrected: any rotation and flip already\n        applied, framed to their tissue the same way atlas sections are.\n        Each image carries its corrected index and filename burned into its\n        top-left corner.\n\n        Args:\n            slices: Filenames or corrected indices (max 4 per call).\n            view: Picture options (described once in the job statement).\n                Modes: \"section\" (default: the section in view.channels) or\n                \"channels\" (one small tile per raw channel, unmodified, each\n                labelled with its name). No atlas is drawn.\n\n        Returns:\n            status/slices/description plus the images, in the order asked.\n        ",
+   "inputSchema": {
+    "$defs": {
+     "View": {
+      "additionalProperties": false,
+      "description": "Picture options: what this call's pictures show (this call only).",
+      "properties": {
+       "atlas_channels": {
+        "items": {
+         "type": "string"
+        },
+        "title": "Atlas Channels",
+        "type": "array"
+       },
+       "atlas_opacity": {
+        "title": "Atlas Opacity",
+        "type": "number"
+       },
+       "border_color": {
+        "title": "Border Color",
+        "type": "string"
+       },
+       "border_thickness": {
+        "title": "Border Thickness",
+        "type": "number"
+       },
+       "channels": {
+        "items": {
+         "type": "string"
+        },
+        "title": "Channels",
+        "type": "array"
+       },
+       "deformation": {
+        "title": "Deformation",
+        "type": "string"
+       },
+       "mode": {
+        "title": "Mode",
+        "type": "string"
+       },
+       "outlines": {
+        "title": "Outlines",
+        "type": "string"
+       },
+       "regions": {
+        "items": {
+         "type": "string"
+        },
+        "title": "Regions",
+        "type": "array"
+       },
+       "zoom": {
+        "items": {
+         "type": "number"
+        },
+        "title": "Zoom",
+        "type": "array"
+       }
+      },
+      "title": "View",
+      "type": "object"
+     }
+    },
+    "properties": {
+     "slices": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Slices",
+      "type": "array"
+     },
+     "view": {
+      "$ref": "#/$defs/View",
+      "default": {}
+     }
+    },
+    "required": [
+     "slices"
+    ],
+    "title": "view_slicesArguments",
+    "type": "object"
+   },
+   "name": "view_slices"
+  },
+  {
+   "annotations": {
+    "readOnlyHint": true
+   },
+   "description": "Look at atlas sections at the positions you name, at most 4 per call.\n\n        Sections are rendered at the stack's current cutting angles, each\n        labelled with its position (and the angles, when the stack is oblique)\n        in its top-left corner. Ask for more than 4 and only the first 4 are\n        shown; the rest come back under ``dropped_positions_mm`` with\n        ``truncated: true``. Positions outside the atlas range are clamped,\n        and positions within 0.02 mm of one already in the same call are\n        coalesced.\n\n        Args:\n            positions_mm: Positions along the slicing axis, in millimetres.\n            view: Picture options (described once in the job statement).\n                Mode \"template\" only: the atlas alone, framed to its anatomy;\n                atlas_channels default [\"ara\"], add \"borders\" for the region\n                lines. No section is drawn, so channels does not apply.\n\n        Returns:\n            status/positions plus the atlas images, in the order requested.\n        ",
+   "inputSchema": {
+    "$defs": {
+     "View": {
+      "additionalProperties": false,
+      "description": "Picture options: what this call's pictures show (this call only).",
+      "properties": {
+       "atlas_channels": {
+        "items": {
+         "type": "string"
+        },
+        "title": "Atlas Channels",
+        "type": "array"
+       },
+       "atlas_opacity": {
+        "title": "Atlas Opacity",
+        "type": "number"
+       },
+       "border_color": {
+        "title": "Border Color",
+        "type": "string"
+       },
+       "border_thickness": {
+        "title": "Border Thickness",
+        "type": "number"
+       },
+       "channels": {
+        "items": {
+         "type": "string"
+        },
+        "title": "Channels",
+        "type": "array"
+       },
+       "deformation": {
+        "title": "Deformation",
+        "type": "string"
+       },
+       "mode": {
+        "title": "Mode",
+        "type": "string"
+       },
+       "outlines": {
+        "title": "Outlines",
+        "type": "string"
+       },
+       "regions": {
+        "items": {
+         "type": "string"
+        },
+        "title": "Regions",
+        "type": "array"
+       },
+       "zoom": {
+        "items": {
+         "type": "number"
+        },
+        "title": "Zoom",
+        "type": "array"
+       }
+      },
+      "title": "View",
+      "type": "object"
+     }
+    },
+    "properties": {
+     "positions_mm": {
+      "items": {
+       "type": "number"
+      },
+      "title": "Positions Mm",
+      "type": "array"
+     },
+     "view": {
+      "$ref": "#/$defs/View",
+      "default": {}
+     }
+    },
+    "required": [
+     "positions_mm"
+    ],
+    "title": "view_atlasArguments",
+    "type": "object"
+   },
+   "name": "view_atlas"
+  },
+  {
+   "annotations": {
+    "readOnlyHint": false
+   },
+   "description": "Append one line to the run notes, which are saved with the results.\n\n        Args:\n            text: The note.\n        ",
+   "inputSchema": {
+    "properties": {
+     "text": {
+      "title": "Text",
+      "type": "string"
+     }
+    },
+    "required": [
+     "text"
+    ],
+    "title": "noteArguments",
+    "type": "object"
+   },
+   "name": "note"
+  },
+  {
+   "annotations": {
+    "readOnlyHint": false
+   },
+   "description": "Undo the last write. One tool call undoes as one step.",
+   "inputSchema": {
+    "properties": {},
+    "title": "undoArguments",
+    "type": "object"
+   },
+   "name": "undo"
+  },
+  {
+   "annotations": {
+    "readOnlyHint": false
+   },
+   "description": "Redo the write that ``undo`` reversed.",
+   "inputSchema": {
+    "properties": {},
+    "title": "redoArguments",
+    "type": "object"
+   },
+   "name": "redo"
+  },
+  {
+   "annotations": {
+    "readOnlyHint": false
+   },
+   "description": "Set or clear damage flags for sections with unreliable outlines.\n\n        Damage here means the section outline massively deviates from the\n        atlas: large missing chunks, a missing hemisphere or olfactory bulb,\n        split or independently rotated hemispheres, displaced fragments.\n        Bubbles, stains, low contrast and small tears with an intact outline\n        are NOT damage.\n\n        Args:\n            entries: Objects with id (filename or corrected index), damaged\n                (boolean, default True) and note. Set damaged=False to clear\n                the flag and its note.\n\n        Returns:\n            The rows this call changed.\n        ",
+   "inputSchema": {
+    "$defs": {
+     "DamageEntry": {
+      "additionalProperties": false,
+      "description": "One ``mark_damaged`` entry.",
+      "properties": {
+       "damaged": {
+        "title": "Damaged",
+        "type": "boolean"
+       },
+       "id": {
+        "anyOf": [
+         {
+          "type": "string"
+         },
+         {
+          "type": "integer"
+         }
+        ],
+        "title": "Id"
+       },
+       "note": {
+        "title": "Note",
+        "type": "string"
+       }
+      },
+      "title": "DamageEntry",
+      "type": "object"
+     }
+    },
+    "properties": {
+     "entries": {
+      "items": {
+       "$ref": "#/$defs/DamageEntry"
+      },
+      "title": "Entries",
+      "type": "array"
+     }
+    },
+    "required": [
+     "entries"
+    ],
+    "title": "mark_damagedArguments",
+    "type": "object"
+   },
+   "name": "mark_damaged"
+  },
+  {
+   "annotations": {
+    "readOnlyHint": false
+   },
+   "description": "Place one or more sections together in the requested order.\n\n        Args:\n            slices: Nonempty list of unique section filenames. These sections\n                move as one block in the listed order; all unlisted sections\n                keep their relative order. List the whole stack to set its order.\n                Use filenames, never corrected indices: this call changes indices.\n            after: Filename the block should follow, or \"start\" (default) to\n                put it first. The anchor must not be in slices.\n\n        Returns:\n            Changed rows and moved ids. Only corrected indices change; positions\n            and transforms are kept. The whole call is one undoable write.\n        ",
+   "inputSchema": {
+    "properties": {
+     "after": {
+      "default": "start",
+      "title": "After",
+      "type": "string"
+     },
+     "slices": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Slices",
+      "type": "array"
+     }
+    },
+    "required": [
+     "slices"
+    ],
+    "title": "reorder_slicesArguments",
+    "type": "object"
+   },
+   "name": "reorder_slices"
+  },
+  {
+   "annotations": {
+    "readOnlyHint": false
+   },
+   "description": "Write positions for one or more sections, and show each placement.\n\n        Positions are in atlas-native millimetres along the slicing axis. A\n        value outside the atlas range is clamped and reported back.\n\n        Args:\n            entries: ``[{\"id\": \"<filename>\", \"position_mm\": <number>}]``.\n            view: Picture options (described once in the job statement).\n                Modes as in `view_placement`; default \"stacked\".\n\n        Returns:\n            What was written, what was clamped, the rows it changed, and one\n            picture per placement not already seen in a full-canvas,\n            atlas-bearing view with this orientation and these cutting\n            angles, labelled in the top-left corner.\n        ",
+   "inputSchema": {
+    "$defs": {
+     "PositionEntry": {
+      "additionalProperties": false,
+      "description": "One ``set_positions`` entry.",
+      "properties": {
+       "id": {
+        "anyOf": [
+         {
+          "type": "string"
+         },
+         {
+          "type": "integer"
+         }
+        ],
+        "title": "Id"
+       },
+       "position_mm": {
+        "title": "Position Mm",
+        "type": "number"
+       }
+      },
+      "title": "PositionEntry",
+      "type": "object"
+     },
+     "View": {
+      "additionalProperties": false,
+      "description": "Picture options: what this call's pictures show (this call only).",
+      "properties": {
+       "atlas_channels": {
+        "items": {
+         "type": "string"
+        },
+        "title": "Atlas Channels",
+        "type": "array"
+       },
+       "atlas_opacity": {
+        "title": "Atlas Opacity",
+        "type": "number"
+       },
+       "border_color": {
+        "title": "Border Color",
+        "type": "string"
+       },
+       "border_thickness": {
+        "title": "Border Thickness",
+        "type": "number"
+       },
+       "channels": {
+        "items": {
+         "type": "string"
+        },
+        "title": "Channels",
+        "type": "array"
+       },
+       "deformation": {
+        "title": "Deformation",
+        "type": "string"
+       },
+       "mode": {
+        "title": "Mode",
+        "type": "string"
+       },
+       "outlines": {
+        "title": "Outlines",
+        "type": "string"
+       },
+       "regions": {
+        "items": {
+         "type": "string"
+        },
+        "title": "Regions",
+        "type": "array"
+       },
+       "zoom": {
+        "items": {
+         "type": "number"
+        },
+        "title": "Zoom",
+        "type": "array"
+       }
+      },
+      "title": "View",
+      "type": "object"
+     }
+    },
+    "properties": {
+     "entries": {
+      "items": {
+       "$ref": "#/$defs/PositionEntry"
+      },
+      "title": "Entries",
+      "type": "array"
+     },
+     "view": {
+      "$ref": "#/$defs/View",
+      "default": {}
+     }
+    },
+    "required": [
+     "entries"
+    ],
+    "title": "set_positionsArguments",
+    "type": "object"
+   },
+   "name": "set_positions"
+  },
+  {
+   "annotations": {
+    "readOnlyHint": true
+   },
+   "description": "Show sections in their complete current registration, or at candidate positions.\n\n        Writes nothing. At most 4 section-position pairs per call. The\n        physical modes draw the section on a millimetre-true canvas under its\n        complete current registration: its in-plane transform (identity when\n        it has none) and, at its own position, its applied deformation (a\n        warped section; view.deformation \"none\" shows the linear placement\n        alone). One image per pair.\n\n        Args:\n            entries: ``[{\"id\": \"<filename or corrected index>\",\n                \"positions_mm\": [<mm>, ...]}]``. An empty or missing\n                ``positions_mm`` means that section's current position.\n            view: Picture options (described once in the job statement).\n                Modes: \"template\" (default: the atlas alone on the section's\n                own canvas, at its scale; the section is in the opening\n                message), \"overlay\" (the section under its registration with\n                the atlas lines on it), \"checkerboard\" (section and atlas\n                image in alternating tiles), \"outlines\" (atlas lines and the\n                section's silhouette on black), \"section\" (the registered\n                section alone), \"stacked\" (one picture: the section as\n                corrected over the atlas, each tissue-framed; no placement\n                drawn) or \"side_by_side\" (separate original section and\n                atlas images, tissue-framed, full view only, up to 8\n                images). zoom and deformation apply to the physical modes.\n\n        Returns:\n            The section-position pairs shown, in order, each with its\n            calibration, the transform drawn and whether a deformation was\n            drawn, and the images per pair in that order.\n        ",
+   "inputSchema": {
+    "$defs": {
+     "PlacementEntry": {
+      "additionalProperties": false,
+      "description": "One ``view_placement`` entry.",
+      "properties": {
+       "id": {
+        "anyOf": [
+         {
+          "type": "string"
+         },
+         {
+          "type": "integer"
+         }
+        ],
+        "title": "Id"
+       },
+       "positions_mm": {
+        "items": {
+         "type": "number"
+        },
+        "title": "Positions Mm",
+        "type": "array"
+       }
+      },
+      "title": "PlacementEntry",
+      "type": "object"
+     },
+     "View": {
+      "additionalProperties": false,
+      "description": "Picture options: what this call's pictures show (this call only).",
+      "properties": {
+       "atlas_channels": {
+        "items": {
+         "type": "string"
+        },
+        "title": "Atlas Channels",
+        "type": "array"
+       },
+       "atlas_opacity": {
+        "title": "Atlas Opacity",
+        "type": "number"
+       },
+       "border_color": {
+        "title": "Border Color",
+        "type": "string"
+       },
+       "border_thickness": {
+        "title": "Border Thickness",
+        "type": "number"
+       },
+       "channels": {
+        "items": {
+         "type": "string"
+        },
+        "title": "Channels",
+        "type": "array"
+       },
+       "deformation": {
+        "title": "Deformation",
+        "type": "string"
+       },
+       "mode": {
+        "title": "Mode",
+        "type": "string"
+       },
+       "outlines": {
+        "title": "Outlines",
+        "type": "string"
+       },
+       "regions": {
+        "items": {
+         "type": "string"
+        },
+        "title": "Regions",
+        "type": "array"
+       },
+       "zoom": {
+        "items": {
+         "type": "number"
+        },
+        "title": "Zoom",
+        "type": "array"
+       }
+      },
+      "title": "View",
+      "type": "object"
+     }
+    },
+    "properties": {
+     "entries": {
+      "items": {
+       "$ref": "#/$defs/PlacementEntry"
+      },
+      "title": "Entries",
+      "type": "array"
+     },
+     "view": {
+      "$ref": "#/$defs/View",
+      "default": {}
+     }
+    },
+    "required": [
+     "entries"
+    ],
+    "title": "view_placementArguments",
+    "type": "object"
+   },
+   "name": "view_placement"
+  },
+  {
+   "annotations": {
+    "readOnlyHint": true
+   },
+   "description": "The whole stack ordered by written position, each over its atlas match.\n\n        One contact sheet: every section as a labelled thumbnail, in the\n        order of the positions written so far (unplaced sections last), a\n        placed section with the atlas section at its position pasted\n        directly beneath it. The label carries the corrected index,\n        filename, position and the signed distance to the next placed\n        section. Then one plot of position against corrected index (damaged\n        sections in red). Two images; `view_slices` shows any section large.\n\n        Args:\n            view: Picture options (described once in the job statement).\n                Mode \"stacked\" only; atlas_channels default [\"ara\"]; no zoom.\n\n        Returns:\n            The rows in that order and the two images.\n        ",
+   "inputSchema": {
+    "$defs": {
+     "View": {
+      "additionalProperties": false,
+      "description": "Picture options: what this call's pictures show (this call only).",
+      "properties": {
+       "atlas_channels": {
+        "items": {
+         "type": "string"
+        },
+        "title": "Atlas Channels",
+        "type": "array"
+       },
+       "atlas_opacity": {
+        "title": "Atlas Opacity",
+        "type": "number"
+       },
+       "border_color": {
+        "title": "Border Color",
+        "type": "string"
+       },
+       "border_thickness": {
+        "title": "Border Thickness",
+        "type": "number"
+       },
+       "channels": {
+        "items": {
+         "type": "string"
+        },
+        "title": "Channels",
+        "type": "array"
+       },
+       "deformation": {
+        "title": "Deformation",
+        "type": "string"
+       },
+       "mode": {
+        "title": "Mode",
+        "type": "string"
+       },
+       "outlines": {
+        "title": "Outlines",
+        "type": "string"
+       },
+       "regions": {
+        "items": {
+         "type": "string"
+        },
+        "title": "Regions",
+        "type": "array"
+       },
+       "zoom": {
+        "items": {
+         "type": "number"
+        },
+        "title": "Zoom",
+        "type": "array"
+       }
+      },
+      "title": "View",
+      "type": "object"
+     }
+    },
+    "properties": {
+     "view": {
+      "$ref": "#/$defs/View",
+      "default": {}
+     }
+    },
+    "title": "view_stackArguments",
+    "type": "object"
+   },
+   "name": "view_stack"
+  },
+  {
+   "annotations": {
+    "readOnlyHint": false
+   },
+   "description": "End the run. Call this exactly once, last.\n\n        Args:\n            summary: One or two sentences on what you did.\n            interval_breaks: Corrected indices of the sections AFTER a gap you\n                conclude is real. Empty if there are none.\n            notes: Short observations worth carrying forward.\n        ",
+   "inputSchema": {
+    "properties": {
+     "interval_breaks": {
+      "items": {
+       "type": "integer"
+      },
+      "title": "Interval Breaks",
+      "type": "array"
+     },
+     "notes": {
+      "items": {
+       "type": "string"
+      },
+      "title": "Notes",
+      "type": "array"
+     },
+     "summary": {
+      "title": "Summary",
+      "type": "string"
+     }
+    },
+    "required": [
+     "summary",
+     "notes",
+     "interval_breaks"
+    ],
+    "title": "submitArguments",
+    "type": "object"
+   },
+   "name": "submit"
+  },
+  {
+   "annotations": {
+    "readOnlyHint": true
+   },
+   "description": "Read an opening-picture page (1-based); read every page before writes.",
+   "inputSchema": {
+    "properties": {
+     "page": {
+      "title": "Page",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "page"
+    ],
+    "title": "show_stackArguments",
+    "type": "object"
+   },
+   "name": "show_stack"
+  }
+ ]
+}

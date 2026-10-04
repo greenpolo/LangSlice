@@ -27,6 +27,9 @@ Four doors are covered:
   door: one server writes, a second server on the same folder resumes from
   the checkpoint and carries on (including ``undo``/``redo`` across it).
 - the final stack state of the main toolbox and of the resumed job.
+- ``declarations``: what each door declares per tool (ADK function
+  declarations of three toolboxes, MCP tool lists with their schemas),
+  recorded last.
 - ``job_folders``: each door's job folder (``<images>/langslice``) after
   the run: its file list, the views index, ``job.json``, a hash of every
   saved picture's label and border layers (decoded pixels) and of its
@@ -805,6 +808,59 @@ def record_mcp_resume(rec: Recorder, folder: Path) -> None:
     rec.raw("state", "final_resumed", {"state": saved.to_dict() if saved else None})
 
 
+# --- every door's declarations ----------------------------------------------------------
+
+
+def record_declarations(rec: Recorder, folder: Path) -> None:
+    """What each door declares, per tool: the ADK function declarations of
+    three toolboxes (the full spec, the "auto" spec with the engine fixed and
+    no image model, and a positioning-only gated spec) and the MCP tool list
+    (name, description, input schema, annotations) of a transform job and a
+    positioning job. Recorded after everything else, so no earlier entry is
+    renumbered."""
+    import dataclasses
+
+    from google.adk.tools import FunctionTool
+    from mcp.shared.memory import create_connected_server_and_client_session
+
+    from langslice.adk.media import packaged_tools
+    from langslice.linear.engine import build_context
+    from langslice.linear.job import ingest
+    from langslice.linear.spec import JobSpec, NonlinearSpec, PositionSpec
+    from langslice.linear.toolbox import build_tools
+    from langslice.mcp_server.server import build_server
+
+    base = {"model": "fake-model", "preprocess": "none",
+            "inputs": {"pixel_size_um": PIXEL_SIZE_UM}}
+    specs = {
+        "full": full_spec(folder),
+        "auto": JobSpec(image_folder=str(folder), tasks=["position", "transform", "nonlinear"],
+                        image_resolution="auto",
+                        nonlinear=NonlinearSpec(engine="elastix", provider="none"), **base),
+        "gated": JobSpec(image_folder=str(folder), tasks=["position"],
+                         position=PositionSpec(gated=True), **base),
+    }
+    for label, spec in specs.items():
+        ctx = build_context(spec, emit=lambda _m: None, atlas_loader=atlas_loader())
+        box = build_tools(ingest(spec, ctx), ctx, spec,
+                          image_model=stub_image_model(spec) if label == "full" else None)
+        declarations = [FunctionTool(tool)._get_declaration().model_dump(  # noqa: SLF001
+            exclude_none=True, mode="json") for tool in packaged_tools(box.tools)]
+        rec.raw("declarations", f"adk_{label}", {"tools": declarations})
+
+    for label, tasks in (("transform", ["transform"]), ("position", ["reorder", "position"])):
+        spec = JobSpec(image_folder=str(folder), tasks=tasks, **base)
+        server = build_server(lambda image_folder, spec=spec: dataclasses.replace(
+            spec, image_folder=image_folder), str(folder), atlas_loader=atlas_loader())
+
+        async def listed(server: Any = server) -> list[dict[str, Any]]:
+            async with create_connected_server_and_client_session(server) as client:
+                return [tool.model_dump(mode="json", exclude_none=True)
+                        for tool in (await client.list_tools()).tools]
+
+        rec.raw("declarations", f"mcp_{label}", {"tools": asyncio.run(listed())})
+
+
 # --- the job folders ------------------------------------------------------------------
 
 
@@ -888,6 +944,9 @@ def record(out: Path) -> dict[str, Any]:
         record_mcp(rec, folders["mcp"])
         record_mcp_resume(rec, folders["resume"])
         snapshot_job_folders(rec, folders)
+        declared = root / "declarations"
+        write_sections(declared)
+        record_declarations(rec, declared)
         built = sorted(set(main_names) | set(auto_names) | set(gated_names))
         missing = sorted(set(built) - rec.called)
         if missing:
