@@ -23,7 +23,8 @@ wording; `registry.py` lists which.
   dataclass with `touched`, or plain data). It runs under the job folder's
   write lock (`Job.writing`: lock, sync, apply, commit): the doors hold it
   around every verb except the long ones (`registry.Verb.long`:
-  `fit_affine`, `fit_deformable`, `trace_borders`), which compute outside
+  `fit_affine`, `fit_deformable`, `trace_borders`, and the scripting
+  verb `export_maps`), which compute outside
   it from the state they read and take it themselves to apply, comparing
   each section's `inputs.section_inputs` with the value they computed from:
   a changed section is that section's row `STALE_INPUT`
@@ -102,7 +103,11 @@ wording; `registry.py` lists which.
   stands). Returns `Submitted` (`exported`).
 - `exports.py` (formats phase) — `export_maps(job, workspace, ids=,
   full_resolution=)`: the job folder's derived files from the stack as it
-  stands, no undo step: per placed section the maps
+  stands, no undo step (a long verb: the stack read under the job lock
+  after a sync, each section's maps computed outside it and written under
+  it only when the section's `inputs.section_inputs` are unchanged, else
+  `skipped` as `STALE_INPUT`; the exports and `registration.json` last,
+  under the lock): per placed section the maps
   (`core.maps.section_maps` through the applied deformation record, written
   by `job.formats.write_section_maps`; a section without a position, or
   whose record or file cannot be read, is `skipped` with its reason), then
