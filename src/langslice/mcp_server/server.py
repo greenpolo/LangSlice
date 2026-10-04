@@ -42,15 +42,15 @@ from langslice.linear.toolbox import ToolBox, build_tools
 from langslice.linear.trace import TRACE_DIR_ENV
 from langslice.mcp_server.host_channel import HostChannel
 from langslice.mcp_server.prompt import job_statement
+from langslice.ops.registry import VERBS
 
 logger = logging.getLogger(__name__)
 
 SERVER_NAME = "langslice"
 
-#: Tools that only look. Hosts may use the hint to skip a confirmation.
-READ_ONLY_TOOLS = frozenset(
-    {"status", "view_slices", "view_atlas", "view_placement", "view_stack"}
-)
+#: Tools that only look (the registry's read verbs, plus the door's own
+#: ``show_stack``). Hosts may use the hint to skip a confirmation.
+READ_ONLY_TOOLS = frozenset(name for name, verb in VERBS.items() if verb.kind == "read")
 
 INSTRUCTIONS = (
     "LangSlice places histology sections in a brain atlas. Call `start_job` "
@@ -433,6 +433,9 @@ def build_server(
     current: dict[str, Session] = {}
 
     def install(session: Session) -> None:
+        """List the session's tools: the verbs the registry gives its spec
+        (``session.box.tools``, declared by :mod:`langslice.doors.declarations`),
+        then the door's own ``show_stack``."""
         old = current.get("job")
         if old is not None:
             if old.channel is not None:
