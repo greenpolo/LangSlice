@@ -2,12 +2,16 @@
  "door": "job",
  "folders": {
   "auto": {
+   "derived": {
+    "registration.json": "<hex>"
+   },
    "files": [
     "history/index.json",
     "history/step-000001.json",
     "history/step-000002.json",
     "history/step-000003.json",
     "job.lock",
+    "registration.json",
     "sections/s0/deformable/<hex>/arrays.npz",
     "sections/s0/deformable/<hex>/record.json",
     "sections/s0/views/000001_view_slices_section/view.jpg",
@@ -22,6 +26,9 @@
     "sections/s0/views/000006_adjust_transforms_overlay/labels.tif",
     "sections/s0/views/000006_adjust_transforms_overlay/view.jpg",
     "sections/s0/views/000006_adjust_transforms_overlay/view.json",
+    "sections/s0/views/000007_fit_deformable_borders/borders.png",
+    "sections/s0/views/000007_fit_deformable_borders/labels.tif",
+    "sections/s0/views/000007_fit_deformable_borders/residual.tif",
     "sections/s0/views/000007_fit_deformable_borders/view.jpg",
     "sections/s0/views/000007_fit_deformable_borders/view.json",
     "state.json",
@@ -60,6 +67,13 @@
      "view_json": "<hex>"
     },
     "sections/s0/views/000007_fit_deformable_borders": {
+     "borders": "<hex>",
+     "labels": "<hex>",
+     "labels_dtype": "uint32",
+     "size": [
+      272,
+      245
+     ],
      "view_json": "<hex>"
     },
     "views/000004_view_stack_sheet": {
@@ -150,7 +164,7 @@
     },
     {
      "call": 6,
-     "layers": false,
+     "layers": true,
      "mode": "borders",
      "name": "000007_fit_deformable_borders",
      "path": "sections/s0/views/000007_fit_deformable_borders",
@@ -163,12 +177,16 @@
    ]
   },
   "engine": {
+   "derived": {
+    "registration.json": "<hex>"
+   },
    "files": [
     "AGENTS.md",
     "CLAUDE.md",
     "job.json",
     "job.lock",
     "logs/events.jsonl",
+    "registration.json",
     "state.json",
     "views.jsonl",
     "views/000001_opening/view.jpg",
@@ -268,7 +286,95 @@
    ]
   },
   "gated": {
+   "derived": {
+    "exports/quicknii.json": "<hex>",
+    "exports/visualign.json": "<hex>",
+    "registration.json": "<hex>",
+    "sections/s0/coords.tif": {
+     "dtype": "float32",
+     "pixels": "<hex>",
+     "shape": [
+      3,
+      208,
+      272
+     ]
+    },
+    "sections/s0/labels.csv": "index,id,acronym,name,r,g,b\n1,2,CTX,CTX,50,160,60\n2,3,STR,STR,120,160,220\n3,4,TH,TH,240,120,120\n4,5,HY,HY,230,80,200\n5,81,VL,VL,150,150,150\n",
+    "sections/s0/labels.tif": {
+     "dtype": "uint32",
+     "pixels": "<hex>",
+     "shape": [
+      208,
+      272
+     ]
+    },
+    "sections/s0/labels_fiji.tif": {
+     "dtype": "uint16",
+     "pixels": "<hex>",
+     "shape": [
+      208,
+      272
+     ]
+    },
+    "sections/s0/maps.json": "<hex>",
+    "sections/s1/coords.tif": {
+     "dtype": "float32",
+     "pixels": "<hex>",
+     "shape": [
+      3,
+      208,
+      272
+     ]
+    },
+    "sections/s1/labels.csv": "index,id,acronym,name,r,g,b\n1,2,CTX,CTX,50,160,60\n2,3,STR,STR,120,160,220\n3,4,TH,TH,240,120,120\n4,5,HY,HY,230,80,200\n5,81,VL,VL,150,150,150\n",
+    "sections/s1/labels.tif": {
+     "dtype": "uint32",
+     "pixels": "<hex>",
+     "shape": [
+      208,
+      272
+     ]
+    },
+    "sections/s1/labels_fiji.tif": {
+     "dtype": "uint16",
+     "pixels": "<hex>",
+     "shape": [
+      208,
+      272
+     ]
+    },
+    "sections/s1/maps.json": "<hex>",
+    "sections/s2/coords.tif": {
+     "dtype": "float32",
+     "pixels": "<hex>",
+     "shape": [
+      3,
+      208,
+      272
+     ]
+    },
+    "sections/s2/labels.csv": "index,id,acronym,name,r,g,b\n1,2,CTX,CTX,50,160,60\n2,3,STR,STR,120,160,220\n3,4,TH,TH,240,120,120\n4,5,HY,HY,230,80,200\n5,81,VL,VL,150,150,150\n",
+    "sections/s2/labels.tif": {
+     "dtype": "uint32",
+     "pixels": "<hex>",
+     "shape": [
+      208,
+      272
+     ]
+    },
+    "sections/s2/labels_fiji.tif": {
+     "dtype": "uint16",
+     "pixels": "<hex>",
+     "shape": [
+      208,
+      272
+     ]
+    },
+    "sections/s2/maps.json": "<hex>"
+   },
    "files": [
+    "exports/quicknii.json",
+    "exports/visualign.json",
     "history/index.json",
     "history/step-000001.json",
     "history/step-000002.json",
@@ -276,6 +382,12 @@
     "history/step-000004.json",
     "history/step-000005.json",
     "job.lock",
+    "registration.json",
+    "sections/s0/coords.tif",
+    "sections/s0/labels.csv",
+    "sections/s0/labels.tif",
+    "sections/s0/labels_fiji.tif",
+    "sections/s0/maps.json",
     "sections/s0/views/000001_view_placement_template/borders.png",
     "sections/s0/views/000001_view_placement_template/labels.tif",
     "sections/s0/views/000001_view_placement_template/view.jpg",
@@ -286,6 +398,11 @@
     "sections/s0/views/000003_view_placement_template/labels.tif",
     "sections/s0/views/000003_view_placement_template/view.jpg",
     "sections/s0/views/000003_view_placement_template/view.json",
+    "sections/s1/coords.tif",
+    "sections/s1/labels.csv",
+    "sections/s1/labels.tif",
+    "sections/s1/labels_fiji.tif",
+    "sections/s1/maps.json",
     "sections/s1/views/000004_view_placement_template/borders.png",
     "sections/s1/views/000004_view_placement_template/labels.tif",
     "sections/s1/views/000004_view_placement_template/view.jpg",
@@ -298,6 +415,11 @@
     "sections/s1/views/000010_view_placement_template/view.json",
     "sections/s1/views/000011_set_positions_stacked/view.jpg",
     "sections/s1/views/000011_set_positions_stacked/view.json",
+    "sections/s2/coords.tif",
+    "sections/s2/labels.csv",
+    "sections/s2/labels.tif",
+    "sections/s2/labels_fiji.tif",
+    "sections/s2/maps.json",
     "sections/s2/views/000005_view_placement_template/borders.png",
     "sections/s2/views/000005_view_placement_template/labels.tif",
     "sections/s2/views/000005_view_placement_template/view.jpg",
@@ -571,6 +693,9 @@
    ]
   },
   "mcp": {
+   "derived": {
+    "registration.json": "<hex>"
+   },
    "files": [
     "AGENTS.md",
     "CLAUDE.md",
@@ -580,6 +705,7 @@
     "job.json",
     "job.lock",
     "logs/events.jsonl",
+    "registration.json",
     "sections/s0/views/000002_view_placement_overlay/borders.png",
     "sections/s0/views/000002_view_placement_overlay/labels.tif",
     "sections/s0/views/000002_view_placement_overlay/view.jpg",
@@ -761,10 +887,98 @@
    ]
   },
   "resume": {
+   "derived": {
+    "exports/quicknii.json": "<hex>",
+    "exports/visualign.json": "<hex>",
+    "registration.json": "<hex>",
+    "sections/s0/coords.tif": {
+     "dtype": "float32",
+     "pixels": "<hex>",
+     "shape": [
+      3,
+      208,
+      272
+     ]
+    },
+    "sections/s0/labels.csv": "index,id,acronym,name,r,g,b\n1,2,CTX,CTX,50,160,60\n2,3,STR,STR,120,160,220\n3,4,TH,TH,240,120,120\n4,5,HY,HY,230,80,200\n5,81,VL,VL,150,150,150\n",
+    "sections/s0/labels.tif": {
+     "dtype": "uint32",
+     "pixels": "<hex>",
+     "shape": [
+      208,
+      272
+     ]
+    },
+    "sections/s0/labels_fiji.tif": {
+     "dtype": "uint16",
+     "pixels": "<hex>",
+     "shape": [
+      208,
+      272
+     ]
+    },
+    "sections/s0/maps.json": "<hex>",
+    "sections/s1/coords.tif": {
+     "dtype": "float32",
+     "pixels": "<hex>",
+     "shape": [
+      3,
+      208,
+      272
+     ]
+    },
+    "sections/s1/labels.csv": "index,id,acronym,name,r,g,b\n1,2,CTX,CTX,50,160,60\n2,3,STR,STR,120,160,220\n3,4,TH,TH,240,120,120\n4,5,HY,HY,230,80,200\n5,81,VL,VL,150,150,150\n",
+    "sections/s1/labels.tif": {
+     "dtype": "uint32",
+     "pixels": "<hex>",
+     "shape": [
+      208,
+      272
+     ]
+    },
+    "sections/s1/labels_fiji.tif": {
+     "dtype": "uint16",
+     "pixels": "<hex>",
+     "shape": [
+      208,
+      272
+     ]
+    },
+    "sections/s1/maps.json": "<hex>",
+    "sections/s2/coords.tif": {
+     "dtype": "float32",
+     "pixels": "<hex>",
+     "shape": [
+      3,
+      208,
+      272
+     ]
+    },
+    "sections/s2/labels.csv": "index,id,acronym,name,r,g,b\n1,2,CTX,CTX,50,160,60\n2,3,STR,STR,120,160,220\n3,4,TH,TH,240,120,120\n4,5,HY,HY,230,80,200\n5,81,VL,VL,150,150,150\n",
+    "sections/s2/labels.tif": {
+     "dtype": "uint32",
+     "pixels": "<hex>",
+     "shape": [
+      208,
+      272
+     ]
+    },
+    "sections/s2/labels_fiji.tif": {
+     "dtype": "uint16",
+     "pixels": "<hex>",
+     "shape": [
+      208,
+      272
+     ]
+    },
+    "sections/s2/maps.json": "<hex>"
+   },
    "files": [
     "AGENTS.md",
     "CLAUDE.md",
     "exports/linear_results.json",
+    "exports/quicknii.json",
+    "exports/visualign.json",
     "history/index.json",
     "history/step-000001.json",
     "history/step-000002.json",
@@ -774,14 +988,30 @@
     "job.json",
     "job.lock",
     "logs/events.jsonl",
+    "registration.json",
+    "sections/s0/coords.tif",
+    "sections/s0/labels.csv",
+    "sections/s0/labels.tif",
+    "sections/s0/labels_fiji.tif",
+    "sections/s0/maps.json",
     "sections/s0/views/000001_adjust_transforms_overlay/borders.png",
     "sections/s0/views/000001_adjust_transforms_overlay/labels.tif",
     "sections/s0/views/000001_adjust_transforms_overlay/view.jpg",
     "sections/s0/views/000001_adjust_transforms_overlay/view.json",
+    "sections/s1/coords.tif",
+    "sections/s1/labels.csv",
+    "sections/s1/labels.tif",
+    "sections/s1/labels_fiji.tif",
+    "sections/s1/maps.json",
     "sections/s1/views/000002_fit_affine_overlay/borders.png",
     "sections/s1/views/000002_fit_affine_overlay/labels.tif",
     "sections/s1/views/000002_fit_affine_overlay/view.jpg",
     "sections/s1/views/000002_fit_affine_overlay/view.json",
+    "sections/s2/coords.tif",
+    "sections/s2/labels.csv",
+    "sections/s2/labels.tif",
+    "sections/s2/labels_fiji.tif",
+    "sections/s2/maps.json",
     "sections/s2/views/000003_adjust_transforms_overlay/borders.png",
     "sections/s2/views/000003_adjust_transforms_overlay/labels.tif",
     "sections/s2/views/000003_adjust_transforms_overlay/view.jpg",
@@ -923,7 +1153,113 @@
    ]
   },
   "tools": {
+   "derived": {
+    "exports/quicknii.json": "<hex>",
+    "exports/visualign.json": "<hex>",
+    "registration.json": "<hex>",
+    "sections/s0/coords.tif": {
+     "dtype": "float32",
+     "pixels": "<hex>",
+     "shape": [
+      3,
+      208,
+      272
+     ]
+    },
+    "sections/s0/labels.csv": "index,id,acronym,name,r,g,b\n1,2,CTX,CTX,50,160,60\n2,3,STR,STR,120,160,220\n3,4,TH,TH,240,120,120\n4,5,HY,HY,230,80,200\n5,81,VL,VL,150,150,150\n",
+    "sections/s0/labels.tif": {
+     "dtype": "uint32",
+     "pixels": "<hex>",
+     "shape": [
+      208,
+      272
+     ]
+    },
+    "sections/s0/labels_fiji.tif": {
+     "dtype": "uint16",
+     "pixels": "<hex>",
+     "shape": [
+      208,
+      272
+     ]
+    },
+    "sections/s0/maps.json": "<hex>",
+    "sections/s0/residual.tif": {
+     "dtype": "float32",
+     "pixels": "<hex>",
+     "shape": [
+      2,
+      208,
+      272
+     ]
+    },
+    "sections/s1/coords.tif": {
+     "dtype": "float32",
+     "pixels": "<hex>",
+     "shape": [
+      3,
+      208,
+      272
+     ]
+    },
+    "sections/s1/labels.csv": "index,id,acronym,name,r,g,b\n1,2,CTX,CTX,50,160,60\n2,3,STR,STR,120,160,220\n3,4,TH,TH,240,120,120\n4,5,HY,HY,230,80,200\n5,81,VL,VL,150,150,150\n",
+    "sections/s1/labels.tif": {
+     "dtype": "uint32",
+     "pixels": "<hex>",
+     "shape": [
+      208,
+      272
+     ]
+    },
+    "sections/s1/labels_fiji.tif": {
+     "dtype": "uint16",
+     "pixels": "<hex>",
+     "shape": [
+      208,
+      272
+     ]
+    },
+    "sections/s1/maps.json": "<hex>",
+    "sections/s1/residual.tif": {
+     "dtype": "float32",
+     "pixels": "<hex>",
+     "shape": [
+      2,
+      208,
+      272
+     ]
+    },
+    "sections/s2/coords.tif": {
+     "dtype": "float32",
+     "pixels": "<hex>",
+     "shape": [
+      3,
+      208,
+      272
+     ]
+    },
+    "sections/s2/labels.csv": "index,id,acronym,name,r,g,b\n1,2,CTX,CTX,50,160,60\n2,3,STR,STR,120,160,220\n3,4,TH,TH,240,120,120\n4,5,HY,HY,230,80,200\n5,81,VL,VL,150,150,150\n",
+    "sections/s2/labels.tif": {
+     "dtype": "uint32",
+     "pixels": "<hex>",
+     "shape": [
+      208,
+      272
+     ]
+    },
+    "sections/s2/labels_fiji.tif": {
+     "dtype": "uint16",
+     "pixels": "<hex>",
+     "shape": [
+      208,
+      272
+     ]
+    },
+    "sections/s2/maps.json": "<hex>"
+   },
    "files": [
+    "exports/quicknii.json",
+    "exports/visualign.json",
     "history/index.json",
     "history/step-000001.json",
     "history/step-000002.json",
@@ -954,6 +1290,8 @@
     "history/step-000039.json",
     "history/step-000040.json",
     "job.lock",
+    "registration.json",
+    "sections/s0/coords.tif",
     "sections/s0/deformable/<hex>/arrays.npz",
     "sections/s0/deformable/<hex>/arrays.npz",
     "sections/s0/deformable/<hex>/record.json",
@@ -969,6 +1307,11 @@
     "sections/s0/image_correction/<hex>/attempt-01/result.json",
     "sections/s0/image_correction/<hex>/attempt-01/rough_border_overlay.png",
     "sections/s0/image_correction/<hex>/result.json",
+    "sections/s0/labels.csv",
+    "sections/s0/labels.tif",
+    "sections/s0/labels_fiji.tif",
+    "sections/s0/maps.json",
+    "sections/s0/residual.tif",
     "sections/s0/views/000001_view_slices_section/view.jpg",
     "sections/s0/views/000001_view_slices_section/view.json",
     "sections/s0/views/000010_set_positions_stacked/view.jpg",
@@ -1019,16 +1362,28 @@
     "sections/s0/views/000050_adjust_transforms_checkerboard/labels.tif",
     "sections/s0/views/000050_adjust_transforms_checkerboard/view.jpg",
     "sections/s0/views/000050_adjust_transforms_checkerboard/view.json",
+    "sections/s0/views/000055_fit_deformable_borders/borders.png",
+    "sections/s0/views/000055_fit_deformable_borders/labels.tif",
+    "sections/s0/views/000055_fit_deformable_borders/residual.tif",
     "sections/s0/views/000055_fit_deformable_borders/view.jpg",
     "sections/s0/views/000055_fit_deformable_borders/view.json",
     "sections/s0/views/000056_fit_deformable_trace/view.jpg",
     "sections/s0/views/000056_fit_deformable_trace/view.json",
+    "sections/s0/views/000057_fit_deformable_borders/borders.png",
+    "sections/s0/views/000057_fit_deformable_borders/labels.tif",
+    "sections/s0/views/000057_fit_deformable_borders/residual.tif",
     "sections/s0/views/000057_fit_deformable_borders/view.jpg",
     "sections/s0/views/000057_fit_deformable_borders/view.json",
+    "sections/s0/views/000058_fit_deformable_borders/borders.png",
+    "sections/s0/views/000058_fit_deformable_borders/labels.tif",
+    "sections/s0/views/000058_fit_deformable_borders/residual.tif",
     "sections/s0/views/000058_fit_deformable_borders/view.jpg",
     "sections/s0/views/000058_fit_deformable_borders/view.json",
     "sections/s0/views/000059_fit_deformable_trace/view.jpg",
     "sections/s0/views/000059_fit_deformable_trace/view.json",
+    "sections/s0/views/000060_fit_deformable_borders/borders.png",
+    "sections/s0/views/000060_fit_deformable_borders/labels.tif",
+    "sections/s0/views/000060_fit_deformable_borders/residual.tif",
     "sections/s0/views/000060_fit_deformable_borders/view.jpg",
     "sections/s0/views/000060_fit_deformable_borders/view.json",
     "sections/s0/views/000064_view_placement_overlay/borders.png",
@@ -1039,6 +1394,7 @@
     "sections/s0/views/000065_view_placement_overlay/labels.tif",
     "sections/s0/views/000065_view_placement_overlay/view.jpg",
     "sections/s0/views/000065_view_placement_overlay/view.json",
+    "sections/s1/coords.tif",
     "sections/s1/deformable/<hex>/arrays.npz",
     "sections/s1/deformable/<hex>/arrays.npz",
     "sections/s1/deformable/<hex>/parent/arrays.npz",
@@ -1056,6 +1412,11 @@
     "sections/s1/image_correction/<hex>/attempt-01/result.json",
     "sections/s1/image_correction/<hex>/attempt-01/rough_border_overlay.png",
     "sections/s1/image_correction/<hex>/result.json",
+    "sections/s1/labels.csv",
+    "sections/s1/labels.tif",
+    "sections/s1/labels_fiji.tif",
+    "sections/s1/maps.json",
+    "sections/s1/residual.tif",
     "sections/s1/views/000002_view_slices_section/view.jpg",
     "sections/s1/views/000002_view_slices_section/view.json",
     "sections/s1/views/000004_view_slices_channels/view.jpg",
@@ -1118,12 +1479,21 @@
     "sections/s1/views/000054_adjust_transforms_template/labels.tif",
     "sections/s1/views/000054_adjust_transforms_template/view.jpg",
     "sections/s1/views/000054_adjust_transforms_template/view.json",
+    "sections/s1/views/000061_fit_deformable_after/borders.png",
+    "sections/s1/views/000061_fit_deformable_after/labels.tif",
+    "sections/s1/views/000061_fit_deformable_after/residual.tif",
     "sections/s1/views/000061_fit_deformable_after/view.jpg",
     "sections/s1/views/000061_fit_deformable_after/view.json",
+    "sections/s1/views/000062_fit_deformable_before/borders.png",
+    "sections/s1/views/000062_fit_deformable_before/labels.tif",
     "sections/s1/views/000062_fit_deformable_before/view.jpg",
     "sections/s1/views/000062_fit_deformable_before/view.json",
+    "sections/s1/views/000063_fit_deformable_borders/borders.png",
+    "sections/s1/views/000063_fit_deformable_borders/labels.tif",
+    "sections/s1/views/000063_fit_deformable_borders/residual.tif",
     "sections/s1/views/000063_fit_deformable_borders/view.jpg",
     "sections/s1/views/000063_fit_deformable_borders/view.json",
+    "sections/s2/coords.tif",
     "sections/s2/image_correction/<hex>/attempt-01/base_prompt.txt",
     "sections/s2/image_correction/<hex>/attempt-01/extracted_lines.png",
     "sections/s2/image_correction/<hex>/attempt-01/input_slice.png",
@@ -1135,6 +1505,10 @@
     "sections/s2/image_correction/<hex>/attempt-01/result.json",
     "sections/s2/image_correction/<hex>/attempt-01/rough_border_overlay.png",
     "sections/s2/image_correction/<hex>/result.json",
+    "sections/s2/labels.csv",
+    "sections/s2/labels.tif",
+    "sections/s2/labels_fiji.tif",
+    "sections/s2/maps.json",
     "sections/s2/views/000003_view_slices_section/view.jpg",
     "sections/s2/views/000003_view_slices_section/view.json",
     "sections/s2/views/000012_set_positions_stacked/view.jpg",
@@ -1286,21 +1660,49 @@
      "view_json": "<hex>"
     },
     "sections/s0/views/000055_fit_deformable_borders": {
+     "borders": "<hex>",
+     "labels": "<hex>",
+     "labels_dtype": "uint32",
+     "size": [
+      272,
+      245
+     ],
      "view_json": "<hex>"
     },
     "sections/s0/views/000056_fit_deformable_trace": {
      "view_json": "<hex>"
     },
     "sections/s0/views/000057_fit_deformable_borders": {
+     "borders": "<hex>",
+     "labels": "<hex>",
+     "labels_dtype": "uint32",
+     "size": [
+      272,
+      245
+     ],
      "view_json": "<hex>"
     },
     "sections/s0/views/000058_fit_deformable_borders": {
+     "borders": "<hex>",
+     "labels": "<hex>",
+     "labels_dtype": "uint32",
+     "size": [
+      272,
+      245
+     ],
      "view_json": "<hex>"
     },
     "sections/s0/views/000059_fit_deformable_trace": {
      "view_json": "<hex>"
     },
     "sections/s0/views/000060_fit_deformable_borders": {
+     "borders": "<hex>",
+     "labels": "<hex>",
+     "labels_dtype": "uint32",
+     "size": [
+      272,
+      245
+     ],
      "view_json": "<hex>"
     },
     "sections/s0/views/000064_view_placement_overlay": {
@@ -1453,12 +1855,33 @@
      "view_json": "<hex>"
     },
     "sections/s1/views/000061_fit_deformable_after": {
+     "borders": "<hex>",
+     "labels": "<hex>",
+     "labels_dtype": "uint32",
+     "size": [
+      272,
+      261
+     ],
      "view_json": "<hex>"
     },
     "sections/s1/views/000062_fit_deformable_before": {
+     "borders": "<hex>",
+     "labels": "<hex>",
+     "labels_dtype": "uint32",
+     "size": [
+      272,
+      228
+     ],
      "view_json": "<hex>"
     },
     "sections/s1/views/000063_fit_deformable_borders": {
+     "borders": "<hex>",
+     "labels": "<hex>",
+     "labels_dtype": "uint32",
+     "size": [
+      272,
+      245
+     ],
      "view_json": "<hex>"
     },
     "sections/s2/views/000003_view_slices_section": {
@@ -2182,7 +2605,7 @@
     },
     {
      "call": 33,
-     "layers": false,
+     "layers": true,
      "mode": "borders",
      "name": "000055_fit_deformable_borders",
      "path": "sections/s0/views/000055_fit_deformable_borders",
@@ -2206,7 +2629,7 @@
     },
     {
      "call": 34,
-     "layers": false,
+     "layers": true,
      "mode": "borders",
      "name": "000057_fit_deformable_borders",
      "path": "sections/s0/views/000057_fit_deformable_borders",
@@ -2218,7 +2641,7 @@
     },
     {
      "call": 34,
-     "layers": false,
+     "layers": true,
      "mode": "borders",
      "name": "000058_fit_deformable_borders",
      "path": "sections/s0/views/000058_fit_deformable_borders",
@@ -2242,7 +2665,7 @@
     },
     {
      "call": 35,
-     "layers": false,
+     "layers": true,
      "mode": "borders",
      "name": "000060_fit_deformable_borders",
      "path": "sections/s0/views/000060_fit_deformable_borders",
@@ -2254,7 +2677,7 @@
     },
     {
      "call": 36,
-     "layers": false,
+     "layers": true,
      "mode": "after",
      "name": "000061_fit_deformable_after",
      "path": "sections/s1/views/000061_fit_deformable_after",
@@ -2266,7 +2689,7 @@
     },
     {
      "call": 36,
-     "layers": false,
+     "layers": true,
      "mode": "before",
      "name": "000062_fit_deformable_before",
      "path": "sections/s1/views/000062_fit_deformable_before",
@@ -2278,7 +2701,7 @@
     },
     {
      "call": 37,
-     "layers": false,
+     "layers": true,
      "mode": "borders",
      "name": "000063_fit_deformable_borders",
      "path": "sections/s1/views/000063_fit_deformable_borders",

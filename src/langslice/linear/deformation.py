@@ -559,6 +559,7 @@ def picture(
     style: Style,
     atlas_images: tuple[str, ...],
     title: str,
+    note: dict[str, Any] | None = None,
 ) -> Image.Image:
     """The record's borders on the section at ``style.long_edge``, captioned.
 
@@ -567,7 +568,11 @@ def picture(
     (:data:`FIT_LONG_EDGE`) is never upsampled. *atlas_images* (``ara``,
     ``nissl``; the call's ``view.atlas_channels``) are pulled through the
     record's map and blended under the lines at ``style.atlas_opacity``.
+    With *note* (:func:`langslice.core.layers.note` fields: sections, mode)
+    the picture is noted with its frame (:class:`~langslice.core.layers.WarpNote`),
+    so the job saves its layers.
     """
+    from langslice.core import layers
     from langslice.core.canvas import zoom_box
     from langslice.core.captions import caption
 
@@ -586,12 +591,19 @@ def picture(
     if style.atlas_opacity > 0 and kinds:
         base = _blend_atlas(ctx, base, small if warped else _unwarped(small), kinds,
                             style.atlas_opacity)
+    native = native_labels(ctx.atlas, record.placement)
     drawn = draw_warped_borders(
         base, small, ctx.atlas, highlight=style.highlight, marked=style.marked, warped=warped,
         outlines=style.outlines, width_px=style.thickness, color=style.color,
-        native=native_labels(ctx.atlas, record.placement),
+        native=native,
     )
-    return caption(drawn, title)
+    captioned = caption(drawn, title)
+    if note is not None:
+        layers.note(captioned, **note, warp=layers.WarpNote(
+            record=small, band=captioned.height - drawn.height, warped=warped,
+            highlight=tuple(style.highlight), marked=tuple(style.marked),
+            outlines=style.outlines, width_px=float(style.thickness), native=native))
+    return captioned
 
 
 def trace_picture(

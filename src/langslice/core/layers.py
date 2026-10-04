@@ -56,6 +56,13 @@ CONVENTION = (
     "same map, nearest neighbour; section_to_picture maps the section "
     "render's pixel [row, col, 1] to the picture before any deformation."
 )
+#: Added to a deformable-fit picture's frame record.
+WARP_CONVENTION = (
+    " For a deformable-fit picture, residual names a 2-channel float32 TIFF beside "
+    "view.json, (drow, dcol) in picture pixels: pixel [row, col] shows the atlas "
+    "point pixel_to_atlas_um @ [row + drow, col + dcol, 1] (no residual: the "
+    "linear placement alone)."
+)
 
 
 # --- notes: which pictures a call returned ------------------------------------------
@@ -73,6 +80,28 @@ class PictureNote:
     #: The section's applied deformation as the job stores it, when drawn.
     deformation: str | None = None
     extra: dict[str, Any] = field(default_factory=dict)
+    #: A deformable-fit picture's frame (:class:`WarpNote`): the section on
+    #: its fit grid with the record's borders.
+    warp: WarpNote | None = None
+
+
+@dataclass(frozen=True)
+class WarpNote:
+    """How a ``fit_deformable`` picture was drawn: the record resampled onto
+    the picture's content (``record``, a
+    :class:`~langslice.deformable.record.DeformableRecord` on the picture's
+    grid below its caption band of ``band`` rows), whether the residual was
+    drawn (``warped``; False is the linear placement alone), and the border
+    style the lines were drawn with (``langslice.deformable.draw_warped_borders``)."""
+
+    record: Any
+    band: int
+    warped: bool
+    highlight: tuple[str, ...] = ()
+    marked: tuple[str, ...] = ()
+    outlines: str = "all"
+    width_px: float = 2.0
+    native: Any = None
 
 
 _NOTES: contextvars.ContextVar[list[tuple[Image.Image, PictureNote]] | None] = (
@@ -257,19 +286,114 @@ def picture_layers(atlas: Any, note: PictureNote) -> tuple[np.ndarray, np.ndarra
     return labels_layer(note.panel), borders_layer(note.panel), frame_record(atlas, note)
 
 
+#: The name a deformable-fit picture's residual layer is saved under, beside
+#: its ``view.json`` (the frame record's ``residual``).
+RESIDUAL_LAYER = "residual.tif"
+
+
+def warp_layers(atlas: Any, note: PictureNote, picture_size: tuple[int, int]) -> tuple[
+        np.ndarray, np.ndarray, dict[str, Any], np.ndarray | None]:
+    """``(labels, borders, frame record, residual)`` of a ``fit_deformable``
+    picture (a :class:`WarpNote`), on the picture's own pixel grid.
+
+    The frame's ``pixel_to_atlas_um`` is the record's linear placement on
+    the picture; *residual* (``(rows, cols, 2)`` float32, ``(drow, dcol)``
+    in picture pixels, zero in the caption band; None when the picture shows
+    the linear placement alone) completes it: a pixel ``[r, c]`` shows atlas
+    point ``pixel_to_atlas_um @ [r + drow, c + dcol, 1]``. Labels are the
+    native atlas plane's ids under that map (nearest), 0 outside the tissue
+    the record keeps; borders the drawn lines' coverage at full strength.
+    """
+    from langslice.deformable.geometry import sample_native
+    from langslice.deformable.render import drawn_border_coverage
+    from langslice.oblique import plane_index_affine
+
+    warp = note.warp
+    if warp is None:
+        raise ValueError("warp_layers needs a deformable-fit picture's note")
+    record = warp.record
+    placement = record.placement
+    width, height = (int(v) for v in picture_size)
+    rows, cols = record.field_mm.shape[:2]
+    band = int(warp.band)
+    facts = atlas_facts(atlas)
+    index = plane_index_affine(atlas, placement.position_mm, placement.plane,
+                               placement.pitch_deg, placement.yaw_deg)
+    # picture [row, col, 1] -> record grid [x, y, 1] -> native [x, y, 1] -> [row, col, 1]
+    swap = np.array([[0.0, 1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
+    down = np.array([[1.0, 0.0, -band], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
+    picture_to_grid = swap @ down  # [row, col, 1] -> [x, y, 1] on the record's grid
+    grid_to_native = np.linalg.inv(np.asarray(placement.atlas_to_section, dtype=np.float64))
+    to_um = (np.diag(facts["resolution_um"]) @ index @ swap @ grid_to_native
+             @ picture_to_grid)
+    yy, xx = np.indices((rows, cols), dtype=np.float64)
+    shift_x = shift_y = np.zeros((rows, cols))
+    if warp.warped:
+        shift_x = record.field_mm[..., 0].astype(np.float64) / record.mm_per_px
+        shift_y = record.field_mm[..., 1].astype(np.float64) / record.mm_per_px
+    gx, gy = xx + shift_x, yy + shift_y
+    native_x = grid_to_native[0, 0] * gx + grid_to_native[0, 1] * gy + grid_to_native[0, 2]
+    native_y = grid_to_native[1, 0] * gx + grid_to_native[1, 1] * gy + grid_to_native[1, 2]
+    native = warp.native if warp.native is not None else None
+    if native is None:
+        from langslice.deformable.atlas_images import native_labels
+
+        native = native_labels(atlas, placement)
+    ids = sample_native(np.asarray(native), np.stack([native_x, native_y], axis=-1))
+    ids = np.where(np.asarray(record.tissue, dtype=bool), ids, 0)
+    labels = np.zeros((height, width), dtype=np.uint32)
+    labels[band:band + rows, :cols] = ids.astype(np.uint32)
+    coverage = drawn_border_coverage(
+        record, atlas, highlight=warp.highlight, marked=warp.marked, warped=warp.warped,
+        outlines=warp.outlines, width_px=warp.width_px, native=native)
+    borders = np.zeros((height, width), dtype=np.uint8)
+    borders[band:band + rows, :cols] = np.rint(np.clip(coverage, 0.0, 1.0) * 255.0)
+    residual: np.ndarray | None = None
+    if warp.warped:
+        residual = np.zeros((height, width, 2), dtype=np.float32)
+        residual[band:band + rows, :cols, 0] = shift_y.astype(np.float32)
+        residual[band:band + rows, :cols, 1] = shift_x.astype(np.float32)
+    frame = {
+        "format_version": FRAME_FORMAT_VERSION,
+        "atlas": facts,
+        "plane": {"name": placement.plane, "position_mm": float(placement.position_mm),
+                  "pitch_deg": float(placement.pitch_deg),
+                  "yaw_deg": float(placement.yaw_deg)},
+        "picture_size": [width, height],
+        "content_box": [0, band, cols, band + rows],
+        "um_per_px": {"picture": float(record.mm_per_px) * 1000.0},
+        "section": {"id": note.sections[0] if note.sections else None,
+                    "grid": "the section's oriented, unframed render the fit ran on, "
+                            "resized and cropped to the picture"},
+        "deformation": note.deformation,
+        "warped": bool(warp.warped),
+        "residual": RESIDUAL_LAYER if residual is not None else None,
+        "pixel_to_atlas_um": to_um.tolist(),
+        "convention": CONVENTION + WARP_CONVENTION,
+    }
+    return labels, borders, frame, residual
+
+
 # --- on demand: the coordinate map ------------------------------------------------------
 
 
-def coordinate_map(view: dict[str, Any] | str | os.PathLike[str]) -> np.ndarray:
+def coordinate_map(
+    view: dict[str, Any] | str | os.PathLike[str], *,
+    folder: str | os.PathLike[str] | None = None,
+) -> np.ndarray:
     """Every picture pixel's atlas position, ``(rows, cols, 3)`` float32 µm.
 
     *view* is a saved picture's ``view.json`` (its record or its path). The
     three channels are the atlas axes in the atlas's own order, BrainGlobe
     micrometres (voxel ``i``'s centre at ``i * resolution``); the caption
-    band, which shows no canvas, is NaN. Exact, not interpolated: the
-    picture shows one atlas plane, so the map is ``pixel_to_atlas_um``
-    applied to every pixel centre.
+    band, which shows no canvas, is NaN. A placement picture shows one atlas
+    plane, so the map is ``pixel_to_atlas_um`` applied to every pixel
+    centre, exactly. A deformable-fit picture adds its residual layer (the
+    frame's ``residual``, read from beside the ``view.json``, or from
+    *folder* when *view* is a record): ``pixel_to_atlas_um`` at each pixel
+    plus its displacement.
     """
+    base: str | None = None
     if isinstance(view, dict):
         record: dict[str, Any] = view
     else:
@@ -277,12 +401,25 @@ def coordinate_map(view: dict[str, Any] | str | os.PathLike[str]) -> np.ndarray:
 
         with open(os.fspath(view), encoding="utf-8") as handle:
             record = json.load(handle)
+        base = os.path.dirname(os.path.abspath(os.fspath(view)))
+    if folder is not None:
+        base = os.fspath(folder)
     frame = record.get("frame", record)
     if not isinstance(frame, dict) or "pixel_to_atlas_um" not in frame:
         raise ValueError("This picture has no atlas frame (not a placement picture)")
     matrix = np.asarray(frame["pixel_to_atlas_um"], dtype=np.float64)
     width, height = (int(v) for v in frame["picture_size"])
     rows, cols = np.mgrid[0:height, 0:width].astype(np.float64)
+    if frame.get("residual"):
+        if base is None:
+            raise ValueError("This picture's map needs its residual layer: pass the "
+                             "view.json path, or folder= with the record")
+        import tifffile
+
+        shift = np.asarray(tifffile.imread(os.path.join(base, str(frame["residual"]))),
+                           dtype=np.float64)
+        rows = rows + shift[0]
+        cols = cols + shift[1]
     out = (np.tensordot(matrix[:, :2], np.stack([rows, cols]), axes=1)
            + matrix[:, 2][:, None, None])
     result = np.moveaxis(out, 0, -1).astype(np.float32)

@@ -33,8 +33,10 @@ Four doors are covered:
 - ``job_folders``: each door's job folder (``<images>/langslice``) after
   the run: its file list, the views index, ``job.json``, a hash of every
   saved picture's label and border layers (decoded pixels) and of its
-  ``view.json``, and whether every saved ``view.jpg`` is byte for byte the
-  JPEG the door sent, in order.
+  ``view.json``, whether every saved ``view.jpg`` is byte for byte the
+  JPEG the door sent, in order, and the derived public files
+  (``registration.json``, each section's maps, the exports: decoded pixels
+  and normalised JSON hashed, ``labels.csv`` as text).
 
 Everything goes through public entry points (``build_tools``, ``engine.run``,
 ``mcp_server.server.build_server``). The few internals touched are listed in
@@ -908,7 +910,27 @@ def snapshot_job_folders(rec: Recorder, folders: dict[str, Path]) -> None:
         sent = rec.sent.get(door, [])
         job_file = read_job_file(Layout(root)) or {}
         job_file.pop("created_at", None)
+        # The public files derived from the state (formats phase):
+        # registration.json on every write, the maps and exports at submit.
+        derived: dict[str, Any] = {}
+        for path in sorted(root.rglob("*")):
+            relative = path.relative_to(root).as_posix()
+            if "/views/" in relative or "/deformable/" in relative or not path.is_file():
+                continue
+            name = path.name
+            if name in ("registration.json", "maps.json", "quicknii.json", "visualign.json"):
+                data = rec.norm.data(json.loads(path.read_text()))
+                derived[rec.norm.text(relative)] = hashlib.sha256(
+                    canonical(data).encode()).hexdigest()
+            elif name in ("coords.tif", "labels.tif", "labels_fiji.tif", "residual.tif"):
+                pixels = tifffile.imread(path)
+                derived[rec.norm.text(relative)] = {
+                    "pixels": _pixels_digest(pixels), "dtype": str(pixels.dtype),
+                    "shape": list(pixels.shape)}
+            elif name == "labels.csv":
+                derived[rec.norm.text(relative)] = path.read_text()
         summary[door] = {
+            "derived": derived,
             "files": files,
             "views_index": rec.norm.data(entries),
             "job_file": rec.norm.data(job_file),

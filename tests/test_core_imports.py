@@ -49,12 +49,14 @@ CORE_MODULES = (
     "langslice.core.status",
     "langslice.core.sheets",
     "langslice.core.canvas",
+    "langslice.core.maps",
     "langslice.job",
     "langslice.job.layout",
     "langslice.job.history",
     "langslice.job.index",
     "langslice.job.migrate",
     "langslice.job.views",
+    "langslice.job.formats",
     "langslice.ops",
     "langslice.ops.refusal",
     "langslice.ops.positions",
@@ -71,6 +73,7 @@ CORE_MODULES = (
     "langslice.ops.traces",
     "langslice.ops.atlas",
     "langslice.ops.registry",
+    "langslice.ops.exports",
 )
 
 #: The doors: an operation (``langslice.ops``) must load none of them.

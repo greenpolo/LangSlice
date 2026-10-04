@@ -51,7 +51,14 @@ import numpy as np
 from PIL import Image
 
 from langslice.core.jpeg import encode_jpeg
-from langslice.core.layers import PictureNote, collecting, note_for, picture_layers
+from langslice.core.layers import (
+    RESIDUAL_LAYER,
+    PictureNote,
+    collecting,
+    note_for,
+    picture_layers,
+    warp_layers,
+)
 from langslice.job.layout import JobLayout
 
 logger = logging.getLogger(__name__)
@@ -62,6 +69,7 @@ VIEW_FILE = "view.json"
 PICTURE_FILE = "view.jpg"
 LABELS_FILE = "labels.tif"
 BORDERS_FILE = "borders.png"
+RESIDUAL_FILE = RESIDUAL_LAYER
 
 _NAME_PART = re.compile(r"[^a-zA-Z0-9_]+")
 
@@ -79,16 +87,28 @@ class Saved:
     folder: Path
     name: str
     layers: bool
+    #: A deformable-fit picture with its residual drawn (``residual.tif``).
+    residual: bool = False
 
     def files(self) -> list[tuple[Path, str]]:
         """``(path, kind)`` of every file the picture's folder will hold:
-        ``view`` (the JPEG), ``view_json``, and for a placement picture
-        ``labels`` and ``borders``."""
+        ``view`` (the JPEG), ``view_json``, for a placement or deformable-fit
+        picture ``labels`` and ``borders``, and ``residual`` for a
+        deformable-fit picture showing its residual."""
         listed = [(self.folder / PICTURE_FILE, "view"), (self.folder / VIEW_FILE, "view_json")]
         if self.layers:
             listed += [(self.folder / LABELS_FILE, "labels"), (self.folder / BORDERS_FILE,
                                                                "borders")]
+        if self.residual:
+            listed.append((self.folder / RESIDUAL_FILE, "residual"))
         return listed
+
+
+def has_frame(note: PictureNote | None) -> bool:
+    """Whether a picture's note carries a frame its layers are drawn from: a
+    placement picture's canvas, or a deformable-fit picture's record."""
+    return note is not None and ((note.panel is not None and note.frame is not None)
+                                 or note.warp is not None)
 
 
 @contextlib.contextmanager
@@ -226,8 +246,9 @@ class ViewStore:
             for capture in _CAPTURES.get():
                 capture.extend(
                     Saved(self._folder(item.note, item.name), item.name,
-                          item.note is not None and item.note.panel is not None
-                          and item.note.frame is not None and atlas is not None)
+                          has_frame(item.note) and atlas is not None,
+                          item.note is not None and item.note.warp is not None
+                          and item.note.warp.warped and atlas is not None)
                     for item in items)
             self._seq, self._call = seq, call
             self._queue.put(_Call(tool, call, call_id, arguments, items, atlas))
@@ -260,7 +281,7 @@ class ViewStore:
         if not call.pictures:
             return
         noted = [(picture, note_for(picture, notes)) for picture in call.pictures]
-        placed = any(held is not None and held.panel is not None for _p, held in noted)
+        placed = any(has_frame(held) for _p, held in noted)
         try:
             self.save(tool=tool, pictures=list(noted), arguments=call.arguments,
                       call_id=call.call_id,
@@ -340,13 +361,23 @@ class ViewStore:
         }
         if note is not None and note.extra:
             record["extra"] = note.extra
-        if note is not None and note.panel is not None and note.frame is not None \
-                and call.atlas is not None:
-            labels, borders, frame = picture_layers(call.atlas, note)
+        if has_frame(note) and call.atlas is not None:
+            assert note is not None
+            residual = None
+            if note.warp is not None:
+                labels, borders, frame, residual = warp_layers(call.atlas, note,
+                                                                (size[0], size[1]))
+            else:
+                labels, borders, frame = picture_layers(call.atlas, note)
             tifffile.imwrite(folder / LABELS_FILE, labels, compression="zlib")
             Image.fromarray(np.ascontiguousarray(borders)).save(
                 folder / BORDERS_FILE, format="PNG", optimize=True)
             record["layers"] = {"labels": LABELS_FILE, "borders": BORDERS_FILE}
+            if residual is not None:
+                tifffile.imwrite(folder / RESIDUAL_FILE,
+                                 np.ascontiguousarray(np.moveaxis(residual, -1, 0)),
+                                 compression="zlib")
+                record["layers"]["residual"] = RESIDUAL_FILE
             record["frame"] = frame
         (folder / VIEW_FILE).write_text(json.dumps(record, indent=1, default=str) + "\n",
                                         encoding="utf-8")
