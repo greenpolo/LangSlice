@@ -37,6 +37,28 @@ if TYPE_CHECKING:
     from langslice.core.state import StackState
 
 
+#: Said when a section has no written in-plane transform and the job cannot
+#: write one (Linear off): what the caller does instead. A missing transform
+#: is the identity to the maps (``core.maps``), never to the nonlinear step.
+NO_TRANSFORM_LINEAR_OFF = (
+    "A written affine transform is required, and Linear is off for this job, so "
+    "nothing here writes one. Supply the in-plane transforms with the job "
+    "(inputs.transforms; --transforms on `langslice job FOLDER init`), or switch "
+    "Linear on (task transform) and run fit_affine on the section first."
+)
+
+
+def missing_transform_message(spec: Any) -> str:
+    """The refusal for a section with no written in-plane transform: with
+    Linear (task ``transform``) off, :data:`NO_TRANSFORM_LINEAR_OFF`, what to
+    do instead; with it on, the plain requirement (``fit_affine`` and
+    ``adjust_transforms`` are the job's own tools)."""
+    has = getattr(spec, "has", None)
+    if callable(has) and not has("transform"):
+        return NO_TRANSFORM_LINEAR_OFF
+    return "A written affine transform is required"
+
+
 @dataclass(frozen=True)
 class LinearRegistrationInput:
     """Native sampled atlas pixels mapped onto the returned section image.
@@ -130,7 +152,7 @@ def prepare_linear_registration(
     if transform is None:
         transform = record.transform
     if not transform:
-        raise ValueError("A written affine transform is required")
+        raise ValueError(missing_transform_message(getattr(ctx, "spec", None)))
     if transform.get("spline"):
         raise ValueError("A linear placement is required; an existing spline cannot be discarded")
     if transform.get("stale"):

@@ -165,7 +165,12 @@ other module whose imports are core-only:
   stored numbers to the atlas, which `core.maps` uses too),
   `correction_fingerprint` (everything an image correction's inputs
   depend on; the trace's call key, the submit check and a traced fit's
-  staleness test all read it) and `digest`. No provider import:
+  staleness test all read it) and `digest`. A section without a written
+  transform is refused by `missing_transform_message(spec)`: with Linear
+  (`transform`) off, `NO_TRANSFORM_LINEAR_OFF`, which tells the caller to
+  supply the transforms (`inputs.transforms`, `--transforms`) or switch
+  Linear on and run `fit_affine` first (the maps still read a missing
+  transform as the identity). No provider import:
   `core/nonlinear/registration_handoff.py` re-exports the first for SliceBench.
 
 ## The frame of a picture and its layers (phase 3c)

@@ -154,7 +154,8 @@ wording; `registry.py` lists which.
   `render_failed`, each drawn row's `image_indexes`).
   `keep_linear(job, records, reason)`: the "linear placement
   stands" record, one undo step; `NOTHING_WRITTEN` (each offending section
-  under `results`) when one lacks a position or a transform. An applied
+  under `results`) when one lacks a position or a transform (with Linear
+  off, the message adds `handoff.NO_TRANSFORM_LINEAR_OFF`). An applied
   record is saved in the section's folder (`job.deformations`:
   `sections/<stem>/deformable/<key>`) and the section's `deformation`
   holds its path relative to the job folder; a traced fit section reads
