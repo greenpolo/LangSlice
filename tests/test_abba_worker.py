@@ -491,3 +491,16 @@ def test_a_section_keeping_the_users_warp_is_refused_by_fit_deformable(tmp_path,
         assert job.state.by_id(ID0).deformation is None
     finally:
         job.close()
+
+
+def test_the_seed_event_carries_the_saved_opening_views():
+    from langslice.agent.engine import with_seed_views
+
+    got: list = []
+    forward = with_seed_views(got.append, ["/job/views/000001_opening/view.jpg"])
+    assert forward is not None
+    forward({"kind": "seed", "text": "", "images": []})
+    forward({"kind": "text", "text": "hello"})
+    assert got[0]["views"] == ["/job/views/000001_opening/view.jpg"]
+    assert "views" not in got[1]
+    assert with_seed_views(None, ["x"]) is None

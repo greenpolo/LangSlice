@@ -442,3 +442,51 @@ def test_a_saved_job_opened_at_startup_lists_its_tools_from_the_first_request(
     assert {"start_job", "show_stack", "reorder_slices", "set_positions", "submit"} <= _session(
         server, body
     )
+
+
+def test_a_saved_abba_job_forwards_tool_events_with_view_paths(tmp_path: Path, monkeypatch: Any):
+    """Claude mode: the tools' start/end events and the opening pages reach the
+    ABBA channel as agent events, with the saved pictures' paths, never bytes."""
+    from langslice.doors.api import claude_jobs
+    from langslice.doors.mcp.server import host_tool, open_saved_job
+
+    folder = _folder(tmp_path)
+    monkeypatch.setattr(claude_jobs, "jobs_root", lambda: tmp_path / "jobs")
+    params = {"image_folder": str(folder), "pixel_size_um": 25,
+              "positions_mm": {f"s{i}.png": i + 1 for i in range(3)},
+              "spec": {"tasks": ["position", "transform"]}, "z_offset_mm": 5.7}
+    prepared = claude_jobs.prepare_claude(params)
+    session = open_saved_job(prepared["job_id"], lambda _n: _ATLAS)
+    sent: list[dict[str, Any]] = []
+    assert session.channel is not None
+    session.channel.event = sent.append  # type: ignore[method-assign]
+    view = next(tool for tool in session.box.tools if tool.__name__ == "view_slices")
+    asyncio.run(host_tool(session, view)(slices=["s1.png"]))
+    events = [payload["event"] for payload in sent if payload["kind"] == "agent_event"]
+    kinds = [event["kind"] for event in events]
+    assert kinds == ["tool_start", "tool_end"]
+    start, end = events
+    assert start["name"] == "view_slices" and start["target_ids"] == ["s1.png"]
+    assert end["execution_id"] == start["execution_id"]
+    session.job.views.flush()
+    assert end["views"] and all(Path(path).is_file() for path in end["views"])
+    assert all(Path(path).is_relative_to(session.job.layout.folder) for path in end["views"])
+    assert "data" not in json.dumps(sent)
+
+    server = build_server(_spec_for, job_id=prepared["job_id"], atlas_loader=lambda _n: _ATLAS)
+
+    async def body(client: Any) -> Any:
+        return await client.call_tool("show_stack", {"page": 1})
+
+    from langslice.doors.mcp import host_channel
+
+    seen: list[dict[str, Any]] = []
+    monkeypatch.setattr(host_channel.HostChannel, "event",
+                        lambda self, payload: seen.append(payload))
+    _session(server, body)
+    seeds = [p["event"] for p in seen if p.get("kind") == "agent_event"
+             and p["event"]["kind"] == "seed"]
+    assert len(seeds) == 1 and seeds[0]["page"] == 1 and seeds[0]["views"]
+    # The ABBA session's facts are kept with the job.
+    record = json.loads((Path(prepared["job_dir"]) / "job.json").read_text())
+    assert record["host"]["abba"]["z_offset_mm"] == 5.7
