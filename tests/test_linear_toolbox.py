@@ -360,7 +360,7 @@ def test_failed_compare_is_not_counted_as_seen_or_compared(
     def fail_render(*_args, **_kwargs):
         raise RuntimeError("render broke")
 
-    monkeypatch.setattr("langslice.linear.toolbox.physical_views", fail_render)
+    monkeypatch.setattr("langslice.core.placement.physical_views", fail_render)
     result = _tool(box, "view_placement")(
         [{"id": "s0.png", "positions_mm": [3.0]}],
         tool_context=_ToolContext("compare-1"),
@@ -789,10 +789,10 @@ def test_adjust_transforms_refuses_two_planned_edits_to_the_same_section(
 def test_adjust_transforms_checkpoints_successes_when_another_render_fails(
     tmp_path: Path, monkeypatch,
 ):
-    import langslice.linear.toolbox as toolbox_module
+    import langslice.core.placement as placement_module
 
     state, ctx, box = _box(tmp_path, placed=True)
-    real_views = toolbox_module.physical_views
+    real_views = placement_module.physical_views
     calls = 0
 
     def fail_second(*args, **kwargs):
@@ -802,7 +802,7 @@ def test_adjust_transforms_checkpoints_successes_when_another_render_fails(
             raise RuntimeError("second render broke")
         return real_views(*args, **kwargs)
 
-    monkeypatch.setattr(toolbox_module, "physical_views", fail_second)
+    monkeypatch.setattr(placement_module, "physical_views", fail_second)
     base = {
         "rotation_deg": 0.0,
         "scale_x": 1.0,
