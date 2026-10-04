@@ -73,7 +73,7 @@ def test_candidate_to_registration_result_uses_dense_placeholders_and_metadata()
     assert result.affine_result.output_size == (20, 12)
     assert result.nonlinear_result.atlas_points.shape == (0, 2)
     assert result.nonlinear_result.slice_points.shape == (0, 2)
-    assert result.nonlinear_result.backend == "elastix_bspline_visualign"
+    assert result.nonlinear_result.backend == "deformable_visualign"
     assert result.nonlinear_result.output_size == (20, 12)
     assert serialized_before["metadata"]["existing"] == "keep"
     assert serialized_before["metadata"]["visualign_markers"] == [[10.0, 11.0], [12.0, 13.0]]

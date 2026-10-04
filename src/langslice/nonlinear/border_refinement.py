@@ -1,4 +1,10 @@
-"""Correct placed atlas boundaries while keeping the original photograph authoritative."""
+"""Correct placed atlas boundaries while keeping the original photograph authoritative.
+
+The image-model half of route "supplied": the request (rough borders drawn on
+the photograph, the clean photograph beside it), the yellow-line extraction
+and the review overlays. The fit after it is the deformable package's
+(:mod:`langslice.nonlinear.border_fit`).
+"""
 
 from __future__ import annotations
 
@@ -11,12 +17,8 @@ from PIL import Image
 
 from langslice.atlas.render import placed_border_coverage
 from langslice.nonlinear.image_gen_helpers import (
-    _compute_deformation_field,
     _extract_borders_from_classified,
     _merge_classified,
-    _register_channel_stacks,
-    _run_elastix_april_borders,
-    _warp_classified_labels,
     line_width_px,
 )
 from langslice.nonlinear.prompts import border_refinement_prompt
@@ -24,7 +26,6 @@ from langslice.nonlinear.providers import (
     SegmentationGenerationRequest,
     generate_warped_segmentation_image,
 )
-from langslice.nonlinear.types import Deformation
 from langslice.providers.registry import canonical_provider
 from langslice.space import Plane
 
@@ -123,7 +124,7 @@ def border_overlay(image: Image.Image, mask: np.ndarray, width: int = 1) -> Imag
 def extract_thinned_lines(raw: Image.Image, canvas_size: tuple[int, int]) -> np.ndarray:
     """Boolean thinned yellow-line mask from a raw model reply, on *canvas_size*.
 
-    Shared by the residual-fit border extraction in :func:`refine_borders` and
+    Shared by the line extraction in :func:`refine_borders` and
     route "atlas"'s pass-2 input construction (:mod:`border_registration`),
     which needs pass 1's lines redrawn on the clean tissue at the same canvas
     before the second call. Extracts before any interpolation, so tissue
@@ -140,15 +141,15 @@ def extract_thinned_lines(raw: Image.Image, canvas_size: tuple[int, int]) -> np.
 
 @dataclass
 class BorderRefinementResult:
+    """The model's correction of the rough borders, before any fit.
+
+    The fit after it is :func:`langslice.nonlinear.border_fit.fit_border_lines`.
+    """
+
     rough_border_overlay: Image.Image
     raw_model_image: Image.Image
     model_border_mask: np.ndarray
     model_border_overlay: Image.Image
-    fitted_labels: np.ndarray
-    fitted_border_overlay: Image.Image
-    result_transform: Any | None
-    deformation_field: np.ndarray
-    elapsed: float
     metadata: dict[str, Any]
 
 
@@ -164,23 +165,20 @@ def refine_borders(
     openai_image_route: str = "images",
     thinking_level: str | None = None,
     generated_image: Image.Image | None = None,
-    deformation: Deformation = "bspline",
     image_prompt: str | None = None,
     image_call: ImageCall | None = None,
 ) -> BorderRefinementResult:
-    """Fit label-preserving residual deformation to a model's corrected lines.
+    """Ask the model to move the rough borders onto the tissue; extract its lines.
 
-    ``deformation="none"`` runs no Elastix at all: the model's lines are
-    extracted and drawn on the original, and the "fitted" outputs are the
-    rough placement with an identity residual. That is the default while the
-    model call itself is under design; the fit stage is judged separately.
-
-    All arrays use the original input canvas. The returned displacement maps
-    output coordinates back into that rough canvas; the caller composes it
-    with initial placement for atlas-space exports. Raw replies are untouched.
+    Image 1 is the photograph with the rough placement's family borders drawn
+    on it, Image 2 the clean photograph; the reply's yellow lines are
+    extracted on the original canvas. ``provider="none"`` without a
+    *generated_image* calls no model: the rough borders stand as the lines
+    (``model_free``). A *generated_image* replays a reply with no call.
+    Nothing is fitted here (the caller fits the lines,
+    :func:`langslice.nonlinear.border_fit.fit_border_lines`), and the raw
+    reply is untouched.
     """
-    if deformation not in {"none", "affine", "bspline"}:
-        raise ValueError(f"Unsupported border deformation: {deformation}")
     labels = np.asarray(rough_labels)
     shape = (image.height, image.width)
     if labels.shape != shape or not np.issubdtype(labels.dtype, np.integer):
@@ -195,13 +193,11 @@ def refine_borders(
     metadata: dict[str, Any] = {
         "workflow": "border_refinement", "prompt": prompt,
         "provider": canonical_provider(provider), "model": model,
-        "deformation": deformation, "line_width_px": line_width,
-        "input_size": list(image.size),
+        "line_width_px": line_width, "input_size": list(image.size),
     }
     if generated_image is None and canonical_provider(provider) == "none":
         return BorderRefinementResult(
-            rough, rough.copy(), moving > 0, rough.copy(), labels.copy(), rough.copy(),
-            None, np.zeros((*shape, 2), dtype=np.float64), 0.0,
+            rough, rough.copy(), moving > 0, rough.copy(),
             {**metadata, "model_called": False, "model_free": True},
         )
     if generated_image is None:
@@ -225,25 +221,4 @@ def refine_borders(
         "raw_output_size": list(raw.size), "model_border_pixels": int(mask.sum()),
         "rough_border_pixels": int((moving > 0).sum()),
     })
-    if deformation == "none":
-        return BorderRefinementResult(
-            rough, raw, mask, border_overlay(original, mask), labels.copy(), rough.copy(),
-            None, np.zeros((*shape, 2), dtype=np.float64), 0.0,
-            {**metadata, "fit_skipped": True},
-        )
-    fixed = mask.astype(np.uint8) * 255
-    if deformation == "bspline":
-        transform, elapsed = _run_elastix_april_borders(fixed, moving)
-    else:
-        transform, elapsed = _register_channel_stacks(
-            [fixed], [moving], deformation="affine"
-        )
-    fitted = _warp_classified_labels(labels, transform)
-    field = _compute_deformation_field(transform, moving)
-    if field is None or field.shape != (*shape, 2) or not np.isfinite(field).all():
-        raise RuntimeError("Border registration did not produce a finite canvas deformation field")
-    fitted_borders = _extract_borders_from_classified(_merge_classified(fitted, atlas)) > 0
-    return BorderRefinementResult(
-        rough, raw, mask, border_overlay(original, mask), fitted,
-        border_overlay(original, fitted_borders), transform, field, elapsed, metadata,
-    )
+    return BorderRefinementResult(rough, raw, mask, border_overlay(original, mask), metadata)

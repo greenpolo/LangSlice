@@ -178,7 +178,21 @@ def _native_coords(matrix: np.ndarray, offset_px: np.ndarray | None,
                      for k in range(2)], axis=-1)
 
 
-def _atlas_meta(atlas: Any, placement: Placement, native: np.ndarray) -> dict[str, Any]:
+def _atlas_meta(atlas: Any, placement: Placement, native: np.ndarray,
+                supplied: bool = False) -> dict[str, Any]:
+    if supplied:
+        context = atlas_space_context(atlas)
+        return {
+            "atlas_name": str(getattr(atlas, "atlas_name", placement.atlas_name)),
+            "orientation": context.orientation,
+            "resolution_um": list(context.resolution_um),
+            "native_size": [int(native.shape[1]), int(native.shape[0])],
+            "native_to_volume_index": None,
+            "native_to_volume_note": (
+                "native labels supplied by the caller (sampled at the host's own "
+                "coordinates), not an atlas plane: no volume mapping is recorded"
+            ),
+        }
     coords = plane_index_coordinates(
         atlas, placement.position_mm, placement.plane, placement.pitch_deg, placement.yaw_deg,
     )
@@ -210,6 +224,7 @@ def prepare_fit(
     torn_band: np.ndarray | None = None,
     previous: DeformableRecord | None = None,
     abba: AbbaAtlas | None = None,
+    native: np.ndarray | None = None,
 ) -> PreparedFit:
     """Build the working-grid images and masks for one candidate.
 
@@ -218,6 +233,13 @@ def prepare_fit(
     overrides the automatic torn-edge band (a boolean mask on the section
     grid). With *previous*, this is the next step of a sequential fit: the
     atlas starts where *previous* left it and the result composes onto it.
+
+    *native* replaces the atlas plane's labels with the caller's own leaf
+    label grid, placed by ``placement.atlas_to_section`` (an ABBA host
+    samples the atlas at its own per-pixel coordinates, which no
+    position/angles plane reproduces). It suits the border atlas images only
+    (the grayscale ones and one-sided entries read the atlas plane), and the
+    record then carries no volume mapping.
     """
     width, height = section_image.size
     mm = placement.section_mm_per_px
@@ -234,7 +256,18 @@ def prepare_fit(
     grid = WorkingGrid.for_section((width, height), mm, DETAIL[settings.detail].working_um / 1000)
     spacing = float(np.mean(grid.spacing_mm))
     atlas_to_working = grid.section_to_working @ placement.atlas_to_section
-    native = native_labels(atlas, placement)
+    supplied = native is not None
+    if native is None:
+        native = native_labels(atlas, placement)
+    else:
+        native = np.asarray(native)
+        if native.ndim != 2 or not np.issubdtype(native.dtype, np.integer):
+            raise ValueError("Supplied native labels must be a two-dimensional integer map")
+        sided = [entry for entry in (*settings.exclude, *settings.structures)
+                 if split_side(entry)[1] is not None]
+        if settings.atlas_image not in ("borders", "borders_merged") or sided:
+            raise ValueError("Supplied native labels fit border atlas images only, "
+                             "without one-sided entries")
     # One-sided entries ("CTX:left") need the placement's displayed left.
     left = placement_left(atlas, placement, (*settings.exclude, *settings.structures))
     excluded = whole_region_ids(atlas, settings.exclude)
@@ -371,7 +404,7 @@ def prepare_fit(
     return PreparedFit(
         settings=settings, placement=placement, grid=grid, inputs=inputs, native=native,
         tissue=tissue, torn_band=torn_section, excluded=excluded, ventricles=ventricles,
-        atlas_meta={**_atlas_meta(atlas, placement, native),
+        atlas_meta={**_atlas_meta(atlas, placement, native, supplied),
                     "acronyms": {str(k): v for k, v in structure_acronyms(
                         atlas, np.unique(native)).items()}},
         previous=previous, details=details, excluded_mask=excluded_native,

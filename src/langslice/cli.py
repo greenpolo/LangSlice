@@ -88,11 +88,12 @@ def _add_register_parser(subparsers: argparse._SubParsersAction) -> None:
     reg.add_argument(
         "--deformation",
         default="none",
-        choices=["none", "bspline", "affine"],
-        help="Residual fit after the model call. 'none' (default) runs no "
-        "Elastix: outputs are the model's lines on the original plus the "
-        "rough placement with an identity residual. 'bspline' is affine + "
-        "B-spline; 'affine' fits the affine stage alone.",
+        choices=["none", "deformable"],
+        help="Fit after the model call. 'none' (default) fits nothing: outputs "
+        "are the model's lines on the original plus the rough placement with "
+        "an identity residual. 'deformable' fits the model's lines against the "
+        "atlas family borders with the deformable package (Elastix B-spline; "
+        "fit_deformable's traced_lines fit).",
     )
     reg.add_argument(
         "--passes",

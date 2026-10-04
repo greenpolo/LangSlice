@@ -25,7 +25,7 @@ from langslice.deformable.render import (
     warped_border_coverage,
     warped_border_layers,
 )
-from langslice.deformable.settings import FitSettings
+from langslice.deformable.settings import FitSettings, traced_settings
 
 __all__ = [
     "AbbaAtlas",
@@ -45,6 +45,7 @@ __all__ = [
     "placement_from_handoff",
     "prepare_fit",
     "resampled_record",
+    "traced_settings",
     "ventricle_ids",
     "warp_section_image",
     "warped_border_coverage",

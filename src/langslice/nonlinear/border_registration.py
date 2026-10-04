@@ -15,17 +15,14 @@ from PIL import Image
 from langslice.affine import pixel_center_map
 from langslice.atlas import load_atlas
 from langslice.atlas.render import annotation_slice
+from langslice.deformable.settings import Engine
+from langslice.nonlinear.border_fit import fit_border_lines, placement_on_canvas
 from langslice.nonlinear.border_refinement import (
     border_overlay,
     extract_thinned_lines,
     refine_borders,
 )
-from langslice.nonlinear.image_gen_helpers import (
-    _classified_to_rgb,
-    _elastix_report,
-    _grid_spacing_px,
-    line_width_px,
-)
+from langslice.nonlinear.image_gen_helpers import _classified_to_rgb, line_width_px
 from langslice.nonlinear.prior import place_plane_on_tissue_with_matrix, tissue_mask
 from langslice.nonlinear.prompts import pass1_atlas_prompt, pass2_atlas_prompt
 from langslice.nonlinear.providers import (
@@ -42,6 +39,45 @@ from langslice.space import Plane, atlas_space_context, orient_slice_to_axes
 
 if TYPE_CHECKING:
     from langslice.providers.registry import ImageCall
+
+
+def marker_spacing_px(shape: tuple[int, ...]) -> int:
+    """Spacing of the exported correspondence grid: 1/36 of the long edge, 32 px at least.
+
+    (The control-grid spacing of the retired Elastix residual fit, kept as
+    the marker density so exports keep their size.)
+    """
+    return max(32, round(max(shape) / 36))
+
+
+def native_to_oriented_map(
+    native_shape: tuple[int, int], atlas: Any, plane: Plane,
+    image_axes: str | None, atlas_mirror_lr: bool,
+) -> np.ndarray:
+    """3x3 map of native atlas-plane pixels to the oriented (and mirrored) grid.
+
+    The orientation is right-angle turns and flips of the label array
+    (:func:`langslice.space.orient_slice_to_axes`, then the explicit
+    left-right mirror), so it is read off by orienting the pixel index grids
+    themselves: the deformable fit works on the native plane, the canvas
+    placement on the oriented one.
+    """
+    height, width = native_shape
+    yy, xx = np.indices((height, width), dtype=np.float64)
+    if image_axes:
+        context = atlas_space_context(atlas)
+        xx = orient_slice_to_axes(xx, context, plane, image_axes)
+        yy = orient_slice_to_axes(yy, context, plane, image_axes)
+    if atlas_mirror_lr:
+        xx, yy = np.fliplr(xx), np.fliplr(yy)
+    if xx.shape[0] < 2 or xx.shape[1] < 2:
+        raise ValueError("The atlas plane is too small to place")
+    oriented_to_native = np.array([
+        [xx[0, 1] - xx[0, 0], xx[1, 0] - xx[0, 0], xx[0, 0]],
+        [yy[0, 1] - yy[0, 0], yy[1, 0] - yy[0, 0], yy[0, 0]],
+        [0.0, 0.0, 1.0],
+    ])
+    return np.linalg.inv(oriented_to_native)
 
 
 def canonical_atlas_map(native_size: tuple[int, int], canvas_size: tuple[int, int]) -> np.ndarray:
@@ -79,7 +115,7 @@ def composed_correspondences(
     height, width = field.shape[:2]
     if not height or not width:
         raise ValueError("Cannot export an empty deformation field")
-    spacing = _grid_spacing_px(field.shape)
+    spacing = marker_spacing_px(field.shape)
     ys = np.unique(np.append(np.arange(0, height, spacing), height - 1))
     xs = np.unique(np.append(np.arange(0, width, spacing), width - 1))
     canvas_to_native = np.linalg.inv(_affine(atlas_to_canvas))
@@ -112,42 +148,6 @@ def composed_native_map(field: np.ndarray, atlas_to_canvas: np.ndarray) -> np.nd
     ], axis=-1)
 
 
-def residual_fit_report(
-    rough_labels: np.ndarray,
-    fitted_labels: np.ndarray,
-    field: np.ndarray,
-    structures: Any = None,
-) -> dict[str, Any]:
-    """Mechanical residual checks; neither initial placement nor model anatomy QC."""
-    if (fitted_labels.shape != rough_labels.shape
-            or not np.issubdtype(fitted_labels.dtype, np.integer)):
-        raise ValueError("Fitted atlas labels must remain an integer map on the rough canvas")
-    allowed = np.append(np.unique(rough_labels), 0)
-    if not np.isin(np.unique(fitted_labels), allowed).all():
-        raise ValueError("Border fitting introduced region identities absent from the rough atlas")
-    if field.shape != (*rough_labels.shape, 2) or not np.isfinite(field).all():
-        raise ValueError("Residual deformation must be finite and match the fitted label canvas")
-    report = _elastix_report(
-        atlas_classified=rough_labels, warped_classified=fitted_labels,
-        structures=structures,
-        deformation_field=field if min(rough_labels.shape) >= 2 else None,
-    )
-    original_count = int(np.count_nonzero(rough_labels))
-    fitted_count = int(np.count_nonzero(fitted_labels))
-    ratio = fitted_count / original_count if original_count else None
-    if original_count and fitted_count == 0:
-        report["codes"].append({"code": "EMPTY_WARP", "rough_foreground_px": original_count})
-    elif ratio is not None and ratio < 0.2:
-        report["codes"].append({"code": "ATLAS_COLLAPSED", "foreground_retained_fraction": ratio})
-    report.update({
-        "scope": "residual deformation only; initial-stage report is separate",
-        "description": "Mechanical fit diagnostics, not an assessment of model anatomy",
-        "finite_residual_field": True, "foreground_retained_fraction": ratio,
-        "max_residual_displacement_px": float(np.linalg.norm(field, axis=2).max()),
-    })
-    return report
-
-
 def generate_border_registration_candidate(
     image: Image.Image,
     *,
@@ -165,7 +165,7 @@ def generate_border_registration_candidate(
     canvas_pad: float = 0.0,
     pitch_deg: float = 0.0,
     yaw_deg: float = 0.0,
-    deformation: Deformation = "bspline",
+    deformation: Deformation = "deformable",
     passes: int = 1,
     previous_candidate_id: str | None = None,
     candidate_id: str | None = None,
@@ -178,8 +178,9 @@ def generate_border_registration_candidate(
     native_canvas: bool = True,
     canvas_long_edge: int | None = None,
     image_call: ImageCall | None = None,
+    engine: Engine = "elastix",
 ) -> RegistrationCandidate:
-    """Route to exactly one of two border-based placements, then correct.
+    """Route to exactly one of two border-based placements, then correct and fit.
 
     ``initial_atlas_to_slice`` (route "supplied") takes precedence. Without
     it, ``provider="none"`` keeps its historical model-free diagnostic
@@ -187,13 +188,18 @@ def generate_border_registration_candidate(
     rough placement is ALWAYS the local silhouette-moments fit — never a
     remote call, since there is no placement to correct — and one model call
     (``passes=2`` for two) draws/corrects boundaries on the clean tissue
-    against the outlined atlas template before the SAME residual border fit
-    as "supplied" runs (``generated_image`` is reassigned to the model's
-    output and passed to :func:`~langslice.nonlinear.border_refinement.refine_borders`
-    below; the fit is not duplicated). A caller-supplied ``generated_image``
-    with no placement replays route "atlas" without any model call: it is
-    treated as that route's own final output. No reflection is inferred from
-    symmetric tissue; ``atlas_mirror_lr`` is the only source of it.
+    against the outlined atlas template before the SAME fit as "supplied"
+    runs (``generated_image`` is reassigned to the model's output and passed
+    to :func:`~langslice.nonlinear.border_refinement.refine_borders` below;
+    the fit is not duplicated). The fit is the deformable package's
+    (:func:`~langslice.nonlinear.border_fit.fit_border_lines`, Elastix by
+    default, *engine* ``"ants"`` for the named-region mode);
+    ``deformation="none"`` fits nothing (identity residual), as does the
+    model-free diagnostic. A
+    caller-supplied ``generated_image`` with no placement replays route
+    "atlas" without any model call: it is treated as that route's own final
+    output. No reflection is inferred from symmetric tissue;
+    ``atlas_mirror_lr`` is the only source of it.
     *image_call* is the image model's edit (default: the transport adapter
     for *provider*).
     """
@@ -207,6 +213,7 @@ def generate_border_registration_candidate(
     labels = annotation_slice(
         atlas, position_mm, plane=plane, pitch_deg=pitch_deg, yaw_deg=yaw_deg
     )
+    native_shape = (int(np.shape(labels)[0]), int(np.shape(labels)[1]))
     if image_axes:
         labels = orient_slice_to_axes(labels, atlas_space_context(atlas), plane, image_axes)
     if atlas_mirror_lr:
@@ -317,7 +324,7 @@ def generate_border_registration_candidate(
         canvas, rough, atlas, provider=provider, model=image_model, plane=plane,
         review_model=review_model, openai_image_route=openai_image_route,
         thinking_level=thinking_level, generated_image=generated_image,
-        deformation=deformation, image_prompt=image_prompt, image_call=image_call,
+        image_prompt=image_prompt, image_call=image_call,
     )
     if prior["source"] == "silhouette_moments_atlas_route":
         # refine_borders sees `generated_image` as a replay either way (it
@@ -332,14 +339,31 @@ def generate_border_registration_candidate(
         result.metadata["prompt"] = atlas_route_prompts["pass1"]
         if "pass2" in atlas_route_prompts:
             result.metadata["pass2_prompt"] = atlas_route_prompts["pass2"]
-    fit_report = residual_fit_report(
-        rough, result.fitted_labels, result.deformation_field, getattr(atlas, "structures", None)
-    )
+    record = None
+    if deformation == "none" or result.metadata.get("model_free"):
+        field = np.zeros((canvas.height, canvas.width, 2), dtype=np.float64)
+        fitted_labels = rough.copy()
+        fitted_overlay = result.rough_border_overlay.copy()
+        fit_elapsed = 0.0
+        fit_report: dict[str, Any] = {"fit": "none", "fit_skipped": True}
+    else:
+        placement = placement_on_canvas(
+            atlas, atlas_to_canvas @ native_to_oriented_map(
+                native_shape, atlas, plane, image_axes, atlas_mirror_lr),
+            atlas_name=atlas_name, position_mm=position_mm, plane=plane,
+            pitch_deg=pitch_deg, yaw_deg=yaw_deg, source=str(prior["source"]),
+        )
+        fitted = fit_border_lines(canvas, result.model_border_mask, atlas, placement,
+                                  engine=engine)
+        record = fitted.record
+        field, fitted_labels = fitted.field_px, fitted.fitted_labels
+        fitted_overlay, fit_elapsed, fit_report = (
+            fitted.fitted_border_overlay, fitted.elapsed, fitted.metadata)
     markers, native_points = composed_correspondences(
-        result.deformation_field, atlas_to_canvas, original_to_canvas, canonical,
+        field, atlas_to_canvas, original_to_canvas, canonical,
     )
-    final_native_map = composed_native_map(result.deformation_field, atlas_to_canvas)
-    warped_atlas = Image.fromarray(_classified_to_rgb(result.fitted_labels, atlas))
+    final_native_map = composed_native_map(field, atlas_to_canvas)
+    warped_atlas = Image.fromarray(_classified_to_rgb(fitted_labels, atlas))
     metadata: dict[str, Any] = {
         **result.metadata,
         "workflow": "border_refinement", "output_kind": "border_overlay",
@@ -371,9 +395,8 @@ def generate_border_registration_candidate(
         "slice_to_native_atlas_correspondences": native_points,
         "native_correspondence_columns": ["slice_x", "slice_y", "native_atlas_x", "native_atlas_y"],
         "prior": prior, "inverse_warp_status": "not_computed",
-        "elastix_elapsed_s": float(result.elapsed),
-        "elastix_stage": "border_residual",
-        "elastix": fit_report,
+        "deformation": deformation, "fit_elapsed_s": float(fit_elapsed),
+        "fit": fit_report,
     }
     if previous_candidate_id is not None:
         metadata["previous_candidate_id"] = previous_candidate_id
@@ -396,7 +419,7 @@ def generate_border_registration_candidate(
             "corrected_border_overlay.png": result.model_border_overlay,
             "generated_border_overlay.png": result.model_border_overlay,
             "warped_atlas.png": warped_atlas,
-            "warped_border_overlay.png": result.fitted_border_overlay,
+            "warped_border_overlay.png": fitted_overlay,
             **atlas_route_artifacts,
         }
         for filename, artifact in artifacts.items():
@@ -405,8 +428,10 @@ def generate_border_registration_candidate(
             if key in paths:
                 paths[key] = str((directory / filename).resolve())
         np.savez_compressed(directory / "rough_leaf_ids.npz", ids=rough)
-        np.savez_compressed(directory / "warped_leaf_ids.npz", ids=result.fitted_labels)
-        np.savez_compressed(directory / "residual_field.npz", field=result.deformation_field)
+        np.savez_compressed(directory / "warped_leaf_ids.npz", ids=fitted_labels)
+        np.savez_compressed(directory / "residual_field.npz", field=field)
+        if record is not None:
+            record.save(directory / "deformable")
         np.savez_compressed(directory / "atlas_coordinate_map.npz", coordinates=final_native_map)
         Image.fromarray(result.model_border_mask.astype(np.uint8) * 255).save(
             directory / "corrected_border_mask.png"
@@ -419,7 +444,7 @@ def generate_border_registration_candidate(
     if debug_dir is not None:
         directory = Path(debug_dir) / "registration" / candidate_id
         (directory / "meta.json").write_text(json.dumps(metadata, indent=2))
-        (directory / "elastix_report.json").write_text(json.dumps(metadata["elastix"], indent=2))
+        (directory / "fit_report.json").write_text(json.dumps(metadata["fit"], indent=2))
     if on_trace is not None:
         on_trace({"stage": "registration", "title": "Atlas boundary correction complete",
                   "metadata": metadata})
@@ -430,7 +455,7 @@ def generate_border_registration_candidate(
     )
     return RegistrationCandidate(
         candidate_id=candidate_id, generated_segmentation=result.raw_model_image,
-        warped_atlas=warped_atlas, warped_border_overlay=result.fitted_border_overlay,
+        warped_atlas=warped_atlas, warped_border_overlay=fitted_overlay,
         markers=markers, annotation_session=session, metadata=metadata,
-        warped_labels=result.fitted_labels, atlas_coordinate_map=final_native_map,
+        warped_labels=fitted_labels, atlas_coordinate_map=final_native_map,
     )

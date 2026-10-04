@@ -2,15 +2,15 @@
 
 The candidate-building pipeline these tests once exercised end-to-end
 (`_generate_registration_candidate`, the colormap workflow) is deleted; what
-remains here are the geometry, Elastix-report, and marker-sampling helpers
-that `border_registration.py`/`border_refinement.py` still call, tested
-directly rather than through that deleted pipeline.
+remains here are the geometry and CLI helpers that
+`border_registration.py`/`border_refinement.py` still call, tested directly
+rather than through that deleted pipeline (the Elastix report and parameter
+builders went with the Elastix residual fit on 2026-10-04).
 """
 
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import Any
 
 import numpy as np
 import pytest
@@ -73,53 +73,6 @@ def test_build_atlas_root_mask_produces_binary_alpha_at_target_size(monkeypatch)
     assert (mask[-1] == 0).all()
 
 
-def test_elastix_report_emits_codes_only_for_implausible_warps():
-    from langslice.nonlinear.image_gen_helpers import _elastix_report
-
-    atlas = np.zeros((20, 20), dtype=np.int32)
-    atlas[:10] = 1
-    atlas[10:15] = 2
-    atlas[15:] = 3
-    structures = {2: {"acronym": "TH"}, 3: {"acronym": "CB"}}
-
-    # Healthy: identical classification, identity deformation, tissue covered.
-    identity = np.zeros((20, 20, 2), dtype=np.float64)
-    healthy = _elastix_report(
-        atlas_classified=atlas,
-        warped_classified=atlas.copy(),
-        structures=structures,
-        deformation_field=identity,
-        tissue_mask=atlas != 0,
-    )
-    assert healthy["codes"] == []
-
-    # Region 2 vanished, region 3 collapsed to a sliver, and the field folds.
-    warped = np.ones((20, 20), dtype=np.int32)
-    warped[19, :10] = 3
-    folding = np.zeros((20, 20, 2), dtype=np.float64)
-    folding[..., 0] = -2.0 * np.arange(20)[np.newaxis, :]
-    report = _elastix_report(
-        atlas_classified=atlas,
-        warped_classified=warped,
-        structures=structures,
-        deformation_field=folding,
-        tissue_mask=None,
-    )
-    codes = {entry["code"] for entry in report["codes"]}
-    assert codes == {"REGION_MISSING", "REGION_COLLAPSED", "WARP_FOLDS"}
-    missing = next(e for e in report["codes"] if e["code"] == "REGION_MISSING")
-    assert missing["region"] == "TH"
-
-    # All-background warp leaves the real tissue uncovered.
-    uncovered = _elastix_report(
-        atlas_classified=atlas,
-        warped_classified=np.zeros((20, 20), dtype=np.int32),
-        structures=structures,
-        tissue_mask=np.ones((20, 20), dtype=bool),
-    )
-    assert {e["code"] for e in uncovered["codes"]} == {"TISSUE_UNCOVERED"}
-
-
 def test_canvas_pad_grows_working_canvas_and_reports_offsets():
     from langslice.nonlinear.image_gen_registration import prepare_canvas
 
@@ -161,54 +114,17 @@ def test_in_range_aspect_ratio_is_left_untouched():
     assert (ox, oy) == (0.0, 0.0)
 
 
-def _fake_itk_parameter_module() -> SimpleNamespace:
-    """Minimal itk stand-in: a ParameterObject that just collects its maps."""
-
-    class FakeParameterObject:
-        def __init__(self) -> None:
-            self.maps: list[dict[str, Any]] = []
-
-        def GetDefaultParameterMap(self, kind: str):  # noqa: N802 - itk API name
-            return {"Transform": (kind,)}
-
-        def AddParameterMap(self, param_map) -> None:  # noqa: N802, ANN001
-            self.maps.append(param_map)
-
-        def GetNumberOfParameterMaps(self) -> int:  # noqa: N802 - itk API name
-            return len(self.maps)
-
-    return SimpleNamespace(ParameterObject=SimpleNamespace(New=FakeParameterObject))
-
-
-def test_multichannel_parameter_object_affine_only_emits_a_single_map(monkeypatch):
-    """``deformation="affine"`` drops the B-spline stage from the shared
-    multi-channel builder both border routes' affine path uses
-    (:func:`~langslice.nonlinear.image_gen_helpers._register_channel_stacks`)."""
-    import sys
-
-    from langslice.nonlinear import image_gen_helpers
-
-    monkeypatch.setitem(sys.modules, "itk", _fake_itk_parameter_module())
-
-    bspline = image_gen_helpers._build_multichannel_parameter_object(32, 3, "bspline")
-    assert bspline.GetNumberOfParameterMaps() == 2
-
-    affine_only = image_gen_helpers._build_multichannel_parameter_object(32, 3, "affine")
-    assert affine_only.GetNumberOfParameterMaps() == 1
-    assert affine_only.maps[0]["Transform"] == ("affine",)
-
-
 def test_register_cli_parses_passes_deformation_and_mirror():
     from langslice.cli import _build_parser
 
     args = _build_parser().parse_args(
         [
             "nonlinear", "register", "tests/fixture.png", "--position", "5.0",
-            "--passes", "2", "--deformation", "affine", "--mirror-atlas-lr",
+            "--passes", "2", "--deformation", "deformable", "--mirror-atlas-lr",
         ]
     )
     assert args.passes == 2
-    assert args.deformation == "affine"
+    assert args.deformation == "deformable"
     assert args.mirror_atlas_lr is True
 
     defaults = _build_parser().parse_args(
@@ -225,3 +141,10 @@ def test_register_cli_parses_passes_deformation_and_mirror():
                 "--passes", "3",
             ]
         )
+    # The Elastix residual fit's stages are gone (2026-10-04).
+    for retired in ("bspline", "affine"):
+        with pytest.raises(SystemExit):
+            _build_parser().parse_args(
+                ["nonlinear", "register", "tests/fixture.png", "--position", "5.0",
+                 "--deformation", retired]
+            )
