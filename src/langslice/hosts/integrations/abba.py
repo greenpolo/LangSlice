@@ -233,30 +233,40 @@ def compute_registration_landmarks(
         thinking_level=config.thinking_level,
         image_call=image_model.call if image_model else None,
     )
-    inside = coords_mm[ids != 0] if np.any(ids) else coords_mm.reshape(-1, 3)
-    placement = Placement(
-        atlas_name=config.atlas_name, position_mm=float(np.median(inside[:, 0])),
-        plane="coronal", pitch_deg=0.0, yaw_deg=0.0, atlas_to_section=np.eye(3),
-        section_mm_per_px=float(config.voxel_size_um) / 1000.0, source="abba",
-    )
-    fitted = fit_border_lines(slice_image, result.model_border_mask, atlas, placement,
-                              native=ids)
+    if result.metadata.get("model_free"):
+        # No model call: ABBA's placement stands, as `nonlinear register`'s
+        # model-free route returns an identity residual (fitting the rough
+        # borders against themselves would only drift them).
+        field = np.zeros((*ids.shape, 2), dtype=np.float64)
+        fitted_labels = ids
+        fitted_overlay = result.rough_border_overlay
+    else:
+        inside = coords_mm[ids != 0] if np.any(ids) else coords_mm.reshape(-1, 3)
+        placement = Placement(
+            atlas_name=config.atlas_name, position_mm=float(np.median(inside[:, 0])),
+            plane="coronal", pitch_deg=0.0, yaw_deg=0.0, atlas_to_section=np.eye(3),
+            section_mm_per_px=float(config.voxel_size_um) / 1000.0, source="abba",
+        )
+        fitted = fit_border_lines(slice_image, result.model_border_mask, atlas, placement,
+                                  native=ids)
+        field = fitted.field_px
+        fitted_labels = fitted.fitted_labels
+        fitted_overlay = fitted.fitted_border_overlay
     _dump_debug_images(
         1,
         histology=np.asarray(slice_image),
         rough_border_overlay=np.asarray(result.rough_border_overlay),
         raw_border_correction=np.asarray(result.raw_model_image),
         model_border_overlay=np.asarray(result.model_border_overlay),
-        fitted_border_overlay=np.asarray(fitted.fitted_border_overlay),
+        fitted_border_overlay=np.asarray(fitted_overlay),
     )
-    field = fitted.field_px
     if field.shape != (*ids.shape, 2) or not np.isfinite(field).all():
         raise RuntimeError("Border refinement returned an unusable ABBA deformation field")
     # The fit is a pullback: corrected tissue q -> rough atlas p=q+u(q).
     # ABBA needs p -> q. Swap corresponding points, not displacement signs:
     # negating u at p would evaluate a spatially varying field at the wrong place.
     tissue_points, atlas_points = landmarks_from_field(
-        field, np.asarray(fitted.fitted_labels) != 0, config.landmark_grid
+        field, np.asarray(fitted_labels) != 0, config.landmark_grid
     )
     return atlas_points, tissue_points
 
