@@ -34,7 +34,6 @@ from langslice.adk import TOOL_MEDIA_DELIVERY_ID_KEY, TOOL_MEDIA_PARTS_KEY
 from langslice.adk.media import atlas_part, image_to_part, reference_slice_part
 from langslice.affine import (
     denormalized_affine,
-    normalized_physical_affine,
     physical_affine_matrix,
 )
 from langslice.linear import appearance as looks
@@ -94,10 +93,11 @@ from langslice.linear.state import (
     normalize_to_atlas_order,
 )
 from langslice.linear.transform import (
+    FIT_FRAME_KEY,
+    FitFrame,
     calibrate,
     fit_elastix,
     fit_silhouette,
-    physical_decomposition,
 )
 from langslice.linear.view_options import Profile, parse_view, view_schema
 from langslice.ops import appearance as ops_appearance
@@ -106,6 +106,7 @@ from langslice.ops import notes as ops_notes
 from langslice.ops import order as ops_order
 from langslice.ops import orientation as ops_orientation
 from langslice.ops import positions as ops_positions
+from langslice.ops import transforms as ops_transforms
 from langslice.ops.refusal import Refused
 from langslice.space import Plane
 
@@ -1973,22 +1974,21 @@ def build_tools(
             if isinstance(options, dict):
                 return options
 
-        def draw_fit(record: SliceState) -> Any:
-            def draw(section: Any, um_per_px: float, matrix: np.ndarray) -> list[Any]:
-                def drawn(chosen: Any) -> list[Any]:
-                    return draw_canvas(
-                        record, section, um_per_px, float(record.position_mm or 0.0),
-                        matrix, chosen, label=record.id,
-                    )
-                if options is plain:
-                    return drawn(options)
-                try:
-                    return drawn(options)
-                except ValueError:
-                    # The automatic highlight of a one-sided region cannot be
-                    # drawn once the fit turns the midline past 45 degrees.
-                    return drawn(plain)
-            return draw
+        def draw_fit(record: SliceState, frame: FitFrame) -> list[Any]:
+            """The fitted section, drawn from the fit's working frame and matrix."""
+            def drawn(chosen: Any) -> list[Any]:
+                return draw_canvas(
+                    record, frame.section, frame.um_per_px, float(record.position_mm or 0.0),
+                    frame.matrix, chosen, label=record.id,
+                )
+            if options is plain:
+                return drawn(options)
+            try:
+                return drawn(options)
+            except ValueError:
+                # The automatic highlight of a one-sided region cannot be
+                # drawn once the fit turns the midline past 45 degrees.
+                return drawn(plain)
 
         results: list[dict[str, Any]] = []
         parts: list[types.Part] = []
@@ -2001,15 +2001,15 @@ def build_tools(
                 results.append({"id": record.id, "status": "error", "error": "DAMAGED"})
                 continue
             try:
-                outcome = fitter(state, ctx, record, draw=draw_fit(record),
-                                 include=kept, exclude=dropped)
+                outcome = fitter(state, ctx, record, include=kept, exclude=dropped)
+                frame = outcome.pop(FIT_FRAME_KEY, None)
+                panels = draw_fit(record, frame) if frame is not None else []
             except Exception as exc:  # nothing is written for this section
                 logger.warning("fit_affine failed for %s: %s", record.id, exc)
                 results.append({"id": record.id, "status": "error",
                                 "error": getattr(exc, "code", "RENDER_FAILED"),
                                 "message": str(exc)})
                 continue
-            panels = outcome.pop("panels", None) or []
             results.append(outcome)
             if outcome["status"] != "ok":
                 continue
@@ -2039,21 +2039,13 @@ def build_tools(
                    if restricted else "")
             )
             payload[TOOL_MEDIA_PARTS_KEY] = parts
-        before = job.snapshot()
-        for record, outcome in fits:
-            record.transform = {
-                "kind": chosen,
-                "params": outcome.pop("params"),  # the six raw numbers stay host-side
-                "physical": outcome["physical"],
-                "iou": outcome["iou"],
-                "calibration": outcome["calibration"],
-                "mirrored": outcome["mirrored"],
-                **({"regions": {"include": list(kept), "exclude": list(dropped)}}
-                   if restricted else {}),
-                **({"fit_atlas": atlas_kind} if chosen == "elastix" and atlas_kind != "ara"
-                   else {}),
-            }
-        job.commit(before)
+        ops_transforms.set_transforms(job, {
+            record.id: ops_transforms.fit_transform(chosen, outcome, include=kept,
+                                                    exclude=dropped, fit_atlas=atlas_kind)
+            for record, outcome in fits
+        })
+        for _record, outcome in fits:
+            outcome.pop("params")  # the six raw numbers stay host-side
         return payload
 
     # --- the interactive transform --------------------------------------
@@ -2143,8 +2135,6 @@ def build_tools(
             label=label, spline=spline,
         )
 
-    batching_adjustments = False
-
     def _adjust_transform(
         slice_id: str,
         rotation_deg: float,
@@ -2155,14 +2145,14 @@ def build_tools(
         options: DisplayOptions,
         pivot: str | list[float] = "canvas",
         note: str = "",
-    ) -> dict[str, Any]:
-        """Set one section's in-plane transform and show the result.
+    ) -> tuple[dict[str, Any], dict[str, Any] | None]:
+        """One section's new in-plane transform, drawn: ``(result, record to write)``.
 
-        Every call writes the parameters as the section's transform and
-        returns the section drawn under them in the requested view. The same
-        parameters again only re-draw. The section's flip and rotation flags
-        are not touched. Writes, checkpoints, and can be undone (the batch
-        tool owns the undo step).
+        The record is the stored transform these parameters make
+        (:func:`langslice.ops.transforms.interactive_transform`), None when
+        the section already holds it (the same numbers again only re-draw)
+        or nothing could be drawn. The section's flip and rotation flags are
+        not touched. The batch tool writes every record as one undo step.
         """
         view = options.mode
         staged = stage(
@@ -2170,26 +2160,15 @@ def build_tools(
             translate_y_mm, pivot,
         )
         if isinstance(staged, dict):
-            return staged
+            return staged, None
         record = staged.record
         previous = record.transform
-        six = normalized_physical_affine(
-            size=staged.section.size,
-            um_per_px=staged.um_per_px,
-            pivot=staged.pivot_in_section,
-            **staged.params,
+        written = ops_transforms.interactive_transform(
+            size=staged.section.size, um_per_px=staged.um_per_px,
+            calibration=staged.calibration, pivot=staged.pivot_in_section,
+            pivot_frac=staged.pivot_frac, knobs=staged.params, note=note,
         )
-        decomposition = physical_decomposition(six, staged.section.size)
-        written = {
-            "kind": "interactive",
-            "params": six,
-            "physical": {**staged.params, "pivot": staged.pivot_frac},
-            "calibration": staged.calibration,
-            "mirrored": decomposition["mirrored"],
-            "note": str(note or "").strip(),
-        }
-        # The same numbers again are a look, not a write: no undo step for it.
-        wrote = previous is None or {**previous, "note": ""} != {**written, "note": ""}
+        wrote = not ops_transforms.same_transform(previous, written)
 
         stored = (previous or {}).get("physical")
         reference: dict[str, Any] | None = None
@@ -2233,24 +2212,18 @@ def build_tools(
                 )
         except Exception as exc:
             logger.warning("adjust_transform failed for %s: %s", record.id, exc)
-            return {"status": "error", "error": "RENDER_FAILED", "message": str(exc)}
+            return {"status": "error", "error": "RENDER_FAILED", "message": str(exc)}, None
 
-        # Encoding is part of producing feedback. Finish it before mutating
-        # state so an encoder failure cannot leave an uncheckpointed transform,
-        # especially inside a multi-section batch.
+        # Encoding is part of producing feedback: a section whose picture
+        # cannot be encoded is not written.
         try:
             media_parts = [image_to_part(image) for image in images]
         except Exception as exc:
             logger.warning("adjust_transform encode failed for %s: %s", record.id, exc)
-            return {"status": "error", "error": "RENDER_FAILED", "message": str(exc)}
+            return {"status": "error", "error": "RENDER_FAILED", "message": str(exc)}, None
 
         history = box.transform_history.setdefault(record.id, [])
         history.append(dict(staged.params))
-        if wrote:
-            single = None if batching_adjustments else job.snapshot()
-            record.transform = written
-            if single is not None:
-                job.commit(single)
         image = f"atlas {options.atlas_name()}"
         under = (f", the {image} blended under it at opacity {options.atlas_opacity:g}"
                  if options.atlas_images and options.atlas_opacity > 0 else "")
@@ -2301,7 +2274,7 @@ def build_tools(
             **({"regions_not_in_plane": absent} if absent else {}),
             "description": f"{record.id} under the transform above, {described}. {lines}",
             TOOL_MEDIA_PARTS_KEY: media_parts,
-        }
+        }, (written if wrote else None)
 
     def adjust_transforms(
         entries: list[TransformEntry],
@@ -2337,7 +2310,6 @@ def build_tools(
             with. All writes form one undo step. Repeating unchanged
             parameters only redraws, without an undo step.
         """
-        nonlocal batching_adjustments
         if not entries:
             return {"status": "error", "error": "BAD_ARGS"}
         if len(entries) > MAX_VIEW_SLICES:
@@ -2373,41 +2345,36 @@ def build_tools(
         if isinstance(options, dict):
             return options
 
-        before = job.snapshot()
         results: list[dict[str, Any]] = []
         parts: list[types.Part] = []
-        wrote_any = False
-        batching_adjustments = True
-        try:
-            for entry in entries:
-                if not isinstance(entry, dict):
-                    results.append({"status": "error", "error": "BAD_ARGS"})
-                    continue
-                target = state.resolve(entry.get("id", ""))
-                if target is not None and target.id in locked:
-                    results.append({"status": "error", "error": "LOCKED", "id": target.id})
-                    continue
-                result = _adjust_transform(
-                    str(entry.get("id", "")),
-                    entry.get("rotation_deg"),  # type: ignore[arg-type]
-                    entry.get("scale_x"),  # type: ignore[arg-type]
-                    entry.get("scale_y"),  # type: ignore[arg-type]
-                    entry.get("translate_x_mm"),  # type: ignore[arg-type]
-                    entry.get("translate_y_mm"),  # type: ignore[arg-type]
-                    options,
-                    entry.get("pivot", "canvas"),  # type: ignore[arg-type]
-                    str(entry.get("note", "")),
-                )
-                media = result.pop(TOOL_MEDIA_PARTS_KEY, [])
-                result["image_indexes"] = list(range(len(parts), len(parts) + len(media)))
-                parts.extend(media)
-                wrote_any = wrote_any or bool(result.get("written"))
-                results.append(result)
-        finally:
-            batching_adjustments = False
-
-        if wrote_any:
-            job.commit(before)
+        writes: dict[str, dict[str, Any]] = {}
+        for entry in entries:
+            if not isinstance(entry, dict):
+                results.append({"status": "error", "error": "BAD_ARGS"})
+                continue
+            target = state.resolve(entry.get("id", ""))
+            if target is not None and target.id in locked:
+                results.append({"status": "error", "error": "LOCKED", "id": target.id})
+                continue
+            result, record_to_write = _adjust_transform(
+                str(entry.get("id", "")),
+                entry.get("rotation_deg"),  # type: ignore[arg-type]
+                entry.get("scale_x"),  # type: ignore[arg-type]
+                entry.get("scale_y"),  # type: ignore[arg-type]
+                entry.get("translate_x_mm"),  # type: ignore[arg-type]
+                entry.get("translate_y_mm"),  # type: ignore[arg-type]
+                options,
+                entry.get("pivot", "canvas"),  # type: ignore[arg-type]
+                str(entry.get("note", "")),
+            )
+            media = result.pop(TOOL_MEDIA_PARTS_KEY, [])
+            result["image_indexes"] = list(range(len(parts), len(parts) + len(media)))
+            parts.extend(media)
+            if record_to_write is not None:
+                writes[str(result["id"])] = record_to_write
+            results.append(result)
+        # Every section of the call, one undo step.
+        ops_transforms.set_transforms(job, writes)
         successful = [row["id"] for row in results if row.get("status") == "ok"]
         return {
             "status": "ok" if successful else "error",

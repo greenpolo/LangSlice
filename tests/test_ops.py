@@ -14,7 +14,7 @@ from langslice.linear.engine import build_context
 from langslice.linear.job import Job
 from langslice.linear.spec import JobSpec, TransformSpec
 from langslice.linear.state import SliceState
-from langslice.ops import appearance, damage, notes, order, orientation, positions
+from langslice.ops import appearance, damage, notes, order, orientation, positions, transforms
 from langslice.ops.refusal import Refused
 from tests.fakes import SlabAtlas
 
@@ -116,3 +116,32 @@ def test_appearance_plan_matches_the_write(tmp_path: Path):
     done = appearance.set_appearance(job, ["view", "fit"], ["s1.png"], settings)
     assert done.in_force["view"] == {"sections": {"s1.png": planned}}
     assert planned == settings and len(job.undo_stack) == 1
+
+
+def test_transform_records_and_one_undo_step_for_a_batch(tmp_path: Path):
+    job, _ = _open(tmp_path, inputs={"locked": ["s2.png"]})
+    knobs = {"rotation_deg": 0.0, "scale_x": 1.0, "scale_y": 1.0,
+             "translate_x_mm": 0.0, "translate_y_mm": 0.0}
+    record = transforms.interactive_transform(
+        size=(40, 30), um_per_px=10.0, calibration={"section_um_per_px": 10.0, "source": "host"},
+        pivot=None, pivot_frac=[0.5, 0.5], knobs=knobs, note=" why ")
+    assert record["params"] == [1.0, 0.0, 0.0, 0.0, 1.0, 0.0]
+    assert record["physical"] == {**knobs, "pivot": [0.5, 0.5]} and record["note"] == "why"
+    assert not transforms.same_transform(None, record)
+    assert transforms.same_transform({**record, "note": "other"}, record)
+
+    fitted = transforms.fit_transform(
+        "elastix", {"params": [1, 0, 0, 0, 1, 0], "physical": {}, "iou": 0.5,
+                    "calibration": {}, "mirrored": False},
+        exclude=["HY"], fit_atlas="nissl")
+    assert fitted["regions"] == {"include": [], "exclude": ["HY"]}
+    assert fitted["fit_atlas"] == "nissl"
+
+    assert transforms.set_transforms(job, {"s0.png": record, "s1.png": fitted}) == [
+        "s0.png", "s1.png"]
+    assert len(job.undo_stack) == 1
+    assert job.undo() and _record(job, "s1.png").transform is None
+    with pytest.raises(Refused) as locked:
+        transforms.set_transforms(job, {"s0.png": record, "s2.png": record})
+    assert locked.value.code == "LOCKED" and _record(job, "s0.png").transform is None
+    assert transforms.set_transforms(job, {}) == []
